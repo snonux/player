@@ -34,6 +34,7 @@ type Set struct {
 	Name               string
 	RootPath           string
 	CoverThumbnailPath string
+	Permissions        []SetPermission
 	CreatedAt          time.Time
 }
 
