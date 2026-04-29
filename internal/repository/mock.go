@@ -13,6 +13,11 @@ var (
 	_ Store = (*MockStore)(nil)
 )
 
+// NewMockStore returns a MockStore with all no-op defaults.
+func NewMockStore() *MockStore {
+	return &MockStore{}
+}
+
 // MockStore is a hand-written fake for all repository interfaces.
 // Each embedded struct provides default no-op / zero-value behavior;
 // callers override individual func fields to inject test behavior.
