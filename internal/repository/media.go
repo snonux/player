@@ -70,7 +70,7 @@ func scanMedia(row sqlScanner) (*model.Media, error) {
 // GetMediaByID retrieves a media by ID.
 func (s *SQLite) GetMediaByID(ctx context.Context, id int64) (*model.Media, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, thumbnail_path, play_count, deleted_at, created_at FROM media WHERE id = ?`, id)
+		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, thumbnail_path, play_count, deleted_at, created_at FROM media WHERE id = ? AND deleted_at IS NULL`, id)
 	return scanMedia(row)
 }
 

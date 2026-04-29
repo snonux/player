@@ -243,6 +243,31 @@ func TestSQLite_MediaRepo(t *testing.T) {
 			},
 		},
 		{
+			name: "excludes soft-deleted from get by id",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				mid, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				if err := s.SoftDeleteMedia(ctx, mid); err != nil {
+					t.Fatalf("soft delete: %v", err)
+				}
+				m, err := s.GetMediaByID(ctx, mid)
+				if err == nil {
+					t.Fatal("expected error for soft-deleted media")
+				}
+				if m != nil {
+					t.Fatalf("expected nil media for soft-deleted record, got %+v", m)
+				}
+				deleted, _ := s.ListDeletedMedia(ctx)
+				if len(deleted) != 1 {
+					t.Fatalf("expected 1 deleted media, got %d", len(deleted))
+				}
+				if deleted[0].ID != mid {
+					t.Fatalf("expected deleted media ID %d, got %d", mid, deleted[0].ID)
+				}
+			},
+		},
+		{
 			name: "hard delete",
 			run: func(t *testing.T, ctx context.Context, s *SQLite) {
 				now := time.Now().Truncate(time.Second)
