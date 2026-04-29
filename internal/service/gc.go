@@ -22,6 +22,7 @@ type GCWorker struct {
 	logger    *slog.Logger
 	ticker    *time.Ticker
 	stopCh    chan struct{}
+	stopOnce  sync.Once
 	wg        sync.WaitGroup
 	mediaRoot string
 }
@@ -69,11 +70,14 @@ func (w *GCWorker) Start() {
 }
 
 // Stop stops the GC goroutine and waits for it to finish.
+// Safe to call multiple times or before Start() (idempotent, no-op).
 func (w *GCWorker) Stop() {
-	if w.ticker != nil {
-		w.ticker.Stop()
-	}
-	close(w.stopCh)
+	w.stopOnce.Do(func() {
+		if w.ticker != nil {
+			w.ticker.Stop()
+		}
+		close(w.stopCh)
+	})
 	w.wg.Wait()
 }
 

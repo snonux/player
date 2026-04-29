@@ -113,6 +113,22 @@ func TestGCWorker_ListDeletedError(t *testing.T) {
 	w.RunOnce()
 }
 
+func TestGCWorker_StopBeforeStart(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	w := NewGCWorker(&repository.MockStore{}, &clock.MockClock{T: now}, "/tmp", time.Minute, logger)
+	w.Stop() // must not panic
+}
+
+func TestGCWorker_DoubleStop(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	w := NewGCWorker(&repository.MockStore{}, &clock.MockClock{T: now}, "/tmp", time.Minute, logger)
+	w.Start()
+	w.Stop()
+	w.Stop() // must not panic
+}
+
 func TestGCWorker_RelPathFallback(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	tmpDir := t.TempDir()
