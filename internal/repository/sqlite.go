@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -41,6 +42,11 @@ func Open(dsn string) (*SQLite, error) {
 // Close closes the underlying database connection.
 func (s *SQLite) Close() error {
 	return s.db.Close()
+}
+
+// Ping checks the database connection health.
+func (s *SQLite) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
 }
 
 var _ Store = (*SQLite)(nil)
