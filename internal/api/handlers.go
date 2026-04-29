@@ -71,6 +71,14 @@ func floatPtr(f float64) *float64 { return &f }
 
 func intPtr(i int64) *int64 { return &i }
 
+func requireService(w http.ResponseWriter, svc any) bool {
+	if svc == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+		return false
+	}
+	return true
+}
+
 // ------------------------------------------------------------------
 // Static pages
 // ------------------------------------------------------------------
@@ -237,8 +245,7 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter) {
 // ------------------------------------------------------------------
 
 func (s *Server) handleListSets(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	sets, err := s.mediaSvc.ListSets(r.Context(), userIDFromContext(r))
@@ -250,8 +257,7 @@ func (s *Server) handleListSets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSetCover(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	setID := pathID(r, "id")
@@ -267,8 +273,7 @@ func (s *Server) handleSetCover(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	setID := pathID(r, "id")
@@ -297,8 +302,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------
 
 func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	q := r.URL.Query()
@@ -353,8 +357,7 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -375,8 +378,7 @@ func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -393,8 +395,7 @@ func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -417,8 +418,7 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -435,8 +435,7 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -452,8 +451,7 @@ func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -523,16 +521,14 @@ func (s *Server) fileHandler(fn func(context.Context, int64, int64) (*service.Fi
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	s.fileHandler(s.mediaSvc.StreamMedia)(w, r)
 }
 
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -561,16 +557,14 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	s.fileHandler(s.mediaSvc.GetThumbnail)(w, r)
 }
 
 func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -590,8 +584,7 @@ func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------
 
 func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -609,8 +602,7 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -627,8 +619,7 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	token := r.PathValue("token")
@@ -644,8 +635,7 @@ func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	token := r.PathValue("token")
@@ -658,8 +648,7 @@ func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	token := r.PathValue("token")
@@ -680,8 +669,7 @@ func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------
 
 func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -702,8 +690,7 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpsertNote(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -727,8 +714,7 @@ func (s *Server) handleUpsertNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
-	if s.mediaSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.mediaSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -748,8 +734,7 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------
 
 func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
-	if s.progressSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.progressSvc) {
 		return
 	}
 	var req struct {
@@ -783,8 +768,7 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------
 
 func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {
-	if s.adminSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.adminSvc) {
 		return
 	}
 	items, err := s.adminSvc.ListTrash(r.Context())
@@ -796,8 +780,7 @@ func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
-	if s.adminSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.adminSvc) {
 		return
 	}
 	if err := s.adminSvc.TriggerRescan(r.Context()); err != nil {
@@ -808,8 +791,7 @@ func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	if s.adminSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.adminSvc) {
 		return
 	}
 	users, err := s.adminSvc.ListUsers(r.Context())
@@ -821,8 +803,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
-	if s.adminSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.adminSvc) {
 		return
 	}
 	var req struct {
@@ -843,8 +824,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
-	if s.adminSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.adminSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -861,8 +841,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListPermissions(w http.ResponseWriter, r *http.Request) {
-	if s.adminSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.adminSvc) {
 		return
 	}
 	perms, err := s.adminSvc.ListPermissions(r.Context())
@@ -874,8 +853,7 @@ func (s *Server) handleListPermissions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGrantPermission(w http.ResponseWriter, r *http.Request) {
-	if s.adminSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.adminSvc) {
 		return
 	}
 	var req struct {
@@ -895,8 +873,7 @@ func (s *Server) handleGrantPermission(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRevokePermission(w http.ResponseWriter, r *http.Request) {
-	if s.adminSvc == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if !requireService(w, s.adminSvc) {
 		return
 	}
 	var req struct {
