@@ -1,5 +1,6 @@
 # Binaries
 mediaplayer
+play
 *.exe
 *.dll
 *.so

@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kiss-media-player
+  labels:
+    app: kiss-media-player
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kiss-media-player
+  template:
+    metadata:
+      labels:
+        app: kiss-media-player
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 65534
+      containers:
+        - name: app
+          image: kiss-media-player:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - secretRef:
+                name: kiss-media-player-secret
+                optional: true
+          env:
+            - name: PORT
+              value: "8080"
+            - name: DB_PATH
+              value: "/data/media.db"
+            - name: MEDIA_ROOT
+              value: "/media"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: media
+              mountPath: /media
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: kiss-media-player-db
+        - name: media
+          persistentVolumeClaim:
+            claimName: kiss-media-player-media
