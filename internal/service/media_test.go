@@ -32,10 +32,10 @@ func TestMediaService_ListSets(t *testing.T) {
 		wantErr   bool
 	}{
 		{
-			name:   "admin sees all sets",
-			userID: 1,
-			user:   &model.User{ID: 1, IsAdmin: true},
-			sets:   []model.Set{{ID: 1}, {ID: 2}, {ID: 3}},
+			name:      "admin sees all sets",
+			userID:    1,
+			user:      &model.User{ID: 1, IsAdmin: true},
+			sets:      []model.Set{{ID: 1}, {ID: 2}, {ID: 3}},
 			wantCount: 3,
 		},
 		{
@@ -46,7 +46,7 @@ func TestMediaService_ListSets(t *testing.T) {
 				{ID: 1, Permissions: []model.SetPermission{{SetID: 1, UserID: 2}}},
 				{ID: 2},
 			},
-			perms: []model.SetPermission{{SetID: 1, UserID: 2}},
+			perms:     []model.SetPermission{{SetID: 1, UserID: 2}},
 			wantCount: 1,
 		},
 		{
@@ -124,30 +124,30 @@ func TestMediaService_GetMediaDetail(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name       string
-		mediaID    int64
-		userID     int64
-		media      *model.Media
-		mediaErr   error
-		tags       []model.Tag
-		tagsErr    error
-		fav        bool
-		favErr     error
-		note       *model.Note
-		noteErr    error
-		progress   *model.PlaybackProgress
+		name        string
+		mediaID     int64
+		userID      int64
+		media       *model.Media
+		mediaErr    error
+		tags        []model.Tag
+		tagsErr     error
+		fav         bool
+		favErr      error
+		note        *model.Note
+		noteErr     error
+		progress    *model.PlaybackProgress
 		progressErr error
-		wantErr    bool
-		wantNil    bool
+		wantErr     bool
+		wantNil     bool
 	}{
 		{
-			name:    "ok",
-			mediaID: 1,
-			userID:  1,
-			media:   &model.Media{ID: 1, FileName: "a.mp4"},
-			tags:    []model.Tag{{ID: 1, Name: "rock"}},
-			fav:     true,
-			note:    &model.Note{MediaID: 1, UserID: 1, Content: "hello"},
+			name:     "ok",
+			mediaID:  1,
+			userID:   1,
+			media:    &model.Media{ID: 1, FileName: "a.mp4"},
+			tags:     []model.Tag{{ID: 1, Name: "rock"}},
+			fav:      true,
+			note:     &model.Note{MediaID: 1, UserID: 1, Content: "hello"},
 			progress: &model.PlaybackProgress{UserID: 1, MediaID: 1, PositionSeconds: 42},
 		},
 		{
@@ -236,6 +236,7 @@ func TestMediaService_GetMediaDetail(t *testing.T) {
 
 func TestMediaService_StreamMedia_Access(t *testing.T) {
 	ctx := context.Background()
+	now := time.Now()
 
 	tests := []struct {
 		name    string
@@ -245,7 +246,7 @@ func TestMediaService_StreamMedia_Access(t *testing.T) {
 		user    *model.User
 		set     *model.Set
 		perm    *model.SetPermission
-		wantErr bool
+		wantErr error
 	}{
 		{
 			name:    "admin access",
@@ -255,36 +256,53 @@ func TestMediaService_StreamMedia_Access(t *testing.T) {
 			user:    &model.User{ID: 1, IsAdmin: true},
 		},
 		{
-			name:    "permission access",
+			name:    "viewer via explicit permission",
 			mediaID: 1,
 			userID:  2,
-			media:   &model.Media{ID: 1, SetID: 1},
+			media:   &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/a.mp4", FileName: "a.mp4"},
 			user:    &model.User{ID: 2, IsAdmin: false},
 			set:     &model.Set{ID: 1},
-			perm:    &model.SetPermission{SetID: 1, UserID: 2},
+			perm:    &model.SetPermission{SetID: 1, UserID: 2, Role: model.RoleViewer},
 		},
 		{
-			name:    "set permissions access",
+			name:    "owner via set permissions",
 			mediaID: 1,
 			userID:  3,
-			media:   &model.Media{ID: 1, SetID: 1},
+			media:   &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/a.mp4", FileName: "a.mp4"},
 			user:    &model.User{ID: 3, IsAdmin: false},
-			set:     &model.Set{ID: 1, Permissions: []model.SetPermission{{SetID: 1, UserID: 3}}},
+			set:     &model.Set{ID: 1, Permissions: []model.SetPermission{{SetID: 1, UserID: 3, Role: model.RoleOwner}}},
 		},
 		{
-			name:    "no access",
+			name:    "unauthorized user",
 			mediaID: 1,
 			userID:  4,
 			media:   &model.Media{ID: 1, SetID: 1},
 			user:    &model.User{ID: 4, IsAdmin: false},
 			set:     &model.Set{ID: 1, Permissions: []model.SetPermission{}},
-			wantErr: true,
+			wantErr: ErrForbidden,
+		},
+		{
+			name:    "unauthenticated user",
+			mediaID: 1,
+			userID:  0,
+			media:   &model.Media{ID: 1, SetID: 1},
+			set:     &model.Set{ID: 1},
+			wantErr: ErrForbidden,
 		},
 		{
 			name:    "media not found",
-			mediaID: 1,
+			mediaID: 99,
+			userID:  1,
 			media:   nil,
-			wantErr: true,
+			wantErr: ErrNotFound,
+		},
+		{
+			name:    "soft-deleted media",
+			mediaID: 1,
+			userID:  1,
+			media:   &model.Media{ID: 1, SetID: 1, DeletedAt: &now, AbsPath: "/tmp/a.mp4", FileName: "a.mp4"},
+			user:    &model.User{ID: 1, IsAdmin: true},
+			wantErr: ErrNotFound,
 		},
 	}
 
@@ -293,7 +311,10 @@ func TestMediaService_StreamMedia_Access(t *testing.T) {
 			store := &repository.MockStore{
 				MediaRepo: repository.MockMediaRepo{
 					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
-						return tt.media, nil
+						if id == tt.mediaID {
+							return tt.media, nil
+						}
+						return nil, nil
 					},
 				},
 				UserRepo: repository.MockUserRepo{
@@ -314,9 +335,12 @@ func TestMediaService_StreamMedia_Access(t *testing.T) {
 			}
 			svc := NewMediaService(store, newMockClock(), "/tmp/media")
 			res, err := svc.StreamMedia(ctx, tt.mediaID, tt.userID)
-			if tt.wantErr {
+			if tt.wantErr != nil {
 				if err == nil {
-					t.Fatal("expected error")
+					t.Fatalf("expected error %v", tt.wantErr)
+				}
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("expected error %v, got %v", tt.wantErr, err)
 				}
 				return
 			}
@@ -351,6 +375,103 @@ func TestMediaService_StreamMedia(t *testing.T) {
 	}
 	if res.FileName != "a.mp4" {
 		t.Fatalf("unexpected filename %q", res.FileName)
+	}
+}
+
+func TestMediaService_DownloadMedia_Access(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	tests := []struct {
+		name    string
+		mediaID int64
+		userID  int64
+		media   *model.Media
+		user    *model.User
+		set     *model.Set
+		perm    *model.SetPermission
+		wantErr error
+	}{
+		{
+			name:    "admin access",
+			mediaID: 1,
+			userID:  1,
+			media:   &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/a.mp4", FileName: "a.mp4", FileSizeBytes: 100},
+			user:    &model.User{ID: 1, IsAdmin: true},
+		},
+		{
+			name:    "viewer via explicit permission",
+			mediaID: 1,
+			userID:  2,
+			media:   &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/a.mp4", FileName: "a.mp4"},
+			user:    &model.User{ID: 2, IsAdmin: false},
+			set:     &model.Set{ID: 1},
+			perm:    &model.SetPermission{SetID: 1, UserID: 2, Role: model.RoleViewer},
+		},
+		{
+			name:    "unauthorized user",
+			mediaID: 1,
+			userID:  4,
+			media:   &model.Media{ID: 1, SetID: 1},
+			user:    &model.User{ID: 4, IsAdmin: false},
+			set:     &model.Set{ID: 1, Permissions: []model.SetPermission{}},
+			wantErr: ErrForbidden,
+		},
+		{
+			name:    "soft-deleted media",
+			mediaID: 1,
+			userID:  1,
+			media:   &model.Media{ID: 1, SetID: 1, DeletedAt: &now, AbsPath: "/tmp/a.mp4", FileName: "a.mp4"},
+			user:    &model.User{ID: 1, IsAdmin: true},
+			wantErr: ErrNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &repository.MockStore{
+				MediaRepo: repository.MockMediaRepo{
+					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+						if id == tt.mediaID {
+							return tt.media, nil
+						}
+						return nil, nil
+					},
+				},
+				UserRepo: repository.MockUserRepo{
+					GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+						return tt.user, nil
+					},
+				},
+				SetRepo: repository.MockSetRepo{
+					GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+						return tt.set, nil
+					},
+				},
+				SetPermissionRepo: repository.MockSetPermissionRepo{
+					GetPermissionFunc: func(ctx context.Context, setID, userID int64) (*model.SetPermission, error) {
+						return tt.perm, nil
+					},
+				},
+			}
+			svc := NewMediaService(store, newMockClock(), "/tmp/media")
+			res, err := svc.DownloadMedia(ctx, tt.mediaID, tt.userID)
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatalf("expected error %v", tt.wantErr)
+				}
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if res == nil {
+				t.Fatal("expected result, got nil")
+			}
+		})
 	}
 }
 

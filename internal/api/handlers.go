@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -502,6 +503,14 @@ func (s *Server) fileHandler(fn func(context.Context, int64, int64) (*service.Fi
 		}
 		res, err := fn(r.Context(), id, userIDFromContext(r))
 		if err != nil {
+			if errors.Is(err, service.ErrNotFound) {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			if errors.Is(err, service.ErrForbidden) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -533,6 +542,14 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.mediaSvc.DownloadMedia(r.Context(), id, userIDFromContext(r))
 	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if errors.Is(err, service.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

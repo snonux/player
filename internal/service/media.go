@@ -33,6 +33,12 @@ func NewMediaService(store repository.Store, clk clock.Clock, mediaRoot string) 
 	}
 }
 
+// Sentinel errors returned by the media service layer.
+var (
+	ErrNotFound  = errors.New("not found")
+	ErrForbidden = errors.New("access denied")
+)
+
 func (s *mediaService) ListSets(ctx context.Context, userID int64) ([]model.Set, error) {
 	user, err := s.store.GetUserByID(ctx, userID)
 	if err != nil {
@@ -122,8 +128,8 @@ func (s *mediaService) verifyAccess(ctx context.Context, mediaID, userID int64) 
 	if err != nil {
 		return nil, fmt.Errorf("get media: %w", err)
 	}
-	if media == nil {
-		return nil, errors.New("media not found")
+	if media == nil || media.DeletedAt != nil {
+		return nil, ErrNotFound
 	}
 
 	user, err := s.store.GetUserByID(ctx, userID)
@@ -139,7 +145,7 @@ func (s *mediaService) verifyAccess(ctx context.Context, mediaID, userID int64) 
 		return nil, fmt.Errorf("get set: %w", err)
 	}
 	if set == nil {
-		return nil, errors.New("set not found")
+		return nil, ErrNotFound
 	}
 
 	for _, p := range set.Permissions {
@@ -156,7 +162,7 @@ func (s *mediaService) verifyAccess(ctx context.Context, mediaID, userID int64) 
 		return media, nil
 	}
 
-	return nil, errors.New("access denied")
+	return nil, ErrForbidden
 }
 
 func (s *mediaService) StreamMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error) {
