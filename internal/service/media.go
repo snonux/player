@@ -280,7 +280,7 @@ func (s *mediaService) UploadMedia(ctx context.Context, setID, userID int64, fil
 		return nil, errors.New("set not found")
 	}
 
-	dir := filepath.Join(s.mediaRoot, set.RootPath)
+	dir := filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir: %w", err)
 	}

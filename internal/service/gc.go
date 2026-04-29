@@ -99,7 +99,7 @@ func (w *GCWorker) run() {
 
 		absPath := item.AbsPath
 		if absPath == "" {
-			absPath = filepath.Join(w.mediaRoot, item.RelPath)
+			absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
 		}
 
 		if absPath != "" {
