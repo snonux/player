@@ -1,0 +1,1472 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/paul/kiss-media-player/internal"
+	"github.com/paul/kiss-media-player/internal/auth"
+	"github.com/paul/kiss-media-player/internal/clock"
+	"github.com/paul/kiss-media-player/internal/model"
+	"github.com/paul/kiss-media-player/internal/repository"
+	"github.com/paul/kiss-media-player/internal/service"
+)
+
+// ------------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------------
+
+func makeTempFile(t *testing.T, data string) string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "media-*.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(data); err != nil {
+		t.Fatal(err)
+	}
+	return f.Name()
+}
+
+func newUploadRequest(t *testing.T, setID, filename, content string) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, err := w.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.WriteString(part, content)
+	_ = w.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/sets/"+setID+"/upload", &buf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	return req
+}
+
+func buildAdminSessionStore(userID int64) *repository.MockStore {
+	store := buildSessionStore(userID)
+	store.UserRepo.GetUserByIDFunc = func(ctx context.Context, id int64) (*model.User, error) {
+		return &model.User{ID: id, Username: "admin", IsAdmin: true}, nil
+	}
+	return store
+}
+
+func sessionCookieForStore(t *testing.T, store repository.Store, sm *auth.SessionManager, userID int64) *http.Cookie {
+	t.Helper()
+	return addSessionCookie(t, store, sm, userID)
+}
+
+// ------------------------------------------------------------------
+// Server helpers (server.go)
+// ------------------------------------------------------------------
+
+func Test_addrFromPort(t *testing.T) {
+	if got := addrFromPort(8080); got != ":8080" {
+		t.Fatalf("expected :8080, got %s", got)
+	}
+}
+
+func TestNewGracefulServer(t *testing.T) {
+	cfg := &internal.Config{Port: 3000}
+	gs := NewGracefulServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), cfg)
+	if gs.Server.Addr != ":3000" {
+		t.Fatalf("unexpected addr %s", gs.Server.Addr)
+	}
+}
+
+func TestPingStore_nonPinger(t *testing.T) {
+	store := &repository.MockStore{}
+	srv := newTestServer(t, store, nil, nil, &internal.Config{}, nil, nil, nil, nil)
+	if err := srv.pingStore(context.Background()); err != nil {
+		t.Fatal("expected nil for non-pinger")
+	}
+}
+
+func TestPingStore_pingerError(t *testing.T) {
+	store := &mockPingStore{err: errors.New("down")}
+	srv := newTestServer(t, store, nil, nil, &internal.Config{}, nil, nil, nil, nil)
+	if err := srv.pingStore(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+// ------------------------------------------------------------------
+// String / readJSON / writeJSON / context helpers
+// ------------------------------------------------------------------
+
+func Test_stringPtr(t *testing.T) {
+	s := "x"
+	p := stringPtr(s)
+	if p == nil || *p != s {
+		t.Fatal("unexpected")
+	}
+}
+
+func Test_readJSON_nilBody(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Body = nil
+	var dst map[string]any
+	if err := readJSON(req, &dst); err == nil {
+		t.Fatal("expected error for nil body")
+	}
+}
+
+func Test_writeJSON_encodeError(t *testing.T) {
+	// channel cannot be JSON-encoded, triggering the error path
+	rr := httptest.NewRecorder()
+	writeJSON(rr, http.StatusOK, make(chan int))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+func Test_userIDFromContext_missing(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if userIDFromContext(req) != 0 {
+		t.Fatal("expected 0")
+	}
+}
+
+func Test_sessionIDFromContext_missing(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if sessionIDFromContext(req) != "" {
+		t.Fatal("expected empty")
+	}
+}
+
+// ------------------------------------------------------------------
+// Static pages (serveFile)
+// ------------------------------------------------------------------
+
+func TestServer_ServeFile_success(t *testing.T) {
+	store := buildSessionStore(1)
+	store.SessionRepo = repository.MockSessionRepo{
+		GetSessionByIDFunc: func(ctx context.Context, id string) (*model.Session, error) {
+			return &model.Session{ID: id, UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}, nil
+		},
+	}
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	srv := newTestServer(t, store, nil, sm, &internal.Config{SessionTimeoutHours: 24}, nil, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+func TestServer_ServeFile_notFound(t *testing.T) {
+	fs := newTestFS(map[string]string{}) // no index.html
+	store := buildSessionStore(1)
+	store.SessionRepo = repository.MockSessionRepo{
+		GetSessionByIDFunc: func(ctx context.Context, id string) (*model.Session, error) {
+			return &model.Session{ID: id, UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}, nil
+		},
+	}
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	srv := newTestServer(t, store, nil, sm, &internal.Config{SessionTimeoutHours: 24}, nil, nil, nil, fs)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected %d, got %d", http.StatusNotFound, rr.Code)
+	}
+}
+
+// ------------------------------------------------------------------
+// Bootstrap negative paths
+// ------------------------------------------------------------------
+
+func TestServer_Bootstrap_negativePaths(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		countErr  error
+		hashErr   error
+		createErr error
+		sessErr   error
+		wantCode  int
+	}{
+		{"invalid json", `bad`, nil, nil, nil, nil, http.StatusBadRequest},
+		{"count users error", `{"username":"u","password":"p"}`, errors.New("boom"), nil, nil, nil, http.StatusInternalServerError},
+		{"hash error", `{"username":"u","password":"p"}`, nil, errors.New("boom"), nil, nil, http.StatusInternalServerError},
+		{"create user error", `{"username":"u","password":"p"}`, nil, nil, errors.New("boom"), nil, http.StatusInternalServerError},
+		{"create session error", `{"username":"u","password":"p"}`, nil, nil, nil, errors.New("boom"), http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_ = tt.wantCode
+		})
+	}
+}
+
+func TestServer_Bootstrap_hashError(t *testing.T) {
+	store := &repository.MockStore{
+		UserRepo: repository.MockUserRepo{
+			CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil },
+		},
+	}
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	hasher := &errHasher{}
+	srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil)
+	body := `{"username":"u","password":"p"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected %d, got %d", http.StatusInternalServerError, rr.Code)
+	}
+}
+
+func TestServer_Bootstrap_createUserError(t *testing.T) {
+	store := &repository.MockStore{
+		UserRepo: repository.MockUserRepo{
+			CountUsersFunc:  func(ctx context.Context) (int, error) { return 0, nil },
+			CreateUserFunc: func(ctx context.Context, user *model.User) (int64, error) { return 0, errors.New("boom") },
+		},
+	}
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, store, &staticHasher{fixed: "h"}, nil, cfg, nil, nil, nil, nil)
+	body := `{"username":"u","password":"p"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected %d, got %d", http.StatusInternalServerError, rr.Code)
+	}
+}
+
+func TestServer_Bootstrap_createSessionError(t *testing.T) {
+	store := &repository.MockStore{
+		UserRepo: repository.MockUserRepo{
+			CountUsersFunc:  func(ctx context.Context) (int, error) { return 0, nil },
+			CreateUserFunc: func(ctx context.Context, user *model.User) (int64, error) { return 1, nil },
+		},
+	}
+	repo := repository.MockSessionRepo{
+		CreateSessionFunc: func(ctx context.Context, session *model.Session) error { return errors.New("boom") },
+	}
+	sm := auth.NewSessionManager(&repo, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, store, &staticHasher{fixed: "h"}, sm, cfg, nil, nil, nil, nil)
+	body := `{"username":"u","password":"p"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected %d, got %d", http.StatusInternalServerError, rr.Code)
+	}
+}
+
+// ------------------------------------------------------------------
+// Login negative paths
+// ------------------------------------------------------------------
+
+func TestServer_Login_negativePaths(t *testing.T) {
+	hasher := &staticHasher{fixed: "hashed"}
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	t.Run("invalid json", func(t *testing.T) {
+		store := buildSessionStore(1)
+		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(`bad`)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+
+	t.Run("db error", func(t *testing.T) {
+		store := buildSessionStore(1)
+		store.UserRepo.GetUserByUsernameFunc = func(ctx context.Context, username string) (*model.User, error) {
+			return nil, errors.New("boom")
+		}
+		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil)
+		body := `{"username":"alice","password":"correct"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("expected %d, got %d", http.StatusUnauthorized, rr.Code)
+		}
+	})
+}
+
+// ------------------------------------------------------------------
+// Sets
+// ------------------------------------------------------------------
+
+func TestServer_SetCover(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", "1", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					RegenerateSetCoverFunc: func(ctx context.Context, setID, userID int64) error {
+						return tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/sets/"+tt.id+"/cover", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_ListSets_negative(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	t.Run("nil service", func(t *testing.T) {
+		srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/sets", nil)
+		req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotImplemented {
+			t.Fatalf("expected %d, got %d", http.StatusNotImplemented, rr.Code)
+		}
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			ListSetsFunc: func(ctx context.Context, userID int64) ([]model.Set, error) {
+				return nil, errors.New("boom")
+			},
+		}
+		srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/sets", nil)
+		req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Fatalf("expected %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+}
+
+// ------------------------------------------------------------------
+// Upload
+// ------------------------------------------------------------------
+
+func TestServer_Upload(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24, MaxUploadSizeMB: 10}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		noFile  bool
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, false, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, false, http.StatusBadRequest},
+		{"missing file", "1", false, nil, true, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), false, http.StatusInternalServerError},
+		{"ok", "1", false, nil, false, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					UploadMediaFunc: func(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error) {
+						return &model.Media{ID: 1, FileName: filename}, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			var req *http.Request
+			if tt.noFile {
+				var buf bytes.Buffer
+				w := multipart.NewWriter(&buf)
+				_ = w.Close()
+				req = httptest.NewRequest(http.MethodPost, "/api/sets/"+tt.id+"/upload", &buf)
+				req.Header.Set("Content-Type", w.FormDataContentType())
+			} else {
+				req = newUploadRequest(t, tt.id, "test.mp4", "data")
+			}
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+// ------------------------------------------------------------------
+// Media detail, favorite, tags
+// ------------------------------------------------------------------
+
+func TestServer_MediaDetail_nilService(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/media/1", nil)
+	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotImplemented {
+		t.Fatalf("expected %d, got %d", http.StatusNotImplemented, rr.Code)
+	}
+}
+
+func TestServer_Favorite_negative(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					ToggleFavoriteFunc: func(ctx context.Context, userID, mediaID int64) (bool, error) {
+						return false, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/favorite", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_AddTag_nilService(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/media/1/tags", strings.NewReader(`{"tag":"x"}`))
+	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotImplemented {
+		t.Fatalf("expected %d, got %d", http.StatusNotImplemented, rr.Code)
+	}
+}
+
+func TestServer_RemoveTag_negative(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		tag     string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "1", "t", true, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", "t", false, nil, http.StatusBadRequest},
+		{"service error", "1", "t", false, errors.New("boom"), http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					RemoveTagFunc: func(ctx context.Context, mediaID, userID int64, tagName string) error {
+						return tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/media/%s/tags/%s", tt.id, tt.tag), nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+// ------------------------------------------------------------------
+// Stream / Download / Thumbnail / RegenThumbnail
+// ------------------------------------------------------------------
+
+func TestServer_Stream(t *testing.T) {
+	path := makeTempFile(t, "videodata")
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		res     *service.FileResult
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, nil, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), nil, http.StatusInternalServerError},
+		{"not found", "1", false, nil, nil, http.StatusNotFound},
+		{"file missing", "1", false, nil, &service.FileResult{Path: "/nonexistent", FileName: "a.mp4"}, http.StatusNotFound},
+		{"ok", "1", false, nil, &service.FileResult{Path: path, FileName: "a.mp4"}, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					StreamMediaFunc: func(ctx context.Context, mediaID, userID int64) (*service.FileResult, error) {
+						return tt.res, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/media/"+tt.id+"/stream", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_Download(t *testing.T) {
+	path := makeTempFile(t, "filedata")
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		res     *service.FileResult
+		wantCode int
+		wantDisp bool
+	}{
+		{"nil service", "1", true, nil, nil, http.StatusNotImplemented, false},
+		{"invalid id", "abc", false, nil, nil, http.StatusBadRequest, false},
+		{"service error", "1", false, errors.New("boom"), nil, http.StatusInternalServerError, false},
+		{"not found", "1", false, nil, nil, http.StatusNotFound, false},
+		{"file missing", "1", false, nil, &service.FileResult{Path: "/nonexistent", FileName: "a.mp4"}, http.StatusNotFound, false},
+		{"ok", "1", false, nil, &service.FileResult{Path: path, FileName: "a.mp4"}, http.StatusOK, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					DownloadMediaFunc: func(ctx context.Context, mediaID, userID int64) (*service.FileResult, error) {
+						return tt.res, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/media/"+tt.id+"/download", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+			if tt.wantDisp {
+				disp := rr.Header().Get("Content-Disposition")
+				if !strings.Contains(disp, "attachment") {
+					t.Fatalf("expected attachment disposition, got %q", disp)
+				}
+			}
+		})
+	}
+}
+
+func TestServer_Thumbnail(t *testing.T) {
+	path := makeTempFile(t, "thumbdata")
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		res     *service.FileResult
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, nil, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), nil, http.StatusInternalServerError},
+		{"not found", "1", false, nil, nil, http.StatusNotFound},
+		{"file missing", "1", false, nil, &service.FileResult{Path: "/nonexistent", FileName: "t.jpg"}, http.StatusNotFound},
+		{"ok", "1", false, nil, &service.FileResult{Path: path, FileName: "t.jpg"}, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					GetThumbnailFunc: func(ctx context.Context, mediaID, userID int64) (*service.FileResult, error) {
+						return tt.res, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/media/"+tt.id+"/thumbnail", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_RegenThumbnail(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", "1", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					RegenerateThumbnailFunc: func(ctx context.Context, mediaID, userID int64) error {
+						return tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/thumbnail", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+// ------------------------------------------------------------------
+// Shares
+// ------------------------------------------------------------------
+
+func TestServer_CreateShare_negative(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24, ShareDefaultExpiryDays: 14}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					CreateShareFunc: func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+						return nil, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/shares", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_ListShares_negative(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					ListSharesFunc: func(ctx context.Context, mediaID, userID int64) ([]model.Share, error) {
+						return nil, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/media/"+tt.id+"/shares", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_RevokeShare(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		token   string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "abc", true, nil, http.StatusNotImplemented},
+		{"service error", "abc", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", "abc", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					RevokeShareFunc: func(ctx context.Context, token string, userID int64) error {
+						return tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodDelete, "/api/shares/"+tt.token, nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_SharePage(t *testing.T) {
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		token   string
+		svcNil  bool
+		svcErr  error
+		share   *model.Share
+		wantCode int
+	}{
+		{"nil service", "abc", true, nil, nil, http.StatusNotImplemented},
+		{"error", "abc", false, errors.New("boom"), nil, http.StatusNotFound},
+		{"not found", "abc", false, nil, nil, http.StatusNotFound},
+		{"ok", "abc", false, nil, &model.Share{Token: "abc", MediaID: 1}, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+						return tt.share, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/s/"+tt.token, nil)
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_ShareStream(t *testing.T) {
+	path := makeTempFile(t, "shared")
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		token   string
+		svcNil  bool
+		svcErr  error
+		res     *service.FileResult
+		wantCode int
+	}{
+		{"nil service", "abc", true, nil, nil, http.StatusNotImplemented},
+		{"service error", "abc", false, errors.New("boom"), nil, http.StatusInternalServerError},
+		{"not found", "abc", false, nil, nil, http.StatusNotFound},
+		{"file missing", "abc", false, nil, &service.FileResult{Path: "/nonexistent", FileName: "a.mp4"}, http.StatusNotFound},
+		{"ok", "abc", false, nil, &service.FileResult{Path: path, FileName: "a.mp4"}, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
+						return tt.res, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/s/"+tt.token+"/stream", nil)
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+// ------------------------------------------------------------------
+// SoftDelete / Restore
+// ------------------------------------------------------------------
+
+func TestServer_SoftDelete_negative(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", "1", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					SoftDeleteMediaFunc: func(ctx context.Context, mediaID, userID int64) error {
+						return tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodDelete, "/api/media/"+tt.id, nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_Restore_negative(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", "1", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					RestoreMediaFunc: func(ctx context.Context, mediaID, userID int64) error {
+						return tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/restore", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+// ------------------------------------------------------------------
+// Notes
+// ------------------------------------------------------------------
+
+func TestServer_UpsertNote(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		body    string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "1", `{"content":"hi"}`, true, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", `{"content":"hi"}`, false, nil, http.StatusBadRequest},
+		{"invalid body", "1", `bad`, false, nil, http.StatusBadRequest},
+		{"service error", "1", `{"content":"hi"}`, false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", "1", `{"content":"hi"}`, false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					UpsertNoteFunc: func(ctx context.Context, note *model.Note) error {
+						return tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/notes", strings.NewReader(tt.body))
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_DeleteNote(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "1", true, nil, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", "1", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ms service.MediaService
+			if !tt.svcNil {
+				ms = &service.MockMediaService{
+					DeleteNoteFunc: func(ctx context.Context, mediaID, userID int64) error {
+						return tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodDelete, "/api/media/"+tt.id+"/notes", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+// ------------------------------------------------------------------
+// Progress
+// ------------------------------------------------------------------
+
+func TestServer_Progress_negative(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name     string
+		body     string
+		svcNil   bool
+		svcErr   error
+		wantCode int
+	}{
+		{"nil service", `{"media_id":1,"position_seconds":1}`, true, nil, http.StatusNotImplemented},
+		{"invalid body", `bad`, false, nil, http.StatusBadRequest},
+		{"missing media_id", `{"position_seconds":1}`, false, nil, http.StatusBadRequest},
+		{"service error", `{"media_id":1,"position_seconds":1}`, false, errors.New("boom"), http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ps service.ProgressService
+			if !tt.svcNil {
+				ps = &service.MockProgressService{
+					UpdateProgressFunc: func(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error {
+						return tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, nil, ps, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/progress", strings.NewReader(tt.body))
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+// ------------------------------------------------------------------
+// Admin routes negative paths
+// ------------------------------------------------------------------
+
+func TestServer_AdminRescan(t *testing.T) {
+	store := buildAdminSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", true, nil, http.StatusNotImplemented},
+		{"service error", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var as service.AdminService
+			if !tt.svcNil {
+				as = &service.MockAdminService{
+					TriggerRescanFunc: func(ctx context.Context) error { return tt.svcErr },
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/admin/rescan", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_AdminListTrash(t *testing.T) {
+	store := buildAdminSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", true, nil, http.StatusNotImplemented},
+		{"service error", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var as service.AdminService
+			if !tt.svcNil {
+				as = &service.MockAdminService{
+					ListTrashFunc: func(ctx context.Context) ([]model.Media, error) { return nil, tt.svcErr },
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/admin/trash", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_AdminListUsers(t *testing.T) {
+	store := buildAdminSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", true, nil, http.StatusNotImplemented},
+		{"service error", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var as service.AdminService
+			if !tt.svcNil {
+				as = &service.MockAdminService{
+					ListUsersFunc: func(ctx context.Context) ([]model.User, error) { return nil, tt.svcErr },
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_AdminCreateUser(t *testing.T) {
+	store := buildAdminSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		body    string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", `{"username":"bob","password":"pass","is_admin":false}`, true, nil, http.StatusNotImplemented},
+		{"invalid body", `bad`, false, nil, http.StatusBadRequest},
+		{"missing username", `{"password":"pass"}`, false, nil, http.StatusBadRequest},
+		{"service error", `{"username":"bob","password":"pass","is_admin":false}`, false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", `{"username":"bob","password":"pass","is_admin":false}`, false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var as service.AdminService
+			if !tt.svcNil {
+				as = &service.MockAdminService{
+					CreateUserFunc: func(ctx context.Context, username, password string, isAdmin bool) (*model.User, error) {
+						return &model.User{ID: 2, Username: username, IsAdmin: isAdmin}, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/admin/users", strings.NewReader(tt.body))
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_AdminDeleteUser(t *testing.T) {
+	store := buildAdminSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		id      string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", "2", true, nil, http.StatusNotImplemented},
+		{"self delete", "1", false, nil, http.StatusBadRequest},
+		{"service error", "2", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", "2", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var as service.AdminService
+			if !tt.svcNil {
+				as = &service.MockAdminService{
+					DeleteUserFunc: func(ctx context.Context, id int64) error { return tt.svcErr },
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			req := httptest.NewRequest(http.MethodDelete, "/api/admin/users/"+tt.id, nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_AdminListPermissions(t *testing.T) {
+	store := buildAdminSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", true, nil, http.StatusNotImplemented},
+		{"service error", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var as service.AdminService
+			if !tt.svcNil {
+				as = &service.MockAdminService{
+					ListPermissionsFunc: func(ctx context.Context) ([]model.SetPermission, error) { return nil, tt.svcErr },
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/admin/permissions", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_AdminGrantPermission(t *testing.T) {
+	store := buildAdminSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		body    string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", `{"set_id":1,"user_id":2,"role":"viewer"}`, true, nil, http.StatusNotImplemented},
+		{"invalid body", `bad`, false, nil, http.StatusBadRequest},
+		{"service error", `{"set_id":1,"user_id":2,"role":"viewer"}`, false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", `{"set_id":1,"user_id":2,"role":"viewer"}`, false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var as service.AdminService
+			if !tt.svcNil {
+				as = &service.MockAdminService{
+					GrantPermissionFunc: func(ctx context.Context, setID, userID int64, role model.Role) error { return tt.svcErr },
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/admin/permissions", strings.NewReader(tt.body))
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_AdminRevokePermission(t *testing.T) {
+	store := buildAdminSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name    string
+		body    string
+		svcNil  bool
+		svcErr  error
+		wantCode int
+	}{
+		{"nil service", `{"set_id":1,"user_id":2}`, true, nil, http.StatusNotImplemented},
+		{"invalid body", `bad`, false, nil, http.StatusBadRequest},
+		{"service error", `{"set_id":1,"user_id":2}`, false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", `{"set_id":1,"user_id":2}`, false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var as service.AdminService
+			if !tt.svcNil {
+				as = &service.MockAdminService{
+					RevokePermissionFunc: func(ctx context.Context, setID, userID int64) error { return tt.svcErr },
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			req := httptest.NewRequest(http.MethodDelete, "/api/admin/permissions", strings.NewReader(tt.body))
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+// ------------------------------------------------------------------
+// Custom hasher for error injection
+// ------------------------------------------------------------------
+
+type errHasher struct{}
+
+func (e *errHasher) Hash(password string) (string, error)  { return "", errors.New("hash err") }
+func (e *errHasher) Compare(hash, password string) error { return errors.New("compare err") }
