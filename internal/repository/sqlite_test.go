@@ -271,6 +271,47 @@ func TestSQLite_MediaRepo(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "search escapes LIKE wildcards",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				// Create media with names that include literal wildcard characters.
+				m1, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "ab_c.mp4", FileName: "ab_c.mp4", AbsPath: "/s/ab_c.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				m2, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "de%f.mp4", FileName: "de%f.mp4", AbsPath: "/s/de%f.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				m3, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "gh\\ij.mp4", FileName: "gh\\ij.mp4", AbsPath: "/s/gh\\ij.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "normal.mp4", FileName: "normal.mp4", AbsPath: "/s/normal.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+
+				for _, tc := range []struct {
+					search   string
+					expected []int64
+				}{
+					{"ab_c", []int64{m1}},
+					{"de%f", []int64{m2}},
+					{"gh\\ij", []int64{m3}},
+					{"_", []int64{m1}},        // literal underscore must match only ab_c.mp4
+					{"%", []int64{m2}},        // literal percent must match only de%f.mp4
+					{"\\", []int64{m3}},       // literal backslash must match only gh\ij.mp4
+				} {
+					res, err := s.ListMedia(ctx, MediaFilter{Search: tc.search})
+					if err != nil {
+						t.Fatalf("search %q: %v", tc.search, err)
+					}
+					if len(res) != len(tc.expected) {
+						t.Fatalf("search %q: expected %d results, got %d", tc.search, len(tc.expected), len(res))
+					}
+					got := make(map[int64]struct{}, len(res))
+					for _, r := range res {
+						got[r.ID] = struct{}{}
+					}
+					for _, id := range tc.expected {
+						if _, ok := got[id]; !ok {
+							t.Fatalf("search %q: expected media id %d in results", tc.search, id)
+						}
+					}
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

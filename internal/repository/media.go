@@ -123,8 +123,12 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 	query := `SELECT DISTINCT media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at FROM media`
 
 	if filter.Search != "" {
-		conds = append(conds, `(media.file_name LIKE ? OR media.rel_path LIKE ?)`)
-		like := "%" + strings.ReplaceAll(filter.Search, "%", "\\%") + "%"
+		conds = append(conds, `(media.file_name LIKE ? ESCAPE '\' OR media.rel_path LIKE ? ESCAPE '\')`)
+		term := filter.Search
+		term = strings.ReplaceAll(term, "\\", "\\\\")
+		term = strings.ReplaceAll(term, "%", "\\%")
+		term = strings.ReplaceAll(term, "_", "\\_")
+		like := "%" + term + "%"
 		args = append(args, like, like)
 	}
 	if filter.Favorites != nil {
