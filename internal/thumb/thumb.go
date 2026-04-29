@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os/exec"
+	"time"
 )
 
 // Generator creates a thumbnail for a given media file.
@@ -16,12 +17,14 @@ type Generator interface {
 // FFmpegGenerator uses ffmpeg to extract a random frame.
 type FFmpegGenerator struct {
 	execer func(ctx context.Context, name string, arg ...string) *exec.Cmd
+	rnd    *rand.Rand
 }
 
-// NewFFmpegGenerator creates a new FFmpegGenerator.
+// NewFFmpegGenerator creates a new FFmpegGenerator with a seeded random source.
 func NewFFmpegGenerator() *FFmpegGenerator {
 	return &FFmpegGenerator{
 		execer: exec.CommandContext,
+		rnd:    rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -30,7 +33,7 @@ func NewFFmpegGenerator() *FFmpegGenerator {
 func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath string, duration float64) error {
 	offset := 0.0
 	if duration > 0 {
-		offset = rand.Float64() * duration
+		offset = g.rnd.Float64() * duration
 		if offset < 1.0 {
 			offset = 1.0
 		}
