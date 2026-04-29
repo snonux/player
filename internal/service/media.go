@@ -245,6 +245,10 @@ func (s *mediaService) RestoreMedia(ctx context.Context, mediaID, userID int64) 
 }
 
 func (s *mediaService) uniqueFilename(dir, filename string) string {
+	filename = filepath.Base(filename)
+	if filename == "." || filename == ".." || filename == "" {
+		return ""
+	}
 	ext := filepath.Ext(filename)
 	base := strings.TrimSuffix(filename, ext)
 
@@ -276,6 +280,9 @@ func (s *mediaService) UploadMedia(ctx context.Context, setID, userID int64, fil
 	}
 
 	path := s.uniqueFilename(dir, filename)
+	if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(dir)+string(filepath.Separator)) {
+		return nil, errors.New("invalid filename")
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		return nil, fmt.Errorf("create file: %w", err)

@@ -575,6 +575,18 @@ func TestMediaService_UploadMedia(t *testing.T) {
 			setErr:    errors.New("boom"),
 			wantErr:   true,
 		},
+		{
+			name:      "path traversal sanitized",
+			setExists: true,
+			filename:  "../../etc/passwd",
+			wantErr:   false,
+		},
+		{
+			name:      "path traversal dotdot rejected",
+			setExists: true,
+			filename:  "..",
+			wantErr:   true,
+		},
 	}
 
 	for _, tt := range tests {
