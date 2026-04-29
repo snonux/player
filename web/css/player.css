@@ -1,0 +1,132 @@
+/* Player */
+.player {
+  position: fixed;
+  inset: auto 0 0 var(--sidebar-width);
+  background: var(--player-bg);
+  color: var(--text-primary);
+  border-top: 1px solid var(--border);
+  z-index: 60;
+  transition: inset var(--transition-base);
+}
+.player.is-fullscreen {
+  inset: 0;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.player .stage {
+  position: relative;
+  background: #000;
+}
+.player:not(.is-fullscreen) .stage {
+  height: 0;
+  overflow: hidden;
+  transition: height var(--transition-base);
+}
+.player.open .stage {
+  height: clamp(10rem, 28vh, 26rem);
+}
+.player.is-fullscreen .stage {
+  flex: 1 1 auto;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player video, .player audio {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+.player.is-fullscreen video, .player.is-fullscreen audio {
+  max-height: 100%;
+}
+
+/* Overlay controls */
+.player .controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+.player .controls .spacer { flex: 1 1 auto; }
+
+.player .time {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Progress bar */
+.progress-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 0.35rem;
+  background: var(--player-progress-bg);
+  border-radius: 999px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.progress-track:hover { height: 0.5rem; }
+.progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: var(--player-progress-fill);
+  border-radius: 999px;
+  transition: width 120ms linear;
+}
+.progress-thumb {
+  position: absolute;
+  top: 50%;
+  width: 0.9rem;
+  height: 0.9rem;
+  background: var(--player-thumb);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform var(--transition-fast);
+  pointer-events: none;
+}
+.progress-track:hover .progress-thumb,
+.progress-track:focus-within .progress-thumb {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* Volume */
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.volume-slider {
+  width: 5rem;
+  height: 0.25rem;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+/* Big play button */
+.big-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,0.35);
+  cursor: pointer;
+  z-index: 5;
+}
+.big-play .play-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+  color: #000;
+  display: grid;
+  place-items: center;
+  font-size: 1.25rem;
+}

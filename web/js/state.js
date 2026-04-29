@@ -1,0 +1,11 @@
+export const state = {
+  user: null,
+  sets: [],
+  selectedSetId: null,
+  media: [],
+  filters: { type: '', search: '', favorites: false, tags: '', sort: 'name' },
+  isAdmin: false,
+};
+
+export function getState() { return state; }
+export function setMedia(list) { state.media = list; }
