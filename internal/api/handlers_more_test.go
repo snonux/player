@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -1470,3 +1471,125 @@ type errHasher struct{}
 
 func (e *errHasher) Hash(password string) (string, error)  { return "", errors.New("hash err") }
 func (e *errHasher) Compare(hash, password string) error { return errors.New("compare err") }
+
+// ------------------------------------------------------------------
+// parseMediaListQuery
+// ------------------------------------------------------------------
+
+func mustParseQuery(t *testing.T, raw string) url.Values {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse query: %v", err)
+	}
+	return u.Query()
+}
+
+func Test_parseMediaListQuery_defaults(t *testing.T) {
+	q := mustParseQuery(t, "/api/media")
+	got := parseMediaListQuery(q)
+	want := repository.MediaFilter{Limit: 100, Offset: 0}
+	if got.Search != want.Search || got.Sort != want.Sort || got.Limit != want.Limit || got.Offset != want.Offset {
+		t.Fatalf("unexpected defaults: %+v", got)
+	}
+	if got.SetID != nil || got.Type != nil || got.Favorites != nil || got.MinDuration != nil || got.MaxDuration != nil {
+		t.Fatalf("expected nil optional fields, got %+v", got)
+	}
+}
+
+func Test_parseMediaListQuery_allParams(t *testing.T) {
+	q := mustParseQuery(t, "/api/media?search=foo&sort=name&set_id=7&type=video&favorites=3&tags=bar,baz&min_duration=10&max_duration=100&limit=50&offset=10")
+	got := parseMediaListQuery(q)
+	if got.Search != "foo" {
+		t.Fatalf("unexpected search: %q", got.Search)
+	}
+	if got.Sort != "name" {
+		t.Fatalf("unexpected sort: %q", got.Sort)
+	}
+	if got.SetID == nil || *got.SetID != 7 {
+		t.Fatalf("unexpected set_id: %v", got.SetID)
+	}
+	if got.Type == nil || *got.Type != "video" {
+		t.Fatalf("unexpected type: %v", got.Type)
+	}
+	if got.Favorites == nil || *got.Favorites != 3 {
+		t.Fatalf("unexpected favorites: %v", got.Favorites)
+	}
+	if len(got.Tags) != 2 || got.Tags[0] != "bar" || got.Tags[1] != "baz" {
+		t.Fatalf("unexpected tags: %v", got.Tags)
+	}
+	if got.MinDuration == nil || *got.MinDuration != 10 {
+		t.Fatalf("unexpected min_duration: %v", got.MinDuration)
+	}
+	if got.MaxDuration == nil || *got.MaxDuration != 100 {
+		t.Fatalf("unexpected max_duration: %v", got.MaxDuration)
+	}
+	if got.Limit != 50 {
+		t.Fatalf("unexpected limit: %d", got.Limit)
+	}
+	if got.Offset != 10 {
+		t.Fatalf("unexpected offset: %d", got.Offset)
+	}
+}
+
+func Test_parseMediaListQuery_limitClampingAndNegativeOffset(t *testing.T) {
+	tests := []struct {
+		name          string
+		limit         string
+		offset        string
+		wantLimit     int
+		wantOffset    int
+		invalidParam  string
+		invalidKey    string
+		invalidBadVal string
+	}{
+		{"limit too high", "5000", "0", 100, 0, "", "", ""},
+		{"limit negative", "-5", "0", 100, 0, "", "", ""},
+		{"limit zero", "0", "0", 100, 0, "", "", ""},
+		{"valid limit", "200", "0", 200, 0, "", "", ""},
+		{"offset negative", "100", "-1", 100, 0, "", "", ""},
+		{"offset string", "100", "foo", 100, 0, "", "", ""},
+		{"max duration bad", "100", "0", 100, 0, "max_duration", "max_duration", "bad"},
+		{"min duration bad", "100", "0", 100, 0, "min_duration", "min_duration", "bad"},
+		{"set_id bad", "100", "0", 100, 0, "set_id", "set_id", "bad"},
+		{"favorites bad", "100", "0", 100, 0, "favorites", "favorites", "bad"},
+		{"limit valid", "100", "0", 100, 0, "", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := mustParseQuery(t, "/api/media?limit="+tt.limit+"&offset="+tt.offset)
+			if tt.invalidKey != "" {
+				q.Set(tt.invalidKey, tt.invalidBadVal)
+			}
+			got := parseMediaListQuery(q)
+			if got.Limit != tt.wantLimit {
+				t.Fatalf("unexpected limit: got %d, want %d", got.Limit, tt.wantLimit)
+			}
+			if got.Offset != tt.wantOffset {
+				t.Fatalf("unexpected offset: got %d, want %d", got.Offset, tt.wantOffset)
+			}
+			// Ensure invalid params don't cause panics and are treated as omitted
+			if tt.invalidKey == "set_id" && got.SetID != nil {
+				t.Fatalf("expected set_id nil for bad value, got %v", got.SetID)
+			}
+			if tt.invalidKey == "favorites" && got.Favorites != nil {
+				t.Fatalf("expected favorites nil for bad value, got %v", got.Favorites)
+			}
+			if tt.invalidKey == "min_duration" && got.MinDuration != nil {
+				t.Fatalf("expected min_duration nil for bad value, got %v", got.MinDuration)
+			}
+			if tt.invalidKey == "max_duration" && got.MaxDuration != nil {
+				t.Fatalf("expected max_duration nil for bad value, got %v", got.MaxDuration)
+			}
+		})
+	}
+}
+
+func Test_parseMediaListQuery_emptyTags(t *testing.T) {
+	q := mustParseQuery(t, "/api/media?tags=")
+	got := parseMediaListQuery(q)
+	if got.Tags != nil {
+		t.Fatalf("expected nil tags for empty string, got %v", got.Tags)
+	}
+}

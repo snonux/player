@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -301,11 +302,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 // Media
 // ------------------------------------------------------------------
 
-func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
-		return
-	}
-	q := r.URL.Query()
+// parseMediaListQuery extracts and validates query parameters from the request
+// and returns a populated repository.MediaFilter with sensible defaults.
+func parseMediaListQuery(q url.Values) repository.MediaFilter {
 	filter := repository.MediaFilter{
 		Search: q.Get("search"),
 		Sort:   q.Get("sort"),
@@ -313,41 +312,50 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 		Offset: 0,
 	}
 	if v := q.Get("set_id"); v != "" {
-		id, _ := strconv.ParseInt(v, 10, 64)
-		filter.SetID = &id
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			filter.SetID = &id
+		}
 	}
 	if v := q.Get("type"); v != "" {
 		t := model.MediaType(v)
 		filter.Type = &t
 	}
 	if v := q.Get("favorites"); v != "" {
-		uid, _ := strconv.ParseInt(v, 10, 64)
-		filter.Favorites = &uid
+		if uid, err := strconv.ParseInt(v, 10, 64); err == nil {
+			filter.Favorites = &uid
+		}
 	}
 	if v := q.Get("tags"); v != "" {
 		filter.Tags = strings.Split(v, ",")
 	}
 	if v := q.Get("min_duration"); v != "" {
-		f, _ := strconv.ParseFloat(v, 64)
-		filter.MinDuration = &f
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			filter.MinDuration = &f
+		}
 	}
 	if v := q.Get("max_duration"); v != "" {
-		f, _ := strconv.ParseFloat(v, 64)
-		filter.MaxDuration = &f
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			filter.MaxDuration = &f
+		}
 	}
 	if v := q.Get("limit"); v != "" {
-		n, _ := strconv.Atoi(v)
-		if n > 0 && n <= 1000 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 1000 {
 			filter.Limit = n
 		}
 	}
 	if v := q.Get("offset"); v != "" {
-		n, _ := strconv.Atoi(v)
-		if n >= 0 {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			filter.Offset = n
 		}
 	}
+	return filter
+}
 
+func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	filter := parseMediaListQuery(r.URL.Query())
 	media, err := s.mediaSvc.ListMedia(r.Context(), filter)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
