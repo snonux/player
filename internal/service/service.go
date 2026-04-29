@@ -1,2 +1,70 @@
 // Package service contains application business logic.
 package service
+
+import (
+	"context"
+	"io"
+	"time"
+
+	"github.com/paul/kiss-media-player/internal/model"
+	"github.com/paul/kiss-media-player/internal/repository"
+)
+
+// MediaService handles media and set operations.
+type MediaService interface {
+	ListSets(ctx context.Context, userID int64) ([]model.Set, error)
+	GetMediaDetail(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
+	ListMedia(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error)
+	StreamMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error)
+	DownloadMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error)
+	GetThumbnail(ctx context.Context, mediaID, userID int64) (*FileResult, error)
+	RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error
+	RegenerateSetCover(ctx context.Context, setID, userID int64) error
+	ToggleFavorite(ctx context.Context, userID, mediaID int64) (bool, error)
+	AssignTag(ctx context.Context, mediaID, userID int64, tagName string) error
+	RemoveTag(ctx context.Context, mediaID, userID int64, tagName string) error
+	SoftDeleteMedia(ctx context.Context, mediaID, userID int64) error
+	RestoreMedia(ctx context.Context, mediaID, userID int64) error
+	UploadMedia(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error)
+	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
+	ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
+	RevokeShare(ctx context.Context, token string, userID int64) error
+	ValidateShareToken(ctx context.Context, token string) (*model.Share, error)
+	StreamSharedMedia(ctx context.Context, token string) (*FileResult, error)
+	GetNote(ctx context.Context, mediaID, userID int64) (*model.Note, error)
+	UpsertNote(ctx context.Context, note *model.Note) error
+	DeleteNote(ctx context.Context, mediaID, userID int64) error
+}
+
+// AdminService handles admin-only operations.
+type AdminService interface {
+	ListTrash(ctx context.Context) ([]model.Media, error)
+	TriggerRescan(ctx context.Context) error
+	ListUsers(ctx context.Context) ([]model.User, error)
+	CreateUser(ctx context.Context, username, password string, isAdmin bool) (*model.User, error)
+	DeleteUser(ctx context.Context, id int64) error
+	ListPermissions(ctx context.Context) ([]model.SetPermission, error)
+	GrantPermission(ctx context.Context, setID, userID int64, role model.Role) error
+	RevokePermission(ctx context.Context, setID, userID int64) error
+}
+
+// ProgressService handles playback progress updates.
+type ProgressService interface {
+	UpdateProgress(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error
+}
+
+// FileResult contains info for serving a file.
+type FileResult struct {
+	Path     string
+	FileName string
+	FileSize int64
+}
+
+// MediaDetail combines media with related data.
+type MediaDetail struct {
+	Media    *model.Media
+	Tags     []model.Tag
+	Favorite bool
+	Note     *model.Note
+	Progress *model.PlaybackProgress
+}

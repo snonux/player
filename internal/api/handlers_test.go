@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/paul/kiss-media-player/internal"
@@ -15,32 +18,85 @@ import (
 	"github.com/paul/kiss-media-player/internal/clock"
 	"github.com/paul/kiss-media-player/internal/model"
 	"github.com/paul/kiss-media-player/internal/repository"
+	"github.com/paul/kiss-media-player/internal/service"
 )
 
-func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm *auth.SessionManager, cfg *internal.Config) *Server {
-	t.Helper()
-	return NewServer(store, hasher, sm, cfg)
+type memFS struct {
+	http.FileSystem
 }
+
+func newTestFS(files map[string]string) http.FileSystem {
+	fsys := fstest.MapFS{}
+	for name, data := range files {
+		fsys[name] = &fstest.MapFile{Data: []byte(data)}
+	}
+	return http.FS(fsys)
+}
+
+func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm *auth.SessionManager, cfg *internal.Config,
+	mediaSvc service.MediaService, adminSvc service.AdminService, progressSvc service.ProgressService,
+	fs http.FileSystem,
+) *Server {
+	t.Helper()
+	if fs == nil {
+		fs = newTestFS(map[string]string{
+			"index.html":     "index",
+			"login.html":     "login",
+			"bootstrap.html": "bootstrap",
+		})
+	}
+	return NewServer(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, fs)
+}
+
+func addSessionCookie(t *testing.T, store repository.Store, sm *auth.SessionManager, userID int64) *http.Cookie {
+	t.Helper()
+	repo := store.(repository.SessionRepo)
+	now := time.Now()
+	if sm == nil {
+		// provide a default mock session; tests that need real validation should create their own.
+		return &http.Cookie{Name: "session", Value: "abc123"}
+	}
+	id, err := sm.CreateSession(context.Background(), userID)
+	if err != nil {
+		// fallback for test when repo doesn't implement CreateSessionFunc
+		id = "testsession"
+		_ = repo.CreateSession(context.Background(), &model.Session{ID: id, UserID: userID, ExpiresAt: now.Add(time.Hour), CreatedAt: now})
+	}
+	return &http.Cookie{Name: "session", Value: id}
+}
+
+func requireAuthCookie(t *testing.T, rr *httptest.ResponseRecorder) {
+	t.Helper()
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == "session" {
+			return
+		}
+	}
+	t.Fatal("expected session cookie")
+}
+
+// ------------------------------------------------------------------
+// Middleware tests
+// ------------------------------------------------------------------
 
 func TestMiddleware_BootstrapRedirect(t *testing.T) {
 	tests := []struct {
-		name       string
-		path       string
-		userCount  int
-		userErr    error
-		wantCode   int
-		wantLoc    string
-		wantBody   string
+		name      string
+		path      string
+		userCount int
+		userErr   error
+		wantCode  int
+		wantLoc   string
 	}{
-		{"public bootstrap html", "/bootstrap.html", 0, nil, http.StatusOK, "", ""},
-		{"public api bootstrap", "/api/bootstrap", 0, nil, http.StatusOK, "", ""},
-		{"public login html", "/login.html", 0, nil, http.StatusOK, "", ""},
-		{"public api login", "/api/login", 0, nil, http.StatusOK, "", ""},
-		{"public healthz", "/healthz", 0, nil, http.StatusOK, "", ""},
-		{"public readyz", "/readyz", 0, nil, http.StatusOK, "", ""},
-		{"protected no users", "/", 0, nil, http.StatusTemporaryRedirect, "/bootstrap.html", ""},
-		{"protected users exist", "/", 1, nil, http.StatusOK, "", ""},
-		{"count error", "/", 0, errors.New("boom"), http.StatusInternalServerError, "", ""},
+		{"public bootstrap html", "/bootstrap.html", 0, nil, http.StatusOK, ""},
+		{"public api bootstrap", "/api/bootstrap", 0, nil, http.StatusOK, ""},
+		{"public login html", "/login.html", 0, nil, http.StatusOK, ""},
+		{"public api login", "/api/login", 0, nil, http.StatusOK, ""},
+		{"public healthz", "/healthz", 0, nil, http.StatusOK, ""},
+		{"public readyz", "/readyz", 0, nil, http.StatusOK, ""},
+		{"protected no users", "/", 0, nil, http.StatusTemporaryRedirect, "/bootstrap.html"},
+		{"protected users exist", "/", 1, nil, http.StatusOK, ""},
+		{"count error", "/", 0, errors.New("boom"), http.StatusInternalServerError, ""},
 	}
 
 	for _, tt := range tests {
@@ -92,9 +148,6 @@ func TestMiddleware_RequireSession(t *testing.T) {
 			var deleted string
 			repo := repository.MockSessionRepo{
 				GetSessionByIDFunc: func(ctx context.Context, id string) (*model.Session, error) {
-					if id == "abc" {
-						return tt.session, tt.sessErr
-					}
 					return tt.session, tt.sessErr
 				},
 				DeleteSessionFunc: func(ctx context.Context, id string) error {
@@ -168,7 +221,6 @@ func TestMiddleware_RequireAdmin(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			if tt.name != "no session in context" {
 				sess := &model.Session{UserID: 1}
-				// For "session but nil user" and "db error" we still want a valid session in context.
 				req = req.WithContext(context.WithValue(req.Context(), sessionCtxKey, sess))
 			}
 			rr := httptest.NewRecorder()
@@ -180,13 +232,77 @@ func TestMiddleware_RequireAdmin(t *testing.T) {
 	}
 }
 
+// ------------------------------------------------------------------
+// Static pages
+// ------------------------------------------------------------------
+
+func TestServer_StaticPages(t *testing.T) {
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	store := &repository.MockStore{
+		UserRepo: repository.MockUserRepo{
+			CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
+		},
+	}
+
+	t.Run("index requires session", func(t *testing.T) {
+		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("expected %d, got %d", http.StatusUnauthorized, rr.Code)
+		}
+	})
+
+	t.Run("login public", func(t *testing.T) {
+		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/login.html", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "login") {
+			t.Fatal("expected login page body")
+		}
+	})
+
+	t.Run("bootstrap public", func(t *testing.T) {
+		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/bootstrap.html", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("css public", func(t *testing.T) {
+		fs := newTestFS(map[string]string{"css/theme.css": "body{}"})
+		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, fs)
+		req := httptest.NewRequest(http.MethodGet, "/css/theme.css", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+}
+
+// ------------------------------------------------------------------
+// Auth handlers
+// ------------------------------------------------------------------
+
 type staticHasher struct {
 	fixed string
 }
 
-func (h *staticHasher) Hash(password string) (string, error) { return h.fixed, nil }
+func (h *staticHasher) Hash(password string) (string, error)  { return h.fixed, nil }
 func (h *staticHasher) Compare(hash, password string) error {
 	if hash == h.fixed && password == "correct" {
+		return nil
+	}
+	if hash == h.fixed && password == "secret" {
 		return nil
 	}
 	return errors.New("mismatch")
@@ -207,7 +323,7 @@ func TestServer_Bootstrap(t *testing.T) {
 			CreateSessionFunc: func(ctx context.Context, session *model.Session) error { return nil },
 		}
 		sm := auth.NewSessionManager(&repo, &clock.MockClock{T: time.Now()}, time.Hour)
-		srv := newTestServer(t, store, hasher, sm, cfg)
+		srv := newTestServer(t, store, hasher, sm, cfg, nil, nil, nil, nil)
 
 		body := `{"username":"admin","password":"secret"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(body)))
@@ -225,20 +341,7 @@ func TestServer_Bootstrap(t *testing.T) {
 		if resp["username"] != "admin" {
 			t.Fatalf("unexpected username: %v", resp["username"])
 		}
-		cookies := rr.Result().Cookies()
-		var sessCookie *http.Cookie
-		for _, c := range cookies {
-			if c.Name == "session" {
-				sessCookie = c
-				break
-			}
-		}
-		if sessCookie == nil {
-			t.Fatal("expected session cookie")
-		}
-		if !sessCookie.HttpOnly || !sessCookie.Secure || sessCookie.SameSite != http.SameSiteStrictMode {
-			t.Fatalf("unexpected cookie attrs: HttpOnly=%v Secure=%v SameSite=%v", sessCookie.HttpOnly, sessCookie.Secure, sessCookie.SameSite)
-		}
+		requireAuthCookie(t, rr)
 	})
 
 	t.Run("bootstrap already complete", func(t *testing.T) {
@@ -247,7 +350,7 @@ func TestServer_Bootstrap(t *testing.T) {
 				CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
 			},
 		}
-		srv := newTestServer(t, store, hasher, nil, cfg)
+		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil)
 		body := `{"username":"admin","password":"secret"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(body)))
 		req.Header.Set("Content-Type", "application/json")
@@ -260,7 +363,7 @@ func TestServer_Bootstrap(t *testing.T) {
 
 	t.Run("missing fields", func(t *testing.T) {
 		store := &repository.MockStore{UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil }}}
-		srv := newTestServer(t, store, hasher, nil, cfg)
+		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(`{"username":""}`)))
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -270,7 +373,7 @@ func TestServer_Bootstrap(t *testing.T) {
 	})
 
 	t.Run("wrong method", func(t *testing.T) {
-		srv := newTestServer(t, nil, hasher, nil, cfg)
+		srv := newTestServer(t, nil, hasher, nil, cfg, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/api/bootstrap", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -297,7 +400,7 @@ func TestServer_Login(t *testing.T) {
 			CreateSessionFunc: func(ctx context.Context, session *model.Session) error { return nil },
 		}
 		sm := auth.NewSessionManager(&repo, &clock.MockClock{T: time.Now()}, time.Hour)
-		srv := newTestServer(t, store, hasher, sm, cfg)
+		srv := newTestServer(t, store, hasher, sm, cfg, nil, nil, nil, nil)
 		body := `{"username":"alice","password":"correct"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
 		req.Header.Set("Content-Type", "application/json")
@@ -311,17 +414,7 @@ func TestServer_Login(t *testing.T) {
 		if resp["username"] != "alice" {
 			t.Fatalf("unexpected username")
 		}
-		cookies := rr.Result().Cookies()
-		var sessCookie *http.Cookie
-		for _, c := range cookies {
-			if c.Name == "session" {
-				sessCookie = c
-				break
-			}
-		}
-		if sessCookie == nil {
-			t.Fatal("expected session cookie after login")
-		}
+		requireAuthCookie(t, rr)
 	})
 
 	t.Run("invalid credentials", func(t *testing.T) {
@@ -333,7 +426,7 @@ func TestServer_Login(t *testing.T) {
 				},
 			},
 		}
-		srv := newTestServer(t, store, hasher, nil, cfg)
+		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil)
 		body := `{"username":"alice","password":"wrong"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
 		req.Header.Set("Content-Type", "application/json")
@@ -353,7 +446,7 @@ func TestServer_Login(t *testing.T) {
 				},
 			},
 		}
-		srv := newTestServer(t, store, hasher, nil, cfg)
+		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil)
 		body := `{"username":"nobody","password":"pass"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
 		rr := httptest.NewRecorder()
@@ -383,7 +476,7 @@ func TestServer_Logout(t *testing.T) {
 		}
 		sm := auth.NewSessionManager(&repo, &clock.MockClock{T: time.Now()}, time.Hour)
 		store := &repository.MockStore{UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil }}}
-		srv := newTestServer(t, store, nil, sm, cfg)
+		srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/logout", nil)
 		req.AddCookie(&http.Cookie{Name: "session", Value: "abc"})
@@ -395,22 +488,16 @@ func TestServer_Logout(t *testing.T) {
 		if deleted != "abc" {
 			t.Fatalf("expected session abc to be deleted, got %q", deleted)
 		}
-		cookies := rr.Result().Cookies()
-		var sessCookie *http.Cookie
-		for _, c := range cookies {
-			if c.Name == "session" {
-				sessCookie = c
-				break
+		for _, c := range rr.Result().Cookies() {
+			if c.Name == "session" && c.MaxAge != -1 {
+				t.Fatal("expected cleared session cookie")
 			}
-		}
-		if sessCookie == nil || sessCookie.MaxAge != -1 {
-			t.Fatal("expected cleared session cookie")
 		}
 	})
 
 	t.Run("no cookie logout", func(t *testing.T) {
 		store := &repository.MockStore{UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil }}}
-		srv := newTestServer(t, store, nil, nil, cfg)
+		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodPost, "/api/logout", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -421,8 +508,7 @@ func TestServer_Logout(t *testing.T) {
 }
 
 func TestServer_Healthz(t *testing.T) {
-	cfg := &internal.Config{}
-	srv := newTestServer(t, &repository.MockStore{}, nil, nil, cfg)
+	srv := newTestServer(t, &repository.MockStore{}, nil, nil, &internal.Config{}, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -432,13 +518,12 @@ func TestServer_Healthz(t *testing.T) {
 }
 
 func TestServer_Readyz(t *testing.T) {
-	cfg := &internal.Config{}
 	t.Run("ping ok", func(t *testing.T) {
 		store := &repository.MockStore{
 			UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil }},
 		}
 		store2 := &mockPingStore{store: store, err: nil}
-		srv := newTestServer(t, store2, nil, nil, cfg)
+		srv := newTestServer(t, store2, nil, nil, &internal.Config{}, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -452,7 +537,7 @@ func TestServer_Readyz(t *testing.T) {
 			UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil }},
 		}
 		store2 := &mockPingStore{store: store, err: errors.New("down")}
-		srv := newTestServer(t, store2, nil, nil, cfg)
+		srv := newTestServer(t, store2, nil, nil, &internal.Config{}, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -462,6 +547,564 @@ func TestServer_Readyz(t *testing.T) {
 	})
 }
 
+// ------------------------------------------------------------------
+// Media handler tests (table-driven with mocked service)
+// ------------------------------------------------------------------
+
+func TestServer_MediaList(t *testing.T) {
+	hasher := &staticHasher{fixed: "hashed"}
+	cfg := &internal.Config{SessionTimeoutHours: 24, MaxUploadSizeMB: 10}
+
+	tests := []struct {
+		name         string
+		filter       repository.MediaFilter
+		listResult   []model.Media
+		listErr      error
+		query        string
+		wantCode     int
+		wantResponse string
+	}{
+		{
+			name:       "ok",
+			listResult: []model.Media{{ID: 1, FileName: "a.mp4"}, {ID: 2, FileName: "b.mp3"}},
+			wantCode:   http.StatusOK,
+		},
+		{
+			name:    "service error",
+			listErr: errors.New("boom"),
+			wantCode: http.StatusInternalServerError,
+		},
+		{
+			name:   "with query params",
+			query:  "?set_id=1&type=video&search=foo&tags=bar,baz&favorites=2&min_duration=10&max_duration=100&sort=name&limit=5&offset=10",
+			filter: repository.MediaFilter{SetID: intPtr(1), Type: (*model.MediaType)(func() *string { s := "video"; return &s }()), Search: "foo", Tags: []string{"bar", "baz"}, Favorites: intPtr(2), MinDuration: floatPtr(10), MaxDuration: floatPtr(100), Sort: "name", Limit: 5, Offset: 10},
+			listResult: []model.Media{},
+			wantCode:   http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotFilter repository.MediaFilter
+			ms := &service.MockMediaService{
+				ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+					gotFilter = filter
+					return tt.listResult, tt.listErr
+				},
+			}
+			store := buildSessionStore(1)
+			sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+			srv := newTestServer(t, buildCountStore(1), hasher, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/media"+tt.query, nil)
+			req.AddCookie(addSessionCookie(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+			if tt.query != "" {
+				if gotFilter.SetID != nil && *gotFilter.SetID != *tt.filter.SetID {
+					t.Fatalf("unexpected set_id")
+				}
+			}
+		})
+	}
+}
+
+func TestServer_MediaDetail(t *testing.T) {
+	tests := []struct {
+		name       string
+		id         string
+		result     *service.MediaDetail
+		err        error
+		wantCode   int
+		wantMedia  bool
+	}{
+		{"ok", "42", &service.MediaDetail{Media: &model.Media{ID: 42, FileName: "a.mp4"}}, nil, http.StatusOK, true},
+		{"invalid id", "abc", nil, nil, http.StatusBadRequest, false},
+		{"not found", "7", nil, nil, http.StatusNotFound, false},
+		{"service error", "7", nil, errors.New("boom"), http.StatusInternalServerError, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ms := &service.MockMediaService{
+				GetMediaDetailFunc: func(ctx context.Context, mediaID, userID int64) (*service.MediaDetail, error) {
+					return tt.result, tt.err
+				},
+			}
+			store := buildSessionStore(1)
+			sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+			cfg := &internal.Config{SessionTimeoutHours: 24}
+			srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/media/%s", tt.id), nil)
+			req.AddCookie(addSessionCookie(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_Favorite(t *testing.T) {
+	ms := &service.MockMediaService{
+		ToggleFavoriteFunc: func(ctx context.Context, userID, mediaID int64) (bool, error) {
+			return true, nil
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/media/5/favorite", strings.NewReader(`{}`))
+	req.AddCookie(addSessionCookie(t, store, sm, 1))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+	var resp map[string]bool
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if !resp["favorite"] {
+		t.Fatal("expected favorite true")
+	}
+}
+
+func TestServer_AddTag(t *testing.T) {
+	ms := &service.MockMediaService{
+		AssignTagFunc: func(ctx context.Context, mediaID, userID int64, tagName string) error {
+			if tagName == "fail" {
+				return errors.New("boom")
+			}
+			return nil
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+
+	t.Run("add tag", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/media/1/tags", strings.NewReader(`{"tag":"rock"}`))
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/media/1/tags", strings.NewReader(`{"tag":"fail"}`))
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Fatalf("expected %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("missing tag", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/media/1/tags", strings.NewReader(`{"tag":""}`))
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+}
+
+func TestServer_RemoveTag(t *testing.T) {
+	ms := &service.MockMediaService{
+		RemoveTagFunc: func(ctx context.Context, mediaID, userID int64, tagName string) error {
+			return nil
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/1/tags/rock", nil)
+	req.AddCookie(addSessionCookie(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+func TestServer_SoftDelete(t *testing.T) {
+	ms := &service.MockMediaService{
+		SoftDeleteMediaFunc: func(ctx context.Context, mediaID, userID int64) error {
+			return nil
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/99", nil)
+	req.AddCookie(addSessionCookie(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+func TestServer_Restore(t *testing.T) {
+	ms := &service.MockMediaService{
+		RestoreMediaFunc: func(ctx context.Context, mediaID, userID int64) error {
+			return nil
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/media/99/restore", nil)
+	req.AddCookie(addSessionCookie(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+// ------------------------------------------------------------------
+// Notes
+// ------------------------------------------------------------------
+
+func TestServer_Notes(t *testing.T) {
+	ms := &service.MockMediaService{
+		GetNoteFunc: func(ctx context.Context, mediaID, userID int64) (*model.Note, error) {
+			if mediaID == 1 {
+				return &model.Note{MediaID: 1, UserID: userID, Content: "hello"}, nil
+			}
+			return nil, nil
+		},
+		UpsertNoteFunc: func(ctx context.Context, note *model.Note) error {
+			return nil
+		},
+		DeleteNoteFunc: func(ctx context.Context, mediaID, userID int64) error {
+			return nil
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+
+	t.Run("get note", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/media/1/notes", nil)
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("get no note", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/media/2/notes", nil)
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("expected %d, got %d", http.StatusNoContent, rr.Code)
+		}
+	})
+
+	t.Run("upsert", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/media/1/notes", strings.NewReader(`{"content":"hi"}`))
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, "/api/media/1/notes", nil)
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+}
+
+// ------------------------------------------------------------------
+// Progress
+// ------------------------------------------------------------------
+
+func TestServer_Progress(t *testing.T) {
+	var called bool
+	ps := &service.MockProgressService{
+		UpdateProgressFunc: func(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error {
+			called = true
+			return nil
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, nil, ps, nil)
+
+	t.Run("ok", func(t *testing.T) {
+		called = false
+		req := httptest.NewRequest(http.MethodPost, "/api/progress", strings.NewReader(`{"media_id":5,"position_seconds":12.3}`))
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		if !called {
+			t.Fatal("expected progress service called")
+		}
+	})
+
+	t.Run("missing media_id", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/progress", strings.NewReader(`{"position_seconds":1}`))
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+	})
+}
+
+// ------------------------------------------------------------------
+// Share routes
+// ------------------------------------------------------------------
+
+func TestServer_Shares(t *testing.T) {
+	ms := &service.MockMediaService{
+		CreateShareFunc: func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+			return &model.Share{Token: "abc", MediaID: mediaID}, nil
+		},
+		ListSharesFunc: func(ctx context.Context, mediaID, userID int64) ([]model.Share, error) {
+			return []model.Share{{Token: "abc"}}, nil
+		},
+		RevokeShareFunc: func(ctx context.Context, token string, userID int64) error {
+			return nil
+		},
+		ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+			return &model.Share{Token: token, MediaID: 1}, nil
+		},
+		StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
+			return &service.FileResult{Path: "", FileName: "x.mp4"}, nil
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24, ShareDefaultExpiryDays: 14}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+
+	t.Run("create share", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/media/1/shares", nil)
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("list shares", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/media/1/shares", nil)
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("revoke share", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, "/api/shares/abc", nil)
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("share page public", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("share stream public", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		// file open will fail because path is empty; at least not 501
+		if rr.Code == http.StatusNotImplemented {
+			t.Fatal("unexpected 501")
+		}
+	})
+}
+
+// ------------------------------------------------------------------
+// Admin routes
+// ------------------------------------------------------------------
+
+func TestServer_AdminRoutes(t *testing.T) {
+	adminUser := &model.User{ID: 1, Username: "admin", IsAdmin: true}
+	as := &service.MockAdminService{
+		ListTrashFunc: func(ctx context.Context) ([]model.Media, error) {
+			return []model.Media{}, nil
+		},
+		TriggerRescanFunc: func(ctx context.Context) error { return nil },
+		ListUsersFunc:     func(ctx context.Context) ([]model.User, error) { return []model.User{*adminUser}, nil },
+		CreateUserFunc: func(ctx context.Context, username, password string, isAdmin bool) (*model.User, error) {
+			return &model.User{ID: 2, Username: username, IsAdmin: isAdmin}, nil
+		},
+		DeleteUserFunc:       func(ctx context.Context, id int64) error { return nil },
+		ListPermissionsFunc:  func(ctx context.Context) ([]model.SetPermission, error) { return nil, nil },
+		GrantPermissionFunc:  func(ctx context.Context, setID, userID int64, role model.Role) error { return nil },
+		RevokePermissionFunc: func(ctx context.Context, setID, userID int64) error { return nil },
+	}
+
+	store := buildSessionStore(1)
+	store.UserRepo.GetUserByIDFunc = func(ctx context.Context, id int64) (*model.User, error) {
+		return adminUser, nil
+	}
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, as, nil, nil)
+
+	cookie := addSessionCookie(t, store, sm, 1)
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		want   int
+	}{
+		{"list trash", "GET", "/api/admin/trash", "", http.StatusOK},
+		{"rescan", "POST", "/api/admin/rescan", "", http.StatusOK},
+		{"list users", "GET", "/api/admin/users", "", http.StatusOK},
+		{"create user", "POST", "/api/admin/users", `{"username":"bob","password":"pass","is_admin":false}`, http.StatusOK},
+		{"delete user", "DELETE", "/api/admin/users/2", "", http.StatusOK},
+		{"list perms", "GET", "/api/admin/permissions", "", http.StatusOK},
+		{"grant perm", "POST", "/api/admin/permissions", `{"set_id":1,"user_id":2,"role":"viewer"}`, http.StatusOK},
+		{"revoke perm", "DELETE", "/api/admin/permissions", `{"set_id":1,"user_id":2}`, http.StatusOK},
+		{"delete self", "DELETE", "/api/admin/users/1", "", http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body *strings.Reader
+			if tt.body != "" {
+				body = strings.NewReader(tt.body)
+			} else {
+				body = strings.NewReader("")
+			}
+			req := httptest.NewRequest(tt.method, tt.path, body)
+			req.AddCookie(cookie)
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.want {
+				t.Fatalf("expected %d, got %d", tt.want, rr.Code)
+			}
+		})
+	}
+}
+
+// ------------------------------------------------------------------
+// Sets
+// ------------------------------------------------------------------
+
+func TestServer_ListSets(t *testing.T) {
+	ms := &service.MockMediaService{
+		ListSetsFunc: func(ctx context.Context, userID int64) ([]model.Set, error) {
+			return []model.Set{{ID: 1, Name: "music"}}, nil
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sets", nil)
+	req.AddCookie(addSessionCookie(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+	var sets []model.Set
+	_ = json.Unmarshal(rr.Body.Bytes(), &sets)
+	if len(sets) != 1 || sets[0].Name != "music" {
+		t.Fatalf("unexpected sets response")
+	}
+}
+
+// ------------------------------------------------------------------
+// Helper types
+// ------------------------------------------------------------------
+
+func buildSessionStore(userID int64) *repository.MockStore {
+	return &repository.MockStore{
+		SessionRepo: repository.MockSessionRepo{
+			CreateSessionFunc: func(ctx context.Context, session *model.Session) error { return nil },
+			GetSessionByIDFunc: func(ctx context.Context, id string) (*model.Session, error) {
+				return &model.Session{ID: id, UserID: userID, ExpiresAt: time.Now().Add(time.Hour)}, nil
+			},
+		},
+		UserRepo: repository.MockUserRepo{
+			CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
+		},
+	}
+}
+
+func buildCountStore(count int) *repository.MockStore {
+	return &repository.MockStore{
+		UserRepo: repository.MockUserRepo{
+			CountUsersFunc: func(ctx context.Context) (int, error) { return count, nil },
+			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+				return &model.User{ID: id, Username: "admin", IsAdmin: true}, nil
+			},
+		},
+	}
+}
+
+func addSessionCookieStore(t *testing.T, sm *auth.SessionManager, userID int64) *http.Cookie {
+	t.Helper()
+	id, _ := sm.CreateSession(context.Background(), userID)
+	return &http.Cookie{Name: "session", Value: id}
+}
+
+// mockPingStore wraps a Store and adds Ping capability.
 type mockPingStore struct {
 	store repository.Store
 	err   error

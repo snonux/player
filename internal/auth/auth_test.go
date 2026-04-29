@@ -83,11 +83,11 @@ func TestSessionManager_ValidateSession(t *testing.T) {
 	clk := &clock.MockClock{T: now}
 
 	tests := []struct {
-		name        string
-		returns     *model.Session
-		returnsErr  error
-		expectNil   bool
-		expectDel   bool
+		name       string
+		returns    *model.Session
+		returnsErr error
+		expectNil  bool
+		expectDel  bool
 	}{
 		{
 			name: "valid session",

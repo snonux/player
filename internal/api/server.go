@@ -3,53 +3,149 @@ package api
 import (
 	"context"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/paul/kiss-media-player/internal"
 	"github.com/paul/kiss-media-player/internal/auth"
 	"github.com/paul/kiss-media-player/internal/repository"
+	"github.com/paul/kiss-media-player/internal/service"
 )
 
 // Server holds HTTP handlers and dependencies.
 type Server struct {
-	store  repository.Store
-	hasher auth.Hasher
-	sm     *auth.SessionManager
-	cfg    *internal.Config
-	mux    *http.ServeMux
-	mw     *Middleware
+	store       repository.Store
+	hasher      auth.Hasher
+	sm          *auth.SessionManager
+	cfg         *internal.Config
+	mux         *http.ServeMux
+	mediaSvc    service.MediaService
+	adminSvc    service.AdminService
+	progressSvc service.ProgressService
+	staticFS    http.FileSystem
+	mw          *Middleware
 }
 
 // NewServer creates a Server with routes.
-func NewServer(store repository.Store, hasher auth.Hasher, sm *auth.SessionManager, cfg *internal.Config) *Server {
+// If mediaSvc, adminSvc, or progressSvc are nil, their respective routes return 501.
+func NewServer(
+	store repository.Store,
+	hasher auth.Hasher,
+	sm *auth.SessionManager,
+	cfg *internal.Config,
+	mediaSvc service.MediaService,
+	adminSvc service.AdminService,
+	progressSvc service.ProgressService,
+	staticFS http.FileSystem,
+) *Server {
+	if staticFS == nil {
+		staticFS = http.Dir("web")
+	}
 	s := &Server{
-		store:  store,
-		hasher: hasher,
-		sm:     sm,
-		cfg:    cfg,
-		mux:    http.NewServeMux(),
-		mw:     NewMiddleware(store, sm),
+		store:       store,
+		hasher:      hasher,
+		sm:          sm,
+		cfg:         cfg,
+		mux:         http.NewServeMux(),
+		mediaSvc:    mediaSvc,
+		adminSvc:    adminSvc,
+		progressSvc: progressSvc,
+		staticFS:    staticFS,
+		mw:          NewMiddleware(store, sm),
 	}
 	s.routes()
 	return s
 }
 
 func (s *Server) routes() {
-	s.mux.HandleFunc("POST /api/bootstrap", s.handleBootstrap)
-	s.mux.HandleFunc("POST /api/login", s.handleLogin)
-
-	// logout requires a valid session
-	s.mux.Handle("POST /api/logout", s.mw.RequireSession(http.HandlerFunc(s.handleLogout)))
-
-	s.mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	s.mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		if err := s.pingStore(r.Context()); err != nil {
-			http.Error(w, "not ready", http.StatusServiceUnavailable)
+	// Public routes — use plain path so wrong method returns 405 instead of falling through to /
+	s.mux.HandleFunc("/api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		s.handleBootstrap(w, r)
 	})
+	s.mux.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.handleLogin(w, r)
+	})
+	s.mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.handleHealthz(w, r)
+	})
+	s.mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.handleReadyz(w, r)
+	})
+
+	// Public share routes
+	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
+	s.mux.HandleFunc("GET /s/{token}/stream", s.handleShareStream)
+
+	// Static assets (public)
+	staticHandler := http.FileServer(s.staticFS)
+	s.mux.Handle("/css/", staticHandler)
+	s.mux.Handle("/js/", staticHandler)
+
+	// HTML pages
+	s.mux.Handle("/login.html", http.HandlerFunc(s.serveLogin))
+	s.mux.Handle("/bootstrap.html", http.HandlerFunc(s.serveBootstrap))
+	s.mux.Handle("/", s.mw.RequireSession(http.HandlerFunc(s.serveIndex)))
+	s.mux.Handle("GET /index.html", s.mw.RequireSession(http.HandlerFunc(s.serveIndex)))
+
+	// Session-required routes
+	s.mux.Handle("POST /api/logout", s.mw.RequireSession(http.HandlerFunc(s.handleLogout)))
+
+	// Sets
+	s.mux.Handle("GET /api/sets", s.mw.RequireSession(http.HandlerFunc(s.handleListSets)))
+	s.mux.Handle("POST /api/sets/{id}/cover", s.mw.RequireSession(http.HandlerFunc(s.handleSetCover)))
+	s.mux.Handle("POST /api/sets/{id}/upload", s.mw.RequireSession(http.HandlerFunc(s.handleUpload)))
+
+	// Media
+	s.mux.Handle("GET /api/media", s.mw.RequireSession(http.HandlerFunc(s.handleListMedia)))
+	s.mux.Handle("GET /api/media/{id}", s.mw.RequireSession(http.HandlerFunc(s.handleGetMedia)))
+	s.mux.Handle("GET /api/media/{id}/stream", s.mw.RequireSession(http.HandlerFunc(s.handleStream)))
+	s.mux.Handle("GET /api/media/{id}/download", s.mw.RequireSession(http.HandlerFunc(s.handleDownload)))
+	s.mux.Handle("GET /api/media/{id}/thumbnail", s.mw.RequireSession(http.HandlerFunc(s.handleThumbnail)))
+	s.mux.Handle("POST /api/media/{id}/thumbnail", s.mw.RequireSession(http.HandlerFunc(s.handleRegenThumbnail)))
+	s.mux.Handle("POST /api/media/{id}/favorite", s.mw.RequireSession(http.HandlerFunc(s.handleFavorite)))
+	s.mux.Handle("POST /api/media/{id}/tags", s.mw.RequireSession(http.HandlerFunc(s.handleAddTag)))
+	s.mux.Handle("DELETE /api/media/{id}/tags/{tag}", s.mw.RequireSession(http.HandlerFunc(s.handleRemoveTag)))
+	s.mux.Handle("DELETE /api/media/{id}", s.mw.RequireSession(http.HandlerFunc(s.handleSoftDelete)))
+	s.mux.Handle("POST /api/media/{id}/restore", s.mw.RequireSession(http.HandlerFunc(s.handleRestore)))
+	s.mux.Handle("POST /api/media/{id}/shares", s.mw.RequireSession(http.HandlerFunc(s.handleCreateShare)))
+	s.mux.Handle("GET /api/media/{id}/shares", s.mw.RequireSession(http.HandlerFunc(s.handleListShares)))
+
+	// Notes
+	s.mux.Handle("GET /api/media/{id}/notes", s.mw.RequireSession(http.HandlerFunc(s.handleGetNote)))
+	s.mux.Handle("POST /api/media/{id}/notes", s.mw.RequireSession(http.HandlerFunc(s.handleUpsertNote)))
+	s.mux.Handle("DELETE /api/media/{id}/notes", s.mw.RequireSession(http.HandlerFunc(s.handleDeleteNote)))
+
+	// Progress
+	s.mux.Handle("POST /api/progress", s.mw.RequireSession(http.HandlerFunc(s.handleProgress)))
+
+	// Shares
+	s.mux.Handle("DELETE /api/shares/{token}", s.mw.RequireSession(http.HandlerFunc(s.handleRevokeShare)))
+
+	// Admin routes
+	s.mux.Handle("GET /api/admin/trash", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleListTrash))))
+	s.mux.Handle("POST /api/admin/rescan", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleRescan))))
+	s.mux.Handle("GET /api/admin/users", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleListUsers))))
+	s.mux.Handle("POST /api/admin/users", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleCreateUser))))
+	s.mux.Handle("DELETE /api/admin/users/{id}", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleDeleteUser))))
+	s.mux.Handle("GET /api/admin/permissions", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleListPermissions))))
+	s.mux.Handle("POST /api/admin/permissions", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleGrantPermission))))
+	s.mux.Handle("DELETE /api/admin/permissions", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleRevokePermission))))
 }
 
 func (s *Server) pingStore(ctx context.Context) error {
@@ -60,6 +156,28 @@ func (s *Server) pingStore(ctx context.Context) error {
 		return p.Ping(ctx)
 	}
 	return nil
+}
+
+// GracefulServer wraps an http.Server with graceful shutdown support.
+type GracefulServer struct {
+	Server *http.Server
+}
+
+// NewGracefulServer creates a GracefulServer with the given handler and config.
+func NewGracefulServer(handler http.Handler, cfg *internal.Config) *GracefulServer {
+	return &GracefulServer{
+		Server: &http.Server{
+			Addr:         addrFromPort(cfg.Port),
+			Handler:      handler,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  120 * time.Second,
+		},
+	}
+}
+
+func addrFromPort(port int) string {
+	return ":" + strconv.Itoa(port)
 }
 
 // ServeHTTP implements http.Handler.
