@@ -76,8 +76,8 @@ A self-hosted, Kubernetes-deployable web media player written in Go (stdlib `net
 │   │   ├── player.css       # Custom overlay, fullscreen progress-bar-visible
 │   │   ├── layout.css       # Responsive grid/flex
 │   │   ├── login.css        # Login page layout
-│   │   └── themes/
-│   │       └── light.css    # Future swap
+  │   │   └── themes/        # (empty; themes toggled via data-theme in theme.css)
+
 │   └── js/
 │       ├── app.js           # Router, auth bootstrap, orchestration
 │       ├── api.js           # Fetch wrapper (credentials: include)
@@ -330,13 +330,13 @@ CREATE INDEX idx_shares_expires ON shares(expires_at);
 
 ### 9. Upload
 - `POST /api/sets/:id/upload` with `multipart/form-data`.
-- Max file size: **500MB** (`MAX_UPLOAD_SIZE_MB=500`).
+- Max file size: **100MB** (`MAX_UPLOAD_SIZE_MB=100`).
 - If filename exists, append `(1)`, `(2)`, etc.
 - After save, immediate `ffprobe` + `ffmpeg` thumbnail + insert into `media`.
 
 ### 10. Share Links
 - `POST /api/media/:id/shares` generates a new random token.
-- Default expiration: **14 days** from now.
+- Default expiration: **7 days** from now.
 - Public routes `/s/:token` and `/s/:token/stream` bypass auth.
 - Each time `s` is pressed, a **new share** is created (old ones remain valid until expiry).
 
@@ -344,7 +344,7 @@ CREATE INDEX idx_shares_expires ON shares(expires_at);
 - `DELETE /api/media/:id` sets `deleted_at = NOW()`.
 - Media hidden from normal views; shown in admin trash view.
 - Admin/owner can restore before 7 days.
-- Background goroutine (`time.Ticker` hourly) selects items where `deleted_at < NOW() - 7 days`.
+- Background goroutine (`time.Ticker`, default every 30 minutes) selects items where `deleted_at < NOW() - 7 days`.
 - Physical file deleted via `os.Remove()`, then **hard DELETE** from DB row.
 
 ### 12. Thumbnail Regeneration
@@ -396,12 +396,12 @@ CREATE INDEX idx_shares_expires ON shares(expires_at);
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `8080` | HTTP listen port |
-| `MEDIA_ROOT` | `/media` | Root path for set directories |
-| `DB_PATH` | `/data/media.db` | SQLite database file |
-| `MAX_UPLOAD_SIZE_MB` | `500` | Max upload size per file |
+| `MEDIA_ROOT` | `./media` | Root path for set directories |
+| `DB_PATH` | `data.db` | SQLite database file |
+| `MAX_UPLOAD_SIZE_MB` | `100` | Max upload size per file |
 | `SESSION_TIMEOUT_HOURS` | `24` | Cookie expiry |
-| `GC_INTERVAL_MINUTES` | `60` | Garbage collector tick |
-| `SHARE_DEFAULT_EXPIRY_DAYS` | `14` | Default share link lifetime |
+| `GC_INTERVAL_MINUTES` | `30` | Garbage collector tick |
+| `SHARE_DEFAULT_EXPIRY_DAYS` | `7` | Default share link lifetime |
 | `LOG_LEVEL` | `info` | Log verbosity |
 
 ---
@@ -440,7 +440,7 @@ All 31 features implemented, tested, and deployable:
 17. Theming (CSS variables)
 18. Dark Mode Toggle
 19. Upload (500MB, owner/admin)
-20. Share Links (s key, 14 days)
+20. Share Links (s key, 7 days)
 21. Shuffle (r key, filtered scope)
 22. Keyboard Navigation
 23. Selection Highlight
