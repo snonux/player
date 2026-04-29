@@ -19,13 +19,13 @@ import (
 
 // mediaService is the concrete implementation of MediaService.
 type mediaService struct {
-	store     repository.Store
+	store     repository.MediaServiceStore
 	clock     clock.Clock
 	mediaRoot string
 }
 
 // NewMediaService creates a concrete MediaService.
-func NewMediaService(store repository.Store, clk clock.Clock, mediaRoot string) MediaService {
+func NewMediaService(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string) MediaService {
 	return &mediaService{
 		store:     store,
 		clock:     clk,

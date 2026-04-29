@@ -10,7 +10,12 @@ import (
 
 // compile-time checks.
 var (
-	_ Store = (*MockStore)(nil)
+	_ Store                = (*MockStore)(nil)
+	_ MediaServiceStore    = (*MockStore)(nil)
+	_ AdminServiceStore    = (*MockStore)(nil)
+	_ ProgressServiceStore = (*MockStore)(nil)
+	_ GCStore              = (*MockStore)(nil)
+	_ ScannerStore         = (*MockStore)(nil)
 )
 
 // NewMockStore returns a MockStore with all no-op defaults.

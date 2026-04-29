@@ -15,7 +15,7 @@ import (
 
 // GCWorker is a background worker that hard-deletes soft-deleted media older than a threshold.
 type GCWorker struct {
-	store     repository.Store
+	store     repository.GCStore
 	clock     clock.Clock
 	interval  time.Duration
 	age       time.Duration
@@ -28,7 +28,7 @@ type GCWorker struct {
 }
 
 // NewGCWorker creates a GCWorker. Use WithAge and WithInterval to customise.
-func NewGCWorker(store repository.Store, clk clock.Clock, mediaRoot string, interval time.Duration, logger *slog.Logger) *GCWorker {
+func NewGCWorker(store repository.GCStore, clk clock.Clock, mediaRoot string, interval time.Duration, logger *slog.Logger) *GCWorker {
 	return &GCWorker{
 		store:     store,
 		clock:     clk,

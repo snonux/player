@@ -22,7 +22,7 @@ type Scanner interface {
 
 // FSScanner recursively scans media root for sets and media files.
 type FSScanner struct {
-	store     repository.Store
+	store     repository.ScannerStore
 	prober    probe.Prober
 	thumbGen  thumb.Generator
 	clock     clock.Clock
@@ -31,7 +31,7 @@ type FSScanner struct {
 }
 
 // NewFSScanner creates a filesystem scanner with injected dependencies.
-func NewFSScanner(store repository.Store, prober probe.Prober, thumbGen thumb.Generator, clk clock.Clock, mediaRoot string) Scanner {
+func NewFSScanner(store repository.ScannerStore, prober probe.Prober, thumbGen thumb.Generator, clk clock.Clock, mediaRoot string) Scanner {
 	return &FSScanner{
 		store:     store,
 		prober:    prober,

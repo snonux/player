@@ -11,12 +11,12 @@ import (
 
 // progressService is the concrete implementation of ProgressService.
 type progressService struct {
-	store repository.Store
+	store repository.ProgressServiceStore
 	clock clock.Clock
 }
 
 // NewProgressService creates a concrete ProgressService.
-func NewProgressService(store repository.Store, clk clock.Clock) ProgressService {
+func NewProgressService(store repository.ProgressServiceStore, clk clock.Clock) ProgressService {
 	return &progressService{
 		store: store,
 		clock: clk,

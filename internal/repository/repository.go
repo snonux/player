@@ -23,6 +23,45 @@ type Store interface {
 	NoteRepo
 }
 
+// MediaServiceStore is the subset of Store required by service.MediaService.
+type MediaServiceStore interface {
+	UserRepo
+	SetRepo
+	SetPermissionRepo
+	MediaRepo
+	TagRepo
+	FavoriteRepo
+	PlaybackProgressRepo
+	ShareRepo
+	NoteRepo
+}
+
+// AdminServiceStore is the subset of Store required by service.AdminService.
+type AdminServiceStore interface {
+	UserRepo
+	SetRepo
+	SetPermissionRepo
+	MediaRepo
+}
+
+// ProgressServiceStore is the subset of Store required by service.ProgressService.
+type ProgressServiceStore interface {
+	PlaybackProgressRepo
+	PlaybackAccumulatorRepo
+	MediaRepo
+}
+
+// GCStore is the subset of Store required by service.GCWorker.
+type GCStore interface {
+	MediaRepo
+}
+
+// ScannerStore is the subset of Store required by scanner.FSScanner.
+type ScannerStore interface {
+	SetRepo
+	MediaRepo
+}
+
 // UserRepo manages application users.
 type UserRepo interface {
 	CreateUser(ctx context.Context, user *model.User) (int64, error)

@@ -91,7 +91,7 @@ func (m *mockFS) WalkDir(root string, walkFn fs.WalkDirFunc) error {
 	return nil
 }
 
-func newTestScanner(store repository.Store, prober probe.Prober, gen thumb.Generator, clk clock.Clock, filesystem FS) *FSScanner {
+func newTestScanner(store repository.ScannerStore, prober probe.Prober, gen thumb.Generator, clk clock.Clock, filesystem FS) *FSScanner {
 	return &FSScanner{
 		store:    store,
 		prober:   prober,

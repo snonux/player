@@ -12,13 +12,13 @@ import (
 
 // adminService is the concrete implementation of AdminService.
 type adminService struct {
-	store  repository.Store
+	store  repository.AdminServiceStore
 	clock  clock.Clock
 	hasher auth.Hasher
 }
 
 // NewAdminService creates a concrete AdminService.
-func NewAdminService(store repository.Store, clk clock.Clock, hasher auth.Hasher) AdminService {
+func NewAdminService(store repository.AdminServiceStore, clk clock.Clock, hasher auth.Hasher) AdminService {
 	return &adminService{
 		store:  store,
 		clock:  clk,
