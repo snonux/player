@@ -172,7 +172,7 @@ function setSetByDelta(dx) {
 async function loadMedia() {
   const grid = document.getElementById('media-grid');
   if (!grid) return;
-  grid.innerHTML = '<p class="text-muted" style="grid-column:1/-1;font-size:0.85rem;">Loading...</p>';
+  grid.innerHTML = '<p class="text-muted text-sm grid-full">Loading...</p>';
   try {
     const params = {
       set_id: state.selectedSetId ?? '',
@@ -188,14 +188,14 @@ async function loadMedia() {
     renderGrid(list);
     document.getElementById('result-count').textContent = `${list.length} items`;
   } catch (err) {
-    grid.innerHTML = `<p class="error-message" style="grid-column:1/-1;">${escapeHtml(err.message)}</p>`;
+    grid.innerHTML = `<p class="error-message grid-full">${escapeHtml(err.message)}</p>`;
   }
 }
 
 function renderGrid(items) {
   const grid = document.getElementById('media-grid');
   if (!grid) return;
-  if (!items.length) { grid.innerHTML = `<p class="text-muted" style="grid-column:1/-1;font-size:0.85rem;">No results.</p>`; return; }
+  if (!items.length) { grid.innerHTML = `<p class="text-muted text-sm grid-full">No results.</p>`; return; }
   grid.innerHTML = items.map((m, i) => renderItem(m, i)).join('');
   grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
     el.addEventListener('click', () => { selectByElement(el); });
@@ -220,7 +220,7 @@ function renderItem(m, index) {
           <div class="title">${escapeHtml(m.file_name)}</div>
           <div class="subtitle">${escapeHtml(m.codec || '')} ${m.resolution || ''} ${m.bitrate ? Math.round(m.bitrate / 1000) + 'kbps' : ''}</div>
         </div>
-        <div style="display:flex;gap:0.25rem;padding:0 0.5rem 0.5rem;">
+        <div class="card-actions">
           <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
           <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
           <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>

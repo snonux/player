@@ -21,16 +21,16 @@
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-inverse);
   border-color: var(--accent-active);
 }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-danger {
   background: var(--danger);
-  color: #fff;
-  border-color: #b91c1c;
+  color: var(--text-inverse);
+  border-color: var(--danger-active);
 }
-.btn-danger:hover { background: #e04e4e; }
+.btn-danger:hover { background: var(--danger-hover); }
 .btn-ghost {
   background: transparent;
   color: var(--text-secondary);

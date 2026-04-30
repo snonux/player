@@ -10,7 +10,7 @@
 }
 .player.is-fullscreen {
   inset: 0;
-  background: #000;
+  background: var(--player-stage-bg);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -18,7 +18,7 @@
 
 .player .stage {
   position: relative;
-  background: #000;
+  background: var(--player-stage-bg);
 }
 .player:not(.is-fullscreen) .stage {
   height: 0;
@@ -116,7 +116,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(0,0,0,0.35);
+  background: var(--overlay-dim);
   cursor: pointer;
   z-index: 5;
 }
@@ -124,8 +124,8 @@
   width: 3.5rem;
   height: 3.5rem;
   border-radius: 50%;
-  background: rgba(255,255,255,0.9);
-  color: #000;
+  background: var(--overlay-button-bg);
+  color: var(--overlay-button-color);
   display: grid;
   place-items: center;
   font-size: 1.25rem;

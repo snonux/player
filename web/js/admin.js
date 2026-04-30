@@ -61,8 +61,8 @@ function esc(s) {
 function renderUsers(users) {
   const el = document.getElementById('admin-users');
   if (!el) return;
-  el.innerHTML = `<ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:0.35rem;">
-    ${users.map((u) => `<li style="display:flex;align-items:center;gap:0.5rem;justify-content:space-between;padding:0.25rem 0.35rem;border-radius:var(--radius-sm);${u.is_admin ? 'background:var(--accent-soft);' : ''}">
+  el.innerHTML = `<ul class="admin-list">
+    ${users.map((u) => `<li class="${u.is_admin ? 'is-admin' : ''}">
       <span>${esc(u.username)}${u.is_admin ? ' <span class="badge">admin</span>' : ''}</span>
       <button class="btn btn-danger btn-sm" data-id="${u.id}">Remove</button>
     </li>`).join('')}
@@ -78,16 +78,16 @@ function renderUsers(users) {
 function renderPermissions(data) {
   const el = document.getElementById('admin-permissions');
   if (!el || !data) return;
-  el.innerHTML = `<p class="text-muted" style="font-size:0.8rem;">Use the API to manage permissions directly.</p>`;
+  el.innerHTML = `<p class="text-muted text-xs">Use the API to manage permissions directly.</p>`;
 }
 
 function renderTrash(data) {
   const el = document.getElementById('admin-users');
   if (!el || !Array.isArray(data)) return;
-  el.innerHTML = `<h4 style="font-size:0.9rem;">Trash</h4><ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:0.35rem;">
-    ${data.map((m) => `<li style="display:flex;align-items:center;justify-content:space-between;padding:0.25rem 0.35rem;border-radius:var(--radius-sm);">
+  el.innerHTML = `<h4 class="text-90">Trash</h4><ul class="admin-list">
+    ${data.map((m) => `<li>
       <span>${esc(m.file_name)}</span>
-      <span class="text-muted" style="font-size:0.75rem;">${esc(m.deleted_at || '')}</span>
+      <span class="text-muted text-75">${esc(m.deleted_at || '')}</span>
     </li>`).join('')}
   </ul>`;
 }

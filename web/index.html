@@ -23,7 +23,7 @@
   <button id="shuffle-toggle" class="icon-btn" title="Shuffle (r)">🔀</button>
   <button id="admin-toggle" class="icon-btn hidden" title="Admin panel (a)">⚙</button>
   <button id="theme-toggle" class="icon-btn" title="Toggle theme">☀</button>
-  <span id="user-name" class="text-secondary" style="font-size:0.85rem;"></span>
+  <span id="user-name" class="text-secondary text-xs"></span>
   <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
   <button id="menu-btn" class="icon-btn" title="Menu" aria-label="Open sets">☰</button>
 </header>
@@ -35,7 +35,7 @@
 
 <div class="page" role="main">
   <div class="main-content">
-    <div class="toolbar" style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+    <div class="toolbar">
       <select id="filter-type" aria-label="Filter by type">
         <option value="">All</option>
         <option value="video">Video</option>
@@ -43,7 +43,7 @@
       </select>
       <button id="filter-favorites" class="btn btn-ghost btn-sm">❤ Favorites</button>
       <div class="spacer"></div>
-      <span id="result-count" class="text-muted" style="font-size:0.8rem;"></span>
+      <span id="result-count" class="text-muted text-xs"></span>
     </div>
     <div id="media-grid" class="media-grid" tabindex="0" aria-label="Media grid"></div>
   </div>
@@ -52,7 +52,7 @@
 <aside id="player" class="player open" aria-label="Player">
   <div class="stage">
     <video id="media-video" playsinline controlslist="nodownload"></video>
-    <audio id="media-audio" style="display:none;"></audio>
+    <audio id="media-audio" class="hidden"></audio>
     <div id="big-play" class="big-play" role="button" aria-label="Play" tabindex="0">
       <div class="play-icon">▶</div>
     </div>
@@ -86,7 +86,7 @@
       <button id="notes-close" class="icon-btn" aria-label="Close">✕</button>
     </div>
     <textarea id="notes-textarea" rows="6" placeholder="Add your notes…"></textarea>
-    <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.5rem;">
+    <div class="flex justify-end gap-2 mt-1">
       <button id="notes-delete" class="btn btn-danger btn-sm">Delete</button>
       <button id="notes-save" class="btn btn-primary btn-sm">Save</button>
     </div>
@@ -95,31 +95,31 @@
 
 <!-- Admin Modal -->
 <div id="admin-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-title">
-  <div class="modal" style="width:min(56rem,96vw);">
+    <div class="modal modal-wide">
     <div class="modal-header">
       <h3 id="admin-title">Admin</h3>
       <div class="spacer"></div>
       <button id="admin-close" class="icon-btn" aria-label="Close">✕</button>
     </div>
-    <div style="display:flex;gap:1rem;flex-wrap:wrap;">
-      <section style="flex:1 1 18rem;">
-        <h4 style="margin:0.25rem 0;font-size:0.9rem;">Users</h4>
+    <div class="flex gap-4 flex-wrap">
+      <section class="flex-1-18">
+        <h4 class="my-1 text-90">Users</h4>
         <div id="admin-users"></div>
-        <form id="admin-user-form" style="margin-top:0.5rem;">
+        <form id="admin-user-form" class="mt-2">
           <input name="username" placeholder="Username" required autocomplete="off">
           <input type="password" name="password" placeholder="Password" required autocomplete="new-password">
-          <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.8rem;">
+          <label class="flex align-center gap-1 text-xs">
             <input type="checkbox" name="is_admin"> Admin
           </label>
-          <button type="submit" class="btn btn-primary btn-sm" style="margin-top:0.25rem;">Add user</button>
+          <button type="submit" class="btn btn-primary btn-sm mt-1">Add user</button>
         </form>
       </section>
-      <section style="flex:1 1 18rem;">
-        <h4 style="margin:0.25rem 0;font-size:0.9rem;">Permissions</h4>
+      <section class="flex-1-18">
+        <h4 class="my-1 text-90">Permissions</h4>
         <div id="admin-permissions"></div>
       </section>
     </div>
-    <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+    <div class="flex gap-2 mt-3">
       <button id="admin-rescan" class="btn btn-primary btn-sm">Trigger rescan</button>
       <button id="admin-trash" class="btn btn-danger btn-sm">View trash</button>
     </div>

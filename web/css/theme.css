@@ -24,6 +24,8 @@
 
   /* Feedback */
   --danger: #f25c5c;
+  --danger-active: #b91c1c;
+  --danger-hover: #e04e4e;
   --danger-soft: rgba(242,92,92,0.18);
   --success: #3ddc84;
   --success-soft: rgba(61,220,132,0.18);
@@ -31,9 +33,13 @@
 
   /* Player */
   --player-bg: #0b0d12;
+  --player-stage-bg: #000;
   --player-progress-bg: #2e3546;
   --player-progress-fill: #5e9eff;
   --player-thumb: #7cb2ff;
+  --overlay-dim: rgba(0,0,0,0.35);
+  --overlay-button-bg: rgba(255,255,255,0.9);
+  --overlay-button-color: #000;
 
   /* Selection */
   --selected-bg: rgba(94,158,255,0.25);
@@ -90,9 +96,13 @@
   --success-soft: rgba(37,136,85,0.14);
 
   --player-bg: #0b0d12;
+  --player-stage-bg: #000;
   --player-progress-bg: #d6dae4;
   --player-progress-fill: #2b6cb0;
   --player-thumb: #1a5490;
+  --overlay-dim: rgba(0,0,0,0.35);
+  --overlay-button-bg: rgba(255,255,255,0.9);
+  --overlay-button-color: #000;
 
   --selected-bg: rgba(43,108,176,0.18);
   --selected-border: #2b6cb0;
