@@ -8,21 +8,26 @@ import (
 	"codeberg.org/snonux/play/internal/clock"
 	"codeberg.org/snonux/play/internal/model"
 	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/play/internal/scanner"
 )
 
 // adminService is the concrete implementation of AdminService.
 type adminService struct {
-	store  repository.AdminServiceStore
-	clock  clock.Clock
-	hasher auth.Hasher
+	store     repository.AdminServiceStore
+	clock     clock.Clock
+	hasher    auth.Hasher
+	scanner   scanner.Scanner
+	mediaRoot string
 }
 
 // NewAdminService creates a concrete AdminService.
-func NewAdminService(store repository.AdminServiceStore, clk clock.Clock, hasher auth.Hasher) AdminService {
+func NewAdminService(store repository.AdminServiceStore, clk clock.Clock, hasher auth.Hasher, sc scanner.Scanner, mediaRoot string) AdminService {
 	return &adminService{
-		store:  store,
-		clock:  clk,
-		hasher: hasher,
+		store:     store,
+		clock:     clk,
+		hasher:    hasher,
+		scanner:   sc,
+		mediaRoot: mediaRoot,
 	}
 }
 
@@ -31,7 +36,12 @@ func (s *adminService) ListTrash(ctx context.Context) ([]model.Media, error) {
 }
 
 func (s *adminService) TriggerRescan(ctx context.Context) error {
-	// No-op; scanner will be wired later.
+	if s.scanner == nil {
+		return fmt.Errorf("scanner not configured")
+	}
+	if err := s.scanner.Scan(ctx, s.mediaRoot); err != nil {
+		return fmt.Errorf("scan failed: %w", err)
+	}
 	return nil
 }
 

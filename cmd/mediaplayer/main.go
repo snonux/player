@@ -15,8 +15,11 @@ import (
 	"codeberg.org/snonux/play/internal/api"
 	"codeberg.org/snonux/play/internal/auth"
 	"codeberg.org/snonux/play/internal/clock"
+	"codeberg.org/snonux/play/internal/probe"
 	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/play/internal/scanner"
 	"codeberg.org/snonux/play/internal/service"
+	"codeberg.org/snonux/play/internal/thumb"
 )
 
 func main() {
@@ -48,7 +51,12 @@ func main() {
 	sm := auth.NewSessionManager(store, clk, time.Duration(cfg.SessionTimeoutHours)*time.Hour)
 
 	mediaSvc := service.NewMediaService(store, clk, cfg.MediaRoot)
-	adminSvc := service.NewAdminService(store, clk, hasher)
+
+	prober := probe.NewFFProber()
+	thumbGen := thumb.NewFFmpegGenerator()
+	fsScanner := scanner.NewFSScanner(store, prober, thumbGen, clk, cfg.MediaRoot)
+	adminSvc := service.NewAdminService(store, clk, hasher, fsScanner, cfg.MediaRoot)
+
 	progressSvc := service.NewProgressService(store, clk)
 
 	staticFS := http.Dir("web")

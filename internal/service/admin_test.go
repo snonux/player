@@ -9,6 +9,17 @@ import (
 	"codeberg.org/snonux/play/internal/repository"
 )
 
+type fakeScanner struct {
+	scanFunc func(ctx context.Context, root string) error
+}
+
+func (f *fakeScanner) Scan(ctx context.Context, root string) error {
+	if f.scanFunc != nil {
+		return f.scanFunc(ctx, root)
+	}
+	return nil
+}
+
 type fakeHasher struct {
 	fixed string
 	err   error
@@ -33,7 +44,7 @@ func TestAdminService_ListTrash(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"})
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
 	items, err := svc.ListTrash(ctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -45,9 +56,42 @@ func TestAdminService_ListTrash(t *testing.T) {
 
 func TestAdminService_TriggerRescan(t *testing.T) {
 	ctx := context.Background()
-	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"})
+	var scannedRoot string
+	sc := &fakeScanner{
+		scanFunc: func(_ context.Context, root string) error {
+			scannedRoot = root
+			return nil
+		},
+	}
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
 	if err := svc.TriggerRescan(ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if scannedRoot != "/media" {
+		t.Fatalf("expected root %q, got %q", "/media", scannedRoot)
+	}
+}
+
+func TestAdminService_TriggerRescan_Error(t *testing.T) {
+	ctx := context.Background()
+	sc := &fakeScanner{
+		scanFunc: func(_ context.Context, _ string) error {
+			return errors.New("scan failed")
+		},
+	}
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
+	err := svc.TriggerRescan(ctx)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestAdminService_TriggerRescan_NilScanner(t *testing.T) {
+	ctx := context.Background()
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+	err := svc.TriggerRescan(ctx)
+	if err == nil {
+		t.Fatal("expected error when scanner is nil")
 	}
 }
 
@@ -60,7 +104,7 @@ func TestAdminService_ListUsers(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"})
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
 	users, err := svc.ListUsers(ctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -104,7 +148,7 @@ func TestAdminService_CreateUser(t *testing.T) {
 				},
 			}
 			hasher := &fakeHasher{fixed: "hashed", err: tt.hashErr}
-			svc := NewAdminService(store, newMockClock(), hasher)
+			svc := NewAdminService(store, newMockClock(), hasher, nil, "")
 			user, err := svc.CreateUser(ctx, "alice", "secret", false)
 			if tt.wantErr {
 				if err == nil {
@@ -133,7 +177,7 @@ func TestAdminService_DeleteUser(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"})
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
 	if err := svc.DeleteUser(ctx, 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,7 +200,7 @@ func TestAdminService_ListPermissions(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"})
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
 	perms, err := svc.ListPermissions(ctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -177,7 +221,7 @@ func TestAdminService_GrantPermission(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"})
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
 	if err := svc.GrantPermission(ctx, 1, 2, model.RoleViewer); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,7 +244,7 @@ func TestAdminService_RevokePermission(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"})
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
 	if err := svc.RevokePermission(ctx, 1, 2); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
