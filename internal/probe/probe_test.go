@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal/model"
+	"codeberg.org/snonux/play/internal/model"
 )
 
 func TestParseFFprobeOutput(t *testing.T) {
@@ -61,9 +61,9 @@ func TestParseFFprobeOutput(t *testing.T) {
 			want: &model.Metadata{Codec: "vp9"},
 		},
 		{
-			name: "no format or streams",
+			name:  "no format or streams",
 			input: `{"format":{},"streams":[]}`,
-			want: &model.Metadata{},
+			want:  &model.Metadata{},
 		},
 	}
 

@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal/model"
+	"codeberg.org/snonux/play/internal/model"
 )
 
 // Store is the composite interface for all repositories.

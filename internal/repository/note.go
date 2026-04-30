@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/paul/kiss-media-player/internal/model"
+	"codeberg.org/snonux/play/internal/model"
 )
 
 // UpsertNote inserts or replaces a note for a user and media.

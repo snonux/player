@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/paul/kiss-media-player/internal/clock"
-	"github.com/paul/kiss-media-player/internal/model"
-	"github.com/paul/kiss-media-player/internal/repository"
+	"codeberg.org/snonux/play/internal/clock"
+	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/play/internal/repository"
 )
 
 // progressService is the concrete implementation of ProgressService.

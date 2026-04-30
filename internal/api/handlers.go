@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal/model"
-	"github.com/paul/kiss-media-player/internal/repository"
-	"github.com/paul/kiss-media-player/internal/service"
+	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/play/internal/service"
 )
 
 type bootstrapRequest struct {

@@ -6,34 +6,34 @@ import (
 	"io"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal/model"
-	"github.com/paul/kiss-media-player/internal/repository"
+	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/play/internal/repository"
 )
 
 // MockMediaService is a fake MediaService for testing.
 type MockMediaService struct {
-	ListSetsFunc             func(ctx context.Context, userID int64) ([]model.Set, error)
-	GetMediaDetailFunc       func(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
-	ListMediaFunc            func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error)
-	StreamMediaFunc          func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
-	DownloadMediaFunc        func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
-	GetThumbnailFunc         func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
-	RegenerateThumbnailFunc  func(ctx context.Context, mediaID, userID int64) error
-	RegenerateSetCoverFunc   func(ctx context.Context, setID, userID int64) error
-	ToggleFavoriteFunc       func(ctx context.Context, userID, mediaID int64) (bool, error)
-	AssignTagFunc            func(ctx context.Context, mediaID, userID int64, tagName string) error
-	RemoveTagFunc            func(ctx context.Context, mediaID, userID int64, tagName string) error
-	SoftDeleteMediaFunc      func(ctx context.Context, mediaID, userID int64) error
-	RestoreMediaFunc         func(ctx context.Context, mediaID, userID int64) error
-	UploadMediaFunc          func(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error)
-	CreateShareFunc          func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
-	ListSharesFunc           func(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
-	RevokeShareFunc          func(ctx context.Context, token string, userID int64) error
-	ValidateShareTokenFunc   func(ctx context.Context, token string) (*model.Share, error)
-	StreamSharedMediaFunc    func(ctx context.Context, token string) (*FileResult, error)
-	GetNoteFunc              func(ctx context.Context, mediaID, userID int64) (*model.Note, error)
-	UpsertNoteFunc           func(ctx context.Context, note *model.Note) error
-	DeleteNoteFunc           func(ctx context.Context, mediaID, userID int64) error
+	ListSetsFunc            func(ctx context.Context, userID int64) ([]model.Set, error)
+	GetMediaDetailFunc      func(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
+	ListMediaFunc           func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error)
+	StreamMediaFunc         func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
+	DownloadMediaFunc       func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
+	GetThumbnailFunc        func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
+	RegenerateThumbnailFunc func(ctx context.Context, mediaID, userID int64) error
+	RegenerateSetCoverFunc  func(ctx context.Context, setID, userID int64) error
+	ToggleFavoriteFunc      func(ctx context.Context, userID, mediaID int64) (bool, error)
+	AssignTagFunc           func(ctx context.Context, mediaID, userID int64, tagName string) error
+	RemoveTagFunc           func(ctx context.Context, mediaID, userID int64, tagName string) error
+	SoftDeleteMediaFunc     func(ctx context.Context, mediaID, userID int64) error
+	RestoreMediaFunc        func(ctx context.Context, mediaID, userID int64) error
+	UploadMediaFunc         func(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error)
+	CreateShareFunc         func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
+	ListSharesFunc          func(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
+	RevokeShareFunc         func(ctx context.Context, token string, userID int64) error
+	ValidateShareTokenFunc  func(ctx context.Context, token string) (*model.Share, error)
+	StreamSharedMediaFunc   func(ctx context.Context, token string) (*FileResult, error)
+	GetNoteFunc             func(ctx context.Context, mediaID, userID int64) (*model.Note, error)
+	UpsertNoteFunc          func(ctx context.Context, note *model.Note) error
+	DeleteNoteFunc          func(ctx context.Context, mediaID, userID int64) error
 }
 
 func (m *MockMediaService) ListSets(ctx context.Context, userID int64) ([]model.Set, error) {

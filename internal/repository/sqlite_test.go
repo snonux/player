@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal/model"
+	"codeberg.org/snonux/play/internal/model"
 )
 
 func newTestStore(t *testing.T) *SQLite {
@@ -326,9 +326,9 @@ func TestSQLite_MediaRepo(t *testing.T) {
 					{"ab_c", []int64{m1}},
 					{"de%f", []int64{m2}},
 					{"gh\\ij", []int64{m3}},
-					{"_", []int64{m1}},        // literal underscore must match only ab_c.mp4
-					{"%", []int64{m2}},        // literal percent must match only de%f.mp4
-					{"\\", []int64{m3}},       // literal backslash must match only gh\ij.mp4
+					{"_", []int64{m1}},  // literal underscore must match only ab_c.mp4
+					{"%", []int64{m2}},  // literal percent must match only de%f.mp4
+					{"\\", []int64{m3}}, // literal backslash must match only gh\ij.mp4
 				} {
 					res, err := s.ListMedia(ctx, MediaFilter{Search: tc.search})
 					if err != nil {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal/model"
+	"codeberg.org/snonux/play/internal/model"
 )
 
 // CreateShare inserts a new share link.

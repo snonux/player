@@ -13,12 +13,12 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal"
-	"github.com/paul/kiss-media-player/internal/auth"
-	"github.com/paul/kiss-media-player/internal/clock"
-	"github.com/paul/kiss-media-player/internal/model"
-	"github.com/paul/kiss-media-player/internal/repository"
-	"github.com/paul/kiss-media-player/internal/service"
+	"codeberg.org/snonux/play/internal"
+	"codeberg.org/snonux/play/internal/auth"
+	"codeberg.org/snonux/play/internal/clock"
+	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/play/internal/service"
 )
 
 type memFS struct {
@@ -297,7 +297,7 @@ type staticHasher struct {
 	fixed string
 }
 
-func (h *staticHasher) Hash(password string) (string, error)  { return h.fixed, nil }
+func (h *staticHasher) Hash(password string) (string, error) { return h.fixed, nil }
 func (h *staticHasher) Compare(hash, password string) error {
 	if hash == h.fixed && password == "correct" {
 		return nil
@@ -570,14 +570,14 @@ func TestServer_MediaList(t *testing.T) {
 			wantCode:   http.StatusOK,
 		},
 		{
-			name:    "service error",
-			listErr: errors.New("boom"),
+			name:     "service error",
+			listErr:  errors.New("boom"),
 			wantCode: http.StatusInternalServerError,
 		},
 		{
-			name:   "with query params",
-			query:  "?set_id=1&type=video&search=foo&tags=bar,baz&favorites=2&min_duration=10&max_duration=100&sort=name&limit=5&offset=10",
-			filter: repository.MediaFilter{SetID: intPtr(1), Type: (*model.MediaType)(func() *string { s := "video"; return &s }()), Search: "foo", Tags: []string{"bar", "baz"}, Favorites: intPtr(2), MinDuration: floatPtr(10), MaxDuration: floatPtr(100), Sort: "name", Limit: 5, Offset: 10},
+			name:       "with query params",
+			query:      "?set_id=1&type=video&search=foo&tags=bar,baz&favorites=2&min_duration=10&max_duration=100&sort=name&limit=5&offset=10",
+			filter:     repository.MediaFilter{SetID: intPtr(1), Type: (*model.MediaType)(func() *string { s := "video"; return &s }()), Search: "foo", Tags: []string{"bar", "baz"}, Favorites: intPtr(2), MinDuration: floatPtr(10), MaxDuration: floatPtr(100), Sort: "name", Limit: 5, Offset: 10},
 			listResult: []model.Media{},
 			wantCode:   http.StatusOK,
 		},
@@ -613,12 +613,12 @@ func TestServer_MediaList(t *testing.T) {
 
 func TestServer_MediaDetail(t *testing.T) {
 	tests := []struct {
-		name       string
-		id         string
-		result     *service.MediaDetail
-		err        error
-		wantCode   int
-		wantMedia  bool
+		name      string
+		id        string
+		result    *service.MediaDetail
+		err       error
+		wantCode  int
+		wantMedia bool
 	}{
 		{"ok", "42", &service.MediaDetail{Media: &model.Media{ID: 42, FileName: "a.mp4"}}, nil, http.StatusOK, true},
 		{"invalid id", "abc", nil, nil, http.StatusBadRequest, false},

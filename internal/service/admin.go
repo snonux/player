@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/paul/kiss-media-player/internal/auth"
-	"github.com/paul/kiss-media-player/internal/clock"
-	"github.com/paul/kiss-media-player/internal/model"
-	"github.com/paul/kiss-media-player/internal/repository"
+	"codeberg.org/snonux/play/internal/auth"
+	"codeberg.org/snonux/play/internal/clock"
+	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/play/internal/repository"
 )
 
 // adminService is the concrete implementation of AdminService.

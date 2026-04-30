@@ -11,12 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal"
-	"github.com/paul/kiss-media-player/internal/api"
-	"github.com/paul/kiss-media-player/internal/auth"
-	"github.com/paul/kiss-media-player/internal/clock"
-	"github.com/paul/kiss-media-player/internal/repository"
-	"github.com/paul/kiss-media-player/internal/service"
+	"codeberg.org/snonux/play/internal"
+	"codeberg.org/snonux/play/internal/api"
+	"codeberg.org/snonux/play/internal/auth"
+	"codeberg.org/snonux/play/internal/clock"
+	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/play/internal/service"
 )
 
 func main() {

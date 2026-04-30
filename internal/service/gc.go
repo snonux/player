@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal/clock"
-	"github.com/paul/kiss-media-player/internal/repository"
+	"codeberg.org/snonux/play/internal/clock"
+	"codeberg.org/snonux/play/internal/repository"
 )
 
 // GCWorker is a background worker that hard-deletes soft-deleted media older than a threshold.

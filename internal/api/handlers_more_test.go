@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal"
-	"github.com/paul/kiss-media-player/internal/auth"
-	"github.com/paul/kiss-media-player/internal/clock"
-	"github.com/paul/kiss-media-player/internal/model"
-	"github.com/paul/kiss-media-player/internal/repository"
-	"github.com/paul/kiss-media-player/internal/service"
+	"codeberg.org/snonux/play/internal"
+	"codeberg.org/snonux/play/internal/auth"
+	"codeberg.org/snonux/play/internal/clock"
+	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/play/internal/service"
 )
 
 // ------------------------------------------------------------------
@@ -239,7 +239,7 @@ func TestServer_Bootstrap_hashError(t *testing.T) {
 func TestServer_Bootstrap_createUserError(t *testing.T) {
 	store := &repository.MockStore{
 		UserRepo: repository.MockUserRepo{
-			CountUsersFunc:  func(ctx context.Context) (int, error) { return 0, nil },
+			CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil },
 			CreateUserFunc: func(ctx context.Context, user *model.User) (int64, error) { return 0, errors.New("boom") },
 		},
 	}
@@ -258,7 +258,7 @@ func TestServer_Bootstrap_createUserError(t *testing.T) {
 func TestServer_Bootstrap_createSessionError(t *testing.T) {
 	store := &repository.MockStore{
 		UserRepo: repository.MockUserRepo{
-			CountUsersFunc:  func(ctx context.Context) (int, error) { return 0, nil },
+			CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil },
 			CreateUserFunc: func(ctx context.Context, user *model.User) (int64, error) { return 1, nil },
 		},
 	}
@@ -325,10 +325,10 @@ func TestServer_SetCover(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, http.StatusNotImplemented},
@@ -402,11 +402,11 @@ func TestServer_Upload(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24, MaxUploadSizeMB: 10}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
-		noFile  bool
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
+		noFile   bool
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, false, http.StatusNotImplemented},
@@ -471,10 +471,10 @@ func TestServer_Favorite_negative(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, http.StatusNotImplemented},
@@ -525,11 +525,11 @@ func TestServer_RemoveTag_negative(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		tag     string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		tag      string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "1", "t", true, nil, http.StatusNotImplemented},
@@ -570,11 +570,11 @@ func TestServer_Stream(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
-		res     *service.FileResult
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
+		res      *service.FileResult
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, nil, http.StatusNotImplemented},
@@ -614,11 +614,11 @@ func TestServer_Download(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
-		res     *service.FileResult
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
+		res      *service.FileResult
 		wantCode int
 		wantDisp bool
 	}{
@@ -665,11 +665,11 @@ func TestServer_Thumbnail(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
-		res     *service.FileResult
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
+		res      *service.FileResult
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, nil, http.StatusNotImplemented},
@@ -708,10 +708,10 @@ func TestServer_RegenThumbnail(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, http.StatusNotImplemented},
@@ -752,10 +752,10 @@ func TestServer_CreateShare_negative(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24, ShareDefaultExpiryDays: 14}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, http.StatusNotImplemented},
@@ -791,10 +791,10 @@ func TestServer_ListShares_negative(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, http.StatusNotImplemented},
@@ -830,10 +830,10 @@ func TestServer_RevokeShare(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		token   string
-		svcNil  bool
-		svcErr  error
+		name     string
+		token    string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "abc", true, nil, http.StatusNotImplemented},
@@ -867,11 +867,11 @@ func TestServer_SharePage(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		token   string
-		svcNil  bool
-		svcErr  error
-		share   *model.Share
+		name     string
+		token    string
+		svcNil   bool
+		svcErr   error
+		share    *model.Share
 		wantCode int
 	}{
 		{"nil service", "abc", true, nil, nil, http.StatusNotImplemented},
@@ -906,11 +906,11 @@ func TestServer_ShareStream(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		token   string
-		svcNil  bool
-		svcErr  error
-		res     *service.FileResult
+		name     string
+		token    string
+		svcNil   bool
+		svcErr   error
+		res      *service.FileResult
 		wantCode int
 	}{
 		{"nil service", "abc", true, nil, nil, http.StatusNotImplemented},
@@ -951,10 +951,10 @@ func TestServer_SoftDelete_negative(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, http.StatusNotImplemented},
@@ -991,10 +991,10 @@ func TestServer_Restore_negative(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, http.StatusNotImplemented},
@@ -1035,11 +1035,11 @@ func TestServer_UpsertNote(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		body    string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		body     string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "1", `{"content":"hi"}`, true, nil, http.StatusNotImplemented},
@@ -1078,10 +1078,10 @@ func TestServer_DeleteNote(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "1", true, nil, http.StatusNotImplemented},
@@ -1167,9 +1167,9 @@ func TestServer_AdminRescan(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		svcNil  bool
-		svcErr  error
+		name     string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", true, nil, http.StatusNotImplemented},
@@ -1203,9 +1203,9 @@ func TestServer_AdminListTrash(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		svcNil  bool
-		svcErr  error
+		name     string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", true, nil, http.StatusNotImplemented},
@@ -1239,9 +1239,9 @@ func TestServer_AdminListUsers(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		svcNil  bool
-		svcErr  error
+		name     string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", true, nil, http.StatusNotImplemented},
@@ -1275,10 +1275,10 @@ func TestServer_AdminCreateUser(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		body    string
-		svcNil  bool
-		svcErr  error
+		name     string
+		body     string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", `{"username":"bob","password":"pass","is_admin":false}`, true, nil, http.StatusNotImplemented},
@@ -1317,10 +1317,10 @@ func TestServer_AdminDeleteUser(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		id      string
-		svcNil  bool
-		svcErr  error
+		name     string
+		id       string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", "2", true, nil, http.StatusNotImplemented},
@@ -1355,9 +1355,9 @@ func TestServer_AdminListPermissions(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		svcNil  bool
-		svcErr  error
+		name     string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", true, nil, http.StatusNotImplemented},
@@ -1391,10 +1391,10 @@ func TestServer_AdminGrantPermission(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		body    string
-		svcNil  bool
-		svcErr  error
+		name     string
+		body     string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", `{"set_id":1,"user_id":2,"role":"viewer"}`, true, nil, http.StatusNotImplemented},
@@ -1430,10 +1430,10 @@ func TestServer_AdminRevokePermission(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	tests := []struct {
-		name    string
-		body    string
-		svcNil  bool
-		svcErr  error
+		name     string
+		body     string
+		svcNil   bool
+		svcErr   error
 		wantCode int
 	}{
 		{"nil service", `{"set_id":1,"user_id":2}`, true, nil, http.StatusNotImplemented},
@@ -1469,8 +1469,8 @@ func TestServer_AdminRevokePermission(t *testing.T) {
 
 type errHasher struct{}
 
-func (e *errHasher) Hash(password string) (string, error)  { return "", errors.New("hash err") }
-func (e *errHasher) Compare(hash, password string) error { return errors.New("compare err") }
+func (e *errHasher) Hash(password string) (string, error) { return "", errors.New("hash err") }
+func (e *errHasher) Compare(hash, password string) error  { return errors.New("compare err") }
 
 // ------------------------------------------------------------------
 // parseMediaListQuery

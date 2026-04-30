@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/paul/kiss-media-player/internal/model"
-	"github.com/paul/kiss-media-player/internal/repository"
+	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/play/internal/repository"
 )
 
 type fakeHasher struct {

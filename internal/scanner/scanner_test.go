@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal/clock"
-	"github.com/paul/kiss-media-player/internal/model"
-	"github.com/paul/kiss-media-player/internal/probe"
-	"github.com/paul/kiss-media-player/internal/repository"
-	"github.com/paul/kiss-media-player/internal/thumb"
+	"codeberg.org/snonux/play/internal/clock"
+	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/play/internal/probe"
+	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/play/internal/thumb"
 )
 
 // mockDirEntry implements os.DirEntry for tests.
@@ -23,10 +23,12 @@ type mockDirEntry struct {
 	isDir bool
 }
 
-func (m mockDirEntry) Name() string               { return m.name }
-func (m mockDirEntry) IsDir() bool                { return m.isDir }
-func (m mockDirEntry) Type() os.FileMode          { return 0 }
-func (m mockDirEntry) Info() (os.FileInfo, error) { return mockFileInfo{name: m.name, isDir: m.isDir}, nil }
+func (m mockDirEntry) Name() string      { return m.name }
+func (m mockDirEntry) IsDir() bool       { return m.isDir }
+func (m mockDirEntry) Type() os.FileMode { return 0 }
+func (m mockDirEntry) Info() (os.FileInfo, error) {
+	return mockFileInfo{name: m.name, isDir: m.isDir}, nil
+}
 
 // mockFileInfo implements os.FileInfo for tests.
 type mockFileInfo struct {
@@ -38,11 +40,11 @@ type mockFileInfo struct {
 }
 
 func (m mockFileInfo) Name() string       { return m.name }
-func (m mockFileInfo) Size() int64       { return m.size }
-func (m mockFileInfo) Mode() os.FileMode { return m.mode }
+func (m mockFileInfo) Size() int64        { return m.size }
+func (m mockFileInfo) Mode() os.FileMode  { return m.mode }
 func (m mockFileInfo) ModTime() time.Time { return m.modTime }
-func (m mockFileInfo) IsDir() bool       { return m.isDir }
-func (m mockFileInfo) Sys() interface{} { return nil }
+func (m mockFileInfo) IsDir() bool        { return m.isDir }
+func (m mockFileInfo) Sys() interface{}   { return nil }
 
 // walkEntry describes a single path yielded by mockFS.WalkDir.
 type walkEntry struct {

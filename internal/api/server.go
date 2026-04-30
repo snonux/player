@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/paul/kiss-media-player/internal"
-	"github.com/paul/kiss-media-player/internal/auth"
-	"github.com/paul/kiss-media-player/internal/repository"
-	"github.com/paul/kiss-media-player/internal/service"
+	"codeberg.org/snonux/play/internal"
+	"codeberg.org/snonux/play/internal/auth"
+	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/play/internal/service"
 )
 
 // Server holds HTTP handlers and dependencies.

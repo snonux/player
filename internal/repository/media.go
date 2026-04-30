@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/paul/kiss-media-player/internal/model"
+	"codeberg.org/snonux/play/internal/model"
 )
 
 // CreateMedia inserts a new media and returns the generated ID.

@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 
-	"github.com/paul/kiss-media-player/internal/model"
+	"codeberg.org/snonux/play/internal/model"
 )
 
 // Prober extracts metadata from a media file.

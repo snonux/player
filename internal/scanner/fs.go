@@ -19,7 +19,7 @@ type FS interface {
 type osFS struct{}
 
 func (osFS) ReadDir(name string) ([]os.DirEntry, error) { return os.ReadDir(name) }
-func (osFS) Stat(name string) (os.FileInfo, error)       { return os.Stat(name) }
+func (osFS) Stat(name string) (os.FileInfo, error)      { return os.Stat(name) }
 func (osFS) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }

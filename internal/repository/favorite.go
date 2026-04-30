@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/paul/kiss-media-player/internal/model"
+	"codeberg.org/snonux/play/internal/model"
 )
 
 // ToggleFavorite inserts or deletes a favorite row, returning whether it is now favorited.

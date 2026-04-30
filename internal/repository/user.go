@@ -5,9 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/paul/kiss-media-player/internal/model"
+	"codeberg.org/snonux/play/internal/model"
 )
-
 
 // CreateUser inserts a new user and returns the generated ID.
 func (s *SQLite) CreateUser(ctx context.Context, user *model.User) (int64, error) {

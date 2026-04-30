@@ -1,4 +1,4 @@
-module github.com/paul/kiss-media-player
+module codeberg.org/snonux/play
 
 go 1.25.0
 

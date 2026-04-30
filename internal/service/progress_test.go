@@ -5,28 +5,28 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/paul/kiss-media-player/internal/model"
-	"github.com/paul/kiss-media-player/internal/repository"
+	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/play/internal/repository"
 )
 
 func TestProgressService_UpdateProgress(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name            string
-		sessionID       string
-		userID          int64
-		mediaID         int64
-		position        float64
-		accLastPosition float64
-		accAccumulated  float64
-		accCounted      bool
-		accErr          error
+		name              string
+		sessionID         string
+		userID            int64
+		mediaID           int64
+		position          float64
+		accLastPosition   float64
+		accAccumulated    float64
+		accCounted        bool
+		accErr            error
 		upsertProgressErr error
-		upsertAccErr    error
-		incrementErr    error
-		wantErr         bool
-		wantCounted     bool
+		upsertAccErr      error
+		incrementErr      error
+		wantErr           bool
+		wantCounted       bool
 	}{
 		{
 			name:            "fresh accumulator does not reach 60 due to clamp",
