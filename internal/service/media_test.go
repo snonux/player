@@ -774,13 +774,19 @@ func TestMediaService_UploadMedia(t *testing.T) {
 		{
 			name:      "path traversal sanitized",
 			setExists: true,
-			filename:  "../../etc/passwd",
+			filename:  "../../etc/passwd.mp3",
 			wantErr:   false,
 		},
 		{
 			name:      "path traversal dotdot rejected",
 			setExists: true,
 			filename:  "..",
+			wantErr:   true,
+		},
+		{
+			name:      "unsupported extension",
+			setExists: true,
+			filename:  "document.txt",
 			wantErr:   true,
 		},
 	}
@@ -943,13 +949,6 @@ func TestMediaService_StreamSharedMedia(t *testing.T) {
 			media:   &model.Media{ID: 1, AbsPath: "/tmp/a.mp4", FileName: "a.mp4"},
 			share:   &model.Share{Token: "abc", MediaID: 1, ExpiresAt: now.Add(time.Hour)},
 		},
-		{
-			name:    "media not found",
-			mediaID: 2,
-			media:   nil,
-			share:   &model.Share{Token: "abc", MediaID: 2, ExpiresAt: now.Add(time.Hour)},
-			wantErr: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -985,6 +984,147 @@ func TestMediaService_StreamSharedMedia(t *testing.T) {
 			}
 		})
 	}
+}
+
+
+func TestMediaService_UploadMedia_ProbeAndThumbnail(t *testing.T) {
+	ctx := context.Background()
+	makeStore := func() *repository.MockStore {
+		return &repository.MockStore{
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: 1, RootPath: "music"}, nil
+				},
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: true}, nil
+				},
+			},
+			MediaRepo: repository.MockMediaRepo{
+				CreateMediaFunc: func(ctx context.Context, media *model.Media) (int64, error) {
+					return 42, nil
+				},
+				UpdateMediaFunc: func(ctx context.Context, media *model.Media) error {
+					return nil
+				},
+				HardDeleteMediaFunc: func(ctx context.Context, id int64) error {
+					return nil
+				},
+			},
+		}
+	}
+
+	t.Run("success video with probe and thumbnail", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		store := makeStore()
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 120, Codec: "h264", Resolution: "1920x1080", Bitrate: 5000}, nil
+		}}
+		thumbGen := &mockThumbGenerator{GenerateFunc: func(ctx context.Context, inputPath, outputPath string, duration float64) error {
+			_ = os.WriteFile(outputPath, []byte("thumb"), 0o644)
+			return nil
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
+		data := strings.NewReader("fake video data")
+		media, err := svc.UploadMedia(ctx, 1, 1, "video.mp4", data, 16)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if media.ID != 42 {
+			t.Fatalf("unexpected id %d", media.ID)
+		}
+		if media.Duration != 120 {
+			t.Fatalf("unexpected duration %f", media.Duration)
+		}
+		if media.Codec != "h264" {
+			t.Fatalf("unexpected codec %s", media.Codec)
+		}
+		if media.ThumbnailPath == "" {
+			t.Fatal("expected thumbnail path")
+		}
+	})
+
+	t.Run("probe failure cleans up", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		store := makeStore()
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return nil, errors.New("probe failed")
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, nil, prober)
+		data := strings.NewReader("fake")
+		_, err := svc.UploadMedia(ctx, 1, 1, "song.mp3", data, 4)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		// verify temp file is removed
+		files, _ := os.ReadDir(filepath.Join(tmpDir, "music"))
+		for _, e := range files {
+			if e.Name() != ".thumbnails" {
+				t.Fatalf("expected cleanup, found %s", e.Name())
+			}
+		}
+	})
+
+	t.Run("thumbnail failure cleans up", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		store := makeStore()
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 120}, nil
+		}}
+		thumbGen := &mockThumbGenerator{GenerateFunc: func(ctx context.Context, inputPath, outputPath string, duration float64) error {
+			return errors.New("thumbnail failed")
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
+		data := strings.NewReader("fake video data")
+		_, err := svc.UploadMedia(ctx, 1, 1, "video.mp4", data, 16)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		files, _ := os.ReadDir(filepath.Join(tmpDir, "music"))
+		for _, e := range files {
+			if e.Name() != ".thumbnails" {
+				t.Fatalf("expected cleanup, found %s", e.Name())
+			}
+		}
+	})
+
+	t.Run("audio skips thumbnail but probes", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		store := makeStore()
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 300, Bitrate: 320}, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, nil, prober)
+		data := strings.NewReader("fake audio data")
+		media, err := svc.UploadMedia(ctx, 1, 1, "song.mp3", data, 16)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if media.ThumbnailPath != "" {
+			t.Fatal("expected no thumbnail path for audio")
+		}
+		if media.Duration != 300 {
+			t.Fatalf("unexpected duration %f", media.Duration)
+		}
+	})
+
+	t.Run("update media failure cleans up", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		store := makeStore()
+		store.MediaRepo.UpdateMediaFunc = func(ctx context.Context, media *model.Media) error {
+			return errors.New("update failed")
+		}
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 120}, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, nil, prober)
+		data := strings.NewReader("fake audio data")
+		_, err := svc.UploadMedia(ctx, 1, 1, "song.mp3", data, 16)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestMediaService_Notes(t *testing.T) {

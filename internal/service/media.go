@@ -42,12 +42,37 @@ func NewMediaService(store repository.MediaServiceStore, clk clock.Clock, mediaR
 
 // Sentinel errors returned by the media service layer.
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrForbidden     = errors.New("access denied")
-	ErrShareNotFound = errors.New("share not found")
-	ErrShareExpired  = errors.New("share expired")
-	ErrMediaNotFound = errors.New("media not found")
+	ErrNotFound           = errors.New("not found")
+	ErrForbidden          = errors.New("access denied")
+	ErrShareNotFound      = errors.New("share not found")
+	ErrShareExpired       = errors.New("share expired")
+	ErrMediaNotFound      = errors.New("media not found")
+	ErrUnsupportedExtension = errors.New("unsupported file extension")
 )
+
+// supportedExtensions lists all file extensions accepted by UploadMedia.
+var supportedExtensions = map[string]struct{}{
+	".mp4":  {},
+	".mkv":  {},
+	".avi":  {},
+	".mov":  {},
+	".wmv":  {},
+	".flv":  {},
+	".webm": {},
+	".mp3":  {},
+	".wav":  {},
+	".flac": {},
+	".aac":  {},
+	".ogg":  {},
+	".m4a":  {},
+	".wma":  {},
+}
+
+func isSupportedExtension(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	_, ok := supportedExtensions[ext]
+	return ok
+}
 
 func (s *mediaService) ListSets(ctx context.Context, userID int64) ([]model.Set, error) {
 	user, err := s.store.GetUserByID(ctx, userID)
@@ -461,11 +486,15 @@ func (s *mediaService) UploadMedia(ctx context.Context, setID, userID int64, fil
 		return nil, fmt.Errorf("get set: %w", err)
 	}
 	if set == nil {
-		return nil, errors.New("set not found")
+		return nil, ErrNotFound
 	}
 
 	if err := s.verifySetModifyAccess(ctx, setID, userID); err != nil {
 		return nil, err
+	}
+
+	if !isSupportedExtension(filename) {
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedExtension, filepath.Ext(filename))
 	}
 
 	dir := filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath))
@@ -477,6 +506,43 @@ func (s *mediaService) UploadMedia(ctx context.Context, setID, userID int64, fil
 	if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(dir)+string(filepath.Separator)) {
 		return nil, errors.New("invalid filename")
 	}
+
+	media, err := s.saveUploadedMedia(ctx, setID, path, data, size)
+	if err != nil {
+		os.Remove(path)
+		return nil, err
+	}
+
+	meta, err := s.probeMedia(ctx, path)
+	if err != nil {
+		os.Remove(path)
+		s.store.HardDeleteMedia(ctx, media.ID)
+		return nil, err
+	}
+	media.Duration = meta.Duration
+	media.Codec = meta.Codec
+	media.Resolution = meta.Resolution
+	media.Bitrate = meta.Bitrate
+
+	if media.Type == model.MediaTypeVideo {
+		if err := s.generateThumbnail(ctx, media, meta.Duration); err != nil {
+			os.Remove(path)
+			_ = s.store.HardDeleteMedia(ctx, media.ID)
+			return nil, err
+		}
+	}
+
+	if err := s.store.UpdateMedia(ctx, media); err != nil {
+		os.Remove(path)
+		_ = s.store.HardDeleteMedia(ctx, media.ID)
+		return nil, fmt.Errorf("update media metadata: %w", err)
+	}
+
+	return media, nil
+}
+
+// saveUploadedMedia writes data to disk and creates a minimal media row.
+func (s *mediaService) saveUploadedMedia(ctx context.Context, setID int64, path string, data io.Reader, size int64) (*model.Media, error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return nil, fmt.Errorf("create file: %w", err)
@@ -485,7 +551,6 @@ func (s *mediaService) UploadMedia(ctx context.Context, setID, userID int64, fil
 
 	n, err := io.Copy(f, data)
 	if err != nil {
-		os.Remove(path)
 		return nil, fmt.Errorf("write file: %w", err)
 	}
 
@@ -499,16 +564,46 @@ func (s *mediaService) UploadMedia(ctx context.Context, setID, userID int64, fil
 		FileSizeBytes: n,
 		CreatedAt:     now,
 	}
-
 	_ = size
 
 	id, err := s.store.CreateMedia(ctx, media)
 	if err != nil {
-		os.Remove(path)
 		return nil, fmt.Errorf("create media: %w", err)
 	}
 	media.ID = id
 	return media, nil
+}
+
+// probeMedia extracts metadata from the uploaded file.
+func (s *mediaService) probeMedia(ctx context.Context, path string) (*model.Metadata, error) {
+	if s.prober == nil {
+		return &model.Metadata{}, nil
+	}
+	meta, err := s.prober.Probe(ctx, path)
+	if err != nil {
+		return nil, fmt.Errorf("probe media: %w", err)
+	}
+	return meta, nil
+}
+
+// generateThumbnail creates a thumbnail for a video file.
+func (s *mediaService) generateThumbnail(ctx context.Context, media *model.Media, duration float64) error {
+	thumbDir := filepath.Join(filepath.Dir(media.AbsPath), ".thumbnails")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir thumbnails: %w", err)
+	}
+	thumbName := strings.TrimSuffix(filepath.Base(media.AbsPath), filepath.Ext(media.AbsPath)) + ".jpg"
+	thumbnailPath := filepath.Join(thumbDir, thumbName)
+
+	if s.thumbGen == nil {
+		media.ThumbnailPath = thumbnailPath
+		return nil
+	}
+	if err := s.thumbGen.Generate(ctx, media.AbsPath, thumbnailPath, duration); err != nil {
+		return fmt.Errorf("generate thumbnail: %w", err)
+	}
+	media.ThumbnailPath = thumbnailPath
+	return nil
 }
 
 func guessMediaType(name string) model.MediaType {

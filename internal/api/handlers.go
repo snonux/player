@@ -290,7 +290,19 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid set id"})
 		return
 	}
-	_ = r.ParseMultipartForm(int64(s.cfg.MaxUploadSizeMB) << 20)
+
+	maxBytes := int64(s.cfg.MaxUploadSizeMB) << 20
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+	if err := r.ParseMultipartForm(maxBytes); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "file too large"})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid multipart form"})
+		return
+	}
+
 	file, fh, err := r.FormFile("file")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing file"})
@@ -300,6 +312,18 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	media, err := s.mediaSvc.UploadMedia(r.Context(), setID, userIDFromContext(r), fh.Filename, file, fh.Size)
 	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if errors.Is(err, service.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		if errors.Is(err, service.ErrUnsupportedExtension) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

@@ -410,13 +410,18 @@ func TestServer_Upload(t *testing.T) {
 		svcNil   bool
 		svcErr   error
 		noFile   bool
+		large    bool
 		wantCode int
 	}{
-		{"nil service", "1", true, nil, false, http.StatusNotImplemented},
-		{"invalid id", "abc", false, nil, false, http.StatusBadRequest},
-		{"missing file", "1", false, nil, true, http.StatusBadRequest},
-		{"service error", "1", false, errors.New("boom"), false, http.StatusInternalServerError},
-		{"ok", "1", false, nil, false, http.StatusOK},
+		{"nil service", "1", true, nil, false, false, http.StatusNotImplemented},
+		{"invalid id", "abc", false, nil, false, false, http.StatusBadRequest},
+		{"missing file", "1", false, nil, true, false, http.StatusBadRequest},
+		{"file too large", "1", false, nil, false, true, http.StatusRequestEntityTooLarge},
+		{"forbidden", "1", false, service.ErrForbidden, false, false, http.StatusForbidden},
+		{"not found", "1", false, service.ErrNotFound, false, false, http.StatusNotFound},
+		{"unsupported ext", "1", false, service.ErrUnsupportedExtension, false, false, http.StatusBadRequest},
+		{"service error", "1", false, errors.New("boom"), false, false, http.StatusInternalServerError},
+		{"ok", "1", false, nil, false, false, http.StatusOK},
 	}
 
 	for _, tt := range tests {
@@ -436,6 +441,14 @@ func TestServer_Upload(t *testing.T) {
 				w := multipart.NewWriter(&buf)
 				_ = w.Close()
 				req = httptest.NewRequest(http.MethodPost, "/api/sets/"+tt.id+"/upload", &buf)
+				req.Header.Set("Content-Type", w.FormDataContentType())
+			} else if tt.large {
+				var buf bytes.Buffer
+				w := multipart.NewWriter(&buf)
+				part, _ := w.CreateFormFile("file", "big.bin")
+				part.Write(make([]byte, 11*1024*1024))
+				_ = w.Close()
+				req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/sets/%s/upload", tt.id), &buf)
 				req.Header.Set("Content-Type", w.FormDataContentType())
 			} else {
 				req = newUploadRequest(t, tt.id, "test.mp4", "data")

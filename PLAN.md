@@ -261,7 +261,7 @@ CREATE INDEX idx_shares_expires ON shares(expires_at);
 | `GET` | `/api/admin/permissions` | admin | Set permissions matrix |
 | `POST` | `/api/admin/permissions` | admin | Grant set access |
 | `DELETE` | `/api/admin/permissions` | admin | Revoke set access |
-| `POST` | `/api/sets/:id/upload` | session (owner/admin) | Upload file (multipart, max 500MB) |
+| `POST` | `/api/sets/:id/upload` | session (owner/admin) | Upload file (multipart, max 100MB) |
 | `POST` | `/api/media/:id/shares` | session | Create new share link (expires 14d default) |
 | `GET` | `/api/media/:id/shares` | session | List active shares for media |
 | `DELETE` | `/api/shares/:token` | session | Revoke share |
