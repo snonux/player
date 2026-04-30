@@ -62,6 +62,7 @@ export const API = {
   upload: (setId, formData) => api(`/api/sets/${setId}/upload`, { method: 'POST', body: formData }),
   addTag: (id, tag) => api(`/api/media/${id}/tags`, { method: 'POST', body: { tag } }),
   removeTag: (id, tag) => api(`/api/media/${id}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' }),
+  restore: (id) => api(`/api/media/${id}/restore`, { method: 'POST' }),
   trash: () => api('/api/admin/trash'),
   users: () => api('/api/admin/users'),
   createUser: (body) => api('/api/admin/users', { method: 'POST', body }),
