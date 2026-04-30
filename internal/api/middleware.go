@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/paul/kiss-media-player/internal/auth"
 	"github.com/paul/kiss-media-player/internal/model"
@@ -85,7 +86,11 @@ func (mw *Middleware) BootstrapRedirect(next http.Handler) http.Handler {
 
 func isBootstrapPublic(path string) bool {
 	switch path {
-	case "/bootstrap.html", "/api/bootstrap", "/login.html", "/api/login", "/healthz", "/readyz":
+	case "/bootstrap.html", "/api/bootstrap", "/login.html", "/api/login", "/healthz", "/readyz",
+		"/favicon.svg", "/manifest.json", "/sw.js":
+		return true
+	}
+	if strings.HasPrefix(path, "/css/") || strings.HasPrefix(path, "/js/") || strings.HasPrefix(path, "/images/") {
 		return true
 	}
 	return false
