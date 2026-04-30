@@ -1,6 +1,6 @@
 module codeberg.org/snonux/play
 
-go 1.25.0
+go 1.23
 
 require (
 	github.com/magefile/mage v1.17.2
