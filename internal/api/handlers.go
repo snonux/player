@@ -665,7 +665,20 @@ func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	share, err := s.mediaSvc.ValidateShareToken(r.Context(), token)
 	if err != nil || share == nil {
+		if err != nil && errors.Is(err, service.ErrShareExpired) {
+			http.Error(w, "gone", http.StatusGone)
+			return
+		}
 		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Accept")
+
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "text/html") || accept == "" {
+		s.serveFile(w, r, "share.html")
 		return
 	}
 	writeJSON(w, http.StatusOK, share)
@@ -678,6 +691,14 @@ func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	res, err := s.mediaSvc.StreamSharedMedia(r.Context(), token)
 	if err != nil {
+		if errors.Is(err, service.ErrShareExpired) {
+			http.Error(w, "gone", http.StatusGone)
+			return
+		}
+		if errors.Is(err, service.ErrShareNotFound) || errors.Is(err, service.ErrMediaNotFound) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

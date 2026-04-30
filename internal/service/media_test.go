@@ -905,14 +905,17 @@ func TestMediaService_ValidateShareToken(t *testing.T) {
 			}
 			svc := NewMediaService(store, newMockClock(), "/tmp/media")
 			res, err := svc.ValidateShareToken(ctx, "abc")
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
 			if tt.wantValid {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 				if res == nil {
 					t.Fatal("expected valid share")
 				}
 			} else {
+				if err == nil {
+					t.Fatal("expected error for invalid share")
+				}
 				if res != nil {
 					t.Fatal("expected nil share")
 				}

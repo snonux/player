@@ -135,8 +135,8 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 		}
 		svc := NewMediaService(store, newMockClock(), "/tmp/media")
 		sh, err := svc.ValidateShareToken(ctx, "nope")
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
+		if !errors.Is(err, ErrShareNotFound) {
+			t.Fatalf("expected ErrShareNotFound, got %v", err)
 		}
 		if sh != nil {
 			t.Fatalf("expected nil share, got %+v", sh)
@@ -153,8 +153,8 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 		}
 		svc := NewMediaService(store, newMockClock(), "/tmp/media")
 		_, err := svc.StreamSharedMedia(ctx, "nope")
-		if err == nil {
-			t.Fatal("expected error for missing share")
+		if !errors.Is(err, ErrShareNotFound) {
+			t.Fatalf("expected ErrShareNotFound, got %v", err)
 		}
 	})
 

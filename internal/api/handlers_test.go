@@ -43,6 +43,7 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 			"index.html":     "index",
 			"login.html":     "login",
 			"bootstrap.html": "bootstrap",
+			"share.html":     "share",
 		})
 	}
 	return NewServer(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, fs)

@@ -35,8 +35,11 @@ func NewMediaService(store repository.MediaServiceStore, clk clock.Clock, mediaR
 
 // Sentinel errors returned by the media service layer.
 var (
-	ErrNotFound  = errors.New("not found")
-	ErrForbidden = errors.New("access denied")
+	ErrNotFound      = errors.New("not found")
+	ErrForbidden     = errors.New("access denied")
+	ErrShareNotFound = errors.New("share not found")
+	ErrShareExpired  = errors.New("share expired")
+	ErrMediaNotFound = errors.New("media not found")
 )
 
 func (s *mediaService) ListSets(ctx context.Context, userID int64) ([]model.Set, error) {
@@ -510,16 +513,16 @@ func (s *mediaService) ValidateShareToken(ctx context.Context, token string) (*m
 		return nil, fmt.Errorf("get share: %w", err)
 	}
 	if share == nil {
-		return nil, nil
+		return nil, ErrShareNotFound
 	}
 
 	now := s.clock.Now()
 	if now.After(share.ExpiresAt) {
-		return nil, nil
+		return nil, ErrShareExpired
 	}
 
 	if share.MaxUses != nil && share.UsedCount >= *share.MaxUses {
-		return nil, nil
+		return nil, ErrShareExpired
 	}
 
 	return share, nil
@@ -530,16 +533,13 @@ func (s *mediaService) StreamSharedMedia(ctx context.Context, token string) (*Fi
 	if err != nil {
 		return nil, err
 	}
-	if share == nil {
-		return nil, errors.New("invalid or expired share")
-	}
 
 	media, err := s.store.GetMediaByID(ctx, share.MediaID)
 	if err != nil {
 		return nil, fmt.Errorf("get media: %w", err)
 	}
 	if media == nil {
-		return nil, errors.New("media not found")
+		return nil, ErrMediaNotFound
 	}
 
 	_ = s.store.UseShare(ctx, token)

@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -865,80 +866,242 @@ func TestServer_RevokeShare(t *testing.T) {
 
 func TestServer_SharePage(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
+	fs := newTestFS(map[string]string{
+		"index.html":  "index",
+		"login.html":  "login",
+		"share.html":  "<html>share</html>",
+		"bootstrap.html": "bootstrap",
+	})
 
-	tests := []struct {
-		name     string
-		token    string
-		svcNil   bool
-		svcErr   error
-		share    *model.Share
-		wantCode int
-	}{
-		{"nil service", "abc", true, nil, nil, http.StatusNotImplemented},
-		{"error", "abc", false, errors.New("boom"), nil, http.StatusNotFound},
-		{"not found", "abc", false, nil, nil, http.StatusNotFound},
-		{"ok", "abc", false, nil, &model.Share{Token: "abc", MediaID: 1}, http.StatusOK},
-	}
+	t.Run("nil service", func(t *testing.T) {
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, nil, nil, nil, fs)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotImplemented {
+			t.Fatalf("expected %d, got %d", http.StatusNotImplemented, rr.Code)
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var ms service.MediaService
-			if !tt.svcNil {
-				ms = &service.MockMediaService{
-					ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
-						return tt.share, tt.svcErr
-					},
-				}
-			}
-			srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
-			req := httptest.NewRequest(http.MethodGet, "/s/"+tt.token, nil)
-			rr := httptest.NewRecorder()
-			srv.ServeHTTP(rr, req)
-			if rr.Code != tt.wantCode {
-				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
-			}
-		})
-	}
+	t.Run("service error", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+				return nil, errors.New("boom")
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected %d, got %d", http.StatusNotFound, rr.Code)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+				return nil, nil
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected %d, got %d", http.StatusNotFound, rr.Code)
+		}
+	})
+
+	t.Run("expired", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+				return nil, service.ErrShareExpired
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusGone {
+			t.Fatalf("expected %d, got %d", http.StatusGone, rr.Code)
+		}
+	})
+
+	t.Run("html default accept", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+				return &model.Share{Token: "abc", MediaID: 1}, nil
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		ct := rr.Header().Get("Content-Type")
+		if !strings.Contains(ct, "text/html") {
+			t.Fatalf("expected text/html content type, got %q", ct)
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, "<html>") {
+			t.Fatalf("expected share.html body, got %q", body)
+		}
+	})
+
+	t.Run("html explicit accept", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+				return &model.Share{Token: "abc", MediaID: 1}, nil
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
+		req.Header.Set("Accept", "text/html")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		ct := rr.Header().Get("Content-Type")
+		if !strings.Contains(ct, "text/html") {
+			t.Fatalf("expected text/html content type, got %q", ct)
+		}
+	})
+
+	t.Run("json accept", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+				return &model.Share{Token: "abc", MediaID: 1}, nil
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
+		req.Header.Set("Accept", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		ct := rr.Header().Get("Content-Type")
+		if !strings.Contains(ct, "application/json") {
+			t.Fatalf("expected application/json content type, got %q", ct)
+		}
+		var body model.Share
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatalf("expected JSON body: %v", err)
+		}
+		if body.Token != "abc" {
+			t.Fatalf("unexpected token %q", body.Token)
+		}
+	})
 }
 
 func TestServer_ShareStream(t *testing.T) {
 	path := makeTempFile(t, "shared")
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
-	tests := []struct {
-		name     string
-		token    string
-		svcNil   bool
-		svcErr   error
-		res      *service.FileResult
-		wantCode int
-	}{
-		{"nil service", "abc", true, nil, nil, http.StatusNotImplemented},
-		{"service error", "abc", false, errors.New("boom"), nil, http.StatusInternalServerError},
-		{"not found", "abc", false, nil, nil, http.StatusNotFound},
-		{"file missing", "abc", false, nil, &service.FileResult{Path: "/nonexistent", FileName: "a.mp4"}, http.StatusNotFound},
-		{"ok", "abc", false, nil, &service.FileResult{Path: path, FileName: "a.mp4"}, http.StatusOK},
-	}
+	t.Run("nil service", func(t *testing.T) {
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, nil, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotImplemented {
+			t.Fatalf("expected %d, got %d", http.StatusNotImplemented, rr.Code)
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var ms service.MediaService
-			if !tt.svcNil {
-				ms = &service.MockMediaService{
-					StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
-						return tt.res, tt.svcErr
-					},
-				}
-			}
-			srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
-			req := httptest.NewRequest(http.MethodGet, "/s/"+tt.token+"/stream", nil)
-			rr := httptest.NewRecorder()
-			srv.ServeHTTP(rr, req)
-			if rr.Code != tt.wantCode {
-				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
-			}
-		})
-	}
+	t.Run("service error", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
+				return nil, errors.New("boom")
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Fatalf("expected %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
+				return nil, service.ErrShareNotFound
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected %d, got %d", http.StatusNotFound, rr.Code)
+		}
+	})
+
+	t.Run("expired", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
+				return nil, service.ErrShareExpired
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusGone {
+			t.Fatalf("expected %d, got %d", http.StatusGone, rr.Code)
+		}
+	})
+
+	t.Run("media not found", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
+				return nil, service.ErrMediaNotFound
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected %d, got %d", http.StatusNotFound, rr.Code)
+		}
+	})
+
+	t.Run("file missing", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
+				return &service.FileResult{Path: "/nonexistent", FileName: "a.mp4"}, nil
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected %d, got %d", http.StatusNotFound, rr.Code)
+		}
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
+				return &service.FileResult{Path: path, FileName: "a.mp4"}, nil
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
 }
 
 // ------------------------------------------------------------------

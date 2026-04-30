@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shared Media</title>
+<link rel="stylesheet" href="/css/theme.css">
+<style>
+  body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: var(--bg-body);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    padding: 1rem;
+    box-sizing: border-box;
+  }
+  .container {
+    width: 100%;
+    max-width: 720px;
+    text-align: center;
+  }
+  h1 {
+    margin: 0 0 1rem;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+  }
+  .player-wrapper {
+    position: relative;
+    background: var(--player-bg);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+  }
+  video, audio {
+    width: 100%;
+    display: block;
+  }
+  .play-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-overlay);
+    cursor: pointer;
+    transition: opacity var(--transition-base);
+  }
+  .play-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .play-icon {
+    font-size: 3rem;
+    color: var(--text-primary);
+    background: var(--accent-soft);
+    border-radius: 50%;
+    width: 4rem;
+    height: 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  .back-link {
+    margin-top: 1.5rem;
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+  .back-link:hover {
+    color: var(--accent-hover);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Shared Media</h1>
+  <div class="player-wrapper">
+    <video id="player" playsinline preload="metadata" src="./stream"></video>
+    <div id="overlay" class="play-overlay" role="button" aria-label="Play">
+      <div class="play-icon">▶</div>
+    </div>
+  </div>
+  <a class="back-link" href="/">Back to Home</a>
+</div>
+<script>
+  const player = document.getElementById('player');
+  const overlay = document.getElementById('overlay');
+  overlay.addEventListener('click', () => {
+    player.play();
+  });
+  player.addEventListener('play', () => {
+    overlay.classList.add('hidden');
+  });
+  player.addEventListener('pause', () => {
+    overlay.classList.remove('hidden');
+  });
+</script>
+</body>
+</html>
