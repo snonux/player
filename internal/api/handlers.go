@@ -352,10 +352,8 @@ func parseMediaListQuery(q url.Values) repository.MediaFilter {
 		t := model.MediaType(v)
 		filter.Type = &t
 	}
-	if v := q.Get("favorites"); v != "" {
-		if uid, err := strconv.ParseInt(v, 10, 64); err == nil {
-			filter.Favorites = &uid
-		}
+	if v := q.Get("favorites"); v == "true" || v == "1" {
+		filter.Favorites = true
 	}
 	if v := q.Get("tags"); v != "" {
 		filter.Tags = strings.Split(v, ",")
@@ -368,6 +366,16 @@ func parseMediaListQuery(q url.Values) repository.MediaFilter {
 	if v := q.Get("max_duration"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			filter.MaxDuration = &f
+		}
+	}
+	if v := q.Get("filesize_min"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			filter.MinFileSize = &n
+		}
+	}
+	if v := q.Get("filesize_max"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			filter.MaxFileSize = &n
 		}
 	}
 	if v := q.Get("limit"); v != "" {

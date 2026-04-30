@@ -97,9 +97,12 @@ type MediaFilter struct {
 	Type          *model.MediaType
 	Search        string
 	Tags          []string
-	Favorites     *int64 // userID if set
+	Favorites     bool // restrict to current user's favorites
+	UserID        int64
 	MinDuration   *float64
 	MaxDuration   *float64
+	MinFileSize   *int64
+	MaxFileSize   *int64
 	Sort          string // name, date, duration, play_count, random
 	Limit         int
 	Offset        int

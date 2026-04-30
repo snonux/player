@@ -1705,13 +1705,13 @@ func Test_parseMediaListQuery_defaults(t *testing.T) {
 	if got.Search != want.Search || got.Sort != want.Sort || got.Limit != want.Limit || got.Offset != want.Offset {
 		t.Fatalf("unexpected defaults: %+v", got)
 	}
-	if got.SetID != nil || got.Type != nil || got.Favorites != nil || got.MinDuration != nil || got.MaxDuration != nil {
+	if got.SetID != nil || got.Type != nil || got.Favorites != false || got.MinDuration != nil || got.MaxDuration != nil {
 		t.Fatalf("expected nil optional fields, got %+v", got)
 	}
 }
 
 func Test_parseMediaListQuery_allParams(t *testing.T) {
-	q := mustParseQuery(t, "/api/media?search=foo&sort=name&set_id=7&type=video&favorites=3&tags=bar,baz&min_duration=10&max_duration=100&limit=50&offset=10")
+	q := mustParseQuery(t, "/api/media?search=foo&sort=name&set_id=7&type=video&favorites=true&tags=bar,baz&min_duration=10&max_duration=100&limit=50&offset=10")
 	got := parseMediaListQuery(q)
 	if got.Search != "foo" {
 		t.Fatalf("unexpected search: %q", got.Search)
@@ -1725,7 +1725,7 @@ func Test_parseMediaListQuery_allParams(t *testing.T) {
 	if got.Type == nil || *got.Type != "video" {
 		t.Fatalf("unexpected type: %v", got.Type)
 	}
-	if got.Favorites == nil || *got.Favorites != 3 {
+	if got.Favorites != true {
 		t.Fatalf("unexpected favorites: %v", got.Favorites)
 	}
 	if len(got.Tags) != 2 || got.Tags[0] != "bar" || got.Tags[1] != "baz" {
@@ -1786,7 +1786,7 @@ func Test_parseMediaListQuery_limitClampingAndNegativeOffset(t *testing.T) {
 			if tt.invalidKey == "set_id" && got.SetID != nil {
 				t.Fatalf("expected set_id nil for bad value, got %v", got.SetID)
 			}
-			if tt.invalidKey == "favorites" && got.Favorites != nil {
+			if tt.invalidKey == "favorites" && got.Favorites != false {
 				t.Fatalf("expected favorites nil for bad value, got %v", got.Favorites)
 			}
 			if tt.invalidKey == "min_duration" && got.MinDuration != nil {

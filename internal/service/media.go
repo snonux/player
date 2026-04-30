@@ -158,6 +158,7 @@ func (s *mediaService) ListMedia(ctx context.Context, userID int64, filter repos
 	}
 
 	if user != nil && user.IsAdmin {
+		filter.UserID = userID
 		return s.store.ListMedia(ctx, filter)
 	}
 
@@ -171,6 +172,7 @@ func (s *mediaService) ListMedia(ctx context.Context, userID int64, filter repos
 		allowed = append(allowed, p.SetID)
 	}
 	filter.AllowedSetIDs = allowed
+	filter.UserID = userID
 	return s.store.ListMedia(ctx, filter)
 }
 

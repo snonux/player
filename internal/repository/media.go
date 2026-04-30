@@ -134,9 +134,9 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 		like := "%" + term + "%"
 		args = append(args, like, like)
 	}
-	if filter.Favorites != nil {
+	if filter.Favorites {
 		joins += ` INNER JOIN favorites f ON f.media_id = media.id AND f.user_id = ?`
-		args = append(args, *filter.Favorites)
+		args = append(args, filter.UserID)
 	}
 	if len(filter.Tags) > 0 {
 		joins += ` INNER JOIN media_tags mt ON mt.media_id = media.id INNER JOIN tags t ON t.id = mt.tag_id`

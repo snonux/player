@@ -577,8 +577,8 @@ func TestServer_MediaList(t *testing.T) {
 		},
 		{
 			name:       "with query params",
-			query:      "?set_id=1&type=video&search=foo&tags=bar,baz&favorites=2&min_duration=10&max_duration=100&sort=name&limit=5&offset=10",
-			filter:     repository.MediaFilter{SetID: intPtr(1), Type: (*model.MediaType)(func() *string { s := "video"; return &s }()), Search: "foo", Tags: []string{"bar", "baz"}, Favorites: intPtr(2), MinDuration: floatPtr(10), MaxDuration: floatPtr(100), Sort: "name", Limit: 5, Offset: 10},
+			query: "?set_id=1&type=video&search=foo&tags=bar,baz&favorites=true&min_duration=10&max_duration=100&sort=name&limit=5&offset=10",
+			filter: repository.MediaFilter{SetID: intPtr(1), Type: (*model.MediaType)(func() *string { s := "video"; return &s }()), Search: "foo", Tags: []string{"bar", "baz"}, Favorites: true, MinDuration: floatPtr(10), MaxDuration: floatPtr(100), Sort: "name", Limit: 5, Offset: 10},
 			listResult: []model.Media{},
 			wantCode:   http.StatusOK,
 		},
