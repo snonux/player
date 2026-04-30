@@ -130,7 +130,7 @@ func TestMockAdminService_WithFuncs(t *testing.T) {
 		ListUsersFunc:        func(ctx context.Context) ([]model.User, error) { return nil, nil },
 		CreateUserFunc:       func(ctx context.Context, username, password string, isAdmin bool) (*model.User, error) { return nil, nil },
 		DeleteUserFunc:       func(ctx context.Context, id int64) error { return nil },
-		ListPermissionsFunc:  func(ctx context.Context) ([]model.SetPermission, error) { return nil, nil },
+		ListPermissionsFunc:  func(ctx context.Context) (*PermissionsMatrix, error) { return nil, nil },
 		GrantPermissionFunc:  func(ctx context.Context, setID, userID int64, role model.Role) error { return nil },
 		RevokePermissionFunc: func(ctx context.Context, setID, userID int64) error { return nil },
 	}

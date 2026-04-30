@@ -1583,7 +1583,7 @@ func TestServer_AdminListPermissions(t *testing.T) {
 			var as service.AdminService
 			if !tt.svcNil {
 				as = &service.MockAdminService{
-					ListPermissionsFunc: func(ctx context.Context) ([]model.SetPermission, error) { return nil, tt.svcErr },
+					ListPermissionsFunc: func(ctx context.Context) (*service.PermissionsMatrix, error) { return nil, tt.svcErr },
 				}
 			}
 			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)

@@ -1148,7 +1148,7 @@ func TestServer_AdminRoutes(t *testing.T) {
 			return &model.User{ID: 2, Username: username, IsAdmin: isAdmin}, nil
 		},
 		DeleteUserFunc:       func(ctx context.Context, id int64) error { return nil },
-		ListPermissionsFunc:  func(ctx context.Context) ([]model.SetPermission, error) { return nil, nil },
+		ListPermissionsFunc:  func(ctx context.Context) (*service.PermissionsMatrix, error) { return nil, nil },
 		GrantPermissionFunc:  func(ctx context.Context, setID, userID int64, role model.Role) error { return nil },
 		RevokePermissionFunc: func(ctx context.Context, setID, userID int64) error { return nil },
 	}

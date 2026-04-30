@@ -43,7 +43,7 @@ type AdminService interface {
 	ListUsers(ctx context.Context) ([]model.User, error)
 	CreateUser(ctx context.Context, username, password string, isAdmin bool) (*model.User, error)
 	DeleteUser(ctx context.Context, id int64) error
-	ListPermissions(ctx context.Context) ([]model.SetPermission, error)
+	ListPermissions(ctx context.Context) (*PermissionsMatrix, error)
 	GrantPermission(ctx context.Context, setID, userID int64, role model.Role) error
 	RevokePermission(ctx context.Context, setID, userID int64) error
 }
@@ -51,6 +51,13 @@ type AdminService interface {
 // ProgressService handles playback progress updates.
 type ProgressService interface {
 	UpdateProgress(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error
+}
+
+// PermissionsMatrix is the shape returned by ListPermissions.
+type PermissionsMatrix struct {
+	Sets        []model.Set         `json:"sets"`
+	Users       []model.User        `json:"users"`
+	Permissions []model.SetPermission `json:"permissions"`
 }
 
 // FileResult contains info for serving a file.

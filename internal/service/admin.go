@@ -74,10 +74,15 @@ func (s *adminService) DeleteUser(ctx context.Context, id int64) error {
 	return s.store.DeleteUser(ctx, id)
 }
 
-func (s *adminService) ListPermissions(ctx context.Context) ([]model.SetPermission, error) {
+func (s *adminService) ListPermissions(ctx context.Context) (*PermissionsMatrix, error) {
 	sets, err := s.store.ListSets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list sets: %w", err)
+	}
+
+	users, err := s.store.ListUsers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
 	}
 
 	var perms []model.SetPermission
@@ -89,7 +94,11 @@ func (s *adminService) ListPermissions(ctx context.Context) ([]model.SetPermissi
 		perms = append(perms, setPerms...)
 	}
 
-	return perms, nil
+	return &PermissionsMatrix{
+		Sets:        sets,
+		Users:       users,
+		Permissions: perms,
+	}, nil
 }
 
 func (s *adminService) GrantPermission(ctx context.Context, setID, userID int64, role model.Role) error {

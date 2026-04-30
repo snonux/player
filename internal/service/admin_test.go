@@ -205,8 +205,11 @@ func TestAdminService_ListPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(perms) != 2 {
-		t.Fatalf("expected 2 permissions, got %d", len(perms))
+	if perms == nil || len(perms.Permissions) != 2 {
+		t.Fatalf("expected 2 permissions, got %+v", perms)
+	}
+	if len(perms.Sets) != 2 {
+		t.Fatalf("expected 2 sets, got %d", len(perms.Sets))
 	}
 }
 
