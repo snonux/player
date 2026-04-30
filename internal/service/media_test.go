@@ -144,7 +144,7 @@ func TestMediaService_GetMediaDetail(t *testing.T) {
 			name:     "ok",
 			mediaID:  1,
 			userID:   1,
-			media:    &model.Media{ID: 1, FileName: "a.mp4"},
+			media:    &model.Media{ID: 1, SetID: 1, FileName: "a.mp4"},
 			tags:     []model.Tag{{ID: 1, Name: "rock"}},
 			fav:      true,
 			note:     &model.Note{MediaID: 1, UserID: 1, Content: "hello"},
@@ -154,7 +154,7 @@ func TestMediaService_GetMediaDetail(t *testing.T) {
 			name:    "not found",
 			mediaID: 2,
 			media:   nil,
-			wantNil: true,
+			wantErr: true,
 		},
 		{
 			name:     "media error",
@@ -165,14 +165,14 @@ func TestMediaService_GetMediaDetail(t *testing.T) {
 		{
 			name:    "tags error",
 			mediaID: 1,
-			media:   &model.Media{ID: 1},
+			media:   &model.Media{ID: 1, SetID: 1},
 			tagsErr: errors.New("boom"),
 			wantErr: true,
 		},
 		{
 			name:    "favorite error",
 			mediaID: 1,
-			media:   &model.Media{ID: 1},
+			media:   &model.Media{ID: 1, SetID: 1},
 			favErr:  errors.New("boom"),
 			wantErr: true,
 		},
@@ -184,6 +184,16 @@ func TestMediaService_GetMediaDetail(t *testing.T) {
 				MediaRepo: repository.MockMediaRepo{
 					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
 						return tt.media, tt.mediaErr
+					},
+				},
+				UserRepo: repository.MockUserRepo{
+					GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+						return &model.User{ID: id, IsAdmin: true}, nil
+					},
+				},
+				SetRepo: repository.MockSetRepo{
+					GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+						return &model.Set{ID: id}, nil
 					},
 				},
 				TagRepo: repository.MockTagRepo{
@@ -478,6 +488,21 @@ func TestMediaService_DownloadMedia_Access(t *testing.T) {
 func TestMediaService_ToggleFavorite(t *testing.T) {
 	ctx := context.Background()
 	store := &repository.MockStore{
+		MediaRepo: repository.MockMediaRepo{
+			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+				return &model.Media{ID: 1, SetID: 1}, nil
+			},
+		},
+		UserRepo: repository.MockUserRepo{
+			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+				return &model.User{ID: id, IsAdmin: true}, nil
+			},
+		},
+		SetRepo: repository.MockSetRepo{
+			GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+				return &model.Set{ID: id}, nil
+			},
+		},
 		FavoriteRepo: repository.MockFavoriteRepo{
 			ToggleFavoriteFunc: func(ctx context.Context, userID, mediaID int64) (bool, error) {
 				return true, nil
@@ -530,6 +555,21 @@ func TestMediaService_AssignTag(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var created bool
 			store := &repository.MockStore{
+				MediaRepo: repository.MockMediaRepo{
+					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+						return &model.Media{ID: 1, SetID: 1}, nil
+					},
+				},
+				UserRepo: repository.MockUserRepo{
+					GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+						return &model.User{ID: id, IsAdmin: true}, nil
+					},
+				},
+				SetRepo: repository.MockSetRepo{
+					GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+						return &model.Set{ID: id}, nil
+					},
+				},
 				TagRepo: repository.MockTagRepo{
 					GetTagByNameFunc: func(ctx context.Context, name string) (*model.Tag, error) {
 						if tt.tagExists {
@@ -593,6 +633,21 @@ func TestMediaService_RemoveTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &repository.MockStore{
+				MediaRepo: repository.MockMediaRepo{
+					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+						return &model.Media{ID: 1, SetID: 1}, nil
+					},
+				},
+				UserRepo: repository.MockUserRepo{
+					GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+						return &model.User{ID: id, IsAdmin: true}, nil
+					},
+				},
+				SetRepo: repository.MockSetRepo{
+					GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+						return &model.Set{ID: id}, nil
+					},
+				},
 				TagRepo: repository.MockTagRepo{
 					GetTagByNameFunc: func(ctx context.Context, name string) (*model.Tag, error) {
 						if tt.tagExists {
@@ -636,6 +691,11 @@ func TestMediaService_SoftDeleteMedia(t *testing.T) {
 				return &model.User{ID: 1, IsAdmin: true}, nil
 			},
 		},
+		SetRepo: repository.MockSetRepo{
+			GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+				return &model.Set{ID: id}, nil
+			},
+		},
 	}
 	svc := NewMediaService(store, newMockClock(), "/tmp/media")
 	if err := svc.SoftDeleteMedia(ctx, 1, 1); err != nil {
@@ -648,9 +708,22 @@ func TestMediaService_RestoreMedia(t *testing.T) {
 	var called bool
 	store := &repository.MockStore{
 		MediaRepo: repository.MockMediaRepo{
+			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+				return &model.Media{ID: 1, SetID: 1}, nil
+			},
 			RestoreMediaFunc: func(ctx context.Context, id int64) error {
 				called = true
 				return nil
+			},
+		},
+		UserRepo: repository.MockUserRepo{
+			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+				return &model.User{ID: 1, IsAdmin: true}, nil
+			},
+		},
+		SetRepo: repository.MockSetRepo{
+			GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+				return &model.Set{ID: id}, nil
 			},
 		},
 	}
@@ -719,6 +792,16 @@ func TestMediaService_UploadMedia(t *testing.T) {
 							return nil, nil
 						}
 						return &model.Set{ID: 1, RootPath: "music"}, tt.setErr
+					},
+				},
+				UserRepo: repository.MockUserRepo{
+					GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+						return &model.User{ID: id, IsAdmin: true}, nil
+					},
+				},
+				SetPermissionRepo: repository.MockSetPermissionRepo{
+					GetPermissionFunc: func(ctx context.Context, setID, userID int64) (*model.SetPermission, error) {
+						return &model.SetPermission{SetID: setID, UserID: userID, Role: model.RoleOwner}, nil
 					},
 				},
 				MediaRepo: repository.MockMediaRepo{
@@ -921,6 +1004,21 @@ func TestMediaService_Notes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &repository.MockStore{
+				MediaRepo: repository.MockMediaRepo{
+					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+						return &model.Media{ID: 1, SetID: 1}, nil
+					},
+				},
+				UserRepo: repository.MockUserRepo{
+					GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+						return &model.User{ID: id, IsAdmin: true}, nil
+					},
+				},
+				SetRepo: repository.MockSetRepo{
+					GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+						return &model.Set{ID: id}, nil
+					},
+				},
 				NoteRepo: repository.MockNoteRepo{
 					GetNoteFunc: func(ctx context.Context, mediaID, userID int64) (*model.Note, error) {
 						return &model.Note{MediaID: mediaID, UserID: userID, Content: "hello"}, tt.noteErr
@@ -958,4 +1056,380 @@ func TestMediaService_Notes(t *testing.T) {
 
 func intPtr(i int) *int {
 	return &i
+}
+
+func TestMediaService_ViewerCannotMutate(t *testing.T) {
+	ctx := context.Background()
+
+	makeViewerStore := func(mediaID, setID int64) *repository.MockStore {
+		return &repository.MockStore{
+			MediaRepo: repository.MockMediaRepo{
+				GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+					if id == mediaID {
+						return &model.Media{ID: mediaID, SetID: setID}, nil
+					}
+					return nil, nil
+				},
+				SoftDeleteMediaFunc: func(ctx context.Context, id int64) error { return nil },
+				RestoreMediaFunc:     func(ctx context.Context, id int64) error { return nil },
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: id, Permissions: []model.SetPermission{{SetID: setID, UserID: 2, Role: model.RoleViewer}}}, nil
+				},
+			},
+		}
+	}
+
+	t.Run("viewer cannot soft delete", func(t *testing.T) {
+		store := makeViewerStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		err := svc.SoftDeleteMedia(ctx, 1, 2)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("viewer cannot restore", func(t *testing.T) {
+		store := makeViewerStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		err := svc.RestoreMedia(ctx, 1, 2)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("viewer cannot upload", func(t *testing.T) {
+		store := &repository.MockStore{
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: 1, RootPath: "music", Permissions: []model.SetPermission{{SetID: 1, UserID: 2, Role: model.RoleViewer}}}, nil
+				},
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+		}
+		svc := NewMediaService(store, newMockClock(), t.TempDir())
+		_, err := svc.UploadMedia(ctx, 1, 2, "song.mp3", strings.NewReader("data"), 4)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("viewer cannot regenerate thumbnail", func(t *testing.T) {
+		store := makeViewerStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		err := svc.RegenerateThumbnail(ctx, 1, 2)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("viewer cannot regenerate set cover", func(t *testing.T) {
+		store := &repository.MockStore{
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: 1, Permissions: []model.SetPermission{{SetID: 1, UserID: 2, Role: model.RoleViewer}}}, nil
+				},
+			},
+		}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		err := svc.RegenerateSetCover(ctx, 1, 2)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+}
+
+func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
+	ctx := context.Background()
+
+	makeUnauthorizedStore := func(mediaID, setID int64) *repository.MockStore {
+		return &repository.MockStore{
+			MediaRepo: repository.MockMediaRepo{
+				GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+					if id == mediaID {
+						return &model.Media{ID: mediaID, SetID: setID}, nil
+					}
+					return nil, nil
+				},
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: id, Permissions: []model.SetPermission{}}, nil
+				},
+			},
+			SetPermissionRepo: repository.MockSetPermissionRepo{
+				GetPermissionFunc: func(ctx context.Context, setID, userID int64) (*model.SetPermission, error) {
+					return nil, nil
+				},
+			},
+		}
+	}
+
+	t.Run("unauthorized cannot get detail", func(t *testing.T) {
+		store := makeUnauthorizedStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		_, err := svc.GetMediaDetail(ctx, 1, 9)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("unauthorized cannot list media in set", func(t *testing.T) {
+		store := &repository.MockStore{
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			SetPermissionRepo: repository.MockSetPermissionRepo{
+				ListPermissionsByUserFunc: func(ctx context.Context, userID int64) ([]model.SetPermission, error) {
+					return nil, nil
+				},
+			},
+			MediaRepo: repository.MockMediaRepo{
+				ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+					return nil, nil
+				},
+			},
+		}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		res, err := svc.ListMedia(ctx, 9, repository.MediaFilter{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res) != 0 {
+			t.Fatalf("expected empty list, got %d", len(res))
+		}
+	})
+
+	t.Run("unauthorized cannot favorite", func(t *testing.T) {
+		store := makeUnauthorizedStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		_, err := svc.ToggleFavorite(ctx, 9, 1)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("unauthorized cannot assign tag", func(t *testing.T) {
+		store := makeUnauthorizedStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		err := svc.AssignTag(ctx, 1, 9, "rock")
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("unauthorized cannot remove tag", func(t *testing.T) {
+		store := makeUnauthorizedStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		err := svc.RemoveTag(ctx, 1, 9, "rock")
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("unauthorized cannot get note", func(t *testing.T) {
+		store := makeUnauthorizedStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		_, err := svc.GetNote(ctx, 1, 9)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("unauthorized cannot upsert note", func(t *testing.T) {
+		store := makeUnauthorizedStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		err := svc.UpsertNote(ctx, &model.Note{MediaID: 1, UserID: 9, Content: "hello"})
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("unauthorized cannot delete note", func(t *testing.T) {
+		store := makeUnauthorizedStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		err := svc.DeleteNote(ctx, 1, 9)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("unauthorized cannot create share", func(t *testing.T) {
+		store := makeUnauthorizedStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		_, err := svc.CreateShare(ctx, 9, 1, time.Now().Add(time.Hour))
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("unauthorized cannot list shares", func(t *testing.T) {
+		store := makeUnauthorizedStore(1, 1)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		_, err := svc.ListShares(ctx, 1, 9)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("owner can soft delete", func(t *testing.T) {
+		store := &repository.MockStore{
+			MediaRepo: repository.MockMediaRepo{
+				GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+					return &model.Media{ID: 1, SetID: 1}, nil
+				},
+				SoftDeleteMediaFunc: func(ctx context.Context, id int64) error { return nil },
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: 1, Permissions: []model.SetPermission{{SetID: 1, UserID: 2, Role: model.RoleOwner}}}, nil
+				},
+			},
+		}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		err := svc.SoftDeleteMedia(ctx, 1, 2)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("owner can restore", func(t *testing.T) {
+		store := &repository.MockStore{
+			MediaRepo: repository.MockMediaRepo{
+				GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+					return &model.Media{ID: 1, SetID: 1}, nil
+				},
+				RestoreMediaFunc: func(ctx context.Context, id int64) error { return nil },
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: 1, Permissions: []model.SetPermission{{SetID: 1, UserID: 2, Role: model.RoleOwner}}}, nil
+				},
+			},
+		}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		err := svc.RestoreMedia(ctx, 1, 2)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("owner can upload", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		store := &repository.MockStore{
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: 1, RootPath: "music", Permissions: []model.SetPermission{{SetID: 1, UserID: 2, Role: model.RoleOwner}}}, nil
+				},
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			MediaRepo: repository.MockMediaRepo{
+				CreateMediaFunc: func(ctx context.Context, media *model.Media) (int64, error) {
+					return 1, nil
+				},
+			},
+		}
+		svc := NewMediaService(store, newMockClock(), tmpDir)
+		media, err := svc.UploadMedia(ctx, 1, 2, "song.mp3", strings.NewReader("data"), 4)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if media == nil {
+			t.Fatal("expected media")
+		}
+	})
+}
+
+func TestMediaService_ListMedia_AdminAndUserFiltering(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("admin sees all", func(t *testing.T) {
+		store := &repository.MockStore{
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: true}, nil
+				},
+			},
+			MediaRepo: repository.MockMediaRepo{
+				ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+					return []model.Media{{ID: 1}, {ID: 2}}, nil
+				},
+			},
+		}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		res, err := svc.ListMedia(ctx, 1, repository.MediaFilter{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res) != 2 {
+			t.Fatalf("expected 2, got %d", len(res))
+		}
+	})
+
+	t.Run("user sees only allowed sets", func(t *testing.T) {
+		store := &repository.MockStore{
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			SetPermissionRepo: repository.MockSetPermissionRepo{
+				ListPermissionsByUserFunc: func(ctx context.Context, userID int64) ([]model.SetPermission, error) {
+					return []model.SetPermission{{SetID: 3, UserID: userID, Role: model.RoleViewer}}, nil
+				},
+			},
+			MediaRepo: repository.MockMediaRepo{
+				ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+					if len(filter.AllowedSetIDs) == 1 && filter.AllowedSetIDs[0] == 3 {
+						return []model.Media{{ID: 5}}, nil
+					}
+					return nil, nil
+				},
+			},
+		}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		res, err := svc.ListMedia(ctx, 2, repository.MediaFilter{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res) != 1 || res[0].ID != 5 {
+			t.Fatalf("unexpected result: %+v", res)
+		}
+	})
 }

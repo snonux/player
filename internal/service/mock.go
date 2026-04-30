@@ -14,7 +14,7 @@ import (
 type MockMediaService struct {
 	ListSetsFunc            func(ctx context.Context, userID int64) ([]model.Set, error)
 	GetMediaDetailFunc      func(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
-	ListMediaFunc           func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error)
+	ListMediaFunc           func(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error)
 	StreamMediaFunc         func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	DownloadMediaFunc       func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	GetThumbnailFunc        func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
@@ -48,9 +48,9 @@ func (m *MockMediaService) GetMediaDetail(ctx context.Context, mediaID, userID i
 	}
 	return nil, nil
 }
-func (m *MockMediaService) ListMedia(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+func (m *MockMediaService) ListMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error) {
 	if m.ListMediaFunc != nil {
-		return m.ListMediaFunc(ctx, filter)
+		return m.ListMediaFunc(ctx, userID, filter)
 	}
 	return nil, nil
 }

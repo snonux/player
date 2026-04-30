@@ -14,7 +14,7 @@ import (
 type MediaService interface {
 	ListSets(ctx context.Context, userID int64) ([]model.Set, error)
 	GetMediaDetail(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
-	ListMedia(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error)
+	ListMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error)
 	StreamMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	DownloadMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	GetThumbnail(ctx context.Context, mediaID, userID int64) (*FileResult, error)

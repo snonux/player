@@ -22,8 +22,8 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 		}
 		svc := NewMediaService(store, newMockClock(), "/tmp/media")
 		detail, err := svc.GetMediaDetail(ctx, 99, 1)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected ErrNotFound, got %v", err)
 		}
 		if detail != nil {
 			t.Fatalf("expected nil detail, got %+v", detail)
@@ -32,6 +32,21 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 
 	t.Run("GetNote nil", func(t *testing.T) {
 		store := &repository.MockStore{
+			MediaRepo: repository.MockMediaRepo{
+				GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+					return &model.Media{ID: 1, SetID: 1}, nil
+				},
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: true}, nil
+				},
+			},
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: id}, nil
+				},
+			},
 			NoteRepo: repository.MockNoteRepo{
 				GetNoteFunc: func(ctx context.Context, mediaID, userID int64) (*model.Note, error) {
 					return nil, nil
@@ -50,6 +65,21 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 
 	t.Run("AssignTag creates missing tag", func(t *testing.T) {
 		store := &repository.MockStore{
+			MediaRepo: repository.MockMediaRepo{
+				GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+					return &model.Media{ID: 1, SetID: 1}, nil
+				},
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: true}, nil
+				},
+			},
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: id}, nil
+				},
+			},
 			TagRepo: repository.MockTagRepo{
 				GetTagByNameFunc: func(ctx context.Context, name string) (*model.Tag, error) {
 					return nil, nil

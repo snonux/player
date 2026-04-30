@@ -587,7 +587,7 @@ func TestServer_MediaList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotFilter repository.MediaFilter
 			ms := &service.MockMediaService{
-				ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+				ListMediaFunc: func(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error) {
 					gotFilter = filter
 					return tt.listResult, tt.listErr
 				},
@@ -779,6 +779,46 @@ func TestServer_Restore(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+func TestServer_SoftDelete_Forbidden(t *testing.T) {
+	ms := &service.MockMediaService{
+		SoftDeleteMediaFunc: func(ctx context.Context, mediaID, userID int64) error {
+			return service.ErrForbidden
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/99", nil)
+	req.AddCookie(addSessionCookie(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected %d, got %d", http.StatusForbidden, rr.Code)
+	}
+}
+
+func TestServer_Restore_Forbidden(t *testing.T) {
+	ms := &service.MockMediaService{
+		RestoreMediaFunc: func(ctx context.Context, mediaID, userID int64) error {
+			return service.ErrForbidden
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/media/99/restore", nil)
+	req.AddCookie(addSessionCookie(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected %d, got %d", http.StatusForbidden, rr.Code)
 	}
 }
 

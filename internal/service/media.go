@@ -82,12 +82,9 @@ func (s *mediaService) ListSets(ctx context.Context, userID int64) ([]model.Set,
 }
 
 func (s *mediaService) GetMediaDetail(ctx context.Context, mediaID, userID int64) (*MediaDetail, error) {
-	media, err := s.store.GetMediaByID(ctx, mediaID)
+	media, err := s.verifyAccess(ctx, mediaID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get media: %w", err)
-	}
-	if media == nil {
-		return nil, nil
+		return nil, err
 	}
 
 	tags, err := s.store.ListTagsByMedia(ctx, mediaID)
@@ -119,7 +116,26 @@ func (s *mediaService) GetMediaDetail(ctx context.Context, mediaID, userID int64
 	}, nil
 }
 
-func (s *mediaService) ListMedia(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+func (s *mediaService) ListMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error) {
+	user, err := s.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+
+	if user != nil && user.IsAdmin {
+		return s.store.ListMedia(ctx, filter)
+	}
+
+	perms, err := s.store.ListPermissionsByUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list permissions: %w", err)
+	}
+
+	allowed := make([]int64, 0, len(perms))
+	for _, p := range perms {
+		allowed = append(allowed, p.SetID)
+	}
+	filter.AllowedSetIDs = allowed
 	return s.store.ListMedia(ctx, filter)
 }
 
@@ -165,6 +181,77 @@ func (s *mediaService) verifyAccess(ctx context.Context, mediaID, userID int64) 
 	return nil, ErrForbidden
 }
 
+// verifyModifyAccess checks that the user has access to the media and is an owner or admin.
+func (s *mediaService) verifyModifyAccess(ctx context.Context, mediaID, userID int64) (*model.Media, error) {
+	media, err := s.verifyAccess(ctx, mediaID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := s.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+	if user != nil && user.IsAdmin {
+		return media, nil
+	}
+
+	perm, err := s.store.GetPermission(ctx, media.SetID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get permission: %w", err)
+	}
+	if perm != nil && perm.Role == model.RoleOwner {
+		return media, nil
+	}
+
+	set, err := s.store.GetSetByID(ctx, media.SetID)
+	if err != nil {
+		return nil, fmt.Errorf("get set: %w", err)
+	}
+	if set != nil {
+		for _, p := range set.Permissions {
+			if p.UserID == userID && p.Role == model.RoleOwner {
+				return media, nil
+			}
+		}
+	}
+
+	return nil, ErrForbidden
+}
+
+// verifySetModifyAccess checks that the user is an owner or admin for a set.
+func (s *mediaService) verifySetModifyAccess(ctx context.Context, setID, userID int64) error {
+	user, err := s.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+	if user != nil && user.IsAdmin {
+		return nil
+	}
+
+	perm, err := s.store.GetPermission(ctx, setID, userID)
+	if err != nil {
+		return fmt.Errorf("get permission: %w", err)
+	}
+	if perm != nil && perm.Role == model.RoleOwner {
+		return nil
+	}
+
+	set, err := s.store.GetSetByID(ctx, setID)
+	if err != nil {
+		return fmt.Errorf("get set: %w", err)
+	}
+	if set != nil {
+		for _, p := range set.Permissions {
+			if p.UserID == userID && p.Role == model.RoleOwner {
+				return nil
+			}
+		}
+	}
+
+	return ErrForbidden
+}
+
 func (s *mediaService) StreamMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error) {
 	media, err := s.verifyAccess(ctx, mediaID, userID)
 	if err != nil {
@@ -201,18 +288,31 @@ func (s *mediaService) GetThumbnail(ctx context.Context, mediaID, userID int64) 
 }
 
 func (s *mediaService) RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error {
+	_, err := s.verifyModifyAccess(ctx, mediaID, userID)
+	if err != nil {
+		return err
+	}
 	return errors.New("not implemented")
 }
 
 func (s *mediaService) RegenerateSetCover(ctx context.Context, setID, userID int64) error {
+	if err := s.verifySetModifyAccess(ctx, setID, userID); err != nil {
+		return err
+	}
 	return errors.New("not implemented")
 }
 
 func (s *mediaService) ToggleFavorite(ctx context.Context, userID, mediaID int64) (bool, error) {
+	if _, err := s.verifyAccess(ctx, mediaID, userID); err != nil {
+		return false, err
+	}
 	return s.store.ToggleFavorite(ctx, userID, mediaID)
 }
 
 func (s *mediaService) AssignTag(ctx context.Context, mediaID, userID int64, tagName string) error {
+	if _, err := s.verifyAccess(ctx, mediaID, userID); err != nil {
+		return err
+	}
 	tag, err := s.store.GetTagByName(ctx, tagName)
 	if err != nil {
 		return fmt.Errorf("get tag: %w", err)
@@ -228,6 +328,9 @@ func (s *mediaService) AssignTag(ctx context.Context, mediaID, userID int64, tag
 }
 
 func (s *mediaService) RemoveTag(ctx context.Context, mediaID, userID int64, tagName string) error {
+	if _, err := s.verifyAccess(ctx, mediaID, userID); err != nil {
+		return err
+	}
 	tag, err := s.store.GetTagByName(ctx, tagName)
 	if err != nil {
 		return fmt.Errorf("get tag: %w", err)
@@ -239,7 +342,7 @@ func (s *mediaService) RemoveTag(ctx context.Context, mediaID, userID int64, tag
 }
 
 func (s *mediaService) SoftDeleteMedia(ctx context.Context, mediaID, userID int64) error {
-	_, err := s.verifyAccess(ctx, mediaID, userID)
+	_, err := s.verifyModifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return err
 	}
@@ -247,6 +350,10 @@ func (s *mediaService) SoftDeleteMedia(ctx context.Context, mediaID, userID int6
 }
 
 func (s *mediaService) RestoreMedia(ctx context.Context, mediaID, userID int64) error {
+	_, err := s.verifyModifyAccess(ctx, mediaID, userID)
+	if err != nil {
+		return err
+	}
 	return s.store.RestoreMedia(ctx, mediaID)
 }
 
@@ -278,6 +385,10 @@ func (s *mediaService) UploadMedia(ctx context.Context, setID, userID int64, fil
 	}
 	if set == nil {
 		return nil, errors.New("set not found")
+	}
+
+	if err := s.verifySetModifyAccess(ctx, setID, userID); err != nil {
+		return nil, err
 	}
 
 	dir := filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath))
@@ -441,14 +552,23 @@ func (s *mediaService) StreamSharedMedia(ctx context.Context, token string) (*Fi
 }
 
 func (s *mediaService) GetNote(ctx context.Context, mediaID, userID int64) (*model.Note, error) {
+	if _, err := s.verifyAccess(ctx, mediaID, userID); err != nil {
+		return nil, err
+	}
 	return s.store.GetNote(ctx, mediaID, userID)
 }
 
 func (s *mediaService) UpsertNote(ctx context.Context, note *model.Note) error {
+	if _, err := s.verifyAccess(ctx, note.MediaID, note.UserID); err != nil {
+		return err
+	}
 	note.UpdatedAt = s.clock.Now()
 	return s.store.UpsertNote(ctx, note)
 }
 
 func (s *mediaService) DeleteNote(ctx context.Context, mediaID, userID int64) error {
+	if _, err := s.verifyAccess(ctx, mediaID, userID); err != nil {
+		return err
+	}
 	return s.store.DeleteNote(ctx, mediaID, userID)
 }

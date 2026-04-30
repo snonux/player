@@ -356,7 +356,7 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter := parseMediaListQuery(r.URL.Query())
-	media, err := s.mediaSvc.ListMedia(r.Context(), filter)
+	media, err := s.mediaSvc.ListMedia(r.Context(), userIDFromContext(r), filter)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -452,6 +452,14 @@ func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.mediaSvc.SoftDeleteMedia(r.Context(), id, userIDFromContext(r)); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if errors.Is(err, service.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -468,6 +476,14 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.mediaSvc.RestoreMedia(r.Context(), id, userIDFromContext(r)); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if errors.Is(err, service.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

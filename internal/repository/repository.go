@@ -92,16 +92,17 @@ type SetPermissionRepo interface {
 
 // MediaFilter defines query parameters for listing media.
 type MediaFilter struct {
-	SetID       *int64
-	Type        *model.MediaType
-	Search      string
-	Tags        []string
-	Favorites   *int64 // userID if set
-	MinDuration *float64
-	MaxDuration *float64
-	Sort        string // name, date, duration, play_count, random
-	Limit       int
-	Offset      int
+	SetID         *int64
+	AllowedSetIDs []int64
+	Type          *model.MediaType
+	Search        string
+	Tags          []string
+	Favorites     *int64 // userID if set
+	MinDuration   *float64
+	MaxDuration   *float64
+	Sort          string // name, date, duration, play_count, random
+	Limit         int
+	Offset        int
 }
 
 // MediaRepo manages media items.
