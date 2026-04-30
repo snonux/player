@@ -705,17 +705,28 @@ func TestServer_MediaList(t *testing.T) {
 
 func TestServer_MediaDetail(t *testing.T) {
 	tests := []struct {
-		name      string
-		id        string
-		result    *service.MediaDetail
-		err       error
-		wantCode  int
-		wantMedia bool
+		name             string
+		id               string
+		result           *service.MediaDetail
+		err              error
+		wantCode         int
+		wantMedia        bool
+		wantResumeFrom   float64
+		wantProgressNil  bool
 	}{
-		{"ok", "42", &service.MediaDetail{Media: &model.Media{ID: 42, FileName: "a.mp4"}}, nil, http.StatusOK, true},
-		{"invalid id", "abc", nil, nil, http.StatusBadRequest, false},
-		{"not found", "7", nil, nil, http.StatusNotFound, false},
-		{"service error", "7", nil, errors.New("boom"), http.StatusInternalServerError, false},
+		{
+			name:           "ok with progress",
+			id:             "42",
+			result:         &service.MediaDetail{Media: &model.Media{ID: 42, FileName: "a.mp4"}, Progress: &model.PlaybackProgress{UserID: 1, MediaID: 42, PositionSeconds: 77}},
+			err:            nil,
+			wantCode:       http.StatusOK,
+			wantMedia:      true,
+			wantResumeFrom: 77,
+		},
+		{"ok without progress", "42", &service.MediaDetail{Media: &model.Media{ID: 42, FileName: "a.mp4"}}, nil, http.StatusOK, true, 0, true},
+		{"invalid id", "abc", nil, nil, http.StatusBadRequest, false, 0, false},
+		{"not found", "7", nil, nil, http.StatusNotFound, false, 0, false},
+		{"service error", "7", nil, errors.New("boom"), http.StatusInternalServerError, false, 0, false},
 	}
 
 	for _, tt := range tests {
@@ -735,6 +746,26 @@ func TestServer_MediaDetail(t *testing.T) {
 			srv.ServeHTTP(rr, req)
 			if rr.Code != tt.wantCode {
 				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+			if tt.wantCode != http.StatusOK {
+				return
+			}
+			var resp struct {
+				Media    *model.Media              `json:"media"`
+				Progress *model.PlaybackProgress  `json:"progress"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal detail: %v", err)
+			}
+			if tt.wantMedia && resp.Media == nil {
+				t.Fatal("expected media in response")
+			}
+			var gotResume float64
+			if resp.Progress != nil {
+				gotResume = resp.Progress.PositionSeconds
+			}
+			if gotResume != tt.wantResumeFrom {
+				t.Fatalf("expected resume_from %v, got %v", tt.wantResumeFrom, gotResume)
 			}
 		})
 	}

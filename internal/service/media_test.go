@@ -242,6 +242,19 @@ func TestMediaService_GetMediaDetail(t *testing.T) {
 			if detail.Media.ID != tt.mediaID {
 				t.Fatalf("unexpected media id %d", detail.Media.ID)
 			}
+			if tt.progress != nil {
+				if detail.Progress == nil {
+					t.Fatal("expected progress in detail")
+				}
+				if detail.Progress.PositionSeconds != tt.progress.PositionSeconds {
+					t.Fatalf("expected position %v, got %v", tt.progress.PositionSeconds, detail.Progress.PositionSeconds)
+				}
+				if detail.ResumeFrom() != tt.progress.PositionSeconds {
+					t.Fatalf("expected ResumeFrom %v, got %v", tt.progress.PositionSeconds, detail.ResumeFrom())
+				}
+			} else if detail.Progress != nil {
+				t.Fatal("unexpected progress in detail")
+			}
 		})
 	}
 }

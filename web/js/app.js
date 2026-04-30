@@ -243,12 +243,19 @@ function renderItem(m, index) {
   `;
 }
 
-function playSelected() {
+async function playSelected() {
   const el = currentElement();
   if (!el) return;
   const idx = parseInt(el.dataset.index, 10);
   const media = state.media[idx];
-  if (media) selectAndPlay(media, idx);
+  if (!media) return;
+  try {
+    const detail = await API.mediaDetail(media.id);
+    const resumeFrom = detail?.progress?.position_seconds ?? 0;
+    selectAndPlay(media, idx, resumeFrom);
+  } catch {
+    selectAndPlay(media, idx, 0);
+  }
 }
 
 async function shareSelected() {

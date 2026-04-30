@@ -89,16 +89,16 @@ export function togglePlay() {
   if (m.paused) { m.play().catch(() => {}); } else { m.pause(); }
 }
 
-export function selectAndPlay(media, index) {
+export function selectAndPlay(media, index, resumeFrom = 0) {
   currentMedia = media;
   currentMediaIndex = index ?? -1;
-  loadMedia(media);
+  loadMedia(media, resumeFrom);
   isPlaying = true;
   currentMediaElement()?.play().catch(() => {});
   highlightPlayingCard();
 }
 
-function loadMedia(media) {
+function loadMedia(media, resumeFrom = 0) {
   const e = els();
   const isVideo = media.type === 'video';
   const src = `/api/media/${media.id}/stream`;
@@ -107,13 +107,13 @@ function loadMedia(media) {
     e.audio.style.display = 'none';
     e.audio.pause(); e.audio.src = '';
     e.video.src = src;
-    e.video.currentTime = media.resume_from ?? 0;
+    e.video.currentTime = resumeFrom;
   } else {
     e.video.style.display = 'none';
     e.audio.style.display = '';
     e.video.pause(); e.video.src = '';
     e.audio.src = src;
-    e.audio.currentTime = media.resume_from ?? 0;
+    e.audio.currentTime = resumeFrom;
   }
   e.player?.classList.add('open');
   e.btnPlay.textContent = '⏸';

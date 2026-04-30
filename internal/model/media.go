@@ -21,121 +21,121 @@ const (
 
 // User represents an application account.
 type User struct {
-	ID           int64
-	Username     string
-	PasswordHash string
-	IsAdmin      bool
-	CreatedAt    time.Time
+	ID           int64     `json:"id"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"-"`
+	IsAdmin      bool      `json:"is_admin"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // Set represents a top-level media collection (a directory under MEDIA_ROOT).
 type Set struct {
-	ID                 int64
-	Name               string
-	RootPath           string
-	CoverThumbnailPath string
-	Permissions        []SetPermission
-	CreatedAt          time.Time
+	ID                 int64             `json:"id"`
+	Name               string            `json:"name"`
+	RootPath           string            `json:"root_path"`
+	CoverThumbnailPath string            `json:"cover_thumbnail_path"`
+	Permissions        []SetPermission   `json:"permissions"`
+	CreatedAt          time.Time         `json:"created_at"`
 }
 
 // SetPermission grants a user access to a set.
 type SetPermission struct {
-	SetID     int64
-	UserID    int64
-	Role      Role
-	CreatedAt time.Time
+	SetID     int64     `json:"set_id"`
+	UserID    int64     `json:"user_id"`
+	Role      Role      `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Media represents a single audio or video file within a set.
 type Media struct {
-	ID            int64
-	SetID         int64
-	RelPath       string
-	FileName      string
-	AbsPath       string
-	Type          MediaType
-	Duration      float64
-	Codec         string
-	Resolution    string
-	Bitrate       int
-	FileSizeBytes int64
-	ThumbnailPath string
-	PlayCount     int
-	DeletedAt     *time.Time
-	CreatedAt     time.Time
+	ID            int64      `json:"id"`
+	SetID         int64      `json:"set_id"`
+	RelPath       string     `json:"rel_path"`
+	FileName      string     `json:"file_name"`
+	AbsPath       string     `json:"abs_path"`
+	Type          MediaType  `json:"type"`
+	Duration      float64    `json:"duration"`
+	Codec         string     `json:"codec"`
+	Resolution    string     `json:"resolution"`
+	Bitrate       int        `json:"bitrate"`
+	FileSizeBytes int64      `json:"file_size_bytes"`
+	ThumbnailPath string     `json:"thumbnail_path"`
+	PlayCount     int        `json:"play_count"`
+	DeletedAt     *time.Time `json:"deleted_at"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 // Tag is a label that can be attached to media items.
 type Tag struct {
-	ID   int64
-	Name string
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 // Session is an authenticated browser session.
 type Session struct {
-	ID        string
-	UserID    int64
-	ExpiresAt time.Time
-	CreatedAt time.Time
+	ID        string    `json:"id"`
+	UserID    int64     `json:"user_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Share is a time-bounded public link to a media item.
 type Share struct {
-	Token     string
-	MediaID   int64
-	CreatedBy int64
-	CreatedAt time.Time
-	ExpiresAt time.Time
-	MaxUses   *int
-	UsedCount int
+	Token     string    `json:"token"`
+	MediaID   int64     `json:"media_id"`
+	CreatedBy int64     `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	MaxUses   *int      `json:"max_uses"`
+	UsedCount int       `json:"used_count"`
 }
 
 // Note is a per-user, per-media text note.
 type Note struct {
-	ID        int64
-	MediaID   int64
-	UserID    int64
-	Content   string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        int64     `json:"id"`
+	MediaID   int64     `json:"media_id"`
+	UserID    int64     `json:"user_id"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // PlaybackProgress stores the last known playback position.
 type PlaybackProgress struct {
-	UserID          int64
-	MediaID         int64
-	PositionSeconds float64
-	UpdatedAt       time.Time
+	UserID          int64     `json:"user_id"`
+	MediaID         int64     `json:"media_id"`
+	PositionSeconds float64   `json:"position_seconds"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // PlaybackAccumulator tracks deltas for the 60-second playback counter rule.
 type PlaybackAccumulator struct {
-	SessionID          string
-	MediaID            int64
-	LastPosition       float64
-	AccumulatedSeconds float64
-	Counted            bool
-	UpdatedAt          time.Time
+	SessionID          string    `json:"session_id"`
+	MediaID            int64     `json:"media_id"`
+	LastPosition       float64   `json:"last_position"`
+	AccumulatedSeconds float64   `json:"accumulated_seconds"`
+	Counted            bool      `json:"counted"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // Favorite records that a user has favorited a media item.
 type Favorite struct {
-	UserID    int64
-	MediaID   int64
-	CreatedAt time.Time
+	UserID    int64     `json:"user_id"`
+	MediaID   int64     `json:"media_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // MediaTag is the join table between media and tags.
 type MediaTag struct {
-	MediaID int64
-	TagID   int64
+	MediaID int64 `json:"media_id"`
+	TagID   int64 `json:"tag_id"`
 }
 
 // Metadata holds extracted file properties from ffprobe and os.Stat.
 type Metadata struct {
-	Duration      float64
-	Codec         string
-	Resolution    string
-	Bitrate       int
-	FileSizeBytes int64
+	Duration      float64 `json:"duration"`
+	Codec         string  `json:"codec"`
+	Resolution    string  `json:"resolution"`
+	Bitrate       int     `json:"bitrate"`
+	FileSizeBytes int64   `json:"file_size_bytes"`
 }
