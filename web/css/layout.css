@@ -298,6 +298,22 @@ body {
 .text-75 { font-size: 0.75rem; }
 .text-90 { font-size: 0.9rem; }
 .flex-1-18 { flex: 1 1 18rem; }
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-right: 0.25rem;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.78rem;
+}
 .grid-full { grid-column: 1 / -1; }
 
 /* Toolbar */

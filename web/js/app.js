@@ -10,7 +10,6 @@ import { initAdmin } from './admin.js';
 import { state, setMedia } from './state.js';
 import { initPWA } from './pwa.js';
 
-const qs = document.querySelector.bind(document);
 const pageMap = { '/index.html': 'spa', '/login.html': 'login', '/bootstrap.html': 'bootstrap' };
 
 main();
@@ -98,10 +97,13 @@ async function initApp() {
     share: () => shareSelected(),
     search: focusSearch,
     notes: openNotesForSelected,
+    tags: openTagsForSelected,
+    download: downloadSelected,
   });
   initNotes(() => toast('Note saved'));
   initAdmin();
   initPWA();
+  initUpload();
 
   // Filters
   document.getElementById('filter-type')?.addEventListener('change', (e) => { state.filters.type = e.target.value; loadMedia(); });
@@ -110,6 +112,11 @@ async function initApp() {
     e.target.classList.toggle('active', state.filters.favorites);
     loadMedia();
   });
+  document.getElementById('filter-tags')?.addEventListener('change', (e) => { state.filters.tags = e.target.value; loadMedia(); });
+  document.getElementById('filter-min-duration')?.addEventListener('change', (e) => { state.filters.minDuration = e.target.value; loadMedia(); });
+  document.getElementById('filter-max-duration')?.addEventListener('change', (e) => { state.filters.maxDuration = e.target.value; loadMedia(); });
+  document.getElementById('filter-min-filesize')?.addEventListener('change', (e) => { state.filters.minFilesizeMB = e.target.value; loadMedia(); });
+  document.getElementById('filter-max-filesize')?.addEventListener('change', (e) => { state.filters.maxFilesizeMB = e.target.value; loadMedia(); });
 
   // Menu toggle
   document.getElementById('menu-btn')?.addEventListener('click', () => {
@@ -119,11 +126,9 @@ async function initApp() {
     try { await API.logout(); location.href = '/login.html'; } catch {}
   });
 
-  const user = await API.loginProfile ? API.loginProfile : undefined; // not a route; we just try to bootstrap auth via /api/sets
   try {
     const sets = await API.sets();
     state.sets = sets || [];
-    state.isAdmin = !!state.sets?.__isAdmin; // backend may not send this; we'll infer from admin endpoint later
     // Admin check via admin users endpoint
     API.users().then(() => { state.isAdmin = true; showAdmin(); }).catch(() => {});
     renderSets();
@@ -137,13 +142,22 @@ async function initApp() {
     const el = e.target.closest('.media-card, .media-row');
     if (el) { selectByElement(el); playSelected(); }
   });
+
+  // Tags modal close
+  document.getElementById('tags-close')?.addEventListener('click', closeTagsModal);
+  document.getElementById('tags-modal')?.addEventListener('click', (e) => { if (e.target === document.getElementById('tags-modal')) closeTagsModal(); });
+  document.getElementById('tags-add')?.addEventListener('click', addTagForSelected);
+  document.getElementById('tags-new')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addTagForSelected(); } });
 }
 
 function renderSets() {
   const el = document.getElementById('set-list');
   if (!el) return;
   el.innerHTML = state.sets.map((s) =>
-    `<a href="#" class="set-item" data-id="${s.id}">${escapeHtml(s.name)}</a>`
+    `<div class="set-row">
+      <a href="#" class="set-item flex-1-18" data-id="${s.id}">${escapeHtml(s.name)}</a>
+      <button class="icon-btn btn-sm" data-cover-set="${s.id}" title="Regenerate cover">🔄</button>
+    </div>`
   ).join('');
   el.querySelectorAll('.set-item').forEach((a) => {
     a.addEventListener('click', (e) => {
@@ -151,6 +165,14 @@ function renderSets() {
       state.selectedSetId = parseInt(a.dataset.id, 10);
       setActiveSet(state.selectedSetId);
       loadMedia();
+    });
+  });
+  el.querySelectorAll('[data-cover-set]').forEach((b) => {
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = b.dataset.coverSet;
+      try { await API.regenCover(id); toast('Cover regenerated'); }
+      catch (err) { toast(err.message || 'Cover failed', 'error'); }
     });
   });
 }
@@ -179,6 +201,11 @@ async function loadMedia() {
       type: state.filters.type,
       search: state.filters.search,
       favorites: state.filters.favorites ? 'true' : '',
+      tags: state.filters.tags || '',
+      min_duration: state.filters.minDuration || '',
+      max_duration: state.filters.maxDuration || '',
+      filesize_min: state.filters.minFilesizeMB ? String(parseInt(state.filters.minFilesizeMB, 10) << 20) : '',
+      filesize_max: state.filters.maxFilesizeMB ? String(parseInt(state.filters.maxFilesizeMB, 10) << 20) : '',
       sort: isShuffle() ? 'random' : 'name',
       limit: '200',
     };
@@ -202,19 +229,26 @@ function renderGrid(items) {
     const playBtn = el.querySelector('[data-action="play"]');
     const favBtn = el.querySelector('[data-action="favorite"]');
     const noteBtn = el.querySelector('[data-action="notes"]');
+    const downloadBtn = el.querySelector('[data-action="download"]');
+    const tagBtn = el.querySelector('[data-action="tags"]');
+    const thumbBtn = el.querySelector('[data-action="regen-thumb"]');
     playBtn?.addEventListener('click', (e) => { e.stopPropagation(); selectByElement(el); playSelected(); });
     favBtn?.addEventListener('click', (e) => { e.stopPropagation(); toggleFavorite(el.dataset.id, favBtn); });
     noteBtn?.addEventListener('click', (e) => { e.stopPropagation(); openNotesForSelected(); });
+    downloadBtn?.addEventListener('click', (e) => { e.stopPropagation(); window.open(`/api/media/${el.dataset.id}/download`, '_blank'); });
+    tagBtn?.addEventListener('click', (e) => { e.stopPropagation(); openTagsForElement(el); });
+    thumbBtn?.addEventListener('click', (e) => { e.stopPropagation(); regenThumb(el.dataset.id); });
   });
 }
 
 function renderItem(m, index) {
+  const sizeText = fmtSize(m.file_size_bytes);
   if (m.type === 'video') {
     return `
       <div class="media-card" data-id="${m.id}" data-index="${index}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
-          <span class="badge">${fmtDur(m.duration)}</span>
+          <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
         </div>
         <div class="meta">
           <div class="title">${escapeHtml(m.file_name)}</div>
@@ -224,6 +258,9 @@ function renderItem(m, index) {
           <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
           <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
           <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+          <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
+          <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
+          <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
         </div>
       </div>
     `;
@@ -233,12 +270,15 @@ function renderItem(m, index) {
       <span class="row-icon">🎵</span>
       <div class="row-body">
         <div class="row-title">${escapeHtml(m.file_name)}</div>
-        <div class="row-meta">${escapeHtml(m.codec || '')} ${m.bitrate ? Math.round(m.bitrate/1000)+'kbps' : ''}</div>
+        <div class="row-meta">${escapeHtml(m.codec || '')} ${m.bitrate ? Math.round(m.bitrate/1000)+'kbps' : ''} ${sizeText ? '• ' + sizeText : ''}</div>
       </div>
       <span class="row-duration">${fmtDur(m.duration)}</span>
       <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
       <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
       <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+      <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
+      <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
+      <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
     </div>
   `;
 }
@@ -290,6 +330,104 @@ async function openNotesForSelected() {
   openNotes(id, content);
 }
 
+async function downloadSelected() {
+  const el = currentElement();
+  if (!el) return;
+  window.open(`/api/media/${el.dataset.id}/download`, '_blank');
+}
+
+// Tags modal
+let tagsCurrentMediaId = null;
+
+async function openTagsForSelected() {
+  const el = currentElement();
+  if (!el) return;
+  openTagsForElement(el);
+}
+
+async function openTagsForElement(el) {
+  const id = el.dataset.id;
+  tagsCurrentMediaId = id;
+  const detail = await API.mediaDetail(id);
+  const tags = detail?.tags || [];
+  renderTagsList(tags);
+  document.getElementById('tags-modal')?.classList.add('open');
+  document.getElementById('tags-new')?.focus();
+}
+
+function closeTagsModal() {
+  document.getElementById('tags-modal')?.classList.remove('open');
+  tagsCurrentMediaId = null;
+}
+
+function renderTagsList(tags) {
+  const el = document.getElementById('tags-list');
+  if (!el) return;
+  if (!tags.length) { el.innerHTML = '<span class="text-muted text-xs">No tags.</span>'; return; }
+  el.innerHTML = tags.map((t) =>
+    `<span class="tag-chip">${escapeHtml(t.name)} <button class="icon-btn btn-sm tag-remove" data-tag="${escapeHtml(t.name)}" title="Remove">✕</button></span>`
+  ).join('');
+  el.querySelectorAll('.tag-remove').forEach((b) => {
+    b.addEventListener('click', async () => {
+      if (!tagsCurrentMediaId) return;
+      try {
+        await API.removeTag(tagsCurrentMediaId, b.dataset.tag);
+        const detail = await API.mediaDetail(tagsCurrentMediaId);
+        renderTagsList(detail?.tags || []);
+      } catch (err) { toast(err.message || 'Remove tag failed', 'error'); }
+    });
+  });
+}
+
+async function addTagForSelected() {
+  if (!tagsCurrentMediaId) return;
+  const input = document.getElementById('tags-new');
+  const name = input?.value.trim();
+  if (!name) return;
+  try {
+    await API.addTag(tagsCurrentMediaId, name);
+    input.value = '';
+    const detail = await API.mediaDetail(tagsCurrentMediaId);
+    renderTagsList(detail?.tags || []);
+  } catch (err) { toast(err.message || 'Add tag failed', 'error'); }
+}
+
+async function regenThumb(mediaId) {
+  try {
+    await API.regenThumbnail(mediaId);
+    toast('Thumbnail regenerated');
+  } catch (err) { toast(err.message || 'Thumbnail failed', 'error'); }
+}
+
+// Upload modal
+function initUpload() {
+  const modal = document.getElementById('upload-modal');
+  const closeBtn = document.getElementById('upload-close');
+  const form = document.getElementById('upload-form');
+  const fileInput = document.getElementById('upload-file');
+
+  // Open via an icon button in header (already added in HTML)
+  document.getElementById('upload-toggle')?.addEventListener('click', () => modal?.classList.add('open'));
+  closeBtn?.addEventListener('click', () => modal?.classList.remove('open'));
+  modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!state.selectedSetId) { toast('Select a set first', 'error'); return; }
+    const file = fileInput?.files[0];
+    if (!file) { toast('Choose a file', 'error'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      await API.upload(state.selectedSetId, fd);
+      toast('Upload complete');
+      fileInput.value = '';
+      modal?.classList.remove('open');
+      loadMedia();
+    } catch (err) { toast(err.message || 'Upload failed', 'error'); }
+  });
+}
+
 function showAdmin() {
   const btn = document.getElementById('admin-toggle');
   if (btn) btn.classList.remove('hidden');
@@ -303,6 +441,15 @@ function fmtDur(s) {
   const mm = String(m).padStart(2, '0');
   const ss = String(sec).padStart(2, '0');
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function fmtSize(bytes) {
+  if (!bytes || bytes <= 0) return '';
+  const kb = bytes / 1024;
+  if (kb < 1024) return Math.round(kb) + ' KB';
+  const mb = kb / 1024;
+  if (mb < 1024) return Math.round(mb * 10) / 10 + ' MB';
+  return Math.round((mb / 1024) * 10) / 10 + ' GB';
 }
 
 function escapeHtml(s) {

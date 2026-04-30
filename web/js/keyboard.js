@@ -23,6 +23,8 @@ export function initKeyboard(handlers) {
       case 's':          handlers.share?.(e); break;
       case '/':          e.preventDefault(); handlers.search?.(e); break;
       case 'n':          handlers.notes?.(e); break;
+      case 't':          handlers.tags?.(e); break;
+      case 'd':          handlers.download?.(e); break;
     }
   });
 }

@@ -3,7 +3,7 @@ export const state = {
   sets: [],
   selectedSetId: null,
   media: [],
-  filters: { type: '', search: '', favorites: false, tags: '', sort: 'name' },
+  filters: { type: '', search: '', favorites: false, tags: '', sort: 'name', minDuration: '', maxDuration: '', minFilesizeMB: '', maxFilesizeMB: '' },
   isAdmin: false,
 };
 

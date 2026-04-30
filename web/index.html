@@ -24,6 +24,7 @@
   <button id="admin-toggle" class="icon-btn hidden" title="Admin panel (a)">⚙</button>
   <button id="theme-toggle" class="icon-btn" title="Toggle theme">☀</button>
   <span id="user-name" class="text-secondary text-xs"></span>
+  <button id="upload-toggle" class="icon-btn" title="Upload">⬆</button>
   <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
   <button id="menu-btn" class="icon-btn" title="Menu" aria-label="Open sets">☰</button>
 </header>
@@ -42,6 +43,11 @@
         <option value="audio">Audio</option>
       </select>
       <button id="filter-favorites" class="btn btn-ghost btn-sm">❤ Favorites</button>
+      <input id="filter-tags" type="text" placeholder="Tags (comma)" aria-label="Filter by tags" class="input-sm">
+      <input id="filter-min-duration" type="number" min="0" placeholder="Min s" aria-label="Min duration seconds" class="input-sm">
+      <input id="filter-max-duration" type="number" min="0" placeholder="Max s" aria-label="Max duration seconds" class="input-sm">
+      <input id="filter-min-filesize" type="number" min="0" placeholder="Min MB" aria-label="Min file size MB" class="input-sm">
+      <input id="filter-max-filesize" type="number" min="0" placeholder="Max MB" aria-label="Max file size MB" class="input-sm">
       <div class="spacer"></div>
       <span id="result-count" class="text-muted text-xs"></span>
     </div>
@@ -90,6 +96,37 @@
       <button id="notes-delete" class="btn btn-danger btn-sm">Delete</button>
       <button id="notes-save" class="btn btn-primary btn-sm">Save</button>
     </div>
+  </div>
+</div>
+
+<!-- Tags Modal -->
+<div id="tags-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="tags-title">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="tags-title">Tags</h3>
+      <div class="spacer"></div>
+      <button id="tags-close" class="icon-btn" aria-label="Close">✕</button>
+    </div>
+    <div id="tags-list" class="flex flex-wrap gap-2 mb-2"></div>
+    <div class="flex gap-2">
+      <input id="tags-new" type="text" placeholder="New tag…" autocomplete="off">
+      <button id="tags-add" class="btn btn-primary btn-sm">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Modal -->
+<div id="upload-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="upload-title">Upload</h3>
+      <div class="spacer"></div>
+      <button id="upload-close" class="icon-btn" aria-label="Close">✕</button>
+    </div>
+    <form id="upload-form" class="flex flex-col gap-2">
+      <input id="upload-file" type="file" required>
+      <button type="submit" class="btn btn-primary btn-sm">Upload to current set</button>
+    </form>
   </div>
 </div>
 
