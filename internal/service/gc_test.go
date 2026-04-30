@@ -166,3 +166,21 @@ func TestGCWorker_RelPathFallback(t *testing.T) {
 		t.Fatal("expected file to be deleted")
 	}
 }
+
+func TestGCWorker_WithInterval(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	w := NewGCWorker(&repository.MockStore{}, &clock.MockClock{T: now}, "/tmp", time.Minute, logger).WithInterval(2 * time.Minute)
+	if w.interval != 2*time.Minute {
+		t.Fatalf("expected interval 2m, got %v", w.interval)
+	}
+}
+
+func TestGCWorker_RunOnce_NotStarted(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	w := NewGCWorker(&repository.MockStore{}, &clock.MockClock{}, "/tmp", 0, logger)
+	err := w.RunOnce()
+	if err == nil {
+		t.Fatal("expected error when interval is 0")
+	}
+}

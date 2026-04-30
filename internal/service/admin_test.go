@@ -252,3 +252,42 @@ func TestAdminService_RevokePermission(t *testing.T) {
 		t.Fatal("expected revoke called")
 	}
 }
+
+func TestAdminService_ListPermissions_Error(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("list sets error", func(t *testing.T) {
+		store := &repository.MockStore{
+			SetRepo: repository.MockSetRepo{
+				ListSetsFunc: func(ctx context.Context) ([]model.Set, error) {
+					return nil, errors.New("boom")
+				},
+			},
+		}
+		svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+		_, err := svc.ListPermissions(ctx)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("list permissions by set error", func(t *testing.T) {
+		store := &repository.MockStore{
+			SetRepo: repository.MockSetRepo{
+				ListSetsFunc: func(ctx context.Context) ([]model.Set, error) {
+					return []model.Set{{ID: 1}}, nil
+				},
+			},
+			SetPermissionRepo: repository.MockSetPermissionRepo{
+				ListPermissionsBySetFunc: func(ctx context.Context, setID int64) ([]model.SetPermission, error) {
+					return nil, errors.New("boom")
+				},
+			},
+		}
+		svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+		_, err := svc.ListPermissions(ctx)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+}

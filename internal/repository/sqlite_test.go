@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -845,6 +846,820 @@ func TestSQLite_SetPermissionRepo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := newTestStore(t)
 			defer s.Close()
+			tt.run(t, context.Background(), s)
+		})
+	}
+}
+
+func TestSQLite_MediaFilters(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T, ctx context.Context, s *SQLite)
+	}{
+		{
+			name: "favorites filter",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				uid, _ := s.CreateUser(ctx, &model.User{Username: "u", PasswordHash: "h", CreatedAt: now})
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				mid, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				_, _ = s.ToggleFavorite(ctx, uid, mid)
+				res, err := s.ListMedia(ctx, MediaFilter{Favorites: true, UserID: uid})
+				if err != nil {
+					t.Fatalf("list: %v", err)
+				}
+				if len(res) != 1 {
+					t.Fatalf("expected 1 favorite media, got %d", len(res))
+				}
+			},
+		},
+		{
+			name: "type filter",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "b.mp3", FileName: "b.mp3", AbsPath: "/s/b.mp3", Type: model.MediaTypeAudio, CreatedAt: now})
+				audio := model.MediaTypeAudio
+				res, err := s.ListMedia(ctx, MediaFilter{Type: &audio})
+				if err != nil {
+					t.Fatalf("list: %v", err)
+				}
+				if len(res) != 1 || res[0].FileName != "b.mp3" {
+					t.Fatalf("unexpected result: %+v", res)
+				}
+			},
+		},
+		{
+			name: "duration and sort filters",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, Duration: 100, PlayCount: 5, CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "b.mp4", FileName: "b.mp4", AbsPath: "/s/b.mp4", Type: model.MediaTypeVideo, Duration: 200, PlayCount: 1, CreatedAt: now.Add(time.Hour)})
+				minDur := 150.0
+				res, err := s.ListMedia(ctx, MediaFilter{MinDuration: &minDur, Sort: "duration"})
+				if err != nil {
+					t.Fatalf("list: %v", err)
+				}
+				if len(res) != 1 || res[0].FileName != "b.mp4" {
+					t.Fatalf("unexpected result: %+v", res)
+				}
+				res, _ = s.ListMedia(ctx, MediaFilter{Sort: "play_count"})
+				if len(res) != 2 || res[0].FileName != "a.mp4" {
+					t.Fatalf("unexpected play_count sort: %+v", res)
+				}
+				res, _ = s.ListMedia(ctx, MediaFilter{Sort: "date"})
+				if len(res) != 2 || res[0].FileName != "b.mp4" {
+					t.Fatalf("unexpected date sort: %+v", res)
+				}
+				res, _ = s.ListMedia(ctx, MediaFilter{Sort: "random"})
+				if len(res) != 2 {
+					t.Fatalf("unexpected random sort count: %d", len(res))
+				}
+			},
+		},
+		{
+			name: "limit offset",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "b.mp4", FileName: "b.mp4", AbsPath: "/s/b.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				res, err := s.ListMedia(ctx, MediaFilter{Limit: 1, Offset: 1})
+				if err != nil {
+					t.Fatalf("list: %v", err)
+				}
+				if len(res) != 1 {
+					t.Fatalf("expected 1, got %d", len(res))
+				}
+			},
+		},
+		{
+			name: "allowed set ids",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				s1, _ := s.CreateSet(ctx, &model.Set{Name: "s1", RootPath: "/s1", CreatedAt: now})
+				s2, _ := s.CreateSet(ctx, &model.Set{Name: "s2", RootPath: "/s2", CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: s1, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s1/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: s2, RelPath: "b.mp4", FileName: "b.mp4", AbsPath: "/s2/b.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				res, err := s.ListMedia(ctx, MediaFilter{AllowedSetIDs: []int64{s1}})
+				if err != nil {
+					t.Fatalf("list: %v", err)
+				}
+				if len(res) != 1 || res[0].FileName != "a.mp4" {
+					t.Fatalf("unexpected result: %+v", res)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newTestStore(t)
+			defer s.Close()
+			tt.run(t, context.Background(), s)
+		})
+	}
+}
+
+func TestSQLite_Ping(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+	if err := s.Ping(context.Background()); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
+}
+
+func TestSQLite_Helpers(t *testing.T) {
+	if got := sqlNullTime(nil); got.Valid {
+		t.Fatal("expected sqlNullTime(nil) to be invalid")
+	}
+	if got := sqlNullInt(nil); got.Valid {
+		t.Fatal("expected sqlNullInt(nil) to be invalid")
+	}
+}
+
+func TestSQLite_MiscRepos(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T, ctx context.Context, s *SQLite)
+	}{
+		{
+			name: "IsFavorite false for missing",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				ok, err := s.IsFavorite(ctx, 1, 1)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if ok {
+					t.Fatal("expected false")
+				}
+			},
+		},
+		{
+			name: "ListFavoritesByUser empty",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				favs, err := s.ListFavoritesByUser(ctx, 1)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if len(favs) != 0 {
+					t.Fatalf("expected 0, got %d", len(favs))
+				}
+			},
+		},
+		{
+			name: "CountUsers zero",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				cnt, err := s.CountUsers(ctx)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if cnt != 0 {
+					t.Fatalf("expected 0, got %d", cnt)
+				}
+			},
+		},
+		{
+			name: "DeleteTag and scanSet cover",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				id, _ := s.CreateTag(ctx, "action")
+				if err := s.DeleteTag(ctx, id); err != nil {
+					t.Fatalf("delete tag: %v", err)
+				}
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				if err := s.UpdateSet(ctx, &model.Set{ID: sid, Name: "s2", RootPath: "/s2", CoverThumbnailPath: "/cover.jpg"}); err != nil {
+					t.Fatalf("update set: %v", err)
+				}
+				got, _ := s.GetSetByID(ctx, sid)
+				if got.CoverThumbnailPath != "/cover.jpg" {
+					t.Fatalf("unexpected cover path: %s", got.CoverThumbnailPath)
+				}
+			},
+		},
+		{
+			name: "AssignTag and RemoveTag",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				mid, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				tid, _ := s.CreateTag(ctx, "rock")
+				if err := s.AssignTag(ctx, mid, tid); err != nil {
+					t.Fatalf("assign: %v", err)
+				}
+				if err := s.RemoveTag(ctx, mid, tid); err != nil {
+					t.Fatalf("remove: %v", err)
+				}
+				tags, _ := s.ListTagsByMedia(ctx, mid)
+				if len(tags) != 0 {
+					t.Fatalf("expected 0 tags, got %d", len(tags))
+				}
+			},
+		},
+		{
+			name: "UpdateMedia with all fields",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				mid, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				m, _ := s.GetMediaByID(ctx, mid)
+				m.Duration = 120
+				m.Codec = "h264"
+				m.Resolution = "1920x1080"
+				m.Bitrate = 5000
+				m.FileSizeBytes = 1000
+				m.ThumbnailPath = "/t.jpg"
+				m.PlayCount = 3
+				if err := s.UpdateMedia(ctx, m); err != nil {
+					t.Fatalf("update: %v", err)
+				}
+				got, _ := s.GetMediaByID(ctx, mid)
+				if got.Duration != 120 || got.Codec != "h264" || got.Resolution != "1920x1080" || got.Bitrate != 5000 || got.FileSizeBytes != 1000 || got.ThumbnailPath != "/t.jpg" || got.PlayCount != 3 {
+					t.Fatalf("unexpected update: %+v", got)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newTestStore(t)
+			defer s.Close()
+			tt.run(t, context.Background(), s)
+		})
+	}
+}
+
+func TestSQLite_OpenFailures(t *testing.T) {
+	t.Run("invalid dsn", func(t *testing.T) {
+		_, err := Open("/dev/null/invalid")
+		if err == nil {
+			t.Fatal("expected error for invalid dsn")
+		}
+	})
+
+	t.Run("closed db migrate failure", func(t *testing.T) {
+		db, err := sql.Open("sqlite", ":memory:")
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		db.Close()
+		_, err = New(db)
+		if err == nil {
+			t.Fatal("expected error when migrating closed db")
+		}
+	})
+}
+
+func TestSQLite_ErrorPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T, ctx context.Context, s *SQLite)
+	}{
+		{
+			name: "Ping on closed store",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.Ping(ctx)
+				if err == nil {
+					t.Fatal("expected error pinging closed store")
+				}
+			},
+		},
+		{
+			name: "CreateUser error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.CreateUser(ctx, &model.User{Username: "u", PasswordHash: "h"})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "CreateSet error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s"})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "CreateMedia error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.CreateMedia(ctx, &model.Media{SetID: 1, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "CreateTag error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.CreateTag(ctx, "rock")
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "CreateSession error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.CreateSession(ctx, &model.Session{ID: "abc", UserID: 1, ExpiresAt: time.Now()})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "CreateShare error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.CreateShare(ctx, &model.Share{Token: "t", MediaID: 1, CreatedBy: 1, ExpiresAt: time.Now()})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "UpsertNote error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.UpsertNote(ctx, &model.Note{MediaID: 1, UserID: 1, Content: "hi"})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "UpsertProgress error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.UpsertProgress(ctx, &model.PlaybackProgress{UserID: 1, MediaID: 1, PositionSeconds: 10})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "UpsertAccumulator error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.UpsertAccumulator(ctx, &model.PlaybackAccumulator{SessionID: "s", MediaID: 1})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GrantPermission error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.GrantPermission(ctx, &model.SetPermission{SetID: 1, UserID: 1, Role: model.RoleOwner})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ToggleFavorite error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ToggleFavorite(ctx, 1, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListMedia error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListMedia(ctx, MediaFilter{})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListSets error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListSets(ctx)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListUsers error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListUsers(ctx)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListTags error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListTags(ctx)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListDeletedMedia error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListDeletedMedia(ctx)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListProgressByUser error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListProgressByUser(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListSharesByMedia error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListSharesByMedia(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListPermissionsBySet error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListPermissionsBySet(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListPermissionsByUser error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListPermissionsByUser(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListFavoritesByUser error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListFavoritesByUser(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "ListTagsByMedia error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.ListTagsByMedia(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "UpdateMedia error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.UpdateMedia(ctx, &model.Media{ID: 1, SetID: 1, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "UpdateSet error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.UpdateSet(ctx, &model.Set{ID: 1, Name: "s", RootPath: "/s"})
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "SoftDeleteMedia error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.SoftDeleteMedia(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "RestoreMedia error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.RestoreMedia(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "HardDeleteMedia error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.HardDeleteMedia(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "IncrementPlayCount error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.IncrementPlayCount(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "DeleteUser error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.DeleteUser(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "DeleteSet error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.DeleteSet(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "DeleteTag error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.DeleteTag(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "DeleteSession error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.DeleteSession(ctx, "abc")
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "DeleteExpiredSessions error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.DeleteExpiredSessions(ctx, time.Now())
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "DeleteShare error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.DeleteShare(ctx, "abc")
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "DeleteExpiredShares error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.DeleteExpiredShares(ctx, time.Now())
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "DeleteNote error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.DeleteNote(ctx, 1, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "RevokePermission error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.RevokePermission(ctx, 1, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "AssignTag error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.AssignTag(ctx, 1, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "RemoveTag error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.RemoveTag(ctx, 1, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "UseShare error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				err := s.UseShare(ctx, "abc")
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetUserByID error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetUserByID(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetUserByUsername error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetUserByUsername(ctx, "u")
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetSetByID error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetSetByID(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetMediaByID error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetMediaByID(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetTagByID error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetTagByID(ctx, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetTagByName error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetTagByName(ctx, "rock")
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetPermission error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetPermission(ctx, 1, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetNote error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetNote(ctx, 1, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetProgress error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetProgress(ctx, 1, 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetAccumulator error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetAccumulator(ctx, "s", 1)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetSessionByID error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetSessionByID(ctx, "abc")
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "GetShareByToken error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.GetShareByToken(ctx, "abc")
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+		{
+			name: "CountUsers error on closed db",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				s.Close()
+				_, err := s.CountUsers(ctx)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newTestStore(t)
 			tt.run(t, context.Background(), s)
 		})
 	}

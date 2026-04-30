@@ -1925,3 +1925,221 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 		}
 	})
 }
+
+func TestMediaService_GetThumbnail(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	thumbPath := filepath.Join(tmpDir, "thumb.jpg")
+	_ = os.WriteFile(thumbPath, []byte("thumb"), 0o644)
+
+	tests := []struct {
+		name     string
+		media    *model.Media
+		wantPath string
+		wantErr  bool
+	}{
+		{
+			name:     "ok",
+			media:    &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/a.mp4", FileName: "a.mp4", ThumbnailPath: thumbPath},
+			wantPath: thumbPath,
+		},
+		{
+			name:    "no thumbnail path",
+			media:   &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/a.mp4", FileName: "a.mp4", ThumbnailPath: ""},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &repository.MockStore{
+				MediaRepo: repository.MockMediaRepo{
+					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+						return tt.media, nil
+					},
+				},
+				UserRepo: repository.MockUserRepo{
+					GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+						return &model.User{ID: 1, IsAdmin: true}, nil
+					},
+				},
+			}
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+			res, err := svc.GetThumbnail(ctx, 1, 1)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if res.Path != tt.wantPath {
+				t.Fatalf("unexpected path %q", res.Path)
+			}
+		})
+	}
+}
+
+func TestMediaService_RevokeShare(t *testing.T) {
+	ctx := context.Background()
+	now := newMockClock().T
+
+	tests := []struct {
+		name    string
+		share   *model.Share
+		media   *model.Media
+		wantErr bool
+	}{
+		{
+			name:  "ok",
+			share: &model.Share{Token: "abc", MediaID: 1, CreatedBy: 1, ExpiresAt: now.Add(time.Hour)},
+			media: &model.Media{ID: 1, SetID: 1},
+		},
+		{
+			name:    "share not found",
+			share:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "access denied",
+			share:   &model.Share{Token: "abc", MediaID: 1, CreatedBy: 1, ExpiresAt: now.Add(time.Hour)},
+			media:   &model.Media{ID: 1, SetID: 1},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &repository.MockStore{
+				ShareRepo: repository.MockShareRepo{
+					GetShareByTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+						return tt.share, nil
+					},
+					DeleteShareFunc: func(ctx context.Context, token string) error {
+						return nil
+					},
+				},
+				MediaRepo: repository.MockMediaRepo{
+					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+						return tt.media, nil
+					},
+				},
+				UserRepo: repository.MockUserRepo{
+					GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+						if tt.name == "access denied" {
+							return &model.User{ID: id, IsAdmin: false}, nil
+						}
+						return &model.User{ID: id, IsAdmin: true}, nil
+					},
+				},
+				SetRepo: repository.MockSetRepo{
+					GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+						return &model.Set{ID: id}, nil
+					},
+				},
+			}
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+			err := svc.RevokeShare(ctx, "abc", 1)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestMediaService_ListShares(t *testing.T) {
+	ctx := context.Background()
+	now := newMockClock().T
+
+	store := &repository.MockStore{
+		MediaRepo: repository.MockMediaRepo{
+			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+				return &model.Media{ID: 1, SetID: 1}, nil
+			},
+		},
+		UserRepo: repository.MockUserRepo{
+			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+				return &model.User{ID: id, IsAdmin: true}, nil
+			},
+		},
+		ShareRepo: repository.MockShareRepo{
+			ListSharesByMediaFunc: func(ctx context.Context, mediaID int64) ([]model.Share, error) {
+				return []model.Share{{Token: "abc", MediaID: 1, ExpiresAt: now.Add(time.Hour)}}, nil
+			},
+		},
+	}
+	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+	shares, err := svc.ListShares(ctx, 1, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(shares) != 1 {
+		t.Fatalf("expected 1 share, got %d", len(shares))
+	}
+}
+
+func TestMediaService_StreamSharedMedia_MissingMedia(t *testing.T) {
+	ctx := context.Background()
+	now := newMockClock().T
+
+	store := &repository.MockStore{
+		ShareRepo: repository.MockShareRepo{
+			GetShareByTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+				return &model.Share{Token: "abc", MediaID: 1, ExpiresAt: now.Add(time.Hour)}, nil
+			},
+			UseShareFunc: func(ctx context.Context, token string) error { return nil },
+		},
+		MediaRepo: repository.MockMediaRepo{
+			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+				return nil, nil
+			},
+		},
+	}
+	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+	_, err := svc.StreamSharedMedia(ctx, "abc")
+	if !errors.Is(err, ErrMediaNotFound) {
+		t.Fatalf("expected ErrMediaNotFound, got %v", err)
+	}
+}
+
+func TestMediaService_GuessMediaType_Edge(t *testing.T) {
+	if got := guessMediaType("unknown.xyz"); got != model.MediaTypeVideo {
+		t.Fatalf("expected video for unknown ext, got %v", got)
+	}
+}
+
+func TestMediaService_CreateShare_StoreError(t *testing.T) {
+	ctx := context.Background()
+	now := newMockClock().T
+
+	store := &repository.MockStore{
+		MediaRepo: repository.MockMediaRepo{
+			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+				return &model.Media{ID: 1, SetID: 1}, nil
+			},
+		},
+		UserRepo: repository.MockUserRepo{
+			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+				return &model.User{ID: 1, IsAdmin: true}, nil
+			},
+		},
+		ShareRepo: repository.MockShareRepo{
+			CreateShareFunc: func(ctx context.Context, share *model.Share) error {
+				return errors.New("db error")
+			},
+		},
+	}
+	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+	_, err := svc.CreateShare(ctx, 1, 1, now.Add(time.Hour))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
