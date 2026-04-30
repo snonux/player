@@ -97,7 +97,25 @@
   transform: translate(-50%, -50%) scale(1);
 }
 
-/* Volume */
+/* Touch-friendly progress bar */
+.progress-track {
+  touch-action: none;
+}
+
+@media (max-width: 520px) {
+  .player .controls {
+    gap: 0.35rem;
+    padding: 0.4rem 0.5rem;
+  }
+  .volume-slider {
+    width: 3.5rem;
+  }
+  .big-play .play-icon {
+    width: 2.8rem;
+    height: 2.8rem;
+    font-size: 1rem;
+  }
+}
 .volume-control {
   display: flex;
   align-items: center;

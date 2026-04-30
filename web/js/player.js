@@ -68,13 +68,28 @@ export function initPlayer() {
   });
 
   let seeking = false;
-  e.track?.addEventListener('click', (ev) => {
+  const seekToFraction = (frac) => {
     const m = currentMediaElement();
     if (!m || !m.duration) return;
-    const r = e.track.getBoundingClientRect();
-    const frac = (ev.clientX - r.left) / r.width;
     m.currentTime = Math.max(0, Math.min(1, frac)) * m.duration;
-  });
+  };
+  const handlePointer = (ev) => {
+    const r = e.track.getBoundingClientRect();
+    const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+    return (clientX - r.left) / r.width;
+  };
+  e.track?.addEventListener('click', (ev) => seekToFraction(handlePointer(ev)));
+  e.track?.addEventListener('touchstart', (ev) => {
+    seeking = true;
+    ev.preventDefault();
+    seekToFraction(handlePointer(ev));
+  }, { passive: false });
+  e.track?.addEventListener('touchmove', (ev) => {
+    if (!seeking) return;
+    ev.preventDefault();
+    seekToFraction(handlePointer(ev));
+  }, { passive: false });
+  e.track?.addEventListener('touchend', () => { seeking = false; });
   e.track?.addEventListener('keydown', (ev) => {
     const m = currentMediaElement();
     if (!m || !m.duration) return;

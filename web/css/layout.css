@@ -257,6 +257,19 @@ body {
 
 /* Responsive */
 @media (max-width: 860px) {
+  :root {
+    --header-height: 3rem;
+    --sidebar-width: 0;
+  }
+  .site-header {
+    gap: 0.35rem;
+    padding: 0 0.5rem;
+  }
+  .search-bar {
+    max-width: none;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
   .sidebar {
     position: fixed;
     inset: var(--header-height) auto auto 0;
@@ -269,11 +282,35 @@ body {
   }
   .sidebar.open { display: flex; }
   .page { padding-left: 0; }
-  .media-grid { grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); }
+  .player { inset: auto 0 0 0 !important; }
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .toolbar .input-sm {
+    min-width: 4.5rem;
+    max-width: none;
+    flex: 1 1 4.5rem;
+  }
+  .site-header .logo {
+    font-size: 0.9rem;
+  }
+  #theme-toggle,
+  #user-name {
+    display: none;
+  }
+  #logout-btn {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.75rem;
+  }
+  .media-grid { grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); }
 }
 
 @media (max-width: 520px) {
   .media-grid { grid-template-columns: repeat(2, 1fr); }
+  .toolbar .input-sm {
+    min-width: 3.5rem;
+  }
 }
 
 /* Utilities */

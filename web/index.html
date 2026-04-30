@@ -43,13 +43,16 @@
         <option value="audio">Audio</option>
       </select>
       <button id="filter-favorites" class="btn btn-ghost btn-sm">❤ Favorites</button>
+      <div class="spacer"></div>
+      <button id="filter-toggle" class="btn btn-ghost btn-sm" title="More filters">Filters ▾</button>
+      <span id="result-count" class="text-muted text-xs"></span>
+    </div>
+    <div id="filter-advanced" class="toolbar hidden">
       <input id="filter-tags" type="text" placeholder="Tags (comma)" aria-label="Filter by tags" class="input-sm">
       <input id="filter-min-duration" type="number" min="0" placeholder="Min s" aria-label="Min duration seconds" class="input-sm">
       <input id="filter-max-duration" type="number" min="0" placeholder="Max s" aria-label="Max duration seconds" class="input-sm">
       <input id="filter-min-filesize" type="number" min="0" placeholder="Min MB" aria-label="Min file size MB" class="input-sm">
       <input id="filter-max-filesize" type="number" min="0" placeholder="Max MB" aria-label="Max file size MB" class="input-sm">
-      <div class="spacer"></div>
-      <span id="result-count" class="text-muted text-xs"></span>
     </div>
     <div id="media-grid" class="media-grid" tabindex="0" aria-label="Media grid"></div>
   </div>

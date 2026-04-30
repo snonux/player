@@ -117,6 +117,9 @@ async function initApp() {
   document.getElementById('filter-max-duration')?.addEventListener('change', (e) => { state.filters.maxDuration = e.target.value; loadMedia(); });
   document.getElementById('filter-min-filesize')?.addEventListener('change', (e) => { state.filters.minFilesizeMB = e.target.value; loadMedia(); });
   document.getElementById('filter-max-filesize')?.addEventListener('change', (e) => { state.filters.maxFilesizeMB = e.target.value; loadMedia(); });
+  document.getElementById('filter-toggle')?.addEventListener('click', () => {
+    document.getElementById('filter-advanced')?.classList.toggle('hidden');
+  });
 
   // Menu toggle
   document.getElementById('menu-btn')?.addEventListener('click', () => {
