@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -102,7 +104,7 @@ func TestMediaService_ListSets(t *testing.T) {
 					},
 				},
 			}
-			svc := NewMediaService(store, newMockClock(), "/tmp/media")
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 			sets, err := svc.ListSets(ctx, tt.userID)
 			if tt.wantErr {
 				if err == nil {
@@ -217,7 +219,7 @@ func TestMediaService_GetMediaDetail(t *testing.T) {
 					},
 				},
 			}
-			svc := NewMediaService(store, newMockClock(), "/tmp/media")
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 			detail, err := svc.GetMediaDetail(ctx, tt.mediaID, tt.userID)
 			if tt.wantErr {
 				if err == nil {
@@ -343,7 +345,7 @@ func TestMediaService_StreamMedia_Access(t *testing.T) {
 					},
 				},
 			}
-			svc := NewMediaService(store, newMockClock(), "/tmp/media")
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 			res, err := svc.StreamMedia(ctx, tt.mediaID, tt.userID)
 			if tt.wantErr != nil {
 				if err == nil {
@@ -378,7 +380,7 @@ func TestMediaService_StreamMedia(t *testing.T) {
 			},
 		},
 	}
-	svc := NewMediaService(store, newMockClock(), "/tmp/media")
+	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 	res, err := svc.StreamMedia(ctx, 1, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -464,7 +466,7 @@ func TestMediaService_DownloadMedia_Access(t *testing.T) {
 					},
 				},
 			}
-			svc := NewMediaService(store, newMockClock(), "/tmp/media")
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 			res, err := svc.DownloadMedia(ctx, tt.mediaID, tt.userID)
 			if tt.wantErr != nil {
 				if err == nil {
@@ -509,7 +511,7 @@ func TestMediaService_ToggleFavorite(t *testing.T) {
 			},
 		},
 	}
-	svc := NewMediaService(store, newMockClock(), "/tmp/media")
+	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 	fav, err := svc.ToggleFavorite(ctx, 1, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -586,7 +588,7 @@ func TestMediaService_AssignTag(t *testing.T) {
 					},
 				},
 			}
-			svc := NewMediaService(store, newMockClock(), "/tmp/media")
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 			err := svc.AssignTag(ctx, 1, 1, "rock")
 			if tt.wantErr {
 				if err == nil {
@@ -660,7 +662,7 @@ func TestMediaService_RemoveTag(t *testing.T) {
 					},
 				},
 			}
-			svc := NewMediaService(store, newMockClock(), "/tmp/media")
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 			err := svc.RemoveTag(ctx, 1, 1, "rock")
 			if tt.wantErr {
 				if err == nil {
@@ -697,7 +699,7 @@ func TestMediaService_SoftDeleteMedia(t *testing.T) {
 			},
 		},
 	}
-	svc := NewMediaService(store, newMockClock(), "/tmp/media")
+	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 	if err := svc.SoftDeleteMedia(ctx, 1, 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -727,7 +729,7 @@ func TestMediaService_RestoreMedia(t *testing.T) {
 			},
 		},
 	}
-	svc := NewMediaService(store, newMockClock(), "/tmp/media")
+	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 	if err := svc.RestoreMedia(ctx, 1, 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -810,7 +812,7 @@ func TestMediaService_UploadMedia(t *testing.T) {
 					},
 				},
 			}
-			svc := NewMediaService(store, newMockClock(), tmpDir)
+			svc := NewMediaService(store, newMockClock(), tmpDir, nil, nil)
 			data := strings.NewReader("hello world")
 			media, err := svc.UploadMedia(ctx, 1, 1, tt.filename, data, 11)
 			if tt.wantErr {
@@ -850,7 +852,7 @@ func TestMediaService_CreateShare(t *testing.T) {
 			},
 		},
 	}
-	svc := NewMediaService(store, newMockClock(), "/tmp/media")
+	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 	share, err := svc.CreateShare(ctx, 1, 1, now.Add(24*time.Hour))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -903,7 +905,7 @@ func TestMediaService_ValidateShareToken(t *testing.T) {
 					},
 				},
 			}
-			svc := NewMediaService(store, newMockClock(), "/tmp/media")
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 			res, err := svc.ValidateShareToken(ctx, "abc")
 			if tt.wantValid {
 				if err != nil {
@@ -967,7 +969,7 @@ func TestMediaService_StreamSharedMedia(t *testing.T) {
 					},
 				},
 			}
-			svc := NewMediaService(store, newMockClock(), "/tmp/media")
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 			res, err := svc.StreamSharedMedia(ctx, "abc")
 			if tt.wantErr {
 				if err == nil {
@@ -1034,7 +1036,7 @@ func TestMediaService_Notes(t *testing.T) {
 					},
 				},
 			}
-			svc := NewMediaService(store, newMockClock(), "/tmp/media")
+			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 			var err error
 			switch tt.method {
 			case "get":
@@ -1059,6 +1061,30 @@ func TestMediaService_Notes(t *testing.T) {
 
 func intPtr(i int) *int {
 	return &i
+}
+
+// mockThumbGenerator is a test fake for thumb.Generator.
+type mockThumbGenerator struct {
+	GenerateFunc func(ctx context.Context, inputPath, outputPath string, duration float64) error
+}
+
+func (m *mockThumbGenerator) Generate(ctx context.Context, inputPath, outputPath string, duration float64) error {
+	if m.GenerateFunc != nil {
+		return m.GenerateFunc(ctx, inputPath, outputPath, duration)
+	}
+	return nil
+}
+
+// mockProber is a test fake for probe.Prober.
+type mockProber struct {
+	ProbeFunc func(ctx context.Context, path string) (*model.Metadata, error)
+}
+
+func (m *mockProber) Probe(ctx context.Context, path string) (*model.Metadata, error) {
+	if m.ProbeFunc != nil {
+		return m.ProbeFunc(ctx, path)
+	}
+	return &model.Metadata{}, nil
 }
 
 func TestMediaService_ViewerCannotMutate(t *testing.T) {
@@ -1091,7 +1117,7 @@ func TestMediaService_ViewerCannotMutate(t *testing.T) {
 
 	t.Run("viewer cannot soft delete", func(t *testing.T) {
 		store := makeViewerStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		err := svc.SoftDeleteMedia(ctx, 1, 2)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1100,7 +1126,7 @@ func TestMediaService_ViewerCannotMutate(t *testing.T) {
 
 	t.Run("viewer cannot restore", func(t *testing.T) {
 		store := makeViewerStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		err := svc.RestoreMedia(ctx, 1, 2)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1120,7 +1146,7 @@ func TestMediaService_ViewerCannotMutate(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), t.TempDir())
+		svc := NewMediaService(store, newMockClock(), t.TempDir(), nil, nil)
 		_, err := svc.UploadMedia(ctx, 1, 2, "song.mp3", strings.NewReader("data"), 4)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1129,7 +1155,7 @@ func TestMediaService_ViewerCannotMutate(t *testing.T) {
 
 	t.Run("viewer cannot regenerate thumbnail", func(t *testing.T) {
 		store := makeViewerStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		err := svc.RegenerateThumbnail(ctx, 1, 2)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1149,7 +1175,7 @@ func TestMediaService_ViewerCannotMutate(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		err := svc.RegenerateSetCover(ctx, 1, 2)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1190,7 +1216,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 
 	t.Run("unauthorized cannot get detail", func(t *testing.T) {
 		store := makeUnauthorizedStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		_, err := svc.GetMediaDetail(ctx, 1, 9)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1215,7 +1241,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		res, err := svc.ListMedia(ctx, 9, repository.MediaFilter{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1227,7 +1253,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 
 	t.Run("unauthorized cannot favorite", func(t *testing.T) {
 		store := makeUnauthorizedStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		_, err := svc.ToggleFavorite(ctx, 9, 1)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1236,7 +1262,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 
 	t.Run("unauthorized cannot assign tag", func(t *testing.T) {
 		store := makeUnauthorizedStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		err := svc.AssignTag(ctx, 1, 9, "rock")
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1245,7 +1271,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 
 	t.Run("unauthorized cannot remove tag", func(t *testing.T) {
 		store := makeUnauthorizedStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		err := svc.RemoveTag(ctx, 1, 9, "rock")
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1254,7 +1280,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 
 	t.Run("unauthorized cannot get note", func(t *testing.T) {
 		store := makeUnauthorizedStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		_, err := svc.GetNote(ctx, 1, 9)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1263,7 +1289,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 
 	t.Run("unauthorized cannot upsert note", func(t *testing.T) {
 		store := makeUnauthorizedStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		err := svc.UpsertNote(ctx, &model.Note{MediaID: 1, UserID: 9, Content: "hello"})
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1272,7 +1298,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 
 	t.Run("unauthorized cannot delete note", func(t *testing.T) {
 		store := makeUnauthorizedStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		err := svc.DeleteNote(ctx, 1, 9)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1281,7 +1307,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 
 	t.Run("unauthorized cannot create share", func(t *testing.T) {
 		store := makeUnauthorizedStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		_, err := svc.CreateShare(ctx, 9, 1, time.Now().Add(time.Hour))
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1290,7 +1316,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 
 	t.Run("unauthorized cannot list shares", func(t *testing.T) {
 		store := makeUnauthorizedStore(1, 1)
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		_, err := svc.ListShares(ctx, 1, 9)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
@@ -1316,7 +1342,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		err := svc.SoftDeleteMedia(ctx, 1, 2)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1342,7 +1368,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		err := svc.RestoreMedia(ctx, 1, 2)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1368,7 +1394,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), tmpDir)
+		svc := NewMediaService(store, newMockClock(), tmpDir, nil, nil)
 		media, err := svc.UploadMedia(ctx, 1, 2, "song.mp3", strings.NewReader("data"), 4)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1395,7 +1421,7 @@ func TestMediaService_ListMedia_AdminAndUserFiltering(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		res, err := svc.ListMedia(ctx, 1, repository.MediaFilter{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1426,13 +1452,323 @@ func TestMediaService_ListMedia_AdminAndUserFiltering(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		res, err := svc.ListMedia(ctx, 2, repository.MediaFilter{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(res) != 1 || res[0].ID != 5 {
 			t.Fatalf("unexpected result: %+v", res)
+		}
+	})
+}
+
+func TestMediaService_RegenerateThumbnail(t *testing.T) {
+	ctx := context.Background()
+	makeStore := func(media *model.Media) *repository.MockStore {
+		return &repository.MockStore{
+			MediaRepo: repository.MockMediaRepo{
+				GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+					return media, nil
+				},
+				UpdateMediaFunc: func(ctx context.Context, m *model.Media) error {
+					return nil
+				},
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					if id == 1 {
+						return &model.User{ID: 1, IsAdmin: true}, nil
+					}
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					return &model.Set{ID: id}, nil
+				},
+			},
+			SetPermissionRepo: repository.MockSetPermissionRepo{
+				GetPermissionFunc: func(ctx context.Context, setID, userID int64) (*model.SetPermission, error) {
+					return nil, nil
+				},
+			},
+		}
+	}
+
+	t.Run("admin can regenerate thumbnail", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mediaPath := filepath.Join(tmpDir, "video.mp4")
+		_ = os.WriteFile(mediaPath, []byte("fake"), 0o644)
+		media := &model.Media{ID: 1, SetID: 1, AbsPath: mediaPath, Type: model.MediaTypeVideo}
+		store := makeStore(media)
+		thumbGen := &mockThumbGenerator{}
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 60}, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
+		if err := svc.RegenerateThumbnail(ctx, 1, 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("owner can regenerate thumbnail", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mediaPath := filepath.Join(tmpDir, "video.mp4")
+		_ = os.WriteFile(mediaPath, []byte("fake"), 0o644)
+		media := &model.Media{ID: 1, SetID: 1, AbsPath: mediaPath, Type: model.MediaTypeVideo}
+		store := makeStore(media)
+		store.SetRepo = repository.MockSetRepo{
+			GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+				return &model.Set{ID: id, Permissions: []model.SetPermission{{SetID: id, UserID: 2, Role: model.RoleOwner}}}, nil
+			},
+		}
+		thumbGen := &mockThumbGenerator{}
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 60}, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
+		if err := svc.RegenerateThumbnail(ctx, 1, 2); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("viewer cannot regenerate thumbnail", func(t *testing.T) {
+		media := &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/video.mp4", Type: model.MediaTypeVideo}
+		store := makeStore(media)
+		store.SetRepo = repository.MockSetRepo{
+			GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+				return &model.Set{ID: id, Permissions: []model.SetPermission{{SetID: id, UserID: 2, Role: model.RoleViewer}}}, nil
+			},
+		}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+		err := svc.RegenerateThumbnail(ctx, 1, 2)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		store := makeStore(nil)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+		err := svc.RegenerateThumbnail(ctx, 1, 1)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected ErrNotFound, got %v", err)
+		}
+	})
+
+	t.Run("audio file rejected", func(t *testing.T) {
+		media := &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/song.mp3", Type: model.MediaTypeAudio}
+		store := makeStore(media)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+		err := svc.RegenerateThumbnail(ctx, 1, 1)
+		if err == nil {
+			t.Fatal("expected error for audio file")
+		}
+	})
+
+	t.Run("probe failure", func(t *testing.T) {
+		media := &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/video.mp4", Type: model.MediaTypeVideo}
+		store := makeStore(media)
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return nil, errors.New("probe err")
+		}}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, prober)
+		err := svc.RegenerateThumbnail(ctx, 1, 1)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("thumb generation failure", func(t *testing.T) {
+		media := &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/video.mp4", Type: model.MediaTypeVideo}
+		store := makeStore(media)
+		thumbGen := &mockThumbGenerator{GenerateFunc: func(ctx context.Context, inputPath, outputPath string, duration float64) error {
+			return errors.New("thumb err")
+		}}
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 60}, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", thumbGen, prober)
+		err := svc.RegenerateThumbnail(ctx, 1, 1)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("update media failure", func(t *testing.T) {
+		media := &model.Media{ID: 1, SetID: 1, AbsPath: "/tmp/video.mp4", Type: model.MediaTypeVideo}
+		store := makeStore(media)
+		store.MediaRepo.UpdateMediaFunc = func(ctx context.Context, m *model.Media) error {
+			return errors.New("update err")
+		}
+		thumbGen := &mockThumbGenerator{}
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 60}, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", thumbGen, prober)
+		err := svc.RegenerateThumbnail(ctx, 1, 1)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+}
+
+func TestMediaService_RegenerateSetCover(t *testing.T) {
+	ctx := context.Background()
+	makeStore := func(setID int64, media []model.Media, set *model.Set) *repository.MockStore {
+		return &repository.MockStore{
+			SetRepo: repository.MockSetRepo{
+				GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+					if set != nil && set.ID == id {
+						return set, nil
+					}
+					return nil, nil
+				},
+				UpdateSetFunc: func(ctx context.Context, s *model.Set) error {
+					return nil
+				},
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					if id == 1 {
+						return &model.User{ID: 1, IsAdmin: true}, nil
+					}
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			SetPermissionRepo: repository.MockSetPermissionRepo{
+				GetPermissionFunc: func(ctx context.Context, sid, uid int64) (*model.SetPermission, error) {
+					return nil, nil
+				},
+			},
+			MediaRepo: repository.MockMediaRepo{
+				ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+					return media, nil
+				},
+			},
+		}
+	}
+
+	t.Run("admin can regenerate cover", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		videoPath := filepath.Join(tmpDir, "video.mp4")
+		_ = os.WriteFile(videoPath, []byte("fake"), 0o644)
+		set := &model.Set{ID: 1, RootPath: "music"}
+		media := []model.Media{{ID: 1, SetID: 1, AbsPath: videoPath, Type: model.MediaTypeVideo}}
+		store := makeStore(1, media, set)
+		thumbGen := &mockThumbGenerator{}
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 60}, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
+		if err := svc.RegenerateSetCover(ctx, 1, 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("owner can regenerate cover", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		videoPath := filepath.Join(tmpDir, "video.mp4")
+		_ = os.WriteFile(videoPath, []byte("fake"), 0o644)
+		set := &model.Set{ID: 1, RootPath: "music", Permissions: []model.SetPermission{{SetID: 1, UserID: 2, Role: model.RoleOwner}}}
+		media := []model.Media{{ID: 1, SetID: 1, AbsPath: videoPath, Type: model.MediaTypeVideo}}
+		store := makeStore(1, media, set)
+		thumbGen := &mockThumbGenerator{}
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 60}, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
+		if err := svc.RegenerateSetCover(ctx, 1, 2); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("viewer cannot regenerate cover", func(t *testing.T) {
+		set := &model.Set{ID: 1, RootPath: "music", Permissions: []model.SetPermission{{SetID: 1, UserID: 2, Role: model.RoleViewer}}}
+		store := makeStore(1, nil, set)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+		err := svc.RegenerateSetCover(ctx, 1, 2)
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+	})
+
+	t.Run("set not found", func(t *testing.T) {
+		store := makeStore(1, nil, nil)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+		err := svc.RegenerateSetCover(ctx, 1, 1)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected ErrNotFound, got %v", err)
+		}
+	})
+
+	t.Run("no video files", func(t *testing.T) {
+		set := &model.Set{ID: 1, RootPath: "music"}
+		media := []model.Media{{ID: 1, SetID: 1, AbsPath: "/tmp/song.mp3", Type: model.MediaTypeAudio}}
+		store := makeStore(1, media, set)
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+		err := svc.RegenerateSetCover(ctx, 1, 1)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("probe failure", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		videoPath := filepath.Join(tmpDir, "video.mp4")
+		_ = os.WriteFile(videoPath, []byte("fake"), 0o644)
+		set := &model.Set{ID: 1, RootPath: "music"}
+		media := []model.Media{{ID: 1, SetID: 1, AbsPath: videoPath, Type: model.MediaTypeVideo}}
+		store := makeStore(1, media, set)
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return nil, errors.New("probe err")
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, nil, prober)
+		err := svc.RegenerateSetCover(ctx, 1, 1)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("thumb generation failure", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		videoPath := filepath.Join(tmpDir, "video.mp4")
+		_ = os.WriteFile(videoPath, []byte("fake"), 0o644)
+		set := &model.Set{ID: 1, RootPath: "music"}
+		media := []model.Media{{ID: 1, SetID: 1, AbsPath: videoPath, Type: model.MediaTypeVideo}}
+		store := makeStore(1, media, set)
+		thumbGen := &mockThumbGenerator{GenerateFunc: func(ctx context.Context, inputPath, outputPath string, duration float64) error {
+			return errors.New("thumb err")
+		}}
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 60}, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
+		err := svc.RegenerateSetCover(ctx, 1, 1)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("update set failure", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		videoPath := filepath.Join(tmpDir, "video.mp4")
+		_ = os.WriteFile(videoPath, []byte("fake"), 0o644)
+		set := &model.Set{ID: 1, RootPath: "music"}
+		media := []model.Media{{ID: 1, SetID: 1, AbsPath: videoPath, Type: model.MediaTypeVideo}}
+		store := makeStore(1, media, set)
+		store.SetRepo.UpdateSetFunc = func(ctx context.Context, s *model.Set) error {
+			return errors.New("update err")
+		}
+		thumbGen := &mockThumbGenerator{}
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			return &model.Metadata{Duration: 60}, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
+		err := svc.RegenerateSetCover(ctx, 1, 1)
+		if err == nil {
+			t.Fatal("expected error")
 		}
 	})
 }

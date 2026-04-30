@@ -20,7 +20,7 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		detail, err := svc.GetMediaDetail(ctx, 99, 1)
 		if !errors.Is(err, ErrNotFound) {
 			t.Fatalf("expected ErrNotFound, got %v", err)
@@ -53,7 +53,7 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		note, err := svc.GetNote(ctx, 1, 1)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
@@ -92,7 +92,7 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		if err := svc.AssignTag(ctx, 1, 1, "newtag"); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -133,7 +133,7 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		sh, err := svc.ValidateShareToken(ctx, "nope")
 		if !errors.Is(err, ErrShareNotFound) {
 			t.Fatalf("expected ErrShareNotFound, got %v", err)
@@ -151,7 +151,7 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		_, err := svc.StreamSharedMedia(ctx, "nope")
 		if !errors.Is(err, ErrShareNotFound) {
 			t.Fatalf("expected ErrShareNotFound, got %v", err)
@@ -181,7 +181,7 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media")
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
 		_, err := svc.StreamMedia(ctx, 1, 1)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)

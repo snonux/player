@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	mrand "math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,9 @@ import (
 
 	"codeberg.org/snonux/play/internal/clock"
 	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/play/internal/probe"
 	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/play/internal/thumb"
 )
 
 // mediaService is the concrete implementation of MediaService.
@@ -22,14 +25,18 @@ type mediaService struct {
 	store     repository.MediaServiceStore
 	clock     clock.Clock
 	mediaRoot string
+	thumbGen  thumb.Generator
+	prober    probe.Prober
 }
 
 // NewMediaService creates a concrete MediaService.
-func NewMediaService(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string) MediaService {
+func NewMediaService(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober) MediaService {
 	return &mediaService{
 		store:     store,
 		clock:     clk,
 		mediaRoot: mediaRoot,
+		thumbGen:  thumbGen,
+		prober:    prober,
 	}
 }
 
@@ -291,18 +298,85 @@ func (s *mediaService) GetThumbnail(ctx context.Context, mediaID, userID int64) 
 }
 
 func (s *mediaService) RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error {
-	_, err := s.verifyModifyAccess(ctx, mediaID, userID)
+	media, err := s.verifyModifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return err
 	}
-	return errors.New("not implemented")
+	if media.Type != model.MediaTypeVideo {
+		return errors.New("thumbnails can only be generated for video files")
+	}
+
+	meta, err := s.prober.Probe(ctx, media.AbsPath)
+	if err != nil {
+		return fmt.Errorf("probe media: %w", err)
+	}
+
+	thumbDir := filepath.Join(filepath.Dir(media.AbsPath), ".thumbnails")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir thumbnails: %w", err)
+	}
+	thumbName := strings.TrimSuffix(filepath.Base(media.AbsPath), filepath.Ext(media.AbsPath)) + ".jpg"
+	thumbnailPath := filepath.Join(thumbDir, thumbName)
+
+	if err := s.thumbGen.Generate(ctx, media.AbsPath, thumbnailPath, meta.Duration); err != nil {
+		return fmt.Errorf("generate thumbnail: %w", err)
+	}
+
+	media.ThumbnailPath = thumbnailPath
+	if err := s.store.UpdateMedia(ctx, media); err != nil {
+		return fmt.Errorf("update media: %w", err)
+	}
+	return nil
 }
 
 func (s *mediaService) RegenerateSetCover(ctx context.Context, setID, userID int64) error {
 	if err := s.verifySetModifyAccess(ctx, setID, userID); err != nil {
 		return err
 	}
-	return errors.New("not implemented")
+
+	set, err := s.store.GetSetByID(ctx, setID)
+	if err != nil {
+		return fmt.Errorf("get set: %w", err)
+	}
+	if set == nil {
+		return ErrNotFound
+	}
+
+	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
+	if err != nil {
+		return fmt.Errorf("list media: %w", err)
+	}
+
+	var candidates []model.Media
+	for _, m := range media {
+		if m.Type == model.MediaTypeVideo && m.DeletedAt == nil {
+			candidates = append(candidates, m)
+		}
+	}
+	if len(candidates) == 0 {
+		return errors.New("no video files available for cover")
+	}
+
+	candidate := candidates[0]
+	if len(candidates) > 1 {
+		candidate = candidates[mrand.Intn(len(candidates))]
+	}
+
+	coverPath := filepath.Join(filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath)), ".cover.jpg")
+	meta, err := s.prober.Probe(ctx, candidate.AbsPath)
+	if err != nil {
+		return fmt.Errorf("probe cover candidate: %w", err)
+	}
+
+	if err := s.thumbGen.Generate(ctx, candidate.AbsPath, coverPath, meta.Duration); err != nil {
+		return fmt.Errorf("generate cover: %w", err)
+	}
+
+	set.CoverThumbnailPath = coverPath
+	if err := s.store.UpdateSet(ctx, set); err != nil {
+		return fmt.Errorf("update set: %w", err)
+	}
+	return nil
 }
 
 func (s *mediaService) ToggleFavorite(ctx context.Context, userID, mediaID int64) (bool, error) {

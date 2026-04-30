@@ -335,6 +335,8 @@ func TestServer_SetCover(t *testing.T) {
 		{"nil service", "1", true, nil, http.StatusNotImplemented},
 		{"invalid id", "abc", false, nil, http.StatusBadRequest},
 		{"service error", "1", false, errors.New("boom"), http.StatusInternalServerError},
+		{"not found", "1", false, service.ErrNotFound, http.StatusNotFound},
+		{"forbidden", "1", false, service.ErrForbidden, http.StatusForbidden},
 		{"ok", "1", false, nil, http.StatusOK},
 	}
 
@@ -733,6 +735,41 @@ func TestServer_RegenThumbnail(t *testing.T) {
 			}
 			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/thumbnail", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_RegenThumbnail_errorMapping(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name     string
+		svcErr   error
+		wantCode int
+	}{
+		{"not found", service.ErrNotFound, http.StatusNotFound},
+		{"forbidden", service.ErrForbidden, http.StatusForbidden},
+		{"internal error", errors.New("boom"), http.StatusInternalServerError},
+		{"ok", nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ms := &service.MockMediaService{
+				RegenerateThumbnailFunc: func(ctx context.Context, mediaID, userID int64) error {
+					return tt.svcErr
+				},
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/media/1/thumbnail", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)

@@ -76,10 +76,10 @@ func run(args []string) error {
 	hasher := auth.NewBCryptHasher(12)
 	sm := auth.NewSessionManager(store, clk, time.Duration(cfg.SessionTimeoutHours)*time.Hour)
 
-	mediaSvc := service.NewMediaService(store, clk, cfg.MediaRoot)
-
 	prober := probe.NewFFProber()
 	thumbGen := thumb.NewFFmpegGenerator()
+	mediaSvc := service.NewMediaService(store, clk, cfg.MediaRoot, thumbGen, prober)
+
 	fsScanner := scanner.NewFSScanner(store, prober, thumbGen, clk, cfg.MediaRoot)
 	adminSvc := service.NewAdminService(store, clk, hasher, fsScanner, cfg.MediaRoot)
 

@@ -267,6 +267,14 @@ func (s *Server) handleSetCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.mediaSvc.RegenerateSetCover(r.Context(), setID, userIDFromContext(r)); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if errors.Is(err, service.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -597,6 +605,14 @@ func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.mediaSvc.RegenerateThumbnail(r.Context(), id, userIDFromContext(r)); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if errors.Is(err, service.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
