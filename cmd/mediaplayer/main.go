@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,28 +24,53 @@ import (
 )
 
 func main() {
-	versionFlag := flag.Bool("version", false, "print version and exit")
-	flag.Parse()
+	if err := run(os.Args[1:]); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(args []string) error {
+	fs := flag.NewFlagSet("mediaplayer", flag.ContinueOnError)
+	versionFlag := fs.Bool("version", false, "print version and exit")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	if *versionFlag {
 		fmt.Println(internal.Version)
-		os.Exit(0)
+		return nil
 	}
 
 	cfg, err := internal.LoadConfig()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	store, err := repository.Open(cfg.DBPath)
 	if err != nil {
-		log.Fatalf("failed to open database: %v", err)
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer func() {
 		if err := store.Close(); err != nil {
 			log.Printf("failed to close database: %v", err)
 		}
 	}()
+
+	// Build logger aligned with the configured log level.
+	var level slog.Level
+	switch cfg.LogLevel {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	clk := clock.RealClock{}
 	hasher := auth.NewBCryptHasher(12)
@@ -58,6 +84,11 @@ func main() {
 	adminSvc := service.NewAdminService(store, clk, hasher, fsScanner, cfg.MediaRoot)
 
 	progressSvc := service.NewProgressService(store, clk)
+
+	// Start the background GC worker that hard-deletes soft-deleted media.
+	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger)
+	gcWorker.Start()
+	defer gcWorker.Stop()
 
 	staticFS := http.Dir("web")
 	server := api.NewServer(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, staticFS)
@@ -80,7 +111,8 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := gs.Server.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("failed to shutdown server: %v", err)
+		return fmt.Errorf("failed to shutdown server: %w", err)
 	}
 	log.Println("server stopped")
+	return nil
 }
