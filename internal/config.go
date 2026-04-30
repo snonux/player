@@ -17,6 +17,7 @@ const (
 	DefaultGCIntervalMinutes      = 30
 	DefaultShareDefaultExpiryDays = 7
 	DefaultLogLevel               = "info"
+	DefaultSecureCookies          = true
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -29,6 +30,7 @@ type Config struct {
 	GCIntervalMinutes      int
 	ShareDefaultExpiryDays int
 	LogLevel               string
+	SecureCookies          bool
 }
 
 // envInt reads an integer environment variable, validates it with the given check,
@@ -68,6 +70,7 @@ func LoadConfig() (*Config, error) {
 		GCIntervalMinutes:      DefaultGCIntervalMinutes,
 		ShareDefaultExpiryDays: DefaultShareDefaultExpiryDays,
 		LogLevel:               DefaultLogLevel,
+		SecureCookies:          DefaultSecureCookies,
 	}
 
 	validLevels := map[string]struct{}{
@@ -131,6 +134,14 @@ func LoadConfig() (*Config, error) {
 			return nil, fmt.Errorf("invalid LOG_LEVEL: must be one of debug, info, warn, error, got %q", level)
 		}
 		cfg.LogLevel = level
+	}
+
+	if v := os.Getenv("SECURE_COOKIES"); v != "" {
+		b, err := strconv.ParseBool(strings.TrimSpace(v))
+		if err != nil {
+			return nil, fmt.Errorf("invalid SECURE_COOKIES: %w", err)
+		}
+		cfg.SecureCookies = b
 	}
 
 	return cfg, nil

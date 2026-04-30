@@ -37,6 +37,9 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.LogLevel != DefaultLogLevel {
 		t.Errorf("LogLevel: expected %q, got %q", DefaultLogLevel, cfg.LogLevel)
 	}
+	if cfg.SecureCookies != DefaultSecureCookies {
+		t.Errorf("SecureCookies: expected %v, got %v", DefaultSecureCookies, cfg.SecureCookies)
+	}
 }
 
 func TestLoadConfig_EnvOverrides(t *testing.T) {
@@ -50,6 +53,7 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 		{"GC_INTERVAL_MINUTES", "60"},
 		{"SHARE_DEFAULT_EXPIRY_DAYS", "14"},
 		{"LOG_LEVEL", "debug"},
+		{"SECURE_COOKIES", "false"},
 	})
 
 	cfg, err := LoadConfig()
@@ -79,6 +83,9 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel: expected %q, got %q", "debug", cfg.LogLevel)
+	}
+	if cfg.SecureCookies != false {
+		t.Errorf("SecureCookies: expected false, got %v", cfg.SecureCookies)
 	}
 }
 
@@ -128,6 +135,11 @@ func TestLoadConfig_InvalidValues(t *testing.T) {
 			env:     []envPair{{"LOG_LEVEL", "trace"}},
 			wantErr: "invalid LOG_LEVEL",
 		},
+		{
+			name:    "invalid SECURE_COOKIES",
+			env:     []envPair{{"SECURE_COOKIES", "maybe"}},
+			wantErr: "invalid SECURE_COOKIES",
+		},
 	}
 
 	for _, tc := range cases {
@@ -156,7 +168,7 @@ func clearEnv() {
 		"PORT", "MEDIA_ROOT", "DB_PATH",
 		"MAX_UPLOAD_SIZE_MB", "SESSION_TIMEOUT_HOURS",
 		"GC_INTERVAL_MINUTES", "SHARE_DEFAULT_EXPIRY_DAYS",
-		"LOG_LEVEL",
+		"LOG_LEVEL", "SECURE_COOKIES",
 	} {
 		os.Unsetenv(k)
 	}

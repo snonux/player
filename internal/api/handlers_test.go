@@ -458,6 +458,97 @@ func TestServer_Login(t *testing.T) {
 	})
 }
 
+func TestServer_SessionCookieSecure(t *testing.T) {
+	hasher := &staticHasher{fixed: "hashed"}
+	store := &repository.MockStore{
+		UserRepo: repository.MockUserRepo{
+			CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
+			GetUserByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
+				return &model.User{ID: 1, Username: "alice", PasswordHash: "hashed"}, nil
+			},
+		},
+	}
+	repo := repository.MockSessionRepo{
+		CreateSessionFunc: func(ctx context.Context, session *model.Session) error { return nil },
+	}
+	sm := auth.NewSessionManager(&repo, &clock.MockClock{T: time.Now()}, time.Hour)
+
+	t.Run("Secure=true by default", func(t *testing.T) {
+		cfg := &internal.Config{SessionTimeoutHours: 24, SecureCookies: true}
+		srv := newTestServer(t, store, hasher, sm, cfg, nil, nil, nil, nil)
+		body := `{"username":"alice","password":"correct"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		for _, c := range rr.Result().Cookies() {
+			if c.Name == "session" && c.Secure != true {
+				t.Fatalf("expected Secure=true, got Secure=%v", c.Secure)
+			}
+		}
+	})
+
+	t.Run("Secure=false", func(t *testing.T) {
+		cfg := &internal.Config{SessionTimeoutHours: 24, SecureCookies: false}
+		srv := newTestServer(t, store, hasher, sm, cfg, nil, nil, nil, nil)
+		body := `{"username":"alice","password":"correct"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		for _, c := range rr.Result().Cookies() {
+			if c.Name == "session" && c.Secure != false {
+				t.Fatalf("expected Secure=false, got Secure=%v", c.Secure)
+			}
+		}
+	})
+
+	t.Run("clear cookie respects Secure config", func(t *testing.T) {
+		var deleted string
+		sessStore := &repository.MockStore{
+			UserRepo: repository.MockUserRepo{
+				CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
+			},
+			SessionRepo: repository.MockSessionRepo{
+				GetSessionByIDFunc: func(ctx context.Context, id string) (*model.Session, error) {
+					if id == "abc" {
+						return &model.Session{ID: "abc", UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}, nil
+					}
+					return nil, nil
+				},
+				DeleteSessionFunc: func(ctx context.Context, id string) error {
+					deleted = id
+					return nil
+				},
+			},
+		}
+		logoutSM := auth.NewSessionManager(&sessStore.SessionRepo, &clock.MockClock{T: time.Now()}, time.Hour)
+		cfg := &internal.Config{SessionTimeoutHours: 24, SecureCookies: false}
+		srv := newTestServer(t, sessStore, nil, logoutSM, cfg, nil, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/logout", nil)
+		req.AddCookie(&http.Cookie{Name: "session", Value: "abc"})
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("expected %d, got %d", http.StatusNoContent, rr.Code)
+		}
+		if deleted != "abc" {
+			t.Fatalf("expected session abc to be deleted, got %q", deleted)
+		}
+		for _, c := range rr.Result().Cookies() {
+			if c.Name == "session" && c.Secure != false {
+				t.Fatalf("expected Secure=false on cleared cookie, got Secure=%v", c.Secure)
+			}
+		}
+	})
+}
+
 func TestServer_Logout(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 

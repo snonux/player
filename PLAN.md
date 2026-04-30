@@ -403,6 +403,7 @@ CREATE INDEX idx_shares_expires ON shares(expires_at);
 | `GC_INTERVAL_MINUTES` | `30` | Garbage collector tick |
 | `SHARE_DEFAULT_EXPIRY_DAYS` | `7` | Default share link lifetime |
 | `LOG_LEVEL` | `info` | Log verbosity |
+| `SECURE_COOKIES` | `true` | Set `Secure` flag on session cookies; disable for plain-HTTP local deployments |
 
 ---
 
