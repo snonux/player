@@ -39,6 +39,9 @@ func scanMedia(row sqlScanner) (*model.Media, error) {
 		&duration, &codec, &resolution, &bitrate, &fileSize,
 		&thumbnail, &m.PlayCount, &deleted, &m.CreatedAt,
 	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -34,6 +34,9 @@ func (s *SQLite) RevokePermission(ctx context.Context, setID, userID int64) erro
 func scanPermission(row sqlScanner) (*model.SetPermission, error) {
 	var p model.SetPermission
 	err := row.Scan(&p.SetID, &p.UserID, &p.Role, &p.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

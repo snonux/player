@@ -26,7 +26,9 @@ func (s *SQLite) GetSessionByID(ctx context.Context, id string) (*model.Session,
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, user_id, expires_at, created_at FROM sessions WHERE id = ?`, id)
 	var sess model.Session
-	if err := row.Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt); err != nil {
+	if err := row.Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt); err == sql.ErrNoRows {
+		return nil, nil
+	} else if err != nil {
 		return nil, err
 	}
 	return &sess, nil

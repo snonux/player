@@ -24,7 +24,9 @@ func (s *SQLite) CreateShare(ctx context.Context, share *model.Share) error {
 func scanShare(row sqlScanner) (*model.Share, error) {
 	var sh model.Share
 	var maxUses sql.NullInt64
-	if err := row.Scan(&sh.Token, &sh.MediaID, &sh.CreatedBy, &sh.CreatedAt, &sh.ExpiresAt, &maxUses, &sh.UsedCount); err != nil {
+	if err := row.Scan(&sh.Token, &sh.MediaID, &sh.CreatedBy, &sh.CreatedAt, &sh.ExpiresAt, &maxUses, &sh.UsedCount); err == sql.ErrNoRows {
+		return nil, nil
+	} else if err != nil {
 		return nil, err
 	}
 	if maxUses.Valid {

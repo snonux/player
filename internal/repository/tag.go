@@ -19,7 +19,9 @@ func (s *SQLite) CreateTag(ctx context.Context, name string) (int64, error) {
 
 func scanTag(row sqlScanner) (*model.Tag, error) {
 	var t model.Tag
-	if err := row.Scan(&t.ID, &t.Name); err != nil {
+	if err := row.Scan(&t.ID, &t.Name); err == sql.ErrNoRows {
+		return nil, nil
+	} else if err != nil {
 		return nil, err
 	}
 	return &t, nil

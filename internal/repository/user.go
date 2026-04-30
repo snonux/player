@@ -8,6 +8,7 @@ import (
 	"github.com/paul/kiss-media-player/internal/model"
 )
 
+
 // CreateUser inserts a new user and returns the generated ID.
 func (s *SQLite) CreateUser(ctx context.Context, user *model.User) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
@@ -24,6 +25,9 @@ func scanUser(row sqlScanner) (*model.User, error) {
 	var u model.User
 	var admin int
 	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &admin, &u.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

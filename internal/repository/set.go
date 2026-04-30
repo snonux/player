@@ -24,6 +24,9 @@ func scanSet(row sqlScanner) (*model.Set, error) {
 	var st model.Set
 	var cover sql.NullString
 	err := row.Scan(&st.ID, &st.Name, &st.RootPath, &cover, &st.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/paul/kiss-media-player/internal/model"
@@ -26,7 +27,9 @@ func (s *SQLite) GetProgress(ctx context.Context, userID, mediaID int64) (*model
 		userID, mediaID,
 	)
 	var p model.PlaybackProgress
-	if err := row.Scan(&p.UserID, &p.MediaID, &p.PositionSeconds, &p.UpdatedAt); err != nil {
+	if err := row.Scan(&p.UserID, &p.MediaID, &p.PositionSeconds, &p.UpdatedAt); err == sql.ErrNoRows {
+		return nil, nil
+	} else if err != nil {
 		return nil, err
 	}
 	return &p, nil

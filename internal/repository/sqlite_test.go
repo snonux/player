@@ -83,8 +83,12 @@ func TestSQLite_UserRepo(t *testing.T) {
 				if err := s.DeleteUser(ctx, id); err != nil {
 					t.Fatalf("delete: %v", err)
 				}
-				if _, err := s.GetUserByID(ctx, id); err == nil {
-					t.Fatal("expected error after delete")
+				u, err := s.GetUserByID(ctx, id)
+				if err != nil {
+					t.Fatalf("expected no error after delete, got %v", err)
+				}
+				if u != nil {
+					t.Fatal("expected nil user after delete")
 				}
 			},
 		},
@@ -158,8 +162,12 @@ func TestSQLite_SetRepo(t *testing.T) {
 				if err := s.DeleteSet(ctx, id); err != nil {
 					t.Fatalf("delete: %v", err)
 				}
-				if _, err := s.GetSetByID(ctx, id); err == nil {
-					t.Fatal("expected error after delete")
+				st, err := s.GetSetByID(ctx, id)
+				if err != nil {
+					t.Fatalf("expected no error after delete, got %v", err)
+				}
+				if st != nil {
+					t.Fatal("expected nil set after delete")
 				}
 			},
 		},
@@ -252,8 +260,8 @@ func TestSQLite_MediaRepo(t *testing.T) {
 					t.Fatalf("soft delete: %v", err)
 				}
 				m, err := s.GetMediaByID(ctx, mid)
-				if err == nil {
-					t.Fatal("expected error for soft-deleted media")
+				if err != nil {
+					t.Fatalf("expected no error for soft-deleted media, got %v", err)
 				}
 				if m != nil {
 					t.Fatalf("expected nil media for soft-deleted record, got %+v", m)
@@ -276,8 +284,12 @@ func TestSQLite_MediaRepo(t *testing.T) {
 				if err := s.HardDeleteMedia(ctx, mid); err != nil {
 					t.Fatalf("hard delete: %v", err)
 				}
-				if _, err := s.GetMediaByID(ctx, mid); err == nil {
-					t.Fatal("expected error after hard delete")
+				m, err := s.GetMediaByID(ctx, mid)
+				if err != nil {
+					t.Fatalf("expected no error after hard delete, got %v", err)
+				}
+				if m != nil {
+					t.Fatal("expected nil media after hard delete")
 				}
 			},
 		},
@@ -377,8 +389,12 @@ func TestSQLite_TagRepo(t *testing.T) {
 				if err := s.DeleteTag(ctx, id); err != nil {
 					t.Fatalf("delete: %v", err)
 				}
-				if _, err := s.GetTagByID(ctx, id); err == nil {
-					t.Fatal("expected error after delete")
+				tag, err := s.GetTagByID(ctx, id)
+				if err != nil {
+					t.Fatalf("expected no error after delete, got %v", err)
+				}
+				if tag != nil {
+					t.Fatal("expected nil tag after delete")
 				}
 			},
 		},
@@ -533,8 +549,12 @@ func TestSQLite_SessionRepo(t *testing.T) {
 				if err := s.DeleteSession(ctx, "abc"); err != nil {
 					t.Fatalf("delete: %v", err)
 				}
-				if _, err := s.GetSessionByID(ctx, "abc"); err == nil {
-					t.Fatal("expected error after delete")
+				sess, err := s.GetSessionByID(ctx, "abc")
+				if err != nil {
+					t.Fatalf("expected no error after delete, got %v", err)
+				}
+				if sess != nil {
+					t.Fatal("expected nil session after delete")
 				}
 			},
 		},
@@ -548,11 +568,19 @@ func TestSQLite_SessionRepo(t *testing.T) {
 				if err := s.DeleteExpiredSessions(ctx, now); err != nil {
 					t.Fatalf("delete expired: %v", err)
 				}
-				if _, err := s.GetSessionByID(ctx, "old"); err == nil {
+				sess, err := s.GetSessionByID(ctx, "old")
+				if err != nil {
+					t.Fatalf("expected no error for old session, got %v", err)
+				}
+				if sess != nil {
 					t.Fatal("expected old session gone")
 				}
-				if _, err := s.GetSessionByID(ctx, "new"); err != nil {
+				sess, err = s.GetSessionByID(ctx, "new")
+				if err != nil {
 					t.Fatalf("expected new session present: %v", err)
+				}
+				if sess == nil {
+					t.Fatal("expected new session present")
 				}
 			},
 		},
@@ -603,8 +631,12 @@ func TestSQLite_ShareRepo(t *testing.T) {
 				if err := s.DeleteShare(ctx, "tok1"); err != nil {
 					t.Fatalf("delete: %v", err)
 				}
-				if _, err := s.GetShareByToken(ctx, "tok1"); err == nil {
-					t.Fatal("expected error after delete")
+				sh, err := s.GetShareByToken(ctx, "tok1")
+				if err != nil {
+					t.Fatalf("expected no error after delete, got %v", err)
+				}
+				if sh != nil {
+					t.Fatal("expected nil share after delete")
 				}
 			},
 		},
@@ -620,11 +652,19 @@ func TestSQLite_ShareRepo(t *testing.T) {
 				if err := s.DeleteExpiredShares(ctx, now); err != nil {
 					t.Fatalf("delete expired: %v", err)
 				}
-				if _, err := s.GetShareByToken(ctx, "old"); err == nil {
+				sh, err := s.GetShareByToken(ctx, "old")
+				if err != nil {
+					t.Fatalf("expected no error for old share, got %v", err)
+				}
+				if sh != nil {
 					t.Fatal("expected old share gone")
 				}
-				if _, err := s.GetShareByToken(ctx, "new"); err != nil {
+				sh, err = s.GetShareByToken(ctx, "new")
+				if err != nil {
 					t.Fatalf("expected new share present: %v", err)
+				}
+				if sh == nil {
+					t.Fatal("expected new share present")
 				}
 			},
 		},
@@ -670,8 +710,12 @@ func TestSQLite_NoteRepo(t *testing.T) {
 				if err := s.DeleteNote(ctx, mid, uid); err != nil {
 					t.Fatalf("delete: %v", err)
 				}
-				if _, err := s.GetNote(ctx, mid, uid); err == nil {
-					t.Fatal("expected error after delete")
+				note, err = s.GetNote(ctx, mid, uid)
+				if err != nil {
+					t.Fatalf("expected no error after delete, got %v", err)
+				}
+				if note != nil {
+					t.Fatal("expected nil note after delete")
 				}
 			},
 		},
@@ -787,8 +831,12 @@ func TestSQLite_SetPermissionRepo(t *testing.T) {
 				if err := s.RevokePermission(ctx, sid, uid); err != nil {
 					t.Fatalf("revoke: %v", err)
 				}
-				if _, err := s.GetPermission(ctx, sid, uid); err == nil {
-					t.Fatal("expected error after revoke")
+				perm, err = s.GetPermission(ctx, sid, uid)
+				if err != nil {
+					t.Fatalf("expected no error after revoke, got %v", err)
+				}
+				if perm != nil {
+					t.Fatal("expected nil permission after revoke")
 				}
 			},
 		},

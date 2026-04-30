@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/paul/kiss-media-player/internal/model"
@@ -27,7 +28,9 @@ func (s *SQLite) GetNote(ctx context.Context, mediaID, userID int64) (*model.Not
 		mediaID, userID,
 	)
 	var n model.Note
-	if err := row.Scan(&n.ID, &n.MediaID, &n.UserID, &n.Content, &n.CreatedAt, &n.UpdatedAt); err != nil {
+	if err := row.Scan(&n.ID, &n.MediaID, &n.UserID, &n.Content, &n.CreatedAt, &n.UpdatedAt); err == sql.ErrNoRows {
+		return nil, nil
+	} else if err != nil {
 		return nil, err
 	}
 	return &n, nil

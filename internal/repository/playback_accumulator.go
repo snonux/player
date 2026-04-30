@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/paul/kiss-media-player/internal/model"
@@ -27,7 +28,9 @@ func (s *SQLite) GetAccumulator(ctx context.Context, sessionID string, mediaID i
 	)
 	var a model.PlaybackAccumulator
 	var counted int
-	if err := row.Scan(&a.SessionID, &a.MediaID, &a.LastPosition, &a.AccumulatedSeconds, &counted, &a.UpdatedAt); err != nil {
+	if err := row.Scan(&a.SessionID, &a.MediaID, &a.LastPosition, &a.AccumulatedSeconds, &counted, &a.UpdatedAt); err == sql.ErrNoRows {
+		return nil, nil
+	} else if err != nil {
 		return nil, err
 	}
 	a.Counted = counted != 0
