@@ -10,6 +10,16 @@ import (
 	"codeberg.org/snonux/player/internal/repository"
 )
 
+var (
+	_ MediaBrowseService    = (*MockMediaService)(nil)
+	_ MediaWriteService     = (*MockMediaService)(nil)
+	_ MediaShareService     = (*MockMediaService)(nil)
+	_ MediaTagService       = (*MockMediaService)(nil)
+	_ MediaFavoriteService  = (*MockMediaService)(nil)
+	_ MediaNoteService      = (*MockMediaService)(nil)
+	_ MediaService          = (*MockMediaService)(nil)
+)
+
 // MockMediaService is a fake MediaService for testing.
 type MockMediaService struct {
 	ListSetsFunc            func(ctx context.Context, userID int64) ([]model.Set, error)

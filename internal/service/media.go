@@ -20,6 +20,16 @@ import (
 	"codeberg.org/snonux/player/internal/thumb"
 )
 
+var (
+	_ MediaBrowseService    = (*mediaService)(nil)
+	_ MediaWriteService     = (*mediaService)(nil)
+	_ MediaShareService     = (*mediaService)(nil)
+	_ MediaTagService       = (*mediaService)(nil)
+	_ MediaFavoriteService  = (*mediaService)(nil)
+	_ MediaNoteService      = (*mediaService)(nil)
+	_ MediaService          = (*mediaService)(nil)
+)
+
 // mediaService is the concrete implementation of MediaService.
 type mediaService struct {
 	store     repository.MediaServiceStore

@@ -10,8 +10,8 @@ import (
 	"codeberg.org/snonux/player/internal/repository"
 )
 
-// MediaService handles media and set operations.
-type MediaService interface {
+// MediaBrowseService handles read-only browsing and media streaming operations.
+type MediaBrowseService interface {
 	ListSets(ctx context.Context, userID int64) ([]model.Set, error)
 	GetMediaDetail(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
 	ListMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error)
@@ -20,20 +20,50 @@ type MediaService interface {
 	GetThumbnail(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error
 	RegenerateSetCover(ctx context.Context, setID, userID int64) error
-	ToggleFavorite(ctx context.Context, userID, mediaID int64) (bool, error)
-	AssignTag(ctx context.Context, mediaID, userID int64, tagName string) error
-	RemoveTag(ctx context.Context, mediaID, userID int64, tagName string) error
+}
+
+// MediaWriteService handles mutations such as upload, soft-delete and restore.
+type MediaWriteService interface {
 	SoftDeleteMedia(ctx context.Context, mediaID, userID int64) error
 	RestoreMedia(ctx context.Context, mediaID, userID int64) error
 	UploadMedia(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error)
+}
+
+// MediaShareService handles creation, validation and revocation of share links.
+type MediaShareService interface {
 	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
 	ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
 	RevokeShare(ctx context.Context, token string, userID int64) error
 	ValidateShareToken(ctx context.Context, token string) (*model.Share, error)
 	StreamSharedMedia(ctx context.Context, token string) (*FileResult, error)
+}
+
+// MediaTagService handles tagging of media items.
+type MediaTagService interface {
+	AssignTag(ctx context.Context, mediaID, userID int64, tagName string) error
+	RemoveTag(ctx context.Context, mediaID, userID int64, tagName string) error
+}
+
+// MediaFavoriteService handles toggling favorite status.
+type MediaFavoriteService interface {
+	ToggleFavorite(ctx context.Context, userID, mediaID int64) (bool, error)
+}
+
+// MediaNoteService handles CRUD for per-user per-media notes.
+type MediaNoteService interface {
 	GetNote(ctx context.Context, mediaID, userID int64) (*model.Note, error)
 	UpsertNote(ctx context.Context, note *model.Note) error
 	DeleteNote(ctx context.Context, mediaID, userID int64) error
+}
+
+// MediaService is the composite interface combining all media-related roles.
+type MediaService interface {
+	MediaBrowseService
+	MediaWriteService
+	MediaShareService
+	MediaTagService
+	MediaFavoriteService
+	MediaNoteService
 }
 
 // AdminService handles admin-only operations.
