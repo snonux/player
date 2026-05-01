@@ -1,0 +1,116 @@
+package api
+
+import (
+	"errors"
+	"net/http"
+	"strings"
+	"time"
+
+	"codeberg.org/snonux/player/internal/service"
+)
+
+// ------------------------------------------------------------------
+// Share routes
+// ------------------------------------------------------------------
+
+func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	id := pathID(r, "id")
+	if id == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
+		return
+	}
+	expiresAt := time.Now().Add(time.Duration(s.cfg.ShareDefaultExpiryDays) * 24 * time.Hour)
+	share, err := s.mediaSvc.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, share)
+}
+
+func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	id := pathID(r, "id")
+	if id == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
+		return
+	}
+	shares, err := s.mediaSvc.ListShares(r.Context(), id, userIDFromContext(r))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, shares)
+}
+
+func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	token := r.PathValue("token")
+	if token == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "token required"})
+		return
+	}
+	if err := s.mediaSvc.RevokeShare(r.Context(), token, userIDFromContext(r)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	token := r.PathValue("token")
+	share, err := s.mediaSvc.ValidateShareToken(r.Context(), token)
+	if err != nil || share == nil {
+		if err != nil && errors.Is(err, service.ErrShareExpired) {
+			http.Error(w, "gone", http.StatusGone)
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Vary", "Accept")
+
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "text/html") || accept == "" {
+		s.serveFile(w, r, "share.html")
+		return
+	}
+	writeJSON(w, http.StatusOK, share)
+}
+
+func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	token := r.PathValue("token")
+	res, err := s.mediaSvc.StreamSharedMedia(r.Context(), token)
+	if err != nil {
+		if errors.Is(err, service.ErrShareExpired) {
+			http.Error(w, "gone", http.StatusGone)
+			return
+		}
+		if errors.Is(err, service.ErrShareNotFound) || errors.Is(err, service.ErrMediaNotFound) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if res == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	s.serveFileResult(w, r, res, false)
+}
