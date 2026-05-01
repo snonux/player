@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -616,6 +617,28 @@ func TestServer_Stream(t *testing.T) {
 	}
 }
 
+func TestLooksLikeMPEGTS(t *testing.T) {
+	ts := make([]byte, 188*5)
+	for i := 0; i < len(ts); i += 188 {
+		ts[i] = 0x47
+	}
+	tsPath := filepath.Join(t.TempDir(), "mislabelled.mp4")
+	if err := os.WriteFile(tsPath, ts, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !looksLikeMPEGTS(tsPath) {
+		t.Fatal("expected MPEG-TS sync bytes to be detected")
+	}
+
+	mp4Path := filepath.Join(t.TempDir(), "real.mp4")
+	if err := os.WriteFile(mp4Path, []byte("\x00\x00\x00\x18ftypmp42"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if looksLikeMPEGTS(mp4Path) {
+		t.Fatal("did not expect MP4 header to be detected as MPEG-TS")
+	}
+}
+
 func TestServer_Download(t *testing.T) {
 	path := makeTempFile(t, "filedata")
 	store := buildSessionStore(1)
@@ -910,14 +933,14 @@ func TestServer_RevokeShare(t *testing.T) {
 func TestServer_SharePage(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 	fs := newTestFS(map[string]string{
-		"index.html":  "index",
-		"login.html":  "login",
-		"share.html":  "<html>share</html>",
+		"index.html":     "index",
+		"login.html":     "login",
+		"share.html":     "<html>share</html>",
 		"bootstrap.html": "bootstrap",
 	})
 
 	t.Run("nil service", func(t *testing.T) {
-			srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, nil, nil, nil, nil, fs)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, nil, nil, nil, nil, fs)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)

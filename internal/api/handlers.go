@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -122,6 +123,11 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 		return
 	}
 
+	if !attachment && looksLikeMPEGTS(res.Path) {
+		s.serveRemuxedMP4(w, r, res, stat.Size())
+		return
+	}
+
 	if attachment {
 		disp := fmt.Sprintf("attachment; filename=%q", res.FileName)
 		w.Header().Set("Content-Disposition", disp)
@@ -132,6 +138,80 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 	w.Header().Set("Accept-Ranges", "bytes")
 	fmt.Printf("[api] stream file=%s size=%d bytes range=%s\n", res.FileName, stat.Size(), r.Header.Get("Range"))
 	http.ServeContent(w, r, res.FileName, stat.ModTime(), f)
+}
+
+func (s *Server) serveRemuxedMP4(w http.ResponseWriter, r *http.Request, res *service.FileResult, size int64) {
+	cmd := exec.CommandContext(
+		r.Context(),
+		"ffmpeg",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-i", res.Path,
+		"-map", "0:v:0?",
+		"-map", "0:a:0?",
+		"-dn",
+		"-sn",
+		"-c", "copy",
+		"-bsf:a", "aac_adtstoasc",
+		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+		"-f", "mp4",
+		"pipe:1",
+	)
+	cmd.Stderr = os.Stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		http.Error(w, "stream setup failed", http.StatusInternalServerError)
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		http.Error(w, "stream setup failed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Cache-Control", "no-store")
+	fmt.Printf("[api] remux stream file=%s size=%d bytes range=%s\n", res.FileName, size, r.Header.Get("Range"))
+	if _, err := io.Copy(w, stdout); err != nil && r.Context().Err() == nil {
+		slog.Error("copy remuxed media", "file", res.FileName, "err", err)
+	}
+	if err := cmd.Wait(); err != nil && r.Context().Err() == nil {
+		slog.Error("remux media", "file", res.FileName, "err", err)
+	}
+}
+
+func looksLikeMPEGTS(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	buf := make([]byte, 188*5)
+	n, err := f.Read(buf)
+	if err != nil && err != io.EOF {
+		return false
+	}
+	buf = buf[:n]
+	return hasMPEGTSsync(buf, 188) || hasMPEGTSsync(buf, 192)
+}
+
+func hasMPEGTSsync(buf []byte, packetSize int) bool {
+	if len(buf) < packetSize*3+1 {
+		return false
+	}
+	for offset := 0; offset < packetSize; offset++ {
+		matches := 0
+		for pos := offset; pos < len(buf); pos += packetSize {
+			if buf[pos] != 0x47 {
+				break
+			}
+			matches++
+			if matches >= 3 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // mimeTypeForFilename returns an HTTP Content-Type based on the file extension.
