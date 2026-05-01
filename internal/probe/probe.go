@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 
-	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/player/internal/model"
 )
 
 // Prober extracts metadata from a media file.

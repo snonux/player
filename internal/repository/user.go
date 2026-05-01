@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/player/internal/model"
 )
 
 // CreateUser inserts a new user and returns the generated ID.

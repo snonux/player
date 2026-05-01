@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/player/internal/model"
 )
 
 // CreateShare inserts a new share link.

@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"codeberg.org/snonux/play/internal/auth"
-	"codeberg.org/snonux/play/internal/model"
-	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/player/internal/auth"
+	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/repository"
 )
 
 type ctxKey int

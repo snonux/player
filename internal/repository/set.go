@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/player/internal/model"
 )
 
 // CreateSet inserts a new set and returns the generated ID.

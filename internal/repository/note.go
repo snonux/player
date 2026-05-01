@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/player/internal/model"
 )
 
 // UpsertNote inserts or replaces a note for a user and media.

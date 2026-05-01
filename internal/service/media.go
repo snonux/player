@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/play/internal/clock"
-	"codeberg.org/snonux/play/internal/model"
-	"codeberg.org/snonux/play/internal/probe"
-	"codeberg.org/snonux/play/internal/repository"
-	"codeberg.org/snonux/play/internal/thumb"
+	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/probe"
+	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/thumb"
 )
 
 // mediaService is the concrete implementation of MediaService.

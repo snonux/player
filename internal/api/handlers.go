@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/play/internal/model"
-	"codeberg.org/snonux/play/internal/repository"
-	"codeberg.org/snonux/play/internal/service"
+	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/service"
 )
 
 type bootstrapRequest struct {

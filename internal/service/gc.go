@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"codeberg.org/snonux/play/internal/clock"
-	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/repository"
 )
 
 // GCWorker is a background worker that hard-deletes soft-deleted media older than a threshold.

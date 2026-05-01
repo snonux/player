@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"codeberg.org/snonux/play/internal/clock"
-	"codeberg.org/snonux/play/internal/model"
-	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/repository"
 )
 
 // SessionManager handles session lifecycle.

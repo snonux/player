@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"codeberg.org/snonux/play/internal/model"
-	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/repository"
 )
 
 func TestProgressService_UpdateProgress(t *testing.T) {

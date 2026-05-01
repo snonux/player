@@ -6,8 +6,8 @@ import (
 	"io"
 	"time"
 
-	"codeberg.org/snonux/play/internal/model"
-	"codeberg.org/snonux/play/internal/repository"
+	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/repository"
 )
 
 // MockMediaService is a fake MediaService for testing.

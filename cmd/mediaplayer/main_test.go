@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/play/internal"
-	"codeberg.org/snonux/play/internal/clock"
-	"codeberg.org/snonux/play/internal/repository"
-	"codeberg.org/snonux/play/internal/service"
+	"codeberg.org/snonux/player/internal"
+	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/service"
 )
 
 // TestGCWorkerWiring verifies that the GC worker can be constructed with the

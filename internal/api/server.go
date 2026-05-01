@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	"codeberg.org/snonux/play/internal"
-	"codeberg.org/snonux/play/internal/auth"
-	"codeberg.org/snonux/play/internal/repository"
-	"codeberg.org/snonux/play/internal/service"
+	"codeberg.org/snonux/player/internal"
+	"codeberg.org/snonux/player/internal/auth"
+	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/service"
 )
 
 // Server holds HTTP handlers and dependencies.

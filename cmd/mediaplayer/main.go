@@ -12,15 +12,15 @@ import (
 	"syscall"
 	"time"
 
-	"codeberg.org/snonux/play/internal"
-	"codeberg.org/snonux/play/internal/api"
-	"codeberg.org/snonux/play/internal/auth"
-	"codeberg.org/snonux/play/internal/clock"
-	"codeberg.org/snonux/play/internal/probe"
-	"codeberg.org/snonux/play/internal/repository"
-	"codeberg.org/snonux/play/internal/scanner"
-	"codeberg.org/snonux/play/internal/service"
-	"codeberg.org/snonux/play/internal/thumb"
+	"codeberg.org/snonux/player/internal"
+	"codeberg.org/snonux/player/internal/api"
+	"codeberg.org/snonux/player/internal/auth"
+	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/probe"
+	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/scanner"
+	"codeberg.org/snonux/player/internal/service"
+	"codeberg.org/snonux/player/internal/thumb"
 )
 
 func main() {

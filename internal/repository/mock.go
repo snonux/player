@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"codeberg.org/snonux/play/internal/model"
+	"codeberg.org/snonux/player/internal/model"
 )
 
 // compile-time checks.

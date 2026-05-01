@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"codeberg.org/snonux/play/internal/auth"
-	"codeberg.org/snonux/play/internal/clock"
-	"codeberg.org/snonux/play/internal/model"
-	"codeberg.org/snonux/play/internal/repository"
-	"codeberg.org/snonux/play/internal/scanner"
+	"codeberg.org/snonux/player/internal/auth"
+	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/scanner"
 )
 
 // adminService is the concrete implementation of AdminService.
