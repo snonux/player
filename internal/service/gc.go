@@ -25,6 +25,8 @@ type GCWorker struct {
 	stopOnce  sync.Once
 	wg        sync.WaitGroup
 	mediaRoot string
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 // NewGCWorker creates a GCWorker. Use WithAge and WithInterval to customise.
@@ -54,6 +56,7 @@ func (w *GCWorker) WithInterval(interval time.Duration) *GCWorker {
 
 // Start launches the GC goroutine.
 func (w *GCWorker) Start() {
+	w.ctx, w.cancel = context.WithCancel(context.Background())
 	w.ticker = time.NewTicker(w.interval)
 	w.wg.Add(1)
 	go func() {
@@ -61,7 +64,7 @@ func (w *GCWorker) Start() {
 		for {
 			select {
 			case <-w.ticker.C:
-				w.run()
+				w.run(w.ctx)
 			case <-w.stopCh:
 				return
 			}
@@ -76,13 +79,15 @@ func (w *GCWorker) Stop() {
 		if w.ticker != nil {
 			w.ticker.Stop()
 		}
+		if w.cancel != nil {
+			w.cancel()
+		}
 		close(w.stopCh)
 	})
 	w.wg.Wait()
 }
 
-func (w *GCWorker) run() {
-	ctx := context.Background()
+func (w *GCWorker) run(ctx context.Context) {
 	items, err := w.store.ListDeletedMedia(ctx)
 	if err != nil {
 		if w.logger != nil {
@@ -129,6 +134,10 @@ func (w *GCWorker) RunOnce() error {
 	if w.interval == 0 {
 		return fmt.Errorf("worker not started")
 	}
-	w.run()
+	ctx := w.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	w.run(ctx)
 	return nil
 }
