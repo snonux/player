@@ -78,6 +78,12 @@ body {
   color: var(--accent);
   font-weight: 600;
 }
+.sidebar .set-item.selected {
+  border: 2px solid var(--accent);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-weight: 600;
+}
 .sidebar-header {
   display: flex;
   align-items: center;
@@ -176,9 +182,21 @@ body {
 }
 
 .media-card .card-actions {
+  position: absolute;
+  bottom: 0.35rem;
+  left: 0;
+  right: 0;
   display: flex;
   gap: 0.25rem;
-  padding: 0 0.5rem 0.5rem;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: 2;
+}
+.media-card:hover .card-actions,
+.media-card.selected .card-actions,
+.media-card.playing .card-actions {
+  opacity: 1;
 }
 
 /* Audio row variant */
@@ -237,6 +255,17 @@ body {
   border-radius: var(--radius-sm);
   flex-shrink: 0;
   background: var(--bg-elevated);
+}
+
+/* Hide row action buttons unless hovered/selected/playing */
+.media-row button[data-action] {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.media-row:hover button[data-action],
+.media-row.selected button[data-action],
+.media-row.playing button[data-action] {
+  opacity: 1;
 }
 
 /* Modal */

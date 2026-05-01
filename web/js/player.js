@@ -16,7 +16,9 @@ const els = () => ({
   btnNext: document.getElementById('btn-next'),
   btnMute: document.getElementById('btn-mute'),
   btnFs: document.getElementById('btn-fullscreen'),
+  btnToggleStage: document.getElementById('btn-toggle-stage'),
   bigPlay: document.getElementById('big-play'),
+  coverArt: document.getElementById('cover-art'),
   track: document.getElementById('progress-track'),
   fill: document.getElementById('progress-fill'),
   thumb: document.getElementById('progress-thumb'),
@@ -34,6 +36,7 @@ export function initPlayer() {
   e.btnNext?.addEventListener('click', playNext);
   e.btnMute?.addEventListener('click', toggleMute);
   e.btnFs?.addEventListener('click', toggleFullscreen);
+  e.btnToggleStage?.addEventListener('click', toggleStage);
   e.bigPlay?.addEventListener('click', togglePlay);
   e.bigPlay?.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); togglePlay(); } });
 
@@ -120,15 +123,25 @@ function loadMedia(media, resumeFrom = 0) {
   if (isVideo) {
     e.video.style.display = '';
     e.audio.style.display = 'none';
+    e.coverArt?.classList.add('hidden');
     e.audio.pause(); e.audio.src = '';
     e.video.src = src;
     e.video.currentTime = resumeFrom;
   } else {
     e.video.style.display = 'none';
-    e.audio.style.display = '';
+    e.audio.style.display = 'none';   /* keep playing but invisible so cover-art fills stage */
     e.video.pause(); e.video.src = '';
     e.audio.src = src;
     e.audio.currentTime = resumeFrom;
+    if (e.coverArt) {
+      if (media.thumbnail_path) {
+        e.coverArt.src = `/api/media/${media.id}/thumbnail`;
+        e.coverArt.classList.remove('hidden');
+      } else {
+        e.coverArt.classList.add('hidden');
+        e.coverArt.src = '';
+      }
+    }
   }
   e.player?.classList.add('open');
   e.btnPlay.textContent = '⏸';
@@ -177,6 +190,11 @@ export function toggleFullscreen() {
     p.requestFullscreen().catch(() => {});
     p.classList.add('is-fullscreen');
   }
+}
+
+export function toggleStage() {
+  const e = els();
+  e.player?.classList.toggle('collapsed');
 }
 
 export function exitFullscreenIfNeeded() {

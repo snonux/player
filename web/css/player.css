@@ -53,6 +53,15 @@
   max-height: 100%;
 }
 
+/* Cover art for audio playback */
+.player .cover-art {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: var(--player-stage-bg);
+}
+
 /* Overlay controls */
 .player .controls {
   display: flex;

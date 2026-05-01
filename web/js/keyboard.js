@@ -9,6 +9,32 @@ export function initKeyboard(handlers) {
       }
       return;
     }
+
+    // Tab / Shift+Tab set navigation when sidebar is open
+    if (e.key === 'Tab') {
+      if (handlers.isSidebarOpen?.()) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handlers.prevSet?.(e);
+        } else {
+          handlers.nextSet?.(e);
+        }
+      }
+      return;
+    }
+
+    // Space toggles focused set selection when sidebar is focused/open
+    if (e.key === ' ') {
+      if (handlers.isSidebarFocused?.()) {
+        e.preventDefault();
+        handlers.toggleSetSelect?.(e);
+        return;
+      }
+      e.preventDefault();
+      handlers.playPause?.(e);
+      return;
+    }
+
     switch (e.key) {
       // Navigation
       case 'ArrowUp':
@@ -41,11 +67,8 @@ export function initKeyboard(handlers) {
         handlers.navRight?.(e);
         break;
       case 'Enter': handlers.enter?.(e); break;
-      case ' ':
-        e.preventDefault();
-        handlers.playPause?.(e);
-        break;
       case 'p': handlers.playPause?.(e); break;
+      case 'c': handlers.toggleStage?.(e); break;
       case 'f': handlers.fullscreen?.(e); break;
       case 'Escape': handlers.escape?.(e); break;
       case 'r': handlers.shuffle?.(e); break;

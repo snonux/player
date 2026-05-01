@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the binary.
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o play ./cmd/mediaplayer
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o player ./cmd/mediaplayer
 
 # ---- Runtime stage ----
 FROM alpine:3.21
@@ -28,10 +28,10 @@ USER 65534:65534
 WORKDIR /app
 
 # Copy the binary and static assets from the builder.
-COPY --from=builder --chown=65534:65534 /build/play /app/play
+COPY --from=builder --chown=65534:65534 /build/player /app/player
 COPY --from=builder --chown=65534:65534 /build/web /app/web
 
 # Expose the default HTTP port.
 EXPOSE 8080
 
-ENTRYPOINT ["/app/play"]
+ENTRYPOINT ["/app/player"]

@@ -164,6 +164,12 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 		conds = append(conds, `media.set_id = ?`)
 		args = append(args, *filter.SetID)
 	}
+	if len(filter.SetIDs) > 0 {
+		conds = append(conds, "media.set_id IN ("+placeholders(len(filter.SetIDs))+")")
+		for _, id := range filter.SetIDs {
+			args = append(args, id)
+		}
+	}
 	if len(filter.AllowedSetIDs) > 0 {
 		conds = append(conds, "media.set_id IN ("+placeholders(len(filter.AllowedSetIDs))+")")
 		for _, id := range filter.AllowedSetIDs {

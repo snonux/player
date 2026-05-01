@@ -10,12 +10,12 @@ import (
 )
 
 type fakeScanner struct {
-	scanFunc func(ctx context.Context, root string) error
+	scanFunc func(ctx context.Context, root string, progress *model.ScanProgress) error
 }
 
-func (f *fakeScanner) Scan(ctx context.Context, root string) error {
+func (f *fakeScanner) Scan(ctx context.Context, root string, progress *model.ScanProgress) error {
 	if f.scanFunc != nil {
-		return f.scanFunc(ctx, root)
+		return f.scanFunc(ctx, root, progress)
 	}
 	return nil
 }
@@ -59,7 +59,7 @@ func TestAdminService_TriggerRescan(t *testing.T) {
 	var scannedRoot string
 	done := make(chan struct{})
 	sc := &fakeScanner{
-		scanFunc: func(_ context.Context, root string) error {
+		scanFunc: func(_ context.Context, root string, _ *model.ScanProgress) error {
 			scannedRoot = root
 			close(done)
 			return nil
@@ -80,7 +80,7 @@ func TestAdminService_TriggerRescan_Error(t *testing.T) {
 	ctx := context.Background()
 	done := make(chan struct{})
 	sc := &fakeScanner{
-		scanFunc: func(_ context.Context, _ string) error {
+		scanFunc: func(_ context.Context, _ string, _ *model.ScanProgress) error {
 			close(done)
 			return errors.New("scan failed")
 		},

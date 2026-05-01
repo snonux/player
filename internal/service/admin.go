@@ -45,7 +45,7 @@ func (s *adminService) TriggerRescan(ctx context.Context) error {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		if err := s.scanner.Scan(ctx, s.mediaRoot); err != nil {
+		if err := s.scanner.Scan(ctx, s.mediaRoot, nil); err != nil {
 			fmt.Printf("[rescan] scan failed: %v\n", err)
 		} else {
 			fmt.Printf("[rescan] scan completed\n")

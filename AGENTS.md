@@ -77,10 +77,10 @@ Available targets (from `Magefile.go`):
 | Target | Description |
 |--------|-------------|
 | `mage` (default) | Same as `mage build` |
-| `mage build` | Compile the binary (`go build -o play ./cmd/mediaplayer`) |
+| `mage build` | Compile the binary (`go build -o player ./cmd/mediaplayer`) |
 | `mage test` | Run `go test ./...` |
-| `mage install` | Build and copy `play` to `$GOPATH/bin` (or `~/go/bin`) |
-| `mage clean` | Remove the `play` binary |
+| `mage install` | Build and copy `player` to `$GOPATH/bin` (or `~/go/bin`) |
+| `mage clean` | Remove the `player` binary |
 | `mage docker-build` | Build container image as `player:latest` |
 | `mage docker-push` | Push `player:latest` to registry |
 

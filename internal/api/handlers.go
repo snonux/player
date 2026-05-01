@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -348,6 +350,14 @@ func parseMediaListQuery(q url.Values) repository.MediaFilter {
 			filter.SetID = &id
 		}
 	}
+	if v := q.Get("set_ids"); v != "" {
+		parts := strings.Split(v, ",")
+		for _, p := range parts {
+			if id, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64); err == nil {
+				filter.SetIDs = append(filter.SetIDs, id)
+			}
+		}
+	}
 	if v := q.Get("type"); v != "" {
 		t := model.MediaType(v)
 		filter.Type = &t
@@ -552,7 +562,10 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 		disp := fmt.Sprintf("attachment; filename=%q", res.FileName)
 		w.Header().Set("Content-Disposition", disp)
 	}
-
+	// Set Content-Type so browsers know how to decode the file without
+	// needing to sniff, which avoids buffering delays during streaming.
+	w.Header().Set("Content-Type", mimeTypeForFilename(res.FileName))
+	w.Header().Set("Accept-Ranges", "bytes")
 	http.ServeContent(w, r, res.FileName, stat.ModTime(), f)
 }
 
@@ -982,4 +995,38 @@ func (s *Server) handleRevokePermission(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// mimeTypeForFilename returns an HTTP Content-Type based on the file extension.
+func mimeTypeForFilename(name string) string {
+	ext := strings.ToLower(filepath.Ext(name))
+	t := mime.TypeByExtension(ext)
+	if t != "" {
+		return t
+	}
+	switch ext {
+	case ".mp4", ".m4v":
+		return "video/mp4"
+	case ".mkv":
+		return "video/x-matroska"
+	case ".avi":
+		return "video/x-msvideo"
+	case ".mov":
+		return "video/quicktime"
+	case ".webm":
+		return "video/webm"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".flac":
+		return "audio/flac"
+	case ".wav":
+		return "audio/wav"
+	case ".aac", ".m4a":
+		return "audio/mp4"
+	case ".ogg", ".opus":
+		return "audio/ogg"
+	case ".m4b":
+		return "audio/x-m4b"
+	}
+	return "application/octet-stream"
 }

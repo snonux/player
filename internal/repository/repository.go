@@ -93,6 +93,7 @@ type SetPermissionRepo interface {
 // MediaFilter defines query parameters for listing media.
 type MediaFilter struct {
 	SetID         *int64
+	SetIDs        []int64 // multi-set selection
 	AllowedSetIDs []int64
 	Type          *model.MediaType
 	Search        string

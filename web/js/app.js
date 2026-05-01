@@ -1,7 +1,7 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
-import { initSelection, select, selectByElement, next, prev, currentIndex, currentElement } from './selection.js';
-import { initPlayer, togglePlay, toggleFullscreen, exitFullscreenIfNeeded, currentMediaId, selectAndPlay, playPrevious, playNext } from './player.js';
+import { initSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
+import { initPlayer, togglePlay, toggleFullscreen, toggleStage, exitFullscreenIfNeeded, currentMediaId, selectAndPlay, playPrevious, playNext } from './player.js';
 import { initSearch, focusSearch, trigger as triggerSearch } from './search.js';
 import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
 import { initThemes } from './themes.js';
@@ -82,16 +82,25 @@ async function initApp() {
     onChange: () => loadMedia(),
   });
   initKeyboard({
-    navUp: () => prev(),
-    navDown: () => next(),
-    navLeft: () => setSetByDelta(-1),
-    navRight: () => setSetByDelta(1),
+    navUp: () => navUp(),
+    navDown: () => navDown(),
+    navLeft: () => navLeft(),
+    navRight: () => navRight(),
+    nextSet: () => setSetByDelta(1),
+    prevSet: () => setSetByDelta(-1),
+    isSidebarOpen: () => document.getElementById('sidebar')?.classList.contains('open'),
+    isSidebarFocused: () => {
+      const sidebar = document.getElementById('sidebar');
+      return sidebar?.contains(document.activeElement);
+    },
+    toggleSetSelect: () => toggleSetSelection(),
     enter: () => {
       const el = currentElement();
       if (el) { selectByElement(el); playSelected(); }
     },
     playPause: () => togglePlay(),
     fullscreen: () => toggleFullscreen(),
+    toggleStage: () => toggleStage(),
     escape: () => { exitFullscreenIfNeeded(); const el = currentElement(); if (el) el.classList.remove('selected'); closeAllModals(); },
     shuffle: () => { toggleShuffle(); loadMedia(); },
     share: () => shareSelected(),
@@ -164,16 +173,20 @@ function renderSets() {
   const el = document.getElementById('set-list');
   if (!el) return;
   el.innerHTML = state.sets.map((s) =>
-    `<div class="set-row">
-      <a href="#" class="set-item flex-1-18" data-id="${s.id}">${escapeHtml(s.name)}</a>
+    `<div class="set-row" tabindex="0" role="button" data-id="${s.id}" aria-label="Set ${escapeHtml(s.name)}">
+      <span class="set-item flex-1-18" data-id="${s.id}">${escapeHtml(s.name)}</span>
       <button class="icon-btn btn-sm" data-cover-set="${s.id}" title="Regenerate cover">🔄</button>
     </div>`
   ).join('');
-  el.querySelectorAll('.set-item').forEach((a) => {
-    a.addEventListener('click', (e) => {
+  el.querySelectorAll('.set-row').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('[data-cover-set]')) return;
       e.preventDefault();
-      state.selectedSetId = parseInt(a.dataset.id, 10);
-      setActiveSet(state.selectedSetId);
+      // Single-select on click
+      const id = parseInt(row.dataset.id, 10);
+      state.selectedSetIds = [id];
+      state.selectedSetId = id;
+      updateSetRowsUI();
       loadMedia();
     });
   });
@@ -185,6 +198,39 @@ function renderSets() {
       catch (err) { toast(err.message || 'Cover failed', 'error'); }
     });
   });
+  updateSetRowsUI();
+}
+
+function updateSetRowsUI() {
+  document.querySelectorAll('#set-list .set-row').forEach((row) => {
+    const id = parseInt(row.dataset.id, 10);
+    const item = row.querySelector('.set-item');
+    if (!item) return;
+    item.classList.toggle('active', id === state.selectedSetId);
+    item.classList.toggle('selected', state.selectedSetIds.includes(id));
+  });
+}
+
+function toggleSetSelection() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  const focused = document.activeElement.closest('.set-row');
+  if (!focused) return;
+  const id = parseInt(focused.dataset.id, 10);
+  const idx = state.selectedSetIds.indexOf(id);
+  if (idx >= 0) {
+    state.selectedSetIds.splice(idx, 1);
+  } else {
+    state.selectedSetIds.push(id);
+  }
+  // Also sync primary selectedSetId for media loading
+  if (state.selectedSetIds.length) {
+    state.selectedSetId = state.selectedSetIds[state.selectedSetIds.length - 1];
+  } else {
+    state.selectedSetId = null;
+  }
+  updateSetRowsUI();
+  loadMedia();
 }
 
 function setActiveSet(id) {
@@ -197,6 +243,7 @@ function setSetByDelta(dx) {
   if (idx < 0) idx = 0;
   const nextIdx = (idx + dx + state.sets.length) % state.sets.length;
   state.selectedSetId = state.sets[nextIdx].id;
+  state.selectedSetIds = [state.selectedSetId];
   setActiveSet(state.selectedSetId);
   loadMedia();
 }
@@ -209,8 +256,11 @@ async function loadMedia() {
   hint?.classList.add('hidden');
   grid.innerHTML = '<p class="text-muted text-sm grid-full">Loading...</p>';
   try {
+    const setIds = state.selectedSetIds.length > 1 ? state.selectedSetIds.join(',') : '';
+    const singleSetId = state.selectedSetIds.length === 1 ? String(state.selectedSetIds[0]) : (state.selectedSetId ?? '');
     const params = {
-      set_id: state.selectedSetId ?? '',
+      set_id: setIds ? '' : singleSetId,
+      set_ids: setIds,
       type: state.filters.type,
       search: state.filters.search,
       favorites: state.filters.favorites ? 'true' : '',
@@ -262,18 +312,18 @@ function renderItem(m, index) {
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
+          <div class="card-actions">
+            <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
+            <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
+            <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+            <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
+            <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
+            <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
+          </div>
         </div>
         <div class="meta">
           <div class="title">${escapeHtml(m.file_name)}</div>
           <div class="subtitle">${escapeHtml(m.codec || '')} ${m.resolution || ''} ${m.bitrate ? Math.round(m.bitrate / 1000) + 'kbps' : ''}</div>
-        </div>
-        <div class="card-actions">
-          <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
-          <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
-          <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
-          <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
-          <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
-          <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
         </div>
       </div>
     `;

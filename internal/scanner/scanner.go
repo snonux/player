@@ -17,7 +17,7 @@ import (
 
 // Scanner defines the filesystem scanning contract.
 type Scanner interface {
-	Scan(ctx context.Context, root string) error
+	Scan(ctx context.Context, root string, progress *model.ScanProgress) error
 }
 
 // FSScanner recursively scans media root for sets and media files.
@@ -43,10 +43,21 @@ func NewFSScanner(store repository.ScannerStore, prober probe.Prober, thumbGen t
 }
 
 // Scan walks immediate subdirectories of root, treating each as a set.
-func (s *FSScanner) Scan(ctx context.Context, root string) error {
+func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanProgress) error {
 	entries, err := s.fs.ReadDir(root)
 	if err != nil {
 		return fmt.Errorf("read media root %q: %w", root, err)
+	}
+
+	// Count total sets for progress.
+	var setCount int
+	for _, entry := range entries {
+		if entry.IsDir() {
+			setCount++
+		}
+	}
+	if progress != nil {
+		progress.Start(setCount)
 	}
 
 	for _, entry := range entries {
@@ -54,15 +65,21 @@ func (s *FSScanner) Scan(ctx context.Context, root string) error {
 			continue
 		}
 		setPath := filepath.Join(root, entry.Name())
-		if err := s.scanSet(ctx, root, setPath); err != nil {
+		if err := s.scanSet(ctx, root, setPath, progress); err != nil {
 			return err
+		}
+		if progress != nil {
+			progress.IncrementSet()
 		}
 	}
 	return nil
 }
 
-func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
+func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress *model.ScanProgress) error {
 	setName := filepath.Base(setPath)
+	if progress != nil {
+		progress.SetCurrentSet(setName)
+	}
 	relRoot, err := filepath.Rel(root, setPath)
 	if err != nil {
 		relRoot = setName
@@ -106,8 +123,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 		existing[m.RelPath] = m
 	}
 
-	// First pass: gather images per directory so we can pair them with audio files.
-	// Key: parent dir path (absolute); Value: relative path to the first image found there.
+	// First pass: gather images per directory.
 	coverImages := make(map[string]string)
 	_ = s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !isImageFile(path) {
@@ -121,7 +137,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 		return nil
 	})
 
-	// Second pass: walk set directory recursively for NEW media files.
+	// Second pass: walk for NEW media files.
 	walkErr := s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("walk %q: %w", path, err)
@@ -147,7 +163,6 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 
 		meta, err := s.prober.Probe(ctx, path)
 		if err != nil {
-			// Skip unprobeable/corrupt files instead of aborting the whole scan.
 			fmt.Printf("[scanner] skipping unprobeable file %q: %v\n", path, err)
 			return nil
 		}
@@ -163,12 +178,10 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 			thumbName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".jpg"
 			thumbnailPath = filepath.Join(thumbDir, thumbName)
 			if err := s.thumbGen.Generate(ctx, path, thumbnailPath, meta.Duration); err != nil {
-				// Skip thumbnail generation errors (e.g., corrupt or audio-only video files).
 				fmt.Printf("[scanner] skipping thumbnail for %q: %v\n", path, err)
 				thumbnailPath = ""
 			}
 		} else if mediaType == model.MediaTypeAudio {
-			// Use a sibling or ancestor image as the cover/thumbnail if one exists.
 			thumbnailPath = findCoverImage(path, coverImages, setPath)
 		}
 
@@ -189,6 +202,9 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 
 		if _, err := s.store.CreateMedia(ctx, media); err != nil {
 			return fmt.Errorf("create media %q: %w", path, err)
+		}
+		if progress != nil {
+			progress.IncrementFile()
 		}
 		return nil
 	})
@@ -212,8 +228,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 	return nil
 }
 
-// findCoverImage walks up from a file's directory toward the set root,
-// returning the first cover image found.
+// findCoverImage walks up from a file's directory toward the set root.
 func findCoverImage(filePath string, coverImages map[string]string, setPath string) string {
 	for dir := filepath.Dir(filePath); len(dir) >= len(setPath); dir = filepath.Dir(dir) {
 		if coverRel, ok := coverImages[dir]; ok {
@@ -228,7 +243,7 @@ func findCoverImage(filePath string, coverImages map[string]string, setPath stri
 
 var mediaExtensions = map[string]struct{}{
 	".mp4": {}, ".mkv": {}, ".avi": {}, ".mov": {}, ".webm": {},
-	".mp3": {}, ".flac": {}, ".wav": {}, ".aac": {}, ".ogg": {}, ".m4a": {}, ".opus": {},
+	".mp3": {}, ".flac": {}, ".wav": {}, ".aac": {}, ".ogg": {}, ".m4a": {}, ".opus": {}, ".m4b": {},
 }
 
 // imageExtensions lists file extensions recognized as cover/artwork images.
@@ -248,7 +263,6 @@ func isImageFile(path string) bool {
 
 func isMediaFile(path string) bool {
 	base := filepath.Base(path)
-	// Skip macOS resource fork files (._*)
 	if strings.HasPrefix(base, "._") {
 		return false
 	}

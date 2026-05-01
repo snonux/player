@@ -117,7 +117,7 @@ func TestFSScanner_Scan(t *testing.T) {
 		store := repository.NewMockStore()
 		store.SetRepo.ListSetsFunc = func(_ context.Context) ([]model.Set, error) { return nil, nil }
 		s := newTestScanner(store, &probe.MockProber{}, &thumb.MockGenerator{}, clk, mfs)
-		if err := s.Scan(ctx, "/media"); err != nil {
+		if err := s.Scan(ctx, "/media", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -180,7 +180,7 @@ func TestFSScanner_Scan(t *testing.T) {
 		}
 
 		s := newTestScanner(store, prober, gen, clk, mfs)
-		if err := s.Scan(ctx, "/media"); err != nil {
+		if err := s.Scan(ctx, "/media", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
@@ -242,7 +242,7 @@ func TestFSScanner_Scan(t *testing.T) {
 		}
 
 		s := newTestScanner(store, &probe.MockProber{}, &thumb.MockGenerator{}, clk, mfs)
-		if err := s.Scan(ctx, "/media"); err != nil {
+		if err := s.Scan(ctx, "/media", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if created != 0 {
@@ -282,7 +282,7 @@ func TestFSScanner_Scan(t *testing.T) {
 		}
 
 		s := newTestScanner(store, prober, &thumb.MockGenerator{}, clk, mfs)
-		if err := s.Scan(ctx, "/media"); err != nil {
+		if err := s.Scan(ctx, "/media", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if created.RelPath != filepath.Join("season1", "ep1.mp4") {
@@ -293,7 +293,7 @@ func TestFSScanner_Scan(t *testing.T) {
 	t.Run("read dir error", func(t *testing.T) {
 		mfs := &mockFS{entries: map[string][]os.DirEntry{}}
 		s := newTestScanner(repository.NewMockStore(), &probe.MockProber{}, &thumb.MockGenerator{}, clk, mfs)
-		err := s.Scan(ctx, "/media")
+		err := s.Scan(ctx, "/media", nil)
 		if err == nil {
 			t.Fatal("expected error for missing root")
 		}
@@ -315,7 +315,7 @@ func TestFSScanner_Scan(t *testing.T) {
 		store.MediaRepo.ListMediaFunc = func(_ context.Context, filter repository.MediaFilter) ([]model.Media, error) { return nil, nil }
 
 		s := newTestScanner(store, &probe.MockProber{}, &thumb.MockGenerator{}, clk, mfs)
-		err := s.Scan(ctx, "/media")
+		err := s.Scan(ctx, "/media", nil)
 		if err == nil {
 			t.Fatal("expected error for stat failure")
 		}
@@ -346,7 +346,7 @@ func TestFSScanner_Scan(t *testing.T) {
 
 		s := newTestScanner(store, prober, &thumb.MockGenerator{}, clk, mfs)
 		// Unprobeable files are skipped with a log instead of failing the whole scan.
-		err := s.Scan(ctx, "/media")
+		err := s.Scan(ctx, "/media", nil)
 		if err != nil {
 			t.Fatalf("unexpected error for probe failure; expected skip, got: %v", err)
 		}
@@ -386,7 +386,7 @@ func TestFSScanner_Scan(t *testing.T) {
 
 		s := newTestScanner(store, prober, gen, clk, mfs)
 		// Thumbnail generation errors are skipped so the scan continues.
-		err := s.Scan(ctx, "/media")
+		err := s.Scan(ctx, "/media", nil)
 		if err != nil {
 			t.Fatalf("unexpected error for thumbnail failure; expected skip, got: %v", err)
 		}
@@ -406,7 +406,7 @@ func TestFSScanner_Scan(t *testing.T) {
 		store.MediaRepo.ListMediaFunc = func(_ context.Context, _ repository.MediaFilter) ([]model.Media, error) { return nil, nil }
 
 		s := newTestScanner(store, &probe.MockProber{}, &thumb.MockGenerator{}, clk, mfs)
-		err := s.Scan(ctx, "/media")
+		err := s.Scan(ctx, "/media", nil)
 		if err == nil {
 			t.Fatal("expected error for walk failure")
 		}

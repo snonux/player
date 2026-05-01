@@ -73,13 +73,15 @@
 <!-- Player: hidden until something plays -->
 <aside id="player" class="player" aria-label="Player">
   <div class="stage">
-    <video id="media-video" playsinline controlslist="nodownload"></video>
+    <video id="media-video" playsinline preload="none" controlslist="nodownload"></video>
     <audio id="media-audio" class="hidden"></audio>
+    <img id="cover-art" class="cover-art hidden" alt="Cover" loading="lazy">
     <div id="big-play" class="big-play" role="button" aria-label="Play" tabindex="0">
       <div class="play-icon">▶</div>
     </div>
   </div>
   <div class="controls">
+    <button id="btn-toggle-stage" class="icon-btn" aria-label="Toggle stage (c)">⛶</button>
     <button id="btn-play" class="icon-btn" aria-label="Play/Pause (Space/p)">▶</button>
     <div class="time" id="time-elapsed">0:00</div>
     <div id="progress-track" class="progress-track" tabindex="0" aria-label="Seek">
@@ -116,6 +118,7 @@
         <tr><td><kbd>Enter</kbd></td><td>Open selected media</td></tr>
         <tr><td><kbd>Space</kbd> <kbd>p</kbd></td><td>Play / pause</td></tr>
         <tr><td><kbd>f</kbd></td><td>Toggle fullscreen</td></tr>
+        <tr><td><kbd>c</kbd></td><td>Collapse / expand player stage</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Exit fullscreen, deselect item</td></tr>
         <tr><td><kbd>r</kbd></td><td>Toggle shuffle</td></tr>
         <tr><td><kbd>s</kbd></td><td>Share selected media</td></tr>

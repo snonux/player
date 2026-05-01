@@ -12,7 +12,7 @@ import (
 	"github.com/magefile/mage/sh"
 )
 
-const binaryName = "play"
+const binaryName = "player"
 
 // Default target runs Build.
 func Default() error {

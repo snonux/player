@@ -1,22 +1,26 @@
 #!/usr/bin/env sh
 # Quick-start script for Player testing
-# Usage: ./start.sh [restart]
+# Usage: ./start.sh [restart|stop|status]
 set -e
 
 MEDIA_ROOT="${MEDIA_ROOT:-/data/nfs/earthdata/playtest}"
 DB_PATH="${DB_PATH:-/tmp/playtest.db}"
 PORT="${PORT:-18080}"
-PIDFILE="/tmp/play.pid"
-COOKIE="/tmp/play_cookies.txt"
+PIDFILE="/tmp/player.pid"
+COOKIE="/tmp/player_cookies.txt"
+LOGFILE="/tmp/player.log"
 
 BASEURL="http://localhost:${PORT}"
+BINARY="${BINARY:-./player}"
 
 stop() {
   if [ -f "$PIDFILE" ]; then
     pid=$(cat "$PIDFILE")
     if kill -0 "$pid" 2>/dev/null; then
       echo "Stopping server (PID $pid)..."
-      kill -9 "$pid" 2>/dev/null || true
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 1
+      kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
     fi
     rm -f "$PIDFILE"
   fi
@@ -47,10 +51,6 @@ case "${1:-run}" in
     stop
     exit 0
     ;;
-  restart)
-    stop
-    sleep 1
-    ;;
   status)
     if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
       echo "Running (PID $(cat "$PIDFILE"))"
@@ -64,38 +64,34 @@ esac
 cd "$(dirname "$0")"
 
 # Build if needed
-if [ ! -x ./play ]; then
+if [ ! -x "$BINARY" ]; then
   echo "Building player binary..."
-  go build -o play ./cmd/mediaplayer
+  go build -o player ./cmd/mediaplayer
 fi
 
-# Check if already running
-if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-  echo "Server already running (PID $(cat "$PIDFILE")) at ${BASEURL}"
-  bootstrap_auth
-  if needs_rescan; then
-    echo "Library empty — triggering rescan..."
-    curl -fs -X POST "${BASEURL}/api/admin/rescan" -b "$COOKIE" > /dev/null 2>&1 || true
-  fi
-  echo "Ready. Open ${BASEURL} in your browser."
-  echo "Login: test / test123"
-  exit 0
+stop
+
+# Restart action backgrounds; default run blocks in foreground.
+BACKGROUND=false
+if [ "${1:-run}" = "restart" ]; then
+  BACKGROUND=true
 fi
 
-# Start server
-MEDIA_ROOT="$MEDIA_ROOT" DB_PATH="$DB_PATH" PORT="$PORT" \
-  exec ./play > /tmp/play.log 2>&1 &
-echo "$!" > "$PIDFILE"
-echo "Server started (PID $!) at ${BASEURL}"
+# Start server in foreground so Ctrl+C kills it directly.
+export MEDIA_ROOT DB_PATH PORT LOG_LEVEL="${LOG_LEVEL:-debug}"
+"$BINARY" &
+SERVER_PID=$!
+echo "$SERVER_PID" > "$PIDFILE"
+echo "Server started (PID $SERVER_PID) at ${BASEURL}"
 
 sleep 2
 
 bootstrap_auth
 
 if needs_rescan; then
-  echo "Library empty — triggering rescan..."
+  echo "Library empty -- triggering rescan..."
   curl -fs -X POST "${BASEURL}/api/admin/rescan" -b "$COOKIE" > /dev/null 2>&1 || true
-  echo "Rescan running in background (check tail -f /tmp/play.log)"
+  echo "Rescan running in background (check tail -f $LOGFILE)"
 fi
 
 echo ""
@@ -103,7 +99,23 @@ echo "Ready. Open ${BASEURL} in your browser."
 echo "Login: test / test123"
 echo ""
 echo "Quick tips:"
-echo "  m  — show/hide sets sidebar"
-echo "  t  — show/hide toolbar"
-echo "  /  — search"
-echo "  ?  — help"
+echo "  m  -- show/hide sets sidebar"
+echo "  t  -- show/hide toolbar"
+echo "  /  -- search"
+echo "  ?  -- help"
+
+if [ "$BACKGROUND" = "true" ]; then
+  exit 0
+fi
+
+# Foreground mode: trap ctrl+c so when this script exits,the player also stops.
+shutdown_server() {
+  echo ""
+  echo "Shutting down..."
+  kill -TERM "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
+  rm -f "$PIDFILE"
+  exit 0
+}
+trap shutdown_server INT TERM EXIT
+wait "$SERVER_PID"

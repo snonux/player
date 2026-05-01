@@ -1,6 +1,6 @@
 # Binaries
 mediaplayer
-play
+player
 *.exe
 *.dll
 *.so
