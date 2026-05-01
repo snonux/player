@@ -57,9 +57,11 @@ func TestAdminService_ListTrash(t *testing.T) {
 func TestAdminService_TriggerRescan(t *testing.T) {
 	ctx := context.Background()
 	var scannedRoot string
+	done := make(chan struct{})
 	sc := &fakeScanner{
 		scanFunc: func(_ context.Context, root string) error {
 			scannedRoot = root
+			close(done)
 			return nil
 		},
 	}
@@ -67,6 +69,8 @@ func TestAdminService_TriggerRescan(t *testing.T) {
 	if err := svc.TriggerRescan(ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	<-done
+	// Give the background goroutine a moment to write scannedRoot.
 	if scannedRoot != "/media" {
 		t.Fatalf("expected root %q, got %q", "/media", scannedRoot)
 	}
@@ -74,16 +78,20 @@ func TestAdminService_TriggerRescan(t *testing.T) {
 
 func TestAdminService_TriggerRescan_Error(t *testing.T) {
 	ctx := context.Background()
+	done := make(chan struct{})
 	sc := &fakeScanner{
 		scanFunc: func(_ context.Context, _ string) error {
+			close(done)
 			return errors.New("scan failed")
 		},
 	}
 	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
 	err := svc.TriggerRescan(ctx)
-	if err == nil {
-		t.Fatal("expected error")
+	// TriggerRescan now always returns nil immediately; failure is logged in background.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+	<-done
 }
 
 func TestAdminService_TriggerRescan_NilScanner(t *testing.T) {

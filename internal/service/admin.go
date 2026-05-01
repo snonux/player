@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"codeberg.org/snonux/player/internal/auth"
 	"codeberg.org/snonux/player/internal/clock"
@@ -39,10 +40,17 @@ func (s *adminService) TriggerRescan(ctx context.Context) error {
 	if s.scanner == nil {
 		return fmt.Errorf("scanner not configured")
 	}
-	// Use a background context so the scan isn't canceled when the HTTP request finishes.
-	if err := s.scanner.Scan(context.Background(), s.mediaRoot); err != nil {
-		return fmt.Errorf("scan failed: %w", err)
-	}
+	// Run the scan in a background goroutine so the HTTP request
+	// returns immediately and the scan continues asynchronously.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		if err := s.scanner.Scan(ctx, s.mediaRoot); err != nil {
+			fmt.Printf("[rescan] scan failed: %v\n", err)
+		} else {
+			fmt.Printf("[rescan] scan completed\n")
+		}
+	}()
 	return nil
 }
 
