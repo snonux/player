@@ -95,7 +95,7 @@ func run(args []string) error {
 
 	gs := api.NewGracefulServer(server, cfg)
 
-	log.Printf("kiss-media-player %s starting on %s", internal.Version, gs.Server.Addr)
+	log.Printf("player %s starting on %s", internal.Version, gs.Server.Addr)
 
 	go func() {
 		if err := gs.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

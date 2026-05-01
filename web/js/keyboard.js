@@ -23,8 +23,11 @@ export function initKeyboard(handlers) {
       case 's':          handlers.share?.(e); break;
       case '/':          e.preventDefault(); handlers.search?.(e); break;
       case 'n':          handlers.notes?.(e); break;
-      case 't':          handlers.tags?.(e); break;
+      case 't':          handlers.toolbar?.(e); break;
+      case 'm':          handlers.sidebar?.(e); break;
       case 'd':          handlers.download?.(e); break;
+      case 'u':          handlers.upload?.(e); break;
+      case '?':          e.preventDefault(); handlers.help?.(e); break;
     }
   });
 }

@@ -132,7 +132,9 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 
 		meta, err := s.prober.Probe(ctx, path)
 		if err != nil {
-			return fmt.Errorf("probe %q: %w", path, err)
+			// Skip unprobeable/corrupt files instead of aborting the whole scan.
+			fmt.Printf("[scanner] skipping unprobeable file %q: %v\n", path, err)
+			return nil
 		}
 		meta.FileSizeBytes = info.Size()
 
@@ -146,7 +148,10 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 			thumbName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".jpg"
 			thumbnailPath = filepath.Join(thumbDir, thumbName)
 			if err := s.thumbGen.Generate(ctx, path, thumbnailPath, meta.Duration); err != nil {
-				return fmt.Errorf("thumbnail %q: %w", path, err)
+				// Skip thumbnail generation errors (e.g., corrupt or audio-only video files)
+				// and continue scanning without a thumbnail.
+				fmt.Printf("[scanner] skipping thumbnail for %q: %v\n", path, err)
+				thumbnailPath = ""
 			}
 		}
 
@@ -182,6 +187,11 @@ var mediaExtensions = map[string]struct{}{
 }
 
 func isMediaFile(path string) bool {
+	base := filepath.Base(path)
+	// Skip macOS resource fork files (._*)
+	if strings.HasPrefix(base, "._") {
+		return false
+	}
 	ext := strings.ToLower(filepath.Ext(path))
 	_, ok := mediaExtensions[ext]
 	return ok

@@ -1,6 +1,6 @@
-# KISS Media Player — Agent Documentation
+# Player — Agent Documentation
 
-This file is written for coding agents working on the `kiss-media-player` project.
+This file is written for coding agents working on the `player` project.
 
 ---
 
@@ -81,8 +81,8 @@ Available targets (from `Magefile.go`):
 | `mage test` | Run `go test ./...` |
 | `mage install` | Build and copy `play` to `$GOPATH/bin` (or `~/go/bin`) |
 | `mage clean` | Remove the `play` binary |
-| `mage docker-build` | Build container image as `kiss-media-player:latest` |
-| `mage docker-push` | Push `kiss-media-player:latest` to registry |
+| `mage docker-build` | Build container image as `player:latest` |
+| `mage docker-push` | Push `player:latest` to registry |
 
 ---
 

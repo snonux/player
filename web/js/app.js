@@ -92,18 +92,23 @@ async function initApp() {
     },
     playPause: () => togglePlay(),
     fullscreen: () => toggleFullscreen(),
-    escape: () => { exitFullscreenIfNeeded(); const el = currentElement(); if (el) el.classList.remove('selected'); },
+    escape: () => { exitFullscreenIfNeeded(); const el = currentElement(); if (el) el.classList.remove('selected'); closeAllModals(); },
     shuffle: () => { toggleShuffle(); loadMedia(); },
     share: () => shareSelected(),
-    search: focusSearch,
+    search: () => showSearch(),
     notes: openNotesForSelected,
     tags: openTagsForSelected,
     download: downloadSelected,
+    help: toggleHelp,
+    toolbar: toggleToolbar,
+    sidebar: toggleSidebar,
+    upload: () => showUpload(),
   });
   initNotes(() => toast('Note saved'));
   initAdmin();
   initPWA();
   initUpload();
+  initHelp();
 
   // Filters
   document.getElementById('filter-type')?.addEventListener('change', (e) => { state.filters.type = e.target.value; loadMedia(); });
@@ -121,10 +126,12 @@ async function initApp() {
     document.getElementById('filter-advanced')?.classList.toggle('hidden');
   });
 
-  // Menu toggle
-  document.getElementById('menu-btn')?.addEventListener('click', () => {
-    document.getElementById('sidebar')?.classList.toggle('open');
+  // Sidebar close
+  document.getElementById('menu-close')?.addEventListener('click', () => {
+    document.getElementById('sidebar')?.classList.remove('open');
+    document.querySelector('.page')?.classList.remove('has-sidebar');
   });
+
   document.getElementById('logout-btn')?.addEventListener('click', async () => {
     try { await API.logout(); location.href = '/login.html'; } catch {}
   });
@@ -135,7 +142,7 @@ async function initApp() {
     // Admin check via admin users endpoint
     API.users().then(() => { state.isAdmin = true; showAdmin(); }).catch(() => {});
     renderSets();
-    if (state.sets.length) { state.selectedSetId = state.sets[0].id; setActiveSet(state.sets[0].id); loadMedia(); }
+    // Do NOT auto-load a set by default; keep the page blank until the user chooses.
   } catch (err) {
     toast(err.message || 'Error loading sets', 'error');
   }
@@ -196,7 +203,10 @@ function setSetByDelta(dx) {
 
 async function loadMedia() {
   const grid = document.getElementById('media-grid');
+  const hint = document.getElementById('empty-hint');
   if (!grid) return;
+  grid.classList.remove('hidden');
+  hint?.classList.add('hidden');
   grid.innerHTML = '<p class="text-muted text-sm grid-full">Loading...</p>';
   try {
     const params = {
@@ -409,8 +419,6 @@ function initUpload() {
   const form = document.getElementById('upload-form');
   const fileInput = document.getElementById('upload-file');
 
-  // Open via an icon button in header (already added in HTML)
-  document.getElementById('upload-toggle')?.addEventListener('click', () => modal?.classList.add('open'));
   closeBtn?.addEventListener('click', () => modal?.classList.remove('open'));
   modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
 
@@ -429,6 +437,52 @@ function initUpload() {
       loadMedia();
     } catch (err) { toast(err.message || 'Upload failed', 'error'); }
   });
+}
+
+function showUpload() {
+  const modal = document.getElementById('upload-modal');
+  modal?.classList.add('open');
+}
+
+// Help modal
+function initHelp() {
+  const modal = document.getElementById('help-modal');
+  const closeBtn = document.getElementById('help-close');
+  const toggleBtn = document.getElementById('help-toggle');
+
+  toggleBtn?.addEventListener('click', toggleHelp);
+  closeBtn?.addEventListener('click', () => modal?.classList.remove('open'));
+  modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
+}
+
+function toggleHelp() {
+  const modal = document.getElementById('help-modal');
+  if (!modal) return;
+  modal.classList.toggle('open');
+}
+
+// Toolbar / sidebar / search visibility toggles
+function toggleToolbar() {
+  const toolbar = document.getElementById('toolbar');
+  toolbar?.classList.toggle('hidden');
+}
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const page = document.querySelector('.page');
+  if (!sidebar) return;
+  const open = sidebar.classList.toggle('open');
+  page?.classList.toggle('has-sidebar', open);
+}
+
+function showSearch() {
+  const bar = document.getElementById('search-bar');
+  bar?.classList.remove('hidden');
+  focusSearch();
+}
+
+function closeAllModals() {
+  document.querySelectorAll('.modal-overlay.open').forEach((m) => m.classList.remove('open'));
 }
 
 function showAdmin() {

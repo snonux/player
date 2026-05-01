@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KISS Media Player</title>
+<title>Player</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/css/theme.css">
 <link rel="stylesheet" href="/css/layout.css">
@@ -13,36 +13,33 @@
 </head>
 <body>
 <header class="site-header" role="banner">
-  <a href="/" class="logo">KISS Media</a>
-  <div class="search-bar" role="search">
-    <span aria-hidden="true">🔎</span>
-    <input id="search-input" type="search" placeholder="Search… (press /)" autocomplete="off" aria-label="Search media">
-    <button id="search-clear" class="icon-btn btn-sm" title="Clear">✕</button>
-  </div>
+  <a href="/" class="logo">Player</a>
   <div class="spacer"></div>
-  <button id="shuffle-toggle" class="icon-btn" title="Shuffle (r)">🔀</button>
-  <button id="admin-toggle" class="icon-btn hidden" title="Admin panel (a)">⚙</button>
-  <button id="theme-toggle" class="icon-btn" title="Toggle theme">☀</button>
-  <span id="user-name" class="text-secondary text-xs"></span>
-  <button id="upload-toggle" class="icon-btn" title="Upload">⬆</button>
+  <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
+  <button id="admin-toggle" class="icon-btn hidden" title="Admin panel">⚙</button>
   <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
-  <button id="menu-btn" class="icon-btn" title="Menu" aria-label="Open sets">☰</button>
 </header>
 
+<!-- Sidebar: hidden by default, toggled via keyboard or menu -->
 <nav id="sidebar" class="sidebar" aria-label="Sets">
-  <h2>Sets</h2>
+  <div class="sidebar-header">
+    <h2>Sets</h2>
+    <button id="menu-close" class="icon-btn btn-sm" title="Close">✕</button>
+  </div>
   <div id="set-list"></div>
 </nav>
 
+<!-- Main page area -->
 <div class="page" role="main">
   <div class="main-content">
-    <div class="toolbar">
+    <!-- Toolbar: hidden by default, shown on 't' key or when searching -->
+    <div id="toolbar" class="toolbar hidden">
       <select id="filter-type" aria-label="Filter by type">
         <option value="">All</option>
         <option value="video">Video</option>
         <option value="audio">Audio</option>
       </select>
-      <button id="filter-favorites" class="btn btn-ghost btn-sm">❤ Favorites</button>
+      <button id="filter-favorites" class="btn btn-ghost btn-sm">♥ Favorites</button>
       <div class="spacer"></div>
       <button id="filter-toggle" class="btn btn-ghost btn-sm" title="More filters">Filters ▾</button>
       <span id="result-count" class="text-muted text-xs"></span>
@@ -54,11 +51,27 @@
       <input id="filter-min-filesize" type="number" min="0" placeholder="Min MB" aria-label="Min file size MB" class="input-sm">
       <input id="filter-max-filesize" type="number" min="0" placeholder="Max MB" aria-label="Max file size MB" class="input-sm">
     </div>
-    <div id="media-grid" class="media-grid" tabindex="0" aria-label="Media grid"></div>
+
+    <!-- Search bar: hidden by default, shown on '/' key -->
+    <div id="search-bar" class="search-bar hidden" role="search">
+      <span aria-hidden="true">🔎</span>
+      <input id="search-input" type="search" placeholder="Search… (press /)" autocomplete="off" aria-label="Search media">
+      <button id="search-clear" class="icon-btn btn-sm" title="Clear">✕</button>
+    </div>
+
+    <!-- Empty state hint: shown when no set is selected -->
+    <div id="empty-hint" class="empty-hint">
+      <p>Welcome to Player</p>
+      <p class="text-muted text-sm">Press <kbd>m</kbd> to browse sets, <kbd>/</kbd> to search, or <kbd>?</kbd> for help.</p>
+    </div>
+
+    <!-- Media grid: hidden until a set is loaded or search is active -->
+    <div id="media-grid" class="media-grid hidden" tabindex="0" aria-label="Media grid"></div>
   </div>
 </div>
 
-<aside id="player" class="player open" aria-label="Player">
+<!-- Player: hidden until something plays -->
+<aside id="player" class="player" aria-label="Player">
   <div class="stage">
     <video id="media-video" playsinline controlslist="nodownload"></video>
     <audio id="media-audio" class="hidden"></audio>
@@ -85,6 +98,37 @@
 </aside>
 
 <footer class="toast" id="toast" role="status" aria-live="polite"></footer>
+
+<!-- Help Modal -->
+<div id="help-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="help-title">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="help-title">Keyboard Shortcuts</h3>
+      <div class="spacer"></div>
+      <button id="help-close" class="icon-btn" aria-label="Close">✕</button>
+    </div>
+    <div class="help-content">
+      <table class="help-table">
+        <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate media list</td></tr>
+        <tr><td><kbd>k</kbd> <kbd>j</kbd></td><td>Navigate media list (vim-style)</td></tr>
+        <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Switch sets / pages</td></tr>
+        <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>Switch sets / pages (vim-style)</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>Open selected media</td></tr>
+        <tr><td><kbd>Space</kbd> <kbd>p</kbd></td><td>Play / pause</td></tr>
+        <tr><td><kbd>f</kbd></td><td>Toggle fullscreen</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Exit fullscreen, deselect item</td></tr>
+        <tr><td><kbd>r</kbd></td><td>Toggle shuffle</td></tr>
+        <tr><td><kbd>s</kbd></td><td>Share selected media</td></tr>
+        <tr><td><kbd>/</kbd></td><td>Focus search bar</td></tr>
+        <tr><td><kbd>n</kbd></td><td>Open notes for selected media</td></tr>
+        <tr><td><kbd>t</kbd></td><td>Toggle toolbar / filters</td></tr>
+        <tr><td><kbd>m</kbd></td><td>Toggle sets sidebar</td></tr>
+        <tr><td><kbd>?</kbd></td><td>Show / hide this help</td></tr>
+      </table>
+      <p class="text-muted text-xs mt-2">Click the <strong>?</strong> button or press <kbd>?</kbd> anytime to show or hide this help.</p>
+    </div>
+  </div>
+</div>
 
 <!-- Notes Modal -->
 <div id="notes-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="notes-title">

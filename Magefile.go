@@ -67,10 +67,10 @@ func Clean() error {
 
 // DockerBuild builds the container image.
 func DockerBuild() error {
-	return sh.RunV("docker", "build", "-t", "kiss-media-player:latest", ".")
+	return sh.RunV("docker", "build", "-t", "player:latest", ".")
 }
 
 // DockerPush pushes the container image to the registry.
 func DockerPush() error {
-	return sh.RunV("docker", "push", "kiss-media-player:latest")
+	return sh.RunV("docker", "push", "player:latest")
 }

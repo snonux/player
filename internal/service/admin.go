@@ -39,7 +39,8 @@ func (s *adminService) TriggerRescan(ctx context.Context) error {
 	if s.scanner == nil {
 		return fmt.Errorf("scanner not configured")
 	}
-	if err := s.scanner.Scan(ctx, s.mediaRoot); err != nil {
+	// Use a background context so the scan isn't canceled when the HTTP request finishes.
+	if err := s.scanner.Scan(context.Background(), s.mediaRoot); err != nil {
 		return fmt.Errorf("scan failed: %w", err)
 	}
 	return nil

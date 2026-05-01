@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: kiss-media-player-db
+  name: player-db
   labels:
-    app: kiss-media-player
+    app: player
 spec:
   accessModes:
     - ReadWriteOnce

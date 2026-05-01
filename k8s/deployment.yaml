@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kiss-media-player
+  name: player
   labels:
-    app: kiss-media-player
+    app: player
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: kiss-media-player
+      app: player
   template:
     metadata:
       labels:
-        app: kiss-media-player
+        app: player
     spec:
       securityContext:
         runAsNonRoot: true
         fsGroup: 65534
       containers:
         - name: app
-          image: kiss-media-player:latest
+          image: player:latest
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 65534
@@ -31,7 +31,7 @@ spec:
               name: http
           envFrom:
             - secretRef:
-                name: kiss-media-player-secret
+                name: player-secret
                 optional: true
           env:
             - name: PORT
@@ -67,7 +67,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: kiss-media-player-db
+            claimName: player-db
         - name: media
           persistentVolumeClaim:
-            claimName: kiss-media-player-media
+            claimName: player-media

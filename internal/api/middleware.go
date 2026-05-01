@@ -29,21 +29,36 @@ func NewMiddleware(store repository.Store, sm *auth.SessionManager) *Middleware 
 }
 
 // RequireSession validates the session cookie and injects the session into request context.
+// For HTML page requests (Accept: text/html), redirects to /login.html instead of returning 401.
 func (mw *Middleware) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("session")
 		if err != nil {
+			if wantsHTML(r) {
+				http.Redirect(w, r, "/login.html", http.StatusTemporaryRedirect)
+				return
+			}
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		sess, err := mw.sm.ValidateSession(r.Context(), cookie.Value)
 		if err != nil || sess == nil {
+			if wantsHTML(r) {
+				http.Redirect(w, r, "/login.html", http.StatusTemporaryRedirect)
+				return
+			}
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		ctx := context.WithValue(r.Context(), sessionCtxKey, sess)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// wantsHTML returns true if the request appears to be from a browser expecting an HTML page.
+func wantsHTML(r *http.Request) bool {
+	accept := r.Header.Get("Accept")
+	return strings.Contains(accept, "text/html")
 }
 
 // RequireAdmin ensures the authenticated user is an admin.

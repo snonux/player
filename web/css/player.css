@@ -1,12 +1,19 @@
 /* Player */
 .player {
   position: fixed;
-  inset: auto 0 0 var(--sidebar-width);
+  inset: auto 0 0 0;
   background: var(--player-bg);
   color: var(--text-primary);
   border-top: 1px solid var(--border);
   z-index: 60;
+  display: none; /* hidden by default until something plays */
   transition: inset var(--transition-base);
+}
+.player.open {
+  display: block;
+}
+.page.has-sidebar .player {
+  inset: auto 0 0 var(--sidebar-width);
 }
 .player.is-fullscreen {
   inset: 0;

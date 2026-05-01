@@ -41,10 +41,13 @@ body {
   border-right: 1px solid var(--border);
   overflow: auto;
   padding: 0.75rem 0.5rem;
-  display: flex;
+  display: none; /* hidden by default */
   flex-direction: column;
   gap: 0.25rem;
   z-index: 40;
+}
+.sidebar.open {
+  display: flex;
 }
 .sidebar h2 {
   font-size: 0.75rem;
@@ -75,12 +78,19 @@ body {
   color: var(--accent);
   font-weight: 600;
 }
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 
 /* Main layout */
 .page {
   padding-top: var(--header-height);
-  padding-left: var(--sidebar-width);
   min-height: 100vh;
+}
+.page.has-sidebar {
+  padding-left: var(--sidebar-width);
 }
 .main-content {
   padding: var(--gap);
@@ -255,6 +265,35 @@ body {
 .modal-header h3 { margin: 0; font-size: 1.1rem; }
 .modal-header .spacer { flex: 1 1 auto; }
 
+/* Help modal */
+.help-content {
+  overflow: auto;
+}
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.help-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.help-table td:first-child {
+  white-space: nowrap;
+  width: 1%;
+  font-family: var(--font-mono);
+}
+.help-table kbd {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  font-size: 0.8rem;
+  min-width: 1.6rem;
+  text-align: center;
+}
+
 /* Responsive */
 @media (max-width: 860px) {
   :root {
@@ -282,6 +321,7 @@ body {
   }
   .sidebar.open { display: flex; }
   .page { padding-left: 0; }
+  .page.has-sidebar { padding-left: 0; }
   .player { inset: auto 0 0 0 !important; }
   .toolbar {
     flex-wrap: wrap;
@@ -361,6 +401,32 @@ body {
   margin-bottom: 0.75rem;
 }
 
+/* Empty state hint */
+.empty-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  gap: 0.5rem;
+  text-align: center;
+}
+.empty-hint p {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+}
+.empty-hint kbd {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.empty-hint.hidden { display: none !important; }
+
 /* Modal sizes */
 .modal-wide { width: min(56rem, 96vw); }
 
@@ -383,4 +449,3 @@ body {
 .admin-list li.is-admin {
   background: var(--accent-soft);
 }
-

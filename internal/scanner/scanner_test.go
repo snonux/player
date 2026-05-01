@@ -345,9 +345,13 @@ func TestFSScanner_Scan(t *testing.T) {
 		}
 
 		s := newTestScanner(store, prober, &thumb.MockGenerator{}, clk, mfs)
+		// Unprobeable files are skipped with a log instead of failing the whole scan.
 		err := s.Scan(ctx, "/media")
-		if err == nil {
-			t.Fatal("expected error for probe failure")
+		if err != nil {
+			t.Fatalf("unexpected error for probe failure; expected skip, got: %v", err)
+		}
+		if store.MediaRepo.CreateMediaFunc != nil {
+			// no media should have been created for the bad file
 		}
 	})
 
@@ -381,9 +385,10 @@ func TestFSScanner_Scan(t *testing.T) {
 		}
 
 		s := newTestScanner(store, prober, gen, clk, mfs)
+		// Thumbnail generation errors are skipped so the scan continues.
 		err := s.Scan(ctx, "/media")
-		if err == nil {
-			t.Fatal("expected error for thumbnail failure")
+		if err != nil {
+			t.Fatalf("unexpected error for thumbnail failure; expected skip, got: %v", err)
 		}
 	})
 
