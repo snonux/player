@@ -84,6 +84,7 @@ func run(args []string) error {
 	adminSvc := service.NewAdminService(store, clk, hasher, fsScanner, cfg.MediaRoot)
 
 	progressSvc := service.NewProgressService(store, clk)
+	authSvc := service.NewAuthService(store, clk, hasher, sm)
 
 	// Start the background GC worker that hard-deletes soft-deleted media.
 	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger)
@@ -91,7 +92,7 @@ func run(args []string) error {
 	defer gcWorker.Stop()
 
 	staticFS := http.Dir("web")
-	server := api.NewServer(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, staticFS)
+	server := api.NewServer(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, authSvc, staticFS)
 
 	gs := api.NewGracefulServer(server, cfg)
 

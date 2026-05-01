@@ -78,6 +78,18 @@ type AdminService interface {
 	RevokePermission(ctx context.Context, setID, userID int64) error
 }
 
+// AuthService handles bootstrap and login operations.
+type AuthService interface {
+	Bootstrap(ctx context.Context, username, password string) (*AuthResult, error)
+	Login(ctx context.Context, username, password string) (*AuthResult, error)
+}
+
+// AuthResult contains the authenticated user and session ID.
+type AuthResult struct {
+	User      *model.User
+	SessionID string
+}
+
 // ProgressService handles playback progress updates.
 type ProgressService interface {
 	UpdateProgress(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error

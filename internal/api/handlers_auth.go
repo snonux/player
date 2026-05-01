@@ -1,10 +1,11 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/service"
 )
 
 type bootstrapRequest struct {
@@ -22,6 +23,9 @@ type loginRequest struct {
 // ------------------------------------------------------------------
 
 func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.authSvc) {
+		return
+	}
 	var req bootstrapRequest
 	if err := readJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -32,41 +36,24 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
-	count, err := s.store.CountUsers(ctx)
+	res, err := s.authSvc.Bootstrap(r.Context(), req.Username, req.Password)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
-		return
-	}
-	if count > 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "bootstrap already complete"})
-		return
-	}
-
-	hash, err := s.hasher.Hash(req.Password)
-	if err != nil {
+		if errors.Is(err, service.ErrAlreadyBootstrapped) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "bootstrap already complete"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}
 
-	user := &model.User{Username: req.Username, PasswordHash: hash, IsAdmin: true, CreatedAt: time.Now()}
-	id, err := s.store.CreateUser(ctx, user)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
-		return
-	}
-	user.ID = id
-
-	sessID, err := s.sm.CreateSession(ctx, id)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
-		return
-	}
-	s.setSessionCookie(w, sessID)
-	writeJSON(w, http.StatusOK, map[string]interface{}{"id": user.ID, "username": user.Username, "is_admin": user.IsAdmin})
+	s.setSessionCookie(w, res.SessionID)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"id": res.User.ID, "username": res.User.Username, "is_admin": res.User.IsAdmin})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.authSvc) {
+		return
+	}
 	var req loginRequest
 	if err := readJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -77,28 +64,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
-	user, err := s.store.GetUserByUsername(ctx, req.Username)
+	res, err := s.authSvc.Login(r.Context(), req.Username, req.Password)
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
-		return
-	}
-	if user == nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
-		return
-	}
-	if err := s.hasher.Compare(user.PasswordHash, req.Password); err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
-		return
-	}
-
-	sessID, err := s.sm.CreateSession(ctx, user.ID)
-	if err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}
-	s.setSessionCookie(w, sessID)
-	writeJSON(w, http.StatusOK, map[string]interface{}{"id": user.ID, "username": user.Username, "is_admin": user.IsAdmin})
+
+	s.setSessionCookie(w, res.SessionID)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"id": res.User.ID, "username": res.User.Username, "is_admin": res.User.IsAdmin})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

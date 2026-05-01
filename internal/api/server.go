@@ -22,12 +22,13 @@ type Server struct {
 	mediaSvc    service.MediaService
 	adminSvc    service.AdminService
 	progressSvc service.ProgressService
+	authSvc     service.AuthService
 	staticFS    http.FileSystem
 	mw          *Middleware
 }
 
 // NewServer creates a Server with routes.
-// If mediaSvc, adminSvc, or progressSvc are nil, their respective routes return 501.
+// If mediaSvc, adminSvc, progressSvc, or authSvc are nil, their respective routes return 501.
 func NewServer(
 	store repository.Store,
 	hasher auth.Hasher,
@@ -36,6 +37,7 @@ func NewServer(
 	mediaSvc service.MediaService,
 	adminSvc service.AdminService,
 	progressSvc service.ProgressService,
+	authSvc service.AuthService,
 	staticFS http.FileSystem,
 ) *Server {
 	if staticFS == nil {
@@ -50,6 +52,7 @@ func NewServer(
 		mediaSvc:    mediaSvc,
 		adminSvc:    adminSvc,
 		progressSvc: progressSvc,
+		authSvc:     authSvc,
 		staticFS:    staticFS,
 		mw:          NewMiddleware(store, sm),
 	}

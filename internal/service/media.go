@@ -53,6 +53,8 @@ var (
 	ErrShareExpired         = errors.New("share expired")
 	ErrMediaNotFound        = errors.New("media not found")
 	ErrUnsupportedExtension = errors.New("unsupported file extension")
+	ErrAlreadyBootstrapped  = errors.New("already bootstrapped")
+	ErrInvalidCredentials   = errors.New("invalid credentials")
 )
 
 // supportedExtensions lists all file extensions accepted by UploadMedia.

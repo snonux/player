@@ -89,7 +89,7 @@ func TestNewGracefulServer(t *testing.T) {
 
 func TestPingStore_nonPinger(t *testing.T) {
 	store := &repository.MockStore{}
-	srv := newTestServer(t, store, nil, nil, &internal.Config{}, nil, nil, nil, nil)
+	srv := newTestServer(t, store, nil, nil, &internal.Config{}, nil, nil, nil, nil, nil)
 	if err := srv.pingStore(context.Background()); err != nil {
 		t.Fatal("expected nil for non-pinger")
 	}
@@ -97,7 +97,7 @@ func TestPingStore_nonPinger(t *testing.T) {
 
 func TestPingStore_pingerError(t *testing.T) {
 	store := &mockPingStore{err: errors.New("down")}
-	srv := newTestServer(t, store, nil, nil, &internal.Config{}, nil, nil, nil, nil)
+	srv := newTestServer(t, store, nil, nil, &internal.Config{}, nil, nil, nil, nil, nil)
 	if err := srv.pingStore(context.Background()); err == nil {
 		t.Fatal("expected error")
 	}
@@ -159,7 +159,7 @@ func TestServer_ServeFile_success(t *testing.T) {
 		},
 	}
 	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
-	srv := newTestServer(t, store, nil, sm, &internal.Config{SessionTimeoutHours: 24}, nil, nil, nil, nil)
+	srv := newTestServer(t, store, nil, sm, &internal.Config{SessionTimeoutHours: 24}, nil, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
@@ -179,7 +179,7 @@ func TestServer_ServeFile_notFound(t *testing.T) {
 		},
 	}
 	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
-	srv := newTestServer(t, store, nil, sm, &internal.Config{SessionTimeoutHours: 24}, nil, nil, nil, fs)
+	srv := newTestServer(t, store, nil, sm, &internal.Config{SessionTimeoutHours: 24}, nil, nil, nil, nil, fs)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
@@ -219,14 +219,13 @@ func TestServer_Bootstrap_negativePaths(t *testing.T) {
 }
 
 func TestServer_Bootstrap_hashError(t *testing.T) {
-	store := &repository.MockStore{
-		UserRepo: repository.MockUserRepo{
-			CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil },
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	authSvc := &service.MockAuthService{
+		BootstrapFunc: func(ctx context.Context, username, password string) (*service.AuthResult, error) {
+			return nil, errors.New("hash err")
 		},
 	}
-	cfg := &internal.Config{SessionTimeoutHours: 24}
-	hasher := &errHasher{}
-	srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil)
+	srv := newTestServer(t, nil, nil, nil, cfg, nil, nil, nil, authSvc, nil)
 	body := `{"username":"u","password":"p"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
@@ -238,14 +237,13 @@ func TestServer_Bootstrap_hashError(t *testing.T) {
 }
 
 func TestServer_Bootstrap_createUserError(t *testing.T) {
-	store := &repository.MockStore{
-		UserRepo: repository.MockUserRepo{
-			CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil },
-			CreateUserFunc: func(ctx context.Context, user *model.User) (int64, error) { return 0, errors.New("boom") },
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	authSvc := &service.MockAuthService{
+		BootstrapFunc: func(ctx context.Context, username, password string) (*service.AuthResult, error) {
+			return nil, errors.New("boom")
 		},
 	}
-	cfg := &internal.Config{SessionTimeoutHours: 24}
-	srv := newTestServer(t, store, &staticHasher{fixed: "h"}, nil, cfg, nil, nil, nil, nil)
+	srv := newTestServer(t, nil, nil, nil, cfg, nil, nil, nil, authSvc, nil)
 	body := `{"username":"u","password":"p"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
@@ -257,18 +255,13 @@ func TestServer_Bootstrap_createUserError(t *testing.T) {
 }
 
 func TestServer_Bootstrap_createSessionError(t *testing.T) {
-	store := &repository.MockStore{
-		UserRepo: repository.MockUserRepo{
-			CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil },
-			CreateUserFunc: func(ctx context.Context, user *model.User) (int64, error) { return 1, nil },
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	authSvc := &service.MockAuthService{
+		BootstrapFunc: func(ctx context.Context, username, password string) (*service.AuthResult, error) {
+			return nil, errors.New("boom")
 		},
 	}
-	repo := repository.MockSessionRepo{
-		CreateSessionFunc: func(ctx context.Context, session *model.Session) error { return errors.New("boom") },
-	}
-	sm := auth.NewSessionManager(&repo, &clock.MockClock{T: time.Now()}, time.Hour)
-	cfg := &internal.Config{SessionTimeoutHours: 24}
-	srv := newTestServer(t, store, &staticHasher{fixed: "h"}, sm, cfg, nil, nil, nil, nil)
+	srv := newTestServer(t, nil, nil, nil, cfg, nil, nil, nil, authSvc, nil)
 	body := `{"username":"u","password":"p"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
@@ -284,12 +277,11 @@ func TestServer_Bootstrap_createSessionError(t *testing.T) {
 // ------------------------------------------------------------------
 
 func TestServer_Login_negativePaths(t *testing.T) {
-	hasher := &staticHasher{fixed: "hashed"}
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	t.Run("invalid json", func(t *testing.T) {
-		store := buildSessionStore(1)
-		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil)
+		authSvc := &service.MockAuthService{}
+		srv := newTestServer(t, nil, nil, nil, cfg, nil, nil, nil, authSvc, nil)
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(`bad`)))
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
@@ -300,18 +292,19 @@ func TestServer_Login_negativePaths(t *testing.T) {
 	})
 
 	t.Run("db error", func(t *testing.T) {
-		store := buildSessionStore(1)
-		store.UserRepo.GetUserByUsernameFunc = func(ctx context.Context, username string) (*model.User, error) {
-			return nil, errors.New("boom")
+		authSvc := &service.MockAuthService{
+			LoginFunc: func(ctx context.Context, username, password string) (*service.AuthResult, error) {
+				return nil, errors.New("boom")
+			},
 		}
-		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil)
+		srv := newTestServer(t, nil, nil, nil, cfg, nil, nil, nil, authSvc, nil)
 		body := `{"username":"alice","password":"correct"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
-		if rr.Code != http.StatusUnauthorized {
-			t.Fatalf("expected %d, got %d", http.StatusUnauthorized, rr.Code)
+		if rr.Code != http.StatusInternalServerError {
+			t.Fatalf("expected %d, got %d", http.StatusInternalServerError, rr.Code)
 		}
 	})
 }
@@ -350,7 +343,7 @@ func TestServer_SetCover(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/sets/"+tt.id+"/cover", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -368,7 +361,7 @@ func TestServer_ListSets_negative(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	t.Run("nil service", func(t *testing.T) {
-		srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil)
+		srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/api/sets", nil)
 		req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 		rr := httptest.NewRecorder()
@@ -384,7 +377,7 @@ func TestServer_ListSets_negative(t *testing.T) {
 				return nil, errors.New("boom")
 			},
 		}
-		srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+		srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/api/sets", nil)
 		req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 		rr := httptest.NewRecorder()
@@ -434,7 +427,7 @@ func TestServer_Upload(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			var req *http.Request
 			if tt.noFile {
 				var buf bytes.Buffer
@@ -471,7 +464,7 @@ func TestServer_MediaDetail_nilService(t *testing.T) {
 	store := buildSessionStore(1)
 	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
 	cfg := &internal.Config{SessionTimeoutHours: 24}
-	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil)
+	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/media/1", nil)
 	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 	rr := httptest.NewRecorder()
@@ -508,7 +501,7 @@ func TestServer_Favorite_negative(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/favorite", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -524,7 +517,7 @@ func TestServer_AddTag_nilService(t *testing.T) {
 	store := buildSessionStore(1)
 	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
 	cfg := &internal.Config{SessionTimeoutHours: 24}
-	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil)
+	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/media/1/tags", strings.NewReader(`{"tag":"x"}`))
 	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 	req.Header.Set("Content-Type", "application/json")
@@ -563,7 +556,7 @@ func TestServer_RemoveTag_negative(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/media/%s/tags/%s", tt.id, tt.tag), nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -611,7 +604,7 @@ func TestServer_Stream(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodGet, "/api/media/"+tt.id+"/stream", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -656,7 +649,7 @@ func TestServer_Download(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodGet, "/api/media/"+tt.id+"/download", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -706,7 +699,7 @@ func TestServer_Thumbnail(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodGet, "/api/media/"+tt.id+"/thumbnail", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -746,7 +739,7 @@ func TestServer_RegenThumbnail(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/thumbnail", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -781,7 +774,7 @@ func TestServer_RegenThumbnail_errorMapping(t *testing.T) {
 					return tt.svcErr
 				},
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/media/1/thumbnail", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -824,7 +817,7 @@ func TestServer_CreateShare_negative(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/shares", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -863,7 +856,7 @@ func TestServer_ListShares_negative(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodGet, "/api/media/"+tt.id+"/shares", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -902,7 +895,7 @@ func TestServer_RevokeShare(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodDelete, "/api/shares/"+tt.token, nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -924,7 +917,7 @@ func TestServer_SharePage(t *testing.T) {
 	})
 
 	t.Run("nil service", func(t *testing.T) {
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, nil, nil, nil, fs)
+			srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, nil, nil, nil, nil, fs)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -939,7 +932,7 @@ func TestServer_SharePage(t *testing.T) {
 				return nil, errors.New("boom")
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, fs)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -954,7 +947,7 @@ func TestServer_SharePage(t *testing.T) {
 				return nil, nil
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, fs)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -969,7 +962,7 @@ func TestServer_SharePage(t *testing.T) {
 				return nil, service.ErrShareExpired
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, fs)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -984,7 +977,7 @@ func TestServer_SharePage(t *testing.T) {
 				return &model.Share{Token: "abc", MediaID: 1}, nil
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, fs)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -1007,7 +1000,7 @@ func TestServer_SharePage(t *testing.T) {
 				return &model.Share{Token: "abc", MediaID: 1}, nil
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, fs)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
 		req.Header.Set("Accept", "text/html")
 		rr := httptest.NewRecorder()
@@ -1027,7 +1020,7 @@ func TestServer_SharePage(t *testing.T) {
 				return &model.Share{Token: "abc", MediaID: 1}, nil
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, fs)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, fs)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
 		req.Header.Set("Accept", "application/json")
 		rr := httptest.NewRecorder()
@@ -1054,7 +1047,7 @@ func TestServer_ShareStream(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	t.Run("nil service", func(t *testing.T) {
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, nil, nil, nil, nil)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, nil, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -1069,7 +1062,7 @@ func TestServer_ShareStream(t *testing.T) {
 				return nil, errors.New("boom")
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -1084,7 +1077,7 @@ func TestServer_ShareStream(t *testing.T) {
 				return nil, service.ErrShareNotFound
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -1099,7 +1092,7 @@ func TestServer_ShareStream(t *testing.T) {
 				return nil, service.ErrShareExpired
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -1114,7 +1107,7 @@ func TestServer_ShareStream(t *testing.T) {
 				return nil, service.ErrMediaNotFound
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -1129,7 +1122,7 @@ func TestServer_ShareStream(t *testing.T) {
 				return &service.FileResult{Path: "/nonexistent", FileName: "a.mp4"}, nil
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -1144,7 +1137,7 @@ func TestServer_ShareStream(t *testing.T) {
 				return &service.FileResult{Path: path, FileName: "a.mp4"}, nil
 			},
 		}
-		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil)
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/s/abc/stream", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -1186,7 +1179,7 @@ func TestServer_SoftDelete_negative(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodDelete, "/api/media/"+tt.id, nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -1226,7 +1219,7 @@ func TestServer_Restore_negative(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/restore", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -1272,7 +1265,7 @@ func TestServer_UpsertNote(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/media/"+tt.id+"/notes", strings.NewReader(tt.body))
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			req.Header.Set("Content-Type", "application/json")
@@ -1313,7 +1306,7 @@ func TestServer_DeleteNote(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, ms, nil, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodDelete, "/api/media/"+tt.id+"/notes", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -1357,7 +1350,7 @@ func TestServer_Progress_negative(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, nil, nil, ps, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, nil, nil, ps, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/progress", strings.NewReader(tt.body))
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			req.Header.Set("Content-Type", "application/json")
@@ -1398,7 +1391,7 @@ func TestServer_AdminRescan(t *testing.T) {
 					TriggerRescanFunc: func(ctx context.Context) error { return tt.svcErr },
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/admin/rescan", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -1434,7 +1427,7 @@ func TestServer_AdminListTrash(t *testing.T) {
 					ListTrashFunc: func(ctx context.Context) ([]model.Media, error) { return nil, tt.svcErr },
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodGet, "/api/admin/trash", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -1470,7 +1463,7 @@ func TestServer_AdminListUsers(t *testing.T) {
 					ListUsersFunc: func(ctx context.Context) ([]model.User, error) { return nil, tt.svcErr },
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -1511,7 +1504,7 @@ func TestServer_AdminCreateUser(t *testing.T) {
 					},
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/admin/users", strings.NewReader(tt.body))
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			req.Header.Set("Content-Type", "application/json")
@@ -1550,7 +1543,7 @@ func TestServer_AdminDeleteUser(t *testing.T) {
 					DeleteUserFunc: func(ctx context.Context, id int64) error { return tt.svcErr },
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodDelete, "/api/admin/users/"+tt.id, nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -1586,7 +1579,7 @@ func TestServer_AdminListPermissions(t *testing.T) {
 					ListPermissionsFunc: func(ctx context.Context) (*service.PermissionsMatrix, error) { return nil, tt.svcErr },
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodGet, "/api/admin/permissions", nil)
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			rr := httptest.NewRecorder()
@@ -1624,7 +1617,7 @@ func TestServer_AdminGrantPermission(t *testing.T) {
 					GrantPermissionFunc: func(ctx context.Context, setID, userID int64, role model.Role) error { return tt.svcErr },
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/admin/permissions", strings.NewReader(tt.body))
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			req.Header.Set("Content-Type", "application/json")
@@ -1663,7 +1656,7 @@ func TestServer_AdminRevokePermission(t *testing.T) {
 					RevokePermissionFunc: func(ctx context.Context, setID, userID int64) error { return tt.svcErr },
 				}
 			}
-			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil)
+			srv := newTestServer(t, store, nil, sm, cfg, nil, as, nil, nil, nil)
 			req := httptest.NewRequest(http.MethodDelete, "/api/admin/permissions", strings.NewReader(tt.body))
 			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
 			req.Header.Set("Content-Type", "application/json")

@@ -56,6 +56,11 @@ type GCStore interface {
 	MediaRepo
 }
 
+// AuthServiceStore is the subset of Store required by service.AuthService.
+type AuthServiceStore interface {
+	UserRepo
+}
+
 // ScannerStore is the subset of Store required by scanner.FSScanner.
 type ScannerStore interface {
 	SetRepo

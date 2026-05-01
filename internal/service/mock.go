@@ -18,6 +18,7 @@ var (
 	_ MediaFavoriteService  = (*MockMediaService)(nil)
 	_ MediaNoteService      = (*MockMediaService)(nil)
 	_ MediaService          = (*MockMediaService)(nil)
+	_ AuthService           = (*MockAuthService)(nil)
 )
 
 // MockMediaService is a fake MediaService for testing.
@@ -238,6 +239,25 @@ func (m *MockAdminService) RevokePermission(ctx context.Context, setID, userID i
 		return m.RevokePermissionFunc(ctx, setID, userID)
 	}
 	return nil
+}
+
+// MockAuthService is a fake AuthService for testing.
+type MockAuthService struct {
+	BootstrapFunc func(ctx context.Context, username, password string) (*AuthResult, error)
+	LoginFunc     func(ctx context.Context, username, password string) (*AuthResult, error)
+}
+
+func (m *MockAuthService) Bootstrap(ctx context.Context, username, password string) (*AuthResult, error) {
+	if m.BootstrapFunc != nil {
+		return m.BootstrapFunc(ctx, username, password)
+	}
+	return nil, nil
+}
+func (m *MockAuthService) Login(ctx context.Context, username, password string) (*AuthResult, error) {
+	if m.LoginFunc != nil {
+		return m.LoginFunc(ctx, username, password)
+	}
+	return nil, nil
 }
 
 // MockProgressService is a fake ProgressService for testing.
