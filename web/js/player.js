@@ -70,6 +70,23 @@ export function initPlayer() {
     m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
   });
 
+  function setupVideoDebug(m) {
+    const events = ['loadstart','loadeddata','loadedmetadata','canplay','canplaythrough','playing','waiting','stalled','suspend','error','abort','emptied','ended'];
+    events.forEach(event => {
+      m.addEventListener(event, () => {
+        console.log('[video-debug]', event,
+          'readyState=', m.readyState,
+          'networkState=', m.networkState,
+          'paused=', m.paused,
+          'src=', m.src?.slice(-40),
+          'error=', m.error?.code || 'none',
+          'errorMsg=', m.error?.message || '');
+      });
+    });
+  }
+  setupVideoDebug(e.video);
+  setupVideoDebug(e.audio);
+
   let seeking = false;
   const seekToFraction = (frac) => {
     const m = currentMediaElement();
@@ -112,7 +129,13 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
   currentMediaIndex = index ?? -1;
   loadMedia(media, resumeFrom);
   isPlaying = true;
-  currentMediaElement()?.play().catch(() => {});
+  const m = currentMediaElement();
+  if (m) {
+    console.log('selectAndPlay: type=', media.type, 'src=', m.src, 'readyState=', m.readyState);
+    m.play().catch((err) => { console.error('play() failed:', err); });
+  } else {
+    console.error('selectAndPlay: no media element found for type', media.type);
+  }
   highlightPlayingCard();
 }
 
@@ -121,16 +144,19 @@ function loadMedia(media, resumeFrom = 0) {
   const isVideo = media.type === 'video';
   const src = `/api/media/${media.id}/stream`;
   if (isVideo) {
+    e.video.pause();
+    e.audio.pause(); e.audio.src = '';
     e.video.style.display = '';
     e.audio.style.display = 'none';
     e.coverArt?.classList.add('hidden');
-    e.audio.pause(); e.audio.src = '';
     e.video.src = src;
+    e.video.load();
     e.video.currentTime = resumeFrom;
   } else {
+    e.audio.pause();
+    e.video.pause(); e.video.src = '';
     e.video.style.display = 'none';
     e.audio.style.display = 'none';   /* keep playing but invisible so cover-art fills stage */
-    e.video.pause(); e.video.src = '';
     e.audio.src = src;
     e.audio.currentTime = resumeFrom;
     if (e.coverArt) {
@@ -195,6 +221,7 @@ export function toggleFullscreen() {
 export function toggleStage() {
   const e = els();
   e.player?.classList.toggle('collapsed');
+  console.log('toggleStage: collapsed =', e.player?.classList.contains('collapsed'));
 }
 
 export function exitFullscreenIfNeeded() {

@@ -62,6 +62,15 @@
   background: var(--player-stage-bg);
 }
 
+/* Collapsed stage (controls still visible) */
+.player.collapsed .stage {
+  height: 0 !important;
+  overflow: hidden;
+}
+.player.collapsed .big-play {
+  display: none;
+}
+
 /* Overlay controls */
 .player .controls {
   display: flex;

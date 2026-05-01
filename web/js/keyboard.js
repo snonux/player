@@ -35,6 +35,8 @@ export function initKeyboard(handlers) {
       return;
     }
 
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // don't intercept browser shortcuts
+
     switch (e.key) {
       // Navigation
       case 'ArrowUp':
@@ -68,7 +70,10 @@ export function initKeyboard(handlers) {
         break;
       case 'Enter': handlers.enter?.(e); break;
       case 'p': handlers.playPause?.(e); break;
-      case 'c': handlers.toggleStage?.(e); break;
+      case 'c':
+      case 'C':
+        handlers.toggleStage?.(e);
+        break;
       case 'f': handlers.fullscreen?.(e); break;
       case 'Escape': handlers.escape?.(e); break;
       case 'r': handlers.shuffle?.(e); break;

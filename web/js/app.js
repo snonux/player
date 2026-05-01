@@ -462,6 +462,17 @@ async function regenThumb(mediaId) {
   try {
     await API.regenThumbnail(mediaId);
     toast('Thumbnail regenerated');
+    // Force refresh any thumbnail images for this media in the grid
+    document.querySelectorAll(`#media-grid [data-id="${mediaId}"] img`).forEach((img) => {
+      const base = img.src.split('?')[0];
+      img.src = `${base}?t=${Date.now()}`;
+    });
+    // If the same media is currently loaded in the player, refresh cover art too
+    const e = document.getElementById('cover-art');
+    if (e && !e.classList.contains('hidden')) {
+      const base = e.src.split('?')[0];
+      e.src = `${base}?t=${Date.now()}`;
+    }
   } catch (err) { toast(err.message || 'Thumbnail failed', 'error'); }
 }
 

@@ -405,12 +405,22 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.mediaSvc) {
 		return
 	}
-	filter := parseMediaListQuery(r.URL.Query())
+	path := r.URL.Path
+	q := r.URL.Query()
+	setID := q.Get("set_id")
+	setIDs := q.Get("set_ids")
+	search := q.Get("search")
+	typ := q.Get("type")
+	start := time.Now()
+	filter := parseMediaListQuery(q)
 	media, err := s.mediaSvc.ListMedia(r.Context(), userIDFromContext(r), filter)
+	dur := time.Since(start)
 	if err != nil {
+		fmt.Printf("[api] %s set_id=%s set_ids=%s search=%q type=%s error=%v (took %s)\n", path, setID, setIDs, search, typ, err, dur)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	fmt.Printf("[api] %s set_id=%s set_ids=%s search=%q type=%s returned=%d (took %s)\n", path, setID, setIDs, search, typ, len(media), dur)
 	writeJSON(w, http.StatusOK, media)
 }
 
@@ -547,6 +557,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *service.FileResult, attachment bool) {
 	f, err := os.Open(res.Path)
 	if err != nil {
+		fmt.Printf("[api] stream file=%s error=open_failed\n", res.FileName)
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -554,6 +565,7 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 
 	stat, err := f.Stat()
 	if err != nil {
+		fmt.Printf("[api] stream file=%s error=stat_failed\n", res.FileName)
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -566,6 +578,7 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 	// needing to sniff, which avoids buffering delays during streaming.
 	w.Header().Set("Content-Type", mimeTypeForFilename(res.FileName))
 	w.Header().Set("Accept-Ranges", "bytes")
+	fmt.Printf("[api] stream file=%s size=%d bytes range=%s\n", res.FileName, stat.Size(), r.Header.Get("Range"))
 	http.ServeContent(w, r, res.FileName, stat.ModTime(), f)
 }
 
