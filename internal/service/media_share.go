@@ -1,0 +1,114 @@
+package service
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"time"
+
+	"codeberg.org/snonux/player/internal/model"
+)
+
+func generateToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func (s *mediaService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+	_, err := s.verifyAccess(ctx, mediaID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := generateToken()
+	if err != nil {
+		return nil, fmt.Errorf("generate token: %w", err)
+	}
+
+	share := &model.Share{
+		Token:     token,
+		MediaID:   mediaID,
+		CreatedBy: userID,
+		CreatedAt: s.clock.Now(),
+		ExpiresAt: expiresAt,
+	}
+
+	if err := s.store.CreateShare(ctx, share); err != nil {
+		return nil, fmt.Errorf("create share: %w", err)
+	}
+	return share, nil
+}
+
+func (s *mediaService) ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error) {
+	_, err := s.verifyAccess(ctx, mediaID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.ListSharesByMedia(ctx, mediaID)
+}
+
+func (s *mediaService) RevokeShare(ctx context.Context, token string, userID int64) error {
+	share, err := s.store.GetShareByToken(ctx, token)
+	if err != nil {
+		return fmt.Errorf("get share: %w", err)
+	}
+	if share == nil {
+		return errors.New("share not found")
+	}
+
+	_, err = s.verifyAccess(ctx, share.MediaID, userID)
+	if err != nil {
+		return err
+	}
+
+	return s.store.DeleteShare(ctx, token)
+}
+
+func (s *mediaService) ValidateShareToken(ctx context.Context, token string) (*model.Share, error) {
+	share, err := s.store.GetShareByToken(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("get share: %w", err)
+	}
+	if share == nil {
+		return nil, ErrShareNotFound
+	}
+
+	now := s.clock.Now()
+	if now.After(share.ExpiresAt) {
+		return nil, ErrShareExpired
+	}
+
+	if share.MaxUses != nil && share.UsedCount >= *share.MaxUses {
+		return nil, ErrShareExpired
+	}
+
+	return share, nil
+}
+
+func (s *mediaService) StreamSharedMedia(ctx context.Context, token string) (*FileResult, error) {
+	share, err := s.ValidateShareToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	media, err := s.store.GetMediaByID(ctx, share.MediaID)
+	if err != nil {
+		return nil, fmt.Errorf("get media: %w", err)
+	}
+	if media == nil {
+		return nil, ErrMediaNotFound
+	}
+
+	_ = s.store.UseShare(ctx, token)
+
+	return &FileResult{
+		Path:     media.AbsPath,
+		FileName: media.FileName,
+		FileSize: media.FileSizeBytes,
+	}, nil
+}
