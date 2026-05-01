@@ -1330,6 +1330,9 @@ func (m *mockPingStore) GetMediaByID(ctx context.Context, id int64) (*model.Medi
 func (m *mockPingStore) UpdateMedia(ctx context.Context, media *model.Media) error {
 	return m.store.UpdateMedia(ctx, media)
 }
+func (m *mockPingStore) UpdateMediaThumbnail(ctx context.Context, id int64, thumbnailPath string) error {
+	return m.store.UpdateMediaThumbnail(ctx, id, thumbnailPath)
+}
 func (m *mockPingStore) SoftDeleteMedia(ctx context.Context, id int64) error {
 	return m.store.SoftDeleteMedia(ctx, id)
 }

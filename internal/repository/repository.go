@@ -111,14 +111,15 @@ type MediaFilter struct {
 // MediaRepo manages media items.
 type MediaRepo interface {
 	CreateMedia(ctx context.Context, media *model.Media) (int64, error)
-	GetMediaByID(ctx context.Context, id int64) (*model.Media, error)
 	UpdateMedia(ctx context.Context, media *model.Media) error
+	UpdateMediaThumbnail(ctx context.Context, id int64, thumbnailPath string) error
+	GetMediaByID(ctx context.Context, id int64) (*model.Media, error)
+	ListMedia(ctx context.Context, filter MediaFilter) ([]model.Media, error)
 	SoftDeleteMedia(ctx context.Context, id int64) error
 	RestoreMedia(ctx context.Context, id int64) error
 	HardDeleteMedia(ctx context.Context, id int64) error
-	ListMedia(ctx context.Context, filter MediaFilter) ([]model.Media, error)
-	ListDeletedMedia(ctx context.Context) ([]model.Media, error)
 	IncrementPlayCount(ctx context.Context, id int64) error
+	ListDeletedMedia(ctx context.Context) ([]model.Media, error)
 }
 
 // TagRepo manages tags and their assignment to media.

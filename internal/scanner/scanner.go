@@ -96,18 +96,18 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 		setID = set.ID
 	}
 
-	// Build map of existing media for quick lookup.
-	existing := make(map[string]bool)
+	// Build map of existing media for quick lookup by relPath.
+	existing := make(map[string]model.Media)
 	mediaList, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
 	if err != nil {
 		return fmt.Errorf("list media for set %q: %w", setName, err)
 	}
 	for _, m := range mediaList {
-		existing[m.RelPath] = true
+		existing[m.RelPath] = m
 	}
 
 	// First pass: gather images per directory so we can pair them with audio files.
-	// Key: parent dir path; Value: relative path to the first image found there.
+	// Key: parent dir path (absolute); Value: relative path to the first image found there.
 	coverImages := make(map[string]string)
 	_ = s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !isImageFile(path) {
@@ -121,7 +121,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 		return nil
 	})
 
-	// Second pass: walk set directory recursively for media files.
+	// Second pass: walk set directory recursively for NEW media files.
 	walkErr := s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("walk %q: %w", path, err)
@@ -136,7 +136,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 		if err != nil {
 			return fmt.Errorf("rel path for %q: %w", path, err)
 		}
-		if existing[relPath] {
+		if _, alreadyExists := existing[relPath]; alreadyExists {
 			return nil
 		}
 
@@ -163,17 +163,13 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 			thumbName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".jpg"
 			thumbnailPath = filepath.Join(thumbDir, thumbName)
 			if err := s.thumbGen.Generate(ctx, path, thumbnailPath, meta.Duration); err != nil {
-				// Skip thumbnail generation errors (e.g., corrupt or audio-only video files)
-				// and continue scanning without a thumbnail.
+				// Skip thumbnail generation errors (e.g., corrupt or audio-only video files).
 				fmt.Printf("[scanner] skipping thumbnail for %q: %v\n", path, err)
 				thumbnailPath = ""
 			}
 		} else if mediaType == model.MediaTypeAudio {
-			// Use a sibling image as the cover/thumbnail if one exists.
-			dir := filepath.Dir(path)
-			if coverRel, ok := coverImages[dir]; ok {
-				thumbnailPath = filepath.Join(setPath, coverRel)
-			}
+			// Use a sibling or ancestor image as the cover/thumbnail if one exists.
+			thumbnailPath = findCoverImage(path, coverImages, setPath)
 		}
 
 		media := &model.Media{
@@ -199,7 +195,35 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 	if walkErr != nil {
 		return fmt.Errorf("scan set %q: %w", setName, walkErr)
 	}
+
+	// Third pass: update existing audio files that gained a cover image.
+	for _, m := range mediaList {
+		if m.Type != model.MediaTypeAudio || m.ThumbnailPath != "" {
+			continue
+		}
+		candidate := findCoverImage(m.AbsPath, coverImages, setPath)
+		if candidate != "" && candidate != m.ThumbnailPath {
+			if err := s.store.UpdateMediaThumbnail(ctx, m.ID, candidate); err != nil {
+				fmt.Printf("[scanner] failed to update thumbnail for %q: %v\n", m.FileName, err)
+			}
+		}
+	}
+
 	return nil
+}
+
+// findCoverImage walks up from a file's directory toward the set root,
+// returning the first cover image found.
+func findCoverImage(filePath string, coverImages map[string]string, setPath string) string {
+	for dir := filepath.Dir(filePath); len(dir) >= len(setPath); dir = filepath.Dir(dir) {
+		if coverRel, ok := coverImages[dir]; ok {
+			return filepath.Join(setPath, coverRel)
+		}
+		if dir == setPath {
+			break
+		}
+	}
+	return ""
 }
 
 var mediaExtensions = map[string]struct{}{

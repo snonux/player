@@ -98,6 +98,9 @@ func (m *MockStore) GetMediaByID(ctx context.Context, id int64) (*model.Media, e
 func (m *MockStore) UpdateMedia(ctx context.Context, media *model.Media) error {
 	return m.MediaRepo.UpdateMedia(ctx, media)
 }
+func (m *MockStore) UpdateMediaThumbnail(ctx context.Context, id int64, thumbnailPath string) error {
+	return m.MediaRepo.UpdateMediaThumbnail(ctx, id, thumbnailPath)
+}
 func (m *MockStore) SoftDeleteMedia(ctx context.Context, id int64) error {
 	return m.MediaRepo.SoftDeleteMedia(ctx, id)
 }
@@ -340,14 +343,15 @@ func (m *MockSetPermissionRepo) ListPermissionsByUser(ctx context.Context, userI
 
 // MockMediaRepo is a fake MediaRepo.
 type MockMediaRepo struct {
-	CreateMediaFunc        func(ctx context.Context, media *model.Media) (int64, error)
-	GetMediaByIDFunc       func(ctx context.Context, id int64) (*model.Media, error)
-	UpdateMediaFunc        func(ctx context.Context, media *model.Media) error
-	SoftDeleteMediaFunc    func(ctx context.Context, id int64) error
-	RestoreMediaFunc       func(ctx context.Context, id int64) error
-	HardDeleteMediaFunc    func(ctx context.Context, id int64) error
-	ListMediaFunc          func(ctx context.Context, filter MediaFilter) ([]model.Media, error)
-	ListDeletedMediaFunc   func(ctx context.Context) ([]model.Media, error)
+	CreateMediaFunc         func(ctx context.Context, media *model.Media) (int64, error)
+	GetMediaByIDFunc        func(ctx context.Context, id int64) (*model.Media, error)
+	UpdateMediaFunc         func(ctx context.Context, media *model.Media) error
+	UpdateMediaThumbnailFunc func(ctx context.Context, id int64, thumbnailPath string) error
+	SoftDeleteMediaFunc     func(ctx context.Context, id int64) error
+	RestoreMediaFunc        func(ctx context.Context, id int64) error
+	HardDeleteMediaFunc     func(ctx context.Context, id int64) error
+	ListMediaFunc           func(ctx context.Context, filter MediaFilter) ([]model.Media, error)
+	ListDeletedMediaFunc    func(ctx context.Context) ([]model.Media, error)
 	IncrementPlayCountFunc func(ctx context.Context, id int64) error
 }
 
@@ -366,6 +370,12 @@ func (m *MockMediaRepo) GetMediaByID(ctx context.Context, id int64) (*model.Medi
 func (m *MockMediaRepo) UpdateMedia(ctx context.Context, media *model.Media) error {
 	if m.UpdateMediaFunc != nil {
 		return m.UpdateMediaFunc(ctx, media)
+	}
+	return nil
+}
+func (m *MockMediaRepo) UpdateMediaThumbnail(ctx context.Context, id int64, thumbnailPath string) error {
+	if m.UpdateMediaThumbnailFunc != nil {
+		return m.UpdateMediaThumbnailFunc(ctx, id, thumbnailPath)
 	}
 	return nil
 }

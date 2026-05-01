@@ -91,6 +91,18 @@ func (s *SQLite) UpdateMedia(ctx context.Context, media *model.Media) error {
 	return nil
 }
 
+// UpdateMediaThumbnail only patches the thumbnail_path field.
+func (s *SQLite) UpdateMediaThumbnail(ctx context.Context, id int64, thumbnailPath string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE media SET thumbnail_path = ? WHERE id = ?`,
+		sqlNullString(thumbnailPath), id,
+	)
+	if err != nil {
+		return fmt.Errorf("update media thumbnail: %w", err)
+	}
+	return nil
+}
+
 // SoftDeleteMedia sets deleted_at to NOW().
 func (s *SQLite) SoftDeleteMedia(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE media SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
