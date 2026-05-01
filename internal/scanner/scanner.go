@@ -106,7 +106,22 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 		existing[m.RelPath] = true
 	}
 
-	// Walk set directory recursively.
+	// First pass: gather images per directory so we can pair them with audio files.
+	// Key: parent dir path; Value: relative path to the first image found there.
+	coverImages := make(map[string]string)
+	_ = s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !isImageFile(path) {
+			return nil
+		}
+		relPath, _ := filepath.Rel(setPath, path)
+		dir := filepath.Dir(path)
+		if _, ok := coverImages[dir]; !ok {
+			coverImages[dir] = relPath
+		}
+		return nil
+	})
+
+	// Second pass: walk set directory recursively for media files.
 	walkErr := s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("walk %q: %w", path, err)
@@ -153,6 +168,12 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 				fmt.Printf("[scanner] skipping thumbnail for %q: %v\n", path, err)
 				thumbnailPath = ""
 			}
+		} else if mediaType == model.MediaTypeAudio {
+			// Use a sibling image as the cover/thumbnail if one exists.
+			dir := filepath.Dir(path)
+			if coverRel, ok := coverImages[dir]; ok {
+				thumbnailPath = filepath.Join(setPath, coverRel)
+			}
 		}
 
 		media := &model.Media{
@@ -184,6 +205,21 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string) error {
 var mediaExtensions = map[string]struct{}{
 	".mp4": {}, ".mkv": {}, ".avi": {}, ".mov": {}, ".webm": {},
 	".mp3": {}, ".flac": {}, ".wav": {}, ".aac": {}, ".ogg": {}, ".m4a": {}, ".opus": {},
+}
+
+// imageExtensions lists file extensions recognized as cover/artwork images.
+var imageExtensions = map[string]struct{}{
+	".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {},
+}
+
+func isImageFile(path string) bool {
+	base := filepath.Base(path)
+	if strings.HasPrefix(base, ".") {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	_, ok := imageExtensions[ext]
+	return ok
 }
 
 func isMediaFile(path string) bool {

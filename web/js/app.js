@@ -278,9 +278,12 @@ function renderItem(m, index) {
       </div>
     `;
   }
+  const coverHtml = m.thumbnail_path
+    ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy" class="row-cover">`
+    : '<span class="row-icon">🎵</span>';
   return `
     <div class="media-row" data-id="${m.id}" data-index="${index}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
-      <span class="row-icon">🎵</span>
+      ${coverHtml}
       <div class="row-body">
         <div class="row-title">${escapeHtml(m.file_name)}</div>
         <div class="row-meta">${escapeHtml(m.codec || '')} ${m.bitrate ? Math.round(m.bitrate/1000)+'kbps' : ''} ${sizeText ? '• ' + sizeText : ''}</div>

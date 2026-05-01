@@ -230,6 +230,15 @@ body {
   white-space: nowrap;
 }
 
+.media-row .row-cover {
+  width: 2.8rem;
+  height: 2.8rem;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+}
+
 /* Modal */
 .modal-overlay {
   position: fixed;
