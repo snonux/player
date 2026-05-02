@@ -1083,7 +1083,7 @@ func TestServer_Shares(t *testing.T) {
 		},
 		GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
 			return &service.GetSharedMediaResult{
-				Media: &model.Media{ID: 1, FileName: "x.mp4", Type: model.MediaTypeVideo, Duration: 120},
+				Media: &service.SharedMediaView{ID: 1, FileName: "x.mp4", Type: model.MediaTypeVideo, Duration: 120},
 				StreamURL: "/s/abc/stream",
 				ThumbURL:  "/s/abc/thumbnail",
 			}, nil
@@ -1437,6 +1437,9 @@ func (m *mockPingStore) GetShareByToken(ctx context.Context, token string) (*mod
 }
 func (m *mockPingStore) ListSharesByMedia(ctx context.Context, mediaID int64) ([]model.Share, error) {
 	return m.store.ListSharesByMedia(ctx, mediaID)
+}
+func (m *mockPingStore) ListSharesByUser(ctx context.Context, userID int64) ([]model.Share, error) {
+	return m.store.ListSharesByUser(ctx, userID)
 }
 func (m *mockPingStore) UseShare(ctx context.Context, token string) error {
 	return m.store.UseShare(ctx, token)

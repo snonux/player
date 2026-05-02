@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -120,22 +119,22 @@ func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := r.PathValue("token")
-	res, err := s.mediaSvc.GetSharedMedia(r.Context(), token)
-	if err != nil || res == nil {
-		if err != nil && errors.Is(err, service.ErrShareExpired) {
+	fr, err := s.mediaSvc.GetSharedThumbnail(r.Context(), token)
+	if err != nil {
+		if errors.Is(err, service.ErrShareExpired) {
 			http.Error(w, "gone", http.StatusGone)
 			return
 		}
-		http.Error(w, "not found", http.StatusNotFound)
+		if errors.Is(err, service.ErrShareNotFound) || errors.Is(err, service.ErrMediaNotFound) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if !res.HasThumb || res.Media == nil || res.Media.ThumbnailPath == "" {
+	if fr == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
-	}
-	fr := &service.FileResult{
-		Path:     res.Media.ThumbnailPath,
-		FileName: filepath.Base(res.Media.ThumbnailPath),
 	}
 	s.serveFileResult(w, r, fr, false)
 }
@@ -163,4 +162,41 @@ func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.serveFileResult(w, r, res, false)
+}
+
+func (s *Server) handleShareDownload(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	token := r.PathValue("token")
+	fr, err := s.mediaSvc.StreamSharedMedia(r.Context(), token)
+	if err != nil {
+		if errors.Is(err, service.ErrShareExpired) {
+			http.Error(w, "gone", http.StatusGone)
+			return
+		}
+		if errors.Is(err, service.ErrShareNotFound) || errors.Is(err, service.ErrMediaNotFound) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if fr == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	s.serveFileResult(w, r, fr, true)
+}
+
+func (s *Server) handleMyShares(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	shares, err := s.mediaSvc.ListMyShares(r.Context(), userIDFromContext(r))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, shares)
 }

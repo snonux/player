@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
@@ -127,11 +128,75 @@ func (s *mediaService) GetSharedMedia(ctx context.Context, token string) (*GetSh
 		return nil, ErrMediaNotFound
 	}
 
-	res := &GetSharedMediaResult{
-		Media:     media,
-		StreamURL: fmt.Sprintf("/s/%s/stream", token),
-		HasThumb:  media.ThumbnailPath != "",
-		ThumbURL:  fmt.Sprintf("/s/%s/thumbnail", token),
+	return &GetSharedMediaResult{
+		Media: &SharedMediaView{
+			ID:            media.ID,
+			FileName:      media.FileName,
+			Type:          media.Type,
+			Duration:      media.Duration,
+			Codec:         media.Codec,
+			Resolution:    media.Resolution,
+			Bitrate:       media.Bitrate,
+			FileSizeBytes: media.FileSizeBytes,
+		},
+		HasThumb:    media.ThumbnailPath != "",
+		StreamURL:   fmt.Sprintf("/s/%s/stream", token),
+		DownloadURL: fmt.Sprintf("/s/%s/download", token),
+		ThumbURL:    fmt.Sprintf("/s/%s/thumbnail", token),
+	}, nil
+}
+
+func (s *mediaService) GetSharedThumbnail(ctx context.Context, token string) (*FileResult, error) {
+	share, err := s.ValidateShareToken(ctx, token)
+	if err != nil {
+		return nil, err
 	}
-	return res, nil
+
+	media, err := s.store.GetMediaByID(ctx, share.MediaID)
+	if err != nil {
+		return nil, fmt.Errorf("get media: %w", err)
+	}
+	if media == nil {
+		return nil, ErrMediaNotFound
+	}
+	if media.ThumbnailPath == "" {
+		return nil, ErrMediaNotFound
+	}
+
+	return &FileResult{
+		Path:     media.ThumbnailPath,
+		FileName: filepath.Base(media.ThumbnailPath),
+	}, nil
+}
+
+func (s *mediaService) ListMyShares(ctx context.Context, userID int64) ([]ShareInfo, error) {
+	shares, err := s.store.ListSharesByUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list shares: %w", err)
+	}
+
+	result := make([]ShareInfo, 0, len(shares))
+	for _, sh := range shares {
+		media, err := s.store.GetMediaByID(ctx, sh.MediaID)
+		if err != nil {
+			return nil, fmt.Errorf("get media: %w", err)
+		}
+		fileName := ""
+		mediaType := model.MediaTypeVideo
+		if media != nil {
+			fileName = media.FileName
+			mediaType = media.Type
+		}
+		result = append(result, ShareInfo{
+			Token:     sh.Token,
+			MediaID:   sh.MediaID,
+			FileName:  fileName,
+			MediaType: mediaType,
+			CreatedAt: sh.CreatedAt,
+			ExpiresAt: sh.ExpiresAt,
+			MaxUses:   sh.MaxUses,
+			UsedCount: sh.UsedCount,
+		})
+	}
+	return result, nil
 }

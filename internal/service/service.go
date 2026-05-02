@@ -44,23 +44,50 @@ type BrowseResult struct {
 	Media       []model.Media   `json:"media"`
 }
 
+// SharedMediaView exposes only the metadata fields needed for a public share page.
+type SharedMediaView struct {
+	ID            int64           `json:"id"`
+	FileName      string          `json:"file_name"`
+	Type          model.MediaType `json:"type"`
+	Duration      float64         `json:"duration"`
+	Codec         string          `json:"codec"`
+	Resolution    string          `json:"resolution"`
+	Bitrate       int             `json:"bitrate"`
+	FileSizeBytes int64           `json:"file_size_bytes"`
+}
+
 // GetSharedMediaResult wraps media metadata needed to render a share page.
-	type GetSharedMediaResult struct {
-		Media      *model.Media `json:"media"`
-		HasThumb   bool         `json:"has_thumb"`
-		StreamURL  string       `json:"stream_url"`
-		ThumbURL   string       `json:"thumb_url"`
-	}
+type GetSharedMediaResult struct {
+	Media       *SharedMediaView `json:"media"`
+	HasThumb    bool             `json:"has_thumb"`
+	StreamURL   string           `json:"stream_url"`
+	DownloadURL string           `json:"download_url"`
+	ThumbURL    string           `json:"thumb_url"`
+}
+
+// ShareInfo augments a share with its associated media metadata.
+type ShareInfo struct {
+	Token     string          `json:"token"`
+	MediaID   int64           `json:"media_id"`
+	FileName  string          `json:"file_name"`
+	MediaType model.MediaType `json:"media_type"`
+	CreatedAt time.Time       `json:"created_at"`
+	ExpiresAt time.Time       `json:"expires_at"`
+	MaxUses   *int            `json:"max_uses,omitempty"`
+	UsedCount int             `json:"used_count"`
+}
 
 // MediaShareService handles creation, validation and revocation of share links.
-	type MediaShareService interface {
-		CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
-		ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
-		RevokeShare(ctx context.Context, token string, userID int64) error
-		ValidateShareToken(ctx context.Context, token string) (*model.Share, error)
-		StreamSharedMedia(ctx context.Context, token string) (*FileResult, error)
-		GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error)
-	}
+type MediaShareService interface {
+	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
+	ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
+	RevokeShare(ctx context.Context, token string, userID int64) error
+	ValidateShareToken(ctx context.Context, token string) (*model.Share, error)
+	StreamSharedMedia(ctx context.Context, token string) (*FileResult, error)
+	GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error)
+	GetSharedThumbnail(ctx context.Context, token string) (*FileResult, error)
+	ListMyShares(ctx context.Context, userID int64) ([]ShareInfo, error)
+}
 
 // MediaTagService handles tagging of media items.
 type MediaTagService interface {

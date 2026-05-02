@@ -124,14 +124,10 @@
         <tr><td><kbd>Backspace</kbd></td><td>Go up one folder</td></tr>
         <tr><td><kbd>r</kbd></td><td>Toggle shuffle</td></tr>
         <tr><td><kbd>s</kbd></td><td>Toggle sets sidebar</td></tr>
-        <tr><td><kbd>/</kbd></td><td>Focus search bar</td></tr>
-        <tr><td><kbd>n</kbd></td><td>Open notes for selected media</td></tr>
-        <tr><td><kbd>t</kbd></td><td>Toggle toolbar / filters</td></tr>
-        <tr><td><kbd>,</kbd></td><td>Focus min duration filter</td></tr>
-        <tr><td><kbd>.</kbd></td><td>Focus max duration filter</td></tr>
-        <tr><td><kbd>?</kbd></td><td>Show / hide this help</td></tr>
+        <tr><td><kbd>S</kbd></td><td>Share selected media</td></tr>
+        <tr><td><kbd>L</kbd></td><td>My Shares (opens list)</td></tr>
       </table>
-      <p class="text-muted text-xs mt-2">Click the <strong>?</strong> button or press <kbd>?</kbd> anytime to show or hide this help.</p>
+      <p class="text-muted text-xs mt-2">Inside the <strong>My Shares</strong> list: <kbd>↑</kbd> / <kbd>↓</kbd> or <kbd>k</kbd> / <kbd>j</kbd> to navigate; <kbd>Enter</kbd> to copy the selected link; <kbd>Delete</kbd> or <kbd>d</kbd> to revoke it; <kbd>Esc</kbd> to close.</p>
     </div>
   </div>
 </div>
@@ -215,5 +211,23 @@
     </div>
   </div>
 </div>
+<!-- Shares Modal -->
+<div id="shares-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="shares-title">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h3 id="shares-title">My Shares</h3>
+      <div class="spacer"></div>
+      <button id="shares-close" class="icon-btn" aria-label="Close">&#10005;</button>
+    </div>
+    <div id="shares-list"></div>
+    <div class="shares-hint">
+      <kbd>&#8593;</kbd> <kbd>&#8595;</kbd> <kbd>k</kbd> <kbd>j</kbd> navigate &middot;
+      <kbd>Enter</kbd> copy &middot;
+      <kbd>Delete</kbd> <kbd>d</kbd> revoke &middot;
+      <kbd>Esc</kbd> close
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

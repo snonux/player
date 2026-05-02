@@ -95,6 +95,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
 	s.mux.HandleFunc("GET /s/{token}/stream", s.handleShareStream)
 	s.mux.HandleFunc("GET /s/{token}/thumbnail", s.handleShareThumbnail)
+	s.mux.HandleFunc("GET /s/{token}/download", s.handleShareDownload)
 
 	// Static assets (public)
 	staticHandler := http.FileServer(s.staticFS)
@@ -142,6 +143,7 @@ func (s *Server) routes() {
 
 	// Shares
 	s.mux.Handle("DELETE /api/shares/{token}", s.mw.RequireSession(http.HandlerFunc(s.handleRevokeShare)))
+	s.mux.Handle("GET /api/shares", s.mw.RequireSession(http.HandlerFunc(s.handleMyShares)))
 
 	// Admin routes
 	s.mux.Handle("GET /api/admin/trash", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleListTrash))))

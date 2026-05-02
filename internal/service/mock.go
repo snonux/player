@@ -41,10 +41,12 @@ type MockMediaService struct {
 	UploadMediaFunc         func(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error)
 	CreateShareFunc         func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
 	ListSharesFunc          func(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
+	ListMySharesFunc        func(ctx context.Context, userID int64) ([]ShareInfo, error)
 	RevokeShareFunc         func(ctx context.Context, token string, userID int64) error
 	ValidateShareTokenFunc  func(ctx context.Context, token string) (*model.Share, error)
 	StreamSharedMediaFunc   func(ctx context.Context, token string) (*FileResult, error)
 	GetSharedMediaFunc      func(ctx context.Context, token string) (*GetSharedMediaResult, error)
+	GetSharedThumbnailFunc  func(ctx context.Context, token string) (*FileResult, error)
 	GetNoteFunc             func(ctx context.Context, mediaID, userID int64) (*model.Note, error)
 	UpsertNoteFunc          func(ctx context.Context, note *model.Note) error
 	DeleteNoteFunc          func(ctx context.Context, mediaID, userID int64) error
@@ -183,7 +185,16 @@ func (m *MockMediaService) GetSharedMedia(ctx context.Context, token string) (*G
 	return nil, errors.New("not implemented")
 }
 func (m *MockMediaService) GetSharedThumbnail(ctx context.Context, token string) (*FileResult, error) {
+	if m.GetSharedThumbnailFunc != nil {
+		return m.GetSharedThumbnailFunc(ctx, token)
+	}
 	return nil, errors.New("not implemented")
+}
+func (m *MockMediaService) ListMyShares(ctx context.Context, userID int64) ([]ShareInfo, error) {
+	if m.ListMySharesFunc != nil {
+		return m.ListMySharesFunc(ctx, userID)
+	}
+	return nil, nil
 }
 func (m *MockMediaService) GetNote(ctx context.Context, mediaID, userID int64) (*model.Note, error) {
 	if m.GetNoteFunc != nil {

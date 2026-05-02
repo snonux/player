@@ -62,6 +62,25 @@ func (s *SQLite) ListSharesByMedia(ctx context.Context, mediaID int64) ([]model.
 	return shares, rows.Err()
 }
 
+// ListSharesByUser returns all shares created by a specific user.
+func (s *SQLite) ListSharesByUser(ctx context.Context, userID int64) ([]model.Share, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT token, media_id, created_by, created_at, expires_at, max_uses, used_count FROM shares WHERE created_by = ? ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list shares by user: %w", err)
+	}
+	defer rows.Close()
+	var shares []model.Share
+	for rows.Next() {
+		sh, err := scanShare(rows)
+		if err != nil {
+			return nil, err
+		}
+		shares = append(shares, *sh)
+	}
+	return shares, rows.Err()
+}
+
 // UseShare increments the used_count of a share token.
 func (s *SQLite) UseShare(ctx context.Context, token string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE shares SET used_count = used_count + 1 WHERE token = ?`, token)

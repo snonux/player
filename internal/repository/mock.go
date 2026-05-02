@@ -195,6 +195,9 @@ func (m *MockStore) GetShareByToken(ctx context.Context, token string) (*model.S
 func (m *MockStore) ListSharesByMedia(ctx context.Context, mediaID int64) ([]model.Share, error) {
 	return m.ShareRepo.ListSharesByMedia(ctx, mediaID)
 }
+func (m *MockStore) ListSharesByUser(ctx context.Context, userID int64) ([]model.Share, error) {
+	return m.ShareRepo.ListSharesByUser(ctx, userID)
+}
 func (m *MockStore) UseShare(ctx context.Context, token string) error {
 	return m.ShareRepo.UseShare(ctx, token)
 }
@@ -587,6 +590,7 @@ type MockShareRepo struct {
 	CreateShareFunc         func(ctx context.Context, share *model.Share) error
 	GetShareByTokenFunc     func(ctx context.Context, token string) (*model.Share, error)
 	ListSharesByMediaFunc   func(ctx context.Context, mediaID int64) ([]model.Share, error)
+	ListSharesByUserFunc    func(ctx context.Context, userID int64) ([]model.Share, error)
 	UseShareFunc            func(ctx context.Context, token string) error
 	DeleteShareFunc         func(ctx context.Context, token string) error
 	DeleteExpiredSharesFunc func(ctx context.Context, now time.Time) error
@@ -607,6 +611,12 @@ func (m *MockShareRepo) GetShareByToken(ctx context.Context, token string) (*mod
 func (m *MockShareRepo) ListSharesByMedia(ctx context.Context, mediaID int64) ([]model.Share, error) {
 	if m.ListSharesByMediaFunc != nil {
 		return m.ListSharesByMediaFunc(ctx, mediaID)
+	}
+	return nil, nil
+}
+func (m *MockShareRepo) ListSharesByUser(ctx context.Context, userID int64) ([]model.Share, error) {
+	if m.ListSharesByUserFunc != nil {
+		return m.ListSharesByUserFunc(ctx, userID)
 	}
 	return nil, nil
 }

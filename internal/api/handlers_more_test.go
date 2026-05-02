@@ -998,7 +998,7 @@ func TestServer_SharePage(t *testing.T) {
 		ms := &service.MockMediaService{
 			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
 				return &service.GetSharedMediaResult{
-					Media: &model.Media{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
+					Media: &service.SharedMediaView{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
 					StreamURL: "/s/abc/stream",
 					ThumbURL:  "/s/abc/thumbnail",
 				}, nil
@@ -1025,7 +1025,7 @@ func TestServer_SharePage(t *testing.T) {
 		ms := &service.MockMediaService{
 			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
 				return &service.GetSharedMediaResult{
-					Media: &model.Media{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
+					Media: &service.SharedMediaView{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
 					StreamURL: "/s/abc/stream",
 					ThumbURL:  "/s/abc/thumbnail",
 				}, nil
@@ -1049,7 +1049,7 @@ func TestServer_SharePage(t *testing.T) {
 		ms := &service.MockMediaService{
 			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
 				return &service.GetSharedMediaResult{
-					Media: &model.Media{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
+					Media: &service.SharedMediaView{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
 					StreamURL: "/s/abc/stream",
 					ThumbURL:  "/s/abc/thumbnail",
 				}, nil

@@ -35,13 +35,6 @@
     font-size: 1.25rem;
     color: var(--text-primary);
   }
-  .back-link {
-    margin-top: 1.5rem;
-    color: var(--accent);
-    text-decoration: none;
-    font-size: 0.9rem;
-  }
-  .back-link:hover { color: var(--accent-hover); }
 
   /* Player overrides for standalone share page */
   .player {
@@ -74,12 +67,12 @@
         <audio id="media-audio" class="hidden"></audio>
         <img id="cover-art" class="cover-art hidden" alt="Cover" loading="lazy">
         <div id="big-play" class="big-play" role="button" aria-label="Play" tabindex="0">
-          <div class="play-icon">▶</div>
+          <div class="play-icon">&#9654;</div>
         </div>
       </div>
       <div class="controls">
-        <button id="btn-toggle-stage" class="icon-btn" aria-label="Toggle stage">⛶</button>
-        <button id="btn-play" class="icon-btn" aria-label="Play/Pause">▶</button>
+        <button id="btn-toggle-stage" class="icon-btn" aria-label="Toggle stage">&#9978;</button>
+        <button id="btn-play" class="icon-btn" aria-label="Play/Pause">&#9654;</button>
         <div class="time" id="time-elapsed">0:00</div>
         <div id="progress-track" class="progress-track" tabindex="0" aria-label="Seek">
           <div id="progress-fill" class="progress-fill"></div>
@@ -87,13 +80,13 @@
         </div>
         <div class="time" id="time-total">0:00</div>
         <div class="volume-control">
-          <button id="btn-mute" class="icon-btn" aria-label="Mute">🔊</button>
+          <button id="btn-mute" class="icon-btn" aria-label="Mute">&#128266;</button>
           <input id="volume-slider" type="range" min="0" max="1" step="0.05" value="1" class="volume-slider" aria-label="Volume">
         </div>
-        <button id="btn-fullscreen" class="icon-btn" aria-label="Fullscreen">⛶</button>
+        <button id="btn-download" class="icon-btn" aria-label="Download">&#11123;</button>
+        <button id="btn-fullscreen" class="icon-btn" aria-label="Fullscreen">&#9978;</button>
       </div>
     </aside>
-    <a class="back-link" href="/">Back to Home</a>
   </div>
 </div>
 
@@ -102,7 +95,6 @@
 
   initPlayer();
 
-  // Parse injected metadata
   const metaEl = document.getElementById('share-meta');
   let data = null;
   try {
@@ -111,9 +103,10 @@
 
   if (data && data.media) {
     loadMediaDirect(data.media, data.stream_url, data.thumb_url, 0);
-    // Auto-play on first click via the big play overlay handled by player.js,
-    // but start paused so the controls are visible. The overlay click already
-    // wires to togglePlay.
+    const dlBtn = document.getElementById('btn-download');
+    if (dlBtn && data.download_url) {
+      dlBtn.addEventListener('click', () => { location.href = data.download_url; });
+    }
   }
 </script>
 

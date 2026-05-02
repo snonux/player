@@ -7,6 +7,7 @@ export const state = {
   filters: { type: '', search: '', favorites: false, tags: '', sort: 'name', minDuration: '', maxDuration: '' },
   isAdmin: false,
   folderPath: '',   // current subfolder path within the selected set
+  sharesCurrentRow: -1,
 };
 
 export function getState() { return state; }

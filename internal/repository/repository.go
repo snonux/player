@@ -173,6 +173,7 @@ type ShareRepo interface {
 	CreateShare(ctx context.Context, share *model.Share) error
 	GetShareByToken(ctx context.Context, token string) (*model.Share, error)
 	ListSharesByMedia(ctx context.Context, mediaID int64) ([]model.Share, error)
+	ListSharesByUser(ctx context.Context, userID int64) ([]model.Share, error)
 	UseShare(ctx context.Context, token string) error
 	DeleteShare(ctx context.Context, token string) error
 	DeleteExpiredShares(ctx context.Context, now time.Time) error
