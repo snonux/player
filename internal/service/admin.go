@@ -19,6 +19,7 @@ type adminService struct {
 	hasher    auth.Hasher
 	scanner   scanner.Scanner
 	mediaRoot string
+	progress  *model.ScanProgress
 }
 
 // NewAdminService creates a concrete AdminService.
@@ -29,6 +30,7 @@ func NewAdminService(store repository.AdminServiceStore, clk clock.Clock, hasher
 		hasher:    hasher,
 		scanner:   sc,
 		mediaRoot: mediaRoot,
+		progress:  &model.ScanProgress{},
 	}
 }
 
@@ -45,13 +47,19 @@ func (s *adminService) TriggerRescan(ctx context.Context) error {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		if err := s.scanner.Scan(ctx, s.mediaRoot, nil); err != nil {
+		if err := s.scanner.Scan(ctx, s.mediaRoot, s.progress); err != nil {
+			s.progress.Done(err)
 			fmt.Printf("[rescan] scan failed: %v\n", err)
 		} else {
+			s.progress.Done(nil)
 			fmt.Printf("[rescan] scan completed\n")
 		}
 	}()
 	return nil
+}
+
+func (s *adminService) ScanProgress(ctx context.Context) model.ScanProgress {
+	return s.progress.Copy()
 }
 
 func (s *adminService) ListUsers(ctx context.Context) ([]model.User, error) {

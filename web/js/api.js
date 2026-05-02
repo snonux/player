@@ -78,6 +78,7 @@ export const API = {
   restore: (id) => api(`/api/media/${id}/restore`, { method: 'POST' }),
   trash: () => api('/api/admin/trash'),
   users: () => api('/api/admin/users'),
+  scanProgress: () => api('/api/admin/scan-progress'),
   createUser: (body) => api('/api/admin/users', { method: 'POST', body }),
   deleteUser: (id) => api(`/api/admin/users/${id}`, { method: 'DELETE' }),
   permissions: () => api('/api/admin/permissions'),

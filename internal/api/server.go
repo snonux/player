@@ -107,6 +107,7 @@ func (s *Server) routes() {
 	s.mux.Handle("/bootstrap.html", http.HandlerFunc(s.serveBootstrap))
 	s.mux.Handle("/", s.mw.RequireSession(http.HandlerFunc(s.serveIndex)))
 	s.mux.Handle("GET /index.html", s.mw.RequireSession(http.HandlerFunc(s.serveIndex)))
+	s.mux.Handle("GET /detach.html", s.mw.RequireSession(http.HandlerFunc(s.serveDetach)))
 
 	// Session-required routes
 	s.mux.Handle("POST /api/logout", s.mw.RequireSession(http.HandlerFunc(s.handleLogout)))
@@ -148,6 +149,7 @@ func (s *Server) routes() {
 	// Admin routes
 	s.mux.Handle("GET /api/admin/trash", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleListTrash))))
 	s.mux.Handle("POST /api/admin/rescan", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleRescan))))
+	s.mux.Handle("GET /api/admin/scan-progress", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleScanProgress))))
 	s.mux.Handle("GET /api/admin/users", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleListUsers))))
 	s.mux.Handle("POST /api/admin/users", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleCreateUser))))
 	s.mux.Handle("DELETE /api/admin/users/{id}", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleDeleteUser))))

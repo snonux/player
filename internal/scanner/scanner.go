@@ -59,6 +59,7 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 	if progress != nil {
 		progress.Start(setCount)
 	}
+	fmt.Printf("[scanner] scan started root=%q sets=%d\n", root, setCount)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -72,11 +73,13 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 			progress.IncrementSet()
 		}
 	}
+	fmt.Printf("[scanner] scan finished root=%q sets=%d\n", root, setCount)
 	return nil
 }
 
 func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress *model.ScanProgress) error {
 	setName := filepath.Base(setPath)
+	fmt.Printf("[scanner] set started name=%q path=%q\n", setName, setPath)
 	if progress != nil {
 		progress.SetCurrentSet(setName)
 	}
@@ -122,6 +125,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 	for _, m := range mediaList {
 		existing[m.RelPath] = m
 	}
+	newFiles := 0
 
 	// First pass: gather images per directory.
 	coverImages := make(map[string]string)
@@ -153,7 +157,12 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 			return fmt.Errorf("rel path for %q: %w", path, err)
 		}
 		relPath = filepath.ToSlash(relPath)
-		if _, alreadyExists := existing[relPath]; alreadyExists {
+		_, alreadyExists := existing[relPath]
+		fmt.Printf("[scanner] file set=%q path=%q existing=%t\n", setName, relPath, alreadyExists)
+		if progress != nil {
+			progress.IncrementFile()
+		}
+		if alreadyExists {
 			return nil
 		}
 
@@ -204,8 +213,9 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		if _, err := s.store.CreateMedia(ctx, media); err != nil {
 			return fmt.Errorf("create media %q: %w", path, err)
 		}
-		if progress != nil {
-			progress.IncrementFile()
+		newFiles++
+		if newFiles == 1 || newFiles%25 == 0 {
+			fmt.Printf("[scanner] set progress name=%q new_media=%d latest=%q\n", setName, newFiles, relPath)
 		}
 		return nil
 	})
@@ -226,6 +236,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		}
 	}
 
+	fmt.Printf("[scanner] set completed name=%q existing_media=%d new_media=%d\n", setName, len(existing), newFiles)
 	return nil
 }
 

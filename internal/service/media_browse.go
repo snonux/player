@@ -270,13 +270,29 @@ func (s *mediaService) GetSetCover(ctx context.Context, setID int64, folder stri
 	coverPath := filepath.Join(filepath.Clean(baseDir), ".cover.jpg")
 
 	info, err := os.Stat(coverPath)
-	if err != nil {
-		return nil, fmt.Errorf("stat cover: %w", err)
+	if err == nil {
+		return &FileResult{
+			Path:     coverPath,
+			FileName: filepath.Base(coverPath),
+			FileSize: info.Size(),
+		}, nil
 	}
 
+	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
+	if err != nil {
+		return nil, fmt.Errorf("list media: %w", err)
+	}
+	candidate := randomFolderThumbnail(media, prefix)
+	if candidate == "" {
+		return nil, fmt.Errorf("stat cover: %w", err)
+	}
+	info, err = os.Stat(candidate)
+	if err != nil {
+		return nil, fmt.Errorf("stat thumbnail cover: %w", err)
+	}
 	return &FileResult{
-		Path:     coverPath,
-		FileName: filepath.Base(coverPath),
+		Path:     candidate,
+		FileName: filepath.Base(candidate),
 		FileSize: info.Size(),
 	}, nil
 }
@@ -399,7 +415,8 @@ func (s *mediaService) BrowseSet(ctx context.Context, setID, userID int64, paren
 			subPath := filepath.Join(parent, name)
 			coverPath := filepath.Join(filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath, filepath.FromSlash(subPath))), ".cover.jpg")
 			_, err := os.Stat(coverPath)
-			folders = append(folders, BrowseFolder{Name: name, HasCover: err == nil})
+			hasCover := err == nil || randomFolderThumbnail(media, filepath.ToSlash(subPath)) != ""
+			folders = append(folders, BrowseFolder{Name: name, HasCover: hasCover})
 		}
 	}
 	sort.Slice(folders, func(i, j int) bool { return folders[i].Name < folders[j].Name })
@@ -409,4 +426,29 @@ func (s *mediaService) BrowseSet(ctx context.Context, setID, userID int64, paren
 		Folders:     folders,
 		Media:       items,
 	}, nil
+}
+
+func randomFolderThumbnail(media []model.Media, folder string) string {
+	prefix := filepath.ToSlash(strings.Trim(folder, "/"))
+	if prefix != "" {
+		prefix += "/"
+	}
+	var candidates []string
+	for _, m := range media {
+		if m.DeletedAt != nil || m.ThumbnailPath == "" {
+			continue
+		}
+		rel := filepath.ToSlash(m.RelPath)
+		if prefix != "" && !strings.HasPrefix(rel, prefix) {
+			continue
+		}
+		if prefix == "" && strings.Contains(rel, "/") {
+			continue
+		}
+		candidates = append(candidates, m.ThumbnailPath)
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+	return candidates[mrand.Intn(len(candidates))]
 }

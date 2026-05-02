@@ -11,14 +11,14 @@ import (
 )
 
 var (
-	_ MediaBrowseService    = (*MockMediaService)(nil)
-	_ MediaWriteService     = (*MockMediaService)(nil)
-	_ MediaShareService     = (*MockMediaService)(nil)
-	_ MediaTagService       = (*MockMediaService)(nil)
-	_ MediaFavoriteService  = (*MockMediaService)(nil)
-	_ MediaNoteService      = (*MockMediaService)(nil)
-	_ MediaService          = (*MockMediaService)(nil)
-	_ AuthService           = (*MockAuthService)(nil)
+	_ MediaBrowseService   = (*MockMediaService)(nil)
+	_ MediaWriteService    = (*MockMediaService)(nil)
+	_ MediaShareService    = (*MockMediaService)(nil)
+	_ MediaTagService      = (*MockMediaService)(nil)
+	_ MediaFavoriteService = (*MockMediaService)(nil)
+	_ MediaNoteService     = (*MockMediaService)(nil)
+	_ MediaService         = (*MockMediaService)(nil)
+	_ AuthService          = (*MockAuthService)(nil)
 )
 
 // MockMediaService is a fake MediaService for testing.
@@ -219,6 +219,7 @@ func (m *MockMediaService) DeleteNote(ctx context.Context, mediaID, userID int64
 type MockAdminService struct {
 	ListTrashFunc        func(ctx context.Context) ([]model.Media, error)
 	TriggerRescanFunc    func(ctx context.Context) error
+	ScanProgressFunc     func(ctx context.Context) model.ScanProgress
 	ListUsersFunc        func(ctx context.Context) ([]model.User, error)
 	CreateUserFunc       func(ctx context.Context, username, password string, isAdmin bool) (*model.User, error)
 	DeleteUserFunc       func(ctx context.Context, id int64) error
@@ -238,6 +239,12 @@ func (m *MockAdminService) TriggerRescan(ctx context.Context) error {
 		return m.TriggerRescanFunc(ctx)
 	}
 	return nil
+}
+func (m *MockAdminService) ScanProgress(ctx context.Context) model.ScanProgress {
+	if m.ScanProgressFunc != nil {
+		return m.ScanProgressFunc(ctx)
+	}
+	return model.ScanProgress{}
 }
 func (m *MockAdminService) ListUsers(ctx context.Context) ([]model.User, error) {
 	if m.ListUsersFunc != nil {

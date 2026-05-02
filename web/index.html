@@ -15,6 +15,10 @@
 <header class="site-header" role="banner">
   <a href="/" class="logo">Player</a>
   <div class="spacer"></div>
+  <div id="scan-indicator" class="scan-indicator hidden" role="status" aria-live="polite">
+    <span class="scan-dot" aria-hidden="true"></span>
+    <span id="scan-indicator-text">Scanning</span>
+  </div>
   <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
   <button id="admin-toggle" class="icon-btn hidden" title="Admin panel">⚙</button>
   <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
@@ -100,6 +104,11 @@
   </div>
 </aside>
 
+<!-- Detached player placeholder bar -->
+<div id="detached-bar" class="detached-bar hidden" role="status" aria-label="Player detached">
+  <span>Player detached — press <kbd>d</kbd> to reattach</span>
+</div>
+
 <footer class="toast" id="toast" role="status" aria-live="polite"></footer>
 
 <!-- Help Modal -->
@@ -120,6 +129,8 @@
         <tr><td><kbd>Space</kbd> <kbd>p</kbd></td><td>Play / pause</td></tr>
         <tr><td><kbd>f</kbd></td><td>Toggle fullscreen</td></tr>
         <tr><td><kbd>c</kbd></td><td>Collapse / expand player stage</td></tr>
+        <tr><td><kbd>d</kbd></td><td>Detach / attach player popup</td></tr>
+        <tr><td><kbd>D</kbd></td><td>Download selected media</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Exit fullscreen, deselect item</td></tr>
         <tr><td><kbd>Backspace</kbd></td><td>Go up one folder</td></tr>
         <tr><td><kbd>r</kbd></td><td>Toggle shuffle</td></tr>
@@ -127,7 +138,7 @@
         <tr><td><kbd>S</kbd></td><td>Share selected media</td></tr>
         <tr><td><kbd>L</kbd></td><td>My Shares (opens list)</td></tr>
       </table>
-      <p class="text-muted text-xs mt-2">Inside the <strong>My Shares</strong> list: <kbd>↑</kbd> / <kbd>↓</kbd> or <kbd>k</kbd> / <kbd>j</kbd> to navigate; <kbd>Enter</kbd> to copy the selected link; <kbd>Delete</kbd> or <kbd>d</kbd> to revoke it; <kbd>Esc</kbd> to close.</p>
+      <p class="text-muted text-xs mt-2">Inside the <strong>My Shares</strong> list: <kbd>↑</kbd> / <kbd>↓</kbd> or <kbd>k</kbd> / <kbd>j</kbd> to navigate; <kbd>Enter</kbd> to copy the selected link; <kbd>Delete</kbd> to revoke it; <kbd>Esc</kbd> to close.</p>
     </div>
   </div>
 </div>
@@ -223,8 +234,8 @@
     <div class="shares-hint">
       <kbd>&#8593;</kbd> <kbd>&#8595;</kbd> <kbd>k</kbd> <kbd>j</kbd> navigate &middot;
       <kbd>Enter</kbd> copy &middot;
-      <kbd>Delete</kbd> <kbd>d</kbd> revoke &middot;
-      <kbd>Esc</kbd> close
+        <kbd>Delete</kbd> revoke &middot;
+        <kbd>Esc</kbd> close
     </div>
   </div>
 </div>

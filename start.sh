@@ -9,6 +9,7 @@ PORT="${PORT:-18080}"
 PIDFILE="/tmp/player.pid"
 COOKIE="/tmp/player_cookies.txt"
 LOGFILE="/tmp/player.log"
+TAIL_PID=""
 
 BASEURL="http://localhost:${PORT}"
 BINARY="${BINARY:-./player}"
@@ -70,10 +71,12 @@ fi
 
 # Start server in foreground so Ctrl+C kills it directly.
 export MEDIA_ROOT DB_PATH PORT LOG_LEVEL="${LOG_LEVEL:-debug}"
-"$BINARY" &
+: > "$LOGFILE"
+"$BINARY" > "$LOGFILE" 2>&1 &
 SERVER_PID=$!
 echo "$SERVER_PID" > "$PIDFILE"
 echo "Server started (PID $SERVER_PID) at ${BASEURL}"
+echo "Server log: $LOGFILE"
 
 sleep 2
 
@@ -82,6 +85,11 @@ bootstrap_auth
 echo "Library rescan starting..."
 curl -fs -X POST "${BASEURL}/api/admin/rescan" -b "$COOKIE" > /dev/null 2>&1 || true
 echo "Rescan running in background (check tail -f $LOGFILE)"
+
+if [ "$BACKGROUND" != "true" ]; then
+  tail -n +1 -f "$LOGFILE" &
+  TAIL_PID=$!
+fi
 
 echo ""
 echo "Ready. Open ${BASEURL} in your browser."
@@ -101,6 +109,9 @@ fi
 shutdown_server() {
   echo ""
   echo "Shutting down..."
+  if [ -n "$TAIL_PID" ]; then
+    kill "$TAIL_PID" 2>/dev/null || true
+  fi
   kill -TERM "$SERVER_PID" 2>/dev/null || true
   wait "$SERVER_PID" 2>/dev/null || true
   rm -f "$PIDFILE"

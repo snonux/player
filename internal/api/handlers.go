@@ -103,6 +103,10 @@ func (s *Server) serveBootstrap(w http.ResponseWriter, r *http.Request) {
 	s.serveFile(w, r, "bootstrap.html")
 }
 
+func (s *Server) serveDetach(w http.ResponseWriter, r *http.Request) {
+	s.serveFile(w, r, "detach.html")
+}
+
 // ------------------------------------------------------------------
 // File serving helpers
 // ------------------------------------------------------------------

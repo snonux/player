@@ -999,7 +999,6 @@ func TestMediaService_StreamSharedMedia(t *testing.T) {
 	}
 }
 
-
 func TestMediaService_UploadMedia_ProbeAndThumbnail(t *testing.T) {
 	ctx := context.Background()
 	makeStore := func() *repository.MockStore {
@@ -1253,7 +1252,7 @@ func TestMediaService_ViewerCannotMutate(t *testing.T) {
 					return nil, nil
 				},
 				SoftDeleteMediaFunc: func(ctx context.Context, id int64) error { return nil },
-				RestoreMediaFunc:     func(ctx context.Context, id int64) error { return nil },
+				RestoreMediaFunc:    func(ctx context.Context, id int64) error { return nil },
 			},
 			UserRepo: repository.MockUserRepo{
 				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
@@ -1901,6 +1900,65 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 		err := svc.RegenerateSetCover(ctx, 1, "", 1)
 		if err == nil {
 			t.Fatal("expected error")
+		}
+	})
+}
+
+func TestMediaService_FolderThumbnailFallback(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	thumbPath := filepath.Join(tmpDir, "thumb.jpg")
+	if err := os.WriteFile(thumbPath, []byte("thumb"), 0o644); err != nil {
+		t.Fatalf("write thumb: %v", err)
+	}
+
+	set := &model.Set{ID: 1, RootPath: "library"}
+	media := []model.Media{
+		{ID: 1, SetID: 1, RelPath: "Rock/a.mp4", ThumbnailPath: thumbPath, Type: model.MediaTypeVideo},
+		{ID: 2, SetID: 1, RelPath: "Rock/b.mp4", Type: model.MediaTypeVideo},
+	}
+	store := &repository.MockStore{
+		SetRepo: repository.MockSetRepo{
+			GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+				if id == set.ID {
+					return set, nil
+				}
+				return nil, nil
+			},
+		},
+		UserRepo: repository.MockUserRepo{
+			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+				return &model.User{ID: id, IsAdmin: true}, nil
+			},
+		},
+		MediaRepo: repository.MockMediaRepo{
+			ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+				return media, nil
+			},
+		},
+	}
+	svc := NewMediaService(store, newMockClock(), tmpDir, nil, nil)
+
+	t.Run("browse marks folder as having thumbnail", func(t *testing.T) {
+		res, err := svc.BrowseSet(ctx, 1, 1, "")
+		if err != nil {
+			t.Fatalf("browse set: %v", err)
+		}
+		if len(res.Folders) != 1 {
+			t.Fatalf("expected one folder, got %d", len(res.Folders))
+		}
+		if res.Folders[0].Name != "Rock" || !res.Folders[0].HasCover {
+			t.Fatalf("unexpected folder: %+v", res.Folders[0])
+		}
+	})
+
+	t.Run("cover endpoint falls back to media thumbnail", func(t *testing.T) {
+		fr, err := svc.GetSetCover(ctx, 1, "Rock", 1)
+		if err != nil {
+			t.Fatalf("get set cover: %v", err)
+		}
+		if fr.Path != thumbPath {
+			t.Fatalf("expected fallback thumb %q, got %q", thumbPath, fr.Path)
 		}
 	})
 }

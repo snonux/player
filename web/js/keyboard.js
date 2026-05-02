@@ -21,7 +21,6 @@ export function initKeyboard(handlers) {
           handlers.sharesCopy?.(e);
           return;
         case 'Delete':
-        case 'd':
           e.preventDefault();
           handlers.sharesDelete?.(e);
           return;
@@ -118,7 +117,8 @@ export function initKeyboard(handlers) {
         break;
       case 'n': handlers.notes?.(e); break;
       case 't': handlers.toolbar?.(e); break;
-      case 'd': handlers.download?.(e); break;
+      case 'd': handlers.toggleDetach?.(e); break;
+      case 'D': handlers.download?.(e); break;
       case 'u': handlers.upload?.(e); break;
       case 'L': handlers.sharesToggle?.(e); break;
       case '?':

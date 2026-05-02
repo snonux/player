@@ -33,15 +33,15 @@ type MediaWriteService interface {
 
 // BrowseFolder is a named folder within a set's directory tree.
 type BrowseFolder struct {
-	Name       string `json:"name"`
-	HasCover   bool   `json:"has_cover"`
+	Name     string `json:"name"`
+	HasCover bool   `json:"has_cover"`
 }
 
 // BrowseResult is the content of one directory inside a set.
 type BrowseResult struct {
-	CurrentPath string        `json:"current_path"`
+	CurrentPath string         `json:"current_path"`
 	Folders     []BrowseFolder `json:"folders"`
-	Media       []model.Media   `json:"media"`
+	Media       []model.Media  `json:"media"`
 }
 
 // SharedMediaView exposes only the metadata fields needed for a public share page.
@@ -121,6 +121,7 @@ type MediaService interface {
 type AdminService interface {
 	ListTrash(ctx context.Context) ([]model.Media, error)
 	TriggerRescan(ctx context.Context) error
+	ScanProgress(ctx context.Context) model.ScanProgress
 	ListUsers(ctx context.Context) ([]model.User, error)
 	CreateUser(ctx context.Context, username, password string, isAdmin bool) (*model.User, error)
 	DeleteUser(ctx context.Context, id int64) error
@@ -148,8 +149,8 @@ type ProgressService interface {
 
 // PermissionsMatrix is the shape returned by ListPermissions.
 type PermissionsMatrix struct {
-	Sets        []model.Set         `json:"sets"`
-	Users       []model.User        `json:"users"`
+	Sets        []model.Set           `json:"sets"`
+	Users       []model.User          `json:"users"`
 	Permissions []model.SetPermission `json:"permissions"`
 }
 
@@ -162,11 +163,11 @@ type FileResult struct {
 
 // MediaDetail combines media with related data.
 type MediaDetail struct {
-	Media    *model.Media              `json:"media"`
-	Tags     []model.Tag               `json:"tags"`
-	Favorite bool                      `json:"favorite"`
-	Note     *model.Note               `json:"note,omitempty"`
-	Progress *model.PlaybackProgress  `json:"progress,omitempty"`
+	Media    *model.Media            `json:"media"`
+	Tags     []model.Tag             `json:"tags"`
+	Favorite bool                    `json:"favorite"`
+	Note     *model.Note             `json:"note,omitempty"`
+	Progress *model.PlaybackProgress `json:"progress,omitempty"`
 }
 
 // ResumeFrom returns the saved playback position in seconds, or 0 if none.

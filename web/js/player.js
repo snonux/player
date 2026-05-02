@@ -1,11 +1,15 @@
 import { API } from './api.js';
-import { state, setMedia } from './state.js';
+import { state } from './state.js';
 
 let currentMedia = null;
 let isPlaying = false;
-let progressTimer = null;
 let progressInterval = null;
 let currentMediaIndex = -1;
+let reportProgress = true;
+let detachWindow = null;
+let detachReady = false;
+let pendingDetachMessage = null;
+let detachedPlaybackState = null;
 
 const els = () => ({
   video: document.getElementById('media-video'),
@@ -70,6 +74,8 @@ export function initPlayer() {
     m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
   });
 
+  e.video.addEventListener('loadedmetadata', updateCollapsedSize);
+
   function setupVideoDebug(m) {
     const events = ['loadstart','loadeddata','loadedmetadata','canplay','canplaythrough','playing','waiting','stalled','suspend','error','abort','emptied','ended'];
     events.forEach(event => {
@@ -118,7 +124,30 @@ export function initPlayer() {
   });
 }
 
+function updateCollapsedSize() {
+  const e = els();
+  if (!e.player || !e.video) return;
+  const vw = e.video.videoWidth || 0;
+  const vh = e.video.videoHeight || 0;
+  let w, h;
+  if (vw > 0 && vh > 0) {
+    const aspect = vw / vh;
+    const base = 240; // px reference height for collapsed card
+    h = Math.max(180, Math.min(340, base));
+    w = Math.max(240, Math.min(480, Math.round(h * aspect)));
+  } else {
+    w = 320;
+    h = 240;
+  }
+  e.player.style.setProperty('--collapsed-w', w + 'px');
+  e.player.style.setProperty('--collapsed-h', h + 'px');
+}
+
 export function togglePlay() {
+  if (isDetached()) {
+    postToDetach({ type: 'detach-command', action: 'toggle-play' });
+    return;
+  }
   const m = currentMediaElement();
   if (!m) return;
   if (m.paused) { m.play().catch(() => {}); } else { m.pause(); }
@@ -127,6 +156,13 @@ export function togglePlay() {
 export function selectAndPlay(media, index, resumeFrom = 0) {
   currentMedia = media;
   currentMediaIndex = index ?? -1;
+  if (isDetached()) {
+    isPlaying = true;
+    stopProgressTimer();
+    sendDetachedLoad(media, resumeFrom, true);
+    highlightPlayingCard();
+    return;
+  }
   loadMedia(media, resumeFrom);
   isPlaying = true;
   const m = currentMediaElement();
@@ -140,6 +176,9 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
 }
 
 export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) {
+  currentMedia = media;
+  currentMediaIndex = -1;
+  reportProgress = false;
   const e = els();
   const isVideo = media.type === 'video';
   const src = streamUrl;
@@ -151,14 +190,14 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
     e.coverArt?.classList.add('hidden');
     e.video.src = src;
     e.video.load();
-    e.video.currentTime = resumeFrom;
+    seekWhenMetadataReady(e.video, resumeFrom);
   } else {
     e.audio.pause();
     e.video.pause(); e.video.src = '';
     e.video.style.display = 'none';
     e.audio.style.display = 'none';
     e.audio.src = src;
-    e.audio.currentTime = resumeFrom;
+    seekWhenMetadataReady(e.audio, resumeFrom);
     if (e.coverArt) {
       if (thumbnailUrl) {
         e.coverArt.src = thumbnailUrl;
@@ -175,9 +214,11 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
   e.timeTotal.textContent = fmt(media.duration ?? 0);
   e.fill.style.width = '0%';
   e.thumb.style.left = '0%';
+  updateCollapsedSize();
 }
 
 function loadMedia(media, resumeFrom = 0) {
+  reportProgress = true;
   const e = els();
   const isVideo = media.type === 'video';
   const src = `/api/media/${media.id}/stream`;
@@ -189,14 +230,14 @@ function loadMedia(media, resumeFrom = 0) {
     e.coverArt?.classList.add('hidden');
     e.video.src = src;
     e.video.load();
-    e.video.currentTime = resumeFrom;
+    seekWhenMetadataReady(e.video, resumeFrom);
   } else {
     e.audio.pause();
     e.video.pause(); e.video.src = '';
     e.video.style.display = 'none';
-    e.audio.style.display = 'none';   /* keep playing but invisible so cover-art fills stage */
+    e.audio.style.display = 'none';
     e.audio.src = src;
-    e.audio.currentTime = resumeFrom;
+    seekWhenMetadataReady(e.audio, resumeFrom);
     if (e.coverArt) {
       if (media.thumbnail_path) {
         e.coverArt.src = `/api/media/${media.id}/thumbnail`;
@@ -211,15 +252,27 @@ function loadMedia(media, resumeFrom = 0) {
   e.btnPlay.textContent = '⏸';
   e.bigPlay?.classList.add('hidden');
   e.timeTotal.textContent = fmt(media.duration ?? 0);
-  // Reset progress visual
   e.fill.style.width = '0%';
   e.thumb.style.left = '0%';
+  updateCollapsedSize();
 }
 
 function currentMediaElement() {
   const e = els();
   if (currentMedia?.type === 'audio') return e.audio;
   return e.video;
+}
+
+function seekWhenMetadataReady(m, seconds) {
+  const target = Number(seconds || 0);
+  if (!m || !isFinite(target) || target <= 0) return;
+  const seek = () => {
+    try {
+      m.currentTime = target;
+    } catch {}
+  };
+  if (m.readyState >= HTMLMediaElement.HAVE_METADATA) seek();
+  else m.addEventListener('loadedmetadata', seek, { once: true });
 }
 
 function updateUI(playing) {
@@ -271,7 +324,7 @@ export function exitFullscreenIfNeeded() {
 
 function startProgressTimer() {
   stopProgressTimer();
-  // Report every 3s while playing
+  if (!reportProgress) return;
   progressInterval = setInterval(() => {
     const m = currentMediaElement();
     if (m && currentMedia && !m.paused) {
@@ -309,6 +362,144 @@ export function playNext() {
 }
 
 export function currentMediaId() { return currentMedia?.id; }
+
+export function isDetached() { return !!detachWindow && !detachWindow.closed; }
+
+export function toggleDetach() {
+  if (isDetached()) {
+    reattachDetached();
+    return;
+  }
+  const e = els();
+  if (!e.player) return;
+
+  const snapshot = localPlaybackState();
+  const features = 'width=640,height=480,resizable=yes,scrollbars=no,status=no,location=no,menubar=no,toolbar=no';
+  detachWindow = window.open('/detach.html', 'playerDetach', features);
+  if (!detachWindow) return;
+
+  detachReady = false;
+  detachedPlaybackState = snapshot;
+  if (currentMedia) {
+    pendingDetachMessage = detachedLoadMessage(currentMedia, snapshot.currentTime, snapshot.playing);
+  }
+  currentMediaElement()?.pause();
+  e.player.classList.add('hidden');
+  showDetachedPlaceholder(true);
+}
+
+export function onDetachReady(popup) {
+  if (!popup || popup !== detachWindow) return;
+  detachReady = true;
+  if (pendingDetachMessage) postToDetach(pendingDetachMessage);
+}
+
+export function onDetachClosing(state = null) {
+  if (state) detachedPlaybackState = state;
+  if (!detachWindow) return;
+  reattachDetached({ closePopup: false });
+}
+
+function reattachDetached({ closePopup = true } = {}) {
+  const popup = detachWindow;
+  const state = readDetachedWindowState(popup) || detachedPlaybackState;
+  detachWindow = null;
+  detachReady = false;
+  pendingDetachMessage = null;
+  if (closePopup && popup && !popup.closed) {
+    popup.postMessage({ type: 'detach-request-state' }, window.location.origin);
+    popup.close();
+  }
+  showDetachedPlaceholder(false);
+  els().player?.classList.remove('hidden');
+
+  if (state?.media) {
+    currentMedia = state.media;
+    currentMediaIndex = Number.isInteger(state.index) ? state.index : currentMediaIndex;
+    loadMedia(state.media, state.currentTime || 0);
+    const m = currentMediaElement();
+    if (m) {
+      if (typeof state.volume === 'number') m.volume = state.volume;
+      m.muted = !!state.muted;
+      if (state.playing) m.play().catch(() => {});
+    }
+  }
+}
+
+function readDetachedWindowState(popup) {
+  if (!popup || popup.closed) return null;
+  try {
+    if (typeof popup.__playerDetachCurrentState === 'function') {
+      return popup.__playerDetachCurrentState();
+    }
+  } catch {}
+  return null;
+}
+
+function sendDetachedLoad(media, resumeFrom = 0, play = true) {
+  const msg = detachedLoadMessage(media, resumeFrom, play);
+  pendingDetachMessage = msg;
+  postToDetach(msg);
+}
+
+function detachedLoadMessage(media, resumeFrom = 0, play = true) {
+  const local = localPlaybackState();
+  return {
+    type: 'detach-load',
+    media,
+    index: currentMediaIndex,
+    streamUrl: `/api/media/${media.id}/stream`,
+    thumbnailUrl: media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '',
+    resumeFrom,
+    play,
+    volume: detachedPlaybackState?.volume ?? local.volume,
+    muted: detachedPlaybackState?.muted ?? local.muted,
+  };
+}
+
+function postToDetach(message) {
+  if (!detachWindow || detachWindow.closed) return;
+  if (!detachReady && message.type !== 'detach-request-state') {
+    pendingDetachMessage = message;
+    return;
+  }
+  detachWindow.postMessage(message, window.location.origin);
+}
+
+function localPlaybackState() {
+  const m = currentMediaElement();
+  return {
+    media: currentMedia,
+    index: currentMediaIndex,
+    currentTime: m?.currentTime || 0,
+    duration: m?.duration || currentMedia?.duration || 0,
+    playing: !!m && !m.paused,
+    volume: m?.volume ?? 1,
+    muted: !!m?.muted,
+  };
+}
+
+function showDetachedPlaceholder(show) {
+  const bar = document.getElementById('detached-bar');
+  if (!bar) return;
+  bar.classList.toggle('hidden', !show);
+}
+
+window.addEventListener('message', (ev) => {
+  if (ev.origin !== window.location.origin) return;
+  if (!ev.data || typeof ev.data !== 'object') return;
+  if (ev.data.type === 'detach-ready') {
+    onDetachReady(ev.source);
+  } else if (ev.data.type === 'detach-closing') {
+    onDetachClosing(ev.data.state);
+  } else if (ev.data.type === 'detach-state') {
+    detachedPlaybackState = ev.data.state;
+  } else if (ev.data.type === 'detach-prev') {
+    playPrevious();
+  } else if (ev.data.type === 'detach-next') {
+    playNext();
+  }
+});
 
 function fmt(s) {
   if (!isFinite(s) || s < 0) return '0:00';

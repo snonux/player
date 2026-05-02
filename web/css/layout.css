@@ -32,6 +32,40 @@ body {
 }
 .site-header .spacer { flex: 1 1 auto; }
 
+.scan-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: min(22rem, 45vw);
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.scan-indicator.hidden {
+  display: none;
+}
+.scan-indicator span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scan-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent-soft);
+  animation: scanPulse 1.4s ease-out infinite;
+}
+@keyframes scanPulse {
+  0% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  100% { box-shadow: 0 0 0 0.45rem transparent; }
+}
+
 /* Sidebar */
 .sidebar {
   position: fixed;

@@ -679,8 +679,8 @@ func TestServer_MediaList(t *testing.T) {
 		},
 		{
 			name:       "with query params",
-			query: "?set_id=1&type=video&search=foo&tags=bar,baz&favorites=true&min_duration=10&max_duration=100&sort=name&limit=5&offset=10",
-			filter: repository.MediaFilter{SetID: intPtr(1), Type: (*model.MediaType)(func() *string { s := "video"; return &s }()), Search: "foo", Tags: []string{"bar", "baz"}, Favorites: true, MinDuration: floatPtr(10), MaxDuration: floatPtr(100), Sort: "name", Limit: 5, Offset: 10},
+			query:      "?set_id=1&type=video&search=foo&tags=bar,baz&favorites=true&min_duration=10&max_duration=100&sort=name&limit=5&offset=10",
+			filter:     repository.MediaFilter{SetID: intPtr(1), Type: (*model.MediaType)(func() *string { s := "video"; return &s }()), Search: "foo", Tags: []string{"bar", "baz"}, Favorites: true, MinDuration: floatPtr(10), MaxDuration: floatPtr(100), Sort: "name", Limit: 5, Offset: 10},
 			listResult: []model.Media{},
 			wantCode:   http.StatusOK,
 		},
@@ -716,14 +716,14 @@ func TestServer_MediaList(t *testing.T) {
 
 func TestServer_MediaDetail(t *testing.T) {
 	tests := []struct {
-		name             string
-		id               string
-		result           *service.MediaDetail
-		err              error
-		wantCode         int
-		wantMedia        bool
-		wantResumeFrom   float64
-		wantProgressNil  bool
+		name            string
+		id              string
+		result          *service.MediaDetail
+		err             error
+		wantCode        int
+		wantMedia       bool
+		wantResumeFrom  float64
+		wantProgressNil bool
 	}{
 		{
 			name:           "ok with progress",
@@ -762,8 +762,8 @@ func TestServer_MediaDetail(t *testing.T) {
 				return
 			}
 			var resp struct {
-				Media    *model.Media              `json:"media"`
-				Progress *model.PlaybackProgress  `json:"progress"`
+				Media    *model.Media            `json:"media"`
+				Progress *model.PlaybackProgress `json:"progress"`
 			}
 			if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 				t.Fatalf("unmarshal detail: %v", err)
@@ -1083,7 +1083,7 @@ func TestServer_Shares(t *testing.T) {
 		},
 		GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
 			return &service.GetSharedMediaResult{
-				Media: &service.SharedMediaView{ID: 1, FileName: "x.mp4", Type: model.MediaTypeVideo, Duration: 120},
+				Media:     &service.SharedMediaView{ID: 1, FileName: "x.mp4", Type: model.MediaTypeVideo, Duration: 120},
 				StreamURL: "/s/abc/stream",
 				ThumbURL:  "/s/abc/thumbnail",
 			}, nil
@@ -1190,6 +1190,7 @@ func TestServer_AdminRoutes(t *testing.T) {
 	}{
 		{"list trash", "GET", "/api/admin/trash", "", http.StatusOK},
 		{"rescan", "POST", "/api/admin/rescan", "", http.StatusOK},
+		{"scan progress", "GET", "/api/admin/scan-progress", "", http.StatusOK},
 		{"list users", "GET", "/api/admin/users", "", http.StatusOK},
 		{"create user", "POST", "/api/admin/users", `{"username":"bob","password":"pass","is_admin":false}`, http.StatusOK},
 		{"delete user", "DELETE", "/api/admin/users/2", "", http.StatusOK},

@@ -1,7 +1,7 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
-import { initPlayer, togglePlay, toggleFullscreen, toggleStage, exitFullscreenIfNeeded, currentMediaId, selectAndPlay, playPrevious, playNext } from './player.js';
+import { initPlayer, togglePlay, toggleFullscreen, toggleStage, toggleDetach, exitFullscreenIfNeeded, currentMediaId, selectAndPlay, playPrevious, playNext } from './player.js';
 import { initSearch, focusSearch, trigger as triggerSearch } from './search.js';
 import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
 import { initThemes } from './themes.js';
@@ -11,6 +11,7 @@ import { state, setMedia } from './state.js';
 import { initPWA } from './pwa.js';
 
 const pageMap = { '/index.html': 'spa', '/login.html': 'login', '/bootstrap.html': 'bootstrap' };
+let scanProgressTimer = null;
 
 main();
 
@@ -114,6 +115,7 @@ async function initApp() {
     search: () => showSearch(),
     notes: openNotesForSelected,
     tags: openTagsForSelected,
+    toggleDetach: () => toggleDetach(),
     download: downloadSelected,
     help: toggleHelp,
     toolbar: toggleToolbar,
@@ -709,6 +711,37 @@ function closeAllModals() {
 function showAdmin() {
   const btn = document.getElementById('admin-toggle');
   if (btn) btn.classList.remove('hidden');
+  startScanProgressPolling();
+}
+
+function startScanProgressPolling() {
+  if (scanProgressTimer) return;
+  pollScanProgress();
+  scanProgressTimer = setInterval(pollScanProgress, 2000);
+}
+
+async function pollScanProgress() {
+  try {
+    renderScanProgress(await API.scanProgress());
+  } catch {}
+}
+
+function renderScanProgress(progress) {
+  const indicator = document.getElementById('scan-indicator');
+  const text = document.getElementById('scan-indicator-text');
+  if (!indicator || !text || !progress) return;
+
+  if (!progress.running) {
+    indicator.classList.add('hidden');
+    return;
+  }
+
+  const setPart = progress.current_set ? ` ${progress.current_set}` : '';
+  const setsTotal = progress.sets_total || 0;
+  const setsPart = setsTotal ? ` ${progress.sets_done || 0}/${setsTotal} sets` : '';
+  const filesPart = progress.files_done ? `, ${progress.files_done} files` : '';
+  text.textContent = `Scanning${setPart}${setsPart}${filesPart}`;
+  indicator.classList.remove('hidden');
 }
 
 // Shares modal
