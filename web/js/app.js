@@ -479,23 +479,23 @@ function renderItem(m, index) {
       </div>
     `;
   }
-  const coverHtml = m.thumbnail_path
-    ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy" class="row-cover">`
-    : '<span class="row-icon">🎵</span>';
   return `
-    <div class="media-row" data-id="${m.id}" data-index="${index}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
-      ${coverHtml}
-      <div class="row-body">
-        <div class="row-title">${escapeHtml(m.file_name)}</div>
-        <div class="row-meta">${escapeHtml(m.codec || '')} ${m.bitrate ? Math.round(m.bitrate/1000)+'kbps' : ''} ${sizeText ? '• ' + sizeText : ''}</div>
+    <div class="media-card audio-card" data-id="${m.id}" data-index="${index}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
+      <div class="thumb-wrap">
+        ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No cover</span>`}
+        <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
+        <div class="card-actions">
+          <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
+          <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
+          <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+          <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
+          <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
+        </div>
       </div>
-      <span class="row-duration">${fmtDur(m.duration)}</span>
-      <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
-      <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
-      <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
-      <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
-      <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
-      <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
+      <div class="meta">
+        <div class="title">${escapeHtml(m.file_name)}</div>
+        <div class="subtitle">${escapeHtml(m.codec || '')} ${m.bitrate ? Math.round(m.bitrate/1000)+'kbps' : ''}</div>
+      </div>
     </div>
   `;
 }
