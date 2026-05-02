@@ -101,10 +101,8 @@ export function initKeyboard(handlers) {
         break;
       case 'Enter': handlers.enter?.(e); break;
       case 'p': handlers.playPause?.(e); break;
-      case 'c':
-      case 'C':
-        handlers.toggleStage?.(e);
-        break;
+      case 'c': handlers.toggleStage?.(e); break;
+      case 'C': handlers.toggleMinimize?.(e); break;
       case 'f': handlers.fullscreen?.(e); break;
       case 'Escape': handlers.escape?.(e); break;
       case 'Backspace': handlers.backspace?.(e); break;

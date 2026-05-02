@@ -1,7 +1,7 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
-import { initPlayer, togglePlay, toggleFullscreen, toggleStage, toggleDetach, exitFullscreenIfNeeded, currentMediaId, selectAndPlay, playPrevious, playNext } from './player.js';
+import { initPlayer, togglePlay, toggleFullscreen, toggleStage, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, currentMediaId, selectAndPlay, playPrevious, playNext } from './player.js';
 import { initSearch, focusSearch, trigger as triggerSearch } from './search.js';
 import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
 import { initThemes } from './themes.js';
@@ -109,6 +109,7 @@ async function initApp() {
     playPause: () => togglePlay(),
     fullscreen: () => toggleFullscreen(),
     toggleStage: () => toggleStage(),
+    toggleMinimize: () => toggleMinimize(),
     escape: () => { exitFullscreenIfNeeded(); const el = currentElement(); if (el) el.classList.remove('selected'); closeAllModals(); },
     shuffle: () => { toggleShuffle(); loadMedia(); },
     share: () => shareSelected(),

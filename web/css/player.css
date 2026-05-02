@@ -46,6 +46,44 @@
   height: 2rem;
   font-size: 0.8rem;
 }
+.player.minimized {
+  inset: auto auto 1rem 1rem;
+  width: min(20rem, calc(100vw - 2rem));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+.player.minimized .stage,
+.player.minimized .controls {
+  display: none;
+}
+.player .player-restore {
+  display: none;
+}
+.player.minimized .player-restore {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.65rem;
+  border: 0;
+  background: var(--player-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+}
+.player.minimized .player-restore:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+.player.minimized .player-restore span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .player.is-fullscreen {
   inset: 0;
   background: var(--player-stage-bg);

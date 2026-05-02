@@ -87,6 +87,7 @@
   </div>
   <div class="controls">
     <button id="btn-toggle-stage" class="icon-btn" aria-label="Toggle stage (c)">⛶</button>
+    <button id="btn-minimize" class="icon-btn" aria-label="Minimize player (Shift+C)">▾</button>
     <button id="btn-play" class="icon-btn" aria-label="Play/Pause (Space/p)">▶</button>
     <div class="time" id="time-elapsed">0:00</div>
     <div id="progress-track" class="progress-track" tabindex="0" aria-label="Seek">
@@ -103,6 +104,9 @@
     </div>
     <button id="btn-fullscreen" class="icon-btn" aria-label="Fullscreen (f)">⛶</button>
   </div>
+  <button id="btn-restore-player" class="player-restore" type="button" aria-label="Restore player">
+    <span id="player-restore-title">Player minimized</span>
+  </button>
 </aside>
 
 <!-- Detached player placeholder bar -->
@@ -130,6 +134,7 @@
         <tr><td><kbd>Space</kbd> <kbd>p</kbd></td><td>Play / pause</td></tr>
         <tr><td><kbd>f</kbd></td><td>Toggle fullscreen</td></tr>
         <tr><td><kbd>c</kbd></td><td>Collapse / expand player stage</td></tr>
+        <tr><td><kbd>C</kbd></td><td>Minimize / restore player</td></tr>
         <tr><td><kbd>d</kbd></td><td>Detach / attach player popup</td></tr>
         <tr><td><kbd>D</kbd></td><td>Download selected media</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Exit fullscreen, deselect item</td></tr>

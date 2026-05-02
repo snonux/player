@@ -21,6 +21,9 @@ const els = () => ({
   btnMute: document.getElementById('btn-mute'),
   btnFs: document.getElementById('btn-fullscreen'),
   btnToggleStage: document.getElementById('btn-toggle-stage'),
+  btnMinimize: document.getElementById('btn-minimize'),
+  btnRestore: document.getElementById('btn-restore-player'),
+  restoreTitle: document.getElementById('player-restore-title'),
   bigPlay: document.getElementById('big-play'),
   coverArt: document.getElementById('cover-art'),
   track: document.getElementById('progress-track'),
@@ -42,6 +45,8 @@ export function initPlayer() {
   e.btnMute?.addEventListener('click', toggleMute);
   e.btnFs?.addEventListener('click', toggleFullscreen);
   e.btnToggleStage?.addEventListener('click', toggleStage);
+  e.btnMinimize?.addEventListener('click', minimizePlayer);
+  e.btnRestore?.addEventListener('click', toggleMinimize);
   e.bigPlay?.addEventListener('click', togglePlay);
   e.bigPlay?.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); togglePlay(); } });
 
@@ -251,6 +256,7 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
   e.buffered && (e.buffered.style.background = 'transparent');
   e.fill.style.width = '0%';
   e.thumb.style.left = '0%';
+  updateMinimizedTitle();
   updateCollapsedSize();
 }
 
@@ -292,6 +298,7 @@ function loadMedia(media, resumeFrom = 0) {
   e.buffered && (e.buffered.style.background = 'transparent');
   e.fill.style.width = '0%';
   e.thumb.style.left = '0%';
+  updateMinimizedTitle();
   updateCollapsedSize();
 }
 
@@ -349,8 +356,32 @@ export function toggleFullscreen() {
 
 export function toggleStage() {
   const e = els();
+  e.player?.classList.remove('minimized');
   e.player?.classList.toggle('collapsed');
   console.log('toggleStage: collapsed =', e.player?.classList.contains('collapsed'));
+}
+
+export function toggleMinimize() {
+  const e = els();
+  if (!e.player || !e.player.classList.contains('open')) return;
+  const willMinimize = !e.player.classList.contains('minimized');
+  e.player.classList.toggle('minimized');
+  if (willMinimize) exitFullscreenIfNeeded();
+  updateMinimizedTitle();
+}
+
+function minimizePlayer() {
+  const e = els();
+  if (!e.player || !e.player.classList.contains('open')) return;
+  e.player.classList.add('minimized');
+  exitFullscreenIfNeeded();
+  updateMinimizedTitle();
+}
+
+function updateMinimizedTitle() {
+  const e = els();
+  if (!e.restoreTitle) return;
+  e.restoreTitle.textContent = currentMedia?.file_name ? `Restore: ${currentMedia.file_name}` : 'Restore player';
 }
 
 export function exitFullscreenIfNeeded() {
