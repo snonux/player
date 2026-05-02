@@ -339,7 +339,7 @@ func TestServer_SetCover(t *testing.T) {
 			var ms service.MediaService
 			if !tt.svcNil {
 				ms = &service.MockMediaService{
-					RegenerateSetCoverFunc: func(ctx context.Context, setID, userID int64) error {
+					RegenerateSetCoverFunc: func(ctx context.Context, setID int64, folder string, userID int64) error {
 						return tt.svcErr
 					},
 				}

@@ -7,6 +7,7 @@ import (
 	mrand "math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"codeberg.org/snonux/player/internal/model"
@@ -182,7 +183,7 @@ func (s *mediaService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 	return nil
 }
 
-func (s *mediaService) RegenerateSetCover(ctx context.Context, setID, userID int64) error {
+func (s *mediaService) RegenerateSetCover(ctx context.Context, setID int64, folder string, userID int64) error {
 	if err := s.verifySetModifyAccess(ctx, setID, userID); err != nil {
 		return err
 	}
@@ -200,9 +201,25 @@ func (s *mediaService) RegenerateSetCover(ctx context.Context, setID, userID int
 		return fmt.Errorf("list media: %w", err)
 	}
 
+	prefix := filepath.ToSlash(strings.Trim(folder, "/"))
 	var candidates []model.Media
 	for _, m := range media {
-		if m.Type == model.MediaTypeVideo && m.DeletedAt == nil {
+		if m.DeletedAt != nil {
+			continue
+		}
+		rel := filepath.ToSlash(m.RelPath)
+		if prefix != "" {
+			if !strings.HasPrefix(rel, prefix+"/") {
+				continue
+			}
+			suffix := strings.TrimPrefix(rel, prefix+"/")
+			if strings.Contains(suffix, "/") {
+				continue
+			}
+		} else if strings.Contains(rel, "/") {
+			continue
+		}
+		if m.Type == model.MediaTypeVideo {
 			candidates = append(candidates, m)
 		}
 	}
@@ -215,7 +232,11 @@ func (s *mediaService) RegenerateSetCover(ctx context.Context, setID, userID int
 		candidate = candidates[mrand.Intn(len(candidates))]
 	}
 
-	coverPath := filepath.Join(filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath)), ".cover.jpg")
+	baseDir := filepath.Join(s.mediaRoot, filepath.FromSlash(set.RootPath))
+	if prefix != "" {
+		baseDir = filepath.Join(baseDir, filepath.FromSlash(prefix))
+	}
+	coverPath := filepath.Join(filepath.Clean(baseDir), ".cover.jpg")
 	meta, err := s.prober.Probe(ctx, candidate.AbsPath)
 	if err != nil {
 		return fmt.Errorf("probe cover candidate: %w", err)
@@ -225,11 +246,39 @@ func (s *mediaService) RegenerateSetCover(ctx context.Context, setID, userID int
 		return fmt.Errorf("generate cover: %w", err)
 	}
 
-	set.CoverThumbnailPath = coverPath
-	if err := s.store.UpdateSet(ctx, set); err != nil {
-		return fmt.Errorf("update set: %w", err)
-	}
 	return nil
+}
+
+func (s *mediaService) GetSetCover(ctx context.Context, setID int64, folder string, userID int64) (*FileResult, error) {
+	if err := s.checkSetPermission(ctx, setID, userID, ""); err != nil {
+		return nil, err
+	}
+
+	set, err := s.store.GetSetByID(ctx, setID)
+	if err != nil {
+		return nil, fmt.Errorf("get set: %w", err)
+	}
+	if set == nil {
+		return nil, ErrNotFound
+	}
+
+	prefix := filepath.ToSlash(strings.Trim(folder, "/"))
+	baseDir := filepath.Join(s.mediaRoot, filepath.FromSlash(set.RootPath))
+	if prefix != "" {
+		baseDir = filepath.Join(baseDir, filepath.FromSlash(prefix))
+	}
+	coverPath := filepath.Join(filepath.Clean(baseDir), ".cover.jpg")
+
+	info, err := os.Stat(coverPath)
+	if err != nil {
+		return nil, fmt.Errorf("stat cover: %w", err)
+	}
+
+	return &FileResult{
+		Path:     coverPath,
+		FileName: filepath.Base(coverPath),
+		FileSize: info.Size(),
+	}, nil
 }
 
 func (s *mediaService) ToggleFavorite(ctx context.Context, userID, mediaID int64) (bool, error) {
@@ -269,4 +318,95 @@ func (s *mediaService) RemoveTag(ctx context.Context, mediaID, userID int64, tag
 		return errors.New("tag not found")
 	}
 	return s.store.RemoveTag(ctx, mediaID, tag.ID)
+}
+
+// BrowseSet returns the immediate subfolders and media files inside
+// a specific folder (parent) of a set.
+// If a subfolder contains exactly one file and no further subfolders,
+// that file is "flattened" and shown at the current level instead of
+// presenting the folder.
+func (s *mediaService) BrowseSet(ctx context.Context, setID, userID int64, parent string) (*BrowseResult, error) {
+	if err := s.checkSetPermission(ctx, setID, userID, ""); err != nil {
+		return nil, err
+	}
+
+	parent = filepath.ToSlash(strings.Trim(parent, "/"))
+	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
+	if err != nil {
+		return nil, fmt.Errorf("list media: %w", err)
+	}
+
+	set, err := s.store.GetSetByID(ctx, setID)
+	if err != nil {
+		return nil, fmt.Errorf("get set: %w", err)
+	}
+	if set == nil {
+		return nil, ErrNotFound
+	}
+
+	type folderContent struct {
+		files      []model.Media
+		subfolders map[string]struct{}
+	}
+	folderMap := make(map[string]*folderContent)
+	var items []model.Media
+
+	for _, m := range media {
+		if m.DeletedAt != nil {
+			continue
+		}
+		rel := filepath.ToSlash(m.RelPath)
+		prefix := ""
+		if parent != "" {
+			prefix = parent + "/"
+		}
+		if !strings.HasPrefix(rel, prefix) {
+			continue
+		}
+		suffix := strings.TrimPrefix(rel, prefix)
+		if suffix == "" {
+			continue
+		}
+		parts := strings.SplitN(suffix, "/", 2)
+		name := parts[0]
+		if len(parts) == 1 {
+			// File at the current level.
+			items = append(items, m)
+			continue
+		}
+		// Inside a subfolder — count what is in there.
+		fc, ok := folderMap[name]
+		if !ok {
+			fc = &folderContent{subfolders: make(map[string]struct{})}
+			folderMap[name] = fc
+		}
+		rest := parts[1]
+		subparts := strings.SplitN(rest, "/", 2)
+		if len(subparts) == 1 {
+			fc.files = append(fc.files, m)
+		} else {
+			fc.subfolders[subparts[0]] = struct{}{}
+		}
+	}
+
+	var folders []BrowseFolder
+	for name, fc := range folderMap {
+		total := len(fc.files) + len(fc.subfolders)
+		if total == 1 && len(fc.files) == 1 {
+			// Flatten: show the lone file at the current level.
+			items = append(items, fc.files[0])
+		} else {
+			subPath := filepath.Join(parent, name)
+			coverPath := filepath.Join(filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath, filepath.FromSlash(subPath))), ".cover.jpg")
+			_, err := os.Stat(coverPath)
+			folders = append(folders, BrowseFolder{Name: name, HasCover: err == nil})
+		}
+	}
+	sort.Slice(folders, func(i, j int) bool { return folders[i].Name < folders[j].Name })
+
+	return &BrowseResult{
+		CurrentPath: parent,
+		Folders:     folders,
+		Media:       items,
+	}, nil
 }

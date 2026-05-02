@@ -1329,7 +1329,7 @@ func TestMediaService_ViewerCannotMutate(t *testing.T) {
 			},
 		}
 		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-		err := svc.RegenerateSetCover(ctx, 1, 2)
+		err := svc.RegenerateSetCover(ctx, 1, "", 2)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
 		}
@@ -1815,7 +1815,7 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 			return &model.Metadata{Duration: 60}, nil
 		}}
 		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
-		if err := svc.RegenerateSetCover(ctx, 1, 1); err != nil {
+		if err := svc.RegenerateSetCover(ctx, 1, "", 1); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -1832,7 +1832,7 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 			return &model.Metadata{Duration: 60}, nil
 		}}
 		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
-		if err := svc.RegenerateSetCover(ctx, 1, 2); err != nil {
+		if err := svc.RegenerateSetCover(ctx, 1, "", 2); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -1841,7 +1841,7 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 		set := &model.Set{ID: 1, RootPath: "music", Permissions: []model.SetPermission{{SetID: 1, UserID: 2, Role: model.RoleViewer}}}
 		store := makeStore(1, nil, set)
 		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-		err := svc.RegenerateSetCover(ctx, 1, 2)
+		err := svc.RegenerateSetCover(ctx, 1, "", 2)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
 		}
@@ -1850,7 +1850,7 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 	t.Run("set not found", func(t *testing.T) {
 		store := makeStore(1, nil, nil)
 		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-		err := svc.RegenerateSetCover(ctx, 1, 1)
+		err := svc.RegenerateSetCover(ctx, 1, "", 1)
 		if !errors.Is(err, ErrNotFound) {
 			t.Fatalf("expected ErrNotFound, got %v", err)
 		}
@@ -1861,7 +1861,7 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 		media := []model.Media{{ID: 1, SetID: 1, AbsPath: "/tmp/song.mp3", Type: model.MediaTypeAudio}}
 		store := makeStore(1, media, set)
 		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-		err := svc.RegenerateSetCover(ctx, 1, 1)
+		err := svc.RegenerateSetCover(ctx, 1, "", 1)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -1878,7 +1878,7 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 			return nil, errors.New("probe err")
 		}}
 		svc := NewMediaService(store, newMockClock(), tmpDir, nil, prober)
-		err := svc.RegenerateSetCover(ctx, 1, 1)
+		err := svc.RegenerateSetCover(ctx, 1, "", 1)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -1898,28 +1898,7 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 			return &model.Metadata{Duration: 60}, nil
 		}}
 		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
-		err := svc.RegenerateSetCover(ctx, 1, 1)
-		if err == nil {
-			t.Fatal("expected error")
-		}
-	})
-
-	t.Run("update set failure", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		videoPath := filepath.Join(tmpDir, "video.mp4")
-		_ = os.WriteFile(videoPath, []byte("fake"), 0o644)
-		set := &model.Set{ID: 1, RootPath: "music"}
-		media := []model.Media{{ID: 1, SetID: 1, AbsPath: videoPath, Type: model.MediaTypeVideo}}
-		store := makeStore(1, media, set)
-		store.SetRepo.UpdateSetFunc = func(ctx context.Context, s *model.Set) error {
-			return errors.New("update err")
-		}
-		thumbGen := &mockThumbGenerator{}
-		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
-			return &model.Metadata{Duration: 60}, nil
-		}}
-		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
-		err := svc.RegenerateSetCover(ctx, 1, 1)
+		err := svc.RegenerateSetCover(ctx, 1, "", 1)
 		if err == nil {
 			t.Fatal("expected error")
 		}

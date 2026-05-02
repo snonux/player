@@ -76,6 +76,7 @@ export function initKeyboard(handlers) {
         break;
       case 'f': handlers.fullscreen?.(e); break;
       case 'Escape': handlers.escape?.(e); break;
+      case 'Backspace': handlers.backspace?.(e); break;
       case 'r': handlers.shuffle?.(e); break;
       case 's': handlers.sidebar?.(e); break;
       case '/':

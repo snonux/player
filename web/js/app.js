@@ -73,6 +73,7 @@ async function initApp() {
   initSearch({
     onChange: (q) => {
       state.filters.search = q;
+      state.folderPath = '';
       loadMedia();
     },
     input: document.getElementById('search-input'),
@@ -96,7 +97,13 @@ async function initApp() {
     toggleSetSelect: () => toggleSetSelection(),
     enter: () => {
       const el = currentElement();
-      if (el) { selectByElement(el); playSelected(); }
+      if (!el) return;
+      selectByElement(el);
+      if (el.classList.contains('folder-card')) {
+        enterFolder(el.dataset.name);
+      } else {
+        playSelected();
+      }
     },
     playPause: () => togglePlay(),
     fullscreen: () => toggleFullscreen(),
@@ -110,6 +117,7 @@ async function initApp() {
     download: downloadSelected,
     help: toggleHelp,
     toolbar: toggleToolbar,
+    backspace: () => { navigateBack(); },
     sidebar: toggleSidebar,
     upload: () => showUpload(),
     focusMinDuration: () => focusFilter('filter-min-duration'),
@@ -122,15 +130,16 @@ async function initApp() {
   initHelp();
 
   // Filters
-  document.getElementById('filter-type')?.addEventListener('change', (e) => { state.filters.type = e.target.value; loadMedia(); });
+  document.getElementById('filter-type')?.addEventListener('change', (e) => { state.filters.type = e.target.value; state.folderPath = ''; loadMedia(); });
   document.getElementById('filter-favorites')?.addEventListener('click', (e) => {
     state.filters.favorites = !state.filters.favorites;
     e.target.classList.toggle('active', state.filters.favorites);
+    state.folderPath = '';
     loadMedia();
   });
-  document.getElementById('filter-tags')?.addEventListener('change', (e) => { state.filters.tags = e.target.value; loadMedia(); });
-  document.getElementById('filter-min-duration')?.addEventListener('change', (e) => { state.filters.minDuration = e.target.value; loadMedia(); });
-  document.getElementById('filter-max-duration')?.addEventListener('change', (e) => { state.filters.maxDuration = e.target.value; loadMedia(); });
+  document.getElementById('filter-tags')?.addEventListener('change', (e) => { state.filters.tags = e.target.value; state.folderPath = ''; loadMedia(); });
+  document.getElementById('filter-min-duration')?.addEventListener('change', (e) => { state.filters.minDuration = e.target.value; state.folderPath = ''; loadMedia(); });
+  document.getElementById('filter-max-duration')?.addEventListener('change', (e) => { state.filters.maxDuration = e.target.value; state.folderPath = ''; loadMedia(); });
   document.getElementById('filter-toggle')?.addEventListener('click', () => {
     document.getElementById('filter-advanced')?.classList.toggle('hidden');
   });
@@ -162,6 +171,15 @@ async function initApp() {
     if (el) { selectByElement(el); playSelected(); }
   });
 
+  // Folder navigation
+  document.getElementById('media-grid')?.addEventListener('click', (e) => {
+    const folder = e.target.closest('.folder-card');
+    if (folder) {
+      e.stopPropagation();
+      enterFolder(folder.dataset.name);
+    }
+  });
+
   // Tags modal close
   document.getElementById('tags-close')?.addEventListener('click', closeTagsModal);
   document.getElementById('tags-modal')?.addEventListener('click', (e) => { if (e.target === document.getElementById('tags-modal')) closeTagsModal(); });
@@ -186,6 +204,7 @@ function renderSets() {
       const id = parseInt(row.dataset.id, 10);
       state.selectedSetIds = [id];
       state.selectedSetId = id;
+      state.folderPath = '';
       updateSetRowsUI();
       loadMedia();
     });
@@ -229,6 +248,7 @@ function toggleSetSelection() {
   } else {
     state.selectedSetId = null;
   }
+  state.folderPath = '';
   updateSetRowsUI();
   loadMedia();
 }
@@ -244,6 +264,7 @@ function setSetByDelta(dx) {
   const nextIdx = (idx + dx + state.sets.length) % state.sets.length;
   state.selectedSetId = state.sets[nextIdx].id;
   state.selectedSetIds = [state.selectedSetId];
+  state.folderPath = '';
   setActiveSet(state.selectedSetId);
   loadMedia();
 }
@@ -255,29 +276,152 @@ async function loadMedia() {
   grid.classList.remove('hidden');
   hint?.classList.add('hidden');
   grid.innerHTML = '<p class="text-muted text-sm grid-full">Loading...</p>';
+
+  const resultCount = document.getElementById('result-count');
+  const breadcrumb = document.getElementById('breadcrumb-bar');
+
   try {
     const setIds = state.selectedSetIds.length > 1 ? state.selectedSetIds.join(',') : '';
-    const singleSetId = state.selectedSetIds.length === 1 ? String(state.selectedSetIds[0]) : (state.selectedSetId ?? '');
-    const params = {
-      set_id: setIds ? '' : singleSetId,
-      set_ids: setIds,
-      type: state.filters.type,
-      search: state.filters.search,
-      favorites: state.filters.favorites ? 'true' : '',
-      tags: state.filters.tags || '',
-      min_duration: state.filters.minDuration ? String(parseFloat(state.filters.minDuration) * 60) : '',
-      max_duration: state.filters.maxDuration ? String(parseFloat(state.filters.maxDuration) * 60) : '',
-      sort: isShuffle() ? 'random' : 'name',
-      limit: '200',
-    };
-    const data = await API.media(params);
-    const list = Array.isArray(data) ? data : data?.media || [];
-    setMedia(list);
-    renderGrid(list);
-    document.getElementById('result-count').textContent = `${list.length} items`;
+    const singleSetId = state.selectedSetIds.length === 1 ? state.selectedSetIds[0] : null;
+
+    // When viewing a single set with no filters/search, use the browse endpoint
+    // so that subfolders are presented as folders to navigate into.
+    if (singleSetId && !setIds && !state.filters.search && !state.filters.type && !state.filters.favorites && !state.filters.tags && !state.filters.minDuration && !state.filters.maxDuration) {
+      const data = await API.browse(singleSetId, state.folderPath);
+      updateBreadcrumb(data.current_path);
+      setMedia(data.media || []);
+      renderBrowse(data);
+      const total = (data.media?.length || 0) + (data.folders?.length || 0);
+      resultCount.textContent = `${total} items`;
+    } else {
+      breadcrumb?.classList.add('hidden');
+      const params = {
+        set_id: setIds ? '' : String(singleSetId || state.selectedSetId || ''),
+        set_ids: setIds,
+        type: state.filters.type,
+        search: state.filters.search,
+        favorites: state.filters.favorites ? 'true' : '',
+        tags: state.filters.tags || '',
+        min_duration: state.filters.minDuration ? String(parseFloat(state.filters.minDuration) * 60) : '',
+        max_duration: state.filters.maxDuration ? String(parseFloat(state.filters.maxDuration) * 60) : '',
+        sort: isShuffle() ? 'random' : 'name',
+        limit: '200',
+      };
+      const data = await API.media(params);
+      const list = Array.isArray(data) ? data : data?.media || [];
+      setMedia(list);
+      renderGrid(list);
+      resultCount.textContent = `${list.length} items`;
+    }
   } catch (err) {
     grid.innerHTML = `<p class="error-message grid-full">${escapeHtml(err.message)}</p>`;
   }
+}
+
+function updateBreadcrumb(currentPath) {
+  const el = document.getElementById('breadcrumb-bar');
+  if (!el) return;
+  const setName = state.sets.find((s) => s.id === state.selectedSetId)?.name || 'Set';
+  const parts = currentPath ? currentPath.split('/') : [];
+
+  let html = `<button class="breadcrumb-root" data-folder="">${escapeHtml(setName)}</button>`;
+  let accumulated = '';
+  for (const part of parts) {
+    accumulated = accumulated ? `${accumulated}/${part}` : part;
+    html += ` <span class="breadcrumb-sep">/</span> <button class="breadcrumb-part" data-folder="${accumulated}">${escapeHtml(part)}</button>`;
+  }
+  el.innerHTML = html;
+  el.classList.remove('hidden');
+  el.querySelectorAll('button').forEach((b) => {
+    b.addEventListener('click', () => {
+      state.folderPath = b.dataset.folder;
+      loadMedia();
+    });
+  });
+}
+
+function enterFolder(name) {
+  state.folderPath = state.folderPath ? `${state.folderPath}/${name}` : name;
+  loadMedia();
+}
+
+function navigateBack() {
+  if (!state.folderPath) return;
+  const last = state.folderPath.lastIndexOf('/');
+  if (last < 0) {
+    state.folderPath = '';
+  } else {
+    state.folderPath = state.folderPath.substring(0, last);
+  }
+  loadMedia();
+}
+
+function renderBrowse(data) {
+  const grid = document.getElementById('media-grid');
+  if (!grid) return;
+  const folders = data.folders || [];
+  const media = data.media || [];
+  if (!folders.length && !media.length) {
+    grid.innerHTML = '<p class="text-muted text-sm grid-full">Folder is empty.</p>';
+    return;
+  }
+  const folderHtml = folders.map((f, i) => renderFolder(f, i)).join('');
+  const mediaHtml = media.map((m, i) => renderItem(m, i + folders.length)).join('');
+  grid.innerHTML = folderHtml + mediaHtml;
+
+  grid.querySelectorAll('.folder-card').forEach((el) => {
+    el.addEventListener('click', () => enterFolder(el.dataset.name));
+  });
+
+  grid.querySelectorAll('.folder-card [data-action="regen-folder-cover"]').forEach((b) => {
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const setId = state.selectedSetId;
+      if (!setId) return;
+      const name = b.closest('.folder-card')?.dataset.name;
+      const folder = state.folderPath ? `${state.folderPath}/${name}` : name;
+      try { await API.regenCover(setId, folder); toast('Folder cover regenerated'); loadMedia(); }
+      catch (err) { toast(err.message || 'Cover failed', 'error'); }
+    });
+  });
+
+  grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
+    el.addEventListener('click', () => { selectByElement(el); });
+    const playBtn = el.querySelector('[data-action="play"]');
+    const favBtn = el.querySelector('[data-action="favorite"]');
+    const noteBtn = el.querySelector('[data-action="notes"]');
+    const downloadBtn = el.querySelector('[data-action="download"]');
+    const tagBtn = el.querySelector('[data-action="tags"]');
+    const thumbBtn = el.querySelector('[data-action="regen-thumb"]');
+    playBtn?.addEventListener('click', (e) => { e.stopPropagation(); selectByElement(el); playSelected(); });
+    favBtn?.addEventListener('click', (e) => { e.stopPropagation(); toggleFavorite(el.dataset.id, favBtn); });
+    noteBtn?.addEventListener('click', (e) => { e.stopPropagation(); openNotesForSelected(); });
+    downloadBtn?.addEventListener('click', (e) => { e.stopPropagation(); window.open(`/api/media/${el.dataset.id}/download`, '_blank'); });
+    tagBtn?.addEventListener('click', (e) => { e.stopPropagation(); openTagsForElement(el); });
+    thumbBtn?.addEventListener('click', (e) => { e.stopPropagation(); regenThumb(el.dataset.id); });
+  });
+}
+
+function renderFolder(folder, index) {
+  const name = typeof folder === 'string' ? folder : folder.name;
+  const hasCover = typeof folder === 'object' && folder?.has_cover;
+  const coverImg = hasCover
+    ? `<img src="/api/sets/${state.selectedSetId}/cover?folder=${encodeURIComponent(state.folderPath ? `${state.folderPath}/${name}` : name)}" alt="" loading="lazy">`
+    : null;
+  return `
+    <div class="media-card folder-card" data-name="${escapeHtml(name)}" data-index="${index}" tabindex="0" role="button" aria-label="Folder ${escapeHtml(name)}">
+      <div class="thumb-wrap">
+        ${hasCover ? coverImg : '<span class="placeholder">📁</span>'}
+        <div class="card-actions">
+          <button class="icon-btn btn-sm" data-action="regen-folder-cover" title="Regenerate cover">🔄</button>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="title">${escapeHtml(name)}</div>
+        <div class="subtitle">Folder</div>
+      </div>
+    </div>
+  `;
 }
 
 function renderGrid(items) {

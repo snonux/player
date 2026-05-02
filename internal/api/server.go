@@ -112,7 +112,9 @@ func (s *Server) routes() {
 
 	// Sets
 	s.mux.Handle("GET /api/sets", s.mw.RequireSession(http.HandlerFunc(s.handleListSets)))
-	s.mux.Handle("POST /api/sets/{id}/cover", s.mw.RequireSession(http.HandlerFunc(s.handleSetCover)))
+	s.mux.Handle("GET /api/sets/{id}/browse", s.mw.RequireSession(http.HandlerFunc(s.handleBrowseSet)))
+	s.mux.Handle("GET /api/sets/{id}/cover", s.mw.RequireSession(http.HandlerFunc(s.handleGetSetCover)))
+	s.mux.Handle("POST /api/sets/{id}/cover", s.mw.RequireSession(http.HandlerFunc(s.handlePostSetCover)))
 	s.mux.Handle("POST /api/sets/{id}/upload", s.mw.RequireSession(http.HandlerFunc(s.handleUpload)))
 
 	// Media

@@ -152,6 +152,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		if err != nil {
 			return fmt.Errorf("rel path for %q: %w", path, err)
 		}
+		relPath = filepath.ToSlash(relPath)
 		if _, alreadyExists := existing[relPath]; alreadyExists {
 			return nil
 		}

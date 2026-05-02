@@ -63,6 +63,9 @@
       <p class="text-muted text-sm">Press <kbd>s</kbd> to browse sets, <kbd>/</kbd> to search, or <kbd>?</kbd> for help.</p>
     </div>
 
+    <!-- Breadcrumb bar for folder navigation -->
+    <div id="breadcrumb-bar" class="breadcrumb-bar hidden"></div>
+
     <!-- Media grid: hidden until a set is loaded or search is active -->
     <div id="media-grid" class="media-grid hidden" tabindex="0" aria-label="Media grid"></div>
   </div>
@@ -113,11 +116,12 @@
         <tr><td><kbd>k</kbd> <kbd>j</kbd></td><td>Navigate media list (vim-style)</td></tr>
         <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Switch sets / pages</td></tr>
         <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>Switch sets / pages (vim-style)</td></tr>
-        <tr><td><kbd>Enter</kbd></td><td>Open selected media</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>Open selected media / enter folder</td></tr>
         <tr><td><kbd>Space</kbd> <kbd>p</kbd></td><td>Play / pause</td></tr>
         <tr><td><kbd>f</kbd></td><td>Toggle fullscreen</td></tr>
         <tr><td><kbd>c</kbd></td><td>Collapse / expand player stage</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Exit fullscreen, deselect item</td></tr>
+        <tr><td><kbd>Backspace</kbd></td><td>Go up one folder</td></tr>
         <tr><td><kbd>r</kbd></td><td>Toggle shuffle</td></tr>
         <tr><td><kbd>s</kbd></td><td>Toggle sets sidebar</td></tr>
         <tr><td><kbd>/</kbd></td><td>Focus search bar</td></tr>

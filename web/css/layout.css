@@ -103,6 +103,31 @@ body {
   max-width: 100%;
 }
 
+/* Breadcrumb bar */
+.breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+.breadcrumb-bar.hidden { display: none !important; }
+.breadcrumb-bar button {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  padding: 0.15rem 0.25rem;
+  cursor: pointer;
+  font: inherit;
+  border-radius: var(--radius-sm);
+}
+.breadcrumb-bar button:hover { background: var(--accent-soft); }
+.breadcrumb-bar .breadcrumb-sep { color: var(--text-muted); user-select: none; }
+
+/* Folder card placeholder */
+.folder-card .thumb-wrap .placeholder { font-size: 3rem; }
+
 /* Media grid */
 .media-grid {
   display: grid;

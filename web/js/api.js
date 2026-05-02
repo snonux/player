@@ -58,7 +58,18 @@ export const API = {
   tags: () => api('/api/tags'),
   download: (id) => api(`/api/media/${id}/download`),
   regenThumbnail: (id) => api(`/api/media/${id}/thumbnail`, { method: 'POST' }),
-  regenCover: (setId) => api(`/api/sets/${setId}/cover`, { method: 'POST' }),
+  browse: (setId, parent) => {
+    const params = new URLSearchParams();
+    if (parent) params.set('parent', parent);
+    const s = params.toString();
+    return api(`/api/sets/${setId}/browse${s ? '?' + s : ''}`);
+  },
+  regenCover: (setId, folder = '') => {
+    const params = new URLSearchParams();
+    if (folder) params.set('folder', folder);
+    const s = params.toString();
+    return api(`/api/sets/${setId}/cover${s ? '?' + s : ''}`, { method: 'POST' });
+  },
   upload: (setId, formData) => api(`/api/sets/${setId}/upload`, { method: 'POST', body: formData }),
   addTag: (id, tag) => api(`/api/media/${id}/tags`, { method: 'POST', body: { tag } }),
   removeTag: (id, tag) => api(`/api/media/${id}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' }),

@@ -25,7 +25,7 @@ func TestMockMediaService_Defaults(t *testing.T) {
 	m.SoftDeleteMedia(ctx, 1, 1)
 	m.RestoreMedia(ctx, 1, 1)
 	m.RegenerateThumbnail(ctx, 1, 1)
-	m.RegenerateSetCover(ctx, 1, 1)
+	m.RegenerateSetCover(ctx, 1, "", 1)
 	m.GetNote(ctx, 1, 1)
 	m.UpsertNote(ctx, &model.Note{MediaID: 1, UserID: 1, Content: "hi"})
 	m.DeleteNote(ctx, 1, 1)
@@ -64,7 +64,7 @@ func TestMockMediaService_WithFuncs(t *testing.T) {
 		DownloadMediaFunc:       func(ctx context.Context, mediaID, userID int64) (*FileResult, error) { return nil, nil },
 		GetThumbnailFunc:        func(ctx context.Context, mediaID, userID int64) (*FileResult, error) { return nil, nil },
 		RegenerateThumbnailFunc: func(ctx context.Context, mediaID, userID int64) error { return nil },
-		RegenerateSetCoverFunc:  func(ctx context.Context, setID, userID int64) error { return nil },
+		RegenerateSetCoverFunc:  func(ctx context.Context, setID int64, folder string, userID int64) error { return nil },
 		ToggleFavoriteFunc:      func(ctx context.Context, userID, mediaID int64) (bool, error) { return false, nil },
 		AssignTagFunc:           func(ctx context.Context, mediaID, userID int64, tagName string) error { return nil },
 		RemoveTagFunc:           func(ctx context.Context, mediaID, userID int64, tagName string) error { return nil },
@@ -88,7 +88,7 @@ func TestMockMediaService_WithFuncs(t *testing.T) {
 	m.DownloadMedia(ctx, 1, 1)
 	m.GetThumbnail(ctx, 1, 1)
 	m.RegenerateThumbnail(ctx, 1, 1)
-	m.RegenerateSetCover(ctx, 1, 1)
+	m.RegenerateSetCover(ctx, 1, "", 1)
 	m.ToggleFavorite(ctx, 1, 1)
 	m.AssignTag(ctx, 1, 1, "rock")
 	m.RemoveTag(ctx, 1, 1, "rock")

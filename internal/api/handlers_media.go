@@ -30,7 +30,7 @@ func (s *Server) handleListSets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sets)
 }
 
-func (s *Server) handleSetCover(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.mediaSvc) {
 		return
 	}
@@ -39,7 +39,34 @@ func (s *Server) handleSetCover(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid set id"})
 		return
 	}
-	if err := s.mediaSvc.RegenerateSetCover(r.Context(), setID, userIDFromContext(r)); err != nil {
+	folder := r.URL.Query().Get("folder")
+	fr, err := s.mediaSvc.GetSetCover(r.Context(), setID, folder, userIDFromContext(r))
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if errors.Is(err, service.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	http.ServeFile(w, r, fr.Path)
+}
+
+func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	setID := pathID(r, "id")
+	if setID == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid set id"})
+		return
+	}
+	folder := r.URL.Query().Get("folder")
+	if err := s.mediaSvc.RegenerateSetCover(r.Context(), setID, folder, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -52,6 +79,28 @@ func (s *Server) handleSetCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	setID := pathID(r, "id")
+	if setID == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid set id"})
+		return
+	}
+	parent := r.URL.Query().Get("parent")
+	result, err := s.mediaSvc.BrowseSet(r.Context(), setID, userIDFromContext(r), parent)
+	if err != nil {
+		if errors.Is(err, service.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {

@@ -11,7 +11,7 @@ export function initSelection() {
 }
 
 function refreshCards() {
-  return Array.from(document.querySelectorAll('.media-card, .media-row'));
+  return Array.from(document.querySelectorAll('.media-card, .media-row, .folder-card'));
 }
 
 // Compute grid geometry from the rendered cards.

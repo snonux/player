@@ -30,7 +30,9 @@ type MockMediaService struct {
 	DownloadMediaFunc       func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	GetThumbnailFunc        func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	RegenerateThumbnailFunc func(ctx context.Context, mediaID, userID int64) error
-	RegenerateSetCoverFunc  func(ctx context.Context, setID, userID int64) error
+	RegenerateSetCoverFunc  func(ctx context.Context, setID int64, folder string, userID int64) error
+	BrowseSetFunc           func(ctx context.Context, setID, userID int64, parent string) (*BrowseResult, error)
+	GetSetCoverFunc         func(ctx context.Context, setID int64, folder string, userID int64) (*FileResult, error)
 	ToggleFavoriteFunc      func(ctx context.Context, userID, mediaID int64) (bool, error)
 	AssignTagFunc           func(ctx context.Context, mediaID, userID int64, tagName string) error
 	RemoveTagFunc           func(ctx context.Context, mediaID, userID int64, tagName string) error
@@ -90,11 +92,23 @@ func (m *MockMediaService) RegenerateThumbnail(ctx context.Context, mediaID, use
 	}
 	return nil
 }
-func (m *MockMediaService) RegenerateSetCover(ctx context.Context, setID, userID int64) error {
+func (m *MockMediaService) RegenerateSetCover(ctx context.Context, setID int64, folder string, userID int64) error {
 	if m.RegenerateSetCoverFunc != nil {
-		return m.RegenerateSetCoverFunc(ctx, setID, userID)
+		return m.RegenerateSetCoverFunc(ctx, setID, folder, userID)
 	}
 	return nil
+}
+func (m *MockMediaService) BrowseSet(ctx context.Context, setID, userID int64, parent string) (*BrowseResult, error) {
+	if m.BrowseSetFunc != nil {
+		return m.BrowseSetFunc(ctx, setID, userID, parent)
+	}
+	return nil, nil
+}
+func (m *MockMediaService) GetSetCover(ctx context.Context, setID int64, folder string, userID int64) (*FileResult, error) {
+	if m.GetSetCoverFunc != nil {
+		return m.GetSetCoverFunc(ctx, setID, folder, userID)
+	}
+	return nil, errors.New("not implemented")
 }
 func (m *MockMediaService) ToggleFavorite(ctx context.Context, userID, mediaID int64) (bool, error) {
 	if m.ToggleFavoriteFunc != nil {
@@ -166,6 +180,9 @@ func (m *MockMediaService) GetSharedMedia(ctx context.Context, token string) (*G
 	if m.GetSharedMediaFunc != nil {
 		return m.GetSharedMediaFunc(ctx, token)
 	}
+	return nil, errors.New("not implemented")
+}
+func (m *MockMediaService) GetSharedThumbnail(ctx context.Context, token string) (*FileResult, error) {
 	return nil, errors.New("not implemented")
 }
 func (m *MockMediaService) GetNote(ctx context.Context, mediaID, userID int64) (*model.Note, error) {

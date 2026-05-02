@@ -6,6 +6,7 @@ export const state = {
   media: [],
   filters: { type: '', search: '', favorites: false, tags: '', sort: 'name', minDuration: '', maxDuration: '' },
   isAdmin: false,
+  folderPath: '',   // current subfolder path within the selected set
 };
 
 export function getState() { return state; }
