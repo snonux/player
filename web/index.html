@@ -86,9 +86,8 @@
     </div>
   </div>
   <div class="controls">
-    <button id="btn-toggle-stage" class="icon-btn" aria-label="Toggle stage (c)">⛶</button>
     <button id="btn-minimize" class="icon-btn" aria-label="Minimize player (Shift+C)">▾</button>
-    <button id="btn-play" class="icon-btn" aria-label="Play/Pause (Space)">▶</button>
+    <button id="btn-play" class="icon-btn" aria-label="Play/Pause (Space/p)">▶</button>
     <div class="time" id="time-elapsed">0:00</div>
     <div id="progress-track" class="progress-track" tabindex="0" aria-label="Seek">
       <div id="progress-buffered" class="progress-buffered"></div>
@@ -118,35 +117,36 @@
 
 <!-- Help Modal -->
 <div id="help-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="help-title">
-  <div class="modal">
+  <div class="modal help-modal">
     <div class="modal-header">
       <h3 id="help-title">Keyboard Shortcuts</h3>
       <div class="spacer"></div>
       <button id="help-close" class="icon-btn" aria-label="Close">✕</button>
     </div>
     <div class="help-content">
-      <table class="help-table">
-        <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate media list</td></tr>
-        <tr><td><kbd>k</kbd> <kbd>j</kbd></td><td>Navigate media list (vim-style)</td></tr>
-        <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Seek during playback, otherwise switch sets / pages</td></tr>
-        <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>Seek during playback, otherwise switch sets / pages (vim-style)</td></tr>
-        <tr><td><kbd>Enter</kbd></td><td>Open selected media / enter folder</td></tr>
-        <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
-        <tr><td><kbd>n</kbd> <kbd>p</kbd></td><td>Next / previous track</td></tr>
-        <tr><td><kbd>i</kbd></td><td>Show / hide media info</td></tr>
-        <tr><td><kbd>f</kbd></td><td>Toggle fullscreen</td></tr>
-        <tr><td><kbd>c</kbd></td><td>Collapse / expand player stage</td></tr>
-        <tr><td><kbd>C</kbd></td><td>Minimize / restore player</td></tr>
-        <tr><td><kbd>d</kbd></td><td>Detach / attach player popup</td></tr>
-        <tr><td><kbd>D</kbd></td><td>Download selected media</td></tr>
-        <tr><td><kbd>Esc</kbd></td><td>Exit fullscreen, deselect item</td></tr>
-        <tr><td><kbd>Backspace</kbd></td><td>Go up one folder</td></tr>
-        <tr><td><kbd>r</kbd></td><td>Toggle shuffle</td></tr>
-        <tr><td><kbd>s</kbd></td><td>Toggle sets sidebar</td></tr>
-        <tr><td><kbd>S</kbd></td><td>Share selected media</td></tr>
-        <tr><td><kbd>L</kbd></td><td>My Shares (opens list)</td></tr>
-      </table>
-      <p class="text-muted text-xs mt-2">Inside the <strong>My Shares</strong> list: <kbd>↑</kbd> / <kbd>↓</kbd> or <kbd>k</kbd> / <kbd>j</kbd> to navigate; <kbd>Enter</kbd> to copy the selected link; <kbd>Delete</kbd> to revoke it; <kbd>Esc</kbd> to close.</p>
+      <div class="help-shortcuts">
+        <div class="help-row"><span><kbd>↑</kbd> <kbd>↓</kbd></span><span>Navigate media list</span></div>
+        <div class="help-row"><span><kbd>k</kbd> <kbd>j</kbd></span><span>Navigate media list</span></div>
+        <div class="help-row"><span><kbd>←</kbd> <kbd>→</kbd></span><span>Seek or switch pages</span></div>
+        <div class="help-row"><span><kbd>h</kbd> <kbd>l</kbd></span><span>Seek or switch pages</span></div>
+        <div class="help-row"><span><kbd>Enter</kbd></span><span>Open selected item</span></div>
+        <div class="help-row"><span><kbd>Space</kbd> <kbd>p</kbd></span><span>Play / pause</span></div>
+        <div class="help-row"><span><kbd>N</kbd> <kbd>P</kbd></span><span>Next / previous track</span></div>
+        <div class="help-row"><span><kbd>i</kbd></span><span>Show / hide media info</span></div>
+        <div class="help-row"><span><kbd>n</kbd></span><span>Open notes</span></div>
+        <div class="help-row"><span><kbd>f</kbd></span><span>Toggle fullscreen</span></div>
+        <div class="help-row"><span><kbd>C</kbd></span><span>Minimize player</span></div>
+        <div class="help-row"><span><kbd>d</kbd></span><span>Detach / attach player</span></div>
+        <div class="help-row"><span><kbd>D</kbd></span><span>Download selected media</span></div>
+        <div class="help-row"><span><kbd>Esc</kbd></span><span>Exit fullscreen / close</span></div>
+        <div class="help-row"><span><kbd>Backspace</kbd></span><span>Go up one folder</span></div>
+        <div class="help-row"><span><kbd>r</kbd></span><span>Toggle shuffle</span></div>
+        <div class="help-row"><span><kbd>s</kbd></span><span>Toggle sets sidebar</span></div>
+        <div class="help-row"><span><kbd>S</kbd></span><span>Share selected media</span></div>
+        <div class="help-row"><span><kbd>L</kbd></span><span>My Shares</span></div>
+        <div class="help-row"><span><kbd>?</kbd></span><span>Show / hide help</span></div>
+      </div>
+      <div class="help-shares text-muted text-xs mt-2">My Shares: <kbd>↑</kbd> / <kbd>↓</kbd> or <kbd>k</kbd> / <kbd>j</kbd> navigate, <kbd>Enter</kbd> copies, <kbd>Delete</kbd> revokes, <kbd>Esc</kbd> closes.</div>
     </div>
   </div>
 </div>

@@ -10,8 +10,23 @@ export function initSelection() {
   });
 }
 
+export function clearSelection() {
+  selectedIndex = -1;
+  refreshCards().forEach((c) => c.classList.remove('selected'));
+}
+
 function refreshCards() {
   return Array.from(document.querySelectorAll('.media-card, .media-row, .folder-card'));
+}
+
+function syncedIndex(cards) {
+  const domIndex = cards.findIndex((c) => c.classList.contains('selected'));
+  if (domIndex >= 0) {
+    selectedIndex = domIndex;
+    return domIndex;
+  }
+  selectedIndex = -1;
+  return -1;
 }
 
 // Compute grid geometry from the rendered cards.
@@ -50,7 +65,12 @@ export function selectByElement(el) {
 export function next(step = 1) {
   const cards = refreshCards();
   if (!cards.length) return;
-  select((selectedIndex + step + cards.length) % cards.length);
+  const idx = syncedIndex(cards);
+  if (idx < 0) {
+    select(step >= 0 ? 0 : cards.length - 1);
+    return;
+  }
+  select((idx + step + cards.length) % cards.length);
 }
 
 export function prev(step = 1) { next(-step); }
@@ -59,12 +79,17 @@ export function prev(step = 1) { next(-step); }
 export function navLeft() {
   const cards = refreshCards();
   if (!cards.length) return;
+  const idx = syncedIndex(cards);
+  if (idx < 0) {
+    select(cards.length - 1);
+    return;
+  }
   const { cols } = gridGeometry(cards);
   if (cols === 0) return;
-  const row = Math.floor(selectedIndex / cols);
-  const col = selectedIndex % cols;
+  const row = Math.floor(idx / cols);
+  const col = idx % cols;
   if (col > 0) {
-    select(selectedIndex - 1);
+    select(idx - 1);
   } else if (row > 0) {
     // wrap to end of previous row
     select(row * cols - 1);
@@ -74,14 +99,19 @@ export function navLeft() {
 export function navRight() {
   const cards = refreshCards();
   if (!cards.length) return;
+  const idx = syncedIndex(cards);
+  if (idx < 0) {
+    select(0);
+    return;
+  }
   const { cols } = gridGeometry(cards);
   if (cols === 0) return;
-  const row = Math.floor(selectedIndex / cols);
-  const col = selectedIndex % cols;
+  const row = Math.floor(idx / cols);
+  const col = idx % cols;
   const lastInRow = Math.min((row + 1) * cols, cards.length) - 1;
   if (col < (lastInRow - row * cols)) {
-    select(selectedIndex + 1);
-  } else if (selectedIndex < cards.length - 1) {
+    select(idx + 1);
+  } else if (idx < cards.length - 1) {
     // wrap to start of next row
     select(Math.min((row + 1) * cols, cards.length - 1));
   }
@@ -90,9 +120,14 @@ export function navRight() {
 export function navUp() {
   const cards = refreshCards();
   if (!cards.length) return;
+  const idx = syncedIndex(cards);
+  if (idx < 0) {
+    select(cards.length - 1);
+    return;
+  }
   const { cols } = gridGeometry(cards);
   if (cols === 0) return;
-  const idxAbove = selectedIndex - cols;
+  const idxAbove = idx - cols;
   if (idxAbove >= 0) {
     select(idxAbove);
   }
@@ -101,13 +136,22 @@ export function navUp() {
 export function navDown() {
   const cards = refreshCards();
   if (!cards.length) return;
+  const idx = syncedIndex(cards);
+  if (idx < 0) {
+    select(0);
+    return;
+  }
   const { cols } = gridGeometry(cards);
   if (cols === 0) return;
-  const idxBelow = selectedIndex + cols;
+  const idxBelow = idx + cols;
   if (idxBelow < cards.length) {
     select(idxBelow);
   }
 }
 
-export function currentIndex() { return selectedIndex; }
-export function currentElement() { return refreshCards()[selectedIndex] ?? null; }
+export function currentIndex() { return syncedIndex(refreshCards()); }
+export function currentElement() {
+  const cards = refreshCards();
+  const idx = syncedIndex(cards);
+  return idx >= 0 ? cards[idx] : null;
+}

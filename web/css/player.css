@@ -1,47 +1,31 @@
 /* Player */
 .player {
   position: fixed;
-  inset: auto 0 0 0;
+  inset: auto auto 1rem 1rem;
+  width: var(--floating-w, 320px);
+  height: var(--floating-h, 240px);
   background: var(--player-bg);
   color: var(--text-primary);
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  overflow: hidden;
   z-index: 60;
   display: none; /* hidden by default until something plays */
   transition: inset var(--transition-base), width var(--transition-base), height var(--transition-base), box-shadow var(--transition-base);
 }
 .player.open {
-  display: block;
-}
-.page.has-sidebar .player {
-  inset: auto 0 0 var(--sidebar-width);
-}
-
-/* Collapsed: floating bottom-left card sized to video aspect ratio */
-.player.collapsed {
-  inset: auto auto 1rem 1rem;
-  width: var(--collapsed-w, 320px);
-  height: var(--collapsed-h, 240px);
-  border-radius: 0.5rem;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-  border: 1px solid var(--border);
-  overflow: hidden;
-}
-.player.open.collapsed {
   display: flex;
   flex-direction: column;
 }
-.player.collapsed .stage {
+.player .stage {
   flex: 1 1 auto;
-  height: auto !important;
+  position: relative;
+  height: auto;
+  background: var(--player-stage-bg);
   overflow: hidden;
 }
-.player.collapsed .controls {
-  flex: 0 0 auto;
-  padding: 0.35rem 0.5rem;
-  gap: 0.35rem;
-  border-top: 1px solid var(--border);
-}
-.player.collapsed .big-play .play-icon {
+.player .big-play .play-icon {
   width: 2rem;
   height: 2rem;
   font-size: 0.8rem;
@@ -86,6 +70,11 @@
 }
 .player.is-fullscreen {
   inset: 0;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   background: var(--player-stage-bg);
   display: flex;
   flex-direction: column;
@@ -121,18 +110,6 @@
   flex: 0 0 auto;
 }
 
-.player .stage {
-  position: relative;
-  background: var(--player-stage-bg);
-}
-.player:not(.is-fullscreen) .stage {
-  height: 0;
-  overflow: hidden;
-  transition: height var(--transition-base);
-}
-.player.open .stage {
-  height: clamp(10rem, 28vh, 26rem);
-}
 .player.is-fullscreen .stage {
   flex: 1 1 auto;
   height: auto;
@@ -162,10 +139,12 @@
 
 /* Overlay controls */
 .player .controls {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border-top: 1px solid var(--border);
 }
 .player .controls .spacer { flex: 1 1 auto; }
 

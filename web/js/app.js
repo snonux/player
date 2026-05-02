@@ -1,7 +1,7 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
-import { initSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
-import { initPlayer, togglePlay, toggleFullscreen, toggleStage, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, currentMediaId, hasLoadedMedia, isPlaybackActive, seekRelative, selectAndPlay } from './player.js';
+import { initSelection, clearSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
+import { initPlayer, togglePlay, toggleFullscreen, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, currentMediaId, currentMediaInfo, hasLoadedMedia, isPlaybackActive, seekRelative, selectAndPlay } from './player.js';
 import { initSearch, focusSearch, trigger as triggerSearch } from './search.js';
 import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
 import { initThemes } from './themes.js';
@@ -69,7 +69,10 @@ function initBootstrap() {
 
 // SPA
 async function initApp() {
-  initPlayer();
+  initPlayer({
+    onNext: (options) => navigatePlayable(1, options),
+    onPrevious: (options) => navigatePlayable(-1, options),
+  });
   initSelection();
   initSearch({
     onChange: (q) => {
@@ -113,7 +116,6 @@ async function initApp() {
     prevTrack: () => navigatePlayable(-1),
     mediaInfo: () => toggleMediaInfo(),
     fullscreen: () => toggleFullscreen(),
-    toggleStage: () => toggleStage(),
     toggleMinimize: () => toggleMinimize(),
     escape: () => { exitFullscreenIfNeeded(); const el = currentElement(); if (el) el.classList.remove('selected'); closeAllModals(); },
     shuffle: () => { toggleShuffle(); loadMedia(); },
@@ -302,10 +304,10 @@ async function loadMedia() {
 
     // When viewing a single set with no filters/search, use the browse endpoint
     // so that subfolders are presented as folders to navigate into.
-    if (singleSetId && !setIds && !state.filters.search && !state.filters.type && !state.filters.favorites && !state.filters.tags && !state.filters.minDuration && !state.filters.maxDuration) {
+    if (singleSetId && !setIds && !isShuffle() && !state.filters.search && !state.filters.type && !state.filters.favorites && !state.filters.tags && !state.filters.minDuration && !state.filters.maxDuration) {
       const data = await API.browse(singleSetId, state.folderPath);
       updateBreadcrumb(data.current_path);
-      setMedia(data.media || []);
+      setMedia(mediaWithBrowsePath(data.media || [], data.current_path || ''));
       renderBrowse(data);
       const total = (data.media?.length || 0) + (data.folders?.length || 0);
       resultCount.textContent = `${total} items`;
@@ -321,7 +323,7 @@ async function loadMedia() {
         min_duration: state.filters.minDuration ? String(parseFloat(state.filters.minDuration) * 60) : '',
         max_duration: state.filters.maxDuration ? String(parseFloat(state.filters.maxDuration) * 60) : '',
         sort: isShuffle() ? 'random' : 'name',
-        limit: '200',
+        limit: '1000',
       };
       const data = await API.media(params);
       const list = Array.isArray(data) ? data : data?.media || [];
@@ -361,6 +363,10 @@ function enterFolder(name) {
   loadMedia();
 }
 
+function mediaWithBrowsePath(media, path) {
+  return media.map((m) => ({ ...m, browse_path: path || '' }));
+}
+
 function navigateBack() {
   if (!state.folderPath) return;
   const last = state.folderPath.lastIndexOf('/');
@@ -376,14 +382,16 @@ function renderBrowse(data) {
   const grid = document.getElementById('media-grid');
   if (!grid) return;
   const folders = data.folders || [];
-  const media = data.media || [];
+  const media = mediaWithBrowsePath(data.media || [], data.current_path || '');
   if (!folders.length && !media.length) {
     grid.innerHTML = '<p class="text-muted text-sm grid-full">Folder is empty.</p>';
+    clearSelection();
     return;
   }
   const folderHtml = folders.map((f, i) => renderFolder(f, i)).join('');
   const mediaHtml = media.map((m, i) => renderItem(m, i)).join('');
   grid.innerHTML = folderHtml + mediaHtml;
+  clearSelection();
 
   grid.querySelectorAll('.folder-card').forEach((el) => {
     el.addEventListener('click', () => enterFolder(el.dataset.name));
@@ -443,8 +451,9 @@ function renderFolder(folder, index) {
 function renderGrid(items) {
   const grid = document.getElementById('media-grid');
   if (!grid) return;
-  if (!items.length) { grid.innerHTML = `<p class="text-muted text-sm grid-full">No results.</p>`; return; }
+  if (!items.length) { grid.innerHTML = `<p class="text-muted text-sm grid-full">No results.</p>`; clearSelection(); return; }
   grid.innerHTML = items.map((m, i) => renderItem(m, i)).join('');
+  clearSelection();
   grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
     el.addEventListener('click', () => { selectByElement(el); });
     const playBtn = el.querySelector('[data-action="play"]');
@@ -537,21 +546,187 @@ function selectedPlayableIndex(cards, preferCurrent) {
   return idx >= 0 ? idx : -1;
 }
 
-function navigatePlayable(delta) {
+async function navigatePlayable(delta, options = {}) {
   const cards = visiblePlayableCards();
-  if (!cards.length) return;
-  const active = isPlaybackActive();
+  const active = options.forcePlay || isPlaybackActive();
   const base = selectedPlayableIndex(cards, active);
-  const nextIdx = (base + delta + cards.length) % cards.length;
-  const target = cards[nextIdx];
-  selectByElement(target);
-  if (active) {
-    playSelected();
+
+  if (cards.length && !(active && base < 0)) {
+    const atForwardEdge = delta > 0 && base === cards.length - 1;
+    const atBackwardEdge = delta < 0 && base === 0;
+    if (!((atForwardEdge || atBackwardEdge) && canTraverseBrowseFolders())) {
+      const nextIdx = base >= 0
+        ? (base + delta + cards.length) % cards.length
+        : (delta > 0 ? 0 : cards.length - 1);
+      const target = cards[nextIdx];
+      selectByElement(target);
+      if (active) await playSelected();
+      return;
+    }
+  }
+
+  const crossFolderTarget = await findCrossFolderPlayable(delta, active);
+  if (!crossFolderTarget) return;
+  await openPlayableTarget(crossFolderTarget, active);
+}
+
+function canTraverseBrowseFolders() {
+  return !!state.selectedSetId && state.selectedSetIds.length === 1 && !isShuffle() && !hasActiveFilters();
+}
+
+function hasActiveFilters() {
+  return !!(state.filters.search || state.filters.type || state.filters.favorites || state.filters.tags || state.filters.minDuration || state.filters.maxDuration);
+}
+
+async function findCrossFolderPlayable(delta, preferCurrent) {
+  if (!canTraverseBrowseFolders()) return null;
+  const current = currentPlaybackCandidate(preferCurrent);
+  if (!current) return null;
+  const currentPath = current.browse_path ?? state.folderPath ?? '';
+  const currentData = await browsePath(currentPath);
+  const media = mediaWithBrowsePath(currentData.media || [], currentPath);
+  const idx = media.findIndex((m) => String(m.id) === String(current.id));
+
+  if (idx >= 0) {
+    const nextInFolder = idx + delta;
+    if (nextInFolder >= 0 && nextInFolder < media.length) {
+      return { path: currentPath, media: media[nextInFolder] };
+    }
+  }
+
+  return delta > 0
+    ? findAfterFolder(currentPath)
+    : findBeforeFolder(currentPath);
+}
+
+function currentPlaybackCandidate(preferCurrent) {
+  const playing = currentMediaInfo();
+  if (preferCurrent && playing) return playing;
+  const selected = currentElement();
+  if (selected?.dataset?.id) {
+    const selectedMedia = state.media.find((m) => String(m.id) === selected.dataset.id);
+    if (selectedMedia) return selectedMedia;
+  }
+  return playing;
+}
+
+async function findAfterFolder(path) {
+  if (!path) return firstPlayableInFolder('');
+  let childPath = normalizePath(path);
+  while (childPath) {
+    const parent = parentPath(childPath);
+    const name = baseName(childPath);
+    const data = await browsePath(parent);
+    const items = browseItems(data, parent);
+    const idx = items.findIndex((item) => item.type === 'folder' && item.name === name);
+    for (const item of items.slice(idx + 1)) {
+      const target = item.type === 'media'
+        ? { path: parent, media: item.media }
+        : await firstPlayableInFolder(joinPath(parent, item.name));
+      if (target) return target;
+    }
+    childPath = parent;
+  }
+  return firstPlayableInFolder('');
+}
+
+async function findBeforeFolder(path) {
+  if (!path) return lastPlayableInFolder('');
+  let childPath = normalizePath(path);
+  while (childPath) {
+    const parent = parentPath(childPath);
+    const name = baseName(childPath);
+    const data = await browsePath(parent);
+    const items = browseItems(data, parent);
+    const idx = items.findIndex((item) => item.type === 'folder' && item.name === name);
+    for (const item of items.slice(0, Math.max(0, idx)).reverse()) {
+      const target = item.type === 'media'
+        ? { path: parent, media: item.media }
+        : await lastPlayableInFolder(joinPath(parent, item.name));
+      if (target) return target;
+    }
+    childPath = parent;
+  }
+  return lastPlayableInFolder('');
+}
+
+async function firstPlayableInFolder(path) {
+  const data = await browsePath(path);
+  for (const folder of data.folders || []) {
+    const target = await firstPlayableInFolder(joinPath(path, folder.name));
+    if (target) return target;
+  }
+  const media = mediaWithBrowsePath(data.media || [], data.current_path || path);
+  if (media.length) return { path: data.current_path || path, media: media[0] };
+  return null;
+}
+
+async function lastPlayableInFolder(path) {
+  const data = await browsePath(path);
+  const media = mediaWithBrowsePath(data.media || [], data.current_path || path);
+  if (media.length) return { path: data.current_path || path, media: media[media.length - 1] };
+  const folders = data.folders || [];
+  for (const folder of folders.slice().reverse()) {
+    const target = await lastPlayableInFolder(joinPath(path, folder.name));
+    if (target) return target;
+  }
+  return null;
+}
+
+function browseItems(data, path) {
+  const folders = (data.folders || []).map((folder) => ({ type: 'folder', name: folder.name }));
+  const media = mediaWithBrowsePath(data.media || [], data.current_path || path)
+    .map((m) => ({ type: 'media', media: m }));
+  return folders.concat(media);
+}
+
+async function browsePath(path) {
+  return API.browse(state.selectedSetId, path || '');
+}
+
+function normalizePath(path) {
+  return (path || '').split('/').filter(Boolean).join('/');
+}
+
+function parentPath(path) {
+  const normalized = normalizePath(path);
+  const idx = normalized.lastIndexOf('/');
+  return idx >= 0 ? normalized.slice(0, idx) : '';
+}
+
+function baseName(path) {
+  const normalized = normalizePath(path);
+  const idx = normalized.lastIndexOf('/');
+  return idx >= 0 ? normalized.slice(idx + 1) : normalized;
+}
+
+function joinPath(parent, child) {
+  const cleanParent = normalizePath(parent);
+  const cleanChild = normalizePath(child);
+  return cleanParent ? `${cleanParent}/${cleanChild}` : cleanChild;
+}
+
+async function openPlayableTarget(target, play) {
+  state.folderPath = target.path || '';
+  await loadMedia();
+  const card = document.querySelector(`#media-grid [data-id="${target.media.id}"]`);
+  if (card) selectByElement(card);
+  const idx = state.media.findIndex((m) => String(m.id) === String(target.media.id));
+  const media = idx >= 0 ? state.media[idx] : { ...target.media, browse_path: target.path || '' };
+  if (play) {
+    try {
+      const detail = await API.mediaDetail(media.id);
+      const resumeFrom = detail?.progress?.position_seconds ?? 0;
+      selectAndPlay(media, idx >= 0 ? idx : 0, resumeFrom);
+    } catch {
+      selectAndPlay(media, idx >= 0 ? idx : 0, 0);
+    }
   }
 }
 
 function seekByKeyboard(direction, repeated) {
   if (!hasLoadedMedia()) return false;
+  if (!document.fullscreenElement) return false;
   const step = repeated ? 15 : 5;
   return seekRelative(direction * step);
 }

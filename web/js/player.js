@@ -10,6 +10,8 @@ let detachWindow = null;
 let detachReady = false;
 let pendingDetachMessage = null;
 let detachedPlaybackState = null;
+let nextHandler = null;
+let previousHandler = null;
 
 const els = () => ({
   video: document.getElementById('media-video'),
@@ -20,7 +22,6 @@ const els = () => ({
   btnNext: document.getElementById('btn-next'),
   btnMute: document.getElementById('btn-mute'),
   btnFs: document.getElementById('btn-fullscreen'),
-  btnToggleStage: document.getElementById('btn-toggle-stage'),
   btnMinimize: document.getElementById('btn-minimize'),
   btnRestore: document.getElementById('btn-restore-player'),
   restoreTitle: document.getElementById('player-restore-title'),
@@ -35,16 +36,17 @@ const els = () => ({
   timeTotal: document.getElementById('time-total'),
 });
 
-export function initPlayer() {
+export function initPlayer(options = {}) {
+  nextHandler = typeof options.onNext === 'function' ? options.onNext : null;
+  previousHandler = typeof options.onPrevious === 'function' ? options.onPrevious : null;
   const e = els();
   if (!e.video || !e.audio) return;
 
   e.btnPlay?.addEventListener('click', togglePlay);
-  e.btnPrev?.addEventListener('click', playPrevious);
-  e.btnNext?.addEventListener('click', playNext);
+  e.btnPrev?.addEventListener('click', () => triggerPrevious({ forcePlay: true }));
+  e.btnNext?.addEventListener('click', () => triggerNext({ forcePlay: true }));
   e.btnMute?.addEventListener('click', toggleMute);
   e.btnFs?.addEventListener('click', toggleFullscreen);
-  e.btnToggleStage?.addEventListener('click', toggleStage);
   e.btnMinimize?.addEventListener('click', minimizePlayer);
   e.btnRestore?.addEventListener('click', toggleMinimize);
   e.bigPlay?.addEventListener('click', togglePlay);
@@ -79,13 +81,13 @@ export function initPlayer() {
       updateUI(false);
       isPlaying = false;
       stopProgressTimer();
-      playNext();
+      triggerNext({ forcePlay: true });
     });
     m.addEventListener('play', () => { updateUI(true); isPlaying = true; startProgressTimer(); });
     m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
   });
 
-  e.video.addEventListener('loadedmetadata', updateCollapsedSize);
+  e.video.addEventListener('loadedmetadata', updateFloatingSize);
 
   function setupVideoDebug(m) {
     const events = ['loadstart','loadeddata','loadedmetadata','canplay','canplaythrough','playing','waiting','stalled','suspend','error','abort','emptied','ended'];
@@ -135,7 +137,7 @@ export function initPlayer() {
   });
 }
 
-function updateCollapsedSize() {
+function updateFloatingSize() {
   const e = els();
   if (!e.player || !e.video) return;
   const vw = e.video.videoWidth || 0;
@@ -143,15 +145,15 @@ function updateCollapsedSize() {
   let w, h;
   if (vw > 0 && vh > 0) {
     const aspect = vw / vh;
-    const base = 240; // px reference height for collapsed card
+    const base = 240; // px reference height for the floating player
     h = Math.max(180, Math.min(340, base));
     w = Math.max(240, Math.min(480, Math.round(h * aspect)));
   } else {
     w = 320;
     h = 240;
   }
-  e.player.style.setProperty('--collapsed-w', w + 'px');
-  e.player.style.setProperty('--collapsed-h', h + 'px');
+  e.player.style.setProperty('--floating-w', w + 'px');
+  e.player.style.setProperty('--floating-h', h + 'px');
 }
 
 function updateBufferedRanges(m) {
@@ -275,7 +277,7 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
   e.fill.style.width = '0%';
   e.thumb.style.left = '0%';
   updateMinimizedTitle();
-  updateCollapsedSize();
+  updateFloatingSize();
 }
 
 function loadMedia(media, resumeFrom = 0) {
@@ -317,7 +319,7 @@ function loadMedia(media, resumeFrom = 0) {
   e.fill.style.width = '0%';
   e.thumb.style.left = '0%';
   updateMinimizedTitle();
-  updateCollapsedSize();
+  updateFloatingSize();
 }
 
 function currentMediaElement() {
@@ -370,13 +372,6 @@ export function toggleFullscreen() {
     p.requestFullscreen().catch(() => {});
     p.classList.add('is-fullscreen');
   }
-}
-
-export function toggleStage() {
-  const e = els();
-  e.player?.classList.remove('minimized');
-  e.player?.classList.toggle('collapsed');
-  console.log('toggleStage: collapsed =', e.player?.classList.contains('collapsed'));
 }
 
 export function toggleMinimize() {
@@ -432,6 +427,22 @@ function highlightPlayingCard() {
   }
 }
 
+function triggerPrevious(options = {}) {
+  if (previousHandler) {
+    previousHandler(options);
+    return;
+  }
+  playPrevious();
+}
+
+function triggerNext(options = {}) {
+  if (nextHandler) {
+    nextHandler(options);
+    return;
+  }
+  playNext();
+}
+
 export function playPrevious() {
   const list = state.media;
   if (!list.length) return;
@@ -457,6 +468,8 @@ function currentMediaListIndex() {
 }
 
 export function currentMediaId() { return currentMedia?.id; }
+
+export function currentMediaInfo() { return currentMedia; }
 
 export function isPlaybackActive() {
   if (isDetached()) return !!detachedPlaybackState?.playing;
@@ -595,9 +608,9 @@ window.addEventListener('message', (ev) => {
   } else if (ev.data.type === 'detach-state') {
     detachedPlaybackState = ev.data.state;
   } else if (ev.data.type === 'detach-prev') {
-    playPrevious();
+    triggerPrevious({ forcePlay: ev.data.play ?? true });
   } else if (ev.data.type === 'detach-next') {
-    playNext();
+    triggerNext({ forcePlay: ev.data.play ?? true });
   }
 });
 

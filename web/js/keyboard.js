@@ -68,6 +68,23 @@ export function initKeyboard(handlers) {
 
     if (e.ctrlKey || e.metaKey || e.altKey) return; // don't intercept browser shortcuts
 
+    if (e.shiftKey && e.code === 'KeyN') {
+      e.preventDefault();
+      handlers.nextTrack?.(e);
+      return;
+    }
+    if (e.shiftKey && e.code === 'KeyP') {
+      e.preventDefault();
+      handlers.prevTrack?.(e);
+      return;
+    }
+    if (e.code === 'KeyS') {
+      e.preventDefault();
+      if (e.shiftKey) handlers.share?.(e);
+      else handlers.sidebar?.(e);
+      return;
+    }
+
     switch (e.key) {
       // Navigation
       case 'ArrowUp':
@@ -116,9 +133,21 @@ export function initKeyboard(handlers) {
         handlers.navRight?.(e);
         break;
       case 'Enter': handlers.enter?.(e); break;
-      case 'n': handlers.nextTrack?.(e); break;
-      case 'p': handlers.prevTrack?.(e); break;
-      case 'c': handlers.toggleStage?.(e); break;
+      case 'n':
+        handlers.notes?.(e);
+        break;
+      case 'p':
+        e.preventDefault();
+        handlers.playPause?.(e);
+        break;
+      case 'N':
+        e.preventDefault();
+        handlers.nextTrack?.(e);
+        break;
+      case 'P':
+        e.preventDefault();
+        handlers.prevTrack?.(e);
+        break;
       case 'C': handlers.toggleMinimize?.(e); break;
       case 'f': handlers.fullscreen?.(e); break;
       case 'Escape': handlers.escape?.(e); break;

@@ -43,6 +43,17 @@ document.addEventListener('keydown', (ev) => {
   const editing = tag === 'INPUT' || tag === 'TEXTAREA' || ev.target?.isContentEditable;
   if (editing || ev.ctrlKey || ev.metaKey || ev.altKey) return;
 
+  if (ev.shiftKey && ev.code === 'KeyN') {
+    ev.preventDefault();
+    post({ type: 'detach-next', play: currentState().playing });
+    return;
+  }
+  if (ev.shiftKey && ev.code === 'KeyP') {
+    ev.preventDefault();
+    post({ type: 'detach-prev', play: currentState().playing });
+    return;
+  }
+
   if (ev.key === ' ' || ev.code === 'Space') {
     ev.preventDefault();
     togglePlayback();
@@ -55,6 +66,15 @@ document.addEventListener('keydown', (ev) => {
   } else if (ev.key === 'ArrowRight' || ev.key === 'l') {
     ev.preventDefault();
     seekRelative(ev.repeat ? 15 : 5);
+  } else if (ev.key === 'p') {
+    ev.preventDefault();
+    togglePlayback();
+  } else if (ev.key === 'N') {
+    ev.preventDefault();
+    post({ type: 'detach-next', play: currentState().playing });
+  } else if (ev.key === 'P') {
+    ev.preventDefault();
+    post({ type: 'detach-prev', play: currentState().playing });
   }
 });
 
