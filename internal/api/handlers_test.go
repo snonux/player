@@ -1081,6 +1081,13 @@ func TestServer_Shares(t *testing.T) {
 		RevokeShareFunc: func(ctx context.Context, token string, userID int64) error {
 			return nil
 		},
+		GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+			return &service.GetSharedMediaResult{
+				Media: &model.Media{ID: 1, FileName: "x.mp4", Type: model.MediaTypeVideo, Duration: 120},
+				StreamURL: "/s/abc/stream",
+				ThumbURL:  "/s/abc/thumbnail",
+			}, nil
+		},
 		ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
 			return &model.Share{Token: token, MediaID: 1}, nil
 		},

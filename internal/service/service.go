@@ -29,14 +29,23 @@ type MediaWriteService interface {
 	UploadMedia(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error)
 }
 
+// GetSharedMediaResult wraps media metadata needed to render a share page.
+	type GetSharedMediaResult struct {
+		Media      *model.Media `json:"media"`
+		HasThumb   bool         `json:"has_thumb"`
+		StreamURL  string       `json:"stream_url"`
+		ThumbURL   string       `json:"thumb_url"`
+	}
+
 // MediaShareService handles creation, validation and revocation of share links.
-type MediaShareService interface {
-	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
-	ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
-	RevokeShare(ctx context.Context, token string, userID int64) error
-	ValidateShareToken(ctx context.Context, token string) (*model.Share, error)
-	StreamSharedMedia(ctx context.Context, token string) (*FileResult, error)
-}
+	type MediaShareService interface {
+		CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
+		ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
+		RevokeShare(ctx context.Context, token string, userID int64) error
+		ValidateShareToken(ctx context.Context, token string) (*model.Share, error)
+		StreamSharedMedia(ctx context.Context, token string) (*FileResult, error)
+		GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error)
+	}
 
 // MediaTagService handles tagging of media items.
 type MediaTagService interface {

@@ -42,6 +42,7 @@ type MockMediaService struct {
 	RevokeShareFunc         func(ctx context.Context, token string, userID int64) error
 	ValidateShareTokenFunc  func(ctx context.Context, token string) (*model.Share, error)
 	StreamSharedMediaFunc   func(ctx context.Context, token string) (*FileResult, error)
+	GetSharedMediaFunc      func(ctx context.Context, token string) (*GetSharedMediaResult, error)
 	GetNoteFunc             func(ctx context.Context, mediaID, userID int64) (*model.Note, error)
 	UpsertNoteFunc          func(ctx context.Context, note *model.Note) error
 	DeleteNoteFunc          func(ctx context.Context, mediaID, userID int64) error
@@ -158,6 +159,12 @@ func (m *MockMediaService) ValidateShareToken(ctx context.Context, token string)
 func (m *MockMediaService) StreamSharedMedia(ctx context.Context, token string) (*FileResult, error) {
 	if m.StreamSharedMediaFunc != nil {
 		return m.StreamSharedMediaFunc(ctx, token)
+	}
+	return nil, errors.New("not implemented")
+}
+func (m *MockMediaService) GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error) {
+	if m.GetSharedMediaFunc != nil {
+		return m.GetSharedMediaFunc(ctx, token)
 	}
 	return nil, errors.New("not implemented")
 }

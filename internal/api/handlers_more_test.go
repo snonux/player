@@ -951,7 +951,7 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("service error", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
 				return nil, errors.New("boom")
 			},
 		}
@@ -966,7 +966,7 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
 				return nil, nil
 			},
 		}
@@ -981,7 +981,7 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("expired", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
 				return nil, service.ErrShareExpired
 			},
 		}
@@ -996,8 +996,12 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("html default accept", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
-				return &model.Share{Token: "abc", MediaID: 1}, nil
+			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+				return &service.GetSharedMediaResult{
+					Media: &model.Media{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
+					StreamURL: "/s/abc/stream",
+					ThumbURL:  "/s/abc/thumbnail",
+				}, nil
 			},
 		}
 		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, fs)
@@ -1019,8 +1023,12 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("html explicit accept", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
-				return &model.Share{Token: "abc", MediaID: 1}, nil
+			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+				return &service.GetSharedMediaResult{
+					Media: &model.Media{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
+					StreamURL: "/s/abc/stream",
+					ThumbURL:  "/s/abc/thumbnail",
+				}, nil
 			},
 		}
 		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, fs)
@@ -1039,8 +1047,12 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("json accept", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
-				return &model.Share{Token: "abc", MediaID: 1}, nil
+			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+				return &service.GetSharedMediaResult{
+					Media: &model.Media{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
+					StreamURL: "/s/abc/stream",
+					ThumbURL:  "/s/abc/thumbnail",
+				}, nil
 			},
 		}
 		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, nil, nil, nil, fs)
@@ -1055,12 +1067,12 @@ func TestServer_SharePage(t *testing.T) {
 		if !strings.Contains(ct, "application/json") {
 			t.Fatalf("expected application/json content type, got %q", ct)
 		}
-		var body model.Share
+		var body service.GetSharedMediaResult
 		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 			t.Fatalf("expected JSON body: %v", err)
 		}
-		if body.Token != "abc" {
-			t.Fatalf("unexpected token %q", body.Token)
+		if body.StreamURL != "/s/abc/stream" {
+			t.Fatalf("unexpected stream_url %q", body.StreamURL)
 		}
 	})
 }

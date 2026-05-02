@@ -112,3 +112,26 @@ func (s *mediaService) StreamSharedMedia(ctx context.Context, token string) (*Fi
 		FileSize: media.FileSizeBytes,
 	}, nil
 }
+
+func (s *mediaService) GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error) {
+	share, err := s.ValidateShareToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	media, err := s.store.GetMediaByID(ctx, share.MediaID)
+	if err != nil {
+		return nil, fmt.Errorf("get media: %w", err)
+	}
+	if media == nil {
+		return nil, ErrMediaNotFound
+	}
+
+	res := &GetSharedMediaResult{
+		Media:     media,
+		StreamURL: fmt.Sprintf("/s/%s/stream", token),
+		HasThumb:  media.ThumbnailPath != "",
+		ThumbURL:  fmt.Sprintf("/s/%s/thumbnail", token),
+	}
+	return res, nil
+}

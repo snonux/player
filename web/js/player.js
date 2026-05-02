@@ -139,6 +139,44 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
   highlightPlayingCard();
 }
 
+export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) {
+  const e = els();
+  const isVideo = media.type === 'video';
+  const src = streamUrl;
+  if (isVideo) {
+    e.video.pause();
+    e.audio.pause(); e.audio.src = '';
+    e.video.style.display = '';
+    e.audio.style.display = 'none';
+    e.coverArt?.classList.add('hidden');
+    e.video.src = src;
+    e.video.load();
+    e.video.currentTime = resumeFrom;
+  } else {
+    e.audio.pause();
+    e.video.pause(); e.video.src = '';
+    e.video.style.display = 'none';
+    e.audio.style.display = 'none';
+    e.audio.src = src;
+    e.audio.currentTime = resumeFrom;
+    if (e.coverArt) {
+      if (thumbnailUrl) {
+        e.coverArt.src = thumbnailUrl;
+        e.coverArt.classList.remove('hidden');
+      } else {
+        e.coverArt.classList.add('hidden');
+        e.coverArt.src = '';
+      }
+    }
+  }
+  e.player?.classList.add('open');
+  e.btnPlay.textContent = '⏸';
+  e.bigPlay?.classList.add('hidden');
+  e.timeTotal.textContent = fmt(media.duration ?? 0);
+  e.fill.style.width = '0%';
+  e.thumb.style.left = '0%';
+}
+
 function loadMedia(media, resumeFrom = 0) {
   const e = els();
   const isVideo = media.type === 'video';

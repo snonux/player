@@ -73,6 +73,8 @@ var supportedExtensions = map[string]struct{}{
 	".ogg":  {},
 	".m4a":  {},
 	".wma":  {},
+	".m4b":  {},
+	".opus": {},
 }
 
 func isSupportedExtension(name string) bool {
@@ -86,7 +88,7 @@ func guessMediaType(name string) model.MediaType {
 	switch ext {
 	case ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm":
 		return model.MediaTypeVideo
-	case ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma":
+	case ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma", ".m4b", ".opus":
 		return model.MediaTypeAudio
 	default:
 		return model.MediaTypeVideo

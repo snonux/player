@@ -1,8 +1,11 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -69,8 +72,8 @@ func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := r.PathValue("token")
-	share, err := s.mediaSvc.ValidateShareToken(r.Context(), token)
-	if err != nil || share == nil {
+	res, err := s.mediaSvc.GetSharedMedia(r.Context(), token)
+	if err != nil || res == nil {
 		if err != nil && errors.Is(err, service.ErrShareExpired) {
 			http.Error(w, "gone", http.StatusGone)
 			return
@@ -83,11 +86,58 @@ func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Vary", "Accept")
 
 	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "text/html") || accept == "" {
-		s.serveFile(w, r, "share.html")
+	if strings.Contains(accept, "application/json") {
+		writeJSON(w, http.StatusOK, res)
 		return
 	}
-	writeJSON(w, http.StatusOK, share)
+
+	// Serve HTML page with media metadata injected.
+	f, err := s.staticFS.Open("share.html")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	var buf strings.Builder
+	if _, err := io.Copy(&buf, f); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	html := buf.String()
+	data, _ := json.Marshal(res)
+	html = strings.Replace(html, "<!--SHARE_MEDIA-->", string(data), 1)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	http.ServeContent(w, r, "share.html", stat.ModTime(), strings.NewReader(html))
+}
+
+func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.mediaSvc) {
+		return
+	}
+	token := r.PathValue("token")
+	res, err := s.mediaSvc.GetSharedMedia(r.Context(), token)
+	if err != nil || res == nil {
+		if err != nil && errors.Is(err, service.ErrShareExpired) {
+			http.Error(w, "gone", http.StatusGone)
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if !res.HasThumb || res.Media == nil || res.Media.ThumbnailPath == "" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	fr := &service.FileResult{
+		Path:     res.Media.ThumbnailPath,
+		FileName: filepath.Base(res.Media.ThumbnailPath),
+	}
+	s.serveFileResult(w, r, fr, false)
 }
 
 func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {

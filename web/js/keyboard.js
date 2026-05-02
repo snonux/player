@@ -91,6 +91,14 @@ export function initKeyboard(handlers) {
         e.preventDefault();
         handlers.help?.(e);
         break;
+      case ',':
+        e.preventDefault();
+        handlers.focusMinDuration?.(e);
+        break;
+      case '.':
+        e.preventDefault();
+        handlers.focusMaxDuration?.(e);
+        break;
     }
   });
 }

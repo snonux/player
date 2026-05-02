@@ -112,6 +112,8 @@ async function initApp() {
     toolbar: toggleToolbar,
     sidebar: toggleSidebar,
     upload: () => showUpload(),
+    focusMinDuration: () => focusFilter('filter-min-duration'),
+    focusMaxDuration: () => focusFilter('filter-max-duration'),
   });
   initNotes(() => toast('Note saved'));
   initAdmin();
@@ -129,8 +131,6 @@ async function initApp() {
   document.getElementById('filter-tags')?.addEventListener('change', (e) => { state.filters.tags = e.target.value; loadMedia(); });
   document.getElementById('filter-min-duration')?.addEventListener('change', (e) => { state.filters.minDuration = e.target.value; loadMedia(); });
   document.getElementById('filter-max-duration')?.addEventListener('change', (e) => { state.filters.maxDuration = e.target.value; loadMedia(); });
-  document.getElementById('filter-min-filesize')?.addEventListener('change', (e) => { state.filters.minFilesizeMB = e.target.value; loadMedia(); });
-  document.getElementById('filter-max-filesize')?.addEventListener('change', (e) => { state.filters.maxFilesizeMB = e.target.value; loadMedia(); });
   document.getElementById('filter-toggle')?.addEventListener('click', () => {
     document.getElementById('filter-advanced')?.classList.toggle('hidden');
   });
@@ -265,10 +265,8 @@ async function loadMedia() {
       search: state.filters.search,
       favorites: state.filters.favorites ? 'true' : '',
       tags: state.filters.tags || '',
-      min_duration: state.filters.minDuration || '',
-      max_duration: state.filters.maxDuration || '',
-      filesize_min: state.filters.minFilesizeMB ? String(parseInt(state.filters.minFilesizeMB, 10) << 20) : '',
-      filesize_max: state.filters.maxFilesizeMB ? String(parseInt(state.filters.maxFilesizeMB, 10) << 20) : '',
+      min_duration: state.filters.minDuration ? String(parseFloat(state.filters.minDuration) * 60) : '',
+      max_duration: state.filters.maxDuration ? String(parseFloat(state.filters.maxDuration) * 60) : '',
       sort: isShuffle() ? 'random' : 'name',
       limit: '200',
     };
@@ -537,6 +535,14 @@ function toggleSidebar() {
   if (!sidebar) return;
   const open = sidebar.classList.toggle('open');
   page?.classList.toggle('has-sidebar', open);
+}
+
+function focusFilter(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  document.getElementById('filter-advanced')?.classList.remove('hidden');
+  el.focus();
+  el.select();
 }
 
 function showSearch() {

@@ -5,17 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Shared Media</title>
 <link rel="stylesheet" href="/css/theme.css">
+<link rel="stylesheet" href="/css/player.css">
 <style>
   body {
     margin: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
     min-height: 100vh;
     background: var(--bg-body);
     color: var(--text-primary);
     font-family: var(--font-sans);
+    display: flex;
+    flex-direction: column;
+  }
+  .page-wrap {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     padding: 1rem;
     box-sizing: border-box;
   }
@@ -29,77 +35,88 @@
     font-size: 1.25rem;
     color: var(--text-primary);
   }
-  .player-wrapper {
-    position: relative;
-    background: var(--player-bg);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    box-shadow: var(--shadow-md);
-  }
-  video, audio {
-    width: 100%;
-    display: block;
-  }
-  .play-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg-overlay);
-    cursor: pointer;
-    transition: opacity var(--transition-base);
-  }
-  .play-overlay.hidden {
-    opacity: 0;
-    pointer-events: none;
-  }
-  .play-icon {
-    font-size: 3rem;
-    color: var(--text-primary);
-    background: var(--accent-soft);
-    border-radius: 50%;
-    width: 4rem;
-    height: 4rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-  }
   .back-link {
     margin-top: 1.5rem;
     color: var(--accent);
     text-decoration: none;
     font-size: 0.9rem;
   }
-  .back-link:hover {
-    color: var(--accent-hover);
+  .back-link:hover { color: var(--accent-hover); }
+
+  /* Player overrides for standalone share page */
+  .player {
+    display: block;
+    position: static;
+    border-top: none;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+  }
+  .player .stage {
+    height: clamp(14rem, 35vh, 28rem);
+    background: var(--player-stage-bg);
+  }
+  .player.is-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    border-radius: 0;
   }
 </style>
 </head>
 <body>
-<div class="container">
-  <h1>Shared Media</h1>
-  <div class="player-wrapper">
-    <video id="player" playsinline preload="metadata" src="./stream"></video>
-    <div id="overlay" class="play-overlay" role="button" aria-label="Play">
-      <div class="play-icon">▶</div>
-    </div>
+<div class="page-wrap">
+  <div class="container">
+    <h1>Shared Media</h1>
+    <aside id="player" class="player open" aria-label="Player">
+      <div class="stage">
+        <video id="media-video" playsinline controlslist="nodownload"></video>
+        <audio id="media-audio" class="hidden"></audio>
+        <img id="cover-art" class="cover-art hidden" alt="Cover" loading="lazy">
+        <div id="big-play" class="big-play" role="button" aria-label="Play" tabindex="0">
+          <div class="play-icon">▶</div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="btn-toggle-stage" class="icon-btn" aria-label="Toggle stage">⛶</button>
+        <button id="btn-play" class="icon-btn" aria-label="Play/Pause">▶</button>
+        <div class="time" id="time-elapsed">0:00</div>
+        <div id="progress-track" class="progress-track" tabindex="0" aria-label="Seek">
+          <div id="progress-fill" class="progress-fill"></div>
+          <div id="progress-thumb" class="progress-thumb" aria-hidden="true"></div>
+        </div>
+        <div class="time" id="time-total">0:00</div>
+        <div class="volume-control">
+          <button id="btn-mute" class="icon-btn" aria-label="Mute">🔊</button>
+          <input id="volume-slider" type="range" min="0" max="1" step="0.05" value="1" class="volume-slider" aria-label="Volume">
+        </div>
+        <button id="btn-fullscreen" class="icon-btn" aria-label="Fullscreen">⛶</button>
+      </div>
+    </aside>
+    <a class="back-link" href="/">Back to Home</a>
   </div>
-  <a class="back-link" href="/">Back to Home</a>
 </div>
-<script>
-  const player = document.getElementById('player');
-  const overlay = document.getElementById('overlay');
-  overlay.addEventListener('click', () => {
-    player.play();
-  });
-  player.addEventListener('play', () => {
-    overlay.classList.add('hidden');
-  });
-  player.addEventListener('pause', () => {
-    overlay.classList.remove('hidden');
-  });
+
+<script type="module">
+  import { initPlayer, loadMediaDirect } from '/js/player.js';
+
+  initPlayer();
+
+  // Parse injected metadata
+  const metaEl = document.getElementById('share-meta');
+  let data = null;
+  try {
+    data = JSON.parse(metaEl.textContent);
+  } catch {}
+
+  if (data && data.media) {
+    loadMediaDirect(data.media, data.stream_url, data.thumb_url, 0);
+    // Auto-play on first click via the big play overlay handled by player.js,
+    // but start paused so the controls are visible. The overlay click already
+    // wires to togglePlay.
+  }
 </script>
+
+<script id="share-meta" type="application/json"><!--SHARE_MEDIA--></script>
 </body>
 </html>

@@ -94,6 +94,7 @@ func (s *Server) routes() {
 	// Public share routes
 	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
 	s.mux.HandleFunc("GET /s/{token}/stream", s.handleShareStream)
+	s.mux.HandleFunc("GET /s/{token}/thumbnail", s.handleShareThumbnail)
 
 	// Static assets (public)
 	staticHandler := http.FileServer(s.staticFS)

@@ -4,7 +4,7 @@ export const state = {
   selectedSetId: null,
   selectedSetIds: [], // multi-selection
   media: [],
-  filters: { type: '', search: '', favorites: false, tags: '', sort: 'name', minDuration: '', maxDuration: '', minFilesizeMB: '', maxFilesizeMB: '' },
+  filters: { type: '', search: '', favorites: false, tags: '', sort: 'name', minDuration: '', maxDuration: '' },
   isAdmin: false,
 };
 
