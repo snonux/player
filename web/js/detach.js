@@ -35,6 +35,7 @@ window.__playerDetachCurrentState = currentState;
       lastStateSent = now;
     }
   });
+  el?.addEventListener('ended', () => post({ type: 'detach-next' }));
 });
 
 document.addEventListener('keydown', (ev) => {
@@ -48,6 +49,12 @@ document.addEventListener('keydown', (ev) => {
   } else if (ev.key === 'f') {
     ev.preventDefault();
     toggleFullscreen();
+  } else if (ev.key === 'ArrowLeft' || ev.key === 'h') {
+    ev.preventDefault();
+    seekRelative(ev.repeat ? -15 : -5);
+  } else if (ev.key === 'ArrowRight' || ev.key === 'l') {
+    ev.preventDefault();
+    seekRelative(ev.repeat ? 15 : 5);
   }
 });
 
@@ -63,7 +70,7 @@ window.addEventListener('message', (ev) => {
       loadDetachedMedia(ev.data);
       break;
     case 'detach-command':
-      handleCommand(ev.data.action);
+      handleCommand(ev.data);
       break;
     case 'detach-request-state':
       sendState();
@@ -97,7 +104,8 @@ function loadDetachedMedia(payload) {
   sendState();
 }
 
-function handleCommand(action) {
+function handleCommand(payload) {
+  const action = payload?.action;
   if (action === 'toggle-play') {
     togglePlayback();
   } else if (action === 'pause') {
@@ -108,6 +116,8 @@ function handleCommand(action) {
     const el = mediaElement();
     if (!el) return;
     el.play().catch(() => {});
+  } else if (action === 'seek-relative') {
+    seekRelative(Number(payload.seconds || 0));
   }
 }
 
@@ -116,6 +126,14 @@ function togglePlayback() {
   if (!el) return;
   if (el.paused) el.play().catch(showPlayPrompt);
   else el.pause();
+}
+
+function seekRelative(seconds) {
+  const el = mediaElement();
+  if (!currentMedia || !el || !isFinite(seconds)) return;
+  const upper = el.duration && isFinite(el.duration) ? el.duration : Infinity;
+  el.currentTime = Math.max(0, Math.min(upper, (el.currentTime || 0) + seconds));
+  sendState();
 }
 
 function toggleFullscreen() {

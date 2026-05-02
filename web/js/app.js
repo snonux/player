@@ -1,7 +1,7 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
-import { initPlayer, togglePlay, toggleFullscreen, toggleStage, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, currentMediaId, selectAndPlay, playPrevious, playNext } from './player.js';
+import { initPlayer, togglePlay, toggleFullscreen, toggleStage, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, currentMediaId, hasLoadedMedia, isPlaybackActive, seekRelative, selectAndPlay } from './player.js';
 import { initSearch, focusSearch, trigger as triggerSearch } from './search.js';
 import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
 import { initThemes } from './themes.js';
@@ -88,6 +88,8 @@ async function initApp() {
     navDown: () => navDown(),
     navLeft: () => navLeft(),
     navRight: () => navRight(),
+    seekBackward: (e) => seekByKeyboard(-1, e.repeat),
+    seekForward: (e) => seekByKeyboard(1, e.repeat),
     nextSet: () => setSetByDelta(1),
     prevSet: () => setSetByDelta(-1),
     isSidebarOpen: () => document.getElementById('sidebar')?.classList.contains('open'),
@@ -107,6 +109,9 @@ async function initApp() {
       }
     },
     playPause: () => togglePlay(),
+    nextTrack: () => navigatePlayable(1),
+    prevTrack: () => navigatePlayable(-1),
+    mediaInfo: () => toggleMediaInfo(),
     fullscreen: () => toggleFullscreen(),
     toggleStage: () => toggleStage(),
     toggleMinimize: () => toggleMinimize(),
@@ -138,6 +143,7 @@ async function initApp() {
   initUpload();
   initHelp();
   initShares();
+  initMediaInfo();
 
   // Filters
   document.getElementById('filter-type')?.addEventListener('change', (e) => { state.filters.type = e.target.value; state.folderPath = ''; loadMedia(); });
@@ -376,7 +382,7 @@ function renderBrowse(data) {
     return;
   }
   const folderHtml = folders.map((f, i) => renderFolder(f, i)).join('');
-  const mediaHtml = media.map((m, i) => renderItem(m, i + folders.length)).join('');
+  const mediaHtml = media.map((m, i) => renderItem(m, i)).join('');
   grid.innerHTML = folderHtml + mediaHtml;
 
   grid.querySelectorAll('.folder-card').forEach((el) => {
@@ -514,6 +520,130 @@ async function playSelected() {
   } catch {
     selectAndPlay(media, idx, 0);
   }
+}
+
+function visiblePlayableCards() {
+  return Array.from(document.querySelectorAll('#media-grid .media-card[data-id], #media-grid .media-row[data-id]'));
+}
+
+function selectedPlayableIndex(cards, preferCurrent) {
+  const currentID = String(currentMediaId() || '');
+  if (preferCurrent && currentID) {
+    const idx = cards.findIndex((el) => el.dataset.id === currentID);
+    if (idx >= 0) return idx;
+  }
+  const selected = currentElement();
+  const idx = selected ? cards.indexOf(selected) : -1;
+  return idx >= 0 ? idx : -1;
+}
+
+function navigatePlayable(delta) {
+  const cards = visiblePlayableCards();
+  if (!cards.length) return;
+  const active = isPlaybackActive();
+  const base = selectedPlayableIndex(cards, active);
+  const nextIdx = (base + delta + cards.length) % cards.length;
+  const target = cards[nextIdx];
+  selectByElement(target);
+  if (active) {
+    playSelected();
+  }
+}
+
+function seekByKeyboard(direction, repeated) {
+  if (!hasLoadedMedia()) return false;
+  const step = repeated ? 15 : 5;
+  return seekRelative(direction * step);
+}
+
+function initMediaInfo() {
+  const modal = document.getElementById('media-info-modal');
+  const closeBtn = document.getElementById('media-info-close');
+  closeBtn?.addEventListener('click', closeMediaInfo);
+  modal?.addEventListener('click', (e) => { if (e.target === modal) closeMediaInfo(); });
+}
+
+function closeMediaInfo() {
+  document.getElementById('media-info-modal')?.classList.remove('open');
+}
+
+async function toggleMediaInfo() {
+  const modal = document.getElementById('media-info-modal');
+  if (!modal) return;
+  if (modal.classList.contains('open')) {
+    closeMediaInfo();
+    return;
+  }
+  const id = selectedMediaId();
+  if (!id) {
+    toast('No media selected', 'error');
+    return;
+  }
+  await openMediaInfo(id);
+}
+
+function selectedMediaId() {
+  const el = currentElement();
+  if (el?.dataset?.id) return el.dataset.id;
+  const id = currentMediaId();
+  return id ? String(id) : '';
+}
+
+async function openMediaInfo(id) {
+  const modal = document.getElementById('media-info-modal');
+  const body = document.getElementById('media-info-body');
+  if (!modal || !body) return;
+  body.innerHTML = '<p class="text-muted text-sm">Loading...</p>';
+  modal.classList.add('open');
+  try {
+    const detail = await API.mediaDetail(id);
+    body.innerHTML = renderMediaInfo(detail);
+  } catch (err) {
+    body.innerHTML = `<p class="error-message">${escapeHtml(err.message || 'Failed to load media info')}</p>`;
+  }
+}
+
+function renderMediaInfo(detail) {
+  const media = detail?.media || {};
+  const tags = Array.isArray(detail?.tags) ? detail.tags.map((t) => t.name).filter(Boolean).join(', ') : '';
+  const ext = media.file_name?.includes('.') ? media.file_name.split('.').pop().toUpperCase() : '';
+  const progress = detail?.progress;
+  const note = detail?.note;
+  const rows = [
+    ['Title', media.file_name],
+    ['Format', ext],
+    ['Type', media.type],
+    ['Duration', media.duration ? `${fmtDur(media.duration)} (${Math.round(media.duration)} seconds)` : ''],
+    ['File size', media.file_size_bytes ? `${fmtSize(media.file_size_bytes)} (${media.file_size_bytes} bytes)` : ''],
+    ['Bitrate', media.bitrate ? `${Math.round(media.bitrate / 1000)} kbps (${media.bitrate} bps)` : ''],
+    ['Codec', media.codec],
+    ['Resolution', media.resolution],
+    ['Relative path', media.rel_path],
+    ['Absolute path', media.abs_path],
+    ['Media ID', media.id],
+    ['Set ID', media.set_id],
+    ['Play count', media.play_count],
+    ['Added', fmtDateTime(media.created_at)],
+    ['Thumbnail', media.thumbnail_path],
+    ['Favorite', detail?.favorite ? 'Yes' : 'No'],
+    ['Tags', tags],
+    ['Saved position', progress ? `${fmtDur(progress.position_seconds)} (${Math.round(progress.position_seconds || 0)} seconds)` : ''],
+    ['Progress updated', fmtDateTime(progress?.updated_at)],
+    ['Note updated', fmtDateTime(note?.updated_at)],
+    ['Note length', note?.content ? `${note.content.length} characters` : ''],
+  ];
+  const table = rows
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([label, value]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${escapeHtml(String(value))}</td></tr>`)
+    .join('');
+  const raw = escapeHtml(JSON.stringify(detail || {}, null, 2));
+  return `
+    <table class="media-info-table">${table}</table>
+    <details class="media-info-raw">
+      <summary>Raw API detail</summary>
+      <pre>${raw}</pre>
+    </details>
+  `;
 }
 
 async function shareSelected() {
@@ -861,6 +991,13 @@ function fmtDate(d) {
   if (!d) return '';
   const dt = typeof d === 'string' ? new Date(d) : d;
   return dt.toLocaleDateString();
+}
+
+function fmtDateTime(d) {
+  if (!d) return '';
+  const dt = typeof d === 'string' ? new Date(d) : d;
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleString();
 }
 
 function fmtDur(s) {

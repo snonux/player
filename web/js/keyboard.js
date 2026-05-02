@@ -79,9 +79,17 @@ export function initKeyboard(handlers) {
         handlers.navDown?.(e);
         break;
       case 'ArrowLeft':
+        if (handlers.seekBackward?.(e)) {
+          e.preventDefault();
+          break;
+        }
         handlers.navLeft?.(e);
         break;
       case 'ArrowRight':
+        if (handlers.seekForward?.(e)) {
+          e.preventDefault();
+          break;
+        }
         handlers.navRight?.(e);
         break;
       // Vim-style navigation
@@ -94,13 +102,22 @@ export function initKeyboard(handlers) {
         handlers.navDown?.(e);
         break;
       case 'h':
+        if (handlers.seekBackward?.(e)) {
+          e.preventDefault();
+          break;
+        }
         handlers.navLeft?.(e);
         break;
       case 'l':
+        if (handlers.seekForward?.(e)) {
+          e.preventDefault();
+          break;
+        }
         handlers.navRight?.(e);
         break;
       case 'Enter': handlers.enter?.(e); break;
-      case 'p': handlers.playPause?.(e); break;
+      case 'n': handlers.nextTrack?.(e); break;
+      case 'p': handlers.prevTrack?.(e); break;
       case 'c': handlers.toggleStage?.(e); break;
       case 'C': handlers.toggleMinimize?.(e); break;
       case 'f': handlers.fullscreen?.(e); break;
@@ -113,7 +130,7 @@ export function initKeyboard(handlers) {
         e.preventDefault();
         handlers.search?.(e);
         break;
-      case 'n': handlers.notes?.(e); break;
+      case 'i': handlers.mediaInfo?.(e); break;
       case 't': handlers.toolbar?.(e); break;
       case 'd': handlers.toggleDetach?.(e); break;
       case 'D': handlers.download?.(e); break;

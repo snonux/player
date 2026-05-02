@@ -194,6 +194,24 @@ export function togglePlay() {
   if (m.paused) { m.play().catch(() => {}); } else { m.pause(); }
 }
 
+export function hasLoadedMedia() {
+  return !!currentMedia;
+}
+
+export function seekRelative(seconds) {
+  const amount = Number(seconds);
+  if (!currentMedia || !isFinite(amount)) return false;
+  if (isDetached()) {
+    postToDetach({ type: 'detach-command', action: 'seek-relative', seconds: amount });
+    return true;
+  }
+  const m = currentMediaElement();
+  if (!m) return false;
+  const upper = m.duration && isFinite(m.duration) ? m.duration : Infinity;
+  m.currentTime = Math.max(0, Math.min(upper, (m.currentTime || 0) + amount));
+  return true;
+}
+
 export function selectAndPlay(media, index, resumeFrom = 0) {
   currentMedia = media;
   currentMediaIndex = index ?? -1;
@@ -409,28 +427,41 @@ function stopProgressTimer() {
 
 function highlightPlayingCard() {
   document.querySelectorAll('.media-card, .media-row').forEach((c) => c.classList.remove('playing'));
-  const idx = currentMediaIndex;
-  if (idx >= 0) {
-    const cards = Array.from(document.querySelectorAll('.media-card, .media-row'));
-    if (cards[idx]) cards[idx].classList.add('playing');
+  if (currentMedia?.id) {
+    document.querySelector(`.media-card[data-id="${currentMedia.id}"], .media-row[data-id="${currentMedia.id}"]`)?.classList.add('playing');
   }
 }
 
 export function playPrevious() {
   const list = state.media;
   if (!list.length) return;
-  const idx = currentMediaIndex > 0 ? currentMediaIndex - 1 : list.length - 1;
+  const currentIdx = currentMediaListIndex();
+  const idx = currentIdx > 0 ? currentIdx - 1 : list.length - 1;
   selectAndPlay(list[idx], idx);
 }
 
 export function playNext() {
   const list = state.media;
   if (!list.length) return;
-  const idx = currentMediaIndex >= 0 && currentMediaIndex + 1 < list.length ? currentMediaIndex + 1 : 0;
+  const currentIdx = currentMediaListIndex();
+  const idx = currentIdx >= 0 && currentIdx + 1 < list.length ? currentIdx + 1 : 0;
   selectAndPlay(list[idx], idx);
 }
 
+function currentMediaListIndex() {
+  if (currentMediaIndex >= 0 && state.media[currentMediaIndex]?.id === currentMedia?.id) {
+    return currentMediaIndex;
+  }
+  const idx = state.media.findIndex((m) => m.id === currentMedia?.id);
+  return idx >= 0 ? idx : currentMediaIndex;
+}
+
 export function currentMediaId() { return currentMedia?.id; }
+
+export function isPlaybackActive() {
+  if (isDetached()) return !!detachedPlaybackState?.playing;
+  return isPlaying;
+}
 
 export function isDetached() { return !!detachWindow && !detachWindow.closed; }
 

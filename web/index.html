@@ -88,7 +88,7 @@
   <div class="controls">
     <button id="btn-toggle-stage" class="icon-btn" aria-label="Toggle stage (c)">⛶</button>
     <button id="btn-minimize" class="icon-btn" aria-label="Minimize player (Shift+C)">▾</button>
-    <button id="btn-play" class="icon-btn" aria-label="Play/Pause (Space/p)">▶</button>
+    <button id="btn-play" class="icon-btn" aria-label="Play/Pause (Space)">▶</button>
     <div class="time" id="time-elapsed">0:00</div>
     <div id="progress-track" class="progress-track" tabindex="0" aria-label="Seek">
       <div id="progress-buffered" class="progress-buffered"></div>
@@ -128,10 +128,12 @@
       <table class="help-table">
         <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate media list</td></tr>
         <tr><td><kbd>k</kbd> <kbd>j</kbd></td><td>Navigate media list (vim-style)</td></tr>
-        <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Switch sets / pages</td></tr>
-        <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>Switch sets / pages (vim-style)</td></tr>
+        <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Seek during playback, otherwise switch sets / pages</td></tr>
+        <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>Seek during playback, otherwise switch sets / pages (vim-style)</td></tr>
         <tr><td><kbd>Enter</kbd></td><td>Open selected media / enter folder</td></tr>
-        <tr><td><kbd>Space</kbd> <kbd>p</kbd></td><td>Play / pause</td></tr>
+        <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
+        <tr><td><kbd>n</kbd> <kbd>p</kbd></td><td>Next / previous track</td></tr>
+        <tr><td><kbd>i</kbd></td><td>Show / hide media info</td></tr>
         <tr><td><kbd>f</kbd></td><td>Toggle fullscreen</td></tr>
         <tr><td><kbd>c</kbd></td><td>Collapse / expand player stage</td></tr>
         <tr><td><kbd>C</kbd></td><td>Minimize / restore player</td></tr>
@@ -146,6 +148,18 @@
       </table>
       <p class="text-muted text-xs mt-2">Inside the <strong>My Shares</strong> list: <kbd>↑</kbd> / <kbd>↓</kbd> or <kbd>k</kbd> / <kbd>j</kbd> to navigate; <kbd>Enter</kbd> to copy the selected link; <kbd>Delete</kbd> to revoke it; <kbd>Esc</kbd> to close.</p>
     </div>
+  </div>
+</div>
+
+<!-- Media Info Modal -->
+<div id="media-info-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="media-info-title">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h3 id="media-info-title">Media Info</h3>
+      <div class="spacer"></div>
+      <button id="media-info-close" class="icon-btn" aria-label="Close">✕</button>
+    </div>
+    <div id="media-info-body"></div>
   </div>
 </div>
 
