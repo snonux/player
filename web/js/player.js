@@ -24,6 +24,7 @@ const els = () => ({
   bigPlay: document.getElementById('big-play'),
   coverArt: document.getElementById('cover-art'),
   track: document.getElementById('progress-track'),
+  buffered: document.getElementById('progress-buffered'),
   fill: document.getElementById('progress-fill'),
   thumb: document.getElementById('progress-thumb'),
   volume: document.getElementById('volume-slider'),
@@ -60,9 +61,14 @@ export function initPlayer() {
       e.fill.style.width = pct.toFixed(2) + '%';
       e.thumb.style.left = pct.toFixed(2) + '%';
       e.timeElapsed.textContent = fmt(m.currentTime);
+      updateBufferedRanges(m);
     });
     m.addEventListener('loadedmetadata', () => {
       e.timeTotal.textContent = fmt(isFinite(m.duration) ? m.duration : 0);
+      updateBufferedRanges(m);
+    });
+    ['progress', 'durationchange', 'loadeddata', 'canplay', 'seeked'].forEach((event) => {
+      m.addEventListener(event, () => updateBufferedRanges(m));
     });
     m.addEventListener('ended', () => {
       updateUI(false);
@@ -143,6 +149,36 @@ function updateCollapsedSize() {
   e.player.style.setProperty('--collapsed-h', h + 'px');
 }
 
+function updateBufferedRanges(m) {
+  const e = els();
+  if (!e.buffered || !m || !m.duration || !isFinite(m.duration)) {
+    if (e.buffered) e.buffered.style.background = 'transparent';
+    return;
+  }
+
+  const ranges = [];
+  for (let i = 0; i < m.buffered.length; i++) {
+    const start = Math.max(0, Math.min(100, (m.buffered.start(i) / m.duration) * 100));
+    const end = Math.max(0, Math.min(100, (m.buffered.end(i) / m.duration) * 100));
+    if (end > start) ranges.push([start, end]);
+  }
+  if (!ranges.length) {
+    e.buffered.style.background = 'transparent';
+    return;
+  }
+
+  const color = 'var(--player-progress-buffered)';
+  const stops = ['transparent 0%'];
+  for (const [start, end] of ranges) {
+    stops.push(`transparent ${start.toFixed(2)}%`);
+    stops.push(`${color} ${start.toFixed(2)}%`);
+    stops.push(`${color} ${end.toFixed(2)}%`);
+    stops.push(`transparent ${end.toFixed(2)}%`);
+  }
+  stops.push('transparent 100%');
+  e.buffered.style.background = `linear-gradient(to right, ${stops.join(', ')})`;
+}
+
 export function togglePlay() {
   if (isDetached()) {
     postToDetach({ type: 'detach-command', action: 'toggle-play' });
@@ -212,6 +248,7 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
   e.btnPlay.textContent = '⏸';
   e.bigPlay?.classList.add('hidden');
   e.timeTotal.textContent = fmt(media.duration ?? 0);
+  e.buffered && (e.buffered.style.background = 'transparent');
   e.fill.style.width = '0%';
   e.thumb.style.left = '0%';
   updateCollapsedSize();
@@ -252,6 +289,7 @@ function loadMedia(media, resumeFrom = 0) {
   e.btnPlay.textContent = '⏸';
   e.bigPlay?.classList.add('hidden');
   e.timeTotal.textContent = fmt(media.duration ?? 0);
+  e.buffered && (e.buffered.style.background = 'transparent');
   e.fill.style.width = '0%';
   e.thumb.style.left = '0%';
   updateCollapsedSize();

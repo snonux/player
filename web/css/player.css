@@ -149,6 +149,15 @@
   overflow: hidden;
 }
 .progress-track:hover { height: 0.5rem; }
+.progress-buffered {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border-radius: 999px;
+  background: transparent;
+  pointer-events: none;
+  z-index: 1;
+}
 .progress-fill {
   position: absolute;
   inset: 0 auto 0 0;
@@ -156,6 +165,7 @@
   background: var(--player-progress-fill);
   border-radius: 999px;
   transition: width 120ms linear;
+  z-index: 2;
 }
 .progress-thumb {
   position: absolute;
@@ -167,6 +177,7 @@
   transform: translate(-50%, -50%) scale(0);
   transition: transform var(--transition-fast);
   pointer-events: none;
+  z-index: 3;
 }
 .progress-track:hover .progress-thumb,
 .progress-track:focus-within .progress-thumb {
