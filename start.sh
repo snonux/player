@@ -39,13 +39,6 @@ bootstrap_auth() {
     -c "$COOKIE" > /dev/null 2>&1 || true
 }
 
-needs_rescan() {
-  # Returns 0 if DB is empty (needs rescan)
-  count=$(curl -fs "${BASEURL}/api/sets" -b "$COOKIE" 2>&1 | \
-    python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d))' 2>&1 || echo "0")
-  [ "$count" = "0" ]
-}
-
 case "${1:-run}" in
   stop)
     stop
@@ -63,11 +56,9 @@ esac
 
 cd "$(dirname "$0")"
 
-# Build if needed
-if [ ! -x "$BINARY" ]; then
-  echo "Building player binary..."
-  go build -o player ./cmd/mediaplayer
-fi
+# Build unconditionally — this script is for development
+echo "Building player binary..."
+go build -o player ./cmd/mediaplayer
 
 stop
 
@@ -88,18 +79,16 @@ sleep 2
 
 bootstrap_auth
 
-if needs_rescan; then
-  echo "Library empty -- triggering rescan..."
-  curl -fs -X POST "${BASEURL}/api/admin/rescan" -b "$COOKIE" > /dev/null 2>&1 || true
-  echo "Rescan running in background (check tail -f $LOGFILE)"
-fi
+echo "Library rescan starting..."
+curl -fs -X POST "${BASEURL}/api/admin/rescan" -b "$COOKIE" > /dev/null 2>&1 || true
+echo "Rescan running in background (check tail -f $LOGFILE)"
 
 echo ""
 echo "Ready. Open ${BASEURL} in your browser."
 echo "Login: test / test123"
 echo ""
 echo "Quick tips:"
-echo "  m  -- show/hide sets sidebar"
+echo "  s  -- show/hide sets sidebar"
 echo "  t  -- show/hide toolbar"
 echo "  /  -- search"
 echo "  ?  -- help"

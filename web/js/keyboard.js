@@ -77,14 +77,13 @@ export function initKeyboard(handlers) {
       case 'f': handlers.fullscreen?.(e); break;
       case 'Escape': handlers.escape?.(e); break;
       case 'r': handlers.shuffle?.(e); break;
-      case 's': handlers.share?.(e); break;
+      case 's': handlers.sidebar?.(e); break;
       case '/':
         e.preventDefault();
         handlers.search?.(e);
         break;
       case 'n': handlers.notes?.(e); break;
       case 't': handlers.toolbar?.(e); break;
-      case 'm': handlers.sidebar?.(e); break;
       case 'd': handlers.download?.(e); break;
       case 'u': handlers.upload?.(e); break;
       case '?':
