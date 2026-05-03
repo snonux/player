@@ -17,6 +17,7 @@ import (
 	"codeberg.org/snonux/player/internal/auth"
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
 )
@@ -37,6 +38,7 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 	mediaSvc service.MediaService, adminSvc service.AdminService, progressSvc service.ProgressService,
 	authSvc service.AuthService,
 	fs http.FileSystem,
+	remuxer ...probe.Remuxer,
 ) *Server {
 	t.Helper()
 	if fs == nil {
@@ -47,7 +49,11 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 			"share.html":     "share",
 		})
 	}
-	return NewServer(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, authSvc, fs)
+	var rem probe.Remuxer
+	if len(remuxer) > 0 {
+		rem = remuxer[0]
+	}
+	return NewServer(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, authSvc, fs, rem)
 }
 
 func addSessionCookie(t *testing.T, store repository.Store, sm *auth.SessionManager, userID int64) *http.Cookie {

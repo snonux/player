@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"mime"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strconv"
-	"strings"
 
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/service"
 )
 
@@ -127,7 +124,7 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 		return
 	}
 
-	if !attachment && looksLikeMPEGTS(res.Path) {
+	if !attachment && probe.LooksLikeMPEGTS(res.Path) {
 		s.serveRemuxedMP4(w, r, res, stat.Size())
 		return
 	}
@@ -138,130 +135,17 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 	}
 	// Set Content-Type so browsers know how to decode the file without
 	// needing to sniff, which avoids buffering delays during streaming.
-	w.Header().Set("Content-Type", mimeTypeForFilename(res.FileName))
+	w.Header().Set("Content-Type", probe.MimeTypeForFilename(res.FileName))
 	w.Header().Set("Accept-Ranges", "bytes")
 	fmt.Printf("[api] stream file=%s size=%d bytes range=%s\n", res.FileName, stat.Size(), r.Header.Get("Range"))
 	http.ServeContent(w, r, res.FileName, stat.ModTime(), f)
 }
 
 func (s *Server) serveRemuxedMP4(w http.ResponseWriter, r *http.Request, res *service.FileResult, size int64) {
-	cmd := exec.CommandContext(
-		r.Context(),
-		"ffmpeg",
-		"-hide_banner",
-		"-loglevel", "error",
-		"-i", res.Path,
-		"-map", "0:v:0?",
-		"-map", "0:a:0?",
-		"-dn",
-		"-sn",
-		"-c", "copy",
-		"-bsf:a", "aac_adtstoasc",
-		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-		"-f", "mp4",
-		"pipe:1",
-	)
-	cmd.Stderr = os.Stderr
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		http.Error(w, "stream setup failed", http.StatusInternalServerError)
-		return
-	}
-	if err := cmd.Start(); err != nil {
-		http.Error(w, "stream setup failed", http.StatusInternalServerError)
-		return
-	}
-
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Printf("[api] remux stream file=%s size=%d bytes range=%s\n", res.FileName, size, r.Header.Get("Range"))
-	if _, err := io.Copy(w, stdout); err != nil && r.Context().Err() == nil {
-		slog.Error("copy remuxed media", "file", res.FileName, "err", err)
-	}
-	if err := cmd.Wait(); err != nil && r.Context().Err() == nil {
+	if err := s.remuxer.Remux(r.Context(), res.Path, w); err != nil {
 		slog.Error("remux media", "file", res.FileName, "err", err)
 	}
-}
-
-func looksLikeMPEGTS(path string) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-
-	buf := make([]byte, 188*5)
-	n, err := f.Read(buf)
-	if err != nil && err != io.EOF {
-		return false
-	}
-	buf = buf[:n]
-	return hasMPEGTSsync(buf, 188) || hasMPEGTSsync(buf, 192)
-}
-
-func hasMPEGTSsync(buf []byte, packetSize int) bool {
-	if len(buf) < packetSize*3+1 {
-		return false
-	}
-	for offset := 0; offset < packetSize; offset++ {
-		matches := 0
-		for pos := offset; pos < len(buf); pos += packetSize {
-			if buf[pos] != 0x47 {
-				break
-			}
-			matches++
-			if matches >= 3 {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// mimeTypeForFilename returns an HTTP Content-Type based on the file extension.
-func mimeTypeForFilename(name string) string {
-	ext := strings.ToLower(filepath.Ext(name))
-	t := mime.TypeByExtension(ext)
-	if t != "" {
-		return t
-	}
-	switch ext {
-	case ".mp4", ".m4v":
-		return "video/mp4"
-	case ".mkv":
-		return "video/x-matroska"
-	case ".avi":
-		return "video/x-msvideo"
-	case ".mov":
-		return "video/quicktime"
-	case ".webm":
-		return "video/webm"
-	case ".mp3":
-		return "audio/mpeg"
-	case ".flac":
-		return "audio/flac"
-	case ".wav":
-		return "audio/wav"
-	case ".aac", ".m4a":
-		return "audio/mp4"
-	case ".ogg", ".opus":
-		return "audio/ogg"
-	case ".m4b":
-		return "audio/x-m4b"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".gif":
-		return "image/gif"
-	case ".webp":
-		return "image/webp"
-	case ".bmp":
-		return "image/bmp"
-	case ".avif":
-		return "image/avif"
-	case ".svg":
-		return "image/svg+xml"
-	}
-	return "application/octet-stream"
 }

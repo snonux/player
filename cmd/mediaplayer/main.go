@@ -96,7 +96,8 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 	defer gcWorker.Stop()
 
 	staticFS := http.Dir("web")
-	server := api.NewServer(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, authSvc, staticFS)
+	remuxer := probe.NewFFRemuxer()
+	server := api.NewServer(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, authSvc, staticFS, remuxer)
 
 	gs := api.NewGracefulServer(server, cfg)
 

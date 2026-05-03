@@ -21,6 +21,7 @@ import (
 	"codeberg.org/snonux/player/internal/auth"
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
 )
@@ -626,7 +627,7 @@ func TestLooksLikeMPEGTS(t *testing.T) {
 	if err := os.WriteFile(tsPath, ts, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if !looksLikeMPEGTS(tsPath) {
+	if !probe.LooksLikeMPEGTS(tsPath) {
 		t.Fatal("expected MPEG-TS sync bytes to be detected")
 	}
 
@@ -634,7 +635,7 @@ func TestLooksLikeMPEGTS(t *testing.T) {
 	if err := os.WriteFile(mp4Path, []byte("\x00\x00\x00\x18ftypmp42"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if looksLikeMPEGTS(mp4Path) {
+	if probe.LooksLikeMPEGTS(mp4Path) {
 		t.Fatal("did not expect MP4 header to be detected as MPEG-TS")
 	}
 }

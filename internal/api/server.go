@@ -8,6 +8,7 @@ import (
 
 	"codeberg.org/snonux/player/internal"
 	"codeberg.org/snonux/player/internal/auth"
+	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
 )
@@ -24,6 +25,7 @@ type Server struct {
 	progressSvc service.ProgressService
 	authSvc     service.AuthService
 	staticFS    http.FileSystem
+	remuxer     probe.Remuxer
 	mw          *Middleware
 }
 
@@ -39,6 +41,7 @@ func NewServer(
 	progressSvc service.ProgressService,
 	authSvc service.AuthService,
 	staticFS http.FileSystem,
+	remuxer probe.Remuxer,
 ) *Server {
 	if staticFS == nil {
 		staticFS = http.Dir("web")
@@ -54,6 +57,7 @@ func NewServer(
 		progressSvc: progressSvc,
 		authSvc:     authSvc,
 		staticFS:    staticFS,
+		remuxer:     remuxer,
 		mw:          NewMiddleware(store, sm),
 	}
 	s.routes()
