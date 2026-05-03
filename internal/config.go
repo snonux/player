@@ -81,8 +81,9 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if err := envInt("PORT", func(n int) error {
-		if n < 1 || n > 65535 {
-			return fmt.Errorf("must be between 1 and 65535, got %d", n)
+		// Allow 0 so tests can bind to an ephemeral port.
+		if n < 0 || n > 65535 {
+			return fmt.Errorf("must be between 0 and 65535, got %d", n)
 		}
 		return nil
 	}, func(n int) { cfg.Port = n }); err != nil {

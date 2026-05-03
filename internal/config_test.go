@@ -101,8 +101,8 @@ func TestLoadConfig_InvalidValues(t *testing.T) {
 			wantErr: "invalid PORT",
 		},
 		{
-			name:    "PORT out of range (0)",
-			env:     []envPair{{"PORT", "0"}},
+			name:    "PORT negative",
+			env:     []envPair{{"PORT", "-1"}},
 			wantErr: "invalid PORT",
 		},
 		{

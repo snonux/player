@@ -30,6 +30,10 @@ func main() {
 }
 
 func run(args []string) error {
+	return runWithSignal(args, nil)
+}
+
+func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 	fs := flag.NewFlagSet("mediaplayer", flag.ContinueOnError)
 	versionFlag := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
@@ -98,15 +102,26 @@ func run(args []string) error {
 
 	log.Printf("player %s starting on %s", internal.Version, gs.Server.Addr)
 
+	errCh := make(chan error, 1)
 	go func() {
 		if err := gs.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("failed to start server: %v", err)
+			errCh <- fmt.Errorf("failed to start server: %w", err)
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	if sigCh == nil {
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		sigCh = quit
+	}
+
+	select {
+	case <-sigCh:
+	case err := <-errCh:
+		if err != nil {
+			return err
+		}
+	}
 
 	log.Println("shutting down server...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

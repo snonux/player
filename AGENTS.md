@@ -242,7 +242,7 @@ This triggers `FSScanner.Scan()`, which:
 
 | Variable | Default | Validation | Description |
 |----------|---------|------------|-------------|
-| `PORT` | `8080` | 1–65535 | HTTP listen port |
+| `PORT` | `8080` | 0–65535 | HTTP listen port (0 = ephemeral, used in tests) |
 | `MEDIA_ROOT` | `./media` | — | Root path for media set directories |
 | `DB_PATH` | `data.db` | — | SQLite database file path |
 | `MAX_UPLOAD_SIZE_MB` | `100` | ≥ 1 | Max upload size per file (MB) |
