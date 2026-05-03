@@ -10,11 +10,36 @@ import (
 	"sort"
 	"strings"
 
+	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/thumb"
 )
 
-func (s *mediaService) ListSets(ctx context.Context, userID int64) ([]model.Set, error) {
+// browseService handles read-only browsing and media streaming operations.
+type browseService struct {
+	store     repository.MediaServiceStore
+	clock     clock.Clock
+	mediaRoot string
+	thumbGen  thumb.Generator
+	prober    probe.Prober
+	helper    *accessHelper
+}
+
+// NewBrowseService creates a BrowseService.
+func NewBrowseService(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, helper *accessHelper) MediaBrowseService {
+	return &browseService{
+		store:     store,
+		clock:     clk,
+		mediaRoot: mediaRoot,
+		thumbGen:  thumbGen,
+		prober:    prober,
+		helper:    helper,
+	}
+}
+
+func (s *browseService) ListSets(ctx context.Context, userID int64) ([]model.Set, error) {
 	user, err := s.store.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
@@ -56,8 +81,8 @@ func (s *mediaService) ListSets(ctx context.Context, userID int64) ([]model.Set,
 	return filtered, nil
 }
 
-func (s *mediaService) GetMediaDetail(ctx context.Context, mediaID, userID int64) (*MediaDetail, error) {
-	media, err := s.verifyAccess(ctx, mediaID, userID)
+func (s *browseService) GetMediaDetail(ctx context.Context, mediaID, userID int64) (*MediaDetail, error) {
+	media, err := s.helper.verifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +116,7 @@ func (s *mediaService) GetMediaDetail(ctx context.Context, mediaID, userID int64
 	}, nil
 }
 
-func (s *mediaService) ListMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error) {
+func (s *browseService) ListMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error) {
 	user, err := s.store.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
@@ -116,8 +141,8 @@ func (s *mediaService) ListMedia(ctx context.Context, userID int64, filter repos
 	return s.store.ListMedia(ctx, filter)
 }
 
-func (s *mediaService) StreamMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error) {
-	media, err := s.verifyAccess(ctx, mediaID, userID)
+func (s *browseService) StreamMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error) {
+	media, err := s.helper.verifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -128,12 +153,12 @@ func (s *mediaService) StreamMedia(ctx context.Context, mediaID, userID int64) (
 	}, nil
 }
 
-func (s *mediaService) DownloadMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error) {
+func (s *browseService) DownloadMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error) {
 	return s.StreamMedia(ctx, mediaID, userID)
 }
 
-func (s *mediaService) GetThumbnail(ctx context.Context, mediaID, userID int64) (*FileResult, error) {
-	media, err := s.verifyAccess(ctx, mediaID, userID)
+func (s *browseService) GetThumbnail(ctx context.Context, mediaID, userID int64) (*FileResult, error) {
+	media, err := s.helper.verifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -151,8 +176,8 @@ func (s *mediaService) GetThumbnail(ctx context.Context, mediaID, userID int64) 
 	}, nil
 }
 
-func (s *mediaService) RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error {
-	media, err := s.verifyModifyAccess(ctx, mediaID, userID)
+func (s *browseService) RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error {
+	media, err := s.helper.verifyModifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return err
 	}
@@ -183,8 +208,8 @@ func (s *mediaService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 	return nil
 }
 
-func (s *mediaService) RegenerateSetCover(ctx context.Context, setID int64, folder string, userID int64) error {
-	if err := s.verifySetModifyAccess(ctx, setID, userID); err != nil {
+func (s *browseService) RegenerateSetCover(ctx context.Context, setID int64, folder string, userID int64) error {
+	if err := s.helper.verifySetModifyAccess(ctx, setID, userID); err != nil {
 		return err
 	}
 
@@ -249,8 +274,94 @@ func (s *mediaService) RegenerateSetCover(ctx context.Context, setID int64, fold
 	return nil
 }
 
-func (s *mediaService) GetSetCover(ctx context.Context, setID int64, folder string, userID int64) (*FileResult, error) {
-	if err := s.checkSetPermission(ctx, setID, userID, ""); err != nil {
+func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, parent string) (*BrowseResult, error) {
+	if err := s.helper.checkSetPermission(ctx, setID, userID, ""); err != nil {
+		return nil, err
+	}
+
+	parent = filepath.ToSlash(strings.Trim(parent, "/"))
+	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
+	if err != nil {
+		return nil, fmt.Errorf("list media: %w", err)
+	}
+
+	set, err := s.store.GetSetByID(ctx, setID)
+	if err != nil {
+		return nil, fmt.Errorf("get set: %w", err)
+	}
+	if set == nil {
+		return nil, ErrNotFound
+	}
+
+	type folderContent struct {
+		files      []model.Media
+		subfolders map[string]struct{}
+	}
+	folderMap := make(map[string]*folderContent)
+	var items []model.Media
+
+	for _, m := range media {
+		if m.DeletedAt != nil {
+			continue
+		}
+		rel := filepath.ToSlash(m.RelPath)
+		prefix := ""
+		if parent != "" {
+			prefix = parent + "/"
+		}
+		if !strings.HasPrefix(rel, prefix) {
+			continue
+		}
+		suffix := strings.TrimPrefix(rel, prefix)
+		if suffix == "" {
+			continue
+		}
+		parts := strings.SplitN(suffix, "/", 2)
+		name := parts[0]
+		if len(parts) == 1 {
+			items = append(items, m)
+			continue
+		}
+		fc, ok := folderMap[name]
+		if !ok {
+			fc = &folderContent{subfolders: make(map[string]struct{})}
+			folderMap[name] = fc
+		}
+		rest := parts[1]
+		subparts := strings.SplitN(rest, "/", 2)
+		if len(subparts) == 1 {
+			fc.files = append(fc.files, m)
+		} else {
+			fc.subfolders[subparts[0]] = struct{}{}
+		}
+	}
+
+	var folders []BrowseFolder
+	for name, fc := range folderMap {
+		total := len(fc.files) + len(fc.subfolders)
+		if total == 1 && len(fc.files) == 1 {
+			items = append(items, fc.files[0])
+		} else {
+			subPath := filepath.Join(parent, name)
+			folderDir := filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath, filepath.FromSlash(subPath)))
+			coverPath := filepath.Join(folderDir, ".cover.jpg")
+			_, err := os.Stat(coverPath)
+			_, hasDirectCover := folderCoverFile(folderDir)
+			hasCover := err == nil || hasDirectCover || randomFolderThumbnail(media, filepath.ToSlash(subPath)) != ""
+			folders = append(folders, BrowseFolder{Name: name, HasCover: hasCover})
+		}
+	}
+	sort.Slice(folders, func(i, j int) bool { return folders[i].Name < folders[j].Name })
+
+	return &BrowseResult{
+		CurrentPath: parent,
+		Folders:     folders,
+		Media:       items,
+	}, nil
+}
+
+func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder string, userID int64) (*FileResult, error) {
+	if err := s.helper.checkSetPermission(ctx, setID, userID, ""); err != nil {
 		return nil, err
 	}
 
@@ -297,139 +408,6 @@ func (s *mediaService) GetSetCover(ctx context.Context, setID int64, folder stri
 		Path:     candidate,
 		FileName: filepath.Base(candidate),
 		FileSize: info.Size(),
-	}, nil
-}
-
-func (s *mediaService) ToggleFavorite(ctx context.Context, userID, mediaID int64) (bool, error) {
-	if _, err := s.verifyAccess(ctx, mediaID, userID); err != nil {
-		return false, err
-	}
-	return s.store.ToggleFavorite(ctx, userID, mediaID)
-}
-
-func (s *mediaService) AssignTag(ctx context.Context, mediaID, userID int64, tagName string) error {
-	if _, err := s.verifyAccess(ctx, mediaID, userID); err != nil {
-		return err
-	}
-	tag, err := s.store.GetTagByName(ctx, tagName)
-	if err != nil {
-		return fmt.Errorf("get tag: %w", err)
-	}
-	if tag == nil {
-		id, err := s.store.CreateTag(ctx, tagName)
-		if err != nil {
-			return fmt.Errorf("create tag: %w", err)
-		}
-		tag = &model.Tag{ID: id, Name: tagName}
-	}
-	return s.store.AssignTag(ctx, mediaID, tag.ID)
-}
-
-func (s *mediaService) RemoveTag(ctx context.Context, mediaID, userID int64, tagName string) error {
-	if _, err := s.verifyAccess(ctx, mediaID, userID); err != nil {
-		return err
-	}
-	tag, err := s.store.GetTagByName(ctx, tagName)
-	if err != nil {
-		return fmt.Errorf("get tag: %w", err)
-	}
-	if tag == nil {
-		return errors.New("tag not found")
-	}
-	return s.store.RemoveTag(ctx, mediaID, tag.ID)
-}
-
-// BrowseSet returns the immediate subfolders and media files inside
-// a specific folder (parent) of a set.
-// If a subfolder contains exactly one file and no further subfolders,
-// that file is "flattened" and shown at the current level instead of
-// presenting the folder.
-func (s *mediaService) BrowseSet(ctx context.Context, setID, userID int64, parent string) (*BrowseResult, error) {
-	if err := s.checkSetPermission(ctx, setID, userID, ""); err != nil {
-		return nil, err
-	}
-
-	parent = filepath.ToSlash(strings.Trim(parent, "/"))
-	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
-	if err != nil {
-		return nil, fmt.Errorf("list media: %w", err)
-	}
-
-	set, err := s.store.GetSetByID(ctx, setID)
-	if err != nil {
-		return nil, fmt.Errorf("get set: %w", err)
-	}
-	if set == nil {
-		return nil, ErrNotFound
-	}
-
-	type folderContent struct {
-		files      []model.Media
-		subfolders map[string]struct{}
-	}
-	folderMap := make(map[string]*folderContent)
-	var items []model.Media
-
-	for _, m := range media {
-		if m.DeletedAt != nil {
-			continue
-		}
-		rel := filepath.ToSlash(m.RelPath)
-		prefix := ""
-		if parent != "" {
-			prefix = parent + "/"
-		}
-		if !strings.HasPrefix(rel, prefix) {
-			continue
-		}
-		suffix := strings.TrimPrefix(rel, prefix)
-		if suffix == "" {
-			continue
-		}
-		parts := strings.SplitN(suffix, "/", 2)
-		name := parts[0]
-		if len(parts) == 1 {
-			// File at the current level.
-			items = append(items, m)
-			continue
-		}
-		// Inside a subfolder — count what is in there.
-		fc, ok := folderMap[name]
-		if !ok {
-			fc = &folderContent{subfolders: make(map[string]struct{})}
-			folderMap[name] = fc
-		}
-		rest := parts[1]
-		subparts := strings.SplitN(rest, "/", 2)
-		if len(subparts) == 1 {
-			fc.files = append(fc.files, m)
-		} else {
-			fc.subfolders[subparts[0]] = struct{}{}
-		}
-	}
-
-	var folders []BrowseFolder
-	for name, fc := range folderMap {
-		total := len(fc.files) + len(fc.subfolders)
-		if total == 1 && len(fc.files) == 1 {
-			// Flatten: show the lone file at the current level.
-			items = append(items, fc.files[0])
-		} else {
-			subPath := filepath.Join(parent, name)
-			folderDir := filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath, filepath.FromSlash(subPath)))
-			coverPath := filepath.Join(folderDir, ".cover.jpg")
-			_, err := os.Stat(coverPath)
-			_, hasDirectCover := folderCoverFile(folderDir)
-			hasCover := err == nil || hasDirectCover || randomFolderThumbnail(media, filepath.ToSlash(subPath)) != ""
-			folders = append(folders, BrowseFolder{Name: name, HasCover: hasCover})
-		}
-	}
-	sort.Slice(folders, func(i, j int) bool { return folders[i].Name < folders[j].Name })
-
-	return &BrowseResult{
-		CurrentPath: parent,
-		Folders:     folders,
-		Media:       items,
 	}, nil
 }
 

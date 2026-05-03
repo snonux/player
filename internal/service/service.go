@@ -3,12 +3,75 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
 )
+
+// Sentinel errors returned by the service layer.
+var (
+	ErrNotFound             = errors.New("not found")
+	ErrForbidden            = errors.New("access denied")
+	ErrShareNotFound        = errors.New("share not found")
+	ErrShareExpired         = errors.New("share expired")
+	ErrMediaNotFound        = errors.New("media not found")
+	ErrUnsupportedExtension = errors.New("unsupported file extension")
+	ErrAlreadyBootstrapped  = errors.New("already bootstrapped")
+	ErrInvalidCredentials   = errors.New("invalid credentials")
+)
+
+// supportedExtensions lists all file extensions accepted by UploadMedia.
+var supportedExtensions = map[string]struct{}{
+	".mp4":  {},
+	".mkv":  {},
+	".avi":  {},
+	".mov":  {},
+	".wmv":  {},
+	".flv":  {},
+	".webm": {},
+	".mp3":  {},
+	".wav":  {},
+	".flac": {},
+	".aac":  {},
+	".ogg":  {},
+	".m4a":  {},
+	".wma":  {},
+	".m4b":  {},
+	".opus": {},
+	".jpg":  {},
+	".jpeg": {},
+	".png":  {},
+	".gif":  {},
+	".webp": {},
+	".bmp":  {},
+	".avif": {},
+	".svg":  {},
+}
+
+func isSupportedExtension(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	_, ok := supportedExtensions[ext]
+	return ok
+}
+
+func guessMediaType(name string) model.MediaType {
+	ext := strings.ToLower(filepath.Ext(name))
+	switch ext {
+	case ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm":
+		return model.MediaTypeVideo
+	case ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma", ".m4b", ".opus":
+		return model.MediaTypeAudio
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif", ".svg":
+		return model.MediaTypeImage
+	default:
+		return model.MediaTypeVideo
+	}
+}
 
 // MediaBrowseService handles read-only browsing and media streaming operations.
 type MediaBrowseService interface {

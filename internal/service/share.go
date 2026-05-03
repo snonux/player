@@ -9,8 +9,26 @@ import (
 	"path/filepath"
 	"time"
 
+	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/repository"
 )
+
+// shareService handles creation, validation and revocation of share links.
+type shareService struct {
+	store  repository.ShareServiceStore
+	clock  clock.Clock
+	helper *accessHelper
+}
+
+// NewShareService creates a ShareService.
+func NewShareService(store repository.ShareServiceStore, clk clock.Clock, helper *accessHelper) MediaShareService {
+	return &shareService{
+		store:  store,
+		clock:  clk,
+		helper: helper,
+	}
+}
 
 func generateToken() (string, error) {
 	b := make([]byte, 16)
@@ -20,8 +38,8 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (s *mediaService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
-	_, err := s.verifyAccess(ctx, mediaID, userID)
+func (s *shareService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+	_, err := s.helper.verifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -45,15 +63,15 @@ func (s *mediaService) CreateShare(ctx context.Context, userID, mediaID int64, e
 	return share, nil
 }
 
-func (s *mediaService) ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error) {
-	_, err := s.verifyAccess(ctx, mediaID, userID)
+func (s *shareService) ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error) {
+	_, err := s.helper.verifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return nil, err
 	}
 	return s.store.ListSharesByMedia(ctx, mediaID)
 }
 
-func (s *mediaService) RevokeShare(ctx context.Context, token string, userID int64) error {
+func (s *shareService) RevokeShare(ctx context.Context, token string, userID int64) error {
 	share, err := s.store.GetShareByToken(ctx, token)
 	if err != nil {
 		return fmt.Errorf("get share: %w", err)
@@ -62,7 +80,7 @@ func (s *mediaService) RevokeShare(ctx context.Context, token string, userID int
 		return errors.New("share not found")
 	}
 
-	_, err = s.verifyAccess(ctx, share.MediaID, userID)
+	_, err = s.helper.verifyAccess(ctx, share.MediaID, userID)
 	if err != nil {
 		return err
 	}
@@ -70,7 +88,7 @@ func (s *mediaService) RevokeShare(ctx context.Context, token string, userID int
 	return s.store.DeleteShare(ctx, token)
 }
 
-func (s *mediaService) ValidateShareToken(ctx context.Context, token string) (*model.Share, error) {
+func (s *shareService) ValidateShareToken(ctx context.Context, token string) (*model.Share, error) {
 	share, err := s.store.GetShareByToken(ctx, token)
 	if err != nil {
 		return nil, fmt.Errorf("get share: %w", err)
@@ -91,7 +109,7 @@ func (s *mediaService) ValidateShareToken(ctx context.Context, token string) (*m
 	return share, nil
 }
 
-func (s *mediaService) StreamSharedMedia(ctx context.Context, token string) (*FileResult, error) {
+func (s *shareService) StreamSharedMedia(ctx context.Context, token string) (*FileResult, error) {
 	share, err := s.ValidateShareToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -114,7 +132,7 @@ func (s *mediaService) StreamSharedMedia(ctx context.Context, token string) (*Fi
 	}, nil
 }
 
-func (s *mediaService) GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error) {
+func (s *shareService) GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error) {
 	share, err := s.ValidateShareToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -146,7 +164,7 @@ func (s *mediaService) GetSharedMedia(ctx context.Context, token string) (*GetSh
 	}, nil
 }
 
-func (s *mediaService) GetSharedThumbnail(ctx context.Context, token string) (*FileResult, error) {
+func (s *shareService) GetSharedThumbnail(ctx context.Context, token string) (*FileResult, error) {
 	share, err := s.ValidateShareToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -169,7 +187,7 @@ func (s *mediaService) GetSharedThumbnail(ctx context.Context, token string) (*F
 	}, nil
 }
 
-func (s *mediaService) ListMyShares(ctx context.Context, userID int64) ([]ShareInfo, error) {
+func (s *shareService) ListMyShares(ctx context.Context, userID int64) ([]ShareInfo, error) {
 	shares, err := s.store.ListSharesByUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list shares: %w", err)

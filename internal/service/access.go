@@ -5,12 +5,18 @@ import (
 	"fmt"
 
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/repository"
 )
+
+// accessHelper encapsulates permission checks used by media sub-services.
+type accessHelper struct {
+	store repository.MediaServiceStore
+}
 
 // checkSetPermission verifies that a user has the required role on a set.
 // An empty requiredRole means any role is accepted. Admins are always allowed.
-func (s *mediaService) checkSetPermission(ctx context.Context, setID, userID int64, requiredRole model.Role) error {
-	user, err := s.store.GetUserByID(ctx, userID)
+func (h *accessHelper) checkSetPermission(ctx context.Context, setID, userID int64, requiredRole model.Role) error {
+	user, err := h.store.GetUserByID(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("get user: %w", err)
 	}
@@ -18,7 +24,7 @@ func (s *mediaService) checkSetPermission(ctx context.Context, setID, userID int
 		return nil
 	}
 
-	perm, err := s.store.GetPermission(ctx, setID, userID)
+	perm, err := h.store.GetPermission(ctx, setID, userID)
 	if err != nil {
 		return fmt.Errorf("get permission: %w", err)
 	}
@@ -26,7 +32,7 @@ func (s *mediaService) checkSetPermission(ctx context.Context, setID, userID int
 		return nil
 	}
 
-	set, err := s.store.GetSetByID(ctx, setID)
+	set, err := h.store.GetSetByID(ctx, setID)
 	if err != nil {
 		return fmt.Errorf("get set: %w", err)
 	}
@@ -41,8 +47,8 @@ func (s *mediaService) checkSetPermission(ctx context.Context, setID, userID int
 	return ErrForbidden
 }
 
-func (s *mediaService) verifyAccess(ctx context.Context, mediaID, userID int64) (*model.Media, error) {
-	media, err := s.store.GetMediaByID(ctx, mediaID)
+func (h *accessHelper) verifyAccess(ctx context.Context, mediaID, userID int64) (*model.Media, error) {
+	media, err := h.store.GetMediaByID(ctx, mediaID)
 	if err != nil {
 		return nil, fmt.Errorf("get media: %w", err)
 	}
@@ -50,7 +56,7 @@ func (s *mediaService) verifyAccess(ctx context.Context, mediaID, userID int64) 
 		return nil, ErrNotFound
 	}
 
-	if err := s.checkSetPermission(ctx, media.SetID, userID, ""); err != nil {
+	if err := h.checkSetPermission(ctx, media.SetID, userID, ""); err != nil {
 		return nil, err
 	}
 
@@ -58,13 +64,13 @@ func (s *mediaService) verifyAccess(ctx context.Context, mediaID, userID int64) 
 }
 
 // verifyModifyAccess checks that the user has access to the media and is an owner or admin.
-func (s *mediaService) verifyModifyAccess(ctx context.Context, mediaID, userID int64) (*model.Media, error) {
-	media, err := s.verifyAccess(ctx, mediaID, userID)
+func (h *accessHelper) verifyModifyAccess(ctx context.Context, mediaID, userID int64) (*model.Media, error) {
+	media, err := h.verifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.checkSetPermission(ctx, media.SetID, userID, model.RoleOwner); err != nil {
+	if err := h.checkSetPermission(ctx, media.SetID, userID, model.RoleOwner); err != nil {
 		return nil, err
 	}
 
@@ -72,6 +78,6 @@ func (s *mediaService) verifyModifyAccess(ctx context.Context, mediaID, userID i
 }
 
 // verifySetModifyAccess checks that the user is an owner or admin for a set.
-func (s *mediaService) verifySetModifyAccess(ctx context.Context, setID, userID int64) error {
-	return s.checkSetPermission(ctx, setID, userID, model.RoleOwner)
+func (h *accessHelper) verifySetModifyAccess(ctx context.Context, setID, userID int64) error {
+	return h.checkSetPermission(ctx, setID, userID, model.RoleOwner)
 }

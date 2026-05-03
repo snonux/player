@@ -1,15 +1,7 @@
 package service
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-
 	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/thumb"
@@ -26,106 +18,25 @@ var (
 )
 
 // mediaService is the concrete implementation of MediaService.
+// It composes role-focused sub-services to satisfy SRP.
 type mediaService struct {
-	store     repository.MediaServiceStore
-	clock     clock.Clock
-	mediaRoot string
-	thumbGen  thumb.Generator
-	prober    probe.Prober
+	MediaBrowseService
+	MediaWriteService
+	MediaShareService
+	MediaTagService
+	MediaFavoriteService
+	MediaNoteService
 }
 
-// NewMediaService creates a concrete MediaService.
+// NewMediaService creates a concrete MediaService by wiring role-focused sub-services.
 func NewMediaService(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober) MediaService {
+	helper := &accessHelper{store: store}
 	return &mediaService{
-		store:     store,
-		clock:     clk,
-		mediaRoot: mediaRoot,
-		thumbGen:  thumbGen,
-		prober:    prober,
+		MediaBrowseService:   NewBrowseService(store, clk, mediaRoot, thumbGen, prober, helper),
+		MediaWriteService:    NewWriteService(store, clk, mediaRoot, thumbGen, prober, helper),
+		MediaShareService:    NewShareService(store, clk, helper),
+		MediaTagService:      NewTagService(store, helper),
+		MediaFavoriteService: NewFavService(store, helper),
+		MediaNoteService:     NewNoteService(store, clk, helper),
 	}
-}
-
-// Sentinel errors returned by the media service layer.
-var (
-	ErrNotFound             = errors.New("not found")
-	ErrForbidden            = errors.New("access denied")
-	ErrShareNotFound        = errors.New("share not found")
-	ErrShareExpired         = errors.New("share expired")
-	ErrMediaNotFound        = errors.New("media not found")
-	ErrUnsupportedExtension = errors.New("unsupported file extension")
-	ErrAlreadyBootstrapped  = errors.New("already bootstrapped")
-	ErrInvalidCredentials   = errors.New("invalid credentials")
-)
-
-// supportedExtensions lists all file extensions accepted by UploadMedia.
-var supportedExtensions = map[string]struct{}{
-	".mp4":  {},
-	".mkv":  {},
-	".avi":  {},
-	".mov":  {},
-	".wmv":  {},
-	".flv":  {},
-	".webm": {},
-	".mp3":  {},
-	".wav":  {},
-	".flac": {},
-	".aac":  {},
-	".ogg":  {},
-	".m4a":  {},
-	".wma":  {},
-	".m4b":  {},
-	".opus": {},
-	".jpg":  {},
-	".jpeg": {},
-	".png":  {},
-	".gif":  {},
-	".webp": {},
-	".bmp":  {},
-	".avif": {},
-	".svg":  {},
-}
-
-func isSupportedExtension(name string) bool {
-	ext := strings.ToLower(filepath.Ext(name))
-	_, ok := supportedExtensions[ext]
-	return ok
-}
-
-func guessMediaType(name string) model.MediaType {
-	ext := strings.ToLower(filepath.Ext(name))
-	switch ext {
-	case ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm":
-		return model.MediaTypeVideo
-	case ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma", ".m4b", ".opus":
-		return model.MediaTypeAudio
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif", ".svg":
-		return model.MediaTypeImage
-	default:
-		return model.MediaTypeVideo
-	}
-}
-
-// generateThumbnail creates a thumbnail for a video or image file.
-func (s *mediaService) generateThumbnail(ctx context.Context, media *model.Media, duration float64) error {
-	ext := strings.ToLower(filepath.Ext(media.AbsPath))
-	if ext == ".svg" {
-		media.ThumbnailPath = media.AbsPath
-		return nil
-	}
-	thumbDir := filepath.Join(filepath.Dir(media.AbsPath), ".thumbnails")
-	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir thumbnails: %w", err)
-	}
-	thumbName := strings.TrimSuffix(filepath.Base(media.AbsPath), filepath.Ext(media.AbsPath)) + ".jpg"
-	thumbnailPath := filepath.Join(thumbDir, thumbName)
-
-	if s.thumbGen == nil {
-		media.ThumbnailPath = thumbnailPath
-		return nil
-	}
-	if err := s.thumbGen.Generate(ctx, media.AbsPath, thumbnailPath, duration); err != nil {
-		return fmt.Errorf("generate thumbnail: %w", err)
-	}
-	media.ThumbnailPath = thumbnailPath
-	return nil
 }

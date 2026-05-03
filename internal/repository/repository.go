@@ -67,6 +67,67 @@ type ScannerStore interface {
 	MediaRepo
 }
 
+// BrowseServiceStore is the subset of Store required by service.BrowseService.
+type BrowseServiceStore interface {
+	UserRepo
+	SetRepo
+	SetPermissionRepo
+	MediaRepo
+	TagRepo
+	FavoriteRepo
+	PlaybackProgressRepo
+	NoteRepo
+}
+
+// WriteServiceStore is the subset of Store required by service.WriteService.
+type WriteServiceStore interface {
+	UserRepo
+	SetRepo
+	SetPermissionRepo
+	MediaRepo
+}
+
+// ShareServiceStore is the subset of Store required by service.ShareService.
+type ShareServiceStore interface {
+	MediaRepo
+	ShareRepo
+}
+
+// TagServiceStore is the subset of Store required by service.TagService.
+type TagServiceStore interface {
+	MediaRepo
+	TagRepo
+}
+
+// FavoriteServiceStore is the subset of Store required by service.FavService.
+type FavoriteServiceStore interface {
+	MediaRepo
+	FavoriteRepo
+}
+
+// NoteServiceStore is the subset of Store required by service.NoteService.
+type NoteServiceStore interface {
+	MediaRepo
+	NoteRepo
+}
+
+// TrashServiceStore is the subset of Store required by service.TrashService.
+type TrashServiceStore interface {
+	MediaRepo
+}
+
+// UserAdminServiceStore is the subset of Store required by service.UserAdminService.
+type UserAdminServiceStore interface {
+	UserRepo
+}
+
+// PermissionAdminServiceStore is the subset of Store required by service.PermissionAdminService.
+type PermissionAdminServiceStore interface {
+	UserRepo
+	SetRepo
+	SetPermissionRepo
+}
+
 // UserRepo manages application users.
 type UserRepo interface {
 	// CreateUser stores a new user and returns its database ID.
