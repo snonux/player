@@ -17,6 +17,16 @@ var (
 	_ ProgressServiceStore = (*MockStore)(nil)
 	_ GCStore              = (*MockStore)(nil)
 	_ ScannerStore         = (*MockStore)(nil)
+	_ AccessHelperStore    = (*MockStore)(nil)
+	_ BrowseServiceStore   = (*MockStore)(nil)
+	_ WriteServiceStore    = (*MockStore)(nil)
+	_ ShareServiceStore    = (*MockStore)(nil)
+	_ TagServiceStore      = (*MockStore)(nil)
+	_ FavoriteServiceStore = (*MockStore)(nil)
+	_ NoteServiceStore     = (*MockStore)(nil)
+	_ TrashServiceStore    = (*MockStore)(nil)
+	_ UserAdminServiceStore         = (*MockStore)(nil)
+	_ PermissionAdminServiceStore   = (*MockStore)(nil)
 )
 
 // NewMockStore returns a MockStore with all no-op defaults.

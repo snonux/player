@@ -44,6 +44,14 @@ type AdminServiceStore interface {
 	MediaRepo
 }
 
+// AccessHelperStore is the subset of Store required by service.accessHelper.
+type AccessHelperStore interface {
+	UserRepo
+	MediaRepo
+	SetRepo
+	SetPermissionRepo
+}
+
 // ProgressServiceStore is the subset of Store required by service.ProgressService.
 type ProgressServiceStore interface {
 	PlaybackProgressRepo

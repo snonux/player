@@ -10,7 +10,7 @@ import (
 
 // accessHelper encapsulates permission checks used by media sub-services.
 type accessHelper struct {
-	store repository.MediaServiceStore
+	store repository.AccessHelperStore
 }
 
 // checkSetPermission verifies that a user has the required role on a set.

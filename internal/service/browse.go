@@ -19,7 +19,7 @@ import (
 
 // browseService handles read-only browsing and media streaming operations.
 type browseService struct {
-	store     repository.MediaServiceStore
+	store     repository.BrowseServiceStore
 	clock     clock.Clock
 	mediaRoot string
 	thumbGen  thumb.Generator
@@ -28,7 +28,7 @@ type browseService struct {
 }
 
 // NewBrowseService creates a BrowseService.
-func NewBrowseService(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, helper *accessHelper) MediaBrowseService {
+func NewBrowseService(store repository.BrowseServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, helper *accessHelper) MediaBrowseService {
 	return &browseService{
 		store:     store,
 		clock:     clk,
@@ -338,6 +338,7 @@ func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, pare
 
 	var folders []BrowseFolder
 	for name, fc := range folderMap {
+		// Flatten: show the lone file at the current level.
 		total := len(fc.files) + len(fc.subfolders)
 		if total == 1 && len(fc.files) == 1 {
 			items = append(items, fc.files[0])
