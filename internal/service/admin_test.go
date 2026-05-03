@@ -46,7 +46,7 @@ func TestAdminService_ListTrash(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
 	items, err := svc.ListTrash(ctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -67,7 +67,7 @@ func TestAdminService_TriggerRescan(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media", ctx)
 	if err := svc.TriggerRescan(ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestAdminService_TriggerRescan_Error(t *testing.T) {
 			return errors.New("scan failed")
 		},
 	}
-	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media", ctx)
 	err := svc.TriggerRescan(ctx)
 	// TriggerRescan now always returns nil immediately; failure is logged in background.
 	if err != nil {
@@ -98,7 +98,7 @@ func TestAdminService_TriggerRescan_Error(t *testing.T) {
 
 func TestAdminService_TriggerRescan_NilScanner(t *testing.T) {
 	ctx := context.Background()
-	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
 	err := svc.TriggerRescan(ctx)
 	if err == nil {
 		t.Fatal("expected error when scanner is nil")
@@ -114,7 +114,7 @@ func TestAdminService_ListUsers(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
 	users, err := svc.ListUsers(ctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -158,7 +158,7 @@ func TestAdminService_CreateUser(t *testing.T) {
 				},
 			}
 			hasher := &fakeHasher{fixed: "hashed", err: tt.hashErr}
-			svc := NewAdminService(store, newMockClock(), hasher, nil, "")
+			svc := NewAdminService(store, newMockClock(), hasher, nil, "", ctx)
 			user, err := svc.CreateUser(ctx, "alice", "secret", false)
 			if tt.wantErr {
 				if err == nil {
@@ -187,7 +187,7 @@ func TestAdminService_DeleteUser(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
 	if err := svc.DeleteUser(ctx, 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestAdminService_ListPermissions(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
 	perms, err := svc.ListPermissions(ctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -234,7 +234,7 @@ func TestAdminService_GrantPermission(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
 	if err := svc.GrantPermission(ctx, 1, 2, model.RoleViewer); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestAdminService_RevokePermission(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
 	if err := svc.RevokePermission(ctx, 1, 2); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestAdminService_TriggerRescan_CancelsPrevious(t *testing.T) {
 			return scanCtx.Err()
 		},
 	}
-	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media", ctx)
 
 	// Start first scan.
 	if err := svc.TriggerRescan(ctx); err != nil {
@@ -308,7 +308,7 @@ func TestAdminService_TriggerRescan_FreshProgressPerScan(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media", ctx)
 
 	if err := svc.TriggerRescan(ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -347,7 +347,7 @@ func TestAdminService_TriggerRescan_FreshProgressPerScan(t *testing.T) {
 	}
 	// We replace the scanner field via reflection? No, easier: just create new service.
 	// Actually, the test verifies per-service fresh progress, so new service is fine.
-	svc2 := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc2, "/media")
+	svc2 := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc2, "/media", ctx)
 	if err := svc2.TriggerRescan(ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestAdminService_TriggerRescan_FreshProgressPerScan(t *testing.T) {
 
 func TestAdminService_ScanProgress_ReturnsEmptyWhenNotStarted(t *testing.T) {
 	ctx := context.Background()
-	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
 	p := svc.ScanProgress(ctx)
 	if p.Running {
 		t.Fatal("expected not running when no scan started")
@@ -402,7 +402,7 @@ func TestAdminService_TriggerRescan_ConcurrentCalls(t *testing.T) {
 			return scanCtx.Err()
 		},
 	}
-	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media", ctx)
 
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
@@ -446,7 +446,7 @@ func TestAdminService_ListPermissions_Error(t *testing.T) {
 				},
 			},
 		}
-		svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+		svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
 		_, err := svc.ListPermissions(ctx)
 		if err == nil {
 			t.Fatal("expected error")
@@ -466,7 +466,7 @@ func TestAdminService_ListPermissions_Error(t *testing.T) {
 				},
 			},
 		}
-		svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+		svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
 		_, err := svc.ListPermissions(ctx)
 		if err == nil {
 			t.Fatal("expected error")

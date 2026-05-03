@@ -80,12 +80,15 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 	hasher := auth.NewBCryptHasher(12)
 	sm := auth.NewSessionManager(store, clk, time.Duration(cfg.SessionTimeoutHours)*time.Hour)
 
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+
 	prober := probe.NewFFProber()
 	thumbGen := thumb.NewFFmpegGenerator()
 	mediaSvc := service.NewMediaService(store, clk, cfg.MediaRoot, thumbGen, prober)
 
 	fsScanner := scanner.NewFSScannerWithLogger(store, prober, thumbGen, clk, cfg.MediaRoot, logger)
-	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, logger)
+	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
 
 	progressSvc := service.NewProgressService(store, clk)
 	authSvc := service.NewAuthService(store, clk, hasher, sm)

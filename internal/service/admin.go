@@ -21,15 +21,15 @@ type adminService struct {
 }
 
 // NewAdminService creates a concrete AdminService.
-func NewAdminService(store repository.AdminServiceStore, clk clock.Clock, hasher auth.Hasher, sc scanner.Scanner, mediaRoot string) AdminService {
-	return NewAdminServiceWithLogger(store, clk, hasher, sc, mediaRoot, slog.Default())
+func NewAdminService(store repository.AdminServiceStore, clk clock.Clock, hasher auth.Hasher, sc scanner.Scanner, mediaRoot string, appCtx context.Context) AdminService {
+	return NewAdminServiceWithLogger(store, clk, hasher, sc, mediaRoot, appCtx, slog.Default())
 }
 
 // NewAdminServiceWithLogger creates a concrete AdminService with an injected logger.
-func NewAdminServiceWithLogger(store repository.AdminServiceStore, clk clock.Clock, hasher auth.Hasher, sc scanner.Scanner, mediaRoot string, logger *slog.Logger) AdminService {
+func NewAdminServiceWithLogger(store repository.AdminServiceStore, clk clock.Clock, hasher auth.Hasher, sc scanner.Scanner, mediaRoot string, appCtx context.Context, logger *slog.Logger) AdminService {
 	return &adminService{
 		trashService:           NewTrashService(store),
-		scanService:            NewScanService(sc, mediaRoot, clk, logger),
+		scanService:            NewScanService(appCtx, sc, mediaRoot, clk, logger),
 		userAdminService:       NewUserAdminService(store, clk, hasher),
 		permissionAdminService: NewPermissionAdminService(store, clk),
 	}

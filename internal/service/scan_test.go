@@ -37,7 +37,7 @@ func TestScanService_ScanLibrary(t *testing.T) {
 					return tt.scanErr
 				},
 			}
-			svc := NewScanService(sc, "/media", clock.RealClock{}, nil)
+			svc := NewScanService(ctx, sc, "/media", clock.RealClock{}, nil)
 			err := svc.TriggerRescan(ctx)
 			if tt.wantErr {
 				if err == nil {
@@ -55,5 +55,43 @@ func TestScanService_ScanLibrary(t *testing.T) {
 				t.Fatal("timeout waiting for scan goroutine")
 			}
 		})
+	}
+}
+
+func TestScanService_CancelledByAppContext(t *testing.T) {
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+
+	done := make(chan struct{})
+	started := make(chan struct{})
+	sc := &fakeScanner{
+		scanFunc: func(scanCtx context.Context, _ string, progress *model.ScanProgress) error {
+			close(started)
+			<-scanCtx.Done()
+			close(done)
+			return scanCtx.Err()
+		},
+	}
+
+	svc := NewScanService(appCtx, sc, "/media", clock.RealClock{}, nil)
+	if err := svc.TriggerRescan(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	<-started
+	appCancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for scan goroutine to exit after app context cancellation")
+	}
+
+	p := svc.ScanProgress(context.Background())
+	if p.Running {
+		t.Fatal("expected scan to be stopped after app context cancellation")
+	}
+	if p.LastError == "" {
+		t.Fatal("expected a last error after cancellation")
 	}
 }

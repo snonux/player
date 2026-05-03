@@ -21,10 +21,11 @@ type scanService struct {
 	mu         sync.Mutex
 	scanCancel context.CancelFunc
 	progress   *model.ScanProgress
+	appCtx     context.Context // application-level context used to propagate shutdown cancellation
 }
 
 // NewScanService creates a ScanService.
-func NewScanService(sc scanner.Scanner, mediaRoot string, clk clock.Clock, logger *slog.Logger) *scanService {
+func NewScanService(appCtx context.Context, sc scanner.Scanner, mediaRoot string, clk clock.Clock, logger *slog.Logger) *scanService {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -33,6 +34,7 @@ func NewScanService(sc scanner.Scanner, mediaRoot string, clk clock.Clock, logge
 		mediaRoot: mediaRoot,
 		clock:     clk,
 		logger:    logger,
+		appCtx:    appCtx,
 	}
 }
 
@@ -45,7 +47,9 @@ func (s *scanService) TriggerRescan(ctx context.Context) error {
 	if s.scanCancel != nil {
 		s.scanCancel()
 	}
-	scanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	// Derive the scan context from the application-level context so that
+	// cancellation propagates on server exit, while still applying a 30-minute timeout.
+	scanCtx, cancel := context.WithTimeout(s.appCtx, 30*time.Minute)
 	s.scanCancel = cancel
 	progress := &model.ScanProgress{}
 	s.progress = progress
