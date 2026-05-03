@@ -421,7 +421,7 @@ func Test_isMediaFile(t *testing.T) {
 		{"movie.mp4", true},
 		{"song.MP3", true},
 		{"archive.zip", false},
-		{"photo.jpg", false},
+		{"photo.jpg", true},
 		{"", false},
 	}
 	for _, c := range cases {
@@ -440,6 +440,8 @@ func Test_mediaTypeFromExt(t *testing.T) {
 		{"a.mkv", model.MediaTypeVideo},
 		{"a.mp3", model.MediaTypeAudio},
 		{"a.FLAC", model.MediaTypeAudio},
+		{"a.jpg", model.MediaTypeImage},
+		{"a.png", model.MediaTypeImage},
 	}
 	for _, c := range cases {
 		if got := mediaTypeFromExt(c.path); got != c.want {

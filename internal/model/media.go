@@ -9,6 +9,7 @@ type MediaType string
 const (
 	MediaTypeVideo MediaType = "video"
 	MediaTypeAudio MediaType = "audio"
+	MediaTypeImage MediaType = "image"
 )
 
 // Role defines the level of access a user has to a set.
@@ -46,23 +47,32 @@ type SetPermission struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Media represents a single audio or video file within a set.
+// Media represents a single media file within a set.
 type Media struct {
-	ID            int64      `json:"id"`
-	SetID         int64      `json:"set_id"`
-	RelPath       string     `json:"rel_path"`
-	FileName      string     `json:"file_name"`
-	AbsPath       string     `json:"abs_path"`
-	Type          MediaType  `json:"type"`
-	Duration      float64    `json:"duration"`
-	Codec         string     `json:"codec"`
-	Resolution    string     `json:"resolution"`
-	Bitrate       int        `json:"bitrate"`
-	FileSizeBytes int64      `json:"file_size_bytes"`
-	ThumbnailPath string     `json:"thumbnail_path"`
-	PlayCount     int        `json:"play_count"`
-	DeletedAt     *time.Time `json:"deleted_at"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID              int64      `json:"id"`
+	SetID           int64      `json:"set_id"`
+	RelPath         string     `json:"rel_path"`
+	FileName        string     `json:"file_name"`
+	AbsPath         string     `json:"abs_path"`
+	Type            MediaType  `json:"type"`
+	Duration        float64    `json:"duration"`
+	Codec           string     `json:"codec"`
+	Resolution      string     `json:"resolution"`
+	Bitrate         int        `json:"bitrate"`
+	FileSizeBytes   int64      `json:"file_size_bytes"`
+	Width           int        `json:"width"`
+	Height          int        `json:"height"`
+	EXIFCamera      string     `json:"exif_camera"`
+	EXIFLens        string     `json:"exif_lens"`
+	EXIFDate        string     `json:"exif_date"`
+	EXIFISO         string     `json:"exif_iso"`
+	EXIFFNumber     string     `json:"exif_f_number"`
+	EXIFExposure    string     `json:"exif_exposure"`
+	EXIFFocalLength string     `json:"exif_focal_length"`
+	ThumbnailPath   string     `json:"thumbnail_path"`
+	PlayCount       int        `json:"play_count"`
+	DeletedAt       *time.Time `json:"deleted_at"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // Tag is a label that can be attached to media items.
@@ -133,9 +143,18 @@ type MediaTag struct {
 
 // Metadata holds extracted file properties from ffprobe and os.Stat.
 type Metadata struct {
-	Duration      float64 `json:"duration"`
-	Codec         string  `json:"codec"`
-	Resolution    string  `json:"resolution"`
-	Bitrate       int     `json:"bitrate"`
-	FileSizeBytes int64   `json:"file_size_bytes"`
+	Duration        float64 `json:"duration"`
+	Codec           string  `json:"codec"`
+	Resolution      string  `json:"resolution"`
+	Bitrate         int     `json:"bitrate"`
+	FileSizeBytes   int64   `json:"file_size_bytes"`
+	Width           int     `json:"width"`
+	Height          int     `json:"height"`
+	EXIFCamera      string  `json:"exif_camera"`
+	EXIFLens        string  `json:"exif_lens"`
+	EXIFDate        string  `json:"exif_date"`
+	EXIFISO         string  `json:"exif_iso"`
+	EXIFFNumber     string  `json:"exif_f_number"`
+	EXIFExposure    string  `json:"exif_exposure"`
+	EXIFFocalLength string  `json:"exif_focal_length"`
 }

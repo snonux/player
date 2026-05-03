@@ -1,7 +1,7 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initSelection, clearSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
-import { initPlayer, togglePlay, toggleFullscreen, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, currentMediaId, currentMediaInfo, hasLoadedMedia, isPlaybackActive, seekRelative, selectAndPlay } from './player.js';
+import { initPlayer, togglePlay, toggleFullscreen, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, currentMediaId, currentMediaInfo, hasLoadedMedia, isPlaybackActive, seekRelative, selectAndPlay, zoomIn as playerZoomIn, zoomOut as playerZoomOut, toggleSlideshow as playerToggleSlideshow, isImageMode as playerIsImageMode } from './player.js';
 import { initSearch, focusSearch, trigger as triggerSearch, parseQuery } from './search.js';
 import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
 import { initThemes } from './themes.js';
@@ -9,6 +9,7 @@ import { initNotes, open as openNotes } from './notes.js';
 import { initAdmin } from './admin.js';
 import { state, setMedia } from './state.js';
 import { initPWA } from './pwa.js';
+import { initLightbox, open as openLightbox, close as closeLightbox, isOpen as isLightboxOpen, next as lightboxNext, prev as lightboxPrev, zoomIn as lightboxZoomIn, zoomOut as lightboxZoomOut, toggleSlideshow as lightboxToggleSlideshow } from './lightbox.js';
 
 const pageMap = { '/index.html': 'spa', '/login.html': 'login', '/bootstrap.html': 'bootstrap' };
 let scanProgressTimer = null;
@@ -88,6 +89,13 @@ async function initApp() {
   initShuffle({
     onChange: () => loadMedia(),
   });
+  initLightbox({
+    onNavigate: (delta) => {
+      const images = state.media.filter((m) => m.type === 'image');
+      if (!images.length) return;
+      // Not needed - lightbox navigates internally
+    },
+  });
   initKeyboard({
     navUp: () => navUp(),
     navDown: () => navDown(),
@@ -110,7 +118,13 @@ async function initApp() {
       if (el.classList.contains('folder-card')) {
         enterFolder(el.dataset.name);
       } else {
-        playSelected();
+        const idx = parseInt(el.dataset.index, 10);
+        const media = state.media[idx];
+        if (media?.type === 'image') {
+          openLightbox(state.media, media.id);
+        } else {
+          playSelected();
+        }
       }
     },
     playPause: () => togglePlay(),
@@ -119,7 +133,7 @@ async function initApp() {
     mediaInfo: () => toggleMediaInfo(),
     fullscreen: () => toggleFullscreen(),
     toggleMinimize: () => toggleMinimize(),
-    escape: () => { exitFullscreenIfNeeded(); const el = currentElement(); if (el) el.classList.remove('selected'); closeAllModals(); },
+    escape: () => { exitFullscreenIfNeeded(); closeLightbox(); const el = currentElement(); if (el) el.classList.remove('selected'); closeAllModals(); },
     shuffle: () => { toggleShuffle(); loadMedia(); },
     share: () => shareSelected(),
     search: () => showSearch(),
@@ -140,6 +154,23 @@ async function initApp() {
     sharesNavDown: () => sharesNav(1),
     sharesCopy: copySelectedShare,
     sharesDelete: deleteSelectedShare,
+    isLightboxOpen,
+    isImageMode: () => currentMediaInfo()?.type === 'image',
+    zoomIn: () => {
+      if (isLightboxOpen()) { lightboxZoomIn(); }
+      else if (playerIsImageMode()) { playerZoomIn(); }
+    },
+    zoomOut: () => {
+      if (isLightboxOpen()) { lightboxZoomOut(); }
+      else if (playerIsImageMode()) { playerZoomOut(); }
+    },
+    toggleSlideshow: () => {
+      if (isLightboxOpen()) { lightboxToggleSlideshow(); }
+      else if (playerIsImageMode()) { playerToggleSlideshow(); }
+    },
+    lightboxNext,
+    lightboxPrev,
+    closeLightbox,
   });
   initNotes(() => toast('Note saved'));
   initAdmin();
@@ -170,10 +201,18 @@ async function initApp() {
     toast(err.message || 'Error loading sets', 'error');
   }
 
-  // Play on double-click
+  // Play on double-click (or open lightbox for images)
   document.getElementById('media-grid')?.addEventListener('dblclick', (e) => {
     const el = e.target.closest('.media-card, .media-row');
-    if (el) { selectByElement(el); playSelected(); }
+    if (!el) return;
+    selectByElement(el);
+    const idx = parseInt(el.dataset.index, 10);
+    const media = state.media[idx];
+    if (media?.type === 'image') {
+      openLightbox(state.media, media.id);
+    } else {
+      playSelected();
+    }
   });
 
   // Folder navigation
@@ -336,7 +375,7 @@ function updateBreadcrumb(currentPath) {
   let accumulated = '';
   for (const part of parts) {
     accumulated = accumulated ? `${accumulated}/${part}` : part;
-    html += ` <span class="breadcrumb-sep">/</span> <button class="breadcrumb-part" data-folder="${accumulated}">${escapeHtml(part)}</button>`;
+    html += ` <span class="breadcrumb-sep">/</span> <button class="breadcrumb-part" data-folder="${escapeHtml(accumulated)}">${escapeHtml(part)}</button>`;
   }
   el.innerHTML = html;
   el.classList.remove('hidden');
@@ -413,12 +452,20 @@ function renderBrowse(data) {
   grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
     el.addEventListener('click', () => { selectByElement(el); });
     const playBtn = el.querySelector('[data-action="play"]');
+    const viewBtn = el.querySelector('[data-action="view"]');
     const favBtn = el.querySelector('[data-action="favorite"]');
     const noteBtn = el.querySelector('[data-action="notes"]');
     const downloadBtn = el.querySelector('[data-action="download"]');
     const tagBtn = el.querySelector('[data-action="tags"]');
     const thumbBtn = el.querySelector('[data-action="regen-thumb"]');
     playBtn?.addEventListener('click', (e) => { e.stopPropagation(); selectByElement(el); playSelected(); });
+    viewBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectByElement(el);
+      const idx = parseInt(el.dataset.index, 10);
+      const media = state.media[idx];
+      if (media) openLightbox(state.media, media.id);
+    });
     favBtn?.addEventListener('click', (e) => { e.stopPropagation(); toggleFavorite(el.dataset.id, favBtn); });
     noteBtn?.addEventListener('click', (e) => { e.stopPropagation(); openNotesForSelected(); });
     downloadBtn?.addEventListener('click', (e) => { e.stopPropagation(); window.open(`/api/media/${el.dataset.id}/download`, '_blank'); });
@@ -458,12 +505,20 @@ function renderGrid(items) {
   grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
     el.addEventListener('click', () => { selectByElement(el); });
     const playBtn = el.querySelector('[data-action="play"]');
+    const viewBtn = el.querySelector('[data-action="view"]');
     const favBtn = el.querySelector('[data-action="favorite"]');
     const noteBtn = el.querySelector('[data-action="notes"]');
     const downloadBtn = el.querySelector('[data-action="download"]');
     const tagBtn = el.querySelector('[data-action="tags"]');
     const thumbBtn = el.querySelector('[data-action="regen-thumb"]');
     playBtn?.addEventListener('click', (e) => { e.stopPropagation(); selectByElement(el); playSelected(); });
+    viewBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectByElement(el);
+      const idx = parseInt(el.dataset.index, 10);
+      const media = state.media[idx];
+      if (media) openLightbox(state.media, media.id);
+    });
     favBtn?.addEventListener('click', (e) => { e.stopPropagation(); toggleFavorite(el.dataset.id, favBtn); });
     noteBtn?.addEventListener('click', (e) => { e.stopPropagation(); openNotesForSelected(); });
     downloadBtn?.addEventListener('click', (e) => { e.stopPropagation(); window.open(`/api/media/${el.dataset.id}/download`, '_blank'); });
@@ -491,7 +546,31 @@ function renderItem(m, index) {
         </div>
         <div class="meta">
           <div class="title">${escapeHtml(m.file_name)}</div>
-          <div class="subtitle">${escapeHtml(m.codec || '')} ${m.resolution || ''} ${m.bitrate ? Math.round(m.bitrate / 1000) + 'kbps' : ''}</div>
+          <div class="subtitle">${escapeHtml(m.codec || '')} ${escapeHtml(m.resolution || '')} ${m.bitrate ? Math.round(m.bitrate / 1000) + 'kbps' : ''}</div>
+        </div>
+      </div>
+    `;
+  }
+  if (m.type === 'image') {
+    const resText = escapeHtml(m.resolution || '');
+    const safeSizeText = escapeHtml(sizeText || '');
+    return `
+      <div class="media-card image-card" data-id="${m.id}" data-index="${index}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
+        <div class="thumb-wrap">
+          ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
+          <span class="badge">${resText}${safeSizeText ? ' • ' + safeSizeText : ''}</span>
+          <div class="card-actions">
+            <button class="icon-btn btn-sm" data-action="view" title="View">👁</button>
+            <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
+            <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+            <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
+            <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
+            <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
+          </div>
+        </div>
+        <div class="meta">
+          <div class="title">${escapeHtml(m.file_name)}</div>
+          <div class="subtitle">${resText} ${safeSizeText}</div>
         </div>
       </div>
     `;
@@ -809,15 +888,11 @@ function renderMediaInfo(detail) {
   const ext = media.file_name?.includes('.') ? media.file_name.split('.').pop().toUpperCase() : '';
   const progress = detail?.progress;
   const note = detail?.note;
-  const rows = [
+  let rows = [
     ['Title', media.file_name],
     ['Format', ext],
     ['Type', media.type],
-    ['Duration', media.duration ? `${fmtDur(media.duration)} (${Math.round(media.duration)} seconds)` : ''],
     ['File size', media.file_size_bytes ? `${fmtSize(media.file_size_bytes)} (${media.file_size_bytes} bytes)` : ''],
-    ['Bitrate', media.bitrate ? `${Math.round(media.bitrate / 1000)} kbps (${media.bitrate} bps)` : ''],
-    ['Codec', media.codec],
-    ['Resolution', media.resolution],
     ['Relative path', media.rel_path],
     ['Absolute path', media.abs_path],
     ['Media ID', media.id],
@@ -827,11 +902,34 @@ function renderMediaInfo(detail) {
     ['Thumbnail', media.thumbnail_path],
     ['Favorite', detail?.favorite ? 'Yes' : 'No'],
     ['Tags', tags],
-    ['Saved position', progress ? `${fmtDur(progress.position_seconds)} (${Math.round(progress.position_seconds || 0)} seconds)` : ''],
-    ['Progress updated', fmtDateTime(progress?.updated_at)],
+  ];
+  if (media.type === 'image') {
+    rows = rows.concat([
+      ['Dimensions', media.resolution],
+      ['Width', media.width],
+      ['Height', media.height],
+      ['Camera', media.exif_camera],
+      ['Lens', media.exif_lens],
+      ['Date Taken', media.exif_date],
+      ['ISO', media.exif_iso],
+      ['F-Number', media.exif_f_number],
+      ['Exposure', media.exif_exposure],
+      ['Focal Length', media.exif_focal_length],
+    ]);
+  } else {
+    rows = rows.concat([
+      ['Duration', media.duration ? `${fmtDur(media.duration)} (${Math.round(media.duration)} seconds)` : ''],
+      ['Bitrate', media.bitrate ? `${Math.round(media.bitrate / 1000)} kbps (${media.bitrate} bps)` : ''],
+      ['Codec', media.codec],
+      ['Resolution', media.resolution],
+      ['Saved position', progress ? `${fmtDur(progress.position_seconds)} (${Math.round(progress.position_seconds || 0)} seconds)` : ''],
+      ['Progress updated', fmtDateTime(progress?.updated_at)],
+    ]);
+  }
+  rows = rows.concat([
     ['Note updated', fmtDateTime(note?.updated_at)],
     ['Note length', note?.content ? `${note.content.length} characters` : ''],
-  ];
+  ]);
   const table = rows
     .filter(([, value]) => value !== undefined && value !== null && value !== '')
     .map(([label, value]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${escapeHtml(String(value))}</td></tr>`)
@@ -1109,7 +1207,7 @@ function renderSharesList(shares) {
     return `
       <div class="share-row flex gap-2 align-center py-1 border-b${i === 0 ? ' selected' : ''}" data-index="${i}" tabindex="0">
         <span class="flex-1 text-sm truncate">${escapeHtml(sh.file_name || 'Unknown')}</span>
-        <span class="text-xs text-muted">${sh.media_type === 'video' ? '🎬' : '🎵'} ${expired ? '<span class="text-danger">Expired</span>' : fmtDate(expires)}</span>
+        <span class="text-xs text-muted">${sh.media_type === 'video' ? '🎬' : sh.media_type === 'image' ? '🖼️' : '🎵'} ${expired ? '<span class="text-danger">Expired</span>' : fmtDate(expires)}</span>
         <button class="icon-btn btn-sm" title="Copy link" data-copy="${url}">&#128203;</button>
         <button class="icon-btn btn-sm" title="Revoke" data-revoke="${sh.token}">&#10005;</button>
       </div>

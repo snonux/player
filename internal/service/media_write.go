@@ -92,8 +92,17 @@ func (s *mediaService) UploadMedia(ctx context.Context, setID, userID int64, fil
 	media.Codec = meta.Codec
 	media.Resolution = meta.Resolution
 	media.Bitrate = meta.Bitrate
+	media.Width = meta.Width
+	media.Height = meta.Height
+	media.EXIFCamera = meta.EXIFCamera
+	media.EXIFLens = meta.EXIFLens
+	media.EXIFDate = meta.EXIFDate
+	media.EXIFISO = meta.EXIFISO
+	media.EXIFFNumber = meta.EXIFFNumber
+	media.EXIFExposure = meta.EXIFExposure
+	media.EXIFFocalLength = meta.EXIFFocalLength
 
-	if media.Type == model.MediaTypeVideo {
+	if media.Type == model.MediaTypeVideo || media.Type == model.MediaTypeImage {
 		if err := s.generateThumbnail(ctx, media, meta.Duration); err != nil {
 			os.Remove(path)
 			_ = s.store.HardDeleteMedia(ctx, media.ID)

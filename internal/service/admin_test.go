@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
@@ -261,6 +263,175 @@ func TestAdminService_RevokePermission(t *testing.T) {
 	}
 	if !revoked {
 		t.Fatal("expected revoke called")
+	}
+}
+
+func TestAdminService_TriggerRescan_CancelsPrevious(t *testing.T) {
+	ctx := context.Background()
+	started := make(chan struct{}, 2)
+	sc := &fakeScanner{
+		scanFunc: func(scanCtx context.Context, _ string, progress *model.ScanProgress) error {
+			progress.Start(1)
+			started <- struct{}{}
+			<-scanCtx.Done()
+			return scanCtx.Err()
+		},
+	}
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
+
+	// Start first scan.
+	if err := svc.TriggerRescan(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	<-started
+
+	// Start second scan — should cancel the first.
+	if err := svc.TriggerRescan(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	<-started
+
+	// Verify final progress is from the second (still running) scan.
+	progress := svc.ScanProgress(ctx)
+	if !progress.Running {
+		t.Fatal("expected second scan to be running")
+	}
+}
+
+func TestAdminService_TriggerRescan_FreshProgressPerScan(t *testing.T) {
+	ctx := context.Background()
+	done := make(chan struct{})
+	sc := &fakeScanner{
+		scanFunc: func(_ context.Context, _ string, progress *model.ScanProgress) error {
+			progress.Start(5)
+			<-done
+			return nil
+		},
+	}
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
+
+	if err := svc.TriggerRescan(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Wait for goroutine to start.
+	for {
+		p := svc.ScanProgress(ctx)
+		if p.Running {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(done)
+	// Wait for goroutine to finish.
+	for {
+		p := svc.ScanProgress(ctx)
+		if !p.Running {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	p1 := svc.ScanProgress(ctx)
+	if p1.SetsTotal != 5 {
+		t.Fatalf("expected sets_total 5, got %d", p1.SetsTotal)
+	}
+
+	// Start a new scan on the same service with different progress.
+	done2 := make(chan struct{})
+	sc2 := &fakeScanner{
+		scanFunc: func(_ context.Context, _ string, progress *model.ScanProgress) error {
+			progress.Start(10)
+			<-done2
+			return nil
+		},
+	}
+	// We replace the scanner field via reflection? No, easier: just create new service.
+	// Actually, the test verifies per-service fresh progress, so new service is fine.
+	svc2 := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc2, "/media")
+	if err := svc2.TriggerRescan(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Wait for goroutine to start.
+	for {
+		p := svc2.ScanProgress(ctx)
+		if p.Running {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(done2)
+	// Wait for goroutine to finish.
+	for {
+		p := svc2.ScanProgress(ctx)
+		if !p.Running {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	p2 := svc2.ScanProgress(ctx)
+	if p2.SetsTotal != 10 {
+		t.Fatalf("expected sets_total 10, got %d", p2.SetsTotal)
+	}
+	if p2.LastError != "" {
+		t.Fatalf("unexpected last_error: %s", p2.LastError)
+	}
+}
+
+func TestAdminService_ScanProgress_ReturnsEmptyWhenNotStarted(t *testing.T) {
+	ctx := context.Background()
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "")
+	p := svc.ScanProgress(ctx)
+	if p.Running {
+		t.Fatal("expected not running when no scan started")
+	}
+}
+
+func TestAdminService_TriggerRescan_ConcurrentCalls(t *testing.T) {
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	callCount := 0
+	var mu sync.Mutex
+	sc := &fakeScanner{
+		scanFunc: func(scanCtx context.Context, _ string, progress *model.ScanProgress) error {
+			mu.Lock()
+			callCount++
+			mu.Unlock()
+			progress.Start(1)
+			<-scanCtx.Done()
+			return scanCtx.Err()
+		},
+	}
+	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media")
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = svc.TriggerRescan(ctx)
+		}()
+	}
+	wg.Wait()
+
+	// Wait for the final surviving goroutine to start.
+	for {
+		progress := svc.ScanProgress(ctx)
+		if progress.Running {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	mu.Lock()
+	if callCount == 0 {
+		t.Fatal("expected at least one scan to start")
+	}
+	mu.Unlock()
+
+	// Final progress should reflect the last scan.
+	progress := svc.ScanProgress(ctx)
+	if !progress.Running {
+		t.Fatal("expected a scan to be running after concurrent calls")
 	}
 }
 

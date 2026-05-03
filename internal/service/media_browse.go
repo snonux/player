@@ -156,8 +156,8 @@ func (s *mediaService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 	if err != nil {
 		return err
 	}
-	if media.Type != model.MediaTypeVideo {
-		return errors.New("thumbnails can only be generated for video files")
+	if media.Type != model.MediaTypeVideo && media.Type != model.MediaTypeImage {
+		return errors.New("thumbnails can only be generated for video and image files")
 	}
 
 	meta, err := s.prober.Probe(ctx, media.AbsPath)

@@ -12,10 +12,12 @@ import (
 // CreateMedia inserts a new media and returns the generated ID.
 func (s *SQLite) CreateMedia(ctx context.Context, media *model.Media) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO media (set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, thumbnail_path, play_count, deleted_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO media (set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		media.SetID, media.RelPath, media.FileName, media.AbsPath, string(media.Type),
 		media.Duration, media.Codec, media.Resolution, media.Bitrate, media.FileSizeBytes,
+		media.Width, media.Height, media.EXIFCamera, media.EXIFLens, media.EXIFDate,
+		media.EXIFISO, media.EXIFFNumber, media.EXIFExposure, media.EXIFFocalLength,
 		sqlNullString(media.ThumbnailPath), media.PlayCount, sqlNullTime(media.DeletedAt), media.CreatedAt,
 	)
 	if err != nil {
@@ -34,9 +36,20 @@ func scanMedia(row sqlScanner) (*model.Media, error) {
 	var duration sql.NullFloat64
 	var bitrate sql.NullInt64
 	var fileSize sql.NullInt64
+	var exifCamera sql.NullString
+	var exifLens sql.NullString
+	var exifDate sql.NullString
+	var exifISO sql.NullString
+	var exifFNumber sql.NullString
+	var exifExposure sql.NullString
+	var exifFocalLength sql.NullString
+	var width sql.NullInt64
+	var height sql.NullInt64
 	err := row.Scan(
 		&m.ID, &m.SetID, &m.RelPath, &m.FileName, &m.AbsPath, &mediaType,
 		&duration, &codec, &resolution, &bitrate, &fileSize,
+		&width, &height, &exifCamera, &exifLens, &exifDate, &exifISO,
+		&exifFNumber, &exifExposure, &exifFocalLength,
 		&thumbnail, &m.PlayCount, &deleted, &m.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -67,22 +80,52 @@ func scanMedia(row sqlScanner) (*model.Media, error) {
 	if fileSize.Valid {
 		m.FileSizeBytes = fileSize.Int64
 	}
+	if width.Valid {
+		m.Width = int(width.Int64)
+	}
+	if height.Valid {
+		m.Height = int(height.Int64)
+	}
+	if exifCamera.Valid {
+		m.EXIFCamera = exifCamera.String
+	}
+	if exifLens.Valid {
+		m.EXIFLens = exifLens.String
+	}
+	if exifDate.Valid {
+		m.EXIFDate = exifDate.String
+	}
+	if exifISO.Valid {
+		m.EXIFISO = exifISO.String
+	}
+	if exifFNumber.Valid {
+		m.EXIFFNumber = exifFNumber.String
+	}
+	if exifExposure.Valid {
+		m.EXIFExposure = exifExposure.String
+	}
+	if exifFocalLength.Valid {
+		m.EXIFFocalLength = exifFocalLength.String
+	}
 	return &m, nil
 }
 
 // GetMediaByID retrieves a media by ID.
 func (s *SQLite) GetMediaByID(ctx context.Context, id int64) (*model.Media, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, thumbnail_path, play_count, deleted_at, created_at FROM media WHERE id = ? AND deleted_at IS NULL`, id)
+		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at FROM media WHERE id = ? AND deleted_at IS NULL`, id)
 	return scanMedia(row)
 }
 
 // UpdateMedia updates all mutable fields of a media record.
 func (s *SQLite) UpdateMedia(ctx context.Context, media *model.Media) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE media SET set_id = ?, rel_path = ?, file_name = ?, abs_path = ?, type = ?, duration = ?, codec = ?, resolution = ?, bitrate = ?, file_size_bytes = ?, thumbnail_path = ?, play_count = ?, deleted_at = ? WHERE id = ?`,
+		`UPDATE media SET set_id = ?, rel_path = ?, file_name = ?, abs_path = ?, type = ?, duration = ?, codec = ?, resolution = ?, bitrate = ?, file_size_bytes = ?, width = ?, height = ?, exif_camera = ?, exif_lens = ?, exif_date = ?, exif_iso = ?, exif_f_number = ?, exif_exposure = ?, exif_focal_length = ?, thumbnail_path = ?, play_count = ?, deleted_at = ? WHERE id = ?`,
 		media.SetID, media.RelPath, media.FileName, media.AbsPath, string(media.Type), media.Duration,
-		media.Codec, media.Resolution, media.Bitrate, media.FileSizeBytes, sqlNullString(media.ThumbnailPath),
+		media.Codec, media.Resolution, media.Bitrate, media.FileSizeBytes,
+		media.Width, media.Height, media.EXIFCamera, media.EXIFLens, media.EXIFDate,
+		media.EXIFISO, media.EXIFFNumber, media.EXIFExposure, media.EXIFFocalLength,
+		sqlNullString(media.ThumbnailPath),
 		media.PlayCount, sqlNullTime(media.DeletedAt), media.ID,
 	)
 	if err != nil {
@@ -135,7 +178,7 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 	var args []any
 	var conds []string
 	var joins string
-	query := `SELECT DISTINCT media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at FROM media`
+	query := `SELECT DISTINCT media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at FROM media`
 
 	if filter.Search != "" {
 		conds = append(conds, `(media.file_name LIKE ? ESCAPE '\' OR media.rel_path LIKE ? ESCAPE '\')`)
@@ -239,7 +282,7 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 // ListDeletedMedia returns all soft-deleted media.
 func (s *SQLite) ListDeletedMedia(ctx context.Context) ([]model.Media, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, thumbnail_path, play_count, deleted_at, created_at FROM media WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
+		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at FROM media WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list deleted media: %w", err)
 	}

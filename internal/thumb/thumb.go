@@ -39,15 +39,22 @@ func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath st
 		}
 	}
 
-	cmd := g.execer(ctx, "ffmpeg",
-		"-ss", fmt.Sprintf("%.3f", offset),
-		"-i", inputPath,
+	// Build args: only add -ss when we have a real duration (video).
+	// For static images, -ss before -i produces no output frame on some
+	// ffmpeg versions (it skips past the single image2 frame).
+	args := []string{"-i", inputPath}
+	if duration > 0 {
+		// Prepend -ss before -i for fast seek when we have a video.
+		args = append([]string{"-ss", fmt.Sprintf("%.3f", offset)}, args...)
+	}
+	args = append(args,
 		"-vf", "scale=320:-1",
 		"-frames:v", "1",
 		"-q:v", "2",
 		"-y",
 		outputPath,
 	)
+	cmd := g.execer(ctx, "ffmpeg", args...)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg generate thumbnail for %s: %w", inputPath, err)
 	}

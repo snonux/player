@@ -75,6 +75,14 @@ var supportedExtensions = map[string]struct{}{
 	".wma":  {},
 	".m4b":  {},
 	".opus": {},
+	".jpg":  {},
+	".jpeg": {},
+	".png":  {},
+	".gif":  {},
+	".webp": {},
+	".bmp":  {},
+	".avif": {},
+	".svg":  {},
 }
 
 func isSupportedExtension(name string) bool {
@@ -90,13 +98,20 @@ func guessMediaType(name string) model.MediaType {
 		return model.MediaTypeVideo
 	case ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma", ".m4b", ".opus":
 		return model.MediaTypeAudio
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif", ".svg":
+		return model.MediaTypeImage
 	default:
 		return model.MediaTypeVideo
 	}
 }
 
-// generateThumbnail creates a thumbnail for a video file.
+// generateThumbnail creates a thumbnail for a video or image file.
 func (s *mediaService) generateThumbnail(ctx context.Context, media *model.Media, duration float64) error {
+	ext := strings.ToLower(filepath.Ext(media.AbsPath))
+	if ext == ".svg" {
+		media.ThumbnailPath = media.AbsPath
+		return nil
+	}
 	thumbDir := filepath.Join(filepath.Dir(media.AbsPath), ".thumbnails")
 	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir thumbnails: %w", err)

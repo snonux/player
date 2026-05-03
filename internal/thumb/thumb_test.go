@@ -13,14 +13,14 @@ import (
 
 func TestFFmpegGenerator_Generate(t *testing.T) {
 	ctx := context.Background()
-	called := false
 
-	fakeExecer := func(_ context.Context, name string, arg ...string) *exec.Cmd {
-		called = true
+	// Video with duration > 0 should include -ss.
+	videoCalled := false
+	fakeExecerVideo := func(_ context.Context, name string, arg ...string) *exec.Cmd {
+		videoCalled = true
 		if name != "ffmpeg" {
 			t.Errorf("expected ffmpeg, got %s", name)
 		}
-		// Verify some expected flags exist.
 		args := strings.Join(arg, " ")
 		if !strings.Contains(args, "-ss") {
 			t.Error("missing -ss flag")
@@ -34,25 +34,35 @@ func TestFFmpegGenerator_Generate(t *testing.T) {
 		if !strings.Contains(args, "-y") {
 			t.Error("missing -y flag")
 		}
-		// Return a command that does nothing successfully.
 		return exec.Command("true")
 	}
-
-	g := &FFmpegGenerator{execer: fakeExecer, rnd: rand.New(rand.NewSource(1))}
-	if err := g.Generate(ctx, "input.mp4", "output.jpg", 120.0); err != nil {
+	g := &FFmpegGenerator{execer: fakeExecerVideo, rnd: rand.New(rand.NewSource(1))}
+	if err := g.Generate(ctx, "input.mp4", "out.jpg", 120.0); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !called {
+	if !videoCalled {
 		t.Fatal("expected fake execer to be called")
 	}
 
-	// Duration zero or negative should still call execer with valid offset.
-	called = false
-	if err := g.Generate(ctx, "input.mp4", "output.jpg", 0); err != nil {
+	// Image with duration == 0 should NOT include -ss.
+	imgCalled := false
+	fakeExecerImage := func(_ context.Context, name string, arg ...string) *exec.Cmd {
+		imgCalled = true
+		args := strings.Join(arg, " ")
+		if strings.Contains(args, "-ss") {
+			t.Error("unexpected -ss flag for image")
+		}
+		if !strings.Contains(args, "-i") {
+			t.Error("missing -i flag")
+		}
+		return exec.Command("true")
+	}
+	gi := &FFmpegGenerator{execer: fakeExecerImage, rnd: rand.New(rand.NewSource(1))}
+	if err := gi.Generate(ctx, "photo.jpg", "thumb.jpg", 0); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !called {
-		t.Fatal("expected fake execer to be called for zero duration")
+	if !imgCalled {
+		t.Fatal("expected fake execer to be called for image")
 	}
 }
 

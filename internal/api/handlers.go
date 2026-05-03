@@ -248,6 +248,20 @@ func mimeTypeForFilename(name string) string {
 		return "audio/ogg"
 	case ".m4b":
 		return "audio/x-m4b"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".bmp":
+		return "image/bmp"
+	case ".avif":
+		return "image/avif"
+	case ".svg":
+		return "image/svg+xml"
 	}
 	return "application/octet-stream"
 }

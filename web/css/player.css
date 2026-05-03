@@ -137,6 +137,27 @@
   background: var(--player-stage-bg);
 }
 
+/* Image viewer inside player */
+.player .media-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  transition: transform 0.15s ease;
+  user-select: none;
+}
+.player .media-image.hidden {
+  display: none;
+}
+
+/* Show/hide controls per media type */
+.player.has-image .video-only {
+  display: none !important;
+}
+.player:not(.has-image) .image-only {
+  display: none !important;
+}
+
 /* Overlay controls */
 .player .controls {
   flex: 0 0 auto;

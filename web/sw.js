@@ -8,6 +8,7 @@ const ASSETS = [
   '/css/layout.css',
   '/css/components.css',
   '/css/player.css',
+  '/css/lightbox.css',
   '/css/login.css',
   '/js/app.js',
   '/js/state.js',
@@ -21,6 +22,7 @@ const ASSETS = [
   '/js/notes.js',
   '/js/admin.js',
   '/js/pwa.js',
+  '/js/lightbox.js',
   '/manifest.json',
 ];
 

@@ -131,6 +131,9 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 	coverImages := make(map[string]string)
 	_ = s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !isImageFile(path) {
+			if d != nil && d.IsDir() && strings.HasPrefix(d.Name(), ".") && path != setPath {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		relPath, _ := filepath.Rel(setPath, path)
@@ -147,6 +150,9 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 			return fmt.Errorf("walk %q: %w", path, err)
 		}
 		if d.IsDir() {
+			if strings.HasPrefix(d.Name(), ".") && path != setPath {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !isMediaFile(path) {
@@ -193,6 +199,22 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 			}
 		} else if mediaType == model.MediaTypeAudio {
 			thumbnailPath = findCoverImage(path, coverImages, setPath)
+		} else if mediaType == model.MediaTypeImage {
+			ext := strings.ToLower(filepath.Ext(path))
+			if ext == ".svg" {
+				thumbnailPath = path
+			} else {
+				thumbDir := filepath.Join(setPath, ".thumbnails")
+				if err := s.fs.MkdirAll(thumbDir, 0o755); err != nil {
+					return fmt.Errorf("mkdir thumbnails %q: %w", thumbDir, err)
+				}
+				thumbName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".jpg"
+				thumbnailPath = filepath.Join(thumbDir, thumbName)
+				if err := s.thumbGen.Generate(ctx, path, thumbnailPath, 0); err != nil {
+					fmt.Printf("[scanner] skipping thumbnail for %q: %v\n", path, err)
+					thumbnailPath = ""
+				}
+			}
 		}
 
 		media := &model.Media{
@@ -206,6 +228,15 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 			Resolution:    meta.Resolution,
 			Bitrate:       meta.Bitrate,
 			FileSizeBytes: meta.FileSizeBytes,
+			Width:         meta.Width,
+			Height:        meta.Height,
+			EXIFCamera:    meta.EXIFCamera,
+			EXIFLens:      meta.EXIFLens,
+			EXIFDate:      meta.EXIFDate,
+			EXIFISO:       meta.EXIFISO,
+			EXIFFNumber:   meta.EXIFFNumber,
+			EXIFExposure:  meta.EXIFExposure,
+			EXIFFocalLength: meta.EXIFFocalLength,
 			ThumbnailPath: thumbnailPath,
 			CreatedAt:     s.clock.Now(),
 		}
@@ -256,6 +287,7 @@ func findCoverImage(filePath string, coverImages map[string]string, setPath stri
 var mediaExtensions = map[string]struct{}{
 	".mp4": {}, ".mkv": {}, ".avi": {}, ".mov": {}, ".webm": {},
 	".mp3": {}, ".flac": {}, ".wav": {}, ".aac": {}, ".ogg": {}, ".m4a": {}, ".opus": {}, ".m4b": {},
+	".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {}, ".webp": {}, ".bmp": {}, ".avif": {}, ".svg": {},
 }
 
 // imageExtensions lists file extensions recognized as cover/artwork images.
@@ -288,6 +320,10 @@ func mediaTypeFromExt(path string) model.MediaType {
 	switch ext {
 	case ".mp4", ".mkv", ".avi", ".mov", ".webm":
 		return model.MediaTypeVideo
+	case ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".opus", ".m4b":
+		return model.MediaTypeAudio
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif", ".svg":
+		return model.MediaTypeImage
 	default:
 		return model.MediaTypeAudio
 	}

@@ -920,6 +920,23 @@ func TestSQLite_MediaFilters(t *testing.T) {
 			},
 		},
 		{
+			name: "max duration filter",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, Duration: 100, CreatedAt: now})
+				_, _ = s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "b.mp4", FileName: "b.mp4", AbsPath: "/s/b.mp4", Type: model.MediaTypeVideo, Duration: 200, CreatedAt: now})
+				maxDur := 150.0
+				res, err := s.ListMedia(ctx, MediaFilter{MaxDuration: &maxDur, Sort: "duration"})
+				if err != nil {
+					t.Fatalf("list: %v", err)
+				}
+				if len(res) != 1 || res[0].FileName != "a.mp4" {
+					t.Fatalf("unexpected result: %+v", res)
+				}
+			},
+		},
+		{
 			name: "limit offset",
 			run: func(t *testing.T, ctx context.Context, s *SQLite) {
 				now := time.Now().Truncate(time.Second)

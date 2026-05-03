@@ -3,6 +3,42 @@ export function initKeyboard(handlers) {
     const tag = e.target.tagName;
     const editing = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
 
+    // Lightbox keyboard navigation (overrides global keys while open)
+    if (handlers.isLightboxOpen?.()) {
+      if (e.shiftKey && e.code === 'KeyS') {
+        e.preventDefault();
+        handlers.toggleSlideshow?.(e);
+        return;
+      }
+      switch (e.key) {
+        case 'ArrowLeft':
+        case 'h':
+          e.preventDefault();
+          handlers.lightboxPrev?.(e);
+          return;
+        case 'ArrowRight':
+        case 'l':
+          e.preventDefault();
+          handlers.lightboxNext?.(e);
+          return;
+        case 'Escape':
+          e.preventDefault();
+          handlers.closeLightbox?.(e);
+          return;
+        case '+':
+        case '=':
+          e.preventDefault();
+          handlers.zoomIn?.(e);
+          return;
+        case '-':
+          e.preventDefault();
+          handlers.zoomOut?.(e);
+          return;
+      }
+      // Allow only Escape/Arrows/h/l/+/−/Shift+S inside the lightbox; ignore everything else
+      return;
+    }
+
     // Shares modal keyboard navigation (overrides global keys while open)
     if (handlers.isSharesOpen?.()) {
       switch (e.key) {
@@ -101,8 +137,15 @@ export function initKeyboard(handlers) {
     }
     if (e.code === 'KeyS') {
       e.preventDefault();
-      if (e.shiftKey) handlers.share?.(e);
-      else handlers.sidebar?.(e);
+      if (e.shiftKey) {
+        if (handlers.isImageMode?.()) {
+          handlers.toggleSlideshow?.(e);
+        } else {
+          handlers.share?.(e);
+        }
+      } else {
+        handlers.sidebar?.(e);
+      }
       return;
     }
 
@@ -174,8 +217,7 @@ export function initKeyboard(handlers) {
       case 'Escape': handlers.escape?.(e); break;
       case 'Backspace': handlers.backspace?.(e); break;
       case 'r': handlers.shuffle?.(e); break;
-      case 's': handlers.sidebar?.(e); break;
-      case 'S': handlers.share?.(e); break;
+      // Note: 's' / 'S' are handled above by the e.code === 'KeyS' block
       case '/':
         e.preventDefault();
         handlers.search?.(e);

@@ -13,13 +13,26 @@ let detachedPlaybackState = null;
 let nextHandler = null;
 let previousHandler = null;
 
+// Image viewer state
+let zoomScale = 1;
+let panX = 0;
+let panY = 0;
+let isPanning = false;
+let panStart = { x: 0, y: 0 };
+let slideshowTimer = null;
+let slideshowPausedUntil = 0;
+
 const els = () => ({
   video: document.getElementById('media-video'),
   audio: document.getElementById('media-audio'),
   player: document.getElementById('player'),
+  image: document.getElementById('media-image'),
   btnPlay: document.getElementById('btn-play'),
   btnPrev: document.getElementById('btn-prev'),
   btnNext: document.getElementById('btn-next'),
+  btnZoomIn: document.getElementById('btn-zoom-in'),
+  btnZoomOut: document.getElementById('btn-zoom-out'),
+  btnSlideshow: document.getElementById('btn-slideshow'),
   btnMute: document.getElementById('btn-mute'),
   btnFs: document.getElementById('btn-fullscreen'),
   btnMinimize: document.getElementById('btn-minimize'),
@@ -40,7 +53,7 @@ export function initPlayer(options = {}) {
   nextHandler = typeof options.onNext === 'function' ? options.onNext : null;
   previousHandler = typeof options.onPrevious === 'function' ? options.onPrevious : null;
   const e = els();
-  if (!e.video || !e.audio) return;
+  if (!e.video && !e.audio) return;
 
   e.btnPlay?.addEventListener('click', togglePlay);
   e.btnPrev?.addEventListener('click', () => triggerPrevious({ forcePlay: true }));
@@ -51,6 +64,38 @@ export function initPlayer(options = {}) {
   e.btnRestore?.addEventListener('click', toggleMinimize);
   e.bigPlay?.addEventListener('click', togglePlay);
   e.bigPlay?.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); togglePlay(); } });
+
+  // Image controls
+  e.btnZoomIn?.addEventListener('click', () => { zoomIn(); pauseSlideshow(); });
+  e.btnZoomOut?.addEventListener('click', () => { zoomOut(); pauseSlideshow(); });
+  e.btnSlideshow?.addEventListener('click', toggleSlideshow);
+
+  // Pan support for image viewer
+  e.image?.addEventListener('mousedown', (ev) => {
+    if (zoomScale > 1) {
+      isPanning = true;
+      panStart = { x: ev.clientX - panX, y: ev.clientY - panY };
+      e.image.style.cursor = 'grabbing';
+      ev.preventDefault();
+    }
+  });
+  e.image?.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    if (ev.deltaY < 0) zoomIn();
+    else zoomOut();
+  }, { passive: false });
+  window.addEventListener('mousemove', (ev) => {
+    if (!isPanning) return;
+    panX = ev.clientX - panStart.x;
+    panY = ev.clientY - panStart.y;
+    applyImageTransform();
+  });
+  window.addEventListener('mouseup', () => {
+    if (isPanning) {
+      isPanning = false;
+      if (e.image) e.image.style.cursor = zoomScale > 1 ? 'grab' : 'zoom-in';
+    }
+  });
 
   e.volume?.addEventListener('input', () => {
     const v = parseFloat(e.volume.value);
@@ -225,6 +270,11 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
     return;
   }
   loadMedia(media, resumeFrom);
+  if (media.type === 'image') {
+    isPlaying = false;
+    highlightPlayingCard();
+    return;
+  }
   isPlaying = true;
   const m = currentMediaElement();
   if (m) {
@@ -241,22 +291,59 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
   currentMediaIndex = -1;
   reportProgress = false;
   const e = els();
+  if (media.type === 'image') {
+    resetImageZoom();
+    e.video.pause(); e.video.src = '';
+    e.audio.pause(); e.audio.src = '';
+    e.video.classList.add('hidden');
+    e.audio.classList.add('hidden');
+    e.coverArt?.classList.add('hidden');
+    e.bigPlay?.classList.add('hidden');
+    e.track?.classList.add('hidden');
+    e.timeElapsed?.classList.add('hidden');
+    e.timeTotal?.classList.add('hidden');
+    e.btnPlay?.classList.add('hidden');
+    e.btnZoomIn?.classList.remove('hidden');
+    e.btnZoomOut?.classList.remove('hidden');
+    e.btnSlideshow?.classList.remove('hidden');
+    e.image.classList.remove('hidden');
+    e.image.src = streamUrl;
+    e.player?.classList.add('open', 'has-image');
+    updateMinimizedTitle();
+    return;
+  }
   const isVideo = media.type === 'video';
   const src = streamUrl;
+  e.video.classList.remove('hidden');
+  e.audio.classList.remove('hidden');
+  e.track?.classList.remove('hidden');
+  e.timeElapsed?.classList.remove('hidden');
+  e.timeTotal?.classList.remove('hidden');
+  e.btnPlay?.classList.remove('hidden');
+  e.image?.classList.add('hidden');
+  e.btnZoomIn?.classList.add('hidden');
+  e.btnZoomOut?.classList.add('hidden');
+  e.btnSlideshow?.classList.add('hidden');
+  e.player?.classList.remove('has-image');
+  e.player?.classList.add('open');
+  e.btnPlay.textContent = '⏸';
+  e.bigPlay?.classList.add('hidden');
   if (isVideo) {
     e.video.pause();
     e.audio.pause(); e.audio.src = '';
-    e.video.style.display = '';
-    e.audio.style.display = 'none';
+    e.video.classList.remove('hidden');
+    e.audio.classList.add('hidden');
     e.coverArt?.classList.add('hidden');
+    e.image?.classList.add('hidden');
     e.video.src = src;
     e.video.load();
     seekWhenMetadataReady(e.video, resumeFrom);
   } else {
     e.audio.pause();
     e.video.pause(); e.video.src = '';
-    e.video.style.display = 'none';
-    e.audio.style.display = 'none';
+    e.video.classList.add('hidden');
+    e.audio.classList.remove('hidden');
+    e.image?.classList.add('hidden');
     e.audio.src = src;
     seekWhenMetadataReady(e.audio, resumeFrom);
     if (e.coverArt) {
@@ -270,6 +357,7 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
     }
   }
   e.player?.classList.add('open');
+  e.player?.classList.remove('has-image');
   e.btnPlay.textContent = '⏸';
   e.bigPlay?.classList.add('hidden');
   e.timeTotal.textContent = fmt(media.duration ?? 0);
@@ -283,8 +371,43 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
 function loadMedia(media, resumeFrom = 0) {
   reportProgress = true;
   const e = els();
+  if (media.type === 'image') {
+    resetImageZoom();
+    e.video.pause(); e.video.src = '';
+    e.audio.pause(); e.audio.src = '';
+    e.video.classList.add('hidden');
+    e.audio.classList.add('hidden');
+    e.coverArt?.classList.add('hidden');
+    e.bigPlay?.classList.add('hidden');
+    e.track?.classList.add('hidden');
+    e.timeElapsed?.classList.add('hidden');
+    e.timeTotal?.classList.add('hidden');
+    e.btnPlay?.classList.add('hidden');
+    e.btnZoomIn?.classList.remove('hidden');
+    e.btnZoomOut?.classList.remove('hidden');
+    e.btnSlideshow?.classList.remove('hidden');
+    e.image.classList.remove('hidden');
+    e.image.src = `/api/media/${media.id}/stream`;
+    e.player?.classList.add('open', 'has-image');
+    updateMinimizedTitle();
+    return;
+  }
   const isVideo = media.type === 'video';
   const src = `/api/media/${media.id}/stream`;
+  e.video.classList.remove('hidden');
+  e.audio.classList.remove('hidden');
+  e.track?.classList.remove('hidden');
+  e.timeElapsed?.classList.remove('hidden');
+  e.timeTotal?.classList.remove('hidden');
+  e.btnPlay?.classList.remove('hidden');
+  e.image?.classList.add('hidden');
+  e.btnZoomIn?.classList.add('hidden');
+  e.btnZoomOut?.classList.add('hidden');
+  e.btnSlideshow?.classList.add('hidden');
+  e.player?.classList.remove('has-image');
+  e.player?.classList.add('open');
+  e.btnPlay.textContent = '⏸';
+  e.bigPlay?.classList.add('hidden');
   if (isVideo) {
     e.video.pause();
     e.audio.pause(); e.audio.src = '';
@@ -311,9 +434,6 @@ function loadMedia(media, resumeFrom = 0) {
       }
     }
   }
-  e.player?.classList.add('open');
-  e.btnPlay.textContent = '⏸';
-  e.bigPlay?.classList.add('hidden');
   e.timeTotal.textContent = fmt(media.duration ?? 0);
   e.buffered && (e.buffered.style.background = 'transparent');
   e.fill.style.width = '0%';
@@ -325,7 +445,8 @@ function loadMedia(media, resumeFrom = 0) {
 function currentMediaElement() {
   const e = els();
   if (currentMedia?.type === 'audio') return e.audio;
-  return e.video;
+  if (currentMedia?.type === 'video') return e.video;
+  return null;
 }
 
 function seekWhenMetadataReady(m, seconds) {
@@ -474,6 +595,74 @@ export function currentMediaInfo() { return currentMedia; }
 export function isPlaybackActive() {
   if (isDetached()) return !!detachedPlaybackState?.playing;
   return isPlaying;
+}
+
+export function isImageMode() {
+  return currentMedia?.type === 'image';
+}
+
+// Image zoom helpers
+function setImageZoom(s) {
+  zoomScale = Math.max(0.5, Math.min(s, 5));
+  applyImageTransform();
+}
+
+function applyImageTransform() {
+  const e = els();
+  if (!e.image) return;
+  e.image.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale})`;
+  e.image.style.cursor = zoomScale > 1 ? 'grab' : 'zoom-in';
+}
+
+function resetImageZoom() {
+  zoomScale = 1;
+  panX = 0;
+  panY = 0;
+  applyImageTransform();
+}
+
+export function zoomIn() {
+  setImageZoom(zoomScale * 1.25);
+}
+
+export function zoomOut() {
+  setImageZoom(zoomScale / 1.25);
+}
+
+export function resetZoom() {
+  resetImageZoom();
+}
+
+// Slideshow helpers
+export function toggleSlideshow() {
+  if (slideshowTimer) stopSlideshow();
+  else startSlideshow();
+}
+
+export function isSlideshowActive() {
+  return !!slideshowTimer;
+}
+
+function startSlideshow() {
+  if (slideshowTimer) clearInterval(slideshowTimer);
+  slideshowTimer = setInterval(() => {
+    if (Date.now() < slideshowPausedUntil) return;
+    if (!isImageMode()) { stopSlideshow(); return; }
+    playNext();
+  }, 5000);
+  const btn = els().btnSlideshow;
+  if (btn) btn.textContent = '⏸';
+}
+
+function stopSlideshow() {
+  clearInterval(slideshowTimer);
+  slideshowTimer = null;
+  const btn = els().btnSlideshow;
+  if (btn) btn.textContent = '⏵';
+}
+
+function pauseSlideshow() {
+  slideshowPausedUntil = Date.now() + 10000;
 }
 
 export function isDetached() { return !!detachWindow && !detachWindow.closed; }

@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/css/layout.css">
 <link rel="stylesheet" href="/css/components.css">
 <link rel="stylesheet" href="/css/player.css">
+<link rel="stylesheet" href="/css/lightbox.css">
 <script type="module" src="/js/app.js"></script>
 </head>
 <body>
@@ -64,6 +65,7 @@
     <video id="media-video" playsinline controlslist="nodownload"></video>
     <audio id="media-audio" class="hidden"></audio>
     <img id="cover-art" class="cover-art hidden" alt="Cover" loading="lazy">
+    <img id="media-image" class="media-image hidden" alt="" loading="lazy">
     <div id="big-play" class="big-play" role="button" aria-label="Play" tabindex="0">
       <div class="play-icon">▶</div>
     </div>
@@ -80,7 +82,10 @@
     <div class="time" id="time-total">0:00</div>
     <button id="btn-prev" class="icon-btn" aria-label="Previous">⏮</button>
     <button id="btn-next" class="icon-btn" aria-label="Next">⏭</button>
-    <div class="volume-control">
+    <button id="btn-zoom-in" class="icon-btn image-only hidden" aria-label="Zoom in">+</button>
+    <button id="btn-zoom-out" class="icon-btn image-only hidden" aria-label="Zoom out">−</button>
+    <button id="btn-slideshow" class="icon-btn image-only hidden" aria-label="Slideshow">⏵</button>
+    <div class="volume-control video-only">
       <button id="btn-mute" class="icon-btn" aria-label="Mute">🔊</button>
       <input id="volume-slider" type="range" min="0" max="1" step="0.05" value="1" class="volume-slider" aria-label="Volume">
     </div>
@@ -126,6 +131,8 @@
         <div class="help-row"><span><kbd>r</kbd></span><span>Toggle shuffle</span></div>
         <div class="help-row"><span><kbd>s</kbd></span><span>Toggle sets sidebar</span></div>
         <div class="help-row"><span><kbd>S</kbd></span><span>Share selected media</span></div>
+        <div class="help-row"><span><kbd>+</kbd> <kbd>−</kbd></span><span>Zoom in / out (image viewer)</span></div>
+        <div class="help-row"><span><kbd>Shift+S</kbd></span><span>Toggle slideshow (images)</span></div>
         <div class="help-row"><span><kbd>L</kbd></span><span>My Shares</span></div>
         <div class="help-row"><span><kbd>?</kbd></span><span>Show / hide help</span></div>
       </div>
@@ -243,6 +250,23 @@
         <kbd>Delete</kbd> revoke &middot;
         <kbd>Esc</kbd> close
     </div>
+  </div>
+</div>
+
+<!-- Image Lightbox -->
+<div id="image-lightbox" class="lightbox-overlay" role="dialog" aria-modal="true" aria-label="Image viewer">
+  <button id="lb-close" class="icon-btn lightbox-close" aria-label="Close">✕</button>
+  <button id="lb-prev" class="icon-btn lightbox-nav lightbox-prev" aria-label="Previous">‹</button>
+  <button id="lb-next" class="icon-btn lightbox-nav lightbox-next" aria-label="Next">›</button>
+  <div class="lightbox-stage">
+    <img id="lightbox-image" alt="" draggable="false">
+  </div>
+  <div class="lightbox-toolbar">
+    <button id="lb-zoom-in" class="icon-btn" aria-label="Zoom in">+</button>
+    <button id="lb-zoom-out" class="icon-btn" aria-label="Zoom out">−</button>
+    <button id="lb-slideshow" class="icon-btn" aria-label="Slideshow">⏵</button>
+    <span id="lb-counter" class="lightbox-counter"></span>
+    <span id="lb-meta" class="lightbox-meta"></span>
   </div>
 </div>
 

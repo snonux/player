@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"codeberg.org/snonux/player/internal/auth"
@@ -14,12 +15,14 @@ import (
 
 // adminService is the concrete implementation of AdminService.
 type adminService struct {
-	store     repository.AdminServiceStore
-	clock     clock.Clock
-	hasher    auth.Hasher
-	scanner   scanner.Scanner
-	mediaRoot string
-	progress  *model.ScanProgress
+	store      repository.AdminServiceStore
+	clock      clock.Clock
+	hasher     auth.Hasher
+	scanner    scanner.Scanner
+	mediaRoot  string
+	mu         sync.Mutex
+	scanCancel context.CancelFunc
+	progress   *model.ScanProgress
 }
 
 // NewAdminService creates a concrete AdminService.
@@ -30,7 +33,6 @@ func NewAdminService(store repository.AdminServiceStore, clk clock.Clock, hasher
 		hasher:    hasher,
 		scanner:   sc,
 		mediaRoot: mediaRoot,
-		progress:  &model.ScanProgress{},
 	}
 }
 
@@ -42,16 +44,26 @@ func (s *adminService) TriggerRescan(ctx context.Context) error {
 	if s.scanner == nil {
 		return fmt.Errorf("scanner not configured")
 	}
+
+	s.mu.Lock()
+	if s.scanCancel != nil {
+		s.scanCancel()
+	}
+	scanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	s.scanCancel = cancel
+	progress := &model.ScanProgress{}
+	s.progress = progress
+	s.mu.Unlock()
+
 	// Run the scan in a background goroutine so the HTTP request
 	// returns immediately and the scan continues asynchronously.
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		if err := s.scanner.Scan(ctx, s.mediaRoot, s.progress); err != nil {
-			s.progress.Done(err)
+		if err := s.scanner.Scan(scanCtx, s.mediaRoot, progress); err != nil {
+			progress.Done(err)
 			fmt.Printf("[rescan] scan failed: %v\n", err)
 		} else {
-			s.progress.Done(nil)
+			progress.Done(nil)
 			fmt.Printf("[rescan] scan completed\n")
 		}
 	}()
@@ -59,7 +71,13 @@ func (s *adminService) TriggerRescan(ctx context.Context) error {
 }
 
 func (s *adminService) ScanProgress(ctx context.Context) model.ScanProgress {
-	return s.progress.Copy()
+	s.mu.Lock()
+	progress := s.progress
+	s.mu.Unlock()
+	if progress == nil {
+		return model.ScanProgress{}
+	}
+	return progress.Copy()
 }
 
 func (s *adminService) ListUsers(ctx context.Context) ([]model.User, error) {
