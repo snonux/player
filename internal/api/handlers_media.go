@@ -53,6 +53,7 @@ func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeFile(w, r, fr.Path)
 }
 
@@ -231,16 +232,19 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 	setIDs := q.Get("set_ids")
 	search := q.Get("search")
 	typ := q.Get("type")
+	fav := q.Get("favorites")
+	minDur := q.Get("min_duration")
+	maxDur := q.Get("max_duration")
 	start := time.Now()
 	filter := parseMediaListQuery(q)
 	media, err := s.mediaSvc.ListMedia(r.Context(), userIDFromContext(r), filter)
 	dur := time.Since(start)
 	if err != nil {
-		fmt.Printf("[api] %s set_id=%s set_ids=%s search=%q type=%s error=%v (took %s)\n", path, setID, setIDs, search, typ, err, dur)
+		fmt.Printf("[api] %s set_id=%s set_ids=%s search=%q type=%s fav=%s min=%s max=%s error=%v (took %s)\n", path, setID, setIDs, search, typ, fav, minDur, maxDur, err, dur)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	fmt.Printf("[api] %s set_id=%s set_ids=%s search=%q type=%s returned=%d (took %s)\n", path, setID, setIDs, search, typ, len(media), dur)
+	fmt.Printf("[api] %s set_id=%s set_ids=%s search=%q type=%s fav=%s min=%s max=%s returned=%d (took %s)\n", path, setID, setIDs, search, typ, fav, minDur, maxDur, len(media), dur)
 	writeJSON(w, http.StatusOK, media)
 }
 

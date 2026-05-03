@@ -36,30 +36,13 @@
 <!-- Main page area -->
 <div class="page" role="main">
   <div class="main-content">
-    <!-- Toolbar: hidden by default, shown on 't' key or when searching -->
-    <div id="toolbar" class="toolbar hidden">
-      <select id="filter-type" aria-label="Filter by type">
-        <option value="">All</option>
-        <option value="video">Video</option>
-        <option value="audio">Audio</option>
-      </select>
-      <button id="filter-favorites" class="btn btn-ghost btn-sm">♥ Favorites</button>
-      <div class="spacer"></div>
-      <button id="filter-toggle" class="btn btn-ghost btn-sm" title="More filters">Filters ▾</button>
-      <span id="result-count" class="text-muted text-xs"></span>
-    </div>
-    <div id="filter-advanced" class="toolbar hidden">
-      <input id="filter-tags" type="text" placeholder="Tags (comma)" aria-label="Filter by tags" class="input-sm">
-      <input id="filter-min-duration" type="number" min="0" placeholder="Min min" aria-label="Min duration minutes" class="input-sm">
-      <input id="filter-max-duration" type="number" min="0" placeholder="Max min" aria-label="Max duration minutes" class="input-sm">
-    </div>
-
-    <!-- Search bar: hidden by default, shown on '/' key -->
+    <!-- Search bar: shown on '/' key -->
     <div id="search-bar" class="search-bar hidden" role="search">
       <span aria-hidden="true">🔎</span>
-      <input id="search-input" type="search" placeholder="Search… (press /)" autocomplete="off" aria-label="Search media">
+      <input id="search-input" type="search" placeholder="Search or filter… (press /)" autocomplete="off" aria-label="Search media">
       <button id="search-clear" class="icon-btn btn-sm" title="Clear">✕</button>
     </div>
+    <div id="result-count" class="text-muted text-xs mt-1"></div>
 
     <!-- Empty state hint: shown when no set is selected -->
     <div id="empty-hint" class="empty-hint">
@@ -145,6 +128,9 @@
         <div class="help-row"><span><kbd>S</kbd></span><span>Share selected media</span></div>
         <div class="help-row"><span><kbd>L</kbd></span><span>My Shares</span></div>
         <div class="help-row"><span><kbd>?</kbd></span><span>Show / hide help</span></div>
+      </div>
+      <div class="help-search text-muted text-xs mt-2">
+        Search: plain text searches file name. Syntax: <code>min:30</code> <code>max:55</code> <code>tag:a,b</code> <code>like:1</code> <code>type:video</code> <code>sort:random</code> <code>minsize:10</code> <code>maxsize:500</code>
       </div>
       <div class="help-shares text-muted text-xs mt-2">My Shares: <kbd>↑</kbd> / <kbd>↓</kbd> or <kbd>k</kbd> / <kbd>j</kbd> navigate, <kbd>Enter</kbd> copies, <kbd>Delete</kbd> revokes, <kbd>Esc</kbd> closes.</div>
     </div>

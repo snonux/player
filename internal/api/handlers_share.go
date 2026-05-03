@@ -136,6 +136,7 @@ func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	w.Header().Set("Cache-Control", "no-cache")
 	s.serveFileResult(w, r, fr, false)
 }
 

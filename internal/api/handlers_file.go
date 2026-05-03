@@ -80,6 +80,7 @@ func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.mediaSvc) {
 		return
 	}
+	w.Header().Set("Cache-Control", "no-cache")
 	s.fileHandler(s.mediaSvc.GetThumbnail)(w, r)
 }
 

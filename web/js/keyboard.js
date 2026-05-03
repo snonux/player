@@ -160,7 +160,6 @@ export function initKeyboard(handlers) {
         handlers.search?.(e);
         break;
       case 'i': handlers.mediaInfo?.(e); break;
-      case 't': handlers.toolbar?.(e); break;
       case 'd': handlers.toggleDetach?.(e); break;
       case 'D': handlers.download?.(e); break;
       case 'u': handlers.upload?.(e); break;
@@ -168,14 +167,6 @@ export function initKeyboard(handlers) {
       case '?':
         e.preventDefault();
         handlers.help?.(e);
-        break;
-      case ',':
-        e.preventDefault();
-        handlers.focusMinDuration?.(e);
-        break;
-      case '.':
-        e.preventDefault();
-        handlers.focusMaxDuration?.(e);
         break;
     }
   });

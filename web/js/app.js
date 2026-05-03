@@ -2,7 +2,7 @@ import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initSelection, clearSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
 import { initPlayer, togglePlay, toggleFullscreen, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, currentMediaId, currentMediaInfo, hasLoadedMedia, isPlaybackActive, seekRelative, selectAndPlay } from './player.js';
-import { initSearch, focusSearch, trigger as triggerSearch } from './search.js';
+import { initSearch, focusSearch, trigger as triggerSearch, parseQuery } from './search.js';
 import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
 import { initThemes } from './themes.js';
 import { initNotes, open as openNotes } from './notes.js';
@@ -76,8 +76,10 @@ async function initApp() {
   initSelection();
   initSearch({
     onChange: (q) => {
-      state.filters.search = q;
+      const parsed = parseQuery(q);
+      Object.assign(state.filters, parsed);
       state.folderPath = '';
+      console.log('[search] raw:', q, 'parsed:', parsed, 'filters:', state.filters);
       loadMedia();
     },
     input: document.getElementById('search-input'),
@@ -126,7 +128,6 @@ async function initApp() {
     toggleDetach: () => toggleDetach(),
     download: downloadSelected,
     help: toggleHelp,
-    toolbar: toggleToolbar,
     backspace: () => { navigateBack(); },
     sidebar: toggleSidebar,
     upload: () => showUpload(),
@@ -136,8 +137,6 @@ async function initApp() {
     sharesNavDown: () => sharesNav(1),
     sharesCopy: copySelectedShare,
     sharesDelete: deleteSelectedShare,
-    focusMinDuration: () => focusFilter('filter-min-duration'),
-    focusMaxDuration: () => focusFilter('filter-max-duration'),
   });
   initNotes(() => toast('Note saved'));
   initAdmin();
@@ -146,21 +145,6 @@ async function initApp() {
   initHelp();
   initShares();
   initMediaInfo();
-
-  // Filters
-  document.getElementById('filter-type')?.addEventListener('change', (e) => { state.filters.type = e.target.value; state.folderPath = ''; loadMedia(); });
-  document.getElementById('filter-favorites')?.addEventListener('click', (e) => {
-    state.filters.favorites = !state.filters.favorites;
-    e.target.classList.toggle('active', state.filters.favorites);
-    state.folderPath = '';
-    loadMedia();
-  });
-  document.getElementById('filter-tags')?.addEventListener('change', (e) => { state.filters.tags = e.target.value; state.folderPath = ''; loadMedia(); });
-  document.getElementById('filter-min-duration')?.addEventListener('change', (e) => { state.filters.minDuration = e.target.value; state.folderPath = ''; loadMedia(); });
-  document.getElementById('filter-max-duration')?.addEventListener('change', (e) => { state.filters.maxDuration = e.target.value; state.folderPath = ''; loadMedia(); });
-  document.getElementById('filter-toggle')?.addEventListener('click', () => {
-    document.getElementById('filter-advanced')?.classList.toggle('hidden');
-  });
 
   // Sidebar close
   document.getElementById('menu-close')?.addEventListener('click', () => {
@@ -304,7 +288,7 @@ async function loadMedia() {
 
     // When viewing a single set with no filters/search, use the browse endpoint
     // so that subfolders are presented as folders to navigate into.
-    if (singleSetId && !setIds && !isShuffle() && !state.filters.search && !state.filters.type && !state.filters.favorites && !state.filters.tags && !state.filters.minDuration && !state.filters.maxDuration) {
+    if (singleSetId && !setIds && !isShuffle() && !hasActiveFilters()) {
       const data = await API.browse(singleSetId, state.folderPath);
       updateBreadcrumb(data.current_path);
       setMedia(mediaWithBrowsePath(data.media || [], data.current_path || ''));
@@ -313,6 +297,7 @@ async function loadMedia() {
       resultCount.textContent = `${total} items`;
     } else {
       breadcrumb?.classList.add('hidden');
+      const sort = isShuffle() ? 'random' : (state.filters.sort || 'name');
       const params = {
         set_id: setIds ? '' : String(singleSetId || state.selectedSetId || ''),
         set_ids: setIds,
@@ -322,7 +307,9 @@ async function loadMedia() {
         tags: state.filters.tags || '',
         min_duration: state.filters.minDuration ? String(parseFloat(state.filters.minDuration) * 60) : '',
         max_duration: state.filters.maxDuration ? String(parseFloat(state.filters.maxDuration) * 60) : '',
-        sort: isShuffle() ? 'random' : 'name',
+        filesize_min: state.filters.minFileSize ? String(parseInt(state.filters.minFileSize, 10) * 1024 * 1024) : '',
+        filesize_max: state.filters.maxFileSize ? String(parseInt(state.filters.maxFileSize, 10) * 1024 * 1024) : '',
+        sort,
         limit: '1000',
       };
       const data = await API.media(params);
@@ -404,7 +391,18 @@ function renderBrowse(data) {
       if (!setId) return;
       const name = b.closest('.folder-card')?.dataset.name;
       const folder = state.folderPath ? `${state.folderPath}/${name}` : name;
-      try { await API.regenCover(setId, folder); toast('Folder cover regenerated'); loadMedia(); }
+      try {
+        await API.regenCover(setId, folder);
+        toast('Folder cover regenerated');
+        await loadMedia();
+        // Force refresh the folder cover image to bypass browser cache
+        const folderCard = document.querySelector(`.folder-card[data-name="${CSS.escape(name)}"]`);
+        const img = folderCard?.querySelector('img');
+        if (img) {
+          const base = img.src.split('?')[0];
+          img.src = `${base}?t=${Date.now()}`;
+        }
+      }
       catch (err) { toast(err.message || 'Cover failed', 'error'); }
     });
   });
@@ -575,7 +573,17 @@ function canTraverseBrowseFolders() {
 }
 
 function hasActiveFilters() {
-  return !!(state.filters.search || state.filters.type || state.filters.favorites || state.filters.tags || state.filters.minDuration || state.filters.maxDuration);
+  return !!(
+    state.filters.search ||
+    state.filters.type ||
+    state.filters.favorites ||
+    state.filters.tags ||
+    state.filters.minDuration ||
+    state.filters.maxDuration ||
+    state.filters.minFileSize ||
+    state.filters.maxFileSize ||
+    state.filters.sort
+  );
 }
 
 async function findCrossFolderPlayable(delta, preferCurrent) {
@@ -980,28 +988,6 @@ function toggleHelp() {
   const modal = document.getElementById('help-modal');
   if (!modal) return;
   modal.classList.toggle('open');
-}
-
-// Toolbar / sidebar / search visibility toggles
-function toggleToolbar() {
-  const toolbar = document.getElementById('toolbar');
-  toolbar?.classList.toggle('hidden');
-}
-
-function toggleSidebar() {
-  const sidebar = document.getElementById('sidebar');
-  const page = document.querySelector('.page');
-  if (!sidebar) return;
-  const open = sidebar.classList.toggle('open');
-  page?.classList.toggle('has-sidebar', open);
-}
-
-function focusFilter(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  document.getElementById('filter-advanced')?.classList.remove('hidden');
-  el.focus();
-  el.select();
 }
 
 function showSearch() {
