@@ -129,6 +129,9 @@ async function initApp() {
     download: downloadSelected,
     help: toggleHelp,
     backspace: () => { navigateBack(); },
+    isMediaInfoOpen,
+    closeMediaInfo,
+    mediaInfoScroll: scrollMediaInfo,
     sidebar: toggleSidebar,
     upload: () => showUpload(),
     sharesToggle: toggleShares,
@@ -750,6 +753,18 @@ function closeMediaInfo() {
   document.getElementById('media-info-modal')?.classList.remove('open');
 }
 
+function isMediaInfoOpen() {
+  return document.getElementById('media-info-modal')?.classList.contains('open');
+}
+
+function scrollMediaInfo(delta) {
+  const panel = document.getElementById('media-info-panel')
+    || document.querySelector('#media-info-modal .modal');
+  if (!panel) return;
+  const step = Math.max(96, Math.round(panel.clientHeight * 0.25));
+  panel.scrollTop += delta * step;
+}
+
 async function toggleMediaInfo() {
   const modal = document.getElementById('media-info-modal');
   if (!modal) return;
@@ -778,6 +793,8 @@ async function openMediaInfo(id) {
   if (!modal || !body) return;
   body.innerHTML = '<p class="text-muted text-sm">Loading...</p>';
   modal.classList.add('open');
+  (document.getElementById('media-info-panel')
+    || document.querySelector('#media-info-modal .modal'))?.focus({ preventScroll: true });
   try {
     const detail = await API.mediaDetail(id);
     body.innerHTML = renderMediaInfo(detail);

@@ -508,7 +508,7 @@ export function onDetachReady(popup) {
 }
 
 export function onDetachClosing(state = null) {
-  if (state) detachedPlaybackState = state;
+  if (state) detachedPlaybackState = mergeDetachedState(detachedPlaybackState, state);
   if (!detachWindow) return;
   reattachDetached({ closePopup: false });
 }
@@ -547,6 +547,17 @@ function readDetachedWindowState(popup) {
     }
   } catch {}
   return null;
+}
+
+function mergeDetachedState(previous, next) {
+  if (!next) return previous;
+  if (!previous?.media || !next.media || previous.media.id !== next.media.id) return next;
+  const prevTime = Number(previous.currentTime || 0);
+  const nextTime = Number(next.currentTime || 0);
+  if (prevTime > 0 && nextTime === 0 && next.positionReady !== true) {
+    return { ...next, currentTime: prevTime };
+  }
+  return next;
 }
 
 function sendDetachedLoad(media, resumeFrom = 0, play = true) {
@@ -606,7 +617,7 @@ window.addEventListener('message', (ev) => {
   } else if (ev.data.type === 'detach-closing') {
     onDetachClosing(ev.data.state);
   } else if (ev.data.type === 'detach-state') {
-    detachedPlaybackState = ev.data.state;
+    detachedPlaybackState = mergeDetachedState(detachedPlaybackState, ev.data.state);
   } else if (ev.data.type === 'detach-prev') {
     triggerPrevious({ forcePlay: ev.data.play ?? true });
   } else if (ev.data.type === 'detach-next') {

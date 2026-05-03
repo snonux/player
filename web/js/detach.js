@@ -5,6 +5,7 @@ let currentMedia = null;
 let currentIndex = -1;
 let progressInterval = null;
 let lastStateSent = 0;
+let lastKnownPosition = 0;
 
 initPlayer();
 
@@ -29,11 +30,16 @@ window.__playerDetachCurrentState = currentState;
     stopProgress();
   });
   el?.addEventListener('timeupdate', () => {
+    lastKnownPosition = el.currentTime || lastKnownPosition;
     const now = Date.now();
     if (now - lastStateSent > 500) {
       sendState();
       lastStateSent = now;
     }
+  });
+  el?.addEventListener('seeked', () => {
+    lastKnownPosition = el.currentTime || 0;
+    sendState();
   });
   el?.addEventListener('ended', () => post({ type: 'detach-next' }));
 });
@@ -111,6 +117,7 @@ function loadDetachedMedia(payload) {
   if (!currentMedia) return;
 
   const resumeFrom = Number(payload.resumeFrom || 0);
+  lastKnownPosition = resumeFrom;
   loadMediaDirect(currentMedia, payload.streamUrl, payload.thumbnailUrl, resumeFrom);
 
   const el = mediaElement();
@@ -153,6 +160,7 @@ function seekRelative(seconds) {
   if (!currentMedia || !el || !isFinite(seconds)) return;
   const upper = el.duration && isFinite(el.duration) ? el.duration : Infinity;
   el.currentTime = Math.max(0, Math.min(upper, (el.currentTime || 0) + seconds));
+  lastKnownPosition = el.currentTime || 0;
   sendState();
 }
 
@@ -219,10 +227,13 @@ function sendState() {
 
 function currentState() {
   const el = mediaElement();
+  const positionReady = !el || el.readyState >= HTMLMediaElement.HAVE_METADATA;
+  const position = positionReady ? (el?.currentTime || 0) : (lastKnownPosition || 0);
   return {
     media: currentMedia,
     index: currentIndex,
-    currentTime: el?.currentTime || 0,
+    currentTime: position,
+    positionReady,
     duration: el?.duration || currentMedia?.duration || 0,
     playing: !!el && !el.paused,
     volume: el?.volume ?? 1,

@@ -277,6 +277,9 @@ func (s *mediaService) GetSetCover(ctx context.Context, setID int64, folder stri
 			FileSize: info.Size(),
 		}, nil
 	}
+	if fr, ok := folderCoverFile(baseDir); ok {
+		return fr, nil
+	}
 
 	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
 	if err != nil {
@@ -413,9 +416,11 @@ func (s *mediaService) BrowseSet(ctx context.Context, setID, userID int64, paren
 			items = append(items, fc.files[0])
 		} else {
 			subPath := filepath.Join(parent, name)
-			coverPath := filepath.Join(filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath, filepath.FromSlash(subPath))), ".cover.jpg")
+			folderDir := filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath, filepath.FromSlash(subPath)))
+			coverPath := filepath.Join(folderDir, ".cover.jpg")
 			_, err := os.Stat(coverPath)
-			hasCover := err == nil || randomFolderThumbnail(media, filepath.ToSlash(subPath)) != ""
+			_, hasDirectCover := folderCoverFile(folderDir)
+			hasCover := err == nil || hasDirectCover || randomFolderThumbnail(media, filepath.ToSlash(subPath)) != ""
 			folders = append(folders, BrowseFolder{Name: name, HasCover: hasCover})
 		}
 	}
@@ -451,4 +456,26 @@ func randomFolderThumbnail(media []model.Media, folder string) string {
 		return ""
 	}
 	return candidates[mrand.Intn(len(candidates))]
+}
+
+func folderCoverFile(dir string) (*FileResult, bool) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		switch strings.ToLower(entry.Name()) {
+		case "cover.jpg", "cover.jpeg", "cover.png", "cover.gif", "folder.jpg", "folder.jpeg", "folder.png", "folder.gif":
+			info, err := entry.Info()
+			if err != nil {
+				return nil, false
+			}
+			path := filepath.Join(dir, entry.Name())
+			return &FileResult{Path: path, FileName: entry.Name(), FileSize: info.Size()}, true
+		}
+	}
+	return nil, false
 }

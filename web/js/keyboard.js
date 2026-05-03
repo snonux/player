@@ -33,6 +33,27 @@ export function initKeyboard(handlers) {
       return;
     }
 
+    // Media info modal keyboard scrolling.
+    if (handlers.isMediaInfoOpen?.()) {
+      switch (e.key) {
+        case 'ArrowUp':
+        case 'k':
+          e.preventDefault();
+          handlers.mediaInfoScroll?.(-1, e);
+          return;
+        case 'ArrowDown':
+        case 'j':
+          e.preventDefault();
+          handlers.mediaInfoScroll?.(1, e);
+          return;
+        case 'Escape':
+          e.preventDefault();
+          handlers.closeMediaInfo?.(e);
+          return;
+      }
+      return;
+    }
+
     if (editing) {
       if (e.key === 'Escape') {
         e.target.blur();

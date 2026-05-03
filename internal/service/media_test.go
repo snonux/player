@@ -1963,6 +1963,50 @@ func TestMediaService_FolderThumbnailFallback(t *testing.T) {
 	})
 }
 
+func TestMediaService_GetSetCoverPrefersFolderCoverImage(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	coverDir := filepath.Join(tmpDir, "library", "Book")
+	if err := os.MkdirAll(coverDir, 0o755); err != nil {
+		t.Fatalf("mkdir cover dir: %v", err)
+	}
+	coverPath := filepath.Join(coverDir, "cover.jpg")
+	if err := os.WriteFile(coverPath, []byte("cover"), 0o644); err != nil {
+		t.Fatalf("write cover: %v", err)
+	}
+	wrongThumb := filepath.Join(tmpDir, "wrong.jpg")
+	if err := os.WriteFile(wrongThumb, []byte("wrong"), 0o644); err != nil {
+		t.Fatalf("write wrong thumb: %v", err)
+	}
+
+	store := &repository.MockStore{
+		SetRepo: repository.MockSetRepo{
+			GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+				return &model.Set{ID: 1, RootPath: "library"}, nil
+			},
+		},
+		UserRepo: repository.MockUserRepo{
+			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+				return &model.User{ID: id, IsAdmin: true}, nil
+			},
+		},
+		MediaRepo: repository.MockMediaRepo{
+			ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+				return []model.Media{{ID: 1, SetID: 1, RelPath: "Book/book.m4b", ThumbnailPath: wrongThumb, Type: model.MediaTypeAudio}}, nil
+			},
+		},
+	}
+	svc := NewMediaService(store, newMockClock(), tmpDir, nil, nil)
+
+	fr, err := svc.GetSetCover(ctx, 1, "Book", 1)
+	if err != nil {
+		t.Fatalf("get set cover: %v", err)
+	}
+	if fr.Path != coverPath {
+		t.Fatalf("expected direct cover %q, got %q", coverPath, fr.Path)
+	}
+}
+
 func TestMediaService_GetThumbnail(t *testing.T) {
 	ctx := context.Background()
 	tmpDir := t.TempDir()
