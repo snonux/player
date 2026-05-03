@@ -64,6 +64,78 @@ func TestGCWorker_RunOnce(t *testing.T) {
 	}
 }
 
+func TestGCWorker_DBHardDeleteHappensBeforeFileRemoval(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	tmpDir := t.TempDir()
+
+	file := filepath.Join(tmpDir, "old.mp4")
+	if err := os.WriteFile(file, []byte("old"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	deletedAt := now.Add(-8 * 24 * time.Hour)
+	checkedOrdering := false
+	store := &repository.MockStore{
+		MediaRepo: repository.MockMediaRepo{
+			ListDeletedMediaFunc: func(ctx context.Context) ([]model.Media, error) {
+				return []model.Media{
+					{ID: 1, AbsPath: file, DeletedAt: &deletedAt},
+				}, nil
+			},
+			HardDeleteMediaFunc: func(ctx context.Context, id int64) error {
+				if _, err := os.Stat(file); err != nil {
+					t.Fatalf("expected file to exist while hard-deleting DB record: %v", err)
+				}
+				checkedOrdering = true
+				return nil
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	w := NewGCWorker(store, &clock.MockClock{T: now}, tmpDir, time.Minute, logger).WithAge(7 * 24 * time.Hour)
+	w.RunOnce()
+
+	if !checkedOrdering {
+		t.Fatal("expected hard delete ordering check to run")
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatal("expected file to be removed after DB hard delete succeeds")
+	}
+}
+
+func TestGCWorker_LeavesFileWhenDBHardDeleteFails(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	tmpDir := t.TempDir()
+
+	file := filepath.Join(tmpDir, "old.mp4")
+	if err := os.WriteFile(file, []byte("old"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	deletedAt := now.Add(-8 * 24 * time.Hour)
+	store := &repository.MockStore{
+		MediaRepo: repository.MockMediaRepo{
+			ListDeletedMediaFunc: func(ctx context.Context) ([]model.Media, error) {
+				return []model.Media{
+					{ID: 1, AbsPath: file, DeletedAt: &deletedAt},
+				}, nil
+			},
+			HardDeleteMediaFunc: func(ctx context.Context, id int64) error {
+				return errors.New("db unavailable")
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	w := NewGCWorker(store, &clock.MockClock{T: now}, tmpDir, time.Minute, logger).WithAge(7 * 24 * time.Hour)
+	w.RunOnce()
+
+	if _, err := os.Stat(file); err != nil {
+		t.Fatalf("expected file to remain when DB hard delete fails: %v", err)
+	}
+}
+
 func TestGCWorker_StartStop(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	tmpDir := t.TempDir()

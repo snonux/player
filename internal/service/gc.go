@@ -114,6 +114,13 @@ func (w *GCWorker) run(ctx context.Context) {
 			absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
 		}
 
+		if err := w.store.HardDeleteMedia(ctx, item.ID); err != nil {
+			if w.logger != nil {
+				w.logger.Error("gc hard delete", "id", item.ID, "err", err)
+			}
+			continue
+		}
+
 		if absPath != "" {
 			if err := os.Remove(absPath); err != nil {
 				if w.logger != nil {
@@ -121,13 +128,6 @@ func (w *GCWorker) run(ctx context.Context) {
 				}
 				continue
 			}
-		}
-
-		if err := w.store.HardDeleteMedia(ctx, item.ID); err != nil {
-			if w.logger != nil {
-				w.logger.Error("gc hard delete", "id", item.ID, "err", err)
-			}
-			continue
 		}
 
 		if w.logger != nil {
