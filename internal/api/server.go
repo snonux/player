@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -26,6 +27,7 @@ type Server struct {
 	authSvc     service.AuthService
 	staticFS    http.FileSystem
 	remuxer     probe.Remuxer
+	logger      *slog.Logger
 	mw          *Middleware
 }
 
@@ -43,8 +45,28 @@ func NewServer(
 	staticFS http.FileSystem,
 	remuxer probe.Remuxer,
 ) *Server {
+	return NewServerWithLogger(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, authSvc, staticFS, remuxer, slog.Default())
+}
+
+// NewServerWithLogger creates a Server with routes and an injected logger.
+func NewServerWithLogger(
+	store repository.Store,
+	hasher auth.Hasher,
+	sm *auth.SessionManager,
+	cfg *internal.Config,
+	mediaSvc service.MediaService,
+	adminSvc service.AdminService,
+	progressSvc service.ProgressService,
+	authSvc service.AuthService,
+	staticFS http.FileSystem,
+	remuxer probe.Remuxer,
+	logger *slog.Logger,
+) *Server {
 	if staticFS == nil {
 		staticFS = http.Dir("web")
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 	s := &Server{
 		store:       store,
@@ -58,6 +80,7 @@ func NewServer(
 		authSvc:     authSvc,
 		staticFS:    staticFS,
 		remuxer:     remuxer,
+		logger:      logger,
 		mw:          NewMiddleware(store, sm),
 	}
 	s.routes()

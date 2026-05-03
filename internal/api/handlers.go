@@ -111,7 +111,7 @@ func (s *Server) serveDetach(w http.ResponseWriter, r *http.Request) {
 func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *service.FileResult, attachment bool) {
 	f, err := os.Open(res.Path)
 	if err != nil {
-		fmt.Printf("[api] stream file=%s error=open_failed\n", res.FileName)
+		s.logger.Warn("api stream open failed", "file", res.FileName, "err", err)
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -119,7 +119,7 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 
 	stat, err := f.Stat()
 	if err != nil {
-		fmt.Printf("[api] stream file=%s error=stat_failed\n", res.FileName)
+		s.logger.Warn("api stream stat failed", "file", res.FileName, "err", err)
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -137,15 +137,15 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 	// needing to sniff, which avoids buffering delays during streaming.
 	w.Header().Set("Content-Type", probe.MimeTypeForFilename(res.FileName))
 	w.Header().Set("Accept-Ranges", "bytes")
-	fmt.Printf("[api] stream file=%s size=%d bytes range=%s\n", res.FileName, stat.Size(), r.Header.Get("Range"))
+	s.logger.Info("api stream file", "file", res.FileName, "size", stat.Size(), "range", r.Header.Get("Range"))
 	http.ServeContent(w, r, res.FileName, stat.ModTime(), f)
 }
 
 func (s *Server) serveRemuxedMP4(w http.ResponseWriter, r *http.Request, res *service.FileResult, size int64) {
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Cache-Control", "no-store")
-	fmt.Printf("[api] remux stream file=%s size=%d bytes range=%s\n", res.FileName, size, r.Header.Get("Range"))
+	s.logger.Info("api remux stream file", "file", res.FileName, "size", size, "range", r.Header.Get("Range"))
 	if err := s.remuxer.Remux(r.Context(), res.Path, w); err != nil {
-		slog.Error("remux media", "file", res.FileName, "err", err)
+		s.logger.Error("remux media", "file", res.FileName, "err", err)
 	}
 }

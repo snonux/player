@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -25,7 +24,8 @@ import (
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		log.Fatal(err)
+		slog.Error("fatal", "err", err)
+		os.Exit(1)
 	}
 }
 
@@ -54,11 +54,6 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-	defer func() {
-		if err := store.Close(); err != nil {
-			log.Printf("failed to close database: %v", err)
-		}
-	}()
 
 	// Build logger aligned with the configured log level.
 	var level slog.Level
@@ -75,6 +70,11 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 		level = slog.LevelInfo
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	defer func() {
+		if err := store.Close(); err != nil {
+			logger.Error("failed to close database", "err", err)
+		}
+	}()
 
 	clk := clock.RealClock{}
 	hasher := auth.NewBCryptHasher(12)
@@ -84,8 +84,8 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 	thumbGen := thumb.NewFFmpegGenerator()
 	mediaSvc := service.NewMediaService(store, clk, cfg.MediaRoot, thumbGen, prober)
 
-	fsScanner := scanner.NewFSScanner(store, prober, thumbGen, clk, cfg.MediaRoot)
-	adminSvc := service.NewAdminService(store, clk, hasher, fsScanner, cfg.MediaRoot)
+	fsScanner := scanner.NewFSScannerWithLogger(store, prober, thumbGen, clk, cfg.MediaRoot, logger)
+	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, logger)
 
 	progressSvc := service.NewProgressService(store, clk)
 	authSvc := service.NewAuthService(store, clk, hasher, sm)
@@ -97,11 +97,11 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 
 	staticFS := http.Dir("web")
 	remuxer := probe.NewFFRemuxer()
-	server := api.NewServer(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, authSvc, staticFS, remuxer)
+	server := api.NewServerWithLogger(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, authSvc, staticFS, remuxer, logger)
 
 	gs := api.NewGracefulServer(server, cfg)
 
-	log.Printf("player %s starting on %s", internal.Version, gs.Server.Addr)
+	logger.Info("player starting", "version", internal.Version, "addr", gs.Server.Addr)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -124,12 +124,12 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 		}
 	}
 
-	log.Println("shutting down server...")
+	logger.Info("shutting down server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := gs.Server.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("failed to shutdown server: %w", err)
 	}
-	log.Println("server stopped")
+	logger.Info("server stopped")
 	return nil
 }

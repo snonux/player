@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -28,10 +29,19 @@ type FSScanner struct {
 	clock     clock.Clock
 	mediaRoot string
 	fs        FS
+	logger    *slog.Logger
 }
 
 // NewFSScanner creates a filesystem scanner with injected dependencies.
 func NewFSScanner(store repository.ScannerStore, prober probe.Prober, thumbGen thumb.Generator, clk clock.Clock, mediaRoot string) Scanner {
+	return NewFSScannerWithLogger(store, prober, thumbGen, clk, mediaRoot, slog.Default())
+}
+
+// NewFSScannerWithLogger creates a filesystem scanner with an injected logger.
+func NewFSScannerWithLogger(store repository.ScannerStore, prober probe.Prober, thumbGen thumb.Generator, clk clock.Clock, mediaRoot string, logger *slog.Logger) Scanner {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &FSScanner{
 		store:     store,
 		prober:    prober,
@@ -39,7 +49,15 @@ func NewFSScanner(store repository.ScannerStore, prober probe.Prober, thumbGen t
 		clock:     clk,
 		mediaRoot: mediaRoot,
 		fs:        osFS{},
+		logger:    logger,
 	}
+}
+
+func (s *FSScanner) log() *slog.Logger {
+	if s.logger != nil {
+		return s.logger
+	}
+	return slog.Default()
 }
 
 // Scan walks immediate subdirectories of root, treating each as a set.
@@ -59,7 +77,7 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 	if progress != nil {
 		progress.Start(setCount)
 	}
-	fmt.Printf("[scanner] scan started root=%q sets=%d\n", root, setCount)
+	s.log().Info("scanner scan started", "root", root, "sets", setCount)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -73,13 +91,13 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 			progress.IncrementSet()
 		}
 	}
-	fmt.Printf("[scanner] scan finished root=%q sets=%d\n", root, setCount)
+	s.log().Info("scanner scan finished", "root", root, "sets", setCount)
 	return nil
 }
 
 func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress *model.ScanProgress) error {
 	setName := filepath.Base(setPath)
-	fmt.Printf("[scanner] set started name=%q path=%q\n", setName, setPath)
+	s.log().Info("scanner set started", "name", setName, "path", setPath)
 	if progress != nil {
 		progress.SetCurrentSet(setName)
 	}
@@ -164,7 +182,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		}
 		relPath = filepath.ToSlash(relPath)
 		_, alreadyExists := existing[relPath]
-		fmt.Printf("[scanner] file set=%q path=%q existing=%t\n", setName, relPath, alreadyExists)
+		s.log().Debug("scanner file checked", "set", setName, "path", relPath, "existing", alreadyExists)
 		if progress != nil {
 			progress.IncrementFile()
 		}
@@ -179,7 +197,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 
 		meta, err := s.prober.Probe(ctx, path)
 		if err != nil {
-			fmt.Printf("[scanner] skipping unprobeable file %q: %v\n", path, err)
+			s.log().Warn("scanner skipping unprobeable file", "path", path, "err", err)
 			return nil
 		}
 		meta.FileSizeBytes = info.Size()
@@ -194,7 +212,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 			thumbName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".jpg"
 			thumbnailPath = filepath.Join(thumbDir, thumbName)
 			if err := s.thumbGen.Generate(ctx, path, thumbnailPath, meta.Duration); err != nil {
-				fmt.Printf("[scanner] skipping thumbnail for %q: %v\n", path, err)
+				s.log().Warn("scanner skipping thumbnail", "path", path, "err", err)
 				thumbnailPath = ""
 			}
 		} else if mediaType == model.MediaTypeAudio {
@@ -211,34 +229,34 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 				thumbName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".jpg"
 				thumbnailPath = filepath.Join(thumbDir, thumbName)
 				if err := s.thumbGen.Generate(ctx, path, thumbnailPath, 0); err != nil {
-					fmt.Printf("[scanner] skipping thumbnail for %q: %v\n", path, err)
+					s.log().Warn("scanner skipping thumbnail", "path", path, "err", err)
 					thumbnailPath = ""
 				}
 			}
 		}
 
 		media := &model.Media{
-			SetID:         setID,
-			RelPath:       relPath,
-			FileName:      filepath.Base(path),
-			AbsPath:       path,
-			Type:          mediaType,
-			Duration:      meta.Duration,
-			Codec:         meta.Codec,
-			Resolution:    meta.Resolution,
-			Bitrate:       meta.Bitrate,
-			FileSizeBytes: meta.FileSizeBytes,
-			Width:         meta.Width,
-			Height:        meta.Height,
-			EXIFCamera:    meta.EXIFCamera,
-			EXIFLens:      meta.EXIFLens,
-			EXIFDate:      meta.EXIFDate,
-			EXIFISO:       meta.EXIFISO,
-			EXIFFNumber:   meta.EXIFFNumber,
-			EXIFExposure:  meta.EXIFExposure,
+			SetID:           setID,
+			RelPath:         relPath,
+			FileName:        filepath.Base(path),
+			AbsPath:         path,
+			Type:            mediaType,
+			Duration:        meta.Duration,
+			Codec:           meta.Codec,
+			Resolution:      meta.Resolution,
+			Bitrate:         meta.Bitrate,
+			FileSizeBytes:   meta.FileSizeBytes,
+			Width:           meta.Width,
+			Height:          meta.Height,
+			EXIFCamera:      meta.EXIFCamera,
+			EXIFLens:        meta.EXIFLens,
+			EXIFDate:        meta.EXIFDate,
+			EXIFISO:         meta.EXIFISO,
+			EXIFFNumber:     meta.EXIFFNumber,
+			EXIFExposure:    meta.EXIFExposure,
 			EXIFFocalLength: meta.EXIFFocalLength,
-			ThumbnailPath: thumbnailPath,
-			CreatedAt:     s.clock.Now(),
+			ThumbnailPath:   thumbnailPath,
+			CreatedAt:       s.clock.Now(),
 		}
 
 		if _, err := s.store.CreateMedia(ctx, media); err != nil {
@@ -246,7 +264,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		}
 		newFiles++
 		if newFiles == 1 || newFiles%25 == 0 {
-			fmt.Printf("[scanner] set progress name=%q new_media=%d latest=%q\n", setName, newFiles, relPath)
+			s.log().Info("scanner set progress", "name", setName, "new_media", newFiles, "latest", relPath)
 		}
 		return nil
 	})
@@ -262,12 +280,12 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		candidate := findCoverImage(m.AbsPath, coverImages, setPath)
 		if candidate != "" && candidate != m.ThumbnailPath {
 			if err := s.store.UpdateMediaThumbnail(ctx, m.ID, candidate); err != nil {
-				fmt.Printf("[scanner] failed to update thumbnail for %q: %v\n", m.FileName, err)
+				s.log().Warn("scanner failed to update thumbnail", "file", m.FileName, "err", err)
 			}
 		}
 	}
 
-	fmt.Printf("[scanner] set completed name=%q existing_media=%d new_media=%d\n", setName, len(existing), newFiles)
+	s.log().Info("scanner set completed", "name", setName, "existing_media", len(existing), "new_media", newFiles)
 	return nil
 }
 

@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -240,11 +239,11 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 	media, err := s.mediaSvc.ListMedia(r.Context(), userIDFromContext(r), filter)
 	dur := time.Since(start)
 	if err != nil {
-		fmt.Printf("[api] %s set_id=%s set_ids=%s search=%q type=%s fav=%s min=%s max=%s error=%v (took %s)\n", path, setID, setIDs, search, typ, fav, minDur, maxDur, err, dur)
+		s.logger.Error("api list media failed", "path", path, "set_id", setID, "set_ids", setIDs, "search", search, "type", typ, "favorites", fav, "min_duration", minDur, "max_duration", maxDur, "duration", dur, "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	fmt.Printf("[api] %s set_id=%s set_ids=%s search=%q type=%s fav=%s min=%s max=%s returned=%d (took %s)\n", path, setID, setIDs, search, typ, fav, minDur, maxDur, len(media), dur)
+	s.logger.Info("api list media", "path", path, "set_id", setID, "set_ids", setIDs, "search", search, "type", typ, "favorites", fav, "min_duration", minDur, "max_duration", maxDur, "returned", len(media), "duration", dur)
 	writeJSON(w, http.StatusOK, media)
 }
 

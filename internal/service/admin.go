@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ type adminService struct {
 	hasher     auth.Hasher
 	scanner    scanner.Scanner
 	mediaRoot  string
+	logger     *slog.Logger
 	mu         sync.Mutex
 	scanCancel context.CancelFunc
 	progress   *model.ScanProgress
@@ -27,12 +29,21 @@ type adminService struct {
 
 // NewAdminService creates a concrete AdminService.
 func NewAdminService(store repository.AdminServiceStore, clk clock.Clock, hasher auth.Hasher, sc scanner.Scanner, mediaRoot string) AdminService {
+	return NewAdminServiceWithLogger(store, clk, hasher, sc, mediaRoot, slog.Default())
+}
+
+// NewAdminServiceWithLogger creates a concrete AdminService with an injected logger.
+func NewAdminServiceWithLogger(store repository.AdminServiceStore, clk clock.Clock, hasher auth.Hasher, sc scanner.Scanner, mediaRoot string, logger *slog.Logger) AdminService {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &adminService{
 		store:     store,
 		clock:     clk,
 		hasher:    hasher,
 		scanner:   sc,
 		mediaRoot: mediaRoot,
+		logger:    logger,
 	}
 }
 
@@ -61,10 +72,10 @@ func (s *adminService) TriggerRescan(ctx context.Context) error {
 		defer cancel()
 		if err := s.scanner.Scan(scanCtx, s.mediaRoot, progress); err != nil {
 			progress.Done(err)
-			fmt.Printf("[rescan] scan failed: %v\n", err)
+			s.logger.Error("rescan failed", "err", err)
 		} else {
 			progress.Done(nil)
-			fmt.Printf("[rescan] scan completed\n")
+			s.logger.Info("rescan completed")
 		}
 	}()
 	return nil
