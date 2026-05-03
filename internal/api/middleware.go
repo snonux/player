@@ -7,7 +7,6 @@ import (
 
 	"codeberg.org/snonux/player/internal/auth"
 	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
 )
 
 type ctxKey int
@@ -17,14 +16,20 @@ const (
 	userCtxKey
 )
 
+// UserStore is the narrow interface Middleware needs for user lookups.
+type UserStore interface {
+	CountUsers(ctx context.Context) (int, error)
+	GetUserByID(ctx context.Context, id int64) (*model.User, error)
+}
+
 // Middleware holds dependencies for middleware constructors.
 type Middleware struct {
-	store repository.Store
+	store UserStore
 	sm    *auth.SessionManager
 }
 
 // NewMiddleware creates middleware handlers.
-func NewMiddleware(store repository.Store, sm *auth.SessionManager) *Middleware {
+func NewMiddleware(store UserStore, sm *auth.SessionManager) *Middleware {
 	return &Middleware{store: store, sm: sm}
 }
 

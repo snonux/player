@@ -41,14 +41,14 @@ func (s *Server) fileHandler(fn func(context.Context, int64, int64) (*service.Fi
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.browseSvc) {
 		return
 	}
-	s.fileHandler(s.mediaSvc.StreamMedia)(w, r)
+	s.fileHandler(s.browseSvc.StreamMedia)(w, r)
 }
 
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.browseSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -56,7 +56,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
 		return
 	}
-	res, err := s.mediaSvc.DownloadMedia(r.Context(), id, userIDFromContext(r))
+	res, err := s.browseSvc.DownloadMedia(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
@@ -77,15 +77,15 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.browseSvc) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-cache")
-	s.fileHandler(s.mediaSvc.GetThumbnail)(w, r)
+	s.fileHandler(s.browseSvc.GetThumbnail)(w, r)
 }
 
 func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.browseSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -93,7 +93,7 @@ func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
 		return
 	}
-	if err := s.mediaSvc.RegenerateThumbnail(r.Context(), id, userIDFromContext(r)); err != nil {
+	if err := s.browseSvc.RegenerateThumbnail(r.Context(), id, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return

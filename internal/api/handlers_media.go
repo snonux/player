@@ -18,10 +18,10 @@ import (
 // ------------------------------------------------------------------
 
 func (s *Server) handleListSets(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.browseSvc) {
 		return
 	}
-	sets, err := s.mediaSvc.ListSets(r.Context(), userIDFromContext(r))
+	sets, err := s.browseSvc.ListSets(r.Context(), userIDFromContext(r))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -30,7 +30,7 @@ func (s *Server) handleListSets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.browseSvc) {
 		return
 	}
 	setID := pathID(r, "id")
@@ -39,7 +39,7 @@ func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	folder := r.URL.Query().Get("folder")
-	fr, err := s.mediaSvc.GetSetCover(r.Context(), setID, folder, userIDFromContext(r))
+	fr, err := s.browseSvc.GetSetCover(r.Context(), setID, folder, userIDFromContext(r))
 	if err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
@@ -57,7 +57,7 @@ func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.browseSvc) {
 		return
 	}
 	setID := pathID(r, "id")
@@ -66,7 +66,7 @@ func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	folder := r.URL.Query().Get("folder")
-	if err := s.mediaSvc.RegenerateSetCover(r.Context(), setID, folder, userIDFromContext(r)); err != nil {
+	if err := s.browseSvc.RegenerateSetCover(r.Context(), setID, folder, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -82,7 +82,7 @@ func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.browseSvc) {
 		return
 	}
 	setID := pathID(r, "id")
@@ -91,7 +91,7 @@ func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parent := r.URL.Query().Get("parent")
-	result, err := s.mediaSvc.BrowseSet(r.Context(), setID, userIDFromContext(r), parent)
+	result, err := s.browseSvc.BrowseSet(r.Context(), setID, userIDFromContext(r), parent)
 	if err != nil {
 		if errors.Is(err, service.ErrForbidden) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
@@ -104,7 +104,7 @@ func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.writeSvc) {
 		return
 	}
 	setID := pathID(r, "id")
@@ -132,7 +132,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	media, err := s.mediaSvc.UploadMedia(r.Context(), setID, userIDFromContext(r), fh.Filename, file, fh.Size)
+	media, err := s.writeSvc.UploadMedia(r.Context(), setID, userIDFromContext(r), fh.Filename, file, fh.Size)
 	if err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
@@ -222,7 +222,7 @@ func parseMediaListQuery(q url.Values) repository.MediaFilter {
 }
 
 func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.browseSvc) {
 		return
 	}
 	path := r.URL.Path
@@ -236,7 +236,7 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 	maxDur := q.Get("max_duration")
 	start := time.Now()
 	filter := parseMediaListQuery(q)
-	media, err := s.mediaSvc.ListMedia(r.Context(), userIDFromContext(r), filter)
+	media, err := s.browseSvc.ListMedia(r.Context(), userIDFromContext(r), filter)
 	dur := time.Since(start)
 	if err != nil {
 		s.logger.Error("api list media failed", "path", path, "set_id", setID, "set_ids", setIDs, "search", search, "type", typ, "favorites", fav, "min_duration", minDur, "max_duration", maxDur, "duration", dur, "err", err)
@@ -248,7 +248,7 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.browseSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -256,7 +256,7 @@ func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
 		return
 	}
-	detail, err := s.mediaSvc.GetMediaDetail(r.Context(), id, userIDFromContext(r))
+	detail, err := s.browseSvc.GetMediaDetail(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -269,7 +269,7 @@ func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.favSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -277,7 +277,7 @@ func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
 		return
 	}
-	fav, err := s.mediaSvc.ToggleFavorite(r.Context(), userIDFromContext(r), id)
+	fav, err := s.favSvc.ToggleFavorite(r.Context(), userIDFromContext(r), id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -286,7 +286,7 @@ func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.tagSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -301,7 +301,7 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tag required"})
 		return
 	}
-	if err := s.mediaSvc.AssignTag(r.Context(), id, userIDFromContext(r), req.Tag); err != nil {
+	if err := s.tagSvc.AssignTag(r.Context(), id, userIDFromContext(r), req.Tag); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -309,7 +309,7 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.tagSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -318,7 +318,7 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid parameters"})
 		return
 	}
-	if err := s.mediaSvc.RemoveTag(r.Context(), id, userIDFromContext(r), tagName); err != nil {
+	if err := s.tagSvc.RemoveTag(r.Context(), id, userIDFromContext(r), tagName); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -326,7 +326,7 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.writeSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -334,7 +334,7 @@ func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
 		return
 	}
-	if err := s.mediaSvc.SoftDeleteMedia(r.Context(), id, userIDFromContext(r)); err != nil {
+	if err := s.writeSvc.SoftDeleteMedia(r.Context(), id, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -350,7 +350,7 @@ func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.writeSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -358,7 +358,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
 		return
 	}
-	if err := s.mediaSvc.RestoreMedia(r.Context(), id, userIDFromContext(r)); err != nil {
+	if err := s.writeSvc.RestoreMedia(r.Context(), id, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
@@ -378,7 +378,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------
 
 func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.noteSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -386,7 +386,7 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
 		return
 	}
-	note, err := s.mediaSvc.GetNote(r.Context(), id, userIDFromContext(r))
+	note, err := s.noteSvc.GetNote(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -399,7 +399,7 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpsertNote(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.noteSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -415,7 +415,7 @@ func (s *Server) handleUpsertNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	note := &model.Note{MediaID: id, UserID: userIDFromContext(r), Content: req.Content}
-	if err := s.mediaSvc.UpsertNote(r.Context(), note); err != nil {
+	if err := s.noteSvc.UpsertNote(r.Context(), note); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -423,7 +423,7 @@ func (s *Server) handleUpsertNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.noteSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -431,7 +431,7 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
 		return
 	}
-	if err := s.mediaSvc.DeleteNote(r.Context(), id, userIDFromContext(r)); err != nil {
+	if err := s.noteSvc.DeleteNote(r.Context(), id, userIDFromContext(r)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

@@ -97,7 +97,15 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 
 	staticFS := http.Dir("web")
 	remuxer := probe.NewFFRemuxer()
-	server := api.NewServerWithLogger(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, authSvc, staticFS, remuxer, logger)
+	server := api.NewServerWithLogger(store, hasher, sm, cfg,
+		mediaSvc, // MediaBrowseService
+		mediaSvc, // MediaWriteService
+		mediaSvc, // MediaShareService
+		mediaSvc, // MediaTagService
+		mediaSvc, // MediaFavoriteService
+		mediaSvc, // MediaNoteService
+		adminSvc, progressSvc, authSvc, staticFS, remuxer, logger,
+	)
 
 	gs := api.NewGracefulServer(server, cfg)
 

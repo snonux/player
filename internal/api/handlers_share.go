@@ -16,7 +16,7 @@ import (
 // ------------------------------------------------------------------
 
 func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.shareSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -25,7 +25,7 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expiresAt := time.Now().Add(time.Duration(s.cfg.ShareDefaultExpiryDays) * 24 * time.Hour)
-	share, err := s.mediaSvc.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt)
+	share, err := s.shareSvc.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -34,7 +34,7 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.shareSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -42,7 +42,7 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
 		return
 	}
-	shares, err := s.mediaSvc.ListShares(r.Context(), id, userIDFromContext(r))
+	shares, err := s.shareSvc.ListShares(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -51,7 +51,7 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.shareSvc) {
 		return
 	}
 	token := r.PathValue("token")
@@ -59,7 +59,7 @@ func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "token required"})
 		return
 	}
-	if err := s.mediaSvc.RevokeShare(r.Context(), token, userIDFromContext(r)); err != nil {
+	if err := s.shareSvc.RevokeShare(r.Context(), token, userIDFromContext(r)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -67,11 +67,11 @@ func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.shareSvc) {
 		return
 	}
 	token := r.PathValue("token")
-	res, err := s.mediaSvc.GetSharedMedia(r.Context(), token)
+	res, err := s.shareSvc.GetSharedMedia(r.Context(), token)
 	if err != nil || res == nil {
 		if err != nil && errors.Is(err, service.ErrShareExpired) {
 			http.Error(w, "gone", http.StatusGone)
@@ -115,11 +115,11 @@ func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.shareSvc) {
 		return
 	}
 	token := r.PathValue("token")
-	fr, err := s.mediaSvc.GetSharedThumbnail(r.Context(), token)
+	fr, err := s.shareSvc.GetSharedThumbnail(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, service.ErrShareExpired) {
 			http.Error(w, "gone", http.StatusGone)
@@ -141,11 +141,11 @@ func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.shareSvc) {
 		return
 	}
 	token := r.PathValue("token")
-	res, err := s.mediaSvc.StreamSharedMedia(r.Context(), token)
+	res, err := s.shareSvc.StreamSharedMedia(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, service.ErrShareExpired) {
 			http.Error(w, "gone", http.StatusGone)
@@ -166,11 +166,11 @@ func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShareDownload(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.shareSvc) {
 		return
 	}
 	token := r.PathValue("token")
-	fr, err := s.mediaSvc.StreamSharedMedia(r.Context(), token)
+	fr, err := s.shareSvc.StreamSharedMedia(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, service.ErrShareExpired) {
 			http.Error(w, "gone", http.StatusGone)
@@ -191,10 +191,10 @@ func (s *Server) handleShareDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMyShares(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.mediaSvc) {
+	if !requireService(w, s.shareSvc) {
 		return
 	}
-	shares, err := s.mediaSvc.ListMyShares(r.Context(), userIDFromContext(r))
+	shares, err := s.shareSvc.ListMyShares(r.Context(), userIDFromContext(r))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

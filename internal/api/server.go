@@ -21,7 +21,12 @@ type Server struct {
 	sm          *auth.SessionManager
 	cfg         *internal.Config
 	mux         *http.ServeMux
-	mediaSvc    service.MediaService
+	browseSvc   service.MediaBrowseService
+	writeSvc    service.MediaWriteService
+	shareSvc    service.MediaShareService
+	tagSvc      service.MediaTagService
+	favSvc      service.MediaFavoriteService
+	noteSvc     service.MediaNoteService
 	adminSvc    service.AdminService
 	progressSvc service.ProgressService
 	authSvc     service.AuthService
@@ -32,20 +37,25 @@ type Server struct {
 }
 
 // NewServer creates a Server with routes.
-// If mediaSvc, adminSvc, progressSvc, or authSvc are nil, their respective routes return 501.
+// If any service argument is nil, its respective routes return 501.
 func NewServer(
 	store repository.Store,
 	hasher auth.Hasher,
 	sm *auth.SessionManager,
 	cfg *internal.Config,
-	mediaSvc service.MediaService,
+	browseSvc service.MediaBrowseService,
+	writeSvc service.MediaWriteService,
+	shareSvc service.MediaShareService,
+	tagSvc service.MediaTagService,
+	favSvc service.MediaFavoriteService,
+	noteSvc service.MediaNoteService,
 	adminSvc service.AdminService,
 	progressSvc service.ProgressService,
 	authSvc service.AuthService,
 	staticFS http.FileSystem,
 	remuxer probe.Remuxer,
 ) *Server {
-	return NewServerWithLogger(store, hasher, sm, cfg, mediaSvc, adminSvc, progressSvc, authSvc, staticFS, remuxer, slog.Default())
+	return NewServerWithLogger(store, hasher, sm, cfg, browseSvc, writeSvc, shareSvc, tagSvc, favSvc, noteSvc, adminSvc, progressSvc, authSvc, staticFS, remuxer, slog.Default())
 }
 
 // NewServerWithLogger creates a Server with routes and an injected logger.
@@ -54,7 +64,12 @@ func NewServerWithLogger(
 	hasher auth.Hasher,
 	sm *auth.SessionManager,
 	cfg *internal.Config,
-	mediaSvc service.MediaService,
+	browseSvc service.MediaBrowseService,
+	writeSvc service.MediaWriteService,
+	shareSvc service.MediaShareService,
+	tagSvc service.MediaTagService,
+	favSvc service.MediaFavoriteService,
+	noteSvc service.MediaNoteService,
 	adminSvc service.AdminService,
 	progressSvc service.ProgressService,
 	authSvc service.AuthService,
@@ -74,7 +89,12 @@ func NewServerWithLogger(
 		sm:          sm,
 		cfg:         cfg,
 		mux:         http.NewServeMux(),
-		mediaSvc:    mediaSvc,
+		browseSvc:   browseSvc,
+		writeSvc:    writeSvc,
+		shareSvc:    shareSvc,
+		tagSvc:      tagSvc,
+		favSvc:      favSvc,
+		noteSvc:     noteSvc,
 		adminSvc:    adminSvc,
 		progressSvc: progressSvc,
 		authSvc:     authSvc,
