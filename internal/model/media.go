@@ -7,8 +7,11 @@ import "time"
 type MediaType string
 
 const (
+	// MediaTypeVideo identifies video files.
 	MediaTypeVideo MediaType = "video"
+	// MediaTypeAudio identifies audio files.
 	MediaTypeAudio MediaType = "audio"
+	// MediaTypeImage identifies image files.
 	MediaTypeImage MediaType = "image"
 )
 
@@ -16,7 +19,9 @@ const (
 type Role string
 
 const (
-	RoleOwner  Role = "owner"
+	// RoleOwner allows browsing, uploading, deleting and thumbnail updates.
+	RoleOwner Role = "owner"
+	// RoleViewer allows browsing and playback.
 	RoleViewer Role = "viewer"
 )
 
@@ -31,12 +36,12 @@ type User struct {
 
 // Set represents a top-level media collection (a directory under MEDIA_ROOT).
 type Set struct {
-	ID                 int64             `json:"id"`
-	Name               string            `json:"name"`
-	RootPath           string            `json:"root_path"`
-	CoverThumbnailPath string            `json:"cover_thumbnail_path"`
-	Permissions        []SetPermission   `json:"permissions"`
-	CreatedAt          time.Time         `json:"created_at"`
+	ID                 int64           `json:"id"`
+	Name               string          `json:"name"`
+	RootPath           string          `json:"root_path"`
+	CoverThumbnailPath string          `json:"cover_thumbnail_path"`
+	Permissions        []SetPermission `json:"permissions"`
+	CreatedAt          time.Time       `json:"created_at"`
 }
 
 // SetPermission grants a user access to a set.

@@ -12,22 +12,35 @@ import (
 
 // MediaBrowseService handles read-only browsing and media streaming operations.
 type MediaBrowseService interface {
+	// ListSets returns the sets visible to a user.
 	ListSets(ctx context.Context, userID int64) ([]model.Set, error)
+	// GetMediaDetail returns media metadata and user-specific related state.
 	GetMediaDetail(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
+	// ListMedia returns media visible to a user for the given filter.
 	ListMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error)
+	// StreamMedia returns a playable file for an authorized user.
 	StreamMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error)
+	// DownloadMedia returns a downloadable file for an authorized user.
 	DownloadMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error)
+	// GetThumbnail returns a media thumbnail for an authorized user.
 	GetThumbnail(ctx context.Context, mediaID, userID int64) (*FileResult, error)
+	// RegenerateThumbnail refreshes a media item's thumbnail.
 	RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error
+	// RegenerateSetCover refreshes a folder cover image for a set.
 	RegenerateSetCover(ctx context.Context, setID int64, folder string, userID int64) error
+	// BrowseSet returns folders and media below a set path.
 	BrowseSet(ctx context.Context, setID, userID int64, parent string) (*BrowseResult, error)
+	// GetSetCover returns the cover image for a set folder.
 	GetSetCover(ctx context.Context, setID int64, folder string, userID int64) (*FileResult, error)
 }
 
 // MediaWriteService handles mutations such as upload, soft-delete and restore.
 type MediaWriteService interface {
+	// SoftDeleteMedia marks a media item deleted for an authorized user.
 	SoftDeleteMedia(ctx context.Context, mediaID, userID int64) error
+	// RestoreMedia restores a soft-deleted media item for an authorized user.
 	RestoreMedia(ctx context.Context, mediaID, userID int64) error
+	// UploadMedia stores an uploaded media file in a set.
 	UploadMedia(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error)
 }
 
@@ -79,31 +92,45 @@ type ShareInfo struct {
 
 // MediaShareService handles creation, validation and revocation of share links.
 type MediaShareService interface {
+	// CreateShare creates a public share link for a media item.
 	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
+	// ListShares returns shares for a media item visible to a user.
 	ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
+	// RevokeShare removes a share link owned by a user.
 	RevokeShare(ctx context.Context, token string, userID int64) error
+	// ValidateShareToken returns a usable share for a token.
 	ValidateShareToken(ctx context.Context, token string) (*model.Share, error)
+	// StreamSharedMedia returns a playable file for a share token.
 	StreamSharedMedia(ctx context.Context, token string) (*FileResult, error)
+	// GetSharedMedia returns public metadata and URLs for a share token.
 	GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error)
+	// GetSharedThumbnail returns a thumbnail for a share token.
 	GetSharedThumbnail(ctx context.Context, token string) (*FileResult, error)
+	// ListMyShares returns all shares created by a user.
 	ListMyShares(ctx context.Context, userID int64) ([]ShareInfo, error)
 }
 
 // MediaTagService handles tagging of media items.
 type MediaTagService interface {
+	// AssignTag attaches a named tag to a media item.
 	AssignTag(ctx context.Context, mediaID, userID int64, tagName string) error
+	// RemoveTag detaches a named tag from a media item.
 	RemoveTag(ctx context.Context, mediaID, userID int64, tagName string) error
 }
 
 // MediaFavoriteService handles toggling favorite status.
 type MediaFavoriteService interface {
+	// ToggleFavorite flips and returns the user's favorite state for a media item.
 	ToggleFavorite(ctx context.Context, userID, mediaID int64) (bool, error)
 }
 
 // MediaNoteService handles CRUD for per-user per-media notes.
 type MediaNoteService interface {
+	// GetNote returns a user's note for a media item.
 	GetNote(ctx context.Context, mediaID, userID int64) (*model.Note, error)
+	// UpsertNote creates or updates a user's note.
 	UpsertNote(ctx context.Context, note *model.Note) error
+	// DeleteNote removes a user's note for a media item.
 	DeleteNote(ctx context.Context, mediaID, userID int64) error
 }
 
@@ -119,20 +146,31 @@ type MediaService interface {
 
 // AdminService handles admin-only operations.
 type AdminService interface {
+	// ListTrash returns soft-deleted media.
 	ListTrash(ctx context.Context) ([]model.Media, error)
+	// TriggerRescan starts a media library scan.
 	TriggerRescan(ctx context.Context) error
+	// ScanProgress returns the current or last scan state.
 	ScanProgress(ctx context.Context) model.ScanProgress
+	// ListUsers returns all application users.
 	ListUsers(ctx context.Context) ([]model.User, error)
+	// CreateUser creates a user account.
 	CreateUser(ctx context.Context, username, password string, isAdmin bool) (*model.User, error)
+	// DeleteUser removes a user account.
 	DeleteUser(ctx context.Context, id int64) error
+	// ListPermissions returns the set permission matrix.
 	ListPermissions(ctx context.Context) (*PermissionsMatrix, error)
+	// GrantPermission grants a user access to a set.
 	GrantPermission(ctx context.Context, setID, userID int64, role model.Role) error
+	// RevokePermission removes a user's access to a set.
 	RevokePermission(ctx context.Context, setID, userID int64) error
 }
 
 // AuthService handles bootstrap and login operations.
 type AuthService interface {
+	// Bootstrap creates the first admin account and session.
 	Bootstrap(ctx context.Context, username, password string) (*AuthResult, error)
+	// Login authenticates a user and creates a session.
 	Login(ctx context.Context, username, password string) (*AuthResult, error)
 }
 
@@ -144,6 +182,7 @@ type AuthResult struct {
 
 // ProgressService handles playback progress updates.
 type ProgressService interface {
+	// UpdateProgress stores a playback position and updates play-count accounting.
 	UpdateProgress(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error
 }
 
