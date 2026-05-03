@@ -984,6 +984,14 @@ function initHelp() {
   modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
 }
 
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const page = document.querySelector('.page');
+  if (!sidebar) return;
+  sidebar.classList.toggle('open');
+  page?.classList.toggle('has-sidebar', sidebar.classList.contains('open'));
+}
+
 function toggleHelp() {
   const modal = document.getElementById('help-modal');
   if (!modal) return;
