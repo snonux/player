@@ -21,6 +21,8 @@ type GCWorker struct {
 	age       time.Duration
 	logger    *slog.Logger
 	ticker    *time.Ticker
+	tickCh    <-chan time.Time
+	runDoneCh chan struct{}
 	stopCh    chan struct{}
 	stopOnce  sync.Once
 	wg        sync.WaitGroup
@@ -57,14 +59,19 @@ func (w *GCWorker) WithInterval(interval time.Duration) *GCWorker {
 // Start launches the GC goroutine.
 func (w *GCWorker) Start() {
 	w.ctx, w.cancel = context.WithCancel(context.Background())
-	w.ticker = time.NewTicker(w.interval)
+	tickCh := w.tickCh
+	if tickCh == nil {
+		w.ticker = time.NewTicker(w.interval)
+		tickCh = w.ticker.C
+	}
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()
 		for {
 			select {
-			case <-w.ticker.C:
+			case <-tickCh:
 				w.run(w.ctx)
+				w.notifyRunDone()
 			case <-w.stopCh:
 				return
 			}
@@ -126,6 +133,16 @@ func (w *GCWorker) run(ctx context.Context) {
 		if w.logger != nil {
 			w.logger.Info("gc deleted media", "id", item.ID, "path", absPath)
 		}
+	}
+}
+
+func (w *GCWorker) notifyRunDone() {
+	if w.runDoneCh == nil {
+		return
+	}
+	select {
+	case w.runDoneCh <- struct{}{}:
+	default:
 	}
 }
 

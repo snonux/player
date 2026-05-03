@@ -89,8 +89,17 @@ func TestGCWorker_StartStop(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	w := NewGCWorker(store, &clock.MockClock{T: now}, tmpDir, 10*time.Millisecond, logger).WithAge(7 * 24 * time.Hour)
+	tickCh := make(chan time.Time, 1)
+	runDoneCh := make(chan struct{}, 1)
+	w.tickCh = tickCh
+	w.runDoneCh = runDoneCh
 	w.Start()
-	time.Sleep(50 * time.Millisecond)
+	tickCh <- now
+	select {
+	case <-runDoneCh:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for gc run")
+	}
 	w.Stop()
 
 	if !called {
