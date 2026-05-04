@@ -101,7 +101,7 @@ func NewServerWithLogger(
 		staticFS:    staticFS,
 		remuxer:     remuxer,
 		logger:      logger,
-		mw:          NewMiddleware(store, sm),
+		mw:          NewMiddleware(authSvc, sm),
 	}
 	s.routes()
 	return s

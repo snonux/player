@@ -84,3 +84,13 @@ func (s *authService) Login(ctx context.Context, username, password string) (*Au
 
 	return &AuthResult{User: user, SessionID: sessID}, nil
 }
+
+// CountUsers returns the number of user accounts.
+func (s *authService) CountUsers(ctx context.Context) (int, error) {
+	return s.store.CountUsers(ctx)
+}
+
+// GetUserByID returns a user by database ID.
+func (s *authService) GetUserByID(ctx context.Context, id int64) (*model.User, error) {
+	return s.store.GetUserByID(ctx, id)
+}

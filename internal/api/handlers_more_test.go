@@ -161,7 +161,10 @@ func TestServer_ServeFile_success(t *testing.T) {
 		},
 	}
 	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
-	srv := newTestServer(t, store, nil, sm, &internal.Config{SessionTimeoutHours: 24}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	authSvc := &service.MockAuthService{
+		CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
+	}
+	srv := newTestServer(t, store, nil, sm, &internal.Config{SessionTimeoutHours: 24}, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
@@ -181,7 +184,10 @@ func TestServer_ServeFile_notFound(t *testing.T) {
 		},
 	}
 	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
-	srv := newTestServer(t, store, nil, sm, &internal.Config{SessionTimeoutHours: 24}, nil, nil, nil, nil, nil, nil, nil, nil, nil, fs)
+	authSvc := &service.MockAuthService{
+		CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
+	}
+	srv := newTestServer(t, store, nil, sm, &internal.Config{SessionTimeoutHours: 24}, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, fs)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
@@ -1730,7 +1736,7 @@ func mustParseQuery(t *testing.T, raw string) url.Values {
 func Test_parseMediaListQuery_defaults(t *testing.T) {
 	q := mustParseQuery(t, "/api/media")
 	got := parseMediaListQuery(q)
-	want := repository.MediaFilter{Limit: 100, Offset: 0}
+	want := service.MediaQueryFilter{Limit: 100, Offset: 0}
 	if got.Search != want.Search || got.Sort != want.Sort || got.Limit != want.Limit || got.Offset != want.Offset {
 		t.Fatalf("unexpected defaults: %+v", got)
 	}
@@ -1844,10 +1850,13 @@ func TestServer_NilAdminSvc(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 	store := buildSessionStore(1)
 	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
-	store.UserRepo.GetUserByIDFunc = func(ctx context.Context, id int64) (*model.User, error) {
-		return &model.User{ID: 1, IsAdmin: true}, nil
+	authSvc := &service.MockAuthService{
+		CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: 1, IsAdmin: true}, nil
+		},
 	}
-	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 	cookie := addSessionCookie(t, store, sm, 1)
 
 	tests := []struct {

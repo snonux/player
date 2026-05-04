@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
 )
 
 // Sentinel errors returned by the service layer.
@@ -73,6 +72,24 @@ func guessMediaType(name string) model.MediaType {
 	}
 }
 
+// MediaQueryFilter defines query parameters for listing media from the API layer.
+// It mirrors repository.MediaFilter but lives in the service layer to avoid coupling.
+type MediaQueryFilter struct {
+	SetID       *int64           // SetID restricts results to one set.
+	SetIDs      []int64          // SetIDs restricts results to multiple selected sets.
+	Type        *model.MediaType // Type restricts results to one media type.
+	Search      string           // Search filters by filename or relative path.
+	Tags        []string         // Tags restricts results to media with all listed tags.
+	Favorites   bool             // Favorites restricts results to the current user's favorites.
+	MinDuration *float64         // MinDuration is the minimum duration in seconds.
+	MaxDuration *float64         // MaxDuration is the maximum duration in seconds.
+	MinFileSize *int64           // MinFileSize is the minimum file size in bytes.
+	MaxFileSize *int64           // MaxFileSize is the maximum file size in bytes.
+	Sort        string           // Sort chooses the order: name, date, duration, play_count, or random.
+	Limit       int              // Limit caps the number of returned rows.
+	Offset      int              // Offset skips rows before returning results.
+}
+
 // MediaBrowseService handles read-only browsing and media streaming operations.
 type MediaBrowseService interface {
 	// ListSets returns the sets visible to a user.
@@ -80,7 +97,7 @@ type MediaBrowseService interface {
 	// GetMediaDetail returns media metadata and user-specific related state.
 	GetMediaDetail(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
 	// ListMedia returns media visible to a user for the given filter.
-	ListMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error)
+	ListMedia(ctx context.Context, userID int64, filter MediaQueryFilter) ([]model.Media, error)
 	// StreamMedia returns a playable file for an authorized user.
 	StreamMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	// DownloadMedia returns a downloadable file for an authorized user.
@@ -229,12 +246,16 @@ type AdminService interface {
 	RevokePermission(ctx context.Context, setID, userID int64) error
 }
 
-// AuthService handles bootstrap and login operations.
+// AuthService handles bootstrap, login, and user lookups for middleware.
 type AuthService interface {
 	// Bootstrap creates the first admin account and session.
 	Bootstrap(ctx context.Context, username, password string) (*AuthResult, error)
 	// Login authenticates a user and creates a session.
 	Login(ctx context.Context, username, password string) (*AuthResult, error)
+	// CountUsers returns the number of user accounts.
+	CountUsers(ctx context.Context) (int, error)
+	// GetUserByID returns a user by database ID.
+	GetUserByID(ctx context.Context, id int64) (*model.User, error)
 }
 
 // AuthResult contains the authenticated user and session ID.

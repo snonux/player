@@ -7,6 +7,7 @@ import (
 
 	"codeberg.org/snonux/player/internal/auth"
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/service"
 )
 
 type ctxKey int
@@ -16,21 +17,15 @@ const (
 	userCtxKey
 )
 
-// UserStore is the narrow interface Middleware needs for user lookups.
-type UserStore interface {
-	CountUsers(ctx context.Context) (int, error)
-	GetUserByID(ctx context.Context, id int64) (*model.User, error)
-}
-
 // Middleware holds dependencies for middleware constructors.
 type Middleware struct {
-	store UserStore
-	sm    *auth.SessionManager
+	authSvc service.AuthService
+	sm      *auth.SessionManager
 }
 
 // NewMiddleware creates middleware handlers.
-func NewMiddleware(store UserStore, sm *auth.SessionManager) *Middleware {
-	return &Middleware{store: store, sm: sm}
+func NewMiddleware(authSvc service.AuthService, sm *auth.SessionManager) *Middleware {
+	return &Middleware{authSvc: authSvc, sm: sm}
 }
 
 // RequireSession validates the session cookie and injects the session into request context.
@@ -74,7 +69,7 @@ func (mw *Middleware) RequireAdmin(next http.Handler) http.Handler {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		user, err := mw.store.GetUserByID(r.Context(), sess.UserID)
+		user, err := mw.authSvc.GetUserByID(r.Context(), sess.UserID)
 		if err != nil || user == nil || !user.IsAdmin {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
@@ -91,7 +86,11 @@ func (mw *Middleware) BootstrapRedirect(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		count, err := mw.store.CountUsers(r.Context())
+		if mw.authSvc == nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		count, err := mw.authSvc.CountUsers(r.Context())
 		if err != nil {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return

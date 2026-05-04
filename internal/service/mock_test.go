@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
 )
 
 func TestMockMediaService_Defaults(t *testing.T) {
@@ -18,7 +17,7 @@ func TestMockMediaService_Defaults(t *testing.T) {
 	// Methods that return nil, nil or zero-value defaults
 	m.ListSets(ctx, 1)
 	m.GetMediaDetail(ctx, 1, 1)
-	m.ListMedia(ctx, 1, repository.MediaFilter{})
+	m.ListMedia(ctx, 1, MediaQueryFilter{})
 	m.ToggleFavorite(ctx, 1, 1)
 	m.AssignTag(ctx, 1, 1, "rock")
 	m.RemoveTag(ctx, 1, 1, "rock")
@@ -59,7 +58,7 @@ func TestMockMediaService_WithFuncs(t *testing.T) {
 	m := &MockMediaService{
 		ListSetsFunc:            func(ctx context.Context, userID int64) ([]model.Set, error) { return nil, nil },
 		GetMediaDetailFunc:      func(ctx context.Context, mediaID, userID int64) (*MediaDetail, error) { return nil, nil },
-		ListMediaFunc:           func(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error) { return nil, nil },
+		ListMediaFunc:           func(ctx context.Context, userID int64, filter MediaQueryFilter) ([]model.Media, error) { return nil, nil },
 		StreamMediaFunc:         func(ctx context.Context, mediaID, userID int64) (*FileResult, error) { return nil, nil },
 		DownloadMediaFunc:       func(ctx context.Context, mediaID, userID int64) (*FileResult, error) { return nil, nil },
 		GetThumbnailFunc:        func(ctx context.Context, mediaID, userID int64) (*FileResult, error) { return nil, nil },
@@ -83,7 +82,7 @@ func TestMockMediaService_WithFuncs(t *testing.T) {
 
 	m.ListSets(ctx, 1)
 	m.GetMediaDetail(ctx, 1, 1)
-	m.ListMedia(ctx, 1, repository.MediaFilter{})
+	m.ListMedia(ctx, 1, MediaQueryFilter{})
 	m.StreamMedia(ctx, 1, 1)
 	m.DownloadMedia(ctx, 1, 1)
 	m.GetThumbnail(ctx, 1, 1)

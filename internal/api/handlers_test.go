@@ -56,6 +56,12 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 			"share.html":     "share",
 		})
 	}
+	if authSvc == nil {
+		authSvc = &service.MockAuthService{
+			CountUsersFunc:  func(context.Context) (int, error) { return 1, nil },
+			GetUserByIDFunc: func(context.Context, int64) (*model.User, error) { return &model.User{ID: 1, IsAdmin: true}, nil },
+		}
+	}
 	var rem probe.Remuxer
 	if len(remuxer) > 0 {
 		rem = remuxer[0]
@@ -116,14 +122,12 @@ func TestMiddleware_BootstrapRedirect(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &repository.MockStore{
-				UserRepo: repository.MockUserRepo{
-					CountUsersFunc: func(ctx context.Context) (int, error) {
-						return tt.userCount, tt.userErr
-					},
+			authSvc := &service.MockAuthService{
+				CountUsersFunc: func(ctx context.Context) (int, error) {
+					return tt.userCount, tt.userErr
 				},
 			}
-			mw := NewMiddleware(store, nil)
+			mw := NewMiddleware(authSvc, nil)
 			handler := mw.BootstrapRedirect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))
@@ -217,17 +221,15 @@ func TestMiddleware_RequireAdmin(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &repository.MockStore{
-				UserRepo: repository.MockUserRepo{
-					GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
-						if tt.ctxUser != nil {
-							return tt.ctxUser, tt.userErr
-						}
-						return nil, tt.userErr
-					},
+			authSvc := &service.MockAuthService{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					if tt.ctxUser != nil {
+						return tt.ctxUser, tt.userErr
+					}
+					return nil, tt.userErr
 				},
 			}
-			mw := NewMiddleware(store, nil)
+			mw := NewMiddleware(authSvc, nil)
 			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
@@ -673,7 +675,7 @@ func TestServer_MediaList(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		filter       repository.MediaFilter
+		filter       service.MediaQueryFilter
 		listResult   []model.Media
 		listErr      error
 		query        string
@@ -693,7 +695,7 @@ func TestServer_MediaList(t *testing.T) {
 		{
 			name:       "with query params",
 			query:      "?set_id=1&type=video&search=foo&tags=bar,baz&favorites=true&min_duration=10&max_duration=100&sort=name&limit=5&offset=10",
-			filter:     repository.MediaFilter{SetID: intPtr(1), Type: (*model.MediaType)(func() *string { s := "video"; return &s }()), Search: "foo", Tags: []string{"bar", "baz"}, Favorites: true, MinDuration: floatPtr(10), MaxDuration: floatPtr(100), Sort: "name", Limit: 5, Offset: 10},
+			filter:     service.MediaQueryFilter{SetID: intPtr(1), Type: (*model.MediaType)(func() *string { s := "video"; return &s }()), Search: "foo", Tags: []string{"bar", "baz"}, Favorites: true, MinDuration: floatPtr(10), MaxDuration: floatPtr(100), Sort: "name", Limit: 5, Offset: 10},
 			listResult: []model.Media{},
 			wantCode:   http.StatusOK,
 		},
@@ -701,9 +703,9 @@ func TestServer_MediaList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gotFilter repository.MediaFilter
+			var gotFilter service.MediaQueryFilter
 			ms := &service.MockMediaService{
-				ListMediaFunc: func(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error) {
+				ListMediaFunc: func(ctx context.Context, userID int64, filter service.MediaQueryFilter) ([]model.Media, error) {
 					gotFilter = filter
 					return tt.listResult, tt.listErr
 				},
@@ -1169,6 +1171,12 @@ func TestServer_Shares(t *testing.T) {
 
 func TestServer_AdminRoutes(t *testing.T) {
 	adminUser := &model.User{ID: 1, Username: "admin", IsAdmin: true}
+	authSvc := &service.MockAuthService{
+		CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return adminUser, nil
+		},
+	}
 	as := &service.MockAdminService{
 		ListTrashFunc: func(ctx context.Context) ([]model.Media, error) {
 			return []model.Media{}, nil
@@ -1185,12 +1193,9 @@ func TestServer_AdminRoutes(t *testing.T) {
 	}
 
 	store := buildSessionStore(1)
-	store.UserRepo.GetUserByIDFunc = func(ctx context.Context, id int64) (*model.User, error) {
-		return adminUser, nil
-	}
 	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
 	cfg := &internal.Config{SessionTimeoutHours: 24}
-	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, nil, nil, nil, nil, nil, as, nil, nil, nil)
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, nil, nil, nil, nil, nil, as, nil, authSvc, nil)
 
 	cookie := addSessionCookie(t, store, sm, 1)
 

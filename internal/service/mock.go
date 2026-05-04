@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
 )
 
 var (
@@ -25,7 +24,7 @@ var (
 type MockMediaService struct {
 	ListSetsFunc            func(ctx context.Context, userID int64) ([]model.Set, error)
 	GetMediaDetailFunc      func(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
-	ListMediaFunc           func(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error)
+	ListMediaFunc           func(ctx context.Context, userID int64, filter MediaQueryFilter) ([]model.Media, error)
 	StreamMediaFunc         func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	DownloadMediaFunc       func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	GetThumbnailFunc        func(ctx context.Context, mediaID, userID int64) (*FileResult, error)
@@ -69,7 +68,7 @@ func (m *MockMediaService) GetMediaDetail(ctx context.Context, mediaID, userID i
 }
 
 // ListMedia calls ListMediaFunc or returns nil.
-func (m *MockMediaService) ListMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error) {
+func (m *MockMediaService) ListMedia(ctx context.Context, userID int64, filter MediaQueryFilter) ([]model.Media, error) {
 	if m.ListMediaFunc != nil {
 		return m.ListMediaFunc(ctx, userID, filter)
 	}
@@ -355,8 +354,10 @@ func (m *MockAdminService) RevokePermission(ctx context.Context, setID, userID i
 
 // MockAuthService is a fake AuthService for testing.
 type MockAuthService struct {
-	BootstrapFunc func(ctx context.Context, username, password string) (*AuthResult, error)
-	LoginFunc     func(ctx context.Context, username, password string) (*AuthResult, error)
+	BootstrapFunc   func(ctx context.Context, username, password string) (*AuthResult, error)
+	LoginFunc       func(ctx context.Context, username, password string) (*AuthResult, error)
+	CountUsersFunc  func(ctx context.Context) (int, error)
+	GetUserByIDFunc func(ctx context.Context, id int64) (*model.User, error)
 }
 
 // Bootstrap calls BootstrapFunc or returns nil.
@@ -371,6 +372,22 @@ func (m *MockAuthService) Bootstrap(ctx context.Context, username, password stri
 func (m *MockAuthService) Login(ctx context.Context, username, password string) (*AuthResult, error) {
 	if m.LoginFunc != nil {
 		return m.LoginFunc(ctx, username, password)
+	}
+	return nil, nil
+}
+
+// CountUsers calls CountUsersFunc or returns 0.
+func (m *MockAuthService) CountUsers(ctx context.Context) (int, error) {
+	if m.CountUsersFunc != nil {
+		return m.CountUsersFunc(ctx)
+	}
+	return 0, nil
+}
+
+// GetUserByID calls GetUserByIDFunc or returns nil.
+func (m *MockAuthService) GetUserByID(ctx context.Context, id int64) (*model.User, error) {
+	if m.GetUserByIDFunc != nil {
+		return m.GetUserByIDFunc(ctx, id)
 	}
 	return nil, nil
 }

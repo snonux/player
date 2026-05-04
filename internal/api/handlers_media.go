@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
 )
 
@@ -157,9 +156,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------
 
 // parseMediaListQuery extracts and validates query parameters from the request
-// and returns a populated repository.MediaFilter with sensible defaults.
-func parseMediaListQuery(q url.Values) repository.MediaFilter {
-	filter := repository.MediaFilter{
+// and returns a populated service.MediaQueryFilter with sensible defaults.
+func parseMediaListQuery(q url.Values) service.MediaQueryFilter {
+	filter := service.MediaQueryFilter{
 		Search: q.Get("search"),
 		Sort:   q.Get("sort"),
 		Limit:  100,

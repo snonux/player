@@ -116,15 +116,31 @@ func (s *browseService) GetMediaDetail(ctx context.Context, mediaID, userID int6
 	}, nil
 }
 
-func (s *browseService) ListMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error) {
+func (s *browseService) ListMedia(ctx context.Context, userID int64, filter MediaQueryFilter) ([]model.Media, error) {
 	user, err := s.store.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
 
+	repoFilter := repository.MediaFilter{
+		SetID:       filter.SetID,
+		SetIDs:      filter.SetIDs,
+		Type:        filter.Type,
+		Search:      filter.Search,
+		Tags:        filter.Tags,
+		Favorites:   filter.Favorites,
+		MinDuration: filter.MinDuration,
+		MaxDuration: filter.MaxDuration,
+		MinFileSize: filter.MinFileSize,
+		MaxFileSize: filter.MaxFileSize,
+		Sort:        filter.Sort,
+		Limit:       filter.Limit,
+		Offset:      filter.Offset,
+	}
+
 	if user != nil && user.IsAdmin {
-		filter.UserID = userID
-		return s.store.ListMedia(ctx, filter)
+		repoFilter.UserID = userID
+		return s.store.ListMedia(ctx, repoFilter)
 	}
 
 	perms, err := s.store.ListPermissionsByUser(ctx, userID)
@@ -136,9 +152,9 @@ func (s *browseService) ListMedia(ctx context.Context, userID int64, filter repo
 	for _, p := range perms {
 		allowed = append(allowed, p.SetID)
 	}
-	filter.AllowedSetIDs = allowed
-	filter.UserID = userID
-	return s.store.ListMedia(ctx, filter)
+	repoFilter.AllowedSetIDs = allowed
+	repoFilter.UserID = userID
+	return s.store.ListMedia(ctx, repoFilter)
 }
 
 func (s *browseService) StreamMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error) {

@@ -1394,7 +1394,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 			},
 		}
 		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-		res, err := svc.ListMedia(ctx, 9, repository.MediaFilter{})
+		res, err := svc.ListMedia(ctx, 9, MediaQueryFilter{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1574,7 +1574,7 @@ func TestMediaService_ListMedia_AdminAndUserFiltering(t *testing.T) {
 			},
 		}
 		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-		res, err := svc.ListMedia(ctx, 1, repository.MediaFilter{})
+		res, err := svc.ListMedia(ctx, 1, MediaQueryFilter{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1605,7 +1605,7 @@ func TestMediaService_ListMedia_AdminAndUserFiltering(t *testing.T) {
 			},
 		}
 		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-		res, err := svc.ListMedia(ctx, 2, repository.MediaFilter{})
+		res, err := svc.ListMedia(ctx, 2, MediaQueryFilter{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
