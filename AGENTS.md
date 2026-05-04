@@ -20,64 +20,9 @@ The project is a **self-hosted media player** designed for simplicity (KISS): mi
 
 | Layer | Package | Role |
 |-------|---------|------|
-| Entrypoint | `cmd/mediaplayer` | Flags, config, dependency wiring, server start |
-| API / Transport | `internal/api` | `Server` struct holds `http.ServeMux`, route table, middleware, handlers |
-| Service | `internal/service` | Business logic: `MediaService`, `AdminService`, `ProgressService`, `GCWorker` |
-| Repository | `internal/repository` | `Store` interface (composite of per-entity repos); concrete SQLite in `sqlite.go` |
-| Domain | `internal/model` | Pure structs (`Media`, `User`, `Set`, `Session`, etc.) — zero external deps |
-| Utilities | `internal/auth`, `internal/scanner`, `internal/probe`, `internal/thumb`, `internal/clock`, `internal/setassign`, `internal/mediatype` | Hasher, session manager, filesystem scanner, ffprobe wrapper, thumbnail generator, clock abstraction, permission helper, media type / MIME mappings |
+| Entrypoint | `cmd/player` | Flags, config, dependency wiring, server start |
 
-All external dependencies are injected via constructors (e.g., `NewServer`, `NewMediaService`, `NewFSScanner`). Hand-written mocks live in `internal/repository/mock.go` and `internal/service/mock.go`.
-
-### Frontend
-
-- **Stack:** Vanilla ES modules, no bundler or build step
-- **Pages:** `index.html` (SPA), `login.html`, `bootstrap.html`
-- **Styling:** CSS Custom Properties (`var(--*)`) defined in `web/css/theme.css`; utility/component/layout styles in separate files
-- **PWA:** `manifest.json` + `web/sw.js` caches static assets for offline usage
-- **Media Player:** HTML5 `<video>` / `<audio>` with a custom overlay control bar
-- **Routing:** Simple page-type switch in `app.js` based on `location.pathname`
-
-### Build & Deploy
-
-- **Build Tool:** Mage (`Magefile.go`)
-- **Container:** Multi-stage `Dockerfile` (Go builder → Alpine runtime with `ffmpeg`)
-- **Kubernetes:** `Deployment` + `Service` + two PVCs (`/data` for DB, `/media` for library)
-
----
-
-## Running Tests
-
-```bash
-# Run all tests with race detector and coverage
-go test ./... -race -cover
-
-# Generate coverage profile and view it
-go test ./... -race -coverprofile=coverage.out && go tool cover -func=coverage.out
-```
-
-Tests use:
-- `:memory:` SQLite instances for repository-layer tests
-- Hand-written mocks (fakes) for service-layer tests
-- `httptest` + mocked services for handler tests
-- Golden JSON fixtures for `probe` tests
-
----
-
-## Mage Targets
-
-Install `mage` if you don't have it already:
-
-```bash
-go install github.com/magefile/mage@latest
-```
-
-Available targets (from `Magefile.go`):
-
-| Target | Description |
-|--------|-------------|
-| `mage` (default) | Same as `mage build` |
-| `mage build` | Compile the binary (`go build -o player ./cmd/mediaplayer`) |
+| `mage build` | Compile the binary (`go build -o player ./cmd/player`) |
 | `mage test` | Run `go test ./...` |
 | `mage install` | Build and copy `player` to `$GOPATH/bin` (or `~/go/bin`) |
 | `mage clean` | Remove the `player` binary |

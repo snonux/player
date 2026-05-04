@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the binary.
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o player ./cmd/mediaplayer
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" 	-o player ./cmd/player
 
 # ---- Runtime stage ----
 FROM alpine:3.21

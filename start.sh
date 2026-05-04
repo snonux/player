@@ -59,7 +59,7 @@ cd "$(dirname "$0")"
 
 # Build unconditionally — this script is for development
 echo "Building player binary..."
-go build -o player ./cmd/mediaplayer
+go build -o player ./cmd/player
 
 stop
 

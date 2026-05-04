@@ -51,7 +51,7 @@ type appDeps struct {
 
 // parseVersionFlag parses CLI flags and returns whether --version was requested.
 func parseVersionFlag(args []string) (bool, error) {
-	fs := flag.NewFlagSet("mediaplayer", flag.ContinueOnError)
+	fs := flag.NewFlagSet("player", flag.ContinueOnError)
 	versionFlag := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return false, err

@@ -21,7 +21,7 @@ A self-hosted, Kubernetes-deployable web media player written in Go (stdlib `net
 
 ```
 ./
-├── cmd/mediaplayer/
+├── cmd/player/
 │   └── main.go              # Entrypoint: flags, config, wire dependencies, start server
 ├── internal/
 │   ├── version.go           # const Version; printed via -version flag

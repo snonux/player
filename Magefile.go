@@ -22,7 +22,7 @@ func Default() error {
 
 // Build compiles the application binary.
 func Build() error {
-	return sh.RunV("go", "build", "-o", binaryName, "./cmd/mediaplayer")
+	return sh.RunV("go", "build", "-o", binaryName, "./cmd/player")
 }
 
 // Test runs all tests in the project.
