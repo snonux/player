@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,7 +29,7 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func readJSON(r *http.Request, dst interface{}) error {
 	if r.Body == nil {
-		return fmt.Errorf("missing body")
+		return errors.New("missing body")
 	}
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(dst)

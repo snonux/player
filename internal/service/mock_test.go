@@ -56,9 +56,11 @@ func TestMockMediaService_Defaults(t *testing.T) {
 func TestMockMediaService_WithFuncs(t *testing.T) {
 	ctx := context.Background()
 	m := &MockMediaService{
-		ListSetsFunc:            func(ctx context.Context, userID int64) ([]model.Set, error) { return nil, nil },
-		GetMediaDetailFunc:      func(ctx context.Context, mediaID, userID int64) (*MediaDetail, error) { return nil, nil },
-		ListMediaFunc:           func(ctx context.Context, userID int64, filter MediaQueryFilter) ([]model.Media, error) { return nil, nil },
+		ListSetsFunc:       func(ctx context.Context, userID int64) ([]model.Set, error) { return nil, nil },
+		GetMediaDetailFunc: func(ctx context.Context, mediaID, userID int64) (*MediaDetail, error) { return nil, nil },
+		ListMediaFunc: func(ctx context.Context, userID int64, filter MediaQueryFilter) ([]model.Media, error) {
+			return nil, nil
+		},
 		StreamMediaFunc:         func(ctx context.Context, mediaID, userID int64) (*FileResult, error) { return nil, nil },
 		DownloadMediaFunc:       func(ctx context.Context, mediaID, userID int64) (*FileResult, error) { return nil, nil },
 		GetThumbnailFunc:        func(ctx context.Context, mediaID, userID int64) (*FileResult, error) { return nil, nil },
@@ -69,15 +71,19 @@ func TestMockMediaService_WithFuncs(t *testing.T) {
 		RemoveTagFunc:           func(ctx context.Context, mediaID, userID int64, tagName string) error { return nil },
 		SoftDeleteMediaFunc:     func(ctx context.Context, mediaID, userID int64) error { return nil },
 		RestoreMediaFunc:        func(ctx context.Context, mediaID, userID int64) error { return nil },
-		UploadMediaFunc:         func(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error) { return nil, nil },
-		CreateShareFunc:         func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) { return nil, nil },
-		ListSharesFunc:          func(ctx context.Context, mediaID, userID int64) ([]model.Share, error) { return nil, nil },
-		RevokeShareFunc:         func(ctx context.Context, token string, userID int64) error { return nil },
-		ValidateShareTokenFunc:  func(ctx context.Context, token string) (*model.Share, error) { return nil, nil },
-		StreamSharedMediaFunc:   func(ctx context.Context, token string) (*FileResult, error) { return nil, nil },
-		GetNoteFunc:             func(ctx context.Context, mediaID, userID int64) (*model.Note, error) { return nil, nil },
-		UpsertNoteFunc:          func(ctx context.Context, note *model.Note) error { return nil },
-		DeleteNoteFunc:          func(ctx context.Context, mediaID, userID int64) error { return nil },
+		UploadMediaFunc: func(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error) {
+			return nil, nil
+		},
+		CreateShareFunc: func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+			return nil, nil
+		},
+		ListSharesFunc:         func(ctx context.Context, mediaID, userID int64) ([]model.Share, error) { return nil, nil },
+		RevokeShareFunc:        func(ctx context.Context, token string, userID int64) error { return nil },
+		ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) { return nil, nil },
+		StreamSharedMediaFunc:  func(ctx context.Context, token string) (*FileResult, error) { return nil, nil },
+		GetNoteFunc:            func(ctx context.Context, mediaID, userID int64) (*model.Note, error) { return nil, nil },
+		UpsertNoteFunc:         func(ctx context.Context, note *model.Note) error { return nil },
+		DeleteNoteFunc:         func(ctx context.Context, mediaID, userID int64) error { return nil },
 	}
 
 	m.ListSets(ctx, 1)
@@ -124,10 +130,12 @@ func TestMockAdminService_Defaults(t *testing.T) {
 func TestMockAdminService_WithFuncs(t *testing.T) {
 	ctx := context.Background()
 	m := &MockAdminService{
-		ListTrashFunc:        func(ctx context.Context) ([]model.Media, error) { return nil, nil },
-		TriggerRescanFunc:    func(ctx context.Context) error { return nil },
-		ListUsersFunc:        func(ctx context.Context) ([]model.User, error) { return nil, nil },
-		CreateUserFunc:       func(ctx context.Context, username, password string, isAdmin bool) (*model.User, error) { return nil, nil },
+		ListTrashFunc:     func(ctx context.Context) ([]model.Media, error) { return nil, nil },
+		TriggerRescanFunc: func(ctx context.Context) error { return nil },
+		ListUsersFunc:     func(ctx context.Context) ([]model.User, error) { return nil, nil },
+		CreateUserFunc: func(ctx context.Context, username, password string, isAdmin bool) (*model.User, error) {
+			return nil, nil
+		},
 		DeleteUserFunc:       func(ctx context.Context, id int64) error { return nil },
 		ListPermissionsFunc:  func(ctx context.Context) (*PermissionsMatrix, error) { return nil, nil },
 		GrantPermissionFunc:  func(ctx context.Context, setID, userID int64, role model.Role) error { return nil },

@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -149,7 +149,7 @@ func (w *GCWorker) notifyRunDone() {
 // RunOnce performs a single GC run synchronously. Useful for tests.
 func (w *GCWorker) RunOnce() error {
 	if w.interval == 0 {
-		return fmt.Errorf("worker not started")
+		return errors.New("worker not started")
 	}
 	ctx := w.ctx
 	if ctx == nil {

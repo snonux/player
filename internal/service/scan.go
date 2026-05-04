@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -40,7 +40,7 @@ func NewScanService(appCtx context.Context, sc scanner.Scanner, mediaRoot string
 
 func (s *scanService) TriggerRescan(ctx context.Context) error {
 	if s.scanner == nil {
-		return fmt.Errorf("scanner not configured")
+		return errors.New("scanner not configured")
 	}
 
 	s.mu.Lock()

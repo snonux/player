@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"codeberg.org/snonux/player/internal/model"
@@ -49,7 +50,7 @@ func (s *tagService) RemoveTag(ctx context.Context, mediaID, userID int64, tagNa
 		return fmt.Errorf("get tag: %w", err)
 	}
 	if tag == nil {
-		return fmt.Errorf("tag not found")
+		return errors.New("tag not found")
 	}
 	return s.store.RemoveTag(ctx, mediaID, tag.ID)
 }
