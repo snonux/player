@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
+  <title id="title">Player media software logo</title>
+  <desc id="desc">A rounded gradient app icon with a play triangle and landscape motif, followed by the word Player.</desc>
+
+  <defs>
+    <linearGradient id="iconGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0A7CFF"/>
+      <stop offset="48%" stop-color="#4B67FF"/>
+      <stop offset="100%" stop-color="#8D45F7"/>
+    </linearGradient>
+
+    <linearGradient id="hillDark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4A2AD9"/>
+      <stop offset="100%" stop-color="#6539E8"/>
+    </linearGradient>
+
+    <linearGradient id="hillLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#9D72FF"/>
+      <stop offset="100%" stop-color="#C091FF"/>
+    </linearGradient>
+
+    <clipPath id="iconClip">
+      <rect x="90" y="170" width="330" height="260" rx="58" ry="58"/>
+    </clipPath>
+
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#132044" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <!-- Icon -->
+  <g filter="url(#softShadow)">
+    <rect x="90" y="170" width="330" height="260" rx="58" ry="58" fill="url(#iconGradient)"/>
+
+    <g clip-path="url(#iconClip)">
+      <!-- Dark foreground hill -->
+      <path d="M70 420 C110 365 145 350 185 384 L315 500 L70 500 Z" fill="url(#hillDark)" opacity="0.92"/>
+
+      <!-- Light background hill -->
+      <path d="M210 430 C255 382 292 360 340 398 L455 500 L210 500 Z" fill="url(#hillLight)" opacity="0.72"/>
+
+      <!-- Gentle purple wash near bottom -->
+      <path d="M90 390 C175 350 260 388 420 340 L420 500 L90 500 Z" fill="#6E42EA" opacity="0.24"/>
+    </g>
+
+    <!-- Play triangle -->
+    <path d="M200 236 L200 364 Q200 384 218 374 L318 311 Q337 300 318 289 L218 226 Q200 216 200 236 Z" fill="#FFFFFF"/>
+
+    <!-- Photo sun/dot -->
+    <circle cx="365" cy="335" r="26" fill="#FFFFFF" opacity="0.98"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="480" y="352"
+        font-family="Inter, Avenir Next, Nunito Sans, Segoe UI, Helvetica, Arial, sans-serif"
+        font-size="148"
+        font-weight="800"
+        letter-spacing="-5"
+        fill="#071126">Player</text>
+</svg>
