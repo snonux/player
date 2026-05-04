@@ -10,6 +10,37 @@ import (
 	"codeberg.org/snonux/player/internal/repository"
 )
 
+func TestNoteService_GetNote_AccessCheck(t *testing.T) {
+	ctx := context.Background()
+	store := &repository.MockStore{
+		MediaRepo: repository.MockMediaRepo{
+			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+				return &model.Media{ID: 1, SetID: 1}, nil
+			},
+		},
+		UserRepo: repository.MockUserRepo{
+			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+				return &model.User{ID: id, IsAdmin: false}, nil
+			},
+		},
+		SetRepo: repository.MockSetRepo{
+			GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+				return &model.Set{ID: id}, nil
+			},
+		},
+		SetPermissionRepo: repository.MockSetPermissionRepo{
+			GetPermissionFunc: func(ctx context.Context, setID, userID int64) (*model.SetPermission, error) {
+				return nil, nil
+			},
+		},
+	}
+	svc := NewNoteService(store, clock.RealClock{}, &accessHelper{store: store})
+	_, err := svc.GetNote(ctx, 1, 2)
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
 func TestNoteService_SetNote(t *testing.T) {
 	ctx := context.Background()
 
