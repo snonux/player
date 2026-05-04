@@ -9,6 +9,18 @@ import (
 	"codeberg.org/snonux/player/internal/repository"
 )
 
+func TestProgressService_UpdateProgress_Validation(t *testing.T) {
+	ctx := context.Background()
+	svc := NewProgressService(&repository.MockStore{}, newMockClock())
+
+	if err := svc.UpdateProgress(ctx, "", 1, 10, 5); err == nil {
+		t.Fatal("expected error for empty sessionID")
+	}
+	if err := svc.UpdateProgress(ctx, "sess", 1, 0, 5); err == nil {
+		t.Fatal("expected error for mediaID=0")
+	}
+}
+
 func TestProgressService_UpdateProgress(t *testing.T) {
 	ctx := context.Background()
 

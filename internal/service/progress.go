@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"codeberg.org/snonux/player/internal/clock"
@@ -24,6 +25,13 @@ func NewProgressService(store repository.ProgressServiceStore, clk clock.Clock) 
 }
 
 func (s *progressService) UpdateProgress(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error {
+	if sessionID == "" {
+		return errors.New("session_id required")
+	}
+	if mediaID == 0 {
+		return errors.New("media_id required")
+	}
+
 	now := s.clock.Now()
 
 	if err := s.store.UpsertProgress(ctx, &model.PlaybackProgress{

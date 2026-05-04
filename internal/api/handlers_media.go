@@ -457,9 +457,14 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "media_id required"})
 		return
 	}
+	sessionID := sessionIDFromContext(r)
+	if sessionID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session required"})
+		return
+	}
 	err := s.progressSvc.UpdateProgress(
 		r.Context(),
-		sessionIDFromContext(r),
+		sessionID,
 		userIDFromContext(r),
 		req.MediaID,
 		req.Position,
