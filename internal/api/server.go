@@ -150,6 +150,7 @@ func (s *Server) routesStatic() {
 	staticHandler := http.FileServer(s.staticFS)
 	s.mux.Handle("/css/", staticHandler)
 	s.mux.Handle("/js/", staticHandler)
+	s.mux.Handle("/logo.png", staticHandler)
 	s.mux.Handle("/logo.svg", staticHandler)
 	s.mux.Handle("/favicon.ico", staticHandler)
 	s.mux.Handle("/favicon.svg", staticHandler)
