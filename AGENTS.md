@@ -25,7 +25,7 @@ The project is a **self-hosted media player** designed for simplicity (KISS): mi
 | Service | `internal/service` | Business logic: `MediaService`, `AdminService`, `ProgressService`, `GCWorker` |
 | Repository | `internal/repository` | `Store` interface (composite of per-entity repos); concrete SQLite in `sqlite.go` |
 | Domain | `internal/model` | Pure structs (`Media`, `User`, `Set`, `Session`, etc.) — zero external deps |
-| Utilities | `internal/auth`, `internal/scanner`, `internal/probe`, `internal/thumb`, `internal/clock`, `internal/setassign` | Hasher, session manager, filesystem scanner, ffprobe wrapper, thumbnail generator, clock abstraction, permission helper |
+| Utilities | `internal/auth`, `internal/scanner`, `internal/probe`, `internal/thumb`, `internal/clock`, `internal/setassign`, `internal/mediatype` | Hasher, session manager, filesystem scanner, ffprobe wrapper, thumbnail generator, clock abstraction, permission helper, media type / MIME mappings |
 
 All external dependencies are injected via constructors (e.g., `NewServer`, `NewMediaService`, `NewFSScanner`). Hand-written mocks live in `internal/repository/mock.go` and `internal/service/mock.go`.
 

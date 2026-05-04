@@ -5,11 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"mime"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 )
 
 // Remuxer remuxes media on-the-fly to a browser-friendly container.
@@ -94,54 +91,7 @@ func hasMPEGTSsync(buf []byte, packetSize int) bool {
 				return true
 			}
 		}
-	}
-	return false
+    }
+    return false
 }
 
-// MimeTypeForFilename returns an HTTP Content-Type based on the file extension.
-func MimeTypeForFilename(name string) string {
-	ext := strings.ToLower(filepath.Ext(name))
-	t := mime.TypeByExtension(ext)
-	if t != "" {
-		return t
-	}
-	switch ext {
-	case ".mp4", ".m4v":
-		return "video/mp4"
-	case ".mkv":
-		return "video/x-matroska"
-	case ".avi":
-		return "video/x-msvideo"
-	case ".mov":
-		return "video/quicktime"
-	case ".webm":
-		return "video/webm"
-	case ".mp3":
-		return "audio/mpeg"
-	case ".flac":
-		return "audio/flac"
-	case ".wav":
-		return "audio/wav"
-	case ".aac", ".m4a":
-		return "audio/mp4"
-	case ".ogg", ".opus":
-		return "audio/ogg"
-	case ".m4b":
-		return "audio/x-m4b"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".gif":
-		return "image/gif"
-	case ".webp":
-		return "image/webp"
-	case ".bmp":
-		return "image/bmp"
-	case ".avif":
-		return "image/avif"
-	case ".svg":
-		return "image/svg+xml"
-	}
-	return "application/octet-stream"
-}

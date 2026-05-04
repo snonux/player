@@ -7,10 +7,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
-	"strings"
 
+	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/model"
 	"github.com/rwcarlsen/goexif/exif"
 )
@@ -49,7 +48,7 @@ func (f *FFProber) Probe(ctx context.Context, path string) (*model.Metadata, err
 		return nil, err
 	}
 	// For images, also extract EXIF data.
-	if isImagePath(path) {
+	if mediatype.IsImageExt(path) {
 		extractEXIF(path, meta)
 	}
 	return meta, nil
@@ -106,16 +105,6 @@ func parseFFprobeOutput(data []byte) (*model.Metadata, error) {
 	}
 
 	return meta, nil
-}
-
-var imageExtensions = map[string]struct{}{
-	".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {}, ".webp": {}, ".bmp": {}, ".avif": {}, ".svg": {},
-}
-
-func isImagePath(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	_, ok := imageExtensions[ext]
-	return ok
 }
 
 func extractEXIF(path string, meta *model.Metadata) {

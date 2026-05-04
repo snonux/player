@@ -413,39 +413,4 @@ func TestFSScanner_Scan(t *testing.T) {
 	})
 }
 
-func Test_isMediaFile(t *testing.T) {
-	cases := []struct {
-		path string
-		want bool
-	}{
-		{"movie.mp4", true},
-		{"song.MP3", true},
-		{"archive.zip", false},
-		{"photo.jpg", true},
-		{"", false},
-	}
-	for _, c := range cases {
-		if got := isMediaFile(c.path); got != c.want {
-			t.Errorf("isMediaFile(%q) = %v, want %v", c.path, got, c.want)
-		}
-	}
-}
 
-func Test_mediaTypeFromExt(t *testing.T) {
-	cases := []struct {
-		path string
-		want model.MediaType
-	}{
-		{"a.mp4", model.MediaTypeVideo},
-		{"a.mkv", model.MediaTypeVideo},
-		{"a.mp3", model.MediaTypeAudio},
-		{"a.FLAC", model.MediaTypeAudio},
-		{"a.jpg", model.MediaTypeImage},
-		{"a.png", model.MediaTypeImage},
-	}
-	for _, c := range cases {
-		if got := mediaTypeFromExt(c.path); got != c.want {
-			t.Errorf("mediaTypeFromExt(%q) = %v, want %v", c.path, got, c.want)
-		}
-	}
-}

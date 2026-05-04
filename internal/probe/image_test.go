@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/model"
 )
 
@@ -72,18 +73,18 @@ func TestIsImagePath(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.path, func(t *testing.T) {
-			if got := isImagePath(c.path); got != c.want {
-				t.Errorf("isImagePath(%q) = %v, want %v", c.path, got, c.want)
+			if got := mediatype.IsImageExt(c.path); got != c.want {
+				t.Errorf("IsImageExt(%q) = %v, want %v", c.path, got, c.want)
 			}
 		})
 	}
 }
 
 func TestIsImagePath_CaseInsensitive(t *testing.T) {
-	if !isImagePath("UPPER.JPG") {
+	if !mediatype.IsImageExt("UPPER.JPG") {
 		t.Error("expected true for uppercase extension")
 	}
-	if !isImagePath("Mixed.PnG") {
+	if !mediatype.IsImageExt("Mixed.PnG") {
 		t.Error("expected true for mixed-case extension")
 	}
 }

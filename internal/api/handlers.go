@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 
+	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/service"
@@ -136,7 +137,7 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 	}
 	// Set Content-Type so browsers know how to decode the file without
 	// needing to sniff, which avoids buffering delays during streaming.
-	w.Header().Set("Content-Type", probe.MimeTypeForFilename(res.FileName))
+	w.Header().Set("Content-Type", mediatype.MIMETypeForExt(res.FileName))
 	w.Header().Set("Accept-Ranges", "bytes")
 	s.logger.Info("api stream file", "file", res.FileName, "size", stat.Size(), "range", r.Header.Get("Range"))
 	http.ServeContent(w, r, res.FileName, stat.ModTime(), f)

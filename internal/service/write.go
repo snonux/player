@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
@@ -67,7 +68,7 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 		return nil, err
 	}
 
-	if !isSupportedExtension(filename) {
+	if !mediatype.IsSupportedExt(filename) {
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedExtension, filepath.Ext(filename))
 	}
 
@@ -163,7 +164,7 @@ func (s *writeService) saveUploadedMedia(ctx context.Context, setID int64, path 
 		RelPath:       filepath.Base(path),
 		FileName:      filepath.Base(path),
 		AbsPath:       path,
-		Type:          guessMediaType(filepath.Base(path)),
+		Type:          mediatype.TypeForExt(filepath.Base(path)),
 		FileSizeBytes: n,
 		CreatedAt:     now,
 	}

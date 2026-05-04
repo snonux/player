@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
@@ -148,7 +149,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 	// First pass: gather images per directory.
 	coverImages := make(map[string]string)
 	_ = s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !isImageFile(path) {
+		if err != nil || d.IsDir() || !mediatype.IsCoverImageExt(path) {
 			if d != nil && d.IsDir() && strings.HasPrefix(d.Name(), ".") && path != setPath {
 				return filepath.SkipDir
 			}
@@ -173,7 +174,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 			}
 			return nil
 		}
-		if !isMediaFile(path) {
+		if !mediatype.IsSupportedExt(path) {
 			return nil
 		}
 		relPath, err := filepath.Rel(setPath, path)
@@ -202,7 +203,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		}
 		meta.FileSizeBytes = info.Size()
 
-		mediaType := mediaTypeFromExt(path)
+		mediaType := mediatype.TypeForExt(path)
 		var thumbnailPath string
 		if mediaType == model.MediaTypeVideo {
 			thumbDir := filepath.Join(setPath, ".thumbnails")
@@ -289,7 +290,6 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 	return nil
 }
 
-// findCoverImage walks up from a file's directory toward the set root.
 func findCoverImage(filePath string, coverImages map[string]string, setPath string) string {
 	for dir := filepath.Dir(filePath); len(dir) >= len(setPath); dir = filepath.Dir(dir) {
 		if coverRel, ok := coverImages[dir]; ok {
@@ -300,49 +300,4 @@ func findCoverImage(filePath string, coverImages map[string]string, setPath stri
 		}
 	}
 	return ""
-}
-
-var mediaExtensions = map[string]struct{}{
-	".mp4": {}, ".mkv": {}, ".avi": {}, ".mov": {}, ".webm": {},
-	".mp3": {}, ".flac": {}, ".wav": {}, ".aac": {}, ".ogg": {}, ".m4a": {}, ".opus": {}, ".m4b": {},
-	".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {}, ".webp": {}, ".bmp": {}, ".avif": {}, ".svg": {},
-}
-
-// imageExtensions lists file extensions recognized as cover/artwork images.
-var imageExtensions = map[string]struct{}{
-	".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {},
-}
-
-func isImageFile(path string) bool {
-	base := filepath.Base(path)
-	if strings.HasPrefix(base, ".") {
-		return false
-	}
-	ext := strings.ToLower(filepath.Ext(path))
-	_, ok := imageExtensions[ext]
-	return ok
-}
-
-func isMediaFile(path string) bool {
-	base := filepath.Base(path)
-	if strings.HasPrefix(base, "._") {
-		return false
-	}
-	ext := strings.ToLower(filepath.Ext(path))
-	_, ok := mediaExtensions[ext]
-	return ok
-}
-
-func mediaTypeFromExt(path string) model.MediaType {
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".mp4", ".mkv", ".avi", ".mov", ".webm":
-		return model.MediaTypeVideo
-	case ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".opus", ".m4b":
-		return model.MediaTypeAudio
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif", ".svg":
-		return model.MediaTypeImage
-	default:
-		return model.MediaTypeAudio
-	}
 }

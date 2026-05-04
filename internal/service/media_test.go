@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
 )
@@ -2192,7 +2193,7 @@ func TestMediaService_StreamSharedMedia_MissingMedia(t *testing.T) {
 }
 
 func TestMediaService_GuessMediaType_Edge(t *testing.T) {
-	if got := guessMediaType("unknown.xyz"); got != model.MediaTypeVideo {
+	if got := mediatype.TypeForExt("unknown.xyz"); got != model.MediaTypeVideo {
 		t.Fatalf("expected video for unknown ext, got %v", got)
 	}
 }

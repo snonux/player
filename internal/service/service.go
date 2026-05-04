@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
@@ -23,54 +21,6 @@ var (
 	ErrAlreadyBootstrapped  = errors.New("already bootstrapped")
 	ErrInvalidCredentials   = errors.New("invalid credentials")
 )
-
-// supportedExtensions lists all file extensions accepted by UploadMedia.
-var supportedExtensions = map[string]struct{}{
-	".mp4":  {},
-	".mkv":  {},
-	".avi":  {},
-	".mov":  {},
-	".wmv":  {},
-	".flv":  {},
-	".webm": {},
-	".mp3":  {},
-	".wav":  {},
-	".flac": {},
-	".aac":  {},
-	".ogg":  {},
-	".m4a":  {},
-	".wma":  {},
-	".m4b":  {},
-	".opus": {},
-	".jpg":  {},
-	".jpeg": {},
-	".png":  {},
-	".gif":  {},
-	".webp": {},
-	".bmp":  {},
-	".avif": {},
-	".svg":  {},
-}
-
-func isSupportedExtension(name string) bool {
-	ext := strings.ToLower(filepath.Ext(name))
-	_, ok := supportedExtensions[ext]
-	return ok
-}
-
-func guessMediaType(name string) model.MediaType {
-	ext := strings.ToLower(filepath.Ext(name))
-	switch ext {
-	case ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm":
-		return model.MediaTypeVideo
-	case ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma", ".m4b", ".opus":
-		return model.MediaTypeAudio
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif", ".svg":
-		return model.MediaTypeImage
-	default:
-		return model.MediaTypeVideo
-	}
-}
 
 // MediaQueryFilter defines query parameters for listing media from the API layer.
 // It mirrors repository.MediaFilter but lives in the service layer to avoid coupling.
