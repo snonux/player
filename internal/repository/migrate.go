@@ -5,13 +5,8 @@ import (
 	"fmt"
 )
 
-// Migrate creates the database schema if it does not exist.
-func Migrate(db *sql.DB) error {
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON;`); err != nil {
-		return fmt.Errorf("enable foreign keys: %w", err)
-	}
-
-	schema := `
+// tablesSchema defines all CREATE TABLE statements.
+const tablesSchema = `
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
@@ -126,7 +121,10 @@ CREATE TABLE IF NOT EXISTS media_notes (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(media_id, user_id)
 );
+`
 
+// indexesSchema defines all CREATE INDEX statements.
+const indexesSchema = `
 CREATE INDEX IF NOT EXISTS idx_media_set_id ON media(set_id);
 CREATE INDEX IF NOT EXISTS idx_media_rel_path ON media(set_id, rel_path);
 CREATE INDEX IF NOT EXISTS idx_media_deleted_at ON media(deleted_at);
@@ -136,8 +134,33 @@ CREATE INDEX IF NOT EXISTS idx_permissions_user ON set_permissions(user_id);
 CREATE INDEX IF NOT EXISTS idx_permissions_set ON set_permissions(set_id);
 CREATE INDEX IF NOT EXISTS idx_shares_expires ON shares(expires_at);
 `
+
+// execSchema executes a raw SQL schema block against the given database.
+func execSchema(db *sql.DB, name, schema string) error {
 	if _, err := db.Exec(schema); err != nil {
-		return fmt.Errorf("execute schema: %w", err)
+		return fmt.Errorf("execute %s schema: %w", name, err)
+	}
+	return nil
+}
+
+// enableForeignKeys turns on SQLite foreign key enforcement.
+func enableForeignKeys(db *sql.DB) error {
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON;`); err != nil {
+		return fmt.Errorf("enable foreign keys: %w", err)
+	}
+	return nil
+}
+
+// Migrate creates the database schema if it does not exist.
+func Migrate(db *sql.DB) error {
+	if err := enableForeignKeys(db); err != nil {
+		return err
+	}
+	if err := execSchema(db, "tables", tablesSchema); err != nil {
+		return err
+	}
+	if err := execSchema(db, "indexes", indexesSchema); err != nil {
+		return err
 	}
 	return nil
 }

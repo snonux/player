@@ -107,102 +107,134 @@ func NewServerWithLogger(
 	return s
 }
 
-func (s *Server) routes() {
-	// Public routes — use plain path so wrong method returns 405 instead of falling through to /
-	s.mux.HandleFunc("/api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		s.handleBootstrap(w, r)
-	})
-	s.mux.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		s.handleLogin(w, r)
-	})
-	s.mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		s.handleHealthz(w, r)
-	})
-	s.mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		s.handleReadyz(w, r)
-	})
+// requireSession wraps a handler with the session requirement middleware.
+func (s *Server) requireSession(h http.HandlerFunc) http.HandlerFunc {
+	return s.mw.RequireSession(h).(http.HandlerFunc)
+}
 
-	// Public share routes
+// requireAdmin wraps a handler with both session and admin middleware.
+func (s *Server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
+	return s.mw.RequireSession(s.mw.RequireAdmin(h)).(http.HandlerFunc)
+}
+
+// publicMethod wraps a handler so only the given HTTP method is allowed;
+// other methods yield 405 instead of falling through.
+func publicMethod(method string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != method {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handler(w, r)
+	}
+}
+
+// routesPublic wires the fully-public API endpoints (bootstrap, login, probes).
+func (s *Server) routesPublic() {
+	s.mux.HandleFunc("/api/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
+	s.mux.HandleFunc("/api/login", publicMethod(http.MethodPost, s.handleLogin))
+	s.mux.HandleFunc("/healthz", publicMethod(http.MethodGet, s.handleHealthz))
+	s.mux.HandleFunc("/readyz", publicMethod(http.MethodGet, s.handleReadyz))
+}
+
+// routesSharePublic wires public share routes (no session required).
+func (s *Server) routesSharePublic() {
 	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
 	s.mux.HandleFunc("GET /s/{token}/stream", s.handleShareStream)
 	s.mux.HandleFunc("GET /s/{token}/thumbnail", s.handleShareThumbnail)
 	s.mux.HandleFunc("GET /s/{token}/download", s.handleShareDownload)
+}
 
-	// Static assets (public)
+// routesStatic wires static CSS/JS asset serving.
+func (s *Server) routesStatic() {
 	staticHandler := http.FileServer(s.staticFS)
 	s.mux.Handle("/css/", staticHandler)
 	s.mux.Handle("/js/", staticHandler)
+}
 
-	// HTML pages
+// routesHTML wires the SPA HTML page routes.
+func (s *Server) routesHTML() {
 	s.mux.Handle("/login.html", http.HandlerFunc(s.serveLogin))
 	s.mux.Handle("/bootstrap.html", http.HandlerFunc(s.serveBootstrap))
 	s.mux.Handle("/", s.mw.RequireSession(http.HandlerFunc(s.serveIndex)))
 	s.mux.Handle("GET /index.html", s.mw.RequireSession(http.HandlerFunc(s.serveIndex)))
 	s.mux.Handle("GET /detach.html", s.mw.RequireSession(http.HandlerFunc(s.serveDetach)))
+}
 
-	// Session-required routes
-	s.mux.Handle("POST /api/logout", s.mw.RequireSession(http.HandlerFunc(s.handleLogout)))
+// routesAuth wires the logout route.
+func (s *Server) routesAuth() {
+	s.mux.Handle("POST /api/logout", s.requireSession(s.handleLogout))
+}
 
-	// Sets
-	s.mux.Handle("GET /api/sets", s.mw.RequireSession(http.HandlerFunc(s.handleListSets)))
-	s.mux.Handle("GET /api/sets/{id}/browse", s.mw.RequireSession(http.HandlerFunc(s.handleBrowseSet)))
-	s.mux.Handle("GET /api/sets/{id}/cover", s.mw.RequireSession(http.HandlerFunc(s.handleGetSetCover)))
-	s.mux.Handle("POST /api/sets/{id}/cover", s.mw.RequireSession(http.HandlerFunc(s.handlePostSetCover)))
-	s.mux.Handle("POST /api/sets/{id}/upload", s.mw.RequireSession(http.HandlerFunc(s.handleUpload)))
+// routesSets wires the set-related API routes.
+func (s *Server) routesSets() {
+	s.mux.Handle("GET /api/sets", s.requireSession(s.handleListSets))
+	s.mux.Handle("GET /api/sets/{id}/browse", s.requireSession(s.handleBrowseSet))
+	s.mux.Handle("GET /api/sets/{id}/cover", s.requireSession(s.handleGetSetCover))
+	s.mux.Handle("POST /api/sets/{id}/cover", s.requireSession(s.handlePostSetCover))
+	s.mux.Handle("POST /api/sets/{id}/upload", s.requireSession(s.handleUpload))
+}
 
-	// Media
-	s.mux.Handle("GET /api/media", s.mw.RequireSession(http.HandlerFunc(s.handleListMedia)))
-	s.mux.Handle("GET /api/media/{id}", s.mw.RequireSession(http.HandlerFunc(s.handleGetMedia)))
-	s.mux.Handle("GET /api/media/{id}/stream", s.mw.RequireSession(http.HandlerFunc(s.handleStream)))
-	s.mux.Handle("GET /api/media/{id}/download", s.mw.RequireSession(http.HandlerFunc(s.handleDownload)))
-	s.mux.Handle("GET /api/media/{id}/thumbnail", s.mw.RequireSession(http.HandlerFunc(s.handleThumbnail)))
-	s.mux.Handle("POST /api/media/{id}/thumbnail", s.mw.RequireSession(http.HandlerFunc(s.handleRegenThumbnail)))
-	s.mux.Handle("POST /api/media/{id}/favorite", s.mw.RequireSession(http.HandlerFunc(s.handleFavorite)))
-	s.mux.Handle("POST /api/media/{id}/tags", s.mw.RequireSession(http.HandlerFunc(s.handleAddTag)))
-	s.mux.Handle("DELETE /api/media/{id}/tags/{tag}", s.mw.RequireSession(http.HandlerFunc(s.handleRemoveTag)))
-	s.mux.Handle("DELETE /api/media/{id}", s.mw.RequireSession(http.HandlerFunc(s.handleSoftDelete)))
-	s.mux.Handle("POST /api/media/{id}/restore", s.mw.RequireSession(http.HandlerFunc(s.handleRestore)))
-	s.mux.Handle("POST /api/media/{id}/shares", s.mw.RequireSession(http.HandlerFunc(s.handleCreateShare)))
-	s.mux.Handle("GET /api/media/{id}/shares", s.mw.RequireSession(http.HandlerFunc(s.handleListShares)))
+// routesMedia wires the media-related API routes.
+func (s *Server) routesMedia() {
+	s.mux.Handle("GET /api/media", s.requireSession(s.handleListMedia))
+	s.mux.Handle("GET /api/media/{id}", s.requireSession(s.handleGetMedia))
+	s.mux.Handle("GET /api/media/{id}/stream", s.requireSession(s.handleStream))
+	s.mux.Handle("GET /api/media/{id}/download", s.requireSession(s.handleDownload))
+	s.mux.Handle("GET /api/media/{id}/thumbnail", s.requireSession(s.handleThumbnail))
+	s.mux.Handle("POST /api/media/{id}/thumbnail", s.requireSession(s.handleRegenThumbnail))
+	s.mux.Handle("POST /api/media/{id}/favorite", s.requireSession(s.handleFavorite))
+	s.mux.Handle("POST /api/media/{id}/tags", s.requireSession(s.handleAddTag))
+	s.mux.Handle("DELETE /api/media/{id}/tags/{tag}", s.requireSession(s.handleRemoveTag))
+	s.mux.Handle("DELETE /api/media/{id}", s.requireSession(s.handleSoftDelete))
+	s.mux.Handle("POST /api/media/{id}/restore", s.requireSession(s.handleRestore))
+	s.mux.Handle("POST /api/media/{id}/shares", s.requireSession(s.handleCreateShare))
+	s.mux.Handle("GET /api/media/{id}/shares", s.requireSession(s.handleListShares))
+}
 
-	// Notes
-	s.mux.Handle("GET /api/media/{id}/notes", s.mw.RequireSession(http.HandlerFunc(s.handleGetNote)))
-	s.mux.Handle("POST /api/media/{id}/notes", s.mw.RequireSession(http.HandlerFunc(s.handleUpsertNote)))
-	s.mux.Handle("DELETE /api/media/{id}/notes", s.mw.RequireSession(http.HandlerFunc(s.handleDeleteNote)))
+// routesNotes wires the notes API routes.
+func (s *Server) routesNotes() {
+	s.mux.Handle("GET /api/media/{id}/notes", s.requireSession(s.handleGetNote))
+	s.mux.Handle("POST /api/media/{id}/notes", s.requireSession(s.handleUpsertNote))
+	s.mux.Handle("DELETE /api/media/{id}/notes", s.requireSession(s.handleDeleteNote))
+}
 
-	// Progress
-	s.mux.Handle("POST /api/progress", s.mw.RequireSession(http.HandlerFunc(s.handleProgress)))
+// routesProgress wires the progress API routes.
+func (s *Server) routesProgress() {
+	s.mux.Handle("POST /api/progress", s.requireSession(s.handleProgress))
+}
 
-	// Shares
-	s.mux.Handle("DELETE /api/shares/{token}", s.mw.RequireSession(http.HandlerFunc(s.handleRevokeShare)))
-	s.mux.Handle("GET /api/shares", s.mw.RequireSession(http.HandlerFunc(s.handleMyShares)))
+// routesShares wires the share-management API routes.
+func (s *Server) routesShares() {
+	s.mux.Handle("DELETE /api/shares/{token}", s.requireSession(s.handleRevokeShare))
+	s.mux.Handle("GET /api/shares", s.requireSession(s.handleMyShares))
+}
 
-	// Admin routes
-	s.mux.Handle("GET /api/admin/trash", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleListTrash))))
-	s.mux.Handle("POST /api/admin/rescan", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleRescan))))
-	s.mux.Handle("GET /api/admin/scan-progress", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleScanProgress))))
-	s.mux.Handle("GET /api/admin/users", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleListUsers))))
-	s.mux.Handle("POST /api/admin/users", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleCreateUser))))
-	s.mux.Handle("DELETE /api/admin/users/{id}", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleDeleteUser))))
-	s.mux.Handle("GET /api/admin/permissions", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleListPermissions))))
-	s.mux.Handle("POST /api/admin/permissions", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleGrantPermission))))
-	s.mux.Handle("DELETE /api/admin/permissions", s.mw.RequireSession(s.mw.RequireAdmin(http.HandlerFunc(s.handleRevokePermission))))
+// routesAdmin wires the admin-only API routes.
+func (s *Server) routesAdmin() {
+	s.mux.Handle("GET /api/admin/trash", s.requireAdmin(s.handleListTrash))
+	s.mux.Handle("POST /api/admin/rescan", s.requireAdmin(s.handleRescan))
+	s.mux.Handle("GET /api/admin/scan-progress", s.requireAdmin(s.handleScanProgress))
+	s.mux.Handle("GET /api/admin/users", s.requireAdmin(s.handleListUsers))
+	s.mux.Handle("POST /api/admin/users", s.requireAdmin(s.handleCreateUser))
+	s.mux.Handle("DELETE /api/admin/users/{id}", s.requireAdmin(s.handleDeleteUser))
+	s.mux.Handle("GET /api/admin/permissions", s.requireAdmin(s.handleListPermissions))
+	s.mux.Handle("POST /api/admin/permissions", s.requireAdmin(s.handleGrantPermission))
+	s.mux.Handle("DELETE /api/admin/permissions", s.requireAdmin(s.handleRevokePermission))
+}
+
+func (s *Server) routes() {
+	s.routesPublic()
+	s.routesSharePublic()
+	s.routesStatic()
+	s.routesHTML()
+	s.routesAuth()
+	s.routesSets()
+	s.routesMedia()
+	s.routesNotes()
+	s.routesProgress()
+	s.routesShares()
+	s.routesAdmin()
 }
 
 func (s *Server) pingStore(ctx context.Context) error {

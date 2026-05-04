@@ -58,10 +58,17 @@ func envString(name string, set func(string)) {
 	}
 }
 
-// LoadConfig reads configuration from environment variables and returns
-// a populated Config. Unset variables use the package defaults.
-func LoadConfig() (*Config, error) {
-	cfg := &Config{
+// validLogLevels contains the acceptable values for LOG_LEVEL.
+var validLogLevels = map[string]struct{}{
+	"debug": {},
+	"info":  {},
+	"warn":  {},
+	"error": {},
+}
+
+// defaultConfig returns a Config populated with package-level defaults.
+func defaultConfig() *Config {
+	return &Config{
 		Port:                   DefaultPort,
 		MediaRoot:              DefaultMediaRoot,
 		DBPath:                 DefaultDBPath,
@@ -72,14 +79,11 @@ func LoadConfig() (*Config, error) {
 		LogLevel:               DefaultLogLevel,
 		SecureCookies:          DefaultSecureCookies,
 	}
+}
 
-	validLevels := map[string]struct{}{
-		"debug": {},
-		"info":  {},
-		"warn":  {},
-		"error": {},
-	}
-
+// loadNumericSettings reads PORT, MAX_UPLOAD_SIZE_MB, SESSION_TIMEOUT_HOURS,
+// GC_INTERVAL_MINUTES and SHARE_DEFAULT_EXPIRY_DAYS from the environment.
+func loadNumericSettings(cfg *Config) error {
 	if err := envInt("PORT", func(n int) error {
 		// Allow 0 so tests can bind to an ephemeral port.
 		if n < 0 || n > 65535 {
@@ -87,11 +91,8 @@ func LoadConfig() (*Config, error) {
 		}
 		return nil
 	}, func(n int) { cfg.Port = n }); err != nil {
-		return nil, err
+		return err
 	}
-
-	envString("MEDIA_ROOT", func(s string) { cfg.MediaRoot = s })
-	envString("DB_PATH", func(s string) { cfg.DBPath = s })
 
 	if err := envInt("MAX_UPLOAD_SIZE_MB", func(n int) error {
 		if n < 1 {
@@ -99,7 +100,7 @@ func LoadConfig() (*Config, error) {
 		}
 		return nil
 	}, func(n int) { cfg.MaxUploadSizeMB = n }); err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := envInt("SESSION_TIMEOUT_HOURS", func(n int) error {
@@ -108,7 +109,7 @@ func LoadConfig() (*Config, error) {
 		}
 		return nil
 	}, func(n int) { cfg.SessionTimeoutHours = n }); err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := envInt("GC_INTERVAL_MINUTES", func(n int) error {
@@ -117,7 +118,7 @@ func LoadConfig() (*Config, error) {
 		}
 		return nil
 	}, func(n int) { cfg.GCIntervalMinutes = n }); err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := envInt("SHARE_DEFAULT_EXPIRY_DAYS", func(n int) error {
@@ -126,23 +127,59 @@ func LoadConfig() (*Config, error) {
 		}
 		return nil
 	}, func(n int) { cfg.ShareDefaultExpiryDays = n }); err != nil {
-		return nil, err
+		return err
 	}
 
+	return nil
+}
+
+// loadStringSettings reads MEDIA_ROOT and DB_PATH from the environment.
+func loadStringSettings(cfg *Config) {
+	envString("MEDIA_ROOT", func(s string) { cfg.MediaRoot = s })
+	envString("DB_PATH", func(s string) { cfg.DBPath = s })
+}
+
+// loadLogLevel reads LOG_LEVEL from the environment and validates it.
+func loadLogLevel(cfg *Config) error {
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		level := strings.ToLower(strings.TrimSpace(v))
-		if _, ok := validLevels[level]; !ok {
-			return nil, fmt.Errorf("invalid LOG_LEVEL: must be one of debug, info, warn, error, got %q", level)
+		if _, ok := validLogLevels[level]; !ok {
+			return fmt.Errorf("invalid LOG_LEVEL: must be one of debug, info, warn, error, got %q", level)
 		}
 		cfg.LogLevel = level
 	}
+	return nil
+}
 
+// loadSecureCookies reads SECURE_COOKIES from the environment.
+func loadSecureCookies(cfg *Config) error {
 	if v := os.Getenv("SECURE_COOKIES"); v != "" {
 		b, err := strconv.ParseBool(strings.TrimSpace(v))
 		if err != nil {
-			return nil, fmt.Errorf("invalid SECURE_COOKIES: %w", err)
+			return fmt.Errorf("invalid SECURE_COOKIES: %w", err)
 		}
 		cfg.SecureCookies = b
+	}
+	return nil
+}
+
+// LoadConfig reads configuration from environment variables and returns
+// a populated Config. Unset variables use the package defaults.
+func LoadConfig() (*Config, error) {
+	cfg := defaultConfig()
+
+	loadStringSettings(cfg)
+
+	if err := loadNumericSettings(cfg); err != nil {
+		return nil, err
+	}
+
+	if err := loadLogLevel(cfg); err != nil {
+		return nil, err
+	}
+
+	if err := loadSecureCookies(cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil

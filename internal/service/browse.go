@@ -290,6 +290,100 @@ func (s *browseService) RegenerateSetCover(ctx context.Context, setID int64, fol
 	return nil
 }
 
+// prefixForParent builds the slash-terminated prefix used for matching paths under parent.
+func prefixForParent(parent string) string {
+	if parent == "" {
+		return ""
+	}
+	return parent + "/"
+}
+
+// classifyMediaPath splits a media relPath under a parent prefix into the first path component and remainder.
+// It returns name (first component), rest (remaining path), and a bool indicating whether the media is directly inside the parent.
+func classifyMediaPath(rel, prefix string) (name string, rest string, isDirect bool) {
+	if !strings.HasPrefix(rel, prefix) {
+		return "", "", false
+	}
+	if prefix != "" {
+		rel = strings.TrimPrefix(rel, prefix)
+	}
+	if rel == "" {
+		return "", "", false
+	}
+	parts := strings.SplitN(rel, "/", 2)
+	name = parts[0]
+	if len(parts) == 1 {
+		return name, "", true
+	}
+	return name, parts[1], false
+}
+
+// folderContent collects files and subfolders discovered under a single folder name.
+type folderContent struct {
+	files      []model.Media
+	subfolders map[string]struct{}
+}
+
+// buildFolderMap walks media and groups entries by the first folder component under parent.
+func buildFolderMap(media []model.Media, parent string) (map[string]*folderContent, []model.Media) {
+	prefix := prefixForParent(parent)
+	folderMap := make(map[string]*folderContent)
+	var items []model.Media
+
+	for _, m := range media {
+		if m.DeletedAt != nil {
+			continue
+		}
+		rel := filepath.ToSlash(m.RelPath)
+		name, rest, isDirect := classifyMediaPath(rel, prefix)
+		if name == "" {
+			continue
+		}
+		if isDirect {
+			items = append(items, m)
+			continue
+		}
+		fc, ok := folderMap[name]
+		if !ok {
+			fc = &folderContent{subfolders: make(map[string]struct{})}
+			folderMap[name] = fc
+		}
+		subparts := strings.SplitN(rest, "/", 2)
+		if len(subparts) == 1 {
+			fc.files = append(fc.files, m)
+		} else {
+			fc.subfolders[subparts[0]] = struct{}{}
+		}
+	}
+	return folderMap, items
+}
+
+// folderHasCover determines whether a folder has a cover image on disk or among thumbnails.
+func folderHasCover(mediaRoot, setRootPath, parent, name string, media []model.Media) bool {
+	subPath := filepath.Join(parent, name)
+	folderDir := filepath.Clean(filepath.Join(mediaRoot, setRootPath, filepath.FromSlash(subPath)))
+	coverPath := filepath.Join(folderDir, ".cover.jpg")
+	_, err := os.Stat(coverPath)
+	_, hasDirectCover := folderCoverFile(folderDir)
+	return err == nil || hasDirectCover || randomFolderThumbnail(media, filepath.ToSlash(subPath)) != ""
+}
+
+// buildFolders converts the folder map into sorted BrowseFolder results, flattening single-file folders.
+func buildFolders(folderMap map[string]*folderContent, media []model.Media, items []model.Media, mediaRoot, setRootPath, parent string) ([]BrowseFolder, []model.Media) {
+	var folders []BrowseFolder
+	for name, fc := range folderMap {
+		total := len(fc.files) + len(fc.subfolders)
+		if total == 1 && len(fc.files) == 1 {
+			items = append(items, fc.files[0])
+		} else {
+			hasCover := folderHasCover(mediaRoot, setRootPath, parent, name, media)
+			folders = append(folders, BrowseFolder{Name: name, HasCover: hasCover})
+		}
+	}
+	sort.Slice(folders, func(i, j int) bool { return folders[i].Name < folders[j].Name })
+	return folders, items
+}
+
 func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, parent string) (*BrowseResult, error) {
 	if err := s.helper.checkSetPermission(ctx, setID, userID, ""); err != nil {
 		return nil, err
@@ -309,66 +403,8 @@ func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, pare
 		return nil, ErrNotFound
 	}
 
-	type folderContent struct {
-		files      []model.Media
-		subfolders map[string]struct{}
-	}
-	folderMap := make(map[string]*folderContent)
-	var items []model.Media
-
-	for _, m := range media {
-		if m.DeletedAt != nil {
-			continue
-		}
-		rel := filepath.ToSlash(m.RelPath)
-		prefix := ""
-		if parent != "" {
-			prefix = parent + "/"
-		}
-		if !strings.HasPrefix(rel, prefix) {
-			continue
-		}
-		suffix := strings.TrimPrefix(rel, prefix)
-		if suffix == "" {
-			continue
-		}
-		parts := strings.SplitN(suffix, "/", 2)
-		name := parts[0]
-		if len(parts) == 1 {
-			items = append(items, m)
-			continue
-		}
-		fc, ok := folderMap[name]
-		if !ok {
-			fc = &folderContent{subfolders: make(map[string]struct{})}
-			folderMap[name] = fc
-		}
-		rest := parts[1]
-		subparts := strings.SplitN(rest, "/", 2)
-		if len(subparts) == 1 {
-			fc.files = append(fc.files, m)
-		} else {
-			fc.subfolders[subparts[0]] = struct{}{}
-		}
-	}
-
-	var folders []BrowseFolder
-	for name, fc := range folderMap {
-		// Flatten: show the lone file at the current level.
-		total := len(fc.files) + len(fc.subfolders)
-		if total == 1 && len(fc.files) == 1 {
-			items = append(items, fc.files[0])
-		} else {
-			subPath := filepath.Join(parent, name)
-			folderDir := filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath, filepath.FromSlash(subPath)))
-			coverPath := filepath.Join(folderDir, ".cover.jpg")
-			_, err := os.Stat(coverPath)
-			_, hasDirectCover := folderCoverFile(folderDir)
-			hasCover := err == nil || hasDirectCover || randomFolderThumbnail(media, filepath.ToSlash(subPath)) != ""
-			folders = append(folders, BrowseFolder{Name: name, HasCover: hasCover})
-		}
-	}
-	sort.Slice(folders, func(i, j int) bool { return folders[i].Name < folders[j].Name })
+	folderMap, items := buildFolderMap(media, parent)
+	folders, items := buildFolders(folderMap, media, items, s.mediaRoot, set.RootPath, parent)
 
 	return &BrowseResult{
 		CurrentPath: parent,

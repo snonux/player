@@ -33,31 +33,36 @@ func run(args []string) error {
 	return runWithSignal(args, nil)
 }
 
-func runWithSignal(args []string, sigCh <-chan os.Signal) error {
+// appDeps bundles all wired service-layer dependencies.
+type appDeps struct {
+	store       repository.Store
+	hasher      auth.Hasher
+	sm          *auth.SessionManager
+	cfg         *internal.Config
+	clk         clock.Clock
+	mediaSvc    service.MediaService
+	adminSvc    service.AdminService
+	progressSvc service.ProgressService
+	authSvc     service.AuthService
+	scanner     scanner.Scanner
+	gcWorker    *service.GCWorker
+	logger      *slog.Logger
+}
+
+// parseVersionFlag parses CLI flags and returns whether --version was requested.
+func parseVersionFlag(args []string) (bool, error) {
 	fs := flag.NewFlagSet("mediaplayer", flag.ContinueOnError)
 	versionFlag := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return false, err
 	}
+	return *versionFlag, nil
+}
 
-	if *versionFlag {
-		fmt.Println(internal.Version)
-		return nil
-	}
-
-	cfg, err := internal.LoadConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	store, err := repository.Open(cfg.DBPath)
-	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
-	}
-
-	// Build logger aligned with the configured log level.
+// buildLogger creates a slog.Logger aligned with the named log level.
+func buildLogger(logLevel string) *slog.Logger {
 	var level slog.Level
-	switch cfg.LogLevel {
+	switch logLevel {
 	case "debug":
 		level = slog.LevelDebug
 	case "info":
@@ -69,19 +74,14 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 	default:
 		level = slog.LevelInfo
 	}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
-	defer func() {
-		if err := store.Close(); err != nil {
-			logger.Error("failed to close database", "err", err)
-		}
-	}()
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+}
 
+// wireDeps constructs the core service layer dependencies.
+func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger, appCtx context.Context) *appDeps {
 	clk := clock.RealClock{}
 	hasher := auth.NewBCryptHasher(12)
 	sm := auth.NewSessionManager(store, clk, time.Duration(cfg.SessionTimeoutHours)*time.Hour)
-
-	appCtx, appCancel := context.WithCancel(context.Background())
-	defer appCancel()
 
 	prober := probe.NewFFProber()
 	thumbGen := thumb.NewFFmpegGenerator()
@@ -93,24 +93,51 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 	progressSvc := service.NewProgressService(store, clk)
 	authSvc := service.NewAuthService(store, clk, hasher, sm)
 
-	// Start the background GC worker that hard-deletes soft-deleted media.
 	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger)
 	gcWorker.Start()
-	defer gcWorker.Stop()
 
-	staticFS := http.Dir("web")
-	remuxer := probe.NewFFRemuxer()
-	server := api.NewServerWithLogger(store, hasher, sm, cfg,
-		mediaSvc, // MediaBrowseService
-		mediaSvc, // MediaWriteService
-		mediaSvc, // MediaShareService
-		mediaSvc, // MediaTagService
-		mediaSvc, // MediaFavoriteService
-		mediaSvc, // MediaNoteService
-		adminSvc, progressSvc, authSvc, staticFS, remuxer, logger,
-	)
+	return &appDeps{
+		store:       store,
+		hasher:      hasher,
+		sm:          sm,
+		cfg:         cfg,
+		clk:         clk,
+		mediaSvc:    mediaSvc,
+		adminSvc:    adminSvc,
+		progressSvc: progressSvc,
+		authSvc:     authSvc,
+		scanner:     fsScanner,
+		gcWorker:    gcWorker,
+		logger:      logger,
+	}
+}
 
-	gs := api.NewGracefulServer(server, cfg)
+// ensureSignalChannel returns the provided channel or creates a new one wired
+// to OS interrupt signals.
+func ensureSignalChannel(sigCh <-chan os.Signal) <-chan os.Signal {
+	if sigCh != nil {
+		return sigCh
+	}
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	return quit
+}
+
+// shutdownGracefully performs a timed graceful shutdown of the server.
+func shutdownGracefully(gs *api.GracefulServer, logger *slog.Logger) error {
+	logger.Info("shutting down server")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := gs.Server.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("failed to shutdown server: %w", err)
+	}
+	logger.Info("server stopped")
+	return nil
+}
+
+// runServer starts the HTTP server and blocks until shutdown.
+func runServer(handler http.Handler, cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Signal) error {
+	gs := api.NewGracefulServer(handler, cfg)
 
 	logger.Info("player starting", "version", internal.Version, "addr", gs.Server.Addr)
 
@@ -121,11 +148,7 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 		}
 	}()
 
-	if sigCh == nil {
-		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-		sigCh = quit
-	}
+	sigCh = ensureSignalChannel(sigCh)
 
 	select {
 	case <-sigCh:
@@ -135,12 +158,48 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 		}
 	}
 
-	logger.Info("shutting down server")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := gs.Server.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("failed to shutdown server: %w", err)
+	return shutdownGracefully(gs, logger)
+}
+
+func runWithSignal(args []string, sigCh <-chan os.Signal) error {
+	showVersion, err := parseVersionFlag(args)
+	if err != nil {
+		return err
 	}
-	logger.Info("server stopped")
-	return nil
+	if showVersion {
+		fmt.Println(internal.Version)
+		return nil
+	}
+
+	cfg, err := internal.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	logger := buildLogger(cfg.LogLevel)
+
+	store, err := repository.Open(cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer func() {
+		if err := store.Close(); err != nil {
+			logger.Error("failed to close database", "err", err)
+		}
+	}()
+
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+
+	deps := wireDeps(cfg, store, logger, appCtx)
+	defer deps.gcWorker.Stop()
+
+	staticFS := http.Dir("web")
+	remuxer := probe.NewFFRemuxer()
+	server := api.NewServerWithLogger(store, deps.hasher, deps.sm, cfg,
+		deps.mediaSvc, deps.mediaSvc, deps.mediaSvc, deps.mediaSvc, deps.mediaSvc, deps.mediaSvc,
+		deps.adminSvc, deps.progressSvc, deps.authSvc, staticFS, remuxer, logger,
+	)
+
+	return runServer(server, cfg, logger, sigCh)
 }
