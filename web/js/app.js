@@ -7,6 +7,7 @@ import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuff
 import { initThemes } from './themes.js';
 import { initNotes, open as openNotes } from './notes.js';
 import { initAdmin } from './admin.js';
+import { initPodcasts } from './podcasts.js';
 import { state, setMedia } from './state.js';
 import { initPWA } from './pwa.js';
 import { initLightbox, open as openLightbox, close as closeLightbox, isOpen as isLightboxOpen, next as lightboxNext, prev as lightboxPrev, zoomIn as lightboxZoomIn, zoomOut as lightboxZoomOut, toggleSlideshow as lightboxToggleSlideshow } from './lightbox.js';
@@ -174,6 +175,7 @@ async function initApp() {
   });
   initNotes(() => toast('Note saved'));
   initAdmin();
+  initPodcasts();
   initPWA();
   initUpload();
   initHelp();
