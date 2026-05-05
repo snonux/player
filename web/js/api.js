@@ -85,4 +85,12 @@ export const API = {
   setPermissions: (body) => api('/api/admin/permissions', { method: 'POST', body }),
   delPermissions: (body) => api('/api/admin/permissions', { method: 'DELETE', body }),
   rescan: () => api('/api/admin/rescan', { method: 'POST' }),
+  podcasts: () => api('/api/podcasts'),
+  podcastEpisodes: (setId, limit = 50, offset = 0) => {
+    const params = new URLSearchParams({ limit, offset });
+    return api(`/api/podcasts/${setId}/episodes?${params}`);
+  },
+  subscribePodcast: (feedUrl, setName) => api('/api/podcasts', { method: 'POST', body: { feed_url: feedUrl, set_name: setName } }),
+  downloadEpisode: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/download`, { method: 'POST' }),
+  toggleEpisodeComplete: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/complete`, { method: 'POST' }),
 };

@@ -232,9 +232,36 @@
     <div class="flex gap-2 mt-3">
       <button id="admin-rescan" class="btn btn-primary btn-sm">Trigger rescan</button>
       <button id="admin-trash" class="btn btn-danger btn-sm">View trash</button>
+      <button id="admin-podcasts" class="btn btn-primary btn-sm">Podcasts</button>
     </div>
   </div>
 </div>
+
+<!-- Podcast Manager Modal -->
+<div id="podcast-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="podcast-title">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h3 id="podcast-title">Podcast Feeds</h3>
+      <div class="spacer"></div>
+      <button id="podcast-close" class="icon-btn" aria-label="Close">✕</button>
+    </div>
+    <div class="flex gap-4 flex-wrap">
+      <section class="flex-1-18">
+        <h4 class="my-1 text-90">Subscribe</h4>
+        <form id="podcast-form" class="mt-2">
+          <input id="podcast-url" type="url" placeholder="https://example.com/feed.xml" required autocomplete="off">
+          <input id="podcast-name" type="text" placeholder="Folder name (optional)" autocomplete="off">
+          <button type="submit" class="btn btn-primary btn-sm mt-1">Subscribe</button>
+        </form>
+      </section>
+      <section class="flex-1-18">
+        <h4 class="my-1 text-90">Active Feeds</h4>
+        <div id="podcast-list"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
 <!-- Shares Modal -->
 <div id="shares-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="shares-title">
   <div class="modal modal-wide">
