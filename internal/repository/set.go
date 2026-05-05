@@ -11,8 +11,8 @@ import (
 // CreateSet inserts a new set and returns the generated ID.
 func (s *SQLite) CreateSet(ctx context.Context, set *model.Set) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO sets (name, root_path, cover_thumbnail_path, created_at) VALUES (?, ?, ?, ?)`,
-		set.Name, set.RootPath, sqlNullString(set.CoverThumbnailPath), set.CreatedAt,
+		`INSERT INTO sets (name, root_path, cover_thumbnail_path, is_podcast, created_at) VALUES (?, ?, ?, ?, ?)`,
+		set.Name, set.RootPath, sqlNullString(set.CoverThumbnailPath), boolToInt(set.IsPodcast), set.CreatedAt,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert set: %w", err)
@@ -23,7 +23,8 @@ func (s *SQLite) CreateSet(ctx context.Context, set *model.Set) (int64, error) {
 func scanSet(row sqlScanner) (*model.Set, error) {
 	var st model.Set
 	var cover sql.NullString
-	err := row.Scan(&st.ID, &st.Name, &st.RootPath, &cover, &st.CreatedAt)
+	var isPodcast int
+	err := row.Scan(&st.ID, &st.Name, &st.RootPath, &cover, &isPodcast, &st.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -31,20 +32,21 @@ func scanSet(row sqlScanner) (*model.Set, error) {
 		return nil, err
 	}
 	st.CoverThumbnailPath = cover.String
+	st.IsPodcast = isPodcast != 0
 	return &st, nil
 }
 
 // GetSetByID retrieves a set by ID.
 func (s *SQLite) GetSetByID(ctx context.Context, id int64) (*model.Set, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, root_path, cover_thumbnail_path, created_at FROM sets WHERE id = ?`, id)
+		`SELECT id, name, root_path, cover_thumbnail_path, is_podcast, created_at FROM sets WHERE id = ?`, id)
 	return scanSet(row)
 }
 
 // ListSets returns all sets ordered by name.
 func (s *SQLite) ListSets(ctx context.Context) ([]model.Set, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, root_path, cover_thumbnail_path, created_at FROM sets ORDER BY name`)
+		`SELECT id, name, root_path, cover_thumbnail_path, is_podcast, created_at FROM sets ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list sets: %w", err)
 	}
@@ -63,8 +65,8 @@ func (s *SQLite) ListSets(ctx context.Context) ([]model.Set, error) {
 // UpdateSet modifies a set's fields.
 func (s *SQLite) UpdateSet(ctx context.Context, set *model.Set) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE sets SET name = ?, root_path = ?, cover_thumbnail_path = ? WHERE id = ?`,
-		set.Name, set.RootPath, sqlNullString(set.CoverThumbnailPath), set.ID,
+		`UPDATE sets SET name = ?, root_path = ?, cover_thumbnail_path = ?, is_podcast = ? WHERE id = ?`,
+		set.Name, set.RootPath, sqlNullString(set.CoverThumbnailPath), boolToInt(set.IsPodcast), set.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update set: %w", err)

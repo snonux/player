@@ -13,6 +13,11 @@ type accessHelper struct {
 	store repository.AccessHelperStore
 }
 
+// NewAccessHelper creates a new accessHelper from a store.
+func NewAccessHelper(store repository.AccessHelperStore) *accessHelper {
+	return &accessHelper{store: store}
+}
+
 // checkSetPermission verifies that a user has the required role on a set.
 // An empty requiredRole means any role is accepted. Admins are always allowed.
 func (h *accessHelper) checkSetPermission(ctx context.Context, setID, userID int64, requiredRole model.Role) error {

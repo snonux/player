@@ -88,38 +88,10 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 		return nil, err
 	}
 
-	meta, err := s.probeMedia(ctx, path)
-	if err != nil {
+	if err := ImportMediaFile(ctx, s.store, media, s.prober, s.thumbGen); err != nil {
 		os.Remove(path)
 		s.store.HardDeleteMedia(ctx, media.ID)
 		return nil, err
-	}
-	media.Duration = meta.Duration
-	media.Codec = meta.Codec
-	media.Resolution = meta.Resolution
-	media.Bitrate = meta.Bitrate
-	media.Width = meta.Width
-	media.Height = meta.Height
-	media.EXIFCamera = meta.EXIFCamera
-	media.EXIFLens = meta.EXIFLens
-	media.EXIFDate = meta.EXIFDate
-	media.EXIFISO = meta.EXIFISO
-	media.EXIFFNumber = meta.EXIFFNumber
-	media.EXIFExposure = meta.EXIFExposure
-	media.EXIFFocalLength = meta.EXIFFocalLength
-
-	if media.Type == model.MediaTypeVideo || media.Type == model.MediaTypeImage {
-		if err := s.generateThumbnail(ctx, media, meta.Duration); err != nil {
-			os.Remove(path)
-			_ = s.store.HardDeleteMedia(ctx, media.ID)
-			return nil, err
-		}
-	}
-
-	if err := s.store.UpdateMedia(ctx, media); err != nil {
-		os.Remove(path)
-		_ = s.store.HardDeleteMedia(ctx, media.ID)
-		return nil, fmt.Errorf("update media metadata: %w", err)
 	}
 
 	return media, nil
@@ -176,39 +148,4 @@ func (s *writeService) saveUploadedMedia(ctx context.Context, setID int64, path 
 	}
 	media.ID = id
 	return media, nil
-}
-
-func (s *writeService) probeMedia(ctx context.Context, path string) (*model.Metadata, error) {
-	if s.prober == nil {
-		return &model.Metadata{}, nil
-	}
-	meta, err := s.prober.Probe(ctx, path)
-	if err != nil {
-		return nil, fmt.Errorf("probe media: %w", err)
-	}
-	return meta, nil
-}
-
-func (s *writeService) generateThumbnail(ctx context.Context, media *model.Media, duration float64) error {
-	ext := strings.ToLower(filepath.Ext(media.AbsPath))
-	if ext == ".svg" {
-		media.ThumbnailPath = media.AbsPath
-		return nil
-	}
-	thumbDir := filepath.Join(filepath.Dir(media.AbsPath), ".thumbnails")
-	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir thumbnails: %w", err)
-	}
-	thumbName := strings.TrimSuffix(filepath.Base(media.AbsPath), filepath.Ext(media.AbsPath)) + ".jpg"
-	thumbnailPath := filepath.Join(thumbDir, thumbName)
-
-	if s.thumbGen == nil {
-		media.ThumbnailPath = thumbnailPath
-		return nil
-	}
-	if err := s.thumbGen.Generate(ctx, media.AbsPath, thumbnailPath, duration); err != nil {
-		return fmt.Errorf("generate thumbnail: %w", err)
-	}
-	media.ThumbnailPath = thumbnailPath
-	return nil
 }

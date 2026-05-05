@@ -82,9 +82,10 @@ type BrowseFolder struct {
 
 // BrowseResult is the content of one directory inside a set.
 type BrowseResult struct {
-	CurrentPath string         `json:"current_path"`
-	Folders     []BrowseFolder `json:"folders"`
-	Media       []model.Media  `json:"media"`
+	CurrentPath string                             `json:"current_path"`
+	Folders     []BrowseFolder                     `json:"folders"`
+	Media       []model.Media                      `json:"media"`
+	Episodes    []model.PodcastEpisodeWithStatus    `json:"episodes,omitempty"`
 }
 
 // SharedMediaView exposes only the metadata fields needed for a public share page.

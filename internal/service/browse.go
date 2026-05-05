@@ -406,11 +406,24 @@ func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, pare
 	folderMap, items := buildFolderMap(media, parent)
 	folders, items := buildFolders(folderMap, media, items, s.mediaRoot, set.RootPath, parent)
 
-	return &BrowseResult{
+	result := &BrowseResult{
 		CurrentPath: parent,
 		Folders:     folders,
 		Media:       items,
-	}, nil
+	}
+
+	// For podcast sets, also load episodes (undownloaded items) into the grid.
+	if set.IsPodcast {
+		feed, err := s.store.GetFeedBySetID(ctx, setID)
+		if err == nil && feed != nil {
+			episodes, err := s.store.ListEpisodesWithStatus(ctx, userID, feed.ID, 0, 0)
+			if err == nil {
+				result.Episodes = episodes
+			}
+		}
+	}
+
+	return result, nil
 }
 
 func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder string, userID int64) (*FileResult, error) {

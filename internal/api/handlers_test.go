@@ -66,7 +66,7 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 	if len(remuxer) > 0 {
 		rem = remuxer[0]
 	}
-	return NewServer(store, hasher, sm, cfg, browseSvc, writeSvc, shareSvc, tagSvc, favSvc, noteSvc, adminSvc, progressSvc, authSvc, fs, rem)
+	return NewServer(store, hasher, sm, cfg, browseSvc, writeSvc, shareSvc, tagSvc, favSvc, noteSvc, adminSvc, progressSvc, authSvc, nil, fs, rem)
 }
 
 func addSessionCookie(t *testing.T, store repository.Store, sm *auth.SessionManager, userID int64) *http.Cookie {
@@ -1480,4 +1480,54 @@ func (m *mockPingStore) DeleteNote(ctx context.Context, mediaID, userID int64) e
 }
 func (m *mockPingStore) Ping(ctx context.Context) error {
 	return m.err
+}
+
+// PodcastRepo methods added for Store interface compliance.
+func (m *mockPingStore) CreateFeed(ctx context.Context, feed *model.PodcastFeed) (int64, error) {
+	return m.store.CreateFeed(ctx, feed)
+}
+func (m *mockPingStore) UpdateFeed(ctx context.Context, feed *model.PodcastFeed) error {
+	return m.store.UpdateFeed(ctx, feed)
+}
+func (m *mockPingStore) DeleteFeed(ctx context.Context, id int64) error {
+	return m.store.DeleteFeed(ctx, id)
+}
+func (m *mockPingStore) GetFeedByID(ctx context.Context, id int64) (*model.PodcastFeed, error) {
+	return m.store.GetFeedByID(ctx, id)
+}
+func (m *mockPingStore) GetFeedBySetID(ctx context.Context, setID int64) (*model.PodcastFeed, error) {
+	return m.store.GetFeedBySetID(ctx, setID)
+}
+func (m *mockPingStore) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
+	return m.store.ListFeeds(ctx)
+}
+func (m *mockPingStore) ListFeedsNeedingCheck(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+	return m.store.ListFeedsNeedingCheck(ctx, before)
+}
+func (m *mockPingStore) CreateEpisode(ctx context.Context, episode *model.PodcastEpisode) (int64, error) {
+	return m.store.CreateEpisode(ctx, episode)
+}
+func (m *mockPingStore) GetEpisodeByID(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
+	return m.store.GetEpisodeByID(ctx, id)
+}
+func (m *mockPingStore) GetEpisodeByGUID(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error) {
+	return m.store.GetEpisodeByGUID(ctx, feedID, guid)
+}
+func (m *mockPingStore) ListEpisodesByFeed(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error) {
+	return m.store.ListEpisodesByFeed(ctx, feedID, limit, offset)
+}
+func (m *mockPingStore) UpdateEpisodeMedia(ctx context.Context, episodeID, mediaID int64, fileName string) error {
+	return m.store.UpdateEpisodeMedia(ctx, episodeID, mediaID, fileName)
+}
+func (m *mockPingStore) DeleteEpisodesByFeed(ctx context.Context, feedID int64) error {
+	return m.store.DeleteEpisodesByFeed(ctx, feedID)
+}
+func (m *mockPingStore) UpsertEpisodeProgress(ctx context.Context, status *model.PodcastStatus) error {
+	return m.store.UpsertEpisodeProgress(ctx, status)
+}
+func (m *mockPingStore) GetEpisodeProgress(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error) {
+	return m.store.GetEpisodeProgress(ctx, userID, episodeID)
+}
+func (m *mockPingStore) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
+	return m.store.ListEpisodesWithStatus(ctx, userID, feedID, limit, offset)
 }

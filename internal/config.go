@@ -14,8 +14,9 @@ const (
 	DefaultDBPath                 = "data.db"
 	DefaultMaxUploadSizeMB        = 100
 	DefaultSessionTimeoutHours    = 24
-	DefaultGCIntervalMinutes      = 30
-	DefaultShareDefaultExpiryDays = 7
+	DefaultGCIntervalMinutes       = 30
+	DefaultShareDefaultExpiryDays  = 7
+	DefaultPodcastCheckMinutes     = 60
 	DefaultLogLevel               = "info"
 	DefaultSecureCookies          = true
 )

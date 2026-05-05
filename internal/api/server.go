@@ -30,6 +30,7 @@ type Server struct {
 	adminSvc    service.AdminService
 	progressSvc service.ProgressService
 	authSvc     service.AuthService
+	podcastSvc  service.PodcastEpisodeService
 	staticFS    http.FileSystem
 	remuxer     probe.Remuxer
 	logger      *slog.Logger
@@ -52,10 +53,11 @@ func NewServer(
 	adminSvc service.AdminService,
 	progressSvc service.ProgressService,
 	authSvc service.AuthService,
+	podcastSvc service.PodcastEpisodeService,
 	staticFS http.FileSystem,
 	remuxer probe.Remuxer,
 ) *Server {
-	return NewServerWithLogger(store, hasher, sm, cfg, browseSvc, writeSvc, shareSvc, tagSvc, favSvc, noteSvc, adminSvc, progressSvc, authSvc, staticFS, remuxer, slog.Default())
+	return NewServerWithLogger(store, hasher, sm, cfg, browseSvc, writeSvc, shareSvc, tagSvc, favSvc, noteSvc, adminSvc, progressSvc, authSvc, podcastSvc, staticFS, remuxer, slog.Default())
 }
 
 // NewServerWithLogger creates a Server with routes and an injected logger.
@@ -73,6 +75,7 @@ func NewServerWithLogger(
 	adminSvc service.AdminService,
 	progressSvc service.ProgressService,
 	authSvc service.AuthService,
+	podcastSvc service.PodcastEpisodeService,
 	staticFS http.FileSystem,
 	remuxer probe.Remuxer,
 	logger *slog.Logger,
@@ -98,6 +101,7 @@ func NewServerWithLogger(
 		adminSvc:    adminSvc,
 		progressSvc: progressSvc,
 		authSvc:     authSvc,
+		podcastSvc:  podcastSvc,
 		staticFS:    staticFS,
 		remuxer:     remuxer,
 		logger:      logger,
@@ -239,6 +243,16 @@ func (s *Server) routes() {
 	s.routesProgress()
 	s.routesShares()
 	s.routesAdmin()
+	s.routesPodcast()
+}
+
+// routesPodcast wires the podcast API routes.
+func (s *Server) routesPodcast() {
+	s.mux.Handle("GET /api/podcasts", s.requireSession(s.handleListPodcasts))
+	s.mux.Handle("POST /api/podcasts", s.requireAdmin(s.handleSubscribePodcast))
+	s.mux.Handle("GET /api/podcasts/{id}/episodes", s.requireSession(s.handleListEpisodes))
+	s.mux.Handle("POST /api/podcasts/episodes/{episode_id}/download", s.requireSession(s.handleDownloadEpisode))
+	s.mux.Handle("POST /api/podcasts/episodes/{episode_id}/complete", s.requireSession(s.handleToggleComplete))
 }
 
 func (s *Server) pingStore(ctx context.Context) error {

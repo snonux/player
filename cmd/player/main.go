@@ -44,6 +44,7 @@ type appDeps struct {
 	adminSvc    service.AdminService
 	progressSvc service.ProgressService
 	authSvc     service.AuthService
+	podcastSvc  service.PodcastEpisodeService
 	scanner     scanner.Scanner
 	gcWorker    *service.GCWorker
 	logger      *slog.Logger
@@ -93,6 +94,9 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 	progressSvc := service.NewProgressService(store, clk)
 	authSvc := service.NewAuthService(store, clk, hasher, sm)
 
+	helper := service.NewAccessHelper(store)
+	podcastSvc := service.NewPodcastService(store, clk, cfg.MediaRoot, helper, prober, thumbGen)
+
 	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger)
 	gcWorker.Start()
 
@@ -106,6 +110,7 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 		adminSvc:    adminSvc,
 		progressSvc: progressSvc,
 		authSvc:     authSvc,
+		podcastSvc:  podcastSvc,
 		scanner:     fsScanner,
 		gcWorker:    gcWorker,
 		logger:      logger,
@@ -198,7 +203,7 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 	remuxer := probe.NewFFRemuxer()
 	server := api.NewServerWithLogger(store, deps.hasher, deps.sm, cfg,
 		deps.mediaSvc, deps.mediaSvc, deps.mediaSvc, deps.mediaSvc, deps.mediaSvc, deps.mediaSvc,
-		deps.adminSvc, deps.progressSvc, deps.authSvc, staticFS, remuxer, logger,
+		deps.adminSvc, deps.progressSvc, deps.authSvc, deps.podcastSvc, staticFS, remuxer, logger,
 	)
 
 	return runServer(server, cfg, logger, sigCh)

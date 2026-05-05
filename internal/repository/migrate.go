@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS sets (
     name TEXT NOT NULL,
     root_path TEXT UNIQUE NOT NULL,
     cover_thumbnail_path TEXT,
+    is_podcast INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -121,6 +122,46 @@ CREATE TABLE IF NOT EXISTS media_notes (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(media_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS podcast_feeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    set_id INTEGER NOT NULL UNIQUE REFERENCES sets(id) ON DELETE CASCADE,
+    feed_url TEXT NOT NULL,
+    title TEXT,
+    description TEXT,
+    image_url TEXT,
+    last_checked_at DATETIME,
+    last_etag TEXT,
+    check_interval_minutes INTEGER NOT NULL DEFAULT 60,
+    auto_download INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS podcast_episodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    feed_id INTEGER NOT NULL REFERENCES podcast_feeds(id) ON DELETE CASCADE,
+    media_id INTEGER UNIQUE REFERENCES media(id) ON DELETE SET NULL,
+    guid TEXT NOT NULL,
+    title TEXT,
+    description TEXT,
+    published_at DATETIME,
+    episode_url TEXT NOT NULL,
+    duration_seconds REAL,
+    file_size INTEGER,
+    file_name TEXT,
+    is_downloaded INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(feed_id, guid)
+);
+
+CREATE TABLE IF NOT EXISTS podcast_status (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    episode_id INTEGER NOT NULL REFERENCES podcast_episodes(id) ON DELETE CASCADE,
+    is_completed INTEGER NOT NULL DEFAULT 0,
+    position_seconds REAL NOT NULL DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, episode_id)
+);
 `
 
 // indexesSchema defines all CREATE INDEX statements.
@@ -133,6 +174,10 @@ CREATE INDEX IF NOT EXISTS idx_media_filename ON media(file_name);
 CREATE INDEX IF NOT EXISTS idx_permissions_user ON set_permissions(user_id);
 CREATE INDEX IF NOT EXISTS idx_permissions_set ON set_permissions(set_id);
 CREATE INDEX IF NOT EXISTS idx_shares_expires ON shares(expires_at);
+CREATE INDEX IF NOT EXISTS idx_podcast_episodes_feed ON podcast_episodes(feed_id);
+CREATE INDEX IF NOT EXISTS idx_podcast_episodes_media ON podcast_episodes(media_id);
+CREATE INDEX IF NOT EXISTS idx_podcast_status_episode ON podcast_status(episode_id);
+CREATE INDEX IF NOT EXISTS idx_sets_is_podcast ON sets(is_podcast);
 `
 
 // execSchema executes a raw SQL schema block against the given database.

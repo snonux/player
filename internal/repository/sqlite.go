@@ -51,6 +51,7 @@ func (s *SQLite) Ping(ctx context.Context) error {
 }
 
 var _ Store = (*SQLite)(nil)
+var _ PodcastRepo = (*SQLite)(nil)
 
 type sqlScanner interface {
 	Scan(dest ...any) error

@@ -40,6 +40,7 @@ type Set struct {
 	Name               string          `json:"name"`
 	RootPath           string          `json:"root_path"`
 	CoverThumbnailPath string          `json:"cover_thumbnail_path"`
+	IsPodcast          bool            `json:"is_podcast"`
 	Permissions        []SetPermission `json:"permissions"`
 	CreatedAt          time.Time       `json:"created_at"`
 }

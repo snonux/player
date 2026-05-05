@@ -21,6 +21,7 @@ type Store interface {
 	SessionRepo
 	ShareRepo
 	NoteRepo
+	PodcastRepo
 }
 
 // MediaServiceStore is the subset of Store required by service.MediaService.
@@ -34,6 +35,7 @@ type MediaServiceStore interface {
 	PlaybackProgressRepo
 	ShareRepo
 	NoteRepo
+	PodcastRepo
 }
 
 // AdminServiceStore is the subset of Store required by service.AdminService.
@@ -85,6 +87,7 @@ type BrowseServiceStore interface {
 	FavoriteRepo
 	PlaybackProgressRepo
 	NoteRepo
+	PodcastRepo
 }
 
 // WriteServiceStore is the subset of Store required by service.WriteService.

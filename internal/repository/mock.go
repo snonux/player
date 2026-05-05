@@ -27,6 +27,7 @@ var (
 	_ TrashServiceStore           = (*MockStore)(nil)
 	_ UserAdminServiceStore       = (*MockStore)(nil)
 	_ PermissionAdminServiceStore = (*MockStore)(nil)
+	_ PodcastRepo                 = (*MockStore)(nil)
 )
 
 // NewMockStore returns a MockStore with all no-op defaults.
@@ -49,6 +50,7 @@ type MockStore struct {
 	SessionRepo             MockSessionRepo
 	ShareRepo               MockShareRepo
 	NoteRepo                MockNoteRepo
+	PodcastRepo             MockPodcastRepo
 }
 
 // CreateUser implements UserRepo.
@@ -875,4 +877,234 @@ func (m *MockNoteRepo) DeleteNote(ctx context.Context, mediaID, userID int64) er
 		return m.DeleteNoteFunc(ctx, mediaID, userID)
 	}
 	return nil
+}
+
+// CreateFeed implements PodcastRepo.
+func (m *MockStore) CreateFeed(ctx context.Context, feed *model.PodcastFeed) (int64, error) {
+	return m.PodcastRepo.CreateFeed(ctx, feed)
+}
+
+// UpdateFeed implements PodcastRepo.
+func (m *MockStore) UpdateFeed(ctx context.Context, feed *model.PodcastFeed) error {
+	return m.PodcastRepo.UpdateFeed(ctx, feed)
+}
+
+// DeleteFeed implements PodcastRepo.
+func (m *MockStore) DeleteFeed(ctx context.Context, id int64) error {
+	return m.PodcastRepo.DeleteFeed(ctx, id)
+}
+
+// GetFeedByID implements PodcastRepo.
+func (m *MockStore) GetFeedByID(ctx context.Context, id int64) (*model.PodcastFeed, error) {
+	return m.PodcastRepo.GetFeedByID(ctx, id)
+}
+
+// GetFeedBySetID implements PodcastRepo.
+func (m *MockStore) GetFeedBySetID(ctx context.Context, setID int64) (*model.PodcastFeed, error) {
+	return m.PodcastRepo.GetFeedBySetID(ctx, setID)
+}
+
+// ListFeeds implements PodcastRepo.
+func (m *MockStore) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
+	return m.PodcastRepo.ListFeeds(ctx)
+}
+
+// ListFeedsNeedingCheck implements PodcastRepo.
+func (m *MockStore) ListFeedsNeedingCheck(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+	return m.PodcastRepo.ListFeedsNeedingCheck(ctx, before)
+}
+
+// CreateEpisode implements PodcastRepo.
+func (m *MockStore) CreateEpisode(ctx context.Context, episode *model.PodcastEpisode) (int64, error) {
+	return m.PodcastRepo.CreateEpisode(ctx, episode)
+}
+
+// GetEpisodeByID implements PodcastRepo.
+func (m *MockStore) GetEpisodeByID(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
+	return m.PodcastRepo.GetEpisodeByID(ctx, id)
+}
+
+// GetEpisodeByGUID implements PodcastRepo.
+func (m *MockStore) GetEpisodeByGUID(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error) {
+	return m.PodcastRepo.GetEpisodeByGUID(ctx, feedID, guid)
+}
+
+// ListEpisodesByFeed implements PodcastRepo.
+func (m *MockStore) ListEpisodesByFeed(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error) {
+	return m.PodcastRepo.ListEpisodesByFeed(ctx, feedID, limit, offset)
+}
+
+// UpdateEpisodeMedia implements PodcastRepo.
+func (m *MockStore) UpdateEpisodeMedia(ctx context.Context, episodeID, mediaID int64, fileName string) error {
+	return m.PodcastRepo.UpdateEpisodeMedia(ctx, episodeID, mediaID, fileName)
+}
+
+// DeleteEpisodesByFeed implements PodcastRepo.
+func (m *MockStore) DeleteEpisodesByFeed(ctx context.Context, feedID int64) error {
+	return m.PodcastRepo.DeleteEpisodesByFeed(ctx, feedID)
+}
+
+// UpsertEpisodeProgress implements PodcastRepo.
+func (m *MockStore) UpsertEpisodeProgress(ctx context.Context, status *model.PodcastStatus) error {
+	return m.PodcastRepo.UpsertEpisodeProgress(ctx, status)
+}
+
+// GetEpisodeProgress implements PodcastRepo.
+func (m *MockStore) GetEpisodeProgress(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error) {
+	return m.PodcastRepo.GetEpisodeProgress(ctx, userID, episodeID)
+}
+
+// ListEpisodesWithStatus implements PodcastRepo.
+func (m *MockStore) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
+	return m.PodcastRepo.ListEpisodesWithStatus(ctx, userID, feedID, limit, offset)
+}
+
+// MockPodcastRepo is a fake PodcastRepo.
+type MockPodcastRepo struct {
+	CreateFeedFunc            func(ctx context.Context, feed *model.PodcastFeed) (int64, error)
+	UpdateFeedFunc            func(ctx context.Context, feed *model.PodcastFeed) error
+	DeleteFeedFunc            func(ctx context.Context, id int64) error
+	GetFeedByIDFunc           func(ctx context.Context, id int64) (*model.PodcastFeed, error)
+	GetFeedBySetIDFunc        func(ctx context.Context, setID int64) (*model.PodcastFeed, error)
+	ListFeedsFunc             func(ctx context.Context) ([]model.PodcastFeed, error)
+	ListFeedsNeedingCheckFunc func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error)
+
+	CreateEpisodeFunc         func(ctx context.Context, episode *model.PodcastEpisode) (int64, error)
+	GetEpisodeByIDFunc        func(ctx context.Context, id int64) (*model.PodcastEpisode, error)
+	GetEpisodeByGUIDFunc     func(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error)
+	ListEpisodesByFeedFunc   func(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error)
+	UpdateEpisodeMediaFunc   func(ctx context.Context, episodeID, mediaID int64, fileName string) error
+	DeleteEpisodesByFeedFunc func(ctx context.Context, feedID int64) error
+
+	UpsertEpisodeProgressFunc  func(ctx context.Context, status *model.PodcastStatus) error
+	GetEpisodeProgressFunc     func(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error)
+	ListEpisodesWithStatusFunc func(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error)
+}
+
+// CreateFeed calls CreateFeedFunc or returns a default ID.
+func (m *MockPodcastRepo) CreateFeed(ctx context.Context, feed *model.PodcastFeed) (int64, error) {
+	if m.CreateFeedFunc != nil {
+		return m.CreateFeedFunc(ctx, feed)
+	}
+	return 1, nil
+}
+
+// UpdateFeed calls UpdateFeedFunc or returns nil.
+func (m *MockPodcastRepo) UpdateFeed(ctx context.Context, feed *model.PodcastFeed) error {
+	if m.UpdateFeedFunc != nil {
+		return m.UpdateFeedFunc(ctx, feed)
+	}
+	return nil
+}
+
+// DeleteFeed calls DeleteFeedFunc or returns nil.
+func (m *MockPodcastRepo) DeleteFeed(ctx context.Context, id int64) error {
+	if m.DeleteFeedFunc != nil {
+		return m.DeleteFeedFunc(ctx, id)
+	}
+	return nil
+}
+
+// GetFeedByID calls GetFeedByIDFunc or returns nil.
+func (m *MockPodcastRepo) GetFeedByID(ctx context.Context, id int64) (*model.PodcastFeed, error) {
+	if m.GetFeedByIDFunc != nil {
+		return m.GetFeedByIDFunc(ctx, id)
+	}
+	return nil, nil
+}
+
+// GetFeedBySetID calls GetFeedBySetIDFunc or returns nil.
+func (m *MockPodcastRepo) GetFeedBySetID(ctx context.Context, setID int64) (*model.PodcastFeed, error) {
+	if m.GetFeedBySetIDFunc != nil {
+		return m.GetFeedBySetIDFunc(ctx, setID)
+	}
+	return nil, nil
+}
+
+// ListFeeds calls ListFeedsFunc or returns nil.
+func (m *MockPodcastRepo) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
+	if m.ListFeedsFunc != nil {
+		return m.ListFeedsFunc(ctx)
+	}
+	return nil, nil
+}
+
+// ListFeedsNeedingCheck calls ListFeedsNeedingCheckFunc or returns nil.
+func (m *MockPodcastRepo) ListFeedsNeedingCheck(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+	if m.ListFeedsNeedingCheckFunc != nil {
+		return m.ListFeedsNeedingCheckFunc(ctx, before)
+	}
+	return nil, nil
+}
+
+// CreateEpisode calls CreateEpisodeFunc or returns a default ID.
+func (m *MockPodcastRepo) CreateEpisode(ctx context.Context, episode *model.PodcastEpisode) (int64, error) {
+	if m.CreateEpisodeFunc != nil {
+		return m.CreateEpisodeFunc(ctx, episode)
+	}
+	return 1, nil
+}
+
+// GetEpisodeByID calls GetEpisodeByIDFunc or returns nil.
+func (m *MockPodcastRepo) GetEpisodeByID(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
+	if m.GetEpisodeByIDFunc != nil {
+		return m.GetEpisodeByIDFunc(ctx, id)
+	}
+	return nil, nil
+}
+
+// GetEpisodeByGUID calls GetEpisodeByGUIDFunc or returns nil.
+func (m *MockPodcastRepo) GetEpisodeByGUID(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error) {
+	if m.GetEpisodeByGUIDFunc != nil {
+		return m.GetEpisodeByGUIDFunc(ctx, feedID, guid)
+	}
+	return nil, nil
+}
+
+// ListEpisodesByFeed calls ListEpisodesByFeedFunc or returns nil.
+func (m *MockPodcastRepo) ListEpisodesByFeed(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error) {
+	if m.ListEpisodesByFeedFunc != nil {
+		return m.ListEpisodesByFeedFunc(ctx, feedID, limit, offset)
+	}
+	return nil, nil
+}
+
+// UpdateEpisodeMedia calls UpdateEpisodeMediaFunc or returns nil.
+func (m *MockPodcastRepo) UpdateEpisodeMedia(ctx context.Context, episodeID, mediaID int64, fileName string) error {
+	if m.UpdateEpisodeMediaFunc != nil {
+		return m.UpdateEpisodeMediaFunc(ctx, episodeID, mediaID, fileName)
+	}
+	return nil
+}
+
+// DeleteEpisodesByFeed calls DeleteEpisodesByFeedFunc or returns nil.
+func (m *MockPodcastRepo) DeleteEpisodesByFeed(ctx context.Context, feedID int64) error {
+	if m.DeleteEpisodesByFeedFunc != nil {
+		return m.DeleteEpisodesByFeedFunc(ctx, feedID)
+	}
+	return nil
+}
+
+// UpsertEpisodeProgress calls UpsertEpisodeProgressFunc or returns nil.
+func (m *MockPodcastRepo) UpsertEpisodeProgress(ctx context.Context, status *model.PodcastStatus) error {
+	if m.UpsertEpisodeProgressFunc != nil {
+		return m.UpsertEpisodeProgressFunc(ctx, status)
+	}
+	return nil
+}
+
+// GetEpisodeProgress calls GetEpisodeProgressFunc or returns nil.
+func (m *MockPodcastRepo) GetEpisodeProgress(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error) {
+	if m.GetEpisodeProgressFunc != nil {
+		return m.GetEpisodeProgressFunc(ctx, userID, episodeID)
+	}
+	return nil, nil
+}
+
+// ListEpisodesWithStatus calls ListEpisodesWithStatusFunc or returns nil.
+func (m *MockPodcastRepo) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
+	if m.ListEpisodesWithStatusFunc != nil {
+		return m.ListEpisodesWithStatusFunc(ctx, userID, feedID, limit, offset)
+	}
+	return nil, nil
 }
