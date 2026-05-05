@@ -128,6 +128,17 @@
   max-height: 100%;
 }
 
+.player.crop-mode video {
+  object-fit: fill;
+}
+
+.crop-indicator {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  padding: 0 0.25rem;
+  user-select: none;
+}
+
 /* Cover art for audio playback */
 .player .cover-art {
   width: 100%;

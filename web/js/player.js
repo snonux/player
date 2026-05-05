@@ -21,6 +21,7 @@ let isPanning = false;
 let panStart = { x: 0, y: 0 };
 let slideshowTimer = null;
 let slideshowPausedUntil = 0;
+let cropMode = false;
 
 const els = () => ({
   video: document.getElementById('media-video'),
@@ -47,6 +48,7 @@ const els = () => ({
   volume: document.getElementById('volume-slider'),
   timeElapsed: document.getElementById('time-elapsed'),
   timeTotal: document.getElementById('time-total'),
+  cropIndicator: document.getElementById('crop-indicator'),
 });
 
 export function initPlayer(options = {}) {
@@ -133,6 +135,16 @@ export function initPlayer(options = {}) {
   });
 
   e.video.addEventListener('loadedmetadata', updateFloatingSize);
+
+  document.addEventListener('fullscreenchange', () => {
+    const p = e.player;
+    if (!p) return;
+    if (!document.fullscreenElement) {
+      p.classList.remove('crop-mode');
+      cropMode = false;
+      if (e.cropIndicator) e.cropIndicator.classList.add('hidden');
+    }
+  });
 
   function setupVideoDebug(m) {
     const events = ['loadstart','loadeddata','loadedmetadata','canplay','canplaythrough','playing','waiting','stalled','suspend','error','abort','emptied','ended'];
@@ -521,8 +533,21 @@ function updateMinimizedTitle() {
 export function exitFullscreenIfNeeded() {
   if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
-    els().player?.classList.remove('is-fullscreen');
+    const p = els().player;
+    if (p) p.classList.remove('is-fullscreen', 'crop-mode');
+    cropMode = false;
+    const ind = els().cropIndicator;
+    if (ind) ind.classList.add('hidden');
   }
+}
+
+export function toggleCrop() {
+  const e = els();
+  if (!e.player) return;
+  if (!document.fullscreenElement) return;
+  cropMode = !cropMode;
+  e.player.classList.toggle('crop-mode', cropMode);
+  if (e.cropIndicator) e.cropIndicator.classList.toggle('hidden', !cropMode);
 }
 
 function startProgressTimer() {
