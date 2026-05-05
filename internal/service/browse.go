@@ -416,7 +416,7 @@ func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, pare
 	if set.IsPodcast {
 		feed, err := s.store.GetFeedBySetID(ctx, setID)
 		if err == nil && feed != nil {
-			episodes, err := s.store.ListEpisodesWithStatus(ctx, userID, feed.ID, 0, 0)
+			episodes, err := s.store.ListEpisodesWithStatus(ctx, userID, feed.ID, 1000, 0)
 			if err == nil {
 				result.Episodes = episodes
 			}

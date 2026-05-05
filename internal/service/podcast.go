@@ -75,7 +75,12 @@ type podcastService struct {
 }
 
 // NewPodcastService creates a PodcastService with the given dependencies.
-func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator) *podcastService {
+// NewPodcastService creates a PodcastService with the given dependencies.
+// checkInterval should be the number of minutes between background feed checks.
+func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator, checkInterval int) *podcastService {
+	if checkInterval <= 0 {
+		checkInterval = 60
+	}
 	return &podcastService{
 		store:         store,
 		clock:         clk,
@@ -84,7 +89,7 @@ func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot str
 		prober:        prober,
 		thumbGen:      thumbGen,
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
-		checkInterval: 60,
+		checkInterval: checkInterval,
 	}
 }
 
@@ -166,7 +171,7 @@ func (s *podcastService) SubscribeFeed(ctx context.Context, feedURL, setName str
 
 	// Download cover image.
 	if parsed.ImageURL != "" {
-		_ = podcast.DownloadCoverImage(parsed.ImageURL, setPath)
+		_ = podcast.DownloadCoverImage(s.httpClient, parsed.ImageURL, setPath)
 	}
 
 	// Insert episodes.
@@ -335,12 +340,16 @@ func (s *podcastService) DownloadEpisode(ctx context.Context, episodeID, userID 
 	if err != nil {
 		return nil, fmt.Errorf("create file: %w", err)
 	}
-	defer f.Close()
 
 	n, err := io.Copy(f, resp.Body)
 	if err != nil {
+		f.Close()
 		os.Remove(path)
 		return nil, fmt.Errorf("write file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return nil, fmt.Errorf("close file: %w", err)
 	}
 
 	// Create media row.
@@ -369,6 +378,8 @@ func (s *podcastService) DownloadEpisode(ctx context.Context, episodeID, userID 
 
 	// Link episode to media row.
 	if err := s.store.UpdateEpisodeMedia(ctx, episode.ID, media.ID, filepath.Base(path)); err != nil {
+		os.Remove(path)
+		_ = s.store.HardDeleteMedia(ctx, media.ID)
 		return nil, fmt.Errorf("update episode media: %w", err)
 	}
 
@@ -441,7 +452,7 @@ func (s *podcastService) CheckFeeds(ctx context.Context) error {
 func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feed.FeedURL, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("build request for feed %d: %w", feed.ID, err)
 	}
 
 	// Conditional GET headers.
@@ -468,7 +479,7 @@ func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) 
 		return fmt.Errorf("feed check status %d", resp.StatusCode)
 	}
 
-	parsed, err := podcast.ParseFeed(feed.FeedURL)
+	parsed, err := podcast.ParseFeedReader(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -512,7 +523,7 @@ func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) 
 		set, err := s.store.GetSetByID(ctx, feed.SetID)
 		if err == nil && set != nil {
 			setPath := filepath.Join(s.mediaRoot, set.RootPath)
-			_ = podcast.DownloadCoverImage(parsed.ImageURL, setPath)
+			_ = podcast.DownloadCoverImage(s.httpClient, parsed.ImageURL, setPath)
 		}
 	}
 
@@ -538,25 +549,4 @@ func sanitizeFilename(name string) string {
 	name = strings.ReplaceAll(name, ":", "-")
 	name = strings.TrimSpace(name)
 	return name
-}
-
-func uniqueFilename(dir, filename string) string {
-	filename = filepath.Base(filename)
-	if filename == "." || filename == ".." || filename == "" {
-		return ""
-	}
-	ext := filepath.Ext(filename)
-	base := strings.TrimSuffix(filename, ext)
-
-	candidate := filepath.Join(dir, filename)
-	if _, err := os.Stat(candidate); os.IsNotExist(err) {
-		return candidate
-	}
-
-	for i := 1; ; i++ {
-		candidate = filepath.Join(dir, fmt.Sprintf("%s(%d)%s", base, i, ext))
-		if _, err := os.Stat(candidate); os.IsNotExist(err) {
-			return candidate
-		}
-	}
 }

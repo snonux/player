@@ -3,6 +3,7 @@ package podcast
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -35,14 +36,25 @@ func ParseFeed(url string) (*ParsedFeed, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse feed %q: %w", url, err)
 	}
+	return parsedFeedFromGoFeed(feed), nil
+}
 
+// ParseFeedReader reads and parses a podcast RSS/Atom feed from an io.Reader.
+func ParseFeedReader(r io.Reader) (*ParsedFeed, error) {
+	fp := gofeed.NewParser()
+	feed, err := fp.Parse(r)
+	if err != nil {
+		return nil, fmt.Errorf("parse feed: %w", err)
+	}
+	return parsedFeedFromGoFeed(feed), nil
+}
+
+func parsedFeedFromGoFeed(feed *gofeed.Feed) *ParsedFeed {
 	result := &ParsedFeed{
 		Title:       feed.Title,
 		Description: feed.Description,
+		ImageURL:    extractImageURL(feed),
 	}
-
-	// Extract image URL from common RSS/Atom sources.
-	result.ImageURL = extractImageURL(feed)
 
 	for _, item := range feed.Items {
 		ep := Episode{
@@ -78,7 +90,7 @@ func ParseFeed(url string) (*ParsedFeed, error) {
 		result.Episodes = append(result.Episodes, ep)
 	}
 
-	return result, nil
+	return result
 }
 
 // extractImageURL looks for podcast cover images in RSS 2.0, Atom, and iTunes feed metadata.

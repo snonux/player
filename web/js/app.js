@@ -474,6 +474,13 @@ function renderBrowse(data) {
     tagBtn?.addEventListener('click', (e) => { e.stopPropagation(); openTagsForElement(el); });
     thumbBtn?.addEventListener('click', (e) => { e.stopPropagation(); regenThumb(el.dataset.id); });
   });
+
+  // For podcast sets, render episodes from the browse response after media.
+  if (data.episodes && data.episodes.length) {
+    import('./podcasts.js').then(m => {
+      m.renderPodcastEpisodes(grid, data.episodes);
+    }).catch(() => {});
+  }
 }
 
 function renderFolder(folder, index) {

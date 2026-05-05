@@ -56,44 +56,33 @@ export function initPodcasts() {
   }
 }
 
-export function insertPodcastEpisodes(state) {
-  if (!state.selectedSetId || state.selectedSetIds.length !== 1) return;
-  const set = state.sets.find(s => s.id === state.selectedSetId);
-  if (!set || !set.is_podcast) return;
+export function renderPodcastEpisodes(grid, episodes) {
+  if (!episodes || !episodes.length) return;
+  const divider = document.createElement('div');
+  divider.className = 'grid-divider';
+  divider.textContent = 'Podcast Episodes';
+  grid.appendChild(divider);
 
-  const grid = document.getElementById('media-grid');
-  if (!grid) return;
+  episodes.forEach(ep => {
+    const card = document.createElement('div');
+    card.className = 'media-card episode-card';
+    card.dataset.id = ep.id;
+    card.innerHTML = renderEpisodeHtml(ep);
+    grid.appendChild(card);
 
-  API.podcastEpisodes(state.selectedSetId).then(episodes => {
-    if (!episodes || !episodes.length) return;
-    const divider = document.createElement('div');
-    divider.className = 'grid-divider';
-    divider.textContent = 'Podcast Episodes';
-    grid.appendChild(divider);
-
-    episodes.forEach(ep => {
-      const card = document.createElement('div');
-      card.className = 'media-card episode-card';
-      card.innerHTML = renderEpisodeHtml(ep);
-      grid.appendChild(card);
-
-      const downloadBtn = card.querySelector('.btn-download-episode');
-      const completeBtn = card.querySelector('.btn-complete');
-      downloadBtn?.addEventListener('click', async () => {
-        try {
-          await API.downloadEpisode(ep.id);
-          toast('Download started');
-        } catch (err) { toast(err.message || 'Download failed', 'error'); }
-      });
-      completeBtn?.addEventListener('click', async () => {
-        try {
-          await API.toggleEpisodeComplete(ep.id);
-          completeBtn.classList.toggle('active');
-          toast(ep.is_completed ? 'Marked unlistened' : 'Marked listened');
-        } catch (err) { toast(err.message || 'Toggle failed', 'error'); }
-      });
+    const playBtn = card.querySelector('[data-action="play"]');
+    const completeBtn = card.querySelector('.btn-complete');
+    playBtn?.addEventListener('click', () => {
+      toast(ep.is_downloaded ? 'Play from downloads' : 'Download first to play', 'info');
     });
-  }).catch(() => {}); // silently ignore errors
+    completeBtn?.addEventListener('click', async () => {
+      try {
+        const res = await API.toggleEpisodeComplete(ep.id);
+        completeBtn.classList.toggle('active');
+        toast(res.is_completed ? 'Marked listened' : 'Marked unlistened');
+      } catch (err) { toast(err.message || 'Toggle failed', 'error'); }
+    });
+  });
 }
 
 function renderEpisodeHtml(ep) {
@@ -105,7 +94,7 @@ function renderEpisodeHtml(ep) {
       <span class="placeholder">🎙️</span>
       <span class="badge">${dateStr}${duration ? ' • ' + duration : ''}</span>
       <div class="card-actions">
-        <button class="icon-btn btn-sm btn-download-episode" title="Download to server">⬇</button>
+        <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
         <button class="icon-btn btn-sm btn-complete${completed ? ' active' : ''}" title="Mark as listened">✓</button>
       </div>
     </div>

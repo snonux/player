@@ -53,13 +53,15 @@ func scanFeed(row sqlScanner) (*model.PodcastFeed, error) {
 	var f model.PodcastFeed
 	var title, description, imageURL, lastETag sql.NullString
 	var lastChecked sql.NullTime
-	err := row.Scan(&f.ID, &f.SetID, &f.FeedURL, &title, &description, &imageURL, &lastChecked, &lastETag, &f.CheckIntervalMinutes, &f.AutoDownload, &f.CreatedAt)
+	var autoDownloadInt int
+	err := row.Scan(&f.ID, &f.SetID, &f.FeedURL, &title, &description, &imageURL, &lastChecked, &lastETag, &f.CheckIntervalMinutes, &autoDownloadInt, &f.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	f.AutoDownload = intToBool(autoDownloadInt)
 	f.Title = title.String
 	f.Description = description.String
 	f.ImageURL = imageURL.String
@@ -164,13 +166,15 @@ func scanEpisode(row sqlScanner) (*model.PodcastEpisode, error) {
 	var published sql.NullTime
 	var duration sql.NullFloat64
 	var fileSize sql.NullInt64
-	err := row.Scan(&e.ID, &e.FeedID, &mediaID, &e.GUID, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &e.IsDownloaded, &e.CreatedAt)
+	var isDownloadedInt int
+	err := row.Scan(&e.ID, &e.FeedID, &mediaID, &e.GUID, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	e.IsDownloaded = intToBool(isDownloadedInt)
 	if mediaID.Valid {
 		e.MediaID = &mediaID.Int64
 	}
@@ -267,15 +271,17 @@ func (s *SQLite) UpsertEpisodeProgress(ctx context.Context, status *model.Podcas
 // GetEpisodeProgress returns a user's status for an episode.
 func (s *SQLite) GetEpisodeProgress(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error) {
 	var st model.PodcastStatus
+	var isCompleted int
 	err := s.db.QueryRowContext(ctx,
 		`SELECT user_id, episode_id, is_completed, position_seconds, updated_at FROM podcast_status WHERE user_id = ? AND episode_id = ?`,
-		userID, episodeID).Scan(&st.UserID, &st.EpisodeID, &st.IsCompleted, &st.PositionSeconds, &st.UpdatedAt)
+		userID, episodeID).Scan(&st.UserID, &st.EpisodeID, &isCompleted, &st.PositionSeconds, &st.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get podcast status: %w", err)
 	}
+	st.IsCompleted = intToBool(isCompleted)
 	return &st, nil
 }
 
@@ -302,9 +308,16 @@ func (s *SQLite) ListEpisodesWithStatus(ctx context.Context, userID, feedID int6
 		var published sql.NullTime
 		var duration sql.NullFloat64
 		var fileSize sql.NullInt64
-		err := rows.Scan(&e.ID, &e.FeedID, &mediaID, &e.GUID, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &e.IsDownloaded, &e.CreatedAt, &e.IsCompleted, &e.PositionSeconds)
+		var isDownloadedInt, isCompletedInt int
+		var positionSeconds sql.NullFloat64
+		err := rows.Scan(&e.ID, &e.FeedID, &mediaID, &e.GUID, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt, &isCompletedInt, &positionSeconds)
 		if err != nil {
 			return nil, err
+		}
+		e.IsDownloaded = intToBool(isDownloadedInt)
+		e.IsCompleted = intToBool(isCompletedInt)
+		if positionSeconds.Valid {
+			e.PositionSeconds = positionSeconds.Float64
 		}
 		if mediaID.Valid {
 			e.MediaID = &mediaID.Int64

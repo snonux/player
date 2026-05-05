@@ -30,6 +30,7 @@ type Config struct {
 	SessionTimeoutHours    int
 	GCIntervalMinutes      int
 	ShareDefaultExpiryDays int
+	PodcastCheckMinutes    int
 	LogLevel               string
 	SecureCookies          bool
 }
@@ -77,6 +78,7 @@ func defaultConfig() *Config {
 		SessionTimeoutHours:    DefaultSessionTimeoutHours,
 		GCIntervalMinutes:      DefaultGCIntervalMinutes,
 		ShareDefaultExpiryDays: DefaultShareDefaultExpiryDays,
+		PodcastCheckMinutes:    DefaultPodcastCheckMinutes,
 		LogLevel:               DefaultLogLevel,
 		SecureCookies:          DefaultSecureCookies,
 	}
@@ -128,6 +130,15 @@ func loadNumericSettings(cfg *Config) error {
 		}
 		return nil
 	}, func(n int) { cfg.ShareDefaultExpiryDays = n }); err != nil {
+		return err
+	}
+
+	if err := envInt("PODCAST_CHECK_INTERVAL_MINUTES", func(n int) error {
+		if n < 1 {
+			return fmt.Errorf("must be >= 1, got %d", n)
+		}
+		return nil
+	}, func(n int) { cfg.PodcastCheckMinutes = n }); err != nil {
 		return err
 	}
 

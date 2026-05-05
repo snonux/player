@@ -77,7 +77,7 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 		return nil, fmt.Errorf("mkdir: %w", err)
 	}
 
-	path := s.uniqueFilename(dir, filename)
+	path := uniqueFilename(dir, filename)
 	if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(dir)+string(filepath.Separator)) {
 		return nil, errors.New("invalid filename")
 	}
@@ -95,27 +95,6 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 	}
 
 	return media, nil
-}
-
-func (s *writeService) uniqueFilename(dir, filename string) string {
-	filename = filepath.Base(filename)
-	if filename == "." || filename == ".." || filename == "" {
-		return ""
-	}
-	ext := filepath.Ext(filename)
-	base := strings.TrimSuffix(filename, ext)
-
-	candidate := filepath.Join(dir, filename)
-	if _, err := os.Stat(candidate); os.IsNotExist(err) {
-		return candidate
-	}
-
-	for i := 1; ; i++ {
-		candidate = filepath.Join(dir, fmt.Sprintf("%s(%d)%s", base, i, ext))
-		if _, err := os.Stat(candidate); os.IsNotExist(err) {
-			return candidate
-		}
-	}
 }
 
 func (s *writeService) saveUploadedMedia(ctx context.Context, setID int64, path string, data io.Reader, size int64) (*model.Media, error) {

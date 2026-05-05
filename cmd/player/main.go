@@ -95,10 +95,26 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 	authSvc := service.NewAuthService(store, clk, hasher, sm)
 
 	helper := service.NewAccessHelper(store)
-	podcastSvc := service.NewPodcastService(store, clk, cfg.MediaRoot, helper, prober, thumbGen)
+	podcastSvc := service.NewPodcastService(store, clk, cfg.MediaRoot, helper, prober, thumbGen, cfg.PodcastCheckMinutes)
 
 	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger)
 	gcWorker.Start()
+
+	// Start podcast feed background checker.
+	go func() {
+		ticker := time.NewTicker(time.Duration(cfg.PodcastCheckMinutes) * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := podcastSvc.CheckFeeds(context.Background()); err != nil {
+					logger.Error("podcast feed check failed", "err", err)
+				}
+			case <-appCtx.Done():
+				return
+			}
+		}
+	}()
 
 	return &appDeps{
 		store:       store,

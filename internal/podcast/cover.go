@@ -9,12 +9,12 @@ import (
 )
 
 // DownloadCoverImage fetches a podcast cover image and saves it to the set folder as cover.jpg.
-func DownloadCoverImage(imageURL, setPath string) error {
+func DownloadCoverImage(client *http.Client, imageURL, setPath string) error {
 	if imageURL == "" {
 		return nil
 	}
 
-	resp, err := http.Get(imageURL)
+	resp, err := client.Get(imageURL)
 	if err != nil {
 		return fmt.Errorf("fetch cover image: %w", err)
 	}
