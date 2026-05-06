@@ -86,7 +86,20 @@ export const API = {
   delPermissions: (body) => api('/api/admin/permissions', { method: 'DELETE', body }),
   rescan: () => api('/api/admin/rescan', { method: 'POST' }),
   podcasts: () => api('/api/podcasts'),
-  podcastEpisodes: (setId, limit = 50, offset = 0) => {
+  podcastEpisodes: (setId, pagination, legacyOffset) => {
+    let limit = 50;
+    let offset = 0;
+    if (typeof pagination === 'number') {
+      if (typeof legacyOffset === 'number') {
+        limit = pagination;
+        offset = legacyOffset;
+      } else {
+        offset = pagination;
+      }
+    } else if (pagination) {
+      limit = pagination.limit ?? limit;
+      offset = pagination.offset ?? offset;
+    }
     const params = new URLSearchParams({ limit, offset });
     return api(`/api/podcasts/${setId}/episodes?${params}`);
   },
