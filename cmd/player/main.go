@@ -231,6 +231,7 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 
 	staticFS := http.Dir("web")
 	remuxer := probe.NewFFRemuxer()
+	streamer := service.NewMediaStreamer(remuxer)
 	server := api.NewServerWithLogger(api.ServerDeps{
 		Store:          store,
 		Hasher:         deps.hasher,
@@ -248,8 +249,8 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 			Auth:     deps.authSvc,
 			Podcast:  deps.podcastSvc,
 		},
-		StaticFS: staticFS,
-		Remuxer:  remuxer,
+		StaticFS:      staticFS,
+		MediaStreamer: streamer,
 	}, logger)
 
 	return runServer(server, cfg, logger, sigCh)

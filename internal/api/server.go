@@ -9,7 +9,6 @@ import (
 
 	"codeberg.org/snonux/player/internal"
 	"codeberg.org/snonux/player/internal/auth"
-	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
 )
@@ -31,8 +30,8 @@ type Server struct {
 	progressSvc service.ProgressService
 	authSvc     service.AuthService
 	podcastSvc  service.PodcastEpisodeService
+	streamer    service.MediaStreamer
 	staticFS    http.FileSystem
-	remuxer     probe.Remuxer
 	logger      *slog.Logger
 	mw          *Middleware
 }
@@ -60,7 +59,7 @@ type ServerDeps struct {
 	Config         *internal.Config
 	Services       ServerServices
 	StaticFS       http.FileSystem
-	Remuxer        probe.Remuxer
+	MediaStreamer  service.MediaStreamer
 }
 
 // NewServer creates a Server with routes.
@@ -92,8 +91,8 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) *Server {
 		progressSvc: deps.Services.Progress,
 		authSvc:     deps.Services.Auth,
 		podcastSvc:  deps.Services.Podcast,
+		streamer:    deps.MediaStreamer,
 		staticFS:    deps.StaticFS,
-		remuxer:     deps.Remuxer,
 		logger:      logger,
 		mw:          NewMiddleware(deps.Services.Auth, deps.SessionManager),
 	}

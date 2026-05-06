@@ -91,7 +91,6 @@ func hasMPEGTSsync(buf []byte, packetSize int) bool {
 				return true
 			}
 		}
-    }
-    return false
+	}
+	return false
 }
-

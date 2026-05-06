@@ -221,6 +221,14 @@ type ProgressService interface {
 	UpdateProgress(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error
 }
 
+// MediaStreamer prepares authorized file results for HTTP streaming.
+type MediaStreamer interface {
+	// Open opens a file result and returns the headers/reader needed by the API.
+	Open(ctx context.Context, file *FileResult, attachment bool) (*StreamResult, error)
+	// Remux writes a remuxed stream to w for results where StreamResult.Remuxed is true.
+	Remux(ctx context.Context, stream *StreamResult, w io.Writer) error
+}
+
 // PermissionsMatrix is the shape returned by ListPermissions.
 type PermissionsMatrix struct {
 	Sets        []model.Set           `json:"sets"`
@@ -234,6 +242,19 @@ type FileResult struct {
 	FileName string
 	FileSize int64
 	Duration float64 // DB-stored duration (seconds), used for remuxed streams.
+}
+
+// StreamResult contains an opened file and metadata needed for HTTP streaming.
+type StreamResult struct {
+	File        io.ReadSeekCloser
+	Path        string
+	FileName    string
+	Size        int64
+	ModTime     time.Time
+	ContentType string
+	Attachment  bool
+	Remuxed     bool
+	Duration    float64
 }
 
 // MediaDetail combines media with related data.

@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +20,6 @@ import (
 	"codeberg.org/snonux/player/internal/auth"
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
 )
@@ -621,28 +619,6 @@ func TestServer_Stream(t *testing.T) {
 				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
 			}
 		})
-	}
-}
-
-func TestLooksLikeMPEGTS(t *testing.T) {
-	ts := make([]byte, 188*5)
-	for i := 0; i < len(ts); i += 188 {
-		ts[i] = 0x47
-	}
-	tsPath := filepath.Join(t.TempDir(), "mislabelled.mp4")
-	if err := os.WriteFile(tsPath, ts, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if !probe.LooksLikeMPEGTS(tsPath) {
-		t.Fatal("expected MPEG-TS sync bytes to be detected")
-	}
-
-	mp4Path := filepath.Join(t.TempDir(), "real.mp4")
-	if err := os.WriteFile(mp4Path, []byte("\x00\x00\x00\x18ftypmp42"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if probe.LooksLikeMPEGTS(mp4Path) {
-		t.Fatal("did not expect MP4 header to be detected as MPEG-TS")
 	}
 }
 

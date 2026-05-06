@@ -7,12 +7,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 
-	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/service"
 )
 
@@ -111,23 +108,21 @@ func (s *Server) serveDetach(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------
 
 func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *service.FileResult, attachment bool) {
-	f, err := os.Open(res.Path)
+	streamer := s.streamer
+	if streamer == nil {
+		streamer = service.NewMediaStreamer(nil)
+	}
+
+	stream, err := streamer.Open(r.Context(), res, attachment)
 	if err != nil {
 		s.logger.Warn("api stream open failed", "file", res.FileName, "err", err)
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	defer f.Close()
+	defer stream.File.Close()
 
-	stat, err := f.Stat()
-	if err != nil {
-		s.logger.Warn("api stream stat failed", "file", res.FileName, "err", err)
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	if !attachment && probe.LooksLikeMPEGTS(res.Path) {
-		s.serveRemuxedMP4(w, r, res)
+	if stream.Remuxed {
+		s.serveRemuxed(w, r, streamer, stream)
 		return
 	}
 
@@ -135,22 +130,20 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 		disp := fmt.Sprintf("attachment; filename=%q", res.FileName)
 		w.Header().Set("Content-Disposition", disp)
 	}
-	// Set Content-Type so browsers know how to decode the file without
-	// needing to sniff, which avoids buffering delays during streaming.
-	w.Header().Set("Content-Type", mediatype.MIMETypeForExt(res.FileName))
+	w.Header().Set("Content-Type", stream.ContentType)
 	w.Header().Set("Accept-Ranges", "bytes")
-	s.logger.Info("api stream file", "file", res.FileName, "size", stat.Size(), "range", r.Header.Get("Range"))
-	http.ServeContent(w, r, res.FileName, stat.ModTime(), f)
+	s.logger.Info("api stream file", "file", stream.FileName, "size", stream.Size, "range", r.Header.Get("Range"))
+	http.ServeContent(w, r, stream.FileName, stream.ModTime, stream.File)
 }
 
-func (s *Server) serveRemuxedMP4(w http.ResponseWriter, r *http.Request, res *service.FileResult) {
-	w.Header().Set("Content-Type", "video/mp4")
+func (s *Server) serveRemuxed(w http.ResponseWriter, r *http.Request, streamer service.MediaStreamer, stream *service.StreamResult) {
+	w.Header().Set("Content-Type", stream.ContentType)
 	w.Header().Set("Cache-Control", "no-store")
-	if res.Duration > 0 {
-		w.Header().Set("X-Duration", fmt.Sprintf("%f", res.Duration))
+	if stream.Duration > 0 {
+		w.Header().Set("X-Duration", fmt.Sprintf("%f", stream.Duration))
 	}
-	s.logger.Info("api remux stream file", "file", res.FileName, "size", res.FileSize, "range", r.Header.Get("Range"))
-	if err := s.remuxer.Remux(r.Context(), res.Path, w); err != nil {
-		s.logger.Error("remux media", "file", res.FileName, "err", err)
+	s.logger.Info("api remux stream file", "file", stream.FileName, "size", stream.Size, "range", r.Header.Get("Range"))
+	if err := streamer.Remux(r.Context(), stream, w); err != nil {
+		s.logger.Error("remux media", "file", stream.FileName, "err", err)
 	}
 }

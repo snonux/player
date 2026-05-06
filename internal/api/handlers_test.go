@@ -17,7 +17,6 @@ import (
 	"codeberg.org/snonux/player/internal/auth"
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
 )
@@ -45,7 +44,7 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 	progressSvc service.ProgressService,
 	authSvc service.AuthService,
 	fs http.FileSystem,
-	remuxer ...probe.Remuxer,
+	streamer ...service.MediaStreamer,
 ) *Server {
 	t.Helper()
 	if fs == nil {
@@ -62,9 +61,9 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 			GetUserByIDFunc: func(context.Context, int64) (*model.User, error) { return &model.User{ID: 1, IsAdmin: true}, nil },
 		}
 	}
-	var rem probe.Remuxer
-	if len(remuxer) > 0 {
-		rem = remuxer[0]
+	var mediaStreamer service.MediaStreamer
+	if len(streamer) > 0 {
+		mediaStreamer = streamer[0]
 	}
 	return NewServer(ServerDeps{
 		Store:          store,
@@ -82,8 +81,8 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 			Progress: progressSvc,
 			Auth:     authSvc,
 		},
-		StaticFS: fs,
-		Remuxer:  rem,
+		StaticFS:      fs,
+		MediaStreamer: mediaStreamer,
 	})
 }
 
