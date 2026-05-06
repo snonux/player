@@ -231,10 +231,26 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 
 	staticFS := http.Dir("web")
 	remuxer := probe.NewFFRemuxer()
-	server := api.NewServerWithLogger(store, deps.hasher, deps.sm, cfg,
-		deps.mediaSvc, deps.mediaSvc, deps.mediaSvc, deps.mediaSvc, deps.mediaSvc, deps.mediaSvc,
-		deps.adminSvc, deps.progressSvc, deps.authSvc, deps.podcastSvc, staticFS, remuxer, logger,
-	)
+	server := api.NewServerWithLogger(api.ServerDeps{
+		Store:          store,
+		Hasher:         deps.hasher,
+		SessionManager: deps.sm,
+		Config:         cfg,
+		Services: api.ServerServices{
+			Browse:   deps.mediaSvc,
+			Write:    deps.mediaSvc,
+			Share:    deps.mediaSvc,
+			Tag:      deps.mediaSvc,
+			Favorite: deps.mediaSvc,
+			Note:     deps.mediaSvc,
+			Admin:    deps.adminSvc,
+			Progress: deps.progressSvc,
+			Auth:     deps.authSvc,
+			Podcast:  deps.podcastSvc,
+		},
+		StaticFS: staticFS,
+		Remuxer:  remuxer,
+	}, logger)
 
 	return runServer(server, cfg, logger, sigCh)
 }

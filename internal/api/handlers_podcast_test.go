@@ -49,7 +49,25 @@ func newPodcastTestServer(t *testing.T, store repository.Store, hasher auth.Hash
 			GetUserByIDFunc: func(context.Context, int64) (*model.User, error) { return &model.User{ID: 1, IsAdmin: true}, nil },
 		}
 	}
-	return NewServer(store, hasher, sm, cfg, browseSvc, writeSvc, shareSvc, tagSvc, favSvc, noteSvc, adminSvc, progressSvc, authSvc, podcastSvc, fs, nil)
+	return NewServer(ServerDeps{
+		Store:          store,
+		Hasher:         hasher,
+		SessionManager: sm,
+		Config:         cfg,
+		Services: ServerServices{
+			Browse:   browseSvc,
+			Write:    writeSvc,
+			Share:    shareSvc,
+			Tag:      tagSvc,
+			Favorite: favSvc,
+			Note:     noteSvc,
+			Admin:    adminSvc,
+			Progress: progressSvc,
+			Auth:     authSvc,
+			Podcast:  podcastSvc,
+		},
+		StaticFS: fs,
+	})
 }
 
 // setupPodcastE2E creates a full server with a real SQLite store and real services.

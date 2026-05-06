@@ -66,7 +66,25 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 	if len(remuxer) > 0 {
 		rem = remuxer[0]
 	}
-	return NewServer(store, hasher, sm, cfg, browseSvc, writeSvc, shareSvc, tagSvc, favSvc, noteSvc, adminSvc, progressSvc, authSvc, nil, fs, rem)
+	return NewServer(ServerDeps{
+		Store:          store,
+		Hasher:         hasher,
+		SessionManager: sm,
+		Config:         cfg,
+		Services: ServerServices{
+			Browse:   browseSvc,
+			Write:    writeSvc,
+			Share:    shareSvc,
+			Tag:      tagSvc,
+			Favorite: favSvc,
+			Note:     noteSvc,
+			Admin:    adminSvc,
+			Progress: progressSvc,
+			Auth:     authSvc,
+		},
+		StaticFS: fs,
+		Remuxer:  rem,
+	})
 }
 
 func addSessionCookie(t *testing.T, store repository.Store, sm *auth.SessionManager, userID int64) *http.Cookie {

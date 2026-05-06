@@ -37,75 +37,65 @@ type Server struct {
 	mw          *Middleware
 }
 
+// ServerServices groups the optional service dependencies used by route handlers.
+// If any service is nil, its respective routes return 501.
+type ServerServices struct {
+	Browse   service.MediaBrowseService
+	Write    service.MediaWriteService
+	Share    service.MediaShareService
+	Tag      service.MediaTagService
+	Favorite service.MediaFavoriteService
+	Note     service.MediaNoteService
+	Admin    service.AdminService
+	Progress service.ProgressService
+	Auth     service.AuthService
+	Podcast  service.PodcastEpisodeService
+}
+
+// ServerDeps contains the dependencies needed to construct a Server.
+type ServerDeps struct {
+	Store          repository.Store
+	Hasher         auth.Hasher
+	SessionManager *auth.SessionManager
+	Config         *internal.Config
+	Services       ServerServices
+	StaticFS       http.FileSystem
+	Remuxer        probe.Remuxer
+}
+
 // NewServer creates a Server with routes.
-// If any service argument is nil, its respective routes return 501.
-func NewServer(
-	store repository.Store,
-	hasher auth.Hasher,
-	sm *auth.SessionManager,
-	cfg *internal.Config,
-	browseSvc service.MediaBrowseService,
-	writeSvc service.MediaWriteService,
-	shareSvc service.MediaShareService,
-	tagSvc service.MediaTagService,
-	favSvc service.MediaFavoriteService,
-	noteSvc service.MediaNoteService,
-	adminSvc service.AdminService,
-	progressSvc service.ProgressService,
-	authSvc service.AuthService,
-	podcastSvc service.PodcastEpisodeService,
-	staticFS http.FileSystem,
-	remuxer probe.Remuxer,
-) *Server {
-	return NewServerWithLogger(store, hasher, sm, cfg, browseSvc, writeSvc, shareSvc, tagSvc, favSvc, noteSvc, adminSvc, progressSvc, authSvc, podcastSvc, staticFS, remuxer, slog.Default())
+func NewServer(deps ServerDeps) *Server {
+	return NewServerWithLogger(deps, slog.Default())
 }
 
 // NewServerWithLogger creates a Server with routes and an injected logger.
-func NewServerWithLogger(
-	store repository.Store,
-	hasher auth.Hasher,
-	sm *auth.SessionManager,
-	cfg *internal.Config,
-	browseSvc service.MediaBrowseService,
-	writeSvc service.MediaWriteService,
-	shareSvc service.MediaShareService,
-	tagSvc service.MediaTagService,
-	favSvc service.MediaFavoriteService,
-	noteSvc service.MediaNoteService,
-	adminSvc service.AdminService,
-	progressSvc service.ProgressService,
-	authSvc service.AuthService,
-	podcastSvc service.PodcastEpisodeService,
-	staticFS http.FileSystem,
-	remuxer probe.Remuxer,
-	logger *slog.Logger,
-) *Server {
-	if staticFS == nil {
-		staticFS = http.Dir("web")
+func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) *Server {
+	if deps.StaticFS == nil {
+		deps.StaticFS = http.Dir("web")
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	s := &Server{
-		store:       store,
-		hasher:      hasher,
-		sm:          sm,
-		cfg:         cfg,
+		store:       deps.Store,
+		hasher:      deps.Hasher,
+		sm:          deps.SessionManager,
+		cfg:         deps.Config,
 		mux:         http.NewServeMux(),
-		browseSvc:   browseSvc,
-		writeSvc:    writeSvc,
-		shareSvc:    shareSvc,
-		tagSvc:      tagSvc,
-		favSvc:      favSvc,
-		noteSvc:     noteSvc,
-		adminSvc:    adminSvc,
-		progressSvc: progressSvc,
-		authSvc:     authSvc,
-		podcastSvc:  podcastSvc,
-		staticFS:    staticFS,
-		remuxer:     remuxer,
+		browseSvc:   deps.Services.Browse,
+		writeSvc:    deps.Services.Write,
+		shareSvc:    deps.Services.Share,
+		tagSvc:      deps.Services.Tag,
+		favSvc:      deps.Services.Favorite,
+		noteSvc:     deps.Services.Note,
+		adminSvc:    deps.Services.Admin,
+		progressSvc: deps.Services.Progress,
+		authSvc:     deps.Services.Auth,
+		podcastSvc:  deps.Services.Podcast,
+		staticFS:    deps.StaticFS,
+		remuxer:     deps.Remuxer,
 		logger:      logger,
-		mw:          NewMiddleware(authSvc, sm),
+		mw:          NewMiddleware(deps.Services.Auth, deps.SessionManager),
 	}
 	s.routes()
 	return s
