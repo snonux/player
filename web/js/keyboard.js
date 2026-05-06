@@ -218,6 +218,10 @@ export function initKeyboard(handlers) {
       case 'Escape': handlers.escape?.(e); break;
       case 'Backspace': handlers.backspace?.(e); break;
       case 'r': handlers.shuffle?.(e); break;
+      case 'R':
+        e.preventDefault();
+        handlers.playRandom?.(e);
+        break;
       // Note: 's' / 'S' are handled above by the e.code === 'KeyS' block
       case '/':
         e.preventDefault();

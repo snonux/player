@@ -131,6 +131,7 @@ async function initApp() {
     playPause: () => togglePlay(),
     nextTrack: () => navigatePlayable(1),
     prevTrack: () => navigatePlayable(-1),
+    playRandom: () => playRandom(),
     mediaInfo: () => toggleMediaInfo(),
     fullscreen: () => toggleFullscreen(),
     toggleMinimize: () => toggleMinimize(),
@@ -610,6 +611,20 @@ async function playSelected() {
   const el = currentElement();
   if (!el) return;
   const idx = parseInt(el.dataset.index, 10);
+  const media = state.media[idx];
+  if (!media) return;
+  try {
+    const detail = await API.mediaDetail(media.id);
+    const resumeFrom = detail?.progress?.position_seconds ?? 0;
+    selectAndPlay(media, idx, resumeFrom);
+  } catch {
+    selectAndPlay(media, idx, 0);
+  }
+}
+
+async function playRandom() {
+  if (!state.media.length) return;
+  const idx = Math.floor(Math.random() * state.media.length);
   const media = state.media[idx];
   if (!media) return;
   try {
