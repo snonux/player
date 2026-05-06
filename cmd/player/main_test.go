@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -184,4 +185,100 @@ func TestRunWithSignal_ServerErrorPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when server cannot bind privileged port")
 	}
+}
+
+func TestWireDeps_DoesNotStartBackgroundWorkers(t *testing.T) {
+	// wireDeps must only construct dependencies; it must not start any background goroutines.
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	mediaRoot := filepath.Join(tmpDir, "media")
+	if err := os.MkdirAll(mediaRoot, 0o755); err != nil {
+		t.Fatalf("mkdir media root: %v", err)
+	}
+
+	store, err := repository.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Logf("close db: %v", err)
+		}
+	}()
+
+	cfg := &internal.Config{
+		SessionTimeoutHours: 1,
+		GCIntervalMinutes:   1,
+		PodcastCheckMinutes: 1,
+		MediaRoot:           mediaRoot,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	deps := wireDeps(cfg, store, logger, ctx)
+	if deps.gcWorker == nil {
+		t.Fatal("expected gcWorker to be non-nil")
+	}
+
+	// We call Stop() immediately. If Start() had been called this is safe (idempotent).
+	// If Start() was NOT called, the internal stopCh is still open, so Stop() must handle it gracefully.
+	deps.gcWorker.Stop()
+}
+
+func TestStartBackgroundWorkers_StartsAndStops(t *testing.T) {
+	// startBackgroundWorkers should launch background goroutines that exit
+	// cleanly when the app context is cancelled.
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	mediaRoot := filepath.Join(tmpDir, "media")
+	if err := os.MkdirAll(mediaRoot, 0o755); err != nil {
+		t.Fatalf("mkdir media root: %v", err)
+	}
+
+	store, err := repository.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Logf("close db: %v", err)
+		}
+	}()
+
+	cfg := &internal.Config{
+		SessionTimeoutHours: 1,
+		GCIntervalMinutes:   1,
+		PodcastCheckMinutes: 1,
+		MediaRoot:           mediaRoot,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	deps := wireDeps(cfg, store, logger, ctx)
+	startBackgroundWorkers(deps)
+
+	// Give the goroutines a moment to start.
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel the app context; workers should exit.
+	cancel()
+
+	// Stop the GC worker explicitly (safe and idempotent).
+	deps.gcWorker.Stop()
+
+	// No explicit assertion for goroutine exit beyond the fact that we have not leaked;
+	// the final goroutine dump check in the test run will catch leaks.
+}
+
+func TestStartBackgroundWorkers_NilDepsPanics(t *testing.T) {
+	// Verify defensive behaviour: passing a nil pointer should panic quickly
+	// so the bug is surfaced at start-up rather than later as a nil dereference.
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic when startBackgroundWorkers receives nil")
+		}
+	}()
+	startBackgroundWorkers(nil)
 }

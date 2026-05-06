@@ -48,6 +48,7 @@ type appDeps struct {
 	scanner     scanner.Scanner
 	gcWorker    *service.GCWorker
 	logger      *slog.Logger
+	appCtx      context.Context
 }
 
 // parseVersionFlag parses CLI flags and returns whether --version was requested.
@@ -98,23 +99,6 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 	podcastSvc := service.NewPodcastService(store, clk, cfg.MediaRoot, helper, prober, thumbGen, cfg.PodcastCheckMinutes)
 
 	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger)
-	gcWorker.Start()
-
-	// Start podcast feed background checker.
-	go func() {
-		ticker := time.NewTicker(time.Duration(cfg.PodcastCheckMinutes) * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if err := podcastSvc.CheckFeeds(context.Background()); err != nil {
-					logger.Error("podcast feed check failed", "err", err)
-				}
-			case <-appCtx.Done():
-				return
-			}
-		}
-	}()
 
 	return &appDeps{
 		store:       store,
@@ -130,7 +114,29 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 		scanner:     fsScanner,
 		gcWorker:    gcWorker,
 		logger:      logger,
+		appCtx:      appCtx,
 	}
+}
+
+// startBackgroundWorkers launches background goroutines (GC, podcast feed checker).
+func startBackgroundWorkers(deps *appDeps) {
+	deps.gcWorker.Start()
+
+	// Start podcast feed background checker.
+	go func() {
+		ticker := time.NewTicker(time.Duration(deps.cfg.PodcastCheckMinutes) * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := deps.podcastSvc.CheckFeeds(context.Background()); err != nil {
+					deps.logger.Error("podcast feed check failed", "err", err)
+				}
+			case <-deps.appCtx.Done():
+				return
+			}
+		}
+	}()
 }
 
 // ensureSignalChannel returns the provided channel or creates a new one wired
@@ -214,6 +220,7 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 
 	deps := wireDeps(cfg, store, logger, appCtx)
 	defer deps.gcWorker.Stop()
+	startBackgroundWorkers(deps)
 
 	staticFS := http.Dir("web")
 	remuxer := probe.NewFFRemuxer()
