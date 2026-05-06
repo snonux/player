@@ -35,20 +35,21 @@ func run(args []string) error {
 
 // appDeps bundles all wired service-layer dependencies.
 type appDeps struct {
-	store       repository.Store
-	hasher      auth.Hasher
-	sm          *auth.SessionManager
-	cfg         *internal.Config
-	clk         clock.Clock
-	mediaSvc    service.MediaService
-	adminSvc    service.AdminService
-	progressSvc service.ProgressService
-	authSvc     service.AuthService
-	podcastSvc  service.PodcastEpisodeService
-	scanner     scanner.Scanner
-	gcWorker    *service.GCWorker
-	logger      *slog.Logger
-	appCtx      context.Context
+	store          repository.Store
+	hasher         auth.Hasher
+	sm             *auth.SessionManager
+	cfg            *internal.Config
+	clk            clock.Clock
+	mediaSvc       service.MediaService
+	adminSvc       service.AdminService
+	progressSvc    service.ProgressService
+	authSvc        service.AuthService
+	podcastSvc     service.PodcastEpisodeService
+	scanner        scanner.Scanner
+	gcWorker       *service.GCWorker
+	logger         *slog.Logger
+	appCtx         context.Context
+	workersStarted chan<- struct{}
 }
 
 // parseVersionFlag parses CLI flags and returns whether --version was requested.
@@ -137,6 +138,12 @@ func startBackgroundWorkers(deps *appDeps) {
 			}
 		}
 	}()
+	if deps.workersStarted != nil {
+		select {
+		case deps.workersStarted <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // ensureSignalChannel returns the provided channel or creates a new one wired

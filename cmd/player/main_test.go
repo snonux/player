@@ -106,9 +106,6 @@ func TestRunWithSignal_NormalShutdown(t *testing.T) {
 		errCh <- runWithSignal([]string{}, sigCh)
 	}()
 
-	// Give the server a moment to start listening.
-	time.Sleep(500 * time.Millisecond)
-
 	// Send a synthetic signal to trigger shutdown.
 	sigCh <- syscall.SIGINT
 
@@ -137,7 +134,6 @@ func TestRunWithSignal_LogLevels(t *testing.T) {
 			go func() {
 				errCh <- runWithSignal([]string{}, sigCh)
 			}()
-			time.Sleep(200 * time.Millisecond)
 			sigCh <- syscall.SIGTERM
 
 			select {
@@ -257,10 +253,15 @@ func TestStartBackgroundWorkers_StartsAndStops(t *testing.T) {
 	defer cancel()
 
 	deps := wireDeps(cfg, store, logger, ctx)
+	workersStarted := make(chan struct{}, 1)
+	deps.workersStarted = workersStarted
 	startBackgroundWorkers(deps)
 
-	// Give the goroutines a moment to start.
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-workersStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for background workers to start")
+	}
 
 	// Cancel the app context; workers should exit.
 	cancel()

@@ -2,8 +2,8 @@ package model
 
 import (
 	"errors"
+	"sync"
 	"testing"
-	"time"
 )
 
 func TestScanProgress_Start(t *testing.T) {
@@ -116,8 +116,11 @@ func TestScanProgress_ConcurrentAccess(t *testing.T) {
 	p.Start(2)
 	p.SetFilesTotal(100)
 
+	start := make(chan struct{})
 	done := make(chan struct{})
+	var copies sync.WaitGroup
 	go func() {
+		<-start
 		for i := 0; i < 50; i++ {
 			p.IncrementFile()
 		}
@@ -125,9 +128,15 @@ func TestScanProgress_ConcurrentAccess(t *testing.T) {
 	}()
 
 	for i := 0; i < 50; i++ {
-		_ = p.Copy()
-		time.Sleep(time.Microsecond)
+		copies.Add(1)
+		go func() {
+			defer copies.Done()
+			<-start
+			_ = p.Copy()
+		}()
 	}
+	close(start)
+	copies.Wait()
 	<-done
 
 	cp := p.Copy()

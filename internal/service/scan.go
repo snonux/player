@@ -22,6 +22,7 @@ type scanService struct {
 	scanCancel context.CancelFunc
 	progress   *model.ScanProgress
 	appCtx     context.Context // application-level context used to propagate shutdown cancellation
+	doneCh     chan<- struct{}
 }
 
 // NewScanService creates a ScanService.
@@ -64,6 +65,7 @@ func (s *scanService) TriggerRescan(ctx context.Context) error {
 			progress.Done(nil)
 			s.logger.Info("rescan completed")
 		}
+		s.notifyDone()
 	}()
 	return nil
 }
@@ -76,4 +78,14 @@ func (s *scanService) ScanProgress(ctx context.Context) model.ScanProgress {
 		return model.ScanProgress{}
 	}
 	return progress.Copy()
+}
+
+func (s *scanService) notifyDone() {
+	if s.doneCh == nil {
+		return
+	}
+	select {
+	case s.doneCh <- struct{}{}:
+	default:
+	}
 }
