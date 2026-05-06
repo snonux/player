@@ -119,6 +119,44 @@ label {
 }
 .search-bar input:focus { box-shadow: none; }
 
+/* Search syntax help tooltip */
+.search-help {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  z-index: 45;
+  max-width: 22rem;
+  line-height: 1.5;
+}
+.search-help-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+  font-size: 0.82rem;
+}
+.search-help-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.search-help-row code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.15rem 0.35rem;
+  color: var(--text-primary);
+}
+
 /* Toast */
 .toast {
   position: fixed;

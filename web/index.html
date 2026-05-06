@@ -42,6 +42,16 @@
       <span aria-hidden="true">🔎</span>
       <input id="search-input" type="search" placeholder="Search or filter… (press /)" autocomplete="off" aria-label="Search media">
       <button id="search-clear" class="icon-btn btn-sm" title="Clear">✕</button>
+      <div id="search-help" class="search-help hidden">
+        <div class="search-help-title">Search syntax</div>
+        <div class="search-help-row"><code>min:30</code> minimum duration (seconds)</div>
+        <div class="search-help-row"><code>tag:a,b</code> filter by tags</div>
+        <div class="search-help-row"><code>like:1</code> liked items only</div>
+        <div class="search-help-row"><code>type:video</code> / <code>type:audio</code> / <code>type:image</code></div>
+        <div class="search-help-row"><code>sort:random</code> / <code>sort:name</code> / <code>sort:date</code> / <code>sort:duration</code></div>
+        <div class="search-help-row"><code>minsize:10</code> min file size (MB)</div>
+        <div class="search-help-row"><code>maxsize:500</code> max file size (MB)</div>
+      </div>
     </div>
     <div id="result-count" class="text-muted text-xs mt-1"></div>
 

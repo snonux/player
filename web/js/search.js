@@ -1,5 +1,6 @@
 let _onChange = () => {};
 let _debounceTimer = null;
+let _helpTimer = null;
 
 export function initSearch({ onChange, input, clearBtn }) {
   _onChange = onChange;
@@ -14,6 +15,9 @@ export function initSearch({ onChange, input, clearBtn }) {
   input.addEventListener('input', () => {
     clearTimeout(_debounceTimer);
     _debounceTimer = setTimeout(() => trigger(input.value.trim()), 300);
+  });
+  input.addEventListener('blur', () => {
+    hideSearchHelp();
   });
   if (clearBtn) {
     clearBtn.addEventListener('click', () => {
@@ -110,4 +114,24 @@ export function parseQuery(raw) {
   }
   filters.search = tokens.join(' ').trim();
   return filters;
+}
+
+export function showSearchHelp() {
+  const el = document.getElementById('search-help');
+  if (!el) return;
+  if (el.classList.contains('hidden')) {
+    el.classList.remove('hidden');
+    clearTimeout(_helpTimer);
+    _helpTimer = setTimeout(() => el.classList.add('hidden'), 5000);
+  } else {
+    el.classList.add('hidden');
+    clearTimeout(_helpTimer);
+  }
+}
+
+function hideSearchHelp() {
+  const el = document.getElementById('search-help');
+  if (!el) return;
+  el.classList.add('hidden');
+  clearTimeout(_helpTimer);
 }

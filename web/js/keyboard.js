@@ -101,6 +101,10 @@ export function initKeyboard(handlers) {
         document.getElementById('media-grid')?.focus();
         handlers.navDown?.(e);
       }
+      if (e.key === '?') {
+        e.preventDefault();
+        handlers.searchHelp?.(e);
+      }
       return;
     }
 

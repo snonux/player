@@ -2,7 +2,7 @@ import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initSelection, clearSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
 import { initPlayer, togglePlay, toggleFullscreen, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, toggleCrop, currentMediaId, currentMediaInfo, hasLoadedMedia, isPlaybackActive, seekRelative, selectAndPlay, zoomIn as playerZoomIn, zoomOut as playerZoomOut, toggleSlideshow as playerToggleSlideshow, isImageMode as playerIsImageMode } from './player.js';
-import { initSearch, focusSearch, trigger as triggerSearch, parseQuery } from './search.js';
+import { initSearch, focusSearch, trigger as triggerSearch, parseQuery, showSearchHelp } from './search.js';
 import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
 import { initThemes } from './themes.js';
 import { initNotes, open as openNotes } from './notes.js';
@@ -152,6 +152,7 @@ async function initApp() {
     sidebar: toggleSidebar,
     upload: () => showUpload(),
     sharesToggle: toggleShares,
+    searchHelp: () => showSearchHelp(),
     isSharesOpen: () => document.getElementById('shares-modal')?.classList.contains('open'),
     sharesNavUp: () => sharesNav(-1),
     sharesNavDown: () => sharesNav(1),
