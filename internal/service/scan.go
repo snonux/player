@@ -58,7 +58,11 @@ func (s *scanService) TriggerRescan(ctx context.Context) error {
 
 	go func() {
 		defer cancel()
-		if err := s.scanner.Scan(scanCtx, s.mediaRoot, progress); err != nil {
+		err := s.scanner.Scan(scanCtx, s.mediaRoot, progress)
+		if err == nil {
+			err = scanCtx.Err()
+		}
+		if err != nil {
 			progress.Done(err)
 			s.logger.Error("rescan failed", "err", err)
 		} else {
