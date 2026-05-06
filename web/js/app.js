@@ -160,6 +160,7 @@ async function initApp() {
     upload: () => showUpload(),
     sharesToggle: toggleShares,
     searchHelp: () => showSearchHelp(),
+    regenThumbnail: () => { const id = selectedMediaId(); if (id) regenThumb(id); },
     isSharesOpen: () => document.getElementById('shares-modal')?.classList.contains('open'),
     sharesNavUp: () => sharesNav(-1),
     sharesNavDown: () => sharesNav(1),
