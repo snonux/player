@@ -240,8 +240,6 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 	if len(filter.Tags) > 0 {
 		query += ` GROUP BY media.id HAVING COUNT(DISTINCT t.name) = ` + fmt.Sprintf("%d", len(filter.Tags))
 	}
-	fmt.Printf("[repo] query=%s args=%v\n", query, args)
-
 	switch filter.Sort {
 	case "duration":
 		query += " ORDER BY media.duration"
