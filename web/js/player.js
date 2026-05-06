@@ -315,6 +315,41 @@ export function seekRelative(seconds) {
   return true;
 }
 
+export function stopAndClose() {
+  const m = currentMediaElement();
+  if (m) m.pause();
+  if (currentMedia?.type === 'image') {
+    stopSlideshow();
+    resetImageZoom();
+  }
+  exitFullscreenIfNeeded();
+  const e = els();
+  e.player?.classList.remove('open', 'has-image', 'minimized');
+  e.video?.classList.add('hidden');
+  e.audio?.classList.add('hidden');
+  e.image?.classList.add('hidden');
+  e.coverArt?.classList.add('hidden');
+  e.bigPlay?.classList.add('hidden');
+  e.track?.classList.add('hidden');
+  e.timeElapsed?.classList.add('hidden');
+  e.timeTotal?.classList.add('hidden');
+  e.btnPlay?.classList.add('hidden');
+  e.btnZoomIn?.classList.add('hidden');
+  e.btnZoomOut?.classList.add('hidden');
+  e.btnSlideshow?.classList.add('hidden');
+  currentMedia = null;
+  currentMediaIndex = -1;
+  isPlaying = false;
+  stopProgressTimer();
+  updateUI(false);
+  highlightPlayingCard();
+  if (e.fill) e.fill.style.width = '0%';
+  if (e.thumb) e.thumb.style.left = '0%';
+  if (e.timeElapsed) e.timeElapsed.textContent = '0:00';
+  if (e.timeTotal) e.timeTotal.textContent = '0:00';
+  if (e.buffered) e.buffered.style.background = 'transparent';
+}
+
 export function selectAndPlay(media, index, resumeFrom = 0) {
   currentMedia = media;
   currentMediaIndex = index ?? -1;

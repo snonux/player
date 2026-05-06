@@ -1,7 +1,7 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initSelection, clearSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
-import { initPlayer, togglePlay, toggleFullscreen, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, toggleCrop, shiftCropPosition, cycleCropPosition, currentMediaId, currentMediaInfo, hasLoadedMedia, isPlaybackActive, seekRelative, seekPercent, selectAndPlay, zoomIn as playerZoomIn, zoomOut as playerZoomOut, toggleSlideshow as playerToggleSlideshow, isImageMode as playerIsImageMode } from './player.js';
+import { initPlayer, togglePlay, toggleFullscreen, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, toggleCrop, shiftCropPosition, cycleCropPosition, currentMediaId, currentMediaInfo, hasLoadedMedia, isPlaybackActive, seekRelative, seekPercent, selectAndPlay, stopAndClose, zoomIn as playerZoomIn, zoomOut as playerZoomOut, toggleSlideshow as playerToggleSlideshow, isImageMode as playerIsImageMode } from './player.js';
 import { initSearch, focusSearch, trigger as triggerSearch, parseQuery, showSearchHelp } from './search.js';
 import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
 import { initThemes } from './themes.js';
@@ -150,6 +150,7 @@ async function initApp() {
     notes: openNotesForSelected,
     tags: openTagsForSelected,
     toggleDetach: () => toggleDetach(),
+    stopAndClose: () => stopAndClose(),
     download: downloadSelected,
     help: toggleHelp,
     backspace: () => { navigateBack(); },
