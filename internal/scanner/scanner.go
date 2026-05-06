@@ -330,27 +330,9 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 
 	coverImages := s.gatherCoverImages(setPath)
 
-	// First pass: collect supported media files so we know the total and can
-	// safely close the path channel without blocking the walk.
-	var files []string
-	walkErr := s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return fmt.Errorf("walk %q: %w", path, err)
-		}
-		if d.IsDir() {
-			if strings.HasPrefix(d.Name(), ".") && path != setPath {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !mediatype.IsSupportedExt(path) {
-			return nil
-		}
-		files = append(files, path)
-		return nil
-	})
-	if walkErr != nil {
-		return fmt.Errorf("scan set %q: %w", setName, walkErr)
+	files, err := s.collectFiles(setPath)
+	if err != nil {
+		return fmt.Errorf("scan set %q: %w", setName, err)
 	}
 
 	if progress != nil {
@@ -370,54 +352,20 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 	}
 
 	var workerWg sync.WaitGroup
-
-	// Spawn worker goroutines that consume paths, probe files, and send results.
 	for i := 0; i < workers; i++ {
 		workerWg.Add(1)
 		go func() {
 			defer workerWg.Done()
-			for path := range pathChan {
-				if scanCtx.Err() != nil {
-					continue
-				}
-				result, err := s.probeFile(ctx, path, setPath, setID, setName, existing, coverImages, progress)
-				if err != nil {
-					sendErr(err)
-					return
-				}
-				if result == nil {
-					continue
-				}
-				select {
-				case resultChan <- *result:
-				case <-scanCtx.Done():
-					return
-				}
-			}
+			s.probeWorkerLoop(ctx, scanCtx, pathChan, resultChan, setPath, setID, setName, existing, coverImages, progress, sendErr)
 		}()
 	}
 
 	var newFiles int32
-
-	// Single writer goroutine serialises all SQLite inserts.
 	var writerWg sync.WaitGroup
 	writerWg.Add(1)
 	go func() {
 		defer writerWg.Done()
-		for result := range resultChan {
-			if scanCtx.Err() != nil {
-				continue
-			}
-			if _, err := s.store.CreateMedia(ctx, result.media); err != nil {
-				sendErr(fmt.Errorf("create media %q: %w", result.path, err))
-				continue
-			}
-			nf := atomic.AddInt32(&newFiles, 1)
-			if nf == 1 || nf%25 == 0 {
-				relPath, _ := filepath.Rel(setPath, result.path)
-				s.log().Info("scanner set progress", "name", setName, "new_media", nf, "latest", filepath.ToSlash(relPath))
-			}
-		}
+		s.writerLoop(ctx, scanCtx, resultChan, setName, setPath, &newFiles, sendErr)
 	}()
 
 	// Feed the worker pool.
@@ -455,6 +403,93 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 
 	s.log().Info("scanner set completed", "name", setName, "existing_media", len(existing), "new_media", newFiles)
 	return nil
+}
+
+// collectFiles walks the set and returns the absolute paths of all supported media files.
+func (s *FSScanner) collectFiles(setPath string) ([]string, error) {
+	var files []string
+	walkErr := s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("walk %q: %w", path, err)
+		}
+		if d.IsDir() {
+			if strings.HasPrefix(d.Name(), ".") && path != setPath {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !mediatype.IsSupportedExt(path) {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return files, nil
+}
+
+// probeWorkerLoop consumes file paths, probes each one, and sends the result to resultChan.
+// It stops early if scanCtx is cancelled or if sendErr reports a fatal error.
+func (s *FSScanner) probeWorkerLoop(
+	ctx context.Context,
+	scanCtx context.Context,
+	pathChan <-chan string,
+	resultChan chan<- fileResult,
+	setPath string,
+	setID int64,
+	setName string,
+	existing map[string]model.Media,
+	coverImages map[string]string,
+	progress *model.ScanProgress,
+	sendErr func(error),
+) {
+	for path := range pathChan {
+		if scanCtx.Err() != nil {
+			continue
+		}
+		result, err := s.probeFile(ctx, path, setPath, setID, setName, existing, coverImages, progress)
+		if err != nil {
+			sendErr(err)
+			return
+		}
+		if result == nil {
+			continue
+		}
+		select {
+		case resultChan <- *result:
+		case <-scanCtx.Done():
+			return
+		}
+	}
+}
+
+// writerLoop reads probed results and inserts them into the store.
+// It logs progress every 25 files and tracks the total newFiles count.
+func (s *FSScanner) writerLoop(
+	ctx context.Context,
+	scanCtx context.Context,
+	resultChan <-chan fileResult,
+	setName string,
+	setPath string,
+	newFiles *int32,
+	sendErr func(error),
+) {
+	for result := range resultChan {
+		if scanCtx.Err() != nil {
+			continue
+		}
+		if _, err := s.store.CreateMedia(ctx, result.media); err != nil {
+			sendErr(fmt.Errorf("create media %q: %w", result.path, err))
+			continue
+		}
+		nf := atomic.AddInt32(newFiles, 1)
+		if nf == 1 || nf%25 == 0 {
+			relPath, _ := filepath.Rel(setPath, result.path)
+			s.log().Info("scanner set progress", "name", setName, "new_media", nf, "latest", filepath.ToSlash(relPath))
+		}
+	}
 }
 
 func findCoverImage(filePath string, coverImages map[string]string, setPath string) string {

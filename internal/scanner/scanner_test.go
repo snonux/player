@@ -81,12 +81,30 @@ func (m *mockFS) WalkDir(root string, walkFn fs.WalkDirFunc) error {
 	if m.walkErr != nil {
 		return m.walkErr
 	}
+	var skipDirs []string
 	for _, e := range m.walkList {
-		if !strings.HasPrefix(filepath.Clean(e.path), filepath.Clean(root)) {
+		cleanRoot := filepath.Clean(root)
+		cleanPath := filepath.Clean(e.path)
+		if !strings.HasPrefix(cleanPath, cleanRoot) {
+			continue
+		}
+		skipped := false
+		for _, sd := range skipDirs {
+			if strings.HasPrefix(cleanPath, sd) {
+				skipped = true
+				break
+			}
+		}
+		if skipped {
 			continue
 		}
 		de := mockDirEntry{name: filepath.Base(e.path), isDir: e.isDir}
-		if err := walkFn(e.path, de, nil); err != nil {
+		err := walkFn(e.path, de, nil)
+		if err == filepath.SkipDir {
+			skipDirs = append(skipDirs, cleanPath)
+			continue
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -413,4 +431,74 @@ func TestFSScanner_Scan(t *testing.T) {
 	})
 }
 
+func TestFSScanner_collectFiles(t *testing.T) {
+	t.Run("collects supported media files excluding hidden directories", func(t *testing.T) {
+		mfs := &mockFS{
+			walkList: []walkEntry{
+				{path: "/music", isDir: true},
+				{path: "/music/track.mp3", isDir: false},
+				{path: "/music/cover.jpg", isDir: false},
+				{path: "/music/.hidden", isDir: true},
+				{path: "/music/.hidden/secret.mp3", isDir: false},
+			},
+		}
+		s := newTestScanner(nil, nil, nil, nil, mfs)
+		files, err := s.collectFiles("/music")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(files) != 2 {
+			t.Fatalf("expected 2 supported files, got %v", files)
+		}
+		if files[0] != "/music/track.mp3" || files[1] != "/music/cover.jpg" {
+			t.Fatalf("unexpected files: %v", files)
+		}
+	})
+
+	t.Run("skips dot directories", func(t *testing.T) {
+		mfs := &mockFS{
+			walkList: []walkEntry{
+				{path: "/music", isDir: true},
+				{path: "/music/.hidden", isDir: true},
+				{path: "/music/.hidden/secret.mp3", isDir: false},
+			},
+		}
+		s := newTestScanner(nil, nil, nil, nil, mfs)
+		files, err := s.collectFiles("/music")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(files) != 0 {
+			t.Fatalf("expected 0 files from dot dir, got %v", files)
+		}
+	})
+
+	t.Run("walk error", func(t *testing.T) {
+		mfs := &mockFS{walkErr: errors.New("walk failed")}
+		s := newTestScanner(nil, nil, nil, nil, mfs)
+		_, err := s.collectFiles("/bad")
+		if err == nil {
+			t.Fatal("expected error for walk failure")
+		}
+	})
+
+	t.Run("ignores unsupported extensions", func(t *testing.T) {
+		mfs := &mockFS{
+			walkList: []walkEntry{
+				{path: "/stuff", isDir: true},
+				{path: "/stuff/file.txt", isDir: false},
+				{path: "/stuff/notes.md", isDir: false},
+				{path: "/stuff/track.mp3", isDir: false},
+			},
+		}
+		s := newTestScanner(nil, nil, nil, nil, mfs)
+		files, err := s.collectFiles("/stuff")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(files) != 1 || files[0] != "/stuff/track.mp3" {
+			t.Fatalf("expected only mp3, got %v", files)
+		}
+	})
+}
 
