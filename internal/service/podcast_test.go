@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,7 +26,9 @@ func setupPodcastService(t *testing.T) (*podcastService, *repository.MockStore) 
 	clk := &clock.MockClock{T: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
 	store := repository.NewMockStore()
 	helper := &accessHelper{store: store}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := NewPodcastService(store, clk, mediaRoot, helper, nil, nil, 60)
+	svc.logger = logger
 	return svc, store
 }
 
@@ -686,4 +691,180 @@ func TestPodcastService_InsertPodcastEpisodes(t *testing.T) {
 	if created[0].FeedID != 99 || created[0].GUID != "g1" {
 		t.Errorf("episode mismatch: %+v", created[0])
 	}
+}
+
+func TestPodcastService_CheckFeeds_EmptyList(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	store.PodcastRepo = repository.MockPodcastRepo{
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+			return []model.PodcastFeed{}, nil
+		},
+	}
+
+	err := svc.CheckFeeds(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPodcastService_CheckFeeds_Concurrent_Ok(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	var checked []int64
+	var mu sync.Mutex
+
+	callOrder := make(chan int64, 3)
+	svc.parseFeedReader = func(r io.Reader) (*podcast.ParsedFeed, error) {
+		return &podcast.ParsedFeed{Title: "T"}, nil
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", "etag-"+r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<rss><channel><title>X</title></channel></rss>`))
+		select {
+		case callOrder <- 1:
+		default:
+		}
+	}))
+	defer server.Close()
+
+	store.PodcastRepo = repository.MockPodcastRepo{
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+			return []model.PodcastFeed{
+				{ID: 1, FeedURL: server.URL + "/1.xml"},
+				{ID: 2, FeedURL: server.URL + "/2.xml"},
+				{ID: 3, FeedURL: server.URL + "/3.xml"},
+			}, nil
+		},
+		UpdateFeedFunc: func(ctx context.Context, feed *model.PodcastFeed) error {
+			mu.Lock()
+			checked = append(checked, feed.ID)
+			mu.Unlock()
+			return nil
+		},
+	}
+
+	svc.httpClient = server.Client()
+
+	err := svc.CheckFeeds(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	mu.Lock()
+	if len(checked) != 3 {
+		t.Fatalf("expected 3 feeds checked, got %d", len(checked))
+	}
+	mu.Unlock()
+
+	// Verify we processed 3 requests concurrently by reading from channel.
+	processed := 0
+	done := time.After(100 * time.Millisecond)
+	for {
+		select {
+		case <-callOrder:
+			processed++
+			if processed == 3 {
+				return
+			}
+		case <-done:
+			t.Fatalf("expected 3 feed checks, got %d", processed)
+		}
+	}
+}
+
+func TestPodcastService_CheckFeeds_AllFeedsFail(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	store.PodcastRepo = repository.MockPodcastRepo{
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+			return []model.PodcastFeed{
+				{ID: 1, FeedURL: server.URL + "/1.xml"},
+				{ID: 2, FeedURL: server.URL + "/2.xml"},
+			}, nil
+		},
+		UpdateFeedFunc: func(ctx context.Context, feed *model.PodcastFeed) error { return nil },
+	}
+
+	svc.httpClient = server.Client()
+
+	err := svc.CheckFeeds(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPodcastService_CheckFeeds_ListError(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	boom := errors.New("boom")
+	store.PodcastRepo = repository.MockPodcastRepo{
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+			return nil, boom
+		},
+	}
+
+	err := svc.CheckFeeds(ctx)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("expected wrapped boom, got %v", err)
+	}
+}
+
+func TestPodcastService_CheckFeeds_FeedError_Continues(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	var checked []int64
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "bad") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<rss><channel><title>X</title></channel></rss>`))
+	}))
+	defer server.Close()
+
+	store.PodcastRepo = repository.MockPodcastRepo{
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+			return []model.PodcastFeed{
+				{ID: 1, FeedURL: server.URL + "/bad.xml"},
+				{ID: 2, FeedURL: server.URL + "/ok.xml"},
+			}, nil
+		},
+		UpdateFeedFunc: func(ctx context.Context, feed *model.PodcastFeed) error {
+			mu.Lock()
+			checked = append(checked, feed.ID)
+			mu.Unlock()
+			return nil
+		},
+	}
+
+	svc.httpClient = server.Client()
+
+	err := svc.CheckFeeds(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	mu.Lock()
+	if len(checked) != 1 || checked[0] != 2 {
+		t.Fatalf("expected only feed 2 ok, got %v", checked)
+	}
+	mu.Unlock()
 }

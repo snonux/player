@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"codeberg.org/snonux/player/internal/clock"
@@ -72,6 +74,7 @@ type podcastService struct {
 	thumbGen        thumb.Generator
 	httpClient      *http.Client
 	checkInterval   int // minutes
+	logger          *slog.Logger
 	parseFeed       func(string) (*podcast.ParsedFeed, error)
 	parseFeedReader func(io.Reader) (*podcast.ParsedFeed, error)
 	downloadCover   func(*http.Client, string, string) error
@@ -80,8 +83,16 @@ type podcastService struct {
 // NewPodcastService creates a PodcastService with the given dependencies.
 // checkInterval should be the number of minutes between background feed checks.
 func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator, checkInterval int) *podcastService {
+	return NewPodcastServiceWithLogger(store, clk, mediaRoot, helper, prober, thumbGen, checkInterval, slog.Default())
+}
+
+// NewPodcastServiceWithLogger creates a PodcastService with an injected logger.
+func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator, checkInterval int, logger *slog.Logger) *podcastService {
 	if checkInterval <= 0 {
 		checkInterval = 60
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 	s := &podcastService{
 		store:         store,
@@ -92,6 +103,7 @@ func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot str
 		thumbGen:      thumbGen,
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
 		checkInterval: checkInterval,
+		logger:        logger,
 	}
 	// Wire package-level helpers so tests can inject fakes.
 	s.parseFeed = podcast.ParseFeed
@@ -503,12 +515,23 @@ func (s *podcastService) CheckFeeds(ctx context.Context) error {
 		return fmt.Errorf("list feeds needing check: %w", err)
 	}
 
+	s.logger.Info("podcast feed check starting", "count", len(feeds))
+
+	var wg sync.WaitGroup
 	for _, feed := range feeds {
-		if err := s.checkFeed(ctx, feed); err != nil {
-			// Log and continue with other feeds.
-			continue
-		}
+		wg.Add(1)
+		go func(f model.PodcastFeed) {
+			defer wg.Done()
+			if err := s.checkFeed(ctx, f); err != nil {
+				s.logger.Warn("podcast feed check failed", "feed_id", f.ID, "feed_url", f.FeedURL, "err", err)
+			} else {
+				s.logger.Info("podcast feed check ok", "feed_id", f.ID, "feed_url", f.FeedURL)
+			}
+		}(feed)
 	}
+	wg.Wait()
+
+	s.logger.Info("podcast feed check finished", "count", len(feeds))
 	return nil
 }
 
