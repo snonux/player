@@ -29,6 +29,14 @@ body {
   letter-spacing: 0.04em;
   color: var(--text-primary);
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.site-header .logo-img {
+  height: 1.5rem;
+  width: auto;
+  display: block;
 }
 .site-header .spacer { flex: 1 1 auto; }
 
