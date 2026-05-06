@@ -25,6 +25,22 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	}
 }
 
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func badRequest(w http.ResponseWriter, message string) {
+	writeError(w, http.StatusBadRequest, message)
+}
+
+func notFound(w http.ResponseWriter) {
+	writeError(w, http.StatusNotFound, "not found")
+}
+
+func forbidden(w http.ResponseWriter, message string) {
+	writeError(w, http.StatusForbidden, message)
+}
+
 func readJSON(r *http.Request, dst interface{}) error {
 	if r.Body == nil {
 		return errors.New("missing body")

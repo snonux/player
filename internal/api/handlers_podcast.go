@@ -44,18 +44,18 @@ func (s *Server) handleSubscribePodcast(w http.ResponseWriter, r *http.Request) 
 		SetName string `json:"set_name"`
 	}
 	if err := readJSON(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		badRequest(w, "invalid request")
 		return
 	}
 	if req.FeedURL == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "feed_url is required"})
+		badRequest(w, "feed_url is required")
 		return
 	}
 
 	feed, err := s.podcastSvc.SubscribeFeed(r.Context(), req.FeedURL, req.SetName, userIDFromContext(r))
 	if err != nil {
 		if errors.Is(err, service.ErrForbidden) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+			forbidden(w, "access denied")
 			return
 		}
 		s.logger.Error("subscribe podcast", "err", err)
@@ -73,7 +73,7 @@ func (s *Server) handleListEpisodes(w http.ResponseWriter, r *http.Request) {
 
 	setID := pathID(r, "id")
 	if setID == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid set id"})
+		badRequest(w, "invalid set id")
 		return
 	}
 
@@ -91,11 +91,11 @@ func (s *Server) handleListEpisodes(w http.ResponseWriter, r *http.Request) {
 	episodes, err := s.podcastSvc.ListEpisodes(r.Context(), setID, userIDFromContext(r), limit, offset)
 	if err != nil {
 		if errors.Is(err, service.ErrForbidden) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+			forbidden(w, "access denied")
 			return
 		}
 		if errors.Is(err, service.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			notFound(w)
 			return
 		}
 		s.logger.Error("list episodes", "err", err)
@@ -113,18 +113,18 @@ func (s *Server) handleDownloadEpisode(w http.ResponseWriter, r *http.Request) {
 
 	episodeID := pathID(r, "episode_id")
 	if episodeID == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid episode id"})
+		badRequest(w, "invalid episode id")
 		return
 	}
 
 	media, err := s.podcastSvc.DownloadEpisode(r.Context(), episodeID, userIDFromContext(r))
 	if err != nil {
 		if errors.Is(err, service.ErrForbidden) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+			forbidden(w, "access denied")
 			return
 		}
 		if errors.Is(err, service.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			notFound(w)
 			return
 		}
 		s.logger.Error("download episode", "err", err)
@@ -142,17 +142,17 @@ func (s *Server) handleToggleComplete(w http.ResponseWriter, r *http.Request) {
 
 	episodeID := pathID(r, "episode_id")
 	if episodeID == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid episode id"})
+		badRequest(w, "invalid episode id")
 		return
 	}
 
 	if err := s.podcastSvc.ToggleEpisodeComplete(r.Context(), episodeID, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrForbidden) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+			forbidden(w, "access denied")
 			return
 		}
 		if errors.Is(err, service.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			notFound(w)
 			return
 		}
 		s.logger.Error("toggle complete", "err", err)

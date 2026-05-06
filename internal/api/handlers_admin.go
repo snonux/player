@@ -62,7 +62,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		IsAdmin  bool   `json:"is_admin"`
 	}
 	if err := readJSON(r, &req); err != nil || req.Username == "" || req.Password == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		badRequest(w, "invalid request")
 		return
 	}
 	user, err := s.adminSvc.CreateUser(r.Context(), req.Username, req.Password, req.IsAdmin)
@@ -80,7 +80,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r, "id")
 	adminUser, _ := r.Context().Value(userCtxKey).(*model.User)
 	if adminUser != nil && adminUser.ID == id {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot delete self"})
+		badRequest(w, "cannot delete self")
 		return
 	}
 	if err := s.adminSvc.DeleteUser(r.Context(), id); err != nil {
@@ -112,7 +112,7 @@ func (s *Server) handleGrantPermission(w http.ResponseWriter, r *http.Request) {
 		Role   model.Role `json:"role"`
 	}
 	if err := readJSON(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		badRequest(w, "invalid request")
 		return
 	}
 	if err := s.adminSvc.GrantPermission(r.Context(), req.SetID, req.UserID, req.Role); err != nil {
@@ -131,7 +131,7 @@ func (s *Server) handleRevokePermission(w http.ResponseWriter, r *http.Request) 
 		UserID int64 `json:"user_id"`
 	}
 	if err := readJSON(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		badRequest(w, "invalid request")
 		return
 	}
 	if err := s.adminSvc.RevokePermission(r.Context(), req.SetID, req.UserID); err != nil {

@@ -28,18 +28,18 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 	var req bootstrapRequest
 	if err := readJSON(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		badRequest(w, "invalid request body")
 		return
 	}
 	if req.Username == "" || req.Password == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username and password required"})
+		badRequest(w, "username and password required")
 		return
 	}
 
 	res, err := s.authSvc.Bootstrap(r.Context(), req.Username, req.Password)
 	if err != nil {
 		if errors.Is(err, service.ErrAlreadyBootstrapped) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "bootstrap already complete"})
+			forbidden(w, "bootstrap already complete")
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
@@ -56,11 +56,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	var req loginRequest
 	if err := readJSON(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		badRequest(w, "invalid request body")
 		return
 	}
 	if req.Username == "" || req.Password == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username and password required"})
+		badRequest(w, "username and password required")
 		return
 	}
 

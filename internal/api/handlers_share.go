@@ -22,7 +22,7 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 	}
 	id := pathID(r, "id")
 	if id == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
+		badRequest(w, "invalid media id")
 		return
 	}
 	expiresAt := time.Now().Add(time.Duration(s.cfg.ShareDefaultExpiryDays) * 24 * time.Hour)
@@ -40,7 +40,7 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 	}
 	id := pathID(r, "id")
 	if id == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
+		badRequest(w, "invalid media id")
 		return
 	}
 	shares, err := s.shareSvc.ListShares(r.Context(), id, userIDFromContext(r))
@@ -57,7 +57,7 @@ func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
 	}
 	token := r.PathValue("token")
 	if token == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "token required"})
+		badRequest(w, "token required")
 		return
 	}
 	if err := s.shareSvc.RevokeShare(r.Context(), token, userIDFromContext(r)); err != nil {

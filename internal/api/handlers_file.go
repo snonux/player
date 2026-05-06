@@ -53,24 +53,24 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	id := pathID(r, "id")
 	if id == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
+		badRequest(w, "invalid media id")
 		return
 	}
 	res, err := s.browseSvc.DownloadMedia(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		if errors.Is(err, service.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			notFound(w)
 			return
 		}
 		if errors.Is(err, service.ErrForbidden) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			forbidden(w, "forbidden")
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	if res == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		notFound(w)
 		return
 	}
 	s.serveFileResult(w, r, res, true)
@@ -90,16 +90,16 @@ func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
 	}
 	id := pathID(r, "id")
 	if id == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
+		badRequest(w, "invalid media id")
 		return
 	}
 	if err := s.writeSvc.RegenerateThumbnail(r.Context(), id, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			notFound(w)
 			return
 		}
 		if errors.Is(err, service.ErrForbidden) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			forbidden(w, "forbidden")
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
