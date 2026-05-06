@@ -1,7 +1,8 @@
 import { API } from '../api.js';
 import { state, setMedia } from '../state.js';
 import { clearSelection, selectByElement } from '../selection.js';
-import { escapeHtml, fmtDur, fmtSize, toast } from '../dom.js';
+import { fmtSize } from '../dom.js';
+import { escapeHtml, fmtDur, toast } from '../utils.js';
 
 let callbacks = {};
 

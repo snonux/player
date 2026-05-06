@@ -39,7 +39,8 @@ import {
   zoomOut as lightboxZoomOut,
   toggleSlideshow as lightboxToggleSlideshow,
 } from './lightbox.js';
-import { closeAllModals, toast } from './dom.js';
+import { closeAllModals } from './dom.js';
+import { toast } from './utils.js';
 import { showAdmin } from './views/admin-status.js';
 import { initHelp, showSearch, toggleHelp, toggleSidebar } from './views/help.js';
 import {

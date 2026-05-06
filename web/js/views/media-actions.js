@@ -2,7 +2,7 @@ import { API } from '../api.js';
 import { currentElement } from '../selection.js';
 import { currentMediaId } from '../player.js';
 import { open as openNotes } from '../notes.js';
-import { toast } from '../dom.js';
+import { toast } from '../utils.js';
 
 export async function shareSelected() {
   const el = currentElement();

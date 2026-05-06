@@ -1,6 +1,7 @@
 import { API } from '../api.js';
 import { state } from '../state.js';
-import { escapeHtml, fmtDate, toast } from '../dom.js';
+import { fmtDate } from '../dom.js';
+import { escapeHtml, toast } from '../utils.js';
 
 export function initShares() {
   const modal = document.getElementById('shares-modal');

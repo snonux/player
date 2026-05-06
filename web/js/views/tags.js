@@ -1,6 +1,6 @@
 import { API } from '../api.js';
 import { currentElement } from '../selection.js';
-import { escapeHtml, toast } from '../dom.js';
+import { escapeHtml, toast } from '../utils.js';
 
 let tagsCurrentMediaId = null;
 

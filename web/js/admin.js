@@ -1,4 +1,5 @@
 import { API } from './api.js';
+import { escapeHtml, toast } from './utils.js';
 
 export function initAdmin() {
   const btn = document.getElementById('admin-toggle');
@@ -54,16 +55,12 @@ async function refreshAdmin() {
   } catch (err) { toast(err.message, 'error'); }
 }
 
-function esc(s) {
-  return (s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-}
-
 function renderUsers(users) {
   const el = document.getElementById('admin-users');
   if (!el) return;
   el.innerHTML = `<ul class="admin-list">
     ${users.map((u) => `<li class="${u.is_admin ? 'is-admin' : ''}">
-      <span>${esc(u.username)}${u.is_admin ? ' <span class="badge">admin</span>' : ''}</span>
+      <span>${escapeHtml(u.username)}${u.is_admin ? ' <span class="badge">admin</span>' : ''}</span>
       <button class="btn btn-danger btn-sm" data-id="${u.id}">Remove</button>
     </li>`).join('')}
   </ul>`;
@@ -102,12 +99,12 @@ function renderPermissions(data) {
 
   let html = '<table class="admin-table"><thead><tr><th>Set</th>';
   data.users.forEach((u) => {
-    html += `<th>${esc(u.username)}</th>`;
+    html += `<th>${escapeHtml(u.username)}</th>`;
   });
   html += '</tr></thead><tbody>';
 
   data.sets.forEach((s) => {
-    html += `<tr><td>${esc(s.name)}</td>`;
+    html += `<tr><td>${escapeHtml(s.name)}</td>`;
     data.users.forEach((u) => {
       const role = roleMap[s.id]?.[u.id] || '';
       const selectId = `perm-${s.id}-${u.id}`;
@@ -152,8 +149,8 @@ function renderTrash(data) {
   }
   el.innerHTML = `<h4 class="text-90">Trash</h4><ul class="admin-list">
     ${data.map((m) => `<li>
-      <span>${esc(m.file_name)}</span>
-      <span class="text-muted text-75">${esc(m.deleted_at || '')}</span>
+      <span>${escapeHtml(m.file_name)}</span>
+      <span class="text-muted text-75">${escapeHtml(m.deleted_at || '')}</span>
       <button class="btn btn-primary btn-sm" data-id="${m.id}">Restore</button>
     </li>`).join('')}
   </ul>`;
@@ -168,12 +165,4 @@ function renderTrash(data) {
       } catch (err) { toast(err.message, 'error'); }
     });
   });
-}
-
-function toast(msg, type = 'info') {
-  const t = document.getElementById('toast');
-  if (!t) return;
-  t.textContent = msg;
-  t.className = 'toast show ' + type;
-  setTimeout(() => t.classList.remove('show'), 2800);
 }

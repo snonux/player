@@ -1,5 +1,6 @@
 // podcastUI.js — Podcast feed manager + episode rendering.
 import { API } from './api.js';
+import { escapeHtml, fmtDur, toast } from './utils.js';
 
 export function initPodcasts() {
   const modal = document.getElementById('podcast-modal');
@@ -88,7 +89,7 @@ export function renderPodcastEpisodes(grid, episodes) {
 function renderEpisodeHtml(ep) {
   const completed = ep.is_completed;
   const dateStr = ep.published_at ? new Date(ep.published_at).toLocaleDateString() : '';
-  const duration = ep.duration_seconds ? fmtDuration(ep.duration_seconds) : '';
+  const duration = ep.duration_seconds ? fmtDur(ep.duration_seconds) : '';
   return `
     <div class="thumb-wrap">
       <span class="placeholder">🎙️</span>
@@ -103,24 +104,4 @@ function renderEpisodeHtml(ep) {
       <div class="subtitle">${escapeHtml(ep.description || 'Podcast episode')}</div>
     </div>
   `;
-}
-
-function fmtDuration(s) {
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) return `${h}h ${m % 60}m`;
-  return `${m}m`;
-}
-
-function escapeHtml(str) {
-  if (!str) return '';
-  return str.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-}
-
-function toast(msg, type = 'info') {
-  const t = document.getElementById('toast');
-  if (!t) return;
-  t.textContent = msg;
-  t.className = 'toast show ' + type;
-  setTimeout(() => t.classList.remove('show'), 2800);
 }

@@ -1,5 +1,6 @@
 import { API } from '../api.js';
-import { escapeHtml, fmtDateTime, fmtDur, fmtSize, toast } from '../dom.js';
+import { fmtDateTime, fmtSize } from '../dom.js';
+import { escapeHtml, fmtDur, toast } from '../utils.js';
 import { selectedMediaId } from './media-actions.js';
 
 export function initMediaInfo() {

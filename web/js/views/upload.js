@@ -1,6 +1,6 @@
 import { API } from '../api.js';
 import { state } from '../state.js';
-import { toast } from '../dom.js';
+import { toast } from '../utils.js';
 
 let loadMediaCallback = () => {};
 

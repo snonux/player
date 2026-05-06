@@ -175,7 +175,3 @@ function fmtSize(bytes) {
   if (mb < 1024) return Math.round(mb * 10) / 10 + ' MB';
   return Math.round((mb / 1024) * 10) / 10 + ' GB';
 }
-
-function escapeHtml(s) {
-  return (s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
