@@ -27,9 +27,30 @@ func setupPodcastService(t *testing.T) (*podcastService, *repository.MockStore) 
 	store := repository.NewMockStore()
 	helper := &accessHelper{store: store}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := NewPodcastService(store, clk, mediaRoot, helper, nil, nil, 60)
+	svc := NewPodcastService(store, clk, mediaRoot, helper, nil, nil, &http.Client{Timeout: DefaultHTTPClientTimeout}, 60)
 	svc.logger = logger
 	return svc, store
+}
+
+func TestPodcastService_CustomHTTPClient(t *testing.T) {
+	custom := &http.Client{Timeout: 5 * time.Second}
+	svc := NewPodcastServiceWithLogger(repository.NewMockStore(), &clock.MockClock{T: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}, t.TempDir(), nil, nil, nil, custom, 60, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if svc.httpClient != custom {
+		t.Fatal("expected injected httpClient to be stored")
+	}
+}
+
+func TestPodcastService_NilHTTPClient_Defaults(t *testing.T) {
+	store := repository.NewMockStore()
+	clk := &clock.MockClock{T: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewPodcastServiceWithLogger(store, clk, t.TempDir(), nil, nil, nil, nil, 60, logger)
+	if svc.httpClient == nil {
+		t.Fatal("expected non-nil httpClient when nil passed to constructor")
+	}
+	if svc.httpClient.Timeout != DefaultHTTPClientTimeout {
+		t.Fatalf("expected default timeout %v, got %v", DefaultHTTPClientTimeout, svc.httpClient.Timeout)
+	}
 }
 
 func TestPodcastService_SubscribeFeed_Ok(t *testing.T) {

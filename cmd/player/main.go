@@ -96,7 +96,7 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 	authSvc := service.NewAuthService(store, clk, hasher, sm)
 
 	helper := service.NewAccessHelper(store)
-	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, cfg.PodcastCheckMinutes, logger)
+	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger)
 
 	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger)
 

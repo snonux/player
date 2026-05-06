@@ -85,7 +85,7 @@ func setupPodcastE2E(t *testing.T) (srv *Server, store repository.Store, sm *aut
 	thumbGen := &thumb.MockGenerator{}
 
 	mediaSvc := service.NewMediaService(dbStore, clk, mediaRoot, thumbGen, prober)
-	podcastSvc := service.NewPodcastService(dbStore, clk, mediaRoot, helper, prober, thumbGen, 60)
+	podcastSvc := service.NewPodcastService(dbStore, clk, mediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, 60)
 
 	cfg := &internal.Config{
 		SessionTimeoutHours: 24,

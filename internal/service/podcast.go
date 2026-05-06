@@ -80,19 +80,25 @@ type podcastService struct {
 	downloadCover   func(*http.Client, string, string) error
 }
 
+// DefaultHTTPClientTimeout is the fallback timeout used when no http.Client is injected.
+const DefaultHTTPClientTimeout = 30 * time.Second
+
 // NewPodcastService creates a PodcastService with the given dependencies.
 // checkInterval should be the number of minutes between background feed checks.
-func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator, checkInterval int) *podcastService {
-	return NewPodcastServiceWithLogger(store, clk, mediaRoot, helper, prober, thumbGen, checkInterval, slog.Default())
+func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator, httpClient *http.Client, checkInterval int) *podcastService {
+	return NewPodcastServiceWithLogger(store, clk, mediaRoot, helper, prober, thumbGen, httpClient, checkInterval, slog.Default())
 }
 
 // NewPodcastServiceWithLogger creates a PodcastService with an injected logger.
-func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator, checkInterval int, logger *slog.Logger) *podcastService {
+func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator, httpClient *http.Client, checkInterval int, logger *slog.Logger) *podcastService {
 	if checkInterval <= 0 {
 		checkInterval = 60
 	}
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: DefaultHTTPClientTimeout}
 	}
 	s := &podcastService{
 		store:         store,
@@ -101,7 +107,7 @@ func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, med
 		helper:        helper,
 		prober:        prober,
 		thumbGen:      thumbGen,
-		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		httpClient:    httpClient,
 		checkInterval: checkInterval,
 		logger:        logger,
 	}
