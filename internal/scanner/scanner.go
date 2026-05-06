@@ -202,7 +202,16 @@ func (s *FSScanner) buildThumbnailPath(ctx context.Context, path, setPath string
 		if ext == ".svg" {
 			return path, nil
 		}
-		return s.thumbnailForImage(ctx, path, setPath)
+		thumbPath, err := s.thumbnailForImage(ctx, path, setPath)
+		if err != nil {
+			return "", err
+		}
+		if thumbPath != "" {
+			if _, statErr := s.fs.Stat(thumbPath); statErr == nil {
+				return thumbPath, nil
+			}
+		}
+		return path, nil
 	}
 	return "", nil
 }

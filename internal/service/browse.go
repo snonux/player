@@ -183,14 +183,26 @@ func (s *browseService) GetThumbnail(ctx context.Context, mediaID, userID int64)
 		return nil, errors.New("thumbnail not found")
 	}
 	info, err := os.Stat(media.ThumbnailPath)
-	if err != nil {
-		return nil, fmt.Errorf("stat thumbnail: %w", err)
+	if err == nil {
+		return &FileResult{
+			Path:     media.ThumbnailPath,
+			FileName: filepath.Base(media.ThumbnailPath),
+			FileSize: info.Size(),
+		}, nil
 	}
-	return &FileResult{
-		Path:     media.ThumbnailPath,
-		FileName: filepath.Base(media.ThumbnailPath),
-		FileSize: info.Size(),
-	}, nil
+	// If the generated thumbnail is missing, fall back to the original file
+	// for image media so that cover.jpg and similar files still render.
+	if media.Type == model.MediaTypeImage {
+		info, err = os.Stat(media.AbsPath)
+		if err == nil {
+			return &FileResult{
+				Path:     media.AbsPath,
+				FileName: filepath.Base(media.AbsPath),
+				FileSize: info.Size(),
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("stat thumbnail: %w", err)
 }
 
 func (s *browseService) RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error {
