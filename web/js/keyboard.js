@@ -135,6 +135,24 @@ export function initKeyboard(handlers) {
 
     if (e.ctrlKey || e.metaKey || e.altKey) return; // don't intercept browser shortcuts
 
+    if (e.shiftKey) {
+      switch (e.key) {
+        case 'ArrowUp':
+        case 'ArrowDown':
+        case 'ArrowLeft':
+        case 'ArrowRight': {
+          const dx = e.key === 'ArrowLeft' ? -10 : e.key === 'ArrowRight' ? 10 : 0;
+          const dy = e.key === 'ArrowUp' ? -10 : e.key === 'ArrowDown' ? 10 : 0;
+          const acted = handlers.shiftCropPosition?.(dx, dy);
+          if (acted) {
+            e.preventDefault();
+            return;
+          }
+          break;
+        }
+      }
+    }
+
     if (e.shiftKey && e.code === 'KeyN') {
       e.preventDefault();
       handlers.nextTrack?.(e);
@@ -235,6 +253,10 @@ export function initKeyboard(handlers) {
       case 'C': handlers.toggleMinimize?.(e); break;
       case 'f': handlers.fullscreen?.(e); break;
       case 'c': handlers.toggleCrop?.(e); break;
+      case 'x':
+        e.preventDefault();
+        handlers.cycleCropPosition?.(e);
+        break;
       case 'Escape': handlers.escape?.(e); break;
       case 'Backspace': handlers.backspace?.(e); break;
       case 'r': handlers.shuffle?.(e); break;

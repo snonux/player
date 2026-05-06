@@ -130,6 +130,7 @@
 
 .player.crop-mode video {
   object-fit: fill;
+  object-position: var(--crop-x, 50%) var(--crop-y, 50%);
 }
 
 .crop-indicator {

@@ -22,6 +22,16 @@ let panStart = { x: 0, y: 0 };
 let slideshowTimer = null;
 let slideshowPausedUntil = 0;
 let cropMode = false;
+let cropPositionX = 50;
+let cropPositionY = 50;
+const CROP_PRESETS = [
+  { x: 50, y: 50, label: 'C' },
+  { x: 50, y: 0, label: 'T' },
+  { x: 50, y: 100, label: 'B' },
+  { x: 0, y: 50, label: 'L' },
+  { x: 100, y: 50, label: 'R' },
+];
+let cropPresetIndex = 0;
 
 function currentMediaElement() {
   const e = els();
@@ -158,7 +168,7 @@ export function initPlayer(options = {}) {
     if (!document.fullscreenElement) {
       p.classList.remove('crop-mode');
       cropMode = false;
-      if (e.cropIndicator) e.cropIndicator.classList.add('hidden');
+      resetCropPosition();
     }
   });
 
@@ -563,8 +573,7 @@ export function exitFullscreenIfNeeded() {
     const p = els().player;
     if (p) p.classList.remove('is-fullscreen', 'crop-mode');
     cropMode = false;
-    const ind = els().cropIndicator;
-    if (ind) ind.classList.add('hidden');
+    resetCropPosition();
   }
 }
 
@@ -574,7 +583,62 @@ export function toggleCrop() {
   if (!document.fullscreenElement) return;
   cropMode = !cropMode;
   e.player.classList.toggle('crop-mode', cropMode);
-  if (e.cropIndicator) e.cropIndicator.classList.toggle('hidden', !cropMode);
+  if (!cropMode) {
+    resetCropPosition();
+  } else {
+    applyCropPosition();
+  }
+}
+
+function applyCropPosition() {
+  const e = els();
+  if (!e.player) return;
+  e.player.style.setProperty('--crop-x', cropPositionX + '%');
+  e.player.style.setProperty('--crop-y', cropPositionY + '%');
+  updateCropIndicator();
+}
+
+function updateCropIndicator() {
+  const e = els();
+  if (!e.cropIndicator) return;
+  if (!cropMode) {
+    e.cropIndicator.classList.add('hidden');
+    return;
+  }
+  const snap = 5;
+  let label = '';
+  if (Math.abs(cropPositionX - 50) <= snap && Math.abs(cropPositionY - 50) <= snap) label = 'C';
+  else if (Math.abs(cropPositionX - 50) <= snap && cropPositionY <= snap) label = 'T';
+  else if (Math.abs(cropPositionX - 50) <= snap && cropPositionY >= 95) label = 'B';
+  else if (cropPositionX <= snap && Math.abs(cropPositionY - 50) <= snap) label = 'L';
+  else if (cropPositionX >= 95 && Math.abs(cropPositionY - 50) <= snap) label = 'R';
+  else label = Math.round(cropPositionX) + ',' + Math.round(cropPositionY);
+  e.cropIndicator.textContent = label;
+  e.cropIndicator.classList.remove('hidden');
+}
+
+function resetCropPosition() {
+  cropPositionX = 50;
+  cropPositionY = 50;
+  cropPresetIndex = 0;
+  applyCropPosition();
+}
+
+export function shiftCropPosition(dx, dy) {
+  if (!cropMode) return false;
+  cropPositionX = Math.max(0, Math.min(100, cropPositionX + dx));
+  cropPositionY = Math.max(0, Math.min(100, cropPositionY + dy));
+  applyCropPosition();
+  return true;
+}
+
+export function cycleCropPosition() {
+  if (!cropMode) return;
+  cropPresetIndex = (cropPresetIndex + 1) % CROP_PRESETS.length;
+  const preset = CROP_PRESETS[cropPresetIndex];
+  cropPositionX = preset.x;
+  cropPositionY = preset.y;
+  applyCropPosition();
 }
 
 function startProgressTimer() {
