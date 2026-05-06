@@ -7,7 +7,10 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/mediatype"
@@ -31,6 +34,7 @@ type FSScanner struct {
 	mediaRoot string
 	fs        FS
 	logger    *slog.Logger
+	workers   int
 }
 
 // NewFSScanner creates a filesystem scanner with injected dependencies.
@@ -51,6 +55,7 @@ func NewFSScannerWithLogger(store repository.ScannerStore, prober probe.Prober, 
 		mediaRoot: mediaRoot,
 		fs:        osFS{},
 		logger:    logger,
+		workers:   runtime.NumCPU(),
 	}
 }
 
@@ -216,38 +221,47 @@ func (s *FSScanner) buildThumbnailPath(ctx context.Context, path, setPath string
 	return "", nil
 }
 
-// processNewFile probes, thumbnails, and persists a single new media file.
-func (s *FSScanner) processNewFile(ctx context.Context, path, setPath string, setID int64, setName string, existing map[string]model.Media, coverImages map[string]string, progress *model.ScanProgress) error {
+// fileResult carries a successfully probed media record back to the writer.
+type fileResult struct {
+	media *model.Media
+	path  string // absolute path for logging
+}
+
+// probeFile probes a single file and builds a media record.
+// It returns nil when the file already exists or is unprobeable.
+func (s *FSScanner) probeFile(ctx context.Context, path, setPath string, setID int64, setName string, existing map[string]model.Media, coverImages map[string]string, progress *model.ScanProgress) (*fileResult, error) {
 	relPath, err := filepath.Rel(setPath, path)
 	if err != nil {
-		return fmt.Errorf("rel path for %q: %w", path, err)
+		return nil, fmt.Errorf("rel path for %q: %w", path, err)
 	}
 	relPath = filepath.ToSlash(relPath)
-	_, alreadyExists := existing[relPath]
-	s.log().Debug("scanner file checked", "set", setName, "path", relPath, "existing", alreadyExists)
+
 	if progress != nil {
 		progress.IncrementFile()
 	}
+
+	_, alreadyExists := existing[relPath]
+	s.log().Debug("scanner file checked", "set", setName, "path", relPath, "existing", alreadyExists)
 	if alreadyExists {
-		return nil
+		return nil, nil
 	}
 
 	info, err := s.fs.Stat(path)
 	if err != nil {
-		return fmt.Errorf("stat %q: %w", path, err)
+		return nil, fmt.Errorf("stat %q: %w", path, err)
 	}
 
 	meta, err := s.prober.Probe(ctx, path)
 	if err != nil {
 		s.log().Warn("scanner skipping unprobeable file", "path", path, "err", err)
-		return nil
+		return nil, nil
 	}
 	meta.FileSizeBytes = info.Size()
 
 	mediaType := mediatype.TypeForExt(path)
 	thumbnailPath, err := s.buildThumbnailPath(ctx, path, setPath, mediaType, coverImages, meta)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	media := &model.Media{
@@ -274,10 +288,7 @@ func (s *FSScanner) processNewFile(ctx context.Context, path, setPath string, se
 		CreatedAt:       s.clock.Now(),
 	}
 
-	if _, err := s.store.CreateMedia(ctx, media); err != nil {
-		return fmt.Errorf("create media %q: %w", path, err)
-	}
-	return nil
+	return &fileResult{media: media, path: path}, nil
 }
 
 // updateAudioThumbnails patches existing audio tracks when a new cover image appears.
@@ -295,7 +306,13 @@ func (s *FSScanner) updateAudioThumbnails(ctx context.Context, mediaList []model
 	}
 }
 
+// scanSet scans a single set using a pool of workers for probing and a single
+// writer goroutine for SQLite inserts.
 func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress *model.ScanProgress) error {
+	workers := s.workers
+	if workers <= 0 {
+		workers = 1
+	}
 	setID, setName, err := s.ensureSet(ctx, root, setPath)
 	if err != nil {
 		return err
@@ -313,7 +330,9 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 
 	coverImages := s.gatherCoverImages(setPath)
 
-	newFiles := 0
+	// First pass: collect supported media files so we know the total and can
+	// safely close the path channel without blocking the walk.
+	var files []string
 	walkErr := s.fs.WalkDir(setPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("walk %q: %w", path, err)
@@ -327,18 +346,108 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		if !mediatype.IsSupportedExt(path) {
 			return nil
 		}
-		if err := s.processNewFile(ctx, path, setPath, setID, setName, existing, coverImages, progress); err != nil {
-			return err
-		}
-		newFiles++
-		if newFiles == 1 || newFiles%25 == 0 {
-			relPath, _ := filepath.Rel(setPath, path)
-			s.log().Info("scanner set progress", "name", setName, "new_media", newFiles, "latest", filepath.ToSlash(relPath))
-		}
+		files = append(files, path)
 		return nil
 	})
 	if walkErr != nil {
 		return fmt.Errorf("scan set %q: %w", setName, walkErr)
+	}
+
+	if progress != nil {
+		progress.SetFilesTotal(len(files))
+	}
+
+	pathChan := make(chan string, len(files))
+	resultChan := make(chan fileResult, s.workers)
+
+	scanCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errChan := make(chan error, 1)
+	var errOnce sync.Once
+	sendErr := func(err error) {
+		errOnce.Do(func() { errChan <- err; cancel() })
+	}
+
+	var workerWg sync.WaitGroup
+
+	// Spawn worker goroutines that consume paths, probe files, and send results.
+	for i := 0; i < workers; i++ {
+		workerWg.Add(1)
+		go func() {
+			defer workerWg.Done()
+			for path := range pathChan {
+				if scanCtx.Err() != nil {
+					continue
+				}
+				result, err := s.probeFile(ctx, path, setPath, setID, setName, existing, coverImages, progress)
+				if err != nil {
+					sendErr(err)
+					return
+				}
+				if result == nil {
+					continue
+				}
+				select {
+				case resultChan <- *result:
+				case <-scanCtx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	var newFiles int32
+
+	// Single writer goroutine serialises all SQLite inserts.
+	var writerWg sync.WaitGroup
+	writerWg.Add(1)
+	go func() {
+		defer writerWg.Done()
+		for result := range resultChan {
+			if scanCtx.Err() != nil {
+				continue
+			}
+			if _, err := s.store.CreateMedia(ctx, result.media); err != nil {
+				sendErr(fmt.Errorf("create media %q: %w", result.path, err))
+				continue
+			}
+			nf := atomic.AddInt32(&newFiles, 1)
+			if nf == 1 || nf%25 == 0 {
+				relPath, _ := filepath.Rel(setPath, result.path)
+				s.log().Info("scanner set progress", "name", setName, "new_media", nf, "latest", filepath.ToSlash(relPath))
+			}
+		}
+	}()
+
+	// Feed the worker pool.
+	for _, path := range files {
+		if scanCtx.Err() != nil {
+			break
+		}
+		select {
+		case pathChan <- path:
+		case <-scanCtx.Done():
+			break
+		}
+	}
+	close(pathChan)
+
+	// Wait for workers to finish, then close the result channel so the writer exits.
+	workerWg.Wait()
+	close(resultChan)
+
+	// Wait for the writer to drain all results.
+	writerWg.Wait()
+
+	var firstErr error
+	select {
+	case firstErr = <-errChan:
+	default:
+	}
+
+	if firstErr != nil {
+		return fmt.Errorf("scan set %q: %w", setName, firstErr)
 	}
 
 	mediaList, _ := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
