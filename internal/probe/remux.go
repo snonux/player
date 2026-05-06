@@ -2,6 +2,7 @@ package probe
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -47,15 +48,31 @@ func (f *FFRemuxer) Remux(ctx context.Context, inputPath string, w io.Writer) er
 		return fmt.Errorf("remux stdout pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
+		if isContextError(err) {
+			return nil
+		}
 		return fmt.Errorf("remux start: %w", err)
 	}
-	if _, err := io.Copy(w, stdout); err != nil && ctx.Err() == nil {
-		slog.Error("copy remuxed media", "file", inputPath, "err", err)
+	var firstErr error
+	if _, err := io.Copy(w, stdout); err != nil {
+		if !isContextError(err) {
+			slog.Error("copy remuxed media", "file", inputPath, "err", err)
+			firstErr = fmt.Errorf("copy remuxed media: %w", err)
+		}
 	}
-	if err := cmd.Wait(); err != nil && ctx.Err() == nil {
-		return fmt.Errorf("remux wait: %w", err)
+	if err := cmd.Wait(); err != nil {
+		if !isContextError(err) && firstErr == nil {
+			firstErr = fmt.Errorf("remux wait: %w", err)
+		}
+	}
+	if firstErr != nil {
+		return firstErr
 	}
 	return nil
+}
+
+func isContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // LooksLikeMPEGTS inspects the first bytes of a file for MPEG-TS sync
