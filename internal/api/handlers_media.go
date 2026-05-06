@@ -12,6 +12,8 @@ import (
 	"codeberg.org/snonux/player/internal/service"
 )
 
+const multipartFormMemoryLimit = 32 << 20
+
 // ------------------------------------------------------------------
 // Sets
 // ------------------------------------------------------------------
@@ -114,7 +116,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	maxBytes := int64(s.cfg.MaxUploadSizeMB) << 20
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-	if err := r.ParseMultipartForm(maxBytes); err != nil {
+	if err := r.ParseMultipartForm(multipartFormMemoryLimit); err != nil {
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) {
 			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "file too large"})
@@ -123,6 +125,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid multipart form")
 		return
 	}
+	defer r.MultipartForm.RemoveAll()
 
 	file, fh, err := r.FormFile("file")
 	if err != nil {

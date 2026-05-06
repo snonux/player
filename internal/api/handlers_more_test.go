@@ -492,6 +492,69 @@ func TestServer_Upload(t *testing.T) {
 	}
 }
 
+func TestServer_UploadLargeFileUsesTempFile(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24, MaxUploadSizeMB: 64}
+
+	var called bool
+	ms := &service.MockMediaService{
+		UploadMediaFunc: func(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error) {
+			called = true
+			if setID != 1 || userID != 1 {
+				t.Fatalf("unexpected ids: set=%d user=%d", setID, userID)
+			}
+			if filename != "large.mp4" {
+				t.Fatalf("unexpected filename %q", filename)
+			}
+			if size != int64(multipartFormMemoryLimit)+1 {
+				t.Fatalf("unexpected size %d", size)
+			}
+			if _, ok := data.(*os.File); !ok {
+				t.Fatalf("expected multipart file to spill to temp file, got %T", data)
+			}
+			return &model.Media{ID: 1, FileName: filename}, nil
+		},
+	}
+	srv := newTestServer(t, store, nil, sm, cfg, ms, ms, ms, ms, ms, ms, nil, nil, nil, nil)
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, err := w.CreateFormFile("file", "large.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := bytes.Repeat([]byte{1}, 1024*1024)
+	remaining := int64(multipartFormMemoryLimit) + 1
+	for remaining > 0 {
+		n := int64(len(chunk))
+		if remaining < n {
+			n = remaining
+		}
+		if _, err := part.Write(chunk[:n]); err != nil {
+			t.Fatal(err)
+		}
+		remaining -= n
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sets/1/upload", &buf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+	if !called {
+		t.Fatal("expected upload service to be called")
+	}
+}
+
 // ------------------------------------------------------------------
 // Media detail, favorite, tags
 // ------------------------------------------------------------------
