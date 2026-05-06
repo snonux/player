@@ -64,24 +64,26 @@ type PodcastServiceStore interface {
 // ------------------------------------------------------------------
 
 type podcastService struct {
-	store         PodcastServiceStore
-	clock         clock.Clock
-	mediaRoot     string
-	helper        *accessHelper
-	prober        probe.Prober
-	thumbGen      thumb.Generator
-	httpClient    *http.Client
-	checkInterval int // minutes
+	store           PodcastServiceStore
+	clock           clock.Clock
+	mediaRoot       string
+	helper          *accessHelper
+	prober          probe.Prober
+	thumbGen        thumb.Generator
+	httpClient      *http.Client
+	checkInterval   int // minutes
+	parseFeed       func(string) (*podcast.ParsedFeed, error)
+	parseFeedReader func(io.Reader) (*podcast.ParsedFeed, error)
+	downloadCover   func(*http.Client, string, string) error
 }
 
-// NewPodcastService creates a PodcastService with the given dependencies.
 // NewPodcastService creates a PodcastService with the given dependencies.
 // checkInterval should be the number of minutes between background feed checks.
 func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator, checkInterval int) *podcastService {
 	if checkInterval <= 0 {
 		checkInterval = 60
 	}
-	return &podcastService{
+	s := &podcastService{
 		store:         store,
 		clock:         clk,
 		mediaRoot:     mediaRoot,
@@ -91,6 +93,11 @@ func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot str
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
 		checkInterval: checkInterval,
 	}
+	// Wire package-level helpers so tests can inject fakes.
+	s.parseFeed = podcast.ParseFeed
+	s.parseFeedReader = podcast.ParseFeedReader
+	s.downloadCover = podcast.DownloadCoverImage
+	return s
 }
 
 // ------------------------------------------------------------------
@@ -98,60 +105,95 @@ func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot str
 // ------------------------------------------------------------------
 
 func (s *podcastService) SubscribeFeed(ctx context.Context, feedURL, setName string, userID int64) (*model.PodcastFeed, error) {
-	// Only admins can create podcast sets.
-	user, err := s.store.GetUserByID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("get user: %w", err)
-	}
-	if user == nil || !user.IsAdmin {
-		return nil, ErrForbidden
+	if err := s.verifyAdmin(ctx, userID); err != nil {
+		return nil, err
 	}
 
-	// Parse feed to validate URL and extract metadata.
-	parsed, err := podcast.ParseFeed(feedURL)
+	parsed, err := s.parseFeed(feedURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse feed: %w", err)
 	}
 
-	// Sanitize set name for filesystem.
+	safeName, setPath := s.resolveSetPath(setName, parsed.Title)
+
+	set, err := s.createPodcastSet(ctx, parsed.Title, safeName, setPath, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	feed, err := s.createPodcastFeed(ctx, parsed, set.ID, feedURL, setPath)
+	if err != nil {
+		s.rollbackSet(ctx, set.ID, setPath)
+		return nil, err
+	}
+
+	s.downloadCover(s.httpClient, parsed.ImageURL, setPath)
+	s.insertPodcastEpisodes(ctx, parsed, feed.ID)
+
+	now := s.clock.Now()
+	feed.LastCheckedAt = &now
+	_ = s.store.UpdateFeed(ctx, feed)
+
+	return feed, nil
+}
+
+func (s *podcastService) verifyAdmin(ctx context.Context, userID int64) error {
+	user, err := s.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+	if user == nil || !user.IsAdmin {
+		return ErrForbidden
+	}
+	return nil
+}
+
+func (s *podcastService) resolveSetPath(setName, fallbackTitle string) (string, string) {
 	safeName := sanitizeSetName(setName)
 	if safeName == "" {
-		safeName = sanitizeSetName(parsed.Title)
+		safeName = sanitizeSetName(fallbackTitle)
 	}
 	if safeName == "" {
 		safeName = "podcast"
 	}
-	setPath := filepath.Join(s.mediaRoot, safeName)
+	return safeName, filepath.Join(s.mediaRoot, safeName)
+}
 
-	// Create folder on disk.
+func (s *podcastService) createPodcastSet(ctx context.Context, title, safeName, setPath string, userID int64) (*model.Set, error) {
+	// Create the directory first so we can clean it up easily on DB errors.
 	if err := os.MkdirAll(setPath, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir set path: %w", err)
 	}
 
-	// Create set row.
 	set := &model.Set{
-		Name:      parsed.Title,
+		Name:      title,
 		RootPath:  safeName,
 		IsPodcast: true,
 		CreatedAt: s.clock.Now(),
 	}
 	setID, err := s.store.CreateSet(ctx, set)
 	if err != nil {
-		os.Remove(setPath)
+		os.RemoveAll(setPath)
 		return nil, fmt.Errorf("create set: %w", err)
 	}
 	set.ID = setID
 
-	// Grant owner permission to the creating user.
 	perm := &model.SetPermission{SetID: setID, UserID: userID, Role: model.RoleOwner}
 	if err := s.store.GrantPermission(ctx, perm); err != nil {
-		// Rollback set on error.
 		_ = s.store.DeleteSet(ctx, setID)
-		os.Remove(setPath)
+		os.RemoveAll(setPath)
 		return nil, fmt.Errorf("grant permission: %w", err)
 	}
 
-	// Insert podcast feed row.
+	return set, nil
+}
+
+func (s *podcastService) rollbackSet(ctx context.Context, setID int64, setPath string) {
+	_ = s.store.DeleteSet(ctx, setID)
+	os.RemoveAll(setPath)
+}
+
+func (s *podcastService) createPodcastFeed(ctx context.Context, parsed *podcast.ParsedFeed, setID int64, feedURL, setPath string) (*model.PodcastFeed, error) {
 	feed := &model.PodcastFeed{
 		SetID:                setID,
 		FeedURL:              feedURL,
@@ -163,18 +205,13 @@ func (s *podcastService) SubscribeFeed(ctx context.Context, feedURL, setName str
 	}
 	feedID, err := s.store.CreateFeed(ctx, feed)
 	if err != nil {
-		_ = s.store.DeleteSet(ctx, setID)
-		os.Remove(setPath)
 		return nil, fmt.Errorf("create feed: %w", err)
 	}
 	feed.ID = feedID
+	return feed, nil
+}
 
-	// Download cover image.
-	if parsed.ImageURL != "" {
-		_ = podcast.DownloadCoverImage(s.httpClient, parsed.ImageURL, setPath)
-	}
-
-	// Insert episodes.
+func (s *podcastService) insertPodcastEpisodes(ctx context.Context, parsed *podcast.ParsedFeed, feedID int64) {
 	for _, ep := range parsed.Episodes {
 		episode := &model.PodcastEpisode{
 			FeedID:          feedID,
@@ -189,13 +226,6 @@ func (s *podcastService) SubscribeFeed(ctx context.Context, feedURL, setName str
 		}
 		_, _ = s.store.CreateEpisode(ctx, episode)
 	}
-
-	// Mark feed as checked.
-	now := s.clock.Now()
-	feed.LastCheckedAt = &now
-	_ = s.store.UpdateFeed(ctx, feed)
-
-	return feed, nil
 }
 
 func (s *podcastService) EditFeed(ctx context.Context, feedID int64, feedURL string, checkInterval int, userID int64) error {
@@ -479,24 +509,41 @@ func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) 
 		return fmt.Errorf("feed check status %d", resp.StatusCode)
 	}
 
-	parsed, err := podcast.ParseFeedReader(resp.Body)
+	parsed, err := s.parseFeedReader(resp.Body)
 	if err != nil {
 		return err
 	}
 
-	// Update feed metadata.
-	feed.Title = parsed.Title
-	feed.Description = parsed.Description
-	feed.ImageURL = parsed.ImageURL
-	feed.LastETag = resp.Header.Get("ETag")
-	now := s.clock.Now()
-	feed.LastCheckedAt = &now
-
-	if err := s.store.UpdateFeed(ctx, &feed); err != nil {
+	if err := s.updateFeedFromParsed(ctx, &feed, parsed, resp.Header.Get("ETag")); err != nil {
 		return err
 	}
 
-	// Upsert episodes.
+	if err := s.upsertFeedEpisodes(ctx, &feed, parsed); err != nil {
+		// Non-fatal: continue.
+	}
+
+	if parsed.ImageURL != "" {
+		set, err := s.store.GetSetByID(ctx, feed.SetID)
+		if err == nil && set != nil {
+			setPath := filepath.Join(s.mediaRoot, set.RootPath)
+			s.downloadCover(s.httpClient, parsed.ImageURL, setPath)
+		}
+	}
+
+	return nil
+}
+
+func (s *podcastService) updateFeedFromParsed(ctx context.Context, feed *model.PodcastFeed, parsed *podcast.ParsedFeed, etag string) error {
+	feed.Title = parsed.Title
+	feed.Description = parsed.Description
+	feed.ImageURL = parsed.ImageURL
+	feed.LastETag = etag
+	now := s.clock.Now()
+	feed.LastCheckedAt = &now
+	return s.store.UpdateFeed(ctx, feed)
+}
+
+func (s *podcastService) upsertFeedEpisodes(ctx context.Context, feed *model.PodcastFeed, parsed *podcast.ParsedFeed) error {
 	for _, ep := range parsed.Episodes {
 		existing, err := s.store.GetEpisodeByGUID(ctx, feed.ID, ep.GUID)
 		if err != nil {
@@ -504,29 +551,19 @@ func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) 
 		}
 		if existing == nil {
 			episode := &model.PodcastEpisode{
-				FeedID:      feed.ID,
-				GUID:        ep.GUID,
-				Title:       ep.Title,
-				Description: ep.Description,
-				PublishedAt: ep.PublishedAt,
-				EpisodeURL:  ep.EpisodeURL,
+				FeedID:          feed.ID,
+				GUID:            ep.GUID,
+				Title:           ep.Title,
+				Description:     ep.Description,
+				PublishedAt:     ep.PublishedAt,
+				EpisodeURL:      ep.EpisodeURL,
 				DurationSeconds: ep.DurationSeconds,
-				FileSize:    ep.FileSize,
-				CreatedAt:   s.clock.Now(),
+				FileSize:        ep.FileSize,
+				CreatedAt:       s.clock.Now(),
 			}
 			_, _ = s.store.CreateEpisode(ctx, episode)
 		}
 	}
-
-	// Re-download cover if changed.
-	if parsed.ImageURL != "" {
-		set, err := s.store.GetSetByID(ctx, feed.SetID)
-		if err == nil && set != nil {
-			setPath := filepath.Join(s.mediaRoot, set.RootPath)
-			_ = podcast.DownloadCoverImage(s.httpClient, parsed.ImageURL, setPath)
-		}
-	}
-
 	return nil
 }
 
@@ -550,3 +587,4 @@ func sanitizeFilename(name string) string {
 	name = strings.TrimSpace(name)
 	return name
 }
+

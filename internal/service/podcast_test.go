@@ -1,0 +1,529 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/podcast"
+	"codeberg.org/snonux/player/internal/repository"
+)
+
+func setupPodcastService(t *testing.T) (*podcastService, *repository.MockStore) {
+	t.Helper()
+	mediaRoot := t.TempDir()
+	clk := &clock.MockClock{T: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
+	store := repository.NewMockStore()
+	helper := &accessHelper{store: store}
+	svc := NewPodcastService(store, clk, mediaRoot, helper, nil, nil, 60)
+	return svc, store
+}
+
+func TestPodcastService_SubscribeFeed_Ok(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: true}, nil
+		},
+	}
+	var setID int64
+	store.SetRepo = repository.MockSetRepo{
+		CreateSetFunc: func(ctx context.Context, set *model.Set) (int64, error) {
+			setID++
+			return setID, nil
+		},
+	}
+	var feedID int64
+	store.PodcastRepo = repository.MockPodcastRepo{
+		CreateFeedFunc: func(ctx context.Context, feed *model.PodcastFeed) (int64, error) {
+			feedID++
+			return feedID, nil
+		},
+		UpdateFeedFunc:    func(ctx context.Context, feed *model.PodcastFeed) error { return nil },
+		CreateEpisodeFunc: func(ctx context.Context, ep *model.PodcastEpisode) (int64, error) { return 1, nil },
+	}
+
+	svc.parseFeed = func(url string) (*podcast.ParsedFeed, error) {
+		return &podcast.ParsedFeed{
+			Title:       "Test Feed",
+			Description: "desc",
+			ImageURL:    "http://example.com/cover.jpg",
+			Episodes: []podcast.Episode{
+				{GUID: "ep-1", Title: "Episode 1", EpisodeURL: "http://example.com/1.mp3"},
+			},
+		}, nil
+	}
+	coverCalled := false
+	svc.downloadCover = func(c *http.Client, u, p string) error {
+		coverCalled = true
+		return nil
+	}
+
+	feed, err := svc.SubscribeFeed(ctx, "http://rss.example.com/feed.xml", "my-podcast", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if feed == nil {
+		t.Fatal("expected feed, got nil")
+	}
+	if feed.Title != "Test Feed" {
+		t.Errorf("title = %q, want Test Feed", feed.Title)
+	}
+	if feed.LastCheckedAt == nil {
+		t.Error("expected LastCheckedAt set")
+	}
+	if !coverCalled {
+		t.Error("expected cover download to be called")
+	}
+	if setID != 1 {
+		t.Errorf("expected set created once, got %d", setID)
+	}
+	if feedID != 1 {
+		t.Errorf("expected feed created once, got %d", feedID)
+	}
+
+	setPath := filepath.Join(svc.mediaRoot, "my-podcast")
+	if _, err := os.Stat(setPath); os.IsNotExist(err) {
+		t.Error("expected set directory to exist on disk")
+	}
+}
+
+func TestPodcastService_SubscribeFeed_NonAdmin(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: false}, nil
+		},
+	}
+
+	_, err := svc.SubscribeFeed(ctx, "http://x", "name", 1)
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestPodcastService_SubscribeFeed_NilUser(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return nil, nil
+		},
+	}
+
+	_, err := svc.SubscribeFeed(ctx, "http://x", "name", 1)
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestPodcastService_SubscribeFeed_UserError(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	boom := errors.New("boom")
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return nil, boom
+		},
+	}
+
+	_, err := svc.SubscribeFeed(ctx, "http://x", "name", 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("expected wrapped boom, got %v", err)
+	}
+}
+
+func TestPodcastService_SubscribeFeed_ParseError(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	var setCreated bool
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: true}, nil
+		},
+	}
+	store.SetRepo = repository.MockSetRepo{
+		CreateSetFunc: func(ctx context.Context, set *model.Set) (int64, error) {
+			setCreated = true
+			return 1, nil
+		},
+	}
+	svc.parseFeed = func(url string) (*podcast.ParsedFeed, error) {
+		return nil, errors.New("parse fail")
+	}
+
+	_, err := svc.SubscribeFeed(ctx, "bad", "name", 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if setCreated {
+		t.Error("expected no set created when parse fails")
+	}
+	setPath := filepath.Join(svc.mediaRoot, "name")
+	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
+		t.Error("expected no set directory when parse fails")
+	}
+}
+
+func TestPodcastService_SubscribeFeed_CreateSetError(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: true}, nil
+		},
+	}
+	boom := errors.New("boom")
+	store.SetRepo = repository.MockSetRepo{
+		CreateSetFunc: func(ctx context.Context, set *model.Set) (int64, error) {
+			return 0, boom
+		},
+	}
+	svc.parseFeed = func(url string) (*podcast.ParsedFeed, error) {
+		return &podcast.ParsedFeed{Title: "T"}, nil
+	}
+
+	_, err := svc.SubscribeFeed(ctx, "http://x", "name", 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("expected wrapped boom, got %v", err)
+	}
+	setPath := filepath.Join(svc.mediaRoot, "name")
+	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
+		t.Error("expected set directory to be cleaned up")
+	}
+}
+
+func TestPodcastService_SubscribeFeed_GrantPermissionError(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	boom := errors.New("boom")
+	var deletedSetID int64
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: true}, nil
+		},
+	}
+	store.SetRepo = repository.MockSetRepo{
+		CreateSetFunc: func(ctx context.Context, set *model.Set) (int64, error) {
+			return 42, nil
+		},
+		DeleteSetFunc: func(ctx context.Context, id int64) error {
+			deletedSetID = id
+			return nil
+		},
+	}
+	store.SetPermissionRepo = repository.MockSetPermissionRepo{
+		GrantPermissionFunc: func(ctx context.Context, perm *model.SetPermission) error {
+			return boom
+		},
+	}
+	svc.parseFeed = func(url string) (*podcast.ParsedFeed, error) {
+		return &podcast.ParsedFeed{Title: "T"}, nil
+	}
+
+	_, err := svc.SubscribeFeed(ctx, "http://x", "name", 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("expected wrapped boom, got %v", err)
+	}
+	if deletedSetID != 42 {
+		t.Fatalf("expected set rollback (delete %d), got %d", 42, deletedSetID)
+	}
+	setPath := filepath.Join(svc.mediaRoot, "name")
+	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
+		t.Error("expected set directory to be cleaned up on permission error")
+	}
+}
+
+func TestPodcastService_SubscribeFeed_CreateFeedError(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	boom := errors.New("boom")
+	var deletedSetID int64
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: true}, nil
+		},
+	}
+	store.SetRepo = repository.MockSetRepo{
+		CreateSetFunc: func(ctx context.Context, set *model.Set) (int64, error) {
+			return 42, nil
+		},
+		DeleteSetFunc: func(ctx context.Context, id int64) error {
+			deletedSetID = id
+			return nil
+		},
+	}
+	store.SetPermissionRepo = repository.MockSetPermissionRepo{
+		GrantPermissionFunc: func(ctx context.Context, perm *model.SetPermission) error {
+			return nil
+		},
+	}
+	store.PodcastRepo = repository.MockPodcastRepo{
+		CreateFeedFunc: func(ctx context.Context, feed *model.PodcastFeed) (int64, error) {
+			return 0, boom
+		},
+	}
+	svc.parseFeed = func(url string) (*podcast.ParsedFeed, error) {
+		return &podcast.ParsedFeed{Title: "T"}, nil
+	}
+
+	_, err := svc.SubscribeFeed(ctx, "http://x", "name", 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("expected wrapped boom, got %v", err)
+	}
+	if deletedSetID != 42 {
+		t.Fatalf("expected set rollback (delete %d), got %d", 42, deletedSetID)
+	}
+	setPath := filepath.Join(svc.mediaRoot, "name")
+	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
+		t.Error("expected set directory to be cleaned up on feed error")
+	}
+}
+
+func TestPodcastService_ResolveSetPath(t *testing.T) {
+	svc, _ := setupPodcastService(t)
+
+	tests := []struct {
+		setName string
+		title   string
+		want    string
+	}{
+		{"my-podcast", "Some Title", "my-podcast"},
+		{"", "Some Title", "Some Title"},
+		{"", "", "podcast"},
+		{"../../etc", "", "------etc"},
+	}
+
+	for _, tt := range tests {
+		name, path := svc.resolveSetPath(tt.setName, tt.title)
+		if name != tt.want {
+			t.Errorf("resolveSetPath(%q, %q) name = %q, want %q", tt.setName, tt.title, name, tt.want)
+		}
+		if path != filepath.Join(svc.mediaRoot, tt.want) {
+			t.Errorf("resolveSetPath(%q, %q) path mismatch", tt.setName, tt.title)
+		}
+	}
+}
+
+func TestPodcastService_SanitizeSetName(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"A/B", "A-B"},
+		{"A\\\\B", "A--B"},
+		{"A.B", "A-B"},
+		{"  spaced  ", "spaced"},
+		{"", ""},
+		{"normal", "normal"},
+	}
+
+	for _, c := range cases {
+		got := sanitizeSetName(c.in)
+		if got != c.want {
+			t.Errorf("sanitizeSetName(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestPodcastService_SanitizeFilename(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"A/B", "A-B"},
+		{"A:B", "A-B"},
+		{"  spaced  ", "spaced"},
+		{"", ""},
+		{"normal", "normal"},
+	}
+
+	for _, c := range cases {
+		got := sanitizeFilename(c.in)
+		if got != c.want {
+			t.Errorf("sanitizeFilename(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestPodcastService_DownloadEpisode_NonAdmin(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: false}, nil
+		},
+	}
+	store.PodcastRepo = repository.MockPodcastRepo{
+		GetEpisodeByIDFunc: func(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
+			return &model.PodcastEpisode{ID: id, FeedID: 1}, nil
+		},
+		GetFeedByIDFunc: func(ctx context.Context, id int64) (*model.PodcastFeed, error) {
+			return &model.PodcastFeed{ID: id, SetID: 1}, nil
+		},
+	}
+	store.SetPermissionRepo = repository.MockSetPermissionRepo{
+		GetPermissionFunc: func(ctx context.Context, setID, userID int64) (*model.SetPermission, error) {
+			return nil, nil
+		},
+	}
+
+	_, err := svc.DownloadEpisode(ctx, 1, 1)
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestPodcastService_UpsertFeedEpisodes(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	var created []model.PodcastEpisode
+	store.PodcastRepo = repository.MockPodcastRepo{
+		GetEpisodeByGUIDFunc: func(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error) {
+			return nil, nil
+		},
+		CreateEpisodeFunc: func(ctx context.Context, ep *model.PodcastEpisode) (int64, error) {
+			created = append(created, *ep)
+			return int64(len(created)), nil
+		},
+	}
+
+	feed := &model.PodcastFeed{ID: 7}
+	parsed := &podcast.ParsedFeed{
+		Episodes: []podcast.Episode{
+			{GUID: "g1", Title: "One"},
+			{GUID: "g2", Title: "Two"},
+		},
+	}
+
+	err := svc.upsertFeedEpisodes(ctx, feed, parsed)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(created) != 2 {
+		t.Fatalf("expected 2 episodes created, got %d", len(created))
+	}
+	if created[0].FeedID != 7 || created[0].GUID != "g1" {
+		t.Errorf("episode 0 mismatch: %+v", created[0])
+	}
+	if created[1].GUID != "g2" {
+		t.Errorf("episode 1 mismatch: %+v", created[1])
+	}
+}
+
+func TestPodcastService_UpsertFeedEpisodes_SkipsExisting(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	created := 0
+	store.PodcastRepo = repository.MockPodcastRepo{
+		GetEpisodeByGUIDFunc: func(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error) {
+			if guid == "g1" {
+				return &model.PodcastEpisode{GUID: "g1"}, nil
+			}
+			return nil, nil
+		},
+		CreateEpisodeFunc: func(ctx context.Context, ep *model.PodcastEpisode) (int64, error) {
+			created++
+			return 1, nil
+		},
+	}
+
+	feed := &model.PodcastFeed{ID: 7}
+	parsed := &podcast.ParsedFeed{
+		Episodes: []podcast.Episode{
+			{GUID: "g1", Title: "One"},
+			{GUID: "g2", Title: "Two"},
+		},
+	}
+
+	_ = svc.upsertFeedEpisodes(ctx, feed, parsed)
+	if created != 1 {
+		t.Fatalf("expected 1 new episode created, got %d", created)
+	}
+}
+
+func TestPodcastService_UpdateFeedFromParsed(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	var updated *model.PodcastFeed
+	store.PodcastRepo = repository.MockPodcastRepo{
+		UpdateFeedFunc: func(ctx context.Context, feed *model.PodcastFeed) error {
+			updated = feed
+			return nil
+		},
+	}
+
+	feed := &model.PodcastFeed{ID: 1}
+	parsed := &podcast.ParsedFeed{
+		Title:       "New Title",
+		Description: "New Desc",
+		ImageURL:    "http://img",
+	}
+
+	err := svc.updateFeedFromParsed(ctx, feed, parsed, "etag-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated == nil {
+		t.Fatal("expected feed updated")
+	}
+	if updated.Title != "New Title" {
+		t.Errorf("title = %q", updated.Title)
+	}
+	if updated.LastETag != "etag-123" {
+		t.Errorf("etag = %q", updated.LastETag)
+	}
+	if updated.LastCheckedAt == nil {
+		t.Fatal("expected LastCheckedAt")
+	}
+}
+
+func TestPodcastService_InsertPodcastEpisodes(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	var created []model.PodcastEpisode
+	store.PodcastRepo = repository.MockPodcastRepo{
+		CreateEpisodeFunc: func(ctx context.Context, ep *model.PodcastEpisode) (int64, error) {
+			created = append(created, *ep)
+			return int64(len(created)), nil
+		},
+	}
+
+	parsed := &podcast.ParsedFeed{
+		Episodes: []podcast.Episode{
+			{GUID: "g1", Title: "One"},
+		},
+	}
+	svc.insertPodcastEpisodes(ctx, parsed, 99)
+	if len(created) != 1 {
+		t.Fatalf("expected 1 episode, got %d", len(created))
+	}
+	if created[0].FeedID != 99 || created[0].GUID != "g1" {
+		t.Errorf("episode mismatch: %+v", created[0])
+	}
+}
