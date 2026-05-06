@@ -100,7 +100,12 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, filename stri
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	http.ServeContent(w, r, filename, stat.ModTime(), f.(io.ReadSeeker))
+	rs, ok := f.(io.ReadSeeker)
+	if !ok {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	http.ServeContent(w, r, filename, stat.ModTime(), rs)
 }
 
 func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {

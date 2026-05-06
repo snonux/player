@@ -196,6 +196,36 @@ func TestServer_ServeFile_notFound(t *testing.T) {
 	}
 }
 
+type statErrorFS struct{}
+
+func (statErrorFS) Open(string) (http.File, error) {
+	return statErrorFile{}, nil
+}
+
+type statErrorFile struct{}
+
+func (statErrorFile) Close() error { return nil }
+
+func (statErrorFile) Read([]byte) (int, error) { return 0, io.EOF }
+
+func (statErrorFile) Seek(int64, int) (int64, error) { return 0, nil }
+
+func (statErrorFile) Readdir(int) ([]os.FileInfo, error) { return nil, nil }
+
+func (statErrorFile) Stat() (os.FileInfo, error) { return nil, errors.New("stat failed") }
+
+func TestServer_ServeFile_statError(t *testing.T) {
+	srv := &Server{staticFS: statErrorFS{}}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+
+	srv.serveFile(rr, req, "index.html")
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected %d, got %d", http.StatusNotFound, rr.Code)
+	}
+}
+
 // ------------------------------------------------------------------
 // Bootstrap negative paths
 // ------------------------------------------------------------------
