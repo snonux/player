@@ -25,9 +25,9 @@ func Build() error {
 	return sh.RunV("go", "build", "-o", binaryName, "./cmd/player")
 }
 
-// Test runs all tests in the project.
+// Test runs all tests in the project with the race detector enabled.
 func Test() error {
-	return sh.RunV("go", "test", "./...")
+	return sh.RunV("go", "test", "-race", "-count=1", "./...")
 }
 
 // Install builds and copies the binary to GOPATH/bin.
