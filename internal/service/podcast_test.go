@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -392,6 +394,164 @@ func TestPodcastService_DownloadEpisode_NonAdmin(t *testing.T) {
 	_, err := svc.DownloadEpisode(ctx, 1, 1)
 	if !errors.Is(err, ErrForbidden) {
 		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestPodcastService_DownloadEpisode_Success(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("fake mp3 content"))
+	}))
+	defer server.Close()
+	svc.httpClient = server.Client()
+
+	setDir := filepath.Join(svc.mediaRoot, "podcast-set")
+	if err := os.MkdirAll(setDir, 0o755); err != nil {
+		t.Fatalf("mkdir set dir: %v", err)
+	}
+
+	pub := time.Date(2024, 2, 15, 0, 0, 0, 0, time.UTC)
+	store.PodcastRepo = repository.MockPodcastRepo{
+		GetEpisodeByIDFunc: func(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
+			return &model.PodcastEpisode{ID: id, FeedID: 1, Title: "Ep 1", EpisodeURL: server.URL + "/ep1.mp3", PublishedAt: &pub}, nil
+		},
+		GetFeedByIDFunc: func(ctx context.Context, id int64) (*model.PodcastFeed, error) {
+			return &model.PodcastFeed{ID: id, SetID: 1}, nil
+		},
+		UpdateEpisodeMediaFunc: func(ctx context.Context, episodeID, mediaID int64, fileName string) error {
+			return nil
+		},
+	}
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: true}, nil
+		},
+	}
+	store.SetRepo = repository.MockSetRepo{
+		GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+			return &model.Set{ID: id, RootPath: "podcast-set"}, nil
+		},
+	}
+	store.MediaRepo = repository.MockMediaRepo{
+		CreateMediaFunc: func(ctx context.Context, media *model.Media) (int64, error) {
+			return 42, nil
+		},
+	}
+
+	media, err := svc.DownloadEpisode(ctx, 1, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if media == nil {
+		t.Fatal("expected media, got nil")
+	}
+	if media.ID != 42 {
+		t.Errorf("media.ID = %d, want 42", media.ID)
+	}
+	if media.FileSizeBytes != int64(len("fake mp3 content")) {
+		t.Errorf("media.FileSizeBytes = %d, want %d", media.FileSizeBytes, len("fake mp3 content"))
+	}
+	if _, err := os.Stat(media.AbsPath); os.IsNotExist(err) {
+		t.Error("expected downloaded file to exist on disk")
+	}
+}
+
+func TestPodcastService_DownloadEpisode_HTTPError(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+	svc.httpClient = server.Client()
+
+	store.PodcastRepo = repository.MockPodcastRepo{
+		GetEpisodeByIDFunc: func(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
+			return &model.PodcastEpisode{ID: id, FeedID: 1, Title: "Ep 1", EpisodeURL: server.URL + "/ep1.mp3"}, nil
+		},
+		GetFeedByIDFunc: func(ctx context.Context, id int64) (*model.PodcastFeed, error) {
+			return &model.PodcastFeed{ID: id, SetID: 1}, nil
+		},
+	}
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: true}, nil
+		},
+	}
+	store.SetRepo = repository.MockSetRepo{
+		GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+			return &model.Set{ID: id, RootPath: "podcast-set"}, nil
+		},
+	}
+
+	_, err := svc.DownloadEpisode(ctx, 1, 1)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "status 404") {
+		t.Errorf("expected status 404 in error, got: %v", err)
+	}
+}
+
+func TestPodcastService_DownloadEpisode_EpisodeNotFound(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	store.PodcastRepo = repository.MockPodcastRepo{
+		GetEpisodeByIDFunc: func(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
+			return nil, nil
+		},
+	}
+	_, err := svc.DownloadEpisode(ctx, 1, 1)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestPodcastService_DownloadEpisode_FeedNotFound(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	store.PodcastRepo = repository.MockPodcastRepo{
+		GetEpisodeByIDFunc: func(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
+			return &model.PodcastEpisode{ID: id, FeedID: 1}, nil
+		},
+		GetFeedByIDFunc: func(ctx context.Context, id int64) (*model.PodcastFeed, error) {
+			return nil, nil
+		},
+	}
+	_, err := svc.DownloadEpisode(ctx, 1, 1)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestPodcastService_DownloadEpisode_SetNotFound(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+	store.PodcastRepo = repository.MockPodcastRepo{
+		GetEpisodeByIDFunc: func(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
+			return &model.PodcastEpisode{ID: id, FeedID: 1}, nil
+		},
+		GetFeedByIDFunc: func(ctx context.Context, id int64) (*model.PodcastFeed, error) {
+			return &model.PodcastFeed{ID: id, SetID: 1}, nil
+		},
+	}
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: true}, nil
+		},
+	}
+	store.SetRepo = repository.MockSetRepo{
+		GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
+			return nil, nil
+		},
+	}
+	_, err := svc.DownloadEpisode(ctx, 1, 1)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
 

@@ -303,44 +303,71 @@ func (s *podcastService) ListEpisodes(ctx context.Context, setID, userID int64, 
 }
 
 func (s *podcastService) DownloadEpisode(ctx context.Context, episodeID, userID int64) (*model.Media, error) {
-	// Fetch episode.
-	episode, err := s.store.GetEpisodeByID(ctx, episodeID)
+	episode, set, path, err := s.resolveEpisodeAndSet(ctx, episodeID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get episode: %w", err)
-	}
-	if episode == nil {
-		return nil, ErrNotFound
-	}
-
-	// Fetch feed for set path.
-	feed, err := s.store.GetFeedByID(ctx, episode.FeedID)
-	if err != nil {
-		return nil, fmt.Errorf("get feed: %w", err)
-	}
-	if feed == nil {
-		return nil, ErrNotFound
-	}
-
-	// Verify permission.
-	if err := s.helper.checkSetPermission(ctx, feed.SetID, userID, ""); err != nil {
 		return nil, err
 	}
 
-	// Get set for root path.
-	set, err := s.store.GetSetByID(ctx, feed.SetID)
+	n, err := s.downloadEnclosure(ctx, episode, path)
 	if err != nil {
-		return nil, fmt.Errorf("get set: %w", err)
-	}
-	if set == nil {
-		return nil, ErrNotFound
+		return nil, err
 	}
 
-	// Determine target filename: YYYY-MM-DD - sanitized-title.ext
-	var dateStr string
+	media, cleanup, err := s.persistDownloadedEpisode(ctx, episode, set, path, n)
+	if err != nil {
+		return nil, err
+	}
+
+	// Post-persistence failure: link episode to media row.
+	if err := s.store.UpdateEpisodeMedia(ctx, episode.ID, media.ID, filepath.Base(path)); err != nil {
+		cleanup()
+		return nil, fmt.Errorf("update episode media: %w", err)
+	}
+
+	return media, nil
+}
+
+// resolveEpisodeAndSet fetches the episode, feed, and set, verifies user
+// permission, and returns the unique target file path on disk.
+func (s *podcastService) resolveEpisodeAndSet(ctx context.Context, episodeID, userID int64) (*model.PodcastEpisode, *model.Set, string, error) {
+	episode, err := s.store.GetEpisodeByID(ctx, episodeID)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("get episode: %w", err)
+	}
+	if episode == nil {
+		return nil, nil, "", ErrNotFound
+	}
+
+	feed, err := s.store.GetFeedByID(ctx, episode.FeedID)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("get feed: %w", err)
+	}
+	if feed == nil {
+		return nil, nil, "", ErrNotFound
+	}
+
+	if err := s.helper.checkSetPermission(ctx, feed.SetID, userID, ""); err != nil {
+		return nil, nil, "", err
+	}
+
+	set, err := s.store.GetSetByID(ctx, feed.SetID)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("get set: %w", err)
+	}
+	if set == nil {
+		return nil, nil, "", ErrNotFound
+	}
+
+	setPath := filepath.Join(s.mediaRoot, set.RootPath)
+	path := buildEpisodePath(setPath, episode, s.clock.Now())
+	return episode, set, path, nil
+}
+
+// buildEpisodePath builds a unique local path for the episode enclosure.
+func buildEpisodePath(setPath string, episode *model.PodcastEpisode, now time.Time) string {
+	dateStr := now.Format("2006-01-02")
 	if episode.PublishedAt != nil {
 		dateStr = episode.PublishedAt.Format("2006-01-02")
-	} else {
-		dateStr = s.clock.Now().Format("2006-01-02")
 	}
 
 	ext := filepath.Ext(episode.EpisodeURL)
@@ -352,37 +379,47 @@ func (s *podcastService) DownloadEpisode(ctx context.Context, episodeID, userID 
 		cleanTitle = fmt.Sprintf("episode-%d", episode.ID)
 	}
 	filename := fmt.Sprintf("%s - %s%s", dateStr, cleanTitle, ext)
+	return uniqueFilename(setPath, filename)
+}
 
-	setPath := filepath.Join(s.mediaRoot, set.RootPath)
-	path := uniqueFilename(setPath, filename)
-
-	// Download enclosure.
-	resp, err := s.httpClient.Get(episode.EpisodeURL)
+// downloadEnclosure performs the HTTP GET, writes the body to path, and
+// returns the number of bytes written.
+func (s *podcastService) downloadEnclosure(ctx context.Context, episode *model.PodcastEpisode, path string) (int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, episode.EpisodeURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("download episode: %w", err)
+		return 0, fmt.Errorf("build download request: %w", err)
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("download episode: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download episode: status %d", resp.StatusCode)
+		return 0, fmt.Errorf("download episode: status %d", resp.StatusCode)
 	}
 
 	f, err := os.Create(path)
 	if err != nil {
-		return nil, fmt.Errorf("create file: %w", err)
+		return 0, fmt.Errorf("create file: %w", err)
 	}
 
 	n, err := io.Copy(f, resp.Body)
 	if err != nil {
 		f.Close()
 		os.Remove(path)
-		return nil, fmt.Errorf("write file: %w", err)
+		return 0, fmt.Errorf("write file: %w", err)
 	}
 	if err := f.Close(); err != nil {
 		os.Remove(path)
-		return nil, fmt.Errorf("close file: %w", err)
+		return 0, fmt.Errorf("close file: %w", err)
 	}
 
-	// Create media row.
+	return n, nil
+}
+
+// persistDownloadedEpisode records the downloaded file in the database,
+// probes it, and returns a cleanup function to undo work on failure.
+func (s *podcastService) persistDownloadedEpisode(ctx context.Context, episode *model.PodcastEpisode, set *model.Set, path string, n int64) (*model.Media, func(), error) {
 	media := &model.Media{
 		SetID:         set.ID,
 		RelPath:       filepath.Base(path),
@@ -395,25 +432,21 @@ func (s *podcastService) DownloadEpisode(ctx context.Context, episodeID, userID 
 	mediaID, err := s.store.CreateMedia(ctx, media)
 	if err != nil {
 		os.Remove(path)
-		return nil, fmt.Errorf("create media: %w", err)
+		return nil, nil, fmt.Errorf("create media: %w", err)
 	}
 	media.ID = mediaID
 
-	// Probe, thumbnail, and update metadata using shared helper.
+	cleanup := func() {
+		os.Remove(path)
+		_ = s.store.HardDeleteMedia(ctx, media.ID)
+	}
+
 	if err := ImportMediaFile(ctx, s.store, media, s.prober, s.thumbGen); err != nil {
-		os.Remove(path)
-		_ = s.store.HardDeleteMedia(ctx, media.ID)
-		return nil, err
+		cleanup()
+		return nil, nil, err
 	}
 
-	// Link episode to media row.
-	if err := s.store.UpdateEpisodeMedia(ctx, episode.ID, media.ID, filepath.Base(path)); err != nil {
-		os.Remove(path)
-		_ = s.store.HardDeleteMedia(ctx, media.ID)
-		return nil, fmt.Errorf("update episode media: %w", err)
-	}
-
-	return media, nil
+	return media, cleanup, nil
 }
 
 func (s *podcastService) ToggleEpisodeComplete(ctx context.Context, episodeID, userID int64) error {
@@ -587,4 +620,3 @@ func sanitizeFilename(name string) string {
 	name = strings.TrimSpace(name)
 	return name
 }
-
