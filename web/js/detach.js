@@ -1,260 +1,150 @@
-import { initPlayer, loadMediaDirect } from './player.js';
+let deps = {};
+let detachWindow = null;
+let detachReady = false;
+let pendingDetachMessage = null;
+let detachedPlaybackState = null;
 
-const openerOrigin = window.location.origin;
-let currentMedia = null;
-let currentIndex = -1;
-let progressInterval = null;
-let lastStateSent = 0;
-let lastKnownPosition = 0;
-
-initPlayer();
-
-const video = document.getElementById('media-video');
-const audio = document.getElementById('media-audio');
-const btnPlay = document.getElementById('btn-play');
-const bigPlay = document.getElementById('big-play');
-const btnPrev = document.getElementById('btn-prev');
-const btnNext = document.getElementById('btn-next');
-
-btnPrev?.addEventListener('click', () => post({ type: 'detach-prev' }));
-btnNext?.addEventListener('click', () => post({ type: 'detach-next' }));
-window.__playerDetachCurrentState = currentState;
-
-[video, audio].forEach((el) => {
-  el?.addEventListener('play', () => {
-    sendState();
-    startProgress();
-  });
-  el?.addEventListener('pause', () => {
-    sendState();
-    stopProgress();
-  });
-  el?.addEventListener('timeupdate', () => {
-    lastKnownPosition = el.currentTime || lastKnownPosition;
-    const now = Date.now();
-    if (now - lastStateSent > 500) {
-      sendState();
-      lastStateSent = now;
+export function initDetach(options = {}) {
+  deps = options;
+  window.addEventListener('message', (ev) => {
+    if (ev.origin !== window.location.origin) return;
+    if (!ev.data || typeof ev.data !== 'object') return;
+    if (ev.data.type === 'detach-ready') {
+      onDetachReady(ev.source);
+    } else if (ev.data.type === 'detach-closing') {
+      onDetachClosing(ev.data.state);
+    } else if (ev.data.type === 'detach-state') {
+      detachedPlaybackState = mergeDetachedState(detachedPlaybackState, ev.data.state);
+    } else if (ev.data.type === 'detach-prev') {
+      deps.triggerPrevious?.({ forcePlay: ev.data.play ?? true });
+    } else if (ev.data.type === 'detach-next') {
+      deps.triggerNext?.({ forcePlay: ev.data.play ?? true });
     }
   });
-  el?.addEventListener('seeked', () => {
-    lastKnownPosition = el.currentTime || 0;
-    sendState();
-  });
-  el?.addEventListener('ended', () => post({ type: 'detach-next' }));
-});
+}
 
-document.addEventListener('keydown', (ev) => {
-  const tag = ev.target?.tagName;
-  const editing = tag === 'INPUT' || tag === 'TEXTAREA' || ev.target?.isContentEditable;
-  if (editing || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+export function isDetached() {
+  return !!detachWindow && !detachWindow.closed;
+}
 
-  if (ev.shiftKey && ev.code === 'KeyN') {
-    ev.preventDefault();
-    post({ type: 'detach-next', play: currentState().playing });
+export function detachedIsPlaying() {
+  return !!detachedPlaybackState?.playing;
+}
+
+export function toggleDetach() {
+  if (isDetached()) {
+    reattachDetached();
     return;
   }
-  if (ev.shiftKey && ev.code === 'KeyP') {
-    ev.preventDefault();
-    post({ type: 'detach-prev', play: currentState().playing });
+  const e = deps.els?.() || {};
+  if (!e.player) return;
+
+  const snapshot = deps.localPlaybackState?.() || {};
+  const features = 'width=640,height=480,resizable=yes,scrollbars=no,status=no,location=no,menubar=no,toolbar=no';
+  detachWindow = window.open('/detach.html', 'playerDetach', features);
+  if (!detachWindow) return;
+
+  detachReady = false;
+  detachedPlaybackState = snapshot;
+  const media = deps.getCurrentMedia?.();
+  if (media) {
+    pendingDetachMessage = detachedLoadMessage(media, snapshot.currentTime, snapshot.playing);
+  }
+  deps.currentMediaElement?.()?.pause();
+  e.player.classList.add('hidden');
+  showDetachedPlaceholder(true);
+}
+
+export function sendDetachedLoad(media, resumeFrom = 0, play = true) {
+  const msg = detachedLoadMessage(media, resumeFrom, play);
+  pendingDetachMessage = msg;
+  postToDetach(msg);
+}
+
+export function postToDetach(message) {
+  if (!detachWindow || detachWindow.closed) return;
+  if (!detachReady && message.type !== 'detach-request-state') {
+    pendingDetachMessage = message;
     return;
   }
-
-  if (ev.key === ' ' || ev.code === 'Space') {
-    ev.preventDefault();
-    togglePlayback();
-  } else if (ev.key === 'f') {
-    ev.preventDefault();
-    toggleFullscreen();
-  } else if (ev.key === 'ArrowLeft' || ev.key === 'h') {
-    ev.preventDefault();
-    seekRelative(ev.repeat ? -15 : -5);
-  } else if (ev.key === 'ArrowRight' || ev.key === 'l') {
-    ev.preventDefault();
-    seekRelative(ev.repeat ? 15 : 5);
-  } else if (ev.key === 'p') {
-    ev.preventDefault();
-    togglePlayback();
-  } else if (ev.key === 'N') {
-    ev.preventDefault();
-    post({ type: 'detach-next', play: currentState().playing });
-  } else if (ev.key === 'P') {
-    ev.preventDefault();
-    post({ type: 'detach-prev', play: currentState().playing });
-  }
-});
-
-document.addEventListener('fullscreenchange', () => {
-  document.getElementById('player')?.classList.toggle('is-fullscreen', !!document.fullscreenElement);
-});
-
-window.addEventListener('message', (ev) => {
-  if (ev.origin !== openerOrigin || !ev.data || typeof ev.data !== 'object') return;
-
-  switch (ev.data.type) {
-    case 'detach-load':
-      loadDetachedMedia(ev.data);
-      break;
-    case 'detach-command':
-      handleCommand(ev.data);
-      break;
-    case 'detach-request-state':
-      sendState();
-      break;
-  }
-});
-
-window.addEventListener('beforeunload', () => {
-  sendState();
-  post({ type: 'detach-closing', state: currentState() });
-});
-
-post({ type: 'detach-ready' });
-
-function loadDetachedMedia(payload) {
-  currentMedia = payload.media || null;
-  currentIndex = Number.isInteger(payload.index) ? payload.index : -1;
-  if (!currentMedia) return;
-
-  const resumeFrom = Number(payload.resumeFrom || 0);
-  lastKnownPosition = resumeFrom;
-  loadMediaDirect(currentMedia, payload.streamUrl, payload.thumbnailUrl, resumeFrom);
-
-  const el = mediaElement();
-  if (!el) return;
-  if (typeof payload.volume === 'number') el.volume = payload.volume;
-  el.muted = !!payload.muted;
-
-  seekWhenReady(el, resumeFrom);
-  if (payload.play) playWhenReady(el);
-  else showPlayPrompt();
-  sendState();
+  detachWindow.postMessage(message, window.location.origin);
 }
 
-function handleCommand(payload) {
-  const action = payload?.action;
-  if (action === 'toggle-play') {
-    togglePlayback();
-  } else if (action === 'pause') {
-    const el = mediaElement();
-    if (!el) return;
-    el.pause();
-  } else if (action === 'play') {
-    const el = mediaElement();
-    if (!el) return;
-    el.play().catch(() => {});
-  } else if (action === 'seek-relative') {
-    seekRelative(Number(payload.seconds || 0));
-  } else if (action === 'seek-percent') {
-    seekPercent(Number(payload.percent || 0));
+function onDetachReady(popup) {
+  if (!popup || popup !== detachWindow) return;
+  detachReady = true;
+  if (pendingDetachMessage) postToDetach(pendingDetachMessage);
+}
+
+function onDetachClosing(state = null) {
+  if (state) detachedPlaybackState = mergeDetachedState(detachedPlaybackState, state);
+  if (!detachWindow) return;
+  reattachDetached({ closePopup: false });
+}
+
+function reattachDetached({ closePopup = true } = {}) {
+  const popup = detachWindow;
+  const state = readDetachedWindowState(popup) || detachedPlaybackState;
+  detachWindow = null;
+  detachReady = false;
+  pendingDetachMessage = null;
+  if (closePopup && popup && !popup.closed) {
+    popup.postMessage({ type: 'detach-request-state' }, window.location.origin);
+    popup.close();
+  }
+  showDetachedPlaceholder(false);
+  deps.els?.().player?.classList.remove('hidden');
+
+  if (state?.media) {
+    deps.setCurrentMediaState?.(state.media, Number.isInteger(state.index) ? state.index : undefined);
+    deps.loadMedia?.(state.media, state.currentTime || 0);
+    const m = deps.currentMediaElement?.();
+    if (m) {
+      if (typeof state.volume === 'number') m.volume = state.volume;
+      m.muted = !!state.muted;
+      if (state.playing) m.play().catch(() => {});
+    }
   }
 }
 
-function togglePlayback() {
-  const el = mediaElement();
-  if (!el) return;
-  if (el.paused) el.play().catch(showPlayPrompt);
-  else el.pause();
+function readDetachedWindowState(popup) {
+  if (!popup || popup.closed) return null;
+  try {
+    if (typeof popup.__playerDetachCurrentState === 'function') {
+      return popup.__playerDetachCurrentState();
+    }
+  } catch {}
+  return null;
 }
 
-function seekRelative(seconds) {
-  const el = mediaElement();
-  if (!currentMedia || !el || !isFinite(seconds)) return;
-  const upper = el.duration && isFinite(el.duration) ? el.duration : Infinity;
-  el.currentTime = Math.max(0, Math.min(upper, (el.currentTime || 0) + seconds));
-  lastKnownPosition = el.currentTime || 0;
-  sendState();
-}
-
-function seekPercent(percent) {
-  const el = mediaElement();
-  if (!currentMedia || !el || !isFinite(percent)) return;
-  const dur = (el.duration && isFinite(el.duration) && el.duration > 0) ? el.duration : (currentMedia?.duration || 0);
-  if (!dur) return;
-  const upper = el.duration && isFinite(el.duration) ? el.duration : Infinity;
-  el.currentTime = Math.max(0, Math.min(upper, (el.currentTime || 0) + dur * percent));
-  lastKnownPosition = el.currentTime || 0;
-  sendState();
-}
-
-function toggleFullscreen() {
-  const player = document.getElementById('player');
-  if (!player) return;
-  if (document.fullscreenElement) {
-    document.exitFullscreen().catch(() => {});
-    player.classList.remove('is-fullscreen');
-  } else {
-    player.requestFullscreen().catch(() => {});
-    player.classList.add('is-fullscreen');
+function mergeDetachedState(previous, next) {
+  if (!next) return previous;
+  if (!previous?.media || !next.media || previous.media.id !== next.media.id) return next;
+  const prevTime = Number(previous.currentTime || 0);
+  const nextTime = Number(next.currentTime || 0);
+  if (prevTime > 0 && nextTime === 0 && next.positionReady !== true) {
+    return { ...next, currentTime: prevTime };
   }
+  return next;
 }
 
-function mediaElement() {
-  return currentMedia?.type === 'audio' ? audio : video;
-}
-
-function seekWhenReady(el, seconds) {
-  if (!seconds || seconds < 0) return;
-  const seek = () => {
-    try {
-      el.currentTime = seconds;
-    } catch {}
-  };
-  if (el.readyState >= HTMLMediaElement.HAVE_METADATA) seek();
-  else el.addEventListener('loadedmetadata', seek, { once: true });
-}
-
-function playWhenReady(el) {
-  const play = () => el.play().catch(showPlayPrompt);
-  if (el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) play();
-  else el.addEventListener('canplay', play, { once: true });
-}
-
-function showPlayPrompt() {
-  if (btnPlay) btnPlay.textContent = '\u25b6';
-  bigPlay?.classList.remove('hidden');
-}
-
-function startProgress() {
-  stopProgress();
-  progressInterval = setInterval(() => {
-    const el = mediaElement();
-    if (!currentMedia || !el || el.paused) return;
-    fetch('/api/progress', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ media_id: currentMedia.id, position_seconds: el.currentTime }),
-    }).catch(() => {});
-  }, 3000);
-}
-
-function stopProgress() {
-  clearInterval(progressInterval);
-  progressInterval = null;
-}
-
-function sendState() {
-  post({ type: 'detach-state', state: currentState() });
-}
-
-function currentState() {
-  const el = mediaElement();
-  const positionReady = !el || el.readyState >= HTMLMediaElement.HAVE_METADATA;
-  const position = positionReady ? (el?.currentTime || 0) : (lastKnownPosition || 0);
+function detachedLoadMessage(media, resumeFrom = 0, play = true) {
+  const local = deps.localPlaybackState?.() || {};
   return {
-    media: currentMedia,
-    index: currentIndex,
-    currentTime: position,
-    positionReady,
-    duration: el?.duration || currentMedia?.duration || 0,
-    playing: !!el && !el.paused,
-    volume: el?.volume ?? 1,
-    muted: !!el?.muted,
+    type: 'detach-load',
+    media,
+    index: deps.getCurrentMediaIndex?.() ?? -1,
+    streamUrl: `/api/media/${media.id}/stream`,
+    thumbnailUrl: media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '',
+    resumeFrom,
+    play,
+    volume: detachedPlaybackState?.volume ?? local.volume,
+    muted: detachedPlaybackState?.muted ?? local.muted,
   };
 }
 
-function post(message) {
-  if (!window.opener || window.opener.closed) return;
-  window.opener.postMessage(message, openerOrigin);
+function showDetachedPlaceholder(show) {
+  const bar = document.getElementById('detached-bar');
+  if (!bar) return;
+  bar.classList.toggle('hidden', !show);
 }
