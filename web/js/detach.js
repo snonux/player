@@ -145,6 +145,8 @@ function handleCommand(payload) {
     el.play().catch(() => {});
   } else if (action === 'seek-relative') {
     seekRelative(Number(payload.seconds || 0));
+  } else if (action === 'seek-percent') {
+    seekPercent(Number(payload.percent || 0));
   }
 }
 
@@ -160,6 +162,17 @@ function seekRelative(seconds) {
   if (!currentMedia || !el || !isFinite(seconds)) return;
   const upper = el.duration && isFinite(el.duration) ? el.duration : Infinity;
   el.currentTime = Math.max(0, Math.min(upper, (el.currentTime || 0) + seconds));
+  lastKnownPosition = el.currentTime || 0;
+  sendState();
+}
+
+function seekPercent(percent) {
+  const el = mediaElement();
+  if (!currentMedia || !el || !isFinite(percent)) return;
+  const dur = (el.duration && isFinite(el.duration) && el.duration > 0) ? el.duration : (currentMedia?.duration || 0);
+  if (!dur) return;
+  const upper = el.duration && isFinite(el.duration) ? el.duration : Infinity;
+  el.currentTime = Math.max(0, Math.min(upper, (el.currentTime || 0) + dur * percent));
   lastKnownPosition = el.currentTime || 0;
   sendState();
 }

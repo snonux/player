@@ -275,6 +275,22 @@ export function hasLoadedMedia() {
   return !!currentMedia;
 }
 
+export function seekPercent(deltaPercent) {
+  const dp = Number(deltaPercent);
+  if (!currentMedia || !isFinite(dp)) return false;
+  if (isDetached()) {
+    postToDetach({ type: 'detach-command', action: 'seek-percent', percent: dp });
+    return true;
+  }
+  const m = currentMediaElement();
+  if (!m) return false;
+  const dur = effectiveDuration();
+  if (!dur) return false;
+  const upper = m.duration && isFinite(m.duration) ? m.duration : dur;
+  m.currentTime = Math.max(0, Math.min(upper, (m.currentTime || 0) + dur * dp));
+  return true;
+}
+
 export function seekRelative(seconds) {
   const amount = Number(seconds);
   if (!currentMedia || !isFinite(amount)) return false;

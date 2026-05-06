@@ -1,7 +1,7 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initSelection, clearSelection, select, selectByElement, next, prev, currentIndex, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
-import { initPlayer, togglePlay, toggleFullscreen, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, toggleCrop, currentMediaId, currentMediaInfo, hasLoadedMedia, isPlaybackActive, seekRelative, selectAndPlay, zoomIn as playerZoomIn, zoomOut as playerZoomOut, toggleSlideshow as playerToggleSlideshow, isImageMode as playerIsImageMode } from './player.js';
+import { initPlayer, togglePlay, toggleFullscreen, toggleMinimize, toggleDetach, exitFullscreenIfNeeded, toggleCrop, currentMediaId, currentMediaInfo, hasLoadedMedia, isPlaybackActive, seekRelative, seekPercent, selectAndPlay, zoomIn as playerZoomIn, zoomOut as playerZoomOut, toggleSlideshow as playerToggleSlideshow, isImageMode as playerIsImageMode } from './player.js';
 import { initSearch, focusSearch, trigger as triggerSearch, parseQuery, showSearchHelp } from './search.js';
 import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
 import { initThemes } from './themes.js';
@@ -104,6 +104,11 @@ async function initApp() {
     navRight: () => navRight(),
     seekBackward: (e) => seekByKeyboard(-1, e.repeat),
     seekForward: (e) => seekByKeyboard(1, e.repeat),
+    seekPercent: (e, percent) => {
+      if (!hasLoadedMedia()) return false;
+      if (!document.fullscreenElement) return false;
+      return seekPercent(percent);
+    },
     nextSet: () => setSetByDelta(1),
     prevSet: () => setSetByDelta(-1),
     isSidebarOpen: () => document.getElementById('sidebar')?.classList.contains('open'),

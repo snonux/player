@@ -206,6 +206,16 @@ export function initKeyboard(handlers) {
         }
         handlers.navRight?.(e);
         break;
+      case 'PageUp':
+        if (handlers.seekPercent?.(e, -0.10)) {
+          e.preventDefault();
+        }
+        break;
+      case 'PageDown':
+        if (handlers.seekPercent?.(e, 0.10)) {
+          e.preventDefault();
+        }
+        break;
       case 'Enter': handlers.enter?.(e); break;
       case 'n':
         handlers.notes?.(e);
