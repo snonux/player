@@ -32,7 +32,7 @@ type mediaService struct {
 func NewMediaService(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober) MediaService {
 	helper := &accessHelper{store: store}
 	return &mediaService{
-		MediaBrowseService:   NewBrowseService(store, clk, mediaRoot, thumbGen, prober, helper),
+		MediaBrowseService:   NewBrowseService(store, clk, mediaRoot, helper),
 		MediaWriteService:    NewWriteService(store, clk, mediaRoot, thumbGen, prober, helper),
 		MediaShareService:    NewShareService(store, clk, helper),
 		MediaTagService:      NewTagService(store, helper),

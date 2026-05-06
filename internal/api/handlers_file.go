@@ -85,7 +85,7 @@ func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.writeSvc) {
 		return
 	}
 	id := pathID(r, "id")
@@ -93,7 +93,7 @@ func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media id"})
 		return
 	}
-	if err := s.browseSvc.RegenerateThumbnail(r.Context(), id, userIDFromContext(r)); err != nil {
+	if err := s.writeSvc.RegenerateThumbnail(r.Context(), id, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return

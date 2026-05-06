@@ -15,14 +15,14 @@ func TestBrowseService_BrowseSet(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	tests := []struct {
-		name          string
-		set           *model.Set
-		setErr        error
-		media         []model.Media
-		mediaErr      error
-		wantErr       bool
-		wantMedia     int
-		wantFolders   int
+		name        string
+		set         *model.Set
+		setErr      error
+		media       []model.Media
+		mediaErr    error
+		wantErr     bool
+		wantMedia   int
+		wantFolders int
 	}{
 		{
 			name:        "ok empty set",
@@ -39,10 +39,10 @@ func TestBrowseService_BrowseSet(t *testing.T) {
 			wantFolders: 0,
 		},
 		{
-			name:      "list media error",
-			set:       &model.Set{ID: 1, RootPath: "music"},
-			mediaErr:  errors.New("boom"),
-			wantErr:   true,
+			name:     "list media error",
+			set:      &model.Set{ID: 1, RootPath: "music"},
+			mediaErr: errors.New("boom"),
+			wantErr:  true,
 		},
 		{
 			name:    "set not found",
@@ -76,7 +76,7 @@ func TestBrowseService_BrowseSet(t *testing.T) {
 					},
 				},
 			}
-			svc := NewBrowseService(store, clock.RealClock{}, tmpDir, nil, nil, &accessHelper{store: store})
+			svc := NewBrowseService(store, clock.RealClock{}, tmpDir, &accessHelper{store: store})
 			res, err := svc.BrowseSet(ctx, 1, 1, "")
 			if tt.wantErr {
 				if err == nil {

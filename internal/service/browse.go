@@ -12,9 +12,7 @@ import (
 
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
-	"codeberg.org/snonux/player/internal/thumb"
 )
 
 // browseService handles read-only browsing and media streaming operations.
@@ -22,19 +20,15 @@ type browseService struct {
 	store     repository.BrowseServiceStore
 	clock     clock.Clock
 	mediaRoot string
-	thumbGen  thumb.Generator
-	prober    probe.Prober
 	helper    *accessHelper
 }
 
 // NewBrowseService creates a BrowseService.
-func NewBrowseService(store repository.BrowseServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, helper *accessHelper) MediaBrowseService {
+func NewBrowseService(store repository.BrowseServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper) MediaBrowseService {
 	return &browseService{
 		store:     store,
 		clock:     clk,
 		mediaRoot: mediaRoot,
-		thumbGen:  thumbGen,
-		prober:    prober,
 		helper:    helper,
 	}
 }
@@ -203,104 +197,6 @@ func (s *browseService) GetThumbnail(ctx context.Context, mediaID, userID int64)
 		}
 	}
 	return nil, fmt.Errorf("stat thumbnail: %w", err)
-}
-
-func (s *browseService) RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error {
-	media, err := s.helper.verifyModifyAccess(ctx, mediaID, userID)
-	if err != nil {
-		return err
-	}
-	if media.Type != model.MediaTypeVideo && media.Type != model.MediaTypeImage {
-		return errors.New("thumbnails can only be generated for video and image files")
-	}
-
-	meta, err := s.prober.Probe(ctx, media.AbsPath)
-	if err != nil {
-		return fmt.Errorf("probe media: %w", err)
-	}
-
-	thumbDir := filepath.Join(filepath.Dir(media.AbsPath), ".thumbnails")
-	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir thumbnails: %w", err)
-	}
-	thumbName := strings.TrimSuffix(filepath.Base(media.AbsPath), filepath.Ext(media.AbsPath)) + ".jpg"
-	thumbnailPath := filepath.Join(thumbDir, thumbName)
-
-	if err := s.thumbGen.Generate(ctx, media.AbsPath, thumbnailPath, meta.Duration); err != nil {
-		return fmt.Errorf("generate thumbnail: %w", err)
-	}
-
-	media.ThumbnailPath = thumbnailPath
-	if err := s.store.UpdateMedia(ctx, media); err != nil {
-		return fmt.Errorf("update media: %w", err)
-	}
-	return nil
-}
-
-func (s *browseService) RegenerateSetCover(ctx context.Context, setID int64, folder string, userID int64) error {
-	if err := s.helper.verifySetModifyAccess(ctx, setID, userID); err != nil {
-		return err
-	}
-
-	set, err := s.store.GetSetByID(ctx, setID)
-	if err != nil {
-		return fmt.Errorf("get set: %w", err)
-	}
-	if set == nil {
-		return ErrNotFound
-	}
-
-	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
-	if err != nil {
-		return fmt.Errorf("list media: %w", err)
-	}
-
-	prefix := filepath.ToSlash(strings.Trim(folder, "/"))
-	var candidates []model.Media
-	for _, m := range media {
-		if m.DeletedAt != nil {
-			continue
-		}
-		rel := filepath.ToSlash(m.RelPath)
-		if prefix != "" {
-			if !strings.HasPrefix(rel, prefix+"/") {
-				continue
-			}
-			suffix := strings.TrimPrefix(rel, prefix+"/")
-			if strings.Contains(suffix, "/") {
-				continue
-			}
-		} else if strings.Contains(rel, "/") {
-			continue
-		}
-		if m.Type == model.MediaTypeVideo {
-			candidates = append(candidates, m)
-		}
-	}
-	if len(candidates) == 0 {
-		return errors.New("no video files available for cover")
-	}
-
-	candidate := candidates[0]
-	if len(candidates) > 1 {
-		candidate = candidates[mrand.Intn(len(candidates))]
-	}
-
-	baseDir := filepath.Join(s.mediaRoot, filepath.FromSlash(set.RootPath))
-	if prefix != "" {
-		baseDir = filepath.Join(baseDir, filepath.FromSlash(prefix))
-	}
-	coverPath := filepath.Join(filepath.Clean(baseDir), ".cover.jpg")
-	meta, err := s.prober.Probe(ctx, candidate.AbsPath)
-	if err != nil {
-		return fmt.Errorf("probe cover candidate: %w", err)
-	}
-
-	if err := s.thumbGen.Generate(ctx, candidate.AbsPath, coverPath, meta.Duration); err != nil {
-		return fmt.Errorf("generate cover: %w", err)
-	}
-
-	return nil
 }
 
 // prefixForParent builds the slash-terminated prefix used for matching paths under parent.

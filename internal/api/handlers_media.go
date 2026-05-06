@@ -56,7 +56,7 @@ func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.writeSvc) {
 		return
 	}
 	setID := pathID(r, "id")
@@ -65,7 +65,7 @@ func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	folder := r.URL.Query().Get("folder")
-	if err := s.browseSvc.RegenerateSetCover(r.Context(), setID, folder, userIDFromContext(r)); err != nil {
+	if err := s.writeSvc.RegenerateSetCover(r.Context(), setID, folder, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return

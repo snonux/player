@@ -54,10 +54,6 @@ type MediaBrowseService interface {
 	DownloadMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error)
 	// GetThumbnail returns a media thumbnail for an authorized user.
 	GetThumbnail(ctx context.Context, mediaID, userID int64) (*FileResult, error)
-	// RegenerateThumbnail refreshes a media item's thumbnail.
-	RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error
-	// RegenerateSetCover refreshes a folder cover image for a set.
-	RegenerateSetCover(ctx context.Context, setID int64, folder string, userID int64) error
 	// BrowseSet returns folders and media below a set path.
 	BrowseSet(ctx context.Context, setID, userID int64, parent string) (*BrowseResult, error)
 	// GetSetCover returns the cover image for a set folder.
@@ -72,6 +68,10 @@ type MediaWriteService interface {
 	RestoreMedia(ctx context.Context, mediaID, userID int64) error
 	// UploadMedia stores an uploaded media file in a set.
 	UploadMedia(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error)
+	// RegenerateThumbnail refreshes a media item's thumbnail.
+	RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error
+	// RegenerateSetCover refreshes a folder cover image for a set.
+	RegenerateSetCover(ctx context.Context, setID int64, folder string, userID int64) error
 }
 
 // BrowseFolder is a named folder within a set's directory tree.
@@ -82,10 +82,10 @@ type BrowseFolder struct {
 
 // BrowseResult is the content of one directory inside a set.
 type BrowseResult struct {
-	CurrentPath string                             `json:"current_path"`
-	Folders     []BrowseFolder                     `json:"folders"`
-	Media       []model.Media                      `json:"media"`
-	Episodes    []model.PodcastEpisodeWithStatus    `json:"episodes,omitempty"`
+	CurrentPath string                           `json:"current_path"`
+	Folders     []BrowseFolder                   `json:"folders"`
+	Media       []model.Media                    `json:"media"`
+	Episodes    []model.PodcastEpisodeWithStatus `json:"episodes,omitempty"`
 }
 
 // SharedMediaView exposes only the metadata fields needed for a public share page.
