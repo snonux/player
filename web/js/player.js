@@ -23,6 +23,20 @@ let slideshowTimer = null;
 let slideshowPausedUntil = 0;
 let cropMode = false;
 
+function currentMediaElement() {
+  const e = els();
+  if (currentMedia?.type === 'audio') return e.audio;
+  if (currentMedia?.type === 'video') return e.video;
+  return null;
+}
+
+function effectiveDuration() {
+  const m = currentMediaElement();
+  if (!m) return 0;
+  if (isFinite(m.duration) && m.duration > 0) return m.duration;
+  return currentMedia?.duration || 0;
+}
+
 const els = () => ({
   video: document.getElementById('media-video'),
   audio: document.getElementById('media-audio'),
@@ -36,7 +50,7 @@ const els = () => ({
   btnSlideshow: document.getElementById('btn-slideshow'),
   btnMute: document.getElementById('btn-mute'),
   btnFs: document.getElementById('btn-fullscreen'),
-  btnMinimize: document.getElementById('btn-minimize'),
+  btnMinimize: document.getElementById('btn-minimize-player'),
   btnRestore: document.getElementById('btn-restore-player'),
   restoreTitle: document.getElementById('player-restore-title'),
   bigPlay: document.getElementById('big-play'),
@@ -110,15 +124,17 @@ export function initPlayer(options = {}) {
 
   [e.video, e.audio].forEach((m) => {
     m.addEventListener('timeupdate', () => {
-      if (!m.duration || isNaN(m.duration)) return;
-      const pct = (m.currentTime / m.duration) * 100;
+      const dur = effectiveDuration();
+      if (!dur) return;
+      const pct = (m.currentTime / dur) * 100;
       e.fill.style.width = pct.toFixed(2) + '%';
       e.thumb.style.left = pct.toFixed(2) + '%';
       e.timeElapsed.textContent = fmt(m.currentTime);
       updateBufferedRanges(m);
     });
     m.addEventListener('loadedmetadata', () => {
-      e.timeTotal.textContent = fmt(isFinite(m.duration) ? m.duration : 0);
+      const dur = effectiveDuration();
+      e.timeTotal.textContent = fmt(dur);
       updateBufferedRanges(m);
     });
     ['progress', 'durationchange', 'loadeddata', 'canplay', 'seeked'].forEach((event) => {
@@ -166,8 +182,9 @@ export function initPlayer(options = {}) {
   let seeking = false;
   const seekToFraction = (frac) => {
     const m = currentMediaElement();
-    if (!m || !m.duration) return;
-    m.currentTime = Math.max(0, Math.min(1, frac)) * m.duration;
+    const dur = effectiveDuration();
+    if (!m || !dur) return;
+    m.currentTime = Math.max(0, Math.min(1, frac)) * dur;
   };
   const handlePointer = (ev) => {
     const r = e.track.getBoundingClientRect();
@@ -188,9 +205,10 @@ export function initPlayer(options = {}) {
   e.track?.addEventListener('touchend', () => { seeking = false; });
   e.track?.addEventListener('keydown', (ev) => {
     const m = currentMediaElement();
-    if (!m || !m.duration) return;
+    const dur = effectiveDuration();
+    if (!m || !dur) return;
     if (ev.key === 'ArrowLeft') { ev.preventDefault(); m.currentTime = Math.max(0, m.currentTime - 5); }
-    if (ev.key === 'ArrowRight') { ev.preventDefault(); m.currentTime = Math.min(m.duration, m.currentTime + 5); }
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); m.currentTime = Math.min(dur, m.currentTime + 5); }
   });
 }
 
@@ -452,13 +470,6 @@ function loadMedia(media, resumeFrom = 0) {
   e.thumb.style.left = '0%';
   updateMinimizedTitle();
   updateFloatingSize();
-}
-
-function currentMediaElement() {
-  const e = els();
-  if (currentMedia?.type === 'audio') return e.audio;
-  if (currentMedia?.type === 'video') return e.video;
-  return null;
 }
 
 function seekWhenMetadataReady(m, seconds) {

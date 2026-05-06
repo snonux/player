@@ -129,6 +129,7 @@ func (s *shareService) StreamSharedMedia(ctx context.Context, token string) (*Fi
 		Path:     media.AbsPath,
 		FileName: media.FileName,
 		FileSize: media.FileSizeBytes,
+		Duration: media.Duration,
 	}, nil
 }
 

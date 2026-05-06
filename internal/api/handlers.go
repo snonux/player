@@ -127,7 +127,7 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 	}
 
 	if !attachment && probe.LooksLikeMPEGTS(res.Path) {
-		s.serveRemuxedMP4(w, r, res, stat.Size())
+		s.serveRemuxedMP4(w, r, res)
 		return
 	}
 
@@ -143,10 +143,13 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 	http.ServeContent(w, r, res.FileName, stat.ModTime(), f)
 }
 
-func (s *Server) serveRemuxedMP4(w http.ResponseWriter, r *http.Request, res *service.FileResult, size int64) {
+func (s *Server) serveRemuxedMP4(w http.ResponseWriter, r *http.Request, res *service.FileResult) {
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Cache-Control", "no-store")
-	s.logger.Info("api remux stream file", "file", res.FileName, "size", size, "range", r.Header.Get("Range"))
+	if res.Duration > 0 {
+		w.Header().Set("X-Duration", fmt.Sprintf("%f", res.Duration))
+	}
+	s.logger.Info("api remux stream file", "file", res.FileName, "size", res.FileSize, "range", r.Header.Get("Range"))
 	if err := s.remuxer.Remux(r.Context(), res.Path, w); err != nil {
 		s.logger.Error("remux media", "file", res.FileName, "err", err)
 	}

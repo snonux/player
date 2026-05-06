@@ -233,6 +233,7 @@ type FileResult struct {
 	Path     string
 	FileName string
 	FileSize int64
+	Duration float64 // DB-stored duration (seconds), used for remuxed streams.
 }
 
 // MediaDetail combines media with related data.

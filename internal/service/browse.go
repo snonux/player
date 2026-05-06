@@ -166,6 +166,7 @@ func (s *browseService) StreamMedia(ctx context.Context, mediaID, userID int64) 
 		Path:     media.AbsPath,
 		FileName: media.FileName,
 		FileSize: media.FileSizeBytes,
+		Duration: media.Duration,
 	}, nil
 }
 
