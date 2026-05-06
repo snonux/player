@@ -1084,6 +1084,28 @@ func TestServer_SharePage(t *testing.T) {
 	})
 }
 
+func TestInjectShareMedia(t *testing.T) {
+	t.Run("injects marshaled metadata", func(t *testing.T) {
+		html, err := injectShareMedia(`<script><!--SHARE_MEDIA--></script>`, map[string]string{"stream_url": "/s/abc/stream"})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !strings.Contains(html, `"stream_url":"/s/abc/stream"`) {
+			t.Fatalf("expected injected JSON, got %q", html)
+		}
+	})
+
+	t.Run("returns marshal error", func(t *testing.T) {
+		_, err := injectShareMedia(`<script><!--SHARE_MEDIA--></script>`, map[string]any{"bad": make(chan int)})
+		if err == nil {
+			t.Fatal("expected marshal error")
+		}
+		if !strings.Contains(err.Error(), "marshal share metadata") {
+			t.Fatalf("expected wrapped marshal error, got %v", err)
+		}
+	})
+}
+
 func TestServer_ShareStream(t *testing.T) {
 	path := makeTempFile(t, "shared")
 	cfg := &internal.Config{SessionTimeoutHours: 24}
