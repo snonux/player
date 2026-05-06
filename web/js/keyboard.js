@@ -95,6 +95,12 @@ export function initKeyboard(handlers) {
         e.target.blur();
         handlers.escape?.(e);
       }
+      if (e.key === 'ArrowDown' || e.key === 'j') {
+        e.target.blur();
+        e.preventDefault();
+        document.getElementById('media-grid')?.focus();
+        handlers.navDown?.(e);
+      }
       return;
     }
 
