@@ -97,7 +97,6 @@ echo "Login: test / test123"
 echo ""
 echo "Quick tips:"
 echo "  s  -- share selected media"
-echo "  t  -- show/hide toolbar"
 echo "  /  -- search"
 echo "  ?  -- help"
 
