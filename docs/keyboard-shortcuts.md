@@ -15,8 +15,7 @@ Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** w
 | `f` | Toggle fullscreen on the player wrapper |
 | `Esc` | Exit fullscreen, or deselect current item |
 | `r` | Toggle shuffle on the current filtered result set |
-| `s` | Toggle sets sidebar |
-| `S` | Generate a share link for the selected media |
+| `s` | Generate a share link for the selected media |
 | `/` | Focus the quick search bar (debounced) |
 | `n` | Open notes modal for the selected media |
 | `i` | Show / hide media info |

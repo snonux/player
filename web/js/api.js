@@ -17,11 +17,16 @@ async function api(path, options = {}) {
 
   if (res.status === 204) return null;
   if (res.status === 401) {
+    let msg = 'Unauthorized';
+    try {
+      const j = await res.json();
+      if (j.error) msg = j.error;
+    } catch {}
     const p = location.pathname;
     if (!p.includes('login') && !p.includes('bootstrap')) {
       location.href = '/login.html';
     }
-    throw new Error('Unauthorized');
+    throw new Error(msg);
   }
   if (!res.ok) {
     let msg = res.statusText;

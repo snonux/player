@@ -20,7 +20,10 @@
     <span class="scan-dot" aria-hidden="true"></span>
     <span id="scan-indicator-text">Scanning</span>
   </div>
+  <button id="sidebar-toggle" class="icon-btn" title="Sets" aria-label="Toggle sets sidebar">☰</button>
+  <button id="shuffle-toggle" class="icon-btn" title="Shuffle (r)" aria-label="Toggle shuffle">🔀</button>
   <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
+  <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
   <button id="admin-toggle" class="icon-btn hidden" title="Admin panel">⚙</button>
   <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
 </header>
@@ -58,7 +61,7 @@
     <!-- Empty state hint: shown when no set is selected -->
     <div id="empty-hint" class="empty-hint">
       <p>Welcome to Player</p>
-      <p class="text-muted text-sm">Press <kbd>s</kbd> to browse sets, <kbd>/</kbd> to search, or <kbd>?</kbd> for help.</p>
+      <p class="text-muted text-sm">Use the sets button to browse, <kbd>/</kbd> to search, or <kbd>?</kbd> for help.</p>
     </div>
 
     <!-- Breadcrumb bar for folder navigation -->
@@ -144,8 +147,7 @@
         <div class="help-row"><span><kbd>q</kbd></span><span>Stop playback and close player</span></div>
         <div class="help-row"><span><kbd>Backspace</kbd></span><span>Go up one folder</span></div>
         <div class="help-row"><span><kbd>r</kbd></span><span>Toggle shuffle</span></div>
-        <div class="help-row"><span><kbd>s</kbd></span><span>Toggle sets sidebar</span></div>
-        <div class="help-row"><span><kbd>S</kbd></span><span>Share selected media</span></div>
+        <div class="help-row"><span><kbd>s</kbd></span><span>Share selected media</span></div>
         <div class="help-row"><span><kbd>+</kbd> <kbd>−</kbd></span><span>Zoom in / out (image viewer)</span></div>
         <div class="help-row"><span><kbd>Shift+S</kbd></span><span>Toggle slideshow (images)</span></div>
         <div class="help-row"><span><kbd>c</kbd></span><span>Toggle crop mode (fullscreen)</span></div>

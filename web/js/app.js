@@ -310,6 +310,10 @@ function keyboardHandlers() {
 }
 
 function initChrome() {
+  document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
+    toggleSidebar();
+  });
+
   document.getElementById('menu-close')?.addEventListener('click', () => {
     document.getElementById('sidebar')?.classList.remove('open');
     document.querySelector('.page')?.classList.remove('has-sidebar');
