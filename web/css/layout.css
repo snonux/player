@@ -528,11 +528,23 @@ body {
 .mt-2 { margin-top: 0.5rem; }
 .mt-3 { margin-top: 0.75rem; }
 .my-1 { margin: 0.25rem 0; }
+.mb-2 { margin-bottom: 0.5rem; }
+.py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+.border-b { border-bottom: 1px solid var(--border); }
 .text-sm { font-size: 0.85rem; }
 .text-xs { font-size: 0.8rem; }
 .text-75 { font-size: 0.75rem; }
 .text-90 { font-size: 0.9rem; }
+.text-muted { color: var(--text-muted); }
+.text-danger { color: var(--danger); }
 .flex-1-18 { flex: 1 1 18rem; }
+.flex-col { flex-direction: column; }
+.truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .set-row {
   display: flex;
   align-items: center;
@@ -606,6 +618,38 @@ body {
 }
 .admin-list li.is-admin {
   background: var(--accent-soft);
+}
+
+#admin-permissions {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 0.35rem 0.45rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.admin-table th:first-child,
+.admin-table td:first-child {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-table .perm-select {
+  min-width: 5.5rem;
 }
 
 .podcast-feed-row {
