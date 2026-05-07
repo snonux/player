@@ -106,7 +106,7 @@ type GetSharedMediaResult struct {
 	HasThumb    bool             `json:"has_thumb"`
 	StreamURL   string           `json:"stream_url"`
 	DownloadURL string           `json:"download_url"`
-	ThumbURL    string           `json:"thumb_url"`
+	ThumbURL    string           `json:"thumb_url,omitempty"`
 }
 
 // ShareInfo augments a share with its associated media metadata.

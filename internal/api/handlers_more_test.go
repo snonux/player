@@ -1151,6 +1151,35 @@ func TestServer_SharePage(t *testing.T) {
 			t.Fatalf("unexpected stream_url %q", body.StreamURL)
 		}
 	})
+
+	t.Run("json omits empty thumbnail url", func(t *testing.T) {
+		ms := &service.MockMediaService{
+			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+				return &service.GetSharedMediaResult{
+					Media:       &service.SharedMediaView{ID: 1, FileName: "share.mp3", Type: model.MediaTypeAudio, Duration: 120},
+					HasThumb:    false,
+					StreamURL:   "/s/abc/stream",
+					DownloadURL: "/s/abc/download",
+					ThumbURL:    "",
+				}, nil
+			},
+		}
+		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, ms, ms, ms, ms, ms, nil, nil, nil, fs)
+		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
+		req.Header.Set("Accept", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatalf("expected JSON body: %v", err)
+		}
+		if _, ok := body["thumb_url"]; ok {
+			t.Fatalf("expected thumb_url to be omitted, got %s", rr.Body.String())
+		}
+	})
 }
 
 func TestInjectShareMedia(t *testing.T) {
@@ -1161,6 +1190,22 @@ func TestInjectShareMedia(t *testing.T) {
 		}
 		if !strings.Contains(html, `"stream_url":"/s/abc/stream"`) {
 			t.Fatalf("expected injected JSON, got %q", html)
+		}
+	})
+
+	t.Run("omits empty thumbnail url", func(t *testing.T) {
+		html, err := injectShareMedia(`<script><!--SHARE_MEDIA--></script>`, service.GetSharedMediaResult{
+			Media:       &service.SharedMediaView{ID: 1, FileName: "share.mp3", Type: model.MediaTypeAudio},
+			HasThumb:    false,
+			StreamURL:   "/s/abc/stream",
+			DownloadURL: "/s/abc/download",
+			ThumbURL:    "",
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if strings.Contains(html, "thumb_url") {
+			t.Fatalf("expected no thumb_url in injected JSON, got %q", html)
 		}
 	})
 
