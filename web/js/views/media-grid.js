@@ -30,6 +30,10 @@ export function initMediaGrid(options = {}) {
       enterFolder(folder.dataset.name);
     }
   });
+
+  grid?.addEventListener('podcast:episode-downloaded', () => {
+    loadMedia();
+  });
 }
 
 export async function loadMedia() {
@@ -52,7 +56,7 @@ export async function loadMedia() {
       updateBreadcrumb(data.current_path);
       setMedia(mediaWithBrowsePath(data.media || [], data.current_path || ''));
       renderBrowse(data);
-      const total = (data.media?.length || 0) + (data.folders?.length || 0);
+      const total = (data.media?.length || 0) + (data.folders?.length || 0) + (data.episodes?.length || 0);
       resultCount.textContent = `${total} items`;
     } else {
       breadcrumb?.classList.add('hidden');
@@ -129,7 +133,8 @@ function renderBrowse(data) {
   if (!grid) return;
   const folders = data.folders || [];
   const media = mediaWithBrowsePath(data.media || [], data.current_path || '');
-  if (!folders.length && !media.length) {
+  const episodes = data.episodes || [];
+  if (!folders.length && !media.length && !episodes.length) {
     grid.innerHTML = '<p class="text-muted text-sm grid-full">Folder is empty.</p>';
     clearSelection();
     return;
@@ -164,9 +169,9 @@ function renderBrowse(data) {
 
   bindMediaItems(grid);
 
-  if (data.episodes && data.episodes.length) {
+  if (episodes.length) {
     import('../podcasts.js').then(m => {
-      m.renderPodcastEpisodes(grid, data.episodes);
+      m.renderPodcastEpisodes(grid, episodes);
     }).catch(() => {});
   }
 }

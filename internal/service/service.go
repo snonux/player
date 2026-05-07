@@ -20,6 +20,7 @@ var (
 	ErrUnsupportedExtension = errors.New("unsupported file extension")
 	ErrAlreadyBootstrapped  = errors.New("already bootstrapped")
 	ErrInvalidCredentials   = errors.New("invalid credentials")
+	ErrInvalidFeed          = errors.New("invalid feed")
 )
 
 // MediaQueryFilter defines query parameters for listing media from the API layer.

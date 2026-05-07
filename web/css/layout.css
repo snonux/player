@@ -607,3 +607,26 @@ body {
 .admin-list li.is-admin {
   background: var(--accent-soft);
 }
+
+.podcast-feed-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.podcast-feed-cover {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.btn-download-episode {
+  align-self: flex-start;
+  margin-top: 0.2rem;
+}

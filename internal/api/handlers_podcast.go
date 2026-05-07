@@ -58,6 +58,10 @@ func (s *Server) handleSubscribePodcast(w http.ResponseWriter, r *http.Request) 
 			forbidden(w, "access denied")
 			return
 		}
+		if errors.Is(err, service.ErrInvalidFeed) {
+			badRequest(w, "invalid feed")
+			return
+		}
 		s.logger.Error("subscribe podcast", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to subscribe"})
 		return

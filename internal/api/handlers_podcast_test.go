@@ -303,8 +303,8 @@ func TestPodcastE2E_FullFlow(t *testing.T) {
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusInternalServerError && rr.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 or 500, got %d", rr.Code)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected %d, got %d", http.StatusBadRequest, rr.Code)
 		}
 	})
 

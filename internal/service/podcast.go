@@ -129,7 +129,7 @@ func (s *podcastService) SubscribeFeed(ctx context.Context, feedURL, setName str
 
 	parsed, err := s.parseFeed(feedURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse feed: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidFeed, err)
 	}
 
 	safeName, setPath := s.resolveSetPath(setName, parsed.Title)
