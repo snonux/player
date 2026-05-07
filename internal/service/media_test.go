@@ -1614,6 +1614,40 @@ func TestMediaService_ListMedia_AdminAndUserFiltering(t *testing.T) {
 			t.Fatalf("unexpected result: %+v", res)
 		}
 	})
+
+	t.Run("user with no permissions sees no media", func(t *testing.T) {
+		listMediaCalled := false
+		store := &repository.MockStore{
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: false}, nil
+				},
+			},
+			SetPermissionRepo: repository.MockSetPermissionRepo{
+				ListPermissionsByUserFunc: func(ctx context.Context, userID int64) ([]model.SetPermission, error) {
+					return nil, nil
+				},
+			},
+			MediaRepo: repository.MockMediaRepo{
+				ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+					listMediaCalled = true
+					return []model.Media{{ID: 5}}, nil
+				},
+			},
+		}
+		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+		setID := int64(1)
+		res, err := svc.ListMedia(ctx, 2, MediaQueryFilter{SetID: &setID})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res) != 0 {
+			t.Fatalf("expected no media, got %+v", res)
+		}
+		if listMediaCalled {
+			t.Fatal("expected repository ListMedia not to be called")
+		}
+	})
 }
 
 func TestMediaService_RegenerateThumbnail(t *testing.T) {

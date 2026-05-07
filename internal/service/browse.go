@@ -146,6 +146,9 @@ func (s *browseService) ListMedia(ctx context.Context, userID int64, filter Medi
 	for _, p := range perms {
 		allowed = append(allowed, p.SetID)
 	}
+	if len(allowed) == 0 {
+		return []model.Media{}, nil
+	}
 	repoFilter.AllowedSetIDs = allowed
 	repoFilter.UserID = userID
 	return s.store.ListMedia(ctx, repoFilter)

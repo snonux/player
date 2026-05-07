@@ -82,6 +82,35 @@ func (h *accessHelper) verifyModifyAccess(ctx context.Context, mediaID, userID i
 	return media, nil
 }
 
+// verifyRestoreAccess checks owner/admin access for active or soft-deleted media.
+func (h *accessHelper) verifyRestoreAccess(ctx context.Context, mediaID, userID int64) (*model.Media, error) {
+	media, err := h.store.GetMediaByID(ctx, mediaID)
+	if err != nil {
+		return nil, fmt.Errorf("get media: %w", err)
+	}
+	if media == nil {
+		deleted, err := h.store.ListDeletedMedia(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list deleted media: %w", err)
+		}
+		for i := range deleted {
+			if deleted[i].ID == mediaID {
+				media = &deleted[i]
+				break
+			}
+		}
+	}
+	if media == nil {
+		return nil, ErrNotFound
+	}
+
+	if err := h.checkSetPermission(ctx, media.SetID, userID, model.RoleOwner); err != nil {
+		return nil, err
+	}
+
+	return media, nil
+}
+
 // verifySetModifyAccess checks that the user is an owner or admin for a set.
 func (h *accessHelper) verifySetModifyAccess(ctx context.Context, setID, userID int64) error {
 	return h.checkSetPermission(ctx, setID, userID, model.RoleOwner)

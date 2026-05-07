@@ -14,15 +14,26 @@ func TestWriteService_RestoreMedia(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name     string
-		media    *model.Media
-		storeErr error
-		wantErr  bool
-		wantCode error
+		name         string
+		media        *model.Media
+		deletedMedia []model.Media
+		deletedErr   error
+		storeErr     error
+		wantErr      bool
+		wantCode     error
 	}{
 		{
 			name:  "ok",
 			media: &model.Media{ID: 1, SetID: 1},
+		},
+		{
+			name:         "soft deleted ok",
+			deletedMedia: []model.Media{{ID: 1, SetID: 1}},
+		},
+		{
+			name:       "deleted lookup error",
+			deletedErr: errors.New("deleted lookup failed"),
+			wantErr:    true,
 		},
 		{
 			name:     "store error",
@@ -44,6 +55,9 @@ func TestWriteService_RestoreMedia(t *testing.T) {
 				MediaRepo: repository.MockMediaRepo{
 					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
 						return tt.media, nil
+					},
+					ListDeletedMediaFunc: func(ctx context.Context) ([]model.Media, error) {
+						return tt.deletedMedia, tt.deletedErr
 					},
 					RestoreMediaFunc: func(ctx context.Context, id int64) error {
 						return tt.storeErr

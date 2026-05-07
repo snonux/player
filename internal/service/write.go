@@ -49,7 +49,7 @@ func (s *writeService) SoftDeleteMedia(ctx context.Context, mediaID, userID int6
 }
 
 func (s *writeService) RestoreMedia(ctx context.Context, mediaID, userID int64) error {
-	_, err := s.helper.verifyModifyAccess(ctx, mediaID, userID)
+	_, err := s.helper.verifyRestoreAccess(ctx, mediaID, userID)
 	if err != nil {
 		return err
 	}
