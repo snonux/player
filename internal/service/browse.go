@@ -330,12 +330,23 @@ func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, pare
 		if err == nil && feed != nil {
 			episodes, err := s.store.ListEpisodesWithStatus(ctx, userID, feed.ID, 1000, 0)
 			if err == nil {
-				result.Episodes = episodes
+				result.Episodes = undownloadedEpisodes(episodes)
 			}
 		}
 	}
 
 	return result, nil
+}
+
+func undownloadedEpisodes(episodes []model.PodcastEpisodeWithStatus) []model.PodcastEpisodeWithStatus {
+	undownloaded := make([]model.PodcastEpisodeWithStatus, 0, len(episodes))
+	for _, episode := range episodes {
+		if episode.IsDownloaded {
+			continue
+		}
+		undownloaded = append(undownloaded, episode)
+	}
+	return undownloaded
 }
 
 func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder string, userID int64) (*FileResult, error) {
