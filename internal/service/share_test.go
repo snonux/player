@@ -74,6 +74,59 @@ func TestShareService_GetSharedThumbnail(t *testing.T) {
 	}
 }
 
+func TestShareService_GetSharedMedia_ThumbnailURL(t *testing.T) {
+	ctx := context.Background()
+	now := newMockClock().T
+
+	tests := []struct {
+		name         string
+		thumbnail    string
+		wantHasThumb bool
+		wantThumbURL string
+	}{
+		{
+			name:         "with thumbnail",
+			thumbnail:    "/tmp/thumb.jpg",
+			wantHasThumb: true,
+			wantThumbURL: "/s/abc/thumbnail",
+		},
+		{
+			name:         "without thumbnail",
+			thumbnail:    "",
+			wantHasThumb: false,
+			wantThumbURL: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &repository.MockStore{
+				ShareRepo: repository.MockShareRepo{
+					GetShareByTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
+						return &model.Share{Token: "abc", MediaID: 1, ExpiresAt: now.Add(time.Hour)}, nil
+					},
+				},
+				MediaRepo: repository.MockMediaRepo{
+					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+						return &model.Media{ID: 1, ThumbnailPath: tt.thumbnail}, nil
+					},
+				},
+			}
+			svc := NewShareService(store, newMockClock(), &accessHelper{store: store})
+			got, err := svc.GetSharedMedia(ctx, "abc")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.HasThumb != tt.wantHasThumb {
+				t.Fatalf("HasThumb = %v, want %v", got.HasThumb, tt.wantHasThumb)
+			}
+			if got.ThumbURL != tt.wantThumbURL {
+				t.Fatalf("ThumbURL = %q, want %q", got.ThumbURL, tt.wantThumbURL)
+			}
+		})
+	}
+}
+
 func TestShareService_ListMyShares(t *testing.T) {
 	ctx := context.Background()
 	now := newMockClock().T

@@ -147,6 +147,12 @@ func (s *shareService) GetSharedMedia(ctx context.Context, token string) (*GetSh
 		return nil, ErrMediaNotFound
 	}
 
+	hasThumb := media.ThumbnailPath != ""
+	thumbURL := ""
+	if hasThumb {
+		thumbURL = fmt.Sprintf("/s/%s/thumbnail", token)
+	}
+
 	return &GetSharedMediaResult{
 		Media: &SharedMediaView{
 			ID:            media.ID,
@@ -158,10 +164,10 @@ func (s *shareService) GetSharedMedia(ctx context.Context, token string) (*GetSh
 			Bitrate:       media.Bitrate,
 			FileSizeBytes: media.FileSizeBytes,
 		},
-		HasThumb:    media.ThumbnailPath != "",
+		HasThumb:    hasThumb,
 		StreamURL:   fmt.Sprintf("/s/%s/stream", token),
 		DownloadURL: fmt.Sprintf("/s/%s/download", token),
-		ThumbURL:    fmt.Sprintf("/s/%s/thumbnail", token),
+		ThumbURL:    thumbURL,
 	}, nil
 }
 
