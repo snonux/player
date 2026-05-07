@@ -147,6 +147,8 @@ func (s *Server) routesStatic() {
 	s.mux.Handle("/logo.svg", staticHandler)
 	s.mux.Handle("/favicon.ico", staticHandler)
 	s.mux.Handle("/favicon.svg", staticHandler)
+	s.mux.Handle("/manifest.json", staticHandler)
+	s.mux.Handle("/sw.js", staticHandler)
 }
 
 // routesHTML wires the SPA HTML page routes.
