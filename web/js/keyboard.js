@@ -1,7 +1,8 @@
 export function initKeyboard(handlers) {
   document.addEventListener('keydown', (e) => {
     const tag = e.target.tagName;
-    const editing = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
+    const nativeControl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+      tag === 'BUTTON' || tag === 'A' || e.target.isContentEditable;
 
     // Lightbox keyboard navigation (overrides global keys while open)
     if (handlers.isLightboxOpen?.()) {
@@ -90,7 +91,7 @@ export function initKeyboard(handlers) {
       return;
     }
 
-    if (editing) {
+    if (nativeControl) {
       if (e.key === 'Escape') {
         e.target.blur();
         handlers.escape?.(e);
@@ -227,7 +228,10 @@ export function initKeyboard(handlers) {
           e.preventDefault();
         }
         break;
-      case 'Enter': handlers.enter?.(e); break;
+      case 'Enter':
+        e.preventDefault();
+        handlers.enter?.(e);
+        break;
       case 'n':
         handlers.notes?.(e);
         break;
