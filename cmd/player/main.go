@@ -82,7 +82,7 @@ func buildLogger(logLevel string) *slog.Logger {
 }
 
 func recoverBackgroundWorkerPanic(logger *slog.Logger, worker string) {
-	if r := recover(); r != nil {
+	if r := recover(); r != nil && logger != nil {
 		logger.Error("background worker panic", "worker", worker, "panic", r, "stack", string(debug.Stack()))
 	}
 }

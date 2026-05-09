@@ -179,6 +179,48 @@ func TestGCWorker_StartStop(t *testing.T) {
 	}
 }
 
+func TestGCWorker_RecoversPanicAndContinues(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	var calls int
+	store := &repository.MockStore{
+		MediaRepo: repository.MockMediaRepo{
+			ListDeletedMediaFunc: func(ctx context.Context) ([]model.Media, error) {
+				calls++
+				if calls == 1 {
+					panic("list deleted panic")
+				}
+				return nil, nil
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	w := NewGCWorker(store, &clock.MockClock{T: now}, "/tmp", time.Minute, logger)
+	tickCh := make(chan time.Time, 2)
+	runDoneCh := make(chan struct{}, 2)
+	w.tickCh = tickCh
+	w.runDoneCh = runDoneCh
+	w.Start()
+	defer w.Stop()
+
+	tickCh <- now
+	select {
+	case <-runDoneCh:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for recovered gc run")
+	}
+
+	tickCh <- now
+	select {
+	case <-runDoneCh:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for gc run after panic")
+	}
+	if calls != 2 {
+		t.Fatalf("expected gc worker to continue after panic, got %d calls", calls)
+	}
+}
+
 func TestGCWorker_ListDeletedError(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	store := &repository.MockStore{

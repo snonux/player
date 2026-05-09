@@ -656,7 +656,9 @@ func (s *podcastService) CheckFeeds(ctx context.Context) error {
 		wg.Add(1)
 		go func(f model.PodcastFeed) {
 			defer wg.Done()
-			defer recoverWorkerPanic(s.logger, "podcast feed check")
+			defer func() {
+				handleWorkerPanic(s.logger, "podcast feed check", recover())
+			}()
 			if err := s.checkFeed(ctx, f); err != nil {
 				s.logger.Warn("podcast feed check failed", "feed_id", f.ID, "feed_url", f.FeedURL, "err", err)
 			} else {

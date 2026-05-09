@@ -822,6 +822,28 @@ func TestPodcastService_CheckFeeds_AllFeedsFail(t *testing.T) {
 	}
 }
 
+type panicRoundTripper struct{}
+
+func (panicRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	panic("transport boom")
+}
+
+func TestPodcastService_CheckFeeds_FeedPanicRecovered(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	store.PodcastRepo = repository.MockPodcastRepo{
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+			return []model.PodcastFeed{{ID: 1, FeedURL: "http://example.test/feed.xml"}}, nil
+		},
+	}
+	svc.httpClient = &http.Client{Transport: panicRoundTripper{}}
+
+	if err := svc.CheckFeeds(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestPodcastService_CheckFeeds_ListError(t *testing.T) {
 	ctx := context.Background()
 	svc, store := setupPodcastService(t)

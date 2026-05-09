@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -103,6 +105,36 @@ func TestAdminService_TriggerRescan_Error(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	<-done
+}
+
+func TestAdminService_TriggerRescan_PanicRecovered(t *testing.T) {
+	ctx := context.Background()
+	sc := &fakeScanner{
+		scanFunc: func(_ context.Context, _ string, _ *model.ScanProgress) error {
+			panic("scan boom")
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewAdminServiceWithLogger(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media", ctx, logger)
+	scanDone := make(chan struct{}, 1)
+	setScanDoneCh(t, svc, scanDone)
+
+	if err := svc.TriggerRescan(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	select {
+	case <-scanDone:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for scan panic recovery")
+	}
+
+	progress := svc.ScanProgress(ctx)
+	if progress.Running {
+		t.Fatal("expected scan to be marked done after panic")
+	}
+	if progress.LastError != "rescan panic: scan boom" {
+		t.Fatalf("unexpected panic error: %q", progress.LastError)
+	}
 }
 
 func TestAdminService_TriggerRescan_NilScanner(t *testing.T) {
