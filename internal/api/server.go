@@ -69,6 +69,9 @@ func NewServer(deps ServerDeps) *Server {
 
 // NewServerWithLogger creates a Server with routes and an injected logger.
 func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) *Server {
+	if deps.Config == nil {
+		panic("api.NewServerWithLogger: Config is nil")
+	}
 	if deps.StaticFS == nil {
 		deps.StaticFS = http.Dir("web")
 	}
