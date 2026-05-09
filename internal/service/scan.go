@@ -53,6 +53,7 @@ func (s *scanService) TriggerRescan(ctx context.Context) error {
 	scanCtx, cancel := context.WithTimeout(s.appCtx, 30*time.Minute)
 	s.scanCancel = cancel
 	progress := &model.ScanProgress{}
+	progress.Start(0)
 	s.progress = progress
 	s.mu.Unlock()
 
