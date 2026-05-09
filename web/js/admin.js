@@ -1,5 +1,6 @@
 import { API } from './api.js';
 import { escapeHtml, toast } from './utils.js';
+import { triggerRescan } from './views/admin-status.js';
 
 export function initAdmin() {
   const btn = document.getElementById('admin-toggle');
@@ -18,8 +19,7 @@ export function initAdmin() {
 
   rescanBtn?.addEventListener('click', async () => {
     rescanBtn.disabled = true;
-    try { await API.rescan(); toast('Rescan triggered'); }
-    catch (err) { toast(err.message, 'error'); }
+    try { await triggerRescan(); }
     finally { rescanBtn.disabled = false; }
   });
 

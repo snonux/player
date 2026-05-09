@@ -261,6 +261,10 @@ export function initKeyboard(handlers) {
         e.preventDefault();
         handlers.playRandom?.(e);
         break;
+      case 'M':
+        e.preventDefault();
+        handlers.rescanMedia?.(e);
+        break;
       // Note: 's' / 'S' are handled above by the e.code === 'KeyS' block
       case '/':
         e.preventDefault();

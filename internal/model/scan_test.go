@@ -50,6 +50,17 @@ func TestScanProgress_SetFilesTotal(t *testing.T) {
 	}
 }
 
+func TestScanProgress_AddFilesTotal(t *testing.T) {
+	var p ScanProgress
+	p.Start(2)
+	p.AddFilesTotal(10)
+	p.AddFilesTotal(15)
+	cp := p.Copy()
+	if cp.FilesTotal != 25 {
+		t.Errorf("FilesTotal = %d, want 25", cp.FilesTotal)
+	}
+}
+
 func TestScanProgress_IncrementFile(t *testing.T) {
 	var p ScanProgress
 	p.Start(1)

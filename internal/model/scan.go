@@ -47,6 +47,13 @@ func (p *ScanProgress) SetFilesTotal(total int) {
 	p.FilesTotal = total
 }
 
+// AddFilesTotal adds to the total number of files discovered during the scan.
+func (p *ScanProgress) AddFilesTotal(total int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.FilesTotal += total
+}
+
 // IncrementSet increments the completed set count.
 func (p *ScanProgress) IncrementSet() {
 	p.mu.Lock()

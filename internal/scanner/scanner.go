@@ -347,7 +347,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 	}
 
 	if progress != nil {
-		progress.SetFilesTotal(len(files))
+		progress.AddFilesTotal(len(files))
 	}
 
 	pathChan := make(chan string, len(files))

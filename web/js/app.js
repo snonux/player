@@ -29,7 +29,7 @@ import { state } from './state.js';
 import { initPWA } from './pwa.js';
 import { closeAllModals } from './dom.js';
 import { toast } from './utils.js';
-import { showAdmin } from './views/admin-status.js';
+import { showAdmin, triggerRescan } from './views/admin-status.js';
 import { initHelp, showSearch, toggleHelp, toggleSidebar } from './views/help.js';
 import {
   initMediaGrid,
@@ -254,6 +254,9 @@ function keyboardHandlers() {
     nextTrack: () => navigatePlayable(1, { forcePlay: true }),
     prevTrack: () => navigatePlayable(-1, { forcePlay: true }),
     playRandom: () => playRandom(),
+    rescanMedia: () => {
+      if (state.isAdmin) triggerRescan();
+    },
     mediaInfo: () => toggleMediaInfo(),
     fullscreen: () => toggleFullscreen(),
     toggleMinimize: () => toggleMinimize(),

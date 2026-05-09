@@ -268,6 +268,62 @@ func TestFSScanner_Scan(t *testing.T) {
 		}
 	})
 
+	t.Run("progress accumulates file totals across sets", func(t *testing.T) {
+		mfs := &mockFS{
+			entries: map[string][]os.DirEntry{
+				"/media": {
+					mockDirEntry{name: "Music", isDir: true},
+					mockDirEntry{name: "Movies", isDir: true},
+				},
+			},
+			fileInfos: map[string]os.FileInfo{
+				"/media/Music/a.mp3":  mockFileInfo{name: "a.mp3", size: 100},
+				"/media/Music/b.mp3":  mockFileInfo{name: "b.mp3", size: 200},
+				"/media/Movies/c.mp3": mockFileInfo{name: "c.mp3", size: 300},
+			},
+			walkList: []walkEntry{
+				{path: "/media/Music", isDir: true},
+				{path: "/media/Music/a.mp3", isDir: false},
+				{path: "/media/Music/b.mp3", isDir: false},
+				{path: "/media/Movies", isDir: true},
+				{path: "/media/Movies/c.mp3", isDir: false},
+				{path: "/media/Movies/readme", isDir: false},
+			},
+		}
+		store := repository.NewMockStore()
+		store.SetRepo.ListSetsFunc = func(_ context.Context) ([]model.Set, error) {
+			return []model.Set{
+				{ID: 1, Name: "Music", RootPath: "Music"},
+				{ID: 2, Name: "Movies", RootPath: "Movies"},
+			}, nil
+		}
+		store.MediaRepo.ListMediaFunc = func(_ context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+			return nil, nil
+		}
+		store.MediaRepo.CreateMediaFunc = func(_ context.Context, m *model.Media) (int64, error) {
+			return 1, nil
+		}
+		prober := &probe.MockProber{
+			ProbeFunc: func(_ context.Context, path string) (*model.Metadata, error) {
+				return &model.Metadata{Duration: 1, Codec: "mp3"}, nil
+			},
+		}
+
+		var progress model.ScanProgress
+		s := newTestScanner(store, prober, &thumb.MockGenerator{}, clk, mfs)
+		if err := s.Scan(ctx, "/media", &progress); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		cp := progress.Copy()
+		if cp.SetsTotal != 2 || cp.SetsDone != 2 {
+			t.Fatalf("expected 2/2 sets, got %d/%d", cp.SetsDone, cp.SetsTotal)
+		}
+		if cp.FilesTotal != 3 || cp.FilesDone != 3 {
+			t.Fatalf("expected 3/3 files, got %d/%d", cp.FilesDone, cp.FilesTotal)
+		}
+	})
+
 	t.Run("scans all top-level dirs and marks canonical podcast root", func(t *testing.T) {
 		mfs := &mockFS{
 			entries: map[string][]os.DirEntry{
