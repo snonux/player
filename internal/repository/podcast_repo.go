@@ -19,6 +19,8 @@ type PodcastRepo interface {
 	GetFeedByID(ctx context.Context, id int64) (*model.PodcastFeed, error)
 	// GetFeedBySetID returns a podcast feed linked to a set.
 	GetFeedBySetID(ctx context.Context, setID int64) (*model.PodcastFeed, error)
+	// ListFeedsBySetID returns all podcast feeds linked to a set.
+	ListFeedsBySetID(ctx context.Context, setID int64) ([]model.PodcastFeed, error)
 	// ListFeeds returns all podcast feeds.
 	ListFeeds(ctx context.Context) ([]model.PodcastFeed, error)
 	// ListFeedsNeedingCheck returns feeds whose last_checked_at is before the given time.

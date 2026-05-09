@@ -34,6 +34,9 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.ShareDefaultExpiryDays != DefaultShareDefaultExpiryDays {
 		t.Errorf("ShareDefaultExpiryDays: expected %d, got %d", DefaultShareDefaultExpiryDays, cfg.ShareDefaultExpiryDays)
 	}
+	if cfg.MediaPageSize != DefaultMediaPageSize {
+		t.Errorf("MediaPageSize: expected %d, got %d", DefaultMediaPageSize, cfg.MediaPageSize)
+	}
 	if cfg.LogLevel != DefaultLogLevel {
 		t.Errorf("LogLevel: expected %q, got %q", DefaultLogLevel, cfg.LogLevel)
 	}
@@ -52,6 +55,7 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 		{"SESSION_TIMEOUT_HOURS", "48"},
 		{"GC_INTERVAL_MINUTES", "60"},
 		{"SHARE_DEFAULT_EXPIRY_DAYS", "14"},
+		{"MEDIA_PAGE_SIZE", "25"},
 		{"LOG_LEVEL", "debug"},
 		{"SECURE_COOKIES", "false"},
 	})
@@ -80,6 +84,9 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 	}
 	if cfg.ShareDefaultExpiryDays != 14 {
 		t.Errorf("ShareDefaultExpiryDays: expected 14, got %d", cfg.ShareDefaultExpiryDays)
+	}
+	if cfg.MediaPageSize != 25 {
+		t.Errorf("MediaPageSize: expected 25, got %d", cfg.MediaPageSize)
 	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel: expected %q, got %q", "debug", cfg.LogLevel)
@@ -131,6 +138,11 @@ func TestLoadConfig_InvalidValues(t *testing.T) {
 			wantErr: "invalid SHARE_DEFAULT_EXPIRY_DAYS",
 		},
 		{
+			name:    "invalid MEDIA_PAGE_SIZE",
+			env:     []envPair{{"MEDIA_PAGE_SIZE", "0"}},
+			wantErr: "invalid MEDIA_PAGE_SIZE",
+		},
+		{
 			name:    "invalid LOG_LEVEL",
 			env:     []envPair{{"LOG_LEVEL", "trace"}},
 			wantErr: "invalid LOG_LEVEL",
@@ -168,6 +180,7 @@ func clearEnv() {
 		"PORT", "MEDIA_ROOT", "DB_PATH",
 		"MAX_UPLOAD_SIZE_MB", "SESSION_TIMEOUT_HOURS",
 		"GC_INTERVAL_MINUTES", "SHARE_DEFAULT_EXPIRY_DAYS",
+		"PODCAST_CHECK_INTERVAL_MINUTES", "MEDIA_PAGE_SIZE",
 		"LOG_LEVEL", "SECURE_COOKIES",
 	} {
 		os.Unsetenv(k)

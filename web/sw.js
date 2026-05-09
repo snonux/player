@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v9';
+const CACHE = 'kiss-v18';
 const ASSETS = [
   '/',
   '/index.html',
@@ -9,7 +9,6 @@ const ASSETS = [
   '/css/layout.css',
   '/css/components.css',
   '/css/player.css',
-  '/css/lightbox.css',
   '/css/login.css',
   '/js/app.js',
   '/js/state.js',
@@ -30,7 +29,6 @@ const ASSETS = [
   '/js/utils.js',
   '/js/podcasts.js',
   '/js/pwa.js',
-  '/js/lightbox.js',
   '/js/views/admin-status.js',
   '/js/views/help.js',
   '/js/views/media-actions.js',

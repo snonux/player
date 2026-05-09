@@ -287,6 +287,18 @@ func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"favorite": fav})
 }
 
+func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.tagSvc) {
+		return
+	}
+	tags, err := s.tagSvc.ListTags(r.Context(), userIDFromContext(r))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, tags)
+}
+
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.tagSvc) {
 		return

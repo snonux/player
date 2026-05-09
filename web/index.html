@@ -9,24 +9,45 @@
 <link rel="stylesheet" href="/css/layout.css">
 <link rel="stylesheet" href="/css/components.css">
 <link rel="stylesheet" href="/css/player.css">
-<link rel="stylesheet" href="/css/lightbox.css">
 <script type="module" src="/js/app.js"></script>
 </head>
 <body>
 <header class="site-header" role="banner">
-  <a href="/" class="logo"><img src="/logo.png" alt="Player" class="logo-img">Player</a>
-  <div class="spacer"></div>
-  <div id="scan-indicator" class="scan-indicator hidden" role="status" aria-live="polite">
-    <span class="scan-dot" aria-hidden="true"></span>
-    <span id="scan-indicator-text">Scanning</span>
+  <div class="header-main">
+    <a href="/" class="logo"><img src="/logo.png" alt="Player" class="logo-img">Player</a>
+    <div class="spacer"></div>
+    <div id="scan-indicator" class="scan-indicator hidden" role="status" aria-live="polite">
+      <span class="scan-dot" aria-hidden="true"></span>
+      <span id="scan-indicator-text">Scanning</span>
+    </div>
+    <button id="sidebar-toggle" class="icon-btn" title="Sets" aria-label="Toggle sets sidebar">☰</button>
+    <button id="shuffle-toggle" class="icon-btn" title="Shuffle (r)" aria-label="Toggle shuffle">🔀</button>
+    <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
+    <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
+    <button id="admin-toggle" class="icon-btn hidden" title="Admin panel">⚙</button>
+    <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
   </div>
-  <button id="sidebar-toggle" class="icon-btn" title="Sets" aria-label="Toggle sets sidebar">☰</button>
-  <button id="shuffle-toggle" class="icon-btn" title="Shuffle (r)" aria-label="Toggle shuffle">🔀</button>
-  <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
-  <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
-  <button id="admin-toggle" class="icon-btn hidden" title="Admin panel">⚙</button>
-  <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
 </header>
+
+<div id="search-overlay" class="search-overlay hidden">
+  <div id="search-bar" class="search-bar search-overlay-bar" role="search">
+    <span aria-hidden="true">🔎</span>
+    <input id="search-input" type="search" placeholder="Search or filter… (press /)" autocomplete="off" aria-label="Search media">
+    <button id="search-clear" class="icon-btn btn-sm" title="Clear">✕</button>
+    <div id="tag-filter-list" class="tag-filter-list" aria-label="Tag filters"></div>
+    <div id="search-help" class="search-help hidden">
+      <div class="search-help-title">Search syntax</div>
+      <div class="search-help-row"><code>min:30</code> minimum duration (seconds)</div>
+      <div class="search-help-row"><code>tag:a,b</code> filter by tags</div>
+      <div class="search-help-row"><code>like:1</code> liked items only</div>
+      <div class="search-help-row"><code>set:yoga</code> select a set by id or name</div>
+      <div class="search-help-row"><code>type:video</code> / <code>type:audio</code> / <code>type:image</code></div>
+      <div class="search-help-row"><code>sort:random</code> / <code>sort:name</code> / <code>sort:date</code> / <code>sort:duration</code></div>
+      <div class="search-help-row"><code>minsize:10</code> min file size (MB)</div>
+      <div class="search-help-row"><code>maxsize:500</code> max file size (MB)</div>
+    </div>
+  </div>
+</div>
 
 <!-- Sidebar: hidden by default, toggled via keyboard or menu -->
 <nav id="sidebar" class="sidebar" aria-label="Sets">
@@ -40,22 +61,6 @@
 <!-- Main page area -->
 <div class="page" role="main">
   <div class="main-content">
-    <!-- Search bar: shown on '/' key -->
-    <div id="search-bar" class="search-bar hidden" role="search">
-      <span aria-hidden="true">🔎</span>
-      <input id="search-input" type="search" placeholder="Search or filter… (press /)" autocomplete="off" aria-label="Search media">
-      <button id="search-clear" class="icon-btn btn-sm" title="Clear">✕</button>
-      <div id="search-help" class="search-help hidden">
-        <div class="search-help-title">Search syntax</div>
-        <div class="search-help-row"><code>min:30</code> minimum duration (seconds)</div>
-        <div class="search-help-row"><code>tag:a,b</code> filter by tags</div>
-        <div class="search-help-row"><code>like:1</code> liked items only</div>
-        <div class="search-help-row"><code>type:video</code> / <code>type:audio</code> / <code>type:image</code></div>
-        <div class="search-help-row"><code>sort:random</code> / <code>sort:name</code> / <code>sort:date</code> / <code>sort:duration</code></div>
-        <div class="search-help-row"><code>minsize:10</code> min file size (MB)</div>
-        <div class="search-help-row"><code>maxsize:500</code> max file size (MB)</div>
-      </div>
-    </div>
     <div id="result-count" class="text-muted text-xs mt-1"></div>
 
     <!-- Empty state hint: shown when no set is selected -->
@@ -95,9 +100,6 @@
     <div class="time" id="time-total">0:00</div>
     <button id="btn-prev" class="icon-btn" aria-label="Previous">⏮</button>
     <button id="btn-next" class="icon-btn" aria-label="Next">⏭</button>
-    <button id="btn-zoom-in" class="icon-btn image-only hidden" aria-label="Zoom in">+</button>
-    <button id="btn-zoom-out" class="icon-btn image-only hidden" aria-label="Zoom out">−</button>
-    <button id="btn-slideshow" class="icon-btn image-only hidden" aria-label="Slideshow">⏵</button>
     <div class="volume-control video-only">
       <button id="btn-mute" class="icon-btn" aria-label="Mute">🔊</button>
       <input id="volume-slider" type="range" min="0" max="1" step="0.05" value="1" class="volume-slider" aria-label="Volume">
@@ -148,8 +150,6 @@
         <div class="help-row"><span><kbd>Backspace</kbd></span><span>Go up one folder</span></div>
         <div class="help-row"><span><kbd>r</kbd></span><span>Toggle shuffle</span></div>
         <div class="help-row"><span><kbd>s</kbd></span><span>Share selected media</span></div>
-        <div class="help-row"><span><kbd>+</kbd> <kbd>−</kbd></span><span>Zoom in / out (image viewer)</span></div>
-        <div class="help-row"><span><kbd>Shift+S</kbd></span><span>Toggle slideshow (images)</span></div>
         <div class="help-row"><span><kbd>c</kbd></span><span>Toggle crop mode (fullscreen)</span></div>
         <div class="help-row"><span><kbd>Shift+↑</kbd> <kbd>Shift+↓</kbd> <kbd>Shift+←</kbd> <kbd>Shift+→</kbd></span><span>Nudge crop position</span></div>
         <div class="help-row"><span><kbd>x</kbd></span><span>Cycle crop anchor preset</span></div>
@@ -157,7 +157,7 @@
         <div class="help-row"><span><kbd>?</kbd></span><span>Show / hide help</span></div>
       </div>
       <div class="help-search text-muted text-xs mt-2">
-        Search: plain text searches file name. Syntax: <code>min:30</code> <code>max:55</code> <code>tag:a,b</code> <code>like:1</code> <code>type:video</code> <code>sort:random</code> <code>minsize:10</code> <code>maxsize:500</code>
+        Search: plain text searches file name. Syntax: <code>set:yoga</code> <code>min:30</code> <code>max:55</code> <code>tag:a,b</code> <code>like:1</code> <code>type:video</code> <code>sort:random</code> <code>minsize:10</code> <code>maxsize:500</code>
       </div>
       <div class="help-shares text-muted text-xs mt-2">My Shares: <kbd>↑</kbd> / <kbd>↓</kbd> or <kbd>k</kbd> / <kbd>j</kbd> navigate, <kbd>Enter</kbd> copies, <kbd>Delete</kbd> revokes, <kbd>Esc</kbd> closes.</div>
     </div>
@@ -270,7 +270,6 @@
         <h4 class="my-1 text-90">Subscribe</h4>
         <form id="podcast-form" class="mt-2">
           <input id="podcast-url" type="url" placeholder="https://example.com/feed.xml" required autocomplete="off">
-          <input id="podcast-name" type="text" placeholder="Folder name (optional)" autocomplete="off">
           <button type="submit" class="btn btn-primary btn-sm mt-1">Subscribe</button>
         </form>
       </section>
@@ -297,23 +296,6 @@
         <kbd>Delete</kbd> revoke &middot;
         <kbd>Esc</kbd> close
     </div>
-  </div>
-</div>
-
-<!-- Image Lightbox -->
-<div id="image-lightbox" class="lightbox-overlay" role="dialog" aria-modal="true" aria-label="Image viewer">
-  <button id="lb-close" class="icon-btn lightbox-close" aria-label="Close">✕</button>
-  <button id="lb-prev" class="icon-btn lightbox-nav lightbox-prev" aria-label="Previous">‹</button>
-  <button id="lb-next" class="icon-btn lightbox-nav lightbox-next" aria-label="Next">›</button>
-  <div class="lightbox-stage">
-    <img id="lightbox-image" alt="" draggable="false">
-  </div>
-  <div class="lightbox-toolbar">
-    <button id="lb-zoom-in" class="icon-btn" aria-label="Zoom in">+</button>
-    <button id="lb-zoom-out" class="icon-btn" aria-label="Zoom out">−</button>
-    <button id="lb-slideshow" class="icon-btn" aria-label="Slideshow">⏵</button>
-    <span id="lb-counter" class="lightbox-counter"></span>
-    <span id="lb-meta" class="lightbox-meta"></span>
   </div>
 </div>
 

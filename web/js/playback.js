@@ -119,6 +119,7 @@ export function initPlayer(options = {}) {
     localPlaybackState,
     triggerPrevious,
     triggerNext,
+    triggerNavigate,
   });
 
   e.volume?.addEventListener('input', () => {
@@ -390,9 +391,9 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
     e.timeElapsed?.classList.add('hidden');
     e.timeTotal?.classList.add('hidden');
     e.btnPlay?.classList.add('hidden');
-    e.btnZoomIn?.classList.remove('hidden');
-    e.btnZoomOut?.classList.remove('hidden');
-    e.btnSlideshow?.classList.remove('hidden');
+    e.btnZoomIn?.classList.add('hidden');
+    e.btnZoomOut?.classList.add('hidden');
+    e.btnSlideshow?.classList.add('hidden');
     e.image.classList.remove('hidden');
     e.image.src = streamUrl;
     e.player?.classList.add('open', 'has-image');
@@ -470,9 +471,9 @@ function loadMedia(media, resumeFrom = 0) {
     e.timeElapsed?.classList.add('hidden');
     e.timeTotal?.classList.add('hidden');
     e.btnPlay?.classList.add('hidden');
-    e.btnZoomIn?.classList.remove('hidden');
-    e.btnZoomOut?.classList.remove('hidden');
-    e.btnSlideshow?.classList.remove('hidden');
+    e.btnZoomIn?.classList.add('hidden');
+    e.btnZoomOut?.classList.add('hidden');
+    e.btnSlideshow?.classList.add('hidden');
     e.image.classList.remove('hidden');
     e.image.src = `/api/media/${media.id}/stream`;
     e.player?.classList.add('open', 'has-image');
@@ -646,6 +647,25 @@ function triggerNext(options = {}) {
   playNext();
 }
 
+function triggerNavigate(delta, options = {}) {
+  const step = Number(delta || 0);
+  if (!step) return;
+  if (step < 0 && previousHandler && step === -1) {
+    previousHandler(options);
+    return;
+  }
+  if (step > 0 && nextHandler) {
+    nextHandler({ ...options, delta: step });
+    return;
+  }
+  if (step < 0 && nextHandler) {
+    nextHandler({ ...options, delta: step });
+    return;
+  }
+  if (step < 0) playPrevious();
+  else playNext();
+}
+
 export function playPrevious() {
   const list = state.media;
   if (!list.length) return;
@@ -675,8 +695,8 @@ export function currentMediaId() { return currentMedia?.id; }
 export function currentMediaInfo() { return currentMedia; }
 
 export function isPlaybackActive() {
-  if (isDetached()) return detachedIsPlaying();
-  return isPlaying;
+  if (isDetached()) return detachedIsPlaying() || currentMedia?.type === 'image';
+  return isPlaying || currentMedia?.type === 'image';
 }
 
 export function isImageMode() {

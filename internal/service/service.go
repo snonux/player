@@ -144,6 +144,8 @@ type MediaShareService interface {
 
 // MediaTagService handles tagging of media items.
 type MediaTagService interface {
+	// ListTags returns known tag names.
+	ListTags(ctx context.Context, userID int64) ([]model.Tag, error)
 	// AssignTag attaches a named tag to a media item.
 	AssignTag(ctx context.Context, mediaID, userID int64, tagName string) error
 	// RemoveTag detaches a named tag from a media item.

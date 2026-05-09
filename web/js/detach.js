@@ -19,6 +19,8 @@ export function initDetach(options = {}) {
       deps.triggerPrevious?.({ forcePlay: ev.data.play ?? true });
     } else if (ev.data.type === 'detach-next') {
       deps.triggerNext?.({ forcePlay: ev.data.play ?? true });
+    } else if (ev.data.type === 'detach-nav') {
+      deps.triggerNavigate?.(Number(ev.data.delta || 0), { forcePlay: ev.data.play ?? true });
     }
   });
 }

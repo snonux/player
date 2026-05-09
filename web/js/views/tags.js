@@ -1,10 +1,14 @@
 import { API } from '../api.js';
 import { currentElement } from '../selection.js';
+import { state } from '../state.js';
 import { escapeHtml, toast } from '../utils.js';
 
 let tagsCurrentMediaId = null;
+let tagFilterCallback = () => {};
+let cachedTags = [];
 
-export function initTags() {
+export function initTags(options = {}) {
+  tagFilterCallback = typeof options.onFilterChange === 'function' ? options.onFilterChange : (() => {});
   document.getElementById('tags-close')?.addEventListener('click', closeTagsModal);
   document.getElementById('tags-modal')?.addEventListener('click', (e) => {
     if (e.target === document.getElementById('tags-modal')) closeTagsModal();
@@ -16,6 +20,8 @@ export function initTags() {
       addTagForSelected();
     }
   });
+  document.addEventListener('filters:changed', renderTagFilter);
+  refreshTagFilter();
 }
 
 export async function openTagsForSelected() {
@@ -56,6 +62,7 @@ function renderTagsList(tags) {
         await API.removeTag(tagsCurrentMediaId, b.dataset.tag);
         const detail = await API.mediaDetail(tagsCurrentMediaId);
         renderTagsList(detail?.tags || []);
+        refreshTagFilter();
       } catch (err) {
         toast(err.message || 'Remove tag failed', 'error');
       }
@@ -73,7 +80,50 @@ async function addTagForSelected() {
     input.value = '';
     const detail = await API.mediaDetail(tagsCurrentMediaId);
     renderTagsList(detail?.tags || []);
+    refreshTagFilter();
   } catch (err) {
     toast(err.message || 'Add tag failed', 'error');
   }
+}
+
+async function refreshTagFilter() {
+  const el = document.getElementById('tag-filter-list');
+  if (!el) return;
+  try {
+    cachedTags = await API.tags();
+    renderTagFilter();
+  } catch {
+    cachedTags = [];
+    renderTagFilter();
+  }
+}
+
+function renderTagFilter() {
+  const el = document.getElementById('tag-filter-list');
+  if (!el) return;
+  const active = selectedTags();
+  el.innerHTML = (cachedTags || []).map((tag) => {
+    const name = tag.name || '';
+    const isActive = active.includes(name);
+    return `<button type="button" class="tag-filter-chip${isActive ? ' active' : ''}" data-tag="${escapeHtml(name)}" title="Filter tag ${escapeHtml(name)}"><span>#${escapeHtml(name)}</span></button>`;
+  }).join('');
+  el.querySelectorAll('.tag-filter-chip').forEach((button) => {
+    button.addEventListener('click', () => toggleTagFilter(button.dataset.tag));
+  });
+}
+
+function toggleTagFilter(name) {
+  if (!name) return;
+  const tags = selectedTags();
+  const next = tags.includes(name)
+    ? tags.filter((tag) => tag !== name)
+    : [...tags, name];
+  state.filters.tags = next.join(',');
+  state.folderPath = '';
+  renderTagFilter();
+  tagFilterCallback();
+}
+
+function selectedTags() {
+  return (state.filters.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean);
 }

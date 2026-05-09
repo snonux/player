@@ -1515,6 +1515,9 @@ func (m *mockPingStore) GetFeedByID(ctx context.Context, id int64) (*model.Podca
 func (m *mockPingStore) GetFeedBySetID(ctx context.Context, setID int64) (*model.PodcastFeed, error) {
 	return m.store.GetFeedBySetID(ctx, setID)
 }
+func (m *mockPingStore) ListFeedsBySetID(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
+	return m.store.ListFeedsBySetID(ctx, setID)
+}
 func (m *mockPingStore) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
 	return m.store.ListFeeds(ctx)
 }

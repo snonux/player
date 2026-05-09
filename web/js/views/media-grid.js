@@ -5,6 +5,33 @@ import { fmtSize } from '../dom.js';
 import { escapeHtml, fmtDur, toast } from '../utils.js';
 
 let callbacks = {};
+let mediaPageSize = 100;
+let lastMediaPageKey = '';
+
+export function setMediaPageSize(value) {
+  const parsed = Number.parseInt(value, 10);
+  mediaPageSize = Number.isFinite(parsed) && parsed > 0 ? parsed : 100;
+  state.mediaPage = 0;
+}
+
+export function paginateItems(items, page, pageSize = mediaPageSize) {
+  const size = Math.max(1, Number.parseInt(pageSize, 10) || 100);
+  const total = items.length;
+  const maxPage = Math.max(0, Math.ceil(total / size) - 1);
+  const current = Math.max(0, Math.min(Number.parseInt(page, 10) || 0, maxPage));
+  const start = current * size;
+  const end = Math.min(start + size, total);
+  return {
+    items: items.slice(start, end),
+    total,
+    page: current,
+    pageSize: size,
+    start,
+    end,
+    hasPrev: current > 0,
+    hasNext: current < maxPage,
+  };
+}
 
 export function initMediaGrid(options = {}) {
   callbacks = options;
@@ -14,13 +41,11 @@ export function initMediaGrid(options = {}) {
     const el = e.target.closest('.media-card, .media-row');
     if (!el) return;
     selectByElement(el);
-    const idx = parseInt(el.dataset.index, 10);
-    const media = state.media[idx];
-    if (media?.type === 'image') {
-      callbacks.openLightbox?.(state.media, media.id);
-    } else {
-      callbacks.playSelected?.();
+    if (el.classList.contains('set-card')) {
+      callbacks.openSet?.(parseInt(el.dataset.setId, 10));
+      return;
     }
+    callbacks.playSelected?.();
   });
 
   grid?.addEventListener('click', (e) => {
@@ -51,13 +76,20 @@ export async function loadMedia() {
     const setIds = state.selectedSetIds.length > 1 ? state.selectedSetIds.join(',') : '';
     const singleSetId = state.selectedSetIds.length === 1 ? state.selectedSetIds[0] : null;
 
-    if (singleSetId && !setIds && !callbacks.isShuffle?.() && !hasActiveFilters()) {
+    if (!singleSetId && !setIds && !callbacks.isShuffle?.() && !hasActiveFilters()) {
+      breadcrumb?.classList.add('hidden');
+      setMedia([]);
+      syncMediaPage('sets');
+      const page = renderSetGrid(state.sets || []);
+      resultCount.textContent = resultText(state.sets.length, page);
+    } else if (singleSetId && !setIds && !callbacks.isShuffle?.() && !hasActiveFilters()) {
+      syncMediaPage(`browse:${singleSetId}:${state.folderPath || ''}`);
       const data = await API.browse(singleSetId, state.folderPath);
       updateBreadcrumb(data.current_path);
       setMedia(mediaWithBrowsePath(data.media || [], data.current_path || ''));
-      renderBrowse(data);
+      const page = renderBrowse(data);
       const total = (data.media?.length || 0) + (data.folders?.length || 0) + (data.episodes?.length || 0);
-      resultCount.textContent = `${total} items`;
+      resultCount.textContent = resultText(total, page);
     } else {
       breadcrumb?.classList.add('hidden');
       const sort = callbacks.isShuffle?.() ? 'random' : (state.filters.sort || 'name');
@@ -75,15 +107,27 @@ export async function loadMedia() {
         sort,
         limit: '1000',
       };
+      syncMediaPage(`grid:${JSON.stringify(params)}`);
       const data = await API.media(params);
       const list = Array.isArray(data) ? data : data?.media || [];
       setMedia(list);
-      renderGrid(list);
-      resultCount.textContent = `${list.length} items`;
+      const page = renderGrid(list);
+      resultCount.textContent = resultText(list.length, page);
     }
   } catch (err) {
     grid.innerHTML = `<p class="error-message grid-full">${escapeHtml(err.message)}</p>`;
   }
+}
+
+function syncMediaPage(key) {
+  if (key === lastMediaPageKey) return;
+  lastMediaPageKey = key;
+  state.mediaPage = 0;
+}
+
+function resultText(total, page) {
+  if (!page || total <= page.pageSize) return `${total} items`;
+  return `${page.start + 1}-${page.end} of ${total} items`;
 }
 
 function updateBreadcrumb(currentPath) {
@@ -114,11 +158,31 @@ export function enterFolder(name) {
 }
 
 export function mediaWithBrowsePath(media, path) {
-  return media.map((m) => ({ ...m, browse_path: path || '' }));
+  const prefix = path ? `${path}/` : '';
+  return media.map((m) => {
+    const relPath = m.rel_path || '';
+    const relativeToCurrent = prefix && relPath.startsWith(prefix)
+      ? relPath.slice(prefix.length)
+      : relPath;
+    return {
+      ...m,
+      browse_path: path || '',
+      flattened_folder: relativeToCurrent.includes('/'),
+    };
+  });
 }
 
 export function navigateBack() {
-  if (!state.folderPath) return;
+  if (!state.folderPath) {
+    if (state.selectedSetId || state.selectedSetIds.length) {
+      state.selectedSetId = null;
+      state.selectedSetIds = [];
+      state.mediaPage = 0;
+      callbacks.onSetCleared?.();
+      loadMedia();
+    }
+    return;
+  }
   const last = state.folderPath.lastIndexOf('/');
   if (last < 0) {
     state.folderPath = '';
@@ -128,6 +192,69 @@ export function navigateBack() {
   loadMedia();
 }
 
+function renderSetGrid(sets) {
+  const grid = document.getElementById('media-grid');
+  if (!grid) return;
+  if (!sets.length) {
+    const page = paginateItems([], state.mediaPage);
+    state.mediaPage = page.page;
+    grid.innerHTML = '<p class="text-muted text-sm grid-full">No sets.</p>';
+    clearSelection();
+    return page;
+  }
+  const entries = sets.map((item, index) => ({ item, index }));
+  const page = paginateItems(entries, state.mediaPage);
+  state.mediaPage = page.page;
+  grid.innerHTML = renderPager(page, 'top') +
+    page.items.map((entry) => renderSetCard(entry.item, entry.index)).join('') +
+    renderPager(page, 'bottom');
+  clearSelection();
+  bindSetCards(grid);
+  bindPager(grid);
+  return page;
+}
+
+function renderSetCard(set, index) {
+  return `
+    <div class="media-card set-card" data-set-id="${set.id}" data-index="${index}" tabindex="0" role="button" aria-label="Set ${escapeHtml(set.name)}">
+      <div class="thumb-wrap">
+        <img src="/api/sets/${set.id}/cover" alt="" loading="lazy" onerror="this.remove();">
+        <span class="placeholder">▦</span>
+        <div class="card-actions">
+          <button class="icon-btn btn-sm" data-action="regen-set-cover" title="Regenerate cover">🔄</button>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="title">${escapeHtml(set.name)}</div>
+        <div class="subtitle">${set.is_podcast ? 'Podcast set' : 'Set'}</div>
+      </div>
+    </div>
+  `;
+}
+
+function bindSetCards(grid) {
+  grid.querySelectorAll('.set-card').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      selectByElement(el);
+      if (e.target.closest('.card-actions, button')) return;
+      e.stopPropagation();
+      callbacks.openSet?.(parseInt(el.dataset.setId, 10));
+    });
+    el.querySelector('[data-action="regen-set-cover"]')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = parseInt(el.dataset.setId, 10);
+      if (!Number.isFinite(id)) return;
+      try {
+        await API.regenCover(id);
+        toast('Set cover regenerated');
+        await loadMedia();
+      } catch (err) {
+        toast(err.message || 'Cover failed', 'error');
+      }
+    });
+  });
+}
+
 function renderBrowse(data) {
   const grid = document.getElementById('media-grid');
   if (!grid) return;
@@ -135,13 +262,31 @@ function renderBrowse(data) {
   const media = mediaWithBrowsePath(data.media || [], data.current_path || '');
   const episodes = data.episodes || [];
   if (!folders.length && !media.length && !episodes.length) {
+    const page = paginateItems([], state.mediaPage);
+    state.mediaPage = page.page;
     grid.innerHTML = '<p class="text-muted text-sm grid-full">Folder is empty.</p>';
     clearSelection();
-    return;
+    return page;
   }
-  const folderHtml = folders.map((f, i) => renderFolder(f, i)).join('');
-  const mediaHtml = media.map((m, i) => renderItem(m, i)).join('');
-  grid.innerHTML = folderHtml + mediaHtml;
+  const entries = [
+    ...folders.map((folder, index) => ({ type: 'folder', item: folder, index })),
+    ...media.map((item, index) => ({ type: 'media', item, index })),
+    ...episodes.map((item, index) => ({ type: 'episode', item, index })),
+  ];
+  const page = paginateItems(entries, state.mediaPage);
+  state.mediaPage = page.page;
+  const folderHtml = page.items
+    .filter((entry) => entry.type === 'folder')
+    .map((entry) => renderFolder(entry.item, entry.index))
+    .join('');
+  const mediaHtml = page.items
+    .filter((entry) => entry.type === 'media')
+    .map((entry) => renderItem(entry.item, entry.index))
+    .join('');
+  const pageEpisodes = page.items
+    .filter((entry) => entry.type === 'episode')
+    .map((entry) => entry.item);
+  grid.innerHTML = renderPager(page, 'top') + folderHtml + mediaHtml + renderPager(page, 'bottom');
   clearSelection();
 
   grid.querySelectorAll('.folder-card [data-action="regen-folder-cover"]').forEach((b) => {
@@ -168,12 +313,16 @@ function renderBrowse(data) {
   });
 
   bindMediaItems(grid);
+  bindPager(grid);
 
-  if (episodes.length) {
+  if (pageEpisodes.length) {
     import('../podcasts.js').then(m => {
-      m.renderPodcastEpisodes(grid, episodes);
+      m.renderPodcastEpisodes(grid, pageEpisodes, {
+        before: grid.querySelector('[data-page-pager="bottom"]'),
+      });
     }).catch(() => {});
   }
+  return page;
 }
 
 function renderFolder(folder, index) {
@@ -202,18 +351,55 @@ function renderGrid(items) {
   const grid = document.getElementById('media-grid');
   if (!grid) return;
   if (!items.length) {
+    const page = paginateItems([], state.mediaPage);
+    state.mediaPage = page.page;
     grid.innerHTML = `<p class="text-muted text-sm grid-full">No results.</p>`;
     clearSelection();
-    return;
+    return page;
   }
-  grid.innerHTML = items.map((m, i) => renderItem(m, i)).join('');
+  const entries = items.map((item, index) => ({ item, index }));
+  const page = paginateItems(entries, state.mediaPage);
+  state.mediaPage = page.page;
+  grid.innerHTML = renderPager(page, 'top') +
+    page.items.map((entry) => renderItem(entry.item, entry.index)).join('') +
+    renderPager(page, 'bottom');
   clearSelection();
   bindMediaItems(grid);
+  bindPager(grid);
+  return page;
+}
+
+function renderPager(page, position) {
+  if (!page || page.total <= page.pageSize) return '';
+  const showPrev = position === 'top' && page.hasPrev;
+  const showNext = position === 'bottom' && page.hasNext;
+  if (!showPrev && !showNext) return '';
+  const action = showPrev ? 'prev' : 'next';
+  const label = showPrev ? 'Prev' : 'Next';
+  return `
+    <div class="media-pager media-pager-${position} grid-full" data-page-pager="${position}">
+      <span class="media-page-summary">${page.start + 1}-${page.end} of ${page.total}</span>
+      <button class="btn btn-ghost btn-sm" type="button" data-page-action="${action}">${label}</button>
+    </div>
+  `;
+}
+
+function bindPager(grid) {
+  grid.querySelectorAll('[data-page-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.mediaPage += button.dataset.pageAction === 'next' ? 1 : -1;
+      loadMedia();
+    });
+  });
 }
 
 function bindMediaItems(grid) {
   grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
-    el.addEventListener('click', () => { selectByElement(el); });
+    el.addEventListener('click', (e) => {
+      selectByElement(el);
+      if (el.dataset.flattenedFolder !== 'true' || e.target.closest('.card-actions, button')) return;
+      callbacks.playSelected?.();
+    });
     const playBtn = el.querySelector('[data-action="play"]');
     const viewBtn = el.querySelector('[data-action="view"]');
     const favBtn = el.querySelector('[data-action="favorite"]');
@@ -229,9 +415,7 @@ function bindMediaItems(grid) {
     viewBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
       selectByElement(el);
-      const idx = parseInt(el.dataset.index, 10);
-      const media = state.media[idx];
-      if (media) callbacks.openLightbox?.(state.media, media.id);
+      callbacks.playSelected?.();
     });
     favBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -258,9 +442,10 @@ function bindMediaItems(grid) {
 
 function renderItem(m, index) {
   const sizeText = fmtSize(m.file_size_bytes);
+  const flattenedFolder = m.flattened_folder ? 'true' : 'false';
   if (m.type === 'video') {
     return `
-      <div class="media-card" data-id="${m.id}" data-index="${index}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
+      <div class="media-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
@@ -284,12 +469,12 @@ function renderItem(m, index) {
     const resText = escapeHtml(m.resolution || '');
     const safeSizeText = escapeHtml(sizeText || '');
     return `
-      <div class="media-card image-card" data-id="${m.id}" data-index="${index}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
+      <div class="media-card image-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${resText}${safeSizeText ? ' • ' + safeSizeText : ''}</span>
           <div class="card-actions">
-            <button class="icon-btn btn-sm" data-action="view" title="View">👁</button>
+            <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
             <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
             <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
             <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
@@ -305,7 +490,7 @@ function renderItem(m, index) {
     `;
   }
   return `
-    <div class="media-card audio-card" data-id="${m.id}" data-index="${index}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
+    <div class="media-card audio-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
       <div class="thumb-wrap">
         ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No cover</span>`}
         <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>

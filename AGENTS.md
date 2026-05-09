@@ -194,6 +194,7 @@ This triggers `FSScanner.Scan()`, which:
 | `SESSION_TIMEOUT_HOURS` | `24` | ≥ 1 | Cookie / session expiry |
 | `GC_INTERVAL_MINUTES` | `30` | ≥ 1 | Garbage collector tick interval |
 | `SHARE_DEFAULT_EXPIRY_DAYS` | `7` | ≥ 1 | Default share link lifetime |
+| `MEDIA_PAGE_SIZE` | `100` | ≥ 1 | Items displayed per thumbnail grid page |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` | Log verbosity |
 | `SECURE_COOKIES` | `true` | `true` / `false` | Set `Secure` flag on session cookies; set to `false` for plain-HTTP local deployments |
 
@@ -203,17 +204,17 @@ This triggers `FSScanner.Scan()`, which:
 
 ## Podcast Support
 
-Podcasts are **special sets** (`sets.is_podcast = 1`). They reuse set permissions, browsing, and cover images, while adding feed management and episode tracking.
+Podcasts live under one shared **podcast set** (`sets.is_podcast = 1`, `root_path = "podcast"`). Each subscribed podcast is a `podcast_feeds` row and gets its own folder inside that single set.
 
 ### Subscribing
 
 Admin opens the **Podcasts** button in the admin panel (or calls `POST /api/podcasts`):
-- Submit an RSS/Atom feed URL and optional folder name.
-- Server creates a set folder, parses the feed, downloads the cover image, and inserts episodes into `podcast_episodes`.
+- Submit an RSS/Atom feed URL.
+- Server creates or reuses the shared `podcast` set, creates a feed folder inside it, parses the feed, downloads the cover image, and inserts episodes into `podcast_episodes`.
 
 ### Episode Management
 
-Episodes are stored in `podcast_episodes` and rendered in the browse grid for podcast sets:
+Episodes are stored in `podcast_episodes` and rendered in the browse grid under the shared podcast set:
 - **Undownloaded** episodes show a **Download to server** button (calls `POST /api/podcasts/episodes/{id}/download`).
 - **Downloaded** episodes become regular `media` rows and appear as normal media cards.
 - Users can mark episodes as listened/unlistened via the checkmark button.
@@ -226,7 +227,7 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/podcasts` | List podcast sets |
+| `GET` | `/api/podcasts` | List subscribed podcast feeds |
 | `POST` | `/api/podcasts` | Subscribe to a new feed (admin) |
 | `GET` | `/api/podcasts/{id}/episodes` | List episodes with status |
 | `POST` | `/api/podcasts/episodes/{id}/download` | Server-side download |

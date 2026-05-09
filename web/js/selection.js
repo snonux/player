@@ -16,7 +16,7 @@ export function clearSelection() {
 }
 
 function refreshCards() {
-  return Array.from(document.querySelectorAll('.media-card, .media-row, .folder-card'));
+  return Array.from(document.querySelectorAll('.media-card, .media-row, .folder-card, .set-card'));
 }
 
 function syncedIndex(cards) {

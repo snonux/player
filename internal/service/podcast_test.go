@@ -64,7 +64,13 @@ func TestPodcastService_SubscribeFeed_Ok(t *testing.T) {
 	}
 	var setID int64
 	store.SetRepo = repository.MockSetRepo{
+		ListSetsFunc: func(ctx context.Context) ([]model.Set, error) {
+			return nil, nil
+		},
 		CreateSetFunc: func(ctx context.Context, set *model.Set) (int64, error) {
+			if set.Name != "podcast" || set.RootPath != "podcast" {
+				t.Fatalf("expected fixed podcast set, got name=%q root=%q", set.Name, set.RootPath)
+			}
 			setID++
 			return setID, nil
 		},
@@ -119,8 +125,12 @@ func TestPodcastService_SubscribeFeed_Ok(t *testing.T) {
 	}
 
 	setPath := filepath.Join(svc.mediaRoot, "my-podcast")
-	if _, err := os.Stat(setPath); os.IsNotExist(err) {
-		t.Error("expected set directory to exist on disk")
+	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
+		t.Error("custom set directory should not be created")
+	}
+	feedPath := filepath.Join(svc.mediaRoot, "podcast", "Test Feed")
+	if _, err := os.Stat(feedPath); os.IsNotExist(err) {
+		t.Error("expected feed directory under podcast set to exist on disk")
 	}
 }
 
@@ -230,7 +240,7 @@ func TestPodcastService_SubscribeFeed_CreateSetError(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("expected wrapped boom, got %v", err)
 	}
-	setPath := filepath.Join(svc.mediaRoot, "name")
+	setPath := filepath.Join(svc.mediaRoot, "podcast")
 	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
 		t.Error("expected set directory to be cleaned up")
 	}
@@ -274,7 +284,7 @@ func TestPodcastService_SubscribeFeed_GrantPermissionError(t *testing.T) {
 	if deletedSetID != 42 {
 		t.Fatalf("expected set rollback (delete %d), got %d", 42, deletedSetID)
 	}
-	setPath := filepath.Join(svc.mediaRoot, "name")
+	setPath := filepath.Join(svc.mediaRoot, "podcast")
 	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
 		t.Error("expected set directory to be cleaned up on permission error")
 	}
@@ -284,7 +294,6 @@ func TestPodcastService_SubscribeFeed_CreateFeedError(t *testing.T) {
 	ctx := context.Background()
 	svc, store := setupPodcastService(t)
 	boom := errors.New("boom")
-	var deletedSetID int64
 	store.UserRepo = repository.MockUserRepo{
 		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
 			return &model.User{ID: id, IsAdmin: true}, nil
@@ -293,10 +302,6 @@ func TestPodcastService_SubscribeFeed_CreateFeedError(t *testing.T) {
 	store.SetRepo = repository.MockSetRepo{
 		CreateSetFunc: func(ctx context.Context, set *model.Set) (int64, error) {
 			return 42, nil
-		},
-		DeleteSetFunc: func(ctx context.Context, id int64) error {
-			deletedSetID = id
-			return nil
 		},
 	}
 	store.SetPermissionRepo = repository.MockSetPermissionRepo{
@@ -320,18 +325,13 @@ func TestPodcastService_SubscribeFeed_CreateFeedError(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("expected wrapped boom, got %v", err)
 	}
-	if deletedSetID != 42 {
-		t.Fatalf("expected set rollback (delete %d), got %d", 42, deletedSetID)
-	}
-	setPath := filepath.Join(svc.mediaRoot, "name")
-	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
-		t.Error("expected set directory to be cleaned up on feed error")
+	setPath := filepath.Join(svc.mediaRoot, "podcast")
+	if _, err := os.Stat(setPath); os.IsNotExist(err) {
+		t.Error("expected podcast set directory to remain")
 	}
 }
 
-func TestPodcastService_ResolveSetPath(t *testing.T) {
-	svc, _ := setupPodcastService(t)
-
+func TestPodcastService_PodcastFolderName(t *testing.T) {
 	tests := []struct {
 		setName string
 		title   string
@@ -339,17 +339,14 @@ func TestPodcastService_ResolveSetPath(t *testing.T) {
 	}{
 		{"my-podcast", "Some Title", "my-podcast"},
 		{"", "Some Title", "Some Title"},
-		{"", "", "podcast"},
+		{"", "", "feed-7"},
 		{"../../etc", "", "------etc"},
 	}
 
 	for _, tt := range tests {
-		name, path := svc.resolveSetPath(tt.setName, tt.title)
+		name := podcastFolderName(tt.setName, tt.title, 7)
 		if name != tt.want {
-			t.Errorf("resolveSetPath(%q, %q) name = %q, want %q", tt.setName, tt.title, name, tt.want)
-		}
-		if path != filepath.Join(svc.mediaRoot, tt.want) {
-			t.Errorf("resolveSetPath(%q, %q) path mismatch", tt.setName, tt.title)
+			t.Errorf("podcastFolderName(%q, %q) = %q, want %q", tt.setName, tt.title, name, tt.want)
 		}
 	}
 }

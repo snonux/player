@@ -154,6 +154,25 @@ func TestPodcastE2E_FullFlow(t *testing.T) {
 	}))
 	defer rssServer.Close()
 
+	secondRSSBody := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Second Podcast</title>
+    <description>Another test podcast</description>
+    <item>
+      <title>Second Episode</title>
+      <guid>second-ep-1</guid>
+      <enclosure url="%s/second.mp3" length="4321" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>`, audioServer.URL)
+	secondRSSServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(secondRSSBody))
+	}))
+	defer secondRSSServer.Close()
+
 	badRSSServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
@@ -189,6 +208,27 @@ func TestPodcastE2E_FullFlow(t *testing.T) {
 		podcastSetID = feed.SetID
 	})
 
+	t.Run("subscribe second podcast uses same set", func(t *testing.T) {
+		body := fmt.Sprintf(`{"feed_url":"%s/rss.xml","set_name":"second-podcast"}`, secondRSSServer.URL)
+		req := httptest.NewRequest(http.MethodPost, "/api/podcasts", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+		}
+
+		var feed model.PodcastFeed
+		if err := json.Unmarshal(rr.Body.Bytes(), &feed); err != nil {
+			t.Fatalf("unmarshal feed: %v", err)
+		}
+		if feed.SetID != podcastSetID {
+			t.Fatalf("expected set_id %d, got %d", podcastSetID, feed.SetID)
+		}
+	})
+
 	t.Run("list podcasts", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/podcasts", nil)
 		req.AddCookie(cookie)
@@ -199,20 +239,18 @@ func TestPodcastE2E_FullFlow(t *testing.T) {
 			t.Fatalf("expected %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
 		}
 
-		var sets []model.Set
-		if err := json.Unmarshal(rr.Body.Bytes(), &sets); err != nil {
-			t.Fatalf("unmarshal sets: %v", err)
+		var feeds []model.PodcastFeed
+		if err := json.Unmarshal(rr.Body.Bytes(), &feeds); err != nil {
+			t.Fatalf("unmarshal feeds: %v", err)
 		}
 
-		found := false
-		for _, s := range sets {
-			if s.ID == podcastSetID && s.IsPodcast {
-				found = true
-				break
-			}
+		if len(feeds) != 2 {
+			t.Fatalf("expected 2 podcast feeds, got %d", len(feeds))
 		}
-		if !found {
-			t.Fatalf("expected podcast set %d in list", podcastSetID)
+		for _, feed := range feeds {
+			if feed.SetID != podcastSetID {
+				t.Fatalf("expected all feeds in set %d, got feed %+v", podcastSetID, feed)
+			}
 		}
 	})
 

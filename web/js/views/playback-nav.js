@@ -22,7 +22,11 @@ export function initPlaybackNav({ isShuffle } = {}) {
 }
 
 export async function playSelected() {
-  const el = currentElement();
+  let el = currentElement();
+  if (!el) {
+    el = document.querySelector('#media-grid .media-card[data-id], #media-grid .media-row[data-id]');
+    if (el) selectByElement(el);
+  }
   if (!el) return;
   const idx = parseInt(el.dataset.index, 10);
   const media = state.media[idx];

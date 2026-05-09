@@ -236,6 +236,29 @@ type folderContent struct {
 	subfolders map[string]struct{}
 }
 
+func isFolderArtworkMedia(media model.Media) bool {
+	if media.Type != model.MediaTypeImage {
+		return false
+	}
+	switch strings.ToLower(filepath.Base(media.RelPath)) {
+	case "cover.jpg", "cover.jpeg", "cover.png", "cover.gif", "folder.jpg", "folder.jpeg", "folder.png", "folder.gif":
+		return true
+	default:
+		return false
+	}
+}
+
+func folderContentFiles(files []model.Media) []model.Media {
+	content := make([]model.Media, 0, len(files))
+	for _, file := range files {
+		if isFolderArtworkMedia(file) {
+			continue
+		}
+		content = append(content, file)
+	}
+	return content
+}
+
 // buildFolderMap walks media and groups entries by the first folder component under parent.
 func buildFolderMap(media []model.Media, parent string) (map[string]*folderContent, []model.Media) {
 	prefix := prefixForParent(parent)
@@ -284,9 +307,13 @@ func folderHasCover(mediaRoot, setRootPath, parent, name string, media []model.M
 func buildFolders(folderMap map[string]*folderContent, media []model.Media, items []model.Media, mediaRoot, setRootPath, parent string) ([]BrowseFolder, []model.Media) {
 	var folders []BrowseFolder
 	for name, fc := range folderMap {
-		total := len(fc.files) + len(fc.subfolders)
-		if total == 1 && len(fc.files) == 1 {
-			items = append(items, fc.files[0])
+		files := folderContentFiles(fc.files)
+		total := len(files) + len(fc.subfolders)
+		if total == 0 {
+			continue
+		}
+		if total == 1 && len(files) == 1 {
+			items = append(items, files[0])
 		} else {
 			hasCover := folderHasCover(mediaRoot, setRootPath, parent, name, media)
 			folders = append(folders, BrowseFolder{Name: name, HasCover: hasCover})
@@ -326,11 +353,31 @@ func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, pare
 
 	// For podcast sets, also load episodes (undownloaded items) into the grid.
 	if set.IsPodcast {
-		feed, err := s.store.GetFeedBySetID(ctx, setID)
-		if err == nil && feed != nil {
-			episodes, err := s.store.ListEpisodesWithStatus(ctx, userID, feed.ID, 1000, 0)
-			if err == nil {
-				result.Episodes = undownloadedEpisodes(episodes)
+		feeds, err := s.store.ListFeedsBySetID(ctx, setID)
+		if err == nil {
+			if parent == "" {
+				knownFolders := make(map[string]struct{}, len(result.Folders))
+				for _, folder := range result.Folders {
+					knownFolders[folder.Name] = struct{}{}
+				}
+				for _, feed := range feeds {
+					name := podcastFolderName("", feed.Title, feed.ID)
+					if _, ok := knownFolders[name]; ok {
+						continue
+					}
+					result.Folders = append(result.Folders, BrowseFolder{Name: name, HasCover: folderHasCover(s.mediaRoot, set.RootPath, "", name, media)})
+				}
+				sort.Slice(result.Folders, func(i, j int) bool { return result.Folders[i].Name < result.Folders[j].Name })
+			} else {
+				for _, feed := range feeds {
+					if parent != podcastFolderName("", feed.Title, feed.ID) {
+						continue
+					}
+					episodes, err := s.store.ListEpisodesWithStatus(ctx, userID, feed.ID, 1000, 0)
+					if err == nil {
+						result.Episodes = append(result.Episodes, undownloadedEpisodes(episodes)...)
+					}
+				}
 			}
 		}
 	}
@@ -412,9 +459,6 @@ func randomFolderThumbnail(media []model.Media, folder string) string {
 		}
 		rel := filepath.ToSlash(m.RelPath)
 		if prefix != "" && !strings.HasPrefix(rel, prefix) {
-			continue
-		}
-		if prefix == "" && strings.Contains(rel, "/") {
 			continue
 		}
 		candidates = append(candidates, m.ThumbnailPath)

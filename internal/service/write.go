@@ -149,7 +149,10 @@ func (s *writeService) RegenerateSetCover(ctx context.Context, setID int64, fold
 	}
 
 	prefix := filepath.ToSlash(strings.Trim(folder, "/"))
-	var candidates []model.Media
+	var artworkCandidates []model.Media
+	var videoCandidates []model.Media
+	var imageCandidates []model.Media
+	var thumbnailCandidates []model.Media
 	for _, m := range media {
 		if m.DeletedAt != nil {
 			continue
@@ -163,20 +166,17 @@ func (s *writeService) RegenerateSetCover(ctx context.Context, setID int64, fold
 			if strings.Contains(suffix, "/") {
 				continue
 			}
-		} else if strings.Contains(rel, "/") {
-			continue
 		}
-		if m.Type == model.MediaTypeVideo {
-			candidates = append(candidates, m)
+		switch {
+		case isFolderArtworkMedia(m):
+			artworkCandidates = append(artworkCandidates, m)
+		case m.Type == model.MediaTypeVideo:
+			videoCandidates = append(videoCandidates, m)
+		case m.Type == model.MediaTypeImage:
+			imageCandidates = append(imageCandidates, m)
+		case m.ThumbnailPath != "":
+			thumbnailCandidates = append(thumbnailCandidates, m)
 		}
-	}
-	if len(candidates) == 0 {
-		return errors.New("no video files available for cover")
-	}
-
-	candidate := candidates[0]
-	if len(candidates) > 1 {
-		candidate = candidates[mrand.Intn(len(candidates))]
 	}
 
 	baseDir := filepath.Join(s.mediaRoot, filepath.FromSlash(set.RootPath))
@@ -184,16 +184,63 @@ func (s *writeService) RegenerateSetCover(ctx context.Context, setID int64, fold
 		baseDir = filepath.Join(baseDir, filepath.FromSlash(prefix))
 	}
 	coverPath := filepath.Join(filepath.Clean(baseDir), ".cover.jpg")
-	meta, err := s.prober.Probe(ctx, candidate.AbsPath)
-	if err != nil {
-		return fmt.Errorf("probe cover candidate: %w", err)
-	}
 
-	if err := s.thumbGen.Generate(ctx, candidate.AbsPath, coverPath, meta.Duration); err != nil {
-		return fmt.Errorf("generate cover: %w", err)
+	switch {
+	case len(artworkCandidates) > 0:
+		candidate := randomMedia(artworkCandidates)
+		if err := s.thumbGen.Generate(ctx, candidate.AbsPath, coverPath, 0); err != nil {
+			return fmt.Errorf("generate cover: %w", err)
+		}
+	case len(videoCandidates) > 0:
+		candidate := randomMedia(videoCandidates)
+		meta, err := s.prober.Probe(ctx, candidate.AbsPath)
+		if err != nil {
+			return fmt.Errorf("probe cover candidate: %w", err)
+		}
+		if err := s.thumbGen.Generate(ctx, candidate.AbsPath, coverPath, meta.Duration); err != nil {
+			return fmt.Errorf("generate cover: %w", err)
+		}
+	case len(imageCandidates) > 0:
+		candidate := randomMedia(imageCandidates)
+		if err := s.thumbGen.Generate(ctx, candidate.AbsPath, coverPath, 0); err != nil {
+			return fmt.Errorf("generate cover: %w", err)
+		}
+	case len(thumbnailCandidates) > 0:
+		candidate := randomMedia(thumbnailCandidates)
+		if err := copyFile(candidate.ThumbnailPath, coverPath); err != nil {
+			return fmt.Errorf("copy thumbnail cover: %w", err)
+		}
+	default:
+		return errors.New("no media files available for cover")
 	}
 
 	return nil
+}
+
+func randomMedia(media []model.Media) model.Media {
+	if len(media) == 1 {
+		return media[0]
+	}
+	return media[mrand.Intn(len(media))]
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func (s *writeService) saveUploadedMedia(ctx context.Context, setID int64, path string, data io.Reader, size int64) (*model.Media, error) {

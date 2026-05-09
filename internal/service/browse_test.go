@@ -39,6 +39,27 @@ func TestBrowseService_BrowseSet(t *testing.T) {
 			wantFolders: 0,
 		},
 		{
+			name: "single audio folder with cover is flattened",
+			set:  &model.Set{ID: 1, RootPath: "audiobooks"},
+			media: []model.Media{
+				{ID: 1, SetID: 1, RelPath: "Book/Book.m4b", FileName: "Book.m4b", Type: model.MediaTypeAudio},
+				{ID: 2, SetID: 1, RelPath: "Book/cover.jpg", FileName: "cover.jpg", Type: model.MediaTypeImage},
+			},
+			wantMedia:   1,
+			wantFolders: 0,
+		},
+		{
+			name: "audio folder with extra content is still enterable",
+			set:  &model.Set{ID: 1, RootPath: "audiobooks"},
+			media: []model.Media{
+				{ID: 1, SetID: 1, RelPath: "Book/Book.m4b", FileName: "Book.m4b", Type: model.MediaTypeAudio},
+				{ID: 2, SetID: 1, RelPath: "Book/bonus.mp3", FileName: "bonus.mp3", Type: model.MediaTypeAudio},
+				{ID: 3, SetID: 1, RelPath: "Book/cover.jpg", FileName: "cover.jpg", Type: model.MediaTypeImage},
+			},
+			wantMedia:   0,
+			wantFolders: 1,
+		},
+		{
 			name:     "list media error",
 			set:      &model.Set{ID: 1, RootPath: "music"},
 			mediaErr: errors.New("boom"),
@@ -102,7 +123,7 @@ func TestBrowseService_BrowseSet_PodcastEpisodes(t *testing.T) {
 	store := &repository.MockStore{
 		MediaRepo: repository.MockMediaRepo{
 			ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
-				return []model.Media{{ID: 10, SetID: 1, RelPath: "downloaded.mp3", FileName: "downloaded.mp3"}}, nil
+				return []model.Media{{ID: 10, SetID: 1, RelPath: "Test Feed/downloaded.mp3", FileName: "downloaded.mp3"}}, nil
 			},
 		},
 		SetRepo: repository.MockSetRepo{
@@ -121,8 +142,8 @@ func TestBrowseService_BrowseSet_PodcastEpisodes(t *testing.T) {
 			},
 		},
 		PodcastRepo: repository.MockPodcastRepo{
-			GetFeedBySetIDFunc: func(ctx context.Context, setID int64) (*model.PodcastFeed, error) {
-				return &model.PodcastFeed{ID: 99, SetID: setID}, nil
+			ListFeedsBySetIDFunc: func(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
+				return []model.PodcastFeed{{ID: 99, SetID: setID, Title: "Test Feed"}}, nil
 			},
 			ListEpisodesWithStatusFunc: func(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
 				return []model.PodcastEpisodeWithStatus{
@@ -134,6 +155,14 @@ func TestBrowseService_BrowseSet_PodcastEpisodes(t *testing.T) {
 	}
 	svc := NewBrowseService(store, clock.RealClock{}, t.TempDir(), &accessHelper{store: store})
 	res, err := svc.BrowseSet(ctx, 1, 1, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Folders) != 1 || res.Folders[0].Name != "Test Feed" {
+		t.Fatalf("expected podcast feed folder, got %+v", res.Folders)
+	}
+
+	res, err = svc.BrowseSet(ctx, 1, 1, "Test Feed")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

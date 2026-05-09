@@ -44,6 +44,7 @@ export const API = {
   login: (username, password) => api('/api/login', { method: 'POST', body: { username, password } }),
   logout: () => api('/api/logout', { method: 'POST' }),
   bootstrap: (username, password) => api('/api/bootstrap', { method: 'POST', body: { username, password } }),
+  config: () => api('/api/config'),
   sets: () => api('/api/sets'),
   media: (qs) => {
     const params = new URLSearchParams();

@@ -125,6 +125,17 @@ export function initKeyboard(handlers) {
 
     if (e.ctrlKey || e.metaKey || e.altKey) return; // don't intercept browser shortcuts
 
+    const imageDelta = fullscreenImageDelta(e);
+    if (imageDelta && handlers.imageFullscreenNavigate?.(imageDelta)) {
+      e.preventDefault();
+      return;
+    }
+
+    if (/^[1-9]$/.test(e.key) && handlers.selectSetByHotkey?.(e.key)) {
+      e.preventDefault();
+      return;
+    }
+
     if (e.shiftKey) {
       switch (e.key) {
         case 'ArrowUp':
@@ -155,15 +166,7 @@ export function initKeyboard(handlers) {
     }
     if (e.code === 'KeyS') {
       e.preventDefault();
-      if (e.shiftKey) {
-        if (handlers.isImageMode?.()) {
-          handlers.toggleSlideshow?.(e);
-        } else {
-          handlers.share?.(e);
-        }
-      } else {
-        handlers.share?.(e);
-      }
+      handlers.share?.(e);
       return;
     }
 
@@ -275,4 +278,23 @@ export function initKeyboard(handlers) {
         break;
     }
   });
+}
+
+function fullscreenImageDelta(e) {
+  switch (e.key) {
+    case 'ArrowLeft':
+    case 'ArrowUp':
+    case 'h':
+    case 'k':
+    case 'PageUp':
+      return e.key === 'PageUp' ? -10 : -1;
+    case 'ArrowRight':
+    case 'ArrowDown':
+    case 'j':
+    case 'l':
+    case 'PageDown':
+      return e.key === 'PageDown' ? 10 : 1;
+    default:
+      return 0;
+  }
 }

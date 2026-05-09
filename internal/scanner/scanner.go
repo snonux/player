@@ -116,6 +116,12 @@ func (s *FSScanner) ensureSet(ctx context.Context, root, setPath string) (int64,
 
 	for i := range sets {
 		if sets[i].RootPath == relRoot {
+			if isPodcastRoot(relRoot) && !sets[i].IsPodcast {
+				sets[i].IsPodcast = true
+				if err := s.store.UpdateSet(ctx, &sets[i]); err != nil {
+					return 0, "", fmt.Errorf("update podcast set %q: %w", setName, err)
+				}
+			}
 			return sets[i].ID, setName, nil
 		}
 	}
@@ -123,6 +129,7 @@ func (s *FSScanner) ensureSet(ctx context.Context, root, setPath string) (int64,
 	newSet := &model.Set{
 		Name:      setName,
 		RootPath:  relRoot,
+		IsPodcast: isPodcastRoot(relRoot),
 		CreatedAt: s.clock.Now(),
 	}
 	id, err := s.store.CreateSet(ctx, newSet)
@@ -130,6 +137,10 @@ func (s *FSScanner) ensureSet(ctx context.Context, root, setPath string) (int64,
 		return 0, "", fmt.Errorf("create set %q: %w", setName, err)
 	}
 	return id, setName, nil
+}
+
+func isPodcastRoot(rootPath string) bool {
+	return strings.EqualFold(filepath.ToSlash(rootPath), "podcast")
 }
 
 // loadExistingMedia builds a lookup map of existing media keyed by relPath.

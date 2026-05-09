@@ -33,6 +33,7 @@ type MockMediaService struct {
 	BrowseSetFunc           func(ctx context.Context, setID, userID int64, parent string) (*BrowseResult, error)
 	GetSetCoverFunc         func(ctx context.Context, setID int64, folder string, userID int64) (*FileResult, error)
 	ToggleFavoriteFunc      func(ctx context.Context, userID, mediaID int64) (bool, error)
+	ListTagsFunc            func(ctx context.Context, userID int64) ([]model.Tag, error)
 	AssignTagFunc           func(ctx context.Context, mediaID, userID int64, tagName string) error
 	RemoveTagFunc           func(ctx context.Context, mediaID, userID int64, tagName string) error
 	SoftDeleteMediaFunc     func(ctx context.Context, mediaID, userID int64) error
@@ -137,6 +138,14 @@ func (m *MockMediaService) ToggleFavorite(ctx context.Context, userID, mediaID i
 		return m.ToggleFavoriteFunc(ctx, userID, mediaID)
 	}
 	return false, nil
+}
+
+// ListTags calls ListTagsFunc or returns nil.
+func (m *MockMediaService) ListTags(ctx context.Context, userID int64) ([]model.Tag, error) {
+	if m.ListTagsFunc != nil {
+		return m.ListTagsFunc(ctx, userID)
+	}
+	return nil, nil
 }
 
 // AssignTag calls AssignTagFunc or returns nil.

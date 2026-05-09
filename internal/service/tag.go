@@ -23,6 +23,14 @@ func NewTagService(store repository.TagServiceStore, helper *accessHelper) Media
 	}
 }
 
+func (s *tagService) ListTags(ctx context.Context, userID int64) ([]model.Tag, error) {
+	tags, err := s.store.ListTags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list tags: %w", err)
+	}
+	return tags, nil
+}
+
 func (s *tagService) AssignTag(ctx context.Context, mediaID, userID int64, tagName string) error {
 	if _, err := s.helper.verifyAccess(ctx, mediaID, userID); err != nil {
 		return err

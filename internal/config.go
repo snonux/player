@@ -14,9 +14,10 @@ const (
 	DefaultDBPath                 = "data.db"
 	DefaultMaxUploadSizeMB        = 100
 	DefaultSessionTimeoutHours    = 24
-	DefaultGCIntervalMinutes       = 30
-	DefaultShareDefaultExpiryDays  = 7
-	DefaultPodcastCheckMinutes     = 60
+	DefaultGCIntervalMinutes      = 30
+	DefaultShareDefaultExpiryDays = 7
+	DefaultPodcastCheckMinutes    = 60
+	DefaultMediaPageSize          = 100
 	DefaultLogLevel               = "info"
 	DefaultSecureCookies          = true
 )
@@ -31,6 +32,7 @@ type Config struct {
 	GCIntervalMinutes      int
 	ShareDefaultExpiryDays int
 	PodcastCheckMinutes    int
+	MediaPageSize          int
 	LogLevel               string
 	SecureCookies          bool
 }
@@ -79,13 +81,13 @@ func defaultConfig() *Config {
 		GCIntervalMinutes:      DefaultGCIntervalMinutes,
 		ShareDefaultExpiryDays: DefaultShareDefaultExpiryDays,
 		PodcastCheckMinutes:    DefaultPodcastCheckMinutes,
+		MediaPageSize:          DefaultMediaPageSize,
 		LogLevel:               DefaultLogLevel,
 		SecureCookies:          DefaultSecureCookies,
 	}
 }
 
-// loadNumericSettings reads PORT, MAX_UPLOAD_SIZE_MB, SESSION_TIMEOUT_HOURS,
-// GC_INTERVAL_MINUTES and SHARE_DEFAULT_EXPIRY_DAYS from the environment.
+// loadNumericSettings reads numeric settings from the environment.
 func loadNumericSettings(cfg *Config) error {
 	if err := envInt("PORT", func(n int) error {
 		// Allow 0 so tests can bind to an ephemeral port.
@@ -139,6 +141,15 @@ func loadNumericSettings(cfg *Config) error {
 		}
 		return nil
 	}, func(n int) { cfg.PodcastCheckMinutes = n }); err != nil {
+		return err
+	}
+
+	if err := envInt("MEDIA_PAGE_SIZE", func(n int) error {
+		if n < 1 {
+			return fmt.Errorf("must be >= 1, got %d", n)
+		}
+		return nil
+	}, func(n int) { cfg.MediaPageSize = n }); err != nil {
 		return err
 	}
 

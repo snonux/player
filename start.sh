@@ -40,6 +40,36 @@ bootstrap_auth() {
     -c "$COOKIE" > /dev/null 2>&1 || true
 }
 
+launch_chromium() {
+  CHROMIUM_BIN=""
+  for c in chromium chromium-browser google-chrome google-chrome-stable; do
+    if command -v "$c" >/dev/null 2>&1; then
+      CHROMIUM_BIN="$c"
+      break
+    fi
+  done
+  if [ -z "$CHROMIUM_BIN" ]; then
+    echo "Chromium not found in PATH; skipping browser launch."
+    return
+  fi
+
+  echo "Stopping any running Chromium instances..."
+  pkill -x chromium 2>/dev/null || true
+  pkill -x chromium-browser 2>/dev/null || true
+  pkill -x chrome 2>/dev/null || true
+  pkill -f 'google-chrome' 2>/dev/null || true
+  sleep 1
+
+  echo "Clearing Chromium cache..."
+  rm -rf "$HOME/.cache/chromium/Default/Cache"/* 2>/dev/null || true
+  rm -rf "$HOME/.cache/chromium/Default/Code Cache"/* 2>/dev/null || true
+  rm -rf "$HOME/.cache/google-chrome/Default/Cache"/* 2>/dev/null || true
+  rm -rf "$HOME/.cache/google-chrome/Default/Code Cache"/* 2>/dev/null || true
+
+  echo "Launching $CHROMIUM_BIN at ${BASEURL}..."
+  setsid "$CHROMIUM_BIN" "${BASEURL}" >/dev/null 2>&1 < /dev/null &
+}
+
 case "${1:-run}" in
   stop)
     stop
@@ -85,6 +115,8 @@ bootstrap_auth
 echo "Library rescan starting..."
 curl -fs -X POST "${BASEURL}/api/admin/rescan" -b "$COOKIE" > /dev/null 2>&1 || true
 echo "Rescan running in background (check tail -f $LOGFILE)"
+
+launch_chromium
 
 if [ "$BACKGROUND" != "true" ]; then
   tail -n +1 -f "$LOGFILE" &

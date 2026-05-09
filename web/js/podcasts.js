@@ -9,7 +9,6 @@ export function initPodcasts() {
   const closeBtn = document.getElementById('podcast-close');
   const form = document.getElementById('podcast-form');
   const urlInput = document.getElementById('podcast-url');
-  const nameInput = document.getElementById('podcast-name');
   const listEl = document.getElementById('podcast-list');
   const adminBtn = document.getElementById('admin-podcasts');
 
@@ -26,13 +25,11 @@ export function initPodcasts() {
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const url = urlInput.value.trim();
-    const name = nameInput.value.trim();
     if (!url) return;
     try {
-      await API.subscribePodcast(url, name);
+      await API.subscribePodcast(url, '');
       toast('Subscribed to podcast');
       urlInput.value = '';
-      nameInput.value = '';
       refreshPodcasts();
       refreshSets();
     } catch (err) {
@@ -50,9 +47,9 @@ export function initPodcasts() {
       }
       listEl.innerHTML = podcasts.map(p =>
         `<div class="podcast-feed-row py-1 border-b">
-          <img class="podcast-feed-cover" src="/api/sets/${p.id}/cover" alt="" loading="lazy">
-          <span class="flex-1">${escapeHtml(p.name)}</span>
-          <span class="text-xs text-muted">${escapeHtml(p.root_path)}</span>
+          <img class="podcast-feed-cover" src="${escapeHtml(p.image_url || '/favicon.svg')}" alt="" loading="lazy">
+          <span class="flex-1">${escapeHtml(p.title || p.feed_url)}</span>
+          <span class="text-xs text-muted">${escapeHtml(p.feed_url)}</span>
         </div>`
       ).join('');
     } catch (err) {
@@ -70,19 +67,26 @@ export function initPodcasts() {
   }
 }
 
-export function renderPodcastEpisodes(grid, episodes) {
+export function renderPodcastEpisodes(grid, episodes, options = {}) {
   if (!episodes || !episodes.length) return;
+  const append = (node) => {
+    if (options.before) {
+      grid.insertBefore(node, options.before);
+    } else {
+      grid.appendChild(node);
+    }
+  };
   const divider = document.createElement('div');
   divider.className = 'grid-divider';
   divider.textContent = 'Podcast Episodes';
-  grid.appendChild(divider);
+  append(divider);
 
   episodes.forEach(ep => {
     const card = document.createElement('div');
     card.className = 'media-card episode-card';
     card.dataset.id = ep.id;
     renderEpisodeCard(card, ep);
-    grid.appendChild(card);
+    append(card);
   });
 }
 

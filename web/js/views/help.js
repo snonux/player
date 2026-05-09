@@ -27,7 +27,5 @@ export function toggleHelp() {
 }
 
 export function showSearch() {
-  const bar = document.getElementById('search-bar');
-  bar?.classList.remove('hidden');
   focusSearch();
 }

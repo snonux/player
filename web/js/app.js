@@ -17,7 +17,6 @@ import {
   stopAndClose,
   zoomIn as playerZoomIn,
   zoomOut as playerZoomOut,
-  toggleSlideshow as playerToggleSlideshow,
   isImageMode as playerIsImageMode,
 } from './player.js';
 import { initSearch, parseQuery, showSearchHelp } from './search.js';
@@ -28,17 +27,6 @@ import { initAdmin } from './admin.js';
 import { initPodcasts } from './podcasts.js';
 import { state } from './state.js';
 import { initPWA } from './pwa.js';
-import {
-  initLightbox,
-  open as openLightbox,
-  close as closeLightbox,
-  isOpen as isLightboxOpen,
-  next as lightboxNext,
-  prev as lightboxPrev,
-  zoomIn as lightboxZoomIn,
-  zoomOut as lightboxZoomOut,
-  toggleSlideshow as lightboxToggleSlideshow,
-} from './lightbox.js';
 import { closeAllModals } from './dom.js';
 import { toast } from './utils.js';
 import { showAdmin } from './views/admin-status.js';
@@ -48,6 +36,7 @@ import {
   loadMedia,
   enterFolder,
   navigateBack,
+  setMediaPageSize,
 } from './views/media-grid.js';
 import {
   downloadSelected,
@@ -74,8 +63,10 @@ import {
 import {
   initSets,
   renderSets,
+  selectSetByHotkey,
   setSetByDelta,
   toggleSetSelection,
+  updateSetRowsUI,
 } from './views/sets.js';
 import {
   copySelectedShare,
@@ -153,30 +144,34 @@ function initBootstrap() {
 
 async function initApp() {
   initPlayer({
-    onNext: (options) => navigatePlayable(1, options),
-    onPrevious: (options) => navigatePlayable(-1, options),
+    onNext: (options) => navigatePlayable(options?.delta ?? 1, options),
+    onPrevious: (options) => navigatePlayable(options?.delta ?? -1, options),
   });
   initSelection();
   initSearch({
     onChange: (q) => {
       const parsed = parseQuery(q);
+      applySearchSet(parsed);
+      delete parsed.set;
       Object.assign(state.filters, parsed);
       state.folderPath = '';
+      document.dispatchEvent(new CustomEvent('filters:changed'));
       console.log('[search] raw:', q, 'parsed:', parsed, 'filters:', state.filters);
       loadMedia();
     },
     input: document.getElementById('search-input'),
     clearBtn: document.getElementById('search-clear'),
   });
+  document.addEventListener('search:navigate-results', () => navDown());
   initShuffle({ onChange: () => loadMedia() });
-  initLightbox({ onNavigate: () => {} });
   initPlaybackNav({ isShuffle });
   initSets({ onLoadMedia: loadMedia });
   initMediaGrid({
     isShuffle,
-    openLightbox,
+    onSetCleared: updateSetRowsUI,
     openNotesForSelected,
     openTagsForElement,
+    openSet,
     playSelected,
     regenThumb,
     toggleFavorite,
@@ -190,20 +185,43 @@ async function initApp() {
   initHelp();
   initShares();
   initMediaInfo();
-  initTags();
+  initTags({
+    onFilterChange: () => {
+      document.dispatchEvent(new CustomEvent('filters:changed'));
+      loadMedia();
+    },
+  });
   initChrome();
 
   try {
-    const sets = await API.sets();
-    state.sets = sets || [];
+    const [cfg, sets] = await Promise.all([
+      API.config().catch(() => null),
+      API.sets(),
+    ]);
+    setMediaPageSize(cfg?.media_page_size);
+    state.sets = (sets || []).slice().sort((a, b) => a.name.localeCompare(b.name));
     API.users().then(() => {
       state.isAdmin = true;
       showAdmin();
     }).catch(() => {});
     renderSets();
+    await loadMedia();
   } catch (err) {
     toast(err.message || 'Error loading sets', 'error');
   }
+}
+
+function applySearchSet(parsed) {
+  const setQuery = parsed.set?.trim();
+  if (!setQuery) return;
+  const needle = setQuery.toLowerCase();
+  const match = state.sets.find((set) => String(set.id) === setQuery) ||
+    state.sets.find((set) => set.name.toLowerCase() === needle) ||
+    state.sets.find((set) => set.name.toLowerCase().includes(needle));
+  if (!match) return;
+  state.selectedSetId = match.id;
+  state.selectedSetIds = [match.id];
+  updateSetRowsUI();
 }
 
 function keyboardHandlers() {
@@ -221,6 +239,7 @@ function keyboardHandlers() {
     },
     nextSet: () => setSetByDelta(1),
     prevSet: () => setSetByDelta(-1),
+    selectSetByHotkey: (key) => selectSetByHotkey(key),
     isSidebarOpen: () => document.getElementById('sidebar')?.classList.contains('open'),
     isSidebarFocused: () => {
       const sidebar = document.getElementById('sidebar');
@@ -228,24 +247,11 @@ function keyboardHandlers() {
     },
     toggleSetSelect: () => toggleSetSelection(),
     enter: () => {
-      const el = currentElement();
-      if (!el) return;
-      selectByElement(el);
-      if (el.classList.contains('folder-card')) {
-        enterFolder(el.dataset.name);
-        return;
-      }
-      const idx = parseInt(el.dataset.index, 10);
-      const media = state.media[idx];
-      if (media?.type === 'image') {
-        openLightbox(state.media, media.id);
-      } else {
-        playSelected();
-      }
+      activateGridElement(focusedGridElement() || currentElement() || firstGridElement());
     },
     playPause: () => togglePlay(),
-    nextTrack: () => navigatePlayable(1),
-    prevTrack: () => navigatePlayable(-1),
+    nextTrack: () => navigatePlayable(1, { forcePlay: true }),
+    prevTrack: () => navigatePlayable(-1, { forcePlay: true }),
     playRandom: () => playRandom(),
     mediaInfo: () => toggleMediaInfo(),
     fullscreen: () => toggleFullscreen(),
@@ -255,7 +261,6 @@ function keyboardHandlers() {
     cycleCropPosition: () => cycleCropPosition(),
     escape: () => {
       exitFullscreenIfNeeded();
-      closeLightbox();
       const el = currentElement();
       if (el) el.classList.remove('selected');
       closeAllModals();
@@ -289,24 +294,56 @@ function keyboardHandlers() {
     sharesNavDown: () => sharesNav(1),
     sharesCopy: copySelectedShare,
     sharesDelete: deleteSelectedShare,
-    isLightboxOpen,
     isImageMode: () => currentMediaInfo()?.type === 'image',
+    imageFullscreenNavigate: (delta) => {
+      if (!document.fullscreenElement || !playerIsImageMode()) return false;
+      navigatePlayable(delta, { forcePlay: true });
+      return true;
+    },
     zoomIn: () => {
-      if (isLightboxOpen()) lightboxZoomIn();
-      else if (playerIsImageMode()) playerZoomIn();
+      if (playerIsImageMode()) playerZoomIn();
     },
     zoomOut: () => {
-      if (isLightboxOpen()) lightboxZoomOut();
-      else if (playerIsImageMode()) playerZoomOut();
+      if (playerIsImageMode()) playerZoomOut();
     },
-    toggleSlideshow: () => {
-      if (isLightboxOpen()) lightboxToggleSlideshow();
-      else if (playerIsImageMode()) playerToggleSlideshow();
-    },
-    lightboxNext,
-    lightboxPrev,
-    closeLightbox,
   };
+}
+
+function focusedGridElement() {
+  const active = document.activeElement;
+  if (!active || typeof active.closest !== 'function') return null;
+  return active.closest('#media-grid .media-card, #media-grid .media-row, #media-grid .folder-card, #media-grid .set-card');
+}
+
+function firstGridElement() {
+  return document.querySelector('#media-grid .media-card, #media-grid .media-row, #media-grid .folder-card, #media-grid .set-card');
+}
+
+function activateGridElement(el) {
+  if (!el) return;
+  selectByElement(el);
+  if (el.classList.contains('set-card')) {
+    const id = parseInt(el.dataset.setId, 10);
+    openSet(id);
+    return;
+  }
+  if (el.classList.contains('folder-card')) {
+    enterFolder(el.dataset.name);
+    return;
+  }
+  const idx = parseInt(el.dataset.index, 10);
+  const media = state.media[idx];
+  if (media) playSelected();
+}
+
+function openSet(id) {
+  if (!Number.isFinite(id)) return;
+  state.selectedSetId = id;
+  state.selectedSetIds = [id];
+  state.folderPath = '';
+  state.mediaPage = 0;
+  updateSetRowsUI();
+  loadMedia();
 }
 
 function initChrome() {

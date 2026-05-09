@@ -1871,6 +1871,49 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 		}
 	})
 
+	t.Run("set cover can use nested audiobook artwork", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		coverDir := filepath.Join(tmpDir, "audiobooks", "Book")
+		if err := os.MkdirAll(coverDir, 0o755); err != nil {
+			t.Fatalf("mkdir cover dir: %v", err)
+		}
+		coverPath := filepath.Join(coverDir, "cover.jpg")
+		if err := os.WriteFile(coverPath, []byte("fake cover"), 0o644); err != nil {
+			t.Fatalf("write cover: %v", err)
+		}
+		set := &model.Set{ID: 1, RootPath: "audiobooks"}
+		media := []model.Media{
+			{ID: 1, SetID: 1, RelPath: "Book/book.m4b", AbsPath: filepath.Join(coverDir, "book.m4b"), Type: model.MediaTypeAudio},
+			{ID: 2, SetID: 1, RelPath: "Book/cover.jpg", AbsPath: coverPath, Type: model.MediaTypeImage},
+		}
+		store := makeStore(1, media, set)
+		var gotInput string
+		var gotOutput string
+		thumbGen := &mockThumbGenerator{GenerateFunc: func(ctx context.Context, inputPath, outputPath string, duration float64) error {
+			gotInput = inputPath
+			gotOutput = outputPath
+			return os.WriteFile(outputPath, []byte("generated cover"), 0o644)
+		}}
+		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
+			t.Fatalf("image artwork should not require probing, probed %s", path)
+			return nil, nil
+		}}
+		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
+		if err := svc.RegenerateSetCover(ctx, 1, "", 1); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if gotInput != coverPath {
+			t.Fatalf("expected input %q, got %q", coverPath, gotInput)
+		}
+		wantOutput := filepath.Join(tmpDir, "audiobooks", ".cover.jpg")
+		if gotOutput != wantOutput {
+			t.Fatalf("expected output %q, got %q", wantOutput, gotOutput)
+		}
+		if _, err := os.Stat(wantOutput); err != nil {
+			t.Fatalf("expected generated cover: %v", err)
+		}
+	})
+
 	t.Run("viewer cannot regenerate cover", func(t *testing.T) {
 		set := &model.Set{ID: 1, RootPath: "music", Permissions: []model.SetPermission{{SetID: 1, UserID: 2, Role: model.RoleViewer}}}
 		store := makeStore(1, nil, set)
@@ -1890,7 +1933,7 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 		}
 	})
 
-	t.Run("no video files", func(t *testing.T) {
+	t.Run("no usable cover media", func(t *testing.T) {
 		set := &model.Set{ID: 1, RootPath: "music"}
 		media := []model.Media{{ID: 1, SetID: 1, AbsPath: "/tmp/song.mp3", Type: model.MediaTypeAudio}}
 		store := makeStore(1, media, set)

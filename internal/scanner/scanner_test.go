@@ -268,6 +268,57 @@ func TestFSScanner_Scan(t *testing.T) {
 		}
 	})
 
+	t.Run("scans all top-level dirs and marks canonical podcast root", func(t *testing.T) {
+		mfs := &mockFS{
+			entries: map[string][]os.DirEntry{
+				"/media": {
+					mockDirEntry{name: "qa-stable-podcast-1", isDir: true},
+					mockDirEntry{name: "podcast", isDir: true},
+				},
+			},
+			fileInfos: map[string]os.FileInfo{
+				"/media/podcast/feed/episode.mp3": mockFileInfo{name: "episode.mp3", size: 500},
+			},
+			walkList: []walkEntry{
+				{path: "/media/podcast", isDir: true},
+				{path: "/media/podcast/feed", isDir: true},
+				{path: "/media/podcast/feed/episode.mp3", isDir: false},
+			},
+		}
+		store := repository.NewMockStore()
+		store.SetRepo.ListSetsFunc = func(_ context.Context) ([]model.Set, error) { return nil, nil }
+		var createdSets []model.Set
+		store.SetRepo.CreateSetFunc = func(_ context.Context, set *model.Set) (int64, error) {
+			createdSets = append(createdSets, *set)
+			return int64(len(createdSets)), nil
+		}
+		store.MediaRepo.ListMediaFunc = func(_ context.Context, filter repository.MediaFilter) ([]model.Media, error) {
+			return nil, nil
+		}
+		store.MediaRepo.CreateMediaFunc = func(_ context.Context, m *model.Media) (int64, error) {
+			return 1, nil
+		}
+		prober := &probe.MockProber{
+			ProbeFunc: func(_ context.Context, path string) (*model.Metadata, error) {
+				return &model.Metadata{Duration: 180, Codec: "mp3", Bitrate: 256}, nil
+			},
+		}
+
+		s := newTestScanner(store, prober, &thumb.MockGenerator{}, clk, mfs)
+		if err := s.Scan(ctx, "/media", nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(createdSets) != 2 {
+			t.Fatalf("expected both top-level dirs to be created, got %+v", createdSets)
+		}
+		if createdSets[0].RootPath != "qa-stable-podcast-1" {
+			t.Fatalf("expected qa-stable-podcast-1 root path, got %+v", createdSets[0])
+		}
+		if createdSets[1].RootPath != "podcast" || !createdSets[1].IsPodcast {
+			t.Fatalf("expected podcast root path marked as podcast, got %+v", createdSets[1])
+		}
+	})
+
 	t.Run("nested directories", func(t *testing.T) {
 		mfs := &mockFS{
 			entries: map[string][]os.DirEntry{
@@ -501,4 +552,3 @@ func TestFSScanner_collectFiles(t *testing.T) {
 		}
 	})
 }
-

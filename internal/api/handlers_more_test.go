@@ -87,6 +87,28 @@ func TestNewGracefulServer(t *testing.T) {
 	}
 }
 
+func TestServer_Config(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{MediaPageSize: 37}
+	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req.AddCookie(addSessionCookie(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+	var body map[string]int
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["media_page_size"] != 37 {
+		t.Fatalf("expected media_page_size 37, got %d", body["media_page_size"])
+	}
+}
+
 func TestPingStore_nonPinger(t *testing.T) {
 	store := &repository.MockStore{}
 	srv := newTestServer(t, store, nil, nil, &internal.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)

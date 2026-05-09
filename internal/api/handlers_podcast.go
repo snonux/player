@@ -13,25 +13,17 @@ import (
 // ------------------------------------------------------------------
 
 func (s *Server) handleListPodcasts(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.podcastSvc) {
 		return
 	}
-	userID := userIDFromContext(r)
-	sets, err := s.browseSvc.ListSets(r.Context(), userID)
+	feeds, err := s.podcastSvc.ListFeeds(r.Context(), userIDFromContext(r))
 	if err != nil {
 		s.logger.Error("list podcasts", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list podcasts"})
 		return
 	}
 
-	// Filter to podcast sets only.
-	var podcasts []interface{}
-	for _, set := range sets {
-		if set.IsPodcast {
-			podcasts = append(podcasts, set)
-		}
-	}
-	writeJSON(w, http.StatusOK, podcasts)
+	writeJSON(w, http.StatusOK, feeds)
 }
 
 func (s *Server) handleSubscribePodcast(w http.ResponseWriter, r *http.Request) {

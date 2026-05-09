@@ -86,6 +86,25 @@ func (s *SQLite) GetFeedBySetID(ctx context.Context, setID int64) (*model.Podcas
 	return scanFeed(row)
 }
 
+// ListFeedsBySetID returns all podcast feeds linked to a set.
+func (s *SQLite) ListFeedsBySetID(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, created_at FROM podcast_feeds WHERE set_id = ? ORDER BY title, created_at`, setID)
+	if err != nil {
+		return nil, fmt.Errorf("list podcast feeds by set: %w", err)
+	}
+	defer rows.Close()
+	var feeds []model.PodcastFeed
+	for rows.Next() {
+		f, err := scanFeed(rows)
+		if err != nil {
+			return nil, err
+		}
+		feeds = append(feeds, *f)
+	}
+	return feeds, rows.Err()
+}
+
 // ListFeeds returns all podcast feeds.
 func (s *SQLite) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
 	rows, err := s.db.QueryContext(ctx,
@@ -338,5 +357,3 @@ func (s *SQLite) ListEpisodesWithStatus(ctx context.Context, userID, feedID int6
 	}
 	return episodes, rows.Err()
 }
-
-

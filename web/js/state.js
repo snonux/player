@@ -17,6 +17,7 @@ export const state = {
   },
   isAdmin: false,
   folderPath: '',   // current subfolder path within the selected set
+  mediaPage: 0,
   sharesCurrentRow: -1,
 };
 

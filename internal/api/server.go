@@ -165,6 +165,11 @@ func (s *Server) routesAuth() {
 	s.mux.Handle("POST /api/logout", s.requireSession(s.handleLogout))
 }
 
+// routesConfig wires authenticated client configuration.
+func (s *Server) routesConfig() {
+	s.mux.Handle("GET /api/config", s.requireSession(s.handleConfig))
+}
+
 // routesSets wires the set-related API routes.
 func (s *Server) routesSets() {
 	s.mux.Handle("GET /api/sets", s.requireSession(s.handleListSets))
@@ -183,6 +188,7 @@ func (s *Server) routesMedia() {
 	s.mux.Handle("GET /api/media/{id}/thumbnail", s.requireSession(s.handleThumbnail))
 	s.mux.Handle("POST /api/media/{id}/thumbnail", s.requireSession(s.handleRegenThumbnail))
 	s.mux.Handle("POST /api/media/{id}/favorite", s.requireSession(s.handleFavorite))
+	s.mux.Handle("GET /api/tags", s.requireSession(s.handleListTags))
 	s.mux.Handle("POST /api/media/{id}/tags", s.requireSession(s.handleAddTag))
 	s.mux.Handle("DELETE /api/media/{id}/tags/{tag}", s.requireSession(s.handleRemoveTag))
 	s.mux.Handle("DELETE /api/media/{id}", s.requireSession(s.handleSoftDelete))
@@ -228,6 +234,7 @@ func (s *Server) routes() {
 	s.routesStatic()
 	s.routesHTML()
 	s.routesAuth()
+	s.routesConfig()
 	s.routesSets()
 	s.routesMedia()
 	s.routesNotes()

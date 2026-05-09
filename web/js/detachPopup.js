@@ -49,14 +49,21 @@ document.addEventListener('keydown', (ev) => {
   const editing = tag === 'INPUT' || tag === 'TEXTAREA' || ev.target?.isContentEditable;
   if (editing || ev.ctrlKey || ev.metaKey || ev.altKey) return;
 
+  const imageDelta = fullscreenImageDelta(ev);
+  if (imageDelta) {
+    ev.preventDefault();
+    post({ type: 'detach-nav', delta: imageDelta, play: true });
+    return;
+  }
+
   if (ev.shiftKey && ev.code === 'KeyN') {
     ev.preventDefault();
-    post({ type: 'detach-next', play: currentState().playing });
+    post({ type: 'detach-next', play: shouldContinuePlayback() });
     return;
   }
   if (ev.shiftKey && ev.code === 'KeyP') {
     ev.preventDefault();
-    post({ type: 'detach-prev', play: currentState().playing });
+    post({ type: 'detach-prev', play: shouldContinuePlayback() });
     return;
   }
 
@@ -77,10 +84,10 @@ document.addEventListener('keydown', (ev) => {
     togglePlayback();
   } else if (ev.key === 'N') {
     ev.preventDefault();
-    post({ type: 'detach-next', play: currentState().playing });
+    post({ type: 'detach-next', play: shouldContinuePlayback() });
   } else if (ev.key === 'P') {
     ev.preventDefault();
-    post({ type: 'detach-prev', play: currentState().playing });
+    post({ type: 'detach-prev', play: shouldContinuePlayback() });
   }
 });
 
@@ -121,7 +128,10 @@ function loadDetachedMedia(payload) {
   loadMediaDirect(currentMedia, payload.streamUrl, payload.thumbnailUrl, resumeFrom);
 
   const el = mediaElement();
-  if (!el) return;
+  if (!el) {
+    sendState();
+    return;
+  }
   if (typeof payload.volume === 'number') el.volume = payload.volume;
   el.muted = !!payload.muted;
 
@@ -190,7 +200,33 @@ function toggleFullscreen() {
 }
 
 function mediaElement() {
-  return currentMedia?.type === 'audio' ? audio : video;
+  if (currentMedia?.type === 'audio') return audio;
+  if (currentMedia?.type === 'video') return video;
+  return null;
+}
+
+function shouldContinuePlayback() {
+  return currentMedia?.type === 'image' || currentState().playing;
+}
+
+function fullscreenImageDelta(ev) {
+  if (currentMedia?.type !== 'image' || !document.fullscreenElement) return 0;
+  switch (ev.key) {
+    case 'ArrowLeft':
+    case 'ArrowUp':
+    case 'h':
+    case 'k':
+    case 'PageUp':
+      return ev.key === 'PageUp' ? -10 : -1;
+    case 'ArrowRight':
+    case 'ArrowDown':
+    case 'j':
+    case 'l':
+    case 'PageDown':
+      return ev.key === 'PageDown' ? 10 : 1;
+    default:
+      return 0;
+  }
 }
 
 function seekWhenReady(el, seconds) {
@@ -248,7 +284,7 @@ function currentState() {
     currentTime: position,
     positionReady,
     duration: el?.duration || currentMedia?.duration || 0,
-    playing: !!el && !el.paused,
+    playing: currentMedia?.type === 'image' || (!!el && !el.paused),
     volume: el?.volume ?? 1,
     muted: !!el?.muted,
   };

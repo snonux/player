@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,6 +29,7 @@ import (
 // PodcastSubService manages podcast feed subscriptions.
 type PodcastSubService interface {
 	SubscribeFeed(ctx context.Context, feedURL, setName string, userID int64) (*model.PodcastFeed, error)
+	ListFeeds(ctx context.Context, userID int64) ([]model.PodcastFeed, error)
 	EditFeed(ctx context.Context, feedID int64, feedURL string, checkInterval int, userID int64) error
 	UnsubscribeFeed(ctx context.Context, feedID int64, userID int64) error
 }
@@ -35,6 +37,7 @@ type PodcastSubService interface {
 // PodcastEpisodeService manages episode browsing and downloading.
 type PodcastEpisodeService interface {
 	SubscribeFeed(ctx context.Context, feedURL, setName string, userID int64) (*model.PodcastFeed, error)
+	ListFeeds(ctx context.Context, userID int64) ([]model.PodcastFeed, error)
 	EditFeed(ctx context.Context, feedID int64, feedURL string, checkInterval int, userID int64) error
 	UnsubscribeFeed(ctx context.Context, feedID int64, userID int64) error
 	ListEpisodes(ctx context.Context, setID, userID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error)
@@ -122,6 +125,8 @@ func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, med
 // Subscription
 // ------------------------------------------------------------------
 
+const podcastSetName = "podcast"
+
 func (s *podcastService) SubscribeFeed(ctx context.Context, feedURL, setName string, userID int64) (*model.PodcastFeed, error) {
 	if err := s.verifyAdmin(ctx, userID); err != nil {
 		return nil, err
@@ -132,27 +137,117 @@ func (s *podcastService) SubscribeFeed(ctx context.Context, feedURL, setName str
 		return nil, fmt.Errorf("%w: %v", ErrInvalidFeed, err)
 	}
 
-	safeName, setPath := s.resolveSetPath(setName, parsed.Title)
-
-	set, err := s.createPodcastSet(ctx, parsed.Title, safeName, setPath, userID)
+	set, err := s.ensurePodcastSet(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	feed, err := s.createPodcastFeed(ctx, parsed, set.ID, feedURL, setPath)
+	feed, err := s.findExistingFeed(ctx, set.ID, parsed.Title, feedURL)
 	if err != nil {
-		s.rollbackSet(ctx, set.ID, setPath)
 		return nil, err
 	}
+	if feed == nil {
+		feed, err = s.createPodcastFeed(ctx, parsed, set.ID, feedURL)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		feed.FeedURL = feedURL
+		feed.Title = parsed.Title
+		feed.Description = parsed.Description
+		feed.ImageURL = parsed.ImageURL
+		feed.CheckIntervalMinutes = s.checkInterval
+	}
 
-	s.downloadCover(s.httpClient, parsed.ImageURL, setPath)
+	folderPath := filepath.Join(s.mediaRoot, set.RootPath, podcastFolderName("", parsed.Title, feed.ID))
+	if err := os.MkdirAll(folderPath, 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir podcast folder: %w", err)
+	}
+	s.downloadCover(s.httpClient, parsed.ImageURL, folderPath)
 	s.insertPodcastEpisodes(ctx, parsed, feed.ID)
 
 	now := s.clock.Now()
 	feed.LastCheckedAt = &now
-	_ = s.store.UpdateFeed(ctx, feed)
+	if err := s.store.UpdateFeed(ctx, feed); err != nil {
+		return nil, fmt.Errorf("update feed: %w", err)
+	}
 
 	return feed, nil
+}
+
+func (s *podcastService) ensurePodcastSet(ctx context.Context, userID int64) (*model.Set, error) {
+	set, err := s.findPodcastSet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	setPath := filepath.Join(s.mediaRoot, podcastSetName)
+	if set == nil {
+		set, err = s.createPodcastSet(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := os.MkdirAll(setPath, 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir podcast set path: %w", err)
+	}
+	if err := s.store.GrantPermission(ctx, &model.SetPermission{
+		SetID:     set.ID,
+		UserID:    userID,
+		Role:      model.RoleOwner,
+		CreatedAt: s.clock.Now(),
+	}); err != nil {
+		return nil, fmt.Errorf("grant permission: %w", err)
+	}
+	return set, nil
+}
+
+func (s *podcastService) findPodcastSet(ctx context.Context) (*model.Set, error) {
+	sets, err := s.store.ListSets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, set := range sets {
+		if set.IsPodcast && (set.RootPath == podcastSetName || strings.EqualFold(set.Name, podcastSetName)) {
+			if set.Name != podcastSetName || set.RootPath != podcastSetName {
+				set.Name = podcastSetName
+				set.RootPath = podcastSetName
+				if err := s.store.UpdateSet(ctx, &set); err != nil {
+					return nil, fmt.Errorf("update podcast set: %w", err)
+				}
+			}
+			return &set, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *podcastService) findExistingFeed(ctx context.Context, setID int64, title, feedURL string) (*model.PodcastFeed, error) {
+	feeds, err := s.store.ListFeedsBySetID(ctx, setID)
+	if err != nil {
+		return nil, fmt.Errorf("list feeds by set: %w", err)
+	}
+	for _, feed := range feeds {
+		if feed.FeedURL == feedURL {
+			return &feed, nil
+		}
+	}
+	for _, feed := range feeds {
+		if strings.EqualFold(feed.Title, title) {
+			return &feed, nil
+		}
+	}
+	return nil, nil
+}
+
+func podcastFolderName(requestedName, title string, feedID int64) string {
+	name := sanitizeSetName(requestedName)
+	if name == "" {
+		name = sanitizeSetName(title)
+	}
+	if name == "" {
+		name = fmt.Sprintf("feed-%d", feedID)
+	}
+	return name
 }
 
 func (s *podcastService) verifyAdmin(ctx context.Context, userID int64) error {
@@ -166,26 +261,16 @@ func (s *podcastService) verifyAdmin(ctx context.Context, userID int64) error {
 	return nil
 }
 
-func (s *podcastService) resolveSetPath(setName, fallbackTitle string) (string, string) {
-	safeName := sanitizeSetName(setName)
-	if safeName == "" {
-		safeName = sanitizeSetName(fallbackTitle)
-	}
-	if safeName == "" {
-		safeName = "podcast"
-	}
-	return safeName, filepath.Join(s.mediaRoot, safeName)
-}
-
-func (s *podcastService) createPodcastSet(ctx context.Context, title, safeName, setPath string, userID int64) (*model.Set, error) {
+func (s *podcastService) createPodcastSet(ctx context.Context, userID int64) (*model.Set, error) {
+	setPath := filepath.Join(s.mediaRoot, podcastSetName)
 	// Create the directory first so we can clean it up easily on DB errors.
 	if err := os.MkdirAll(setPath, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir set path: %w", err)
 	}
 
 	set := &model.Set{
-		Name:      title,
-		RootPath:  safeName,
+		Name:      podcastSetName,
+		RootPath:  podcastSetName,
 		IsPodcast: true,
 		CreatedAt: s.clock.Now(),
 	}
@@ -211,7 +296,7 @@ func (s *podcastService) rollbackSet(ctx context.Context, setID int64, setPath s
 	os.RemoveAll(setPath)
 }
 
-func (s *podcastService) createPodcastFeed(ctx context.Context, parsed *podcast.ParsedFeed, setID int64, feedURL, setPath string) (*model.PodcastFeed, error) {
+func (s *podcastService) createPodcastFeed(ctx context.Context, parsed *podcast.ParsedFeed, setID int64, feedURL string) (*model.PodcastFeed, error) {
 	feed := &model.PodcastFeed{
 		SetID:                setID,
 		FeedURL:              feedURL,
@@ -227,6 +312,25 @@ func (s *podcastService) createPodcastFeed(ctx context.Context, parsed *podcast.
 	}
 	feed.ID = feedID
 	return feed, nil
+}
+
+func (s *podcastService) ListFeeds(ctx context.Context, userID int64) ([]model.PodcastFeed, error) {
+	feeds, err := s.store.ListFeeds(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list feeds: %w", err)
+	}
+
+	visible := make([]model.PodcastFeed, 0, len(feeds))
+	for _, feed := range feeds {
+		if err := s.helper.checkSetPermission(ctx, feed.SetID, userID, ""); err != nil {
+			if errors.Is(err, ErrForbidden) {
+				continue
+			}
+			return nil, err
+		}
+		visible = append(visible, feed)
+	}
+	return visible, nil
 }
 
 func (s *podcastService) insertPodcastEpisodes(ctx context.Context, parsed *podcast.ParsedFeed, feedID int64) {
@@ -281,20 +385,19 @@ func (s *podcastService) UnsubscribeFeed(ctx context.Context, feedID int64, user
 		return err
 	}
 
-	// Delete the set row; ON DELETE CASCADE removes feed + episodes.
 	set, err := s.store.GetSetByID(ctx, feed.SetID)
 	if err != nil {
 		return fmt.Errorf("get set: %w", err)
 	}
 
-	if err := s.store.DeleteSet(ctx, feed.SetID); err != nil {
-		return fmt.Errorf("delete set: %w", err)
+	if err := s.store.DeleteFeed(ctx, feedID); err != nil {
+		return fmt.Errorf("delete feed: %w", err)
 	}
 
 	// Optionally delete the folder contents on disk.
 	if set != nil {
-		setPath := filepath.Join(s.mediaRoot, set.RootPath)
-		_ = os.RemoveAll(setPath)
+		folder := podcastFolderName("", feed.Title, feed.ID)
+		_ = os.RemoveAll(filepath.Join(s.mediaRoot, set.RootPath, folder))
 	}
 
 	return nil
@@ -309,15 +412,30 @@ func (s *podcastService) ListEpisodes(ctx context.Context, setID, userID int64, 
 		return nil, err
 	}
 
-	feed, err := s.store.GetFeedBySetID(ctx, setID)
+	feeds, err := s.store.ListFeedsBySetID(ctx, setID)
 	if err != nil {
-		return nil, fmt.Errorf("get feed by set: %w", err)
+		return nil, fmt.Errorf("list feeds by set: %w", err)
 	}
-	if feed == nil {
+	if len(feeds) == 0 {
 		return nil, ErrNotFound
 	}
 
-	return s.store.ListEpisodesWithStatus(ctx, userID, feed.ID, limit, offset)
+	all := make([]model.PodcastEpisodeWithStatus, 0)
+	for _, feed := range feeds {
+		episodes, err := s.store.ListEpisodesWithStatus(ctx, userID, feed.ID, limit, 0)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, episodes...)
+	}
+	if offset >= len(all) {
+		return []model.PodcastEpisodeWithStatus{}, nil
+	}
+	end := len(all)
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+	return all[offset:end], nil
 }
 
 func (s *podcastService) DownloadEpisode(ctx context.Context, episodeID, userID int64) (*model.Media, error) {
@@ -376,7 +494,8 @@ func (s *podcastService) resolveEpisodeAndSet(ctx context.Context, episodeID, us
 		return nil, nil, "", ErrNotFound
 	}
 
-	setPath := filepath.Join(s.mediaRoot, set.RootPath)
+	feedFolder := podcastFolderName("", feed.Title, feed.ID)
+	setPath := filepath.Join(s.mediaRoot, set.RootPath, feedFolder)
 	path := buildEpisodePath(setPath, episode, s.clock.Now())
 	return episode, set, path, nil
 }
@@ -415,6 +534,9 @@ func (s *podcastService) downloadEnclosure(ctx context.Context, episode *model.P
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("download episode: status %d", resp.StatusCode)
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return 0, fmt.Errorf("mkdir episode folder: %w", err)
+	}
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -438,9 +560,15 @@ func (s *podcastService) downloadEnclosure(ctx context.Context, episode *model.P
 // persistDownloadedEpisode records the downloaded file in the database,
 // probes it, and returns a cleanup function to undo work on failure.
 func (s *podcastService) persistDownloadedEpisode(ctx context.Context, episode *model.PodcastEpisode, set *model.Set, path string, n int64) (*model.Media, func(), error) {
+	relPath, err := filepath.Rel(filepath.Join(s.mediaRoot, set.RootPath), path)
+	if err != nil {
+		os.Remove(path)
+		return nil, nil, fmt.Errorf("relative episode path: %w", err)
+	}
+	relPath = filepath.ToSlash(relPath)
 	media := &model.Media{
 		SetID:         set.ID,
-		RelPath:       filepath.Base(path),
+		RelPath:       relPath,
 		FileName:      filepath.Base(path),
 		AbsPath:       path,
 		Type:          mediatype.TypeForExt(filepath.Base(path)),

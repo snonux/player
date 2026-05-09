@@ -6,10 +6,12 @@ export function initSearch({ onChange, input, clearBtn }) {
   _onChange = onChange;
   if (!input) return;
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      input.value = '';
+    if (e.key === 'Escape' || e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
       input.blur();
-      trigger('');
+      hideSearch();
+      document.dispatchEvent(new CustomEvent('search:navigate-results'));
     }
   });
   input.addEventListener('input', () => {
@@ -29,6 +31,7 @@ export function initSearch({ onChange, input, clearBtn }) {
 }
 
 export function focusSearch() {
+  showSearch();
   const input = document.getElementById('search-input');
   if (input) {
     input.focus();
@@ -41,6 +44,15 @@ export function trigger(query) {
   _onChange(query);
 }
 
+export function showSearch() {
+  document.getElementById('search-overlay')?.classList.remove('hidden');
+}
+
+export function hideSearch() {
+  document.getElementById('search-overlay')?.classList.add('hidden');
+  hideSearchHelp();
+}
+
 /**
  * Parse a raw search string into structured filters and free-text search.
  *
@@ -50,6 +62,7 @@ export function trigger(query) {
  *   tag:a,b       – comma-separated tag names
  *   like:1        – only favorited items
  *   type:video    – media type (video | audio)
+ *   set:yoga      – select a set by id or name
  *   sort:name     – sort order (name | date | duration | play_count | random)
  *   minsize:10    – minimum file size in MB
  *   maxsize:500   – maximum file size in MB
@@ -62,6 +75,7 @@ export function parseQuery(raw) {
     favorites: false,
     tags: '',
     sort: '',
+    set: '',
     minDuration: '',
     maxDuration: '',
     minFileSize: '',
@@ -69,8 +83,7 @@ export function parseQuery(raw) {
     search: '',
   };
   const tokens = [];
-  // Split by whitespace while respecting double-quoted strings.
-  const parts = raw.match(/(".*?"|\S+)/g) || [];
+  const parts = tokenize(raw);
   for (const part of parts) {
     const m = part.match(/^([a-zA-Z_]+):(.+)$/);
     if (m) {
@@ -95,6 +108,9 @@ export function parseQuery(raw) {
         case 'type':
           filters.type = value;
           break;
+        case 'set':
+          filters.set = value;
+          break;
         case 'sort':
           filters.sort = value;
           break;
@@ -114,6 +130,28 @@ export function parseQuery(raw) {
   }
   filters.search = tokens.join(' ').trim();
   return filters;
+}
+
+function tokenize(raw) {
+  const parts = [];
+  let current = '';
+  let inQuote = false;
+  for (const ch of raw || '') {
+    if (ch === '"') {
+      inQuote = !inQuote;
+      continue;
+    }
+    if (/\s/.test(ch) && !inQuote) {
+      if (current) {
+        parts.push(current);
+        current = '';
+      }
+      continue;
+    }
+    current += ch;
+  }
+  if (current) parts.push(current);
+  return parts;
 }
 
 export function showSearchHelp() {

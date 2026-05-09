@@ -904,6 +904,11 @@ func (m *MockStore) GetFeedBySetID(ctx context.Context, setID int64) (*model.Pod
 	return m.PodcastRepo.GetFeedBySetID(ctx, setID)
 }
 
+// ListFeedsBySetID implements PodcastRepo.
+func (m *MockStore) ListFeedsBySetID(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
+	return m.PodcastRepo.ListFeedsBySetID(ctx, setID)
+}
+
 // ListFeeds implements PodcastRepo.
 func (m *MockStore) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
 	return m.PodcastRepo.ListFeeds(ctx)
@@ -966,11 +971,12 @@ type MockPodcastRepo struct {
 	DeleteFeedFunc            func(ctx context.Context, id int64) error
 	GetFeedByIDFunc           func(ctx context.Context, id int64) (*model.PodcastFeed, error)
 	GetFeedBySetIDFunc        func(ctx context.Context, setID int64) (*model.PodcastFeed, error)
+	ListFeedsBySetIDFunc      func(ctx context.Context, setID int64) ([]model.PodcastFeed, error)
 	ListFeedsFunc             func(ctx context.Context) ([]model.PodcastFeed, error)
 	ListFeedsNeedingCheckFunc func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error)
 
-	CreateEpisodeFunc         func(ctx context.Context, episode *model.PodcastEpisode) (int64, error)
-	GetEpisodeByIDFunc        func(ctx context.Context, id int64) (*model.PodcastEpisode, error)
+	CreateEpisodeFunc        func(ctx context.Context, episode *model.PodcastEpisode) (int64, error)
+	GetEpisodeByIDFunc       func(ctx context.Context, id int64) (*model.PodcastEpisode, error)
 	GetEpisodeByGUIDFunc     func(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error)
 	ListEpisodesByFeedFunc   func(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error)
 	UpdateEpisodeMediaFunc   func(ctx context.Context, episodeID, mediaID int64, fileName string) error
@@ -1017,6 +1023,14 @@ func (m *MockPodcastRepo) GetFeedByID(ctx context.Context, id int64) (*model.Pod
 func (m *MockPodcastRepo) GetFeedBySetID(ctx context.Context, setID int64) (*model.PodcastFeed, error) {
 	if m.GetFeedBySetIDFunc != nil {
 		return m.GetFeedBySetIDFunc(ctx, setID)
+	}
+	return nil, nil
+}
+
+// ListFeedsBySetID calls ListFeedsBySetIDFunc or returns nil.
+func (m *MockPodcastRepo) ListFeedsBySetID(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
+	if m.ListFeedsBySetIDFunc != nil {
+		return m.ListFeedsBySetIDFunc(ctx, setID)
 	}
 	return nil, nil
 }
