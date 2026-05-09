@@ -92,7 +92,8 @@ export async function loadMedia() {
       resultCount.textContent = resultText(total, page);
     } else {
       breadcrumb?.classList.add('hidden');
-      const sort = callbacks.isShuffle?.() ? 'random' : (state.filters.sort || 'name');
+      const shuffle = callbacks.isShuffle?.();
+      const sort = shuffle ? 'random' : (state.filters.sort || 'name');
       const params = {
         set_id: setIds ? '' : String(singleSetId || state.selectedSetId || ''),
         set_ids: setIds,
@@ -105,6 +106,7 @@ export async function loadMedia() {
         filesize_min: state.filters.minFileSize ? String(parseInt(state.filters.minFileSize, 10) * 1024 * 1024) : '',
         filesize_max: state.filters.maxFileSize ? String(parseInt(state.filters.maxFileSize, 10) * 1024 * 1024) : '',
         sort,
+        shuffle_revision: shuffle ? String(callbacks.shuffleRevision?.() || 0) : '',
         limit: '1000',
       };
       syncMediaPage(`grid:${JSON.stringify(params)}`);

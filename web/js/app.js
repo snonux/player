@@ -20,7 +20,7 @@ import {
   isImageMode as playerIsImageMode,
 } from './player.js';
 import { initSearch, parseQuery, showSearchHelp } from './search.js';
-import { initShuffle, toggle as toggleShuffle, isOn as isShuffle } from './shuffle.js';
+import { initShuffle, enable as enableShuffle, isOn as isShuffle, revision as shuffleRevision } from './shuffle.js';
 import { initThemes } from './themes.js';
 import { initNotes } from './notes.js';
 import { initAdmin } from './admin.js';
@@ -168,6 +168,7 @@ async function initApp() {
   initSets({ onLoadMedia: loadMedia });
   initMediaGrid({
     isShuffle,
+    shuffleRevision,
     onSetCleared: updateSetRowsUI,
     openNotesForSelected,
     openTagsForElement,
@@ -266,7 +267,7 @@ function keyboardHandlers() {
       closeAllModals();
     },
     shuffle: () => {
-      toggleShuffle();
+      enableShuffle();
       loadMedia();
     },
     share: () => shareSelected(),
