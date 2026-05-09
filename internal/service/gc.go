@@ -70,7 +70,10 @@ func (w *GCWorker) Start() {
 		for {
 			select {
 			case <-tickCh:
-				w.run(w.ctx)
+				func() {
+					defer recoverWorkerPanic(w.logger, "gc")
+					w.run(w.ctx)
+				}()
 				w.notifyRunDone()
 			case <-w.stopCh:
 				return

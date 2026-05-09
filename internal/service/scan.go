@@ -59,6 +59,12 @@ func (s *scanService) TriggerRescan(ctx context.Context) error {
 
 	go func() {
 		defer cancel()
+		defer s.notifyDone()
+		defer func() {
+			if err := recoverWorkerPanic(s.logger, "rescan"); err != nil {
+				progress.Done(err)
+			}
+		}()
 		err := s.scanner.Scan(scanCtx, s.mediaRoot, progress)
 		if err == nil {
 			err = scanCtx.Err()
@@ -70,7 +76,6 @@ func (s *scanService) TriggerRescan(ctx context.Context) error {
 			progress.Done(nil)
 			s.logger.Info("rescan completed")
 		}
-		s.notifyDone()
 	}()
 	return nil
 }
