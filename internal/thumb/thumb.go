@@ -28,6 +28,8 @@ func NewFFmpegGenerator() *FFmpegGenerator {
 	}
 }
 
+const thumbWaitDelay = 15 * time.Second
+
 // Generate picks a random offset (at least 1 second if duration > 0) and
 // runs ffmpeg to produce a JPEG thumbnail.
 func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath string, duration float64) error {
@@ -55,6 +57,7 @@ func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath st
 		outputPath,
 	)
 	cmd := g.execer(ctx, "ffmpeg", args...)
+	cmd.WaitDelay = thumbWaitDelay
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg generate thumbnail for %s: %w", inputPath, err)
 	}

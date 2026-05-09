@@ -4,11 +4,14 @@ package podcast
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/mmcdole/gofeed"
 )
+
+const defaultFeedTimeout = 30 * time.Second
 
 // Episode represents a parsed podcast episode from a feed.
 type Episode struct {
@@ -29,9 +32,14 @@ type ParsedFeed struct {
 	Episodes    []Episode
 }
 
-// ParseFeed fetches and parses a podcast RSS/Atom feed URL.
-func ParseFeed(url string) (*ParsedFeed, error) {
+// ParseFeed fetches and parses a podcast RSS/Atom feed URL using an http.Client.
+// If client is nil, a default client with a 30-second timeout is used.
+func ParseFeed(client *http.Client, url string) (*ParsedFeed, error) {
+	if client == nil {
+		client = &http.Client{Timeout: defaultFeedTimeout}
+	}
 	fp := gofeed.NewParser()
+	fp.Client = client
 	feed, err := fp.ParseURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse feed %q: %w", url, err)

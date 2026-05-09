@@ -4,14 +4,22 @@ package probe
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
+	"time"
 
 	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/model"
 	"github.com/rwcarlsen/goexif/exif"
+)
+
+const (
+	defaultProbeWaitDelay  = 10 * time.Second
+	defaultProbeMaxRetries = 2
+	defaultProbeRetryDelay = 500 * time.Millisecond
 )
 
 // Prober extracts metadata from a media file.
@@ -20,15 +28,63 @@ type Prober interface {
 }
 
 // FFProber wraps the ffprobe command-line tool.
-type FFProber struct{}
-
-// NewFFProber creates a new FFProber.
-func NewFFProber() *FFProber {
-	return &FFProber{}
+type FFProber struct {
+	maxRetries int
+	retryDelay time.Duration
+	waitDelay  time.Duration
 }
 
-// Probe runs ffprobe against the given path and parses the resulting JSON.
+// NewFFProber creates a new FFProber with bounded retries and a process wait delay.
+func NewFFProber() *FFProber {
+	return &FFProber{
+		maxRetries: defaultProbeMaxRetries,
+		retryDelay: defaultProbeRetryDelay,
+		waitDelay:  defaultProbeWaitDelay,
+	}
+}
+
+// Probe runs ffprobe against the given path with retries and parses the resulting JSON.
 func (f *FFProber) Probe(ctx context.Context, path string) (*model.Metadata, error) {
+	var lastErr error
+	attempts := f.maxRetries + 1
+	if attempts <= 0 {
+		attempts = 1
+	}
+
+	for i := 0; i < attempts; i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		meta, err := f.probeOnce(ctx, path)
+		if err == nil {
+			return meta, nil
+		}
+		lastErr = err
+
+		// Don't retry on context cancellation.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			break
+		}
+
+		if i < attempts-1 {
+			delay := f.retryDelay * time.Duration(1<<i)
+			const maxDelay = 30 * time.Second
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+	return nil, lastErr
+}
+
+// probeOnce performs a single ffprobe invocation.
+func (f *FFProber) probeOnce(ctx context.Context, path string) (*model.Metadata, error) {
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "error",
 		"-show_format",
@@ -36,6 +92,7 @@ func (f *FFProber) Probe(ctx context.Context, path string) (*model.Metadata, err
 		"-of", "json",
 		path,
 	)
+	cmd.WaitDelay = f.waitDelay
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {

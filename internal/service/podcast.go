@@ -78,7 +78,7 @@ type podcastService struct {
 	httpClient      *http.Client
 	checkInterval   int // minutes
 	logger          *slog.Logger
-	parseFeed       func(string) (*podcast.ParsedFeed, error)
+	parseFeed       func(*http.Client, string) (*podcast.ParsedFeed, error)
 	parseFeedReader func(io.Reader) (*podcast.ParsedFeed, error)
 	downloadCover   func(*http.Client, string, string) error
 }
@@ -132,7 +132,7 @@ func (s *podcastService) SubscribeFeed(ctx context.Context, feedURL, setName str
 		return nil, err
 	}
 
-	parsed, err := s.parseFeed(feedURL)
+	parsed, err := s.parseFeed(s.httpClient, feedURL)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidFeed, err)
 	}

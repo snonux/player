@@ -85,7 +85,7 @@ func TestPodcastService_SubscribeFeed_Ok(t *testing.T) {
 		CreateEpisodeFunc: func(ctx context.Context, ep *model.PodcastEpisode) (int64, error) { return 1, nil },
 	}
 
-	svc.parseFeed = func(url string) (*podcast.ParsedFeed, error) {
+	svc.parseFeed = func(_ *http.Client, url string) (*podcast.ParsedFeed, error) {
 		return &podcast.ParsedFeed{
 			Title:       "Test Feed",
 			Description: "desc",
@@ -198,7 +198,7 @@ func TestPodcastService_SubscribeFeed_ParseError(t *testing.T) {
 			return 1, nil
 		},
 	}
-	svc.parseFeed = func(url string) (*podcast.ParsedFeed, error) {
+	svc.parseFeed = func(_ *http.Client, url string) (*podcast.ParsedFeed, error) {
 		return nil, errors.New("parse fail")
 	}
 
@@ -229,7 +229,7 @@ func TestPodcastService_SubscribeFeed_CreateSetError(t *testing.T) {
 			return 0, boom
 		},
 	}
-	svc.parseFeed = func(url string) (*podcast.ParsedFeed, error) {
+	svc.parseFeed = func(_ *http.Client, url string) (*podcast.ParsedFeed, error) {
 		return &podcast.ParsedFeed{Title: "T"}, nil
 	}
 
@@ -270,7 +270,7 @@ func TestPodcastService_SubscribeFeed_GrantPermissionError(t *testing.T) {
 			return boom
 		},
 	}
-	svc.parseFeed = func(url string) (*podcast.ParsedFeed, error) {
+	svc.parseFeed = func(_ *http.Client, url string) (*podcast.ParsedFeed, error) {
 		return &podcast.ParsedFeed{Title: "T"}, nil
 	}
 
@@ -314,7 +314,7 @@ func TestPodcastService_SubscribeFeed_CreateFeedError(t *testing.T) {
 			return 0, boom
 		},
 	}
-	svc.parseFeed = func(url string) (*podcast.ParsedFeed, error) {
+	svc.parseFeed = func(_ *http.Client, url string) (*podcast.ParsedFeed, error) {
 		return &podcast.ParsedFeed{Title: "T"}, nil
 	}
 

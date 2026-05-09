@@ -45,10 +45,10 @@ func makeItemWithEnclosure(guid, title, desc, encURL, encLength string, publishe
 
 func makeItemWithDuration(guid, title, duration string) *gofeed.Item {
 	return &gofeed.Item{
-		GUID:        guid,
-		Title:       title,
-		ITunesExt:   &ext.ITunesItemExtension{Duration: duration},
-		Enclosures:  []*gofeed.Enclosure{{URL: "http://example.com/" + guid + ".mp3", Length: "0"}},
+		GUID:       guid,
+		Title:      title,
+		ITunesExt:  &ext.ITunesItemExtension{Duration: duration},
+		Enclosures: []*gofeed.Enclosure{{URL: "http://example.com/" + guid + ".mp3", Length: "0"}},
 	}
 }
 
@@ -187,7 +187,8 @@ func TestParseFeed_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	pf, err := ParseFeed(srv.URL)
+	client := srv.Client()
+	pf, err := ParseFeed(client, srv.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -205,7 +206,8 @@ func TestParseFeed_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := ParseFeed(srv.URL)
+	client := srv.Client()
+	_, err := ParseFeed(client, srv.URL)
 	if err == nil {
 		t.Fatal("expected error when server returns 500")
 	}
@@ -291,9 +293,9 @@ func TestParsedFeedFromGoFeed_BadFileSize(t *testing.T) {
 	f := makeFeed("F", "D", "")
 	f.Items = []*gofeed.Item{
 		{
-			GUID:        "bad-size",
-			Title:       "Bad Size",
-			Enclosures:  []*gofeed.Enclosure{{URL: "http://x", Length: "not-a-number"}},
+			GUID:       "bad-size",
+			Title:      "Bad Size",
+			Enclosures: []*gofeed.Enclosure{{URL: "http://x", Length: "not-a-number"}},
 		},
 	}
 	pf := parsedFeedFromGoFeed(f)

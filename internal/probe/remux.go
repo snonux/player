@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"time"
 )
 
 // Remuxer remuxes media on-the-fly to a browser-friendly container.
@@ -22,6 +23,8 @@ type FFRemuxer struct{}
 func NewFFRemuxer() *FFRemuxer {
 	return &FFRemuxer{}
 }
+
+const remuxWaitDelay = 10 * time.Second
 
 // Remux runs ffmpeg to copy video/audio streams into a fragmented MP4
 // suitable for streaming to a browser.
@@ -43,6 +46,7 @@ func (f *FFRemuxer) Remux(ctx context.Context, inputPath string, w io.Writer) er
 		"pipe:1",
 	)
 	cmd.Stderr = os.Stderr
+	cmd.WaitDelay = remuxWaitDelay
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("remux stdout pipe: %w", err)
