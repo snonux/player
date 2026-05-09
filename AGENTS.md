@@ -134,7 +134,7 @@ Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** w
 | `Space` / `p` | Play / pause / switch to selected item |
 | `f` | Toggle fullscreen on the player wrapper |
 | `Esc` | Exit fullscreen, or deselect current item |
-| `r` | Toggle shuffle on the current filtered result set |
+| `r` | Enable shuffle, or reshuffle if shuffle is already active |
 | `s` | Generate a share link for the selected media |
 | `/` | Focus the quick search bar (debounced) |
 | `n` | Open notes modal for the selected media |
