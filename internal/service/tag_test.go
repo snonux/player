@@ -13,11 +13,11 @@ func TestTagService_AssignTag(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name       string
-		tagExists  bool
-		createErr  error
-		assignErr  error
-		wantErr    bool
+		name      string
+		tagExists bool
+		createErr error
+		assignErr error
+		wantErr   bool
 	}{
 		{
 			name:      "existing tag",

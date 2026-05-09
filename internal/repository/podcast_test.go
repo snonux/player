@@ -61,11 +61,11 @@ func TestPodcastRepo_CRUD(t *testing.T) {
 
 	// Create episode.
 	episode := &model.PodcastEpisode{
-		FeedID:      feedID,
-		GUID:        "ep-1",
-		Title:       "Episode 1",
-		EpisodeURL:  "https://example.com/ep1.mp3",
-		CreatedAt:   now,
+		FeedID:     feedID,
+		GUID:       "ep-1",
+		Title:      "Episode 1",
+		EpisodeURL: "https://example.com/ep1.mp3",
+		CreatedAt:  now,
 	}
 	epID, err := s.CreateEpisode(ctx, episode)
 	if err != nil {

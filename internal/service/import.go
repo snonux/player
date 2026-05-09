@@ -18,7 +18,9 @@ import (
 // fetching an episode enclosure).
 func ImportMediaFile(
 	ctx context.Context,
-	store interface{ UpdateMedia(ctx context.Context, media *model.Media) error },
+	store interface {
+		UpdateMedia(ctx context.Context, media *model.Media) error
+	},
 	media *model.Media,
 	prober probe.Prober,
 	thumbGen thumb.Generator,
