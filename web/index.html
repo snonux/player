@@ -16,10 +16,6 @@
   <div class="header-main">
     <a href="/" class="logo"><img src="/logo.png" alt="Player" class="logo-img">Player</a>
     <div class="spacer"></div>
-    <div id="scan-indicator" class="scan-indicator hidden" role="status" aria-live="polite">
-      <span class="scan-dot" aria-hidden="true"></span>
-      <span id="scan-indicator-text">Scanning</span>
-    </div>
     <button id="sidebar-toggle" class="icon-btn" title="Sets" aria-label="Toggle sets sidebar">☰</button>
     <button id="shuffle-toggle" class="icon-btn" title="Shuffle (r)" aria-label="Toggle shuffle">🔀</button>
     <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
@@ -28,6 +24,11 @@
     <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
   </div>
 </header>
+
+<div id="scan-indicator" class="scan-indicator hidden" role="status" aria-live="polite">
+  <span class="scan-dot" aria-hidden="true"></span>
+  <span id="scan-indicator-text">Scanning</span>
+</div>
 
 <div id="search-overlay" class="search-overlay hidden">
   <div id="search-bar" class="search-bar search-overlay-bar" role="search">

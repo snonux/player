@@ -1,5 +1,6 @@
 import { initKeyboard } from '../keyboard.js';
 import { renderScanProgress, triggerRescan } from '../views/admin-status.js';
+import { readFileSync } from 'node:fs';
 
 const failures = [];
 const requests = [];
@@ -117,6 +118,15 @@ function testRenderIdleProgressHidesIndicator() {
   assert(indicator.classList.hidden === true, 'idle progress should hide the indicator');
 }
 
+function testScanIndicatorOutsideHeader() {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+  const afterHeader = html.slice(html.indexOf('</header>'));
+
+  assert(!header.includes('id="scan-indicator"'), 'scan indicator should not be inside the collapsible header');
+  assert(afterHeader.includes('id="scan-indicator"'), 'scan indicator should remain in the document after the header');
+}
+
 async function testTriggerRescanRefreshesProgress() {
   requests.length = 0;
   rescanStatus = 200;
@@ -143,6 +153,7 @@ console.log('Running admin rescan frontend tests...');
 testKeyboardRescanHandler();
 testRenderRunningProgress();
 testRenderIdleProgressHidesIndicator();
+testScanIndicatorOutsideHeader();
 await testTriggerRescanRefreshesProgress();
 await testTriggerRescanErrorDoesNotPollProgress();
 
