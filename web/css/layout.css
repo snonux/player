@@ -65,7 +65,7 @@ body {
   position: fixed;
   top: 0.75rem;
   right: 0.75rem;
-  z-index: 45;
+  z-index: 120;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;

@@ -127,6 +127,16 @@ function testScanIndicatorOutsideHeader() {
   assert(afterHeader.includes('id="scan-indicator"'), 'scan indicator should remain in the document after the header');
 }
 
+function testScanIndicatorAboveModalOverlay() {
+  const css = readFileSync(new URL('../../css/layout.css', import.meta.url), 'utf8');
+  const scanRule = css.match(/\.scan-indicator\s*\{[^}]*z-index:\s*(\d+)/);
+  const modalRule = css.match(/\.modal-overlay\s*\{[^}]*z-index:\s*(\d+)/);
+
+  assert(scanRule, 'scan indicator should define a z-index');
+  assert(modalRule, 'modal overlay should define a z-index');
+  assert(Number(scanRule?.[1]) > Number(modalRule?.[1]), 'scan indicator should render above open admin modal overlay');
+}
+
 async function testTriggerRescanRefreshesProgress() {
   requests.length = 0;
   rescanStatus = 200;
@@ -154,6 +164,7 @@ testKeyboardRescanHandler();
 testRenderRunningProgress();
 testRenderIdleProgressHidesIndicator();
 testScanIndicatorOutsideHeader();
+testScanIndicatorAboveModalOverlay();
 await testTriggerRescanRefreshesProgress();
 await testTriggerRescanErrorDoesNotPollProgress();
 
