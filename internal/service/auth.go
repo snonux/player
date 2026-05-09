@@ -15,11 +15,11 @@ type authService struct {
 	store  repository.AuthServiceStore
 	clock  clock.Clock
 	hasher auth.Hasher
-	sm     *auth.SessionManager
+	sm     auth.SessionManager
 }
 
 // NewAuthService creates a concrete AuthService.
-func NewAuthService(store repository.AuthServiceStore, clk clock.Clock, hasher auth.Hasher, sm *auth.SessionManager) AuthService {
+func NewAuthService(store repository.AuthServiceStore, clk clock.Clock, hasher auth.Hasher, sm auth.SessionManager) AuthService {
 	return &authService{
 		store:  store,
 		clock:  clk,

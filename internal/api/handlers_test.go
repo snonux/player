@@ -33,7 +33,7 @@ func newTestFS(files map[string]string) http.FileSystem {
 	return http.FS(fsys)
 }
 
-func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm *auth.SessionManager, cfg *internal.Config,
+func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm auth.SessionManager, cfg *internal.Config,
 	browseSvc service.MediaBrowseService,
 	writeSvc service.MediaWriteService,
 	shareSvc service.MediaShareService,
@@ -86,7 +86,7 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 	})
 }
 
-func addSessionCookie(t *testing.T, store repository.Store, sm *auth.SessionManager, userID int64) *http.Cookie {
+func addSessionCookie(t *testing.T, store repository.Store, sm auth.SessionManager, userID int64) *http.Cookie {
 	t.Helper()
 	repo := store.(repository.SessionRepo)
 	now := time.Now()
@@ -1315,7 +1315,7 @@ func buildCountStore(count int) *repository.MockStore {
 	}
 }
 
-func addSessionCookieStore(t *testing.T, sm *auth.SessionManager, userID int64) *http.Cookie {
+func addSessionCookieStore(t *testing.T, sm auth.SessionManager, userID int64) *http.Cookie {
 	t.Helper()
 	id, _ := sm.CreateSession(context.Background(), userID)
 	return &http.Cookie{Name: "session", Value: id}

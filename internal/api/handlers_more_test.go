@@ -64,7 +64,7 @@ func buildAdminSessionStore(userID int64) *repository.MockStore {
 	return store
 }
 
-func sessionCookieForStore(t *testing.T, store repository.Store, sm *auth.SessionManager, userID int64) *http.Cookie {
+func sessionCookieForStore(t *testing.T, store repository.Store, sm auth.SessionManager, userID int64) *http.Cookie {
 	t.Helper()
 	return addSessionCookie(t, store, sm, userID)
 }

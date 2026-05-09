@@ -12,23 +12,26 @@ import (
 	"codeberg.org/snonux/player/internal/repository"
 )
 
-// SessionManager handles session lifecycle.
-type SessionManager struct {
+// Compile-time check that *sessionManager satisfies the SessionManager interface.
+var _ SessionManager = (*sessionManager)(nil)
+
+// sessionManager is the concrete implementation of SessionManager.
+type sessionManager struct {
 	repo    repository.SessionRepo
 	clock   clock.Clock
 	timeout time.Duration
 }
 
 // NewSessionManager creates a SessionManager.
-func NewSessionManager(repo repository.SessionRepo, clock clock.Clock, timeout time.Duration) *SessionManager {
-	return &SessionManager{
+func NewSessionManager(repo repository.SessionRepo, clock clock.Clock, timeout time.Duration) SessionManager {
+	return &sessionManager{
 		repo:    repo,
 		clock:   clock,
 		timeout: timeout,
 	}
 }
 
-func (m *SessionManager) generateID() (string, error) {
+func (m *sessionManager) generateID() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generate session id: %w", err)
@@ -37,7 +40,7 @@ func (m *SessionManager) generateID() (string, error) {
 }
 
 // CreateSession creates a new session for a user and returns the session ID.
-func (m *SessionManager) CreateSession(ctx context.Context, userID int64) (string, error) {
+func (m *sessionManager) CreateSession(ctx context.Context, userID int64) (string, error) {
 	id, err := m.generateID()
 	if err != nil {
 		return "", err
@@ -56,7 +59,7 @@ func (m *SessionManager) CreateSession(ctx context.Context, userID int64) (strin
 }
 
 // ValidateSession checks if a session ID is valid and not expired.
-func (m *SessionManager) ValidateSession(ctx context.Context, id string) (*model.Session, error) {
+func (m *sessionManager) ValidateSession(ctx context.Context, id string) (*model.Session, error) {
 	sess, err := m.repo.GetSessionByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get session: %w", err)
@@ -72,11 +75,11 @@ func (m *SessionManager) ValidateSession(ctx context.Context, id string) (*model
 }
 
 // DeleteSession removes a session.
-func (m *SessionManager) DeleteSession(ctx context.Context, id string) error {
+func (m *sessionManager) DeleteSession(ctx context.Context, id string) error {
 	return m.repo.DeleteSession(ctx, id)
 }
 
 // Cleanup removes expired sessions.
-func (m *SessionManager) Cleanup(ctx context.Context) error {
+func (m *sessionManager) Cleanup(ctx context.Context) error {
 	return m.repo.DeleteExpiredSessions(ctx, m.clock.Now())
 }

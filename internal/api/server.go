@@ -17,7 +17,7 @@ import (
 type Server struct {
 	store       repository.Store
 	hasher      auth.Hasher
-	sm          *auth.SessionManager
+	sm          auth.SessionManager
 	cfg         *internal.Config
 	mux         *http.ServeMux
 	browseSvc   service.MediaBrowseService
@@ -55,7 +55,7 @@ type ServerServices struct {
 type ServerDeps struct {
 	Store          repository.Store
 	Hasher         auth.Hasher
-	SessionManager *auth.SessionManager
+	SessionManager auth.SessionManager
 	Config         *internal.Config
 	Services       ServerServices
 	StaticFS       http.FileSystem

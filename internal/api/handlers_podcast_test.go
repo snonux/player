@@ -21,7 +21,7 @@ import (
 )
 
 // newPodcastTestServer is like newTestServer but accepts a real podcast service.
-func newPodcastTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm *auth.SessionManager, cfg *internal.Config,
+func newPodcastTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm auth.SessionManager, cfg *internal.Config,
 	browseSvc service.MediaBrowseService,
 	writeSvc service.MediaWriteService,
 	shareSvc service.MediaShareService,
@@ -71,7 +71,7 @@ func newPodcastTestServer(t *testing.T, store repository.Store, hasher auth.Hash
 }
 
 // setupPodcastE2E creates a full server with a real SQLite store and real services.
-func setupPodcastE2E(t *testing.T) (srv *Server, store repository.Store, sm *auth.SessionManager, adminID int64, cleanup func()) {
+func setupPodcastE2E(t *testing.T) (srv *Server, store repository.Store, sm auth.SessionManager, adminID int64, cleanup func()) {
 	t.Helper()
 
 	dbStore, err := repository.Open(":memory:")

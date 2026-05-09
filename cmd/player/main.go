@@ -38,7 +38,7 @@ func run(args []string) error {
 type appDeps struct {
 	store          repository.Store
 	hasher         auth.Hasher
-	sm             *auth.SessionManager
+	sm             auth.SessionManager
 	cfg            *internal.Config
 	clk            clock.Clock
 	mediaSvc       service.MediaService

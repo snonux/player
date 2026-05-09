@@ -20,11 +20,11 @@ const (
 // Middleware holds dependencies for middleware constructors.
 type Middleware struct {
 	authSvc service.AuthService
-	sm      *auth.SessionManager
+	sm      auth.SessionManager
 }
 
 // NewMiddleware creates middleware handlers.
-func NewMiddleware(authSvc service.AuthService, sm *auth.SessionManager) *Middleware {
+func NewMiddleware(authSvc service.AuthService, sm auth.SessionManager) *Middleware {
 	return &Middleware{authSvc: authSvc, sm: sm}
 }
 
