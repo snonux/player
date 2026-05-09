@@ -1115,7 +1115,7 @@ func TestSQLite_OpenFailures(t *testing.T) {
 		}
 	})
 
-	t.Run("closed db migrate failure", func(t *testing.T) {
+	t.Run("closed db schema initialization failure", func(t *testing.T) {
 		db, err := sql.Open("sqlite", ":memory:")
 		if err != nil {
 			t.Fatalf("open: %v", err)
@@ -1123,7 +1123,73 @@ func TestSQLite_OpenFailures(t *testing.T) {
 		db.Close()
 		_, err = New(db)
 		if err == nil {
-			t.Fatal("expected error when migrating closed db")
+			t.Fatal("expected error when initializing schema on closed db")
+		}
+	})
+}
+
+func TestSQLite_SchemaInitialization(t *testing.T) {
+	t.Run("fresh database includes podcast column and foreign keys", func(t *testing.T) {
+		s := newTestStore(t)
+		defer s.Close()
+
+		var isPodcastColumn int
+		rows, err := s.db.Query(`PRAGMA table_info(sets)`)
+		if err != nil {
+			t.Fatalf("table info: %v", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var cid int
+			var name, typ string
+			var notNull int
+			var defaultValue sql.NullString
+			var pk int
+			if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+				t.Fatalf("scan column: %v", err)
+			}
+			if name == "is_podcast" {
+				isPodcastColumn++
+			}
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("rows: %v", err)
+		}
+		if isPodcastColumn != 1 {
+			t.Fatalf("expected one is_podcast column, got %d", isPodcastColumn)
+		}
+
+		var foreignKeys int
+		if err := s.db.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil {
+			t.Fatalf("foreign_keys pragma: %v", err)
+		}
+		if foreignKeys != 1 {
+			t.Fatalf("expected foreign keys enabled, got %d", foreignKeys)
+		}
+	})
+
+	t.Run("stale pre-podcast sets schema is not upgraded", func(t *testing.T) {
+		db, err := sql.Open("sqlite", ":memory:")
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		defer db.Close()
+
+		_, err = db.Exec(`
+CREATE TABLE sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    root_path TEXT UNIQUE NOT NULL,
+    cover_thumbnail_path TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);`)
+		if err != nil {
+			t.Fatalf("create stale schema: %v", err)
+		}
+
+		_, err = New(db)
+		if err == nil {
+			t.Fatal("expected stale schema initialization to fail")
 		}
 	})
 }

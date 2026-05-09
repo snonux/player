@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// tablesSchema defines all CREATE TABLE statements.
+// tablesSchema defines all CREATE TABLE statements for a fresh database.
 const tablesSchema = `
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -196,32 +196,12 @@ func enableForeignKeys(db *sql.DB) error {
 	return nil
 }
 
-// addPodcastColumn ensures the sets table has the is_podcast column.
-// It safely ignores the error if the column already exists.
-func addPodcastColumn(db *sql.DB) error {
-	_, err := db.Exec(`ALTER TABLE sets ADD COLUMN is_podcast INTEGER NOT NULL DEFAULT 0;`)
-	if err != nil {
-		// SQLite returns a generic error message for duplicate columns.
-		if err.Error() == "duplicate column name: is_podcast" ||
-			err.Error() == "SQL logic error: duplicate column name: is_podcast (1)" {
-			return nil
-		}
-		return fmt.Errorf("add is_podcast column: %w", err)
-	}
-	return nil
-}
-
-// Migrate creates the database schema if it does not exist.
-func Migrate(db *sql.DB) error {
+// initializeSchema creates the database schema for a fresh database.
+func initializeSchema(db *sql.DB) error {
 	if err := enableForeignKeys(db); err != nil {
 		return err
 	}
 	if err := execSchema(db, "tables", tablesSchema); err != nil {
-		return err
-	}
-	// Backward-compatibility: older databases may have a sets table
-	// without the is_podcast column. Add it before creating the index.
-	if err := addPodcastColumn(db); err != nil {
 		return err
 	}
 	if err := execSchema(db, "indexes", indexesSchema); err != nil {

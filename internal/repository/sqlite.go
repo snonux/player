@@ -14,10 +14,10 @@ type SQLite struct {
 	db *sql.DB
 }
 
-// New creates a SQLite store from an existing *sql.DB after migrating the schema.
+// New creates a SQLite store from an existing *sql.DB after initializing the schema.
 func New(db *sql.DB) (*SQLite, error) {
-	if err := Migrate(db); err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
+	if err := initializeSchema(db); err != nil {
+		return nil, fmt.Errorf("initialize schema: %w", err)
 	}
 	return &SQLite{db: db}, nil
 }
