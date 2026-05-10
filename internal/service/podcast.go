@@ -642,9 +642,14 @@ func (s *podcastService) ToggleEpisodeComplete(ctx context.Context, episodeID, u
 // Background checker
 // ------------------------------------------------------------------
 
+const (
+	baseFeedRetryBackoff = 15 * time.Minute
+	maxFeedRetryBackoff  = 24 * time.Hour
+)
+
 func (s *podcastService) CheckFeeds(ctx context.Context) error {
 	before := s.clock.Now().Add(-time.Duration(s.checkInterval) * time.Minute)
-	feeds, err := s.store.ListFeedsNeedingCheck(ctx, before)
+	feeds, err := s.store.ListFeedsNeedingCheck(ctx, s.clock.Now(), before)
 	if err != nil {
 		return fmt.Errorf("list feeds needing check: %w", err)
 	}
@@ -688,6 +693,7 @@ func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) 
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		s.setFeedBackoff(ctx, &feed)
 		return err
 	}
 	defer resp.Body.Close()
@@ -695,19 +701,24 @@ func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) 
 	if resp.StatusCode == http.StatusNotModified {
 		now := s.clock.Now()
 		feed.LastCheckedAt = &now
+		feed.ConsecutiveFailures = 0
+		feed.NextCheckAt = nil
 		_ = s.store.UpdateFeed(ctx, &feed)
 		return nil
 	}
 	if resp.StatusCode != http.StatusOK {
+		s.setFeedBackoff(ctx, &feed)
 		return fmt.Errorf("feed check status %d", resp.StatusCode)
 	}
 
 	parsed, err := s.parseFeedReader(resp.Body)
 	if err != nil {
+		s.setFeedBackoff(ctx, &feed)
 		return err
 	}
 
 	if err := s.updateFeedFromParsed(ctx, &feed, parsed, resp.Header.Get("ETag")); err != nil {
+		s.setFeedBackoff(ctx, &feed)
 		return err
 	}
 
@@ -726,6 +737,17 @@ func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) 
 	return nil
 }
 
+func (s *podcastService) setFeedBackoff(ctx context.Context, feed *model.PodcastFeed) {
+	feed.ConsecutiveFailures++
+	backoff := baseFeedRetryBackoff * (1 << max(0, feed.ConsecutiveFailures-1))
+	if backoff > maxFeedRetryBackoff {
+		backoff = maxFeedRetryBackoff
+	}
+	next := s.clock.Now().Add(backoff)
+	feed.NextCheckAt = &next
+	_ = s.store.UpdateFeed(ctx, feed)
+}
+
 func (s *podcastService) updateFeedFromParsed(ctx context.Context, feed *model.PodcastFeed, parsed *podcast.ParsedFeed, etag string) error {
 	feed.Title = parsed.Title
 	feed.Description = parsed.Description
@@ -733,6 +755,8 @@ func (s *podcastService) updateFeedFromParsed(ctx context.Context, feed *model.P
 	feed.LastETag = etag
 	now := s.clock.Now()
 	feed.LastCheckedAt = &now
+	feed.ConsecutiveFailures = 0
+	feed.NextCheckAt = nil
 	return s.store.UpdateFeed(ctx, feed)
 }
 

@@ -15,6 +15,8 @@ type PodcastFeed struct {
 	LastETag             string     `json:"last_etag"`
 	CheckIntervalMinutes int        `json:"check_interval_minutes"`
 	AutoDownload         bool       `json:"auto_download"`
+	ConsecutiveFailures  int        `json:"consecutive_failures"`
+	NextCheckAt          *time.Time `json:"next_check_at"`
 	CreatedAt            time.Time  `json:"created_at"`
 }
 

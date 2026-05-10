@@ -1521,8 +1521,8 @@ func (m *mockPingStore) ListFeedsBySetID(ctx context.Context, setID int64) ([]mo
 func (m *mockPingStore) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
 	return m.store.ListFeeds(ctx)
 }
-func (m *mockPingStore) ListFeedsNeedingCheck(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
-	return m.store.ListFeedsNeedingCheck(ctx, before)
+func (m *mockPingStore) ListFeedsNeedingCheck(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
+	return m.store.ListFeedsNeedingCheck(ctx, now, before)
 }
 func (m *mockPingStore) CreateEpisode(ctx context.Context, episode *model.PodcastEpisode) (int64, error) {
 	return m.store.CreateEpisode(ctx, episode)

@@ -16,10 +16,11 @@ import (
 // CreateFeed stores a new podcast feed and returns its database ID.
 func (s *SQLite) CreateFeed(ctx context.Context, feed *model.PodcastFeed) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO podcast_feeds (set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO podcast_feeds (set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		feed.SetID, feed.FeedURL, sqlNullString(feed.Title), sqlNullString(feed.Description), sqlNullString(feed.ImageURL),
-		sqlNullTime(feed.LastCheckedAt), sqlNullString(feed.LastETag), feed.CheckIntervalMinutes, boolToInt(feed.AutoDownload), feed.CreatedAt,
+		sqlNullTime(feed.LastCheckedAt), sqlNullString(feed.LastETag), feed.CheckIntervalMinutes, boolToInt(feed.AutoDownload),
+		feed.ConsecutiveFailures, sqlNullTime(feed.NextCheckAt), feed.CreatedAt,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert podcast feed: %w", err)
@@ -30,9 +31,10 @@ func (s *SQLite) CreateFeed(ctx context.Context, feed *model.PodcastFeed) (int64
 // UpdateFeed replaces mutable fields for a podcast feed.
 func (s *SQLite) UpdateFeed(ctx context.Context, feed *model.PodcastFeed) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE podcast_feeds SET feed_url = ?, title = ?, description = ?, image_url = ?, last_checked_at = ?, last_etag = ?, check_interval_minutes = ?, auto_download = ? WHERE id = ?`,
+		`UPDATE podcast_feeds SET feed_url = ?, title = ?, description = ?, image_url = ?, last_checked_at = ?, last_etag = ?, check_interval_minutes = ?, auto_download = ?, consecutive_failures = ?, next_check_at = ? WHERE id = ?`,
 		feed.FeedURL, sqlNullString(feed.Title), sqlNullString(feed.Description), sqlNullString(feed.ImageURL),
-		sqlNullTime(feed.LastCheckedAt), sqlNullString(feed.LastETag), feed.CheckIntervalMinutes, boolToInt(feed.AutoDownload), feed.ID,
+		sqlNullTime(feed.LastCheckedAt), sqlNullString(feed.LastETag), feed.CheckIntervalMinutes, boolToInt(feed.AutoDownload),
+		feed.ConsecutiveFailures, sqlNullTime(feed.NextCheckAt), feed.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update podcast feed: %w", err)
@@ -52,9 +54,9 @@ func (s *SQLite) DeleteFeed(ctx context.Context, id int64) error {
 func scanFeed(row sqlScanner) (*model.PodcastFeed, error) {
 	var f model.PodcastFeed
 	var title, description, imageURL, lastETag sql.NullString
-	var lastChecked sql.NullTime
+	var lastChecked, nextCheckAt sql.NullTime
 	var autoDownloadInt int
-	err := row.Scan(&f.ID, &f.SetID, &f.FeedURL, &title, &description, &imageURL, &lastChecked, &lastETag, &f.CheckIntervalMinutes, &autoDownloadInt, &f.CreatedAt)
+	err := row.Scan(&f.ID, &f.SetID, &f.FeedURL, &title, &description, &imageURL, &lastChecked, &lastETag, &f.CheckIntervalMinutes, &autoDownloadInt, &f.ConsecutiveFailures, &nextCheckAt, &f.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -69,27 +71,30 @@ func scanFeed(row sqlScanner) (*model.PodcastFeed, error) {
 		f.LastCheckedAt = &lastChecked.Time
 	}
 	f.LastETag = lastETag.String
+	if nextCheckAt.Valid {
+		f.NextCheckAt = &nextCheckAt.Time
+	}
 	return &f, nil
 }
 
 // GetFeedByID returns a podcast feed by database ID.
 func (s *SQLite) GetFeedByID(ctx context.Context, id int64) (*model.PodcastFeed, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, created_at FROM podcast_feeds WHERE id = ?`, id)
+		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at FROM podcast_feeds WHERE id = ?`, id)
 	return scanFeed(row)
 }
 
 // GetFeedBySetID returns a podcast feed linked to a set.
 func (s *SQLite) GetFeedBySetID(ctx context.Context, setID int64) (*model.PodcastFeed, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, created_at FROM podcast_feeds WHERE set_id = ?`, setID)
+		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at FROM podcast_feeds WHERE set_id = ?`, setID)
 	return scanFeed(row)
 }
 
 // ListFeedsBySetID returns all podcast feeds linked to a set.
 func (s *SQLite) ListFeedsBySetID(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, created_at FROM podcast_feeds WHERE set_id = ? ORDER BY title, created_at`, setID)
+		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at FROM podcast_feeds WHERE set_id = ? ORDER BY title, created_at`, setID)
 	if err != nil {
 		return nil, fmt.Errorf("list podcast feeds by set: %w", err)
 	}
@@ -108,7 +113,7 @@ func (s *SQLite) ListFeedsBySetID(ctx context.Context, setID int64) ([]model.Pod
 // ListFeeds returns all podcast feeds.
 func (s *SQLite) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, created_at FROM podcast_feeds ORDER BY created_at DESC`)
+		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at FROM podcast_feeds ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list podcast feeds: %w", err)
 	}
@@ -124,11 +129,13 @@ func (s *SQLite) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
 	return feeds, rows.Err()
 }
 
-// ListFeedsNeedingCheck returns feeds whose last_checked_at is before the given time.
-func (s *SQLite) ListFeedsNeedingCheck(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+// ListFeedsNeedingCheck returns feeds eligible for a background check:
+// next_check_at is NULL or in the past, and last_checked_at is older
+// than the given threshold.
+func (s *SQLite) ListFeedsNeedingCheck(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, created_at FROM podcast_feeds
-		WHERE last_checked_at IS NULL OR last_checked_at < ? ORDER BY last_checked_at ASC`, before)
+		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at FROM podcast_feeds
+		WHERE (next_check_at IS NULL OR next_check_at <= ?) AND (last_checked_at IS NULL OR last_checked_at < ?) ORDER BY last_checked_at ASC`, now, before)
 	if err != nil {
 		return nil, fmt.Errorf("list feeds needing check: %w", err)
 	}

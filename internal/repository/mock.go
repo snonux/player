@@ -915,8 +915,8 @@ func (m *MockStore) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) 
 }
 
 // ListFeedsNeedingCheck implements PodcastRepo.
-func (m *MockStore) ListFeedsNeedingCheck(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
-	return m.PodcastRepo.ListFeedsNeedingCheck(ctx, before)
+func (m *MockStore) ListFeedsNeedingCheck(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
+	return m.PodcastRepo.ListFeedsNeedingCheck(ctx, now, before)
 }
 
 // CreateEpisode implements PodcastRepo.
@@ -973,7 +973,7 @@ type MockPodcastRepo struct {
 	GetFeedBySetIDFunc        func(ctx context.Context, setID int64) (*model.PodcastFeed, error)
 	ListFeedsBySetIDFunc      func(ctx context.Context, setID int64) ([]model.PodcastFeed, error)
 	ListFeedsFunc             func(ctx context.Context) ([]model.PodcastFeed, error)
-	ListFeedsNeedingCheckFunc func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error)
+	ListFeedsNeedingCheckFunc func(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error)
 
 	CreateEpisodeFunc        func(ctx context.Context, episode *model.PodcastEpisode) (int64, error)
 	GetEpisodeByIDFunc       func(ctx context.Context, id int64) (*model.PodcastEpisode, error)
@@ -1044,9 +1044,9 @@ func (m *MockPodcastRepo) ListFeeds(ctx context.Context) ([]model.PodcastFeed, e
 }
 
 // ListFeedsNeedingCheck calls ListFeedsNeedingCheckFunc or returns nil.
-func (m *MockPodcastRepo) ListFeedsNeedingCheck(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+func (m *MockPodcastRepo) ListFeedsNeedingCheck(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
 	if m.ListFeedsNeedingCheckFunc != nil {
-		return m.ListFeedsNeedingCheckFunc(ctx, before)
+		return m.ListFeedsNeedingCheckFunc(ctx, now, before)
 	}
 	return nil, nil
 }

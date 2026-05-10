@@ -8,6 +8,69 @@ import (
 	"codeberg.org/snonux/player/internal/model"
 )
 
+func TestPodcastRepo_ListFeedsNeedingCheck_Backoff(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	defer s.Close()
+
+	now := time.Now().Truncate(time.Second)
+
+	setID, err := s.CreateSet(ctx, &model.Set{Name: "Podcast", RootPath: "podcast", IsPodcast: true, CreatedAt: now})
+	if err != nil {
+		t.Fatalf("create set: %v", err)
+	}
+
+	// Feed with last_checked_at far past and no next_check_at.
+	feed1 := &model.PodcastFeed{
+		SetID:     setID,
+		FeedURL:   "https://example.com/1.xml",
+		Title:     "Feed 1",
+		CreatedAt: now,
+	}
+	id1, _ := s.CreateFeed(ctx, feed1)
+
+	// Feed with next_check_at in the future.
+	future := now.Add(time.Hour)
+	feed2 := &model.PodcastFeed{
+		SetID:       setID,
+		FeedURL:     "https://example.com/2.xml",
+		Title:       "Feed 2",
+		NextCheckAt: &future,
+		CreatedAt:   now,
+	}
+	id2, _ := s.CreateFeed(ctx, feed2)
+
+	// Feed with last_checked_at recently (not needing check).
+	recent := now.Add(-5 * time.Minute)
+	feed3 := &model.PodcastFeed{
+		SetID:         setID,
+		FeedURL:       "https://example.com/3.xml",
+		Title:         "Feed 3",
+		LastCheckedAt: &recent,
+		CreatedAt:     now,
+	}
+	id3, _ := s.CreateFeed(ctx, feed3)
+
+	before := now.Add(-time.Hour)
+	feeds, err := s.ListFeedsNeedingCheck(ctx, now, before)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	ids := map[int64]bool{}
+	for _, f := range feeds {
+		ids[f.ID] = true
+	}
+	if !ids[id1] {
+		t.Error("expected feed1")
+	}
+	if ids[id2] {
+		t.Error("did not expect feed2 (next_check_at in future)")
+	}
+	if ids[id3] {
+		t.Error("did not expect feed3 (checked recently)")
+	}
+}
+
 func TestPodcastRepo_CRUD(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)

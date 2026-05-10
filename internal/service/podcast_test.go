@@ -716,7 +716,7 @@ func TestPodcastService_CheckFeeds_EmptyList(t *testing.T) {
 	svc, store := setupPodcastService(t)
 
 	store.PodcastRepo = repository.MockPodcastRepo{
-		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
 			return []model.PodcastFeed{}, nil
 		},
 	}
@@ -751,7 +751,7 @@ func TestPodcastService_CheckFeeds_Concurrent_Ok(t *testing.T) {
 	defer server.Close()
 
 	store.PodcastRepo = repository.MockPodcastRepo{
-		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
 			return []model.PodcastFeed{
 				{ID: 1, FeedURL: server.URL + "/1.xml"},
 				{ID: 2, FeedURL: server.URL + "/2.xml"},
@@ -805,7 +805,7 @@ func TestPodcastService_CheckFeeds_AllFeedsFail(t *testing.T) {
 	defer server.Close()
 
 	store.PodcastRepo = repository.MockPodcastRepo{
-		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
 			return []model.PodcastFeed{
 				{ID: 1, FeedURL: server.URL + "/1.xml"},
 				{ID: 2, FeedURL: server.URL + "/2.xml"},
@@ -833,7 +833,7 @@ func TestPodcastService_CheckFeeds_FeedPanicRecovered(t *testing.T) {
 	svc, store := setupPodcastService(t)
 
 	store.PodcastRepo = repository.MockPodcastRepo{
-		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
 			return []model.PodcastFeed{{ID: 1, FeedURL: "http://example.test/feed.xml"}}, nil
 		},
 	}
@@ -849,7 +849,7 @@ func TestPodcastService_CheckFeeds_ListError(t *testing.T) {
 	svc, store := setupPodcastService(t)
 	boom := errors.New("boom")
 	store.PodcastRepo = repository.MockPodcastRepo{
-		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
 			return nil, boom
 		},
 	}
@@ -867,8 +867,8 @@ func TestPodcastService_CheckFeeds_FeedError_Continues(t *testing.T) {
 	ctx := context.Background()
 	svc, store := setupPodcastService(t)
 
-	var checked []int64
 	var mu sync.Mutex
+	updates := make(map[int64]*model.PodcastFeed)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "bad") {
@@ -881,7 +881,7 @@ func TestPodcastService_CheckFeeds_FeedError_Continues(t *testing.T) {
 	defer server.Close()
 
 	store.PodcastRepo = repository.MockPodcastRepo{
-		ListFeedsNeedingCheckFunc: func(ctx context.Context, before time.Time) ([]model.PodcastFeed, error) {
+		ListFeedsNeedingCheckFunc: func(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
 			return []model.PodcastFeed{
 				{ID: 1, FeedURL: server.URL + "/bad.xml"},
 				{ID: 2, FeedURL: server.URL + "/ok.xml"},
@@ -889,7 +889,7 @@ func TestPodcastService_CheckFeeds_FeedError_Continues(t *testing.T) {
 		},
 		UpdateFeedFunc: func(ctx context.Context, feed *model.PodcastFeed) error {
 			mu.Lock()
-			checked = append(checked, feed.ID)
+			updates[feed.ID] = feed
 			mu.Unlock()
 			return nil
 		},
@@ -903,8 +903,14 @@ func TestPodcastService_CheckFeeds_FeedError_Continues(t *testing.T) {
 	}
 
 	mu.Lock()
-	if len(checked) != 1 || checked[0] != 2 {
-		t.Fatalf("expected only feed 2 ok, got %v", checked)
+	if len(updates) != 2 {
+		t.Fatalf("expected 2 updates, got %d", len(updates))
+	}
+	if updates[1].ConsecutiveFailures != 1 || updates[1].NextCheckAt == nil {
+		t.Fatalf("expected feed 1 to have failure backoff, got %+v", updates[1])
+	}
+	if updates[2].ConsecutiveFailures != 0 || updates[2].NextCheckAt != nil {
+		t.Fatalf("expected feed 2 to have no failures, got %+v", updates[2])
 	}
 	mu.Unlock()
 }

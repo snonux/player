@@ -23,8 +23,9 @@ type PodcastRepo interface {
 	ListFeedsBySetID(ctx context.Context, setID int64) ([]model.PodcastFeed, error)
 	// ListFeeds returns all podcast feeds.
 	ListFeeds(ctx context.Context) ([]model.PodcastFeed, error)
-	// ListFeedsNeedingCheck returns feeds whose last_checked_at is before the given time.
-	ListFeedsNeedingCheck(ctx context.Context, before time.Time) ([]model.PodcastFeed, error)
+	// ListFeedsNeedingCheck returns feeds whose next_check_at has passed and
+	// last_checked_at is older than the given threshold.
+	ListFeedsNeedingCheck(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error)
 
 	// CreateEpisode stores a new podcast episode and returns its database ID.
 	CreateEpisode(ctx context.Context, episode *model.PodcastEpisode) (int64, error)

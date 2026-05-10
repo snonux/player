@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 // tablesSchema defines all CREATE TABLE statements for a fresh database.
@@ -134,6 +135,8 @@ CREATE TABLE IF NOT EXISTS podcast_feeds (
     last_etag TEXT,
     check_interval_minutes INTEGER NOT NULL DEFAULT 60,
     auto_download INTEGER NOT NULL DEFAULT 0,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    next_check_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -196,7 +199,7 @@ func enableForeignKeys(db *sql.DB) error {
 	return nil
 }
 
-// initializeSchema creates the database schema for a fresh database.
+// initializeSchema creates the database schema for a fresh database and applies pending migrations.
 func initializeSchema(db *sql.DB) error {
 	if err := enableForeignKeys(db); err != nil {
 		return err
@@ -207,5 +210,48 @@ func initializeSchema(db *sql.DB) error {
 	if err := execSchema(db, "indexes", indexesSchema); err != nil {
 		return err
 	}
+	if err := runMigrations(db); err != nil {
+		return fmt.Errorf("apply migrations: %w", err)
+	}
 	return nil
+}
+
+// migration is a idempotent schema change applied after the base schema.
+type migration struct {
+	name string
+	sql  string
+}
+
+var migrations = []migration{
+	{
+		name: "add_podcast_feed_backoff_columns",
+		sql: `
+ALTER TABLE podcast_feeds ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE podcast_feeds ADD COLUMN next_check_at DATETIME;
+`,
+	},
+}
+
+// runMigrations applies each migration in order, skipping ones whose SQL
+// has already been partially applied (e.g. column already exists).
+func runMigrations(db *sql.DB) error {
+	for _, m := range migrations {
+		if _, err := db.Exec(m.sql); err != nil {
+			if isDuplicateColumnError(err) {
+				continue
+			}
+			return fmt.Errorf("migration %q: %w", m.name, err)
+		}
+	}
+	return nil
+}
+
+// isDuplicateColumnError returns true for SQLite errors raised when adding an
+// existing column.
+func isDuplicateColumnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate column name") || strings.Contains(msg, "already exists")
 }
