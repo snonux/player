@@ -95,7 +95,10 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 
 	prober := probe.NewFFProber()
 	thumbGen := thumb.NewFFmpegGenerator()
-	mediaSvc := service.NewMediaService(store, clk, cfg.MediaRoot, thumbGen, prober)
+
+	helper := service.NewAccessHelper(store)
+	browser := service.NewPodcastBrowseService(store, cfg.MediaRoot)
+	mediaSvc := service.NewMediaServiceWithPodcastBrowser(store, clk, cfg.MediaRoot, thumbGen, prober, browser)
 
 	fsScanner := scanner.NewFSScannerWithLogger(store, prober, thumbGen, clk, cfg.MediaRoot, logger)
 	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
@@ -103,7 +106,6 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 	progressSvc := service.NewProgressService(store, clk)
 	authSvc := service.NewAuthService(store, clk, hasher, sm)
 
-	helper := service.NewAccessHelper(store)
 	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger)
 
 	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger)

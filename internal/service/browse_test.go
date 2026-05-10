@@ -97,7 +97,7 @@ func TestBrowseService_BrowseSet(t *testing.T) {
 					},
 				},
 			}
-			svc := NewBrowseService(store, clock.RealClock{}, tmpDir, &accessHelper{store: store})
+			svc := NewBrowseService(store, clock.RealClock{}, tmpDir, &accessHelper{store: store}, nil)
 			res, err := svc.BrowseSet(ctx, 1, 1, "")
 			if tt.wantErr {
 				if err == nil {
@@ -153,7 +153,8 @@ func TestBrowseService_BrowseSet_PodcastEpisodes(t *testing.T) {
 			},
 		},
 	}
-	svc := NewBrowseService(store, clock.RealClock{}, t.TempDir(), &accessHelper{store: store})
+	browser := NewPodcastBrowseService(&store.PodcastRepo, t.TempDir())
+	svc := NewBrowseService(store, clock.RealClock{}, t.TempDir(), &accessHelper{store: store}, browser)
 	res, err := svc.BrowseSet(ctx, 1, 1, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

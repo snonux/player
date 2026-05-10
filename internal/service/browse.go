@@ -17,19 +17,73 @@ import (
 
 // browseService handles read-only browsing and media streaming operations.
 type browseService struct {
-	store     repository.BrowseServiceStore
-	clock     clock.Clock
+	store          repository.BrowseServiceStore
+	clock          clock.Clock
+	mediaRoot      string
+	helper         *accessHelper
+	podcastBrowser PodcastBrowser
+}
+
+// PodcastBrowser augments a BrowseResult with podcast-specific folders and episodes.
+type PodcastBrowser interface {
+	AugmentBrowseSet(ctx context.Context, result *BrowseResult, set *model.Set, userID int64, media []model.Media) error
+}
+
+// podcastBrowseService handles podcast-specific grid augmentation.
+type podcastBrowseService struct {
+	store     repository.PodcastRepo
 	mediaRoot string
-	helper    *accessHelper
+}
+
+// NewPodcastBrowseService creates a PodcastBrowser backed by a PodcastRepo.
+func NewPodcastBrowseService(store repository.PodcastRepo, mediaRoot string) PodcastBrowser {
+	return &podcastBrowseService{store: store, mediaRoot: mediaRoot}
+}
+
+// AugmentBrowseSet adds undownloaded podcast feed folders or episodes to a BrowseResult.
+func (p *podcastBrowseService) AugmentBrowseSet(ctx context.Context, result *BrowseResult, set *model.Set, userID int64, media []model.Media) error {
+	if !set.IsPodcast {
+		return nil
+	}
+	feeds, err := p.store.ListFeedsBySetID(ctx, set.ID)
+	if err != nil {
+		return err
+	}
+	if result.CurrentPath == "" {
+		knownFolders := make(map[string]struct{}, len(result.Folders))
+		for _, folder := range result.Folders {
+			knownFolders[folder.Name] = struct{}{}
+		}
+		for _, feed := range feeds {
+			name := podcastFolderName("", feed.Title, feed.ID)
+			if _, ok := knownFolders[name]; ok {
+				continue
+			}
+			result.Folders = append(result.Folders, BrowseFolder{Name: name, HasCover: folderHasCover(p.mediaRoot, set.RootPath, "", name, media)})
+		}
+		sort.Slice(result.Folders, func(i, j int) bool { return result.Folders[i].Name < result.Folders[j].Name })
+	} else {
+		for _, feed := range feeds {
+			if result.CurrentPath != podcastFolderName("", feed.Title, feed.ID) {
+				continue
+			}
+			episodes, err := p.store.ListEpisodesWithStatus(ctx, userID, feed.ID, 1000, 0)
+			if err == nil {
+				result.Episodes = append(result.Episodes, undownloadedEpisodes(episodes)...)
+			}
+		}
+	}
+	return nil
 }
 
 // NewBrowseService creates a BrowseService.
-func NewBrowseService(store repository.BrowseServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper) MediaBrowseService {
+func NewBrowseService(store repository.BrowseServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, browser PodcastBrowser) MediaBrowseService {
 	return &browseService{
-		store:     store,
-		clock:     clk,
-		mediaRoot: mediaRoot,
-		helper:    helper,
+		store:          store,
+		clock:          clk,
+		mediaRoot:      mediaRoot,
+		helper:         helper,
+		podcastBrowser: browser,
 	}
 }
 
@@ -351,35 +405,9 @@ func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, pare
 		Media:       items,
 	}
 
-	// For podcast sets, also load episodes (undownloaded items) into the grid.
-	if set.IsPodcast {
-		feeds, err := s.store.ListFeedsBySetID(ctx, setID)
-		if err == nil {
-			if parent == "" {
-				knownFolders := make(map[string]struct{}, len(result.Folders))
-				for _, folder := range result.Folders {
-					knownFolders[folder.Name] = struct{}{}
-				}
-				for _, feed := range feeds {
-					name := podcastFolderName("", feed.Title, feed.ID)
-					if _, ok := knownFolders[name]; ok {
-						continue
-					}
-					result.Folders = append(result.Folders, BrowseFolder{Name: name, HasCover: folderHasCover(s.mediaRoot, set.RootPath, "", name, media)})
-				}
-				sort.Slice(result.Folders, func(i, j int) bool { return result.Folders[i].Name < result.Folders[j].Name })
-			} else {
-				for _, feed := range feeds {
-					if parent != podcastFolderName("", feed.Title, feed.ID) {
-						continue
-					}
-					episodes, err := s.store.ListEpisodesWithStatus(ctx, userID, feed.ID, 1000, 0)
-					if err == nil {
-						result.Episodes = append(result.Episodes, undownloadedEpisodes(episodes)...)
-					}
-				}
-			}
-		}
+	// Delegate podcast-specific grid augmentation to the injected strategy.
+	if s.podcastBrowser != nil {
+		_ = s.podcastBrowser.AugmentBrowseSet(ctx, result, set, userID, media)
 	}
 
 	return result, nil

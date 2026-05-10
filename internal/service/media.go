@@ -30,9 +30,14 @@ type mediaService struct {
 
 // NewMediaService creates a concrete MediaService by wiring role-focused sub-services.
 func NewMediaService(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober) MediaService {
+	return NewMediaServiceWithPodcastBrowser(store, clk, mediaRoot, thumbGen, prober, nil)
+}
+
+// NewMediaServiceWithPodcastBrowser creates a MediaService with an optional PodcastBrowser.
+func NewMediaServiceWithPodcastBrowser(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, browser PodcastBrowser) MediaService {
 	helper := &accessHelper{store: store}
 	return &mediaService{
-		MediaBrowseService:   NewBrowseService(store, clk, mediaRoot, helper),
+		MediaBrowseService:   NewBrowseService(store, clk, mediaRoot, helper, browser),
 		MediaWriteService:    NewWriteService(store, clk, mediaRoot, thumbGen, prober, helper),
 		MediaShareService:    NewShareService(store, clk, helper),
 		MediaTagService:      NewTagService(store, helper),
