@@ -1731,6 +1731,7 @@ func TestServer_AdminDeleteUser(t *testing.T) {
 	}{
 		{"nil service", "2", true, nil, http.StatusNotImplemented},
 		{"self delete", "1", false, nil, http.StatusBadRequest},
+		{"invalid id zero", "0", false, nil, http.StatusBadRequest},
 		{"service error", "2", false, errors.New("boom"), http.StatusInternalServerError},
 		{"ok", "2", false, nil, http.StatusOK},
 	}
