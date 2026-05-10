@@ -24,7 +24,7 @@ func (s *Server) handleListSets(w http.ResponseWriter, r *http.Request) {
 	}
 	sets, err := s.browseSvc.ListSets(r.Context(), userIDFromContext(r))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, sets)
@@ -50,7 +50,7 @@ func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
 			forbidden(w, "forbidden")
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-cache")
@@ -76,7 +76,7 @@ func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
 			forbidden(w, "forbidden")
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -98,7 +98,7 @@ func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
 			forbidden(w, "forbidden")
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -148,7 +148,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			badRequest(w, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, media)
@@ -242,7 +242,7 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 	dur := time.Since(start)
 	if err != nil {
 		s.logger.Error("api list media failed", "path", path, "set_id", setID, "set_ids", setIDs, "search", search, "type", typ, "favorites", fav, "min_duration", minDur, "max_duration", maxDur, "duration", dur, "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	s.logger.Info("api list media", "path", path, "set_id", setID, "set_ids", setIDs, "search", search, "type", typ, "favorites", fav, "min_duration", minDur, "max_duration", maxDur, "returned", len(media), "duration", dur)
@@ -260,7 +260,7 @@ func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	detail, err := s.browseSvc.GetMediaDetail(r.Context(), id, userIDFromContext(r))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	if detail == nil {
@@ -281,7 +281,7 @@ func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
 	}
 	fav, err := s.favSvc.ToggleFavorite(r.Context(), userIDFromContext(r), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"favorite": fav})
@@ -293,7 +293,7 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 	}
 	tags, err := s.tagSvc.ListTags(r.Context(), userIDFromContext(r))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, tags)
@@ -316,7 +316,7 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.tagSvc.AssignTag(r.Context(), id, userIDFromContext(r), req.Tag); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -333,7 +333,7 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.tagSvc.RemoveTag(r.Context(), id, userIDFromContext(r), tagName); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -357,7 +357,7 @@ func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
 			forbidden(w, "forbidden")
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -381,7 +381,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 			forbidden(w, "forbidden")
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -402,7 +402,7 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 	}
 	note, err := s.noteSvc.GetNote(r.Context(), id, userIDFromContext(r))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	if note == nil {
@@ -430,7 +430,7 @@ func (s *Server) handleUpsertNote(w http.ResponseWriter, r *http.Request) {
 	}
 	note := &model.Note{MediaID: id, UserID: userIDFromContext(r), Content: req.Content}
 	if err := s.noteSvc.UpsertNote(r.Context(), note); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, note)
@@ -446,7 +446,7 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.noteSvc.DeleteNote(r.Context(), id, userIDFromContext(r)); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -485,7 +485,7 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 		req.Position,
 	)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

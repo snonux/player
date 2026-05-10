@@ -16,7 +16,7 @@ func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := s.adminSvc.ListTrash(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
@@ -27,7 +27,7 @@ func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.adminSvc.TriggerRescan(r.Context()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -46,7 +46,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	users, err := s.adminSvc.ListUsers(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, users)
@@ -67,7 +67,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := s.adminSvc.CreateUser(r.Context(), req.Username, req.Password, req.IsAdmin)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, user)
@@ -84,7 +84,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.adminSvc.DeleteUser(r.Context(), id); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -96,7 +96,7 @@ func (s *Server) handleListPermissions(w http.ResponseWriter, r *http.Request) {
 	}
 	perms, err := s.adminSvc.ListPermissions(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, perms)
@@ -116,7 +116,7 @@ func (s *Server) handleGrantPermission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.adminSvc.GrantPermission(r.Context(), req.SetID, req.UserID, req.Role); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -135,7 +135,7 @@ func (s *Server) handleRevokePermission(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.adminSvc.RevokePermission(r.Context(), req.SetID, req.UserID); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

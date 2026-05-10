@@ -41,6 +41,28 @@ func forbidden(w http.ResponseWriter, message string) {
 	writeError(w, http.StatusForbidden, message)
 }
 
+// handleError maps service sentinel errors to the appropriate HTTP status
+// and writes a JSON error response. It falls back to 500 for unknown errors.
+func handleError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrNotFound),
+		errors.Is(err, service.ErrShareNotFound),
+		errors.Is(err, service.ErrMediaNotFound):
+		notFound(w)
+	case errors.Is(err, service.ErrForbidden):
+		forbidden(w, "forbidden")
+	case errors.Is(err, service.ErrAlreadyBootstrapped):
+		forbidden(w, "bootstrap already complete")
+	case errors.Is(err, service.ErrInvalidCredentials):
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+	case errors.Is(err, service.ErrUnsupportedExtension),
+		errors.Is(err, service.ErrInvalidFeed):
+		badRequest(w, err.Error())
+	default:
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+}
+
 func readJSON(r *http.Request, dst interface{}) error {
 	if r.Body == nil {
 		return errors.New("missing body")

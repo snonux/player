@@ -66,7 +66,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 			forbidden(w, "forbidden")
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	if res == nil {
@@ -102,7 +102,7 @@ func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
 			forbidden(w, "forbidden")
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

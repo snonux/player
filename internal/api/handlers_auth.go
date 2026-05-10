@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -42,7 +43,7 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 			forbidden(w, "bootstrap already complete")
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		handleError(w, fmt.Errorf("internal server error: %w", err))
 		return
 	}
 
@@ -70,7 +71,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		handleError(w, fmt.Errorf("internal server error: %w", err))
 		return
 	}
 

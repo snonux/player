@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -19,7 +20,7 @@ func (s *Server) handleListPodcasts(w http.ResponseWriter, r *http.Request) {
 	feeds, err := s.podcastSvc.ListFeeds(r.Context(), userIDFromContext(r))
 	if err != nil {
 		s.logger.Error("list podcasts", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list podcasts"})
+		handleError(w, fmt.Errorf("failed to list podcasts: %w", err))
 		return
 	}
 
@@ -55,7 +56,7 @@ func (s *Server) handleSubscribePodcast(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		s.logger.Error("subscribe podcast", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to subscribe"})
+		handleError(w, fmt.Errorf("failed to subscribe: %w", err))
 		return
 	}
 
@@ -95,7 +96,7 @@ func (s *Server) handleListEpisodes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Error("list episodes", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list episodes"})
+		handleError(w, fmt.Errorf("failed to list episodes: %w", err))
 		return
 	}
 
@@ -124,7 +125,7 @@ func (s *Server) handleDownloadEpisode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Error("download episode", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to download episode"})
+		handleError(w, fmt.Errorf("failed to download episode: %w", err))
 		return
 	}
 
@@ -152,7 +153,7 @@ func (s *Server) handleToggleComplete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Error("toggle complete", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to toggle completion"})
+		handleError(w, fmt.Errorf("failed to toggle completion: %w", err))
 		return
 	}
 

@@ -28,7 +28,7 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().Add(time.Duration(s.cfg.ShareDefaultExpiryDays) * 24 * time.Hour)
 	share, err := s.shareSvc.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, share)
@@ -45,7 +45,7 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 	}
 	shares, err := s.shareSvc.ListShares(r.Context(), id, userIDFromContext(r))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, shares)
@@ -61,7 +61,7 @@ func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.shareSvc.RevokeShare(r.Context(), token, userIDFromContext(r)); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -208,7 +208,7 @@ func (s *Server) handleMyShares(w http.ResponseWriter, r *http.Request) {
 	}
 	shares, err := s.shareSvc.ListMyShares(r.Context(), userIDFromContext(r))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		handleError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, shares)
