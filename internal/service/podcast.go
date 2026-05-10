@@ -166,7 +166,9 @@ func (s *podcastService) SubscribeFeed(ctx context.Context, feedURL, setName str
 	if err := s.downloadCover(s.httpClient, parsed.ImageURL, folderPath); err != nil {
 		s.logger.Warn("download cover failed", "error", err, "feed", feed.FeedURL)
 	}
-	s.insertPodcastEpisodes(ctx, parsed, feed.ID)
+	if err := s.insertPodcastEpisodes(ctx, parsed, feed.ID); err != nil {
+		s.logger.Warn("insert podcast episodes failed", "error", err, "feed", feed.FeedURL)
+	}
 
 	now := s.clock.Now()
 	feed.LastCheckedAt = &now
@@ -335,7 +337,7 @@ func (s *podcastService) ListFeeds(ctx context.Context, userID int64) ([]model.P
 	return visible, nil
 }
 
-func (s *podcastService) insertPodcastEpisodes(ctx context.Context, parsed *podcast.ParsedFeed, feedID int64) {
+func (s *podcastService) insertPodcastEpisodes(ctx context.Context, parsed *podcast.ParsedFeed, feedID int64) error {
 	for _, ep := range parsed.Episodes {
 		episode := &model.PodcastEpisode{
 			FeedID:          feedID,
@@ -348,8 +350,11 @@ func (s *podcastService) insertPodcastEpisodes(ctx context.Context, parsed *podc
 			FileSize:        ep.FileSize,
 			CreatedAt:       s.clock.Now(),
 		}
-		_, _ = s.store.CreateEpisode(ctx, episode)
+		if _, err := s.store.CreateEpisode(ctx, episode); err != nil {
+			return fmt.Errorf("create episode %q: %w", episode.GUID, err)
+		}
 	}
+	return nil
 }
 
 func (s *podcastService) EditFeed(ctx context.Context, feedID int64, feedURL string, checkInterval int, userID int64) error {
@@ -716,7 +721,7 @@ func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) 
 	}
 
 	if err := s.upsertFeedEpisodes(ctx, &feed, parsed); err != nil {
-		// Non-fatal: continue.
+		s.logger.Warn("upsert feed episodes failed", "error", err, "feed", feed.FeedURL)
 	}
 
 	if parsed.ImageURL != "" {
@@ -756,25 +761,35 @@ func (s *podcastService) updateFeedFromParsed(ctx context.Context, feed *model.P
 }
 
 func (s *podcastService) upsertFeedEpisodes(ctx context.Context, feed *model.PodcastFeed, parsed *podcast.ParsedFeed) error {
+	var failed []string
 	for _, ep := range parsed.Episodes {
 		existing, err := s.store.GetEpisodeByGUID(ctx, feed.ID, ep.GUID)
 		if err != nil {
+			s.logger.Warn("failed to look up episode by GUID", "error", err, "guid", ep.GUID)
+			failed = append(failed, ep.GUID)
 			continue
 		}
-		if existing == nil {
-			episode := &model.PodcastEpisode{
-				FeedID:          feed.ID,
-				GUID:            ep.GUID,
-				Title:           ep.Title,
-				Description:     ep.Description,
-				PublishedAt:     ep.PublishedAt,
-				EpisodeURL:      ep.EpisodeURL,
-				DurationSeconds: ep.DurationSeconds,
-				FileSize:        ep.FileSize,
-				CreatedAt:       s.clock.Now(),
-			}
-			_, _ = s.store.CreateEpisode(ctx, episode)
+		if existing != nil {
+			continue
 		}
+		episode := &model.PodcastEpisode{
+			FeedID:          feed.ID,
+			GUID:            ep.GUID,
+			Title:           ep.Title,
+			Description:     ep.Description,
+			PublishedAt:     ep.PublishedAt,
+			EpisodeURL:      ep.EpisodeURL,
+			DurationSeconds: ep.DurationSeconds,
+			FileSize:        ep.FileSize,
+			CreatedAt:       s.clock.Now(),
+		}
+		if _, err := s.store.CreateEpisode(ctx, episode); err != nil {
+			s.logger.Warn("failed to insert episode", "error", err, "guid", ep.GUID)
+			failed = append(failed, ep.GUID)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("episode upserts failed for %d episode(s): %v", len(failed), failed)
 	}
 	return nil
 }

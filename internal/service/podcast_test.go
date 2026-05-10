@@ -702,7 +702,10 @@ func TestPodcastService_InsertPodcastEpisodes(t *testing.T) {
 			{GUID: "g1", Title: "One"},
 		},
 	}
-	svc.insertPodcastEpisodes(ctx, parsed, 99)
+	err := svc.insertPodcastEpisodes(ctx, parsed, 99)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(created) != 1 {
 		t.Fatalf("expected 1 episode, got %d", len(created))
 	}
