@@ -23,17 +23,6 @@ import (
 	"codeberg.org/snonux/player/internal/thumb"
 )
 
-func main() {
-	if err := run(os.Args[1:]); err != nil {
-		slog.Error("fatal", "err", err)
-		os.Exit(1)
-	}
-}
-
-func run(args []string) error {
-	return runWithSignal(args, nil)
-}
-
 // appDeps bundles all wired service-layer dependencies.
 type appDeps struct {
 	store          repository.Store
@@ -61,6 +50,17 @@ func parseVersionFlag(args []string) (bool, error) {
 		return false, err
 	}
 	return *versionFlag, nil
+}
+
+func main() {
+	if err := run(os.Args[1:]); err != nil {
+		slog.Error("fatal", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run(args []string) error {
+	return runWithSignal(args, nil)
 }
 
 // buildLogger creates a slog.Logger aligned with the named log level.
