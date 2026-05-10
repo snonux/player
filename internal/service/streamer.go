@@ -16,7 +16,7 @@ type mediaStreamer struct {
 }
 
 // NewMediaStreamer creates the default service for preparing media files for HTTP streaming.
-func NewMediaStreamer(remuxer probe.Remuxer) MediaStreamer {
+func NewMediaStreamer(remuxer probe.Remuxer) *mediaStreamer {
 	return &mediaStreamer{remuxer: remuxer}
 }
 

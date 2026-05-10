@@ -38,12 +38,12 @@ type FSScanner struct {
 }
 
 // NewFSScanner creates a filesystem scanner with injected dependencies.
-func NewFSScanner(store repository.ScannerStore, prober probe.Prober, thumbGen thumb.Generator, clk clock.Clock, mediaRoot string) Scanner {
+func NewFSScanner(store repository.ScannerStore, prober probe.Prober, thumbGen thumb.Generator, clk clock.Clock, mediaRoot string) *FSScanner {
 	return NewFSScannerWithLogger(store, prober, thumbGen, clk, mediaRoot, slog.Default())
 }
 
 // NewFSScannerWithLogger creates a filesystem scanner with an injected logger.
-func NewFSScannerWithLogger(store repository.ScannerStore, prober probe.Prober, thumbGen thumb.Generator, clk clock.Clock, mediaRoot string, logger *slog.Logger) Scanner {
+func NewFSScannerWithLogger(store repository.ScannerStore, prober probe.Prober, thumbGen thumb.Generator, clk clock.Clock, mediaRoot string, logger *slog.Logger) *FSScanner {
 	if logger == nil {
 		logger = slog.Default()
 	}

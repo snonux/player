@@ -16,7 +16,7 @@ type noteService struct {
 }
 
 // NewNoteService creates a NoteService.
-func NewNoteService(store repository.NoteServiceStore, clk clock.Clock, helper *accessHelper) MediaNoteService {
+func NewNoteService(store repository.NoteServiceStore, clk clock.Clock, helper *accessHelper) *noteService {
 	return &noteService{
 		store:  store,
 		clock:  clk,

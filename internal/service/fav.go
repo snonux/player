@@ -13,7 +13,7 @@ type favService struct {
 }
 
 // NewFavService creates a FavService.
-func NewFavService(store repository.FavoriteServiceStore, helper *accessHelper) MediaFavoriteService {
+func NewFavService(store repository.FavoriteServiceStore, helper *accessHelper) *favService {
 	return &favService{
 		store:  store,
 		helper: helper,

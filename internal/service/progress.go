@@ -17,7 +17,7 @@ type progressService struct {
 }
 
 // NewProgressService creates a concrete ProgressService.
-func NewProgressService(store repository.ProgressServiceStore, clk clock.Clock) ProgressService {
+func NewProgressService(store repository.ProgressServiceStore, clk clock.Clock) *progressService {
 	return &progressService{
 		store: store,
 		clock: clk,

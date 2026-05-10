@@ -22,7 +22,7 @@ type shareService struct {
 }
 
 // NewShareService creates a ShareService.
-func NewShareService(store repository.ShareServiceStore, clk clock.Clock, helper *accessHelper) MediaShareService {
+func NewShareService(store repository.ShareServiceStore, clk clock.Clock, helper *accessHelper) *shareService {
 	return &shareService{
 		store:  store,
 		clock:  clk,

@@ -29,7 +29,7 @@ type writeService struct {
 }
 
 // NewWriteService creates a WriteService.
-func NewWriteService(store repository.WriteServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, helper *accessHelper) MediaWriteService {
+func NewWriteService(store repository.WriteServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, helper *accessHelper) *writeService {
 	return &writeService{
 		store:     store,
 		clock:     clk,

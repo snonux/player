@@ -16,7 +16,7 @@ type tagService struct {
 }
 
 // NewTagService creates a TagService.
-func NewTagService(store repository.TagServiceStore, helper *accessHelper) MediaTagService {
+func NewTagService(store repository.TagServiceStore, helper *accessHelper) *tagService {
 	return &tagService{
 		store:  store,
 		helper: helper,

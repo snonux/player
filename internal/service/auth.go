@@ -19,7 +19,7 @@ type authService struct {
 }
 
 // NewAuthService creates a concrete AuthService.
-func NewAuthService(store repository.AuthServiceStore, clk clock.Clock, hasher auth.Hasher, sm auth.SessionManager) AuthService {
+func NewAuthService(store repository.AuthServiceStore, clk clock.Clock, hasher auth.Hasher, sm auth.SessionManager) *authService {
 	return &authService{
 		store:  store,
 		clock:  clk,

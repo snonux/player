@@ -36,7 +36,7 @@ type podcastBrowseService struct {
 }
 
 // NewPodcastBrowseService creates a PodcastBrowser backed by a PodcastRepo.
-func NewPodcastBrowseService(store repository.PodcastRepo, mediaRoot string) PodcastBrowser {
+func NewPodcastBrowseService(store repository.PodcastRepo, mediaRoot string) *podcastBrowseService {
 	return &podcastBrowseService{store: store, mediaRoot: mediaRoot}
 }
 
@@ -77,7 +77,7 @@ func (p *podcastBrowseService) AugmentBrowseSet(ctx context.Context, result *Bro
 }
 
 // NewBrowseService creates a BrowseService.
-func NewBrowseService(store repository.BrowseServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, browser PodcastBrowser) MediaBrowseService {
+func NewBrowseService(store repository.BrowseServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, browser PodcastBrowser) *browseService {
 	return &browseService{
 		store:          store,
 		clock:          clk,
