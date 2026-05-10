@@ -34,6 +34,8 @@ type FFProber struct {
 	waitDelay  time.Duration
 }
 
+var _ Prober = (*FFProber)(nil)
+
 // NewFFProber creates a new FFProber with bounded retries and a process wait delay.
 func NewFFProber() *FFProber {
 	return &FFProber{

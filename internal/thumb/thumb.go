@@ -20,6 +20,8 @@ type FFmpegGenerator struct {
 	rnd    *rand.Rand
 }
 
+var _ Generator = (*FFmpegGenerator)(nil)
+
 // NewFFmpegGenerator creates a new FFmpegGenerator with a seeded random source.
 func NewFFmpegGenerator() *FFmpegGenerator {
 	return &FFmpegGenerator{

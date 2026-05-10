@@ -19,6 +19,8 @@ type Remuxer interface {
 // FFRemuxer implements Remuxer using ffmpeg.
 type FFRemuxer struct{}
 
+var _ Remuxer = (*FFRemuxer)(nil)
+
 // NewFFRemuxer creates a new FFRemuxer.
 func NewFFRemuxer() *FFRemuxer {
 	return &FFRemuxer{}
