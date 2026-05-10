@@ -103,6 +103,11 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) *Server {
 	return s
 }
 
+// ServeHTTP implements http.Handler.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mw.BootstrapRedirect(s.mux).ServeHTTP(w, r)
+}
+
 // requireSession wraps a handler with the session requirement middleware.
 func (s *Server) requireSession(h http.HandlerFunc) http.HandlerFunc {
 	return s.mw.RequireSession(h).(http.HandlerFunc)
@@ -286,9 +291,4 @@ func NewGracefulServer(handler http.Handler, cfg *internal.Config) *GracefulServ
 
 func addrFromPort(port int) string {
 	return ":" + strconv.Itoa(port)
-}
-
-// ServeHTTP implements http.Handler.
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mw.BootstrapRedirect(s.mux).ServeHTTP(w, r)
 }
