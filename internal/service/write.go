@@ -235,12 +235,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
+	defer out.Close()
 
 	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
+		_ = os.Remove(dst)
 		return err
 	}
-	return out.Close()
+	return nil
 }
 
 func (s *writeService) saveUploadedMedia(ctx context.Context, setID int64, path string, data io.Reader, size int64) (*model.Media, error) {
