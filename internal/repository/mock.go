@@ -939,6 +939,11 @@ func (m *MockStore) ListEpisodesByFeed(ctx context.Context, feedID int64, limit,
 	return m.PodcastRepo.ListEpisodesByFeed(ctx, feedID, limit, offset)
 }
 
+// ListEpisodesByFeedIDsWithStatus implements PodcastRepo.
+func (m *MockStore) ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
+	return m.PodcastRepo.ListEpisodesByFeedIDsWithStatus(ctx, userID, feedIDs, limit, offset)
+}
+
 // UpdateEpisodeMedia implements PodcastRepo.
 func (m *MockStore) UpdateEpisodeMedia(ctx context.Context, episodeID, mediaID int64, fileName string) error {
 	return m.PodcastRepo.UpdateEpisodeMedia(ctx, episodeID, mediaID, fileName)
@@ -979,6 +984,7 @@ type MockPodcastRepo struct {
 	GetEpisodeByIDFunc       func(ctx context.Context, id int64) (*model.PodcastEpisode, error)
 	GetEpisodeByGUIDFunc     func(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error)
 	ListEpisodesByFeedFunc   func(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error)
+	ListEpisodesByFeedIDsWithStatusFunc func(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error)
 	UpdateEpisodeMediaFunc   func(ctx context.Context, episodeID, mediaID int64, fileName string) error
 	DeleteEpisodesByFeedFunc func(ctx context.Context, feedID int64) error
 
@@ -1079,6 +1085,14 @@ func (m *MockPodcastRepo) GetEpisodeByGUID(ctx context.Context, feedID int64, gu
 func (m *MockPodcastRepo) ListEpisodesByFeed(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error) {
 	if m.ListEpisodesByFeedFunc != nil {
 		return m.ListEpisodesByFeedFunc(ctx, feedID, limit, offset)
+	}
+	return nil, nil
+}
+
+// ListEpisodesByFeedIDsWithStatus calls ListEpisodesByFeedIDsWithStatusFunc or returns nil.
+func (m *MockPodcastRepo) ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
+	if m.ListEpisodesByFeedIDsWithStatusFunc != nil {
+		return m.ListEpisodesByFeedIDsWithStatusFunc(ctx, userID, feedIDs, limit, offset)
 	}
 	return nil, nil
 }

@@ -35,6 +35,9 @@ type PodcastRepo interface {
 	GetEpisodeByGUID(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error)
 	// ListEpisodesByFeed returns episodes for a feed with pagination.
 	ListEpisodesByFeed(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error)
+	// ListEpisodesByFeedIDsWithStatus returns episodes with per-user completion
+	// and progress for a list of feed IDs, applying global limit/offset.
+	ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error)
 	// UpdateEpisodeMedia links an episode to a media row after downloading.
 	UpdateEpisodeMedia(ctx context.Context, episodeID, mediaID int64, fileName string) error
 	// DeleteEpisodesByFeed removes all episodes for a feed.

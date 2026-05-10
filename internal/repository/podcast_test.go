@@ -230,3 +230,82 @@ func TestPodcastRepo_CRUD(t *testing.T) {
 		t.Fatal("expected feed to be deleted")
 	}
 }
+
+func TestPodcastRepo_ListEpisodesByFeedIDsWithStatus(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	defer s.Close()
+
+	now := time.Now().Truncate(time.Second)
+
+	userID, err := s.CreateUser(ctx, &model.User{Username: "u", PasswordHash: "h", CreatedAt: now})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	setID, err := s.CreateSet(ctx, &model.Set{Name: "Podcasts", RootPath: "podcasts", IsPodcast: true, CreatedAt: now})
+	if err != nil {
+		t.Fatalf("create set: %v", err)
+	}
+
+	feed1, _ := s.CreateFeed(ctx, &model.PodcastFeed{SetID: setID, FeedURL: "https://example.com/f1.xml", Title: "F1", CreatedAt: now})
+	feed2, _ := s.CreateFeed(ctx, &model.PodcastFeed{SetID: setID, FeedURL: "https://example.com/f2.xml", Title: "F2", CreatedAt: now})
+
+	p1 := now.Add(-1 * time.Hour)
+	p2 := now.Add(-2 * time.Hour)
+	p3 := now.Add(-3 * time.Hour)
+
+	_, err = s.CreateEpisode(ctx, &model.PodcastEpisode{FeedID: feed1, GUID: "g1", Title: "Ep1", PublishedAt: &p1, CreatedAt: now})
+	if err != nil {
+		t.Fatalf("create ep1: %v", err)
+	}
+	_, err = s.CreateEpisode(ctx, &model.PodcastEpisode{FeedID: feed2, GUID: "g2", Title: "Ep2", PublishedAt: &p2, CreatedAt: now})
+	if err != nil {
+		t.Fatalf("create ep2: %v", err)
+	}
+	_, err = s.CreateEpisode(ctx, &model.PodcastEpisode{FeedID: feed1, GUID: "g3", Title: "Ep3", PublishedAt: &p3, CreatedAt: now})
+	if err != nil {
+		t.Fatalf("create ep3: %v", err)
+	}
+
+	// Both feeds, global limit=2 offset=0 should return Ep1 (newest) and Ep2.
+	eps, err := s.ListEpisodesByFeedIDsWithStatus(ctx, userID, []int64{feed1, feed2}, 2, 0)
+	if err != nil {
+		t.Fatalf("list by feed ids with status: %v", err)
+	}
+	if len(eps) != 2 {
+		t.Fatalf("expected 2 episodes, got %d", len(eps))
+	}
+	if eps[0].Title != "Ep1" {
+		t.Errorf("expected first episode Ep1, got %s", eps[0].Title)
+	}
+	if eps[1].Title != "Ep2" {
+		t.Errorf("expected second episode Ep2, got %s", eps[1].Title)
+	}
+
+	// offset=1, limit=1 should skip Ep1 and return Ep2.
+	eps, err = s.ListEpisodesByFeedIDsWithStatus(ctx, userID, []int64{feed1, feed2}, 1, 1)
+	if err != nil {
+		t.Fatalf("list by feed ids with status offset: %v", err)
+	}
+	if len(eps) != 1 || eps[0].Title != "Ep2" {
+		t.Fatalf("expected single episode Ep2, got %+v", eps)
+	}
+
+	// offset=2, limit=10 should return the remaining Ep3 from feed1.
+	eps, err = s.ListEpisodesByFeedIDsWithStatus(ctx, userID, []int64{feed1, feed2}, 10, 2)
+	if err != nil {
+		t.Fatalf("list by feed ids with status offset2: %v", err)
+	}
+	if len(eps) != 1 || eps[0].Title != "Ep3" {
+		t.Fatalf("expected single episode Ep3, got %+v", eps)
+	}
+
+	// Empty feed IDs returns empty slice.
+	eps, err = s.ListEpisodesByFeedIDsWithStatus(ctx, userID, []int64{}, 10, 0)
+	if err != nil {
+		t.Fatalf("empty feed ids: %v", err)
+	}
+	if len(eps) != 0 {
+		t.Fatalf("expected 0 episodes for empty feed ids, got %d", len(eps))
+	}
+}

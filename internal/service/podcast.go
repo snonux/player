@@ -420,22 +420,11 @@ func (s *podcastService) ListEpisodes(ctx context.Context, setID, userID int64, 
 		return nil, ErrNotFound
 	}
 
-	all := make([]model.PodcastEpisodeWithStatus, 0)
-	for _, feed := range feeds {
-		episodes, err := s.store.ListEpisodesWithStatus(ctx, userID, feed.ID, limit, 0)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, episodes...)
+	feedIDs := make([]int64, len(feeds))
+	for i, f := range feeds {
+		feedIDs[i] = f.ID
 	}
-	if offset >= len(all) {
-		return []model.PodcastEpisodeWithStatus{}, nil
-	}
-	end := len(all)
-	if limit > 0 && offset+limit < end {
-		end = offset + limit
-	}
-	return all[offset:end], nil
+	return s.store.ListEpisodesByFeedIDsWithStatus(ctx, userID, feedIDs, limit, offset)
 }
 
 func (s *podcastService) DownloadEpisode(ctx context.Context, episodeID, userID int64) (*model.Media, error) {

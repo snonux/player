@@ -914,3 +914,79 @@ func TestPodcastService_CheckFeeds_FeedError_Continues(t *testing.T) {
 	}
 	mu.Unlock()
 }
+
+func TestPodcastService_ListEpisodes_GlobalPagination(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	store.SetPermissionRepo = repository.MockSetPermissionRepo{
+		GetPermissionFunc: func(ctx context.Context, setID, userID int64) (*model.SetPermission, error) {
+			return nil, nil
+		},
+	}
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: true}, nil
+		},
+	}
+
+	store.PodcastRepo = repository.MockPodcastRepo{
+		ListFeedsBySetIDFunc: func(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
+			return []model.PodcastFeed{
+				{ID: 1, SetID: setID, Title: "Feed A"},
+				{ID: 2, SetID: setID, Title: "Feed B"},
+			}, nil
+		},
+		ListEpisodesByFeedIDsWithStatusFunc: func(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
+			// Verify service passes both feed IDs and the original limit/offset.
+			if len(feedIDs) != 2 {
+				t.Errorf("expected 2 feedIDs, got %d", len(feedIDs))
+			}
+			if limit != 3 {
+				t.Errorf("expected limit 3, got %d", limit)
+			}
+			if offset != 5 {
+				t.Errorf("expected offset 5, got %d", offset)
+			}
+			return []model.PodcastEpisodeWithStatus{
+				{PodcastEpisode: model.PodcastEpisode{ID: 1, Title: "Ep 1"}},
+				{PodcastEpisode: model.PodcastEpisode{ID: 2, Title: "Ep 2"}},
+				{PodcastEpisode: model.PodcastEpisode{ID: 3, Title: "Ep 3"}},
+			}, nil
+		},
+	}
+
+	result, err := svc.ListEpisodes(ctx, 42, 1, 3, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("expected 3 episodes, got %d", len(result))
+	}
+}
+
+func TestPodcastService_ListEpisodes_NoFeeds(t *testing.T) {
+	ctx := context.Background()
+	svc, store := setupPodcastService(t)
+
+	store.SetPermissionRepo = repository.MockSetPermissionRepo{
+		GetPermissionFunc: func(ctx context.Context, setID, userID int64) (*model.SetPermission, error) {
+			return nil, nil
+		},
+	}
+	store.UserRepo = repository.MockUserRepo{
+		GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+			return &model.User{ID: id, IsAdmin: true}, nil
+		},
+	}
+	store.PodcastRepo = repository.MockPodcastRepo{
+		ListFeedsBySetIDFunc: func(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
+			return []model.PodcastFeed{}, nil
+		},
+	}
+
+	_, err := svc.ListEpisodes(ctx, 42, 1, 10, 0)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
@@ -311,6 +312,42 @@ func (s *SQLite) GetEpisodeProgress(ctx context.Context, userID, episodeID int64
 	return &st, nil
 }
 
+func scanEpisodeWithStatus(rows *sql.Rows) (model.PodcastEpisodeWithStatus, error) {
+	var e model.PodcastEpisodeWithStatus
+	var mediaID sql.NullInt64
+	var title, description, fileName sql.NullString
+	var published sql.NullTime
+	var duration sql.NullFloat64
+	var fileSize sql.NullInt64
+	var isDownloadedInt, isCompletedInt int
+	var positionSeconds sql.NullFloat64
+	err := rows.Scan(&e.ID, &e.FeedID, &mediaID, &e.GUID, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt, &isCompletedInt, &positionSeconds)
+	if err != nil {
+		return e, err
+	}
+	e.IsDownloaded = intToBool(isDownloadedInt)
+	e.IsCompleted = intToBool(isCompletedInt)
+	if positionSeconds.Valid {
+		e.PositionSeconds = positionSeconds.Float64
+	}
+	if mediaID.Valid {
+		e.MediaID = &mediaID.Int64
+	}
+	e.Title = title.String
+	e.Description = description.String
+	if published.Valid {
+		e.PublishedAt = &published.Time
+	}
+	if duration.Valid {
+		e.DurationSeconds = &duration.Float64
+	}
+	if fileSize.Valid {
+		e.FileSize = &fileSize.Int64
+	}
+	e.FileName = fileName.String
+	return e, nil
+}
+
 // ListEpisodesWithStatus returns episodes with per-user completion and progress.
 func (s *SQLite) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
 	rows, err := s.db.QueryContext(ctx,
@@ -328,38 +365,52 @@ func (s *SQLite) ListEpisodesWithStatus(ctx context.Context, userID, feedID int6
 	defer rows.Close()
 	var episodes []model.PodcastEpisodeWithStatus
 	for rows.Next() {
-		var e model.PodcastEpisodeWithStatus
-		var mediaID sql.NullInt64
-		var title, description, fileName sql.NullString
-		var published sql.NullTime
-		var duration sql.NullFloat64
-		var fileSize sql.NullInt64
-		var isDownloadedInt, isCompletedInt int
-		var positionSeconds sql.NullFloat64
-		err := rows.Scan(&e.ID, &e.FeedID, &mediaID, &e.GUID, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt, &isCompletedInt, &positionSeconds)
+		e, err := scanEpisodeWithStatus(rows)
 		if err != nil {
 			return nil, err
 		}
-		e.IsDownloaded = intToBool(isDownloadedInt)
-		e.IsCompleted = intToBool(isCompletedInt)
-		if positionSeconds.Valid {
-			e.PositionSeconds = positionSeconds.Float64
+		episodes = append(episodes, e)
+	}
+	return episodes, rows.Err()
+}
+
+// ListEpisodesByFeedIDsWithStatus returns episodes with per-user completion
+// and progress for a list of feed IDs, applying global limit/offset.
+func (s *SQLite) ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
+	if len(feedIDs) == 0 {
+		return []model.PodcastEpisodeWithStatus{}, nil
+	}
+
+	placeholders := make([]string, len(feedIDs))
+	args := make([]interface{}, 0, len(feedIDs)+3)
+	args = append(args, userID)
+	for i, id := range feedIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, limit, offset)
+
+	query := fmt.Sprintf(
+		`SELECT e.id, e.feed_id, e.media_id, e.guid, e.title, e.description, e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at,
+		COALESCE(s.is_completed, 0) AS is_completed, COALESCE(s.position_seconds, 0) AS position_seconds
+		FROM podcast_episodes e
+		LEFT JOIN podcast_status s ON s.episode_id = e.id AND s.user_id = ?
+		WHERE e.feed_id IN (%s)
+		ORDER BY e.published_at DESC
+		LIMIT ? OFFSET ?`,
+		strings.Join(placeholders, ", "))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list episodes by feed ids with status: %w", err)
+	}
+	defer rows.Close()
+	var episodes []model.PodcastEpisodeWithStatus
+	for rows.Next() {
+		e, err := scanEpisodeWithStatus(rows)
+		if err != nil {
+			return nil, err
 		}
-		if mediaID.Valid {
-			e.MediaID = &mediaID.Int64
-		}
-		e.Title = title.String
-		e.Description = description.String
-		if published.Valid {
-			e.PublishedAt = &published.Time
-		}
-		if duration.Valid {
-			e.DurationSeconds = &duration.Float64
-		}
-		if fileSize.Valid {
-			e.FileSize = &fileSize.Int64
-		}
-		e.FileName = fileName.String
 		episodes = append(episodes, e)
 	}
 	return episodes, rows.Err()
