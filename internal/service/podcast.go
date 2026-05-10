@@ -163,7 +163,9 @@ func (s *podcastService) SubscribeFeed(ctx context.Context, feedURL, setName str
 	if err := os.MkdirAll(folderPath, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir podcast folder: %w", err)
 	}
-	s.downloadCover(s.httpClient, parsed.ImageURL, folderPath)
+	if err := s.downloadCover(s.httpClient, parsed.ImageURL, folderPath); err != nil {
+		s.logger.Warn("download cover failed", "error", err, "feed", feed.FeedURL)
+	}
 	s.insertPodcastEpisodes(ctx, parsed, feed.ID)
 
 	now := s.clock.Now()
@@ -719,7 +721,9 @@ func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) 
 		set, err := s.store.GetSetByID(ctx, feed.SetID)
 		if err == nil && set != nil {
 			setPath := filepath.Join(s.mediaRoot, set.RootPath)
-			s.downloadCover(s.httpClient, parsed.ImageURL, setPath)
+			if err := s.downloadCover(s.httpClient, parsed.ImageURL, setPath); err != nil {
+				s.logger.Warn("download cover failed", "error", err, "feed", feed.FeedURL)
+			}
 		}
 	}
 
