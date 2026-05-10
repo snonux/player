@@ -694,7 +694,9 @@ func (s *podcastService) checkFeed(ctx context.Context, feed model.PodcastFeed) 
 		feed.LastCheckedAt = &now
 		feed.ConsecutiveFailures = 0
 		feed.NextCheckAt = nil
-		_ = s.store.UpdateFeed(ctx, &feed)
+		if err := s.store.UpdateFeed(ctx, &feed); err != nil {
+			return fmt.Errorf("update feed after 304: %w", err)
+		}
 		return nil
 	}
 	if resp.StatusCode != http.StatusOK {
