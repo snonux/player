@@ -450,7 +450,9 @@ func TestServer_Login(t *testing.T) {
 			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
 		}
 		var resp map[string]any
-		_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
 		if resp["username"] != "alice" {
 			t.Fatalf("unexpected username")
 		}
@@ -834,7 +836,9 @@ func TestServer_Favorite(t *testing.T) {
 		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
 	}
 	var resp map[string]bool
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
 	if !resp["favorite"] {
 		t.Fatal("expected favorite true")
 	}
@@ -1280,7 +1284,9 @@ func TestServer_ListSets(t *testing.T) {
 		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
 	}
 	var sets []model.Set
-	_ = json.Unmarshal(rr.Body.Bytes(), &sets)
+	if err := json.Unmarshal(rr.Body.Bytes(), &sets); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
 	if len(sets) != 1 || sets[0].Name != "music" {
 		t.Fatalf("unexpected sets response")
 	}
