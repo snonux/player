@@ -462,10 +462,13 @@ func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder str
 	}
 	candidate := randomFolderThumbnail(media, prefix)
 	if candidate == "" {
-		return nil, fmt.Errorf("stat cover: %w", err)
+		return nil, ErrNotFound
 	}
 	info, err = os.Stat(candidate)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("stat thumbnail cover: %w", err)
 	}
 	return &FileResult{
