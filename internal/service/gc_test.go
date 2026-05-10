@@ -64,7 +64,7 @@ func TestGCWorker_RunOnce(t *testing.T) {
 	}
 }
 
-func TestGCWorker_DBHardDeleteHappensBeforeFileRemoval(t *testing.T) {
+func TestGCWorker_FileRemovedBeforeDBHardDelete(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	tmpDir := t.TempDir()
 
@@ -83,8 +83,8 @@ func TestGCWorker_DBHardDeleteHappensBeforeFileRemoval(t *testing.T) {
 				}, nil
 			},
 			HardDeleteMediaFunc: func(ctx context.Context, id int64) error {
-				if _, err := os.Stat(file); err != nil {
-					t.Fatalf("expected file to exist while hard-deleting DB record: %v", err)
+				if _, err := os.Stat(file); !os.IsNotExist(err) {
+					t.Fatalf("expected file to be removed before hard-deleting DB record")
 				}
 				checkedOrdering = true
 				return nil
@@ -99,12 +99,9 @@ func TestGCWorker_DBHardDeleteHappensBeforeFileRemoval(t *testing.T) {
 	if !checkedOrdering {
 		t.Fatal("expected hard delete ordering check to run")
 	}
-	if _, err := os.Stat(file); !os.IsNotExist(err) {
-		t.Fatal("expected file to be removed after DB hard delete succeeds")
-	}
 }
 
-func TestGCWorker_LeavesFileWhenDBHardDeleteFails(t *testing.T) {
+func TestGCWorker_SkipsDBHardDeleteWhenFileRemoveFails(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	tmpDir := t.TempDir()
 
@@ -113,7 +110,14 @@ func TestGCWorker_LeavesFileWhenDBHardDeleteFails(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
+	// Make directory unwritable so os.Remove fails.
+	if err := os.Chmod(tmpDir, 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	defer os.Chmod(tmpDir, 0o755)
+
 	deletedAt := now.Add(-8 * 24 * time.Hour)
+	var hardDeleteCalled bool
 	store := &repository.MockStore{
 		MediaRepo: repository.MockMediaRepo{
 			ListDeletedMediaFunc: func(ctx context.Context) ([]model.Media, error) {
@@ -122,7 +126,8 @@ func TestGCWorker_LeavesFileWhenDBHardDeleteFails(t *testing.T) {
 				}, nil
 			},
 			HardDeleteMediaFunc: func(ctx context.Context, id int64) error {
-				return errors.New("db unavailable")
+				hardDeleteCalled = true
+				return nil
 			},
 		},
 	}
@@ -131,8 +136,16 @@ func TestGCWorker_LeavesFileWhenDBHardDeleteFails(t *testing.T) {
 	w := NewGCWorker(store, &clock.MockClock{T: now}, tmpDir, time.Minute, logger).WithAge(7 * 24 * time.Hour)
 	w.RunOnce()
 
+	// Restore permissions so we can verify the file still exists.
+	if err := os.Chmod(tmpDir, 0o755); err != nil {
+		t.Fatalf("restore chmod: %v", err)
+	}
+
+	if hardDeleteCalled {
+		t.Fatal("expected HardDeleteMedia to not be called when file removal fails")
+	}
 	if _, err := os.Stat(file); err != nil {
-		t.Fatalf("expected file to remain when DB hard delete fails: %v", err)
+		t.Fatalf("expected file to remain when file removal fails: %v", err)
 	}
 }
 

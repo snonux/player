@@ -119,20 +119,24 @@ func (w *GCWorker) run(ctx context.Context) {
 			absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
 		}
 
+		if absPath != "" {
+			if err := os.Remove(absPath); err != nil {
+				if os.IsNotExist(err) {
+					// File already gone; safe to proceed with DB deletion.
+				} else {
+					if w.logger != nil {
+						w.logger.Warn("gc remove file", "path", absPath, "err", err)
+					}
+					continue
+				}
+			}
+		}
+
 		if err := w.store.HardDeleteMedia(ctx, item.ID); err != nil {
 			if w.logger != nil {
 				w.logger.Error("gc hard delete", "id", item.ID, "err", err)
 			}
 			continue
-		}
-
-		if absPath != "" {
-			if err := os.Remove(absPath); err != nil {
-				if w.logger != nil {
-					w.logger.Warn("gc remove file", "path", absPath, "err", err)
-				}
-				continue
-			}
 		}
 
 		if w.logger != nil {
