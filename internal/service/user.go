@@ -47,6 +47,9 @@ func (s *userAdminService) CreateUser(ctx context.Context, username, password st
 	return user, nil
 }
 
-func (s *userAdminService) DeleteUser(ctx context.Context, id int64) error {
+func (s *userAdminService) DeleteUser(ctx context.Context, callerID, id int64) error {
+	if callerID == id {
+		return ErrCannotDeleteSelf
+	}
 	return s.store.DeleteUser(ctx, id)
 }

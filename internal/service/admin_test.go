@@ -229,7 +229,7 @@ func TestAdminService_DeleteUser(t *testing.T) {
 		},
 	}
 	svc := NewAdminService(store, newMockClock(), &fakeHasher{fixed: "hash"}, nil, "", ctx)
-	if err := svc.DeleteUser(ctx, 1); err != nil {
+	if err := svc.DeleteUser(ctx, 2, 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !called {

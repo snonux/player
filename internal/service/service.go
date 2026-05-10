@@ -21,6 +21,7 @@ var (
 	ErrAlreadyBootstrapped  = errors.New("already bootstrapped")
 	ErrInvalidCredentials   = errors.New("invalid credentials")
 	ErrInvalidFeed          = errors.New("invalid feed")
+	ErrCannotDeleteSelf     = errors.New("cannot delete self")
 )
 
 // MediaQueryFilter defines query parameters for listing media from the API layer.
@@ -191,7 +192,7 @@ type AdminService interface {
 	// CreateUser creates a user account.
 	CreateUser(ctx context.Context, username, password string, isAdmin bool) (*model.User, error)
 	// DeleteUser removes a user account.
-	DeleteUser(ctx context.Context, id int64) error
+	DeleteUser(ctx context.Context, callerID, id int64) error
 	// ListPermissions returns the set permission matrix.
 	ListPermissions(ctx context.Context) (*PermissionsMatrix, error)
 	// GrantPermission grants a user access to a set.

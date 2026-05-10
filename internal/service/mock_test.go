@@ -117,7 +117,7 @@ func TestMockAdminService_Defaults(t *testing.T) {
 	m.ListTrash(ctx)
 	m.TriggerRescan(ctx)
 	m.ListUsers(ctx)
-	m.DeleteUser(ctx, 1)
+	m.DeleteUser(ctx, 2, 1)
 	m.ListPermissions(ctx)
 	m.GrantPermission(ctx, 1, 2, model.RoleViewer)
 	m.RevokePermission(ctx, 1, 2)
@@ -136,7 +136,7 @@ func TestMockAdminService_WithFuncs(t *testing.T) {
 		CreateUserFunc: func(ctx context.Context, username, password string, isAdmin bool) (*model.User, error) {
 			return nil, nil
 		},
-		DeleteUserFunc:       func(ctx context.Context, id int64) error { return nil },
+		DeleteUserFunc:       func(ctx context.Context, callerID, id int64) error { return nil },
 		ListPermissionsFunc:  func(ctx context.Context) (*PermissionsMatrix, error) { return nil, nil },
 		GrantPermissionFunc:  func(ctx context.Context, setID, userID int64, role model.Role) error { return nil },
 		RevokePermissionFunc: func(ctx context.Context, setID, userID int64) error { return nil },
@@ -146,7 +146,7 @@ func TestMockAdminService_WithFuncs(t *testing.T) {
 	m.TriggerRescan(ctx)
 	m.ListUsers(ctx)
 	m.CreateUser(ctx, "alice", "secret", false)
-	m.DeleteUser(ctx, 1)
+	m.DeleteUser(ctx, 2, 1)
 	m.ListPermissions(ctx)
 	m.GrantPermission(ctx, 1, 2, model.RoleViewer)
 	m.RevokePermission(ctx, 1, 2)

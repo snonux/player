@@ -1730,7 +1730,7 @@ func TestServer_AdminDeleteUser(t *testing.T) {
 		wantCode int
 	}{
 		{"nil service", "2", true, nil, http.StatusNotImplemented},
-		{"self delete", "1", false, nil, http.StatusBadRequest},
+		{"self delete", "1", false, service.ErrCannotDeleteSelf, http.StatusBadRequest},
 		{"invalid id zero", "0", false, nil, http.StatusBadRequest},
 		{"service error", "2", false, errors.New("boom"), http.StatusInternalServerError},
 		{"ok", "2", false, nil, http.StatusOK},
@@ -1741,7 +1741,7 @@ func TestServer_AdminDeleteUser(t *testing.T) {
 			var as service.AdminService
 			if !tt.svcNil {
 				as = &service.MockAdminService{
-					DeleteUserFunc: func(ctx context.Context, id int64) error { return tt.svcErr },
+					DeleteUserFunc: func(ctx context.Context, callerID, id int64) error { return tt.svcErr },
 				}
 			}
 			srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, as, nil, nil, nil)

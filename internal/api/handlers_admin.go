@@ -83,11 +83,11 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	adminUser, _ := r.Context().Value(userCtxKey).(*model.User)
-	if adminUser != nil && adminUser.ID == id {
-		badRequest(w, "cannot delete self")
-		return
+	var callerID int64
+	if adminUser != nil {
+		callerID = adminUser.ID
 	}
-	if err := s.adminSvc.DeleteUser(r.Context(), id); err != nil {
+	if err := s.adminSvc.DeleteUser(r.Context(), callerID, id); err != nil {
 		handleError(w, err)
 		return
 	}

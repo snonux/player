@@ -283,7 +283,7 @@ type MockAdminService struct {
 	ScanProgressFunc     func(ctx context.Context) model.ScanProgress
 	ListUsersFunc        func(ctx context.Context) ([]model.User, error)
 	CreateUserFunc       func(ctx context.Context, username, password string, isAdmin bool) (*model.User, error)
-	DeleteUserFunc       func(ctx context.Context, id int64) error
+	DeleteUserFunc       func(ctx context.Context, callerID, id int64) error
 	ListPermissionsFunc  func(ctx context.Context) (*PermissionsMatrix, error)
 	GrantPermissionFunc  func(ctx context.Context, setID, userID int64, role model.Role) error
 	RevokePermissionFunc func(ctx context.Context, setID, userID int64) error
@@ -330,9 +330,9 @@ func (m *MockAdminService) CreateUser(ctx context.Context, username, password st
 }
 
 // DeleteUser calls DeleteUserFunc or returns nil.
-func (m *MockAdminService) DeleteUser(ctx context.Context, id int64) error {
+func (m *MockAdminService) DeleteUser(ctx context.Context, callerID, id int64) error {
 	if m.DeleteUserFunc != nil {
-		return m.DeleteUserFunc(ctx, id)
+		return m.DeleteUserFunc(ctx, callerID, id)
 	}
 	return nil
 }

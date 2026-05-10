@@ -61,8 +61,8 @@ func (s *adminService) CreateUser(ctx context.Context, username, password string
 }
 
 // DeleteUser delegates to userAdminService.
-func (s *adminService) DeleteUser(ctx context.Context, id int64) error {
-	return s.userAdminService.DeleteUser(ctx, id)
+func (s *adminService) DeleteUser(ctx context.Context, callerID, id int64) error {
+	return s.userAdminService.DeleteUser(ctx, callerID, id)
 }
 
 // ListPermissions delegates to permissionAdminService.

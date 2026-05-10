@@ -1207,7 +1207,12 @@ func TestServer_AdminRoutes(t *testing.T) {
 		CreateUserFunc: func(ctx context.Context, username, password string, isAdmin bool) (*model.User, error) {
 			return &model.User{ID: 2, Username: username, IsAdmin: isAdmin}, nil
 		},
-		DeleteUserFunc:       func(ctx context.Context, id int64) error { return nil },
+		DeleteUserFunc: func(ctx context.Context, callerID, id int64) error {
+			if callerID == id {
+				return service.ErrCannotDeleteSelf
+			}
+			return nil
+		},
 		ListPermissionsFunc:  func(ctx context.Context) (*service.PermissionsMatrix, error) { return nil, nil },
 		GrantPermissionFunc:  func(ctx context.Context, setID, userID int64, role model.Role) error { return nil },
 		RevokePermissionFunc: func(ctx context.Context, setID, userID int64) error { return nil },
