@@ -14,6 +14,8 @@ type SQLite struct {
 	db *sql.DB
 }
 
+const sqliteBusyTimeoutMS = 5000
+
 // New creates a SQLite store from an existing *sql.DB after initializing the schema.
 func New(db *sql.DB) (*SQLite, error) {
 	if err := initializeSchema(db); err != nil {
@@ -28,9 +30,15 @@ func Open(dsn string) (*SQLite, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, err
+	}
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA busy_timeout = %d;`, sqliteBusyTimeoutMS)); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("set busy timeout: %w", err)
 	}
 	s, err := New(db)
 	if err != nil {

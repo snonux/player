@@ -1129,6 +1129,24 @@ func TestSQLite_OpenFailures(t *testing.T) {
 }
 
 func TestSQLite_SchemaInitialization(t *testing.T) {
+	t.Run("open configures sqlite for single-process nfs use", func(t *testing.T) {
+		s := newTestStore(t)
+		defer s.Close()
+
+		stats := s.db.Stats()
+		if stats.MaxOpenConnections != 1 {
+			t.Fatalf("expected max open connections 1, got %d", stats.MaxOpenConnections)
+		}
+
+		var timeout int
+		if err := s.db.QueryRow(`PRAGMA busy_timeout`).Scan(&timeout); err != nil {
+			t.Fatalf("busy timeout pragma: %v", err)
+		}
+		if timeout != sqliteBusyTimeoutMS {
+			t.Fatalf("expected busy_timeout %d, got %d", sqliteBusyTimeoutMS, timeout)
+		}
+	})
+
 	t.Run("fresh database includes podcast column and foreign keys", func(t *testing.T) {
 		s := newTestStore(t)
 		defer s.Close()
