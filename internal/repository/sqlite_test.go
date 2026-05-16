@@ -1168,7 +1168,7 @@ func TestSQLite_SchemaInitialization(t *testing.T) {
 		}
 	})
 
-	t.Run("stale pre-podcast sets schema is not upgraded", func(t *testing.T) {
+	t.Run("stale pre-podcast sets schema is upgraded", func(t *testing.T) {
 		db, err := sql.Open("sqlite", ":memory:")
 		if err != nil {
 			t.Fatalf("open: %v", err)
@@ -1187,9 +1187,36 @@ CREATE TABLE sets (
 			t.Fatalf("create stale schema: %v", err)
 		}
 
-		_, err = New(db)
-		if err == nil {
-			t.Fatal("expected stale schema initialization to fail")
+		s, err := New(db)
+		if err != nil {
+			t.Fatalf("initialize stale schema: %v", err)
+		}
+		defer s.Close()
+
+		var isPodcastColumn int
+		rows, err := s.db.Query(`PRAGMA table_info(sets)`)
+		if err != nil {
+			t.Fatalf("table info: %v", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var cid int
+			var name, typ string
+			var notNull int
+			var defaultValue sql.NullString
+			var pk int
+			if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+				t.Fatalf("scan column: %v", err)
+			}
+			if name == "is_podcast" {
+				isPodcastColumn++
+			}
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("rows: %v", err)
+		}
+		if isPodcastColumn != 1 {
+			t.Fatalf("expected one is_podcast column, got %d", isPodcastColumn)
 		}
 	})
 }

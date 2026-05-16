@@ -207,11 +207,11 @@ func initializeSchema(db *sql.DB) error {
 	if err := execSchema(db, "tables", tablesSchema); err != nil {
 		return err
 	}
-	if err := execSchema(db, "indexes", indexesSchema); err != nil {
-		return err
-	}
 	if err := runMigrations(db); err != nil {
 		return fmt.Errorf("apply migrations: %w", err)
+	}
+	if err := execSchema(db, "indexes", indexesSchema); err != nil {
+		return err
 	}
 	return nil
 }
@@ -223,6 +223,10 @@ type migration struct {
 }
 
 var migrations = []migration{
+	{
+		name: "add_sets_is_podcast",
+		sql:  `ALTER TABLE sets ADD COLUMN is_podcast INTEGER NOT NULL DEFAULT 0;`,
+	},
 	{
 		name: "add_podcast_feed_backoff_columns",
 		sql: `
