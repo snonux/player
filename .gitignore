@@ -1,19 +1,29 @@
-# Binaries
-/mediaplayer
+# Root build and runtime artifacts
 /player
+/data.db
+/coverage.out
+/c.out
+/cmd.out
+/testmedia/
+
+# Go build and test artifacts
 *.exe
 *.dll
 *.so
 *.dylib
-
-# Test binaries
 *.test
-
-# Output of the go coverage tool
 *.out
-
-# Go workspace file
 go.work
 
-# Database file
-data.db
+# Player server local artifacts
+/player-server/player
+/player-server/data.db
+/player-server/coverage.out
+/player-server/c.out
+/player-server/cmd.out
+/player-server/testmedia/
+
+# Player Android local artifacts
+/player-android/.dart_tool/
+/player-android/.flutter-plugins*
+/player-android/build/
