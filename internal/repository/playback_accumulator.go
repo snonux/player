@@ -36,3 +36,12 @@ func (s *SQLite) GetAccumulator(ctx context.Context, sessionID string, mediaID i
 	a.Counted = counted != 0
 	return &a, nil
 }
+
+// DeleteAccumulatorByMedia removes all playback accumulators for a media item.
+func (s *SQLite) DeleteAccumulatorByMedia(ctx context.Context, mediaID int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM playback_accumulator WHERE media_id = ?`, mediaID)
+	if err != nil {
+		return fmt.Errorf("delete accumulator by media: %w", err)
+	}
+	return nil
+}

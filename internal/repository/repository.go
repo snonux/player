@@ -260,8 +260,14 @@ type PlaybackProgressRepo interface {
 	UpsertProgress(ctx context.Context, progress *model.PlaybackProgress) error
 	// GetProgress returns a user's playback position for a media item.
 	GetProgress(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error)
+	// DeleteProgress removes a user's playback position for a media item.
+	DeleteProgress(ctx context.Context, userID, mediaID int64) error
+	// MarkFinished marks a user's playback position as finished.
+	MarkFinished(ctx context.Context, userID, mediaID int64) error
 	// ListProgressByUser returns all saved playback positions for a user.
 	ListProgressByUser(ctx context.Context, userID int64) ([]model.PlaybackProgress, error)
+	// ListInProgressMedia returns unfinished media with saved playback positions.
+	ListInProgressMedia(ctx context.Context, userID int64, filter MediaFilter) ([]model.Media, error)
 }
 
 // PlaybackAccumulatorRepo manages the 60s playback counter rule.
@@ -270,6 +276,8 @@ type PlaybackAccumulatorRepo interface {
 	UpsertAccumulator(ctx context.Context, acc *model.PlaybackAccumulator) error
 	// GetAccumulator returns the accumulator for a session and media item.
 	GetAccumulator(ctx context.Context, sessionID string, mediaID int64) (*model.PlaybackAccumulator, error)
+	// DeleteAccumulatorByMedia removes all accumulators for a media item.
+	DeleteAccumulatorByMedia(ctx context.Context, mediaID int64) error
 }
 
 // SessionRepo manages browser sessions.

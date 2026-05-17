@@ -464,7 +464,7 @@ func TestSQLite_PlaybackProgressRepo(t *testing.T) {
 				uid, _ := s.CreateUser(ctx, &model.User{Username: "u", PasswordHash: "h", CreatedAt: now})
 				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
 				mid, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
-				if err := s.UpsertProgress(ctx, &model.PlaybackProgress{UserID: uid, MediaID: mid, PositionSeconds: 42, Finished: true, UpdatedAt: now}); err != nil {
+				if err := s.UpsertProgress(ctx, &model.PlaybackProgress{UserID: uid, MediaID: mid, PositionSeconds: 42, UpdatedAt: now}); err != nil {
 					t.Fatalf("upsert: %v", err)
 				}
 				p, err := s.GetProgress(ctx, uid, mid)
@@ -473,6 +473,16 @@ func TestSQLite_PlaybackProgressRepo(t *testing.T) {
 				}
 				if p.PositionSeconds != 42 {
 					t.Fatalf("expected 42, got %f", p.PositionSeconds)
+				}
+				if p.Finished {
+					t.Fatal("expected unfinished")
+				}
+				if err := s.MarkFinished(ctx, uid, mid); err != nil {
+					t.Fatalf("mark finished: %v", err)
+				}
+				p, err = s.GetProgress(ctx, uid, mid)
+				if err != nil {
+					t.Fatalf("get after mark finished: %v", err)
 				}
 				if !p.Finished {
 					t.Fatal("expected finished")
@@ -483,6 +493,55 @@ func TestSQLite_PlaybackProgressRepo(t *testing.T) {
 				}
 				if !pp[0].Finished {
 					t.Fatal("expected listed progress to be finished")
+				}
+				if err := s.DeleteProgress(ctx, uid, mid); err != nil {
+					t.Fatalf("delete progress: %v", err)
+				}
+				p, err = s.GetProgress(ctx, uid, mid)
+				if err != nil {
+					t.Fatalf("get after delete: %v", err)
+				}
+				if p != nil {
+					t.Fatal("expected nil progress after delete")
+				}
+			},
+		},
+		{
+			name: "list in-progress media respects allowed sets and excludes finished and deleted",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				uid, _ := s.CreateUser(ctx, &model.User{Username: "u", PasswordHash: "h", CreatedAt: now})
+				setAllowed, _ := s.CreateSet(ctx, &model.Set{Name: "allowed", RootPath: "/allowed", CreatedAt: now})
+				setOther, _ := s.CreateSet(ctx, &model.Set{Name: "other", RootPath: "/other", CreatedAt: now})
+				keepID, _ := s.CreateMedia(ctx, &model.Media{SetID: setAllowed, RelPath: "keep.mp4", FileName: "keep.mp4", AbsPath: "/allowed/keep.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				finishedID, _ := s.CreateMedia(ctx, &model.Media{SetID: setAllowed, RelPath: "finished.mp4", FileName: "finished.mp4", AbsPath: "/allowed/finished.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				deletedID, _ := s.CreateMedia(ctx, &model.Media{SetID: setAllowed, RelPath: "deleted.mp4", FileName: "deleted.mp4", AbsPath: "/allowed/deleted.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				otherID, _ := s.CreateMedia(ctx, &model.Media{SetID: setOther, RelPath: "other.mp4", FileName: "other.mp4", AbsPath: "/other/other.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+
+				progress := []model.PlaybackProgress{
+					{UserID: uid, MediaID: keepID, PositionSeconds: 10, UpdatedAt: now.Add(3 * time.Second)},
+					{UserID: uid, MediaID: finishedID, PositionSeconds: 20, Finished: true, UpdatedAt: now.Add(2 * time.Second)},
+					{UserID: uid, MediaID: deletedID, PositionSeconds: 30, UpdatedAt: now.Add(time.Second)},
+					{UserID: uid, MediaID: otherID, PositionSeconds: 40, UpdatedAt: now},
+				}
+				for i := range progress {
+					if err := s.UpsertProgress(ctx, &progress[i]); err != nil {
+						t.Fatalf("upsert progress %d: %v", i, err)
+					}
+				}
+				if err := s.SoftDeleteMedia(ctx, deletedID); err != nil {
+					t.Fatalf("soft delete: %v", err)
+				}
+
+				media, err := s.ListInProgressMedia(ctx, uid, MediaFilter{AllowedSetIDs: []int64{setAllowed}})
+				if err != nil {
+					t.Fatalf("list in-progress media: %v", err)
+				}
+				if len(media) != 1 {
+					t.Fatalf("expected 1 in-progress media, got %d: %+v", len(media), media)
+				}
+				if media[0].ID != keepID {
+					t.Fatalf("expected media %d, got %d", keepID, media[0].ID)
 				}
 			},
 		},
@@ -520,6 +579,50 @@ func TestSQLite_PlaybackAccumulatorRepo(t *testing.T) {
 				}
 				if acc.AccumulatedSeconds != 20 {
 					t.Fatalf("expected 20, got %f", acc.AccumulatedSeconds)
+				}
+			},
+		},
+		{
+			name: "delete by media deletes all sessions for media only",
+			run: func(t *testing.T, ctx context.Context, s *SQLite) {
+				now := time.Now().Truncate(time.Second)
+				uid, _ := s.CreateUser(ctx, &model.User{Username: "u", PasswordHash: "h", CreatedAt: now})
+				for _, sessionID := range []string{"sess1", "sess2"} {
+					if err := s.CreateSession(ctx, &model.Session{ID: sessionID, UserID: uid, ExpiresAt: now.Add(time.Hour), CreatedAt: now}); err != nil {
+						t.Fatalf("create session %s: %v", sessionID, err)
+					}
+				}
+				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
+				mediaID, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				otherMediaID, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "b.mp4", FileName: "b.mp4", AbsPath: "/s/b.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				accs := []model.PlaybackAccumulator{
+					{SessionID: "sess1", MediaID: mediaID, LastPosition: 10, AccumulatedSeconds: 20, UpdatedAt: now},
+					{SessionID: "sess2", MediaID: mediaID, LastPosition: 11, AccumulatedSeconds: 21, UpdatedAt: now},
+					{SessionID: "sess1", MediaID: otherMediaID, LastPosition: 12, AccumulatedSeconds: 22, UpdatedAt: now},
+				}
+				for i := range accs {
+					if err := s.UpsertAccumulator(ctx, &accs[i]); err != nil {
+						t.Fatalf("upsert accumulator %d: %v", i, err)
+					}
+				}
+				if err := s.DeleteAccumulatorByMedia(ctx, mediaID); err != nil {
+					t.Fatalf("delete accumulator by media: %v", err)
+				}
+				for _, sessionID := range []string{"sess1", "sess2"} {
+					acc, err := s.GetAccumulator(ctx, sessionID, mediaID)
+					if err != nil {
+						t.Fatalf("get deleted accumulator %s: %v", sessionID, err)
+					}
+					if acc != nil {
+						t.Fatalf("expected accumulator %s/%d to be deleted", sessionID, mediaID)
+					}
+				}
+				acc, err := s.GetAccumulator(ctx, "sess1", otherMediaID)
+				if err != nil {
+					t.Fatalf("get other accumulator: %v", err)
+				}
+				if acc == nil {
+					t.Fatal("expected other media accumulator to remain")
 				}
 			},
 		},

@@ -1455,14 +1455,26 @@ func (m *mockPingStore) UpsertProgress(ctx context.Context, progress *model.Play
 func (m *mockPingStore) GetProgress(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error) {
 	return m.store.GetProgress(ctx, userID, mediaID)
 }
+func (m *mockPingStore) DeleteProgress(ctx context.Context, userID, mediaID int64) error {
+	return m.store.DeleteProgress(ctx, userID, mediaID)
+}
+func (m *mockPingStore) MarkFinished(ctx context.Context, userID, mediaID int64) error {
+	return m.store.MarkFinished(ctx, userID, mediaID)
+}
 func (m *mockPingStore) ListProgressByUser(ctx context.Context, userID int64) ([]model.PlaybackProgress, error) {
 	return m.store.ListProgressByUser(ctx, userID)
+}
+func (m *mockPingStore) ListInProgressMedia(ctx context.Context, userID int64, filter repository.MediaFilter) ([]model.Media, error) {
+	return m.store.ListInProgressMedia(ctx, userID, filter)
 }
 func (m *mockPingStore) UpsertAccumulator(ctx context.Context, acc *model.PlaybackAccumulator) error {
 	return m.store.UpsertAccumulator(ctx, acc)
 }
 func (m *mockPingStore) GetAccumulator(ctx context.Context, sessionID string, mediaID int64) (*model.PlaybackAccumulator, error) {
 	return m.store.GetAccumulator(ctx, sessionID, mediaID)
+}
+func (m *mockPingStore) DeleteAccumulatorByMedia(ctx context.Context, mediaID int64) error {
+	return m.store.DeleteAccumulatorByMedia(ctx, mediaID)
 }
 func (m *mockPingStore) CreateSession(ctx context.Context, session *model.Session) error {
 	return m.store.CreateSession(ctx, session)

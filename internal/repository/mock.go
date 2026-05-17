@@ -246,9 +246,24 @@ func (m *MockStore) GetProgress(ctx context.Context, userID, mediaID int64) (*mo
 	return m.PlaybackProgressRepo.GetProgress(ctx, userID, mediaID)
 }
 
+// DeleteProgress implements PlaybackProgressRepo.
+func (m *MockStore) DeleteProgress(ctx context.Context, userID, mediaID int64) error {
+	return m.PlaybackProgressRepo.DeleteProgress(ctx, userID, mediaID)
+}
+
+// MarkFinished implements PlaybackProgressRepo.
+func (m *MockStore) MarkFinished(ctx context.Context, userID, mediaID int64) error {
+	return m.PlaybackProgressRepo.MarkFinished(ctx, userID, mediaID)
+}
+
 // ListProgressByUser implements PlaybackProgressRepo.
 func (m *MockStore) ListProgressByUser(ctx context.Context, userID int64) ([]model.PlaybackProgress, error) {
 	return m.PlaybackProgressRepo.ListProgressByUser(ctx, userID)
+}
+
+// ListInProgressMedia implements PlaybackProgressRepo.
+func (m *MockStore) ListInProgressMedia(ctx context.Context, userID int64, filter MediaFilter) ([]model.Media, error) {
+	return m.PlaybackProgressRepo.ListInProgressMedia(ctx, userID, filter)
 }
 
 // UpsertAccumulator implements PlaybackAccumulatorRepo.
@@ -259,6 +274,11 @@ func (m *MockStore) UpsertAccumulator(ctx context.Context, acc *model.PlaybackAc
 // GetAccumulator implements PlaybackAccumulatorRepo.
 func (m *MockStore) GetAccumulator(ctx context.Context, sessionID string, mediaID int64) (*model.PlaybackAccumulator, error) {
 	return m.PlaybackAccumulatorRepo.GetAccumulator(ctx, sessionID, mediaID)
+}
+
+// DeleteAccumulatorByMedia implements PlaybackAccumulatorRepo.
+func (m *MockStore) DeleteAccumulatorByMedia(ctx context.Context, mediaID int64) error {
+	return m.PlaybackAccumulatorRepo.DeleteAccumulatorByMedia(ctx, mediaID)
 }
 
 // CreateSession implements SessionRepo.
@@ -690,9 +710,12 @@ func (m *MockFavoriteRepo) ListFavoritesByUser(ctx context.Context, userID int64
 
 // MockPlaybackProgressRepo is a fake PlaybackProgressRepo.
 type MockPlaybackProgressRepo struct {
-	UpsertProgressFunc     func(ctx context.Context, progress *model.PlaybackProgress) error
-	GetProgressFunc        func(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error)
-	ListProgressByUserFunc func(ctx context.Context, userID int64) ([]model.PlaybackProgress, error)
+	UpsertProgressFunc      func(ctx context.Context, progress *model.PlaybackProgress) error
+	GetProgressFunc         func(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error)
+	DeleteProgressFunc      func(ctx context.Context, userID, mediaID int64) error
+	MarkFinishedFunc        func(ctx context.Context, userID, mediaID int64) error
+	ListProgressByUserFunc  func(ctx context.Context, userID int64) ([]model.PlaybackProgress, error)
+	ListInProgressMediaFunc func(ctx context.Context, userID int64, filter MediaFilter) ([]model.Media, error)
 }
 
 // UpsertProgress calls UpsertProgressFunc or returns nil.
@@ -711,6 +734,22 @@ func (m *MockPlaybackProgressRepo) GetProgress(ctx context.Context, userID, medi
 	return nil, nil
 }
 
+// DeleteProgress calls DeleteProgressFunc or returns nil.
+func (m *MockPlaybackProgressRepo) DeleteProgress(ctx context.Context, userID, mediaID int64) error {
+	if m.DeleteProgressFunc != nil {
+		return m.DeleteProgressFunc(ctx, userID, mediaID)
+	}
+	return nil
+}
+
+// MarkFinished calls MarkFinishedFunc or returns nil.
+func (m *MockPlaybackProgressRepo) MarkFinished(ctx context.Context, userID, mediaID int64) error {
+	if m.MarkFinishedFunc != nil {
+		return m.MarkFinishedFunc(ctx, userID, mediaID)
+	}
+	return nil
+}
+
 // ListProgressByUser calls ListProgressByUserFunc or returns nil.
 func (m *MockPlaybackProgressRepo) ListProgressByUser(ctx context.Context, userID int64) ([]model.PlaybackProgress, error) {
 	if m.ListProgressByUserFunc != nil {
@@ -719,10 +758,19 @@ func (m *MockPlaybackProgressRepo) ListProgressByUser(ctx context.Context, userI
 	return nil, nil
 }
 
+// ListInProgressMedia calls ListInProgressMediaFunc or returns nil.
+func (m *MockPlaybackProgressRepo) ListInProgressMedia(ctx context.Context, userID int64, filter MediaFilter) ([]model.Media, error) {
+	if m.ListInProgressMediaFunc != nil {
+		return m.ListInProgressMediaFunc(ctx, userID, filter)
+	}
+	return nil, nil
+}
+
 // MockPlaybackAccumulatorRepo is a fake PlaybackAccumulatorRepo.
 type MockPlaybackAccumulatorRepo struct {
-	UpsertAccumulatorFunc func(ctx context.Context, acc *model.PlaybackAccumulator) error
-	GetAccumulatorFunc    func(ctx context.Context, sessionID string, mediaID int64) (*model.PlaybackAccumulator, error)
+	UpsertAccumulatorFunc        func(ctx context.Context, acc *model.PlaybackAccumulator) error
+	GetAccumulatorFunc           func(ctx context.Context, sessionID string, mediaID int64) (*model.PlaybackAccumulator, error)
+	DeleteAccumulatorByMediaFunc func(ctx context.Context, mediaID int64) error
 }
 
 // UpsertAccumulator calls UpsertAccumulatorFunc or returns nil.
@@ -739,6 +787,14 @@ func (m *MockPlaybackAccumulatorRepo) GetAccumulator(ctx context.Context, sessio
 		return m.GetAccumulatorFunc(ctx, sessionID, mediaID)
 	}
 	return nil, nil
+}
+
+// DeleteAccumulatorByMedia calls DeleteAccumulatorByMediaFunc or returns nil.
+func (m *MockPlaybackAccumulatorRepo) DeleteAccumulatorByMedia(ctx context.Context, mediaID int64) error {
+	if m.DeleteAccumulatorByMediaFunc != nil {
+		return m.DeleteAccumulatorByMediaFunc(ctx, mediaID)
+	}
+	return nil
 }
 
 // MockSessionRepo is a fake SessionRepo.
@@ -980,13 +1036,13 @@ type MockPodcastRepo struct {
 	ListFeedsFunc             func(ctx context.Context) ([]model.PodcastFeed, error)
 	ListFeedsNeedingCheckFunc func(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error)
 
-	CreateEpisodeFunc        func(ctx context.Context, episode *model.PodcastEpisode) (int64, error)
-	GetEpisodeByIDFunc       func(ctx context.Context, id int64) (*model.PodcastEpisode, error)
-	GetEpisodeByGUIDFunc     func(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error)
-	ListEpisodesByFeedFunc   func(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error)
+	CreateEpisodeFunc                   func(ctx context.Context, episode *model.PodcastEpisode) (int64, error)
+	GetEpisodeByIDFunc                  func(ctx context.Context, id int64) (*model.PodcastEpisode, error)
+	GetEpisodeByGUIDFunc                func(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error)
+	ListEpisodesByFeedFunc              func(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error)
 	ListEpisodesByFeedIDsWithStatusFunc func(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error)
-	UpdateEpisodeMediaFunc   func(ctx context.Context, episodeID, mediaID int64, fileName string) error
-	DeleteEpisodesByFeedFunc func(ctx context.Context, feedID int64) error
+	UpdateEpisodeMediaFunc              func(ctx context.Context, episodeID, mediaID int64, fileName string) error
+	DeleteEpisodesByFeedFunc            func(ctx context.Context, feedID int64) error
 
 	UpsertEpisodeProgressFunc  func(ctx context.Context, status *model.PodcastStatus) error
 	GetEpisodeProgressFunc     func(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error)
