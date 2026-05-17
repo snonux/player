@@ -1563,6 +1563,119 @@ func TestServer_Progress_negative(t *testing.T) {
 	}
 }
 
+func TestServer_ProgressStatus_negative(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name     string
+		body     string
+		svcNil   bool
+		svcErr   error
+		wantCode int
+	}{
+		{"nil service", `{"media_id":1,"status":"finished"}`, true, nil, http.StatusNotImplemented},
+		{"invalid body", `bad`, false, nil, http.StatusBadRequest},
+		{"missing media_id", `{"status":"finished"}`, false, nil, http.StatusBadRequest},
+		{"invalid status", `{"media_id":1,"status":"paused"}`, false, nil, http.StatusBadRequest},
+		{"finished service error", `{"media_id":1,"status":"finished"}`, false, errors.New("boom"), http.StatusInternalServerError},
+		{"not started service error", `{"media_id":1,"status":"not_started"}`, false, errors.New("boom"), http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ps service.ProgressService
+			if !tt.svcNil {
+				ps = &service.MockProgressService{
+					MarkFinishedFunc: func(ctx context.Context, userID, mediaID int64) error {
+						return tt.svcErr
+					},
+					MarkNotStartedFunc: func(ctx context.Context, userID, mediaID int64) error {
+						return tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, ps, nil, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/progress/status", strings.NewReader(tt.body))
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_InProgress_negative(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	tests := []struct {
+		name     string
+		svcNil   bool
+		svcErr   error
+		wantCode int
+	}{
+		{"nil service", true, nil, http.StatusNotImplemented},
+		{"service error", false, errors.New("boom"), http.StatusInternalServerError},
+		{"ok", false, nil, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ps service.ProgressService
+			if !tt.svcNil {
+				ps = &service.MockProgressService{
+					ListInProgressFunc: func(ctx context.Context, userID int64) ([]model.Media, error) {
+						return []model.Media{}, tt.svcErr
+					},
+				}
+			}
+			srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, ps, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/in-progress", nil)
+			req.AddCookie(sessionCookieForStore(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestServer_ProgressStatusAndInProgress_requireSession(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	ps := &service.MockProgressService{}
+	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, ps, nil, nil)
+
+	tests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/api/progress/status", `{"media_id":1,"status":"finished"}`},
+		{http.MethodGet, "/api/in-progress", ``},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != http.StatusUnauthorized {
+				t.Fatalf("expected %d, got %d", http.StatusUnauthorized, rr.Code)
+			}
+		})
+	}
+}
+
 // ------------------------------------------------------------------
 // Admin routes negative paths
 // ------------------------------------------------------------------
@@ -2053,12 +2166,26 @@ func TestServer_NilProgressSvc(t *testing.T) {
 	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	cookie := addSessionCookie(t, store, sm, 1)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/progress", strings.NewReader(`{"media_id":1,"position_seconds":5}`))
-	req.AddCookie(cookie)
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-	if rr.Code != http.StatusNotImplemented {
-		t.Fatalf("expected %d, got %d", http.StatusNotImplemented, rr.Code)
+	tests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/api/progress", `{"media_id":1,"position_seconds":5}`},
+		{http.MethodPost, "/api/progress/status", `{"media_id":1,"status":"finished"}`},
+		{http.MethodGet, "/api/in-progress", ``},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.AddCookie(cookie)
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != http.StatusNotImplemented {
+				t.Fatalf("expected %d, got %d", http.StatusNotImplemented, rr.Code)
+			}
+		})
 	}
 }

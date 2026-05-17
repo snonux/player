@@ -215,6 +215,8 @@ func (s *Server) routesNotes() {
 // routesProgress wires the progress API routes.
 func (s *Server) routesProgress() {
 	s.mux.Handle("POST /api/progress", s.requireSession(s.handleProgress))
+	s.mux.Handle("POST /api/progress/status", s.requireSession(s.handleProgressStatus))
+	s.mux.Handle("GET /api/in-progress", s.requireSession(s.handleInProgress))
 }
 
 // routesShares wires the share-management API routes.

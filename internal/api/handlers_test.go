@@ -1102,6 +1102,100 @@ func TestServer_Progress(t *testing.T) {
 	})
 }
 
+func TestServer_ProgressStatus(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	t.Run("finished", func(t *testing.T) {
+		var called bool
+		ps := &service.MockProgressService{
+			MarkFinishedFunc: func(ctx context.Context, userID, mediaID int64) error {
+				called = true
+				if userID != 1 {
+					t.Fatalf("expected userID 1, got %d", userID)
+				}
+				if mediaID != 5 {
+					t.Fatalf("expected mediaID 5, got %d", mediaID)
+				}
+				return nil
+			},
+		}
+		srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, ps, nil, nil)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/progress/status", strings.NewReader(`{"media_id":5,"status":"finished"}`))
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		if !called {
+			t.Fatal("expected progress service called")
+		}
+	})
+
+	t.Run("not started", func(t *testing.T) {
+		var called bool
+		ps := &service.MockProgressService{
+			MarkNotStartedFunc: func(ctx context.Context, userID, mediaID int64) error {
+				called = true
+				if userID != 1 {
+					t.Fatalf("expected userID 1, got %d", userID)
+				}
+				if mediaID != 7 {
+					t.Fatalf("expected mediaID 7, got %d", mediaID)
+				}
+				return nil
+			},
+		}
+		srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, ps, nil, nil)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/progress/status", strings.NewReader(`{"media_id":7,"status":"not_started"}`))
+		req.AddCookie(addSessionCookie(t, store, sm, 1))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		if !called {
+			t.Fatal("expected progress service called")
+		}
+	})
+}
+
+func TestServer_InProgress(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	ps := &service.MockProgressService{
+		ListInProgressFunc: func(ctx context.Context, userID int64) ([]model.Media, error) {
+			if userID != 1 {
+				t.Fatalf("expected userID 1, got %d", userID)
+			}
+			return []model.Media{{ID: 5, FileName: "a.mp4"}}, nil
+		},
+	}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, ps, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/in-progress", nil)
+	req.AddCookie(addSessionCookie(t, store, sm, 1))
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+	var media []model.Media
+	if err := json.NewDecoder(rr.Body).Decode(&media); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(media) != 1 || media[0].ID != 5 {
+		t.Fatalf("unexpected media response: %+v", media)
+	}
+}
+
 // ------------------------------------------------------------------
 // Share routes
 // ------------------------------------------------------------------
