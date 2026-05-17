@@ -121,6 +121,7 @@ type PlaybackProgress struct {
 	UserID          int64     `json:"user_id"`
 	MediaID         int64     `json:"media_id"`
 	PositionSeconds float64   `json:"position_seconds"`
+	Finished        bool      `json:"finished"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 

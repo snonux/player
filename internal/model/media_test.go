@@ -15,7 +15,7 @@ func TestStructsInstantiate(t *testing.T) {
 	max := 1
 	_ = Share{Token: "t", MediaID: 1, CreatedBy: 1, CreatedAt: now, ExpiresAt: now, MaxUses: &max}
 	_ = Note{ID: 1, MediaID: 1, UserID: 1, Content: "c", CreatedAt: now, UpdatedAt: now}
-	_ = PlaybackProgress{UserID: 1, MediaID: 1, PositionSeconds: 1, UpdatedAt: now}
+	_ = PlaybackProgress{UserID: 1, MediaID: 1, PositionSeconds: 1, Finished: true, UpdatedAt: now}
 	_ = PlaybackAccumulator{SessionID: "s", MediaID: 1, UpdatedAt: now}
 	_ = Favorite{UserID: 1, MediaID: 1, CreatedAt: now}
 	_ = MediaTag{MediaID: 1, TagID: 1}

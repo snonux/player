@@ -464,7 +464,7 @@ func TestSQLite_PlaybackProgressRepo(t *testing.T) {
 				uid, _ := s.CreateUser(ctx, &model.User{Username: "u", PasswordHash: "h", CreatedAt: now})
 				sid, _ := s.CreateSet(ctx, &model.Set{Name: "s", RootPath: "/s", CreatedAt: now})
 				mid, _ := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/s/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
-				if err := s.UpsertProgress(ctx, &model.PlaybackProgress{UserID: uid, MediaID: mid, PositionSeconds: 42, UpdatedAt: now}); err != nil {
+				if err := s.UpsertProgress(ctx, &model.PlaybackProgress{UserID: uid, MediaID: mid, PositionSeconds: 42, Finished: true, UpdatedAt: now}); err != nil {
 					t.Fatalf("upsert: %v", err)
 				}
 				p, err := s.GetProgress(ctx, uid, mid)
@@ -474,9 +474,15 @@ func TestSQLite_PlaybackProgressRepo(t *testing.T) {
 				if p.PositionSeconds != 42 {
 					t.Fatalf("expected 42, got %f", p.PositionSeconds)
 				}
+				if !p.Finished {
+					t.Fatal("expected finished")
+				}
 				pp, _ := s.ListProgressByUser(ctx, uid)
 				if len(pp) != 1 {
 					t.Fatalf("expected 1, got %d", len(pp))
+				}
+				if !pp[0].Finished {
+					t.Fatal("expected listed progress to be finished")
 				}
 			},
 		},

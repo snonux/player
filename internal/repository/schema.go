@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS playback_progress (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
     position_seconds REAL NOT NULL,
+    finished BOOLEAN NOT NULL DEFAULT 0,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, media_id)
 );
