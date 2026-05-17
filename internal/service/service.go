@@ -223,6 +223,12 @@ type AuthResult struct {
 type ProgressService interface {
 	// UpdateProgress stores a playback position and updates play-count accounting.
 	UpdateProgress(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error
+	// MarkFinished stores completed playback progress for a media item.
+	MarkFinished(ctx context.Context, userID, mediaID int64) error
+	// MarkNotStarted clears saved playback progress and playback counters for a media item.
+	MarkNotStarted(ctx context.Context, userID, mediaID int64) error
+	// ListInProgress returns unfinished media with saved playback positions visible to the user.
+	ListInProgress(ctx context.Context, userID int64) ([]model.Media, error)
 }
 
 // MediaStreamer prepares authorized file results for HTTP streaming.

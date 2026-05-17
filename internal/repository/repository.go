@@ -55,9 +55,9 @@ type AccessHelperStore interface {
 
 // ProgressServiceStore is the subset of Store required by service.ProgressService.
 type ProgressServiceStore interface {
+	AccessHelperStore
 	PlaybackProgressRepo
 	PlaybackAccumulatorRepo
-	MediaRepo
 }
 
 // GCStore is the subset of Store required by service.GCWorker.

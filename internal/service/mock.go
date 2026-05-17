@@ -404,6 +404,9 @@ func (m *MockAuthService) GetUserByID(ctx context.Context, id int64) (*model.Use
 // MockProgressService is a fake ProgressService for testing.
 type MockProgressService struct {
 	UpdateProgressFunc func(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error
+	MarkFinishedFunc   func(ctx context.Context, userID, mediaID int64) error
+	MarkNotStartedFunc func(ctx context.Context, userID, mediaID int64) error
+	ListInProgressFunc func(ctx context.Context, userID int64) ([]model.Media, error)
 }
 
 // UpdateProgress calls UpdateProgressFunc or returns nil.
@@ -412,4 +415,28 @@ func (m *MockProgressService) UpdateProgress(ctx context.Context, sessionID stri
 		return m.UpdateProgressFunc(ctx, sessionID, userID, mediaID, position)
 	}
 	return nil
+}
+
+// MarkFinished calls MarkFinishedFunc or returns nil.
+func (m *MockProgressService) MarkFinished(ctx context.Context, userID, mediaID int64) error {
+	if m.MarkFinishedFunc != nil {
+		return m.MarkFinishedFunc(ctx, userID, mediaID)
+	}
+	return nil
+}
+
+// MarkNotStarted calls MarkNotStartedFunc or returns nil.
+func (m *MockProgressService) MarkNotStarted(ctx context.Context, userID, mediaID int64) error {
+	if m.MarkNotStartedFunc != nil {
+		return m.MarkNotStartedFunc(ctx, userID, mediaID)
+	}
+	return nil
+}
+
+// ListInProgress calls ListInProgressFunc or returns nil.
+func (m *MockProgressService) ListInProgress(ctx context.Context, userID int64) ([]model.Media, error) {
+	if m.ListInProgressFunc != nil {
+		return m.ListInProgressFunc(ctx, userID)
+	}
+	return nil, nil
 }

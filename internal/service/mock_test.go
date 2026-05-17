@@ -156,12 +156,21 @@ func TestMockProgressService_Defaults(t *testing.T) {
 	ctx := context.Background()
 	m := &MockProgressService{}
 	m.UpdateProgress(ctx, "sess", 1, 1, 10)
+	m.MarkFinished(ctx, 1, 1)
+	m.MarkNotStarted(ctx, 1, 1)
+	m.ListInProgress(ctx, 1)
 }
 
 func TestMockProgressService_WithFunc(t *testing.T) {
 	ctx := context.Background()
 	m := &MockProgressService{
 		UpdateProgressFunc: func(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error { return nil },
+		MarkFinishedFunc:   func(ctx context.Context, userID, mediaID int64) error { return nil },
+		MarkNotStartedFunc: func(ctx context.Context, userID, mediaID int64) error { return nil },
+		ListInProgressFunc: func(ctx context.Context, userID int64) ([]model.Media, error) { return nil, nil },
 	}
 	m.UpdateProgress(ctx, "sess", 1, 1, 10)
+	m.MarkFinished(ctx, 1, 1)
+	m.MarkNotStarted(ctx, 1, 1)
+	m.ListInProgress(ctx, 1)
 }
