@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
 )
@@ -195,6 +197,115 @@ func TestProgressService_UpdateProgress(t *testing.T) {
 				t.Fatalf("expected IncrementPlayCount called with %d", tt.mediaID)
 			}
 		})
+	}
+}
+
+func TestProgressService_BatchUpdateProgress_OrdersByObservedAt(t *testing.T) {
+	ctx := context.Background()
+	observedBase := time.Date(2026, 5, 17, 10, 0, 0, 0, time.UTC)
+	progressByMedia := make(map[int64]*model.PlaybackProgress)
+	accByMedia := make(map[int64]*model.PlaybackAccumulator)
+	var positions []float64
+
+	store := &repository.MockStore{
+		PlaybackProgressRepo: repository.MockPlaybackProgressRepo{
+			GetProgressFunc: func(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error) {
+				return progressByMedia[mediaID], nil
+			},
+			UpsertProgressFunc: func(ctx context.Context, progress *model.PlaybackProgress) error {
+				cp := *progress
+				progressByMedia[progress.MediaID] = &cp
+				positions = append(positions, progress.PositionSeconds)
+				return nil
+			},
+		},
+		PlaybackAccumulatorRepo: repository.MockPlaybackAccumulatorRepo{
+			GetAccumulatorFunc: func(ctx context.Context, sessionID string, mediaID int64) (*model.PlaybackAccumulator, error) {
+				return accByMedia[mediaID], nil
+			},
+			UpsertAccumulatorFunc: func(ctx context.Context, acc *model.PlaybackAccumulator) error {
+				cp := *acc
+				accByMedia[acc.MediaID] = &cp
+				return nil
+			},
+		},
+	}
+
+	svc := NewProgressService(store, &clock.MockClock{T: observedBase})
+	err := svc.BatchUpdateProgress(ctx, "sess", 1, []ProgressUpdate{
+		{MediaID: 10, PositionSeconds: 30, ObservedAt: observedBase.Add(2 * time.Minute)},
+		{MediaID: 10, PositionSeconds: 10, ObservedAt: observedBase},
+		{MediaID: 11, PositionSeconds: 20, ObservedAt: observedBase.Add(time.Minute)},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wantPositions := []float64{10, 20, 30}
+	if len(positions) != len(wantPositions) {
+		t.Fatalf("expected %d progress writes, got %d", len(wantPositions), len(positions))
+	}
+	for i, want := range wantPositions {
+		if positions[i] != want {
+			t.Fatalf("position call %d: expected %v, got %v", i, want, positions[i])
+		}
+	}
+	if got := progressByMedia[10].PositionSeconds; got != 30 {
+		t.Fatalf("expected latest media 10 position to win, got %v", got)
+	}
+}
+
+func TestProgressService_BatchUpdateProgress_TransactionRollback(t *testing.T) {
+	ctx := context.Background()
+	store, err := repository.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Date(2026, 5, 17, 10, 0, 0, 0, time.UTC)
+	userID, err := store.CreateUser(ctx, &model.User{Username: "alice", PasswordHash: "hash", CreatedAt: now})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	setID, err := store.CreateSet(ctx, &model.Set{Name: "set", RootPath: "/media/set", CreatedAt: now})
+	if err != nil {
+		t.Fatalf("create set: %v", err)
+	}
+	mediaID, err := store.CreateMedia(ctx, &model.Media{
+		SetID:     setID,
+		RelPath:   "one.mp4",
+		FileName:  "one.mp4",
+		AbsPath:   "/media/set/one.mp4",
+		Type:      model.MediaTypeVideo,
+		CreatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create media: %v", err)
+	}
+	if err := store.CreateSession(ctx, &model.Session{
+		ID:        "sess",
+		UserID:    userID,
+		ExpiresAt: now.Add(time.Hour),
+		CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	svc := NewProgressService(store, &clock.MockClock{T: now})
+	err = svc.BatchUpdateProgress(ctx, "sess", userID, []ProgressUpdate{
+		{MediaID: mediaID, PositionSeconds: 10, ObservedAt: now},
+		{MediaID: 9999, PositionSeconds: 20, ObservedAt: now.Add(time.Second)},
+	})
+	if err == nil {
+		t.Fatal("expected batch update error")
+	}
+	progress, err := store.GetProgress(ctx, userID, mediaID)
+	if err != nil {
+		t.Fatalf("get progress: %v", err)
+	}
+	if progress != nil {
+		t.Fatalf("expected transaction rollback to remove first progress update, got %+v", progress)
 	}
 }
 

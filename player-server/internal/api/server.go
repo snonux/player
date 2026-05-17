@@ -236,6 +236,7 @@ func (s *Server) routesNotes() {
 // routesProgress wires the progress API routes.
 func (s *Server) routesProgress() {
 	s.handleBoth(http.MethodPost, "/api/progress", s.requireSession(s.handleProgress))
+	s.handleBoth(http.MethodPost, "/api/progress/batch", s.requireSession(s.handleBatchProgress))
 	s.handleBoth(http.MethodPost, "/api/progress/status", s.requireSession(s.handleProgressStatus))
 	s.handleBoth(http.MethodGet, "/api/in-progress", s.requireSession(s.handleInProgress))
 }

@@ -296,6 +296,20 @@ type PlaybackAccumulatorRepo interface {
 	DeleteAccumulatorByMedia(ctx context.Context, mediaID int64) error
 }
 
+// ProgressUpdateStore is the narrow store needed for applying playback updates.
+type ProgressUpdateStore interface {
+	UpsertProgress(ctx context.Context, progress *model.PlaybackProgress) error
+	GetProgress(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error)
+	GetAccumulator(ctx context.Context, sessionID string, mediaID int64) (*model.PlaybackAccumulator, error)
+	UpsertAccumulator(ctx context.Context, acc *model.PlaybackAccumulator) error
+	IncrementPlayCount(ctx context.Context, id int64) error
+}
+
+// ProgressTransactionStore applies progress updates inside one database transaction.
+type ProgressTransactionStore interface {
+	WithProgressTransaction(ctx context.Context, fn func(ProgressUpdateStore) error) error
+}
+
 // SessionRepo manages browser sessions.
 type SessionRepo interface {
 	// CreateSession stores a browser session.

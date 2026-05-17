@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"time"
 
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
@@ -34,18 +36,77 @@ func (s *progressService) UpdateProgress(ctx context.Context, sessionID string, 
 		return errors.New("media_id required")
 	}
 
-	now := s.clock.Now()
+	return s.applyProgress(ctx, s.store, sessionID, userID, mediaID, position, s.clock.Now())
+}
 
-	if err := s.store.UpsertProgress(ctx, &model.PlaybackProgress{
+func (s *progressService) BatchUpdateProgress(ctx context.Context, sessionID string, userID int64, updates []ProgressUpdate) error {
+	if sessionID == "" {
+		return errors.New("session_id required")
+	}
+
+	normalized := make([]ProgressUpdate, len(updates))
+	now := s.clock.Now()
+	for i, update := range updates {
+		if update.MediaID == 0 {
+			return fmt.Errorf("updates[%d].media_id required", i)
+		}
+		if update.ObservedAt.IsZero() {
+			update.ObservedAt = now
+		}
+		normalized[i] = update
+	}
+	sort.SliceStable(normalized, func(i, j int) bool {
+		return normalized[i].ObservedAt.Before(normalized[j].ObservedAt)
+	})
+
+	apply := func(store repository.ProgressUpdateStore) error {
+		for _, update := range normalized {
+			if err := s.applyProgress(
+				ctx,
+				store,
+				sessionID,
+				userID,
+				update.MediaID,
+				update.PositionSeconds,
+				update.ObservedAt,
+			); err != nil {
+				return fmt.Errorf("apply progress media_id %d: %w", update.MediaID, err)
+			}
+		}
+		return nil
+	}
+	if txStore, ok := s.store.(repository.ProgressTransactionStore); ok {
+		return txStore.WithProgressTransaction(ctx, apply)
+	}
+	return apply(s.store)
+}
+
+func (s *progressService) applyProgress(
+	ctx context.Context,
+	store repository.ProgressUpdateStore,
+	sessionID string,
+	userID, mediaID int64,
+	position float64,
+	observedAt time.Time,
+) error {
+	existing, err := store.GetProgress(ctx, userID, mediaID)
+	if err != nil {
+		return fmt.Errorf("get progress: %w", err)
+	}
+	if existing != nil && existing.UpdatedAt.After(observedAt) {
+		return nil
+	}
+
+	if err := store.UpsertProgress(ctx, &model.PlaybackProgress{
 		UserID:          userID,
 		MediaID:         mediaID,
 		PositionSeconds: position,
-		UpdatedAt:       now,
+		UpdatedAt:       observedAt,
 	}); err != nil {
 		return fmt.Errorf("upsert progress: %w", err)
 	}
 
-	acc, err := s.store.GetAccumulator(ctx, sessionID, mediaID)
+	acc, err := store.GetAccumulator(ctx, sessionID, mediaID)
 	if err != nil {
 		return fmt.Errorf("get accumulator: %w", err)
 	}
@@ -56,7 +117,7 @@ func (s *progressService) UpdateProgress(ctx context.Context, sessionID string, 
 			LastPosition:       0,
 			AccumulatedSeconds: 0,
 			Counted:            false,
-			UpdatedAt:          now,
+			UpdatedAt:          observedAt,
 		}
 	}
 
@@ -69,16 +130,16 @@ func (s *progressService) UpdateProgress(ctx context.Context, sessionID string, 
 	}
 	acc.AccumulatedSeconds += delta
 	acc.LastPosition = position
-	acc.UpdatedAt = now
+	acc.UpdatedAt = observedAt
 
 	if acc.AccumulatedSeconds >= 60 && !acc.Counted {
-		if err := s.store.IncrementPlayCount(ctx, mediaID); err != nil {
+		if err := store.IncrementPlayCount(ctx, mediaID); err != nil {
 			return fmt.Errorf("increment play count: %w", err)
 		}
 		acc.Counted = true
 	}
 
-	if err := s.store.UpsertAccumulator(ctx, acc); err != nil {
+	if err := store.UpsertAccumulator(ctx, acc); err != nil {
 		return fmt.Errorf("upsert accumulator: %w", err)
 	}
 

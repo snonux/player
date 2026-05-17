@@ -61,9 +61,18 @@ func (s *SQLite) Ping(ctx context.Context) error {
 var _ Store = (*SQLite)(nil)
 var _ APITokenRepo = (*SQLite)(nil)
 var _ PodcastRepo = (*SQLite)(nil)
+var _ ProgressTransactionStore = (*SQLite)(nil)
 
 type sqlScanner interface {
 	Scan(dest ...any) error
+}
+
+type sqlExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+type sqlQueryRower interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 func boolToInt(b bool) int {

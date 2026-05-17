@@ -18,6 +18,7 @@ var (
 	_ MediaNoteService     = (*MockMediaService)(nil)
 	_ MediaService         = (*MockMediaService)(nil)
 	_ AuthService          = (*MockAuthService)(nil)
+	_ ProgressService      = (*MockProgressService)(nil)
 )
 
 // MockMediaService is a fake MediaService for testing.
@@ -439,16 +440,25 @@ func (m *MockAuthService) GetUserByID(ctx context.Context, id int64) (*model.Use
 
 // MockProgressService is a fake ProgressService for testing.
 type MockProgressService struct {
-	UpdateProgressFunc func(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error
-	MarkFinishedFunc   func(ctx context.Context, userID, mediaID int64) error
-	MarkNotStartedFunc func(ctx context.Context, userID, mediaID int64) error
-	ListInProgressFunc func(ctx context.Context, userID int64) ([]model.Media, error)
+	UpdateProgressFunc      func(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error
+	BatchUpdateProgressFunc func(ctx context.Context, sessionID string, userID int64, updates []ProgressUpdate) error
+	MarkFinishedFunc        func(ctx context.Context, userID, mediaID int64) error
+	MarkNotStartedFunc      func(ctx context.Context, userID, mediaID int64) error
+	ListInProgressFunc      func(ctx context.Context, userID int64) ([]model.Media, error)
 }
 
 // UpdateProgress calls UpdateProgressFunc or returns nil.
 func (m *MockProgressService) UpdateProgress(ctx context.Context, sessionID string, userID, mediaID int64, position float64) error {
 	if m.UpdateProgressFunc != nil {
 		return m.UpdateProgressFunc(ctx, sessionID, userID, mediaID, position)
+	}
+	return nil
+}
+
+// BatchUpdateProgress calls BatchUpdateProgressFunc or returns nil.
+func (m *MockProgressService) BatchUpdateProgress(ctx context.Context, sessionID string, userID int64, updates []ProgressUpdate) error {
+	if m.BatchUpdateProgressFunc != nil {
+		return m.BatchUpdateProgressFunc(ctx, sessionID, userID, updates)
 	}
 	return nil
 }

@@ -1399,6 +1399,49 @@ func TestServer_Progress(t *testing.T) {
 	})
 }
 
+func TestServer_BatchProgress(t *testing.T) {
+	var gotSessionID string
+	var gotUserID int64
+	var gotUpdates []service.ProgressUpdate
+	ps := &service.MockProgressService{
+		BatchUpdateProgressFunc: func(ctx context.Context, sessionID string, userID int64, updates []service.ProgressUpdate) error {
+			gotSessionID = sessionID
+			gotUserID = userID
+			gotUpdates = updates
+			return nil
+		},
+	}
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, ps, nil, nil)
+
+	body := `{"updates":[{"media_id":5,"position_seconds":12.3,"observed_at":"2026-05-17T10:00:00Z"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/progress/batch", strings.NewReader(body))
+	req.AddCookie(addSessionCookie(t, store, sm, 1))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+	if gotSessionID == "" {
+		t.Fatal("expected session id passed to progress service")
+	}
+	if gotUserID != 1 {
+		t.Fatalf("expected user id 1, got %d", gotUserID)
+	}
+	if len(gotUpdates) != 1 {
+		t.Fatalf("expected 1 update, got %d", len(gotUpdates))
+	}
+	if gotUpdates[0].MediaID != 5 || gotUpdates[0].PositionSeconds != 12.3 {
+		t.Fatalf("unexpected update: %+v", gotUpdates[0])
+	}
+	if gotUpdates[0].ObservedAt.IsZero() {
+		t.Fatal("expected observed_at decoded")
+	}
+}
+
 func TestServer_ProgressStatus(t *testing.T) {
 	store := buildSessionStore(1)
 	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)

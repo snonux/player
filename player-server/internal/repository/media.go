@@ -300,7 +300,11 @@ func (s *SQLite) ListDeletedMedia(ctx context.Context) ([]model.Media, error) {
 
 // IncrementPlayCount increments the play_count of a media by 1.
 func (s *SQLite) IncrementPlayCount(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE media SET play_count = play_count + 1 WHERE id = ?`, id)
+	return incrementPlayCount(ctx, s.db, id)
+}
+
+func incrementPlayCount(ctx context.Context, db sqlExecer, id int64) error {
+	_, err := db.ExecContext(ctx, `UPDATE media SET play_count = play_count + 1 WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("increment play count: %w", err)
 	}

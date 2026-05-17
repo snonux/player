@@ -2177,6 +2177,7 @@ func TestServer_NilProgressSvc(t *testing.T) {
 		body   string
 	}{
 		{http.MethodPost, "/api/progress", `{"media_id":1,"position_seconds":5}`},
+		{http.MethodPost, "/api/progress/batch", `{"updates":[{"media_id":1,"position_seconds":5}]}`},
 		{http.MethodPost, "/api/progress/status", `{"media_id":1,"status":"finished"}`},
 		{http.MethodGet, "/api/in-progress", ``},
 	}

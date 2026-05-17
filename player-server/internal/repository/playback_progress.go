@@ -11,7 +11,11 @@ import (
 
 // UpsertProgress inserts or replaces playback progress.
 func (s *SQLite) UpsertProgress(ctx context.Context, progress *model.PlaybackProgress) error {
-	_, err := s.db.ExecContext(ctx,
+	return upsertProgress(ctx, s.db, progress)
+}
+
+func upsertProgress(ctx context.Context, db sqlExecer, progress *model.PlaybackProgress) error {
+	_, err := db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO playback_progress (user_id, media_id, position_seconds, finished, updated_at) VALUES (?, ?, ?, ?, ?)`,
 		progress.UserID, progress.MediaID, progress.PositionSeconds, progress.Finished, progress.UpdatedAt,
 	)
@@ -23,7 +27,11 @@ func (s *SQLite) UpsertProgress(ctx context.Context, progress *model.PlaybackPro
 
 // GetProgress retrieves playback progress for a user and media.
 func (s *SQLite) GetProgress(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error) {
-	row := s.db.QueryRowContext(ctx,
+	return getProgress(ctx, s.db, userID, mediaID)
+}
+
+func getProgress(ctx context.Context, db sqlQueryRower, userID, mediaID int64) (*model.PlaybackProgress, error) {
+	row := db.QueryRowContext(ctx,
 		`SELECT user_id, media_id, position_seconds, finished, updated_at FROM playback_progress WHERE user_id = ? AND media_id = ?`,
 		userID, mediaID,
 	)
