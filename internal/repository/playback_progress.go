@@ -76,10 +76,22 @@ func (s *SQLite) ListProgressByUser(ctx context.Context, userID int64) ([]model.
 	return pp, rows.Err()
 }
 
-// ListInProgressMedia returns unfinished, non-deleted media with saved progress for a user.
+// ListInProgressMedia returns unfinished, non-deleted media with at least 60s accumulated playback.
 func (s *SQLite) ListInProgressMedia(ctx context.Context, userID int64, filter MediaFilter) ([]model.Media, error) {
 	args := []any{userID}
-	conds := []string{`pp.user_id = ?`, `pp.finished = 0`, `media.deleted_at IS NULL`}
+	conds := []string{
+		`pp.user_id = ?`,
+		`pp.finished = 0`,
+		`media.deleted_at IS NULL`,
+		`EXISTS (
+			SELECT 1
+			FROM playback_accumulator pa
+			INNER JOIN sessions s ON s.id = pa.session_id
+			WHERE pa.media_id = media.id
+				AND s.user_id = pp.user_id
+				AND pa.accumulated_seconds >= 60
+		)`,
+	}
 	query := `SELECT media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at FROM playback_progress pp INNER JOIN media ON media.id = pp.media_id`
 
 	if len(filter.AllowedSetIDs) > 0 {

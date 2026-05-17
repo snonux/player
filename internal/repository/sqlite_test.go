@@ -507,19 +507,28 @@ func TestSQLite_PlaybackProgressRepo(t *testing.T) {
 			},
 		},
 		{
-			name: "list in-progress media respects allowed sets and excludes finished and deleted",
+			name: "list in-progress media respects threshold allowed sets and excludes finished and deleted",
 			run: func(t *testing.T, ctx context.Context, s *SQLite) {
 				now := time.Now().Truncate(time.Second)
 				uid, _ := s.CreateUser(ctx, &model.User{Username: "u", PasswordHash: "h", CreatedAt: now})
+				otherUserID, _ := s.CreateUser(ctx, &model.User{Username: "other", PasswordHash: "h", CreatedAt: now})
 				setAllowed, _ := s.CreateSet(ctx, &model.Set{Name: "allowed", RootPath: "/allowed", CreatedAt: now})
 				setOther, _ := s.CreateSet(ctx, &model.Set{Name: "other", RootPath: "/other", CreatedAt: now})
 				keepID, _ := s.CreateMedia(ctx, &model.Media{SetID: setAllowed, RelPath: "keep.mp4", FileName: "keep.mp4", AbsPath: "/allowed/keep.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				belowThresholdID, _ := s.CreateMedia(ctx, &model.Media{SetID: setAllowed, RelPath: "below.mp4", FileName: "below.mp4", AbsPath: "/allowed/below.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
 				finishedID, _ := s.CreateMedia(ctx, &model.Media{SetID: setAllowed, RelPath: "finished.mp4", FileName: "finished.mp4", AbsPath: "/allowed/finished.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
 				deletedID, _ := s.CreateMedia(ctx, &model.Media{SetID: setAllowed, RelPath: "deleted.mp4", FileName: "deleted.mp4", AbsPath: "/allowed/deleted.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
 				otherID, _ := s.CreateMedia(ctx, &model.Media{SetID: setOther, RelPath: "other.mp4", FileName: "other.mp4", AbsPath: "/other/other.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+				if err := s.CreateSession(ctx, &model.Session{ID: "sess", UserID: uid, ExpiresAt: now.Add(time.Hour), CreatedAt: now}); err != nil {
+					t.Fatalf("create session: %v", err)
+				}
+				if err := s.CreateSession(ctx, &model.Session{ID: "other-sess", UserID: otherUserID, ExpiresAt: now.Add(time.Hour), CreatedAt: now}); err != nil {
+					t.Fatalf("create other session: %v", err)
+				}
 
 				progress := []model.PlaybackProgress{
 					{UserID: uid, MediaID: keepID, PositionSeconds: 10, UpdatedAt: now.Add(3 * time.Second)},
+					{UserID: uid, MediaID: belowThresholdID, PositionSeconds: 10, UpdatedAt: now.Add(4 * time.Second)},
 					{UserID: uid, MediaID: finishedID, PositionSeconds: 20, Finished: true, UpdatedAt: now.Add(2 * time.Second)},
 					{UserID: uid, MediaID: deletedID, PositionSeconds: 30, UpdatedAt: now.Add(time.Second)},
 					{UserID: uid, MediaID: otherID, PositionSeconds: 40, UpdatedAt: now},
@@ -527,6 +536,19 @@ func TestSQLite_PlaybackProgressRepo(t *testing.T) {
 				for i := range progress {
 					if err := s.UpsertProgress(ctx, &progress[i]); err != nil {
 						t.Fatalf("upsert progress %d: %v", i, err)
+					}
+				}
+				accs := []model.PlaybackAccumulator{
+					{SessionID: "sess", MediaID: keepID, LastPosition: 61, AccumulatedSeconds: 61, UpdatedAt: now},
+					{SessionID: "sess", MediaID: belowThresholdID, LastPosition: 59, AccumulatedSeconds: 59, UpdatedAt: now},
+					{SessionID: "other-sess", MediaID: belowThresholdID, LastPosition: 120, AccumulatedSeconds: 120, UpdatedAt: now},
+					{SessionID: "sess", MediaID: finishedID, LastPosition: 61, AccumulatedSeconds: 61, UpdatedAt: now},
+					{SessionID: "sess", MediaID: deletedID, LastPosition: 61, AccumulatedSeconds: 61, UpdatedAt: now},
+					{SessionID: "sess", MediaID: otherID, LastPosition: 61, AccumulatedSeconds: 61, UpdatedAt: now},
+				}
+				for i := range accs {
+					if err := s.UpsertAccumulator(ctx, &accs[i]); err != nil {
+						t.Fatalf("upsert accumulator %d: %v", i, err)
 					}
 				}
 				if err := s.SoftDeleteMedia(ctx, deletedID); err != nil {

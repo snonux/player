@@ -266,7 +266,7 @@ type PlaybackProgressRepo interface {
 	MarkFinished(ctx context.Context, userID, mediaID int64) error
 	// ListProgressByUser returns all saved playback positions for a user.
 	ListProgressByUser(ctx context.Context, userID int64) ([]model.PlaybackProgress, error)
-	// ListInProgressMedia returns unfinished media with saved playback positions.
+	// ListInProgressMedia returns unfinished media with at least 60s accumulated playback.
 	ListInProgressMedia(ctx context.Context, userID int64, filter MediaFilter) ([]model.Media, error)
 }
 
