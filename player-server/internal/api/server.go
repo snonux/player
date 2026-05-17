@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"codeberg.org/snonux/player/internal"
@@ -130,10 +131,25 @@ func publicMethod(method string, handler http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func (s *Server) handleBoth(method, path string, h http.Handler) {
+	s.mux.Handle(method+" "+path, h)
+	s.mux.Handle(method+" "+apiV1Path(path), h)
+}
+
+func apiV1Path(path string) string {
+	const apiPrefix = "/api/"
+	if !strings.HasPrefix(path, apiPrefix) {
+		panic("apiV1Path: path must start with /api/")
+	}
+	return "/api/v1/" + strings.TrimPrefix(path, apiPrefix)
+}
+
 // routesPublic wires the fully-public API endpoints (bootstrap, login, probes).
 func (s *Server) routesPublic() {
 	s.mux.HandleFunc("/api/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
+	s.mux.HandleFunc("/api/v1/auth/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
 	s.mux.HandleFunc("/api/login", publicMethod(http.MethodPost, s.handleLogin))
+	s.mux.HandleFunc("/api/v1/auth/login", publicMethod(http.MethodPost, s.handleLogin))
 	s.mux.HandleFunc("/healthz", publicMethod(http.MethodGet, s.handleHealthz))
 	s.mux.HandleFunc("/readyz", publicMethod(http.MethodGet, s.handleReadyz))
 }
@@ -170,72 +186,72 @@ func (s *Server) routesHTML() {
 
 // routesAuth wires the logout route.
 func (s *Server) routesAuth() {
-	s.mux.Handle("POST /api/logout", s.requireSession(s.handleLogout))
+	s.handleBoth(http.MethodPost, "/api/logout", s.requireSession(s.handleLogout))
 }
 
 // routesConfig wires authenticated client configuration.
 func (s *Server) routesConfig() {
-	s.mux.Handle("GET /api/config", s.requireSession(s.handleConfig))
+	s.handleBoth(http.MethodGet, "/api/config", s.requireSession(s.handleConfig))
 }
 
 // routesSets wires the set-related API routes.
 func (s *Server) routesSets() {
-	s.mux.Handle("GET /api/sets", s.requireSession(s.handleListSets))
-	s.mux.Handle("GET /api/sets/{id}/browse", s.requireSession(s.handleBrowseSet))
-	s.mux.Handle("GET /api/sets/{id}/cover", s.requireSession(s.handleGetSetCover))
-	s.mux.Handle("POST /api/sets/{id}/cover", s.requireSession(s.handlePostSetCover))
-	s.mux.Handle("POST /api/sets/{id}/upload", s.requireSession(s.handleUpload))
+	s.handleBoth(http.MethodGet, "/api/sets", s.requireSession(s.handleListSets))
+	s.handleBoth(http.MethodGet, "/api/sets/{id}/browse", s.requireSession(s.handleBrowseSet))
+	s.handleBoth(http.MethodGet, "/api/sets/{id}/cover", s.requireSession(s.handleGetSetCover))
+	s.handleBoth(http.MethodPost, "/api/sets/{id}/cover", s.requireSession(s.handlePostSetCover))
+	s.handleBoth(http.MethodPost, "/api/sets/{id}/upload", s.requireSession(s.handleUpload))
 }
 
 // routesMedia wires the media-related API routes.
 func (s *Server) routesMedia() {
-	s.mux.Handle("GET /api/media", s.requireSession(s.handleListMedia))
-	s.mux.Handle("GET /api/media/{id}", s.requireSession(s.handleGetMedia))
-	s.mux.Handle("GET /api/media/{id}/stream", s.requireSession(s.handleStream))
-	s.mux.Handle("GET /api/media/{id}/download", s.requireSession(s.handleDownload))
-	s.mux.Handle("GET /api/media/{id}/thumbnail", s.requireSession(s.handleThumbnail))
-	s.mux.Handle("POST /api/media/{id}/thumbnail", s.requireSession(s.handleRegenThumbnail))
-	s.mux.Handle("POST /api/media/{id}/favorite", s.requireSession(s.handleFavorite))
-	s.mux.Handle("GET /api/tags", s.requireSession(s.handleListTags))
-	s.mux.Handle("POST /api/media/{id}/tags", s.requireSession(s.handleAddTag))
-	s.mux.Handle("DELETE /api/media/{id}/tags/{tag}", s.requireSession(s.handleRemoveTag))
-	s.mux.Handle("DELETE /api/media/{id}", s.requireSession(s.handleSoftDelete))
-	s.mux.Handle("POST /api/media/{id}/restore", s.requireSession(s.handleRestore))
-	s.mux.Handle("POST /api/media/{id}/shares", s.requireSession(s.handleCreateShare))
-	s.mux.Handle("GET /api/media/{id}/shares", s.requireSession(s.handleListShares))
+	s.handleBoth(http.MethodGet, "/api/media", s.requireSession(s.handleListMedia))
+	s.handleBoth(http.MethodGet, "/api/media/{id}", s.requireSession(s.handleGetMedia))
+	s.handleBoth(http.MethodGet, "/api/media/{id}/stream", s.requireSession(s.handleStream))
+	s.handleBoth(http.MethodGet, "/api/media/{id}/download", s.requireSession(s.handleDownload))
+	s.handleBoth(http.MethodGet, "/api/media/{id}/thumbnail", s.requireSession(s.handleThumbnail))
+	s.handleBoth(http.MethodPost, "/api/media/{id}/thumbnail", s.requireSession(s.handleRegenThumbnail))
+	s.handleBoth(http.MethodPost, "/api/media/{id}/favorite", s.requireSession(s.handleFavorite))
+	s.handleBoth(http.MethodGet, "/api/tags", s.requireSession(s.handleListTags))
+	s.handleBoth(http.MethodPost, "/api/media/{id}/tags", s.requireSession(s.handleAddTag))
+	s.handleBoth(http.MethodDelete, "/api/media/{id}/tags/{tag}", s.requireSession(s.handleRemoveTag))
+	s.handleBoth(http.MethodDelete, "/api/media/{id}", s.requireSession(s.handleSoftDelete))
+	s.handleBoth(http.MethodPost, "/api/media/{id}/restore", s.requireSession(s.handleRestore))
+	s.handleBoth(http.MethodPost, "/api/media/{id}/shares", s.requireSession(s.handleCreateShare))
+	s.handleBoth(http.MethodGet, "/api/media/{id}/shares", s.requireSession(s.handleListShares))
 }
 
 // routesNotes wires the notes API routes.
 func (s *Server) routesNotes() {
-	s.mux.Handle("GET /api/media/{id}/notes", s.requireSession(s.handleGetNote))
-	s.mux.Handle("POST /api/media/{id}/notes", s.requireSession(s.handleUpsertNote))
-	s.mux.Handle("DELETE /api/media/{id}/notes", s.requireSession(s.handleDeleteNote))
+	s.handleBoth(http.MethodGet, "/api/media/{id}/notes", s.requireSession(s.handleGetNote))
+	s.handleBoth(http.MethodPost, "/api/media/{id}/notes", s.requireSession(s.handleUpsertNote))
+	s.handleBoth(http.MethodDelete, "/api/media/{id}/notes", s.requireSession(s.handleDeleteNote))
 }
 
 // routesProgress wires the progress API routes.
 func (s *Server) routesProgress() {
-	s.mux.Handle("POST /api/progress", s.requireSession(s.handleProgress))
-	s.mux.Handle("POST /api/progress/status", s.requireSession(s.handleProgressStatus))
-	s.mux.Handle("GET /api/in-progress", s.requireSession(s.handleInProgress))
+	s.handleBoth(http.MethodPost, "/api/progress", s.requireSession(s.handleProgress))
+	s.handleBoth(http.MethodPost, "/api/progress/status", s.requireSession(s.handleProgressStatus))
+	s.handleBoth(http.MethodGet, "/api/in-progress", s.requireSession(s.handleInProgress))
 }
 
 // routesShares wires the share-management API routes.
 func (s *Server) routesShares() {
-	s.mux.Handle("DELETE /api/shares/{token}", s.requireSession(s.handleRevokeShare))
-	s.mux.Handle("GET /api/shares", s.requireSession(s.handleMyShares))
+	s.handleBoth(http.MethodDelete, "/api/shares/{token}", s.requireSession(s.handleRevokeShare))
+	s.handleBoth(http.MethodGet, "/api/shares", s.requireSession(s.handleMyShares))
 }
 
 // routesAdmin wires the admin-only API routes.
 func (s *Server) routesAdmin() {
-	s.mux.Handle("GET /api/admin/trash", s.requireAdmin(s.handleListTrash))
-	s.mux.Handle("POST /api/admin/rescan", s.requireAdmin(s.handleRescan))
-	s.mux.Handle("GET /api/admin/scan-progress", s.requireAdmin(s.handleScanProgress))
-	s.mux.Handle("GET /api/admin/users", s.requireAdmin(s.handleListUsers))
-	s.mux.Handle("POST /api/admin/users", s.requireAdmin(s.handleCreateUser))
-	s.mux.Handle("DELETE /api/admin/users/{id}", s.requireAdmin(s.handleDeleteUser))
-	s.mux.Handle("GET /api/admin/permissions", s.requireAdmin(s.handleListPermissions))
-	s.mux.Handle("POST /api/admin/permissions", s.requireAdmin(s.handleGrantPermission))
-	s.mux.Handle("DELETE /api/admin/permissions", s.requireAdmin(s.handleRevokePermission))
+	s.handleBoth(http.MethodGet, "/api/admin/trash", s.requireAdmin(s.handleListTrash))
+	s.handleBoth(http.MethodPost, "/api/admin/rescan", s.requireAdmin(s.handleRescan))
+	s.handleBoth(http.MethodGet, "/api/admin/scan-progress", s.requireAdmin(s.handleScanProgress))
+	s.handleBoth(http.MethodGet, "/api/admin/users", s.requireAdmin(s.handleListUsers))
+	s.handleBoth(http.MethodPost, "/api/admin/users", s.requireAdmin(s.handleCreateUser))
+	s.handleBoth(http.MethodDelete, "/api/admin/users/{id}", s.requireAdmin(s.handleDeleteUser))
+	s.handleBoth(http.MethodGet, "/api/admin/permissions", s.requireAdmin(s.handleListPermissions))
+	s.handleBoth(http.MethodPost, "/api/admin/permissions", s.requireAdmin(s.handleGrantPermission))
+	s.handleBoth(http.MethodDelete, "/api/admin/permissions", s.requireAdmin(s.handleRevokePermission))
 }
 
 func (s *Server) routes() {
@@ -256,11 +272,11 @@ func (s *Server) routes() {
 
 // routesPodcast wires the podcast API routes.
 func (s *Server) routesPodcast() {
-	s.mux.Handle("GET /api/podcasts", s.requireSession(s.handleListPodcasts))
-	s.mux.Handle("POST /api/podcasts", s.requireAdmin(s.handleSubscribePodcast))
-	s.mux.Handle("GET /api/podcasts/{id}/episodes", s.requireSession(s.handleListEpisodes))
-	s.mux.Handle("POST /api/podcasts/episodes/{episode_id}/download", s.requireSession(s.handleDownloadEpisode))
-	s.mux.Handle("POST /api/podcasts/episodes/{episode_id}/complete", s.requireSession(s.handleToggleComplete))
+	s.handleBoth(http.MethodGet, "/api/podcasts", s.requireSession(s.handleListPodcasts))
+	s.handleBoth(http.MethodPost, "/api/podcasts", s.requireAdmin(s.handleSubscribePodcast))
+	s.handleBoth(http.MethodGet, "/api/podcasts/{id}/episodes", s.requireSession(s.handleListEpisodes))
+	s.handleBoth(http.MethodPost, "/api/podcasts/episodes/{episode_id}/download", s.requireSession(s.handleDownloadEpisode))
+	s.handleBoth(http.MethodPost, "/api/podcasts/episodes/{episode_id}/complete", s.requireSession(s.handleToggleComplete))
 }
 
 func (s *Server) pingStore(ctx context.Context) error {

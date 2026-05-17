@@ -338,14 +338,19 @@ func TestServer_Login_negativePaths(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 
 	t.Run("invalid json", func(t *testing.T) {
-		authSvc := &service.MockAuthService{}
-		srv := newTestServer(t, nil, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
-		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(`bad`)))
-		req.Header.Set("Content-Type", "application/json")
-		rr := httptest.NewRecorder()
-		srv.ServeHTTP(rr, req)
-		if rr.Code != http.StatusBadRequest {
-			t.Fatalf("expected %d, got %d", http.StatusBadRequest, rr.Code)
+		paths := []string{"/api/login", "/api/v1/auth/login"}
+		for _, path := range paths {
+			t.Run(path, func(t *testing.T) {
+				authSvc := &service.MockAuthService{}
+				srv := newTestServer(t, nil, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
+				req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader([]byte(`bad`)))
+				req.Header.Set("Content-Type", "application/json")
+				rr := httptest.NewRecorder()
+				srv.ServeHTTP(rr, req)
+				if rr.Code != http.StatusBadRequest {
+					t.Fatalf("expected %d, got %d", http.StatusBadRequest, rr.Code)
+				}
+			})
 		}
 	})
 

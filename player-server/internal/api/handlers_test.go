@@ -128,8 +128,10 @@ func TestMiddleware_BootstrapRedirect(t *testing.T) {
 	}{
 		{"public bootstrap html", "/bootstrap.html", 0, nil, http.StatusOK, ""},
 		{"public api bootstrap", "/api/bootstrap", 0, nil, http.StatusOK, ""},
+		{"public api v1 auth bootstrap", "/api/v1/auth/bootstrap", 0, nil, http.StatusOK, ""},
 		{"public login html", "/login.html", 0, nil, http.StatusOK, ""},
 		{"public api login", "/api/login", 0, nil, http.StatusOK, ""},
+		{"public api v1 auth login", "/api/v1/auth/login", 0, nil, http.StatusOK, ""},
 		{"public healthz", "/healthz", 0, nil, http.StatusOK, ""},
 		{"public readyz", "/readyz", 0, nil, http.StatusOK, ""},
 		{"protected no users", "/", 0, nil, http.StatusTemporaryRedirect, "/bootstrap.html"},
@@ -399,14 +401,19 @@ func TestServer_Bootstrap(t *testing.T) {
 	})
 
 	t.Run("missing fields", func(t *testing.T) {
-		store := &repository.MockStore{UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil }}}
-		authSvc := service.NewAuthService(store, clk, hasher, nil)
-		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
-		req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(`{"username":""}`)))
-		rr := httptest.NewRecorder()
-		srv.ServeHTTP(rr, req)
-		if rr.Code != http.StatusBadRequest {
-			t.Fatalf("expected %d, got %d", http.StatusBadRequest, rr.Code)
+		paths := []string{"/api/bootstrap", "/api/v1/auth/bootstrap"}
+		for _, path := range paths {
+			t.Run(path, func(t *testing.T) {
+				store := &repository.MockStore{UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil }}}
+				authSvc := service.NewAuthService(store, clk, hasher, nil)
+				srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
+				req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader([]byte(`{"username":""}`)))
+				rr := httptest.NewRecorder()
+				srv.ServeHTTP(rr, req)
+				if rr.Code != http.StatusBadRequest {
+					t.Fatalf("expected %d, got %d", http.StatusBadRequest, rr.Code)
+				}
+			})
 		}
 	})
 
@@ -1375,19 +1382,31 @@ func TestServer_ListSets(t *testing.T) {
 	cfg := &internal.Config{SessionTimeoutHours: 24}
 	srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, ms, ms, ms, ms, ms, ms, nil, nil, nil, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/sets", nil)
-	req.AddCookie(addSessionCookie(t, store, sm, 1))
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
-	}
-	var sets []model.Set
-	if err := json.Unmarshal(rr.Body.Bytes(), &sets); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-	if len(sets) != 1 || sets[0].Name != "music" {
-		t.Fatalf("unexpected sets response")
+	var legacyBody []byte
+	for _, path := range []string{"/api/sets", "/api/v1/sets"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.AddCookie(addSessionCookie(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+			}
+			var sets []model.Set
+			if err := json.Unmarshal(rr.Body.Bytes(), &sets); err != nil {
+				t.Fatalf("unmarshal response: %v", err)
+			}
+			if len(sets) != 1 || sets[0].Name != "music" {
+				t.Fatalf("unexpected sets response")
+			}
+			if path == "/api/sets" {
+				legacyBody = append([]byte(nil), rr.Body.Bytes()...)
+				return
+			}
+			if !bytes.Equal(legacyBody, rr.Body.Bytes()) {
+				t.Fatalf("versioned response differs from legacy response")
+			}
+		})
 	}
 }
 

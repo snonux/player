@@ -105,7 +105,9 @@ func (mw *Middleware) BootstrapRedirect(next http.Handler) http.Handler {
 
 func isBootstrapPublic(path string) bool {
 	switch path {
-	case "/bootstrap.html", "/api/bootstrap", "/login.html", "/api/login", "/healthz", "/readyz",
+	case "/bootstrap.html", "/api/bootstrap", "/api/v1/auth/bootstrap",
+		"/login.html", "/api/login", "/api/v1/auth/login",
+		"/healthz", "/readyz",
 		"/favicon.svg", "/favicon.ico", "/logo.svg", "/logo.png", "/manifest.json", "/sw.js":
 		return true
 	}
