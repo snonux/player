@@ -13,3 +13,9 @@ type SessionManager interface {
 	DeleteSession(ctx context.Context, id string) error
 	Cleanup(ctx context.Context) error
 }
+
+// TokenManager is the abstraction for API token generation and hashing.
+type TokenManager interface {
+	Generate() (plaintext, hash string)
+	Hash(plaintext string) string
+}
