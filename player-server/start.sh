@@ -3,7 +3,7 @@
 # Usage: ./start.sh [restart|stop|status]
 set -e
 
-MEDIA_ROOT="${MEDIA_ROOT:-/data/nfs/earthdata/playtest}"
+MEDIA_ROOT="${MEDIA_ROOT:-./testmedia}"
 DB_PATH="${DB_PATH:-/tmp/playtest.db}"
 PORT="${PORT:-18080}"
 PIDFILE="/tmp/player.pid"
