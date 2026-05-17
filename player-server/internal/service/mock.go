@@ -363,10 +363,14 @@ func (m *MockAdminService) RevokePermission(ctx context.Context, setID, userID i
 
 // MockAuthService is a fake AuthService for testing.
 type MockAuthService struct {
-	BootstrapFunc   func(ctx context.Context, username, password string) (*AuthResult, error)
-	LoginFunc       func(ctx context.Context, username, password string) (*AuthResult, error)
-	CountUsersFunc  func(ctx context.Context) (int, error)
-	GetUserByIDFunc func(ctx context.Context, id int64) (*model.User, error)
+	BootstrapFunc          func(ctx context.Context, username, password string) (*AuthResult, error)
+	LoginFunc              func(ctx context.Context, username, password string) (*AuthResult, error)
+	CreateAPITokenFunc     func(ctx context.Context, userID int64, name string, expiresAt *time.Time) (*CreateAPITokenResult, error)
+	ListAPITokensFunc      func(ctx context.Context, userID int64) ([]model.APIToken, error)
+	RevokeAPITokenFunc     func(ctx context.Context, userID, tokenID int64) error
+	AuthenticateBearerFunc func(ctx context.Context, plaintext string) (*model.Session, error)
+	CountUsersFunc         func(ctx context.Context) (int, error)
+	GetUserByIDFunc        func(ctx context.Context, id int64) (*model.User, error)
 }
 
 // Bootstrap calls BootstrapFunc or returns nil.
@@ -381,6 +385,38 @@ func (m *MockAuthService) Bootstrap(ctx context.Context, username, password stri
 func (m *MockAuthService) Login(ctx context.Context, username, password string) (*AuthResult, error) {
 	if m.LoginFunc != nil {
 		return m.LoginFunc(ctx, username, password)
+	}
+	return nil, nil
+}
+
+// CreateAPIToken calls CreateAPITokenFunc or returns nil.
+func (m *MockAuthService) CreateAPIToken(ctx context.Context, userID int64, name string, expiresAt *time.Time) (*CreateAPITokenResult, error) {
+	if m.CreateAPITokenFunc != nil {
+		return m.CreateAPITokenFunc(ctx, userID, name, expiresAt)
+	}
+	return nil, nil
+}
+
+// ListAPITokens calls ListAPITokensFunc or returns nil.
+func (m *MockAuthService) ListAPITokens(ctx context.Context, userID int64) ([]model.APIToken, error) {
+	if m.ListAPITokensFunc != nil {
+		return m.ListAPITokensFunc(ctx, userID)
+	}
+	return nil, nil
+}
+
+// RevokeAPIToken calls RevokeAPITokenFunc or returns nil.
+func (m *MockAuthService) RevokeAPIToken(ctx context.Context, userID, tokenID int64) error {
+	if m.RevokeAPITokenFunc != nil {
+		return m.RevokeAPITokenFunc(ctx, userID, tokenID)
+	}
+	return nil
+}
+
+// AuthenticateBearer calls AuthenticateBearerFunc or returns nil.
+func (m *MockAuthService) AuthenticateBearer(ctx context.Context, plaintext string) (*model.Session, error) {
+	if m.AuthenticateBearerFunc != nil {
+		return m.AuthenticateBearerFunc(ctx, plaintext)
 	}
 	return nil, nil
 }

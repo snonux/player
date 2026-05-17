@@ -92,6 +92,7 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 	clk := clock.RealClock{}
 	hasher := auth.NewBCryptHasher(12)
 	sm := auth.NewSessionManager(store, clk, time.Duration(cfg.SessionTimeoutHours)*time.Hour)
+	tm := auth.NewTokenManager()
 
 	prober := probe.NewFFProber()
 	thumbGen := thumb.NewFFmpegGenerator()
@@ -104,7 +105,7 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
 
 	progressSvc := service.NewProgressService(store, clk)
-	authSvc := service.NewAuthService(store, clk, hasher, sm)
+	authSvc := service.NewAuthService(store, clk, hasher, sm, tm)
 
 	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger)
 

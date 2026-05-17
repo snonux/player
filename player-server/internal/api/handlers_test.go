@@ -224,6 +224,109 @@ func TestMiddleware_RequireSession(t *testing.T) {
 	}
 }
 
+func TestMiddleware_RequireSession_BearerOrCookie(t *testing.T) {
+	now := time.Now()
+	cookieSession := &model.Session{ID: "cookie-session", UserID: 1, ExpiresAt: now.Add(time.Hour)}
+	bearerSession := &model.Session{ID: "api-token:9", UserID: 2, ExpiresAt: now.Add(time.Hour)}
+
+	tests := []struct {
+		name        string
+		authHeader  string
+		cookie      *http.Cookie
+		authSvc     service.AuthService
+		sm          auth.SessionManager
+		wantCode    int
+		wantSession string
+	}{
+		{
+			name:        "valid Bearer",
+			authHeader:  "Bearer good-token",
+			authSvc:     bearerAuthService(t, "good-token", bearerSession, nil),
+			wantCode:    http.StatusOK,
+			wantSession: "api-token:9",
+		},
+		{
+			name:       "revoked Bearer",
+			authHeader: "Bearer revoked-token",
+			authSvc:    bearerAuthService(t, "revoked-token", nil, service.ErrInvalidCredentials),
+			wantCode:   http.StatusUnauthorized,
+		},
+		{
+			name:       "expired Bearer",
+			authHeader: "Bearer expired-token",
+			authSvc:    bearerAuthService(t, "expired-token", nil, service.ErrInvalidCredentials),
+			wantCode:   http.StatusUnauthorized,
+		},
+		{
+			name:        "valid cookie",
+			cookie:      &http.Cookie{Name: "session", Value: "cookie-session"},
+			sm:          sessionManagerForMiddleware(t, now, cookieSession, nil),
+			wantCode:    http.StatusOK,
+			wantSession: "cookie-session",
+		},
+		{
+			name:     "neither",
+			sm:       sessionManagerForMiddleware(t, now, nil, nil),
+			wantCode: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mw := NewMiddleware(tt.authSvc, tt.sm)
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sess, ok := r.Context().Value(sessionCtxKey).(*model.Session)
+				if !ok || sess == nil {
+					t.Fatal("expected session in context")
+				}
+				if sess.ID != tt.wantSession {
+					t.Fatalf("expected session %q, got %q", tt.wantSession, sess.ID)
+				}
+				w.WriteHeader(http.StatusOK)
+			})
+			handler := mw.RequireSession(inner)
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+			if tt.cookie != nil {
+				req.AddCookie(tt.cookie)
+			}
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func bearerAuthService(t *testing.T, wantToken string, sess *model.Session, err error) service.AuthService {
+	t.Helper()
+	return &service.MockAuthService{
+		AuthenticateBearerFunc: func(ctx context.Context, plaintext string) (*model.Session, error) {
+			if plaintext != wantToken {
+				t.Fatalf("expected bearer token %q, got %q", wantToken, plaintext)
+			}
+			return sess, err
+		},
+	}
+}
+
+func sessionManagerForMiddleware(t *testing.T, now time.Time, sess *model.Session, err error) auth.SessionManager {
+	t.Helper()
+	repo := repository.MockSessionRepo{
+		GetSessionByIDFunc: func(ctx context.Context, id string) (*model.Session, error) {
+			return sess, err
+		},
+		DeleteSessionFunc: func(ctx context.Context, id string) error {
+			return nil
+		},
+	}
+	return auth.NewSessionManager(&repo, &clock.MockClock{T: now}, time.Hour)
+}
+
 func TestMiddleware_RequireAdmin(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -360,7 +463,7 @@ func TestServer_Bootstrap(t *testing.T) {
 			CreateSessionFunc: func(ctx context.Context, session *model.Session) error { return nil },
 		}
 		sm := auth.NewSessionManager(&repo, clk, time.Hour)
-		authSvc := service.NewAuthService(store, clk, hasher, sm)
+		authSvc := service.NewAuthService(store, clk, hasher, sm, nil)
 		srv := newTestServer(t, store, hasher, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 
 		body := `{"username":"admin","password":"secret"}`
@@ -388,7 +491,7 @@ func TestServer_Bootstrap(t *testing.T) {
 				CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
 			},
 		}
-		authSvc := service.NewAuthService(store, clk, hasher, nil)
+		authSvc := service.NewAuthService(store, clk, hasher, nil, nil)
 		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 		body := `{"username":"admin","password":"secret"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(body)))
@@ -405,7 +508,7 @@ func TestServer_Bootstrap(t *testing.T) {
 		for _, path := range paths {
 			t.Run(path, func(t *testing.T) {
 				store := &repository.MockStore{UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil }}}
-				authSvc := service.NewAuthService(store, clk, hasher, nil)
+				authSvc := service.NewAuthService(store, clk, hasher, nil, nil)
 				srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 				req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader([]byte(`{"username":""}`)))
 				rr := httptest.NewRecorder()
@@ -446,7 +549,7 @@ func TestServer_Login(t *testing.T) {
 			CreateSessionFunc: func(ctx context.Context, session *model.Session) error { return nil },
 		}
 		sm := auth.NewSessionManager(&repo, clk, time.Hour)
-		authSvc := service.NewAuthService(store, clk, hasher, sm)
+		authSvc := service.NewAuthService(store, clk, hasher, sm, nil)
 		srv := newTestServer(t, store, hasher, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 		body := `{"username":"alice","password":"correct"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
@@ -475,7 +578,7 @@ func TestServer_Login(t *testing.T) {
 				},
 			},
 		}
-		authSvc := service.NewAuthService(store, clk, hasher, nil)
+		authSvc := service.NewAuthService(store, clk, hasher, nil, nil)
 		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 		body := `{"username":"alice","password":"wrong"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
@@ -496,7 +599,7 @@ func TestServer_Login(t *testing.T) {
 				},
 			},
 		}
-		authSvc := service.NewAuthService(store, clk, hasher, nil)
+		authSvc := service.NewAuthService(store, clk, hasher, nil, nil)
 		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 		body := `{"username":"nobody","password":"pass"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
@@ -523,7 +626,7 @@ func TestServer_SessionCookieSecure(t *testing.T) {
 	}
 	clk := &clock.MockClock{T: time.Now()}
 	sm := auth.NewSessionManager(&repo, clk, time.Hour)
-	authSvc := service.NewAuthService(store, clk, hasher, sm)
+	authSvc := service.NewAuthService(store, clk, hasher, sm, nil)
 
 	t.Run("Secure=true by default", func(t *testing.T) {
 		cfg := &internal.Config{SessionTimeoutHours: 24, SecureCookies: true}

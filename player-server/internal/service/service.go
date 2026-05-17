@@ -207,10 +207,24 @@ type AuthService interface {
 	Bootstrap(ctx context.Context, username, password string) (*AuthResult, error)
 	// Login authenticates a user and creates a session.
 	Login(ctx context.Context, username, password string) (*AuthResult, error)
+	// CreateAPIToken creates a hashed API token and returns the one-time plaintext value.
+	CreateAPIToken(ctx context.Context, userID int64, name string, expiresAt *time.Time) (*CreateAPITokenResult, error)
+	// ListAPITokens returns API tokens owned by a user.
+	ListAPITokens(ctx context.Context, userID int64) ([]model.APIToken, error)
+	// RevokeAPIToken deletes an API token owned by a user.
+	RevokeAPIToken(ctx context.Context, userID, tokenID int64) error
+	// AuthenticateBearer validates a Bearer token and returns a synthetic session.
+	AuthenticateBearer(ctx context.Context, plaintext string) (*model.Session, error)
 	// CountUsers returns the number of user accounts.
 	CountUsers(ctx context.Context) (int, error)
 	// GetUserByID returns a user by database ID.
 	GetUserByID(ctx context.Context, id int64) (*model.User, error)
+}
+
+// CreateAPITokenResult contains the stored token metadata and one-time plaintext token.
+type CreateAPITokenResult struct {
+	Token     *model.APIToken
+	Plaintext string
 }
 
 // AuthResult contains the authenticated user and session ID.

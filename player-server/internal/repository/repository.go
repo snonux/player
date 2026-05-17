@@ -69,6 +69,7 @@ type GCStore interface {
 // AuthServiceStore is the subset of Store required by service.AuthService.
 type AuthServiceStore interface {
 	UserRepo
+	APITokenRepo
 }
 
 // ScannerStore is the subset of Store required by scanner.FSScanner.

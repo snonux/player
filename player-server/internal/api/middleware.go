@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -11,6 +12,8 @@ import (
 )
 
 type ctxKey int
+
+var errUnauthorized = errors.New("unauthorized")
 
 const (
 	sessionCtxKey ctxKey = iota
@@ -32,16 +35,7 @@ func NewMiddleware(authSvc service.AuthService, sm auth.SessionManager) *Middlew
 // For HTML page requests (Accept: text/html), redirects to /login.html instead of returning 401.
 func (mw *Middleware) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("session")
-		if err != nil {
-			if wantsHTML(r) {
-				http.Redirect(w, r, "/login.html", http.StatusTemporaryRedirect)
-				return
-			}
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		sess, err := mw.sm.ValidateSession(r.Context(), cookie.Value)
+		sess, err := mw.authenticate(r)
 		if err != nil || sess == nil {
 			if wantsHTML(r) {
 				http.Redirect(w, r, "/login.html", http.StatusTemporaryRedirect)
@@ -53,6 +47,34 @@ func (mw *Middleware) RequireSession(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), sessionCtxKey, sess)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func (mw *Middleware) authenticate(r *http.Request) (*model.Session, error) {
+	if token, ok := bearerToken(r); ok {
+		if mw.authSvc == nil {
+			return nil, errUnauthorized
+		}
+		return mw.authSvc.AuthenticateBearer(r.Context(), token)
+	}
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		return nil, errUnauthorized
+	}
+	if mw.sm == nil {
+		return nil, errUnauthorized
+	}
+	return mw.sm.ValidateSession(r.Context(), cookie.Value)
+}
+
+func bearerToken(r *http.Request) (string, bool) {
+	fields := strings.Fields(r.Header.Get("Authorization"))
+	if len(fields) == 0 || !strings.EqualFold(fields[0], "Bearer") {
+		return "", false
+	}
+	if len(fields) != 2 {
+		return "", true
+	}
+	return fields[1], true
 }
 
 // wantsHTML returns true if the request appears to be from a browser expecting an HTML page.
