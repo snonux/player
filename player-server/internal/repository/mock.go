@@ -27,6 +27,7 @@ var (
 	_ TrashServiceStore           = (*MockStore)(nil)
 	_ UserAdminServiceStore       = (*MockStore)(nil)
 	_ PermissionAdminServiceStore = (*MockStore)(nil)
+	_ APITokenRepo                = (*MockStore)(nil)
 	_ PodcastRepo                 = (*MockStore)(nil)
 )
 
@@ -40,6 +41,7 @@ func NewMockStore() *MockStore {
 // callers override individual func fields to inject test behavior.
 type MockStore struct {
 	UserRepo                MockUserRepo
+	APITokenRepo            MockAPITokenRepo
 	SetRepo                 MockSetRepo
 	SetPermissionRepo       MockSetPermissionRepo
 	MediaRepo               MockMediaRepo
@@ -80,6 +82,31 @@ func (m *MockStore) DeleteUser(ctx context.Context, id int64) error {
 
 // CountUsers implements UserRepo.
 func (m *MockStore) CountUsers(ctx context.Context) (int, error) { return m.UserRepo.CountUsers(ctx) }
+
+// Create implements APITokenRepo.
+func (m *MockStore) Create(ctx context.Context, token *model.APIToken) (int64, error) {
+	return m.APITokenRepo.Create(ctx, token)
+}
+
+// GetByHash implements APITokenRepo.
+func (m *MockStore) GetByHash(ctx context.Context, tokenHash string) (*model.APIToken, error) {
+	return m.APITokenRepo.GetByHash(ctx, tokenHash)
+}
+
+// ListByUser implements APITokenRepo.
+func (m *MockStore) ListByUser(ctx context.Context, userID int64) ([]model.APIToken, error) {
+	return m.APITokenRepo.ListByUser(ctx, userID)
+}
+
+// DeleteByID implements APITokenRepo.
+func (m *MockStore) DeleteByID(ctx context.Context, id int64) error {
+	return m.APITokenRepo.DeleteByID(ctx, id)
+}
+
+// TouchLastUsed implements APITokenRepo.
+func (m *MockStore) TouchLastUsed(ctx context.Context, id int64, lastUsedAt time.Time) error {
+	return m.APITokenRepo.TouchLastUsed(ctx, id, lastUsedAt)
+}
 
 // CreateSet implements SetRepo.
 func (m *MockStore) CreateSet(ctx context.Context, set *model.Set) (int64, error) {
@@ -407,6 +434,55 @@ func (m *MockUserRepo) CountUsers(ctx context.Context) (int, error) {
 		return m.CountUsersFunc(ctx)
 	}
 	return 0, nil
+}
+
+// MockAPITokenRepo is a fake APITokenRepo.
+type MockAPITokenRepo struct {
+	CreateFunc        func(ctx context.Context, token *model.APIToken) (int64, error)
+	GetByHashFunc     func(ctx context.Context, tokenHash string) (*model.APIToken, error)
+	ListByUserFunc    func(ctx context.Context, userID int64) ([]model.APIToken, error)
+	DeleteByIDFunc    func(ctx context.Context, id int64) error
+	TouchLastUsedFunc func(ctx context.Context, id int64, lastUsedAt time.Time) error
+}
+
+// Create calls CreateFunc or returns a default ID.
+func (m *MockAPITokenRepo) Create(ctx context.Context, token *model.APIToken) (int64, error) {
+	if m.CreateFunc != nil {
+		return m.CreateFunc(ctx, token)
+	}
+	return 1, nil
+}
+
+// GetByHash calls GetByHashFunc or returns nil.
+func (m *MockAPITokenRepo) GetByHash(ctx context.Context, tokenHash string) (*model.APIToken, error) {
+	if m.GetByHashFunc != nil {
+		return m.GetByHashFunc(ctx, tokenHash)
+	}
+	return nil, nil
+}
+
+// ListByUser calls ListByUserFunc or returns nil.
+func (m *MockAPITokenRepo) ListByUser(ctx context.Context, userID int64) ([]model.APIToken, error) {
+	if m.ListByUserFunc != nil {
+		return m.ListByUserFunc(ctx, userID)
+	}
+	return nil, nil
+}
+
+// DeleteByID calls DeleteByIDFunc or returns nil.
+func (m *MockAPITokenRepo) DeleteByID(ctx context.Context, id int64) error {
+	if m.DeleteByIDFunc != nil {
+		return m.DeleteByIDFunc(ctx, id)
+	}
+	return nil
+}
+
+// TouchLastUsed calls TouchLastUsedFunc or returns nil.
+func (m *MockAPITokenRepo) TouchLastUsed(ctx context.Context, id int64, lastUsedAt time.Time) error {
+	if m.TouchLastUsedFunc != nil {
+		return m.TouchLastUsedFunc(ctx, id, lastUsedAt)
+	}
+	return nil
 }
 
 // MockSetRepo is a fake SetRepo.

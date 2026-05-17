@@ -1469,6 +1469,21 @@ func (m *mockPingStore) DeleteUser(ctx context.Context, id int64) error {
 func (m *mockPingStore) CountUsers(ctx context.Context) (int, error) {
 	return m.store.CountUsers(ctx)
 }
+func (m *mockPingStore) Create(ctx context.Context, token *model.APIToken) (int64, error) {
+	return m.store.Create(ctx, token)
+}
+func (m *mockPingStore) GetByHash(ctx context.Context, tokenHash string) (*model.APIToken, error) {
+	return m.store.GetByHash(ctx, tokenHash)
+}
+func (m *mockPingStore) ListByUser(ctx context.Context, userID int64) ([]model.APIToken, error) {
+	return m.store.ListByUser(ctx, userID)
+}
+func (m *mockPingStore) DeleteByID(ctx context.Context, id int64) error {
+	return m.store.DeleteByID(ctx, id)
+}
+func (m *mockPingStore) TouchLastUsed(ctx context.Context, id int64, lastUsedAt time.Time) error {
+	return m.store.TouchLastUsed(ctx, id, lastUsedAt)
+}
 func (m *mockPingStore) CreateSet(ctx context.Context, set *model.Set) (int64, error) {
 	return m.store.CreateSet(ctx, set)
 }

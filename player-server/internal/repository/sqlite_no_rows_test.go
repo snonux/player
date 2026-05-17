@@ -30,6 +30,16 @@ func TestSQLite_NoRows_ReturnsNil(t *testing.T) {
 		}
 	})
 
+	t.Run("GetByHash", func(t *testing.T) {
+		token, err := s.GetByHash(ctx, "missing")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if token != nil {
+			t.Fatalf("expected nil, got %+v", token)
+		}
+	})
+
 	t.Run("GetSetByID", func(t *testing.T) {
 		st, err := s.GetSetByID(ctx, 9999)
 		if err != nil {

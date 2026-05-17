@@ -11,6 +11,7 @@ import (
 // Store is the composite interface for all repositories.
 type Store interface {
 	UserRepo
+	APITokenRepo
 	SetRepo
 	SetPermissionRepo
 	MediaRepo
@@ -151,6 +152,20 @@ type UserRepo interface {
 	DeleteUser(ctx context.Context, id int64) error
 	// CountUsers returns the number of user accounts.
 	CountUsers(ctx context.Context) (int, error)
+}
+
+// APITokenRepo manages API authentication tokens.
+type APITokenRepo interface {
+	// Create stores a new API token and returns its database ID.
+	Create(ctx context.Context, token *model.APIToken) (int64, error)
+	// GetByHash returns an API token by token hash.
+	GetByHash(ctx context.Context, tokenHash string) (*model.APIToken, error)
+	// ListByUser returns all API tokens for a user.
+	ListByUser(ctx context.Context, userID int64) ([]model.APIToken, error)
+	// DeleteByID removes an API token by database ID.
+	DeleteByID(ctx context.Context, id int64) error
+	// TouchLastUsed updates an API token's last-used timestamp.
+	TouchLastUsed(ctx context.Context, id int64, lastUsedAt time.Time) error
 }
 
 // SetRepo manages media sets.

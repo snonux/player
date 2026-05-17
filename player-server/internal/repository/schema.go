@@ -16,6 +16,16 @@ CREATE TABLE IF NOT EXISTS users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    last_used_at DATETIME,
+    expires_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS sets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -175,6 +185,8 @@ CREATE INDEX IF NOT EXISTS idx_media_rel_path ON media(set_id, rel_path);
 CREATE INDEX IF NOT EXISTS idx_media_deleted_at ON media(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_media_type ON media(type);
 CREATE INDEX IF NOT EXISTS idx_media_filename ON media(file_name);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_token_hash ON api_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_permissions_user ON set_permissions(user_id);
 CREATE INDEX IF NOT EXISTS idx_permissions_set ON set_permissions(set_id);
 CREATE INDEX IF NOT EXISTS idx_shares_expires ON shares(expires_at);
@@ -224,6 +236,20 @@ type migration struct {
 }
 
 var migrations = []migration{
+	{
+		name: "create_api_tokens",
+		sql: `
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    last_used_at DATETIME,
+    expires_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+`,
+	},
 	{
 		name: "add_sets_is_podcast",
 		sql:  `ALTER TABLE sets ADD COLUMN is_podcast INTEGER NOT NULL DEFAULT 0;`,
