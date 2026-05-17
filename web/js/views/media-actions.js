@@ -28,6 +28,27 @@ export async function toggleFavorite(id, btn) {
   }
 }
 
+async function setProgressStatus(id, status, successMessage) {
+  const mediaId = id || selectedMediaId();
+  if (!mediaId) return false;
+  try {
+    await API.progressStatus(mediaId, status);
+    toast(successMessage);
+    return true;
+  } catch (err) {
+    toast(err.message || 'Progress update failed', 'error');
+    return false;
+  }
+}
+
+export function markAsFinished(id) {
+  return setProgressStatus(id, 'finished', 'Marked as finished');
+}
+
+export function markAsNotStarted(id) {
+  return setProgressStatus(id, 'not_started', 'Marked as not started');
+}
+
 export async function openNotesForSelected() {
   const el = currentElement();
   if (!el) return;

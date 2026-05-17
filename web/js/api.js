@@ -56,6 +56,8 @@ export const API = {
   },
   mediaDetail: (id) => api(`/api/media/${id}`),
   progress: (mediaId, positionSeconds) => api('/api/progress', { method: 'POST', body: { media_id: mediaId, position_seconds: positionSeconds } }),
+  progressStatus: (mediaId, status) => api('/api/progress/status', { method: 'POST', body: { media_id: mediaId, status } }),
+  inProgress: () => api('/api/in-progress'),
   favorite: (id) => api(`/api/media/${id}/favorite`, { method: 'POST' }),
   notes: (id) => api(`/api/media/${id}/notes`),
   saveNote: (id, content) => api(`/api/media/${id}/notes`, { method: 'POST', body: { content } }),

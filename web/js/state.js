@@ -3,6 +3,7 @@ export const state = {
   sets: [],
   selectedSetId: null,
   selectedSetIds: [], // multi-selection
+  virtualSet: '',
   media: [],
   filters: {
     type: '',

@@ -40,6 +40,8 @@ import {
 } from './views/media-grid.js';
 import {
   downloadSelected,
+  markAsFinished,
+  markAsNotStarted,
   openNotesForSelected,
   regenThumb,
   selectedMediaId,
@@ -151,6 +153,8 @@ async function initApp() {
   initSearch({
     onChange: (q) => {
       const parsed = parseQuery(q);
+      state.virtualSet = '';
+      syncChromeVirtualSets();
       applySearchSet(parsed);
       delete parsed.set;
       Object.assign(state.filters, parsed);
@@ -165,7 +169,13 @@ async function initApp() {
   document.addEventListener('search:navigate-results', () => navDown());
   initShuffle({ onChange: () => loadMedia() });
   initPlaybackNav({ isShuffle });
-  initSets({ onLoadMedia: loadMedia });
+  initSets({
+    onLoadMedia: () => {
+      state.virtualSet = '';
+      syncChromeVirtualSets();
+      loadMedia();
+    },
+  });
   initMediaGrid({
     isShuffle,
     shuffleRevision,
@@ -175,7 +185,10 @@ async function initApp() {
     openSet,
     playSelected,
     regenThumb,
+    markAsFinished: markAsFinishedAndRefresh,
+    markAsNotStarted: markAsNotStartedAndRefresh,
     toggleFavorite,
+    onVirtualSetCleared: syncChromeVirtualSets,
   });
   initKeyboard(keyboardHandlers());
   initNotes(() => toast('Note saved'));
@@ -185,7 +198,10 @@ async function initApp() {
   initUpload({ onLoadMedia: loadMedia });
   initHelp();
   initShares();
-  initMediaInfo();
+  initMediaInfo({
+    markAsFinished: markAsFinishedAndRefresh,
+    markAsNotStarted: markAsNotStartedAndRefresh,
+  });
   initTags({
     onFilterChange: () => {
       document.dispatchEvent(new CustomEvent('filters:changed'));
@@ -220,6 +236,7 @@ function applySearchSet(parsed) {
     state.sets.find((set) => set.name.toLowerCase() === needle) ||
     state.sets.find((set) => set.name.toLowerCase().includes(needle));
   if (!match) return;
+  state.virtualSet = '';
   state.selectedSetId = match.id;
   state.selectedSetIds = [match.id];
   updateSetRowsUI();
@@ -342,6 +359,7 @@ function activateGridElement(el) {
 
 function openSet(id) {
   if (!Number.isFinite(id)) return;
+  state.virtualSet = '';
   state.selectedSetId = id;
   state.selectedSetIds = [id];
   state.folderPath = '';
@@ -350,7 +368,47 @@ function openSet(id) {
   loadMedia();
 }
 
+async function markAsFinishedAndRefresh(id) {
+  const updated = await markAsFinished(id);
+  if (updated && state.virtualSet === 'in-progress') await loadMedia();
+  return updated;
+}
+
+async function markAsNotStartedAndRefresh(id) {
+  const updated = await markAsNotStarted(id);
+  if (updated && state.virtualSet === 'in-progress') await loadMedia();
+  return updated;
+}
+
+function openInProgress() {
+  state.virtualSet = state.virtualSet === 'in-progress' ? '' : 'in-progress';
+  state.selectedSetId = null;
+  state.selectedSetIds = [];
+  state.folderPath = '';
+  state.mediaPage = 0;
+  updateSetRowsUI();
+  syncChromeVirtualSets();
+  loadMedia();
+}
+
+function syncChromeVirtualSets() {
+  document.getElementById('in-progress-toggle')?.classList.toggle('active', state.virtualSet === 'in-progress');
+}
+
 function initChrome() {
+  const shuffleBtn = document.getElementById('shuffle-toggle');
+  if (shuffleBtn && !document.getElementById('in-progress-toggle')) {
+    const btn = document.createElement('button');
+    btn.id = 'in-progress-toggle';
+    btn.className = 'icon-btn';
+    btn.type = 'button';
+    btn.title = 'In Progress';
+    btn.setAttribute('aria-label', 'Show in-progress media');
+    btn.textContent = '◷';
+    shuffleBtn.insertAdjacentElement('afterend', btn);
+  }
+  document.getElementById('in-progress-toggle')?.addEventListener('click', openInProgress);
+
   document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
     toggleSidebar();
   });

@@ -3,12 +3,28 @@ import { fmtDateTime, fmtSize } from '../dom.js';
 import { escapeHtml, fmtDur, toast } from '../utils.js';
 import { selectedMediaId } from './media-actions.js';
 
-export function initMediaInfo() {
+let callbacks = {};
+
+export function initMediaInfo(options = {}) {
+  callbacks = options;
   const modal = document.getElementById('media-info-modal');
   const closeBtn = document.getElementById('media-info-close');
   closeBtn?.addEventListener('click', closeMediaInfo);
   modal?.addEventListener('click', (e) => {
     if (e.target === modal) closeMediaInfo();
+  });
+  modal?.addEventListener('click', async (e) => {
+    const button = e.target.closest('[data-media-info-action]');
+    if (!button) return;
+    const id = button.dataset.mediaId;
+    if (!id) return;
+    let updated = false;
+    if (button.dataset.mediaInfoAction === 'mark-finished') {
+      updated = await callbacks.markAsFinished?.(id);
+    } else if (button.dataset.mediaInfoAction === 'mark-not-started') {
+      updated = await callbacks.markAsNotStarted?.(id);
+    }
+    if (updated) await openMediaInfo(id);
   });
 }
 
@@ -113,6 +129,10 @@ function renderMediaInfo(detail) {
     .join('');
   const raw = escapeHtml(JSON.stringify(detail || {}, null, 2));
   return `
+    <div class="flex flex-wrap gap-2 mt-1 mb-2">
+      <button class="btn btn-ghost btn-sm" type="button" data-media-info-action="mark-finished" data-media-id="${escapeHtml(String(media.id || ''))}">✓ Finished</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-media-info-action="mark-not-started" data-media-id="${escapeHtml(String(media.id || ''))}">↺ Not started</button>
+    </div>
     <table class="media-info-table">${table}</table>
     <details class="media-info-raw">
       <summary>Raw API detail</summary>

@@ -76,7 +76,15 @@ export async function loadMedia() {
     const setIds = state.selectedSetIds.length > 1 ? state.selectedSetIds.join(',') : '';
     const singleSetId = state.selectedSetIds.length === 1 ? state.selectedSetIds[0] : null;
 
-    if (!singleSetId && !setIds && !callbacks.isShuffle?.() && !hasActiveFilters()) {
+    if (state.virtualSet === 'in-progress') {
+      breadcrumb?.classList.add('hidden');
+      syncMediaPage('virtual:in-progress');
+      const data = await API.inProgress();
+      const list = Array.isArray(data) ? data : data?.media || [];
+      setMedia(list);
+      const page = renderGrid(list, 'No in-progress media.');
+      resultCount.textContent = resultText(list.length, page);
+    } else if (!singleSetId && !setIds && !callbacks.isShuffle?.() && !hasActiveFilters()) {
       breadcrumb?.classList.add('hidden');
       setMedia([]);
       syncMediaPage('sets');
@@ -176,6 +184,13 @@ export function mediaWithBrowsePath(media, path) {
 
 export function navigateBack() {
   if (!state.folderPath) {
+    if (state.virtualSet) {
+      state.virtualSet = '';
+      state.mediaPage = 0;
+      callbacks.onVirtualSetCleared?.();
+      loadMedia();
+      return;
+    }
     if (state.selectedSetId || state.selectedSetIds.length) {
       state.selectedSetId = null;
       state.selectedSetIds = [];
@@ -349,13 +364,13 @@ function renderFolder(folder, index) {
   `;
 }
 
-function renderGrid(items) {
+function renderGrid(items, emptyMessage = 'No results.') {
   const grid = document.getElementById('media-grid');
   if (!grid) return;
   if (!items.length) {
     const page = paginateItems([], state.mediaPage);
     state.mediaPage = page.page;
-    grid.innerHTML = `<p class="text-muted text-sm grid-full">No results.</p>`;
+    grid.innerHTML = `<p class="text-muted text-sm grid-full">${escapeHtml(emptyMessage)}</p>`;
     clearSelection();
     return page;
   }
@@ -409,6 +424,8 @@ function bindMediaItems(grid) {
     const downloadBtn = el.querySelector('[data-action="download"]');
     const tagBtn = el.querySelector('[data-action="tags"]');
     const thumbBtn = el.querySelector('[data-action="regen-thumb"]');
+    const finishedBtn = el.querySelector('[data-action="mark-finished"]');
+    const notStartedBtn = el.querySelector('[data-action="mark-not-started"]');
     playBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
       selectByElement(el);
@@ -439,7 +456,22 @@ function bindMediaItems(grid) {
       e.stopPropagation();
       callbacks.regenThumb?.(el.dataset.id);
     });
+    finishedBtn?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await callbacks.markAsFinished?.(el.dataset.id);
+    });
+    notStartedBtn?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await callbacks.markAsNotStarted?.(el.dataset.id);
+    });
   });
+}
+
+function renderProgressActions() {
+  return `
+    <button class="icon-btn btn-sm" data-action="mark-finished" title="Mark as finished">✓</button>
+    <button class="icon-btn btn-sm" data-action="mark-not-started" title="Mark as not started">↺</button>
+  `;
 }
 
 function renderItem(m, index) {
@@ -455,6 +487,7 @@ function renderItem(m, index) {
             <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
             <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
             <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+            ${renderProgressActions()}
             <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
             <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
             <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
@@ -479,6 +512,7 @@ function renderItem(m, index) {
             <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
             <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
             <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+            ${renderProgressActions()}
             <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
             <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
             <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
@@ -500,6 +534,7 @@ function renderItem(m, index) {
           <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
           <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
           <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+          ${renderProgressActions()}
           <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
           <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
         </div>
