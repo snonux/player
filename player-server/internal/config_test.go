@@ -2,6 +2,7 @@ package internal
 
 import (
 	"os"
+	"reflect"
 	"testing"
 )
 
@@ -43,6 +44,9 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.SecureCookies != DefaultSecureCookies {
 		t.Errorf("SecureCookies: expected %v, got %v", DefaultSecureCookies, cfg.SecureCookies)
 	}
+	if len(cfg.CORSAllowedOrigins) != 0 {
+		t.Errorf("CORSAllowedOrigins: expected empty, got %v", cfg.CORSAllowedOrigins)
+	}
 }
 
 func TestLoadConfig_EnvOverrides(t *testing.T) {
@@ -58,6 +62,7 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 		{"MEDIA_PAGE_SIZE", "25"},
 		{"LOG_LEVEL", "debug"},
 		{"SECURE_COOKIES", "false"},
+		{"PLAYER_CORS_ORIGINS", " http://localhost:5173,https://player.example.com ,, "},
 	})
 
 	cfg, err := LoadConfig()
@@ -93,6 +98,10 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 	}
 	if cfg.SecureCookies != false {
 		t.Errorf("SecureCookies: expected false, got %v", cfg.SecureCookies)
+	}
+	wantOrigins := []string{"http://localhost:5173", "https://player.example.com"}
+	if !reflect.DeepEqual(cfg.CORSAllowedOrigins, wantOrigins) {
+		t.Errorf("CORSAllowedOrigins: expected %v, got %v", wantOrigins, cfg.CORSAllowedOrigins)
 	}
 }
 
@@ -182,6 +191,7 @@ func clearEnv() {
 		"GC_INTERVAL_MINUTES", "SHARE_DEFAULT_EXPIRY_DAYS",
 		"PODCAST_CHECK_INTERVAL_MINUTES", "MEDIA_PAGE_SIZE",
 		"LOG_LEVEL", "SECURE_COOKIES",
+		"PLAYER_CORS_ORIGINS",
 	} {
 		os.Unsetenv(k)
 	}

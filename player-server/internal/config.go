@@ -35,6 +35,7 @@ type Config struct {
 	MediaPageSize          int
 	LogLevel               string
 	SecureCookies          bool
+	CORSAllowedOrigins     []string
 }
 
 // envInt reads an integer environment variable, validates it with the given check,
@@ -186,12 +187,25 @@ func loadSecureCookies(cfg *Config) error {
 	return nil
 }
 
+// loadCORSSettings reads comma-separated CORS origins from the environment.
+func loadCORSSettings(cfg *Config) {
+	if v := os.Getenv("PLAYER_CORS_ORIGINS"); v != "" {
+		for _, origin := range strings.Split(v, ",") {
+			origin = strings.TrimSpace(origin)
+			if origin != "" {
+				cfg.CORSAllowedOrigins = append(cfg.CORSAllowedOrigins, origin)
+			}
+		}
+	}
+}
+
 // LoadConfig reads configuration from environment variables and returns
 // a populated Config. Unset variables use the package defaults.
 func LoadConfig() (*Config, error) {
 	cfg := defaultConfig()
 
 	loadStringSettings(cfg)
+	loadCORSSettings(cfg)
 
 	if err := loadNumericSettings(cfg); err != nil {
 		return nil, err

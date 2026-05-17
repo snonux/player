@@ -21,6 +21,7 @@ type Server struct {
 	sm          auth.SessionManager
 	cfg         *internal.Config
 	mux         *http.ServeMux
+	handler     http.Handler
 	browseSvc   service.MediaBrowseService
 	writeSvc    service.MediaWriteService
 	shareSvc    service.MediaShareService
@@ -101,12 +102,13 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) *Server {
 		mw:          NewMiddleware(deps.Services.Auth, deps.SessionManager),
 	}
 	s.routes()
+	s.handler = withCORS(s.cfg.CORSAllowedOrigins, s.mw.BootstrapRedirect(s.mux))
 	return s
 }
 
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mw.BootstrapRedirect(s.mux).ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
 // requireSession wraps a handler with the session requirement middleware.
