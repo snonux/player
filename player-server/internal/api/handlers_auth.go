@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/service"
 )
 
@@ -17,6 +19,25 @@ type bootstrapRequest struct {
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type createAPITokenRequest struct {
+	Name          string `json:"name"`
+	ExpiresInDays *int   `json:"expires_in_days"`
+}
+
+type createAPITokenResponse struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Token string `json:"token"`
+}
+
+type apiTokenResponse struct {
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 // ------------------------------------------------------------------
@@ -88,6 +109,75 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleCreateAPIToken(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.authSvc) {
+		return
+	}
+
+	var req createAPITokenRequest
+	if err := readJSON(r, &req); err != nil {
+		badRequest(w, "invalid request body")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		badRequest(w, "name required")
+		return
+	}
+
+	expiresAt, ok := apiTokenExpiresAt(req.ExpiresInDays)
+	if !ok {
+		badRequest(w, "expires_in_days must be greater than zero")
+		return
+	}
+
+	result, err := s.authSvc.CreateAPIToken(r.Context(), userIDFromContext(r), name, expiresAt)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	if result == nil || result.Token == nil {
+		handleError(w, fmt.Errorf("create api token returned nil result"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, createAPITokenResponse{
+		ID:    result.Token.ID,
+		Name:  result.Token.Name,
+		Token: result.Plaintext,
+	})
+}
+
+func (s *Server) handleListAPITokens(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.authSvc) {
+		return
+	}
+
+	tokens, err := s.authSvc.ListAPITokens(r.Context(), userIDFromContext(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, apiTokenResponses(tokens))
+}
+
+func (s *Server) handleRevokeAPIToken(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.authSvc) {
+		return
+	}
+
+	id := pathID(r, "id")
+	if id == 0 {
+		badRequest(w, "invalid token id")
+		return
+	}
+	if err := s.authSvc.RevokeAPIToken(r.Context(), userIDFromContext(r), id); err != nil {
+		handleError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
@@ -123,4 +213,29 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter) {
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})
+}
+
+func apiTokenExpiresAt(expiresInDays *int) (*time.Time, bool) {
+	if expiresInDays == nil {
+		return nil, true
+	}
+	if *expiresInDays <= 0 {
+		return nil, false
+	}
+	expiresAt := time.Now().Add(time.Duration(*expiresInDays) * 24 * time.Hour)
+	return &expiresAt, true
+}
+
+func apiTokenResponses(tokens []model.APIToken) []apiTokenResponse {
+	responses := make([]apiTokenResponse, 0, len(tokens))
+	for _, token := range tokens {
+		responses = append(responses, apiTokenResponse{
+			ID:         token.ID,
+			Name:       token.Name,
+			LastUsedAt: token.LastUsedAt,
+			ExpiresAt:  token.ExpiresAt,
+			CreatedAt:  token.CreatedAt,
+		})
+	}
+	return responses
 }

@@ -189,6 +189,9 @@ func (s *Server) routesHTML() {
 // routesAuth wires the logout route.
 func (s *Server) routesAuth() {
 	s.handleBoth(http.MethodPost, "/api/logout", s.requireSession(s.handleLogout))
+	s.handleBoth(http.MethodPost, "/api/auth/tokens", s.requireSession(s.handleCreateAPIToken))
+	s.handleBoth(http.MethodGet, "/api/auth/tokens", s.requireSession(s.handleListAPITokens))
+	s.handleBoth(http.MethodDelete, "/api/auth/tokens/{id}", s.requireSession(s.handleRevokeAPIToken))
 }
 
 // routesConfig wires authenticated client configuration.

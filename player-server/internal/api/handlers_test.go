@@ -754,6 +754,193 @@ func TestServer_Logout(t *testing.T) {
 	})
 }
 
+func TestServer_APITokens(t *testing.T) {
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	store := buildSessionStore(42)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cookie := addSessionCookie(t, store, sm, 42)
+	createdAt := time.Date(2026, 5, 17, 12, 0, 0, 0, time.UTC)
+	expiresAt := createdAt.Add(24 * time.Hour)
+
+	t.Run("create", func(t *testing.T) {
+		authSvc := &service.MockAuthService{
+			CountUsersFunc: func(context.Context) (int, error) { return 1, nil },
+			CreateAPITokenFunc: func(ctx context.Context, userID int64, name string, expiresAt *time.Time) (*service.CreateAPITokenResult, error) {
+				if userID != 42 {
+					t.Fatalf("expected user 42, got %d", userID)
+				}
+				if name != "automation" {
+					t.Fatalf("expected trimmed token name, got %q", name)
+				}
+				if expiresAt == nil {
+					t.Fatal("expected expires_at")
+				}
+				return &service.CreateAPITokenResult{
+					Token:     &model.APIToken{ID: 7, UserID: userID, Name: name, ExpiresAt: expiresAt},
+					Plaintext: "plain-token",
+				}, nil
+			},
+		}
+		srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/tokens", strings.NewReader(`{"name":" automation ","expires_in_days":1}`))
+		req.AddCookie(cookie)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+		}
+
+		var resp map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
+		if resp["token"] != "plain-token" || resp["name"] != "automation" {
+			t.Fatalf("unexpected create response: %+v", resp)
+		}
+	})
+
+	t.Run("list metadata only", func(t *testing.T) {
+		authSvc := &service.MockAuthService{
+			CountUsersFunc: func(context.Context) (int, error) { return 1, nil },
+			ListAPITokensFunc: func(ctx context.Context, userID int64) ([]model.APIToken, error) {
+				if userID != 42 {
+					t.Fatalf("expected user 42, got %d", userID)
+				}
+				return []model.APIToken{{
+					ID:         7,
+					UserID:     userID,
+					TokenHash:  "secret-hash",
+					Name:       "automation",
+					ExpiresAt:  &expiresAt,
+					CreatedAt:  createdAt,
+					LastUsedAt: &createdAt,
+				}}, nil
+			},
+		}
+		srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/tokens", nil)
+		req.AddCookie(cookie)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+		}
+		if strings.Contains(rr.Body.String(), "secret-hash") || strings.Contains(rr.Body.String(), "token") {
+			t.Fatalf("list response leaked token material: %s", rr.Body.String())
+		}
+	})
+
+	t.Run("revoke", func(t *testing.T) {
+		var revokedID int64
+		authSvc := &service.MockAuthService{
+			CountUsersFunc: func(context.Context) (int, error) { return 1, nil },
+			RevokeAPITokenFunc: func(ctx context.Context, userID, tokenID int64) error {
+				if userID != 42 {
+					t.Fatalf("expected user 42, got %d", userID)
+				}
+				revokedID = tokenID
+				return nil
+			},
+		}
+		srv := newTestServer(t, buildCountStore(1), nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/auth/tokens/7", nil)
+		req.AddCookie(cookie)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("expected %d, got %d: %s", http.StatusNoContent, rr.Code, rr.Body.String())
+		}
+		if revokedID != 7 {
+			t.Fatalf("expected token 7 revoked, got %d", revokedID)
+		}
+	})
+}
+
+func TestServer_APITokenBearerFlow(t *testing.T) {
+	ctx := context.Background()
+	dbStore, err := repository.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer dbStore.Close()
+
+	now := time.Now()
+	userID, err := dbStore.CreateUser(ctx, &model.User{
+		Username:     "admin",
+		PasswordHash: "hashed",
+		IsAdmin:      true,
+		CreatedAt:    now,
+	})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	clk := &clock.MockClock{T: now}
+	hasher := &staticHasher{fixed: "hashed"}
+	sm := auth.NewSessionManager(dbStore, clk, time.Hour)
+	authSvc := service.NewAuthService(dbStore, clk, hasher, sm, nil)
+	mediaSvc := service.NewMediaService(dbStore, clk, t.TempDir(), nil, nil)
+	cfg := &internal.Config{SessionTimeoutHours: 24, MaxUploadSizeMB: 10}
+	srv := newTestServer(t, dbStore, hasher, sm, cfg, mediaSvc, mediaSvc, mediaSvc, mediaSvc, mediaSvc, mediaSvc, nil, nil, authSvc, nil)
+
+	sessionID, err := sm.CreateSession(ctx, userID)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	cookie := &http.Cookie{Name: "session", Value: sessionID}
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/tokens", strings.NewReader(`{"name":"cli"}`))
+	createReq.AddCookie(cookie)
+	createRR := httptest.NewRecorder()
+	srv.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusOK {
+		t.Fatalf("expected create %d, got %d: %s", http.StatusOK, createRR.Code, createRR.Body.String())
+	}
+
+	var created createAPITokenResponse
+	if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create response: %v", err)
+	}
+	if created.ID == 0 || created.Token == "" || created.Name != "cli" {
+		t.Fatalf("unexpected create response: %+v", created)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/tokens", nil)
+	listReq.AddCookie(cookie)
+	listRR := httptest.NewRecorder()
+	srv.ServeHTTP(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("expected list %d, got %d: %s", http.StatusOK, listRR.Code, listRR.Body.String())
+	}
+	if strings.Contains(listRR.Body.String(), created.Token) || strings.Contains(listRR.Body.String(), `"token"`) {
+		t.Fatalf("list response leaked plaintext token: %s", listRR.Body.String())
+	}
+
+	bearerReq := httptest.NewRequest(http.MethodGet, "/api/v1/media", nil)
+	bearerReq.Header.Set("Authorization", "Bearer "+created.Token)
+	bearerRR := httptest.NewRecorder()
+	srv.ServeHTTP(bearerRR, bearerReq)
+	if bearerRR.Code != http.StatusOK {
+		t.Fatalf("expected bearer media %d, got %d: %s", http.StatusOK, bearerRR.Code, bearerRR.Body.String())
+	}
+
+	revokeReq := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/auth/tokens/%d", created.ID), nil)
+	revokeReq.AddCookie(cookie)
+	revokeRR := httptest.NewRecorder()
+	srv.ServeHTTP(revokeRR, revokeReq)
+	if revokeRR.Code != http.StatusNoContent {
+		t.Fatalf("expected revoke %d, got %d: %s", http.StatusNoContent, revokeRR.Code, revokeRR.Body.String())
+	}
+
+	afterRevokeReq := httptest.NewRequest(http.MethodGet, "/api/v1/media", nil)
+	afterRevokeReq.Header.Set("Authorization", "Bearer "+created.Token)
+	afterRevokeRR := httptest.NewRecorder()
+	srv.ServeHTTP(afterRevokeRR, afterRevokeReq)
+	if afterRevokeRR.Code != http.StatusUnauthorized {
+		t.Fatalf("expected revoked bearer %d, got %d: %s", http.StatusUnauthorized, afterRevokeRR.Code, afterRevokeRR.Body.String())
+	}
+}
+
 func TestServer_Healthz(t *testing.T) {
 	srv := newTestServer(t, &repository.MockStore{}, nil, nil, &internal.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
