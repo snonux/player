@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -77,7 +76,9 @@ func (s *shareService) RevokeShare(ctx context.Context, token string, userID int
 		return fmt.Errorf("get share: %w", err)
 	}
 	if share == nil {
-		return errors.New("share not found")
+		// Return the sentinel so handleError maps this to HTTP 404.
+		// Returning a plain errors.New here used to fall through to 500.
+		return ErrShareNotFound
 	}
 
 	_, err = s.helper.verifyAccess(ctx, share.MediaID, userID)
