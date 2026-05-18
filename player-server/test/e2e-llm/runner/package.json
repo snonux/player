@@ -1,0 +1,20 @@
+{
+  "name": "player-e2e-llm-runner",
+  "version": "1.0.0",
+  "description": "LLM-driven e2e harness runner: parses YAML+Markdown scenarios, invokes Playwright CLI, retries on failure, opens ask tasks on double-failure.",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}
