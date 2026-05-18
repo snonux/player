@@ -358,17 +358,19 @@ test('admin gear button is visible and opens admin panel for admin user', async 
 
 test('admin panel is not accessible to regular user', async ({ page }) => {
   const cookie = await login(REGULAR_USER, REGULAR_PASS);
-  await openAuthenticatedPage(page, cookie, '/');
-  await waitForAppReady(page);
 
-  // For a non-admin the admin toggle stays hidden because API.users() returns
-  // 403, so showAdmin() is never called. Wait for the 403 response to arrive
-  // before checking the DOM — this avoids a fixed sleep and surfaces failures
-  // cleanly if the request never fires.
-  await page.waitForResponse(
-    resp => resp.url().includes('/api/v1/admin/users') && resp.status() === 403,
+  // Register the response listener BEFORE navigating so it cannot miss the
+  // API.users() call that fires at SPA init. waitForResponse only catches
+  // future responses — setting it up after goto() creates a race condition
+  // where the 403 may already be received by the time the listener is active.
+  await injectSessionCookie(page.context(), cookie);
+  const adminCheck = page.waitForResponse(
+    resp => resp.url().includes('/api/admin/users') && resp.status() === 403,
     { timeout: 10_000 },
   );
+  await page.goto('/');
+  await adminCheck;
+
   const adminToggle = page.locator('#admin-toggle');
   const classes = (await adminToggle.getAttribute('class')) ?? '';
   expect(classes).toContain('hidden');
