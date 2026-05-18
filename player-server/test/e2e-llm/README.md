@@ -84,8 +84,10 @@ Key server environment variables:
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `PLAYER_URL` | No | `http://localhost:8080` | Base URL of the Player server under test |
-| `ANTHROPIC_API_KEY` | Only for screenshot oracle | — | API key for Claude Haiku visual checks |
-| `LLM_E2E_SCREENSHOTS` | No | `false` | Set to `true` to enable Layer 5 screenshot + Haiku visual assertion |
+| `LLM_E2E_SCREENSHOTS` | No | `false` | Set to `true` to enable Layer 5 screenshot + vision model assertion |
+| `OLLAMA_BASE_URL` | No | `https://ollama.com` | Ollama API endpoint; override for a local instance |
+| `OLLAMA_API_KEY` | Yes (for cloud) | — | API key from ollama.com; omit only for local unauthenticated instances |
+| `OLLAMA_MODEL` | No | `qwen3-vl:235b-instruct` | Vision model on the cloud endpoint; override for a local model |
 | `LLM_E2E_OPEN_ISSUE` | No | `false` | Set to `true` to open a Codeberg issue if a failure task is older than 24 h |
 | `PLAYER_DB` | No | Inferred from server config | Path to the SQLite database file; used for DB assertion checks |
 
@@ -110,10 +112,23 @@ To run against a non-default server:
 PLAYER_URL=http://myserver:9090 node dist/index.js
 ```
 
-To enable screenshot assertions (Layer 5, costs extra API tokens):
+To enable screenshot assertions (Layer 5, requires an ollama.com API key):
 
 ```sh
-LLM_E2E_SCREENSHOTS=true ANTHROPIC_API_KEY=sk-ant-... node dist/index.js
+LLM_E2E_SCREENSHOTS=true \
+  OLLAMA_API_KEY=<your-ollama.com-key> \
+  node dist/index.js
+```
+
+The oracle defaults to `llama3.2-vision` via `https://ollama.com`. To use a
+different model or a local Ollama instance:
+
+```sh
+# Different cloud model:
+LLM_E2E_SCREENSHOTS=true OLLAMA_API_KEY=<key> OLLAMA_MODEL=llava:13b node dist/index.js
+
+# Local Ollama (no API key needed):
+LLM_E2E_SCREENSHOTS=true OLLAMA_BASE_URL=http://localhost:11434 node dist/index.js
 ```
 
 ---
@@ -217,11 +232,11 @@ cheapest layer that can detect a failure:
 | 2 | JSON field assertions | Cheap — parse response body |
 | 3 | DB state checks (`sqlite3` CLI) | Cheap — direct SQL query |
 | 4 | Playwright selector checks | Cheap — deterministic DOM query |
-| 5 | Screenshot + Haiku visual check | Expensive — only for S03 and S04; gated behind `LLM_E2E_SCREENSHOTS=true` |
+| 5 | Screenshot + Ollama vision check | Self-hosted cost only — gated behind `LLM_E2E_SCREENSHOTS=true` |
 
-Layer 5 sends a PNG to Claude Haiku with a yes/no question such as "Is there a
-media card visible in the grid?" Haiku is used (not Sonnet) to keep per-run
-cost low.
+Layer 5 sends a PNG to an Ollama vision model (`llama3.2-vision`) with a yes/no
+question such as "Is there a media card visible in the grid?" Using a self-hosted
+Ollama instance means no per-call API cost beyond compute.
 
 ---
 

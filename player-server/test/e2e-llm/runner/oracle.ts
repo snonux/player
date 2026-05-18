@@ -1,68 +1,116 @@
 /**
  * oracle.ts — Screenshot oracle for LLM e2e visual checks (Layer 5).
  *
- * Exports checkScreenshot(pngPath, question) which sends a PNG to Claude
- * Haiku with a yes/no question and returns true when the answer starts with
- * "yes" (case-insensitive).
+ * Sends a PNG screenshot to an Ollama vision model via the OpenAI-compatible
+ * chat completions API and returns true when the model answers "yes" to a
+ * yes/no question about the image content.
  *
- * The oracle is gated behind the LLM_E2E_SCREENSHOTS=true env var.  When
- * that variable is absent or set to any other value the function always
- * returns true so CI runs that don't set the variable skip visual checks
- * silently rather than failing or burning API credits.
+ * Model: llama3.2-vision (Meta, 11B parameters). This is the strongest vision
+ * model available in the Ollama ecosystem for screenshot/UI analysis tasks.
  *
- * When screenshots are enabled, ANTHROPIC_API_KEY must be present in the
- * environment or the function throws immediately.
- *
- * The system prompt is cache-controlled so that repeated calls within the
- * same run benefit from prompt-caching (≥1024 tokens threshold on Haiku 4.5;
- * the system block here is short, but the cache_control marker is cheap to
- * add and costs nothing when the threshold isn't reached).
+ * Configuration (environment variables):
+ *   OLLAMA_BASE_URL     Base URL of the Ollama cloud API (default: https://ollama.com).
+ *                       Override to point at a local Ollama instance or a different
+ *                       hosted endpoint.
+ *   OLLAMA_API_KEY      Bearer token from ollama.com. Required when using the cloud
+ *                       endpoint; optional for local unauthenticated Ollama instances.
+ *   OLLAMA_MODEL        Vision model name (default: llama3.2-vision). Override to use
+ *                       a different model available on the target Ollama endpoint.
+ *   LLM_E2E_SCREENSHOTS Set to "true" to enable visual checks. When absent the
+ *                       function returns true immediately so CI runs that omit
+ *                       this flag skip visual checks silently rather than failing.
  *
  * Used only for S03 (upload-verify-web) and S04 (share-link-round-trip).
- * Estimated cost: ~$0.003 per call at Haiku 4.5 pricing.
  */
 
 import * as fs from 'fs';
-import Anthropic from '@anthropic-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-// The model used for visual checks. Haiku is chosen for cost efficiency.
-const HAIKU_MODEL = 'claude-haiku-4-5';
+// Default vision model on the Ollama cloud (ollama.com). qwen3-vl is Alibaba's
+// instruction-tuned vision-language model — the strongest option available for
+// screenshot and UI analysis tasks. Override with OLLAMA_MODEL for a different
+// model (e.g. a locally-pulled model when using a local Ollama instance).
+const OLLAMA_MODEL = process.env['OLLAMA_MODEL'] ?? 'qwen3-vl:235b-instruct';
 
-// Maximum tokens for the yes/no answer (plus a one-sentence reason).
+// Maximum tokens for the yes/no answer plus a one-sentence reason.
 const MAX_TOKENS = 64;
 
-// System prompt shared across all oracle calls within a run.
-// Marked as ephemeral so repeated calls can read it from the cache.
-const SYSTEM_PROMPT = 'You are a visual test oracle. Answer every question with a single word: yes or no. Optionally add one short sentence of reasoning after the answer.';
+// Ollama cloud API endpoint. Override with OLLAMA_BASE_URL for local instances.
+const DEFAULT_BASE_URL = 'https://ollama.com';
+
+const SYSTEM_PROMPT =
+  'You are a visual test oracle. Answer every question with a single word: yes or no. ' +
+  'Optionally add one short sentence of reasoning after the answer.';
 
 // ---------------------------------------------------------------------------
-// Singleton Anthropic client (created lazily when screenshots are enabled)
+// Ollama API types (OpenAI-compatible subset used here)
 // ---------------------------------------------------------------------------
 
-let _client: Anthropic | null = null;
+interface OllamaChoice {
+  message: { content: string };
+}
+
+interface OllamaResponse {
+  choices: OllamaChoice[];
+}
+
+// ---------------------------------------------------------------------------
+// API call
+// ---------------------------------------------------------------------------
 
 /**
- * getClient returns the Anthropic SDK client, constructing it on first use.
- * Throws if ANTHROPIC_API_KEY is not set, so callers learn immediately
- * rather than receiving a cryptic 401 later.
+ * callOllamaVision posts a base64-encoded PNG and a question to the Ollama
+ * OpenAI-compatible chat completions endpoint and returns the raw text reply.
+ *
+ * Throws on HTTP errors or when the response does not contain a text answer
+ * so callers surface failures clearly rather than treating them as "yes".
  */
-function getClient(): Anthropic {
-  if (_client) return _client;
+async function callOllamaVision(imageData: string, question: string): Promise<string> {
+  const baseURL = (process.env['OLLAMA_BASE_URL'] ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const apiKey = process.env['OLLAMA_API_KEY'] ?? '';
 
-  const apiKey = process.env['ANTHROPIC_API_KEY'];
-  if (!apiKey) {
-    throw new Error(
-      '[oracle] ANTHROPIC_API_KEY is not set. ' +
-      'Set it before enabling LLM_E2E_SCREENSHOTS=true.',
-    );
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // Include Authorization only when a key is configured; local Ollama does not
+  // require authentication and will reject unknown headers on some builds.
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  _client = new Anthropic({ apiKey });
-  return _client;
+  const res = await fetch(`${baseURL}/v1/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: OLLAMA_MODEL,
+      max_tokens: MAX_TOKENS,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: [
+            // Ollama vision models accept images as OpenAI-style image_url
+            // blocks with a data URI carrying the base64-encoded PNG.
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${imageData}` } },
+            { type: 'text', text: `Does this screenshot show ${question}? Answer yes or no.` },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`[oracle] Ollama API error ${res.status}: ${body}`);
+  }
+
+  const data = (await res.json()) as OllamaResponse;
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('[oracle] unexpected Ollama response: missing choices[0].message.content');
+  }
+  return content;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,80 +118,29 @@ function getClient(): Anthropic {
 // ---------------------------------------------------------------------------
 
 /**
- * checkScreenshot sends a PNG file to Claude Haiku with a yes/no question
- * and returns true when the model answers "yes" (case-insensitive prefix
- * match).
+ * checkScreenshot reads a PNG file, sends it to the Ollama vision model with
+ * a yes/no question, and returns true when the model answers "yes".
  *
- * Returns true immediately (without calling the API) when LLM_E2E_SCREENSHOTS
- * is not "true", so the oracle is effectively a no-op in environments that
- * don't opt in.
+ * Returns true immediately (without calling Ollama) when LLM_E2E_SCREENSHOTS
+ * is not set to "true" — this makes the oracle a no-op in environments that
+ * don't opt in, with no API calls and no cost.
  *
  * @param pngPath  Absolute or relative path to the PNG screenshot file.
- * @param question A yes/no question about the screenshot content, e.g.
+ * @param question A yes/no question about the screenshot, e.g.
  *                 "Is there a media card visible in the grid?"
- * @returns        true when Haiku answers yes or when screenshots are disabled.
  */
-export async function checkScreenshot(
-  pngPath: string,
-  question: string,
-): Promise<boolean> {
-  // Gate: skip visual check when the feature flag is not enabled.
+export async function checkScreenshot(pngPath: string, question: string): Promise<boolean> {
   if (process.env['LLM_E2E_SCREENSHOTS'] !== 'true') {
     console.log(`[oracle] screenshots disabled — skipping visual check: "${question}"`);
     return true;
   }
 
-  const client = getClient();
+  const imageData = fs.readFileSync(pngPath).toString('base64');
+  console.log(`[oracle] checking screenshot "${pngPath}" with ${OLLAMA_MODEL}: "${question}"`);
 
-  // Read the PNG and base64-encode it for the API.
-  const imageBytes = fs.readFileSync(pngPath);
-  const imageData = imageBytes.toString('base64');
+  const answer = await callOllamaVision(imageData, question);
+  const passed = answer.trim().toLowerCase().startsWith('yes');
 
-  console.log(`[oracle] checking screenshot "${pngPath}": "${question}"`);
-
-  const response = await client.messages.create({
-    model: HAIKU_MODEL,
-    max_tokens: MAX_TOKENS,
-    // Cache the system prompt so repeated calls within the same run
-    // benefit from prompt-caching (no cost penalty when threshold not met).
-    system: [
-      {
-        type: 'text',
-        text: SYSTEM_PROMPT,
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: 'image/png',
-              data: imageData,
-            },
-          },
-          {
-            type: 'text',
-            text: `Does this screenshot show ${question}? Answer yes or no.`,
-          },
-        ],
-      },
-    ],
-  });
-
-  // Extract the text from the first content block.
-  const firstBlock = response.content[0];
-  if (!firstBlock || firstBlock.type !== 'text') {
-    console.warn('[oracle] unexpected response structure — treating as failure');
-    return false;
-  }
-
-  const answer = firstBlock.text.trim().toLowerCase();
-  const passed = answer.startsWith('yes');
-
-  console.log(`[oracle] answer: "${firstBlock.text.trim()}" → ${passed ? 'PASS' : 'FAIL'}`);
+  console.log(`[oracle] answer: "${answer.trim()}" → ${passed ? 'PASS' : 'FAIL'}`);
   return passed;
 }
