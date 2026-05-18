@@ -1,0 +1,135 @@
+# Go server CI pipeline for codeberg.org/snonux/player
+#
+# Stage 1 — server-unit (every push, every PR):
+#   Fast gate: go test -race -count=1 ./...
+#   Returns in ~10-15 s so developers get near-instant feedback.
+#
+# Stage 2 — server-integration + web-smoke (push to main / PR targeting main):
+#   Runs only after Stage 1 passes; triggered on main or PRs to main.
+#   - server-integration: full Go test suite with -tags=integration
+#   - web-smoke: build binary → start server → Playwright Chromium smoke suite
+#
+# Cache volumes (Woodpecker named volumes, mounted across all Go steps):
+#   go-mod-cache       → /root/go/pkg/mod         (Go module cache)
+#   go-build-cache     → /root/.cache/go-build     (Go build artefact cache)
+#   playwright-chromium → /root/.cache/ms-playwright (Chromium browser binary)
+
+---
+# ── Stage 1: unit (every push) ────────────────────────────────────────────────
+
+steps:
+  - name: server-unit
+    # golang:1.25-alpine matches the go directive in player-server/go.mod.
+    # Alpine keeps the image small; cgo is not needed (pure-Go SQLite port).
+    image: golang:1.25-alpine
+    volumes:
+      # Persist downloaded modules between runs to avoid repeated network fetches.
+      - go-mod-cache:/root/go/pkg/mod
+      # Persist compiled object files so incremental builds are fast.
+      - go-build-cache:/root/.cache/go-build
+    directory: player-server
+    commands:
+      # Run unit tests with the race detector on every push.
+      # -count=1 disables the test result cache so results are always fresh.
+      - go test -race -count=1 ./...
+    # Run on every push and every pull request, regardless of target branch.
+    when:
+      - event: [push, pull_request]
+
+# ── Stage 2a: integration (main / PRs to main only) ───────────────────────────
+
+  - name: server-integration
+    image: golang:1.25-alpine
+    volumes:
+      - go-mod-cache:/root/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    directory: player-server
+    # Depend on Stage 1: this step only runs after server-unit passes.
+    depends_on:
+      - server-unit
+    commands:
+      # Re-run the full test suite with the integration build tag.
+      # Integration tests start their own in-process server, so no external
+      # process management is needed here.
+      - go test -race -count=1 -tags=integration ./...
+    # Only run on pushes to main or pull requests whose base branch is main.
+    when:
+      - event: push
+        branch: main
+      - event: pull_request
+        branch: main
+
+# ── Stage 2b: web-smoke (main / PRs to main only) ─────────────────────────────
+
+  - name: web-smoke
+    # Use a Node+Go combined approach: install Go for the build step, then run
+    # npm/Playwright. The golang:1.25-alpine image is used first to build the
+    # server binary; a separate node step runs Playwright.
+    # We use a Debian-based Go image here because Playwright's --with-deps
+    # flag installs Chromium system dependencies via apt, which is not available
+    # on Alpine. The Debian variant is larger but avoids manual dependency lists.
+    image: golang:1.25-bookworm
+    volumes:
+      - go-mod-cache:/root/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      # Cache the Playwright Chromium binary (~150 MB) to avoid re-downloading
+      # on every run. Invalidate manually when upgrading @playwright/test.
+      - playwright-chromium:/root/.cache/ms-playwright
+    directory: player-server
+    depends_on:
+      - server-unit
+    commands:
+      # ── 1. Install Node.js (needed for npm / Playwright) ──────────────────
+      # golang:bookworm is Debian-based so we can use apt.
+      - apt-get update -qq && apt-get install -y --no-install-recommends nodejs npm
+
+      # ── 2. Build the server binary ────────────────────────────────────────
+      # CGO_ENABLED=0 keeps the binary fully static (no glibc dependency at
+      # runtime) and matches the production Dockerfile build flags.
+      - CGO_ENABLED=0 go build -o player ./cmd/player
+
+      # ── 3. Start the server in the background with test media ─────────────
+      # MEDIA_ROOT points at the in-repo testmedia directory so the server
+      # serves real media files without any external setup.
+      # SECURE_COOKIES=false avoids HTTPS-only cookie restrictions in CI.
+      # DB_PATH uses a temp file so each run starts from a clean database.
+      - MEDIA_ROOT=./testmedia SECURE_COOKIES=false DB_PATH=/tmp/player-e2e-ci.db ./player &
+
+      # ── 4. Wait for the server to be ready ────────────────────────────────
+      # curl retries up to 10 times with a 1-second delay between attempts.
+      # This guards against Playwright launching before the server is ready
+      # to accept connections (especially while it scans testmedia on startup).
+      - curl --retry 10 --retry-delay 1 --fail http://localhost:8080/healthz
+
+      # ── 5. Install Playwright dependencies and run the smoke suite ─────────
+      # Each command in Woodpecker runs in its own shell, so we prefix all npm
+      # commands with the subdirectory rather than relying on cd state.
+      # npm ci installs exact versions from package-lock.json.
+      - npm ci --prefix test/e2e-web
+      # Install Chromium and its OS-level dependencies (uses apt under the hood).
+      - npm run --prefix test/e2e-web install-browsers
+      # CI=true enables Playwright's CI mode (forbidOnly, retries, no headed).
+      # Run from within test/e2e-web so playwright.config.ts is found correctly.
+      - cd test/e2e-web && CI=true npm test
+
+    when:
+      - event: push
+        branch: main
+      - event: pull_request
+        branch: main
+
+# ── Volumes declaration ────────────────────────────────────────────────────────
+# Named volumes are created once per Woodpecker agent host and reused across
+# pipeline runs. They are not automatically cleaned up — run a periodic purge
+# if disk usage becomes a concern.
+
+volumes:
+  - name: go-mod-cache
+    host:
+      path: /var/woodpecker/cache/go-mod-cache
+  - name: go-build-cache
+    host:
+      path: /var/woodpecker/cache/go-build-cache
+  - name: playwright-chromium
+    host:
+      path: /var/woodpecker/cache/playwright-chromium
