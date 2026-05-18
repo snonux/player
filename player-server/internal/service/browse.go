@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	mrand "math/rand"
 	"os"
@@ -231,7 +230,9 @@ func (s *browseService) GetThumbnail(ctx context.Context, mediaID, userID int64)
 		return nil, err
 	}
 	if media.ThumbnailPath == "" {
-		return nil, errors.New("thumbnail not found")
+		// Use the sentinel so handleError maps this to HTTP 404 instead of
+		// falling through to the default 500 branch.
+		return nil, ErrNotFound
 	}
 	info, err := os.Stat(media.ThumbnailPath)
 	if err == nil {

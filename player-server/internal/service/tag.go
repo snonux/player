@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"codeberg.org/snonux/player/internal/model"
@@ -58,7 +57,9 @@ func (s *tagService) RemoveTag(ctx context.Context, mediaID, userID int64, tagNa
 		return fmt.Errorf("get tag: %w", err)
 	}
 	if tag == nil {
-		return errors.New("tag not found")
+		// Use the sentinel so handleError maps this to HTTP 404 instead of
+		// falling through to the default 500 branch.
+		return ErrNotFound
 	}
 	return s.store.RemoveTag(ctx, mediaID, tag.ID)
 }

@@ -57,7 +57,8 @@ func handleError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 	case errors.Is(err, service.ErrUnsupportedExtension),
 		errors.Is(err, service.ErrInvalidFeed),
-		errors.Is(err, service.ErrCannotDeleteSelf):
+		errors.Is(err, service.ErrCannotDeleteSelf),
+		errors.Is(err, service.ErrEmptySetForCover):
 		badRequest(w, err.Error())
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

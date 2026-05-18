@@ -211,7 +211,10 @@ func (s *writeService) RegenerateSetCover(ctx context.Context, setID int64, fold
 			return fmt.Errorf("copy thumbnail cover: %w", err)
 		}
 	default:
-		return errors.New("no media files available for cover")
+		// Use the sentinel so handleError maps this to HTTP 400 (bad request)
+		// instead of falling through to the default 500 branch — the request
+		// is well-formed, the set just has nothing usable as a cover.
+		return ErrEmptySetForCover
 	}
 
 	return nil

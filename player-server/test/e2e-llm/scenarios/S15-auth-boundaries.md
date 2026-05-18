@@ -96,26 +96,49 @@ as a real auth-boundary defect and file a task.
     handler maps to 404.)
 
 14. Call `DELETE /api/v1/shares/does-not-exist-token-xyz` with `ADMIN_COOKIE`.
-    Confirm the response status code is one of `{404, 500}` and record which
-    one was actually returned. NOTE: At the time of writing,
-    `shareService.RevokeShare` returns a plain `errors.New("share not found")`
-    instead of the sentinel `ErrShareNotFound`, so `handleError` falls into
-    its default branch and returns HTTP 500. The "correct" status is 404; if
-    you see 500 here, file a task — this is a real auth-boundary / error-
-    mapping defect in `internal/service/share.go`.
+    Confirm the response is HTTP 404. (`shareService.RevokeShare` returns
+    the sentinel `ErrShareNotFound` for missing tokens; `handleError`
+    maps that to 404. A 500 here would be a regression — this exact path
+    used to return 500 because the service returned a plain
+    `errors.New("share not found")` instead of the sentinel.)
 
 15. Call `GET {PLAYER_URL}/s/does-not-exist-token-xyz/thumbnail` with no
     cookie (this is a public share route). Confirm the response is HTTP 404.
 
+## C2) Error-code mapping regressions (must not return 500)
+
+These three paths used to fall through to HTTP 500 because the service
+layer returned plain `errors.New(...)` values instead of the sentinels
+that `handleError` knows how to map. They were fixed by switching to
+`ErrNotFound` / `ErrShareNotFound` / `ErrEmptySetForCover`; the steps
+below lock that behaviour in.
+
+16. Pick any existing media id (e.g. from `GET /api/v1/media?limit=1`).
+    Call `DELETE /api/v1/media/{media_id}/tags/does-not-exist-tag-xyz`
+    with `ADMIN_COOKIE`. Confirm the response is HTTP 404 — not 500.
+    (`tagService.RemoveTag` returns `ErrNotFound` for unknown tag names.)
+
+17. Find a set whose media items have no generated thumbnail. If every
+    media item in `testmedia/` happens to have one, skip the rest of this
+    step and continue — the regression case is unreachable in this DB.
+    Otherwise, call `GET /api/v1/media/{id}/thumbnail` for one of those
+    items and confirm the response is HTTP 404 — not 500.
+
+18. The empty-set cover regen path: `POST /api/v1/sets/{id}/cover` for a
+    set with no eligible media files. If the seeded `testmedia/` library
+    contains no empty set, skip this step. Otherwise, confirm the response
+    is HTTP 400 — not 500. (`writeService.RegenerateSetCover` returns
+    `ErrEmptySetForCover` which maps to 400.)
+
 ## D) Cleanup
 
-16. Delete the temporary non-admin user: call
+19. Delete the temporary non-admin user: call
     `DELETE /api/v1/admin/users/{temp_user_id}` with `ADMIN_COOKIE`. Confirm
     the response is HTTP 200 and the body is `{"status": "ok"}`. Do NOT skip
     this cleanup — leftover users will pollute subsequent runs of S12, S13,
     and S15.
 
-17. Confirm cleanup succeeded: call `GET /api/v1/admin/users` with
+20. Confirm cleanup succeeded: call `GET /api/v1/admin/users` with
     `ADMIN_COOKIE`. Confirm the response is HTTP 200 and the array does NOT
     contain any entry whose `id` matches `temp_user_id` or whose `username`
     is `e2e-auth-boundaries`.

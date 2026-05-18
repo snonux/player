@@ -18,6 +18,7 @@ var (
 	ErrShareExpired         = errors.New("share expired")
 	ErrMediaNotFound        = errors.New("media not found")
 	ErrUnsupportedExtension = errors.New("unsupported file extension")
+	ErrEmptySetForCover     = errors.New("no media files available for cover")
 	ErrAlreadyBootstrapped  = errors.New("already bootstrapped")
 	ErrInvalidCredentials   = errors.New("invalid credentials")
 	ErrInvalidFeed          = errors.New("invalid feed")
