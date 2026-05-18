@@ -1,0 +1,45 @@
+# Dockerfile.flutter-ci — Flutter SDK image for CI use.
+#
+# Built on top of the official Dart Docker image and installs a pinned Flutter
+# SDK release. Used by .woodpecker/android.yml to run `flutter analyze` and
+# `flutter test` without downloading the SDK on every CI run.
+#
+# To build and push (replace TAG with the Flutter SDK version, e.g. 3.32.0):
+#
+#   docker build --build-arg FLUTTER_VERSION=3.32.0 \
+#     -t codeberg.org/snonux/player/flutter-ci:3.32.0 \
+#     -f Dockerfile.flutter-ci .
+#   docker push codeberg.org/snonux/player/flutter-ci:3.32.0
+#
+# Update .woodpecker/android.yml to reference the new tag when upgrading.
+
+FROM dart:3.8-sdk AS flutter-ci
+
+ARG FLUTTER_VERSION=3.32.0
+
+# Install system packages needed by flutter, git, and the Dart toolchain.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    curl \
+    git \
+    unzip \
+    xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and install the Flutter SDK at the pinned version.
+RUN git clone --depth 1 --branch "${FLUTTER_VERSION}" \
+    https://github.com/flutter/flutter.git /opt/flutter
+
+ENV PATH="/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:${PATH}"
+ENV FLUTTER_ROOT=/opt/flutter
+
+# Pre-warm the Flutter tool cache: downloads the Dart SDK embedded in Flutter,
+# sets up the engine and tool, and configures the CLI for CI use.
+RUN flutter config --no-analytics \
+    && flutter precache --no-android --no-ios --no-linux --no-macos --no-web \
+    && flutter doctor --suppress-analytics
+
+# Pub cache lives here; mount as a Woodpecker named volume to persist across runs.
+ENV PUB_CACHE=/root/.pub-cache
+
+WORKDIR /workspace

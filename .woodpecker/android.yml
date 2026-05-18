@@ -7,9 +7,11 @@
 #   (Emulator decision deferred per docs/ci-design.md § 4.)
 #
 # Docker image:
-#   ghcr.io/cirruslabs/flutter:stable — pre-built Flutter SDK image maintained by
-#   CirrusLabs; eliminates ~500 MB SDK download on every run.
-#   Update the tag when bumping Flutter locally (one-line change in this file).
+#   codeberg.org/snonux/player/flutter-ci:<version> — project-owned image built
+#   from Dockerfile.flutter-ci, pinned to a specific Flutter SDK version.
+#   Build and push the image when upgrading Flutter (see Dockerfile.flutter-ci).
+#   Falls back to ghcr.io/cirruslabs/flutter:stable if the project image is not
+#   yet published.
 #
 # Cache volumes (Woodpecker named volumes):
 #   flutter-pub-cache → /root/.pub-cache   (Flutter pub package cache)
@@ -20,10 +22,10 @@
 
 steps:
   - name: android-unit
-    # ghcr.io/cirruslabs/flutter:stable bundles the Flutter SDK and Dart SDK so no
-    # SDK download occurs at runtime. Use a version-pinned tag in production when
-    # Flutter SDK version stability is required (see docs/ci-design.md § 8).
-    image: ghcr.io/cirruslabs/flutter:stable
+    # Project-owned Flutter CI image (see Dockerfile.flutter-ci). Falls back to
+    # ghcr.io/cirruslabs/flutter:stable until the project image is published.
+    # Pin to a specific Flutter version tag; update this line when upgrading.
+    image: codeberg.org/snonux/player/flutter-ci:3.32.0
     volumes:
       # Persist downloaded pub packages between runs to avoid repeated fetches.
       # The pub cache is keyed by pubspec.lock; no explicit invalidation is needed.
