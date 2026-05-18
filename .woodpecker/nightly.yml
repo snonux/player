@@ -1,12 +1,18 @@
-# Nightly LLM e2e pipeline for codeberg.org/snonux/player
+# LLM e2e pipeline for codeberg.org/snonux/player
 #
-# Trigger: Woodpecker cron schedule 0 2 * * * (02:00 UTC daily, main only).
-#          Manual dispatch is also allowed for ad-hoc runs.
+# Trigger: Manual only — do NOT configure a Woodpecker cron schedule for this
+#          pipeline. The intended way to run LLM e2e tests is locally via:
 #
-# Purpose: LLM-assisted end-to-end test harness (currently a placeholder).
-#   The real test suite is a future task. This pipeline wires in the correct
-#   structure — secret injection, branch guard, cost logging — so that the
-#   first real LLM e2e tests can be added without restructuring the YAML.
+#            mage E2E
+#
+#          The Mage target (magefile.go at the project root) builds the runner,
+#          sets the required env vars, and invokes `node dist/index.js` against
+#          a locally running Player server.
+#
+#          This pipeline file exists so the secret is available when the
+#          pipeline is re-triggered manually via the Woodpecker UI. It will
+#          never fire automatically: the `event: cron` filter only matches a
+#          Woodpecker cron job, and no cron is configured for this project.
 #
 # Secrets:
 #   ANTHROPIC_API_KEY — injected from a Woodpecker protected project secret.
@@ -20,7 +26,7 @@
 #   A future monitoring step can fail the job if cost exceeds a threshold.
 
 ---
-# ── Nightly LLM e2e (main only, cron 0 2 * * *) ───────────────────────────────
+# ── LLM e2e (manual trigger via Woodpecker UI or mage E2E locally) ─────────────
 
 steps:
   - name: llm-e2e
@@ -35,8 +41,6 @@ steps:
       - from_secret: ANTHROPIC_API_KEY
     commands:
       # Belt-and-suspenders branch guard: skip if not running on main.
-      # The cron trigger is already scoped to main; this check guards against
-      # accidental manual triggers on feature branches exposing the secret.
       - |
         if [ "$CI_COMMIT_BRANCH" != "main" ]; then
           echo "Skipping LLM e2e: not on main branch (branch=$CI_COMMIT_BRANCH)"
@@ -48,10 +52,11 @@ steps:
       - 'echo "LLM e2e harness: placeholder (no tests implemented yet)"'
       - exit 0
 
-    # Run only on pushes to main (manual dispatch) and via the cron trigger.
-    # The cron event is automatically scoped to main by Woodpecker's scheduler.
+    # Only fire when explicitly triggered via a Woodpecker cron event.
+    # No cron is configured for this project, so this pipeline never runs
+    # automatically. Re-trigger it manually via the Woodpecker UI when needed.
     when:
-      - event: [push, cron]
+      - event: cron
         branch: main
 
 # ── Cost logging step ──────────────────────────────────────────────────────────
@@ -70,7 +75,6 @@ steps:
       # (e.g., $1.00/run — see docs/ci-design.md § 8).
       - 'echo "Cost: $0.00 (placeholder -- no LLM calls yet)"'
 
-    # Run whenever llm-e2e ran — same branch/event filter applies.
     when:
-      - event: [push, cron]
+      - event: cron
         branch: main
