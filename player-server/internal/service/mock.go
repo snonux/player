@@ -19,6 +19,7 @@ var (
 	_ MediaService         = (*MockMediaService)(nil)
 	_ AuthService          = (*MockAuthService)(nil)
 	_ ProgressService      = (*MockProgressService)(nil)
+	_ PlaybackHintsService = (*MockPlaybackHintsService)(nil)
 )
 
 // MockMediaService is a fake MediaService for testing.
@@ -434,6 +435,19 @@ func (m *MockAuthService) CountUsers(ctx context.Context) (int, error) {
 func (m *MockAuthService) GetUserByID(ctx context.Context, id int64) (*model.User, error) {
 	if m.GetUserByIDFunc != nil {
 		return m.GetUserByIDFunc(ctx, id)
+	}
+	return nil, nil
+}
+
+// MockPlaybackHintsService is a fake PlaybackHintsService for testing.
+type MockPlaybackHintsService struct {
+	GetPlaybackHintFunc func(ctx context.Context, mediaID, userID int64) (*PlaybackHint, error)
+}
+
+// GetPlaybackHint calls GetPlaybackHintFunc or returns nil.
+func (m *MockPlaybackHintsService) GetPlaybackHint(ctx context.Context, mediaID, userID int64) (*PlaybackHint, error) {
+	if m.GetPlaybackHintFunc != nil {
+		return m.GetPlaybackHintFunc(ctx, mediaID, userID)
 	}
 	return nil, nil
 }

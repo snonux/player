@@ -25,21 +25,22 @@ import (
 
 // appDeps bundles all wired service-layer dependencies.
 type appDeps struct {
-	store          repository.Store
-	hasher         auth.Hasher
-	sm             auth.SessionManager
-	cfg            *internal.Config
-	clk            clock.Clock
-	mediaSvc       service.MediaService
-	adminSvc       service.AdminService
-	progressSvc    service.ProgressService
-	authSvc        service.AuthService
-	podcastSvc     service.PodcastEpisodeService
-	scanner        scanner.Scanner
-	gcWorker       *service.GCWorker
-	logger         *slog.Logger
-	appCtx         context.Context
-	workersStarted chan<- struct{}
+	store            repository.Store
+	hasher           auth.Hasher
+	sm               auth.SessionManager
+	cfg              *internal.Config
+	clk              clock.Clock
+	mediaSvc         service.MediaService
+	adminSvc         service.AdminService
+	progressSvc      service.ProgressService
+	authSvc          service.AuthService
+	podcastSvc       service.PodcastEpisodeService
+	playbackHintSvc  service.PlaybackHintsService
+	scanner          scanner.Scanner
+	gcWorker         *service.GCWorker
+	logger           *slog.Logger
+	appCtx           context.Context
+	workersStarted   chan<- struct{}
 }
 
 // parseVersionFlag parses CLI flags and returns whether --version was requested.
@@ -100,6 +101,7 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 	helper := service.NewAccessHelper(store)
 	browser := service.NewPodcastBrowseService(store, cfg.MediaRoot)
 	mediaSvc := service.NewMediaServiceWithPodcastBrowser(store, clk, cfg.MediaRoot, thumbGen, prober, browser)
+	playbackHintSvc := service.NewPlaybackHintsService(helper)
 
 	fsScanner := scanner.NewFSScannerWithLogger(store, prober, thumbGen, clk, cfg.MediaRoot, logger)
 	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
@@ -112,20 +114,21 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger)
 
 	return &appDeps{
-		store:       store,
-		hasher:      hasher,
-		sm:          sm,
-		cfg:         cfg,
-		clk:         clk,
-		mediaSvc:    mediaSvc,
-		adminSvc:    adminSvc,
-		progressSvc: progressSvc,
-		authSvc:     authSvc,
-		podcastSvc:  podcastSvc,
-		scanner:     fsScanner,
-		gcWorker:    gcWorker,
-		logger:      logger,
-		appCtx:      appCtx,
+		store:           store,
+		hasher:          hasher,
+		sm:              sm,
+		cfg:             cfg,
+		clk:             clk,
+		mediaSvc:        mediaSvc,
+		adminSvc:        adminSvc,
+		progressSvc:     progressSvc,
+		authSvc:         authSvc,
+		podcastSvc:      podcastSvc,
+		playbackHintSvc: playbackHintSvc,
+		scanner:         fsScanner,
+		gcWorker:        gcWorker,
+		logger:          logger,
+		appCtx:          appCtx,
 	}
 }
 
@@ -251,16 +254,17 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 		SessionManager: deps.sm,
 		Config:         cfg,
 		Services: api.ServerServices{
-			Browse:   deps.mediaSvc,
-			Write:    deps.mediaSvc,
-			Share:    deps.mediaSvc,
-			Tag:      deps.mediaSvc,
-			Favorite: deps.mediaSvc,
-			Note:     deps.mediaSvc,
-			Admin:    deps.adminSvc,
-			Progress: deps.progressSvc,
-			Auth:     deps.authSvc,
-			Podcast:  deps.podcastSvc,
+			Browse:        deps.mediaSvc,
+			Write:         deps.mediaSvc,
+			Share:         deps.mediaSvc,
+			Tag:           deps.mediaSvc,
+			Favorite:      deps.mediaSvc,
+			Note:          deps.mediaSvc,
+			Admin:         deps.adminSvc,
+			Progress:      deps.progressSvc,
+			Auth:          deps.authSvc,
+			Podcast:       deps.podcastSvc,
+			PlaybackHints: deps.playbackHintSvc,
 		},
 		StaticFS:      staticFS,
 		MediaStreamer: streamer,

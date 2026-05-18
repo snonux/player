@@ -16,41 +16,43 @@ import (
 
 // Server holds HTTP handlers and dependencies.
 type Server struct {
-	store       repository.Store
-	hasher      auth.Hasher
-	sm          auth.SessionManager
-	cfg         *internal.Config
-	mux         *http.ServeMux
-	handler     http.Handler
-	browseSvc   service.MediaBrowseService
-	writeSvc    service.MediaWriteService
-	shareSvc    service.MediaShareService
-	tagSvc      service.MediaTagService
-	favSvc      service.MediaFavoriteService
-	noteSvc     service.MediaNoteService
-	adminSvc    service.AdminService
-	progressSvc service.ProgressService
-	authSvc     service.AuthService
-	podcastSvc  service.PodcastEpisodeService
-	streamer    service.MediaStreamer
-	staticFS    http.FileSystem
-	logger      *slog.Logger
-	mw          *Middleware
+	store           repository.Store
+	hasher          auth.Hasher
+	sm              auth.SessionManager
+	cfg             *internal.Config
+	mux             *http.ServeMux
+	handler         http.Handler
+	browseSvc       service.MediaBrowseService
+	writeSvc        service.MediaWriteService
+	shareSvc        service.MediaShareService
+	tagSvc          service.MediaTagService
+	favSvc          service.MediaFavoriteService
+	noteSvc         service.MediaNoteService
+	adminSvc        service.AdminService
+	progressSvc     service.ProgressService
+	authSvc         service.AuthService
+	podcastSvc      service.PodcastEpisodeService
+	playbackHintSvc service.PlaybackHintsService
+	streamer        service.MediaStreamer
+	staticFS        http.FileSystem
+	logger          *slog.Logger
+	mw              *Middleware
 }
 
 // ServerServices groups the optional service dependencies used by route handlers.
 // If any service is nil, its respective routes return 501.
 type ServerServices struct {
-	Browse   service.MediaBrowseService
-	Write    service.MediaWriteService
-	Share    service.MediaShareService
-	Tag      service.MediaTagService
-	Favorite service.MediaFavoriteService
-	Note     service.MediaNoteService
-	Admin    service.AdminService
-	Progress service.ProgressService
-	Auth     service.AuthService
-	Podcast  service.PodcastEpisodeService
+	Browse        service.MediaBrowseService
+	Write         service.MediaWriteService
+	Share         service.MediaShareService
+	Tag           service.MediaTagService
+	Favorite      service.MediaFavoriteService
+	Note          service.MediaNoteService
+	Admin         service.AdminService
+	Progress      service.ProgressService
+	Auth          service.AuthService
+	Podcast       service.PodcastEpisodeService
+	PlaybackHints service.PlaybackHintsService
 }
 
 // ServerDeps contains the dependencies needed to construct a Server.
@@ -81,25 +83,26 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) *Server {
 		logger = slog.Default()
 	}
 	s := &Server{
-		store:       deps.Store,
-		hasher:      deps.Hasher,
-		sm:          deps.SessionManager,
-		cfg:         deps.Config,
-		mux:         http.NewServeMux(),
-		browseSvc:   deps.Services.Browse,
-		writeSvc:    deps.Services.Write,
-		shareSvc:    deps.Services.Share,
-		tagSvc:      deps.Services.Tag,
-		favSvc:      deps.Services.Favorite,
-		noteSvc:     deps.Services.Note,
-		adminSvc:    deps.Services.Admin,
-		progressSvc: deps.Services.Progress,
-		authSvc:     deps.Services.Auth,
-		podcastSvc:  deps.Services.Podcast,
-		streamer:    deps.MediaStreamer,
-		staticFS:    deps.StaticFS,
-		logger:      logger,
-		mw:          NewMiddleware(deps.Services.Auth, deps.SessionManager),
+		store:           deps.Store,
+		hasher:          deps.Hasher,
+		sm:              deps.SessionManager,
+		cfg:             deps.Config,
+		mux:             http.NewServeMux(),
+		browseSvc:       deps.Services.Browse,
+		writeSvc:        deps.Services.Write,
+		shareSvc:        deps.Services.Share,
+		tagSvc:          deps.Services.Tag,
+		favSvc:          deps.Services.Favorite,
+		noteSvc:         deps.Services.Note,
+		adminSvc:        deps.Services.Admin,
+		progressSvc:     deps.Services.Progress,
+		authSvc:         deps.Services.Auth,
+		podcastSvc:      deps.Services.Podcast,
+		playbackHintSvc: deps.Services.PlaybackHints,
+		streamer:        deps.MediaStreamer,
+		staticFS:        deps.StaticFS,
+		logger:          logger,
+		mw:              NewMiddleware(deps.Services.Auth, deps.SessionManager),
 	}
 	s.routes()
 	s.handler = withCORS(s.cfg.CORSAllowedOrigins, s.mw.BootstrapRedirect(s.mux))
@@ -224,6 +227,7 @@ func (s *Server) routesMedia() {
 	s.handleBoth(http.MethodPost, "/api/media/{id}/restore", s.requireSession(s.handleRestore))
 	s.handleBoth(http.MethodPost, "/api/media/{id}/shares", s.requireSession(s.handleCreateShare))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/shares", s.requireSession(s.handleListShares))
+	s.handleBoth(http.MethodGet, "/api/media/{id}/playback", s.requireSession(s.handlePlaybackHints))
 }
 
 // routesNotes wires the notes API routes.

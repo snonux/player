@@ -388,6 +388,30 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 }
 
 // ------------------------------------------------------------------
+// Playback hints
+// ------------------------------------------------------------------
+
+// handlePlaybackHints returns codec/container metadata for a media item so that
+// the client can decide whether to play natively or request a future transcoded
+// variant. It performs no actual transcoding — only a DB lookup.
+func (s *Server) handlePlaybackHints(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.playbackHintSvc) {
+		return
+	}
+	id := pathID(r, "id")
+	if id == 0 {
+		badRequest(w, "invalid media id")
+		return
+	}
+	hint, err := s.playbackHintSvc.GetPlaybackHint(r.Context(), id, userIDFromContext(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, hint)
+}
+
+// ------------------------------------------------------------------
 // Notes
 // ------------------------------------------------------------------
 
