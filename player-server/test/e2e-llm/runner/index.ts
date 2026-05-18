@@ -330,6 +330,67 @@ function runScenario(scenario: Scenario): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Server precheck
+// ---------------------------------------------------------------------------
+
+// PLAYER_URL is the base URL the harness uses (matches the README + Playwright
+// config). Centralising the constant keeps the precheck and any future direct
+// HTTP calls aligned with the rest of the harness.
+const PLAYER_URL = process.env['PLAYER_URL'] || 'http://localhost:8080';
+
+// How long to wait for /healthz before declaring the server missing. The
+// Playwright suite waits up to 15 s per scenario internally; doing the same
+// up-front means we surface a missing server as a single clear error instead
+// of one Playwright failure (and one bogus ask task) per scenario.
+const PRECHECK_TIMEOUT_MS = 15_000;
+const PRECHECK_POLL_INTERVAL_MS = 200;
+
+/**
+ * waitForServer polls `${PLAYER_URL}/healthz` until it responds 2xx or the
+ * deadline passes. Returns true if the server became healthy, false otherwise.
+ * Using a synchronous loop (spawnSync sleep) keeps the runner's overall
+ * control flow synchronous, matching how runScenario invokes Playwright.
+ */
+function waitForServer(timeoutMs: number): boolean {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    // Use curl for the probe so we don't need to depend on a Node fetch
+    // shim — keeps the harness usable on older Node where fetch is missing.
+    const probe = spawnSync(
+      'curl',
+      ['-fsS', '-o', '/dev/null', '-w', '%{http_code}', `${PLAYER_URL}/healthz`],
+      { encoding: 'utf8' },
+    );
+    if (probe.status === 0 && probe.stdout.trim().startsWith('2')) return true;
+    spawnSync('sleep', [String(PRECHECK_POLL_INTERVAL_MS / 1000)]);
+  }
+  return false;
+}
+
+/**
+ * precheckServer fails fast with a clear, actionable message if the server
+ * is not reachable. Without this, each scenario would individually fail with
+ * the same "did not become healthy" error and openAskTask would file one
+ * spurious task per scenario — drowning the queue in duplicates of the same
+ * root cause. Returning a non-zero exit before the scenario loop avoids both.
+ */
+function precheckServer(): void {
+  if (waitForServer(PRECHECK_TIMEOUT_MS)) return;
+
+  console.error(
+    `[runner] ERROR: Player server at ${PLAYER_URL} is not reachable on /healthz ` +
+      `after ${PRECHECK_TIMEOUT_MS / 1000}s.`,
+  );
+  console.error('[runner] Start it from player-server/ before running the e2e suite:');
+  console.error(
+    '[runner]   MEDIA_ROOT=./testmedia SECURE_COOKIES=false ' +
+      'DB_PATH=/tmp/player-e2e-llm.db ./player',
+  );
+  console.error('[runner] Override the target URL with PLAYER_URL.');
+  process.exit(2);
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -345,6 +406,12 @@ function main(): void {
     console.log('[runner] No scenario files found — nothing to run.');
     process.exit(0);
   }
+
+  // Fail fast with a clear hint if the server is down. Without this the
+  // runner would spawn Playwright per scenario, time out on each, and file
+  // a duplicate ask task per failure — exactly what produced the legacy
+  // "Server at http://localhost:8080 did not become healthy" task pile.
+  precheckServer();
 
   console.log(`[runner] Running ${scenarios.length} scenario(s)…`);
 

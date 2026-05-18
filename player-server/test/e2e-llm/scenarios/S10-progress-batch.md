@@ -6,7 +6,7 @@ preconditions:
   server_state: running        # server running with an existing admin account and at least two media items
   fixtures: []
 assertions:
-  - db: "SELECT id FROM progress WHERE position_seconds=30"
+  - db: "SELECT media_id FROM playback_progress WHERE position_seconds=30"
   - status_code: "POST /api/v1/progress/batch 200"
 skip: false
 ---
