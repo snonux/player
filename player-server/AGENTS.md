@@ -255,3 +255,31 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 - Frontend modules are plain ES modules — no transpilation step. Keep JS vanilla.
 - CSS changes must use `var(--*)` tokens from `theme.css`.
 - If you add new env vars, update both `internal/config.go` and this document.
+
+---
+
+## Auth Middleware — Bearer-or-Cookie Unified Pattern
+
+`RequireSession` in `internal/api/middleware.go` implements a single unified
+authentication path: it tries a Bearer token first (via the `Authorization:
+Bearer <token>` header) and falls back to the `session` cookie if no Bearer
+header is present. Both paths resolve to the same `*model.Session` value in the
+request context, so all downstream handlers are auth-method-agnostic. Do not
+add a separate middleware or a parallel code path for Bearer-only or
+cookie-only routes — doing so would create duplicate auth logic and silently
+break the unified contract. If you need to handle a new auth mechanism, extend
+`authenticate()` inside `Middleware` and keep the single `RequireSession`
+wrapper as the sole gate for session-required routes.
+
+## Route Registration — `handleBoth` Convention
+
+Every session-required and admin route must be registered via `handleBoth` in
+`server.go`, never via `mux.Handle` or `mux.HandleFunc` directly. `handleBoth`
+registers the handler under both `/api/<path>` (legacy / web-app prefix) and
+`/api/v1/<path>` (stable contract prefix) in one call, ensuring the two
+prefixes remain in sync. If you add a new route and use `mux.HandleFunc`
+directly, only one prefix will be registered and the multi-client contract will
+silently drift — the web SPA or mobile client will break without any compile-
+time or test-time signal. Public endpoints that already have explicit v1 aliases
+(e.g. `/api/login` / `/api/v1/auth/login`) are exempt because they use custom
+path naming that does not follow the `/api/` → `/api/v1/` mechanical transform.
