@@ -1,0 +1,17 @@
+{
+  "name": "player-e2e-web",
+  "version": "1.0.0",
+  "description": "Playwright smoke tests for the Player web UI",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "install-browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}
