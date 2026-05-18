@@ -1,0 +1,58 @@
+# Flutter Android CI pipeline for codeberg.org/snonux/player
+#
+# Stage 1 — android-unit (every push touching player-android/**):
+#   Fast gate: flutter analyze && flutter test
+#   Path-scoped so that Go-only changes do not trigger the Flutter runner.
+#   No emulator, no KVM required — unit tests run entirely in the Flutter SDK.
+#   (Emulator decision deferred per docs/ci-design.md § 4.)
+#
+# Docker image:
+#   ghcr.io/cirruslabs/flutter:stable — pre-built Flutter SDK image maintained by
+#   CirrusLabs; eliminates ~500 MB SDK download on every run.
+#   Update the tag when bumping Flutter locally (one-line change in this file).
+#
+# Cache volumes (Woodpecker named volumes):
+#   flutter-pub-cache → /root/.pub-cache   (Flutter pub package cache)
+#   With a warm pub cache, `flutter pub get` runs in under 5 s.
+
+---
+# ── Stage 1: android-unit (every push touching player-android/**) ──────────────
+
+steps:
+  - name: android-unit
+    # ghcr.io/cirruslabs/flutter:stable bundles the Flutter SDK and Dart SDK so no
+    # SDK download occurs at runtime. Use a version-pinned tag in production when
+    # Flutter SDK version stability is required (see docs/ci-design.md § 8).
+    image: ghcr.io/cirruslabs/flutter:stable
+    volumes:
+      # Persist downloaded pub packages between runs to avoid repeated fetches.
+      # The pub cache is keyed by pubspec.lock; no explicit invalidation is needed.
+      - flutter-pub-cache:/root/.pub-cache
+    directory: player-android
+    commands:
+      # Analyse the Flutter project for type errors, lints, and deprecations.
+      # This is a fast static check that catches most issues without running code.
+      - flutter analyze
+
+      # Run all unit tests under player-android/test/.
+      # No emulator is needed — flutter test runs on the host Dart VM.
+      # -count=1 is not a Flutter flag; flutter test always runs fresh.
+      - flutter test
+
+    # Trigger only on pushes or pull requests that touch the Flutter sub-project.
+    # Path filtering prevents Go-only commits from queueing a Flutter runner.
+    when:
+      - event: [push, pull_request]
+        path:
+          include:
+            - player-android/**
+
+# ── Volumes declaration ────────────────────────────────────────────────────────
+# Named volumes are created once per Woodpecker agent host and reused across
+# pipeline runs. They are not automatically cleaned up — run a periodic purge
+# if disk usage becomes a concern (see docs/ci-design.md § 6).
+
+volumes:
+  - name: flutter-pub-cache
+    host:
+      path: /var/woodpecker/cache/flutter-pub-cache

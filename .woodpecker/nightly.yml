@@ -1,0 +1,76 @@
+# Nightly LLM e2e pipeline for codeberg.org/snonux/player
+#
+# Trigger: Woodpecker cron schedule 0 2 * * * (02:00 UTC daily, main only).
+#          Manual dispatch is also allowed for ad-hoc runs.
+#
+# Purpose: LLM-assisted end-to-end test harness (currently a placeholder).
+#   The real test suite is a future task. This pipeline wires in the correct
+#   structure — secret injection, branch guard, cost logging — so that the
+#   first real LLM e2e tests can be added without restructuring the YAML.
+#
+# Secrets:
+#   ANTHROPIC_API_KEY — injected from a Woodpecker protected project secret.
+#   "Protected" mode prevents the key from being exposed in fork PRs.
+#   Additionally, the pipeline itself checks CI_COMMIT_BRANCH == "main" as a
+#   belt-and-suspenders guard (see docs/ci-design.md § 5).
+#
+# Cost logging:
+#   The cost-log step emits a parseable summary line. When real LLM tests run,
+#   update the placeholder with actual token/cost values from the test harness.
+#   A future monitoring step can fail the job if cost exceeds a threshold.
+
+---
+# ── Nightly LLM e2e (main only, cron 0 2 * * *) ───────────────────────────────
+
+steps:
+  - name: llm-e2e
+    # Use a minimal Alpine image — no Flutter or Go SDK needed for the stub.
+    # Replace with an appropriate image when real LLM e2e tests are added.
+    image: alpine:3.21
+    secrets:
+      # ANTHROPIC_API_KEY is stored as a protected Woodpecker project secret.
+      # It is injected here but not yet consumed — the harness is a future task.
+      # Protected secrets are only available on the repo's own main branch, not
+      # on pull requests from forks.
+      - from_secret: ANTHROPIC_API_KEY
+    commands:
+      # Belt-and-suspenders branch guard: skip if not running on main.
+      # The cron trigger is already scoped to main; this check guards against
+      # accidental manual triggers on feature branches exposing the secret.
+      - |
+        if [ "$CI_COMMIT_BRANCH" != "main" ]; then
+          echo "Skipping LLM e2e: not on main branch (branch=$CI_COMMIT_BRANCH)"
+          exit 0
+        fi
+
+      # Placeholder: exits 0 until the real LLM e2e harness is implemented.
+      # Replace this block with the actual test invocation in a future task.
+      - 'echo "LLM e2e harness: placeholder (no tests implemented yet)"'
+      - exit 0
+
+    # Run only on pushes to main (manual dispatch) and via the cron trigger.
+    # The cron event is automatically scoped to main by Woodpecker's scheduler.
+    when:
+      - event: [push, cron]
+        branch: main
+
+# ── Cost logging step ──────────────────────────────────────────────────────────
+
+  - name: cost-log
+    # Minimal image — only needs shell to echo the cost summary line.
+    image: alpine:3.21
+    depends_on:
+      - llm-e2e
+    commands:
+      # Emit a parseable cost summary line.
+      # Format: "Cost: $<amount> (<note>)"
+      # When the real harness runs, replace the placeholder values with actual
+      # token counts and cost computed by the test runner. A future monitoring
+      # step can parse this line and fail the job if cost exceeds a threshold
+      # (e.g., $1.00/run — see docs/ci-design.md § 8).
+      - 'echo "Cost: $0.00 (placeholder -- no LLM calls yet)"'
+
+    # Run whenever llm-e2e ran — same branch/event filter applies.
+    when:
+      - event: [push, cron]
+        branch: main
