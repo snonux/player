@@ -92,8 +92,13 @@ func (s *authService) Login(ctx context.Context, username, password string) (*Au
 }
 
 // CreateAPIToken creates a hashed API token and returns the one-time plaintext value.
+// A token generation failure (e.g. crypto/rand.Read returning an error) is
+// surfaced to the caller; the HTTP layer translates it into a 500 response.
 func (s *authService) CreateAPIToken(ctx context.Context, userID int64, name string, expiresAt *time.Time) (*CreateAPITokenResult, error) {
-	plaintext, hash := s.tm.Generate()
+	plaintext, hash, err := s.tm.Generate()
+	if err != nil {
+		return nil, fmt.Errorf("generate api token: %w", err)
+	}
 	now := s.clock.Now()
 	token := &model.APIToken{
 		UserID:    userID,

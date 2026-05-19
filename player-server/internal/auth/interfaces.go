@@ -15,7 +15,9 @@ type SessionManager interface {
 }
 
 // TokenManager is the abstraction for API token generation and hashing.
+// Generate returns an error when the system random source fails so callers
+// can surface the failure (e.g. via HTTP 500) instead of panicking.
 type TokenManager interface {
-	Generate() (plaintext, hash string)
+	Generate() (plaintext, hash string, err error)
 	Hash(plaintext string) string
 }

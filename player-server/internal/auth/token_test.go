@@ -11,7 +11,10 @@ func TestTokenManager_Generate(t *testing.T) {
 	seen := make(map[string]string)
 
 	for i := 0; i < 1000; i++ {
-		plaintext, hash := tm.Generate()
+		plaintext, hash, err := tm.Generate()
+		if err != nil {
+			t.Fatalf("generate token: %v", err)
+		}
 		if len(plaintext) != tokenByteLength*2 {
 			t.Fatalf("expected plaintext length %d, got %d", tokenByteLength*2, len(plaintext))
 		}

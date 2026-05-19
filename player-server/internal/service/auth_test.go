@@ -16,8 +16,8 @@ type fixedTokenManager struct {
 	hash      string
 }
 
-func (m fixedTokenManager) Generate() (string, string) {
-	return m.plaintext, m.hash
+func (m fixedTokenManager) Generate() (string, string, error) {
+	return m.plaintext, m.hash, nil
 }
 
 func (m fixedTokenManager) Hash(plaintext string) string {
