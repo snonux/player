@@ -65,9 +65,17 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 	if len(streamer) > 0 {
 		mediaStreamer = streamer[0]
 	}
-	// NewServer now returns an error when required deps (e.g. Config) are
-	// missing. Tests always pass a non-nil Config, so a failure here indicates
-	// a programming mistake in the test setup itself.
+	if mediaStreamer == nil {
+		// NewServer now requires a non-nil MediaStreamer at construction
+		// (see api.NewServerWithLogger). Tests that don't exercise streaming
+		// still need one, so we fall back to the default in-process streamer
+		// (nil remuxer means remux requests will error, which is fine for
+		// non-streaming tests).
+		mediaStreamer = service.NewMediaStreamer(nil)
+	}
+	// NewServer now returns an error when required deps (e.g. Config,
+	// MediaStreamer) are missing. Tests always pass non-nil values, so a
+	// failure here indicates a programming mistake in the test setup itself.
 	srv, err := NewServer(ServerDeps{
 		Store:          store,
 		Hasher:         hasher,

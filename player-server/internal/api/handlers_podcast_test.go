@@ -68,7 +68,8 @@ func newPodcastTestServer(t *testing.T, store repository.Store, hasher auth.Hash
 			Auth:     authSvc,
 			Podcast:  podcastSvc,
 		},
-		StaticFS: fs,
+		StaticFS:      fs,
+		MediaStreamer: service.NewMediaStreamer(nil),
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)

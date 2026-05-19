@@ -82,7 +82,8 @@ func newIntegrationServer(t *testing.T) *integrationEnv {
 			Auth:     authSvc,
 			Podcast:  &integrationPodcastService{},
 		},
-		StaticFS: http.FS(staticFS),
+		StaticFS:      http.FS(staticFS),
+		MediaStreamer: service.NewMediaStreamer(nil),
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)

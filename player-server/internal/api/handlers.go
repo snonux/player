@@ -162,10 +162,12 @@ func (s *Server) serveDetach(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------
 
 func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *service.FileResult, attachment bool) {
+	// s.streamer is required at construction time (see NewServerWithLogger),
+	// so it is guaranteed non-nil here. We previously fell back to a default
+	// streamer when nil, which silently hid wiring mistakes and violated the
+	// Dependency Inversion Principle by letting the handler decide its own
+	// dependency.
 	streamer := s.streamer
-	if streamer == nil {
-		streamer = service.NewMediaStreamer(nil)
-	}
 
 	stream, err := streamer.Open(r.Context(), res, attachment)
 	if err != nil {
