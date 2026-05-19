@@ -23,6 +23,12 @@ go.work
 /player-server/cmd.out
 /player-server/testmedia/
 
+# Server-generated artifacts inside the committed test fixture set.
+# The scanner regenerates .thumbnails/ and .cover.jpg on first scan,
+# so they don't need to be in the repository.
+/player-server/testdata/media/**/.thumbnails/
+/player-server/testdata/media/**/.cover.jpg
+
 # Player Android local artifacts
 /player-android/.dart_tool/
 /player-android/.flutter-plugins*
