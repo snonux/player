@@ -8,7 +8,6 @@ import (
 
 	"codeberg.org/snonux/player/internal/auth"
 	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/service"
 )
 
 type ctxKey int
@@ -20,6 +19,24 @@ const (
 	userCtxKey
 )
 
+// Authenticator is the narrow auth interface needed by middleware.
+//
+// It exposes only the methods middleware actually calls, satisfying the
+// Interface Segregation Principle: callers (and test doubles) need not
+// implement the full service.AuthService surface (bootstrap, login, API
+// token CRUD, etc.) just to wire up request authentication.
+//
+// service.AuthService satisfies this interface structurally, so the live
+// server simply passes its concrete service in.
+type Authenticator interface {
+	// AuthenticateBearer validates a Bearer token and returns a synthetic session.
+	AuthenticateBearer(ctx context.Context, plaintext string) (*model.Session, error)
+	// CountUsers reports the number of registered users (used by BootstrapRedirect).
+	CountUsers(ctx context.Context) (int, error)
+	// GetUserByID returns a user by database ID (used by RequireAdmin).
+	GetUserByID(ctx context.Context, id int64) (*model.User, error)
+}
+
 // Middleware holds dependencies for middleware constructors.
 //
 // publicPaths and publicPrefixes form a route registry used by
@@ -29,16 +46,22 @@ const (
 // the bypass set — no hidden hardcoded whitelist that silently 401s/redirects
 // new routes the developer forgot to add.
 type Middleware struct {
-	authSvc        service.AuthService
+	authSvc        Authenticator
 	sm             auth.SessionManager
 	publicPaths    map[string]bool
 	publicPrefixes []string
 }
 
 // NewMiddleware creates middleware handlers.
+//
+// The auth dependency is the narrow Authenticator interface rather than the
+// full service.AuthService — middleware only needs three methods, and the
+// smaller surface keeps tests cheap and prevents accidental coupling to
+// unrelated auth-service operations.
+//
 // The public route registry starts empty; callers register public paths
 // via RegisterPublic / RegisterPublicPrefix as routes are wired up.
-func NewMiddleware(authSvc service.AuthService, sm auth.SessionManager) *Middleware {
+func NewMiddleware(authSvc Authenticator, sm auth.SessionManager) *Middleware {
 	return &Middleware{
 		authSvc:     authSvc,
 		sm:          sm,
