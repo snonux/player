@@ -169,9 +169,21 @@ func TestProgressService_UpdateProgress(t *testing.T) {
 					},
 				},
 				MediaRepo: repository.MockMediaRepo{
+					// GetMediaByID feeds verifyAccess, which UpdateProgress
+					// now calls to reject missing/deleted/forbidden media.
+					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+						return &model.Media{ID: id, SetID: 7}, nil
+					},
 					IncrementPlayCountFunc: func(ctx context.Context, id int64) error {
 						incremented = id
 						return tt.incrementErr
+					},
+				},
+				UserRepo: repository.MockUserRepo{
+					// Admin user short-circuits checkSetPermission so the
+					// progress flow doesn't need a permissions fixture.
+					GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+						return &model.User{ID: id, IsAdmin: true}, nil
 					},
 				},
 			}
@@ -227,6 +239,19 @@ func TestProgressService_BatchUpdateProgress_OrdersByObservedAt(t *testing.T) {
 				cp := *acc
 				accByMedia[acc.MediaID] = &cp
 				return nil
+			},
+		},
+		// BatchUpdateProgress now calls verifyAccess per item; the two
+		// repos below give it real media + an admin user so each item
+		// passes the access check before reaching applyProgress.
+		MediaRepo: repository.MockMediaRepo{
+			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+				return &model.Media{ID: id, SetID: 7}, nil
+			},
+		},
+		UserRepo: repository.MockUserRepo{
+			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+				return &model.User{ID: id, IsAdmin: true}, nil
 			},
 		},
 	}

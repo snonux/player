@@ -36,6 +36,14 @@ func (s *progressService) UpdateProgress(ctx context.Context, sessionID string, 
 		return errors.New("media_id required")
 	}
 
+	// verifyAccess catches three cases the raw upsert misses: missing
+	// media (ErrNotFound → 404 instead of an FK-violation 500), soft-
+	// deleted media (DeletedAt != nil → ErrNotFound), and access denied
+	// (user has no permission on the media's set → ErrForbidden → 403).
+	if _, err := s.helper.verifyAccess(ctx, mediaID, userID); err != nil {
+		return err
+	}
+
 	return s.applyProgress(ctx, s.store, sessionID, userID, mediaID, position, s.clock.Now())
 }
 
@@ -49,6 +57,13 @@ func (s *progressService) BatchUpdateProgress(ctx context.Context, sessionID str
 	for i, update := range updates {
 		if update.MediaID == 0 {
 			return fmt.Errorf("updates[%d].media_id required", i)
+		}
+		// Verify access up-front per item so a bad/forbidden/deleted
+		// media_id is rejected with ErrNotFound/ErrForbidden (404/403)
+		// rather than triggering an FK-violation 500 mid-transaction or
+		// silently recording progress on media the user cannot see.
+		if _, err := s.helper.verifyAccess(ctx, update.MediaID, userID); err != nil {
+			return fmt.Errorf("updates[%d]: %w", i, err)
 		}
 		if update.ObservedAt.IsZero() {
 			update.ObservedAt = now

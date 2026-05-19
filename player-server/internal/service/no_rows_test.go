@@ -114,8 +114,18 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 				},
 			},
 			MediaRepo: repository.MockMediaRepo{
+				// verifyAccess now runs before applyProgress; supply a
+				// non-nil media so the access check passes.
+				GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+					return &model.Media{ID: id, SetID: 7}, nil
+				},
 				IncrementPlayCountFunc: func(ctx context.Context, id int64) error {
 					return nil
+				},
+			},
+			UserRepo: repository.MockUserRepo{
+				GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+					return &model.User{ID: id, IsAdmin: true}, nil
 				},
 			},
 		}
