@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	mrand "math/rand"
 	"os"
@@ -12,15 +13,21 @@ import (
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/thumb"
 )
 
 // browseService handles read-only browsing and media streaming operations.
+//
+// The thumbnail resolver is injected so the service layer no longer reaches
+// into the filesystem itself; tests can swap in a fake Resolver instead of
+// writing temporary files.
 type browseService struct {
 	store          repository.BrowseServiceStore
 	clock          clock.Clock
 	mediaRoot      string
 	helper         *accessHelper
 	podcastBrowser PodcastBrowser
+	thumbResolver  thumb.Resolver
 }
 
 // PodcastBrowser augments a BrowseResult with podcast-specific folders and episodes.
@@ -75,14 +82,27 @@ func (p *podcastBrowseService) AugmentBrowseSet(ctx context.Context, result *Bro
 	return nil
 }
 
-// NewBrowseService creates a BrowseService.
+// NewBrowseService creates a BrowseService with the production filesystem
+// thumbnail resolver. Use NewBrowseServiceWithResolver to inject a custom
+// Resolver (e.g. a fake in tests).
 func NewBrowseService(store repository.BrowseServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, browser PodcastBrowser) *browseService {
+	return NewBrowseServiceWithResolver(store, clk, mediaRoot, helper, browser, thumb.NewFSResolver())
+}
+
+// NewBrowseServiceWithResolver creates a BrowseService with a caller-supplied
+// thumbnail Resolver. A nil resolver falls back to the default filesystem
+// implementation so existing callers keep working.
+func NewBrowseServiceWithResolver(store repository.BrowseServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, browser PodcastBrowser, resolver thumb.Resolver) *browseService {
+	if resolver == nil {
+		resolver = thumb.NewFSResolver()
+	}
 	return &browseService{
 		store:          store,
 		clock:          clk,
 		mediaRoot:      mediaRoot,
 		helper:         helper,
 		podcastBrowser: browser,
+		thumbResolver:  resolver,
 	}
 }
 
@@ -229,32 +249,22 @@ func (s *browseService) GetThumbnail(ctx context.Context, mediaID, userID int64)
 	if err != nil {
 		return nil, err
 	}
-	if media.ThumbnailPath == "" {
-		// Use the sentinel so handleError maps this to HTTP 404 instead of
-		// falling through to the default 500 branch.
-		return nil, ErrNotFound
-	}
-	info, err := os.Stat(media.ThumbnailPath)
-	if err == nil {
-		return &FileResult{
-			Path:     media.ThumbnailPath,
-			FileName: filepath.Base(media.ThumbnailPath),
-			FileSize: info.Size(),
-		}, nil
-	}
-	// If the generated thumbnail is missing, fall back to the original file
-	// for image media so that cover.jpg and similar files still render.
-	if media.Type == model.MediaTypeImage {
-		info, err = os.Stat(media.AbsPath)
-		if err == nil {
-			return &FileResult{
-				Path:     media.AbsPath,
-				FileName: filepath.Base(media.AbsPath),
-				FileSize: info.Size(),
-			}, nil
+	// Delegate filesystem access to the injected resolver so the service
+	// layer stays free of os.Stat. The resolver returns thumb.ErrNotFound
+	// for missing thumbnails; map that to the service-level sentinel so
+	// handleError renders an HTTP 404 instead of a 500.
+	resolved, err := s.thumbResolver.Resolve(media)
+	if err != nil {
+		if errors.Is(err, thumb.ErrNotFound) {
+			return nil, ErrNotFound
 		}
+		return nil, err
 	}
-	return nil, fmt.Errorf("stat thumbnail: %w", err)
+	return &FileResult{
+		Path:     resolved.Path,
+		FileName: resolved.FileName,
+		FileSize: resolved.FileSize,
+	}, nil
 }
 
 // prefixForParent builds the slash-terminated prefix used for matching paths under parent.

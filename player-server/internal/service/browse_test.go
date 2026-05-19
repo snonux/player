@@ -8,7 +8,23 @@ import (
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/thumb"
 )
+
+// fakeResolver is a test double for thumb.Resolver that lets tests assert
+// browseService delegates thumbnail lookup instead of touching the disk.
+type fakeResolver struct {
+	called    bool
+	gotMedia  *model.Media
+	resolved  *thumb.ResolvedFile
+	resolvErr error
+}
+
+func (f *fakeResolver) Resolve(media *model.Media) (*thumb.ResolvedFile, error) {
+	f.called = true
+	f.gotMedia = media
+	return f.resolved, f.resolvErr
+}
 
 func TestBrowseService_BrowseSet(t *testing.T) {
 	ctx := context.Background()
@@ -176,4 +192,71 @@ func TestBrowseService_BrowseSet_PodcastEpisodes(t *testing.T) {
 	if res.Episodes[0].ID != 2 {
 		t.Fatalf("expected undownloaded episode ID 2, got %+v", res.Episodes[0])
 	}
+}
+
+// TestBrowseService_GetThumbnail_DelegatesToResolver verifies the service
+// no longer calls os.Stat directly: GetThumbnail should hand off to the
+// injected thumb.Resolver and translate ResolvedFile -> FileResult.
+func TestBrowseService_GetThumbnail_DelegatesToResolver(t *testing.T) {
+	ctx := context.Background()
+
+	media := &model.Media{ID: 7, SetID: 1, FileName: "a.mp4", ThumbnailPath: "/anywhere/x.jpg"}
+	store := &repository.MockStore{
+		MediaRepo: repository.MockMediaRepo{
+			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
+				return media, nil
+			},
+		},
+		UserRepo: repository.MockUserRepo{
+			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
+				return &model.User{ID: id, IsAdmin: true}, nil
+			},
+		},
+	}
+
+	t.Run("resolver hit becomes FileResult", func(t *testing.T) {
+		fake := &fakeResolver{resolved: &thumb.ResolvedFile{Path: "/anywhere/x.jpg", FileName: "x.jpg", FileSize: 42}}
+		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, nil, fake)
+		res, err := svc.GetThumbnail(ctx, 7, 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !fake.called {
+			t.Fatal("expected resolver to be invoked")
+		}
+		if fake.gotMedia == nil || fake.gotMedia.ID != 7 {
+			t.Fatalf("resolver received wrong media: %+v", fake.gotMedia)
+		}
+		if res.Path != "/anywhere/x.jpg" || res.FileName != "x.jpg" || res.FileSize != 42 {
+			t.Fatalf("unexpected FileResult: %+v", res)
+		}
+	})
+
+	t.Run("resolver ErrNotFound maps to service ErrNotFound", func(t *testing.T) {
+		fake := &fakeResolver{resolvErr: thumb.ErrNotFound}
+		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, nil, fake)
+		_, err := svc.GetThumbnail(ctx, 7, 1)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected ErrNotFound, got %v", err)
+		}
+	})
+
+	t.Run("other resolver errors propagate", func(t *testing.T) {
+		boom := errors.New("disk on fire")
+		fake := &fakeResolver{resolvErr: boom}
+		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, nil, fake)
+		_, err := svc.GetThumbnail(ctx, 7, 1)
+		if err == nil || errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected non-not-found error, got %v", err)
+		}
+	})
+
+	t.Run("nil resolver falls back to default", func(t *testing.T) {
+		// NewBrowseServiceWithResolver(nil resolver) should still work and
+		// not panic — the constructor swaps in the FS resolver.
+		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, nil, nil)
+		if svc == nil {
+			t.Fatal("expected non-nil service")
+		}
+	})
 }

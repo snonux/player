@@ -33,11 +33,21 @@ func NewMediaService(store repository.MediaServiceStore, clk clock.Clock, mediaR
 	return NewMediaServiceWithPodcastBrowser(store, clk, mediaRoot, thumbGen, prober, nil)
 }
 
-// NewMediaServiceWithPodcastBrowser creates a MediaService with an optional PodcastBrowser.
+// NewMediaServiceWithPodcastBrowser creates a MediaService with an optional
+// PodcastBrowser and the default filesystem thumbnail resolver. For
+// dependency-injected setups (e.g. tests that want to avoid touching disk
+// for thumbnails) use NewMediaServiceWithDeps.
 func NewMediaServiceWithPodcastBrowser(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, browser PodcastBrowser) *mediaService {
+	return NewMediaServiceWithDeps(store, clk, mediaRoot, thumbGen, prober, browser, thumb.NewFSResolver())
+}
+
+// NewMediaServiceWithDeps creates a MediaService with all collaborators
+// supplied explicitly, including a thumbnail Resolver. A nil resolver
+// falls back to the default filesystem implementation.
+func NewMediaServiceWithDeps(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, browser PodcastBrowser, thumbResolver thumb.Resolver) *mediaService {
 	helper := &accessHelper{store: store}
 	return &mediaService{
-		MediaBrowseService:   NewBrowseService(store, clk, mediaRoot, helper, browser),
+		MediaBrowseService:   NewBrowseServiceWithResolver(store, clk, mediaRoot, helper, browser, thumbResolver),
 		MediaWriteService:    NewWriteService(store, clk, mediaRoot, thumbGen, prober, helper),
 		MediaShareService:    NewShareService(store, clk, helper),
 		MediaTagService:      NewTagService(store, helper),

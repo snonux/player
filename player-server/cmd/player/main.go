@@ -24,22 +24,22 @@ import (
 
 // appDeps bundles all wired service-layer dependencies.
 type appDeps struct {
-	store            repository.Store
-	hasher           auth.Hasher
-	sm               auth.SessionManager
-	cfg              *internal.Config
-	clk              clock.Clock
-	mediaSvc         service.MediaService
-	adminSvc         service.AdminService
-	progressSvc      service.ProgressService
-	authSvc          service.AuthService
-	podcastSvc       service.PodcastEpisodeService
-	playbackHintSvc  service.PlaybackHintsService
-	scanner          scanner.Scanner
-	gcWorker         *service.GCWorker
-	logger           *slog.Logger
-	appCtx           context.Context
-	workersStarted   chan<- struct{}
+	store           repository.Store
+	hasher          auth.Hasher
+	sm              auth.SessionManager
+	cfg             *internal.Config
+	clk             clock.Clock
+	mediaSvc        service.MediaService
+	adminSvc        service.AdminService
+	progressSvc     service.ProgressService
+	authSvc         service.AuthService
+	podcastSvc      service.PodcastEpisodeService
+	playbackHintSvc service.PlaybackHintsService
+	scanner         scanner.Scanner
+	gcWorker        *service.GCWorker
+	logger          *slog.Logger
+	appCtx          context.Context
+	workersStarted  chan<- struct{}
 }
 
 // parseVersionFlag parses CLI flags and returns whether --version was requested.
@@ -90,10 +90,14 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 
 	prober := probe.NewFFProber()
 	thumbGen := thumb.NewFFmpegGenerator()
+	// Explicit filesystem thumbnail resolver: keeps service.GetThumbnail
+	// free of direct os.Stat calls and makes the dependency easy to swap
+	// out in tests or alternate deployments (e.g. object storage).
+	thumbResolver := thumb.NewFSResolver()
 
 	helper := service.NewAccessHelper(store)
 	browser := service.NewPodcastBrowseService(store, cfg.MediaRoot)
-	mediaSvc := service.NewMediaServiceWithPodcastBrowser(store, clk, cfg.MediaRoot, thumbGen, prober, browser)
+	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, browser, thumbResolver)
 	playbackHintSvc := service.NewPlaybackHintsService(helper)
 
 	fsScanner := scanner.NewFSScannerWithLogger(store, prober, thumbGen, clk, cfg.MediaRoot, logger)
