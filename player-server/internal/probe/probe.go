@@ -75,9 +75,15 @@ func (f *FFProber) Probe(ctx context.Context, path string) (*model.Metadata, err
 			if delay > maxDelay {
 				delay = maxDelay
 			}
+			// Use time.NewTimer instead of time.After so the underlying
+			// timer is released promptly when ctx.Done fires first,
+			// rather than leaking until the delay elapses.
+			t := time.NewTimer(delay)
 			select {
-			case <-time.After(delay):
+			case <-t.C:
+				// Retry path: timer fired naturally, no Stop needed.
 			case <-ctx.Done():
+				t.Stop()
 				return nil, ctx.Err()
 			}
 		}
