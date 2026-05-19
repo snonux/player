@@ -27,13 +27,13 @@ func (s *mediaStreamer) Open(ctx context.Context, file *FileResult, attachment b
 
 	f, err := os.Open(file.Path)
 	if err != nil {
-		return nil, fmt.Errorf("%w: open stream file: %v", ErrNotFound, err)
+		return nil, fmt.Errorf("%w: open stream file: %w", ErrNotFound, err)
 	}
 
 	stat, err := f.Stat()
 	if err != nil {
 		f.Close()
-		return nil, fmt.Errorf("%w: stat stream file: %v", ErrNotFound, err)
+		return nil, fmt.Errorf("%w: stat stream file: %w", ErrNotFound, err)
 	}
 
 	remuxed := !attachment && s.remuxer != nil && probe.LooksLikeMPEGTS(file.Path)
