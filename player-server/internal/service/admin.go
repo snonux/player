@@ -11,6 +11,9 @@ import (
 	"codeberg.org/snonux/player/internal/scanner"
 )
 
+// Compile-time check that *adminService satisfies AdminService.
+var _ AdminService = (*adminService)(nil)
+
 // adminService is the concrete implementation of AdminService.
 // It composes role-focused sub-services to satisfy SRP.
 type adminService struct {

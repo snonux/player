@@ -11,6 +11,9 @@ import (
 	"codeberg.org/snonux/player/internal/probe"
 )
 
+// Compile-time check that *mediaStreamer satisfies MediaStreamer.
+var _ MediaStreamer = (*mediaStreamer)(nil)
+
 type mediaStreamer struct {
 	remuxer probe.Remuxer
 }
