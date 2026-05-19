@@ -498,7 +498,11 @@ func (s *FSScanner) probeWorkerLoop(
 		if scanCtx.Err() != nil {
 			continue
 		}
-		result, err := s.probeFile(ctx, path, setPath, setID, setName, existing, coverImages, progress)
+		// Use scanCtx (not ctx) so ffprobe/ffmpeg subprocesses spawned by
+		// probeFile cancel promptly when scanCtx is cancelled — e.g. another
+		// worker failed or TriggerRescan restarted the scan. Passing the
+		// parent ctx here would leave ffprobe running after cancel.
+		result, err := s.probeFile(scanCtx, path, setPath, setID, setName, existing, coverImages, progress)
 		if err != nil {
 			sendErr(err)
 			return
