@@ -32,15 +32,15 @@ The binary resolves the embedded `web/` static asset directory relative to its w
 directory, so running it from a different location will cause static files to 404.
 
 ```sh
-# From player-server/ — use testmedia/ as the media library.
-MEDIA_ROOT=./testmedia SECURE_COOKIES=false DB_PATH=/tmp/player-e2e.db ./player
+# From player-server/ — use testdata/media/ as the media library.
+MEDIA_ROOT=./testdata/media SECURE_COOKIES=false DB_PATH=/tmp/player-e2e.db ./player
 ```
 
 Key environment variables for the test server:
 
 | Variable        | Value          | Reason                                              |
 |-----------------|----------------|-----------------------------------------------------|
-| `MEDIA_ROOT`    | `./testmedia`  | Provides pre-existing sets so the grid test passes. |
+| `MEDIA_ROOT`    | `./testdata/media`  | Provides pre-existing sets so the grid test passes. |
 | `SECURE_COOKIES`| `false`        | Allows the session cookie over plain HTTP.          |
 | `DB_PATH`       | `/tmp/player-e2e.db` | Isolates the test database from production.  |
 

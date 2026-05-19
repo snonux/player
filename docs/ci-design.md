@@ -142,8 +142,8 @@ No running server process needed — integration tests start their own in-proces
 Runs the Playwright smoke suite against a real running server with test media.
 
 ```
-# Start server with test database and testmedia
-MEDIA_ROOT=./testmedia SECURE_COOKIES=false DB_PATH=/tmp/player-e2e-ci.db \
+# Start server with test database and testdata/media
+MEDIA_ROOT=./testdata/media SECURE_COOKIES=false DB_PATH=/tmp/player-e2e-ci.db \
   ./player &
 
 # Wait for server readiness (done inside the Playwright globalSetup hook)
@@ -429,7 +429,7 @@ bumping Flutter locally. This is a one-line change.
 
 The Playwright suite is configured with `retries: 1` on CI and generous timeouts
 (15 s navigation, 10 s action). Flakiness can still occur if the Go server takes
-longer than expected to start or if testmedia scanning is slow.
+longer than expected to start or if testdata/media scanning is slow.
 
 **Mitigation:** The Playwright `globalSetup` hook already waits for the server to
 respond before tests run (`waitForServer` helper in `tests/helpers/server.ts`). The

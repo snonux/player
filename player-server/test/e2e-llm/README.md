@@ -62,8 +62,8 @@ The harness defaults to `http://localhost:8080`. Override with `PLAYER_URL`.
 Start the server from `player-server/` so it can resolve embedded static assets:
 
 ```sh
-# From player-server/ — use testmedia/ as the media library:
-MEDIA_ROOT=./testmedia \
+# From player-server/ — use testdata/media/ as the media library:
+MEDIA_ROOT=./testdata/media \
 SECURE_COOKIES=false \
 DB_PATH=/tmp/player-e2e-llm.db \
 ./player
@@ -73,7 +73,7 @@ Key server environment variables:
 
 | Variable | Value | Reason |
 |---|---|---|
-| `MEDIA_ROOT` | `./testmedia` | Provides pre-existing media for upload/verify scenarios |
+| `MEDIA_ROOT` | `./testdata/media` | Provides pre-existing media for upload/verify scenarios |
 | `SECURE_COOKIES` | `false` | Allows session cookie over plain HTTP |
 | `DB_PATH` | `/tmp/player-e2e-llm.db` | Isolates the test database from production |
 

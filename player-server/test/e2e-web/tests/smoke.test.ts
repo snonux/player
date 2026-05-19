@@ -18,7 +18,7 @@
  *   - The server must be started with SECURE_COOKIES=false so that the session
  *     cookie is accessible on plain HTTP.
  *   - The server must point at a MEDIA_ROOT that contains at least one set with
- *     at least one media file.  The testmedia/ directory in this repo satisfies
+ *     at least one media file.  The testdata/media/ directory in this repo satisfies
  *     that requirement when passed as MEDIA_ROOT.
  *
  * Run:
@@ -231,7 +231,7 @@ test('authenticated user can open the sets sidebar', async ({ page }) => {
   const sidebar = page.locator('#sidebar');
   await expect(sidebar).toBeVisible({ timeout: 5_000 });
 
-  // At least one set item must exist (testmedia/ has sets after the rescan).
+  // At least one set item must exist (testdata/media/ has sets after the rescan).
   const setRows = sidebar.locator('.set-row');
   await expect(setRows.first()).toBeVisible({ timeout: 10_000 });
   const count = await setRows.count();

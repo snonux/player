@@ -34,7 +34,7 @@ YAML front-matter is used instead.
    or any non-podcast set) as `set_id`.
 
 4. Prepare a small test audio file to upload. Use the fixture file at
-   `player-server/testmedia/podcast/` or create a minimal 1-second silent MP3
+   `player-server/testdata/media/podcast/` or create a minimal 1-second silent MP3
    named `test-audio-e2e.mp3` using `ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t 1 -q:a 9 -acodec libmp3lame /tmp/test-audio-e2e.mp3`
    (requires ffmpeg on PATH). Confirm the file exists at `/tmp/test-audio-e2e.mp3`.
 

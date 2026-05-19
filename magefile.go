@@ -18,7 +18,7 @@ const runnerDir = "player-server/test/e2e-llm/runner"
 // The Player server must already be running before invoking this target.
 // Start it from player-server/ with:
 //
-//	MEDIA_ROOT=./testmedia SECURE_COOKIES=false DB_PATH=/tmp/player-e2e-llm.db ./player
+//	MEDIA_ROOT=./testdata/media SECURE_COOKIES=false DB_PATH=/tmp/player-e2e-llm.db ./player
 //
 // Override the target URL with PLAYER_URL (default: http://localhost:8080).
 // Set ANTHROPIC_API_KEY to enable the Haiku screenshot oracle (Layer 5).

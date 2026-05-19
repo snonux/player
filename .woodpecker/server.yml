@@ -89,16 +89,16 @@ steps:
       - CGO_ENABLED=0 go build -o player ./cmd/player
 
       # ── 3. Start the server in the background with test media ─────────────
-      # MEDIA_ROOT points at the in-repo testmedia directory so the server
+      # MEDIA_ROOT points at the in-repo testdata/media directory so the server
       # serves real media files without any external setup.
       # SECURE_COOKIES=false avoids HTTPS-only cookie restrictions in CI.
       # DB_PATH uses a temp file so each run starts from a clean database.
-      - MEDIA_ROOT=./testmedia SECURE_COOKIES=false DB_PATH=/tmp/player-e2e-ci.db ./player &
+      - MEDIA_ROOT=./testdata/media SECURE_COOKIES=false DB_PATH=/tmp/player-e2e-ci.db ./player &
 
       # ── 4. Wait for the server to be ready ────────────────────────────────
       # curl retries up to 10 times with a 1-second delay between attempts.
       # This guards against Playwright launching before the server is ready
-      # to accept connections (especially while it scans testmedia on startup).
+      # to accept connections (especially while it scans testdata/media on startup).
       - curl --retry 10 --retry-delay 1 --fail http://localhost:8080/healthz
 
       # ── 5. Install Playwright dependencies and run the smoke suite ─────────

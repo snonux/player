@@ -20,7 +20,7 @@ in step 5 is a benign payload — the server ignores it but accepts the
 request. The endpoint returns HTTP 200 only when the set contains at least
 one media file the server can derive a cover from; the chosen set in
 step 3 must therefore be a non-empty set such as `musicvideos` or any
-seeded testmedia set.
+seeded testdata/media set.
 
 ---
 
@@ -37,7 +37,7 @@ seeded testmedia set.
 
 3. List the available sets: call `GET /api/v1/sets` with the session cookie.
    Confirm the response is HTTP 200 and the returned array contains at least
-   one set. Prefer a non-podcast set seeded from `testmedia/` (for example
+   one set. Prefer a non-podcast set seeded from `testdata/media/` (for example
    `musicvideos`). Save the `id` of the chosen set as `set_id`.
 
 4. Browse the contents of the chosen set: call

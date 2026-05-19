@@ -30,7 +30,7 @@ below will need to be updated.
 
 The `MEDIA_ROOT` must point at a directory with at least 5 media items, at
 least one of which is type `audio`, so the pagination, search and type
-assertions can find real data. (`./testmedia` satisfies this — see the harness
+assertions can find real data. (`./testdata/media` satisfies this — see the harness
 README.)
 
 ---
@@ -97,7 +97,7 @@ README.)
 10. Type filter — audio only: call `GET /api/v1/media?type=audio` with the
     session cookie. Confirm the response is HTTP 200. If the array is
     non-empty, confirm every returned item has `type` equal to `audio`. If
-    the array is empty (the seeded `testmedia/` library has no audio files),
+    the array is empty (the seeded `testdata/media/` library has no audio files),
     treat it as acceptable — the type filter still returned 200 with a
     well-formed empty array.
 

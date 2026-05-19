@@ -119,13 +119,13 @@ below lock that behaviour in.
     (`tagService.RemoveTag` returns `ErrNotFound` for unknown tag names.)
 
 17. Find a set whose media items have no generated thumbnail. If every
-    media item in `testmedia/` happens to have one, skip the rest of this
+    media item in `testdata/media/` happens to have one, skip the rest of this
     step and continue — the regression case is unreachable in this DB.
     Otherwise, call `GET /api/v1/media/{id}/thumbnail` for one of those
     items and confirm the response is HTTP 404 — not 500.
 
 18. The empty-set cover regen path: `POST /api/v1/sets/{id}/cover` for a
-    set with no eligible media files. If the seeded `testmedia/` library
+    set with no eligible media files. If the seeded `testdata/media/` library
     contains no empty set, skip this step. Otherwise, confirm the response
     is HTTP 400 — not 500. (`writeService.RegenerateSetCover` returns
     `ErrEmptySetForCover` which maps to 400.)

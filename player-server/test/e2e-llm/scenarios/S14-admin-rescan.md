@@ -33,7 +33,7 @@ skip: false
    - `files_done` (integer, >= 0)
    The fields `current_set` (string) and `last_error` (string) may be present
    or omitted depending on state. Do not require a specific value for `running`
-   — for a small `./testmedia` library the scan can finish before the first
+   — for a small `./testdata/media` library the scan can finish before the first
    poll.
 
 4. Poll scan progress a second time: call `GET /api/v1/admin/scan-progress`

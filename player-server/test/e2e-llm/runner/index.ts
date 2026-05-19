@@ -383,7 +383,7 @@ function precheckServer(): void {
   );
   console.error('[runner] Start it from player-server/ before running the e2e suite:');
   console.error(
-    '[runner]   MEDIA_ROOT=./testmedia SECURE_COOKIES=false ' +
+    '[runner]   MEDIA_ROOT=./testdata/media SECURE_COOKIES=false ' +
       'DB_PATH=/tmp/player-e2e-llm.db ./player',
   );
   console.error('[runner] Override the target URL with PLAYER_URL.');

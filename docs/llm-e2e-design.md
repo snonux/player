@@ -334,7 +334,7 @@ position.
 **Goal:** Verify that a file uploaded via the admin API appears in the web UI
 media grid.
 
-**Precondition:** Server running, admin account exists, testmedia fixture file
+**Precondition:** Server running, admin account exists, testdata/media fixture file
 available.
 
 **Steps (abbreviated):**

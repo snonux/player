@@ -145,7 +145,7 @@ export async function ensureRegularUser(adminCookie: string): Promise<void> {
  * do not need to wait for the full scan to finish; we just need at least
  * one set to be present before running the browse and media-grid tests.
  *
- * The large testmedia library may take several minutes to fully scan on a
+ * The large testdata/media library may take several minutes to fully scan on a
  * slow machine, but the first set appears within seconds.
  */
 export async function triggerRescan(adminCookie: string, timeoutMs = 30_000): Promise<void> {

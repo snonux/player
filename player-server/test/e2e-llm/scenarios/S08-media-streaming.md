@@ -17,7 +17,7 @@ request, and the download endpoint. No actual browser playback is performed —
 each step inspects HTTP status codes, response headers and JSON bodies.
 
 The `MEDIA_ROOT` must point at a directory containing at least one media
-item (see the harness README — `./testmedia` is the default for the LLM e2e
+item (see the harness README — `./testdata/media` is the default for the LLM e2e
 suite). If no media items exist the scenario will fail at step 2.
 
 ---
