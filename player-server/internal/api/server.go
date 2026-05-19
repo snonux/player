@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"codeberg.org/snonux/player/internal/auth"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
+	"codeberg.org/snonux/player/internal/web"
 )
 
 // Server holds HTTP handlers and dependencies.
@@ -35,6 +37,7 @@ type Server struct {
 	playbackHintSvc service.PlaybackHintsService
 	streamer        service.MediaStreamer
 	staticFS        http.FileSystem
+	shareRenderer   *web.SharePageRenderer
 	logger          *slog.Logger
 	mw              *Middleware
 }
@@ -67,14 +70,20 @@ type ServerDeps struct {
 }
 
 // NewServer creates a Server with routes.
-func NewServer(deps ServerDeps) *Server {
+// It returns an error if required dependencies (e.g. Config) are missing
+// so callers can handle invalid input gracefully instead of crashing.
+func NewServer(deps ServerDeps) (*Server, error) {
 	return NewServerWithLogger(deps, slog.Default())
 }
 
 // NewServerWithLogger creates a Server with routes and an injected logger.
-func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) *Server {
+// It returns an error if deps.Config is nil; previously this case panicked,
+// but returning an error lets the caller (e.g. cmd/player/main.go) report
+// the failure cleanly and exit with a useful message rather than crashing
+// deep in the wiring code.
+func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) {
 	if deps.Config == nil {
-		panic("api.NewServerWithLogger: Config is nil")
+		return nil, errors.New("api.NewServerWithLogger: Config is nil")
 	}
 	if deps.StaticFS == nil {
 		deps.StaticFS = http.Dir("web")
@@ -101,12 +110,13 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) *Server {
 		playbackHintSvc: deps.Services.PlaybackHints,
 		streamer:        deps.MediaStreamer,
 		staticFS:        deps.StaticFS,
+		shareRenderer:   web.NewSharePageRenderer(deps.StaticFS),
 		logger:          logger,
 		mw:              NewMiddleware(deps.Services.Auth, deps.SessionManager),
 	}
 	s.routes()
 	s.handler = withCORS(s.cfg.CORSAllowedOrigins, s.mw.BootstrapRedirect(s.mux))
-	return s
+	return s, nil
 }
 
 // ServeHTTP implements http.Handler.

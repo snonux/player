@@ -49,7 +49,9 @@ func newPodcastTestServer(t *testing.T, store repository.Store, hasher auth.Hash
 			GetUserByIDFunc: func(context.Context, int64) (*model.User, error) { return &model.User{ID: 1, IsAdmin: true}, nil },
 		}
 	}
-	return NewServer(ServerDeps{
+	// NewServer now returns (*Server, error); tests always supply Config,
+	// so the only realistic cause of failure is a programming mistake.
+	srv, err := NewServer(ServerDeps{
 		Store:          store,
 		Hasher:         hasher,
 		SessionManager: sm,
@@ -68,6 +70,10 @@ func newPodcastTestServer(t *testing.T, store repository.Store, hasher auth.Hash
 		},
 		StaticFS: fs,
 	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	return srv
 }
 
 // setupPodcastE2E creates a full server with a real SQLite store and real services.

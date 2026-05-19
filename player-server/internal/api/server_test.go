@@ -5,15 +5,18 @@ import (
 	"testing"
 )
 
-func TestNewServerWithLogger_PanicsOnNilConfig(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for nil Config, got none")
-		}
-	}()
-
-	NewServerWithLogger(ServerDeps{
+// TestNewServerWithLogger_ErrorsOnNilConfig verifies that the constructor
+// returns an error (rather than panicking) when deps.Config is nil. The
+// caller in cmd/player/main.go relies on this to fail gracefully.
+func TestNewServerWithLogger_ErrorsOnNilConfig(t *testing.T) {
+	srv, err := NewServerWithLogger(ServerDeps{
 		Config:   nil,
 		StaticFS: nil,
 	}, slog.Default())
+	if err == nil {
+		t.Fatal("expected error for nil Config, got nil")
+	}
+	if srv != nil {
+		t.Fatalf("expected nil Server on error, got %v", srv)
+	}
 }

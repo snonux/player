@@ -63,7 +63,9 @@ func newIntegrationServer(t *testing.T) *integrationEnv {
 		"share.html":     {Data: []byte("share")},
 	}
 
-	srv := NewServer(ServerDeps{
+	// NewServer now returns (*Server, error); cfg is always provided here so a
+	// failure indicates a wiring bug in the test setup.
+	srv, err := NewServer(ServerDeps{
 		Store:          store,
 		Hasher:         hasher,
 		SessionManager: sm,
@@ -82,6 +84,9 @@ func newIntegrationServer(t *testing.T) *integrationEnv {
 		},
 		StaticFS: http.FS(staticFS),
 	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 
 	return &integrationEnv{srv: srv}
 }

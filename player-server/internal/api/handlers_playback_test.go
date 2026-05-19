@@ -28,7 +28,9 @@ func newPlaybackTestServer(t *testing.T, store repository.Store, sm auth.Session
 		CountUsersFunc:  func(context.Context) (int, error) { return 1, nil },
 		GetUserByIDFunc: func(context.Context, int64) (*model.User, error) { return &model.User{ID: 1, IsAdmin: true}, nil },
 	}
-	return NewServer(ServerDeps{
+	// NewServer now returns (*Server, error); we pass a non-nil Config here,
+	// so a failure points to a wiring bug in the test setup.
+	srv, err := NewServer(ServerDeps{
 		Store:          store,
 		SessionManager: sm,
 		Config:         &internal.Config{},
@@ -38,6 +40,10 @@ func newPlaybackTestServer(t *testing.T, store repository.Store, sm auth.Session
 		},
 		StaticFS: fs,
 	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	return srv
 }
 
 // sessionForPlaybackTest creates a session cookie that resolves to userID 1.

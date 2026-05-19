@@ -65,7 +65,10 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 	if len(streamer) > 0 {
 		mediaStreamer = streamer[0]
 	}
-	return NewServer(ServerDeps{
+	// NewServer now returns an error when required deps (e.g. Config) are
+	// missing. Tests always pass a non-nil Config, so a failure here indicates
+	// a programming mistake in the test setup itself.
+	srv, err := NewServer(ServerDeps{
 		Store:          store,
 		Hasher:         hasher,
 		SessionManager: sm,
@@ -84,6 +87,10 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 		StaticFS:      fs,
 		MediaStreamer: mediaStreamer,
 	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	return srv
 }
 
 func addSessionCookie(t *testing.T, store repository.Store, sm auth.SessionManager, userID int64) *http.Cookie {

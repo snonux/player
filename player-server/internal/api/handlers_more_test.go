@@ -1209,43 +1209,9 @@ func TestServer_SharePage(t *testing.T) {
 	})
 }
 
-func TestInjectShareMedia(t *testing.T) {
-	t.Run("injects marshaled metadata", func(t *testing.T) {
-		html, err := injectShareMedia(`<script><!--SHARE_MEDIA--></script>`, map[string]string{"stream_url": "/s/abc/stream"})
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		if !strings.Contains(html, `"stream_url":"/s/abc/stream"`) {
-			t.Fatalf("expected injected JSON, got %q", html)
-		}
-	})
-
-	t.Run("omits empty thumbnail url", func(t *testing.T) {
-		html, err := injectShareMedia(`<script><!--SHARE_MEDIA--></script>`, service.GetSharedMediaResult{
-			Media:       &service.SharedMediaView{ID: 1, FileName: "share.mp3", Type: model.MediaTypeAudio},
-			HasThumb:    false,
-			StreamURL:   "/s/abc/stream",
-			DownloadURL: "/s/abc/download",
-			ThumbURL:    "",
-		})
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		if strings.Contains(html, "thumb_url") {
-			t.Fatalf("expected no thumb_url in injected JSON, got %q", html)
-		}
-	})
-
-	t.Run("returns marshal error", func(t *testing.T) {
-		_, err := injectShareMedia(`<script><!--SHARE_MEDIA--></script>`, map[string]any{"bad": make(chan int)})
-		if err == nil {
-			t.Fatal("expected marshal error")
-		}
-		if !strings.Contains(err.Error(), "marshal share metadata") {
-			t.Fatalf("expected wrapped marshal error, got %v", err)
-		}
-	})
-}
+// TestInjectShareMedia coverage moved to internal/web/sharepage_test.go
+// when share-page rendering was extracted into the internal/web package
+// (task aa). The api package no longer owns the injection helper.
 
 func TestServer_ShareStream(t *testing.T) {
 	path := makeTempFile(t, "shared")

@@ -1,10 +1,7 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -91,39 +88,17 @@ func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Serve HTML page with media metadata injected.
-	f, err := s.staticFS.Open("share.html")
+	// Render the HTML view via the dedicated renderer. This keeps the
+	// handler focused on transport concerns (status codes, headers) and
+	// keeps templating in the internal/web package.
+	page, err := s.shareRenderer.Render(res)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	defer f.Close()
-	stat, err := f.Stat()
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	var buf strings.Builder
-	if _, err := io.Copy(&buf, f); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	html, err := injectShareMedia(buf.String(), res)
-	if err != nil {
-		s.logger.Error("marshal share page metadata", "err", err)
+		s.logger.Error("render share page", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	http.ServeContent(w, r, "share.html", stat.ModTime(), strings.NewReader(html))
-}
-
-func injectShareMedia(html string, data any) (string, error) {
-	encoded, err := json.Marshal(data)
-	if err != nil {
-		return "", fmt.Errorf("marshal share metadata: %w", err)
-	}
-	return strings.Replace(html, "<!--SHARE_MEDIA-->", string(encoded), 1), nil
+	http.ServeContent(w, r, page.Name, page.ModTime, strings.NewReader(page.HTML))
 }
 
 func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {

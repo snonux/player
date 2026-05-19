@@ -246,7 +246,7 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 	staticFS := http.Dir("web")
 	remuxer := probe.NewFFRemuxer()
 	streamer := service.NewMediaStreamer(remuxer)
-	server := api.NewServerWithLogger(api.ServerDeps{
+	server, err := api.NewServerWithLogger(api.ServerDeps{
 		Store:          store,
 		Hasher:         deps.hasher,
 		SessionManager: deps.sm,
@@ -267,6 +267,9 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 		StaticFS:      staticFS,
 		MediaStreamer: streamer,
 	}, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create API server: %w", err)
+	}
 
 	return runServer(server, cfg, logger, sigCh)
 }
