@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -82,12 +81,6 @@ func buildLogger(logLevel string) *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 }
 
-func recoverBackgroundWorkerPanic(logger *slog.Logger, worker string) {
-	if r := recover(); r != nil && logger != nil {
-		logger.Error("background worker panic", "worker", worker, "panic", r, "stack", string(debug.Stack()))
-	}
-}
-
 // wireDeps constructs the core service layer dependencies.
 func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger, appCtx context.Context) *appDeps {
 	clk := clock.RealClock{}
@@ -144,7 +137,12 @@ func startBackgroundWorkers(deps *appDeps) {
 			select {
 			case <-ticker.C:
 				func() {
-					defer recoverBackgroundWorkerPanic(deps.logger, "podcast checker")
+					// Use the unified service.RecoverWorker helper so this
+					// matches every other background-worker panic path in
+					// the codebase (gc, rescan, podcast feed check).
+					defer func() {
+						service.RecoverWorker(deps.logger, "podcast checker", recover())
+					}()
 					if err := deps.podcastSvc.CheckFeeds(context.Background()); err != nil {
 						deps.logger.Error("podcast feed check failed", "err", err)
 					}

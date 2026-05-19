@@ -72,7 +72,7 @@ func (w *GCWorker) Start() {
 			case <-tickCh:
 				func() {
 					defer func() {
-						handleWorkerPanic(w.logger, "gc", recover())
+						RecoverWorker(w.logger, "gc", recover())
 					}()
 					w.run(w.ctx)
 				}()

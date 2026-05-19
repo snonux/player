@@ -61,7 +61,7 @@ func (s *scanService) TriggerRescan(ctx context.Context) error {
 		defer cancel()
 		defer s.notifyDone()
 		defer func() {
-			if err := handleWorkerPanic(s.logger, "rescan", recover()); err != nil {
+			if err := RecoverWorker(s.logger, "rescan", recover()); err != nil {
 				progress.Done(err)
 			}
 		}()
