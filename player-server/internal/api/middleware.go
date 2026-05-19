@@ -21,14 +21,59 @@ const (
 )
 
 // Middleware holds dependencies for middleware constructors.
+//
+// publicPaths and publicPrefixes form a route registry used by
+// BootstrapRedirect to decide which requests bypass the redirect when no
+// users exist. They are populated at route registration time (see
+// Server.routes()) so that adding a new public route automatically updates
+// the bypass set — no hidden hardcoded whitelist that silently 401s/redirects
+// new routes the developer forgot to add.
 type Middleware struct {
-	authSvc service.AuthService
-	sm      auth.SessionManager
+	authSvc        service.AuthService
+	sm             auth.SessionManager
+	publicPaths    map[string]bool
+	publicPrefixes []string
 }
 
 // NewMiddleware creates middleware handlers.
+// The public route registry starts empty; callers register public paths
+// via RegisterPublic / RegisterPublicPrefix as routes are wired up.
 func NewMiddleware(authSvc service.AuthService, sm auth.SessionManager) *Middleware {
-	return &Middleware{authSvc: authSvc, sm: sm}
+	return &Middleware{
+		authSvc:     authSvc,
+		sm:          sm,
+		publicPaths: make(map[string]bool),
+	}
+}
+
+// RegisterPublic marks an exact path as public (bypasses BootstrapRedirect).
+// Call this at route registration time so the middleware's view of "public"
+// stays in sync with the actual route table.
+func (mw *Middleware) RegisterPublic(path string) {
+	if mw.publicPaths == nil {
+		mw.publicPaths = make(map[string]bool)
+	}
+	mw.publicPaths[path] = true
+}
+
+// RegisterPublicPrefix marks a path prefix as public. Used for routes whose
+// concrete paths contain wildcards (e.g. /s/{token}/...) or that serve a
+// directory tree (e.g. /css/, /js/, /images/).
+func (mw *Middleware) RegisterPublicPrefix(prefix string) {
+	mw.publicPrefixes = append(mw.publicPrefixes, prefix)
+}
+
+// isPublic reports whether the given request path is registered as public.
+func (mw *Middleware) isPublic(path string) bool {
+	if mw.publicPaths[path] {
+		return true
+	}
+	for _, p := range mw.publicPrefixes {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // RequireSession validates the session cookie and injects the session into request context.
@@ -102,9 +147,16 @@ func (mw *Middleware) RequireAdmin(next http.Handler) http.Handler {
 }
 
 // BootstrapRedirect redirects all requests to /bootstrap.html when no users exist.
+//
+// Public routes (the bootstrap page itself, login endpoints, health probes,
+// static assets, public share routes, etc.) bypass the redirect so the user
+// can complete the bootstrap flow. The set of public paths is consulted via
+// the route registry on Middleware (populated at route declaration time)
+// rather than a hardcoded list, so adding a new public route in server.go is
+// all that's required — there is no separate whitelist to keep in sync.
 func (mw *Middleware) BootstrapRedirect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isBootstrapPublic(r.URL.Path) {
+		if mw.isPublic(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -123,18 +175,4 @@ func (mw *Middleware) BootstrapRedirect(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func isBootstrapPublic(path string) bool {
-	switch path {
-	case "/bootstrap.html", "/api/bootstrap", "/api/v1/auth/bootstrap",
-		"/login.html", "/api/login", "/api/v1/auth/login",
-		"/healthz", "/readyz",
-		"/favicon.svg", "/favicon.ico", "/logo.svg", "/logo.png", "/manifest.json", "/sw.js":
-		return true
-	}
-	if strings.HasPrefix(path, "/css/") || strings.HasPrefix(path, "/js/") || strings.HasPrefix(path, "/images/") {
-		return true
-	}
-	return false
 }

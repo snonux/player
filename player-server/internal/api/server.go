@@ -77,13 +77,23 @@ func NewServer(deps ServerDeps) (*Server, error) {
 }
 
 // NewServerWithLogger creates a Server with routes and an injected logger.
-// It returns an error if deps.Config is nil; previously this case panicked,
-// but returning an error lets the caller (e.g. cmd/player/main.go) report
-// the failure cleanly and exit with a useful message rather than crashing
-// deep in the wiring code.
+// It returns an error if required dependencies (Config or MediaStreamer) are
+// nil; previously these cases either panicked or were silently filled in at
+// request time with a default streamer, which hid wiring mistakes and
+// violated the Dependency Inversion Principle. Returning an error lets the
+// caller (e.g. cmd/player/main.go) report the failure cleanly and exit with
+// a useful message rather than crashing or quietly degrading.
 func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) {
 	if deps.Config == nil {
 		return nil, errors.New("api.NewServerWithLogger: Config is nil")
+	}
+	// MediaStreamer is required: every file/stream/download/share handler
+	// dispatches through Server.serveFileResult, which uses s.streamer
+	// directly. Callers must inject one (production wiring builds a
+	// service.NewMediaStreamer(remuxer)). This mirrors the explicit-deps
+	// pattern set in commits 622827c (http.Client) and 92edb83 (TokenManager).
+	if deps.MediaStreamer == nil {
+		return nil, errors.New("api.NewServerWithLogger: MediaStreamer is nil")
 	}
 	if deps.StaticFS == nil {
 		deps.StaticFS = http.Dir("web")
@@ -151,6 +161,30 @@ func (s *Server) handleBoth(method, path string, h http.Handler) {
 	s.mux.Handle(method+" "+apiV1Path(path), h)
 }
 
+// handlePublic registers a path with the mux and marks it public in the
+// middleware route registry so BootstrapRedirect lets it through without
+// requiring an existing user account. Use for endpoints reachable before
+// bootstrap completes (login, bootstrap, health probes, public HTML pages,
+// individual static files).
+func (s *Server) handlePublic(path string, h http.Handler) {
+	s.mux.Handle(path, h)
+	s.mw.RegisterPublic(path)
+}
+
+// handlePublicFunc is the http.HandlerFunc variant of handlePublic.
+func (s *Server) handlePublicFunc(path string, h http.HandlerFunc) {
+	s.mux.HandleFunc(path, h)
+	s.mw.RegisterPublic(path)
+}
+
+// handlePublicPrefix registers a "directory" handler (e.g. /css/) and
+// records the prefix in the middleware registry so anything served under it
+// is treated as public.
+func (s *Server) handlePublicPrefix(prefix string, h http.Handler) {
+	s.mux.Handle(prefix, h)
+	s.mw.RegisterPublicPrefix(prefix)
+}
+
 func apiV1Path(path string) string {
 	const apiPrefix = "/api/"
 	if !strings.HasPrefix(path, apiPrefix) {
@@ -160,40 +194,58 @@ func apiV1Path(path string) string {
 }
 
 // routesPublic wires the fully-public API endpoints (bootstrap, login, probes).
+// Each route is registered through handlePublic* helpers so the middleware
+// route registry stays in sync — no separate whitelist to maintain.
+//
+// Note: the v1 aliases live under /api/v1/auth/... rather than the
+// straight /api/v1/<rest> shape that apiV1Path() generates, so they are
+// registered explicitly here instead of via a "both" helper.
 func (s *Server) routesPublic() {
-	s.mux.HandleFunc("/api/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
-	s.mux.HandleFunc("/api/v1/auth/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
-	s.mux.HandleFunc("/api/login", publicMethod(http.MethodPost, s.handleLogin))
-	s.mux.HandleFunc("/api/v1/auth/login", publicMethod(http.MethodPost, s.handleLogin))
-	s.mux.HandleFunc("/healthz", publicMethod(http.MethodGet, s.handleHealthz))
-	s.mux.HandleFunc("/readyz", publicMethod(http.MethodGet, s.handleReadyz))
+	s.handlePublicFunc("/api/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
+	s.handlePublicFunc("/api/v1/auth/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
+	s.handlePublicFunc("/api/login", publicMethod(http.MethodPost, s.handleLogin))
+	s.handlePublicFunc("/api/v1/auth/login", publicMethod(http.MethodPost, s.handleLogin))
+	s.handlePublicFunc("/healthz", publicMethod(http.MethodGet, s.handleHealthz))
+	s.handlePublicFunc("/readyz", publicMethod(http.MethodGet, s.handleReadyz))
 }
 
 // routesSharePublic wires public share routes (no session required).
+// Share routes are dynamic (/s/{token}/...), so we register both the
+// specific mux patterns and a /s/ prefix in the public route registry to
+// cover every concrete token-bearing URL.
 func (s *Server) routesSharePublic() {
 	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
 	s.mux.HandleFunc("GET /s/{token}/stream", s.handleShareStream)
 	s.mux.HandleFunc("GET /s/{token}/thumbnail", s.handleShareThumbnail)
 	s.mux.HandleFunc("GET /s/{token}/download", s.handleShareDownload)
+	s.mw.RegisterPublicPrefix("/s/")
 }
 
 // routesStatic wires static CSS/JS asset serving.
+// Both the directory prefixes (/css/, /js/, /images/) and the individual
+// top-level asset files are registered public so the bootstrap page can
+// load its resources before any user exists.
 func (s *Server) routesStatic() {
 	staticHandler := http.FileServer(s.staticFS)
-	s.mux.Handle("/css/", staticHandler)
-	s.mux.Handle("/js/", staticHandler)
-	s.mux.Handle("/logo.png", staticHandler)
-	s.mux.Handle("/logo.svg", staticHandler)
-	s.mux.Handle("/favicon.ico", staticHandler)
-	s.mux.Handle("/favicon.svg", staticHandler)
-	s.mux.Handle("/manifest.json", staticHandler)
-	s.mux.Handle("/sw.js", staticHandler)
+	s.handlePublicPrefix("/css/", staticHandler)
+	s.handlePublicPrefix("/js/", staticHandler)
+	// /images/ isn't a mux-registered tree but is referenced by some HTML
+	// pages; mark its prefix public so future asset additions just work.
+	s.mw.RegisterPublicPrefix("/images/")
+	s.handlePublic("/logo.png", staticHandler)
+	s.handlePublic("/logo.svg", staticHandler)
+	s.handlePublic("/favicon.ico", staticHandler)
+	s.handlePublic("/favicon.svg", staticHandler)
+	s.handlePublic("/manifest.json", staticHandler)
+	s.handlePublic("/sw.js", staticHandler)
 }
 
 // routesHTML wires the SPA HTML page routes.
+// /login.html and /bootstrap.html are public (the user reaches them before
+// authenticating); the rest sit behind RequireSession.
 func (s *Server) routesHTML() {
-	s.mux.Handle("/login.html", http.HandlerFunc(s.serveLogin))
-	s.mux.Handle("/bootstrap.html", http.HandlerFunc(s.serveBootstrap))
+	s.handlePublic("/login.html", http.HandlerFunc(s.serveLogin))
+	s.handlePublic("/bootstrap.html", http.HandlerFunc(s.serveBootstrap))
 	s.mux.Handle("/", s.mw.RequireSession(http.HandlerFunc(s.serveIndex)))
 	s.mux.Handle("GET /index.html", s.mw.RequireSession(http.HandlerFunc(s.serveIndex)))
 	s.mux.Handle("GET /detach.html", s.mw.RequireSession(http.HandlerFunc(s.serveDetach)))

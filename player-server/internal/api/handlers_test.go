@@ -146,6 +146,15 @@ func TestMiddleware_BootstrapRedirect(t *testing.T) {
 		{"count error", "/", 0, errors.New("boom"), http.StatusInternalServerError, ""},
 	}
 
+	// Public paths the production server registers via routesPublic /
+	// routesHTML — re-declared here so the middleware-level unit test can
+	// exercise BootstrapRedirect without standing up a full Server.
+	publicPaths := []string{
+		"/bootstrap.html", "/api/bootstrap", "/api/v1/auth/bootstrap",
+		"/login.html", "/api/login", "/api/v1/auth/login",
+		"/healthz", "/readyz",
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			authSvc := &service.MockAuthService{
@@ -154,6 +163,9 @@ func TestMiddleware_BootstrapRedirect(t *testing.T) {
 				},
 			}
 			mw := NewMiddleware(authSvc, nil)
+			for _, p := range publicPaths {
+				mw.RegisterPublic(p)
+			}
 			handler := mw.BootstrapRedirect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))
