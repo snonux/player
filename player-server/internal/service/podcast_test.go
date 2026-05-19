@@ -40,17 +40,20 @@ func TestPodcastService_CustomHTTPClient(t *testing.T) {
 	}
 }
 
-func TestPodcastService_NilHTTPClient_Defaults(t *testing.T) {
+// TestPodcastService_NilHTTPClient_Panics verifies the constructor refuses to
+// fabricate a default http.Client. Callers must inject one explicitly (DIP);
+// passing nil is a programmer error and must panic loudly, not silently fall
+// back to a hidden default.
+func TestPodcastService_NilHTTPClient_Panics(t *testing.T) {
 	store := repository.NewMockStore()
 	clk := &clock.MockClock{T: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := NewPodcastServiceWithLogger(store, clk, t.TempDir(), nil, nil, nil, nil, 60, logger)
-	if svc.httpClient == nil {
-		t.Fatal("expected non-nil httpClient when nil passed to constructor")
-	}
-	if svc.httpClient.Timeout != DefaultHTTPClientTimeout {
-		t.Fatalf("expected default timeout %v, got %v", DefaultHTTPClientTimeout, svc.httpClient.Timeout)
-	}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic when nil httpClient passed to constructor, got none")
+		}
+	}()
+	_ = NewPodcastServiceWithLogger(store, clk, t.TempDir(), nil, nil, nil, nil, 60, logger)
 }
 
 func TestPodcastService_SubscribeFeed_Ok(t *testing.T) {

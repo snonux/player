@@ -79,16 +79,24 @@ type podcastService struct {
 	*podcastFeedChecker
 }
 
-// DefaultHTTPClientTimeout is the fallback timeout used when no http.Client is injected.
+// DefaultHTTPClientTimeout is the recommended timeout for production HTTP clients
+// passed into the podcast service. The service no longer constructs a fallback
+// client — callers must inject an explicit *http.Client (dependency inversion);
+// this constant is exported so production wiring can use a sensible default.
 const DefaultHTTPClientTimeout = 30 * time.Second
 
 // NewPodcastService creates a PodcastService with the given dependencies.
 // checkInterval should be the number of minutes between background feed checks.
+// httpClient is required and must not be nil; the service does not construct
+// a default client so callers explicitly own the HTTP timeout / transport policy.
 func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator, httpClient *http.Client, checkInterval int) *podcastService {
 	return NewPodcastServiceWithLogger(store, clk, mediaRoot, helper, prober, thumbGen, httpClient, checkInterval, slog.Default())
 }
 
 // NewPodcastServiceWithLogger creates a PodcastService with an injected logger.
+// httpClient is required and must not be nil — passing nil will panic on first
+// use. This is intentional: the service depends on an injected client per DIP
+// and refuses to silently fabricate one.
 func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, mediaRoot string, helper *accessHelper, prober probe.Prober, thumbGen thumb.Generator, httpClient *http.Client, checkInterval int, logger *slog.Logger) *podcastService {
 	if checkInterval <= 0 {
 		checkInterval = 60
@@ -97,7 +105,7 @@ func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, med
 		logger = slog.Default()
 	}
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: DefaultHTTPClientTimeout}
+		panic("service.NewPodcastService: httpClient must not be nil")
 	}
 	s := &podcastService{
 		store:         store,
