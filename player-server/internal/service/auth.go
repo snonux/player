@@ -21,9 +21,13 @@ type authService struct {
 }
 
 // NewAuthService creates a concrete AuthService.
+// tm is required and must not be nil — passing nil will panic. This is
+// intentional: the service depends on an injected TokenManager per DIP and
+// refuses to silently fabricate one. Production wiring (cmd/player/main.go)
+// constructs the TokenManager at the composition root via auth.NewTokenManager.
 func NewAuthService(store repository.AuthServiceStore, clk clock.Clock, hasher auth.Hasher, sm auth.SessionManager, tm auth.TokenManager) *authService {
 	if tm == nil {
-		tm = auth.NewTokenManager()
+		panic("service.NewAuthService: tm (auth.TokenManager) must not be nil")
 	}
 	return &authService{
 		store:  store,

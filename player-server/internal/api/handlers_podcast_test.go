@@ -95,7 +95,7 @@ func setupPodcastE2E(t *testing.T) (srv *Server, store repository.Store, sm auth
 
 	hasher := &staticHasher{fixed: "hashed"}
 	sm = auth.NewSessionManager(dbStore, clk, time.Hour)
-	authSvc := service.NewAuthService(dbStore, clk, hasher, sm, nil)
+	authSvc := service.NewAuthService(dbStore, clk, hasher, sm, auth.NewTokenManager())
 
 	mediaRoot := t.TempDir()
 	helper := service.NewAccessHelper(dbStore)

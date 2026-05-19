@@ -463,7 +463,7 @@ func TestServer_Bootstrap(t *testing.T) {
 			CreateSessionFunc: func(ctx context.Context, session *model.Session) error { return nil },
 		}
 		sm := auth.NewSessionManager(&repo, clk, time.Hour)
-		authSvc := service.NewAuthService(store, clk, hasher, sm, nil)
+		authSvc := service.NewAuthService(store, clk, hasher, sm, auth.NewTokenManager())
 		srv := newTestServer(t, store, hasher, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 
 		body := `{"username":"admin","password":"secret"}`
@@ -491,7 +491,7 @@ func TestServer_Bootstrap(t *testing.T) {
 				CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil },
 			},
 		}
-		authSvc := service.NewAuthService(store, clk, hasher, nil, nil)
+		authSvc := service.NewAuthService(store, clk, hasher, nil, auth.NewTokenManager())
 		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 		body := `{"username":"admin","password":"secret"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader([]byte(body)))
@@ -508,7 +508,7 @@ func TestServer_Bootstrap(t *testing.T) {
 		for _, path := range paths {
 			t.Run(path, func(t *testing.T) {
 				store := &repository.MockStore{UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil }}}
-				authSvc := service.NewAuthService(store, clk, hasher, nil, nil)
+				authSvc := service.NewAuthService(store, clk, hasher, nil, auth.NewTokenManager())
 				srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 				req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader([]byte(`{"username":""}`)))
 				rr := httptest.NewRecorder()
@@ -549,7 +549,7 @@ func TestServer_Login(t *testing.T) {
 			CreateSessionFunc: func(ctx context.Context, session *model.Session) error { return nil },
 		}
 		sm := auth.NewSessionManager(&repo, clk, time.Hour)
-		authSvc := service.NewAuthService(store, clk, hasher, sm, nil)
+		authSvc := service.NewAuthService(store, clk, hasher, sm, auth.NewTokenManager())
 		srv := newTestServer(t, store, hasher, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 		body := `{"username":"alice","password":"correct"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
@@ -578,7 +578,7 @@ func TestServer_Login(t *testing.T) {
 				},
 			},
 		}
-		authSvc := service.NewAuthService(store, clk, hasher, nil, nil)
+		authSvc := service.NewAuthService(store, clk, hasher, nil, auth.NewTokenManager())
 		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 		body := `{"username":"alice","password":"wrong"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
@@ -599,7 +599,7 @@ func TestServer_Login(t *testing.T) {
 				},
 			},
 		}
-		authSvc := service.NewAuthService(store, clk, hasher, nil, nil)
+		authSvc := service.NewAuthService(store, clk, hasher, nil, auth.NewTokenManager())
 		srv := newTestServer(t, store, hasher, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 		body := `{"username":"nobody","password":"pass"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader([]byte(body)))
@@ -626,7 +626,7 @@ func TestServer_SessionCookieSecure(t *testing.T) {
 	}
 	clk := &clock.MockClock{T: time.Now()}
 	sm := auth.NewSessionManager(&repo, clk, time.Hour)
-	authSvc := service.NewAuthService(store, clk, hasher, sm, nil)
+	authSvc := service.NewAuthService(store, clk, hasher, sm, auth.NewTokenManager())
 
 	t.Run("Secure=true by default", func(t *testing.T) {
 		cfg := &internal.Config{SessionTimeoutHours: 24, SecureCookies: true}
@@ -878,7 +878,7 @@ func TestServer_APITokenBearerFlow(t *testing.T) {
 	clk := &clock.MockClock{T: now}
 	hasher := &staticHasher{fixed: "hashed"}
 	sm := auth.NewSessionManager(dbStore, clk, time.Hour)
-	authSvc := service.NewAuthService(dbStore, clk, hasher, sm, nil)
+	authSvc := service.NewAuthService(dbStore, clk, hasher, sm, auth.NewTokenManager())
 	mediaSvc := service.NewMediaService(dbStore, clk, t.TempDir(), nil, nil)
 	cfg := &internal.Config{SessionTimeoutHours: 24, MaxUploadSizeMB: 10}
 	srv := newTestServer(t, dbStore, hasher, sm, cfg, mediaSvc, mediaSvc, mediaSvc, mediaSvc, mediaSvc, mediaSvc, nil, nil, authSvc, nil)
