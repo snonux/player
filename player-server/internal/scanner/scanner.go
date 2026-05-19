@@ -205,13 +205,15 @@ func (s *FSScanner) gatherCoverImages(setPath string) map[string]string {
 }
 
 // thumbnailForVideo generates a thumbnail for a video file inside the set's .thumbnails directory.
+// The destination directory + filename are derived via internal/thumb so the
+// layout convention stays in lock-step with importers (service.generateThumbnail,
+// writeService.RegenerateThumbnail).
 func (s *FSScanner) thumbnailForVideo(ctx context.Context, path, setPath string, duration float64) (string, error) {
-	thumbDir := filepath.Join(setPath, ".thumbnails")
+	thumbDir := thumb.ThumbnailDir(setPath)
 	if err := s.fs.MkdirAll(thumbDir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir thumbnails %q: %w", thumbDir, err)
 	}
-	thumbName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".jpg"
-	thumbnailPath := filepath.Join(thumbDir, thumbName)
+	thumbnailPath := thumb.ThumbnailPathFor(path, setPath)
 	if err := s.thumbGen.Generate(ctx, path, thumbnailPath, duration); err != nil {
 		s.log().Warn("scanner skipping thumbnail", "path", path, "err", err)
 		return "", nil
@@ -220,13 +222,13 @@ func (s *FSScanner) thumbnailForVideo(ctx context.Context, path, setPath string,
 }
 
 // thumbnailForImage generates a thumbnail for an image file inside the set's .thumbnails directory.
+// See thumbnailForVideo for the shared path-derivation contract.
 func (s *FSScanner) thumbnailForImage(ctx context.Context, path, setPath string) (string, error) {
-	thumbDir := filepath.Join(setPath, ".thumbnails")
+	thumbDir := thumb.ThumbnailDir(setPath)
 	if err := s.fs.MkdirAll(thumbDir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir thumbnails %q: %w", thumbDir, err)
 	}
-	thumbName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + ".jpg"
-	thumbnailPath := filepath.Join(thumbDir, thumbName)
+	thumbnailPath := thumb.ThumbnailPathFor(path, setPath)
 	if err := s.thumbGen.Generate(ctx, path, thumbnailPath, 0); err != nil {
 		s.log().Warn("scanner skipping thumbnail", "path", path, "err", err)
 		return "", nil

@@ -112,12 +112,15 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 		return fmt.Errorf("probe media: %w", err)
 	}
 
-	thumbDir := filepath.Join(filepath.Dir(media.AbsPath), ".thumbnails")
+	// Thumbnail destination is derived via internal/thumb so re-generation
+	// targets the exact same path used by scanner + import; otherwise stale
+	// JPEGs would linger alongside the freshly written one.
+	parent := filepath.Dir(media.AbsPath)
+	thumbDir := thumb.ThumbnailDir(parent)
 	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir thumbnails: %w", err)
 	}
-	thumbName := strings.TrimSuffix(filepath.Base(media.AbsPath), filepath.Ext(media.AbsPath)) + ".jpg"
-	thumbnailPath := filepath.Join(thumbDir, thumbName)
+	thumbnailPath := thumb.ThumbnailPathFor(media.AbsPath, parent)
 
 	if err := s.thumbGen.Generate(ctx, media.AbsPath, thumbnailPath, meta.Duration); err != nil {
 		return fmt.Errorf("generate thumbnail: %w", err)

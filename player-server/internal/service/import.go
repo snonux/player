@@ -69,18 +69,20 @@ func probeMedia(ctx context.Context, prober probe.Prober, path string) (*model.M
 }
 
 // generateThumbnail creates a thumbnail for video and image media.
+// Thumbnail directory + filename are derived via internal/thumb to share the
+// on-disk convention with the scanner and RegenerateThumbnail.
 func generateThumbnail(ctx context.Context, thumbGen thumb.Generator, media *model.Media, duration float64) error {
 	ext := strings.ToLower(filepath.Ext(media.AbsPath))
 	if ext == ".svg" {
 		media.ThumbnailPath = media.AbsPath
 		return nil
 	}
-	thumbDir := filepath.Join(filepath.Dir(media.AbsPath), ".thumbnails")
+	parent := filepath.Dir(media.AbsPath)
+	thumbDir := thumb.ThumbnailDir(parent)
 	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir thumbnails: %w", err)
 	}
-	thumbName := strings.TrimSuffix(filepath.Base(media.AbsPath), filepath.Ext(media.AbsPath)) + ".jpg"
-	thumbnailPath := filepath.Join(thumbDir, thumbName)
+	thumbnailPath := thumb.ThumbnailPathFor(media.AbsPath, parent)
 
 	if thumbGen == nil {
 		media.ThumbnailPath = thumbnailPath
