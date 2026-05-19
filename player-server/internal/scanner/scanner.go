@@ -144,9 +144,15 @@ func isPodcastRoot(rootPath string) bool {
 }
 
 // loadExistingMedia builds a lookup map of existing media keyed by relPath.
+// IncludeDeleted = true so soft-deleted rows show up in the dedup map; if we
+// omitted them, probeFile would treat the file as new and the writer would
+// hit the UNIQUE(set_id, rel_path) constraint, failing the whole scan.
 func (s *FSScanner) loadExistingMedia(ctx context.Context, setID int64, setName string) (map[string]model.Media, error) {
 	existing := make(map[string]model.Media)
-	mediaList, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
+	mediaList, err := s.store.ListMedia(ctx, repository.MediaFilter{
+		SetID:          &setID,
+		IncludeDeleted: true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list media for set %q: %w", setName, err)
 	}
@@ -154,6 +160,28 @@ func (s *FSScanner) loadExistingMedia(ctx context.Context, setID int64, setName 
 		existing[m.RelPath] = m
 	}
 	return existing, nil
+}
+
+// reconcileOrphans soft-deletes media rows whose underlying file is no
+// longer present on disk. seenRel is the set of relPaths produced by the
+// current scan; any active media row in existing whose key is NOT in
+// seenRel had its file deleted between scans. Soft-deleted rows are left
+// alone so the soft-delete state survives the rescan.
+func (s *FSScanner) reconcileOrphans(ctx context.Context, existing map[string]model.Media, seenRel map[string]struct{}, setName string) {
+	for relPath, media := range existing {
+		if _, ok := seenRel[relPath]; ok {
+			continue
+		}
+		if media.DeletedAt != nil {
+			// Already soft-deleted; nothing to reconcile.
+			continue
+		}
+		if err := s.store.SoftDeleteMedia(ctx, media.ID); err != nil {
+			s.log().Warn("scanner orphan soft-delete failed", "set", setName, "rel_path", relPath, "id", media.ID, "err", err)
+			continue
+		}
+		s.log().Info("scanner soft-deleted orphan", "set", setName, "rel_path", relPath, "id", media.ID)
+	}
 }
 
 // gatherCoverImages walks the set and records the first cover image per directory.
@@ -345,6 +373,16 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 	if err != nil {
 		return fmt.Errorf("scan set %q: %w", setName, err)
 	}
+
+	// Build the set of relPaths we just saw on disk so reconcileOrphans
+	// can soft-delete media rows whose files disappeared between scans.
+	seenRel := make(map[string]struct{}, len(files))
+	for _, p := range files {
+		if rel, relErr := filepath.Rel(setPath, p); relErr == nil {
+			seenRel[filepath.ToSlash(rel)] = struct{}{}
+		}
+	}
+	s.reconcileOrphans(ctx, existing, seenRel, setName)
 
 	if progress != nil {
 		progress.AddFilesTotal(len(files))

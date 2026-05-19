@@ -23,14 +23,15 @@ set, and the scenario then asserts visibility, read access and modify access
 from each user's perspective. Mark anything that deviates from the assertions
 below as a real authorization defect.
 
-Note on viewer write surface: the codebase routes tag, favorite and note
-mutations through `verifyAccess` (NOT `verifyModifyAccess`). That means a
-viewer is currently permitted to add tags, favorites and notes on media they
-can see, even though `model.RoleViewer` is documented as "browsing and
-playback" only. The steps below capture the **actual** behaviour (200 for
-tag-add by a viewer). If this scenario later starts returning 403 there, the
-service has been tightened on purpose — update the step. If it ever flips
-back to 200 after a deliberate tightening, that is a regression.
+Note on viewer write surface: tag mutations go through
+`verifyModifyAccess` (added with this scenario), so a viewer is forbidden
+from adding or removing tags — tags are global state visible to every
+other user with access to the media. Favorites and notes stay on
+`verifyAccess` because they're per-user data (`favorites.user_id`,
+`media_notes.user_id`) and don't affect what anyone else sees. Step 15
+asserts the 403 for tags; steps 16 and 17 assert the 200 for personal
+favorites and notes. A viewer-tag-add returning 200 (or a viewer-favorite
+returning 403) would be a regression.
 
 ---
 
@@ -129,14 +130,14 @@ back to 200 after a deliberate tightening, that is a regression.
 
 ## D) U1 — viewer write surface (verify actual behaviour)
 
-15. As `U1`, add a tag to a media item in `SET_A`: call
+15. As `U1`, attempt to add a tag to a media item in `SET_A`: call
     `POST /api/v1/media/{MEDIA_A_ID}/tags` with `U1_COOKIE`,
     `Content-Type: application/json` and body `{"tag": "e2e-perm-test"}`.
-    Expected behaviour (per `tagService.AssignTag` which calls
-    `verifyAccess`, not `verifyModifyAccess`): HTTP 200. If the response is
-    403, the service has been tightened to require owner role for tag
-    mutations — note this in the run output. If it is 200, leave the tag in
-    place for now; step 21 cleans it up.
+    Confirm the response is HTTP 403. Reasoning: tags are global shared
+    state (every viewer of this media sees the change), so
+    `tagService.AssignTag` calls `verifyModifyAccess`, which requires
+    `RoleOwner` (or admin) — `U1` is only a viewer. A 200 here would be a
+    regression of the tightening landed alongside this scenario.
 
 16. As `U1`, mark the media item as a favorite: call
     `POST /api/v1/media/{MEDIA_A_ID}/favorite` with `U1_COOKIE` and an
@@ -186,11 +187,9 @@ back to 200 after a deliberate tightening, that is a regression.
     `POST /api/v1/media/{MEDIA_B_ID}/restore` with `ADMIN_COOKIE`. Confirm
     the response is HTTP 200.
 
-24. As admin, remove the tag added by `U1` in step 15 (only if step 15
-    returned HTTP 200): call
-    `DELETE /api/v1/media/{MEDIA_A_ID}/tags/e2e-perm-test` with
-    `ADMIN_COOKIE`. Confirm the response is HTTP 200. If step 15 returned
-    403 (viewer not allowed to tag), skip this step.
+24. No tag cleanup needed: step 15 now returns 403, so no tag was created.
+    (Earlier versions of this scenario tolerated 200 here and cleaned up;
+    keep the slot to preserve step numbering across runs and history.)
 
 25. As admin, revoke `U1`'s grant on `SET_A`: call
     `DELETE /api/v1/admin/permissions` with `ADMIN_COOKIE` and body

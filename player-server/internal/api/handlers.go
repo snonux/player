@@ -8,10 +8,19 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/service"
 )
+
+// fileETag returns a strong ETag value (without surrounding quotes) for a
+// file of the given size and modification time. Combining size with mtime
+// nanoseconds is enough to detect any in-place rewrite or replacement —
+// callers wrap the result in quotes when emitting the header.
+func fileETag(size int64, modTime time.Time) string {
+	return fmt.Sprintf("%d-%d", size, modTime.UnixNano())
+}
 
 // ------------------------------------------------------------------
 // Helpers
@@ -177,6 +186,11 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 	}
 	w.Header().Set("Content-Type", stream.ContentType)
 	w.Header().Set("Accept-Ranges", "bytes")
+	// Strong ETag derived from size and mtime nanoseconds. http.ServeContent
+	// reads If-None-Match / If-Match from the request once ETag is set, so
+	// clients (iOS audio player, podcast clients) can revalidate cached
+	// downloads without re-fetching the full body.
+	w.Header().Set("ETag", fmt.Sprintf("%q", fileETag(stream.Size, stream.ModTime)))
 	s.logger.Info("api stream file", "file", stream.FileName, "size", stream.Size, "range", r.Header.Get("Range"))
 	http.ServeContent(w, r, stream.FileName, stream.ModTime, stream.File)
 }

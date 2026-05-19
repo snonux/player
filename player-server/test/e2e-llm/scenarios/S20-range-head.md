@@ -50,8 +50,9 @@ the Go standard library:
   no digits) is treated as "no Range" — the server returns the full body
   with status 200, NOT 416. This matches RFC 7233 §3.1.
 - `If-Modified-Since` matching the `Last-Modified` returns 304. The handler
-  does NOT set an explicit `ETag`, so `If-None-Match` cannot match and the
-  full body is returned with 200.
+  also emits a strong `ETag` header derived from file size and mtime, so
+  `If-None-Match` matching that ETag returns 304 too. Both conditional
+  paths must work — they're the basis of iOS/podcast-client revalidation.
 
 If any of those server-side facts have changed when this scenario runs,
 flag it: every one of them affects iOS / podcast-app playback.
@@ -166,15 +167,16 @@ flag it: every one of them affects iOS / podcast-app playback.
     is empty. This proves the conditional-GET path through
     `http.ServeContent` works.
 
-14. GET stream with `If-None-Match`: issue
-    `GET /api/v1/media/{media_id}/stream` with the session cookie and an
-    additional `If-None-Match: "any-tag"` request header. The handler
-    does NOT set an explicit `ETag` response header, so this conditional
-    cannot match — confirm the response is HTTP 200 and the
-    `Content-Length` response header equals the full `file_size`. Also
-    confirm the response has no `ETag` response header. If a future
-    change adds ETag support, this step should be updated to assert 304
-    when the client sends back the server-emitted ETag.
+14. GET stream with `If-None-Match`: first issue a plain
+    `GET /api/v1/media/{media_id}/stream` (or HEAD) with the session
+    cookie, read the `ETag` response header, and confirm it is a
+    quoted string of the form `"<size>-<mtime-nanos>"`. Then re-issue
+    `GET /api/v1/media/{media_id}/stream` with the session cookie and
+    `If-None-Match: <etag>` and confirm the response is HTTP 304
+    (Not Modified) with an empty body. A response missing the `ETag`
+    header or returning 200 with a body to the matching `If-None-Match`
+    request is a regression of the ETag support added with this
+    scenario.
 
 15. Negative case — HEAD on a nonexistent media id: issue
     `HEAD /api/v1/media/999999999/stream` with the session cookie.

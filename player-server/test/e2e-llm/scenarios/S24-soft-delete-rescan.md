@@ -20,18 +20,24 @@ would be a surprising, silent "undelete". A secondary check probes what
 happens when the underlying file is removed from disk while a non-deleted
 media row points to it.
 
-Reading `internal/scanner/scanner.go` shows that
-`FSScanner.loadExistingMedia` uses `repository.ScannerStore.ListMedia` to
-build its `existing` map, and `repository/media.go` always appends
-`media.deleted_at IS NULL` to the `ListMedia` predicate. That means
-soft-deleted rows are invisible to the scanner's dedup map, so a re-walk will
-try to `CreateMedia` for the same `(set_id, rel_path)` pair — which the
-schema constrains with `UNIQUE(set_id, rel_path)` (see
-`internal/repository/schema.go`). The likely observable outcomes are
-therefore: rescan fails with a UNIQUE constraint error and the soft-delete
-remains (b with a noisy side-effect on `last_error`), or — if the harness
-ever changes to upsert — the row is silently resurrected (a, a defect).
-The scenario asserts (b) and treats (a) as a failure.
+Two real defects in the scanner used to be locked in by earlier drafts of
+this scenario; both are now fixed and asserted as regressions:
+
+1. **Soft-deleted rows tripped the rescan.** `FSScanner.loadExistingMedia`
+   used a `ListMedia` call that filtered `deleted_at IS NULL`, so a
+   re-walk of a soft-deleted file tried to `CreateMedia` for the same
+   `(set_id, rel_path)` pair and hit the schema's `UNIQUE` constraint.
+   `last_error` was set and the scan reported failure. Fixed by adding
+   `MediaFilter.IncludeDeleted` and using it in the scanner.
+
+2. **Files deleted from disk left orphan rows.** The scanner only walked
+   files that exist and never compared the resulting set against the DB,
+   so a removed file kept its row in `GET /api/v1/media` (where any
+   stream attempt would 404). Fixed by `reconcileOrphans` which soft-
+   deletes any active row whose `rel_path` was not seen during the walk.
+
+The scenario asserts both fixes (clean rescan in step 13; orphan
+soft-delete in step 20). A regression in either fires this scenario.
 
 1. Authenticate as an admin user: call `POST /api/v1/auth/login` with body
    `{"username": "admin", "password": "TestPassw0rd!"}`. Confirm the response
@@ -99,22 +105,15 @@ The scenario asserts (b) and treats (a) as a failure.
     `running: false`. On each poll the response must be HTTP 200. Save the
     final JSON object as `final_progress` for the next step.
 
-13. Inspect the scan outcome. Read `final_progress.last_error` (which may be
-    absent or empty when the scan succeeded). Record one of three observed
-    cases:
-    - **Case (a)** — `last_error` is empty/absent AND step 14 shows the
-      soft-deleted row resurfaced in `GET /api/v1/media`. This is a defect:
-      rescan silently undeleted media. Annotate task 89 with the observation
-      and fail the scenario at step 15.
-    - **Case (b-clean)** — `last_error` is empty/absent AND the soft-deleted
-      row stays out of `GET /api/v1/media`. This is the desired behaviour.
-    - **Case (b-noisy)** — `last_error` contains a UNIQUE constraint error
-      (text matching `UNIQUE constraint failed: media.set_id, media.rel_path`
-      or similar) AND the soft-deleted row stays out of
-      `GET /api/v1/media`. The soft-delete is preserved, but rescan reports a
-      failure caused by trashed entries. Annotate task 89 noting this as a
-      defect candidate (rescans should not fail because of soft-deleted
-      rows).
+13. Inspect the scan outcome. Read `final_progress.last_error`: it MUST be
+    empty or absent — the scanner's dedup map now includes soft-deleted
+    rows (via `MediaFilter.IncludeDeleted`), so it skips re-inserting them
+    and never hits the `UNIQUE(set_id, rel_path)` constraint. A non-empty
+    `last_error` (especially text matching
+    `UNIQUE constraint failed: media.set_id, media.rel_path`) is a
+    regression of that fix and must fail the scenario. Combined with
+    step 14, only the clean case is acceptable: rescan succeeds AND the
+    soft-deleted row stays out of `GET /api/v1/media`.
 
 14. Re-query the active list to verify the soft-delete persisted: call
     `GET /api/v1/media` with the `admin_session` cookie. Confirm the response
@@ -151,28 +150,26 @@ The scenario asserts (b) and treats (a) as a failure.
 19. Poll `GET /api/v1/admin/scan-progress` with the `admin_session` cookie
     every 1 s for up to 60 polls until `running: false`.
 
-20. Verify what the rescan did to the orphaned row. Run
-    `db: SELECT count(*) FROM media WHERE id={media_id_2}` and record the
-    result. Reading `internal/scanner/scanner.go` shows the scanner only
-    walks files that exist and never reconciles disappeared files against
-    the DB, so the expected count is 1 (row unchanged). Also run
-    `db: SELECT deleted_at FROM media WHERE id={media_id_2}` and confirm
-    `deleted_at` is NULL — the scanner does NOT auto-soft-delete missing
-    files. If the count is 0 or `deleted_at` is non-NULL, that means the
-    scanner does prune orphans and the scenario should annotate task 89 with
-    the observed pruning behaviour, since it contradicts the current
-    implementation.
+20. Verify the rescan reconciled the orphaned row. The scanner now soft-
+    deletes media whose underlying file disappeared between scans (see
+    `reconcileOrphans` in `internal/scanner/scanner.go`). Run
+    `db: SELECT count(*) FROM media WHERE id={media_id_2}` and confirm the
+    count is exactly 1 — orphans are SOFT-deleted, not hard-deleted. Then
+    run `db: SELECT deleted_at FROM media WHERE id={media_id_2}` and
+    confirm `deleted_at` is NOT NULL (a recent timestamp). A NULL
+    `deleted_at` here means the orphan-reconcile pass failed to fire —
+    regression.
 
-21. Confirm the orphaned row still appears in `GET /api/v1/media`: call
-    `GET /api/v1/media` with the `admin_session` cookie and verify an entry
-    with `id == media_id_2` is present. (Streaming it would 404 because the
-    file is gone, but listing should not.)
+21. Confirm the orphan no longer appears in the active media list: call
+    `GET /api/v1/media` with the `admin_session` cookie and verify NO
+    entry has `id == media_id_2`. It must instead appear in
+    `GET /api/v1/admin/trash` (alongside the row from step 7).
 
-22. Cleanup — soft-delete then attempt hard cleanup of both rows. Call
-    `DELETE /api/v1/media/{media_id_2}` with the `admin_session` cookie and
-    confirm HTTP 200. The first test file at `{abs_path}` is still on disk;
-    remove it directly: run `rm -f {abs_path}`. Both DB rows now have
-    `deleted_at IS NOT NULL` and live in the trash.
+22. Cleanup — `media_id_2` is already soft-deleted by the orphan-reconcile
+    pass in step 20, so no DELETE call is needed for it. Remove the first
+    test file from disk if it still exists: run `rm -f {abs_path}`. Both
+    rows now have `deleted_at IS NOT NULL` and live in the trash; subsequent
+    rescans will not re-import them because the dedup map sees them.
 
 23. Revoke the API token: call `DELETE /api/v1/auth/tokens/{token_id}` with
     the `admin_session` cookie. Confirm the response is HTTP 200.

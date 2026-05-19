@@ -214,6 +214,12 @@ type MediaFilter struct {
 	Sort          string           // Sort chooses the order: name, date, duration, play_count, or random.
 	Limit         int              // Limit caps the number of returned rows.
 	Offset        int              // Offset skips rows before returning results.
+
+	// IncludeDeleted disables the implicit `deleted_at IS NULL` filter.
+	// Required for scanner dedup loads so soft-deleted rows are visible to
+	// the dedup map; without it a re-scan of a soft-deleted file would
+	// reinsert and hit the UNIQUE(set_id, rel_path) constraint.
+	IncludeDeleted bool
 }
 
 // MediaRepo manages media items.

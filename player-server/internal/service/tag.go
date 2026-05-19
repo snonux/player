@@ -31,7 +31,11 @@ func (s *tagService) ListTags(ctx context.Context, userID int64) ([]model.Tag, e
 }
 
 func (s *tagService) AssignTag(ctx context.Context, mediaID, userID int64, tagName string) error {
-	if _, err := s.helper.verifyAccess(ctx, mediaID, userID); err != nil {
+	// Tags are global state: every other user with access to this media
+	// sees the change. Require owner-level access so a viewer cannot
+	// mutate shared metadata. Personal annotations (favorites, notes)
+	// stay on verifyAccess because they're per-user.
+	if _, err := s.helper.verifyModifyAccess(ctx, mediaID, userID); err != nil {
 		return err
 	}
 	tag, err := s.store.GetTagByName(ctx, tagName)
@@ -49,7 +53,11 @@ func (s *tagService) AssignTag(ctx context.Context, mediaID, userID int64, tagNa
 }
 
 func (s *tagService) RemoveTag(ctx context.Context, mediaID, userID int64, tagName string) error {
-	if _, err := s.helper.verifyAccess(ctx, mediaID, userID); err != nil {
+	// Tags are global state: every other user with access to this media
+	// sees the change. Require owner-level access so a viewer cannot
+	// mutate shared metadata. Personal annotations (favorites, notes)
+	// stay on verifyAccess because they're per-user.
+	if _, err := s.helper.verifyModifyAccess(ctx, mediaID, userID); err != nil {
 		return err
 	}
 	tag, err := s.store.GetTagByName(ctx, tagName)

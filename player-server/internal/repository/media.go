@@ -231,7 +231,9 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 		conds = append(conds, `media.duration <= ?`)
 		args = append(args, *filter.MaxDuration)
 	}
-	conds = append(conds, `media.deleted_at IS NULL`)
+	if !filter.IncludeDeleted {
+		conds = append(conds, `media.deleted_at IS NULL`)
+	}
 
 	query += joins
 	if len(conds) > 0 {
