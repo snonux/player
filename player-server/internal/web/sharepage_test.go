@@ -76,6 +76,50 @@ func TestInjectShareMedia(t *testing.T) {
 	}
 }
 
+func TestSanitizeFileName(t *testing.T) {
+	t.Run("short clean name unchanged", func(t *testing.T) {
+		got := SanitizeFileName("movie.mp4")
+		if got != "movie.mp4" {
+			t.Fatalf("expected %q, got %q", "movie.mp4", got)
+		}
+	})
+
+	t.Run("html special chars are escaped", func(t *testing.T) {
+		got := SanitizeFileName(`<script>alert(1)</script>.mp4`)
+		if strings.Contains(got, "<") || strings.Contains(got, ">") {
+			t.Fatalf("expected HTML-escaped output, got %q", got)
+		}
+		if !strings.Contains(got, "&lt;") {
+			t.Fatalf("expected &lt; in output, got %q", got)
+		}
+	})
+
+	t.Run("long filename is truncated to MaxFileNameLength runes", func(t *testing.T) {
+		// Build a filename longer than MaxFileNameLength characters.
+		long := strings.Repeat("a", MaxFileNameLength+100)
+		got := SanitizeFileName(long)
+		if len([]rune(got)) > MaxFileNameLength {
+			t.Fatalf("expected at most %d runes, got %d", MaxFileNameLength, len([]rune(got)))
+		}
+	})
+
+	t.Run("multibyte runes counted correctly", func(t *testing.T) {
+		// Each '日' is 3 UTF-8 bytes but 1 rune; we want exactly MaxFileNameLength runes.
+		long := strings.Repeat("日", MaxFileNameLength+10)
+		got := SanitizeFileName(long)
+		if len([]rune(got)) > MaxFileNameLength {
+			t.Fatalf("expected at most %d runes, got %d", MaxFileNameLength, len([]rune(got)))
+		}
+	})
+
+	t.Run("ampersand is escaped", func(t *testing.T) {
+		got := SanitizeFileName("a&b.mp4")
+		if got != "a&amp;b.mp4" {
+			t.Fatalf("expected %q, got %q", "a&amp;b.mp4", got)
+		}
+	})
+}
+
 // statErrorFS returns a file whose Stat() fails — used to cover the
 // rare error path in Render where the template is openable but cannot
 // be stat'd.

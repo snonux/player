@@ -191,16 +191,26 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, value string) {
+	sessionDuration := time.Duration(s.cfg.SessionTimeoutHours) * time.Hour
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   s.cfg.SecureCookies,
-		SameSite: http.SameSiteStrictMode,
+		// SameSite=Lax allows cross-context navigation (e.g. mobile webviews,
+		// embedded players following a link) while still blocking most CSRF
+		// vectors. SameSite=Strict would drop the cookie on any cross-site
+		// top-level navigation, causing unnecessary session loss.
+		SameSite: http.SameSiteLaxMode,
+		// MaxAge is the authoritative persistence signal in modern browsers;
+		// Expires is the legacy fallback. Both are set to the same session
+		// duration so the cookie persists across browser restarts regardless
+		// of which attribute the client honours.
+		MaxAge: int(sessionDuration.Seconds()),
 		// Use the injected clock so tests can assert the cookie Expires
 		// value deterministically (no flakiness from time.Now()).
-		Expires: s.clk.Now().Add(time.Duration(s.cfg.SessionTimeoutHours) * time.Hour),
+		Expires: s.clk.Now().Add(sessionDuration),
 	})
 }
 

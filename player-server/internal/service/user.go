@@ -10,6 +10,9 @@ import (
 	"codeberg.org/snonux/player/internal/repository"
 )
 
+// minPasswordLen is the minimum acceptable password length for new accounts.
+const minPasswordLen = 8
+
 // userAdminService handles user account management.
 type userAdminService struct {
 	store  repository.UserAdminServiceStore
@@ -27,6 +30,11 @@ func (s *userAdminService) ListUsers(ctx context.Context) ([]model.User, error) 
 }
 
 func (s *userAdminService) CreateUser(ctx context.Context, username, password string, isAdmin bool) (*model.User, error) {
+	// Reject blank or short passwords before hashing to prevent weak account creation.
+	if len(password) < minPasswordLen {
+		return nil, ErrWeakPassword
+	}
+
 	hash, err := s.hasher.Hash(password)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)

@@ -200,7 +200,7 @@ func TestAdminService_CreateUser(t *testing.T) {
 			}
 			hasher := &fakeHasher{fixed: "hashed", err: tt.hashErr}
 			svc := NewAdminService(store, newMockClock(), hasher, nil, "", ctx)
-			user, err := svc.CreateUser(ctx, "alice", "secret", false)
+			user, err := svc.CreateUser(ctx, "alice", "strongpass", false)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")

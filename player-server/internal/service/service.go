@@ -48,6 +48,7 @@ var (
 	ErrInvalidCredentials   = &apiError{msg: "invalid credentials", status: http.StatusUnauthorized}
 	ErrInvalidFeed          = &apiError{msg: "invalid feed", status: http.StatusBadRequest}
 	ErrCannotDeleteSelf     = &apiError{msg: "cannot delete self", status: http.StatusBadRequest}
+	ErrWeakPassword         = &apiError{msg: "password must be at least 8 characters", status: http.StatusBadRequest}
 
 	// ErrShareExpired is handled directly by share handlers (not via
 	// handleError); it stays a plain sentinel because no dispatch metadata

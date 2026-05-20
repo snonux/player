@@ -181,12 +181,9 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 	query := `SELECT DISTINCT media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at FROM media`
 
 	if filter.Search != "" {
+		// escapeLike escapes LIKE wildcards so user input is treated as a literal substring.
 		conds = append(conds, `(media.file_name LIKE ? ESCAPE '\' OR media.rel_path LIKE ? ESCAPE '\')`)
-		term := filter.Search
-		term = strings.ReplaceAll(term, "\\", "\\\\")
-		term = strings.ReplaceAll(term, "%", "\\%")
-		term = strings.ReplaceAll(term, "_", "\\_")
-		like := "%" + term + "%"
+		like := "%" + escapeLike(filter.Search) + "%"
 		args = append(args, like, like)
 	}
 	if filter.Favorites {
@@ -311,6 +308,16 @@ func incrementPlayCount(ctx context.Context, db sqlExecer, id int64) error {
 		return fmt.Errorf("increment play count: %w", err)
 	}
 	return nil
+}
+
+// escapeLike escapes backslash, percent, and underscore in s so it can be
+// used as a literal substring in a SQL LIKE ? ESCAPE '\' clause without
+// allowing timing-based wildcard injection.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }
 
 func placeholders(n int) string {

@@ -30,22 +30,36 @@ func TestUserAdminService_CreateUser(t *testing.T) {
 
 	tests := []struct {
 		name      string
+		password  string
 		hashErr   error
 		createErr error
 		wantErr   bool
 	}{
 		{
-			name: "ok",
+			name:     "ok",
+			password: "strongpass", // 10 chars, meets 8-char minimum
 		},
 		{
-			name:    "hash error",
-			hashErr: errors.New("boom"),
-			wantErr: true,
+			name:     "hash error",
+			password: "strongpass",
+			hashErr:  errors.New("boom"),
+			wantErr:  true,
 		},
 		{
 			name:      "create error",
+			password:  "strongpass",
 			createErr: errors.New("boom"),
 			wantErr:   true,
+		},
+		{
+			name:    "empty password rejected",
+			password: "",
+			wantErr: true,
+		},
+		{
+			name:    "short password rejected",
+			password: "short",
+			wantErr: true,
 		},
 	}
 
@@ -60,7 +74,7 @@ func TestUserAdminService_CreateUser(t *testing.T) {
 			}
 			hasher := &fakeUserHasher{fixed: "hashed", err: tt.hashErr}
 			svc := NewUserAdminService(store, clock.RealClock{}, hasher)
-			user, err := svc.CreateUser(ctx, "alice", "secret", false)
+			user, err := svc.CreateUser(ctx, "alice", tt.password, false)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")

@@ -12,7 +12,10 @@ const (
 	DefaultPort                   = 8080
 	DefaultMediaRoot              = "./media"
 	DefaultDBPath                 = "data.db"
-	DefaultMaxUploadSizeMB        = 100
+	// DefaultMaxUploadSizeMB is 10 GB, chosen to accommodate large video files
+	// without imposing an arbitrary low cap. Operators can lower it via the
+	// MAX_UPLOAD_SIZE_MB environment variable for tighter constraints.
+	DefaultMaxUploadSizeMB = 10240
 	DefaultSessionTimeoutHours    = 24
 	DefaultGCIntervalMinutes      = 30
 	DefaultShareDefaultExpiryDays = 7

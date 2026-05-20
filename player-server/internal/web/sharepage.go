@@ -13,11 +13,19 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// MaxFileNameLength is the maximum number of runes kept from a media filename
+// before it is truncated. Filenames beyond this limit can cause unbounded
+// memory growth when embedded in the share-page HTML, so they are silently
+// capped here. 255 is a common filesystem limit and a reasonable upper bound
+// for display purposes.
+const MaxFileNameLength = 255
 
 // ShareMediaPlaceholder is the HTML comment that gets substituted with
 // the JSON-encoded share metadata inside share.html.
@@ -82,25 +90,42 @@ func (r *SharePageRenderer) Render(data any) (RenderedPage, error) {
 		return RenderedPage{}, fmt.Errorf("read share template: %w", err)
 	}
 
-	html, err := injectShareMedia(buf.String(), r.placeholder, data)
+	rendered, err := injectShareMedia(buf.String(), r.placeholder, data)
 	if err != nil {
 		return RenderedPage{}, err
 	}
 
 	return RenderedPage{
-		HTML:    html,
+		HTML:    rendered,
 		ModTime: stat.ModTime(),
 		Name:    r.template,
 	}, nil
 }
 
+// SanitizeFileName truncates s to MaxFileNameLength runes and HTML-escapes
+// the result. Both steps protect against DoS via enormous filenames and
+// against HTML injection when the filename is embedded in a page attribute
+// or element text context outside of the JSON-encoded script block.
+func SanitizeFileName(s string) string {
+	runes := []rune(s)
+	if len(runes) > MaxFileNameLength {
+		runes = runes[:MaxFileNameLength]
+	}
+	return html.EscapeString(string(runes))
+}
+
 // injectShareMedia replaces placeholder with the JSON-encoded form of
 // data, returning the new HTML. It is private to keep this package's
 // surface small: callers are expected to go through SharePageRenderer.
-func injectShareMedia(html, placeholder string, data any) (string, error) {
+//
+// Go's encoding/json already escapes <, > and & as Unicode escapes inside
+// string values, so the JSON blob is safe to embed in a <script> tag.
+// The explicit SanitizeFileName call on the way in (see handlers_share.go)
+// provides a second layer of defence and enforces a length cap.
+func injectShareMedia(htmlDoc, placeholder string, data any) (string, error) {
 	encoded, err := json.Marshal(data)
 	if err != nil {
 		return "", fmt.Errorf("marshal share metadata: %w", err)
 	}
-	return strings.Replace(html, placeholder, string(encoded), 1), nil
+	return strings.Replace(htmlDoc, placeholder, string(encoded), 1), nil
 }

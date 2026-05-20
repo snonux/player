@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/service"
+	"codeberg.org/snonux/player/internal/web"
 )
 
 // ------------------------------------------------------------------
@@ -89,6 +90,15 @@ func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(accept, "application/json") {
 		writeJSON(w, http.StatusOK, res)
 		return
+	}
+
+	// Sanitize the media filename before embedding it in the share page to
+	// prevent XSS via HTML injection and to cap memory growth from enormous
+	// filenames (DoS). SanitizeFileName truncates to MaxFileNameLength runes
+	// and HTML-escapes the result; encoding/json also Unicode-escapes </>
+	// inside string values, so both layers reinforce each other.
+	if res.Media != nil {
+		res.Media.FileName = web.SanitizeFileName(res.Media.FileName)
 	}
 
 	// Render the HTML view via the dedicated renderer. This keeps the
