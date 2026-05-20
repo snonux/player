@@ -147,11 +147,18 @@ func Test_readJSON_nilBody(t *testing.T) {
 }
 
 func Test_writeJSON_encodeError(t *testing.T) {
-	// channel cannot be JSON-encoded, triggering the error path
+	// Channels cannot be JSON-encoded, triggering the error path.
+	//
+	// Historically writeJSON wrote the response status BEFORE attempting to
+	// encode, so an encode failure produced a 200 with a corrupt body. After
+	// y9 the function marshals into an in-memory buffer first; if encoding
+	// fails it must emit 500 with a JSON error envelope instead of silently
+	// committing the caller's success status. This test now guards that
+	// fixed contract.
 	rr := httptest.NewRecorder()
 	writeJSON(rr, http.StatusOK, make(chan int))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected %d on encode failure, got %d", http.StatusInternalServerError, rr.Code)
 	}
 }
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,12 +27,26 @@ func fileETag(size int64, modTime time.Time) string {
 // Helpers
 // ------------------------------------------------------------------
 
+// writeJSON serialises data to JSON and writes it to w with the given status.
+//
+// Marshalling happens into an in-memory buffer BEFORE any status or body is
+// written to the response. This avoids the previous footgun where the headers
+// (and a 200/whatever status) were committed first and then encoding failed
+// halfway through, producing a response with a misleading success status and a
+// truncated/invalid body. If encoding fails we instead emit a 500 with a small
+// JSON error payload so callers always see a consistent error shape.
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(data); err != nil {
+		slog.Error("encode json", "err", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal encoding error"}`))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		slog.Error("encode json", "err", err)
-	}
+	_, _ = w.Write(buf.Bytes())
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
