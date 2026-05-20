@@ -41,14 +41,14 @@ func (s *Server) fileHandler(fn func(context.Context, int64, int64) (*service.Fi
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.media.Browse) {
 		return
 	}
-	s.fileHandler(s.browseSvc.StreamMedia)(w, r)
+	s.fileHandler(s.media.Browse.StreamMedia)(w, r)
 }
 
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.media.Browse) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -56,7 +56,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	res, err := s.browseSvc.DownloadMedia(r.Context(), id, userIDFromContext(r))
+	res, err := s.media.Browse.DownloadMedia(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			notFound(w)
@@ -77,15 +77,15 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.media.Browse) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-cache")
-	s.fileHandler(s.browseSvc.GetThumbnail)(w, r)
+	s.fileHandler(s.media.Browse.GetThumbnail)(w, r)
 }
 
 func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.writeSvc) {
+	if !requireService(w, s.media.Write) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -93,7 +93,7 @@ func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	if err := s.writeSvc.RegenerateThumbnail(r.Context(), id, userIDFromContext(r)); err != nil {
+	if err := s.media.Write.RegenerateThumbnail(r.Context(), id, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			notFound(w)
 			return

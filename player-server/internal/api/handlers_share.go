@@ -15,7 +15,7 @@ import (
 // ------------------------------------------------------------------
 
 func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.shareSvc) {
+	if !requireService(w, s.media.Share) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -27,7 +27,7 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 	// share-expiry semantics (e.g. assert that expiresAt is exactly
 	// ShareDefaultExpiryDays * 24h after the mock clock's T).
 	expiresAt := s.clk.Now().Add(time.Duration(s.cfg.ShareDefaultExpiryDays) * 24 * time.Hour)
-	share, err := s.shareSvc.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt)
+	share, err := s.media.Share.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -36,7 +36,7 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.shareSvc) {
+	if !requireService(w, s.media.Share) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -44,7 +44,7 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	shares, err := s.shareSvc.ListShares(r.Context(), id, userIDFromContext(r))
+	shares, err := s.media.Share.ListShares(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -53,7 +53,7 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.shareSvc) {
+	if !requireService(w, s.media.Share) {
 		return
 	}
 	token := r.PathValue("token")
@@ -61,7 +61,7 @@ func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "token required")
 		return
 	}
-	if err := s.shareSvc.RevokeShare(r.Context(), token, userIDFromContext(r)); err != nil {
+	if err := s.media.Share.RevokeShare(r.Context(), token, userIDFromContext(r)); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -69,11 +69,11 @@ func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.shareSvc) {
+	if !requireService(w, s.media.Share) {
 		return
 	}
 	token := r.PathValue("token")
-	res, err := s.shareSvc.GetSharedMedia(r.Context(), token)
+	res, err := s.media.Share.GetSharedMedia(r.Context(), token)
 	if err != nil || res == nil {
 		if err != nil && errors.Is(err, service.ErrShareExpired) {
 			http.Error(w, "gone", http.StatusGone)
@@ -115,11 +115,11 @@ func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.shareSvc) {
+	if !requireService(w, s.media.Share) {
 		return
 	}
 	token := r.PathValue("token")
-	fr, err := s.shareSvc.GetSharedThumbnail(r.Context(), token)
+	fr, err := s.media.Share.GetSharedThumbnail(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, service.ErrShareExpired) {
 			http.Error(w, "gone", http.StatusGone)
@@ -141,11 +141,11 @@ func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.shareSvc) {
+	if !requireService(w, s.media.Share) {
 		return
 	}
 	token := r.PathValue("token")
-	res, err := s.shareSvc.StreamSharedMedia(r.Context(), token)
+	res, err := s.media.Share.StreamSharedMedia(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, service.ErrShareExpired) {
 			http.Error(w, "gone", http.StatusGone)
@@ -166,11 +166,11 @@ func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShareDownload(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.shareSvc) {
+	if !requireService(w, s.media.Share) {
 		return
 	}
 	token := r.PathValue("token")
-	fr, err := s.shareSvc.StreamSharedMedia(r.Context(), token)
+	fr, err := s.media.Share.StreamSharedMedia(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, service.ErrShareExpired) {
 			http.Error(w, "gone", http.StatusGone)
@@ -191,10 +191,10 @@ func (s *Server) handleShareDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMyShares(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.shareSvc) {
+	if !requireService(w, s.media.Share) {
 		return
 	}
-	shares, err := s.shareSvc.ListMyShares(r.Context(), userIDFromContext(r))
+	shares, err := s.media.Share.ListMyShares(r.Context(), userIDFromContext(r))
 	if err != nil {
 		handleError(w, err)
 		return

@@ -17,7 +17,24 @@ import (
 	"codeberg.org/snonux/player/internal/web"
 )
 
+// MediaServices groups the media-domain service dependencies used by route
+// handlers. Keeping all media-related services in one sub-struct reduces the
+// width of Server/ServerServices and makes it easy to see which concerns belong
+// to the media vertical slice. If any service is nil its routes return 501.
+type MediaServices struct {
+	Browse        service.MediaBrowseService
+	Write         service.MediaWriteService
+	Share         service.MediaShareService
+	Tag           service.MediaTagService
+	Favorite      service.MediaFavoriteService
+	Note          service.MediaNoteService
+	Progress      service.ProgressService
+	PlaybackHints service.PlaybackHintsService
+}
+
 // Server holds HTTP handlers and dependencies.
+// Service dependencies are grouped into vertical slices (media, auth, admin,
+// podcast) to reduce the width of the struct and clarify ownership boundaries.
 type Server struct {
 	store  repository.Store
 	hasher auth.Hasher
@@ -27,41 +44,32 @@ type Server struct {
 	// expiry, session cookie Expires, API token expiry). Injected so tests
 	// can substitute a clock.MockClock and assert deterministic semantics
 	// instead of racing the wall clock.
-	clk             clock.Clock
-	mux             *http.ServeMux
-	handler         http.Handler
-	browseSvc       service.MediaBrowseService
-	writeSvc        service.MediaWriteService
-	shareSvc        service.MediaShareService
-	tagSvc          service.MediaTagService
-	favSvc          service.MediaFavoriteService
-	noteSvc         service.MediaNoteService
-	adminSvc        service.AdminService
-	progressSvc     service.ProgressService
-	authSvc         service.AuthService
-	podcastSvc      service.PodcastEpisodeService
-	playbackHintSvc service.PlaybackHintsService
-	streamer        service.MediaStreamer
-	staticFS        http.FileSystem
-	shareRenderer   *web.SharePageRenderer
-	logger          *slog.Logger
-	mw              *Middleware
+	clk    clock.Clock
+	mux    *http.ServeMux
+	handler http.Handler
+	// media groups all media-domain services (browse, write, share, tags,
+	// favorites, notes, progress, playback hints) into a single vertical slice.
+	media         MediaServices
+	authSvc       service.AuthService
+	adminSvc      service.AdminService
+	podcastSvc    service.PodcastEpisodeService
+	streamer      service.MediaStreamer
+	staticFS      http.FileSystem
+	shareRenderer *web.SharePageRenderer
+	logger        *slog.Logger
+	mw            *Middleware
 }
 
 // ServerServices groups the optional service dependencies used by route handlers.
+// Media-related services are collected into the Media sub-struct to reduce
+// width and reflect the media vertical-slice boundary. Non-media services
+// (Auth, Admin, Podcast) remain as direct fields.
 // If any service is nil, its respective routes return 501.
 type ServerServices struct {
-	Browse        service.MediaBrowseService
-	Write         service.MediaWriteService
-	Share         service.MediaShareService
-	Tag           service.MediaTagService
-	Favorite      service.MediaFavoriteService
-	Note          service.MediaNoteService
-	Admin         service.AdminService
-	Progress      service.ProgressService
-	Auth          service.AuthService
-	Podcast       service.PodcastEpisodeService
-	PlaybackHints service.PlaybackHintsService
+	Media   MediaServices
+	Auth    service.AuthService
+	Admin   service.AdminService
+	Podcast service.PodcastEpisodeService
 }
 
 // ServerDeps contains the dependencies needed to construct a Server.
@@ -117,29 +125,24 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 	if deps.Clock == nil {
 		deps.Clock = clock.RealClock{}
 	}
+	// Populate the media vertical-slice sub-struct directly from the nested
+	// ServerServices.Media group so the Server never sees the flat list.
 	s := &Server{
-		store:           deps.Store,
-		hasher:          deps.Hasher,
-		sm:              deps.SessionManager,
-		cfg:             deps.Config,
-		clk:             deps.Clock,
-		mux:             http.NewServeMux(),
-		browseSvc:       deps.Services.Browse,
-		writeSvc:        deps.Services.Write,
-		shareSvc:        deps.Services.Share,
-		tagSvc:          deps.Services.Tag,
-		favSvc:          deps.Services.Favorite,
-		noteSvc:         deps.Services.Note,
-		adminSvc:        deps.Services.Admin,
-		progressSvc:     deps.Services.Progress,
-		authSvc:         deps.Services.Auth,
-		podcastSvc:      deps.Services.Podcast,
-		playbackHintSvc: deps.Services.PlaybackHints,
-		streamer:        deps.MediaStreamer,
-		staticFS:        deps.StaticFS,
-		shareRenderer:   web.NewSharePageRenderer(deps.StaticFS),
-		logger:          logger,
-		mw:              NewMiddleware(deps.Services.Auth, deps.SessionManager),
+		store:   deps.Store,
+		hasher:  deps.Hasher,
+		sm:      deps.SessionManager,
+		cfg:     deps.Config,
+		clk:     deps.Clock,
+		mux:     http.NewServeMux(),
+		media:   deps.Services.Media,
+		authSvc: deps.Services.Auth,
+		adminSvc: deps.Services.Admin,
+		podcastSvc: deps.Services.Podcast,
+		streamer:      deps.MediaStreamer,
+		staticFS:      deps.StaticFS,
+		shareRenderer: web.NewSharePageRenderer(deps.StaticFS),
+		logger:        logger,
+		mw:            NewMiddleware(deps.Services.Auth, deps.SessionManager),
 	}
 	s.routes()
 	s.handler = withCORS(s.cfg.CORSAllowedOrigins, s.mw.BootstrapRedirect(s.mux))

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal"
+	"codeberg.org/snonux/player/internal/app"
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
@@ -184,7 +185,8 @@ func TestRunWithSignal_ServerErrorPath(t *testing.T) {
 }
 
 func TestWireDeps_DoesNotStartBackgroundWorkers(t *testing.T) {
-	// wireDeps must only construct dependencies; it must not start any background goroutines.
+	// app.Wire must only construct dependencies; it must not start any
+	// background goroutines. StartBackgroundWorkers is a separate step.
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 	mediaRoot := filepath.Join(tmpDir, "media")
@@ -212,18 +214,18 @@ func TestWireDeps_DoesNotStartBackgroundWorkers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	deps := wireDeps(cfg, store, logger, ctx)
-	if deps.gcWorker == nil {
-		t.Fatal("expected gcWorker to be non-nil")
+	deps := app.Wire(cfg, store, logger, ctx)
+	if deps.GCWorker == nil {
+		t.Fatal("expected GCWorker to be non-nil")
 	}
 
 	// We call Stop() immediately. If Start() had been called this is safe (idempotent).
 	// If Start() was NOT called, the internal stopCh is still open, so Stop() must handle it gracefully.
-	deps.gcWorker.Stop()
+	deps.GCWorker.Stop()
 }
 
 func TestStartBackgroundWorkers_StartsAndStops(t *testing.T) {
-	// startBackgroundWorkers should launch background goroutines that exit
+	// app.StartBackgroundWorkers should launch background goroutines that exit
 	// cleanly when the app context is cancelled.
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
@@ -252,10 +254,10 @@ func TestStartBackgroundWorkers_StartsAndStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	deps := wireDeps(cfg, store, logger, ctx)
+	deps := app.Wire(cfg, store, logger, ctx)
 	workersStarted := make(chan struct{}, 1)
-	deps.workersStarted = workersStarted
-	startBackgroundWorkers(deps)
+	deps.WorkersStarted = workersStarted
+	app.StartBackgroundWorkers(deps)
 
 	select {
 	case <-workersStarted:
@@ -267,7 +269,7 @@ func TestStartBackgroundWorkers_StartsAndStops(t *testing.T) {
 	cancel()
 
 	// Stop the GC worker explicitly (safe and idempotent).
-	deps.gcWorker.Stop()
+	deps.GCWorker.Stop()
 
 	// No explicit assertion for goroutine exit beyond the fact that we have not leaked;
 	// the final goroutine dump check in the test run will catch leaks.
@@ -278,8 +280,8 @@ func TestStartBackgroundWorkers_NilDepsPanics(t *testing.T) {
 	// so the bug is surfaced at start-up rather than later as a nil dereference.
 	defer func() {
 		if r := recover(); r == nil {
-			t.Fatal("expected panic when startBackgroundWorkers receives nil")
+			t.Fatal("expected panic when StartBackgroundWorkers receives nil")
 		}
 	}()
-	startBackgroundWorkers(nil)
+	app.StartBackgroundWorkers(nil)
 }

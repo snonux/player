@@ -8,7 +8,7 @@ import (
 )
 
 func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.progressSvc) {
+	if !requireService(w, s.media.Progress) {
 		return
 	}
 	var req struct {
@@ -28,7 +28,7 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "session required")
 		return
 	}
-	err := s.progressSvc.UpdateProgress(
+	err := s.media.Progress.UpdateProgress(
 		r.Context(),
 		sessionID,
 		userIDFromContext(r),
@@ -43,7 +43,7 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBatchProgress(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.progressSvc) {
+	if !requireService(w, s.media.Progress) {
 		return
 	}
 	var req struct {
@@ -76,7 +76,7 @@ func (s *Server) handleBatchProgress(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "session required")
 		return
 	}
-	if err := s.progressSvc.BatchUpdateProgress(r.Context(), sessionID, userIDFromContext(r), updates); err != nil {
+	if err := s.media.Progress.BatchUpdateProgress(r.Context(), sessionID, userIDFromContext(r), updates); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -84,7 +84,7 @@ func (s *Server) handleBatchProgress(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProgressStatus(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.progressSvc) {
+	if !requireService(w, s.media.Progress) {
 		return
 	}
 	var req struct {
@@ -103,9 +103,9 @@ func (s *Server) handleProgressStatus(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch req.Status {
 	case "finished":
-		err = s.progressSvc.MarkFinished(r.Context(), userIDFromContext(r), req.MediaID)
+		err = s.media.Progress.MarkFinished(r.Context(), userIDFromContext(r), req.MediaID)
 	case "not_started":
-		err = s.progressSvc.MarkNotStarted(r.Context(), userIDFromContext(r), req.MediaID)
+		err = s.media.Progress.MarkNotStarted(r.Context(), userIDFromContext(r), req.MediaID)
 	default:
 		badRequest(w, "invalid status")
 		return
@@ -118,10 +118,10 @@ func (s *Server) handleProgressStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleInProgress(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.progressSvc) {
+	if !requireService(w, s.media.Progress) {
 		return
 	}
-	media, err := s.progressSvc.ListInProgress(r.Context(), userIDFromContext(r))
+	media, err := s.media.Progress.ListInProgress(r.Context(), userIDFromContext(r))
 	if err != nil {
 		handleError(w, err)
 		return

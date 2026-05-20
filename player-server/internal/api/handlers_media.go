@@ -19,10 +19,10 @@ const multipartFormMemoryLimit = 32 << 20
 // ------------------------------------------------------------------
 
 func (s *Server) handleListSets(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.media.Browse) {
 		return
 	}
-	sets, err := s.browseSvc.ListSets(r.Context(), userIDFromContext(r))
+	sets, err := s.media.Browse.ListSets(r.Context(), userIDFromContext(r))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -31,7 +31,7 @@ func (s *Server) handleListSets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.media.Browse) {
 		return
 	}
 	setID, err := pathID(r, "id")
@@ -40,7 +40,7 @@ func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	folder := r.URL.Query().Get("folder")
-	fr, err := s.browseSvc.GetSetCover(r.Context(), setID, folder, userIDFromContext(r))
+	fr, err := s.media.Browse.GetSetCover(r.Context(), setID, folder, userIDFromContext(r))
 	if err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			notFound(w)
@@ -58,7 +58,7 @@ func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.writeSvc) {
+	if !requireService(w, s.media.Write) {
 		return
 	}
 	setID, err := pathID(r, "id")
@@ -67,7 +67,7 @@ func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	folder := r.URL.Query().Get("folder")
-	if err := s.writeSvc.RegenerateSetCover(r.Context(), setID, folder, userIDFromContext(r)); err != nil {
+	if err := s.media.Write.RegenerateSetCover(r.Context(), setID, folder, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			notFound(w)
 			return
@@ -83,7 +83,7 @@ func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.media.Browse) {
 		return
 	}
 	setID, err := pathID(r, "id")
@@ -92,7 +92,7 @@ func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parent := r.URL.Query().Get("parent")
-	result, err := s.browseSvc.BrowseSet(r.Context(), setID, userIDFromContext(r), parent)
+	result, err := s.media.Browse.BrowseSet(r.Context(), setID, userIDFromContext(r), parent)
 	if err != nil {
 		if errors.Is(err, service.ErrForbidden) {
 			forbidden(w, "forbidden")
@@ -105,7 +105,7 @@ func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.writeSvc) {
+	if !requireService(w, s.media.Write) {
 		return
 	}
 	setID, err := pathID(r, "id")
@@ -134,7 +134,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	media, err := s.writeSvc.UploadMedia(r.Context(), setID, userIDFromContext(r), fh.Filename, file, fh.Size)
+	media, err := s.media.Write.UploadMedia(r.Context(), setID, userIDFromContext(r), fh.Filename, file, fh.Size)
 	if err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			notFound(w)
@@ -224,7 +224,7 @@ func parseMediaListQuery(q url.Values) service.MediaQueryFilter {
 }
 
 func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.media.Browse) {
 		return
 	}
 	path := r.URL.Path
@@ -238,7 +238,7 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 	maxDur := q.Get("max_duration")
 	start := time.Now()
 	filter := parseMediaListQuery(q)
-	media, err := s.browseSvc.ListMedia(r.Context(), userIDFromContext(r), filter)
+	media, err := s.media.Browse.ListMedia(r.Context(), userIDFromContext(r), filter)
 	dur := time.Since(start)
 	if err != nil {
 		s.logger.Error("api list media failed", "path", path, "set_id", setID, "set_ids", setIDs, "search", search, "type", typ, "favorites", fav, "min_duration", minDur, "max_duration", maxDur, "duration", dur, "err", err)
@@ -250,7 +250,7 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.browseSvc) {
+	if !requireService(w, s.media.Browse) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -258,7 +258,7 @@ func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	detail, err := s.browseSvc.GetMediaDetail(r.Context(), id, userIDFromContext(r))
+	detail, err := s.media.Browse.GetMediaDetail(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -271,7 +271,7 @@ func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.favSvc) {
+	if !requireService(w, s.media.Favorite) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -279,7 +279,7 @@ func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	fav, err := s.favSvc.ToggleFavorite(r.Context(), userIDFromContext(r), id)
+	fav, err := s.media.Favorite.ToggleFavorite(r.Context(), userIDFromContext(r), id)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -288,10 +288,10 @@ func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.tagSvc) {
+	if !requireService(w, s.media.Tag) {
 		return
 	}
-	tags, err := s.tagSvc.ListTags(r.Context(), userIDFromContext(r))
+	tags, err := s.media.Tag.ListTags(r.Context(), userIDFromContext(r))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -300,7 +300,7 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.tagSvc) {
+	if !requireService(w, s.media.Tag) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -315,7 +315,7 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "tag required")
 		return
 	}
-	if err := s.tagSvc.AssignTag(r.Context(), id, userIDFromContext(r), req.Tag); err != nil {
+	if err := s.media.Tag.AssignTag(r.Context(), id, userIDFromContext(r), req.Tag); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -323,7 +323,7 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.tagSvc) {
+	if !requireService(w, s.media.Tag) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -332,7 +332,7 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid parameters")
 		return
 	}
-	if err := s.tagSvc.RemoveTag(r.Context(), id, userIDFromContext(r), tagName); err != nil {
+	if err := s.media.Tag.RemoveTag(r.Context(), id, userIDFromContext(r), tagName); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -340,7 +340,7 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.writeSvc) {
+	if !requireService(w, s.media.Write) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -348,7 +348,7 @@ func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	if err := s.writeSvc.SoftDeleteMedia(r.Context(), id, userIDFromContext(r)); err != nil {
+	if err := s.media.Write.SoftDeleteMedia(r.Context(), id, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			notFound(w)
 			return
@@ -364,7 +364,7 @@ func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.writeSvc) {
+	if !requireService(w, s.media.Write) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -372,7 +372,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	if err := s.writeSvc.RestoreMedia(r.Context(), id, userIDFromContext(r)); err != nil {
+	if err := s.media.Write.RestoreMedia(r.Context(), id, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			notFound(w)
 			return
@@ -395,7 +395,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 // the client can decide whether to play natively or request a future transcoded
 // variant. It performs no actual transcoding — only a DB lookup.
 func (s *Server) handlePlaybackHints(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.playbackHintSvc) {
+	if !requireService(w, s.media.PlaybackHints) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -403,7 +403,7 @@ func (s *Server) handlePlaybackHints(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	hint, err := s.playbackHintSvc.GetPlaybackHint(r.Context(), id, userIDFromContext(r))
+	hint, err := s.media.PlaybackHints.GetPlaybackHint(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -416,7 +416,7 @@ func (s *Server) handlePlaybackHints(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------
 
 func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.noteSvc) {
+	if !requireService(w, s.media.Note) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -424,7 +424,7 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	note, err := s.noteSvc.GetNote(r.Context(), id, userIDFromContext(r))
+	note, err := s.media.Note.GetNote(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -437,7 +437,7 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpsertNote(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.noteSvc) {
+	if !requireService(w, s.media.Note) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -453,7 +453,7 @@ func (s *Server) handleUpsertNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	note := &model.Note{MediaID: id, UserID: userIDFromContext(r), Content: req.Content}
-	if err := s.noteSvc.UpsertNote(r.Context(), note); err != nil {
+	if err := s.media.Note.UpsertNote(r.Context(), note); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -461,7 +461,7 @@ func (s *Server) handleUpsertNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.noteSvc) {
+	if !requireService(w, s.media.Note) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -469,7 +469,7 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	if err := s.noteSvc.DeleteNote(r.Context(), id, userIDFromContext(r)); err != nil {
+	if err := s.media.Note.DeleteNote(r.Context(), id, userIDFromContext(r)); err != nil {
 		handleError(w, err)
 		return
 	}

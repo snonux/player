@@ -35,8 +35,10 @@ func newPlaybackTestServer(t *testing.T, store repository.Store, sm auth.Session
 		SessionManager: sm,
 		Config:         &internal.Config{},
 		Services: ServerServices{
-			Auth:          authSvc,
-			PlaybackHints: hintSvc,
+			Media: MediaServices{
+				PlaybackHints: hintSvc,
+			},
+			Auth: authSvc,
 		},
 		StaticFS:      fs,
 		MediaStreamer: service.NewMediaStreamer(nil, ""),
