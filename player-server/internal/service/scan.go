@@ -39,6 +39,7 @@ func NewScanService(appCtx context.Context, sc scanner.Scanner, mediaRoot string
 	}
 }
 
+// TriggerRescan cancels any in-flight scan and starts a new one asynchronously.
 func (s *scanService) TriggerRescan(ctx context.Context) error {
 	if s.scanner == nil {
 		return errors.New("scanner not configured")
@@ -80,6 +81,7 @@ func (s *scanService) TriggerRescan(ctx context.Context) error {
 	return nil
 }
 
+// ScanProgress returns a snapshot of the current or most recent scan state.
 func (s *scanService) ScanProgress(ctx context.Context) model.ScanProgress {
 	s.mu.Lock()
 	progress := s.progress
