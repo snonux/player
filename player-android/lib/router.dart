@@ -1,0 +1,117 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import 'app_routes.dart';
+import 'navigation_key.dart';
+import 'providers/auth_state_provider.dart';
+import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/media_detail_screen.dart';
+import 'screens/share_screen.dart';
+
+// Re-export AppRoutes so existing callers that import router.dart for routes
+// do not need to change their import path.
+export 'app_routes.dart' show AppRoutes;
+
+// ---------------------------------------------------------------------------
+// Router provider
+// ---------------------------------------------------------------------------
+
+/// Builds the [GoRouter] instance as a Riverpod [Provider] so that:
+///   1. The navigator key is shared with [DioClient] (enabling 401 redirects).
+///   2. The [refreshListenable] is driven by [authStateProvider] changes,
+///      which triggers redirect re-evaluation on every auth state transition.
+///   3. The provider is created lazily and disposed with [ProviderScope].
+final routerProvider = Provider<GoRouter>((ref) {
+  // Watch auth state so the router is rebuilt when it changes.
+  // Using a ChangeNotifier bridge because GoRouter's refreshListenable expects
+  // a Listenable, while Riverpod exposes streams/notifiers.
+  final notifier = _RouterRefreshNotifier(ref);
+
+  return GoRouter(
+    // Share the navigator key with DioClient so imperative 401 redirects
+    // work through go_router rather than the raw Navigator.
+    navigatorKey: navigatorKey,
+
+    // Trigger redirect re-evaluation whenever auth state changes.
+    refreshListenable: notifier,
+
+    // Default entry point before redirect logic resolves.
+    initialLocation: AppRoutes.home,
+
+    redirect: (context, state) {
+      final authAsync = ref.read(authStateProvider);
+
+      // While the initial token check is in-flight, hold the current path.
+      // The router will re-evaluate once refreshListenable fires.
+      if (authAsync.isLoading || authAsync.hasError) return null;
+
+      final auth = authAsync.requireValue;
+      final isLoginRoute = state.matchedLocation == AppRoutes.login;
+
+      if (auth.isUnauthenticated && !isLoginRoute) {
+        // Guard every authenticated route: bounce to login.
+        return AppRoutes.login;
+      }
+
+      if (auth.isAuthenticated && isLoginRoute) {
+        // Prevent the user from seeing the login screen once authenticated.
+        return AppRoutes.home;
+      }
+
+      // No redirect needed.
+      return null;
+    },
+
+    routes: [
+      GoRoute(
+        path: AppRoutes.login,
+        builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.home,
+        builder: (context, state) => const HomeScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.mediaDetail,
+        builder: (context, state) {
+          // The ':id' path parameter is guaranteed by the route pattern.
+          final id = state.pathParameters['id']!;
+          return MediaDetailScreen(mediaId: id);
+        },
+      ),
+      GoRoute(
+        path: AppRoutes.share,
+        builder: (context, state) => const ShareScreen(),
+      ),
+    ],
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Bridges Riverpod's [authStateProvider] to [GoRouter.refreshListenable].
+///
+/// GoRouter expects a [ChangeNotifier] (or any [Listenable]) for its refresh
+/// mechanism.  This notifier listens to the provider and calls [notifyListeners]
+/// on every change, causing the router to re-run its redirect callback.
+class _RouterRefreshNotifier extends ChangeNotifier {
+  _RouterRefreshNotifier(Ref ref) {
+    // Keep a reference to the subscription so we can cancel it on dispose.
+    _subscription = ref.listen<AsyncValue<AuthState>>(
+      authStateProvider,
+      (_, __) => notifyListeners(),
+    );
+  }
+
+  late final ProviderSubscription<AsyncValue<AuthState>> _subscription;
+
+  @override
+  void dispose() {
+    _subscription.close();
+    super.dispose();
+  }
+}

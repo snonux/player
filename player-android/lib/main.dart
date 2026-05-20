@@ -1,50 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-void main() => runApp(const PlayerAndroidApp());
+import 'router.dart';
 
-class PlayerAndroidApp extends StatelessWidget {
+/// Entry point — wraps the whole widget tree in a [ProviderScope] so every
+/// widget and provider has access to the Riverpod container.
+void main() => runApp(const ProviderScope(child: PlayerAndroidApp()));
+
+/// Root application widget.
+///
+/// Uses [ConsumerWidget] to read [routerProvider] from Riverpod so that the
+/// same [GoRouter] instance (and its navigator key) is reused across rebuilds.
+/// [MaterialApp.router] delegates all navigation decisions to go_router.
+class PlayerAndroidApp extends ConsumerWidget {
   const PlayerAndroidApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
+
+    return MaterialApp.router(
       title: 'Player',
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const HomeScreen(),
-        '/now-playing': (context) => const NowPlayingScreen(),
-      },
-    );
-  }
-}
-
-// HomeScreen shows the media library. Placeholder until the library API is wired.
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Library')),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () => Navigator.pushNamed(context, '/now-playing'),
-          child: const Text('Now Playing'),
-        ),
-      ),
-    );
-  }
-}
-
-// NowPlayingScreen shows the active media item. Placeholder until playback is wired.
-class NowPlayingScreen extends StatelessWidget {
-  const NowPlayingScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Now Playing')),
-      body: const Center(child: Text('No media selected')),
+      routerConfig: router,
     );
   }
 }

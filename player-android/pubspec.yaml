@@ -13,6 +13,10 @@ dependencies:
   dio: ^5.7.0
   # flutter_secure_storage: stores the bearer token in the OS keychain/keystore.
   flutter_secure_storage: ^9.2.2
+  # flutter_riverpod: reactive state-management; provides ProviderScope, ref.watch, etc.
+  flutter_riverpod: ^2.6.1
+  # go_router: declarative routing for Flutter; replaces imperative Navigator calls.
+  go_router: ^14.8.1
 
 dev_dependencies:
   flutter_test:
