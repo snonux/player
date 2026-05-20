@@ -184,11 +184,6 @@ func (s *browseService) GetMediaDetail(ctx context.Context, mediaID, userID int6
 }
 
 func (s *browseService) ListMedia(ctx context.Context, userID int64, filter MediaQueryFilter) ([]model.Media, error) {
-	user, err := s.store.GetUserByID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("get user: %w", err)
-	}
-
 	repoFilter := repository.MediaFilter{
 		SetID:       filter.SetID,
 		SetIDs:      filter.SetIDs,
@@ -203,27 +198,24 @@ func (s *browseService) ListMedia(ctx context.Context, userID int64, filter Medi
 		Sort:        filter.Sort,
 		Limit:       filter.Limit,
 		Offset:      filter.Offset,
+		UserID:      userID,
 	}
 
-	if user != nil && user.IsAdmin {
-		repoFilter.UserID = userID
-		return s.store.ListMedia(ctx, repoFilter)
-	}
-
-	perms, err := s.store.ListPermissionsByUser(ctx, userID)
+	// Delegate "what sets can this user see?" to the shared accessHelper so
+	// browse and progress agree on the admin/permission semantics. Admins
+	// get isAdmin=true and an unrestricted query; non-admins get a concrete
+	// (possibly empty) allow-list that we use to short-circuit empty cases.
+	allowed, isAdmin, err := s.helper.AllowedSetIDs(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("list permissions: %w", err)
+		return nil, err
 	}
-
-	allowed := make([]int64, 0, len(perms))
-	for _, p := range perms {
-		allowed = append(allowed, p.SetID)
+	if isAdmin {
+		return s.store.ListMedia(ctx, repoFilter)
 	}
 	if len(allowed) == 0 {
 		return []model.Media{}, nil
 	}
 	repoFilter.AllowedSetIDs = allowed
-	repoFilter.UserID = userID
 	return s.store.ListMedia(ctx, repoFilter)
 }
 

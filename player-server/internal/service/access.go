@@ -115,3 +115,38 @@ func (h *accessHelper) verifyRestoreAccess(ctx context.Context, mediaID, userID 
 func (h *accessHelper) verifySetModifyAccess(ctx context.Context, setID, userID int64) error {
 	return h.checkSetPermission(ctx, setID, userID, model.RoleOwner)
 }
+
+// AllowedSetIDs returns the set IDs the given user can read.
+//
+// For admin users it returns (nil, true, nil) — a nil slice with the isAdmin
+// flag set, meaning "no restriction, all sets are visible". Callers should
+// translate this into a repository filter that does not constrain set IDs.
+//
+// For non-admin users it returns the (possibly empty) list of set IDs the
+// user has any permission on, with isAdmin==false. An empty non-nil slice
+// means the user has no readable sets and the caller should short-circuit
+// rather than querying the repository.
+//
+// This method exists so browse.ListMedia and progress.ListInProgress can
+// share the same "what can this user see?" logic instead of reimplementing
+// the admin/permission lookup separately.
+func (h *accessHelper) AllowedSetIDs(ctx context.Context, userID int64) (ids []int64, isAdmin bool, err error) {
+	user, err := h.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, false, fmt.Errorf("get user: %w", err)
+	}
+	if user != nil && user.IsAdmin {
+		return nil, true, nil
+	}
+
+	perms, err := h.store.ListPermissionsByUser(ctx, userID)
+	if err != nil {
+		return nil, false, fmt.Errorf("list permissions: %w", err)
+	}
+
+	allowed := make([]int64, 0, len(perms))
+	for _, p := range perms {
+		allowed = append(allowed, p.SetID)
+	}
+	return allowed, false, nil
+}
