@@ -26,10 +26,15 @@ type Scanner interface {
 }
 
 // FSScanner recursively scans media root for sets and media files.
+//
+// The scanner does not own thumbnail policy: it delegates path derivation,
+// directory creation, generator invocation, and failure-tolerant warning
+// to a thumb.Maker. This keeps SRP intact — FSScanner orchestrates the
+// scan, thumb.Maker decides how thumbnails get produced on disk.
 type FSScanner struct {
 	store     repository.ScannerStore
 	prober    probe.Prober
-	thumbGen  thumb.Generator
+	thumbMkr  thumb.Maker
 	clock     clock.Clock
 	mediaRoot string
 	fs        FS
@@ -38,19 +43,35 @@ type FSScanner struct {
 }
 
 // NewFSScanner creates a filesystem scanner with injected dependencies.
+// A default thumb.FSMaker is constructed from thumbGen so existing callers
+// keep working without having to know about the Maker interface.
 func NewFSScanner(store repository.ScannerStore, prober probe.Prober, thumbGen thumb.Generator, clk clock.Clock, mediaRoot string) *FSScanner {
 	return NewFSScannerWithLogger(store, prober, thumbGen, clk, mediaRoot, slog.Default())
 }
 
 // NewFSScannerWithLogger creates a filesystem scanner with an injected logger.
+// Like NewFSScanner this wraps thumbGen in a default thumb.FSMaker; callers
+// that want a custom Maker should use NewFSScannerWithMaker instead.
 func NewFSScannerWithLogger(store repository.ScannerStore, prober probe.Prober, thumbGen thumb.Generator, clk clock.Clock, mediaRoot string, logger *slog.Logger) *FSScanner {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	maker := thumb.NewFSMaker(thumbGen, nil, logger)
+	return NewFSScannerWithMaker(store, prober, maker, clk, mediaRoot, logger)
+}
+
+// NewFSScannerWithMaker creates a filesystem scanner with an explicit
+// thumb.Maker. Production wiring (cmd/player/main.go) prefers this form
+// so the Maker can be constructed once and shared with any other
+// component that needs to produce thumbnails consistently.
+func NewFSScannerWithMaker(store repository.ScannerStore, prober probe.Prober, maker thumb.Maker, clk clock.Clock, mediaRoot string, logger *slog.Logger) *FSScanner {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &FSScanner{
 		store:     store,
 		prober:    prober,
-		thumbGen:  thumbGen,
+		thumbMkr:  maker,
 		clock:     clk,
 		mediaRoot: mediaRoot,
 		fs:        osFS{},
@@ -204,43 +225,15 @@ func (s *FSScanner) gatherCoverImages(setPath string) map[string]string {
 	return coverImages
 }
 
-// thumbnailForVideo generates a thumbnail for a video file inside the set's .thumbnails directory.
-// The destination directory + filename are derived via internal/thumb so the
-// layout convention stays in lock-step with importers (service.generateThumbnail,
-// writeService.RegenerateThumbnail).
-func (s *FSScanner) thumbnailForVideo(ctx context.Context, path, setPath string, duration float64) (string, error) {
-	thumbDir := thumb.ThumbnailDir(setPath)
-	if err := s.fs.MkdirAll(thumbDir, 0o755); err != nil {
-		return "", fmt.Errorf("mkdir thumbnails %q: %w", thumbDir, err)
-	}
-	thumbnailPath := thumb.ThumbnailPathFor(path, setPath)
-	if err := s.thumbGen.Generate(ctx, path, thumbnailPath, duration); err != nil {
-		s.log().Warn("scanner skipping thumbnail", "path", path, "err", err)
-		return "", nil
-	}
-	return thumbnailPath, nil
-}
-
-// thumbnailForImage generates a thumbnail for an image file inside the set's .thumbnails directory.
-// See thumbnailForVideo for the shared path-derivation contract.
-func (s *FSScanner) thumbnailForImage(ctx context.Context, path, setPath string) (string, error) {
-	thumbDir := thumb.ThumbnailDir(setPath)
-	if err := s.fs.MkdirAll(thumbDir, 0o755); err != nil {
-		return "", fmt.Errorf("mkdir thumbnails %q: %w", thumbDir, err)
-	}
-	thumbnailPath := thumb.ThumbnailPathFor(path, setPath)
-	if err := s.thumbGen.Generate(ctx, path, thumbnailPath, 0); err != nil {
-		s.log().Warn("scanner skipping thumbnail", "path", path, "err", err)
-		return "", nil
-	}
-	return thumbnailPath, nil
-}
-
 // buildThumbnailPath resolves the thumbnail path for a new media file.
+// Video and image thumbnails are produced via thumb.Maker so the scanner
+// stays out of mkdir / path-derivation / generator policy. Audio uses a
+// nearby cover image when one was discovered during gatherCoverImages.
+// SVG images are served as-is (vector — no raster thumbnail makes sense).
 func (s *FSScanner) buildThumbnailPath(ctx context.Context, path, setPath string, mediaType model.MediaType, coverImages map[string]string, meta *model.Metadata) (string, error) {
 	switch mediaType {
 	case model.MediaTypeVideo:
-		return s.thumbnailForVideo(ctx, path, setPath, meta.Duration)
+		return s.thumbMkr.MakeVideo(ctx, path, setPath, meta.Duration)
 	case model.MediaTypeAudio:
 		return findCoverImage(path, coverImages, setPath), nil
 	case model.MediaTypeImage:
@@ -248,7 +241,7 @@ func (s *FSScanner) buildThumbnailPath(ctx context.Context, path, setPath string
 		if ext == ".svg" {
 			return path, nil
 		}
-		thumbPath, err := s.thumbnailForImage(ctx, path, setPath)
+		thumbPath, err := s.thumbMkr.MakeImage(ctx, path, setPath)
 		if err != nil {
 			return "", err
 		}

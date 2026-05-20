@@ -65,28 +65,26 @@ func forbidden(w http.ResponseWriter, message string) {
 	writeError(w, http.StatusForbidden, message)
 }
 
-// handleError maps service sentinel errors to the appropriate HTTP status
-// and writes a JSON error response. It falls back to 500 for unknown errors.
+// HTTPStatuser is implemented by service errors that know their own HTTP
+// status. Sentinels in internal/service implement this so handleError can
+// dispatch without an ever-growing switch (OCP): adding a new sentinel only
+// requires defining its status alongside the sentinel itself, with no edit
+// required here.
+type HTTPStatuser interface {
+	HTTPStatus() int
+}
+
+// handleError dispatches service errors to an HTTP response. If any error in
+// the chain implements HTTPStatuser, that status is used together with the
+// wrapped error's message (so callers that add context via fmt.Errorf("%w: …")
+// keep that context in the body). Unrecognised errors fall back to 500.
 func handleError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, service.ErrNotFound),
-		errors.Is(err, service.ErrShareNotFound),
-		errors.Is(err, service.ErrMediaNotFound):
-		notFound(w)
-	case errors.Is(err, service.ErrForbidden):
-		forbidden(w, "forbidden")
-	case errors.Is(err, service.ErrAlreadyBootstrapped):
-		forbidden(w, "bootstrap already complete")
-	case errors.Is(err, service.ErrInvalidCredentials):
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
-	case errors.Is(err, service.ErrUnsupportedExtension),
-		errors.Is(err, service.ErrInvalidFeed),
-		errors.Is(err, service.ErrCannotDeleteSelf),
-		errors.Is(err, service.ErrEmptySetForCover):
-		badRequest(w, err.Error())
-	default:
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	var statuser HTTPStatuser
+	if errors.As(err, &statuser) {
+		writeError(w, statuser.HTTPStatus(), err.Error())
+		return
 	}
+	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 }
 
 func readJSON(r *http.Request, dst interface{}) error {

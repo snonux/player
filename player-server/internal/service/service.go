@@ -5,24 +5,54 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
 )
 
-// Sentinel errors returned by the service layer.
+// apiError is a sentinel error that knows its own HTTP status. It implements
+// the api.HTTPStatuser interface (which is satisfied structurally — no import
+// of the api package is needed here) so that api.handleError can dispatch
+// based on the sentinel's own metadata instead of an ever-growing switch.
+//
+// Sentinels are declared as *apiError pointers, which makes errors.Is work via
+// pointer equality even when the error is wrapped with fmt.Errorf("%w: …").
+type apiError struct {
+	msg    string
+	status int
+}
+
+// Error returns the sentinel's human-readable message.
+func (e *apiError) Error() string { return e.msg }
+
+// HTTPStatus returns the HTTP status code this sentinel should map to.
+func (e *apiError) HTTPStatus() int { return e.status }
+
+// Sentinel errors returned by the service layer. Each one carries the HTTP
+// status that the API layer should emit, so handleError stays open for
+// extension (new sentinel) but closed for modification.
+//
+// Where the previous handleError emitted a fixed message that differed from
+// the sentinel's text (e.g. "forbidden" instead of "access denied"), the
+// sentinel text now matches that message so the dispatcher can use the
+// error chain's own text uniformly.
 var (
-	ErrNotFound             = errors.New("not found")
-	ErrForbidden            = errors.New("access denied")
-	ErrShareNotFound        = errors.New("share not found")
-	ErrShareExpired         = errors.New("share expired")
-	ErrMediaNotFound        = errors.New("media not found")
-	ErrUnsupportedExtension = errors.New("unsupported file extension")
-	ErrEmptySetForCover     = errors.New("no media files available for cover")
-	ErrAlreadyBootstrapped  = errors.New("already bootstrapped")
-	ErrInvalidCredentials   = errors.New("invalid credentials")
-	ErrInvalidFeed          = errors.New("invalid feed")
-	ErrCannotDeleteSelf     = errors.New("cannot delete self")
+	ErrNotFound             = &apiError{msg: "not found", status: http.StatusNotFound}
+	ErrForbidden            = &apiError{msg: "forbidden", status: http.StatusForbidden}
+	ErrShareNotFound        = &apiError{msg: "share not found", status: http.StatusNotFound}
+	ErrMediaNotFound        = &apiError{msg: "media not found", status: http.StatusNotFound}
+	ErrUnsupportedExtension = &apiError{msg: "unsupported file extension", status: http.StatusBadRequest}
+	ErrEmptySetForCover     = &apiError{msg: "no media files available for cover", status: http.StatusBadRequest}
+	ErrAlreadyBootstrapped  = &apiError{msg: "bootstrap already complete", status: http.StatusForbidden}
+	ErrInvalidCredentials   = &apiError{msg: "invalid credentials", status: http.StatusUnauthorized}
+	ErrInvalidFeed          = &apiError{msg: "invalid feed", status: http.StatusBadRequest}
+	ErrCannotDeleteSelf     = &apiError{msg: "cannot delete self", status: http.StatusBadRequest}
+
+	// ErrShareExpired is handled directly by share handlers (not via
+	// handleError); it stays a plain sentinel because no dispatch metadata
+	// is needed.
+	ErrShareExpired = errors.New("share expired")
 )
 
 // MediaQueryFilter defines query parameters for listing media from the API layer.

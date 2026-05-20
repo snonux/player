@@ -111,14 +111,35 @@ func (m *mockFS) WalkDir(root string, walkFn fs.WalkDirFunc) error {
 	return nil
 }
 
+// newTestScanner builds an FSScanner around the in-memory mockFS while
+// wrapping the test Generator in a thumb.FSMaker. The Maker is configured
+// with the same mockFS so MkdirAll respects the test's injected error
+// (mfs.mkdirErr), preserving the previous behaviour where the scanner
+// itself called fs.MkdirAll directly.
 func newTestScanner(store repository.ScannerStore, prober probe.Prober, gen thumb.Generator, clk clock.Clock, filesystem FS) *FSScanner {
+	var maker thumb.Maker
+	if gen != nil {
+		maker = thumb.NewFSMaker(gen, makerFSFromScannerFS{fs: filesystem}, nil)
+	}
 	return &FSScanner{
 		store:    store,
 		prober:   prober,
-		thumbGen: gen,
+		thumbMkr: maker,
 		clock:    clk,
 		fs:       filesystem,
 	}
+}
+
+// makerFSFromScannerFS adapts the scanner test's FS to thumb.MakerFS so the
+// Maker's MkdirAll honours the same in-memory error injection the scanner
+// previously honoured directly.
+type makerFSFromScannerFS struct{ fs FS }
+
+func (a makerFSFromScannerFS) MkdirAll(path string, perm os.FileMode) error {
+	if a.fs == nil {
+		return nil
+	}
+	return a.fs.MkdirAll(path, perm)
 }
 
 func TestFSScanner_Scan(t *testing.T) {

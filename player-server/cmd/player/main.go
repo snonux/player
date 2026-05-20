@@ -94,13 +94,17 @@ func wireDeps(cfg *internal.Config, store repository.Store, logger *slog.Logger,
 	// free of direct os.Stat calls and makes the dependency easy to swap
 	// out in tests or alternate deployments (e.g. object storage).
 	thumbResolver := thumb.NewFSResolver()
+	// thumb.FSMaker encapsulates the "create .thumbnails dir + invoke
+	// generator + warn-on-failure" policy so the scanner only
+	// orchestrates the scan and does not own thumbnail layout policy.
+	thumbMaker := thumb.NewFSMaker(thumbGen, nil, logger)
 
 	helper := service.NewAccessHelper(store)
 	browser := service.NewPodcastBrowseService(store, cfg.MediaRoot)
 	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, browser, thumbResolver)
 	playbackHintSvc := service.NewPlaybackHintsService(helper)
 
-	fsScanner := scanner.NewFSScannerWithLogger(store, prober, thumbGen, clk, cfg.MediaRoot, logger)
+	fsScanner := scanner.NewFSScannerWithMaker(store, prober, thumbMaker, clk, cfg.MediaRoot, logger)
 	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
 
 	progressSvc := service.NewProgressService(store, clk)
