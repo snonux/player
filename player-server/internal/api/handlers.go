@@ -169,7 +169,23 @@ func (s *Server) serveLogin(w http.ResponseWriter, r *http.Request) {
 	s.serveFile(w, r, "login.html")
 }
 
+// serveBootstrap serves bootstrap.html only when no users exist yet.
+// Once the first admin account has been created the bootstrap page must no
+// longer be reachable — redirecting to /login.html prevents an attacker
+// from reaching the form on an already-configured instance.
 func (s *Server) serveBootstrap(w http.ResponseWriter, r *http.Request) {
+	if s.authSvc != nil {
+		count, err := s.authSvc.CountUsers(r.Context())
+		if err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if count > 0 {
+			// Bootstrap is complete; send browsers to the login page.
+			http.Redirect(w, r, "/login.html", http.StatusTemporaryRedirect)
+			return
+		}
+	}
 	s.serveFile(w, r, "bootstrap.html")
 }
 

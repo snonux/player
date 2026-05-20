@@ -433,13 +433,41 @@ func TestServer_StaticPages(t *testing.T) {
 		}
 	})
 
-	t.Run("bootstrap public", func(t *testing.T) {
+	// After bootstrap is complete (users exist) the bootstrap page must
+	// redirect to /login.html so the form is no longer reachable.
+	t.Run("bootstrap redirects when users exist", func(t *testing.T) {
 		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		req := httptest.NewRequest(http.MethodGet, "/bootstrap.html", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusTemporaryRedirect {
+			t.Fatalf("expected %d, got %d", http.StatusTemporaryRedirect, rr.Code)
+		}
+		if loc := rr.Header().Get("Location"); loc != "/login.html" {
+			t.Fatalf("expected redirect to /login.html, got %q", loc)
+		}
+	})
+
+	// Before bootstrap the page must be publicly accessible (no users yet).
+	t.Run("bootstrap accessible when no users", func(t *testing.T) {
+		noUserStore := &repository.MockStore{
+			UserRepo: repository.MockUserRepo{
+				CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil },
+			},
+		}
+		noUserAuthSvc := &service.MockAuthService{
+			CountUsersFunc:  func(context.Context) (int, error) { return 0, nil },
+			GetUserByIDFunc: func(context.Context, int64) (*model.User, error) { return &model.User{ID: 1, IsAdmin: true}, nil },
+		}
+		srv := newTestServer(t, noUserStore, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, noUserAuthSvc, nil)
 		req := httptest.NewRequest(http.MethodGet, "/bootstrap.html", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "bootstrap") {
+			t.Fatal("expected bootstrap page body")
 		}
 	})
 
