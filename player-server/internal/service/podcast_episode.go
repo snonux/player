@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,6 +22,16 @@ type podcastEpisodeService struct {
 
 func newPodcastEpisodeService(svc *podcastService) *podcastEpisodeService {
 	return &podcastEpisodeService{svc: svc}
+}
+
+// removeAndLog unlinks path and logs a warning if the unlink fails with
+// anything other than fs.ErrNotExist. NotExist means the file was already
+// cleaned up elsewhere, but permission/I/O errors are real signal worth
+// surfacing rather than silently dropping.
+func (s *podcastEpisodeService) removeAndLog(path string) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		s.svc.logger.Warn("cleanup unlink failed", "path", path, "err", err)
+	}
 }
 
 // ListEpisodes returns podcast episodes visible to the user within a set.
@@ -152,11 +164,11 @@ func (s *podcastEpisodeService) downloadEnclosure(ctx context.Context, episode *
 	n, err := io.Copy(f, resp.Body)
 	if err != nil {
 		f.Close()
-		os.Remove(path)
+		s.removeAndLog(path)
 		return 0, fmt.Errorf("write file: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(path)
+		s.removeAndLog(path)
 		return 0, fmt.Errorf("close file: %w", err)
 	}
 
@@ -168,7 +180,7 @@ func (s *podcastEpisodeService) downloadEnclosure(ctx context.Context, episode *
 func (s *podcastEpisodeService) persistDownloadedEpisode(ctx context.Context, episode *model.PodcastEpisode, set *model.Set, path string, n int64) (*model.Media, func(), error) {
 	relPath, err := filepath.Rel(filepath.Join(s.svc.mediaRoot, set.RootPath), path)
 	if err != nil {
-		os.Remove(path)
+		s.removeAndLog(path)
 		return nil, nil, fmt.Errorf("relative episode path: %w", err)
 	}
 	relPath = filepath.ToSlash(relPath)
@@ -183,13 +195,13 @@ func (s *podcastEpisodeService) persistDownloadedEpisode(ctx context.Context, ep
 	}
 	mediaID, err := s.svc.store.CreateMedia(ctx, media)
 	if err != nil {
-		os.Remove(path)
+		s.removeAndLog(path)
 		return nil, nil, fmt.Errorf("create media: %w", err)
 	}
 	media.ID = mediaID
 
 	cleanup := func() {
-		os.Remove(path)
+		s.removeAndLog(path)
 		_ = s.svc.store.HardDeleteMedia(ctx, media.ID)
 	}
 

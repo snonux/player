@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"log/slog"
 	mrand "math/rand"
 	"os"
 	"path/filepath"
@@ -17,6 +19,16 @@ import (
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/thumb"
 )
+
+// removeAndLog unlinks path and logs a warning when the unlink fails with
+// something other than fs.ErrNotExist. NotExist is fine — the file was already
+// cleaned up elsewhere — but permission/I/O errors are real operator signal
+// that would otherwise vanish if we kept discarding os.Remove's error.
+func removeAndLog(path string) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		slog.Default().Warn("cleanup unlink failed", "path", path, "err", err)
+	}
+}
 
 // writeService handles mutations such as upload, soft-delete and restore.
 type writeService struct {
@@ -85,12 +97,12 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 
 	media, err := s.saveUploadedMedia(ctx, setID, path, data, size)
 	if err != nil {
-		os.Remove(path)
+		removeAndLog(path)
 		return nil, err
 	}
 
 	if err := ImportMediaFile(ctx, s.store, media, s.prober, s.thumbGen); err != nil {
-		os.Remove(path)
+		removeAndLog(path)
 		s.store.HardDeleteMedia(ctx, media.ID)
 		return nil, err
 	}
@@ -248,11 +260,11 @@ func copyFile(src, dst string) error {
 	_, copyErr := io.Copy(out, in)
 	closeErr := out.Close()
 	if copyErr != nil {
-		_ = os.Remove(dst)
+		removeAndLog(dst)
 		return copyErr
 	}
 	if closeErr != nil {
-		_ = os.Remove(dst)
+		removeAndLog(dst)
 		return fmt.Errorf("close %q: %w", dst, closeErr)
 	}
 	return nil
