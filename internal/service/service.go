@@ -22,6 +22,7 @@ var (
 	ErrInvalidCredentials   = errors.New("invalid credentials")
 	ErrInvalidFeed          = errors.New("invalid feed")
 	ErrCannotDeleteSelf     = errors.New("cannot delete self")
+	ErrWeakPassword         = errors.New("password must be at least 8 characters")
 )
 
 // MediaQueryFilter defines query parameters for listing media from the API layer.
