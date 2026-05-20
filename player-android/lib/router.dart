@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'app_routes.dart';
 import 'navigation_key.dart';
 import 'providers/auth_state_provider.dart';
+import 'screens/bootstrap_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/media_detail_screen.dart';
@@ -48,15 +49,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (authAsync.isLoading || authAsync.hasError) return null;
 
       final auth = authAsync.requireValue;
-      final isLoginRoute = state.matchedLocation == AppRoutes.login;
+      final location = state.matchedLocation;
+      final isLoginRoute = location == AppRoutes.login;
+      // Bootstrap is a public route (user is unauthenticated by definition).
+      final isBootstrapRoute = location == AppRoutes.bootstrap;
 
-      if (auth.isUnauthenticated && !isLoginRoute) {
+      if (auth.isUnauthenticated && !isLoginRoute && !isBootstrapRoute) {
         // Guard every authenticated route: bounce to login.
         return AppRoutes.login;
       }
 
-      if (auth.isAuthenticated && isLoginRoute) {
-        // Prevent the user from seeing the login screen once authenticated.
+      if (auth.isAuthenticated && (isLoginRoute || isBootstrapRoute)) {
+        // Prevent already-authenticated users from viewing auth/setup screens.
         return AppRoutes.home;
       }
 
@@ -65,6 +69,10 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
 
     routes: [
+      GoRoute(
+        path: AppRoutes.bootstrap,
+        builder: (context, state) => const BootstrapScreen(),
+      ),
       GoRoute(
         path: AppRoutes.login,
         builder: (context, state) => const LoginScreen(),

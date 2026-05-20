@@ -9,6 +9,9 @@ abstract final class AppRoutes {
   static const mediaDetail = '/media/:id';
   static const share = '/share';
 
+  /// First-run setup route shown when no admin account exists yet.
+  static const bootstrap = '/bootstrap';
+
   /// Returns the concrete path for a media-detail page given a numeric [id].
   static String mediaDetailPath(int id) => '/media/$id';
 }
