@@ -75,6 +75,19 @@ class DioPlayerApiClient extends PlayerApiClient {
   // Health
   // ---------------------------------------------------------------------------
 
+  /// Returns the total number of registered users from the server.
+  ///
+  /// GET /api/v1/auth/count — public endpoint; no session required.
+  /// Mobile clients call this on startup to detect first-run (count == 0)
+  /// and redirect to /bootstrap instead of /login.
+  @override
+  Future<int> countUsers() async {
+    final response = await rawDio.get<Map<String, dynamic>>(
+      '$_kApiV1/auth/count',
+    );
+    return (response.data?['count'] as int?) ?? 0;
+  }
+
   /// Liveness probe — returns immediately without touching the database.
   ///
   /// GET /healthz — 200 means the server process is alive.

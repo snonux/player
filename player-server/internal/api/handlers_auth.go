@@ -100,6 +100,24 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"id": res.User.ID, "username": res.User.Username, "is_admin": res.User.IsAdmin})
 }
 
+// handleCountUsers returns the total number of registered users as a public
+// JSON endpoint.  Mobile clients use this to decide whether to redirect to
+// the bootstrap screen (count == 0) or the login screen (count > 0) on
+// first launch, without requiring a session or credentials.
+//
+// GET /api/v1/auth/count  →  200 {"count": N}
+func (s *Server) handleCountUsers(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.authSvc) {
+		return
+	}
+	count, err := s.authSvc.CountUsers(r.Context())
+	if err != nil {
+		handleError(w, fmt.Errorf("count users: %w", err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"count": count})
+}
+
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session")
 	if err == nil && cookie.Value != "" {

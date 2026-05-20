@@ -225,6 +225,9 @@ func (s *Server) routesPublic() {
 	s.handlePublicFunc("/api/v1/auth/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
 	s.handlePublicFunc("/api/login", publicMethod(http.MethodPost, s.handleLogin))
 	s.handlePublicFunc("/api/v1/auth/login", publicMethod(http.MethodPost, s.handleLogin))
+	// Public user-count endpoint: mobile clients query this on first launch to
+	// decide whether to show the bootstrap screen (count=0) or the login screen.
+	s.handlePublicFunc("/api/v1/auth/count", publicMethod(http.MethodGet, s.handleCountUsers))
 	s.handlePublicFunc("/healthz", publicMethod(http.MethodGet, s.handleHealthz))
 	s.handlePublicFunc("/readyz", publicMethod(http.MethodGet, s.handleReadyz))
 }

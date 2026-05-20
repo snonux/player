@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'app_routes.dart';
 import 'navigation_key.dart';
 import 'providers/auth_state_provider.dart';
+import 'providers/first_run_provider.dart';
 import 'screens/bootstrap_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -54,14 +55,25 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Bootstrap is a public route (user is unauthenticated by definition).
       final isBootstrapRoute = location == AppRoutes.bootstrap;
 
-      if (auth.isUnauthenticated && !isLoginRoute && !isBootstrapRoute) {
-        // Guard every authenticated route: bounce to login.
-        return AppRoutes.login;
-      }
-
       if (auth.isAuthenticated && (isLoginRoute || isBootstrapRoute)) {
         // Prevent already-authenticated users from viewing auth/setup screens.
         return AppRoutes.home;
+      }
+
+      if (auth.isUnauthenticated && !isLoginRoute && !isBootstrapRoute) {
+        // Unauthenticated: determine whether this is first-run (no users) or
+        // a normal returning-user scenario.  firstRunProvider returns true when
+        // the server reports count == 0 (no accounts exist yet).
+        //
+        // While the check is loading we stay put; the router re-evaluates when
+        // firstRunProvider's AsyncValue settles (via refreshListenable).
+        final firstRunAsync = ref.read(firstRunProvider);
+        if (firstRunAsync.isLoading) return null;
+
+        // On first-run redirect to /bootstrap so the admin account can be set
+        // up; otherwise send to /login for normal credential entry.
+        final isFirstRun = firstRunAsync.valueOrNull ?? false;
+        return isFirstRun ? AppRoutes.bootstrap : AppRoutes.login;
       }
 
       // No redirect needed.
@@ -101,25 +113,34 @@ final routerProvider = Provider<GoRouter>((ref) {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Bridges Riverpod's [authStateProvider] to [GoRouter.refreshListenable].
+/// Bridges Riverpod's auth and first-run providers to [GoRouter.refreshListenable].
 ///
 /// GoRouter expects a [ChangeNotifier] (or any [Listenable]) for its refresh
-/// mechanism.  This notifier listens to the provider and calls [notifyListeners]
-/// on every change, causing the router to re-run its redirect callback.
+/// mechanism.  This notifier listens to both [authStateProvider] and
+/// [firstRunProvider], calling [notifyListeners] on every change so the router
+/// re-runs its redirect callback whenever auth state or first-run status settles.
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(Ref ref) {
-    // Keep a reference to the subscription so we can cancel it on dispose.
-    _subscription = ref.listen<AsyncValue<AuthState>>(
+    // Listen to auth state changes (login, logout, token expiry).
+    _authSubscription = ref.listen<AsyncValue<AuthState>>(
       authStateProvider,
+      (_, __) => notifyListeners(),
+    );
+    // Listen to first-run state so the router re-evaluates after the initial
+    // user-count check resolves from loading to a concrete true/false value.
+    _firstRunSubscription = ref.listen<AsyncValue<bool>>(
+      firstRunProvider,
       (_, __) => notifyListeners(),
     );
   }
 
-  late final ProviderSubscription<AsyncValue<AuthState>> _subscription;
+  late final ProviderSubscription<AsyncValue<AuthState>> _authSubscription;
+  late final ProviderSubscription<AsyncValue<bool>> _firstRunSubscription;
 
   @override
   void dispose() {
-    _subscription.close();
+    _authSubscription.close();
+    _firstRunSubscription.close();
     super.dispose();
   }
 }

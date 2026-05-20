@@ -670,6 +670,68 @@ func TestServer_Login(t *testing.T) {
 	})
 }
 
+func TestServer_CountUsers(t *testing.T) {
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+
+	// zero-users case: server has no accounts yet (first-run / bootstrap state).
+	t.Run("zero users", func(t *testing.T) {
+		store := &repository.MockStore{
+			UserRepo: repository.MockUserRepo{
+				CountUsersFunc: func(ctx context.Context) (int, error) { return 0, nil },
+			},
+		}
+		authSvc := &service.MockAuthService{
+			CountUsersFunc:  func(context.Context) (int, error) { return 0, nil },
+			GetUserByIDFunc: func(context.Context, int64) (*model.User, error) { return &model.User{ID: 1, IsAdmin: true}, nil },
+		}
+		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/count", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+		}
+		var resp map[string]int
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["count"] != 0 {
+			t.Fatalf("expected count=0, got %d", resp["count"])
+		}
+	})
+
+	// one-or-more-users case: at least one account exists (normal operation).
+	t.Run("users exist", func(t *testing.T) {
+		store := &repository.MockStore{
+			UserRepo: repository.MockUserRepo{
+				CountUsersFunc: func(ctx context.Context) (int, error) { return 3, nil },
+			},
+		}
+		authSvc := &service.MockAuthService{
+			CountUsersFunc:  func(context.Context) (int, error) { return 3, nil },
+			GetUserByIDFunc: func(context.Context, int64) (*model.User, error) { return &model.User{ID: 1, IsAdmin: true}, nil },
+		}
+		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/count", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+		}
+		var resp map[string]int
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["count"] != 3 {
+			t.Fatalf("expected count=3, got %d", resp["count"])
+		}
+	})
+}
+
 func TestServer_SessionCookieSecure(t *testing.T) {
 	hasher := &staticHasher{fixed: "hashed"}
 	store := &repository.MockStore{

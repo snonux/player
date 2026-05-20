@@ -51,6 +51,12 @@ class PlayerApiClient {
   Future<void> healthz() => throw UnimplementedError();
   Future<void> readyz() => throw UnimplementedError();
 
+  /// Returns the total number of registered users.
+  ///
+  /// Clients use this to detect first-run (count == 0) and redirect to the
+  /// bootstrap screen instead of the login screen.
+  Future<int> countUsers() => throw UnimplementedError();
+
   // ---------------------------------------------------------------------------
   // Shared / public endpoints (no auth required)
   // ---------------------------------------------------------------------------
