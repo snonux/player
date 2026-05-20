@@ -65,7 +65,7 @@ func TestCreateShare_UsesInjectedClock(t *testing.T) {
 			Auth:     authSvc,
 		},
 		StaticFS:      newTestFS(map[string]string{"index.html": "x"}),
-		MediaStreamer: service.NewMediaStreamer(nil),
+		MediaStreamer: service.NewMediaStreamer(nil, ""),
 		Clock:         mockClk,
 	})
 	if err != nil {
@@ -119,7 +119,7 @@ func TestSetSessionCookie_UsesInjectedClock(t *testing.T) {
 			Auth: authSvc,
 		},
 		StaticFS:      newTestFS(map[string]string{"index.html": "x"}),
-		MediaStreamer: service.NewMediaStreamer(nil),
+		MediaStreamer: service.NewMediaStreamer(nil, ""),
 		Clock:         mockClk,
 	})
 	if err != nil {

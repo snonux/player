@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/probe"
@@ -15,17 +17,32 @@ import (
 var _ MediaStreamer = (*mediaStreamer)(nil)
 
 type mediaStreamer struct {
-	remuxer probe.Remuxer
+	remuxer   probe.Remuxer
+	mediaRoot string // root directory that all streamed paths must stay under
 }
 
-// NewMediaStreamer creates the default service for preparing media files for HTTP streaming.
-func NewMediaStreamer(remuxer probe.Remuxer) *mediaStreamer {
-	return &mediaStreamer{remuxer: remuxer}
+// NewMediaStreamer creates the default service for preparing media files for
+// HTTP streaming. mediaRoot, when non-empty, constrains every Open call to
+// files underneath that directory; any path that resolves outside it is
+// rejected to prevent filepath-traversal via a compromised AbsPath in the DB.
+func NewMediaStreamer(remuxer probe.Remuxer, mediaRoot string) *mediaStreamer {
+	return &mediaStreamer{remuxer: remuxer, mediaRoot: mediaRoot}
 }
 
 func (s *mediaStreamer) Open(ctx context.Context, file *FileResult, attachment bool) (*StreamResult, error) {
 	if file == nil {
 		return nil, ErrNotFound
+	}
+
+	// Guard against filepath-traversal: if a media root is configured, reject
+	// any path that resolves outside it. This ensures that a compromised
+	// AbsPath stored in the database cannot be used to serve arbitrary files.
+	if s.mediaRoot != "" {
+		clean := filepath.Clean(file.Path)
+		root := filepath.Clean(s.mediaRoot) + string(filepath.Separator)
+		if !strings.HasPrefix(clean, root) {
+			return nil, fmt.Errorf("%w: path escapes media root", ErrForbidden)
+		}
 	}
 
 	f, err := os.Open(file.Path)

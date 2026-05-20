@@ -48,7 +48,7 @@ func TestNewServerWithLogger_ErrorsOnNilMediaStreamer(t *testing.T) {
 func TestNewServerWithLogger_SucceedsWithMediaStreamer(t *testing.T) {
 	srv, err := NewServerWithLogger(ServerDeps{
 		Config:        &internal.Config{},
-		MediaStreamer: service.NewMediaStreamer(nil),
+		MediaStreamer: service.NewMediaStreamer(nil, ""),
 	}, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -67,7 +67,7 @@ func TestNewServerWithLogger_SucceedsWithMediaStreamer(t *testing.T) {
 func TestServer_PublicRouteRegistry(t *testing.T) {
 	srv, err := NewServerWithLogger(ServerDeps{
 		Config:        &internal.Config{},
-		MediaStreamer: service.NewMediaStreamer(nil),
+		MediaStreamer: service.NewMediaStreamer(nil, ""),
 	}, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

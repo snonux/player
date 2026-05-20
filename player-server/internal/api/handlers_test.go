@@ -71,7 +71,7 @@ func newTestServer(t *testing.T, store repository.Store, hasher auth.Hasher, sm 
 		// still need one, so we fall back to the default in-process streamer
 		// (nil remuxer means remux requests will error, which is fine for
 		// non-streaming tests).
-		mediaStreamer = service.NewMediaStreamer(nil)
+		mediaStreamer = service.NewMediaStreamer(nil, "")
 	}
 	// NewServer now returns an error when required deps (e.g. Config,
 	// MediaStreamer) are missing. Tests always pass non-nil values, so a

@@ -253,7 +253,7 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 
 	staticFS := http.Dir("web")
 	remuxer := probe.NewFFRemuxer()
-	streamer := service.NewMediaStreamer(remuxer)
+	streamer := service.NewMediaStreamer(remuxer, cfg.MediaRoot)
 	server, err := api.NewServerWithLogger(api.ServerDeps{
 		Store:          store,
 		Hasher:         deps.hasher,

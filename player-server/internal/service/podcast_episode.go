@@ -56,6 +56,12 @@ func (s *podcastEpisodeService) ListEpisodes(ctx context.Context, setID, userID 
 }
 
 // DownloadEpisode downloads the episode enclosure and imports it as media.
+//
+// The file is written to disk first, then a defer-based cleanup guard is
+// armed so that any subsequent failure (DB insert, probe, link update) will
+// remove the partially-written file and roll back the database row, leaving
+// the filesystem in a clean state. The guard is disarmed on the happy path
+// by setting succeeded=true before returning.
 func (s *podcastEpisodeService) DownloadEpisode(ctx context.Context, episodeID, userID int64) (*model.Media, error) {
 	episode, set, path, err := s.resolveEpisodeAndSet(ctx, episodeID, userID)
 	if err != nil {
@@ -64,20 +70,35 @@ func (s *podcastEpisodeService) DownloadEpisode(ctx context.Context, episodeID, 
 
 	n, err := s.downloadEnclosure(ctx, episode, path)
 	if err != nil {
+		// downloadEnclosure already cleans up path on failure.
 		return nil, err
 	}
 
-	media, cleanup, err := s.persistDownloadedEpisode(ctx, episode, set, path, n)
+	// Arm a top-level cleanup guard: if anything after the file write fails,
+	// remove the file so no orphaned partial downloads are left on disk.
+	succeeded := false
+	var dbCleanup func()
+	defer func() {
+		if !succeeded {
+			if dbCleanup != nil {
+				dbCleanup()
+			} else {
+				s.removeAndLog(path)
+			}
+		}
+	}()
+
+	media, dbCleanup, err := s.persistDownloadedEpisode(ctx, episode, set, path, n)
 	if err != nil {
 		return nil, err
 	}
 
 	// Post-persistence failure: link episode to media row.
 	if err := s.svc.store.UpdateEpisodeMedia(ctx, episode.ID, media.ID, filepath.Base(path)); err != nil {
-		cleanup()
 		return nil, fmt.Errorf("update episode media: %w", err)
 	}
 
+	succeeded = true
 	return media, nil
 }
 

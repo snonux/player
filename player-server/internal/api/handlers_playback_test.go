@@ -39,7 +39,7 @@ func newPlaybackTestServer(t *testing.T, store repository.Store, sm auth.Session
 			PlaybackHints: hintSvc,
 		},
 		StaticFS:      fs,
-		MediaStreamer: service.NewMediaStreamer(nil),
+		MediaStreamer: service.NewMediaStreamer(nil, ""),
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
