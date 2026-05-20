@@ -69,8 +69,13 @@ func (s *podcastFeedChecker) checkFeed(ctx context.Context, feed model.PodcastFe
 	if err != nil {
 		// Backoff bookkeeping happens inside fetchFeedWithRetry for the
 		// host tracker; we still bump the per-feed consecutive_failures so
-		// the existing feed-level scheduling honours the failure.
-		s.setFeedBackoff(ctx, &feed)
+		// the existing feed-level scheduling honours the failure. Log any
+		// UPDATE failure at warn level: silently swallowing it would leave
+		// the backoff counter stale and the checker would keep retrying the
+		// failing feed at every interval.
+		if berr := s.setFeedBackoff(ctx, &feed); berr != nil {
+			s.logger.Warn("podcast: failed to record feed backoff", "feed_id", feed.ID, "url", feed.FeedURL, "err", berr)
+		}
 		return err
 	}
 	defer resp.Body.Close()
@@ -86,18 +91,24 @@ func (s *podcastFeedChecker) checkFeed(ctx context.Context, feed model.PodcastFe
 		return nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		s.setFeedBackoff(ctx, &feed)
+		if berr := s.setFeedBackoff(ctx, &feed); berr != nil {
+			s.logger.Warn("podcast: failed to record feed backoff", "feed_id", feed.ID, "url", feed.FeedURL, "err", berr)
+		}
 		return fmt.Errorf("feed check status %d", resp.StatusCode)
 	}
 
 	parsed, err := s.parseFeedReader(resp.Body)
 	if err != nil {
-		s.setFeedBackoff(ctx, &feed)
+		if berr := s.setFeedBackoff(ctx, &feed); berr != nil {
+			s.logger.Warn("podcast: failed to record feed backoff", "feed_id", feed.ID, "url", feed.FeedURL, "err", berr)
+		}
 		return err
 	}
 
 	if err := s.updateFeedFromParsed(ctx, &feed, parsed, resp.Header.Get("ETag")); err != nil {
-		s.setFeedBackoff(ctx, &feed)
+		if berr := s.setFeedBackoff(ctx, &feed); berr != nil {
+			s.logger.Warn("podcast: failed to record feed backoff", "feed_id", feed.ID, "url", feed.FeedURL, "err", berr)
+		}
 		return err
 	}
 
@@ -118,7 +129,12 @@ func (s *podcastFeedChecker) checkFeed(ctx context.Context, feed model.PodcastFe
 	return nil
 }
 
-func (s *podcastFeedChecker) setFeedBackoff(ctx context.Context, feed *model.PodcastFeed) {
+// setFeedBackoff bumps the feed's consecutive_failures counter, computes the
+// next exponential-backoff check time, and persists the updated row. It now
+// returns the UPDATE error instead of swallowing it: callers log at warn level
+// so a persistent DB failure is visible to operators (otherwise the counter
+// never advances and the checker hammers the failing feed every interval).
+func (s *podcastFeedChecker) setFeedBackoff(ctx context.Context, feed *model.PodcastFeed) error {
 	feed.ConsecutiveFailures++
 	backoff := baseFeedRetryBackoff * (1 << max(0, feed.ConsecutiveFailures-1))
 	if backoff > maxFeedRetryBackoff {
@@ -126,7 +142,7 @@ func (s *podcastFeedChecker) setFeedBackoff(ctx context.Context, feed *model.Pod
 	}
 	next := s.clock.Now().Add(backoff)
 	feed.NextCheckAt = &next
-	_ = s.store.UpdateFeed(ctx, feed)
+	return s.store.UpdateFeed(ctx, feed)
 }
 
 func (s *podcastFeedChecker) updateFeedFromParsed(ctx context.Context, feed *model.PodcastFeed, parsed *podcast.ParsedFeed, etag string) error {
