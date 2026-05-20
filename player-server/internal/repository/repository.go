@@ -25,12 +25,21 @@ type Store interface {
 	PodcastRepo
 }
 
-// MediaServiceStore is the subset of Store required by service.MediaService.
-type MediaServiceStore interface {
+// CoreStore is the common subset embedded by service-specific store
+// interfaces that need to look up users, sets, set permissions, and media
+// items. Embedding CoreStore deduplicates the four-repo block that
+// previously appeared verbatim in MediaServiceStore, AdminServiceStore,
+// AccessHelperStore, BrowseServiceStore, and WriteServiceStore.
+type CoreStore interface {
 	UserRepo
 	SetRepo
 	SetPermissionRepo
 	MediaRepo
+}
+
+// MediaServiceStore is the subset of Store required by service.MediaService.
+type MediaServiceStore interface {
+	CoreStore
 	TagRepo
 	FavoriteRepo
 	PlaybackProgressRepo
@@ -39,19 +48,16 @@ type MediaServiceStore interface {
 }
 
 // AdminServiceStore is the subset of Store required by service.AdminService.
+// AdminServiceStore needs exactly the CoreStore method set.
 type AdminServiceStore interface {
-	UserRepo
-	SetRepo
-	SetPermissionRepo
-	MediaRepo
+	CoreStore
 }
 
 // AccessHelperStore is the subset of Store required by service.accessHelper.
+// accessHelper resolves user access to sets and media, so it needs exactly
+// the CoreStore method set.
 type AccessHelperStore interface {
-	UserRepo
-	MediaRepo
-	SetRepo
-	SetPermissionRepo
+	CoreStore
 }
 
 // ProgressServiceStore is the subset of Store required by service.ProgressService.
@@ -80,10 +86,7 @@ type ScannerStore interface {
 
 // BrowseServiceStore is the subset of Store required by service.BrowseService.
 type BrowseServiceStore interface {
-	UserRepo
-	SetRepo
-	SetPermissionRepo
-	MediaRepo
+	CoreStore
 	TagRepo
 	FavoriteRepo
 	PlaybackProgressRepo
@@ -91,11 +94,9 @@ type BrowseServiceStore interface {
 }
 
 // WriteServiceStore is the subset of Store required by service.WriteService.
+// WriteServiceStore needs exactly the CoreStore method set.
 type WriteServiceStore interface {
-	UserRepo
-	SetRepo
-	SetPermissionRepo
-	MediaRepo
+	CoreStore
 }
 
 // ShareServiceStore is the subset of Store required by service.ShareService.
