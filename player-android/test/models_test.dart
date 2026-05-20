@@ -10,6 +10,7 @@
 // DateTime.parse(s).toIso8601String() is lossless for UTC timestamps.
 // Each model is also tested with all fields absent to verify defaults.
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/models/media.dart';
 import 'package:player_android/models/media_set.dart';
@@ -527,37 +528,45 @@ void main() {
   // PlayerApiClient constructor
   // ---------------------------------------------------------------------------
   group('PlayerApiClient constructor', () {
-    test('stores baseUrl and bearerToken when valid', () {
-      // The client stores the Uri and token as-is; no transformation occurs.
-      final client = PlayerApiClient(
-        baseUrl: Uri.parse('https://player.example.com'),
-        bearerToken: 'my-secret-token',
-      );
+    test('can be constructed with a plain Dio instance', () {
+      // PlayerApiClient accepts any Dio instance so that tests do not need
+      // platform-specific secure storage or a real NavigatorKey.
+      final dio = Dio(BaseOptions(baseUrl: 'https://player.example.com'));
+      final client = PlayerApiClient(dio: dio);
 
-      expect(client.baseUrl.toString(), 'https://player.example.com');
-      expect(client.bearerToken, 'my-secret-token');
+      // rawDio exposes the underlying instance for advanced use-cases.
+      expect(client.rawDio.options.baseUrl, 'https://player.example.com');
     });
 
-    test('baseUrl with path component is stored verbatim', () {
-      // Verify the full URI including trailing path is preserved unchanged.
-      final client = PlayerApiClient(
-        baseUrl: Uri.parse('https://player.example.com/api/v1'),
-        bearerToken: 'tok',
+    test('can be constructed with a Dio that has a path in the base URL', () {
+      // Verify the full base URL including path component is preserved.
+      final dio = Dio(
+        BaseOptions(baseUrl: 'https://player.example.com/api/v1'),
       );
+      final client = PlayerApiClient(dio: dio);
 
-      expect(client.baseUrl.path, '/api/v1');
-      expect(client.baseUrl.host, 'player.example.com');
+      expect(
+        client.rawDio.options.baseUrl,
+        'https://player.example.com/api/v1',
+      );
     });
 
-    test('stores an empty bearerToken unchanged', () {
-      // A missing or empty token is allowed at construction time; the server
-      // will reject unauthenticated requests at call time.
-      final client = PlayerApiClient(
-        baseUrl: Uri.parse('https://player.example.com'),
-        bearerToken: '',
+    test('can be constructed with a Dio that carries a custom header', () {
+      // Confirms that any headers already configured on the Dio instance are
+      // preserved after construction (DioClient sets the auth header via an
+      // interceptor, but a test may set it directly on BaseOptions).
+      final dio = Dio(
+        BaseOptions(
+          baseUrl: 'https://player.example.com',
+          headers: {'Authorization': 'Bearer test-token'},
+        ),
       );
+      final client = PlayerApiClient(dio: dio);
 
-      expect(client.bearerToken, '');
+      expect(
+        client.rawDio.options.headers['Authorization'],
+        'Bearer test-token',
+      );
     });
   });
 }

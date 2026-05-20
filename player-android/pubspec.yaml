@@ -9,6 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # dio: type-safe HTTP client with interceptor support, used for all API calls.
+  dio: ^5.7.0
+  # flutter_secure_storage: stores the bearer token in the OS keychain/keystore.
+  flutter_secure_storage: ^9.2.2
 
 dev_dependencies:
   flutter_test:
