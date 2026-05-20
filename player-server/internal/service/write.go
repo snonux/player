@@ -237,15 +237,23 @@ func copyFile(src, dst string) error {
 	}
 	defer in.Close()
 
+	// Do NOT defer out.Close(): for the destination file we must observe the
+	// Close error explicitly. When the OS flushes buffered writes during Close
+	// it can surface disk-full, quota, or I/O errors that a deferred close
+	// would silently swallow, leaving a truncated/corrupt destination behind.
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, in); err != nil {
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
 		_ = os.Remove(dst)
-		return err
+		return copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(dst)
+		return fmt.Errorf("close %q: %w", dst, closeErr)
 	}
 	return nil
 }
