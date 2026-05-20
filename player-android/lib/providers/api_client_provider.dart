@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/dio_client.dart';
+import '../api/dio_player_api_client.dart';
 import '../api/player_api_client.dart';
 import '../navigation_key.dart';
 
@@ -41,5 +42,9 @@ final apiClientProvider = Provider<PlayerApiClient>((ref) {
     loginRoute: '/login',
   );
 
-  return PlayerApiClient(dio: dioClient.dio);
+  // Use DioPlayerApiClient — the concrete implementation that maps every
+  // PlayerApiClient method to a real HTTP call via Dio.  The base class now
+  // acts as the public interface (dependency inversion); callers depend on
+  // PlayerApiClient, not on this concrete class.
+  return DioPlayerApiClient(dio: dioClient.dio);
 });
