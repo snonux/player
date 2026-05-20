@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -263,6 +264,58 @@ func TestGCWorker_DoubleStop(t *testing.T) {
 	w.Start()
 	w.Stop()
 	w.Stop() // must not panic
+}
+
+// TestGCWorker_DoubleStartIdempotent verifies that calling Start more than
+// once does not spawn additional goroutines. Each spawned worker increments
+// wg by 1; we drain a single tick and assert only one run happens, then Stop
+// must return promptly (would deadlock on wg.Wait if extra goroutines existed
+// without their own stop signal handling).
+func TestGCWorker_DoubleStartIdempotent(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	var runCount int32
+	store := &repository.MockStore{
+		MediaRepo: repository.MockMediaRepo{
+			ListDeletedMediaFunc: func(ctx context.Context) ([]model.Media, error) {
+				atomic.AddInt32(&runCount, 1)
+				return nil, nil
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	w := NewGCWorker(store, &clock.MockClock{T: now}, "/tmp", time.Minute, logger)
+	tickCh := make(chan time.Time, 4)
+	runDoneCh := make(chan struct{}, 4)
+	w.tickCh = tickCh
+	w.runDoneCh = runDoneCh
+
+	// Call Start multiple times: only the first should spawn a goroutine.
+	w.Start()
+	w.Start()
+	w.Start()
+
+	// A single tick must produce exactly one run; if extra goroutines were
+	// spawned they would also pick up ticks from the same channel.
+	tickCh <- now
+	select {
+	case <-runDoneCh:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for gc run")
+	}
+
+	// No additional runs should be pending.
+	select {
+	case <-runDoneCh:
+		t.Fatal("unexpected extra run from duplicate Start")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	w.Stop()
+
+	if got := atomic.LoadInt32(&runCount); got != 1 {
+		t.Fatalf("expected exactly 1 run, got %d", got)
+	}
 }
 
 func TestGCWorker_RelPathFallback(t *testing.T) {

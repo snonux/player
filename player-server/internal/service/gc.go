@@ -24,6 +24,7 @@ type GCWorker struct {
 	tickCh    <-chan time.Time
 	runDoneCh chan struct{}
 	stopCh    chan struct{}
+	startOnce sync.Once
 	stopOnce  sync.Once
 	wg        sync.WaitGroup
 	mediaRoot string
@@ -56,32 +57,38 @@ func (w *GCWorker) WithInterval(interval time.Duration) *GCWorker {
 	return w
 }
 
-// Start launches the GC goroutine.
+// Start launches the GC goroutine. Idempotent: subsequent calls after the
+// first are no-ops. Paired with Stop (also one-shot via sync.Once); the
+// worker is not designed to be restarted after Stop, so a sync.Once guard
+// matches the existing lifetime semantics and prevents goroutine leaks
+// from accidental double-Start.
 func (w *GCWorker) Start() {
-	w.ctx, w.cancel = context.WithCancel(context.Background())
-	tickCh := w.tickCh
-	if tickCh == nil {
-		w.ticker = time.NewTicker(w.interval)
-		tickCh = w.ticker.C
-	}
-	w.wg.Add(1)
-	go func() {
-		defer w.wg.Done()
-		for {
-			select {
-			case <-tickCh:
-				func() {
-					defer func() {
-						RecoverWorker(w.logger, "gc", recover())
-					}()
-					w.run(w.ctx)
-				}()
-				w.notifyRunDone()
-			case <-w.stopCh:
-				return
-			}
+	w.startOnce.Do(func() {
+		w.ctx, w.cancel = context.WithCancel(context.Background())
+		tickCh := w.tickCh
+		if tickCh == nil {
+			w.ticker = time.NewTicker(w.interval)
+			tickCh = w.ticker.C
 		}
-	}()
+		w.wg.Add(1)
+		go func() {
+			defer w.wg.Done()
+			for {
+				select {
+				case <-tickCh:
+					func() {
+						defer func() {
+							RecoverWorker(w.logger, "gc", recover())
+						}()
+						w.run(w.ctx)
+					}()
+					w.notifyRunDone()
+				case <-w.stopCh:
+					return
+				}
+			}
+		}()
+	})
 }
 
 // Stop stops the GC goroutine and waits for it to finish.
