@@ -6,7 +6,9 @@ class PlayerApiClient {
   final Uri baseUrl;
   final String bearerToken;
 
-  const PlayerApiClient({required this.baseUrl, required this.bearerToken});
+  // Normal (non-const) constructor: Uri is not const-constructable, so the
+  // constructor must not be declared const.
+  PlayerApiClient({required this.baseUrl, required this.bearerToken});
 
   Future<User> bootstrap({required String username, required String password}) => throw UnimplementedError();
   Future<User> login({required String username, required String password}) => throw UnimplementedError();

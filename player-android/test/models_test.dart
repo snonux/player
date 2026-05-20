@@ -126,6 +126,15 @@ void main() {
       expect(media.deletedAt, isNull);
       expect(media.createdAt, isNull);
     });
+
+    // Regression test for e9: non-string and null elements in the tags list
+    // must be silently dropped rather than causing a TypeError at runtime.
+    test('fromJson drops non-string and null tag elements', () {
+      final media = Media.fromJson({'tags': [1, 'valid', null]});
+
+      // Only 'valid' survives: the integer 1 and null are filtered out.
+      expect(media.tags, ['valid']);
+    });
   });
 
   // ---------------------------------------------------------------------------
