@@ -125,7 +125,7 @@ func (s *Server) handleCreateAPIToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expiresAt, ok := apiTokenExpiresAt(req.ExpiresInDays)
+	expiresAt, ok := s.apiTokenExpiresAt(req.ExpiresInDays)
 	if !ok {
 		badRequest(w, "expires_in_days must be greater than zero")
 		return
@@ -166,8 +166,8 @@ func (s *Server) handleRevokeAPIToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid token id")
 		return
 	}
@@ -198,7 +198,9 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, value string) {
 		HttpOnly: true,
 		Secure:   s.cfg.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
-		Expires:  time.Now().Add(time.Duration(s.cfg.SessionTimeoutHours) * time.Hour),
+		// Use the injected clock so tests can assert the cookie Expires
+		// value deterministically (no flakiness from time.Now()).
+		Expires: s.clk.Now().Add(time.Duration(s.cfg.SessionTimeoutHours) * time.Hour),
 	})
 }
 
@@ -215,14 +217,18 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
-func apiTokenExpiresAt(expiresInDays *int) (*time.Time, bool) {
+// apiTokenExpiresAt is a method on Server so it can use the injected clock
+// (s.clk) instead of the wall clock. Returns nil expiry when expiresInDays is
+// nil (i.e. token never expires); false when the value is non-positive (so
+// the caller can return 400).
+func (s *Server) apiTokenExpiresAt(expiresInDays *int) (*time.Time, bool) {
 	if expiresInDays == nil {
 		return nil, true
 	}
 	if *expiresInDays <= 0 {
 		return nil, false
 	}
-	expiresAt := time.Now().Add(time.Duration(*expiresInDays) * 24 * time.Hour)
+	expiresAt := s.clk.Now().Add(time.Duration(*expiresInDays) * 24 * time.Hour)
 	return &expiresAt, true
 }
 

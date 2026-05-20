@@ -97,9 +97,16 @@ func readJSON(r *http.Request, dst interface{}) error {
 	return json.NewDecoder(r.Body).Decode(dst)
 }
 
-func pathID(r *http.Request, name string) int64 {
-	id, _ := strconv.ParseInt(r.PathValue(name), 10, 64)
-	return id
+// pathID parses a path variable as an int64. It returns the parsed id together
+// with an explicit error so callers can distinguish "missing/malformed" from a
+// legitimately zero value and log the underlying ParseInt failure. The error
+// is wrapped with the variable name to make server logs actionable.
+func pathID(r *http.Request, name string) (int64, error) {
+	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", name, err)
+	}
+	return id, nil
 }
 
 func userIDFromContext(r *http.Request) int64 {

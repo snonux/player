@@ -14,8 +14,8 @@ import (
 
 func (s *Server) fileHandler(fn func(context.Context, int64, int64) (*service.FileResult, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id := pathID(r, "id")
-		if id == 0 {
+		id, err := pathID(r, "id")
+		if err != nil || id == 0 {
 			http.Error(w, "invalid media id", http.StatusBadRequest)
 			return
 		}
@@ -51,8 +51,8 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.browseSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}
@@ -88,8 +88,8 @@ func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.writeSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}

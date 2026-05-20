@@ -270,6 +270,10 @@ func runWithSignal(args []string, sigCh <-chan os.Signal) error {
 		},
 		StaticFS:      staticFS,
 		MediaStreamer: streamer,
+		// Share the already-wired clock so handler-level time arithmetic
+		// (share expiry, session cookie Expires, API token expiry) uses
+		// the same source as the rest of the services (scanner, auth, etc).
+		Clock: deps.clk,
 	}, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create API server: %w", err)

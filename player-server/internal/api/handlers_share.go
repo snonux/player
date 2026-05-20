@@ -17,12 +17,15 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.shareSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}
-	expiresAt := time.Now().Add(time.Duration(s.cfg.ShareDefaultExpiryDays) * 24 * time.Hour)
+	// Use the injected clock so tests can pin "now" and assert deterministic
+	// share-expiry semantics (e.g. assert that expiresAt is exactly
+	// ShareDefaultExpiryDays * 24h after the mock clock's T).
+	expiresAt := s.clk.Now().Add(time.Duration(s.cfg.ShareDefaultExpiryDays) * 24 * time.Hour)
 	share, err := s.shareSvc.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt)
 	if err != nil {
 		handleError(w, err)
@@ -35,8 +38,8 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.shareSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}

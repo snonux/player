@@ -77,8 +77,8 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.adminSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid user id")
 		return
 	}

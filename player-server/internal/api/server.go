@@ -11,6 +11,7 @@ import (
 
 	"codeberg.org/snonux/player/internal"
 	"codeberg.org/snonux/player/internal/auth"
+	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
 	"codeberg.org/snonux/player/internal/web"
@@ -18,10 +19,15 @@ import (
 
 // Server holds HTTP handlers and dependencies.
 type Server struct {
-	store           repository.Store
-	hasher          auth.Hasher
-	sm              auth.SessionManager
-	cfg             *internal.Config
+	store  repository.Store
+	hasher auth.Hasher
+	sm     auth.SessionManager
+	cfg    *internal.Config
+	// clk is the time source used for time-dependent handler logic (share
+	// expiry, session cookie Expires, API token expiry). Injected so tests
+	// can substitute a clock.MockClock and assert deterministic semantics
+	// instead of racing the wall clock.
+	clk             clock.Clock
 	mux             *http.ServeMux
 	handler         http.Handler
 	browseSvc       service.MediaBrowseService
@@ -67,6 +73,11 @@ type ServerDeps struct {
 	Services       ServerServices
 	StaticFS       http.FileSystem
 	MediaStreamer  service.MediaStreamer
+	// Clock is the time source for handler-level time arithmetic (share
+	// expiry, session cookie Expires, API token expiry). If nil it defaults
+	// to clock.RealClock{} so existing production callers and tests that
+	// don't care about deterministic time keep working unchanged.
+	Clock clock.Clock
 }
 
 // NewServer creates a Server with routes.
@@ -101,11 +112,17 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// Default to the real wall-clock when no clock is injected so production
+	// wiring stays simple and tests that don't pin time keep working.
+	if deps.Clock == nil {
+		deps.Clock = clock.RealClock{}
+	}
 	s := &Server{
 		store:           deps.Store,
 		hasher:          deps.Hasher,
 		sm:              deps.SessionManager,
 		cfg:             deps.Config,
+		clk:             deps.Clock,
 		mux:             http.NewServeMux(),
 		browseSvc:       deps.Services.Browse,
 		writeSvc:        deps.Services.Write,

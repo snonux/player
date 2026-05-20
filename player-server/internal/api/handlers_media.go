@@ -34,8 +34,8 @@ func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.browseSvc) {
 		return
 	}
-	setID := pathID(r, "id")
-	if setID == 0 {
+	setID, err := pathID(r, "id")
+	if err != nil || setID == 0 {
 		badRequest(w, "invalid set id")
 		return
 	}
@@ -61,8 +61,8 @@ func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.writeSvc) {
 		return
 	}
-	setID := pathID(r, "id")
-	if setID == 0 {
+	setID, err := pathID(r, "id")
+	if err != nil || setID == 0 {
 		badRequest(w, "invalid set id")
 		return
 	}
@@ -86,8 +86,8 @@ func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.browseSvc) {
 		return
 	}
-	setID := pathID(r, "id")
-	if setID == 0 {
+	setID, err := pathID(r, "id")
+	if err != nil || setID == 0 {
 		badRequest(w, "invalid set id")
 		return
 	}
@@ -108,8 +108,8 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.writeSvc) {
 		return
 	}
-	setID := pathID(r, "id")
-	if setID == 0 {
+	setID, err := pathID(r, "id")
+	if err != nil || setID == 0 {
 		badRequest(w, "invalid set id")
 		return
 	}
@@ -253,8 +253,8 @@ func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.browseSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}
@@ -274,8 +274,8 @@ func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.favSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}
@@ -303,8 +303,8 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.tagSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}
@@ -326,9 +326,9 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.tagSvc) {
 		return
 	}
-	id := pathID(r, "id")
+	id, err := pathID(r, "id")
 	tagName := r.PathValue("tag")
-	if id == 0 || tagName == "" {
+	if err != nil || id == 0 || tagName == "" {
 		badRequest(w, "invalid parameters")
 		return
 	}
@@ -343,8 +343,8 @@ func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.writeSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}
@@ -367,8 +367,8 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.writeSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}
@@ -398,8 +398,8 @@ func (s *Server) handlePlaybackHints(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.playbackHintSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}
@@ -419,8 +419,8 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.noteSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}
@@ -440,8 +440,8 @@ func (s *Server) handleUpsertNote(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.noteSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}
@@ -464,8 +464,8 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.noteSvc) {
 		return
 	}
-	id := pathID(r, "id")
-	if id == 0 {
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
 		badRequest(w, "invalid media id")
 		return
 	}

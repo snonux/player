@@ -68,8 +68,8 @@ func (s *Server) handleListEpisodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setID := pathID(r, "id")
-	if setID == 0 {
+	setID, err := pathID(r, "id")
+	if err != nil || setID == 0 {
 		badRequest(w, "invalid set id")
 		return
 	}
@@ -108,8 +108,8 @@ func (s *Server) handleDownloadEpisode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	episodeID := pathID(r, "episode_id")
-	if episodeID == 0 {
+	episodeID, err := pathID(r, "episode_id")
+	if err != nil || episodeID == 0 {
 		badRequest(w, "invalid episode id")
 		return
 	}
@@ -137,8 +137,8 @@ func (s *Server) handleToggleComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	episodeID := pathID(r, "episode_id")
-	if episodeID == 0 {
+	episodeID, err := pathID(r, "episode_id")
+	if err != nil || episodeID == 0 {
 		badRequest(w, "invalid episode id")
 		return
 	}
