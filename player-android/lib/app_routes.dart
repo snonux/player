@@ -60,6 +60,21 @@ abstract final class AppRoutes {
   /// Opens [MySharesScreen] from Settings.
   static const shares = '/shares';
 
+  /// Route for browsing folders within a set.
+  ///
+  /// The ':setId' path segment identifies the set; the optional 'path' query
+  /// parameter specifies the current subfolder (empty or absent = root).
+  static const folderBrowser = '/browse/:setId';
+
+  /// Returns the concrete path for the folder browser of a given [setId].
+  ///
+  /// [path] is the optional subfolder path; omit or pass null for the root.
+  static String folderBrowserPath(int setId, {String? path}) {
+    final base = '/browse/$setId';
+    if (path == null || path.isEmpty) return base;
+    return '$base?path=${Uri.encodeComponent(path)}';
+  }
+
   /// Returns the concrete path for the notes editor of a given [mediaId].
   static String notesPath(String mediaId) => '/notes/$mediaId';
 }

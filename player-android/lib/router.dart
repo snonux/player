@@ -18,6 +18,7 @@ import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
 import 'screens/my_shares_screen.dart';
 import 'screens/notes_editor_screen.dart';
+import 'screens/folder_browser_screen.dart';
 import 'screens/video_player_screen.dart';
 
 // Re-export AppRoutes so existing callers that import router.dart for routes
@@ -186,6 +187,27 @@ final routerProvider = Provider<GoRouter>((ref) {
         // Reachable from the Settings screen.
         path: AppRoutes.shares,
         builder: (context, state) => const MySharesScreen(),
+      ),
+      GoRoute(
+        // Folder browser — shows subfolders and media at the current path
+        // within a set.  The ':setId' path segment identifies the set;
+        // the optional 'path' query parameter identifies the current subfolder
+        // (absent or empty means root).
+        path: AppRoutes.folderBrowser,
+        builder: (context, state) {
+          final raw = state.pathParameters['setId']!;
+          final setId = int.tryParse(raw) ?? 0;
+          final path = state.uri.queryParameters['path'];
+          // setName is optionally passed as a String extra so the screen can
+          // show the set name in the app bar without an extra API call.
+          final setName =
+              state.extra is String ? state.extra as String : null;
+          return FolderBrowserScreen(
+            setId: setId,
+            path: path,
+            setName: setName,
+          );
+        },
       ),
     ],
   );

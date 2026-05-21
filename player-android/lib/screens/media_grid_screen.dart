@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
+import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/search_filter_bar.dart';
 
@@ -599,18 +600,9 @@ class _InfoOverlay extends StatelessWidget {
 
   /// Formats [seconds] as `h:mm:ss` or `m:ss`, omitting leading zeros.
   ///
-  /// Uses integer arithmetic only — no Duration formatting dependency — to
-  /// keep this helper lightweight and independently testable.
-  static String _formatDuration(double seconds) {
-    final total = seconds.truncate();
-    final h = total ~/ 3600;
-    final m = (total % 3600) ~/ 60;
-    final s = total % 60;
-    if (h > 0) {
-      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-    }
-    return '$m:${s.toString().padLeft(2, '0')}';
-  }
+  /// Delegates to the shared [formatDuration] helper in `duration_formatter.dart`
+  /// (DRY) so the formatting logic lives in exactly one place.
+  static String _formatDuration(double seconds) => formatDuration(seconds);
 }
 
 /// Full-screen empty-state view, shown when [listMedia] returns an empty list.

@@ -238,3 +238,23 @@ String sharesErrorMessage(Object error) {
   }
   return 'Unexpected error. Please try again.';
 }
+
+/// Maps any thrown object from [PlayerApiClient.browseSet] to a UI string.
+///
+/// Adds a 403-specific message (permission denied) and a 404 message (set not
+/// found) on top of the generic connection-error fallback, so
+/// FolderBrowserScreen can surface actionable guidance rather than a raw code.
+/// Kept as a separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of the other mappers.
+String folderErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 404) {
+      return 'Folder not found. It may have been removed.';
+    }
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to browse this folder.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}

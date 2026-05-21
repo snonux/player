@@ -153,6 +153,19 @@ class PlayerApiClient {
   String streamUrl(int mediaId) =>
       '${rawDio.options.baseUrl}/api/v1/media/$mediaId/stream';
 
+  /// Returns the URL for the cover image of a set's root or subfolder.
+  ///
+  /// Mirrors [thumbnailUrl] and [streamUrl]: the API path
+  /// `/api/v1/sets/{id}/cover` is kept in one place so the UI layer never
+  /// needs to access Dio internals or hard-code URL segments (DIP).
+  ///
+  /// [folder] is the optional subfolder path (empty or null = set root cover).
+  String setFolderCoverUrl(int setId, {String? folder}) {
+    final base = '${rawDio.options.baseUrl}/api/v1/sets/$setId/cover';
+    if (folder == null || folder.isEmpty) return base;
+    return '$base?folder=${Uri.encodeComponent(folder)}';
+  }
+
   /// Returns the public share URL for a share [token].
   ///
   /// Mirrors [thumbnailUrl] and [streamUrl]: the share path `/s/{token}` is
