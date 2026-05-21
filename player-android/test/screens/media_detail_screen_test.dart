@@ -10,6 +10,8 @@
 //   6. Shows an error view when getMedia throws a DioException.
 //   7. Retry button triggers a fresh getMedia call.
 //   8. 404 error is mapped to the "not found" message.
+//   9. Optimistic update: icon flips immediately before toggleFavorite returns.
+//  10. Revert on error: icon reverts and SnackBar shown when toggleFavorite fails.
 //
 // Riverpod providers are overridden with fakes so tests run without a real
 // server or OS keychain.
@@ -107,6 +109,36 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 
   @override
   Future<Media> getMedia(int mediaId) => _completer.future;
+
+  @override
+  String thumbnailUrl(int mediaId) => '';
+}
+
+/// [PlayerApiClient] stub where [toggleFavorite] is delayed until
+/// [completeToggle] is called.
+///
+/// Allows tests to inspect the UI state between the tap and the API response
+/// (the optimistic update window).
+class _DelayedToggleFakeApiClient extends PlayerApiClient {
+  _DelayedToggleFakeApiClient({required this.mediaResult})
+      : super(dio: Dio());
+
+  /// The media item returned synchronously by [getMedia].
+  final Media mediaResult;
+
+  final _toggleCompleter = Completer<bool>();
+
+  /// Resolves [toggleFavorite] with [result].
+  void completeToggle(bool result) => _toggleCompleter.complete(result);
+
+  /// Fails [toggleFavorite] with [error].
+  void failToggle(Object error) => _toggleCompleter.completeError(error);
+
+  @override
+  Future<Media> getMedia(int mediaId) async => mediaResult;
+
+  @override
+  Future<bool> toggleFavorite(int mediaId) => _toggleCompleter.future;
 
   @override
   String thumbnailUrl(int mediaId) => '';
@@ -438,6 +470,96 @@ void main() {
           of: find.byKey(const Key('media_detail_favorite')),
           matching: find.byIcon(Icons.favorite),
         ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+        'optimistic update: icon flips before toggleFavorite returns',
+        (tester) async {
+      // Use the delayed client so we can observe the UI before the API responds.
+      final fakeClient = _DelayedToggleFakeApiClient(
+        mediaResult: _kVideo, // favorite: false
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Starts as outlined (not favourite).
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('media_detail_favorite')),
+          matching: find.byIcon(Icons.favorite_border),
+        ),
+        findsOneWidget,
+      );
+
+      // Tap — the toggle future is still pending.
+      await tester.tap(find.byKey(const Key('media_detail_favorite')));
+      await tester.pump(); // one frame: setState for optimistic update
+
+      // Icon must already show filled (optimistic) before the API responds.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('media_detail_favorite')),
+          matching: find.byIcon(Icons.favorite),
+        ),
+        findsOneWidget,
+      );
+
+      // Resolve the API call so the test doesn't leave pending async work.
+      fakeClient.completeToggle(true);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets(
+        'revert on error: icon reverts and SnackBar shown when toggleFavorite fails',
+        (tester) async {
+      final fakeClient = _DelayedToggleFakeApiClient(
+        mediaResult: _kVideo, // favorite: false
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Starts as outlined.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('media_detail_favorite')),
+          matching: find.byIcon(Icons.favorite_border),
+        ),
+        findsOneWidget,
+      );
+
+      // Tap — the toggle future is still pending.
+      await tester.tap(find.byKey(const Key('media_detail_favorite')));
+      await tester.pump(); // optimistic flip applied
+
+      // Optimistic: icon is now filled.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('media_detail_favorite')),
+          matching: find.byIcon(Icons.favorite),
+        ),
+        findsOneWidget,
+      );
+
+      // Fail the API call.
+      fakeClient.failToggle(Exception('network error'));
+      await tester.pumpAndSettle();
+
+      // Icon must revert to outlined.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('media_detail_favorite')),
+          matching: find.byIcon(Icons.favorite_border),
+        ),
+        findsOneWidget,
+      );
+
+      // SnackBar must be visible.
+      expect(
+        find.text('Could not update favourite. Try again.'),
         findsOneWidget,
       );
     });

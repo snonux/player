@@ -10,6 +10,7 @@
 //   7. Toggling the favourites button flips favoritesOnly.
 //   8. Picking a sort option updates sortBy in the callback.
 //   9. Initial filter state is reflected in the UI on first render.
+//  10. didUpdateWidget: external filter change updates the bar's UI.
 //
 // Run with: flutter test test/widgets/search_filter_bar_test.dart
 
@@ -19,7 +20,7 @@ import 'package:player_android/models/media_filter.dart';
 import 'package:player_android/widgets/search_filter_bar.dart';
 
 // ---------------------------------------------------------------------------
-// Helper: pump SearchFilterBar inside a minimal MaterialApp.
+// Helpers
 // ---------------------------------------------------------------------------
 
 /// Pumps a [SearchFilterBar] in isolation inside a [MaterialApp].
@@ -41,6 +42,69 @@ Future<void> _pumpBar(
       ),
     ),
   );
+}
+
+// Key used to locate the [_ControlledFilterBar] state in rebuild tests.
+final _controlledBarKey = GlobalKey<_ControlledFilterBarState>();
+
+/// Stateful wrapper that lets tests push a new [MediaFilter] into
+/// [SearchFilterBar] from outside (simulating an external control like the
+/// MediaGridScreen app-bar shortcut).
+class _ControlledFilterBar extends StatefulWidget {
+  const _ControlledFilterBar({
+    super.key,
+    required this.initialFilter,
+    required this.onChanged,
+  });
+
+  final MediaFilter initialFilter;
+  final void Function(MediaFilter) onChanged;
+
+  @override
+  _ControlledFilterBarState createState() => _ControlledFilterBarState();
+}
+
+class _ControlledFilterBarState extends State<_ControlledFilterBar> {
+  late MediaFilter _filter;
+
+  @override
+  void initState() {
+    super.initState();
+    _filter = widget.initialFilter;
+  }
+
+  /// Simulates an external filter update (e.g. app-bar shortcut).
+  void pushFilter(MediaFilter filter) {
+    setState(() => _filter = filter);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SearchFilterBar(
+      initialFilter: _filter,
+      onFiltersChanged: widget.onChanged,
+    );
+  }
+}
+
+/// Pumps [_ControlledFilterBar] and returns the wrapper key.
+Future<GlobalKey<_ControlledFilterBarState>> _pumpControlledBar(
+  WidgetTester tester, {
+  MediaFilter initialFilter = const MediaFilter(),
+  required void Function(MediaFilter) onChanged,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: _ControlledFilterBar(
+          key: _controlledBarKey,
+          initialFilter: initialFilter,
+          onChanged: onChanged,
+        ),
+      ),
+    ),
+  );
+  return _controlledBarKey;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +362,75 @@ void main() {
             .controller
             ?.text,
         equals('test query'),
+      );
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // External filter update (didUpdateWidget)
+  // --------------------------------------------------------------------------
+
+  group('external filter update', () {
+    testWidgets(
+        'favourites star updates when initialFilter is changed externally',
+        (tester) async {
+      final key = await _pumpControlledBar(
+        tester,
+        initialFilter: const MediaFilter(favoritesOnly: false),
+        onChanged: (_) {},
+      );
+      await tester.pumpAndSettle();
+
+      // Star should initially be the outlined (inactive) variant.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('favorites_toggle')),
+          matching: find.byIcon(Icons.star_border),
+        ),
+        findsOneWidget,
+      );
+
+      // Push a new filter with favoritesOnly = true from outside.
+      key.currentState!.pushFilter(const MediaFilter(favoritesOnly: true));
+      await tester.pumpAndSettle();
+
+      // Star should now be filled (active).
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('favorites_toggle')),
+          matching: find.byIcon(Icons.star),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('search text updates when query is changed externally',
+        (tester) async {
+      final key = await _pumpControlledBar(
+        tester,
+        initialFilter: const MediaFilter(query: 'original'),
+        onChanged: (_) {},
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('search_input')))
+            .controller
+            ?.text,
+        equals('original'),
+      );
+
+      // External clear: push a filter with no query.
+      key.currentState!.pushFilter(const MediaFilter());
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('search_input')))
+            .controller
+            ?.text,
+        equals(''),
       );
     });
   });

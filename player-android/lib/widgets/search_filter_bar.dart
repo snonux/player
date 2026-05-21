@@ -114,6 +114,35 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
     _searchController = TextEditingController(text: _filter.query ?? '');
   }
 
+  /// Syncs internal filter state when the parent supplies a new [initialFilter].
+  ///
+  /// This handles the case where an external control (e.g. the app-bar favourites
+  /// shortcut in [MediaGridScreen]) mutates the filter outside [SearchFilterBar]
+  /// and rebuilds the widget with a different [initialFilter].  Without this
+  /// override the bar would ignore the new value and show stale chips/icons.
+  ///
+  /// Only fields that actually changed are updated to avoid clearing the search
+  /// text while the user is still typing (the debounce timer owns the pending
+  /// query, so we leave [_searchController] alone unless the query changed).
+  @override
+  void didUpdateWidget(SearchFilterBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final newFilter = widget.initialFilter;
+    if (newFilter == _filter) return; // nothing changed
+
+    // Sync the internal filter state without calling onFiltersChanged —
+    // the parent already holds the updated filter; we only need to reflect it.
+    setState(() {
+      _filter = newFilter;
+    });
+
+    // Sync the text field only when the query actually changed (avoid
+    // overwriting text the user is currently editing via the debounce path).
+    if (oldWidget.initialFilter.query != newFilter.query) {
+      _searchController.text = newFilter.query ?? '';
+    }
+  }
+
   @override
   void dispose() {
     // Always cancel the timer to prevent a stale callback firing after

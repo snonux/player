@@ -8,6 +8,10 @@
 //   5. Shows an empty-state widget when listMedia returns [].
 //   6. Shows an error view when listMedia throws a DioException.
 //   7. Pull-to-refresh calls listMedia again.
+//   8. Heart overlay is shown on each card, filled for favourites.
+//   9. Tapping heart overlay toggles favourite state (optimistic update).
+//  10. Revert on error: icon reverts when toggleFavorite fails.
+//  11. Favorites filter shortcut in app bar toggles favoritesOnly filter.
 //
 // Riverpod providers are overridden with fakes so tests run without a real
 // server or OS keychain.
@@ -127,6 +131,71 @@ class _DelayedFakeApiClient extends PlayerApiClient {
   String thumbnailUrl(int mediaId) => '';
 }
 
+/// [PlayerApiClient] stub that supports both [listMedia] and [toggleFavorite].
+///
+/// [toggleFavorite] is delayed until [completeToggle] or [failToggle] is called
+/// so tests can inspect the optimistic-update and revert paths.
+class _FakeApiClientWithToggle extends PlayerApiClient {
+  _FakeApiClientWithToggle({required List<Media> initialMedia})
+      : super(dio: Dio()) {
+    mediaResult = initialMedia;
+  }
+
+  /// Mutable media list; [listMedia] always returns this.
+  late List<Media> mediaResult;
+
+  /// When non-null, all [listMedia] calls throw this error.
+  Object? mediaError;
+
+  /// Records the [MediaFilter.favoritesOnly] flag from the last [listMedia] call.
+  bool? lastFavoritesOnlyFlag;
+
+  /// Completer for the current in-flight [toggleFavorite]; replaced per call.
+  Completer<bool>? _toggleCompleter;
+
+  /// Resolve the current pending [toggleFavorite] with [result].
+  void completeToggle(bool result) {
+    _toggleCompleter?.complete(result);
+  }
+
+  /// Fail the current pending [toggleFavorite] with [error].
+  void failToggle(Object error) {
+    _toggleCompleter?.completeError(error);
+  }
+
+  @override
+  Future<List<Media>> listMedia({
+    String? search,
+    int? setId,
+    List<int>? setIds,
+    String? type,
+    bool? favorites,
+    List<String>? tags,
+    double? minDuration,
+    double? maxDuration,
+    int? fileSizeMin,
+    int? fileSizeMax,
+    String? sort,
+    int? limit,
+    int? offset,
+    String? folder,
+    String? parent,
+  }) async {
+    lastFavoritesOnlyFlag = favorites;
+    if (mediaError != null) throw mediaError!;
+    return mediaResult;
+  }
+
+  @override
+  Future<bool> toggleFavorite(int mediaId) {
+    _toggleCompleter = Completer<bool>();
+    return _toggleCompleter!.future;
+  }
+
+  @override
+  String thumbnailUrl(int mediaId) => '';
+}
+
 // ---------------------------------------------------------------------------
 // Sample data
 // ---------------------------------------------------------------------------
@@ -167,6 +236,26 @@ const _kAudio = Media(
   height: 0,
   thumbnailPath: '',
   playCount: 12,
+);
+
+/// A sample media item that starts as a favourite.
+const _kFavorite = Media(
+  id: 3,
+  setId: 10,
+  relPath: 'music/fav.mp3',
+  fileName: 'fav.mp3',
+  absPath: '/media/music/fav.mp3',
+  type: 'audio',
+  duration: 180.0,
+  codec: 'mp3',
+  resolution: '',
+  bitrate: 256,
+  fileSizeBytes: 4194304,
+  width: 0,
+  height: 0,
+  thumbnailPath: '',
+  playCount: 5,
+  favorite: true, // already a favourite
 );
 
 // ---------------------------------------------------------------------------
@@ -440,6 +529,219 @@ void main() {
 
       // listMedia must have been called a second time.
       expect(fakeClient.listMediaCallCount, equals(2));
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Heart overlay
+  // --------------------------------------------------------------------------
+
+  group('heart overlay on media card', () {
+    testWidgets('shows outlined heart on non-favourite item', (tester) async {
+      final fakeClient = _FakeApiClientWithToggle(
+        initialMedia: [_kVideo], // favorite: false
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // The heart button for the non-favourite video must have the outlined icon.
+      final heartFinder = find.byKey(const Key('media_card_favorite_1'));
+      expect(heartFinder, findsOneWidget);
+      expect(
+        find.descendant(
+          of: heartFinder,
+          matching: find.byIcon(Icons.favorite_border),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('shows filled heart on a favourite item', (tester) async {
+      final fakeClient = _FakeApiClientWithToggle(
+        initialMedia: [_kFavorite], // favorite: true
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      final heartFinder = find.byKey(const Key('media_card_favorite_3'));
+      expect(heartFinder, findsOneWidget);
+      expect(
+        find.descendant(
+          of: heartFinder,
+          matching: find.byIcon(Icons.favorite),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('tapping heart flips icon optimistically before API responds',
+        (tester) async {
+      final fakeClient = _FakeApiClientWithToggle(
+        initialMedia: [_kVideo], // favorite: false
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Scroll the heart icon into view (it may be near the card bottom).
+      await tester
+          .ensureVisible(find.byKey(const Key('media_card_favorite_1')));
+      await tester.pumpAndSettle();
+
+      // Starts as outlined.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('media_card_favorite_1')),
+          matching: find.byIcon(Icons.favorite_border),
+        ),
+        findsOneWidget,
+      );
+
+      // Tap heart — toggleFavorite is now in flight (pending).
+      await tester.tap(find.byKey(const Key('media_card_favorite_1')));
+      await tester.pump(); // one frame for the optimistic setState
+
+      // Icon must already show filled (optimistic update) before API responds.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('media_card_favorite_1')),
+          matching: find.byIcon(Icons.favorite),
+        ),
+        findsOneWidget,
+      );
+
+      // Resolve the API call to clean up pending async work.
+      fakeClient.completeToggle(true);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('revert on error: icon reverts and SnackBar shown on failure',
+        (tester) async {
+      final fakeClient = _FakeApiClientWithToggle(
+        initialMedia: [_kVideo], // favorite: false
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Scroll the heart icon into view.
+      await tester
+          .ensureVisible(find.byKey(const Key('media_card_favorite_1')));
+      await tester.pumpAndSettle();
+
+      // Tap the heart.
+      await tester.tap(find.byKey(const Key('media_card_favorite_1')));
+      await tester.pump(); // optimistic flip
+
+      // Optimistic update: icon is filled.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('media_card_favorite_1')),
+          matching: find.byIcon(Icons.favorite),
+        ),
+        findsOneWidget,
+      );
+
+      // Fail the API call.
+      fakeClient.failToggle(Exception('server error'));
+      await tester.pumpAndSettle();
+
+      // Icon must revert to outlined.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('media_card_favorite_1')),
+          matching: find.byIcon(Icons.favorite_border),
+        ),
+        findsOneWidget,
+      );
+
+      // SnackBar error message is visible.
+      expect(
+        find.text('Could not update favourite. Try again.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('tapping card body does not trigger favourite toggle',
+        (tester) async {
+      final fakeClient = _FakeApiClientWithToggle(
+        initialMedia: [_kVideo],
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Tap the card body (centre of the card, not the heart icon).
+      await tester.tap(find.byKey(const Key('media_card_1')));
+      await tester.pumpAndSettle();
+
+      // Navigation happened — no pending toggle completer means toggle was not called.
+      // (If it had been called the completer would be non-null and the test would
+      // crash on dispose with an unhandled Completer future.)
+      expect(find.byKey(_kDestinationKey), findsOneWidget);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Favourites filter shortcut in app bar
+  // --------------------------------------------------------------------------
+
+  group('favourites filter shortcut', () {
+    testWidgets('app bar shows a heart icon button', (tester) async {
+      final fakeClient = _FakeApiClient()..mediaResult = [_kVideo];
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('media_grid_favorites_filter')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+        'tapping favourites filter shortcut passes favorites=true to listMedia',
+        (tester) async {
+      final fakeClient = _FakeApiClientWithToggle(
+        initialMedia: [_kVideo],
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Initially no favourites filter.
+      expect(fakeClient.lastFavoritesOnlyFlag, isNull);
+
+      // Tap the heart in the app bar.
+      await tester.tap(find.byKey(const Key('media_grid_favorites_filter')));
+      await tester.pumpAndSettle();
+
+      // listMedia must have been called with favorites = true.
+      expect(fakeClient.lastFavoritesOnlyFlag, isTrue);
+    });
+
+    testWidgets('tapping shortcut twice reverts filter to off', (tester) async {
+      final fakeClient = _FakeApiClientWithToggle(
+        initialMedia: [_kVideo],
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      final shortcut = find.byKey(const Key('media_grid_favorites_filter'));
+
+      // First tap — enable.
+      await tester.tap(shortcut);
+      await tester.pumpAndSettle();
+      expect(fakeClient.lastFavoritesOnlyFlag, isTrue);
+
+      // Second tap — disable.
+      await tester.tap(shortcut);
+      await tester.pumpAndSettle();
+      // favorites=false means the flag is passed as null (no filter applied).
+      expect(fakeClient.lastFavoritesOnlyFlag, isNull);
     });
   });
 }

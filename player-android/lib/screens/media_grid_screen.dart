@@ -9,6 +9,22 @@ import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/search_filter_bar.dart';
 
+// ---------------------------------------------------------------------------
+// _buildMediaWithFavorite  (file-private helper)
+// ---------------------------------------------------------------------------
+
+/// Returns a copy of [media] with the [favorite] flag replaced.
+///
+/// [Media] is immutable, so we rebuild via [Media.fromJson] / [Media.toJson]
+/// to avoid coupling the grid screen to any `copyWith` generated method.
+/// Extracted as a file-private function so both [_MediaGridScreenState] and
+/// the card overlay can share it without adding a public model API
+/// (Dependency Inversion, DRY).
+Media _buildMediaWithFavorite(Media media, bool favorite) {
+  final json = media.toJson()..['favorite'] = favorite;
+  return Media.fromJson(json);
+}
+
 /// Displays the media items inside a single [MediaSet] as a scrollable grid.
 ///
 /// Each card shows the item's thumbnail, title (file name), media-type icon
@@ -134,6 +150,67 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // Favourite toggle
+  // ---------------------------------------------------------------------------
+
+  /// Optimistically flips the favourite flag on the item at [index], calls
+  /// [toggleFavorite] on the server, then reconciles with the confirmed state.
+  ///
+  /// On error the optimistic update is reverted and a SnackBar is shown.
+  ///
+  /// Guard: if [_media] is null or [index] is out of range the call is a no-op.
+  Future<void> _toggleFavoriteAt(int index) async {
+    final items = _media;
+    if (items == null || index < 0 || index >= items.length) return;
+
+    final original = items[index];
+    final optimistic = _buildMediaWithFavorite(original, !original.favorite);
+
+    // Apply optimistic update immediately so the icon flips without lag.
+    setState(() {
+      _media = List<Media>.from(items)..[index] = optimistic;
+    });
+
+    try {
+      final client = ref.read(apiClientProvider);
+      final confirmed = await client.toggleFavorite(original.id);
+      if (!mounted) return;
+      // Reconcile with the value the server actually stored.
+      setState(() {
+        final current = _media;
+        if (current != null && index < current.length) {
+          _media = List<Media>.from(current)
+            ..[index] = _buildMediaWithFavorite(current[index], confirmed);
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      // Revert the optimistic update on failure.
+      setState(() {
+        final current = _media;
+        if (current != null && index < current.length) {
+          _media = List<Media>.from(current)..[index] = original;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update favourite. Try again.'),
+        ),
+      );
+    }
+  }
+
+  /// Toggles the [MediaFilter.favoritesOnly] flag and reloads.
+  ///
+  /// Called by the app-bar heart icon button as a fast shortcut so the user
+  /// can show/hide favourites without opening [SearchFilterBar].  The filter
+  /// state is kept in sync with [SearchFilterBar] via [_filter] so both
+  /// controls always reflect the same state.
+  void _toggleFavoritesFilter() {
+    _onFiltersChanged(_filter.copyWith(favoritesOnly: !_filter.favoritesOnly));
+  }
+
+  // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
 
@@ -156,9 +233,26 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   }
 
   /// Builds the app bar, showing [widget.setName] when available.
+  ///
+  /// Includes a heart icon button as a quick toggle for [MediaFilter.favoritesOnly].
+  /// The icon is filled and highlighted when the filter is active so the user
+  /// always knows at a glance whether the favourites-only view is on.
   AppBar _buildAppBar() {
     return AppBar(
       title: Text(widget.setName ?? 'Set ${widget.setId}'),
+      actions: [
+        IconButton(
+          key: const Key('media_grid_favorites_filter'),
+          tooltip: _filter.favoritesOnly ? 'Show all items' : 'Show favourites only',
+          icon: Icon(
+            _filter.favoritesOnly ? Icons.favorite : Icons.favorite_border,
+            color: _filter.favoritesOnly
+                ? Theme.of(context).colorScheme.error
+                : null,
+          ),
+          onPressed: _toggleFavoritesFilter,
+        ),
+      ],
     );
   }
 
@@ -190,6 +284,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
           : _MediaGrid(
               media: _media!,
               thumbnailUrlBuilder: _thumbnailUrl,
+              onFavoriteToggle: _toggleFavoriteAt,
             ),
     );
   }
@@ -214,6 +309,7 @@ class _MediaGrid extends StatelessWidget {
   const _MediaGrid({
     required this.media,
     required this.thumbnailUrlBuilder,
+    required this.onFavoriteToggle,
   });
 
   final List<Media> media;
@@ -223,6 +319,13 @@ class _MediaGrid extends StatelessWidget {
   /// Injected rather than computed inline so the widget has no knowledge of
   /// base-URL or API path structure (Dependency Inversion).
   final String Function(int mediaId) thumbnailUrlBuilder;
+
+  /// Called when the user taps the heart icon on a card.
+  ///
+  /// The argument is the [index] of the item within [media].  Using an index
+  /// (rather than the item itself) lets the state class update the correct
+  /// position in its list without a linear search.
+  final void Function(int index) onFavoriteToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -241,6 +344,7 @@ class _MediaGrid extends StatelessWidget {
       itemBuilder: (context, index) => _MediaCard(
         item: media[index],
         thumbnailUrl: thumbnailUrlBuilder(media[index].id),
+        onFavoriteToggle: () => onFavoriteToggle(index),
       ),
     );
   }
@@ -252,13 +356,25 @@ class _MediaGrid extends StatelessWidget {
 ///   - Thumbnail image with placeholder and error fallback.
 ///   - Semi-transparent overlay at the bottom with title, type icon, and
 ///     duration.
+///   - A heart icon in the bottom-right corner of the thumbnail that reflects
+///     the favourite state and fires [onFavoriteToggle] when tapped.
 ///
-/// Tapping navigates to [AppRoutes.mediaDetailPath] for the item.
+/// Tapping the card body navigates to [AppRoutes.mediaDetailPath] for the item.
+/// Tapping the heart icon triggers the favourite toggle without navigating.
 class _MediaCard extends StatelessWidget {
-  const _MediaCard({required this.item, required this.thumbnailUrl});
+  const _MediaCard({
+    required this.item,
+    required this.thumbnailUrl,
+    required this.onFavoriteToggle,
+  });
 
   final Media item;
   final String thumbnailUrl;
+
+  /// Called when the heart icon is tapped.  The parent state performs the
+  /// optimistic update and API call; this widget is purely presentational
+  /// (Single Responsibility, Dependency Inversion).
+  final VoidCallback onFavoriteToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -279,8 +395,72 @@ class _MediaCard extends StatelessWidget {
               bottom: 0,
               child: _InfoOverlay(item: item),
             ),
+            // Heart icon anchored to the bottom-right of the card.
+            // Positioned inside the info overlay's gradient area so it blends
+            // visually. [GestureDetector] is used so taps on the icon do NOT
+            // propagate to the [InkWell] above (which would navigate).
+            Positioned(
+              right: 4,
+              bottom: 4,
+              child: _FavoriteIconButton(
+                isFavorite: item.favorite,
+                mediaId: item.id,
+                onTap: onFavoriteToggle,
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _FavoriteIconButton
+// ---------------------------------------------------------------------------
+
+/// Small heart icon rendered on top of a media card thumbnail.
+///
+/// Uses a [GestureDetector] with [HitTestBehavior.opaque] to consume the tap
+/// before it reaches the parent [InkWell], preventing card-navigation from
+/// firing when the user taps the heart.
+///
+/// Design notes:
+///   - Extracted as a separate widget so it is independently testable and
+///     keeps [_MediaCard.build] under 30 lines (Single Responsibility).
+///   - The icon is styled with a dark shadow so it remains legible over both
+///     light and dark thumbnails.
+class _FavoriteIconButton extends StatelessWidget {
+  const _FavoriteIconButton({
+    required this.isFavorite,
+    required this.mediaId,
+    required this.onTap,
+  });
+
+  final bool isFavorite;
+
+  /// Used only for the widget key so tests can find the button by media ID.
+  final int mediaId;
+
+  /// Called when the user taps the heart; no navigation occurs.
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: Key('media_card_favorite_$mediaId'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Icon(
+        isFavorite ? Icons.favorite : Icons.favorite_border,
+        size: 20,
+        color: isFavorite ? Colors.redAccent : Colors.white70,
+        shadows: const [
+          Shadow(
+            color: Colors.black54,
+            blurRadius: 4,
+          ),
+        ],
       ),
     );
   }

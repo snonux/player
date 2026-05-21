@@ -332,6 +332,29 @@ class DioPlayerApiClient extends PlayerApiClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Favourites
+  // ---------------------------------------------------------------------------
+
+  /// Toggles the authenticated user's favourite status for [mediaId].
+  ///
+  /// POST /api/v1/media/{id}/favorite
+  ///
+  /// The server flips the current favourite state and responds with:
+  ///   `{ "favorite": true | false }`
+  ///
+  /// Returns the **new** favourite state so the caller can reconcile the UI
+  /// without performing a second GET request.
+  @override
+  Future<bool> toggleFavorite(int mediaId) async {
+    final response = await rawDio.post<Map<String, dynamic>>(
+      '$_kApiV1/media/$mediaId/favorite',
+    );
+    // The envelope always contains a boolean "favorite" field per the API spec.
+    final data = response.data ?? {};
+    return (data['favorite'] as bool?) ?? false;
+  }
+
+  // ---------------------------------------------------------------------------
   // Shares
   // ---------------------------------------------------------------------------
 
