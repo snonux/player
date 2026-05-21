@@ -44,6 +44,7 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
     super.key,
     required this.mediaId,
     this.mediaUrl,
+    this.startPosition,
   });
 
   /// The media item identifier extracted from the '/audio/:mediaId' route path.
@@ -53,6 +54,11 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
   /// When null, [PlayerApiClient.streamUrl] is called to derive the URL so the
   /// base URL stays in a single place (Dependency Inversion Principle).
   final String? mediaUrl;
+
+  /// Optional start position in seconds, forwarded from the continue-watching
+  /// screen to resume at the saved position without an extra API round-trip.
+  /// When null, [PlayerApiClient.getMediaProgress] is called instead.
+  final double? startPosition;
 
   @override
   ConsumerState<AudioPlayerScreen> createState() => _AudioPlayerScreenState();
@@ -155,10 +161,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
       return;
     }
 
-    // Step 4: resume from the server-saved position (best-effort; ignore
-    // errors so a missing progress row never blocks playback).
+    // Step 4: resume from the saved position.
+    // Prefer [widget.startPosition] (forwarded by the continue-watching screen)
+    // to avoid a redundant API round-trip.  Fall back to [getMediaProgress] so
+    // audio items opened from other screens still resume correctly.
     try {
-      final savedSeconds = await client.getMediaProgress(mediaIdInt);
+      final savedSeconds =
+          widget.startPosition ?? await client.getMediaProgress(mediaIdInt);
       if (savedSeconds != null && savedSeconds > 0) {
         await audioPlayer.seek(
           Duration(milliseconds: (savedSeconds * 1000).round()),

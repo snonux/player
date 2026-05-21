@@ -8,6 +8,7 @@ import 'providers/auth_state_provider.dart';
 import 'providers/first_run_provider.dart';
 import 'screens/audio_player_screen.dart';
 import 'screens/bootstrap_screen.dart';
+import 'screens/continue_watching_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/media_detail_screen.dart';
@@ -104,6 +105,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SetsListScreen(),
       ),
       GoRoute(
+        // Continue-watching screen — lists all in-progress media items.
+        path: AppRoutes.continueWatching,
+        builder: (context, state) => const ContinueWatchingScreen(),
+      ),
+      GoRoute(
         path: AppRoutes.mediaGrid,
         builder: (context, state) {
           // The ':setId' path parameter is guaranteed by the route pattern.
@@ -143,11 +149,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           // ':mediaId' is guaranteed present by the route pattern.
           final mediaId = state.pathParameters['mediaId']!;
-          // The resolved stream URL is optionally forwarded as a route extra
-          // (String) by the calling screen (e.g. MediaDetailScreen).
-          final mediaUrl =
-              state.extra is String ? state.extra as String : null;
-          return VideoPlayerScreen(mediaId: mediaId, mediaUrl: mediaUrl);
+          final (mediaUrl, startPosition) = _parsePlayerExtra(state.extra);
+          return VideoPlayerScreen(
+            mediaId: mediaId,
+            mediaUrl: mediaUrl,
+            startPosition: startPosition,
+          );
         },
       ),
       GoRoute(
@@ -155,11 +162,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           // ':mediaId' is guaranteed present by the route pattern.
           final mediaId = state.pathParameters['mediaId']!;
-          // The resolved stream URL is optionally forwarded as a route extra
-          // (String) by the calling screen (e.g. MediaDetailScreen).
-          final mediaUrl =
-              state.extra is String ? state.extra as String : null;
-          return AudioPlayerScreen(mediaId: mediaId, mediaUrl: mediaUrl);
+          final (mediaUrl, startPosition) = _parsePlayerExtra(state.extra);
+          return AudioPlayerScreen(
+            mediaId: mediaId,
+            mediaUrl: mediaUrl,
+            startPosition: startPosition,
+          );
         },
       ),
     ],
@@ -169,6 +177,25 @@ final routerProvider = Provider<GoRouter>((ref) {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Parses the route [extra] passed to video and audio player routes.
+///
+/// Accepts two shapes forwarded by different call-sites:
+///   - `Map<String, dynamic>`: `{mediaUrl: String, position: double}` from
+///     [ContinueWatchingScreen] so the player can seek immediately without an
+///     extra [getMediaProgress] round-trip.
+///   - `String`: plain stream URL forwarded by [MediaDetailScreen].
+///
+/// Returns a record `(mediaUrl, startPosition)` with null for absent values.
+/// Extracted to avoid duplicating this logic across the video and audio routes.
+(String?, double?) _parsePlayerExtra(Object? extra) {
+  if (extra is Map<String, dynamic>) {
+    final mediaUrl = extra['mediaUrl'] as String?;
+    final startPosition = (extra['position'] as num?)?.toDouble();
+    return (mediaUrl, startPosition);
+  }
+  return (extra is String ? extra : null, null);
+}
 
 /// Bridges Riverpod's auth and first-run providers to [GoRouter.refreshListenable].
 ///

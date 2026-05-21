@@ -29,6 +29,9 @@ abstract final class AppRoutes {
   /// Opens [PodcastListScreen] and supports the SubscribeDialog FAB.
   static const podcasts = '/podcasts';
 
+  /// Route that shows the Continue Watching screen (in-progress media items).
+  static const continueWatching = '/continue';
+
   /// Returns the concrete path for a media-detail page given a numeric [id].
   static String mediaDetailPath(int id) => '/media/$id';
 
@@ -40,4 +43,12 @@ abstract final class AppRoutes {
 
   /// Returns the concrete path for the audio player of a given [mediaId].
   static String audioPlayerPath(String mediaId) => '/audio/$mediaId';
+
+  /// Returns the appropriate player path for [type] and [mediaId].
+  ///
+  /// Centralises the audio-vs-video routing decision so call-sites do not need
+  /// to repeat the same if/else.  Audio maps to [audioPlayerPath]; every other
+  /// type (including 'video' and unknown) maps to [videoPlayerPath].
+  static String playerPathForType(String type, String mediaId) =>
+      type == 'audio' ? audioPlayerPath(mediaId) : videoPlayerPath(mediaId);
 }

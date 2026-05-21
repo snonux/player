@@ -267,6 +267,19 @@ class DioPlayerApiClient extends PlayerApiClient {
   // Progress
   // ---------------------------------------------------------------------------
 
+  /// Returns all media items the authenticated user has started but not finished.
+  ///
+  /// GET /api/v1/in-progress — returns the same [Media] array as GET /api/v1/media.
+  /// The caller (ContinueWatchingScreen) uses this to populate the resume list.
+  @override
+  Future<List<Media>> listInProgress() async {
+    final response = await rawDio.get<List<dynamic>>('$_kApiV1/in-progress');
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(Media.fromJson)
+        .toList();
+  }
+
   /// Returns the last saved playback position for [mediaId], or `null`.
   ///
   /// GET /api/v1/media/{id} — extracts the `progress.position_seconds` field

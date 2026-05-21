@@ -145,6 +145,19 @@ String podcastListErrorMessage(Object error) {
   return 'Unexpected error. Please try again.';
 }
 
+/// Maps any thrown object from [PlayerApiClient.listInProgress] to a UI string.
+///
+/// Delegates to [dioConnectionErrorMessage] for [DioException]; returns a
+/// generic fallback for all other exception types.  Kept as a separate function
+/// (Open-Closed) so it can evolve independently — for example, adding a 401
+/// message if session refresh is needed in a future iteration.
+String continueWatchingErrorMessage(Object error) {
+  if (error is DioException) {
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
 /// Maps any thrown object from [PlayerApiClient.subscribePodcast] to a UI string.
 ///
 /// Adds human-readable messages for the common failure modes:
