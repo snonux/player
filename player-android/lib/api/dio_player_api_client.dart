@@ -264,6 +264,74 @@ class DioPlayerApiClient extends PlayerApiClient {
       _getBytesFromUrl('$_kApiV1/media/$mediaId/thumbnail');
 
   // ---------------------------------------------------------------------------
+  // Progress
+  // ---------------------------------------------------------------------------
+
+  /// Returns the last saved playback position for [mediaId], or `null`.
+  ///
+  /// GET /api/v1/media/{id} — extracts the `progress.position_seconds` field
+  /// from the response envelope.  Returns `null` when there is no saved
+  /// progress or when the item has been marked as finished (so the player
+  /// starts from the beginning rather than the very end).
+  @override
+  Future<double?> getMediaProgress(int mediaId) async {
+    final response = await rawDio.get<Map<String, dynamic>>(
+      '$_kApiV1/media/$mediaId',
+    );
+
+    final envelope = response.data ?? {};
+    final progress = envelope['progress'];
+
+    // Return null when there is no progress row or when the item is finished
+    // (a finished item should restart from the beginning, not resume near end).
+    if (progress is! Map<String, dynamic>) return null;
+    if (progress['finished'] == true) return null;
+
+    final positionSeconds = progress['position_seconds'];
+    if (positionSeconds is num) return positionSeconds.toDouble();
+    return null;
+  }
+
+  /// Saves a playback position for a single media item.
+  ///
+  /// POST /api/v1/progress
+  /// Call this periodically while the user is playing (e.g. every 5 seconds).
+  /// The server increments [play_count] based on a 60-second accumulator so
+  /// frequent updates are both safe and encouraged.
+  @override
+  Future<void> updateProgress({
+    required int mediaId,
+    required double positionSeconds,
+  }) async {
+    await rawDio.post<void>(
+      '$_kApiV1/progress',
+      data: {
+        'media_id': mediaId,
+        'position_seconds': positionSeconds,
+      },
+    );
+  }
+
+  /// Marks a media item as finished or resets its progress.
+  ///
+  /// POST /api/v1/progress/status
+  /// [status] must be either `"finished"` or `"not_started"`.
+  /// Use `"finished"` when playback reaches the 95% threshold.
+  @override
+  Future<void> updateProgressStatus({
+    required int mediaId,
+    required String status,
+  }) async {
+    await rawDio.post<void>(
+      '$_kApiV1/progress/status',
+      data: {
+        'media_id': mediaId,
+        'status': status,
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 

@@ -217,6 +217,14 @@ class PlayerApiClient {
   }) =>
       throw UnimplementedError();
 
+  /// Returns the last saved playback position in seconds for [mediaId],
+  /// or `null` if the user has never started this item.
+  ///
+  /// Fetches the progress from the `GET /api/v1/media/{id}` envelope rather
+  /// than a dedicated progress endpoint, keeping the surface area small while
+  /// still giving the player screen the position it needs for resume-on-open.
+  Future<double?> getMediaProgress(int mediaId) => throw UnimplementedError();
+
   Future<List<Media>> listInProgress() => throw UnimplementedError();
 
   // ---------------------------------------------------------------------------
