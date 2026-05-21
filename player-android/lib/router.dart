@@ -6,6 +6,7 @@ import 'app_routes.dart';
 import 'navigation_key.dart';
 import 'providers/auth_state_provider.dart';
 import 'providers/first_run_provider.dart';
+import 'screens/audio_player_screen.dart';
 import 'screens/bootstrap_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -13,6 +14,7 @@ import 'screens/media_detail_screen.dart';
 import 'screens/media_grid_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
+import 'screens/video_player_screen.dart';
 
 // Re-export AppRoutes so existing callers that import router.dart for routes
 // do not need to change their import path.
@@ -128,6 +130,30 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.settings,
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.videoPlayer,
+        builder: (context, state) {
+          // ':mediaId' is guaranteed present by the route pattern.
+          final mediaId = state.pathParameters['mediaId']!;
+          // The resolved stream URL is optionally forwarded as a route extra
+          // (String) by the calling screen (e.g. MediaDetailScreen).
+          final mediaUrl =
+              state.extra is String ? state.extra as String : null;
+          return VideoPlayerScreen(mediaId: mediaId, mediaUrl: mediaUrl);
+        },
+      ),
+      GoRoute(
+        path: AppRoutes.audioPlayer,
+        builder: (context, state) {
+          // ':mediaId' is guaranteed present by the route pattern.
+          final mediaId = state.pathParameters['mediaId']!;
+          // The resolved stream URL is optionally forwarded as a route extra
+          // (String) by the calling screen (e.g. MediaDetailScreen).
+          final mediaUrl =
+              state.extra is String ? state.extra as String : null;
+          return AudioPlayerScreen(mediaId: mediaId, mediaUrl: mediaUrl);
+        },
       ),
     ],
   );

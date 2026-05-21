@@ -23,6 +23,18 @@ dependencies:
   # cached_network_image: downloads and caches remote images (e.g. set covers)
   # so repeated visits do not re-fetch from the server.
   cached_network_image: ^3.4.1
+  # video_player: low-level Flutter plugin for video playback via platform codecs.
+  video_player: ^2.9.2
+  # chewie: opinionated UI controls (play/pause, seek bar, fullscreen) built on
+  # top of video_player, so the app gets a polished player without hand-rolling
+  # all the controls.
+  chewie: ^1.8.5
+  # just_audio: cross-platform audio playback with gapless playlists, stream
+  # support, and fine-grained playback controls.
+  just_audio: ^0.9.42
+  # audio_service: runs audio in the background as a foreground service,
+  # integrates with Android media notifications and lock-screen controls.
+  audio_service: ^0.18.15
 
 dev_dependencies:
   flutter_test:

@@ -1,5 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for all network calls (API, streaming). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required by audio_service to keep audio playing when the app is in the
+         background.  Without this the OS may kill the media playback process. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Required to declare mediaPlayback foreground service type on API 34+. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Prevents the CPU from sleeping while audio is actively playing. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:label="Player"
@@ -25,5 +33,28 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- audio_service background playback service.
+             android:foregroundServiceType="mediaPlayback" is mandatory on
+             Android 10+ (API 29+) to grant media-playback foreground service
+             privileges.  This overrides the entry auto-merged from
+             audio_service's own manifest to explicitly pin the foreground
+             service type.  Class names match audio_service 0.18.x internals. -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <!-- Receives hardware media button events (headset play/pause, etc.)
+             and forwards them to audio_service. -->
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

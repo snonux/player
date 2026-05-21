@@ -17,9 +17,23 @@ abstract final class AppRoutes {
   /// The ':setId' segment is a numeric set identifier.
   static const mediaGrid = '/sets/:setId';
 
+  /// Route for the video player screen.
+  /// The ':mediaId' segment identifies the media item to play.
+  static const videoPlayer = '/video/:mediaId';
+
+  /// Route for the audio player screen.
+  /// The ':mediaId' segment identifies the media item to play.
+  static const audioPlayer = '/audio/:mediaId';
+
   /// Returns the concrete path for a media-detail page given a numeric [id].
   static String mediaDetailPath(int id) => '/media/$id';
 
   /// Returns the concrete path for the media-grid page of a given [setId].
   static String mediaGridPath(int setId) => '/sets/$setId';
+
+  /// Returns the concrete path for the video player of a given [mediaId].
+  static String videoPlayerPath(String mediaId) => '/video/$mediaId';
+
+  /// Returns the concrete path for the audio player of a given [mediaId].
+  static String audioPlayerPath(String mediaId) => '/audio/$mediaId';
 }
