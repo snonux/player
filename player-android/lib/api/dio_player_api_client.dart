@@ -517,14 +517,471 @@ class DioPlayerApiClient extends PlayerApiClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Shares (authenticated — per-user management)
+  // ---------------------------------------------------------------------------
+
+  /// Lists active shares for a specific media item.
+  ///
+  /// GET /api/v1/media/{id}/shares
+  /// Returns all [Share] objects currently active for the given media item.
+  @override
+  Future<List<Share>> listSharesForMedia(int mediaId) async {
+    final response = await rawDio.get<List<dynamic>>(
+      '$_kApiV1/media/$mediaId/shares',
+    );
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(Share.fromJson)
+        .toList();
+  }
+
+  /// Lists all share links created by the authenticated user.
+  ///
+  /// GET /api/v1/shares — returns a flat list of all shares the caller owns,
+  /// across all media items.
+  @override
+  Future<List<Share>> listMyShares() async {
+    final response = await rawDio.get<List<dynamic>>('$_kApiV1/shares');
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(Share.fromJson)
+        .toList();
+  }
+
+  /// Revokes a share link by its [token].
+  ///
+  /// DELETE /api/v1/shares/{token} — only the creator can revoke their share.
+  /// Returns immediately; callers should remove the share from any local cache.
+  @override
+  Future<void> revokeShare(String token) async {
+    await rawDio.delete<void>('$_kApiV1/shares/$token');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shared / public endpoints (no auth required)
+  // ---------------------------------------------------------------------------
+
+  /// Returns the share viewer page JSON for the given share [token].
+  ///
+  /// GET /s/{token} with Accept: application/json — returns the share metadata
+  /// as a JSON string (the raw response body) so the caller can display media
+  /// info without authentication.
+  ///
+  /// Note: this endpoint sits outside the /api/v1/ prefix; it has no v1 alias.
+  @override
+  Future<String> getSharedMediaPage(String token) async {
+    final response = await rawDio.get<dynamic>(
+      '/s/$token',
+      options: Options(
+        headers: {'Accept': 'application/json'},
+        responseType: ResponseType.plain,
+      ),
+    );
+    return (response.data as String?) ?? '';
+  }
+
+  /// Streams a shared media file, optionally from a byte [range] offset.
+  ///
+  /// GET /s/{token}/stream — no auth required; supports the Range header.
+  @override
+  Future<Uint8List> streamSharedMedia(String token, {String? range}) {
+    final extraHeaders =
+        range != null ? <String, dynamic>{'Range': range} : null;
+    return _getBytesFromUrl('/s/$token/stream', extraHeaders: extraHeaders);
+  }
+
+  /// Returns the thumbnail image for a shared media item.
+  ///
+  /// GET /s/{token}/thumbnail — no auth required.
+  @override
+  Future<Uint8List> getSharedThumbnail(String token) =>
+      _getBytesFromUrl('/s/$token/thumbnail');
+
+  /// Downloads the original file for a shared media item.
+  ///
+  /// GET /s/{token}/download — no auth required; sets Content-Disposition.
+  @override
+  Future<Uint8List> downloadSharedMedia(String token) =>
+      _getBytesFromUrl('/s/$token/download');
+
+  // ---------------------------------------------------------------------------
+  // Config
+  // ---------------------------------------------------------------------------
+
+  /// Returns client configuration from the server.
+  ///
+  /// GET /api/v1/config — currently exposes the server-side page size so
+  /// clients can paginate consistently with the server defaults.
+  @override
+  Future<Map<String, dynamic>> getConfig() async {
+    final response = await rawDio.get<Map<String, dynamic>>('$_kApiV1/config');
+    return response.data ?? {};
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sets (remaining methods)
+  // ---------------------------------------------------------------------------
+
+  /// Returns the cover image bytes for a set or subfolder.
+  ///
+  /// GET /api/v1/sets/{id}/cover?folder=...
+  /// The optional [folder] query parameter scopes the cover to a subfolder.
+  @override
+  Future<Uint8List> getSetCover(int setId, {String? folder}) {
+    final query = folder != null ? '?folder=${Uri.encodeComponent(folder)}' : '';
+    return _getBytesFromUrl('$_kApiV1/sets/$setId/cover$query');
+  }
+
+  /// Regenerates the cover image for a set or subfolder.
+  ///
+  /// POST /api/v1/sets/{id}/cover?folder=...
+  /// Requires owner permission on the set.  The server regenerates the cover
+  /// synchronously using ffmpeg and returns {"status": "ok"}.
+  @override
+  Future<void> updateSetCover(int setId, {String? folder}) async {
+    await rawDio.post<void>(
+      '$_kApiV1/sets/$setId/cover',
+      queryParameters: {if (folder != null) 'folder': folder},
+    );
+  }
+
+  /// Uploads a media file to a set using multipart/form-data.
+  ///
+  /// POST /api/v1/sets/{id}/upload — requires `owner` permission.
+  /// [fileName] is the name used for the Content-Disposition filename.
+  /// [bytes] is the raw file content as a byte list.
+  ///
+  /// Returns the newly created [Media] object on success.
+  @override
+  Future<Media> uploadToSet(
+    int setId, {
+    required String fileName,
+    required List<int> bytes,
+  }) async {
+    // Wrap the bytes in a Dio MultipartFile so the request uses the correct
+    // Content-Type: multipart/form-data encoding expected by the server.
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+    });
+
+    final response = await rawDio.post<Map<String, dynamic>>(
+      '$_kApiV1/sets/$setId/upload',
+      data: formData,
+    );
+    return Media.fromJson(response.data!);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Media (remaining methods)
+  // ---------------------------------------------------------------------------
+
+  /// Regenerates the thumbnail for a media item using ffmpeg.
+  ///
+  /// POST /api/v1/media/{id}/thumbnail — requires owner permission.
+  @override
+  Future<void> regenerateThumbnail(int mediaId) async {
+    await rawDio.post<void>('$_kApiV1/media/$mediaId/thumbnail');
+  }
+
+  /// Soft-deletes a media item, moving it to trash.
+  ///
+  /// DELETE /api/v1/media/{id} — item is excluded from GET /api/v1/media
+  /// until restored.  Requires owner permission or admin.
+  @override
+  Future<void> deleteMedia(int mediaId) async {
+    await rawDio.delete<void>('$_kApiV1/media/$mediaId');
+  }
+
+  /// Restores a soft-deleted media item from trash.
+  ///
+  /// POST /api/v1/media/{id}/restore — requires owner permission or admin.
+  @override
+  Future<void> restoreMedia(int mediaId) async {
+    await rawDio.post<void>('$_kApiV1/media/$mediaId/restore');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Progress – batch
+  // ---------------------------------------------------------------------------
+
+  /// Submits multiple playback progress updates in a single request.
+  ///
+  /// POST /api/v1/progress/batch — designed for offline clients that
+  /// accumulate updates while disconnected and sync on reconnect.
+  ///
+  /// Each item in [updates] must have `media_id` (int),
+  /// `position_seconds` (double), and `observed_at` (ISO-8601 UTC string).
+  /// The server processes them in `observed_at` order so older updates never
+  /// overwrite newer ones.
+  @override
+  Future<void> batchUpdateProgress(
+    List<Map<String, dynamic>> updates,
+  ) async {
+    await rawDio.post<void>(
+      '$_kApiV1/progress/batch',
+      data: {'updates': updates},
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Podcasts (remaining methods)
+  // ---------------------------------------------------------------------------
+
+  /// Lists all subscribed podcast feeds visible to the authenticated user.
+  ///
+  /// GET /api/v1/podcasts — returns all [PodcastFeed] objects the user can see.
+  @override
+  Future<List<PodcastFeed>> listPodcasts() async {
+    final response = await rawDio.get<List<dynamic>>('$_kApiV1/podcasts');
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(PodcastFeed.fromJson)
+        .toList();
+  }
+
+  /// Lists episodes for a podcast feed identified by its set ID.
+  ///
+  /// GET /api/v1/podcasts/{id}/episodes — [podcastSetId] is the **set ID**
+  /// (not the feed ID).  Supports optional pagination via [limit] and [offset].
+  @override
+  Future<List<PodcastEpisode>> listEpisodes(
+    int podcastSetId, {
+    int? limit,
+    int? offset,
+  }) async {
+    final response = await rawDio.get<List<dynamic>>(
+      '$_kApiV1/podcasts/$podcastSetId/episodes',
+      queryParameters: {
+        if (limit != null) 'limit': limit,
+        if (offset != null) 'offset': offset,
+      },
+    );
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(PodcastEpisode.fromJson)
+        .toList();
+  }
+
+  /// Triggers a server-side download of a podcast episode.
+  ///
+  /// POST /api/v1/podcasts/episodes/{episode_id}/download
+  /// The server downloads the audio file and creates a [Media] row for it.
+  /// Returns the newly created [Media] on success.
+  @override
+  Future<Media> downloadEpisode(int episodeId) async {
+    final response = await rawDio.post<Map<String, dynamic>>(
+      '$_kApiV1/podcasts/episodes/$episodeId/download',
+    );
+    return Media.fromJson(response.data!);
+  }
+
+  /// Toggles the per-user completion state of a podcast episode.
+  ///
+  /// POST /api/v1/podcasts/episodes/{episode_id}/complete
+  /// Returns 204 No Content — the new state must be re-fetched if needed.
+  @override
+  Future<void> toggleEpisodeComplete(int episodeId) async {
+    await rawDio.post<void>(
+      '$_kApiV1/podcasts/episodes/$episodeId/complete',
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin – Users
+  // ---------------------------------------------------------------------------
+
+  /// Lists all registered user accounts.
+  ///
+  /// GET /api/v1/admin/users — requires admin.
+  @override
+  Future<List<User>> listUsers() async {
+    final response = await rawDio.get<List<dynamic>>('$_kApiV1/admin/users');
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(User.fromJson)
+        .toList();
+  }
+
+  /// Creates a new user account.
+  ///
+  /// POST /api/v1/admin/users — requires admin.
+  /// [isAdmin] controls whether the new account has administrative privileges.
+  @override
+  Future<User> createUser({
+    required String username,
+    required String password,
+    required bool isAdmin,
+  }) async {
+    final response = await rawDio.post<Map<String, dynamic>>(
+      '$_kApiV1/admin/users',
+      data: {
+        'username': username,
+        'password': password,
+        'is_admin': isAdmin,
+      },
+    );
+    return User.fromJson(response.data!);
+  }
+
+  /// Deletes a user account by [userId].
+  ///
+  /// DELETE /api/v1/admin/users/{id} — requires admin.
+  /// Admins cannot delete themselves (server returns 400 in that case).
+  @override
+  Future<void> deleteUser(int userId) async {
+    await rawDio.delete<void>('$_kApiV1/admin/users/$userId');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin – Permissions
+  // ---------------------------------------------------------------------------
+
+  /// Returns the full permission matrix: sets, users, and permission rows.
+  ///
+  /// GET /api/v1/admin/permissions — requires admin.
+  /// The raw map is returned because the response combines three distinct object
+  /// types (sets, users, and permission rows) that have no single unified model.
+  @override
+  Future<Map<String, dynamic>> listPermissions() async {
+    final response = await rawDio.get<Map<String, dynamic>>(
+      '$_kApiV1/admin/permissions',
+    );
+    return response.data ?? {};
+  }
+
+  /// Grants [userId] access to [setId] with the given [role].
+  ///
+  /// POST /api/v1/admin/permissions — requires admin.
+  /// [role] must be either `"owner"` (can upload/delete) or `"viewer"`.
+  @override
+  Future<void> grantPermission({
+    required int setId,
+    required int userId,
+    required String role,
+  }) async {
+    await rawDio.post<void>(
+      '$_kApiV1/admin/permissions',
+      data: {
+        'set_id': setId,
+        'user_id': userId,
+        'role': role,
+      },
+    );
+  }
+
+  /// Revokes [userId]'s access to [setId].
+  ///
+  /// DELETE /api/v1/admin/permissions — requires admin.
+  /// The body carries the set and user IDs because Dio DELETE requests support
+  /// request bodies and the server requires them.
+  @override
+  Future<void> revokePermission({
+    required int setId,
+    required int userId,
+  }) async {
+    await rawDio.delete<void>(
+      '$_kApiV1/admin/permissions',
+      data: {
+        'set_id': setId,
+        'user_id': userId,
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin – Scanner
+  // ---------------------------------------------------------------------------
+
+  /// Triggers an asynchronous library rescan.
+  ///
+  /// POST /api/v1/admin/rescan — requires admin.
+  /// The scan runs in the background; poll [getScanProgress] to track it.
+  @override
+  Future<void> triggerRescan() async {
+    await rawDio.post<void>('$_kApiV1/admin/rescan');
+  }
+
+  /// Returns the current or most recent scan progress state.
+  ///
+  /// GET /api/v1/admin/scan-progress — requires admin.
+  /// Returns a raw map with fields: running, current_set, sets_total,
+  /// sets_done, files_total, files_done, last_error.
+  @override
+  Future<Map<String, dynamic>> getScanProgress() async {
+    final response = await rawDio.get<Map<String, dynamic>>(
+      '$_kApiV1/admin/scan-progress',
+    );
+    return response.data ?? {};
+  }
+
+  /// Lists all soft-deleted media items (the trash).
+  ///
+  /// GET /api/v1/admin/trash — requires admin.
+  /// Returns [Media] objects with `deleted_at` set.
+  @override
+  Future<List<Media>> listTrash() async {
+    final response = await rawDio.get<List<dynamic>>('$_kApiV1/admin/trash');
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(Media.fromJson)
+        .toList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // API Tokens
+  // ---------------------------------------------------------------------------
+
+  /// Lists all API tokens belonging to the authenticated user.
+  ///
+  /// GET /api/v1/auth/tokens — plaintext values are never returned here.
+  /// Returns raw maps because there is no dedicated [ApiToken] model yet.
+  @override
+  Future<List<Map<String, dynamic>>> listAPITokens() async {
+    final response = await rawDio.get<List<dynamic>>('$_kApiV1/auth/tokens');
+    return (response.data ?? []).cast<Map<String, dynamic>>().toList();
+  }
+
+  /// Mints a new Bearer API token for the authenticated user.
+  ///
+  /// POST /api/v1/auth/tokens — the plaintext token is returned **once** in
+  /// the `token` field and never again.  Store it securely on the device.
+  ///
+  /// [name] is a human-readable label (e.g. "android-client").
+  /// [expiresInDays] is optional; omit for a non-expiring token.
+  @override
+  Future<Map<String, dynamic>> createAPIToken({
+    required String name,
+    int? expiresInDays,
+  }) async {
+    final body = <String, dynamic>{
+      'name': name,
+      if (expiresInDays != null) 'expires_in_days': expiresInDays,
+    };
+    final response = await rawDio.post<Map<String, dynamic>>(
+      '$_kApiV1/auth/tokens',
+      data: body,
+    );
+    return response.data!;
+  }
+
+  /// Revokes a Bearer API token by its numeric [tokenId].
+  ///
+  /// DELETE /api/v1/auth/tokens/{id} — returns 204 No Content.
+  /// Only the owning user can revoke their own tokens.
+  @override
+  Future<void> revokeAPIToken(int tokenId) async {
+    await rawDio.delete<void>('$_kApiV1/auth/tokens/$tokenId');
+  }
+
+  // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 
   /// Issues a GET request with [ResponseType.bytes] and returns the response
   /// body as a [Uint8List].
   ///
-  /// Shared by [streamMedia], [downloadMedia], and [getThumbnail] to avoid
-  /// repeating the same byte-response boilerplate in each method.
+  /// Shared by [streamMedia], [downloadMedia], [getThumbnail], and all binary
+  /// shared-media endpoints to avoid repeating byte-response boilerplate.
   Future<Uint8List> _getBytesFromUrl(
     String path, {
     Map<String, dynamic>? extraHeaders,

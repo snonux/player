@@ -477,4 +477,248 @@ void main() {
       expect(() => client.getThumbnail(99), throwsA(isA<DioException>()));
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // listMyShares
+  // ---------------------------------------------------------------------------
+
+  group('listMyShares', () {
+    /// Minimal valid Share JSON matching the GET /api/v1/shares response schema.
+    Map<String, dynamic> shareJson({
+      String token = 'abc123xyz',
+      int mediaId = 42,
+    }) =>
+        {
+          'token': token,
+          'media_id': mediaId,
+          'created_by': 3,
+          'created_at': '2026-05-17T10:00:00.000Z',
+          'expires_at': '2026-05-24T10:00:00.000Z',
+          'max_uses': null,
+          'used_count': 2,
+        };
+
+    test('success — returns list of Share objects', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onGet(
+        '/api/v1/shares',
+        (server) => server.reply(200, [
+          shareJson(),
+          shareJson(token: 'xyz789abc', mediaId: 7),
+        ]),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      final shares = await client.listMyShares();
+
+      expect(shares, hasLength(2));
+      expect(shares[0].token, 'abc123xyz');
+      expect(shares[0].mediaId, 42);
+      expect(shares[0].usedCount, 2);
+      expect(shares[1].token, 'xyz789abc');
+      expect(shares[1].mediaId, 7);
+    });
+
+    test('success — empty list when user has no shares', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onGet(
+        '/api/v1/shares',
+        (server) => server.reply(200, <dynamic>[]),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      final shares = await client.listMyShares();
+
+      expect(shares, isEmpty);
+    });
+
+    test('401 — DioException is propagated', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onGet(
+        '/api/v1/shares',
+        (server) => server.reply(401, {'error': 'unauthorized'}),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      expect(() => client.listMyShares(), throwsA(isA<DioException>()));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // revokeShare
+  // ---------------------------------------------------------------------------
+
+  group('revokeShare', () {
+    test('success — 200 completes without error', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onDelete(
+        '/api/v1/shares/abc123xyz',
+        (server) => server.reply(200, {'status': 'ok'}),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      await expectLater(client.revokeShare('abc123xyz'), completes);
+    });
+
+    test('404 — DioException when share not found', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onDelete(
+        '/api/v1/shares/missing_token',
+        (server) => server.reply(404, {'error': 'not found'}),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      expect(
+        () => client.revokeShare('missing_token'),
+        throwsA(isA<DioException>()),
+      );
+    });
+
+    test('401 — DioException when unauthenticated', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onDelete(
+        '/api/v1/shares/abc123xyz',
+        (server) => server.reply(401, {'error': 'unauthorized'}),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      expect(
+        () => client.revokeShare('abc123xyz'),
+        throwsA(isA<DioException>()),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // listEpisodes
+  // ---------------------------------------------------------------------------
+
+  group('listEpisodes', () {
+    /// Minimal valid PodcastEpisode JSON matching the API schema.
+    Map<String, dynamic> episodeJson({
+      int id = 10,
+      String title = 'Episode 1: Introduction',
+    }) =>
+        {
+          'id': id,
+          'feed_id': 1,
+          'media_id': null,
+          'guid': 'episode-guid-$id',
+          'title': title,
+          'description': 'A great episode.',
+          'published_at': '2026-01-05T00:00:00.000Z',
+          'episode_url': 'https://example.com/ep$id.mp3',
+          'duration_seconds': 3600.0,
+          'file_size': 52428800,
+          'file_name': 'ep$id.mp3',
+          'is_downloaded': false,
+          'is_completed': false,
+          'position_seconds': 0.0,
+          'created_at': '2026-01-05T01:00:00.000Z',
+        };
+
+    test('success — returns list of PodcastEpisode objects', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onGet(
+        '/api/v1/podcasts/4/episodes',
+        (server) => server.reply(200, [
+          episodeJson(),
+          episodeJson(id: 11, title: 'Episode 2: Deep Dive'),
+        ]),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      final episodes = await client.listEpisodes(4);
+
+      expect(episodes, hasLength(2));
+      expect(episodes[0].id, 10);
+      expect(episodes[0].title, 'Episode 1: Introduction');
+      expect(episodes[0].isDownloaded, isFalse);
+      expect(episodes[0].isCompleted, isFalse);
+      expect(episodes[1].id, 11);
+      expect(episodes[1].title, 'Episode 2: Deep Dive');
+    });
+
+    test('success with pagination — query params are forwarded', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onGet(
+        '/api/v1/podcasts/4/episodes',
+        (server) => server.reply(200, [episodeJson()]),
+        queryParameters: {'limit': 20, 'offset': 40},
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      final episodes = await client.listEpisodes(4, limit: 20, offset: 40);
+
+      expect(episodes, hasLength(1));
+      expect(episodes[0].id, 10);
+    });
+
+    test('empty — returns empty list', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onGet(
+        '/api/v1/podcasts/4/episodes',
+        (server) => server.reply(200, <dynamic>[]),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      expect(await client.listEpisodes(4), isEmpty);
+    });
+
+    test('401 — DioException is propagated', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onGet(
+        '/api/v1/podcasts/4/episodes',
+        (server) => server.reply(401, {'error': 'unauthorized'}),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      expect(() => client.listEpisodes(4), throwsA(isA<DioException>()));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // toggleEpisodeComplete
+  // ---------------------------------------------------------------------------
+
+  group('toggleEpisodeComplete', () {
+    test('success — 204 completes without error', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onPost(
+        '/api/v1/podcasts/episodes/10/complete',
+        (server) => server.reply(204, null),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      await expectLater(client.toggleEpisodeComplete(10), completes);
+    });
+
+    test('404 — DioException when episode not found', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onPost(
+        '/api/v1/podcasts/episodes/999/complete',
+        (server) => server.reply(404, {'error': 'not found'}),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      expect(
+        () => client.toggleEpisodeComplete(999),
+        throwsA(isA<DioException>()),
+      );
+    });
+
+    test('401 — DioException when unauthenticated', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onPost(
+        '/api/v1/podcasts/episodes/10/complete',
+        (server) => server.reply(401, {'error': 'unauthorized'}),
+      );
+
+      final client = DioPlayerApiClient(dio: dio);
+      expect(
+        () => client.toggleEpisodeComplete(10),
+        throwsA(isA<DioException>()),
+      );
+    });
+  });
 }

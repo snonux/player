@@ -277,7 +277,12 @@ class PlayerApiClient {
   // Admin – Permissions
   // ---------------------------------------------------------------------------
 
-  Future<List<Map<String, dynamic>>> listPermissions() =>
+  /// Returns the full permission matrix (sets, users, and permission rows).
+  ///
+  /// GET /api/v1/admin/permissions — returns a map with keys `sets`, `users`,
+  /// and `permissions`.  The raw map is returned because the response combines
+  /// three distinct object types that have no single unified model.
+  Future<Map<String, dynamic>> listPermissions() =>
       throw UnimplementedError();
 
   Future<void> grantPermission({
@@ -302,6 +307,49 @@ class PlayerApiClient {
   Future<Map<String, dynamic>> getScanProgress() => throw UnimplementedError();
 
   Future<List<Media>> listTrash() => throw UnimplementedError();
+
+  // ---------------------------------------------------------------------------
+  // API Tokens
+  // ---------------------------------------------------------------------------
+
+  /// Lists all API tokens belonging to the authenticated user.
+  ///
+  /// Plaintext token values are never returned by this endpoint — they are only
+  /// visible once at creation time.
+  Future<List<Map<String, dynamic>>> listAPITokens() =>
+      throw UnimplementedError();
+
+  /// Mints a new Bearer API token for the authenticated user.
+  ///
+  /// [name] is a human-readable label.  [expiresInDays] is optional; omit or
+  /// pass `null` for a non-expiring token.
+  ///
+  /// Returns the raw JSON map because the token plaintext is only present in
+  /// the creation response and there is no dedicated model for API tokens.
+  Future<Map<String, dynamic>> createAPIToken({
+    required String name,
+    int? expiresInDays,
+  }) =>
+      throw UnimplementedError();
+
+  /// Revokes a Bearer API token by its numeric [tokenId].
+  ///
+  /// DELETE /api/v1/auth/tokens/{id} — returns 204 No Content.
+  Future<void> revokeAPIToken(int tokenId) => throw UnimplementedError();
+
+  // ---------------------------------------------------------------------------
+  // Progress (batch)
+  // ---------------------------------------------------------------------------
+
+  /// Submits multiple progress updates in one request.
+  ///
+  /// Designed for offline clients that accumulate updates while disconnected
+  /// and sync on reconnect.  Each entry must include [mediaId],
+  /// [positionSeconds], and [observedAt] (ISO-8601 UTC string).
+  Future<void> batchUpdateProgress(
+    List<Map<String, dynamic>> updates,
+  ) =>
+      throw UnimplementedError();
 
   // Expose the underlying Dio for advanced callers (e.g. binary streaming).
   // This should not be used for ordinary JSON requests; prefer the typed
