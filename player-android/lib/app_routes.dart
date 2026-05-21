@@ -32,6 +32,10 @@ abstract final class AppRoutes {
   /// Route that shows the Continue Watching screen (in-progress media items).
   static const continueWatching = '/continue';
 
+  /// Route for the notes editor screen for a specific media item.
+  /// The ':mediaId' segment identifies the media item whose note is edited.
+  static const notes = '/notes/:mediaId';
+
   /// Returns the concrete path for a media-detail page given a numeric [id].
   static String mediaDetailPath(int id) => '/media/$id';
 
@@ -51,4 +55,7 @@ abstract final class AppRoutes {
   /// type (including 'video' and unknown) maps to [videoPlayerPath].
   static String playerPathForType(String type, String mediaId) =>
       type == 'audio' ? audioPlayerPath(mediaId) : videoPlayerPath(mediaId);
+
+  /// Returns the concrete path for the notes editor of a given [mediaId].
+  static String notesPath(String mediaId) => '/notes/$mediaId';
 }

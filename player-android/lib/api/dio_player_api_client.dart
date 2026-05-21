@@ -474,6 +474,49 @@ class DioPlayerApiClient extends PlayerApiClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Notes
+  // ---------------------------------------------------------------------------
+
+  /// Returns the authenticated user's note for [mediaId], or `null` if none.
+  ///
+  /// GET /api/v1/media/{id}/notes
+  /// The server responds with 200 + a Note JSON object when a note exists, or
+  /// 204 No Content when there is no note.  Dio raises no exception on 204, so
+  /// we detect the empty body and return null rather than trying to decode it.
+  @override
+  Future<Note?> getNote(int mediaId) async {
+    final response = await rawDio.get<dynamic>(
+      '$_kApiV1/media/$mediaId/notes',
+    );
+    // 204 No Content — the server signals "no note exists" with an empty body.
+    if (response.statusCode == 204 || response.data == null) return null;
+    final data = response.data;
+    if (data is Map<String, dynamic>) return Note.fromJson(data);
+    return null;
+  }
+
+  /// Creates or updates the authenticated user's note for [mediaId].
+  ///
+  /// POST /api/v1/media/{id}/notes  body: {"content": "<text>"}
+  /// Returns the saved [Note] on success.
+  @override
+  Future<Note> upsertNote(int mediaId, String content) async {
+    final response = await rawDio.post<Map<String, dynamic>>(
+      '$_kApiV1/media/$mediaId/notes',
+      data: {'content': content},
+    );
+    return Note.fromJson(response.data!);
+  }
+
+  /// Deletes the authenticated user's note for [mediaId].
+  ///
+  /// DELETE /api/v1/media/{id}/notes — returns 200 {"status": "ok"}.
+  @override
+  Future<void> deleteNote(int mediaId) async {
+    await rawDio.delete<void>('$_kApiV1/media/$mediaId/notes');
+  }
+
+  // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 

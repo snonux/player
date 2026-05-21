@@ -16,6 +16,7 @@ import 'screens/media_grid_screen.dart';
 import 'screens/podcast_list_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
+import 'screens/notes_editor_screen.dart';
 import 'screens/video_player_screen.dart';
 
 // Re-export AppRoutes so existing callers that import router.dart for routes
@@ -168,6 +169,15 @@ final routerProvider = Provider<GoRouter>((ref) {
             mediaUrl: mediaUrl,
             startPosition: startPosition,
           );
+        },
+      ),
+      GoRoute(
+        // Notes editor — shows and edits the user's personal note for a media
+        // item.  The ':mediaId' segment is the numeric media item identifier.
+        path: AppRoutes.notes,
+        builder: (context, state) {
+          final mediaId = state.pathParameters['mediaId']!;
+          return NotesEditorScreen(mediaId: mediaId);
         },
       ),
     ],

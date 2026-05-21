@@ -201,3 +201,20 @@ String podcastErrorMessage(Object error) {
   }
   return 'Unexpected error. Please try again.';
 }
+
+/// Maps any thrown object from [PlayerApiClient.getNote], [upsertNote], or
+/// [deleteNote] to a human-readable UI string.
+///
+/// Adds a 404-specific message (media not found) so the notes editor can
+/// surface actionable guidance rather than a raw server-error code.  Kept as
+/// a separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of the other mappers.
+String notesErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 404) {
+      return 'Media not found. It may have been deleted.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}

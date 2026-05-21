@@ -157,6 +157,20 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // Notes navigation
+  // ---------------------------------------------------------------------------
+
+  /// Navigates to [NotesEditorScreen] for the current media item.
+  ///
+  /// Uses [AppRoutes.notesPath] so the routing logic stays in one place
+  /// (Open-Closed: no URL construction scattered across the screen).
+  void _openNotes() {
+    final media = _media;
+    if (media == null) return;
+    context.go(AppRoutes.notesPath(media.id.toString()));
+  }
+
+  // ---------------------------------------------------------------------------
   // Share
   // ---------------------------------------------------------------------------
 
@@ -230,12 +244,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   /// Builds the app bar with title and a three-dot overflow menu.
   ///
-  /// The overflow menu currently contains a single "Share" action that opens
-  /// [showCreateShareDialog].  Using a [PopupMenuButton] rather than a plain
-  /// [IconButton] keeps the pattern open for future menu items without layout
+  /// The overflow menu contains "Notes" and "Share" actions.  Using a
+  /// [PopupMenuButton] keeps the pattern open for future items without layout
   /// changes.  The [onSelected] callback uses a [Map]-based dispatch so adding
   /// a new action requires only a new enum value and one map entry — no
-  /// if/else chain to extend (Open-Closed Principle).  The Share action is
+  /// if/else chain to extend (Open-Closed Principle).  All actions are
   /// disabled while media is still loading (null) to prevent calling the API
   /// with a stale ID.
   AppBar _buildAppBar() {
@@ -249,11 +262,23 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             // enum value, a handler method, and one entry here — no if/else
             // chain to extend (Open-Closed Principle).
             final handlers = <_MenuAction, VoidCallback>{
+              _MenuAction.notes: _openNotes,
               _MenuAction.share: _share,
             };
             handlers[action]?.call();
           },
           itemBuilder: (_) => [
+            PopupMenuItem<_MenuAction>(
+              key: const Key('media_detail_notes_menu_item'),
+              // Disable the item until media has loaded so the mediaId is valid.
+              enabled: _media != null,
+              value: _MenuAction.notes,
+              child: const ListTile(
+                leading: Icon(Icons.notes_outlined),
+                title: Text('Notes'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
             PopupMenuItem<_MenuAction>(
               key: const Key('media_detail_share_menu_item'),
               // Disable the item until media has loaded so the mediaId is valid.
@@ -318,7 +343,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 /// Using a typed enum (rather than raw strings) makes [PopupMenuButton] type
 /// safe and avoids stringly-typed comparisons in [onSelected] (type safety /
 /// Open-Closed: add new actions here without touching the menu-builder switch).
-enum _MenuAction { share }
+enum _MenuAction { notes, share }
 
 // ---------------------------------------------------------------------------
 // _MediaDetailContent
