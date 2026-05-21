@@ -153,6 +153,13 @@ class PlayerApiClient {
   String streamUrl(int mediaId) =>
       '${rawDio.options.baseUrl}/api/v1/media/$mediaId/stream';
 
+  /// Returns the public share URL for a share [token].
+  ///
+  /// Mirrors [thumbnailUrl] and [streamUrl]: the share path `/s/{token}` is
+  /// kept in one place so the UI layer never needs to access Dio internals or
+  /// hard-code URL segments (Dependency Inversion Principle).
+  String shareUrl(String token) => '${rawDio.options.baseUrl}/s/$token';
+
   Future<void> regenerateThumbnail(int mediaId) => throw UnimplementedError();
 
   Future<bool> toggleFavorite(int mediaId) => throw UnimplementedError();

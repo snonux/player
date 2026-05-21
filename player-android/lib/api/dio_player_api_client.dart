@@ -332,6 +332,40 @@ class DioPlayerApiClient extends PlayerApiClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Shares
+  // ---------------------------------------------------------------------------
+
+  /// Creates a share link for [mediaId].
+  ///
+  /// POST /api/v1/media/{id}/shares
+  ///
+  /// [expiresAt] and [maxUses] are sent as optional JSON fields so the server
+  /// can apply custom expiry and use-count limits in place of its built-in
+  /// defaults.  Null values are omitted from the request body so the server
+  /// falls back to [SHARE_DEFAULT_EXPIRY_DAYS] for expiry and unlimited uses.
+  ///
+  /// Returns the newly created [Share] on success.
+  @override
+  Future<Share> createShare(
+    int mediaId, {
+    DateTime? expiresAt,
+    int? maxUses,
+  }) async {
+    // Build the optional request body; omit null fields so the server applies
+    // its own defaults rather than receiving explicit nulls.
+    final body = <String, dynamic>{
+      if (expiresAt != null) 'expires_at': expiresAt.toUtc().toIso8601String(),
+      if (maxUses != null) 'max_uses': maxUses,
+    };
+
+    final response = await rawDio.post<Map<String, dynamic>>(
+      '$_kApiV1/media/$mediaId/shares',
+      data: body.isNotEmpty ? body : null,
+    );
+    return Share.fromJson(response.data!);
+  }
+
+  // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 

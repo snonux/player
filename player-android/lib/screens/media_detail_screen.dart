@@ -7,6 +7,7 @@ import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
+import 'create_share_dialog.dart';
 
 // ---------------------------------------------------------------------------
 // MediaDetailScreen
@@ -151,6 +152,33 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // Share
+  // ---------------------------------------------------------------------------
+
+  /// Opens [showCreateShareDialog] for the current media item.
+  ///
+  /// Delegates all share logic (date picker, max uses, clipboard copy) to
+  /// [CreateShareDialog] so this class remains focused on media display and
+  /// navigation (Single Responsibility).  The injected [PlayerApiClient] is
+  /// passed directly so the dialog never needs its own provider read — keeping
+  /// the dialog provider-free and independently testable (Dependency Inversion).
+  Future<void> _share() async {
+    final media = _media;
+    if (media == null || !mounted) return;
+
+    final client = ref.read(apiClientProvider);
+    // showCreateShareDialog is async; the mounted check after the await guards
+    // against the widget being disposed while the dialog is open.
+    await showCreateShareDialog(
+      context,
+      mediaId: media.id,
+      client: client,
+    );
+    // No post-dialog state update needed: the dialog handles clipboard copy
+    // and the SnackBar internally.
+  }
+
+  // ---------------------------------------------------------------------------
   // Navigation
   // ---------------------------------------------------------------------------
 
@@ -195,10 +223,46 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     );
   }
 
-  /// Builds the app bar; shows the media title when available.
+  /// Builds the app bar with title and a three-dot overflow menu.
+  ///
+  /// The overflow menu currently contains a single "Share" action that opens
+  /// [showCreateShareDialog].  Using a [PopupMenuButton] rather than a plain
+  /// [IconButton] keeps the pattern open for future menu items without layout
+  /// changes.  The [onSelected] callback uses a [Map]-based dispatch so adding
+  /// a new action requires only a new enum value and one map entry — no
+  /// if/else chain to extend (Open-Closed Principle).  The Share action is
+  /// disabled while media is still loading (null) to prevent calling the API
+  /// with a stale ID.
   AppBar _buildAppBar() {
     return AppBar(
       title: Text(_media?.fileName ?? 'Media ${widget.mediaId}'),
+      actions: [
+        PopupMenuButton<_MenuAction>(
+          key: const Key('media_detail_overflow_menu'),
+          onSelected: (action) {
+            // Map-based dispatch: adding a new menu action requires only a new
+            // enum value, a handler method, and one entry here — no if/else
+            // chain to extend (Open-Closed Principle).
+            final handlers = <_MenuAction, VoidCallback>{
+              _MenuAction.share: _share,
+            };
+            handlers[action]?.call();
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem<_MenuAction>(
+              key: const Key('media_detail_share_menu_item'),
+              // Disable the item until media has loaded so the mediaId is valid.
+              enabled: _media != null,
+              value: _MenuAction.share,
+              child: const ListTile(
+                leading: Icon(Icons.share),
+                title: Text('Share'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -235,6 +299,17 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// _MenuAction
+// ---------------------------------------------------------------------------
+
+/// Enum of available overflow-menu actions in [MediaDetailScreen].
+///
+/// Using a typed enum (rather than raw strings) makes [PopupMenuButton] type
+/// safe and avoids stringly-typed comparisons in [onSelected] (type safety /
+/// Open-Closed: add new actions here without touching the menu-builder switch).
+enum _MenuAction { share }
 
 // ---------------------------------------------------------------------------
 // _MediaDetailContent

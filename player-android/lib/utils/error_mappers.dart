@@ -109,3 +109,23 @@ String mediaDetailErrorMessage(Object error) {
   }
   return 'Unexpected error. Please try again.';
 }
+
+/// Maps any thrown object from [PlayerApiClient.createShare] to a UI string.
+///
+/// Adds a 404-specific message (media not found) and a 403 message
+/// (permission denied) on top of the generic connection-error fallback, so
+/// the share dialog can surface actionable guidance rather than a raw code.
+/// Kept as a separate function (Open-Closed) so it can evolve independently
+/// of the other mappers.
+String createShareErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 404) {
+      return 'Media not found. It may have been deleted.';
+    }
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to share this item.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
