@@ -144,6 +144,15 @@ class PlayerApiClient {
   String thumbnailUrl(int mediaId) =>
       '${rawDio.options.baseUrl}/api/v1/media/$mediaId/thumbnail';
 
+  /// Returns the URL used to stream a media item.
+  ///
+  /// Mirrors [thumbnailUrl]: the API path `/api/v1/media/{id}/stream` is kept
+  /// in one place and Dio internals are never leaked into the UI layer.
+  /// The base URL is derived from the underlying Dio instance so it stays
+  /// consistent with every other API call.
+  String streamUrl(int mediaId) =>
+      '${rawDio.options.baseUrl}/api/v1/media/$mediaId/stream';
+
   Future<void> regenerateThumbnail(int mediaId) => throw UnimplementedError();
 
   Future<bool> toggleFavorite(int mediaId) => throw UnimplementedError();

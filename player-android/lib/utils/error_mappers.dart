@@ -91,3 +91,21 @@ String mediaErrorMessage(Object error) {
   }
   return 'Unexpected error. Please try again.';
 }
+
+/// Maps any thrown object from [PlayerApiClient.getMedia] to a UI string.
+///
+/// Adds a 404-specific message ("Media not found") on top of the generic
+/// connection-error mapping so the detail screen can distinguish between a
+/// missing item and a network/server failure (Open-Closed: isolated from the
+/// list-media helper so either can evolve independently).
+String mediaDetailErrorMessage(Object error) {
+  if (error is DioException) {
+    // Surface a friendly "not found" message for 404 so users know the item
+    // no longer exists rather than seeing a generic server-error message.
+    if (error.response?.statusCode == 404) {
+      return 'Media not found. It may have been deleted.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
