@@ -4,8 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../api/dio_client.dart';
 import '../api/player_api_client.dart';
 import '../providers/api_client_provider.dart';
+import '../providers/audio_handler_provider.dart';
+import '../services/audio_handler.dart';
 
 // How often progress updates are emitted to the server while playing.
 // Mirrors VideoPlayerScreen._kProgressInterval exactly.
@@ -34,10 +37,16 @@ const _kSkipDuration = Duration(seconds: 15);
 ///   - Bearer token is attached via `headers` on [AudioSource.uri] so the
 ///     just_audio native layer can authenticate without routing bytes through
 ///     Dart.
+///   - The [PlayerAudioHandler] (obtained via [audioHandlerProvider]) wraps
+///     the underlying [AudioPlayer] and bridges it to the Android media
+///     session, enabling lock-screen controls and background playback.
 ///   - Progress updates (every [_kProgressInterval]) and the finished mark are
 ///     fire-and-forget: errors are swallowed so a transient network blip never
 ///     interrupts playback.
-///   - [AudioPlayer] is disposed in [dispose] to prevent resource leaks.
+///   - The progress-sync timer intentionally stays in the screen (not in the
+///     handler) so it can call [updateProgress] via [apiClientProvider] without
+///     the handler needing a reference to the API layer — preserving the
+///     Single Responsibility of each class.
 ///   - All async continuations guard on [mounted] before calling [setState].
 class AudioPlayerScreen extends ConsumerStatefulWidget {
   const AudioPlayerScreen({
@@ -69,9 +78,6 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
 // ---------------------------------------------------------------------------
 
 class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
-  // Nullable until initialisation completes (or fails).
-  AudioPlayer? _audioPlayer;
-
   // Non-null when initialisation failed; shown in the error view.
   String? _error;
 
@@ -101,10 +107,9 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
 
   @override
   void dispose() {
-    // Cancel the timer before disposing the player so the callback cannot fire
-    // against a disposed player (mirrors VideoPlayerScreen dispose order).
+    // Cancel the timer before the player is detached so the callback cannot
+    // fire with a stale player reference (mirrors VideoPlayerScreen order).
     _progressTimer?.cancel();
-    _audioPlayer?.dispose();
     super.dispose();
   }
 
@@ -112,84 +117,102 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   // Player initialisation
   // ---------------------------------------------------------------------------
 
-  /// Initialises [AudioPlayer] with bearer-token auth and resumes position.
+  /// Top-level orchestrator for player setup.
   ///
-  /// Steps:
-  ///   1. Resolve the stream URL (from route extra or [PlayerApiClient]).
-  ///   2. Read the bearer token for the `Authorization` header.
-  ///   3. Create [AudioPlayer] and set the authenticated [AudioSource.uri].
-  ///   4. Fetch the saved position via [getMediaProgress] and seek to it.
-  ///   5. Start playback and the progress ticker.
+  /// Delegates each step to a focused helper so this method stays under 30
+  /// lines and each concern (auth, source loading, seek) is independently
+  /// testable and readable (Separation of Concerns).
   Future<void> _initPlayer() async {
     if (!mounted) return;
 
+    final handler = ref.read(audioHandlerProvider);
+    final player = handler.player;
     final client = ref.read(apiClientProvider);
     final storage = ref.read(tokenStorageProvider);
     final mediaIdInt = int.tryParse(widget.mediaId) ?? 0;
-
-    // Step 1: resolve the stream URL — prefer the route-extra URL so the
-    // calling screen can forward a pre-computed URL; fall back to streamUrl.
     final url = widget.mediaUrl ?? client.streamUrl(mediaIdInt);
 
-    // Step 2: read the bearer token so the native player can authenticate
-    // without routing bytes through Dart (performance and correctness).
-    final token = await storage.readToken();
+    // Step 1–2: build auth headers.
+    final headers = await _buildAuthHeaders(storage);
     if (!mounted) return;
 
-    final headers = <String, String>{
+    // Step 3: load the authenticated source; show error UI on failure.
+    final loaded = await _loadSource(player, url, headers);
+    if (!loaded || !mounted) return;
+
+    // Step 4: seek to the saved position (non-fatal if unavailable).
+    await _resumeFromSavedPosition(player, client, mediaIdInt);
+    if (!mounted) return;
+
+    // Step 5: publish media-session metadata to notification/lock-screen.
+    handler.setMediaItem(
+      id: widget.mediaId,
+      title: 'Audio – ${widget.mediaId}',
+    );
+
+    setState(() => _isLoading = false);
+
+    // Step 6: begin playback and start the periodic progress ticker.
+    unawaited(handler.play());
+    _startProgressTicker(mediaIdInt, client, player);
+  }
+
+  /// Reads the bearer token and returns the `Authorization` header map.
+  ///
+  /// Returns an empty map when no token is stored so the source can still be
+  /// loaded (e.g., public streams or during tests).
+  Future<Map<String, String>> _buildAuthHeaders(TokenStorage storage) async {
+    final token = await storage.readToken();
+    return <String, String>{
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
+  }
 
-    // Step 3: create the AudioPlayer and load the authenticated source.
-    final audioPlayer = AudioPlayer();
+  /// Loads [url] into [player] with [headers]; returns `true` on success.
+  ///
+  /// On failure, sets the error UI state and returns `false` so [_initPlayer]
+  /// can short-circuit without nesting the remaining steps inside a try/catch.
+  Future<bool> _loadSource(
+    AudioPlayer player,
+    String url,
+    Map<String, String> headers,
+  ) async {
     try {
-      await audioPlayer.setAudioSource(
+      await player.setAudioSource(
         AudioSource.uri(Uri.parse(url), headers: headers),
       );
+      return true;
     } catch (e) {
-      audioPlayer.dispose();
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _error = _initErrorMessage(e);
         _isLoading = false;
       });
-      return;
+      return false;
     }
+  }
 
-    if (!mounted) {
-      audioPlayer.dispose();
-      return;
-    }
-
-    // Step 4: resume from the saved position.
-    // Prefer [widget.startPosition] (forwarded by the continue-watching screen)
-    // to avoid a redundant API round-trip.  Fall back to [getMediaProgress] so
-    // audio items opened from other screens still resume correctly.
+  /// Seeks [player] to the saved position for this media item.
+  ///
+  /// Prefers [widget.startPosition] to avoid a redundant API round-trip; falls
+  /// back to [client.getMediaProgress].  Failure is non-fatal — the player
+  /// simply starts from the beginning.
+  Future<void> _resumeFromSavedPosition(
+    AudioPlayer player,
+    PlayerApiClient client,
+    int mediaId,
+  ) async {
     try {
       final savedSeconds =
-          widget.startPosition ?? await client.getMediaProgress(mediaIdInt);
+          widget.startPosition ?? await client.getMediaProgress(mediaId);
       if (savedSeconds != null && savedSeconds > 0) {
-        await audioPlayer.seek(
+        await player.seek(
           Duration(milliseconds: (savedSeconds * 1000).round()),
         );
       }
     } catch (_) {
       // Progress fetch failure is non-fatal; start from the beginning.
     }
-
-    if (!mounted) {
-      audioPlayer.dispose();
-      return;
-    }
-
-    setState(() {
-      _audioPlayer = audioPlayer;
-      _isLoading = false;
-    });
-
-    // Step 5: begin playback and start the periodic progress ticker.
-    unawaited(audioPlayer.play());
-    _startProgressTicker(mediaIdInt, client, audioPlayer);
   }
 
   // ---------------------------------------------------------------------------
@@ -202,6 +225,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   /// The [client] and [player] references are captured once here so we avoid
   /// accessing [ref] or [_audioPlayer] inside the timer callback after the
   /// widget may have been disposed.
+  ///
+  /// The timer intentionally lives in the screen — not in the handler — so
+  /// that [PlayerApiClient] (an HTTP concern) is not imported into
+  /// [PlayerAudioHandler] (an audio-session concern), preserving SRP.
   void _startProgressTicker(
     int mediaId,
     PlayerApiClient client,
@@ -262,14 +289,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   // Actions
   // ---------------------------------------------------------------------------
 
-  /// Tears down the current player and re-runs [_initPlayer].
+  /// Tears down the current player source and re-runs [_initPlayer].
   ///
   /// Extracted to keep [_buildErrorView] below 30 lines (style guideline).
   void _onRetry() {
     _progressTimer?.cancel();
-    _audioPlayer?.dispose();
     setState(() {
-      _audioPlayer = null;
       _error = null;
       _isLoading = true;
       _finishedEmitted = false;
@@ -280,8 +305,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
 
   /// Skips playback by [delta]; clamps to [Duration.zero] and total duration.
   Future<void> _skip(Duration delta) async {
-    final player = _audioPlayer;
-    if (player == null) return;
+    final handler = ref.read(audioHandlerProvider);
+    final player = handler.player;
     final current = player.position;
     final total = player.duration ?? Duration.zero;
     // Duration does not implement Comparable, so clamp manually.
@@ -289,14 +314,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     final next = raw < Duration.zero
         ? Duration.zero
         : (total > Duration.zero && raw > total ? total : raw);
-    await player.seek(next);
+    await handler.seek(next);
   }
 
-  /// Applies [speed] to the player and updates the UI state.
+  /// Applies [speed] to the handler and updates the UI state.
   Future<void> _setSpeed(double speed) async {
-    final player = _audioPlayer;
-    if (player == null) return;
-    await player.setSpeed(speed);
+    final handler = ref.read(audioHandlerProvider);
+    await handler.setSpeed(speed);
     if (!mounted) return;
     setState(() => _playbackSpeed = speed);
   }
@@ -367,7 +391,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
 
   /// The main playback UI: cover art placeholder, seek bar, and controls.
   Widget _buildPlayerView() {
-    final player = _audioPlayer!;
+    final handler = ref.read(audioHandlerProvider);
     return Padding(
       key: const Key('audio_player_view'),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -376,9 +400,9 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
         children: [
           _buildCoverArt(),
           const SizedBox(height: 32),
-          _buildSeekBar(player),
+          _buildSeekBar(handler),
           const SizedBox(height: 16),
-          _buildControls(player),
+          _buildControls(handler),
           const SizedBox(height: 16),
           _buildSpeedSelector(),
         ],
@@ -410,7 +434,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   ///
   /// Uses [StreamBuilder] so the slider reflects real-time position without
   /// calling [setState] on every tick — preventing unnecessary full rebuilds.
-  Widget _buildSeekBar(AudioPlayer player) {
+  ///
+  /// All seeks are routed through [handler.seek] (not directly through the
+  /// underlying [AudioPlayer]) so that the Android media-session notification
+  /// position is updated when the user drags the slider (Law of Demeter:
+  /// the screen should not bypass the handler for mutations).
+  Widget _buildSeekBar(PlayerAudioHandler handler) {
+    final player = handler.player;
     return StreamBuilder<Duration>(
       stream: player.positionStream,
       builder: (context, snapshot) {
@@ -428,8 +458,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
               value: current,
               min: 0,
               max: total > 0 ? total : 1.0,
+              // Route through the handler so the media-session notification
+              // stays in sync with the slider position during a drag.
               onChanged: total > 0
-                  ? (v) => player.seek(Duration(milliseconds: v.round()))
+                  ? (v) => handler.seek(Duration(milliseconds: v.round()))
                   : null,
               activeColor: Colors.white,
               inactiveColor: Colors.white24,
@@ -459,9 +491,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   }
 
   /// Playback controls: skip-back, play/pause, skip-forward.
-  Widget _buildControls(AudioPlayer player) {
+  ///
+  /// All tap handlers delegate to [handler] instead of calling the underlying
+  /// [AudioPlayer] directly, so the media-session notification stays in sync
+  /// with every button press (Law of Demeter: one collaborator for mutations).
+  Widget _buildControls(PlayerAudioHandler handler) {
     return StreamBuilder<bool>(
-      stream: player.playingStream,
+      stream: handler.player.playingStream,
       builder: (context, snapshot) {
         final isPlaying = snapshot.data ?? false;
         return Row(
@@ -475,7 +511,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
               tooltip: 'Skip back 15 seconds',
             ),
             const SizedBox(width: 16),
-            // Play / Pause
+            // Play / Pause — delegate to handler so the notification updates.
             IconButton(
               key: const Key('audio_player_play_pause'),
               icon: Icon(
@@ -483,7 +519,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
                 color: Colors.white,
                 size: 64,
               ),
-              onPressed: isPlaying ? player.pause : player.play,
+              onPressed: isPlaying ? handler.pause : handler.play,
               tooltip: isPlaying ? 'Pause' : 'Play',
             ),
             const SizedBox(width: 16),
@@ -542,4 +578,3 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     return h > 0 ? '$h:$m:$s' : '$m:$s';
   }
 }
-

@@ -8,14 +8,16 @@
 //   5. Screen renders the AppBar title containing the mediaId.
 //   6. Stream URL resolution (route-extra URL and client.streamUrl fallback).
 //
-// just_audio behaviour in the test harness:
+// just_audio / audio_service behaviour in the test harness:
 //   AudioPlayer initialises lazily; the native just_audio platform channel is
 //   not available in the Flutter unit-test environment, so setAudioSource()
 //   hangs indefinitely if we let it wait for a platform response.  We work
 //   around this by:
 //     a) Registering a no-op mock handler for the `com.ryanheise.audio_session`
 //        method channel so that AudioSession.instance resolves immediately.
-//     b) Using pump(Duration(seconds: N)) instead of pumpAndSettle() to advance
+//     b) Providing a [_FakePlayerAudioHandler] via [audioHandlerProvider] so
+//        that no real AudioPlayer or AudioService platform channel is invoked.
+//     c) Using pump(Duration(seconds: N)) instead of pumpAndSettle() to advance
 //        the test clock a fixed amount — enough for the async init path to
 //        attempt and fail, without waiting forever.
 //
@@ -32,10 +34,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
+import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/screens/audio_player_screen.dart';
+import 'package:player_android/services/audio_handler.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -94,6 +99,35 @@ class _FakeApiClient extends PlayerApiClient {
       'http://localhost:8080/api/v1/media/$mediaId/stream';
 }
 
+/// A [PlayerAudioHandler] subclass that wraps a real [AudioPlayer] but
+/// overrides [setMediaItem] and playback methods to be no-ops so that no
+/// platform channels are invoked during widget tests.
+///
+/// The [player] getter returns the real AudioPlayer so that stream subscriptions
+/// in [AudioPlayerScreen] (positionStream, playingStream) work without crashing,
+/// while [setAudioSource] is the call that will hang (pending platform channel) —
+/// matching the existing test behaviour where the screen stays in the loading
+/// state.
+class _FakePlayerAudioHandler extends PlayerAudioHandler {
+  _FakePlayerAudioHandler() : super(AudioPlayer());
+
+  /// Prevents any media-session metadata broadcast from being sent,
+  /// since there is no registered AudioService in the test harness.
+  @override
+  void setMediaItem({required String id, required String title}) {
+    // no-op in tests — audio_service is not initialised
+  }
+
+  @override
+  Future<void> play() async {} // no-op
+
+  @override
+  Future<void> pause() async {} // no-op
+
+  @override
+  Future<void> stop() async {} // no-op
+}
+
 // ---------------------------------------------------------------------------
 // Test setup helpers
 // ---------------------------------------------------------------------------
@@ -126,7 +160,10 @@ Future<void> _pumpScreen(
   _FakeApiClient fakeClient, {
   String mediaId = '42',
   String? mediaUrl,
+  _FakePlayerAudioHandler? fakeHandler,
 }) async {
+  final handler = fakeHandler ?? _FakePlayerAudioHandler();
+
   final router = GoRouter(
     initialLocation: '/audio/$mediaId',
     routes: [
@@ -145,6 +182,9 @@ Future<void> _pumpScreen(
       overrides: [
         tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
         apiClientProvider.overrideWithValue(fakeClient),
+        // Override audioHandlerProvider so no real AudioService or AudioPlayer
+        // platform channels are invoked during widget tests.
+        audioHandlerProvider.overrideWithValue(handler),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
