@@ -158,6 +158,28 @@ String continueWatchingErrorMessage(Object error) {
   return 'Unexpected error. Please try again.';
 }
 
+/// Maps any thrown object from [PlayerApiClient.addTag] or
+/// [PlayerApiClient.removeTag] to a UI string.
+///
+/// Adds human-readable messages for the common failure modes:
+///   - 400: the tag name is invalid (empty, too long, etc.).
+///   - 404: the media item no longer exists.
+///
+/// Kept as a separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of the other mappers without touching unrelated screens.
+String tagErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 404) {
+      return 'Media not found. It may have been deleted.';
+    }
+    if (error.response?.statusCode == 400) {
+      return 'Invalid tag name. Please try a different tag.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
 /// Maps any thrown object from [PlayerApiClient.subscribePodcast] to a UI string.
 ///
 /// Adds human-readable messages for the common failure modes:

@@ -345,6 +345,47 @@ class DioPlayerApiClient extends PlayerApiClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Tags
+  // ---------------------------------------------------------------------------
+
+  /// Returns all tag names visible to the authenticated user.
+  ///
+  /// GET /api/v1/tags — returns [{"id": 1, "name": "documentary"}, ...]
+  /// Used by the tag-picker autocomplete to offer suggestions.
+  @override
+  Future<List<Tag>> listTags() async {
+    final response = await rawDio.get<List<dynamic>>('$_kApiV1/tags');
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(Tag.fromJson)
+        .toList();
+  }
+
+  /// Attaches a tag to a media item by name.
+  ///
+  /// POST /api/v1/media/{id}/tags  body: {"tag": "<name>"}
+  /// Returns 200 {"status": "ok"} on success; throws [DioException] on error.
+  @override
+  Future<void> addTag(int mediaId, String tag) async {
+    await rawDio.post<void>(
+      '$_kApiV1/media/$mediaId/tags',
+      data: {'tag': tag},
+    );
+  }
+
+  /// Removes a named tag from a media item.
+  ///
+  /// DELETE /api/v1/media/{id}/tags/{tag} where {tag} is URL-encoded.
+  /// Returns 200 {"status": "ok"} on success; throws [DioException] on error.
+  @override
+  Future<void> removeTag(int mediaId, String tag) async {
+    // Uri.encodeComponent encodes the tag name so characters like spaces or
+    // slashes in tag names do not break the URL path segment.
+    final encoded = Uri.encodeComponent(tag);
+    await rawDio.delete<void>('$_kApiV1/media/$mediaId/tags/$encoded');
+  }
+
+  // ---------------------------------------------------------------------------
   // Favourites
   // ---------------------------------------------------------------------------
 

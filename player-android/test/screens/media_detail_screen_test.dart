@@ -53,8 +53,10 @@ class _FakeTokenStorage implements TokenStorage {
 
 /// Controllable [PlayerApiClient] stub for [MediaDetailScreen] tests.
 ///
-/// Only [getMedia], [toggleFavorite], and [thumbnailUrl] are implemented;
-/// all other methods remain [UnimplementedError].
+/// Implements [getMedia], [toggleFavorite], [listTags], [addTag],
+/// [removeTag], and [thumbnailUrl]; all other methods remain
+/// [UnimplementedError].  Tag methods return empty/no-op defaults so tests
+/// that do not exercise tag behaviour do not need to configure them.
 class _FakeApiClient extends PlayerApiClient {
   _FakeApiClient() : super(dio: Dio());
 
@@ -90,6 +92,19 @@ class _FakeApiClient extends PlayerApiClient {
     return toggleResult!;
   }
 
+  /// Returns an empty list so the autocomplete in [TagPicker] shows no
+  /// suggestions — keeps existing tests hermetic without extra setup.
+  @override
+  Future<List<Tag>> listTags() async => [];
+
+  /// No-op: tag add operations succeed silently in these tests.
+  @override
+  Future<void> addTag(int mediaId, String tag) async {}
+
+  /// No-op: tag remove operations succeed silently in these tests.
+  @override
+  Future<void> removeTag(int mediaId, String tag) async {}
+
   /// Returns an empty string so [_ThumbnailBanner] shows the static
   /// placeholder instead of making a network request — keeps tests hermetic.
   @override
@@ -99,6 +114,7 @@ class _FakeApiClient extends PlayerApiClient {
 /// [PlayerApiClient] stub that delays [getMedia] until [complete] is called.
 ///
 /// Used to inspect mid-flight loading state before the response arrives.
+/// Tag methods return empty/no-op defaults so tests stay hermetic.
 class _DelayedFakeApiClient extends PlayerApiClient {
   _DelayedFakeApiClient() : super(dio: Dio());
 
@@ -111,6 +127,15 @@ class _DelayedFakeApiClient extends PlayerApiClient {
   Future<Media> getMedia(int mediaId) => _completer.future;
 
   @override
+  Future<List<Tag>> listTags() async => [];
+
+  @override
+  Future<void> addTag(int mediaId, String tag) async {}
+
+  @override
+  Future<void> removeTag(int mediaId, String tag) async {}
+
+  @override
   String thumbnailUrl(int mediaId) => '';
 }
 
@@ -118,7 +143,7 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 /// [completeToggle] is called.
 ///
 /// Allows tests to inspect the UI state between the tap and the API response
-/// (the optimistic update window).
+/// (the optimistic update window).  Tag methods return empty/no-op defaults.
 class _DelayedToggleFakeApiClient extends PlayerApiClient {
   _DelayedToggleFakeApiClient({required this.mediaResult})
       : super(dio: Dio());
@@ -139,6 +164,15 @@ class _DelayedToggleFakeApiClient extends PlayerApiClient {
 
   @override
   Future<bool> toggleFavorite(int mediaId) => _toggleCompleter.future;
+
+  @override
+  Future<List<Tag>> listTags() async => [];
+
+  @override
+  Future<void> addTag(int mediaId, String tag) async {}
+
+  @override
+  Future<void> removeTag(int mediaId, String tag) async {}
 
   @override
   String thumbnailUrl(int mediaId) => '';
@@ -325,13 +359,17 @@ void main() {
       expect(find.text('english'), findsOneWidget);
     });
 
-    testWidgets('hides tag chips row when tags list is empty', (tester) async {
+    testWidgets('shows tag picker (no chips) when tags list is empty',
+        (tester) async {
       final fakeClient = _FakeApiClient()..mediaResult = _kAudio;
 
       await _pumpScreen(tester, fakeClient, mediaId: '7');
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('media_detail_tags')), findsNothing);
+      // TagPicker is always rendered so users can add tags to untagged items.
+      expect(find.byKey(const Key('media_detail_tags')), findsOneWidget);
+      // The chip row is empty — no individual tag chips should be present.
+      expect(find.byKey(const Key('tag_picker_chips')), findsOneWidget);
     });
 
     testWidgets('renders play button', (tester) async {

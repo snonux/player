@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../api/player_api_client.dart';
 import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/tag_picker.dart';
 import 'create_share_dialog.dart';
 
 // ---------------------------------------------------------------------------
@@ -15,7 +17,8 @@ import 'create_share_dialog.dart';
 
 /// Displays a single media item with its title, full metadata (codec,
 /// resolution, duration, file size), a thumbnail banner, a favourite toggle,
-/// tag chips, and a play button that routes to the correct player.
+/// an interactive tag picker, and a play button that routes to the correct
+/// player.
 ///
 /// Design notes:
 ///   - [ConsumerStatefulWidget] is used so we can hold local loading/error
@@ -27,6 +30,8 @@ import 'create_share_dialog.dart';
 ///     in `error_mappers.dart` (Dependency Inversion Principle).
 ///   - The screen is split into multiple focused sub-widgets so the state
 ///     class stays well under 50 lines.
+///   - Tag management (add/remove/autocomplete) is extracted to [TagPicker]
+///     (Single Responsibility); the screen only wires the client through.
 class MediaDetailScreen extends ConsumerStatefulWidget {
   /// The string form of the media ID extracted from the '/media/:id' route.
   final String mediaId;
@@ -288,13 +293,17 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       return const SizedBox.shrink();
     }
 
+    final client = ref.read(apiClientProvider);
     return RefreshIndicator(
       onRefresh: _load,
       child: _MediaDetailContent(
         media: _media!,
-        thumbnailUrl: ref.read(apiClientProvider).thumbnailUrl(_media!.id),
+        thumbnailUrl: client.thumbnailUrl(_media!.id),
         onFavoriteToggle: _toggleFavorite,
         onPlay: _play,
+        // Pass the client so _MediaDetailContent can hand it to TagPicker;
+        // this avoids TagPicker needing its own provider read (DIP).
+        client: client,
       ),
     );
   }
@@ -318,15 +327,16 @@ enum _MenuAction { share }
 /// Scrollable body of the media detail screen.
 ///
 /// Extracted from [_MediaDetailScreenState] so the state class stays concise
-/// and this widget is independently testable.  All callbacks are injected so
-/// this widget has no direct dependency on providers or navigation
-/// (Dependency Inversion, Single Responsibility).
+/// and this widget is independently testable.  All callbacks and the API
+/// client are injected so this widget has no direct dependency on providers
+/// or navigation (Dependency Inversion, Single Responsibility).
 class _MediaDetailContent extends StatelessWidget {
   const _MediaDetailContent({
     required this.media,
     required this.thumbnailUrl,
     required this.onFavoriteToggle,
     required this.onPlay,
+    required this.client,
   });
 
   final Media media;
@@ -339,6 +349,10 @@ class _MediaDetailContent extends StatelessWidget {
 
   /// Called when the play button is tapped.
   final VoidCallback onPlay;
+
+  /// API client injected so [TagPicker] can call [addTag] / [removeTag] /
+  /// [listTags] without reading from a provider directly (DIP).
+  final PlayerApiClient client;
 
   @override
   Widget build(BuildContext context) {
@@ -367,11 +381,16 @@ class _MediaDetailContent extends StatelessWidget {
                 // Codec · resolution · duration · file size.
                 _MetadataRow(media: media),
 
-                // Tag chips (hidden when no tags).
-                if (media.tags.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _TagChips(tags: media.tags),
-                ],
+                // Interactive tag picker: existing tags as deletable chips
+                // plus an autocomplete input for adding new tags.
+                // Always shown so users can add tags even when none exist yet.
+                const SizedBox(height: 12),
+                TagPicker(
+                  key: const Key('media_detail_tags'),
+                  mediaId: media.id,
+                  tags: media.tags,
+                  client: client,
+                ),
 
                 const SizedBox(height: 24),
               ],
@@ -567,39 +586,6 @@ class _MetadataRow extends StatelessWidget {
       return '${(bytes / 1048576).toStringAsFixed(1)} MB';
     }
     return '${(bytes / 1024).toStringAsFixed(0)} KB';
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _TagChips
-// ---------------------------------------------------------------------------
-
-/// Horizontally wrapping row of tag chips.
-///
-/// Uses [Chip] (non-interactive, display-only) rather than [FilterChip]
-/// because the detail screen does not filter — it merely shows what tags
-/// are attached to the item.
-class _TagChips extends StatelessWidget {
-  const _TagChips({required this.tags});
-
-  final List<String> tags;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      key: const Key('media_detail_tags'),
-      spacing: 8,
-      runSpacing: 4,
-      children: [
-        for (final tag in tags)
-          Chip(
-            label: Text(tag),
-            labelStyle: Theme.of(context).textTheme.labelSmall,
-            padding: EdgeInsets.zero,
-            visualDensity: VisualDensity.compact,
-          ),
-      ],
-    );
   }
 }
 
