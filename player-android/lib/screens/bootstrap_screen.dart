@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/api_client_provider.dart';
 import '../providers/auth_state_provider.dart';
+import '../utils/error_mappers.dart';
 
 // Minimum password length enforced by the server (see handlers_auth.go,
 // service/auth.go — passwords shorter than this are rejected with 400).
@@ -131,7 +132,11 @@ class _BootstrapScreenState extends ConsumerState<BootstrapScreen> {
       // Only show the snack-bar if the widget is still mounted; async gaps can
       // occur between the await above and this error handler.
       if (!mounted) return;
-      _showError(_dioErrorMessage(e));
+      // Delegate to the shared error mapper with bootstrap-specific status fallbacks.
+      _showError(dioErrorMessage(e, statusFallbacks: {
+        403: 'Bootstrap already complete — an admin account already exists.',
+        400: 'Invalid request. Check your username and password.',
+      }));
     } catch (e) {
       if (!mounted) return;
       _showError('An unexpected error occurred. Please try again.');
@@ -248,34 +253,7 @@ class _BootstrapScreenState extends ConsumerState<BootstrapScreen> {
 // ---------------------------------------------------------------------------
 // File-level helpers
 // ---------------------------------------------------------------------------
-
-/// Extracts a user-friendly error message from a [DioException].
-///
-/// Pure data-transformation function: no widget state, no Riverpod reads, no
-/// BuildContext — lives at the top level to make that clear and to ease testing.
-///
-/// Prefers a `message` or `error` field from the response JSON body; falls
-/// back to the HTTP status line, or a generic connectivity message.
-String _dioErrorMessage(DioException e) {
-  final statusCode = e.response?.statusCode;
-
-  // Try to read a server-supplied message from the response body.
-  final body = e.response?.data;
-  if (body is Map<String, dynamic>) {
-    final msg = body['message'] as String? ?? body['error'] as String?;
-    if (msg != null && msg.isNotEmpty) return msg;
-  }
-
-  // Fallback to HTTP status descriptions.
-  if (statusCode == 403) {
-    return 'Bootstrap already complete — an admin account already exists.';
-  }
-  if (statusCode == 400) {
-    return 'Invalid request. Check your username and password.';
-  }
-  if (statusCode != null) {
-    return 'Server error ($statusCode). Please try again.';
-  }
-
-  return 'Could not reach the server. Check your network connection.';
-}
+//
+// [_dioErrorMessage] has been removed; error mapping is now delegated to
+// [dioErrorMessage] from ../utils/error_mappers.dart with bootstrap-specific
+// status fallbacks supplied at the call site (DRY/DIP fix).

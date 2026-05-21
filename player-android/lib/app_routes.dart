@@ -13,6 +13,13 @@ abstract final class AppRoutes {
   /// First-run setup route shown when no admin account exists yet.
   static const bootstrap = '/bootstrap';
 
+  /// Route that lists media items inside a specific set.
+  /// The ':setId' segment is a numeric set identifier.
+  static const mediaGrid = '/sets/:setId';
+
   /// Returns the concrete path for a media-detail page given a numeric [id].
   static String mediaDetailPath(int id) => '/media/$id';
+
+  /// Returns the concrete path for the media-grid page of a given [setId].
+  static String mediaGridPath(int setId) => '/sets/$setId';
 }

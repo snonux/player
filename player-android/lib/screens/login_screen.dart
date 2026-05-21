@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/api_client_provider.dart';
 import '../providers/auth_state_provider.dart';
+import '../utils/error_mappers.dart';
 
 /// Sign-in screen shown to returning users who already have an account.
 ///
@@ -100,7 +101,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Guard against stale BuildContext if the widget was disposed during
       // the async gap (e.g. a rapid navigation triggered by another listener).
       if (!mounted) return;
-      _showError(_dioErrorMessage(e));
+      // Delegate to the shared error mapper with login-specific status fallbacks.
+      _showError(dioErrorMessage(e, statusFallbacks: {
+        401: 'Invalid username or password.',
+        400: 'Invalid request. Check your username and password.',
+      }));
     } catch (e) {
       if (!mounted) return;
       _showError('An unexpected error occurred. Please try again.');
@@ -201,37 +206,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 // ---------------------------------------------------------------------------
 // File-level helpers
 // ---------------------------------------------------------------------------
-
-/// Extracts a user-friendly error message from a [DioException].
-///
-/// Pure data-transformation function: no widget state, no Riverpod reads, no
-/// BuildContext — lives at the top level to make that clear and to ease testing.
-///
-/// Priority order for message extraction:
-///   1. Server-supplied `message` or `error` field from the JSON response body.
-///   2. Status-code–specific fallback strings.
-///   3. Generic connectivity message when no HTTP response is available.
-String _dioErrorMessage(DioException e) {
-  final statusCode = e.response?.statusCode;
-
-  // Prefer a human-readable message from the server's JSON response body.
-  final body = e.response?.data;
-  if (body is Map<String, dynamic>) {
-    final msg = body['message'] as String? ?? body['error'] as String?;
-    if (msg != null && msg.isNotEmpty) return msg;
-  }
-
-  // Status-code fallbacks for common auth error cases.
-  if (statusCode == 401) {
-    return 'Invalid username or password.';
-  }
-  if (statusCode == 400) {
-    return 'Invalid request. Check your username and password.';
-  }
-  if (statusCode != null) {
-    return 'Server error ($statusCode). Please try again.';
-  }
-
-  // No HTTP response: connectivity or DNS failure.
-  return 'Could not reach the server. Check your network connection.';
-}
+//
+// [_dioErrorMessage] has been removed; error mapping is now delegated to
+// [dioErrorMessage] from ../utils/error_mappers.dart with login-specific
+// status fallbacks supplied at the call site (DRY/DIP fix).

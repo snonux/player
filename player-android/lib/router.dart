@@ -10,6 +10,7 @@ import 'screens/bootstrap_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/media_detail_screen.dart';
+import 'screens/media_grid_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
 
@@ -96,7 +97,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.home,
-        builder: (context, state) => const HomeScreen(),
+        // HomeScreen now hosts SetsListScreen — the real media-library view.
+        builder: (context, state) => const SetsListScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.mediaGrid,
+        builder: (context, state) {
+          // The ':setId' path parameter is guaranteed by the route pattern.
+          final raw = state.pathParameters['setId']!;
+          final setId = int.tryParse(raw) ?? 0;
+          return MediaGridScreen(setId: setId);
+        },
       ),
       GoRoute(
         path: AppRoutes.mediaDetail,

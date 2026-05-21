@@ -20,6 +20,9 @@ dependencies:
   # shared_preferences: persists simple key-value settings (e.g. server base URL)
   # using platform-native storage (SharedPreferences on Android, NSUserDefaults on iOS).
   shared_preferences: ^2.3.2
+  # cached_network_image: downloads and caches remote images (e.g. set covers)
+  # so repeated visits do not re-fetch from the server.
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:
