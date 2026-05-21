@@ -1,4 +1,5 @@
 export 'media.dart';
+export 'media_filter.dart';
 export 'media_set.dart';
 export 'note.dart';
 export 'playback_hint.dart';

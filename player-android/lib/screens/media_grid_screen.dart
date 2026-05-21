@@ -7,6 +7,7 @@ import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/search_filter_bar.dart';
 
 /// Displays the media items inside a single [MediaSet] as a scrollable grid.
 ///
@@ -24,6 +25,8 @@ import '../utils/error_mappers.dart';
 ///     app bar falls back to "Set $setId" when it is absent.
 ///   - Error handling is fully delegated to top-level helpers in
 ///     `error_mappers.dart` — no `dio` import in this file (DIP).
+///   - [SearchFilterBar] is shown below the AppBar; filter changes cancel
+///     any in-flight load and start a new one with the updated parameters.
 class MediaGridScreen extends ConsumerStatefulWidget {
   /// The numeric identifier of the set whose media items will be displayed.
   final int setId;
@@ -50,6 +53,15 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   // True while the initial or refresh load is in flight.
   bool _isLoading = false;
 
+  // Current filter state; starts with no filters applied.
+  MediaFilter _filter = const MediaFilter();
+
+  // Generation counter — incremented whenever a new load is started.
+  // The async callback checks this value before updating state so that a
+  // stale response from a cancelled logical request is silently discarded,
+  // preventing race conditions when the user changes filters rapidly.
+  int _loadGeneration = 0;
+
   @override
   void initState() {
     super.initState();
@@ -62,12 +74,23 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   // Data loading
   // ---------------------------------------------------------------------------
 
-  /// Fetches media items for [widget.setId] and updates local state.
+  /// Fetches media items for [widget.setId] with the current [_filter] and
+  /// updates local state.
   ///
-  /// Called on first mount and on pull-to-refresh.  Errors are mapped by the
-  /// top-level [mediaErrorMessage] helper so the widget stays free of Dio.
+  /// Called on first mount, on pull-to-refresh, and whenever [_filter]
+  /// changes.  The [_loadGeneration] counter ensures that a response arriving
+  /// after a newer load has started is ignored, preventing stale data from
+  /// overwriting fresher results (cancellation-by-generation pattern).
+  ///
+  /// Errors are mapped by the top-level [mediaErrorMessage] helper so the
+  /// widget stays free of Dio.
   Future<void> _load() async {
     if (!mounted) return;
+
+    // Bump the generation before the async gap so that any pending callback
+    // from the previous load detects the change and drops its result.
+    final generation = ++_loadGeneration;
+
     setState(() {
       _isLoading = true;
       _error = null;
@@ -75,19 +98,39 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 
     try {
       final client = ref.read(apiClientProvider);
-      final items = await client.listMedia(setId: widget.setId);
-      if (!mounted) return;
+      final items = await client.listMedia(
+        setId: widget.setId,
+        search: _filter.query,
+        type: _filter.type,
+        favorites: _filter.favoritesOnly ? true : null,
+        sort: _filter.sortBy,
+      );
+
+      // Discard the result if a newer load was started while this one was
+      // in flight (filter changed, pull-to-refresh, etc.).
+      if (!mounted || generation != _loadGeneration) return;
+
       setState(() {
         _media = items;
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _error = mediaErrorMessage(e);
         _isLoading = false;
       });
     }
+  }
+
+  /// Called by [SearchFilterBar] when any filter dimension changes.
+  ///
+  /// Stores the new filter and immediately starts a new load.  The generation
+  /// counter in [_load] ensures the previous in-flight request is logically
+  /// cancelled even though the underlying Future cannot be cancelled.
+  void _onFiltersChanged(MediaFilter filter) {
+    setState(() => _filter = filter);
+    _load();
   }
 
   // ---------------------------------------------------------------------------
@@ -98,7 +141,17 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: _buildAppBar(),
-      body: _buildBody(context),
+      body: Column(
+        children: [
+          // Search/filter bar sits directly below the AppBar.
+          SearchFilterBar(
+            initialFilter: _filter,
+            onFiltersChanged: _onFiltersChanged,
+          ),
+          // The remaining space is occupied by the data body.
+          Expanded(child: _buildBody(context)),
+        ],
+      ),
     );
   }
 
