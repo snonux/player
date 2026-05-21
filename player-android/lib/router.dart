@@ -16,6 +16,7 @@ import 'screens/media_grid_screen.dart';
 import 'screens/podcast_list_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
+import 'screens/my_shares_screen.dart';
 import 'screens/notes_editor_screen.dart';
 import 'screens/video_player_screen.dart';
 
@@ -179,6 +180,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           final mediaId = state.pathParameters['mediaId']!;
           return NotesEditorScreen(mediaId: mediaId);
         },
+      ),
+      GoRoute(
+        // My Shares — lists all share links created by the authenticated user.
+        // Reachable from the Settings screen.
+        path: AppRoutes.shares,
+        builder: (context, state) => const MySharesScreen(),
       ),
     ],
   );

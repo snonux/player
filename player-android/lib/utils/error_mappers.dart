@@ -218,3 +218,23 @@ String notesErrorMessage(Object error) {
   }
   return 'Unexpected error. Please try again.';
 }
+
+/// Maps any thrown object from [PlayerApiClient.listMyShares] or
+/// [PlayerApiClient.revokeShare] to a human-readable UI string.
+///
+/// Adds a 404-specific message (share no longer exists) and a 403 message
+/// (permission denied) so MySharesScreen can surface actionable guidance.
+/// Kept as a separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of the other mappers.
+String sharesErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 404) {
+      return 'Share not found. It may have already been revoked.';
+    }
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to manage this share.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}

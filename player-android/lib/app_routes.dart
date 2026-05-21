@@ -56,6 +56,10 @@ abstract final class AppRoutes {
   static String playerPathForType(String type, String mediaId) =>
       type == 'audio' ? audioPlayerPath(mediaId) : videoPlayerPath(mediaId);
 
+  /// Route that lists all share links created by the authenticated user.
+  /// Opens [MySharesScreen] from Settings.
+  static const shares = '/shares';
+
   /// Returns the concrete path for the notes editor of a given [mediaId].
   static String notesPath(String mediaId) => '/notes/$mediaId';
 }

@@ -207,6 +207,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onPressed: _saveBaseUrl,
                 child: const Text('Save URL'),
               ),
+
+              const SizedBox(height: 32),
+              const Divider(),
+              const SizedBox(height: 24),
+
+              // ----------------------------------------------------------------
+              // Sharing section: navigate to MyShares screen.
+              // ----------------------------------------------------------------
+              Text(
+                'Sharing',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+
+              // My Shares tile — navigates to /shares.
+              ListTile(
+                key: const Key('settings_my_shares'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.link_outlined),
+                title: const Text('My Shares'),
+                subtitle: const Text('View and revoke your share links'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.go(AppRoutes.shares),
+              ),
             ],
           ),
         ),
