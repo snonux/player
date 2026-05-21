@@ -106,7 +106,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           // The ':setId' path parameter is guaranteed by the route pattern.
           final raw = state.pathParameters['setId']!;
           final setId = int.tryParse(raw) ?? 0;
-          return MediaGridScreen(setId: setId);
+          // The set name is optionally passed as a route extra (String) by the
+          // calling screen (e.g. SetsListScreen) so the app bar can show it
+          // immediately without an extra API call.
+          final setName = state.extra is String ? state.extra as String : null;
+          return MediaGridScreen(setId: setId, setName: setName);
         },
       ),
       GoRoute(

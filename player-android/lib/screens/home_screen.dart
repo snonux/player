@@ -192,7 +192,12 @@ class _SetCard extends StatelessWidget {
       key: Key('set_card_${mediaSet.id}'),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.go(AppRoutes.mediaGridPath(mediaSet.id)),
+        // Pass the set name as a route extra so MediaGridScreen can show it in
+        // the app bar immediately, without making a second API call.
+        onTap: () => context.go(
+          AppRoutes.mediaGridPath(mediaSet.id),
+          extra: mediaSet.name,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

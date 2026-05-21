@@ -77,3 +77,17 @@ String setsErrorMessage(Object error) {
   }
   return 'Unexpected error. Please try again.';
 }
+
+/// Maps any thrown object from [PlayerApiClient.listMedia] to a UI string.
+///
+/// Identical delegation strategy to [setsErrorMessage]: DioExceptions are
+/// mapped by [dioConnectionErrorMessage]; all other exceptions fall back to a
+/// generic message.  Having a separate function preserves the option to add
+/// media-specific status-code overrides (e.g. 403 permission errors) later
+/// without altering the sets helper (Open-Closed Principle).
+String mediaErrorMessage(Object error) {
+  if (error is DioException) {
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}

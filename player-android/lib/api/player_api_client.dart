@@ -133,6 +133,17 @@ class PlayerApiClient {
 
   Future<Uint8List> getThumbnail(int mediaId) => throw UnimplementedError();
 
+  /// Returns the URL for a media item's thumbnail image.
+  ///
+  /// Constructing the URL here (rather than in the screen layer) keeps the API
+  /// path constant `/api/v1/media/{id}/thumbnail` in one place and avoids
+  /// exposing [Dio] or its [BaseOptions] to the UI layer (Dependency Inversion).
+  ///
+  /// The base URL is derived from the underlying Dio instance so it is always
+  /// consistent with the rest of the API calls.
+  String thumbnailUrl(int mediaId) =>
+      '${rawDio.options.baseUrl}/api/v1/media/$mediaId/thumbnail';
+
   Future<void> regenerateThumbnail(int mediaId) => throw UnimplementedError();
 
   Future<bool> toggleFavorite(int mediaId) => throw UnimplementedError();
