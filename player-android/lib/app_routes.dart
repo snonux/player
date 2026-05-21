@@ -25,6 +25,10 @@ abstract final class AppRoutes {
   /// The ':mediaId' segment identifies the media item to play.
   static const audioPlayer = '/audio/:mediaId';
 
+  /// Route that lists all podcast feeds (sets where isPodcast is true).
+  /// Opens [PodcastListScreen] and supports the SubscribeDialog FAB.
+  static const podcasts = '/podcasts';
+
   /// Returns the concrete path for a media-detail page given a numeric [id].
   static String mediaDetailPath(int id) => '/media/$id';
 

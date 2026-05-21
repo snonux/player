@@ -12,6 +12,7 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/media_detail_screen.dart';
 import 'screens/media_grid_screen.dart';
+import 'screens/podcast_list_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
 import 'screens/video_player_screen.dart';
@@ -130,6 +131,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.settings,
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        // Podcast list screen — shows all sets with isPodcast == true.
+        // A FAB inside the screen opens the SubscribeDialog.
+        path: AppRoutes.podcasts,
+        builder: (context, state) => const PodcastListScreen(),
       ),
       GoRoute(
         path: AppRoutes.videoPlayer,

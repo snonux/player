@@ -366,6 +366,37 @@ class DioPlayerApiClient extends PlayerApiClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Podcasts
+  // ---------------------------------------------------------------------------
+
+  /// Subscribes to a new podcast feed and returns the created [PodcastFeed].
+  ///
+  /// POST /api/v1/podcasts
+  /// Requires admin privileges (the server returns 403 for non-admin users).
+  ///
+  /// [feedUrl] is the URL of the RSS/Atom feed to subscribe to.
+  /// [setName] is an optional human-readable name for the podcast set;
+  /// when omitted the server derives it from the feed's own title element.
+  @override
+  Future<PodcastFeed> subscribePodcast({
+    required String feedUrl,
+    String? setName,
+  }) async {
+    // Omit set_name from the request body when not provided so the server falls
+    // back to the feed's title rather than receiving an explicit null.
+    final body = <String, dynamic>{
+      'feed_url': feedUrl,
+      if (setName != null && setName.isNotEmpty) 'set_name': setName,
+    };
+
+    final response = await rawDio.post<Map<String, dynamic>>(
+      '$_kApiV1/podcasts',
+      data: body,
+    );
+    return PodcastFeed.fromJson(response.data!);
+  }
+
+  // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 

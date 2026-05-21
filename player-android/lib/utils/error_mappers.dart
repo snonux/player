@@ -129,3 +129,40 @@ String createShareErrorMessage(Object error) {
   }
   return 'Unexpected error. Please try again.';
 }
+
+/// Maps any thrown object from [PlayerApiClient.listSets] (used by
+/// [PodcastListScreen]) to a UI string.
+///
+/// Identical delegation strategy to [setsErrorMessage]: DioExceptions are
+/// mapped by [dioConnectionErrorMessage]; all other exceptions fall back to a
+/// generic message.  Having a separate function preserves the option to add
+/// podcast-specific status-code overrides later without altering the sets
+/// helper (Open-Closed Principle).
+String podcastListErrorMessage(Object error) {
+  if (error is DioException) {
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
+/// Maps any thrown object from [PlayerApiClient.subscribePodcast] to a UI string.
+///
+/// Adds human-readable messages for the common failure modes:
+///   - 400: the feed URL is malformed or the server could not parse the feed.
+///   - 403: the user is not an admin (subscribe requires admin privileges).
+///   - 409/500: generic server-side failure (duplicate subscription, etc.).
+///
+/// Kept as a separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of the share and sets mappers.
+String podcastErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 400) {
+      return 'Invalid feed URL or the feed could not be parsed. Check the URL and try again.';
+    }
+    if (error.response?.statusCode == 403) {
+      return 'Only administrators can subscribe to podcast feeds.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
