@@ -31,7 +31,9 @@ import 'package:go_router/go_router.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
+import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/screens/video_player_screen.dart';
+import 'package:player_android/services/progress_queue.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -102,6 +104,31 @@ class _FakeApiClient extends PlayerApiClient {
 }
 
 // ---------------------------------------------------------------------------
+// Fakes
+// ---------------------------------------------------------------------------
+
+/// No-op [ProgressQueueBase] stub for widget tests.
+///
+/// Implements [ProgressQueueBase] directly rather than extending [ProgressQueue]
+/// so no real SQLite database is opened and no connectivity subscription is
+/// created in the test harness (Liskov Substitution — any [ProgressQueueBase]
+/// can be injected wherever the interface is required).
+class _FakeProgressQueue implements ProgressQueueBase {
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<void> enqueue(
+    int mediaId,
+    double positionSeconds, {
+    bool finished = false,
+  }) async {}
+
+  @override
+  Future<void> dispose() async {}
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -137,6 +164,9 @@ Future<void> _pumpScreen(
       overrides: [
         tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
         apiClientProvider.overrideWithValue(fakeClient),
+        // Override progressQueueProvider so no real SQLite DB is opened and
+        // no connectivity subscription is created during widget tests.
+        progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),

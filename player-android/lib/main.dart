@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'providers/audio_handler_provider.dart';
+import 'providers/progress_queue_provider.dart';
 import 'router.dart';
 import 'services/audio_handler.dart';
 
@@ -42,12 +43,20 @@ void main() async {
     ),
   );
 
+  // Create the ProviderScope first so we can read providers before runApp.
+  // The scope is then passed to PlayerAndroidApp so it is the single root.
+  final container = ProviderContainer(
+    overrides: [audioHandlerProvider.overrideWithValue(handler)],
+  );
+
+  // Initialise the offline progress queue (opens SQLite DB, subscribes to
+  // connectivity).  Must be done before any player screen opens so that the
+  // queue is ready to accept enqueue calls immediately.
+  await container.read(progressQueueProvider).init();
+
   runApp(
-    ProviderScope(
-      // Override the provider with the concrete handler instance so that every
-      // widget and provider that reads [audioHandlerProvider] gets the same
-      // singleton without going through a global variable.
-      overrides: [audioHandlerProvider.overrideWithValue(handler)],
+    UncontrolledProviderScope(
+      container: container,
       child: const PlayerAndroidApp(),
     ),
   );

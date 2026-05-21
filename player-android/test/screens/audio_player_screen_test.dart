@@ -39,8 +39,10 @@ import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/audio_handler_provider.dart';
+import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/screens/audio_player_screen.dart';
 import 'package:player_android/services/audio_handler.dart';
+import 'package:player_android/services/progress_queue.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -97,6 +99,27 @@ class _FakeApiClient extends PlayerApiClient {
   @override
   String streamUrl(int mediaId) =>
       'http://localhost:8080/api/v1/media/$mediaId/stream';
+}
+
+/// No-op [ProgressQueueBase] stub for widget tests.
+///
+/// Implements [ProgressQueueBase] directly rather than extending [ProgressQueue]
+/// so no real SQLite database is opened and no connectivity subscription is
+/// created in the test harness (Liskov Substitution — any [ProgressQueueBase]
+/// can be injected wherever the interface is required).
+class _FakeProgressQueue implements ProgressQueueBase {
+  @override
+  Future<void> init() async {} // no-op — no DB needed in widget tests
+
+  @override
+  Future<void> enqueue(
+    int mediaId,
+    double positionSeconds, {
+    bool finished = false,
+  }) async {} // no-op — prevent SQLite calls in widget tests
+
+  @override
+  Future<void> dispose() async {} // no-op
 }
 
 /// A [PlayerAudioHandler] subclass that wraps a real [AudioPlayer] but
@@ -185,6 +208,9 @@ Future<void> _pumpScreen(
         // Override audioHandlerProvider so no real AudioService or AudioPlayer
         // platform channels are invoked during widget tests.
         audioHandlerProvider.overrideWithValue(handler),
+        // Override progressQueueProvider so no real SQLite DB is opened and
+        // no connectivity subscription is created during widget tests.
+        progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),

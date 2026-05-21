@@ -7,6 +7,8 @@ import 'package:video_player/video_player.dart';
 
 import '../api/player_api_client.dart';
 import '../providers/api_client_provider.dart';
+import '../providers/progress_queue_provider.dart';
+import '../services/progress_queue.dart';
 
 // How often progress updates are emitted to the server while playing.
 const _kProgressInterval = Duration(seconds: 5);
@@ -190,7 +192,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     });
 
     // Start the periodic progress ticker now that playback is ready.
-    _startProgressTicker(mediaIdInt, client);
+    // The queue is read once here so the timer callback does not access [ref]
+    // after the widget may have been disposed (mirrors the client capture).
+    final queue = ref.read(progressQueueProvider);
+    _startProgressTicker(mediaIdInt, client, queue);
   }
 
   // ---------------------------------------------------------------------------
@@ -200,26 +205,36 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   /// Starts a periodic timer that emits progress updates every
   /// [_kProgressInterval] and marks the item finished at [_kFinishedThreshold].
   ///
-  /// The [client] reference is captured once here so we avoid accessing [ref]
-  /// inside the timer callback after the widget may have been disposed.
-  void _startProgressTicker(int mediaId, PlayerApiClient client) {
+  /// Progress updates are routed through [queue] rather than calling
+  /// [client.updateProgress] directly so that offline buffering and
+  /// online batch-flush are handled transparently (Open-Closed: screens
+  /// need not change if the queue strategy changes).
+  ///
+  /// The [client] and [queue] references are captured once here so we avoid
+  /// accessing [ref] inside the timer callback after the widget may have been
+  /// disposed.
+  void _startProgressTicker(
+    int mediaId,
+    PlayerApiClient client,
+    ProgressQueueBase queue,
+  ) {
     _progressTimer = Timer.periodic(_kProgressInterval, (_) async {
       final vc = _videoController;
       if (vc == null) return;
 
-      // Skip network calls while paused — no progress to record and avoids
-      // unnecessary server traffic when the user has paused playback.
+      // Skip updates while paused — no progress to record and avoids
+      // unnecessary DB writes when the user has paused playback.
       if (!vc.value.isPlaying) return;
 
       final position = vc.value.position;
       final duration = vc.value.duration;
 
-      // Emit raw position update — fire-and-forget so a transient network
-      // error never interrupts playback.
+      // Enqueue position update — fire-and-forget so a transient error
+      // never interrupts playback.  The queue handles online/offline.
       try {
-        await client.updateProgress(
-          mediaId: mediaId,
-          positionSeconds: position.inMilliseconds / 1000.0,
+        await queue.enqueue(
+          mediaId,
+          position.inMilliseconds / 1000.0,
         );
       } catch (_) {}
 
@@ -231,6 +246,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
               _kFinishedThreshold) {
         _finishedEmitted = true;
         try {
+          // The finished status update is still sent directly to the API
+          // because it is a distinct endpoint and should not be queued with
+          // position updates (different semantics: idempotent status vs.
+          // position accumulation).
           await client.updateProgressStatus(
             mediaId: mediaId,
             status: 'finished',

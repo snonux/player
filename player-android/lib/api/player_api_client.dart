@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../models/models.dart';
+import '../services/progress_queue.dart' show ProgressSyncClient;
 
 /// High-level API surface that maps 1-to-1 with the player-server REST API
 /// (see player-server/docs/api.md for the authoritative contract).
@@ -14,9 +15,12 @@ import '../models/models.dart';
 /// In production, create the [Dio] via [DioClient] which wires up the auth
 /// and 401-redirect interceptors.  In tests, pass a plain or mocked [Dio].
 ///
+/// Implements [ProgressSyncClient] so it can be injected directly into
+/// [ProgressQueue] without exposing the full API surface (Interface Segregation).
+///
 /// Concrete implementations of the stub methods will be added incrementally as
 /// features are built.
-class PlayerApiClient {
+class PlayerApiClient implements ProgressSyncClient {
   /// Creates a client backed by [dio].
   ///
   /// Prefer creating [dio] via [DioClient] in production to get bearer-token
@@ -359,6 +363,9 @@ class PlayerApiClient {
   /// Designed for offline clients that accumulate updates while disconnected
   /// and sync on reconnect.  Each entry must include [mediaId],
   /// [positionSeconds], and [observedAt] (ISO-8601 UTC string).
+  ///
+  /// Implements [ProgressSyncClient.batchUpdateProgress].
+  @override
   Future<void> batchUpdateProgress(
     List<Map<String, dynamic>> updates,
   ) =>

@@ -8,7 +8,9 @@ import '../api/dio_client.dart';
 import '../api/player_api_client.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/audio_handler_provider.dart';
+import '../providers/progress_queue_provider.dart';
 import '../services/audio_handler.dart';
+import '../services/progress_queue.dart';
 
 // How often progress updates are emitted to the server while playing.
 // Mirrors VideoPlayerScreen._kProgressInterval exactly.
@@ -153,8 +155,11 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     setState(() => _isLoading = false);
 
     // Step 6: begin playback and start the periodic progress ticker.
+    // The queue is read once here so the timer callback does not access [ref]
+    // after the widget may have been disposed (mirrors the client capture).
     unawaited(handler.play());
-    _startProgressTicker(mediaIdInt, client, player);
+    final queue = ref.read(progressQueueProvider);
+    _startProgressTicker(mediaIdInt, client, player, queue);
   }
 
   /// Reads the bearer token and returns the `Authorization` header map.
@@ -222,9 +227,14 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   /// Starts a periodic timer that emits progress updates every
   /// [_kProgressInterval] and marks the item finished at [_kFinishedThreshold].
   ///
-  /// The [client] and [player] references are captured once here so we avoid
-  /// accessing [ref] or [_audioPlayer] inside the timer callback after the
-  /// widget may have been disposed.
+  /// Progress updates are routed through [queue] rather than calling
+  /// [client.updateProgress] directly so that offline buffering and
+  /// online batch-flush are handled transparently (Open-Closed: screens
+  /// need not change if the queue strategy changes).
+  ///
+  /// The [client], [player], and [queue] references are captured once here so
+  /// we avoid accessing [ref] inside the timer callback after the widget may
+  /// have been disposed.
   ///
   /// The timer intentionally lives in the screen — not in the handler — so
   /// that [PlayerApiClient] (an HTTP concern) is not imported into
@@ -233,21 +243,22 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     int mediaId,
     PlayerApiClient client,
     AudioPlayer player,
+    ProgressQueueBase queue,
   ) {
     _progressTimer = Timer.periodic(_kProgressInterval, (_) async {
-      // Skip network calls while paused — no progress to record and avoids
-      // unnecessary server traffic when the user has paused playback.
+      // Skip updates while paused — no progress to record and avoids
+      // unnecessary DB writes when the user has paused playback.
       if (player.playing == false) return;
 
       final position = player.position;
       final duration = player.duration;
 
-      // Emit raw position update — fire-and-forget so a transient network
-      // error never interrupts playback.
+      // Enqueue position update — fire-and-forget so a transient error
+      // never interrupts playback.  The queue handles online/offline.
       try {
-        await client.updateProgress(
-          mediaId: mediaId,
-          positionSeconds: position.inMilliseconds / 1000.0,
+        await queue.enqueue(
+          mediaId,
+          position.inMilliseconds / 1000.0,
         );
       } catch (_) {}
 
@@ -260,6 +271,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
               _kFinishedThreshold) {
         _finishedEmitted = true;
         try {
+          // The finished status update is still sent directly to the API
+          // because it is a distinct endpoint and should not be queued with
+          // position updates (different semantics: idempotent status vs.
+          // position accumulation).
           await client.updateProgressStatus(
             mediaId: mediaId,
             status: 'finished',

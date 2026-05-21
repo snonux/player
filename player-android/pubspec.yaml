@@ -35,6 +35,12 @@ dependencies:
   # audio_service: runs audio in the background as a foreground service,
   # integrates with Android media notifications and lock-screen controls.
   audio_service: ^0.18.15
+  # sqflite: SQLite plugin for Flutter; used by ProgressQueue to persist pending
+  # progress updates locally so they survive process restarts while offline.
+  sqflite: ^2.4.1
+  # connectivity_plus: monitors network reachability changes; ProgressQueue
+  # subscribes to its stream to trigger a flush when connectivity is restored.
+  connectivity_plus: ^6.1.4
 
 dev_dependencies:
   flutter_test:
@@ -43,6 +49,9 @@ dev_dependencies:
   # http_mock_adapter: intercepts Dio requests in unit tests, returning canned
   # responses without a real network connection.
   http_mock_adapter: ^0.6.1
+  # sqflite_common_ffi: in-memory SQLite backend for pure-Dart tests; allows
+  # ProgressQueue tests to run without a real Android device or platform channel.
+  sqflite_common_ffi: ^2.3.4
 
 flutter:
   uses-material-design: true
