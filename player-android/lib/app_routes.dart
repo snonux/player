@@ -77,4 +77,21 @@ abstract final class AppRoutes {
 
   /// Returns the concrete path for the notes editor of a given [mediaId].
   static String notesPath(String mediaId) => '/notes/$mediaId';
+
+  /// Route that lists episodes for a single podcast set.
+  ///
+  /// The ':setId' path segment is the numeric podcast set identifier.
+  /// Opens [PodcastEpisodesScreen] where the user can see episode titles,
+  /// played state, and playback progress.
+  static const podcastEpisodes = '/podcasts/:setId/episodes';
+
+  /// Returns the concrete path for the podcast-episodes screen of [setId].
+  ///
+  /// [setName] is optionally passed as a URL query parameter so the app bar
+  /// can show it without an extra API call.
+  static String podcastEpisodesPath(int setId, {String? setName}) {
+    final base = '/podcasts/$setId/episodes';
+    if (setName == null || setName.isEmpty) return base;
+    return '$base?name=${Uri.encodeComponent(setName)}';
+  }
 }

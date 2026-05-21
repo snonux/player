@@ -258,3 +258,39 @@ String folderErrorMessage(Object error) {
   }
   return 'Unexpected error. Please try again.';
 }
+
+/// Maps any thrown object from [PlayerApiClient.listEpisodes] to a UI string.
+///
+/// Adds a 404-specific message (podcast set not found) on top of the generic
+/// connection-error fallback so [PodcastEpisodesScreen] can surface actionable
+/// guidance.  Kept as a separate top-level function (Open-Closed, DRY) so it
+/// can evolve independently of the other mappers.
+String episodeListErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 404) {
+      return 'Podcast not found. It may have been removed.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
+/// Maps any thrown object from [PlayerApiClient.toggleEpisodeComplete] to a
+/// UI string.
+///
+/// The toggle is a best-effort action: 404 means the episode no longer exists,
+/// 403 means the user lacks permission.  All other errors fall back to a
+/// generic connectivity message.  Kept as a separate top-level function
+/// (Open-Closed, DRY) so it can evolve independently.
+String episodeToggleErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 404) {
+      return 'Episode not found. It may have been removed.';
+    }
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to update this episode.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Could not update episode. Please try again.';
+}

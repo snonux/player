@@ -13,6 +13,7 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/media_detail_screen.dart';
 import 'screens/media_grid_screen.dart';
+import 'screens/podcast_episodes_screen.dart';
 import 'screens/podcast_list_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
@@ -146,6 +147,19 @@ final routerProvider = Provider<GoRouter>((ref) {
         // A FAB inside the screen opens the SubscribeDialog.
         path: AppRoutes.podcasts,
         builder: (context, state) => const PodcastListScreen(),
+      ),
+      GoRoute(
+        // Podcast episodes screen — shows all episodes for a podcast set.
+        // The ':setId' path segment is the numeric podcast set identifier.
+        // The optional 'name' query parameter provides the feed title for the
+        // app bar without an extra API round-trip.
+        path: AppRoutes.podcastEpisodes,
+        builder: (context, state) {
+          final raw = state.pathParameters['setId']!;
+          final setId = int.tryParse(raw) ?? 0;
+          final setName = state.uri.queryParameters['name'];
+          return PodcastEpisodesScreen(setId: setId, setName: setName);
+        },
       ),
       GoRoute(
         path: AppRoutes.videoPlayer,

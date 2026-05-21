@@ -218,10 +218,11 @@ class _PodcastTile extends StatelessWidget {
         Icons.mic_outlined,
         color: Theme.of(context).colorScheme.primary,
       ),
-      // Navigate to the media-grid screen for this podcast's episodes.
+      // Navigate to the dedicated podcast episodes screen.
+      // The set name is forwarded as a query parameter so the episodes
+      // screen app bar shows it immediately without an extra API call.
       onTap: () => context.go(
-        AppRoutes.mediaGridPath(podcast.id),
-        extra: podcast.name,
+        AppRoutes.podcastEpisodesPath(podcast.id, setName: podcast.name),
       ),
     );
   }
