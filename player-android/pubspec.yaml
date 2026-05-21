@@ -17,6 +17,9 @@ dependencies:
   flutter_riverpod: ^2.6.1
   # go_router: declarative routing for Flutter; replaces imperative Navigator calls.
   go_router: ^14.8.1
+  # shared_preferences: persists simple key-value settings (e.g. server base URL)
+  # using platform-native storage (SharedPreferences on Android, NSUserDefaults on iOS).
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
   flutter_test:

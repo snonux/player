@@ -8,6 +8,7 @@ abstract final class AppRoutes {
   static const home = '/home';
   static const mediaDetail = '/media/:id';
   static const share = '/share';
+  static const settings = '/settings';
 
   /// First-run setup route shown when no admin account exists yet.
   static const bootstrap = '/bootstrap';

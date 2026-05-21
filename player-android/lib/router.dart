@@ -10,6 +10,7 @@ import 'screens/bootstrap_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/media_detail_screen.dart';
+import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
 
 // Re-export AppRoutes so existing callers that import router.dart for routes
@@ -61,9 +62,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       if (auth.isUnauthenticated && !isLoginRoute && !isBootstrapRoute) {
-        // Unauthenticated: determine whether this is first-run (no users) or
-        // a normal returning-user scenario.  firstRunProvider returns true when
-        // the server reports count == 0 (no accounts exist yet).
+        // Unauthenticated: any route other than /login and /bootstrap is
+        // protected.  This covers /home, /media/:id, /share, /settings, and
+        // any future authenticated routes added to the route table.
+        //
+        // Determine whether this is first-run (no users exist yet) or a normal
+        // returning-user scenario.  firstRunProvider returns true when the
+        // server reports count == 0.
         //
         // While the check is loading we stay put; the router re-evaluates when
         // firstRunProvider's AsyncValue settles (via refreshListenable).
@@ -104,6 +109,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.share,
         builder: (context, state) => const ShareScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.settings,
+        builder: (context, state) => const SettingsScreen(),
       ),
     ],
   );
