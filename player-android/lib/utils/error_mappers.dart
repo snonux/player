@@ -385,7 +385,7 @@ String adminPermissionErrorMessage(Object error) {
 /// [PlayerApiClient.getScanProgress] to a UI string.
 ///
 /// Adds a 403-specific message (admin-only) on top of the generic
-/// connection-error fallback so [RescanScreen] surfaces actionable guidance.
+/// connection-error fallback so [AdminRescanScreen] surfaces actionable guidance.
 /// Kept as a separate top-level function (Open-Closed, DRY).
 String adminRescanErrorMessage(Object error) {
   if (error is DioException) {

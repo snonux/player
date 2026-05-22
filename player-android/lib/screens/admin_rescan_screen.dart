@@ -39,7 +39,7 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
   String? _error;
 
   // True while the trigger request is in flight.
-  bool _isTriggerring = false;
+  bool _isTriggering = false;
 
   // Active polling timer; cancelled in dispose and whenever the scan finishes.
   Timer? _pollTimer;
@@ -117,23 +117,23 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
 
   /// Sends a trigger-rescan request and immediately begins polling for progress.
   Future<void> _triggerRescan() async {
-    if (!mounted || _isTriggerring) return;
+    if (!mounted || _isTriggering) return;
     setState(() {
-      _isTriggerring = true;
+      _isTriggering = true;
       _error = null;
     });
 
     try {
       await ref.read(apiClientProvider).triggerRescan();
       if (!mounted) return;
-      setState(() => _isTriggerring = false);
+      setState(() => _isTriggering = false);
       // Start polling immediately so the user sees progress as soon as the
       // server reports the scan has begun.
       await _fetchStatus();
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _isTriggerring = false;
+        _isTriggering = false;
         _error = adminRescanErrorMessage(e);
       });
     }
@@ -175,7 +175,7 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
         const SizedBox(height: 32),
         _TriggerButton(
           isRunning: _status?.isRunning ?? false,
-          isTriggerring: _isTriggerring,
+          isTriggering: _isTriggering,
           onTap: _triggerRescan,
         ),
       ],
@@ -398,23 +398,23 @@ class _ErrorRow extends StatelessWidget {
 class _TriggerButton extends StatelessWidget {
   const _TriggerButton({
     required this.isRunning,
-    required this.isTriggerring,
+    required this.isTriggering,
     required this.onTap,
   });
 
   final bool isRunning;
-  final bool isTriggerring;
+  final bool isTriggering;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     // Disable the button while a scan is active or the trigger is in flight.
-    final canTrigger = !isRunning && !isTriggerring;
+    final canTrigger = !isRunning && !isTriggering;
 
     return FilledButton.icon(
       key: const Key('admin_rescan_trigger'),
       onPressed: canTrigger ? onTap : null,
-      icon: isTriggerring
+      icon: isTriggering
           ? const SizedBox(
               width: 18,
               height: 18,

@@ -84,8 +84,12 @@ class _AdminPermissionsScreenState
 
       if (!mounted || generation != _generation) return;
 
-      final users = results[0] as List<User>;
-      final sets = results[1] as List<MediaSet>;
+      // Use .cast<T>() for list results so a type mismatch produces a useful
+      // error at element access rather than silently failing on a direct cast.
+      // The Map result is kept as-is with a cast because there is no cast()
+      // method on Map in the Dart core library.
+      final users = (results[0] as List).cast<User>();
+      final sets = (results[1] as List).cast<MediaSet>();
       final permsData = results[2] as Map<String, dynamic>;
 
       setState(() {

@@ -87,8 +87,9 @@ class _AdminTrashScreenState extends ConsumerState<AdminTrashScreen> {
   /// problem.  Re-appending (rather than re-inserting at the original index)
   /// avoids position jitter from concurrent mutations.
   Future<void> _restore(Media item, int index) async {
-    // Optimistic removal: remove the item from the list immediately.
-    setState(() => _items!.removeAt(index));
+    // Identity-based removal (by id) avoids position drift from concurrent
+    // operations that could shift list indices between tap and setState.
+    setState(() => _items!.removeWhere((e) => e.id == item.id));
 
     try {
       await ref.read(apiClientProvider).restoreMedia(item.id);
@@ -122,8 +123,9 @@ class _AdminTrashScreenState extends ConsumerState<AdminTrashScreen> {
     final confirmed = await _confirmHardDelete(item.fileName);
     if (!confirmed || !mounted) return;
 
-    // Optimistic removal.
-    setState(() => _items!.removeAt(index));
+    // Identity-based removal (by id) avoids position drift from concurrent
+    // operations that could shift list indices between tap and setState.
+    setState(() => _items!.removeWhere((e) => e.id == item.id));
 
     try {
       // deleteMedia soft-deletes again (no-op for an already-deleted item)
@@ -174,6 +176,7 @@ class _AdminTrashScreenState extends ConsumerState<AdminTrashScreen> {
         ],
       ),
     );
+    // Tapping outside the dialog returns null; treat as cancel (no deletion).
     return result ?? false;
   }
 
