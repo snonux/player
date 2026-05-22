@@ -24,6 +24,7 @@ import 'screens/admin_permissions_screen.dart';
 import 'screens/admin_rescan_screen.dart';
 import 'screens/admin_trash_screen.dart';
 import 'screens/admin_users_screen.dart';
+import 'screens/api_tokens_screen.dart';
 import 'screens/folder_browser_screen.dart';
 import 'screens/video_player_screen.dart';
 
@@ -258,6 +259,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         // Admin-only; non-admin users receive 403 from the server.
         path: AppRoutes.adminTrash,
         builder: (context, state) => const AdminTrashScreen(),
+      ),
+      GoRoute(
+        // API token management — lists, creates, and revokes Bearer API tokens
+        // for the authenticated user.  Available to all authenticated users
+        // (not admin-only) via the Account section of Settings.
+        path: AppRoutes.apiTokens,
+        builder: (context, state) => const ApiTokensScreen(),
       ),
       GoRoute(
         // Folder browser — shows subfolders and media at the current path

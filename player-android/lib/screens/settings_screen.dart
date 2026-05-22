@@ -165,6 +165,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               const SizedBox(height: 24),
 
+              // API Tokens tile — navigates to /settings/api-tokens.
+              // Available to all authenticated users (not admin-only) so they
+              // can manage their own Bearer tokens for external integrations.
+              ListTile(
+                key: const Key('settings_api_tokens'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.key_outlined),
+                title: const Text('API Tokens'),
+                subtitle: const Text('Create and revoke Bearer API tokens'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.go(AppRoutes.apiTokens),
+              ),
+
+              const SizedBox(height: 24),
+
               // Logout button: shows a spinner while the token is being deleted.
               _isLoggingOut
                   ? const Center(child: CircularProgressIndicator())

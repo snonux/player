@@ -419,6 +419,34 @@ String adminTrashErrorMessage(Object error) {
   return 'Unexpected error. Please try again.';
 }
 
+/// Maps any thrown object from [PlayerApiClient.listAPITokens],
+/// [PlayerApiClient.createAPIToken], or [PlayerApiClient.revokeAPIToken] to a
+/// human-readable UI string.
+///
+/// Adds messages for the common failure modes:
+///   - 400: the request body is invalid (e.g. empty name, non-positive expiry).
+///     Delegates to [dioErrorMessage] to surface the server's JSON body message.
+///   - 404: the token no longer exists (may have been revoked already).
+///
+/// Kept as a separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of the other mappers.
+String apiTokenErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 404) {
+      return 'Token not found. It may have already been revoked.';
+    }
+    if (error.response?.statusCode == 400) {
+      // Prefer the server's JSON body message (e.g. "name required") over a
+      // generic fallback so the user knows exactly what to fix.
+      final serverMsg = dioErrorMessage(error);
+      if (!serverMsg.startsWith('Server error')) return serverMsg;
+      return 'Invalid request. Check the token name and expiry and try again.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
 /// Maps any thrown object from [PlayerApiClient.downloadEpisode] to a UI string.
 ///
 /// Adds human-readable messages for the failure modes specific to triggering a

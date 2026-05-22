@@ -137,4 +137,10 @@ abstract final class AppRoutes {
   ///
   /// Lists soft-deleted media items and allows restore or hard-delete.
   static const adminTrash = '/admin/trash';
+
+  /// Route for the API token management screen.
+  ///
+  /// Allows any authenticated user to list, create, and revoke their own
+  /// Bearer API tokens.  Available in the Account section of Settings.
+  static const apiTokens = '/settings/api-tokens';
 }
