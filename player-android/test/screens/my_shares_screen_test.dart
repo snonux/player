@@ -258,6 +258,18 @@ void main() {
       // _kShareB.usedCount=0, maxUses=null → "0 uses".
       expect(find.textContaining('0 uses'), findsOneWidget);
     });
+
+    testWidgets('shows "All shares loaded" footer after a successful load',
+        (tester) async {
+      // The footer is always rendered (MySharesScreen has no pagination) once
+      // the list is non-empty.  Verify the key is present in the widget tree.
+      final fakeClient = _FakeApiClient()..sharesResult = [_kShareA, _kShareB];
+
+      await _pumpMySharesScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shares_no_more')), findsOneWidget);
+    });
   });
 
   // --------------------------------------------------------------------------

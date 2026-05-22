@@ -488,9 +488,16 @@ class _EpisodeList extends StatelessWidget {
 
   /// Builds the footer widget appended after the last episode row.
   ///
-  /// Shows a spinner while more pages are loading, or an "All episodes loaded"
-  /// text once [hasMore] is false.
+  /// Returns [SizedBox.shrink] when no content is needed (more pages exist and
+  /// no load is in flight), so no dead space or phantom keys appear.  Shows a
+  /// spinner while more pages are loading, or an "All episodes loaded" message
+  /// once [hasMore] is false.
   Widget _buildFooter(BuildContext context) {
+    // Nothing to display: further pages exist and we are not currently loading.
+    // Return a zero-size widget so the footer slot takes no visual space and
+    // the 'episodes_no_more' key is never leaked into the tree prematurely.
+    if (!isLoadingMore && hasMore) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: isLoadingMore
@@ -500,7 +507,7 @@ class _EpisodeList extends StatelessWidget {
             )
           : Center(
               child: Text(
-                hasMore ? '' : 'All episodes loaded',
+                'All episodes loaded',
                 key: const Key('episodes_no_more'),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
