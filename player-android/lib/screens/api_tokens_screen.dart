@@ -70,8 +70,8 @@ class _TokenRow {
 ///     is inserted at [_tokens!.length] before the API call; on success the
 ///     real row replaces that slot; on error the slot is removed.
 ///   - Revoke uses identity-based optimistic removal:
-///     `_tokens!.removeWhere((t) => t.id == token.id)` first, then reverted
-///     with `[..._tokens!, token]` on error (consistent with MySharesScreen).
+///     `_tokens!.removeWhere((t) => t.id == token.id)` first, then appended
+///     back on error (mirrors AdminUsersScreen; append avoids unsafe index-based re-insert).
 ///   - The plaintext token from `createAPIToken` is shown exactly once in a
 ///     dialog with a copy button; after the user taps Done it is discarded.
 ///   - All async continuations guard on [mounted] to prevent setState / context
@@ -229,7 +229,7 @@ class _ApiTokensScreenState extends ConsumerState<ApiTokensScreen> {
   ///
   /// Identity-based optimistic removal: the token row is removed from the list
   /// immediately, then the API call is made.  On error the row is appended back
-  /// (consistent with MySharesScreen and the task spec).
+  /// (mirrors AdminUsersScreen, which also appends on revert).
   Future<void> _revokeToken(_TokenRow token) async {
     final confirmed = await _confirmRevoke(token.name);
     if (!confirmed || !mounted) return;
@@ -250,8 +250,8 @@ class _ApiTokensScreenState extends ConsumerState<ApiTokensScreen> {
     } catch (e) {
       if (!mounted) return;
       // Re-append the token to restore the list after the failed revoke.
-      // Append rather than re-insert at original index to avoid position jitter
-      // from concurrent mutations (mirrors MySharesScreen and admin_users).
+      // Append rather than re-insert at original index to match AdminUsersScreen;
+      // index-based re-insert is unsafe if concurrent loads replace _tokens.
       setState(() => _tokens = [...?_tokens, token]);
       _showError(apiTokenErrorMessage(e));
     }
