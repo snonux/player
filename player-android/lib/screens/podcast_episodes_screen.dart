@@ -77,6 +77,10 @@ class _PodcastEpisodesScreenState
   // True while the initial or refresh load is in flight.
   bool _isLoading = false;
 
+  // Tracks episodes whose download is in-flight to prevent double-tap
+  // from firing concurrent API calls for the same episode.
+  final Set<int> _pendingDownloads = {};
+
   @override
   void initState() {
     super.initState();
@@ -171,6 +175,10 @@ class _PodcastEpisodesScreenState
   /// carries the newly created [mediaId].  On success the episode row is
   /// updated in-place so the play button appears without a full reload.
   /// On failure the original row is preserved and a SnackBar is shown.
+  ///
+  /// Double-tap protection: [_pendingDownloads] prevents concurrent API calls
+  /// for the same episode if the user taps the download button multiple times
+  /// before the first await returns.
   Future<void> _downloadEpisodeAt(int index) async {
     final items = _episodes;
     if (items == null || index < 0 || index >= items.length) return;
@@ -179,6 +187,10 @@ class _PodcastEpisodesScreenState
     // Guard: do not re-download an episode that already has a media file.
     if (original.mediaId != null) return;
 
+    // Guard: ignore duplicate taps while a download is already in-flight.
+    if (_pendingDownloads.contains(original.id)) return;
+    setState(() => _pendingDownloads.add(original.id));
+
     try {
       final client = ref.read(apiClientProvider);
       final media = await client.downloadEpisode(original.id);
@@ -186,19 +198,32 @@ class _PodcastEpisodesScreenState
 
       // Update the episode row with the server-assigned mediaId so the play
       // button appears without waiting for a full page reload.
+      // Read _episodes fresh inside setState: _load() may have completed during
+      // the await, and using the pre-await snapshot would silently overwrite
+      // fresher data.  Also guard that the index is still valid and that the
+      // row still lacks a mediaId (i.e. it hasn't been updated by _load()).
       final updated = PodcastEpisode.fromJson(
         original.toJson()
           ..['media_id'] = media.id
           ..['is_downloaded'] = true,
       );
       setState(() {
-        _episodes = List<PodcastEpisode>.from(items)..[index] = updated;
+        final current = _episodes;
+        if (current != null &&
+            index < current.length &&
+            current[index].mediaId == null) {
+          _episodes = List<PodcastEpisode>.from(current)..[index] = updated;
+        }
       });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(episodeDownloadErrorMessage(e))),
       );
+    } finally {
+      // Always clear the pending flag so the button is re-enabled regardless
+      // of success or failure.
+      if (mounted) setState(() => _pendingDownloads.remove(original.id));
     }
   }
 
@@ -248,10 +273,10 @@ class _PodcastEpisodesScreenState
           ? const _EmptyView()
           : _EpisodeList(
               episodes: _episodes!,
+              pendingDownloads: _pendingDownloads,
               onToggleComplete: _toggleCompleteAt,
               onDownload: _downloadEpisodeAt,
-              // Navigate to AudioPlayerScreen; mediaId is guaranteed non-null
-              // here because the play button is only rendered when mediaId != null.
+              // mediaId is non-null: _EpisodeRow only invokes onPlay when episode.mediaId is set.
               onPlay: (mediaId) => context.go(
                 AppRoutes.audioPlayerPath(mediaId.toString()),
               ),
@@ -271,12 +296,19 @@ class _PodcastEpisodesScreenState
 class _EpisodeList extends StatelessWidget {
   const _EpisodeList({
     required this.episodes,
+    required this.pendingDownloads,
     required this.onToggleComplete,
     required this.onDownload,
     required this.onPlay,
   });
 
   final List<PodcastEpisode> episodes;
+
+  /// Set of episode IDs whose download is currently in-flight.
+  ///
+  /// Passed down from the state class so each [_EpisodeRow] can visually
+  /// disable its download button while the request is pending.
+  final Set<int> pendingDownloads;
 
   /// Called with the index of the episode whose played state was tapped.
   ///
@@ -301,6 +333,7 @@ class _EpisodeList extends StatelessWidget {
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, index) => _EpisodeRow(
         episode: episodes[index],
+        isDownloadPending: pendingDownloads.contains(episodes[index].id),
         onToggleComplete: () => onToggleComplete(index),
         onDownload: () => onDownload(index),
         onPlay: onPlay,
@@ -324,12 +357,19 @@ class _EpisodeList extends StatelessWidget {
 class _EpisodeRow extends StatelessWidget {
   const _EpisodeRow({
     required this.episode,
+    required this.isDownloadPending,
     required this.onToggleComplete,
     required this.onDownload,
     required this.onPlay,
   });
 
   final PodcastEpisode episode;
+
+  /// True while this episode's download request is in-flight.
+  ///
+  /// Forwarded to [_DownloadButton] to visually disable it and prevent
+  /// additional taps from firing concurrent API calls.
+  final bool isDownloadPending;
 
   /// Called when the user taps the played/unplayed icon.
   ///
@@ -367,6 +407,7 @@ class _EpisodeRow extends StatelessWidget {
           else
             _DownloadButton(
               episodeId: episode.id,
+              isLoading: isDownloadPending,
               onTap: onDownload,
             ),
           // Checkmark toggle anchored to the trailing edge.
@@ -519,12 +560,62 @@ class _PlaybackProgressBar extends StatelessWidget {
   }
 }
 
+/// Shared icon-button primitive used by [_PlayButton] and [_DownloadButton].
+///
+/// Both buttons are structurally identical — a [GestureDetector] wrapping a
+/// padded [Icon] — and differ only in key string, icon data, and color.
+/// Extracting this base widget eliminates the duplication (DRY) while keeping
+/// each caller widget as a thin, readable wrapper (Single Responsibility).
+///
+/// When [isLoading] is true the tap is suppressed, providing a visual and
+/// interactive disabled state without needing a separate StatefulWidget.
+class _EpisodeActionButton extends StatelessWidget {
+  const _EpisodeActionButton({
+    required this.widgetKey,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+    this.isLoading = false,
+  });
+
+  /// Widget key forwarded directly to the [GestureDetector] so callers can
+  /// assign test-discoverable keys (e.g. `Key('episode_play_button_42')`).
+  final Key widgetKey;
+
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  /// When true, taps are ignored and the icon is dimmed to signal that an
+  /// operation is already in-flight (prevents duplicate API calls).
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: widgetKey,
+      behavior: HitTestBehavior.opaque,
+      // Suppress taps while loading to act as a lightweight disabled state.
+      onTap: isLoading ? null : onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(
+          icon,
+          size: 24,
+          // Dim the icon when loading so the user has visual feedback that
+          // the button is temporarily inactive.
+          color: isLoading ? color.withAlpha(100) : color,
+        ),
+      ),
+    );
+  }
+}
+
 /// Icon button that opens the [AudioPlayerScreen] for a downloaded episode.
 ///
 /// Shown in [_EpisodeRow] only when [PodcastEpisode.mediaId] is non-null,
 /// meaning the episode has been downloaded and a [Media] row exists.
-/// Uses [GestureDetector] with [HitTestBehavior.opaque] to consume taps
-/// without propagating to parent [InkWell] widgets (mirrors [_PlayedToggle]).
+/// Delegates rendering to [_EpisodeActionButton] (DRY).
 class _PlayButton extends StatelessWidget {
   const _PlayButton({
     required this.episodeId,
@@ -536,18 +627,11 @@ class _PlayButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      key: Key('episode_play_button_$episodeId'),
-      behavior: HitTestBehavior.opaque,
+    return _EpisodeActionButton(
+      widgetKey: Key('episode_play_button_$episodeId'),
+      icon: Icons.play_circle_outline,
+      color: Theme.of(context).colorScheme.primary,
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Icon(
-          Icons.play_circle_outline,
-          size: 24,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
     );
   }
 }
@@ -559,29 +643,29 @@ class _PlayButton extends StatelessWidget {
 /// into the server's media library.  Once downloaded, the server creates a
 /// [Media] row and [PodcastEpisode.mediaId] becomes non-null, replacing this
 /// button with [_PlayButton] in the next render cycle.
+/// Delegates rendering to [_EpisodeActionButton] (DRY).
 class _DownloadButton extends StatelessWidget {
   const _DownloadButton({
     required this.episodeId,
+    required this.isLoading,
     required this.onTap,
   });
 
   final int episodeId;
+
+  /// True while the download request is in-flight; passed to
+  /// [_EpisodeActionButton] to visually disable the button.
+  final bool isLoading;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      key: Key('episode_download_button_$episodeId'),
-      behavior: HitTestBehavior.opaque,
+    return _EpisodeActionButton(
+      widgetKey: Key('episode_download_button_$episodeId'),
+      icon: Icons.download_outlined,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+      isLoading: isLoading,
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Icon(
-          Icons.download_outlined,
-          size: 24,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
     );
   }
 }

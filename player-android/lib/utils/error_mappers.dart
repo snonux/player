@@ -318,6 +318,9 @@ String episodeToggleErrorMessage(Object error) {
     }
     return dioConnectionErrorMessage(error);
   }
+  // Action-specific fallback: gives the user more context than a generic
+  // "Unexpected error" message when the toggle mutation fails for an unknown
+  // reason (e.g. an exception type that is not a DioException).
   return 'Could not update episode. Please try again.';
 }
 
@@ -345,5 +348,8 @@ String episodeDownloadErrorMessage(Object error) {
     }
     return dioConnectionErrorMessage(error);
   }
+  // Action-specific fallback: gives the user more context than a generic
+  // "Unexpected error" message when the download mutation fails for an unknown
+  // reason (e.g. an exception type that is not a DioException).
   return 'Could not download episode. Please try again.';
 }
