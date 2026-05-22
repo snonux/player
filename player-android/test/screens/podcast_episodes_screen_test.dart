@@ -90,6 +90,11 @@ class _FakeApiClient extends PlayerApiClient {
   /// Records every call to [downloadEpisode] — useful for download tests.
   int downloadEpisodeCallCount = 0;
 
+  /// When non-null, [downloadEpisode] returns this completer's future instead
+  /// of resolving immediately.  This lets a test hold the first call
+  /// in-flight so a second tap can be verified to be suppressed by the guard.
+  Completer<Media>? downloadCompleter;
+
   @override
   Future<List<PodcastEpisode>> listEpisodes(
     int podcastSetId, {
@@ -111,6 +116,8 @@ class _FakeApiClient extends PlayerApiClient {
   Future<Media> downloadEpisode(int episodeId) async {
     downloadEpisodeCallCount++;
     if (downloadError != null) throw downloadError!;
+    // If a completer is provided, the caller controls when the future resolves.
+    if (downloadCompleter != null) return downloadCompleter!.future;
     return downloadResult!;
   }
 }
@@ -882,6 +889,38 @@ void main() {
 
       expect(find.byType(SnackBar), findsOneWidget);
       expect(find.textContaining('Could not reach'), findsOneWidget);
+    });
+
+    testWidgets(
+        'double-tap download button only fires one API call',
+        (tester) async {
+      // Hold the first download in-flight so the button is still showing when
+      // the second tap happens — this is the window the guard must close.
+      final fakeClient = _FakeApiClient()
+        ..episodesResult = [_kEpisode1]
+        ..downloadCompleter = Completer<Media>();
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      final downloadButton =
+          find.byKey(const Key('episode_download_button_1'));
+      expect(downloadButton, findsOneWidget);
+
+      // First tap: starts the download; future not yet resolved.
+      await tester.tap(downloadButton);
+      await tester.pump();
+
+      // Second tap: should be suppressed by the _pendingDownloads guard.
+      await tester.tap(downloadButton);
+      await tester.pump();
+
+      // Resolve the in-flight download to allow pumpAndSettle to complete.
+      fakeClient.downloadCompleter!.complete(_kDownloadedMedia);
+      await tester.pumpAndSettle();
+
+      // Despite two taps, the API must have been called exactly once.
+      expect(fakeClient.downloadEpisodeCallCount, equals(1));
     });
   });
 
