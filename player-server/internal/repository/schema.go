@@ -261,6 +261,15 @@ ALTER TABLE podcast_feeds ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAU
 ALTER TABLE podcast_feeds ADD COLUMN next_check_at DATETIME;
 `,
 	},
+	{
+		// Adds the "finished" flag used by GetProgress / SetProgress on the
+		// playback_progress table.  Databases created before this column was
+		// introduced still satisfy the CREATE TABLE IF NOT EXISTS in the base
+		// schema, so the column must be added via migration to avoid a 500 on
+		// GET /api/v1/media/{id} reading from progress.
+		name: "add_playback_progress_finished",
+		sql:  `ALTER TABLE playback_progress ADD COLUMN finished BOOLEAN NOT NULL DEFAULT 0;`,
+	},
 }
 
 // runMigrations applies each migration in order, skipping ones whose SQL

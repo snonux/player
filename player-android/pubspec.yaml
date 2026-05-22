@@ -41,6 +41,8 @@ dependencies:
   # connectivity_plus: monitors network reachability changes; ProgressQueue
   # subscribes to its stream to trigger a flush when connectivity is restored.
   connectivity_plus: ^6.1.4
+  cookie_jar: ^4.0.9
+  dio_cookie_manager: ^3.4.0
 
 dev_dependencies:
   flutter_test:

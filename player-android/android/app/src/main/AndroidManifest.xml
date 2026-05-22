@@ -63,6 +63,12 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Disable Impeller on the x86_64 emulator: its OpenGL ES driver
+             does not support GL_EXT_shader_framebuffer_fetch, causing Impeller
+             to fail compiling blend-mode shaders.  Skia renders correctly. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
         <!-- audio_service background playback service.
              android:foregroundServiceType="mediaPlayback" is mandatory on
              Android 10+ (API 29+) to grant media-playback foreground service

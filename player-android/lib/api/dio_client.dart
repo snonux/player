@@ -1,6 +1,9 @@
+import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
+import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:go_router/go_router.dart';
 
 // Storage key under which the bearer token is persisted across app restarts.
 const _kTokenKey = 'bearer_token';
@@ -89,9 +92,15 @@ class _UnauthorizedInterceptor extends Interceptor {
       // Purge the stale token so subsequent requests start unauthenticated.
       await _storage.deleteToken();
 
-      // Use the navigator key to redirect without needing a BuildContext.
-      _navigatorKey.currentState
-          ?.pushNamedAndRemoveUntil(_loginRoute, (_) => false);
+      // Redirect via go_router (the app's router) rather than the classic
+      // Navigator.  pushNamedAndRemoveUntil would throw "Navigator.onGenerateRoute
+      // was null" because go_router does not register named routes on the
+      // underlying Navigator.  Using the navigatorKey's currentContext lets us
+      // resolve the active GoRouter instance without a widget-tree BuildContext.
+      final ctx = _navigatorKey.currentContext;
+      if (ctx != null && ctx.mounted) {
+        GoRouter.of(ctx).go(_loginRoute);
+      }
     }
     handler.next(err);
   }
@@ -138,9 +147,18 @@ class DioClient {
       responseType: ResponseType.json,
     );
 
+    // The server's /api/v1/auth/login sets an HttpOnly Set-Cookie (session=...).
+    // Browsers persist this automatically; on mobile we attach a CookieJar so
+    // Dio replays the cookie on subsequent requests.  Without this, every call
+    // after login returns 401 because Dio discards cookies by default.
+    // In-memory is sufficient: logout clears it, and we persist the bearer
+    // token (for API-token auth) separately via flutter_secure_storage.
+    final cookieJar = CookieJar();
     return Dio(options)
       ..interceptors.addAll([
-        // Auth must run before the 401 handler so the token is attached first.
+        // Cookie manager runs first so the session cookie is replayed before
+        // _AuthInterceptor decides whether to add a Bearer fallback.
+        CookieManager(cookieJar),
         _AuthInterceptor(storage),
         _UnauthorizedInterceptor(
           storage: storage,
