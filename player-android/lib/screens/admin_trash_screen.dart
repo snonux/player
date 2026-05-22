@@ -86,7 +86,7 @@ class _AdminTrashScreenState extends ConsumerState<AdminTrashScreen> {
   /// On error the item is re-appended to the list and a SnackBar reports the
   /// problem.  Re-appending (rather than re-inserting at the original index)
   /// avoids position jitter from concurrent mutations.
-  Future<void> _restore(Media item, int index) async {
+  Future<void> _restore(Media item) async {
     // Identity-based removal (by id) avoids position drift from concurrent
     // operations that could shift list indices between tap and setState.
     setState(() => _items!.removeWhere((e) => e.id == item.id));
@@ -119,7 +119,7 @@ class _AdminTrashScreenState extends ConsumerState<AdminTrashScreen> {
   /// permanent removal.  The server's GC worker completes the physical file
   /// removal.  The item is removed from the local list optimistically and
   /// reverted on error.
-  Future<void> _hardDelete(Media item, int index) async {
+  Future<void> _hardDelete(Media item) async {
     final confirmed = await _confirmHardDelete(item.fileName);
     if (!confirmed || !mounted) return;
 
@@ -260,8 +260,8 @@ class _TrashList extends StatelessWidget {
   });
 
   final List<Media> items;
-  final Future<void> Function(Media item, int index) onRestore;
-  final Future<void> Function(Media item, int index) onHardDelete;
+  final Future<void> Function(Media item) onRestore;
+  final Future<void> Function(Media item) onHardDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -271,7 +271,6 @@ class _TrashList extends StatelessWidget {
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (_, index) => _TrashTile(
         item: items[index],
-        index: index,
         onRestore: onRestore,
         onHardDelete: onHardDelete,
       ),
@@ -283,15 +282,13 @@ class _TrashList extends StatelessWidget {
 class _TrashTile extends StatelessWidget {
   const _TrashTile({
     required this.item,
-    required this.index,
     required this.onRestore,
     required this.onHardDelete,
   });
 
   final Media item;
-  final int index;
-  final Future<void> Function(Media item, int index) onRestore;
-  final Future<void> Function(Media item, int index) onHardDelete;
+  final Future<void> Function(Media item) onRestore;
+  final Future<void> Function(Media item) onHardDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -313,14 +310,14 @@ class _TrashTile extends StatelessWidget {
             key: Key('admin_trash_restore_${item.id}'),
             icon: const Icon(Icons.restore_outlined),
             tooltip: 'Restore',
-            onPressed: () => onRestore(item, index),
+            onPressed: () => onRestore(item),
           ),
           IconButton(
             key: Key('admin_trash_delete_${item.id}'),
             icon: const Icon(Icons.delete_forever_outlined),
             tooltip: 'Delete permanently',
             color: Theme.of(context).colorScheme.error,
-            onPressed: () => onHardDelete(item, index),
+            onPressed: () => onHardDelete(item),
           ),
         ],
       ),
