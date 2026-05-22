@@ -222,7 +222,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               const SizedBox(height: 12),
 
-              _ThemeToggle(),
+              const _ThemeToggle(),
 
               const SizedBox(height: 32),
               const Divider(),
@@ -265,8 +265,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 /// Kept as a separate [ConsumerWidget] (SRP) so [_SettingsScreenState] does
 /// not need to know about [themeProvider] — it only needs to place the widget.
 class _ThemeToggle extends ConsumerWidget {
-  // ignore: prefer_const_constructors_in_immutables — private widget, not const
-  _ThemeToggle();
+  const _ThemeToggle();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -274,14 +273,6 @@ class _ThemeToggle extends ConsumerWidget {
     // immediately rather than showing an empty state.
     final current = ref.watch(themeProvider).valueOrNull ?? ThemeMode.system;
 
-    return _buildSegmentedButton(context, ref, current);
-  }
-
-  Widget _buildSegmentedButton(
-    BuildContext context,
-    WidgetRef ref,
-    ThemeMode current,
-  ) {
     return SegmentedButton<ThemeMode>(
       key: const Key('settings_theme_toggle'),
       segments: const [
@@ -305,6 +296,7 @@ class _ThemeToggle extends ConsumerWidget {
       // Allow only single selection — the user always has exactly one mode active.
       multiSelectionEnabled: false,
       onSelectionChanged: (selection) {
+        // emptySelectionAllowed defaults to false, but guard defensively against future API changes.
         if (selection.isNotEmpty) {
           ref.read(themeProvider.notifier).setThemeMode(selection.first);
         }

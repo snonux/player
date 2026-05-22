@@ -30,15 +30,15 @@ String _themeModeToString(ThemeMode mode) => switch (mode) {
     };
 
 // ---------------------------------------------------------------------------
-// Color schemes derived from player-server/docs/theming.md
+// Color schemes derived from player-server/web/css/theme.css
 //
 // Dark palette mirrors the CSS :root block; light palette mirrors
 // [data-theme="light"].  Material 3 ColorScheme is built from the key tokens:
-//   primary     ← --accent
-//   onPrimary   ← --text-inverse / white
-//   surface     ← --bg-surface
-//   background  ← --bg-body
-//   error       ← --danger
+//   primary               ← --accent
+//   onPrimary             ← --text-inverse / white
+//   surface               ← --bg-surface
+//   scaffoldBackgroundColor ← --bg-body
+//   error                 ← --danger
 // ---------------------------------------------------------------------------
 
 /// Material 3 dark [ColorScheme] matching the server's default dark palette.
@@ -151,12 +151,20 @@ class ThemeNotifier extends AsyncNotifier<ThemeMode> {
 
   /// Updates the active [ThemeMode] and persists the choice to disk.
   ///
-  /// The in-memory state is updated first so that [MaterialApp.themeMode]
-  /// changes immediately; the disk write follows asynchronously.
+  /// In-memory state is updated first so [MaterialApp.themeMode] changes
+  /// immediately without blocking on I/O.  If the disk write fails, the
+  /// previous state is restored so in-memory and disk stay in sync.
   Future<void> setThemeMode(ThemeMode mode) async {
+    final previous = state;
     state = AsyncData(mode);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kThemeModeKey, _themeModeToString(mode));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kThemeModeKey, _themeModeToString(mode));
+    } catch (_) {
+      // Roll back so in-memory and disk stay in sync.
+      state = previous;
+      rethrow;
+    }
   }
 }
 

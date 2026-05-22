@@ -21,6 +21,7 @@ import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
+import 'package:player_android/providers/theme_provider.dart';
 import 'package:player_android/screens/settings_screen.dart';
 
 // ---------------------------------------------------------------------------
@@ -62,6 +63,25 @@ class _FakeSettingsNotifier extends SettingsNotifier {
     savedUrl = url;
     // Mirror the production implementation: update in-memory state immediately.
     state = AsyncData(AppSettings(serverBaseUrl: url));
+  }
+}
+
+/// In-memory [ThemeNotifier] that bypasses [SharedPreferences] in tests.
+///
+/// Starts at [ThemeMode.system] (the default) and records the last mode passed
+/// to [setThemeMode] so tests can assert on the captured value.
+class _FakeThemeNotifier extends ThemeNotifier {
+  // Tracks the last mode applied via setThemeMode for test assertions.
+  ThemeMode? capturedMode;
+
+  @override
+  Future<ThemeMode> build() async => ThemeMode.system;
+
+  @override
+  Future<void> setThemeMode(ThemeMode mode) async {
+    capturedMode = mode;
+    // Mirror the production behaviour: update in-memory state immediately.
+    state = AsyncData(mode);
   }
 }
 
@@ -256,6 +276,96 @@ void main() {
 
       // Nothing should have been saved since the field was blank.
       expect(result.settings.savedUrl, isNull);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Theme toggle
+  // --------------------------------------------------------------------------
+
+  group('theme toggle', () {
+    testWidgets('renders with system segment selected by default',
+        (tester) async {
+      final fakeStorage = _FakeTokenStorage().._token = 'alice';
+      final fakeSettings = _FakeSettingsNotifier('http://10.0.2.2:8080');
+      final fakeTheme = _FakeThemeNotifier();
+
+      final router = GoRouter(
+        initialLocation: '/',
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, __) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: '/login',
+            builder: (_, __) => const Scaffold(body: Text('Login')),
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            tokenStorageProvider.overrideWithValue(fakeStorage),
+            settingsProvider.overrideWith(() => fakeSettings),
+            themeProvider.overrideWith(() => fakeTheme),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The segmented button should be present with the system segment selected.
+      final button = tester.widget<SegmentedButton<ThemeMode>>(
+        find.byKey(const Key('settings_theme_toggle')),
+      );
+      expect(button.selected, equals({ThemeMode.system}));
+    });
+
+    testWidgets('tapping a segment calls setThemeMode with the right ThemeMode',
+        (tester) async {
+      final fakeStorage = _FakeTokenStorage().._token = 'alice';
+      final fakeSettings = _FakeSettingsNotifier('http://10.0.2.2:8080');
+      final fakeTheme = _FakeThemeNotifier();
+
+      final router = GoRouter(
+        initialLocation: '/',
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, __) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: '/login',
+            builder: (_, __) => const Scaffold(body: Text('Login')),
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            tokenStorageProvider.overrideWithValue(fakeStorage),
+            settingsProvider.overrideWith(() => fakeSettings),
+            themeProvider.overrideWith(() => fakeTheme),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Scroll the segmented button into view before tapping — the settings
+      // screen content may exceed the test viewport height.
+      await tester.ensureVisible(find.byKey(const Key('settings_theme_toggle')));
+      await tester.pumpAndSettle();
+
+      // Tap the "Dark" segment label.
+      await tester.tap(find.text('Dark'));
+      await tester.pumpAndSettle();
+
+      // The fake notifier should have received ThemeMode.dark.
+      expect(fakeTheme.capturedMode, equals(ThemeMode.dark));
     });
   });
 

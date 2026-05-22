@@ -64,6 +64,16 @@ void main() async {
 }
 
 // ---------------------------------------------------------------------------
+// Module-level theme constants
+// ---------------------------------------------------------------------------
+
+// Built once at startup rather than on every rebuild of PlayerAndroidApp.
+// ThemeData construction is not cheap, and the colour tokens never change
+// at runtime — only the active ThemeMode (light/dark/system) does.
+final _lightTheme = buildLightTheme();
+final _darkTheme = buildDarkTheme();
+
+// ---------------------------------------------------------------------------
 // Root widget
 // ---------------------------------------------------------------------------
 
@@ -92,8 +102,8 @@ class PlayerAndroidApp extends ConsumerWidget {
       title: 'Player',
       routerConfig: router,
       // Material 3 is enabled in both ThemeData instances; see theme_provider.dart.
-      theme: buildLightTheme(),
-      darkTheme: buildDarkTheme(),
+      theme: _lightTheme,
+      darkTheme: _darkTheme,
       themeMode: themeMode,
     );
   }
