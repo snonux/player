@@ -259,6 +259,32 @@ String folderErrorMessage(Object error) {
   return 'Unexpected error. Please try again.';
 }
 
+/// Maps any thrown object from [PlayerApiClient.getSharedMediaPage] to a UI string.
+///
+/// Adds human-readable messages for the status codes the share-viewer endpoint
+/// can return:
+///   - 404: the share token does not exist (never created, or already deleted).
+///   - 410: the share has expired (server-side expiry or max-uses exceeded).
+///
+/// These two cases are shown with distinct messages so the viewer knows whether
+/// the link was invalid from the start or whether it was valid but has since
+/// expired.  All other failures fall back to [dioConnectionErrorMessage].
+///
+/// Kept as a separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of other error mappers.
+String shareViewerErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 404) {
+      return 'This share link is invalid or has been revoked.';
+    }
+    if (error.response?.statusCode == 410) {
+      return 'This share link has expired.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
 /// Maps any thrown object from [PlayerApiClient.listEpisodes] to a UI string.
 ///
 /// Adds a 404-specific message (podcast set not found) on top of the generic

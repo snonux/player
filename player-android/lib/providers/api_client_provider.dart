@@ -5,12 +5,18 @@ import '../api/dio_player_api_client.dart';
 import '../api/player_api_client.dart';
 import '../navigation_key.dart';
 
-/// Base URL for the player-server API.
+/// Base URL for the player-server API, resolved at compile time via
+/// the PLAYER_BASE_URL environment variable (or the default below).
 ///
-/// In production this is injected from the environment or a config file.
-/// The default points to a local dev instance so the app is runnable
-/// without extra configuration.
-const _kBaseUrl = String.fromEnvironment(
+/// Declared as a package-level identifier (no underscore) so it can be
+/// shared by [publicApiClientProvider] in [public_api_client_provider.dart].
+/// The value is set once at compile time and never changes at runtime,
+/// making it safe to share across providers.
+///
+/// In production this is injected via `--dart-define=PLAYER_BASE_URL=...`.
+/// The default points to the Android emulator host loopback address so the
+/// app is runnable out-of-the-box without extra configuration.
+const kPlayerBaseUrl = String.fromEnvironment(
   'PLAYER_BASE_URL',
   defaultValue: 'http://10.0.2.2:8080',
 );
@@ -34,7 +40,7 @@ final apiClientProvider = Provider<PlayerApiClient>((ref) {
   final storage = ref.watch(tokenStorageProvider);
 
   final dioClient = DioClient(
-    baseUrl: Uri.parse(_kBaseUrl),
+    baseUrl: Uri.parse(kPlayerBaseUrl),
     storage: storage,
     // Share the navigator key with go_router so 401 redirects go through the
     // correct router instance rather than the raw Navigator.

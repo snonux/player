@@ -177,6 +177,15 @@ class PlayerApiClient implements ProgressSyncClient {
   /// hard-code URL segments (Dependency Inversion Principle).
   String shareUrl(String token) => '${rawDio.options.baseUrl}/s/$token';
 
+  /// Returns the base URL of the underlying Dio instance without a trailing slash.
+  ///
+  /// Exposed so screens can construct absolute URLs from server-relative paths
+  /// (e.g., `/s/abc123/stream`) without reaching into [rawDio] directly.
+  /// Encapsulating this lookup here prevents the Dio transport detail from
+  /// leaking into the UI layer (Interface Segregation, Dependency Inversion).
+  String get baseUrl =>
+      rawDio.options.baseUrl.replaceAll(RegExp(r'/$'), '');
+
   Future<void> regenerateThumbnail(int mediaId) => throw UnimplementedError();
 
   Future<bool> toggleFavorite(int mediaId) => throw UnimplementedError();

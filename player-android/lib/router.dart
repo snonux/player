@@ -17,6 +17,7 @@ import 'screens/podcast_episodes_screen.dart';
 import 'screens/podcast_list_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
+import 'screens/share_viewer_screen.dart';
 import 'screens/my_shares_screen.dart';
 import 'screens/notes_editor_screen.dart';
 import 'screens/folder_browser_screen.dart';
@@ -64,16 +65,26 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoginRoute = location == AppRoutes.login;
       // Bootstrap is a public route (user is unauthenticated by definition).
       final isBootstrapRoute = location == AppRoutes.bootstrap;
+      // Share-viewer routes (/share/:token) are public — no session required.
+      // The token is embedded in the URL path; authentication is irrelevant.
+      // Uses [AppRoutes.shareViewerPrefix] rather than a raw string literal so
+      // a rename of the share-viewer path is reflected here automatically (DIP).
+      final isShareViewerRoute =
+          location.startsWith(AppRoutes.shareViewerPrefix);
 
       if (auth.isAuthenticated && (isLoginRoute || isBootstrapRoute)) {
         // Prevent already-authenticated users from viewing auth/setup screens.
         return AppRoutes.home;
       }
 
-      if (auth.isUnauthenticated && !isLoginRoute && !isBootstrapRoute) {
-        // Unauthenticated: any route other than /login and /bootstrap is
-        // protected.  This covers /home, /media/:id, /share, /settings, and
-        // any future authenticated routes added to the route table.
+      if (auth.isUnauthenticated &&
+          !isLoginRoute &&
+          !isBootstrapRoute &&
+          !isShareViewerRoute) {
+        // Unauthenticated: any route other than /login, /bootstrap, and
+        // /share/:token is protected.  This covers /home, /media/:id,
+        // /share (list), /settings, and any future authenticated routes added
+        // to the route table.
         //
         // Determine whether this is first-run (no users exist yet) or a normal
         // returning-user scenario.  firstRunProvider returns true when the
@@ -137,6 +148,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.share,
         builder: (context, state) => const ShareScreen(),
+      ),
+      GoRoute(
+        // Public share-viewer — no authentication required.
+        // The ':token' path parameter is the opaque share token from the URL.
+        // This route is intentionally separate from /share (the authenticated
+        // share-management screen) and must remain before the redirect logic
+        // guards it in any future refactor.
+        path: AppRoutes.shareViewer,
+        builder: (context, state) {
+          final token = state.pathParameters['token']!;
+          return ShareViewerScreen(token: token);
+        },
       ),
       GoRoute(
         path: AppRoutes.settings,

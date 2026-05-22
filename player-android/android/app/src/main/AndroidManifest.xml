@@ -29,6 +29,36 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Deep-link intent-filter for public share URLs.
+                 When a user opens a link of the form
+                   https://<PLAYER_HOST>/share/<token>
+                 Android routes the intent to this activity and go_router
+                 navigates to the ShareViewerScreen (/share/:token).
+                 Replace PLAYER_HOST with the real server hostname (e.g.
+                 player.example.com) for production deployments; the wildcard
+                 host below accepts any host for development flexibility.
+                 android:autoVerify="true" enables App Links (verified deep
+                 links) once an assetlinks.json file is served at the host;
+                 without verification the OS shows the disambiguation dialog.
+                 Both http and https schemes are declared so links work with
+                 self-signed or non-TLS development servers as well as
+                 production HTTPS deployments. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https"
+                      android:host="PLAYER_HOST"
+                      android:pathPattern="/share/.*" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http"
+                      android:host="PLAYER_HOST"
+                      android:pathPattern="/share/.*" />
+            </intent-filter>
         </activity>
         <meta-data
             android:name="flutterEmbedding"
