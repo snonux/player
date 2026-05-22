@@ -293,8 +293,6 @@ class _ThemeToggle extends ConsumerWidget {
         ),
       ],
       selected: {current},
-      // Allow only single selection — the user always has exactly one mode active.
-      multiSelectionEnabled: false,
       onSelectionChanged: (selection) {
         // emptySelectionAllowed defaults to false, but guard defensively against future API changes.
         if (selection.isNotEmpty) {

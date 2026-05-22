@@ -92,6 +92,7 @@ class _FakeThemeNotifier extends ThemeNotifier {
 /// Pumps [SettingsScreen] inside a [ProviderScope] that overrides:
 ///   - [tokenStorageProvider] with an in-memory fake (avoids OS keychain)
 ///   - [settingsProvider] with an in-memory fake (avoids SharedPreferences)
+///   - [themeProvider] with [themeNotifier] when provided (avoids SharedPreferences)
 ///
 /// Uses [MaterialApp.router] with a minimal [GoRouter] so that [context.go]
 /// calls inside [SettingsScreen._logout] do not throw "No GoRouter in context".
@@ -104,6 +105,7 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
   WidgetTester tester, {
   String initialToken = 'alice',
   String initialUrl = 'http://10.0.2.2:8080',
+  _FakeThemeNotifier? themeNotifier,
 }) async {
   final fakeStorage = _FakeTokenStorage().._token = initialToken;
   final fakeSettings = _FakeSettingsNotifier(initialUrl);
@@ -131,6 +133,9 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
         // Avoid OS keychain / SharedPreferences in tests.
         tokenStorageProvider.overrideWithValue(fakeStorage),
         settingsProvider.overrideWith(() => fakeSettings),
+        // Override theme provider when the caller supplies a fake notifier.
+        if (themeNotifier != null)
+          themeProvider.overrideWith(() => themeNotifier),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
@@ -286,35 +291,8 @@ void main() {
   group('theme toggle', () {
     testWidgets('renders with system segment selected by default',
         (tester) async {
-      final fakeStorage = _FakeTokenStorage().._token = 'alice';
-      final fakeSettings = _FakeSettingsNotifier('http://10.0.2.2:8080');
       final fakeTheme = _FakeThemeNotifier();
-
-      final router = GoRouter(
-        initialLocation: '/',
-        routes: [
-          GoRoute(
-            path: '/',
-            builder: (_, __) => const SettingsScreen(),
-          ),
-          GoRoute(
-            path: '/login',
-            builder: (_, __) => const Scaffold(body: Text('Login')),
-          ),
-        ],
-      );
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            tokenStorageProvider.overrideWithValue(fakeStorage),
-            settingsProvider.overrideWith(() => fakeSettings),
-            themeProvider.overrideWith(() => fakeTheme),
-          ],
-          child: MaterialApp.router(routerConfig: router),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await _pumpSettingsScreen(tester, themeNotifier: fakeTheme);
 
       // The segmented button should be present with the system segment selected.
       final button = tester.widget<SegmentedButton<ThemeMode>>(
@@ -325,35 +303,8 @@ void main() {
 
     testWidgets('tapping a segment calls setThemeMode with the right ThemeMode',
         (tester) async {
-      final fakeStorage = _FakeTokenStorage().._token = 'alice';
-      final fakeSettings = _FakeSettingsNotifier('http://10.0.2.2:8080');
       final fakeTheme = _FakeThemeNotifier();
-
-      final router = GoRouter(
-        initialLocation: '/',
-        routes: [
-          GoRoute(
-            path: '/',
-            builder: (_, __) => const SettingsScreen(),
-          ),
-          GoRoute(
-            path: '/login',
-            builder: (_, __) => const Scaffold(body: Text('Login')),
-          ),
-        ],
-      );
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            tokenStorageProvider.overrideWithValue(fakeStorage),
-            settingsProvider.overrideWith(() => fakeSettings),
-            themeProvider.overrideWith(() => fakeTheme),
-          ],
-          child: MaterialApp.router(routerConfig: router),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await _pumpSettingsScreen(tester, themeNotifier: fakeTheme);
 
       // Scroll the segmented button into view before tapping — the settings
       // screen content may exceed the test viewport height.
@@ -366,6 +317,12 @@ void main() {
 
       // The fake notifier should have received ThemeMode.dark.
       expect(fakeTheme.capturedMode, equals(ThemeMode.dark));
+
+      // The widget should also reflect the new theme state visually.
+      final button = tester.widget<SegmentedButton<ThemeMode>>(
+        find.byKey(const Key('settings_theme_toggle')),
+      );
+      expect(button.selected, equals({ThemeMode.dark}));
     });
   });
 
