@@ -7,6 +7,8 @@
 //      settings provider.
 //   3. Logout flow: tapping Log Out calls AuthStateNotifier.logout and clears
 //      the stored token.
+//   4. Admin section: "Manage Users" tile shown only for admin users;
+//      hidden for non-admin users.
 //
 // Riverpod providers are overridden with in-memory fakes so tests run without
 // a real server, OS keychain, or SharedPreferences disk I/O.
@@ -18,8 +20,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:player_android/api/dio_client.dart';
+import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
+import 'package:player_android/providers/current_user_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
 import 'package:player_android/providers/theme_provider.dart';
 import 'package:player_android/screens/settings_screen.dart';
@@ -93,9 +97,11 @@ class _FakeThemeNotifier extends ThemeNotifier {
 ///   - [tokenStorageProvider] with an in-memory fake (avoids OS keychain)
 ///   - [settingsProvider] with an in-memory fake (avoids SharedPreferences)
 ///   - [themeProvider] with [themeNotifier] when provided (avoids SharedPreferences)
+///   - [currentUserProvider] with [currentUser] when provided (drives admin gating)
 ///
 /// Uses [MaterialApp.router] with a minimal [GoRouter] so that [context.go]
-/// calls inside [SettingsScreen._logout] do not throw "No GoRouter in context".
+/// calls inside [SettingsScreen._logout] and the admin tile do not throw
+/// "No GoRouter in context".
 ///
 /// Returns a record containing:
 ///   - [storage]: the fake token storage for post-test assertions.
@@ -106,13 +112,14 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
   String initialToken = 'alice',
   String initialUrl = 'http://10.0.2.2:8080',
   _FakeThemeNotifier? themeNotifier,
+  User? currentUser,
 }) async {
   final fakeStorage = _FakeTokenStorage().._token = initialToken;
   final fakeSettings = _FakeSettingsNotifier(initialUrl);
 
-  // A minimal GoRouter that renders SettingsScreen at '/'.  The /login route
-  // is included so that the safety-net context.go(AppRoutes.login) in
-  // _logout() does not trigger a "route not found" error.
+  // A minimal GoRouter that renders SettingsScreen at '/'.  The /login and
+  // /admin/users routes are included so that context.go calls inside the
+  // screen do not trigger "route not found" errors.
   final router = GoRouter(
     initialLocation: '/',
     routes: [
@@ -123,6 +130,10 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
       GoRoute(
         path: '/login',
         builder: (_, __) => const Scaffold(body: Text('Login')),
+      ),
+      GoRoute(
+        path: '/admin/users',
+        builder: (_, __) => const Scaffold(body: Text('Admin Users')),
       ),
     ],
   );
@@ -136,13 +147,17 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
         // Override theme provider when the caller supplies a fake notifier.
         if (themeNotifier != null)
           themeProvider.overrideWith(() => themeNotifier),
+        // Override currentUserProvider to control admin-section visibility
+        // without a real listUsers round-trip.
+        if (currentUser != null)
+          currentUserProvider.overrideWith((ref) async => currentUser),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
   );
 
-  // Allow async providers (_currentUsernameProvider, settingsProvider) to
-  // resolve their futures before we inspect the widget tree.
+  // Allow async providers (_currentUsernameProvider, settingsProvider,
+  // currentUserProvider) to resolve their futures before we inspect the tree.
   await tester.pumpAndSettle();
 
   return (storage: fakeStorage, settings: fakeSettings);
@@ -403,6 +418,54 @@ void main() {
 
       // After logout the auth state should be unauthenticated.
       expect(capturedState?.isUnauthenticated, isTrue);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Admin section visibility
+  // --------------------------------------------------------------------------
+
+  group('admin section visibility', () {
+    testWidgets('shows Manage Users tile when current user is admin',
+        (tester) async {
+      const adminUser = User(id: 1, username: 'alice', isAdmin: true);
+      await _pumpSettingsScreen(
+        tester,
+        initialToken: 'alice',
+        currentUser: adminUser,
+      );
+
+      // Scroll to ensure the admin section is rendered in the viewport.
+      await tester.ensureVisible(
+        find.byKey(const Key('settings_manage_users')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settings_manage_users')), findsOneWidget);
+      expect(find.text('Manage Users'), findsOneWidget);
+    });
+
+    testWidgets('hides Manage Users tile when current user is not admin',
+        (tester) async {
+      const regularUser = User(id: 2, username: 'bob', isAdmin: false);
+      await _pumpSettingsScreen(
+        tester,
+        initialToken: 'bob',
+        currentUser: regularUser,
+      );
+
+      // The admin tile must not be present for a non-admin user.
+      expect(find.byKey(const Key('settings_manage_users')), findsNothing);
+      expect(find.text('Administration'), findsNothing);
+    });
+
+    testWidgets('hides admin section when currentUserProvider returns null',
+        (tester) async {
+      // No currentUser override → currentUserProvider returns null (loading
+      // or unauthenticated) → admin section stays hidden.
+      await _pumpSettingsScreen(tester, initialToken: 'alice');
+
+      expect(find.byKey(const Key('settings_manage_users')), findsNothing);
     });
   });
 }

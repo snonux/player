@@ -301,6 +301,39 @@ String episodeListErrorMessage(Object error) {
   return 'Unexpected error. Please try again.';
 }
 
+/// Maps any thrown object from [PlayerApiClient.listUsers],
+/// [PlayerApiClient.createUser], or [PlayerApiClient.deleteUser] to a UI string.
+///
+/// Adds human-readable messages for the common failure modes:
+///   - 400: the request body is invalid (e.g. password too short, empty fields).
+///   - 403: the caller is not an admin.
+///   - 409: a user with the same username already exists.
+///
+/// Kept as a separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of the other mappers.
+String adminUserErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 400) {
+      // Prefer the server's specific message (e.g. "password too short") over
+      // a generic fallback because 400 covers several distinct validation cases.
+      final body = error.response?.data;
+      if (body is Map<String, dynamic>) {
+        final msg = body['message'] as String? ?? body['error'] as String?;
+        if (msg != null && msg.isNotEmpty) return msg;
+      }
+      return 'Invalid request. Check the username and password and try again.';
+    }
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to manage users.';
+    }
+    if (error.response?.statusCode == 409) {
+      return 'A user with that username already exists.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
 /// Maps any thrown object from [PlayerApiClient.toggleEpisodeComplete] to a
 /// UI string.
 ///

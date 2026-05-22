@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/auth_state_provider.dart';
+import '../providers/current_user_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/theme_provider.dart';
 
@@ -20,6 +21,10 @@ import '../providers/theme_provider.dart';
 ///     triggers go_router's redirect callback (via [refreshListenable]) and
 ///     navigates to /login automatically.  An explicit [context.go] acts as a
 ///     safety net in case the redirect has not fired yet.
+///   - The Admin section (Manage Users entry) is shown only when
+///     [currentUserProvider] resolves to a user with [User.isAdmin] == true.
+///     Non-admin users never see the tile; the server also enforces this via
+///     403 on the API endpoints, so the gating is defence-in-depth in the UI.
 ///   - All async continuations guard on [mounted] to prevent setState/context
 ///     calls after widget disposal.
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -99,6 +104,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     // Watch settings to seed the URL field on first load.
     final settingsAsync = ref.watch(settingsProvider);
+
+    // Watch the current user to conditionally show the Admin section.
+    // currentUserProvider is autoDispose and resolves to null for non-admins.
+    final isAdmin = ref.watch(currentUserProvider).valueOrNull?.isAdmin ?? false;
 
     // Seed the URL text field exactly once, after settings have loaded.
     // Doing this in build (rather than initState) ensures we have the loaded
@@ -247,6 +256,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.go(AppRoutes.shares),
               ),
+
+              // ----------------------------------------------------------------
+              // Admin section: only visible to admin users.
+              // Non-admin users are gated out here; the server enforces this
+              // independently via 403 responses, making this defence-in-depth.
+              // ----------------------------------------------------------------
+              if (isAdmin) ...[
+                const SizedBox(height: 32),
+                const Divider(),
+                const SizedBox(height: 24),
+
+                Text(
+                  'Administration',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+
+                // Manage Users tile — navigates to /admin/users.
+                ListTile(
+                  key: const Key('settings_manage_users'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.manage_accounts_outlined),
+                  title: const Text('Manage Users'),
+                  subtitle: const Text('Create and delete user accounts'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.go(AppRoutes.adminUsers),
+                ),
+              ],
             ],
           ),
         ),

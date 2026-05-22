@@ -20,6 +20,7 @@ import 'screens/share_screen.dart';
 import 'screens/share_viewer_screen.dart';
 import 'screens/my_shares_screen.dart';
 import 'screens/notes_editor_screen.dart';
+import 'screens/admin_users_screen.dart';
 import 'screens/folder_browser_screen.dart';
 import 'screens/video_player_screen.dart';
 
@@ -224,6 +225,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         // Reachable from the Settings screen.
         path: AppRoutes.shares,
         builder: (context, state) => const MySharesScreen(),
+      ),
+      GoRoute(
+        // Admin user management — lists, creates, and deletes user accounts.
+        // Only reachable from the Settings screen when the current user is admin.
+        // The server enforces admin-only access independently, so non-admin users
+        // who somehow reach this route will receive 403 responses.
+        path: AppRoutes.adminUsers,
+        builder: (context, state) => const AdminUsersScreen(),
       ),
       GoRoute(
         // Folder browser — shows subfolders and media at the current path

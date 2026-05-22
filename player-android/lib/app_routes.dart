@@ -115,4 +115,10 @@ abstract final class AppRoutes {
     if (setName == null || setName.isEmpty) return base;
     return '$base?name=${Uri.encodeComponent(setName)}';
   }
+
+  /// Route for the admin user management screen.
+  ///
+  /// Only accessible when the authenticated user has admin privileges.
+  /// Shows a list of all registered users and allows creating/deleting accounts.
+  static const adminUsers = '/admin/users';
 }
