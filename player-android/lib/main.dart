@@ -35,6 +35,13 @@ void main() async {
     config: const AudioServiceConfig(
       // Notification channel name shown in Android Settings → App info.
       androidNotificationChannelName: 'Player Audio',
+      // Required by audio_service: Android refuses to post a notification
+      // without a small-icon drawable.  Re-use the launcher icon — it is a
+      // resource the project already ships and AudioService accepts any
+      // drawable here.  Without this the foreground service fails with
+      // "Invalid notification (no valid small icon)" and crashes the app
+      // when AudioPlayer.play() triggers media-session metadata.
+      androidNotificationIcon: 'drawable/ic_launcher',
       // Keep the service alive while the notification is visible so the OS
       // does not kill the process when the user swipes the app away.
       androidStopForegroundOnPause: false,
