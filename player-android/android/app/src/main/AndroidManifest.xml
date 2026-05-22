@@ -12,7 +12,8 @@
     <application
         android:label="Player"
         android:name="${applicationName}"
-        android:icon="@drawable/ic_launcher">
+        android:icon="@drawable/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

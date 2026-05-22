@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
@@ -131,11 +132,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     final player = handler.player;
     final client = ref.read(apiClientProvider);
     final storage = ref.read(tokenStorageProvider);
+    final cookieJar = ref.read(cookieJarProvider);
     final mediaIdInt = int.tryParse(widget.mediaId) ?? 0;
     final url = widget.mediaUrl ?? client.streamUrl(mediaIdInt);
 
-    // Step 1–2: build auth headers.
-    final headers = await _buildAuthHeaders(storage);
+    // Step 1–2: build auth headers (Bearer + session cookie).
+    final headers = await _buildAuthHeaders(storage, cookieJar, Uri.parse(url));
     if (!mounted) return;
 
     // Step 3: load the authenticated source; show error UI on failure.
@@ -162,14 +164,26 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     _startProgressTicker(mediaIdInt, client, player, queue);
   }
 
-  /// Reads the bearer token and returns the `Authorization` header map.
+  /// Builds the headers map for an authenticated stream request.
   ///
-  /// Returns an empty map when no token is stored so the source can still be
-  /// loaded (e.g., public streams or during tests).
-  Future<Map<String, String>> _buildAuthHeaders(TokenStorage storage) async {
+  /// just_audio runs a localhost proxy that forwards these headers to
+  /// ExoPlayer's underlying HTTP request, which is how we authenticate against
+  /// the session-cookie-protected `/api/v1/media/{id}/stream` endpoint without
+  /// sharing Dio's HTTP stack.  Both Bearer (for API-token auth) and Cookie
+  /// (for session auth) are attached so either auth scheme works.
+  Future<Map<String, String>> _buildAuthHeaders(
+    TokenStorage storage,
+    CookieJar jar,
+    Uri url,
+  ) async {
     final token = await storage.readToken();
+    final cookies = await jar.loadForRequest(url);
+    final cookieHeader = cookies
+        .map((c) => '${c.name}=${c.value}')
+        .join('; ');
     return <String, String>{
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      if (cookieHeader.isNotEmpty) 'Cookie': cookieHeader,
     };
   }
 

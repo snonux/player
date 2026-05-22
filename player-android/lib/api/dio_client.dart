@@ -113,25 +113,40 @@ class _UnauthorizedInterceptor extends Interceptor {
 /// Callers own the returned [Dio] and may add further interceptors on top.
 /// Separating construction from usage (SRP) keeps this class testable.
 class DioClient {
-  DioClient({
+  factory DioClient({
     required Uri baseUrl,
     required TokenStorage storage,
     required GlobalKey<NavigatorState> navigatorKey,
     String loginRoute = '/login',
     BaseOptions? baseOptions,
-  }) : _dio = _buildDio(
-          baseUrl: baseUrl,
-          storage: storage,
-          navigatorKey: navigatorKey,
-          loginRoute: loginRoute,
-          baseOptions: baseOptions,
-        );
+  }) {
+    final jar = CookieJar();
+    final dio = _buildDio(
+      baseUrl: baseUrl,
+      storage: storage,
+      navigatorKey: navigatorKey,
+      loginRoute: loginRoute,
+      baseOptions: baseOptions,
+      cookieJar: jar,
+    );
+    return DioClient._(dio: dio, cookieJar: jar);
+  }
+
+  DioClient._({required Dio dio, required CookieJar cookieJar})
+      : _dio = dio,
+        _cookieJar = cookieJar;
 
   final Dio _dio;
+  final CookieJar _cookieJar;
 
   /// Exposes the underlying [Dio] so that [PlayerApiClient] can issue typed
   /// requests without re-implementing the interceptor plumbing.
   Dio get dio => _dio;
+
+  /// Exposes the cookie jar so consumers that bypass Dio (e.g. ExoPlayer via
+  /// just_audio, video_player, CachedNetworkImage) can still authenticate
+  /// against the session-cookie-protected media endpoints.
+  CookieJar get cookieJar => _cookieJar;
 
   static Dio _buildDio({
     required Uri baseUrl,
@@ -139,6 +154,7 @@ class DioClient {
     required GlobalKey<NavigatorState> navigatorKey,
     required String loginRoute,
     BaseOptions? baseOptions,
+    required CookieJar cookieJar,
   }) {
     final options = (baseOptions ?? BaseOptions()).copyWith(
       baseUrl: baseUrl.toString(),
@@ -147,13 +163,6 @@ class DioClient {
       responseType: ResponseType.json,
     );
 
-    // The server's /api/v1/auth/login sets an HttpOnly Set-Cookie (session=...).
-    // Browsers persist this automatically; on mobile we attach a CookieJar so
-    // Dio replays the cookie on subsequent requests.  Without this, every call
-    // after login returns 401 because Dio discards cookies by default.
-    // In-memory is sufficient: logout clears it, and we persist the bearer
-    // token (for API-token auth) separately via flutter_secure_storage.
-    final cookieJar = CookieJar();
     return Dio(options)
       ..interceptors.addAll([
         // Cookie manager runs first so the session cookie is replayed before

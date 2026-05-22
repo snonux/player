@@ -116,19 +116,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
     final client = ref.read(apiClientProvider);
     final storage = ref.read(tokenStorageProvider);
+    final cookieJar = ref.read(cookieJarProvider);
     final mediaIdInt = int.tryParse(widget.mediaId) ?? 0;
 
     // Step 1: resolve the stream URL — prefer the route-extra URL so the
     // calling screen can forward a pre-computed URL; fall back to streamUrl.
     final url = widget.mediaUrl ?? client.streamUrl(mediaIdInt);
 
-    // Step 2: read the bearer token so the native player can authenticate
-    // without routing bytes through Dart (performance and correctness).
+    // Step 2: read the auth artefacts so the native player can authenticate
+    // without routing bytes through Dart.  Both Bearer (API-token auth) and
+    // Cookie (session auth) headers are attached because ExoPlayer has its
+    // own HTTP stack and does not share Dio's cookie jar.
     final token = await storage.readToken();
+    final cookies = await cookieJar.loadForRequest(Uri.parse(url));
     if (!mounted) return;
 
+    final cookieHeader =
+        cookies.map((c) => '${c.name}=${c.value}').join('; ');
     final headers = <String, String>{
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      if (cookieHeader.isNotEmpty) 'Cookie': cookieHeader,
     };
 
     // Step 3: create and initialise the VideoPlayerController.

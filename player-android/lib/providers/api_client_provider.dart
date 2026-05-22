@@ -1,3 +1,4 @@
+import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/dio_client.dart';
@@ -36,10 +37,13 @@ final tokenStorageProvider = Provider<TokenStorage>((ref) {
 /// Depends on [tokenStorageProvider] and [navigatorKey] (both singletons) so
 /// the same [Dio] instance is reused for every call site — avoiding redundant
 /// interceptor stacks.
-final apiClientProvider = Provider<PlayerApiClient>((ref) {
+// Single shared DioClient instance: cached as a Riverpod Provider so both the
+// API client and the cookie-jar provider observe the same cookie store.  The
+// API client uses Dio; ExoPlayer/video_player/CachedNetworkImage bypass Dio
+// and need the cookie jar to attach the session cookie manually.
+final _dioClientProvider = Provider<DioClient>((ref) {
   final storage = ref.watch(tokenStorageProvider);
-
-  final dioClient = DioClient(
+  return DioClient(
     baseUrl: Uri.parse(kPlayerBaseUrl),
     storage: storage,
     // Share the navigator key with go_router so 401 redirects go through the
@@ -47,10 +51,19 @@ final apiClientProvider = Provider<PlayerApiClient>((ref) {
     navigatorKey: navigatorKey,
     loginRoute: '/login',
   );
+});
 
+final apiClientProvider = Provider<PlayerApiClient>((ref) {
   // Use DioPlayerApiClient — the concrete implementation that maps every
   // PlayerApiClient method to a real HTTP call via Dio.  The base class now
   // acts as the public interface (dependency inversion); callers depend on
   // PlayerApiClient, not on this concrete class.
-  return DioPlayerApiClient(dio: dioClient.dio);
+  return DioPlayerApiClient(dio: ref.watch(_dioClientProvider).dio);
+});
+
+/// Provides the same [CookieJar] backing [apiClientProvider]'s Dio stack so
+/// non-Dio HTTP clients (ExoPlayer, video_player, CachedNetworkImage) can
+/// authenticate streaming/thumbnail requests using the same session cookie.
+final cookieJarProvider = Provider<CookieJar>((ref) {
+  return ref.watch(_dioClientProvider).cookieJar;
 });
