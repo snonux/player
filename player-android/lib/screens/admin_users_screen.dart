@@ -100,6 +100,9 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
     if (result == null || !mounted) return;
 
     // Optimistic placeholder: id=0 will be replaced by the real server response.
+    // Capture the index before appending so success and error paths can target
+    // the exact slot without relying on reference equality (User has no == override).
+    final placeholderIdx = _users?.length ?? 0;
     final placeholder = User(
       id: 0,
       username: result.username,
@@ -114,14 +117,14 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
             isAdmin: result.isAdmin,
           );
       if (!mounted) return;
-      // Replace the placeholder with the real user returned by the server.
-      setState(() {
-        _users = _users!.map((u) => u == placeholder ? created : u).toList();
-      });
+      // Replace the placeholder slot with the real user returned by the server.
+      setState(() { _users![placeholderIdx] = created; });
     } catch (e) {
       if (!mounted) return;
-      // Revert optimistic insertion on error.
-      setState(() => _users = _users!.where((u) => u != placeholder).toList());
+      // Revert optimistic insertion on error by removing the known slot.
+      setState(() {
+        if (placeholderIdx < _users!.length) _users!.removeAt(placeholderIdx);
+      });
       _showError(adminUserErrorMessage(e));
     }
   }
@@ -152,8 +155,9 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      // Revert optimistic removal.
-      setState(() => _users!.insert(index, user));
+      // Revert optimistic removal. Append rather than re-insert at index to
+      // avoid position jitter from concurrent mutations.
+      setState(() => _users = [..._users!, user]);
       _showError(adminUserErrorMessage(e));
     }
   }
@@ -368,7 +372,6 @@ class _RoleBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Chip(
-      key: Key('role_badge_${isAdmin ? "admin" : "user"}'),
       label: Text(
         isAdmin ? 'Admin' : 'User',
         style: TextStyle(
@@ -394,29 +397,34 @@ class _EmptyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        SizedBox(
-          height: MediaQuery.of(context).size.height * 0.6,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.people_outline,
-                size: 72,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No users found',
-                key: const Key('admin_users_empty'),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ],
+    // Wrap in a fixed-height CustomScrollView so RefreshIndicator still works
+    // on an empty list, while Expanded+Center keeps the content vertically
+    // centred without hard-coding a fraction of the screen height.
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: SizedBox(
+          height: constraints.maxHeight,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.people_outline,
+                  size: 72,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No users found',
+                  key: const Key('admin_users_empty'),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -524,96 +532,88 @@ class _CreateUserDialogState extends State<_CreateUserDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // _buildForm and _buildActions were single-call-site helpers; inlined here
+    // to reduce indirection. The merged build() stays well under 50 lines.
     return AlertDialog(
       key: const Key('admin_create_user_dialog'),
       title: const Text('Create user'),
-      content: _buildForm(),
-      actions: _buildActions(context),
-    );
-  }
-
-  /// Builds the form fields: username, password with toggle, and isAdmin checkbox.
-  Widget _buildForm() {
-    return Form(
-      key: _formKey,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextFormField(
-            key: const Key('admin_create_username'),
-            controller: _usernameController,
-            decoration: const InputDecoration(
-              labelText: 'Username',
-              border: OutlineInputBorder(),
-            ),
-            textInputAction: TextInputAction.next,
-            autocorrect: false,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Username is required.';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            key: const Key('admin_create_password'),
-            controller: _passwordController,
-            decoration: InputDecoration(
-              labelText: 'Password',
-              border: const OutlineInputBorder(),
-              // Toggle visibility icon so the admin can verify the typed password.
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _passwordVisible
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                ),
-                tooltip: _passwordVisible ? 'Hide password' : 'Show password',
-                onPressed: () =>
-                    setState(() => _passwordVisible = !_passwordVisible),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              key: const Key('admin_create_username'),
+              controller: _usernameController,
+              decoration: const InputDecoration(
+                labelText: 'Username',
+                border: OutlineInputBorder(),
               ),
+              textInputAction: TextInputAction.next,
+              autocorrect: false,
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Username is required.';
+                }
+                return null;
+              },
             ),
-            obscureText: !_passwordVisible,
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _submit(),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Password is required.';
-              }
-              if (value.length < 8) {
-                return 'Password must be at least 8 characters.';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 8),
-          CheckboxListTile(
-            key: const Key('admin_create_is_admin'),
-            title: const Text('Administrator'),
-            subtitle: const Text('Can manage users and settings'),
-            value: _isAdmin,
-            contentPadding: EdgeInsets.zero,
-            onChanged: (value) => setState(() => _isAdmin = value ?? false),
-          ),
-        ],
+            const SizedBox(height: 16),
+            TextFormField(
+              key: const Key('admin_create_password'),
+              controller: _passwordController,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                border: const OutlineInputBorder(),
+                // Toggle visibility icon so the admin can verify the typed password.
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _passwordVisible
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                  tooltip: _passwordVisible ? 'Hide password' : 'Show password',
+                  onPressed: () =>
+                      setState(() => _passwordVisible = !_passwordVisible),
+                ),
+              ),
+              obscureText: !_passwordVisible,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _submit(),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Password is required.';
+                }
+                if (value.length < 8) {
+                  return 'Password must be at least 8 characters.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              key: const Key('admin_create_is_admin'),
+              title: const Text('Administrator'),
+              subtitle: const Text('Can manage users and settings'),
+              value: _isAdmin,
+              contentPadding: EdgeInsets.zero,
+              onChanged: (value) => setState(() => _isAdmin = value ?? false),
+            ),
+          ],
+        ),
       ),
+      actions: [
+        TextButton(
+          key: const Key('admin_create_cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('admin_create_submit'),
+          onPressed: _submit,
+          child: const Text('Create'),
+        ),
+      ],
     );
-  }
-
-  /// Cancel and Submit action buttons for the dialog.
-  List<Widget> _buildActions(BuildContext context) {
-    return [
-      TextButton(
-        key: const Key('admin_create_cancel'),
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        key: const Key('admin_create_submit'),
-        onPressed: _submit,
-        child: const Text('Create'),
-      ),
-    ];
   }
 }

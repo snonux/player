@@ -8,7 +8,7 @@
 //   5. Create dialog: opens on FAB tap and submits a new user.
 //   6. Create dialog: cancel closes without calling createUser.
 //   7. Create dialog: validation — empty username and short password are rejected.
-//   8. Create optimistic UI: placeholder row appears immediately, replaced on success.
+//   8. Create optimistic UI: placeholder visible while in-flight, replaced on success.
 //   9. Create optimistic UI: placeholder reverted and error SnackBar shown on failure.
 //  10. Delete: confirmation dialog appears; cancel leaves the row; confirm removes it.
 //  11. Delete optimistic UI: row removed immediately, reinserted on API error.
@@ -132,6 +132,32 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 
   @override
   Future<List<User>> listUsers() => _completer.future;
+}
+
+/// [PlayerApiClient] stub whose [createUser] call is controlled by an external
+/// [Completer] — lets tests inspect the optimistic placeholder while the
+/// network request is still in flight.
+class _DelayedCreateApiClient extends PlayerApiClient {
+  _DelayedCreateApiClient({required List<User> initialUsers})
+      : _initialUsers = initialUsers,
+        super(dio: Dio());
+
+  final List<User> _initialUsers;
+  final _createCompleter = Completer<User>();
+
+  /// Resolves the pending [createUser] with [user].
+  void completeCreate(User user) => _createCompleter.complete(user);
+
+  @override
+  Future<List<User>> listUsers() async => _initialUsers;
+
+  @override
+  Future<User> createUser({
+    required String username,
+    required String password,
+    required bool isAdmin,
+  }) =>
+      _createCompleter.future;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,10 +309,11 @@ void main() {
       await _pumpAdminUsersScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // _kAlice is admin — badge key uses isAdmin=true → 'admin'.
-      expect(find.byKey(const Key('role_badge_admin')), findsOneWidget);
-      // _kBob is not admin — badge key uses isAdmin=false → 'user'.
-      expect(find.byKey(const Key('role_badge_user')), findsOneWidget);
+      // _kAlice is admin — chip label reads 'Admin'.
+      // _kBob is a regular user — chip label reads 'User'.
+      // Using text finders avoids key-collision when multiple users share a role.
+      expect(find.text('Admin'), findsOneWidget);
+      expect(find.text('User'), findsOneWidget);
     });
   });
 
@@ -415,6 +442,54 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('create optimistic UI', () {
+    testWidgets(
+        'placeholder row visible while createUser is in flight, replaced on success',
+        (tester) async {
+      const newUser = User(id: 42, username: 'newuser', isAdmin: false);
+      final fakeClient = _DelayedCreateApiClient(initialUsers: [_kAlice]);
+
+      await _pumpAdminUsersScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Open the create dialog, fill in the form, and submit.
+      await tester.tap(find.byKey(const Key('admin_users_fab')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('admin_create_username')),
+        'newuser',
+      );
+      await tester.enterText(
+        find.byKey(const Key('admin_create_password')),
+        'securepassword',
+      );
+      await tester.tap(find.byKey(const Key('admin_create_submit')));
+
+      // Drive the event loop until the dialog is dismissed and the optimistic
+      // placeholder setState has fired, but stop before createUser completes
+      // (the completer is not yet resolved).
+      // pumpAndSettle would spin forever waiting for the pending Future, so
+      // we pump through the dialog pop animation (300 ms) manually.
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Dialog should be gone.
+      expect(find.byKey(const Key('admin_create_user_dialog')), findsNothing);
+
+      // Placeholder row is visible by tile key (id=0) and username text.
+      expect(find.byKey(const Key('admin_user_tile_0')), findsOneWidget);
+      expect(find.text('newuser'), findsOneWidget);
+
+      // Now resolve the pending createUser call.
+      fakeClient.completeCreate(newUser);
+      await tester.pumpAndSettle();
+
+      // Placeholder (id=0) replaced by the real user (id=42).
+      expect(find.byKey(const Key('admin_user_tile_0')), findsNothing);
+      expect(find.byKey(const Key('admin_user_tile_42')), findsOneWidget);
+      expect(find.text('newuser'), findsOneWidget);
+    });
+
     testWidgets('reverts placeholder and shows error SnackBar on createUser failure',
         (tester) async {
       final fakeClient = _FakeApiClient()

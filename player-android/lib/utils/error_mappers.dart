@@ -306,6 +306,8 @@ String episodeListErrorMessage(Object error) {
 ///
 /// Adds human-readable messages for the common failure modes:
 ///   - 400: the request body is invalid (e.g. password too short, empty fields).
+///     Delegates to [dioErrorMessage] which already prefers the server's JSON
+///     body message, avoiding duplicated body-parsing logic.
 ///   - 403: the caller is not an admin.
 ///   - 409: a user with the same username already exists.
 ///
@@ -313,21 +315,21 @@ String episodeListErrorMessage(Object error) {
 /// independently of the other mappers.
 String adminUserErrorMessage(Object error) {
   if (error is DioException) {
-    if (error.response?.statusCode == 400) {
-      // Prefer the server's specific message (e.g. "password too short") over
-      // a generic fallback because 400 covers several distinct validation cases.
-      final body = error.response?.data;
-      if (body is Map<String, dynamic>) {
-        final msg = body['message'] as String? ?? body['error'] as String?;
-        if (msg != null && msg.isNotEmpty) return msg;
-      }
-      return 'Invalid request. Check the username and password and try again.';
-    }
     if (error.response?.statusCode == 403) {
       return 'You do not have permission to manage users.';
     }
     if (error.response?.statusCode == 409) {
       return 'A user with that username already exists.';
+    }
+    if (error.response?.statusCode == 400) {
+      // Delegate to dioErrorMessage which already prefers the server's JSON
+      // body message (e.g. "password too short") over a generic fallback,
+      // eliminating duplicated body-parsing logic.
+      final serverMsg = dioErrorMessage(error);
+      // dioErrorMessage returns a generic "Server error (400)" string when
+      // there is no body message; replace that with a more actionable hint.
+      if (!serverMsg.startsWith('Server error')) return serverMsg;
+      return 'Invalid request. Check the username and password and try again.';
     }
     return dioConnectionErrorMessage(error);
   }
