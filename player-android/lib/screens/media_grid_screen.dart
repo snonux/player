@@ -160,8 +160,12 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
       _isLoading = true;
       _error = null;
       // Reset pagination so the first page is fetched from the start.
+      // Also clear _isLoadingMore so a stale _loadMore that was in-flight when
+      // _load was triggered (e.g. pull-to-refresh during pagination) does not
+      // leave the spinner stuck after the generation-mismatch early return fires.
       _offset = 0;
       _hasMore = true;
+      _isLoadingMore = false;
     });
 
     try {
@@ -492,20 +496,26 @@ class _MediaGrid extends StatelessWidget {
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
+        // When more pages are coming but none is in-flight, render an invisible
+        // placeholder (SizedBox.shrink) instead of an empty Text so the layout
+        // does not reserve unnecessary vertical space.
         child: isLoadingMore
             ? const Center(
                 key: Key('media_loading_more'),
                 child: CircularProgressIndicator(),
               )
-            : Center(
-                child: Text(
-                  hasMore ? '' : 'No more items',
-                  key: const Key('media_no_more'),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ),
+            : hasMore
+                ? const SizedBox.shrink()
+                : Center(
+                    child: Text(
+                      'No more items',
+                      key: const Key('media_no_more'),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ),
       ),
     );
   }

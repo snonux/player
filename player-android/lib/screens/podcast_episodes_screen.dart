@@ -154,8 +154,12 @@ class _PodcastEpisodesScreenState
       _isLoading = true;
       _error = null;
       // Reset pagination so page 1 is fetched from scratch.
+      // Also clear _isLoadingMore so a stale _loadMore that was in-flight when
+      // _load was triggered (e.g. pull-to-refresh during pagination) does not
+      // leave the spinner stuck after the generation-mismatch early return fires.
       _offset = 0;
       _hasMore = true;
+      _isLoadingMore = false;
     });
 
     try {

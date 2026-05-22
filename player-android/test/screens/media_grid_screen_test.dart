@@ -196,6 +196,60 @@ class _FakeApiClientWithToggle extends PlayerApiClient {
   String thumbnailUrl(int mediaId) => '';
 }
 
+/// [PlayerApiClient] stub for pagination tests.
+///
+/// Each call to [listMedia] pops the next response from [pages].  Supports an
+/// optional [Completer] per call: when [holdNextCompleter] is non-null before a
+/// call arrives, that call waits until the completer is resolved instead of
+/// returning immediately — allowing tests to inspect in-flight state.
+class _PaginatedFakeApiClient extends PlayerApiClient {
+  _PaginatedFakeApiClient({required this.pages}) : super(dio: Dio());
+
+  /// Successive pages to return, oldest first.  Each call to [listMedia] shifts
+  /// one element from the front of this list.
+  final List<List<Media>> pages;
+
+  /// When non-null, the next [listMedia] call returns this completer's future
+  /// instead of the next page.  The field is cleared after the call begins so
+  /// subsequent calls resume normal behaviour.
+  Completer<List<Media>>? holdNextCompleter;
+
+  /// Total number of [listMedia] invocations, including held ones.
+  int listMediaCallCount = 0;
+
+  @override
+  Future<List<Media>> listMedia({
+    String? search,
+    int? setId,
+    List<int>? setIds,
+    String? type,
+    bool? favorites,
+    List<String>? tags,
+    double? minDuration,
+    double? maxDuration,
+    int? fileSizeMin,
+    int? fileSizeMax,
+    String? sort,
+    int? limit,
+    int? offset,
+    String? folder,
+    String? parent,
+  }) async {
+    listMediaCallCount++;
+    // If a completer was staged for this call, return its future and clear
+    // the field so the call after this one resumes normal paged behaviour.
+    final held = holdNextCompleter;
+    if (held != null) {
+      holdNextCompleter = null;
+      return held.future;
+    }
+    return pages.isEmpty ? [] : pages.removeAt(0);
+  }
+
+  @override
+  String thumbnailUrl(int mediaId) => '';
+}
+
 // ---------------------------------------------------------------------------
 // Sample data
 // ---------------------------------------------------------------------------
@@ -742,6 +796,159 @@ void main() {
       await tester.pumpAndSettle();
       // favorites=false means the flag is passed as null (no filter applied).
       expect(fakeClient.lastFavoritesOnlyFlag, isNull);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Pagination (_loadMore)
+  // --------------------------------------------------------------------------
+
+  group('pagination', () {
+    /// Builds a full page of [count] distinct [Media] items starting at [startId].
+    List<Media> makePage(int startId, int count) {
+      return List.generate(
+        count,
+        (i) => Media(
+          id: startId + i,
+          setId: 10,
+          relPath: 'p${startId + i}.mp4',
+          fileName: 'p${startId + i}.mp4',
+          absPath: '/media/p${startId + i}.mp4',
+          type: 'video',
+          duration: 60.0,
+          codec: 'h264',
+          resolution: '1920x1080',
+          bitrate: 1000,
+          fileSizeBytes: 1000000,
+          width: 1920,
+          height: 1080,
+          thumbnailPath: '',
+          playCount: 0,
+        ),
+      );
+    }
+
+    testWidgets('_loadMore appends second page to the grid', (tester) async {
+      // Page 1 is full (50 items), page 2 has 2 items to signal end-of-list.
+      final page1 = makePage(100, 50);
+      final page2 = makePage(200, 2);
+
+      final fakeClient = _PaginatedFakeApiClient(pages: [page1, page2]);
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // After initial load, listMedia was called once and the grid holds 50 items.
+      expect(fakeClient.listMediaCallCount, equals(1));
+
+      // Jump the CustomScrollView to its maximum scroll extent so the
+      // _onScroll listener fires and triggers _loadMore.
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byKey(const Key('media_grid')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      // Two listMedia calls: initial load + one _loadMore page.
+      expect(fakeClient.listMediaCallCount, equals(2));
+
+      // Total items visible = 50 (page 1) + 2 (page 2) = 52.
+      // Verify via the last card key from page 2, which is id 201.
+      expect(find.byKey(const Key('media_card_201')), findsOneWidget);
+    });
+
+    testWidgets('_loadMore is a no-op while _isLoadingMore is already true',
+        (tester) async {
+      // Page 1 is full so _hasMore stays true after the initial load.
+      final page1 = makePage(100, 50);
+
+      // Do NOT set holdNextCompleter yet — let the initial load complete normally.
+      final fakeClient = _PaginatedFakeApiClient(pages: [page1]);
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Sanity: initial load has completed with one API call.
+      expect(fakeClient.listMediaCallCount, equals(1));
+
+      // Now stage a completer to hold the upcoming _loadMore in-flight.
+      final loadMoreCompleter = Completer<List<Media>>();
+      fakeClient.holdNextCompleter = loadMoreCompleter;
+
+      // Jump the CustomScrollView to its maximum extent to trigger _loadMore
+      // via the _onScroll listener — the request is now in-flight (blocked).
+      final scrollable = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pump(); // _loadMore starts, _isLoadingMore = true
+
+      // At this point listMediaCallCount == 2 (initial load + first _loadMore).
+      final callsAfterFirstScroll = fakeClient.listMediaCallCount;
+
+      // Jump again while the first _loadMore is still in-flight.
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pump();
+
+      // No additional API call must have been fired (_isLoadingMore guard).
+      expect(fakeClient.listMediaCallCount, equals(callsAfterFirstScroll));
+
+      // Resolve the in-flight request before pumpAndSettle so no pending async
+      // work remains (prevents timeout).
+      loadMoreCompleter.complete(makePage(200, 2));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets(
+        'pull-to-refresh while _loadMore is in-flight leaves _isLoadingMore=false',
+        (tester) async {
+      // Page 1 is full so _hasMore is true after the initial load.
+      final page1 = makePage(100, 50);
+      // Page returned by the _load triggered by pull-to-refresh.
+      final refreshPage = makePage(300, 3);
+
+      final fakeClient = _PaginatedFakeApiClient(
+        pages: [page1], // consumed by initial load
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Stage a completer to hold the upcoming _loadMore in-flight.
+      final loadMoreCompleter = Completer<List<Media>>();
+      fakeClient.holdNextCompleter = loadMoreCompleter;
+
+      // Jump to the maximum scroll extent to trigger _loadMore via the
+      // _onScroll listener — the request is now in-flight (blocked).
+      final scrollable = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pump(); // _loadMore starts, _isLoadingMore = true
+
+      // Add the refresh page so that the _load triggered by pull-to-refresh
+      // has data to return.
+      fakeClient.pages.add(refreshPage);
+
+      // Pull-to-refresh while _loadMore is still blocked — _load bumps the
+      // generation, so the blocked _loadMore response will be stale.
+      await tester.drag(
+        find.byKey(const Key('media_grid')),
+        const Offset(0, 300),
+      );
+      await tester.pump(const Duration(seconds: 1));
+
+      // Resolve the stale _loadMore so the generation-mismatch path executes.
+      // _load() must have already reset _isLoadingMore = false in its setState.
+      loadMoreCompleter.complete(makePage(200, 2));
+      await tester.pumpAndSettle();
+
+      // The bottom spinner must NOT be visible: _isLoadingMore was cleared by
+      // _load() so the stale _loadMore did not leave it permanently stuck.
+      expect(find.byKey(const Key('media_loading_more')), findsNothing);
     });
   });
 }

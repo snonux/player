@@ -142,6 +142,40 @@ class _DelayedFakeApiClient extends PlayerApiClient {
       _completer.future;
 }
 
+/// [PlayerApiClient] stub for pagination tests.
+///
+/// Each [listEpisodes] call pops the next page from [pages].  Setting
+/// [holdNextCompleter] before a call blocks that call until the completer is
+/// resolved — allowing tests to inspect in-flight state.
+class _PaginatedFakeApiClient extends PlayerApiClient {
+  _PaginatedFakeApiClient({required this.pages}) : super(dio: Dio());
+
+  /// Successive pages to return; each [listEpisodes] call removes the first element.
+  final List<List<PodcastEpisode>> pages;
+
+  /// When non-null, the next [listEpisodes] call returns this completer's
+  /// future and the field is cleared so later calls resume normal paged behaviour.
+  Completer<List<PodcastEpisode>>? holdNextCompleter;
+
+  /// Total number of [listEpisodes] invocations, including held ones.
+  int listEpisodesCallCount = 0;
+
+  @override
+  Future<List<PodcastEpisode>> listEpisodes(
+    int podcastSetId, {
+    int? limit,
+    int? offset,
+  }) async {
+    listEpisodesCallCount++;
+    final held = holdNextCompleter;
+    if (held != null) {
+      holdNextCompleter = null;
+      return held.future;
+    }
+    return pages.isEmpty ? [] : pages.removeAt(0);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Sample data
 // ---------------------------------------------------------------------------
@@ -995,6 +1029,153 @@ void main() {
         episodeDownloadErrorMessage(Exception('boom')),
         contains('Could not download episode'),
       );
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Pagination (_loadMore)
+  // --------------------------------------------------------------------------
+
+  group('pagination', () {
+    /// Builds a full page of [count] distinct [PodcastEpisode] items starting
+    /// at [startId].
+    List<PodcastEpisode> makePage(int startId, int count) {
+      return List.generate(
+        count,
+        (i) => PodcastEpisode(
+          id: startId + i,
+          feedId: 10,
+          guid: 'ep-${startId + i}',
+          title: 'Episode ${startId + i}',
+          description: '',
+          episodeUrl: 'https://example.com/ep${startId + i}.mp3',
+          fileName: 'ep${startId + i}.mp3',
+          isDownloaded: false,
+          isCompleted: false,
+          positionSeconds: 0,
+          durationSeconds: 1800.0,
+        ),
+      );
+    }
+
+    testWidgets('_loadMore appends second page to the list', (tester) async {
+      // Page 1 is full (50 items), page 2 has 2 items to signal end-of-list.
+      final page1 = makePage(100, 50);
+      final page2 = makePage(200, 2);
+
+      final fakeClient = _PaginatedFakeApiClient(pages: [page1, page2]);
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // After initial load, listEpisodes was called once.
+      expect(fakeClient.listEpisodesCallCount, equals(1));
+
+      // Jump the ListView to its maximum scroll extent so the
+      // ScrollUpdateNotification fires and triggers _loadMore.
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byKey(const Key('episodes_list')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      // Two calls: initial load + one _loadMore page.
+      expect(fakeClient.listEpisodesCallCount, equals(2));
+
+      // The last episode from page 2 (id 201) should now be in the list.
+      expect(find.byKey(const Key('episode_row_201')), findsOneWidget);
+    });
+
+    testWidgets('_loadMore is a no-op while _isLoadingMore is already true',
+        (tester) async {
+      final loadMoreCompleter = Completer<List<PodcastEpisode>>();
+
+      // Page 1 is full so _hasMore stays true after initial load.
+      final page1 = makePage(100, 50);
+
+      final fakeClient = _PaginatedFakeApiClient(pages: [page1]);
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Stage the completer to hold the upcoming _loadMore in-flight.
+      fakeClient.holdNextCompleter = loadMoreCompleter;
+
+      // Jump the ListView to its maximum scroll extent to trigger _loadMore
+      // via the ScrollUpdateNotification — the request is now in-flight.
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byKey(const Key('episodes_list')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pump(); // _loadMore starts, _isLoadingMore = true
+
+      final callsAfterFirstScroll = fakeClient.listEpisodesCallCount;
+
+      // Jump again while the first _loadMore is still in-flight.
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pump();
+
+      // No additional API call must have been fired (_isLoadingMore guard).
+      expect(fakeClient.listEpisodesCallCount, equals(callsAfterFirstScroll));
+
+      // Clean up: resolve the in-flight request before pumpAndSettle.
+      loadMoreCompleter.complete(makePage(200, 2));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets(
+        'pull-to-refresh while _loadMore is in-flight leaves _isLoadingMore=false',
+        (tester) async {
+      // Page 1 is full so _hasMore is true after the initial load.
+      final page1 = makePage(100, 50);
+      // Page returned by the _load triggered by pull-to-refresh.
+      final refreshPage = makePage(300, 3);
+
+      final fakeClient = _PaginatedFakeApiClient(pages: [page1]);
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // Stage a completer to hold the upcoming _loadMore in-flight.
+      final loadMoreCompleter = Completer<List<PodcastEpisode>>();
+      fakeClient.holdNextCompleter = loadMoreCompleter;
+
+      // Jump the ListView to its maximum scroll extent to trigger _loadMore
+      // via the ScrollUpdateNotification — the request is now in-flight.
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byKey(const Key('episodes_list')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pump(); // _loadMore starts, _isLoadingMore = true
+
+      // Queue the refresh page for the _load call that pull-to-refresh fires.
+      fakeClient.pages.add(refreshPage);
+
+      // Pull-to-refresh while _loadMore is still blocked — _load bumps the
+      // generation so the blocked _loadMore response will be stale.
+      await tester.drag(
+        find.byKey(const Key('episodes_list')),
+        const Offset(0, 300),
+      );
+      await tester.pump(const Duration(seconds: 1));
+
+      // Resolve the stale _loadMore: generation mismatch causes early return,
+      // but _load() already cleared _isLoadingMore = false in its setState.
+      loadMoreCompleter.complete(makePage(200, 2));
+      await tester.pumpAndSettle();
+
+      // The bottom spinner must NOT be visible: _isLoadingMore was cleared by
+      // _load() so the stale _loadMore did not leave it permanently stuck.
+      expect(find.byKey(const Key('episodes_loading_more')), findsNothing);
     });
   });
 }
