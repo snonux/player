@@ -118,7 +118,13 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
           );
       if (!mounted) return;
       // Replace the placeholder slot with the real user returned by the server.
-      setState(() { _users![placeholderIdx] = created; });
+      // Guard bounds in case a concurrent refresh shrank the list while the
+      // create request was in flight (mirrors the bounds check in the error path).
+      setState(() {
+        if (placeholderIdx < (_users?.length ?? 0)) {
+          _users![placeholderIdx] = created;
+        }
+      });
     } catch (e) {
       if (!mounted) return;
       // Revert optimistic insertion on error by removing the known slot.
@@ -530,10 +536,64 @@ class _CreateUserDialogState extends State<_CreateUserDialog> {
     );
   }
 
+  /// Builds the username TextFormField with non-empty validation.
+  Widget _buildUsernameField() {
+    return TextFormField(
+      key: const Key('admin_create_username'),
+      controller: _usernameController,
+      decoration: const InputDecoration(
+        labelText: 'Username',
+        border: OutlineInputBorder(),
+      ),
+      textInputAction: TextInputAction.next,
+      autocorrect: false,
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return 'Username is required.';
+        }
+        return null;
+      },
+    );
+  }
+
+  /// Builds the password TextFormField with a visibility toggle and length
+  /// validation (minimum 8 characters).
+  Widget _buildPasswordField() {
+    return TextFormField(
+      key: const Key('admin_create_password'),
+      controller: _passwordController,
+      decoration: InputDecoration(
+        labelText: 'Password',
+        border: const OutlineInputBorder(),
+        // Toggle visibility icon so the admin can verify the typed password.
+        suffixIcon: IconButton(
+          icon: Icon(
+            _passwordVisible
+                ? Icons.visibility_off_outlined
+                : Icons.visibility_outlined,
+          ),
+          tooltip: _passwordVisible ? 'Hide password' : 'Show password',
+          onPressed: () =>
+              setState(() => _passwordVisible = !_passwordVisible),
+        ),
+      ),
+      obscureText: !_passwordVisible,
+      textInputAction: TextInputAction.done,
+      onFieldSubmitted: (_) => _submit(),
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Password is required.';
+        }
+        if (value.length < 8) {
+          return 'Password must be at least 8 characters.';
+        }
+        return null;
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // _buildForm and _buildActions were single-call-site helpers; inlined here
-    // to reduce indirection. The merged build() stays well under 50 lines.
     return AlertDialog(
       key: const Key('admin_create_user_dialog'),
       title: const Text('Create user'),
@@ -542,54 +602,9 @@ class _CreateUserDialogState extends State<_CreateUserDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextFormField(
-              key: const Key('admin_create_username'),
-              controller: _usernameController,
-              decoration: const InputDecoration(
-                labelText: 'Username',
-                border: OutlineInputBorder(),
-              ),
-              textInputAction: TextInputAction.next,
-              autocorrect: false,
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Username is required.';
-                }
-                return null;
-              },
-            ),
+            _buildUsernameField(),
             const SizedBox(height: 16),
-            TextFormField(
-              key: const Key('admin_create_password'),
-              controller: _passwordController,
-              decoration: InputDecoration(
-                labelText: 'Password',
-                border: const OutlineInputBorder(),
-                // Toggle visibility icon so the admin can verify the typed password.
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _passwordVisible
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                  ),
-                  tooltip: _passwordVisible ? 'Hide password' : 'Show password',
-                  onPressed: () =>
-                      setState(() => _passwordVisible = !_passwordVisible),
-                ),
-              ),
-              obscureText: !_passwordVisible,
-              textInputAction: TextInputAction.done,
-              onFieldSubmitted: (_) => _submit(),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Password is required.';
-                }
-                if (value.length < 8) {
-                  return 'Password must be at least 8 characters.';
-                }
-                return null;
-              },
-            ),
+            _buildPasswordField(),
             const SizedBox(height: 8),
             CheckboxListTile(
               key: const Key('admin_create_is_admin'),

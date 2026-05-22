@@ -257,33 +257,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onTap: () => context.go(AppRoutes.shares),
               ),
 
-              // ----------------------------------------------------------------
               // Admin section: only visible to admin users.
               // Non-admin users are gated out here; the server enforces this
               // independently via 403 responses, making this defence-in-depth.
-              // ----------------------------------------------------------------
-              if (isAdmin) ...[
-                const SizedBox(height: 32),
-                const Divider(),
-                const SizedBox(height: 24),
-
-                Text(
-                  'Administration',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 12),
-
-                // Manage Users tile — navigates to /admin/users.
-                ListTile(
-                  key: const Key('settings_manage_users'),
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.manage_accounts_outlined),
-                  title: const Text('Manage Users'),
-                  subtitle: const Text('Create and delete user accounts'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.go(AppRoutes.adminUsers),
-                ),
-              ],
+              if (isAdmin) const _AdminSection(),
             ],
           ),
         ),
@@ -336,6 +313,49 @@ class _ThemeToggle extends ConsumerWidget {
           ref.read(themeProvider.notifier).setThemeMode(selection.first);
         }
       },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Admin section widget
+// ---------------------------------------------------------------------------
+
+/// Administration section shown only to admin users in [SettingsScreen].
+///
+/// Extracted as a [ConsumerWidget] (following the [_ThemeToggle] pattern) so
+/// [_SettingsScreenState.build] does not need to reference [AppRoutes.adminUsers]
+/// directly and stays focused on layout concerns.  The server independently
+/// enforces admin-only access via 403, so this UI gate is defence-in-depth.
+class _AdminSection extends ConsumerWidget {
+  const _AdminSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 32),
+        const Divider(),
+        const SizedBox(height: 24),
+
+        Text(
+          'Administration',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 12),
+
+        // Manage Users tile — navigates to /admin/users.
+        ListTile(
+          key: const Key('settings_manage_users'),
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.manage_accounts_outlined),
+          title: const Text('Manage Users'),
+          subtitle: const Text('Create and delete user accounts'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.go(AppRoutes.adminUsers),
+        ),
+      ],
     );
   }
 }
