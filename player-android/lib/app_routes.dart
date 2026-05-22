@@ -121,4 +121,20 @@ abstract final class AppRoutes {
   /// Only accessible when the authenticated user has admin privileges.
   /// Shows a list of all registered users and allows creating/deleting accounts.
   static const adminUsers = '/admin/users';
+
+  /// Route for the admin permission matrix screen.
+  ///
+  /// Displays a cross-table of users vs. sets with checkboxes for granting or
+  /// revoking per-user access to each set.  Admin-only.
+  static const adminPermissions = '/admin/permissions';
+
+  /// Route for the admin rescan screen.
+  ///
+  /// Allows an admin to trigger a library rescan and monitor live progress.
+  static const adminRescan = '/admin/rescan';
+
+  /// Route for the admin trash screen.
+  ///
+  /// Lists soft-deleted media items and allows restore or hard-delete.
+  static const adminTrash = '/admin/trash';
 }

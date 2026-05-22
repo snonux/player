@@ -359,6 +359,66 @@ String episodeToggleErrorMessage(Object error) {
   return 'Could not update episode. Please try again.';
 }
 
+/// Maps any thrown object from admin permission API calls to a UI string.
+///
+/// Adds human-readable messages for the failure modes specific to granting or
+/// revoking set permissions:
+///   - 403: the caller is not an admin.
+///   - 404: the user or set no longer exists.
+///
+/// Kept as a separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of the other admin mappers.
+String adminPermissionErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to manage access.';
+    }
+    if (error.response?.statusCode == 404) {
+      return 'User or set not found. Please refresh and try again.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
+/// Maps any thrown object from [PlayerApiClient.triggerRescan] or
+/// [PlayerApiClient.getScanProgress] to a UI string.
+///
+/// Adds a 403-specific message (admin-only) on top of the generic
+/// connection-error fallback so [RescanScreen] surfaces actionable guidance.
+/// Kept as a separate top-level function (Open-Closed, DRY).
+String adminRescanErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to trigger a rescan.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
+/// Maps any thrown object from admin trash API calls to a UI string.
+///
+/// Adds human-readable messages for the failure modes specific to restoring
+/// or hard-deleting trashed media items:
+///   - 403: the caller is not an admin.
+///   - 404: the media item no longer exists in trash.
+///
+/// Kept as a separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of the other admin mappers.
+String adminTrashErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to manage the trash.';
+    }
+    if (error.response?.statusCode == 404) {
+      return 'Item not found. It may have already been deleted or restored.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
 /// Maps any thrown object from [PlayerApiClient.downloadEpisode] to a UI string.
 ///
 /// Adds human-readable messages for the failure modes specific to triggering a

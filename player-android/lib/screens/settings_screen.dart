@@ -355,6 +355,39 @@ class _AdminSection extends ConsumerWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => context.go(AppRoutes.adminUsers),
         ),
+
+        // Permissions tile — navigates to /admin/permissions.
+        ListTile(
+          key: const Key('settings_permissions'),
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.lock_outlined),
+          title: const Text('Permissions'),
+          subtitle: const Text('Manage set access per user'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.go(AppRoutes.adminPermissions),
+        ),
+
+        // Rescan tile — navigates to /admin/rescan.
+        ListTile(
+          key: const Key('settings_rescan'),
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.sync_outlined),
+          title: const Text('Rescan Library'),
+          subtitle: const Text('Trigger a full media library scan'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.go(AppRoutes.adminRescan),
+        ),
+
+        // Trash tile — navigates to /admin/trash.
+        ListTile(
+          key: const Key('settings_trash'),
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.delete_outline),
+          title: const Text('Trash'),
+          subtitle: const Text('Restore or permanently delete trashed items'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.go(AppRoutes.adminTrash),
+        ),
       ],
     );
   }

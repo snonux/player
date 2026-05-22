@@ -20,6 +20,9 @@ import 'screens/share_screen.dart';
 import 'screens/share_viewer_screen.dart';
 import 'screens/my_shares_screen.dart';
 import 'screens/notes_editor_screen.dart';
+import 'screens/admin_permissions_screen.dart';
+import 'screens/admin_rescan_screen.dart';
+import 'screens/admin_trash_screen.dart';
 import 'screens/admin_users_screen.dart';
 import 'screens/folder_browser_screen.dart';
 import 'screens/video_player_screen.dart';
@@ -233,6 +236,28 @@ final routerProvider = Provider<GoRouter>((ref) {
         // who somehow reach this route will receive 403 responses.
         path: AppRoutes.adminUsers,
         builder: (context, state) => const AdminUsersScreen(),
+      ),
+      GoRoute(
+        // Admin permission matrix — cross-table of users vs. sets with
+        // checkboxes for granting or revoking per-user set access.
+        // Admin-only; non-admin users receive 403 from the server if they
+        // somehow reach this route directly.
+        path: AppRoutes.adminPermissions,
+        builder: (context, state) => const AdminPermissionsScreen(),
+      ),
+      GoRoute(
+        // Admin rescan screen — triggers a library rescan and polls live
+        // progress until the scan completes.
+        // Admin-only; non-admin users receive 403 from the server.
+        path: AppRoutes.adminRescan,
+        builder: (context, state) => const AdminRescanScreen(),
+      ),
+      GoRoute(
+        // Admin trash screen — lists soft-deleted media items and allows
+        // restore or permanent deletion.
+        // Admin-only; non-admin users receive 403 from the server.
+        path: AppRoutes.adminTrash,
+        builder: (context, state) => const AdminTrashScreen(),
       ),
       GoRoute(
         // Folder browser — shows subfolders and media at the current path
