@@ -320,3 +320,30 @@ String episodeToggleErrorMessage(Object error) {
   }
   return 'Could not update episode. Please try again.';
 }
+
+/// Maps any thrown object from [PlayerApiClient.downloadEpisode] to a UI string.
+///
+/// Adds human-readable messages for the failure modes specific to triggering a
+/// server-side episode download:
+///   - 404: the episode no longer exists on the server.
+///   - 403: the user lacks the required permission.
+///   - 409: the episode has already been downloaded (concurrent request).
+///
+/// All other failures fall back to [dioConnectionErrorMessage].  Kept as a
+/// separate top-level function (Open-Closed, DRY) so it can evolve
+/// independently of the toggle and list mappers.
+String episodeDownloadErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 404) {
+      return 'Episode not found. It may have been removed.';
+    }
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to download this episode.';
+    }
+    if (error.response?.statusCode == 409) {
+      return 'Episode is already downloaded.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Could not download episode. Please try again.';
+}

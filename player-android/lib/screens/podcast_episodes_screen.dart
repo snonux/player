@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/duration_formatter.dart';
@@ -159,6 +161,48 @@ class _PodcastEpisodesScreenState
   }
 
   // ---------------------------------------------------------------------------
+  // Download
+  // ---------------------------------------------------------------------------
+
+  /// Triggers a server-side download of the episode at [index] and updates
+  /// the row with the returned [Media.id] so the play button becomes active.
+  ///
+  /// The download is initiated on the server; the returned [Media] object
+  /// carries the newly created [mediaId].  On success the episode row is
+  /// updated in-place so the play button appears without a full reload.
+  /// On failure the original row is preserved and a SnackBar is shown.
+  Future<void> _downloadEpisodeAt(int index) async {
+    final items = _episodes;
+    if (items == null || index < 0 || index >= items.length) return;
+
+    final original = items[index];
+    // Guard: do not re-download an episode that already has a media file.
+    if (original.mediaId != null) return;
+
+    try {
+      final client = ref.read(apiClientProvider);
+      final media = await client.downloadEpisode(original.id);
+      if (!mounted) return;
+
+      // Update the episode row with the server-assigned mediaId so the play
+      // button appears without waiting for a full page reload.
+      final updated = PodcastEpisode.fromJson(
+        original.toJson()
+          ..['media_id'] = media.id
+          ..['is_downloaded'] = true,
+      );
+      setState(() {
+        _episodes = List<PodcastEpisode>.from(items)..[index] = updated;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(episodeDownloadErrorMessage(e))),
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
 
@@ -205,6 +249,12 @@ class _PodcastEpisodesScreenState
           : _EpisodeList(
               episodes: _episodes!,
               onToggleComplete: _toggleCompleteAt,
+              onDownload: _downloadEpisodeAt,
+              // Navigate to AudioPlayerScreen; mediaId is guaranteed non-null
+              // here because the play button is only rendered when mediaId != null.
+              onPlay: (mediaId) => context.go(
+                AppRoutes.audioPlayerPath(mediaId.toString()),
+              ),
             ),
     );
   }
@@ -222,6 +272,8 @@ class _EpisodeList extends StatelessWidget {
   const _EpisodeList({
     required this.episodes,
     required this.onToggleComplete,
+    required this.onDownload,
+    required this.onPlay,
   });
 
   final List<PodcastEpisode> episodes;
@@ -232,6 +284,15 @@ class _EpisodeList extends StatelessWidget {
   /// update the correct position in its list without a linear search.
   final void Function(int index) onToggleComplete;
 
+  /// Called with the index of the episode to be downloaded from the server.
+  final void Function(int index) onDownload;
+
+  /// Called with the [mediaId] of the episode to play.
+  ///
+  /// Only invoked when the episode already has a [PodcastEpisode.mediaId]
+  /// (i.e. it has been downloaded and a Media row exists on the server).
+  final void Function(int mediaId) onPlay;
+
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
@@ -241,6 +302,8 @@ class _EpisodeList extends StatelessWidget {
       itemBuilder: (context, index) => _EpisodeRow(
         episode: episodes[index],
         onToggleComplete: () => onToggleComplete(index),
+        onDownload: () => onDownload(index),
+        onPlay: onPlay,
       ),
     );
   }
@@ -253,14 +316,17 @@ class _EpisodeList extends StatelessWidget {
 ///   - Publication date and formatted duration.
 ///   - A linear progress bar below the title reflecting playback position
 ///     (visible only when the episode has been partially played).
-///   - A checkmark toggle icon on the trailing edge reflecting [isCompleted].
-///
-/// Tapping the checkmark fires [onToggleComplete]; tapping the row body is
-/// currently a no-op (episode playback will be wired in a future iteration).
+///   - Action buttons on the trailing edge:
+///       * Play button (when [PodcastEpisode.mediaId] is non-null).
+///       * Download button (when [PodcastEpisode.mediaId] is null, i.e. not yet
+///         downloaded from the remote feed to the server's media library).
+///       * Checkmark toggle reflecting [PodcastEpisode.isCompleted].
 class _EpisodeRow extends StatelessWidget {
   const _EpisodeRow({
     required this.episode,
     required this.onToggleComplete,
+    required this.onDownload,
+    required this.onPlay,
   });
 
   final PodcastEpisode episode;
@@ -270,6 +336,16 @@ class _EpisodeRow extends StatelessWidget {
   /// The parent state performs the optimistic update and API call; this
   /// widget is purely presentational (Single Responsibility / DIP).
   final VoidCallback onToggleComplete;
+
+  /// Called when the user taps the download icon.
+  ///
+  /// Only shown when [episode.mediaId] is null (episode not yet downloaded).
+  final VoidCallback onDownload;
+
+  /// Called with the episode's [mediaId] when the user taps the play icon.
+  ///
+  /// Only shown when [episode.mediaId] is non-null (episode is downloaded).
+  final void Function(int mediaId) onPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -281,7 +357,18 @@ class _EpisodeRow extends StatelessWidget {
         children: [
           // Episode info fills the available width.
           Expanded(child: _EpisodeInfo(episode: episode)),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+          // Show play or download depending on whether the media file exists.
+          if (episode.mediaId != null)
+            _PlayButton(
+              episodeId: episode.id,
+              onTap: () => onPlay(episode.mediaId!),
+            )
+          else
+            _DownloadButton(
+              episodeId: episode.id,
+              onTap: onDownload,
+            ),
           // Checkmark toggle anchored to the trailing edge.
           _PlayedToggle(
             episodeId: episode.id,
@@ -428,6 +515,73 @@ class _PlaybackProgressBar extends StatelessWidget {
       minHeight: 3,
       backgroundColor:
           Theme.of(context).colorScheme.surfaceContainerHighest,
+    );
+  }
+}
+
+/// Icon button that opens the [AudioPlayerScreen] for a downloaded episode.
+///
+/// Shown in [_EpisodeRow] only when [PodcastEpisode.mediaId] is non-null,
+/// meaning the episode has been downloaded and a [Media] row exists.
+/// Uses [GestureDetector] with [HitTestBehavior.opaque] to consume taps
+/// without propagating to parent [InkWell] widgets (mirrors [_PlayedToggle]).
+class _PlayButton extends StatelessWidget {
+  const _PlayButton({
+    required this.episodeId,
+    required this.onTap,
+  });
+
+  final int episodeId;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: Key('episode_play_button_$episodeId'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(
+          Icons.play_circle_outline,
+          size: 24,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ),
+    );
+  }
+}
+
+/// Icon button that triggers a server-side download of an episode.
+///
+/// Shown in [_EpisodeRow] only when [PodcastEpisode.mediaId] is null —
+/// meaning the episode has not yet been fetched from the remote feed URL
+/// into the server's media library.  Once downloaded, the server creates a
+/// [Media] row and [PodcastEpisode.mediaId] becomes non-null, replacing this
+/// button with [_PlayButton] in the next render cycle.
+class _DownloadButton extends StatelessWidget {
+  const _DownloadButton({
+    required this.episodeId,
+    required this.onTap,
+  });
+
+  final int episodeId;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: Key('episode_download_button_$episodeId'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(
+          Icons.download_outlined,
+          size: 24,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 }
