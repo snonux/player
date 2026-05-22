@@ -45,6 +45,9 @@ PodcastEpisode _buildEpisodeWithCompleted(
 ///     `error_mappers.dart` — no `dio` import in this file (DIP).
 ///   - Optimistic updates mirror the pattern in [MediaGridScreen.toggleFavorite]:
 ///     flip immediately, reconcile/revert after the API call settles.
+///   - Infinite-scroll pagination: [ScrollController] detects when the user
+///     is within 200px of the bottom and calls [_loadMore] to append the next
+///     page.  Pull-to-refresh resets to page 1.
 class PodcastEpisodesScreen extends ConsumerStatefulWidget {
   /// The numeric identifier of the podcast set whose episodes will be listed.
   final int setId;
@@ -66,6 +69,10 @@ class PodcastEpisodesScreen extends ConsumerStatefulWidget {
       _PodcastEpisodesScreenState();
 }
 
+// Number of episodes requested per page.  The server default is 50 (see
+// player-server/docs/api.md §GET /api/podcasts/{id}/episodes).
+const _kEpisodePageSize = 50;
+
 class _PodcastEpisodesScreenState
     extends ConsumerState<PodcastEpisodesScreen> {
   // Nullable: null means "not yet loaded" (loading indicator is shown).
@@ -81,6 +88,20 @@ class _PodcastEpisodesScreenState
   // from firing concurrent API calls for the same episode.
   final Set<int> _pendingDownloads = {};
 
+  // Generation counter — incremented on each fresh load (refresh/first-mount).
+  // Checked after every async gap so stale responses from cancelled loads are
+  // silently discarded (cancellation-by-generation pattern).
+  int _loadGeneration = 0;
+
+  // Pagination state: current offset into the server list.
+  int _offset = 0;
+
+  // True when more pages may be available (last page was full).
+  bool _hasMore = true;
+
+  // True while a _loadMore request is in flight to prevent concurrent loads.
+  bool _isLoadingMore = false;
+
   @override
   void initState() {
     super.initState();
@@ -90,34 +111,110 @@ class _PodcastEpisodesScreenState
   }
 
   // ---------------------------------------------------------------------------
+  // Scroll detection via notification
+  // ---------------------------------------------------------------------------
+
+  /// Called by [NotificationListener] in [_buildBody] on every scroll update.
+  ///
+  /// Using [ScrollNotification] (rather than [ScrollController.addListener])
+  /// avoids attaching a controller to the [ListView], which would otherwise
+  /// interfere with [RefreshIndicator]'s overscroll detection in test and
+  /// production environments.  The notification still bubbles up to
+  /// [RefreshIndicator] because [_onScrollNotification] returns false.
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollUpdateNotification) {
+      final metrics = notification.metrics;
+      if (metrics.pixels >= metrics.maxScrollExtent - 200) {
+        _loadMore();
+      }
+    }
+    // Return false so the notification continues to bubble (e.g. to RefreshIndicator).
+    return false;
+  }
+
+  // ---------------------------------------------------------------------------
   // Data loading
   // ---------------------------------------------------------------------------
 
-  /// Fetches episodes for [widget.setId] and updates local state.
+  /// Fetches the first page of episodes for [widget.setId] and resets all
+  /// pagination state.
   ///
-  /// Called on first mount and on pull-to-refresh.  Errors are mapped by
-  /// [episodeListErrorMessage] so the widget stays free of Dio.
+  /// Called on first mount and on pull-to-refresh.  Resetting [_offset] to 0
+  /// and [_hasMore] to true ensures subsequent scroll-triggered loads start
+  /// cleanly from the beginning.  Errors are mapped by [episodeListErrorMessage]
+  /// so the widget stays free of Dio.
   Future<void> _load() async {
     if (!mounted) return;
+
+    // Bump the generation before the async gap so stale callbacks from the
+    // previous load detect the change and drop their result.
+    final generation = ++_loadGeneration;
+
     setState(() {
       _isLoading = true;
       _error = null;
+      // Reset pagination so page 1 is fetched from scratch.
+      _offset = 0;
+      _hasMore = true;
     });
 
     try {
       final client = ref.read(apiClientProvider);
-      final items = await client.listEpisodes(widget.setId);
-      if (!mounted) return;
+      final items = await client.listEpisodes(
+        widget.setId,
+        limit: _kEpisodePageSize,
+        offset: 0,
+      );
+
+      if (!mounted || generation != _loadGeneration) return;
+
       setState(() {
         _episodes = items;
         _isLoading = false;
+        _offset = items.length;
+        _hasMore = items.length >= _kEpisodePageSize;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _error = episodeListErrorMessage(e);
         _isLoading = false;
       });
+    }
+  }
+
+  /// Appends the next page of episodes to the existing list.
+  ///
+  /// Guards against concurrent loads and stops when all pages have been
+  /// fetched ([_hasMore] is false).  Checks [_loadGeneration] so a pending
+  /// refresh discards this stale response.
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    if (!mounted) return;
+
+    final generation = _loadGeneration;
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final client = ref.read(apiClientProvider);
+      final items = await client.listEpisodes(
+        widget.setId,
+        limit: _kEpisodePageSize,
+        offset: _offset,
+      );
+
+      if (!mounted || generation != _loadGeneration) return;
+
+      setState(() {
+        _episodes = [...?_episodes, ...items];
+        _offset += items.length;
+        _hasMore = items.length >= _kEpisodePageSize;
+        _isLoadingMore = false;
+      });
+    } catch (_) {
+      // On error, allow the user to scroll again to retry.
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
     }
   }
 
@@ -250,7 +347,14 @@ class _PodcastEpisodesScreenState
   ///   - Full-screen spinner (first load, before any data arrives).
   ///   - Error view with a retry button.
   ///   - Empty-state message when [listEpisodes] returns an empty list.
-  ///   - Scrollable list of episode rows once data is available.
+  ///   - Scrollable list of episode rows once data is available (with bottom
+  ///     loading indicator while more pages are being fetched).
+  ///
+  /// [NotificationListener] wraps the [RefreshIndicator] and intercepts
+  /// [ScrollUpdateNotification] to trigger [_loadMore] near the list end.
+  /// Returning false from [_onScrollNotification] ensures the notification
+  /// continues to bubble so [RefreshIndicator]'s overscroll detection still
+  /// works correctly.
   Widget _buildBody(BuildContext context) {
     // Show a full-screen spinner only on the very first load (no data yet).
     if (_isLoading && _episodes == null) {
@@ -265,22 +369,29 @@ class _PodcastEpisodesScreenState
       return _ErrorView(message: _error!, onRetry: _load);
     }
 
-    // [RefreshIndicator] wraps the scrollable content so pull-to-refresh
-    // triggers [_load] on both the list and the empty-state view.
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: _episodes == null || _episodes!.isEmpty
-          ? const _EmptyView()
-          : _EpisodeList(
-              episodes: _episodes!,
-              pendingDownloads: _pendingDownloads,
-              onToggleComplete: _toggleCompleteAt,
-              onDownload: _downloadEpisodeAt,
-              // mediaId is non-null: _EpisodeRow only invokes onPlay when episode.mediaId is set.
-              onPlay: (mediaId) => context.go(
-                AppRoutes.audioPlayerPath(mediaId.toString()),
+    // [NotificationListener] sits outside [RefreshIndicator] and listens for
+    // scroll updates from the inner [ListView] to trigger infinite-scroll
+    // page loads.  The [RefreshIndicator] receives notifications too because
+    // [_onScrollNotification] returns false (non-consuming).
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onScrollNotification,
+      child: RefreshIndicator(
+        onRefresh: _load,
+        child: _episodes == null || _episodes!.isEmpty
+            ? const _EmptyView()
+            : _EpisodeList(
+                episodes: _episodes!,
+                pendingDownloads: _pendingDownloads,
+                onToggleComplete: _toggleCompleteAt,
+                onDownload: _downloadEpisodeAt,
+                // mediaId is non-null: _EpisodeRow only invokes onPlay when episode.mediaId is set.
+                onPlay: (mediaId) => context.go(
+                  AppRoutes.audioPlayerPath(mediaId.toString()),
+                ),
+                isLoadingMore: _isLoadingMore,
+                hasMore: _hasMore,
               ),
-            ),
+      ),
     );
   }
 }
@@ -289,10 +400,18 @@ class _PodcastEpisodesScreenState
 // Sub-widgets
 // ---------------------------------------------------------------------------
 
-/// Scrollable list of episode rows.
+/// Scrollable list of episode rows with infinite-scroll pagination.
 ///
 /// Extracted into its own stateless widget so [_PodcastEpisodesScreenState]
 /// stays concise and the list layout is independently testable.
+///
+/// A footer item is appended after the last episode row: a spinner while more
+/// pages are loading, or an end-of-list message once all pages are fetched.
+///
+/// Scroll detection is handled externally via a [NotificationListener] in
+/// the parent state (rather than a [ScrollController] attached to this
+/// [ListView]) so that [RefreshIndicator]'s overscroll detection is not
+/// interfered with.
 class _EpisodeList extends StatelessWidget {
   const _EpisodeList({
     required this.episodes,
@@ -300,6 +419,8 @@ class _EpisodeList extends StatelessWidget {
     required this.onToggleComplete,
     required this.onDownload,
     required this.onPlay,
+    required this.isLoadingMore,
+    required this.hasMore,
   });
 
   final List<PodcastEpisode> episodes;
@@ -325,19 +446,63 @@ class _EpisodeList extends StatelessWidget {
   /// (i.e. it has been downloaded and a Media row exists on the server).
   final void Function(int mediaId) onPlay;
 
+  /// True while a next-page request is in flight; drives the bottom spinner.
+  final bool isLoadingMore;
+
+  /// False once all pages have been loaded; drives the end-of-list text.
+  final bool hasMore;
+
   @override
   Widget build(BuildContext context) {
+    // Total item count includes one footer slot after the last episode row.
+    final totalCount = episodes.length + 1;
+
     return ListView.separated(
       key: const Key('episodes_list'),
-      itemCount: episodes.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (context, index) => _EpisodeRow(
-        episode: episodes[index],
-        isDownloadPending: pendingDownloads.contains(episodes[index].id),
-        onToggleComplete: () => onToggleComplete(index),
-        onDownload: () => onDownload(index),
-        onPlay: onPlay,
-      ),
+      // +1 for the footer (loading indicator or end-of-list message).
+      itemCount: totalCount,
+      separatorBuilder: (_, index) =>
+          // Do not draw a divider above the footer item.
+          index < episodes.length - 1
+              ? const Divider(height: 1)
+              : const SizedBox.shrink(),
+      itemBuilder: (context, index) {
+        // Last slot is the footer.
+        if (index == episodes.length) {
+          return _buildFooter(context);
+        }
+        return _EpisodeRow(
+          episode: episodes[index],
+          isDownloadPending: pendingDownloads.contains(episodes[index].id),
+          onToggleComplete: () => onToggleComplete(index),
+          onDownload: () => onDownload(index),
+          onPlay: onPlay,
+        );
+      },
+    );
+  }
+
+  /// Builds the footer widget appended after the last episode row.
+  ///
+  /// Shows a spinner while more pages are loading, or an "All episodes loaded"
+  /// text once [hasMore] is false.
+  Widget _buildFooter(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: isLoadingMore
+          ? const Center(
+              key: Key('episodes_loading_more'),
+              child: CircularProgressIndicator(),
+            )
+          : Center(
+              child: Text(
+                hasMore ? '' : 'All episodes loaded',
+                key: const Key('episodes_no_more'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ),
     );
   }
 }

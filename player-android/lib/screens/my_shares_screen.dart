@@ -20,6 +20,9 @@ import '../utils/error_mappers.dart';
 ///     the clipboard, then shows a confirmation SnackBar.
 ///   - All async continuations guard on [mounted] to prevent setState/context
 ///     calls after widget disposal.
+///   - The `GET /api/v1/shares` endpoint returns all shares in a single response
+///     (no server-side pagination).  An end-of-list indicator is shown after the
+///     list is fully loaded to make the experience consistent with other screens.
 class MySharesScreen extends ConsumerStatefulWidget {
   const MySharesScreen({super.key});
 
@@ -37,6 +40,11 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
   // True while the initial or refresh load is in flight.
   bool _isLoading = false;
 
+  // True once the first successful load completes.  The shares endpoint returns
+  // all items in one response (no server-side pagination), so this is set to
+  // true immediately after the first load and drives the end-of-list indicator.
+  bool _loaded = false;
+
   @override
   void initState() {
     super.initState();
@@ -51,13 +59,16 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
 
   /// Fetches the user's share list and updates local state.
   ///
-  /// Called on first mount and on pull-to-refresh.  Errors are mapped by the
-  /// top-level [sharesErrorMessage] helper so the widget stays simple.
+  /// Called on first mount and on pull-to-refresh.  The `GET /api/v1/shares`
+  /// endpoint returns all items in one response, so [_loaded] is set to true
+  /// after a successful fetch.  Errors are mapped by [sharesErrorMessage].
   Future<void> _load() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
+      // Reset end-of-list indicator so the spinner shows during refresh.
+      _loaded = false;
     });
 
     try {
@@ -67,6 +78,8 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
       setState(() {
         _shares = shares;
         _isLoading = false;
+        // Mark all items as loaded since the endpoint returns a single page.
+        _loaded = true;
       });
     } catch (e) {
       if (!mounted) return;
@@ -154,6 +167,8 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
   ///   - Full-screen spinner on the very first load (no data yet).
   ///   - Error view with a retry button when the load failed.
   ///   - Pull-to-refresh wrapper around the share list or empty-state view.
+  ///   - An end-of-list indicator appended below the last row once [_loaded]
+  ///     is true (consistent with MediaGridScreen and PodcastEpisodesScreen).
   Widget _buildBody(BuildContext context) {
     if (_isLoading && _shares == null) {
       return const Center(
@@ -174,6 +189,7 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
               shares: _shares!,
               onCopyLink: _copyLink,
               onRevoke: _revoke,
+              showEndOfList: _loaded,
             ),
     );
   }
@@ -187,24 +203,54 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
 ///
 /// Extracted into its own stateless widget so [_MySharesScreenState] stays
 /// focused on data-loading concerns and the list UI is independently testable.
+///
+/// When [showEndOfList] is true a footer row is appended after the last share
+/// tile with a "All shares loaded" message to keep the UX consistent with
+/// other paginated screens (MediaGridScreen, PodcastEpisodesScreen).
 class _ShareList extends StatelessWidget {
   const _ShareList({
     required this.shares,
     required this.onCopyLink,
     required this.onRevoke,
+    required this.showEndOfList,
   });
 
   final List<Share> shares;
   final void Function(Share share) onCopyLink;
   final Future<void> Function(Share share, int index) onRevoke;
 
+  /// When true a footer with "All shares loaded" is shown below the last row.
+  final bool showEndOfList;
+
   @override
   Widget build(BuildContext context) {
+    // +1 to include the footer slot when end-of-list indicator is needed.
+    final totalCount = shares.length + (showEndOfList ? 1 : 0);
+
     return ListView.separated(
       key: const Key('shares_list'),
-      itemCount: shares.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemCount: totalCount,
+      separatorBuilder: (_, index) =>
+          // Do not draw a divider above the footer item.
+          index < shares.length - 1
+              ? const Divider(height: 1)
+              : const SizedBox.shrink(),
       itemBuilder: (context, index) {
+        // Footer slot: end-of-list indicator.
+        if (index == shares.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: Text(
+                'All shares loaded',
+                key: const Key('shares_no_more'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ),
+          );
+        }
         final share = shares[index];
         return _ShareTile(
           share: share,

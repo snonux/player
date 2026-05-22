@@ -44,6 +44,9 @@ Media _buildMediaWithFavorite(Media media, bool favorite) {
 ///     `error_mappers.dart` — no `dio` import in this file (DIP).
 ///   - [SearchFilterBar] is shown below the AppBar; filter changes cancel
 ///     any in-flight load and start a new one with the updated parameters.
+///   - Infinite-scroll pagination: [ScrollController] detects when the user
+///     is within 200px of the bottom and calls [_loadMore] to append the next
+///     page.  Pull-to-refresh resets to page 1.
 class MediaGridScreen extends ConsumerStatefulWidget {
   /// The numeric identifier of the set whose media items will be displayed.
   final int setId;
@@ -59,6 +62,10 @@ class MediaGridScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<MediaGridScreen> createState() => _MediaGridScreenState();
 }
+
+// Number of items requested per page.  Matches the server's supported range
+// (1–1000); 50 is a comfortable default that avoids very long first loads.
+const _kPageSize = 50;
 
 class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   // Nullable: null means "not yet loaded" (loading indicator is shown).
@@ -79,25 +86,66 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   // preventing race conditions when the user changes filters rapidly.
   int _loadGeneration = 0;
 
+  // Pagination state: current offset into the server list.
+  int _offset = 0;
+
+  // True when more pages may be available (last page was full).
+  // Set to false when a page returns fewer items than [_kPageSize].
+  bool _hasMore = true;
+
+  // True while a _loadMore request is in flight, to prevent concurrent loads.
+  bool _isLoadingMore = false;
+
+  // Drives automatic page loads when the user scrolls near the list end.
+  late final ScrollController _scrollController;
+
   @override
   void initState() {
     super.initState();
+    _scrollController = ScrollController()..addListener(_onScroll);
     // Defer the first load until after the first frame so [ref] is fully bound
     // and any provider overrides in the test environment are applied.
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    // Cancel the scroll listener and release the controller to prevent
+    // callbacks from firing after the widget is removed from the tree.
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Scroll listener
+  // ---------------------------------------------------------------------------
+
+  /// Triggers [_loadMore] when the scroll position is within 200px of the end.
+  ///
+  /// Using a pixel threshold (rather than "at max extent") gives the user a
+  /// smooth experience: the next page starts loading before they reach the
+  /// very last item.
+  void _onScroll() {
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200) {
+      _loadMore();
+    }
   }
 
   // ---------------------------------------------------------------------------
   // Data loading
   // ---------------------------------------------------------------------------
 
-  /// Fetches media items for [widget.setId] with the current [_filter] and
-  /// updates local state.
+  /// Fetches the first page of media for [widget.setId] with the current
+  /// [_filter] and resets all pagination state.
   ///
   /// Called on first mount, on pull-to-refresh, and whenever [_filter]
-  /// changes.  The [_loadGeneration] counter ensures that a response arriving
-  /// after a newer load has started is ignored, preventing stale data from
-  /// overwriting fresher results (cancellation-by-generation pattern).
+  /// changes.  Resetting [_offset] to 0 and [_hasMore] to true ensures that
+  /// subsequent scroll-triggered loads start cleanly from the beginning.
+  ///
+  /// The [_loadGeneration] counter ensures that a response arriving after a
+  /// newer load has started is ignored, preventing stale data from overwriting
+  /// fresher results (cancellation-by-generation pattern).
   ///
   /// Errors are mapped by the top-level [mediaErrorMessage] helper so the
   /// widget stays free of Dio.
@@ -111,6 +159,9 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     setState(() {
       _isLoading = true;
       _error = null;
+      // Reset pagination so the first page is fetched from the start.
+      _offset = 0;
+      _hasMore = true;
     });
 
     try {
@@ -121,6 +172,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
         type: _filter.type,
         favorites: _filter.favoritesOnly ? true : null,
         sort: _filter.sortBy,
+        limit: _kPageSize,
+        offset: 0,
       );
 
       // Discard the result if a newer load was started while this one was
@@ -130,6 +183,9 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
       setState(() {
         _media = items;
         _isLoading = false;
+        _offset = items.length;
+        // If fewer items than requested were returned, there are no more pages.
+        _hasMore = items.length >= _kPageSize;
       });
     } catch (e) {
       if (!mounted || generation != _loadGeneration) return;
@@ -137,6 +193,48 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
         _error = mediaErrorMessage(e);
         _isLoading = false;
       });
+    }
+  }
+
+  /// Appends the next page of media items to the existing list.
+  ///
+  /// Guards against concurrent loads ([_isLoadingMore]) and stops when all
+  /// pages have been fetched ([_hasMore] is false).  Uses the current
+  /// [_loadGeneration] so a pending [_load] (e.g. filter change or
+  /// pull-to-refresh) that starts a new generation will cause this callback
+  /// to discard its stale result.
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    if (!mounted) return;
+
+    final generation = _loadGeneration;
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final client = ref.read(apiClientProvider);
+      final items = await client.listMedia(
+        setId: widget.setId,
+        search: _filter.query,
+        type: _filter.type,
+        favorites: _filter.favoritesOnly ? true : null,
+        sort: _filter.sortBy,
+        limit: _kPageSize,
+        offset: _offset,
+      );
+
+      // Discard if a fresher load (e.g. pull-to-refresh) has started.
+      if (!mounted || generation != _loadGeneration) return;
+
+      setState(() {
+        _media = [...?_media, ...items];
+        _offset += items.length;
+        _hasMore = items.length >= _kPageSize;
+        _isLoadingMore = false;
+      });
+    } catch (_) {
+      // On error, allow the user to scroll again to retry.
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
     }
   }
 
@@ -261,7 +359,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   ///   - Loading spinner (first load, before any data arrives).
   ///   - Error view with a retry button.
   ///   - Empty-state message when [listMedia] returns an empty list.
-  ///   - Grid of media cards once data is available.
+  ///   - Grid of media cards once data is available (with bottom loading
+  ///     indicator while more pages are being fetched).
   Widget _buildBody(BuildContext context) {
     // Show a full-screen spinner only on the very first load (no data yet).
     if (_isLoading && _media == null) {
@@ -286,6 +385,9 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
               media: _media!,
               thumbnailUrlBuilder: _thumbnailUrl,
               onFavoriteToggle: _toggleFavoriteAt,
+              scrollController: _scrollController,
+              isLoadingMore: _isLoadingMore,
+              hasMore: _hasMore,
             ),
     );
   }
@@ -302,15 +404,22 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 // Sub-widgets
 // ---------------------------------------------------------------------------
 
-/// Scrollable grid of [Media] cards.
+/// Scrollable grid of [Media] cards with infinite-scroll pagination.
 ///
 /// Extracted from [_MediaGridScreenState] so the state class stays concise and
 /// the grid layout is independently testable.
+///
+/// The grid is driven by a [CustomScrollView] with two slivers so an end-of-list
+/// indicator (spinner or "No more items" text) can be appended after the last
+/// row without breaking the grid layout.
 class _MediaGrid extends StatelessWidget {
   const _MediaGrid({
     required this.media,
     required this.thumbnailUrlBuilder,
     required this.onFavoriteToggle,
+    required this.scrollController,
+    required this.isLoadingMore,
+    required this.hasMore,
   });
 
   final List<Media> media;
@@ -328,24 +437,75 @@ class _MediaGrid extends StatelessWidget {
   /// position in its list without a linear search.
   final void Function(int index) onFavoriteToggle;
 
+  /// Controls the scroll position and triggers page loads via the listener
+  /// attached in [_MediaGridScreenState].
+  final ScrollController scrollController;
+
+  /// True while a next-page request is in flight; drives the bottom spinner.
+  final bool isLoadingMore;
+
+  /// False once all pages have been loaded; drives the end-of-list text.
+  final bool hasMore;
+
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
+    return CustomScrollView(
       key: const Key('media_grid'),
+      controller: scrollController,
+      slivers: [
+        _buildGridSliver(),
+        _buildFooterSliver(context),
+      ],
+    );
+  }
+
+  /// Builds the main grid sliver containing all loaded media cards.
+  SliverPadding _buildGridSliver() {
+    return SliverPadding(
       padding: const EdgeInsets.all(12),
-      // Two columns on phones; adaptive count could be added for tablets later.
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        // Slightly taller than square to accommodate the info overlay.
-        childAspectRatio: 0.85,
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          // Slightly taller than square to accommodate the info overlay.
+          childAspectRatio: 0.85,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => _MediaCard(
+            item: media[index],
+            thumbnailUrl: thumbnailUrlBuilder(media[index].id),
+            onFavoriteToggle: () => onFavoriteToggle(index),
+          ),
+          childCount: media.length,
+        ),
       ),
-      itemCount: media.length,
-      itemBuilder: (context, index) => _MediaCard(
-        item: media[index],
-        thumbnailUrl: thumbnailUrlBuilder(media[index].id),
-        onFavoriteToggle: () => onFavoriteToggle(index),
+    );
+  }
+
+  /// Builds the footer sliver: spinner while loading more, or end-of-list text.
+  ///
+  /// The footer is always present (a single-item list sliver) so the
+  /// [CustomScrollView] can always scroll past the last grid row, which
+  /// prevents the scroll listener from never triggering on short lists.
+  SliverToBoxAdapter _buildFooterSliver(BuildContext context) {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: isLoadingMore
+            ? const Center(
+                key: Key('media_loading_more'),
+                child: CircularProgressIndicator(),
+              )
+            : Center(
+                child: Text(
+                  hasMore ? '' : 'No more items',
+                  key: const Key('media_no_more'),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
       ),
     );
   }
