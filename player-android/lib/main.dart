@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 
 import 'providers/audio_handler_provider.dart';
 import 'providers/progress_queue_provider.dart';
+import 'providers/theme_provider.dart';
 import 'router.dart';
 import 'services/audio_handler.dart';
 
@@ -68,9 +69,13 @@ void main() async {
 
 /// Root application widget.
 ///
-/// Uses [ConsumerWidget] to read [routerProvider] from Riverpod so that the
-/// same [GoRouter] instance (and its navigator key) is reused across rebuilds.
+/// Uses [ConsumerWidget] to read [routerProvider] and [themeProvider] from
+/// Riverpod so that the same [GoRouter] instance and the persisted [ThemeMode]
+/// are both available without additional state management in the widget itself.
+///
 /// [MaterialApp.router] delegates all navigation decisions to go_router.
+/// [themeMode] is driven by [themeProvider] so the user's light/dark preference
+/// takes effect immediately on every screen and survives app restarts.
 class PlayerAndroidApp extends ConsumerWidget {
   const PlayerAndroidApp({super.key});
 
@@ -78,9 +83,18 @@ class PlayerAndroidApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
 
+    // Default to ThemeMode.system while the preference is loading so the app
+    // does not flash an incorrect theme during startup.
+    final themeMode =
+        ref.watch(themeProvider).valueOrNull ?? ThemeMode.system;
+
     return MaterialApp.router(
       title: 'Player',
       routerConfig: router,
+      // Material 3 is enabled in both ThemeData instances; see theme_provider.dart.
+      theme: buildLightTheme(),
+      darkTheme: buildDarkTheme(),
+      themeMode: themeMode,
     );
   }
 }

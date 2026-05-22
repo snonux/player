@@ -6,6 +6,7 @@ import '../app_routes.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/auth_state_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/theme_provider.dart';
 
 /// Settings screen: editable server base URL, current username, and logout.
 ///
@@ -213,6 +214,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: 24),
 
               // ----------------------------------------------------------------
+              // Appearance section: light / dark / system theme toggle.
+              // ----------------------------------------------------------------
+              Text(
+                'Appearance',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+
+              _ThemeToggle(),
+
+              const SizedBox(height: 32),
+              const Divider(),
+              const SizedBox(height: 24),
+
+              // ----------------------------------------------------------------
               // Sharing section: navigate to MyShares screen.
               // ----------------------------------------------------------------
               Text(
@@ -235,6 +251,64 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Theme toggle widget
+// ---------------------------------------------------------------------------
+
+/// Segmented-button control that lets the user choose between
+/// light, dark, and system (follow OS) theme modes.
+///
+/// Kept as a separate [ConsumerWidget] (SRP) so [_SettingsScreenState] does
+/// not need to know about [themeProvider] — it only needs to place the widget.
+class _ThemeToggle extends ConsumerWidget {
+  // ignore: prefer_const_constructors_in_immutables — private widget, not const
+  _ThemeToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Default to system while the provider is loading so the toggle renders
+    // immediately rather than showing an empty state.
+    final current = ref.watch(themeProvider).valueOrNull ?? ThemeMode.system;
+
+    return _buildSegmentedButton(context, ref, current);
+  }
+
+  Widget _buildSegmentedButton(
+    BuildContext context,
+    WidgetRef ref,
+    ThemeMode current,
+  ) {
+    return SegmentedButton<ThemeMode>(
+      key: const Key('settings_theme_toggle'),
+      segments: const [
+        ButtonSegment(
+          value: ThemeMode.light,
+          icon: Icon(Icons.light_mode_outlined),
+          label: Text('Light'),
+        ),
+        ButtonSegment(
+          value: ThemeMode.system,
+          icon: Icon(Icons.brightness_auto_outlined),
+          label: Text('System'),
+        ),
+        ButtonSegment(
+          value: ThemeMode.dark,
+          icon: Icon(Icons.dark_mode_outlined),
+          label: Text('Dark'),
+        ),
+      ],
+      selected: {current},
+      // Allow only single selection — the user always has exactly one mode active.
+      multiSelectionEnabled: false,
+      onSelectionChanged: (selection) {
+        if (selection.isNotEmpty) {
+          ref.read(themeProvider.notifier).setThemeMode(selection.first);
+        }
+      },
     );
   }
 }
