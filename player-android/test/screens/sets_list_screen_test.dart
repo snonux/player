@@ -16,6 +16,7 @@
 
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,7 +50,13 @@ class _FakeTokenStorage implements TokenStorage {
 ///
 /// The [listSets] behaviour is configured per-test via [setsResult] or
 /// [setsError].  Every other method remains [UnimplementedError] — the screen
-/// only calls [listSets].
+/// only calls [listSets] and [setFolderCoverUrl].
+///
+/// [setFolderCoverUrl] is overridden so [_CoverImage] does not make real HTTP
+/// requests during widget tests.  The default returns an empty string, which
+/// [_CoverImage] short-circuits to the folder-icon placeholder.  Tests that
+/// want to assert the cover URL pattern can set [coverUrlBuilder] to a custom
+/// function.
 class _FakeApiClient extends PlayerApiClient {
   _FakeApiClient() : super(dio: Dio());
 
@@ -62,17 +69,29 @@ class _FakeApiClient extends PlayerApiClient {
   /// Number of times [listSets] has been called; useful for refresh tests.
   int listSetsCallCount = 0;
 
+  /// Builds the cover URL returned to [_CoverImage].  Defaults to an empty
+  /// string so the placeholder is shown without any network I/O.  Tests can
+  /// override this to assert URL construction or to drive the network branch.
+  String Function(int setId, {String? folder})? coverUrlBuilder;
+
   @override
   Future<List<MediaSet>> listSets() async {
     listSetsCallCount++;
     if (setsError != null) throw setsError!;
     return setsResult!;
   }
+
+  @override
+  String setFolderCoverUrl(int setId, {String? folder}) {
+    final builder = coverUrlBuilder;
+    return builder == null ? '' : builder(setId, folder: folder);
+  }
 }
 
 /// [PlayerApiClient] stub that delays [listSets] until [complete] is called.
 ///
-/// Used to inspect mid-flight loading state.
+/// Used to inspect mid-flight loading state.  Like [_FakeApiClient], the cover
+/// URL defaults to '' so no real HTTP traffic is generated during the pump.
 class _DelayedFakeApiClient extends PlayerApiClient {
   _DelayedFakeApiClient() : super(dio: Dio());
 
@@ -83,6 +102,9 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 
   @override
   Future<List<MediaSet>> listSets() => _completer.future;
+
+  @override
+  String setFolderCoverUrl(int setId, {String? folder}) => '';
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +246,77 @@ void main() {
 
       // No podcast badge when all sets are regular media.
       expect(find.byKey(const Key('podcast_badge')), findsNothing);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Cover image
+  // --------------------------------------------------------------------------
+
+  group('cover image', () {
+    testWidgets(
+        'requests <base>/api/v1/sets/{id}/cover for every set with a builder',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..setsResult = [_kMovies, _kPodcasts]
+        // Custom builder that yields a stable URL per set id; the test asserts
+        // that this exact URL ends up on a CachedNetworkImage widget.
+        ..coverUrlBuilder = (int setId, {String? folder}) =>
+            'http://test.invalid/api/v1/sets/$setId/cover';
+
+      await _pumpSetsListScreen(tester, fakeClient);
+      // One pump frame is enough for initState's post-frame callback to run
+      // and for the widget tree to settle without waiting for the network
+      // request (which would hang the test).
+      await tester.pump();
+      await tester.pump();
+
+      // Every CachedNetworkImage in the tree must point at the cover endpoint
+      // for one of the sets.
+      final images = tester
+          .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+          .toList();
+      expect(images, hasLength(2));
+      expect(
+        images.map((i) => i.imageUrl).toSet(),
+        equals({
+          'http://test.invalid/api/v1/sets/1/cover',
+          'http://test.invalid/api/v1/sets/2/cover',
+        }),
+      );
+    });
+
+    testWidgets(
+        'renders folder-icon placeholder when no cover URL is provided',
+        (tester) async {
+      // Default fake returns '' for setFolderCoverUrl — same outcome as a 404.
+      final fakeClient = _FakeApiClient()..setsResult = [_kMovies];
+
+      await _pumpSetsListScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      // No CachedNetworkImage is created when the URL is empty (the widget
+      // short-circuits to the placeholder, identical to a 404 errorWidget).
+      expect(find.byType(CachedNetworkImage), findsNothing);
+      // The folder-icon placeholder is shown in its place.
+      expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
+    });
+
+    testWidgets(
+        'podcast badge is overlaid on the cover image for podcast sets',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..setsResult = [_kPodcasts]
+        ..coverUrlBuilder = (int setId, {String? folder}) =>
+            'http://test.invalid/api/v1/sets/$setId/cover';
+
+      await _pumpSetsListScreen(tester, fakeClient);
+      await tester.pump();
+      await tester.pump();
+
+      // Both the network cover and the podcast badge coexist for podcast sets.
+      expect(find.byType(CachedNetworkImage), findsOneWidget);
+      expect(find.byKey(const Key('podcast_badge')), findsOneWidget);
     });
   });
 

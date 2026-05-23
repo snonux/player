@@ -8,6 +8,11 @@ import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
 
+/// HTTP header map type used to authenticate cover-image requests against the
+/// session-cookie-protected `/api/v1/sets/{id}/cover` endpoint.  Aliased so the
+/// intent reads clearly at every call site.
+typedef _CoverHeaders = Map<String, String>;
+
 /// Home screen: displays all media sets as a scrollable grid.
 ///
 /// Each card shows the set's cover thumbnail, name, and media type badge
@@ -41,12 +46,23 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
   // True while the initial or refresh load is in flight.
   bool _isLoading = false;
 
+  // Headers used to authenticate cover-image requests.  Computed once from the
+  // session cookie jar after the first frame; an empty map is a safe default
+  // because CachedNetworkImage simply omits the header and the server will
+  // respond 401 — falling back to the placeholder via [_CoverImage]'s
+  // errorWidget.  Stored on the state (not rebuilt per frame) so the cookie
+  // is read from the jar exactly once per screen lifecycle.
+  _CoverHeaders _coverHeaders = const {};
+
   @override
   void initState() {
     super.initState();
     // Defer the first load until after the first frame so [ref] is fully bound
     // and any provider overrides in the test environment are applied.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _load();
+      _loadCoverHeaders();
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -79,6 +95,27 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  /// Reads the current session cookie from the shared [cookieJarProvider] and
+  /// stores it as a `Cookie:` HTTP header so [_CoverImage] can authenticate
+  /// against the session-cookie-gated `/api/v1/sets/{id}/cover` endpoint.
+  ///
+  /// CachedNetworkImage bypasses Dio (it uses its own http.Client), so the
+  /// session cookie that Dio normally attaches automatically must be replayed
+  /// manually via [CachedNetworkImage.httpHeaders] — mirroring the pattern in
+  /// [audio_player_screen.dart] and [video_player_screen.dart].
+  Future<void> _loadCoverHeaders() async {
+    final client = ref.read(apiClientProvider);
+    final jar = ref.read(cookieJarProvider);
+    final uri = Uri.parse(client.baseUrl);
+    final cookies = await jar.loadForRequest(uri);
+    if (!mounted || cookies.isEmpty) return;
+    final header = cookies.map((c) => '${c.name}=${c.value}').join('; ');
+    if (header.isEmpty) return;
+    setState(() {
+      _coverHeaders = {'Cookie': header};
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -137,7 +174,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
       onRefresh: _load,
       child: _sets == null || _sets!.isEmpty
           ? const _EmptyView()
-          : _SetsGrid(sets: _sets!),
+          : _SetsGrid(sets: _sets!, coverHeaders: _coverHeaders),
     );
   }
 }
@@ -150,13 +187,25 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
 ///
 /// Extracted into its own stateless widget so [_SetsListScreenState] stays
 /// below 50 lines and the grid layout is independently testable.
-class _SetsGrid extends StatelessWidget {
-  const _SetsGrid({required this.sets});
+///
+/// [coverHeaders] are forwarded to each [_CoverImage] so the session cookie
+/// is attached to the underlying `/api/v1/sets/{id}/cover` request.  Passing
+/// the headers through the tree avoids reading [ref] inside every card.
+class _SetsGrid extends ConsumerWidget {
+  const _SetsGrid({required this.sets, required this.coverHeaders});
 
   final List<MediaSet> sets;
+  final _CoverHeaders coverHeaders;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Build the cover-URL lookup once per grid build so each card does not
+    // need its own ref read (DRY) and so this stays testable: tests override
+    // [apiClientProvider] with a fake whose [setFolderCoverUrl] returns a
+    // stable string they can assert against.
+    final client = ref.watch(apiClientProvider);
+    String coverUrlFor(int setId) => client.setFolderCoverUrl(setId);
+
     return GridView.builder(
       key: const Key('sets_grid'),
       padding: const EdgeInsets.all(12),
@@ -170,7 +219,14 @@ class _SetsGrid extends StatelessWidget {
         childAspectRatio: 0.85,
       ),
       itemCount: sets.length,
-      itemBuilder: (context, index) => _SetCard(mediaSet: sets[index]),
+      itemBuilder: (context, index) {
+        final mediaSet = sets[index];
+        return _SetCard(
+          mediaSet: mediaSet,
+          coverUrl: coverUrlFor(mediaSet.id),
+          coverHeaders: coverHeaders,
+        );
+      },
     );
   }
 }
@@ -182,9 +238,20 @@ class _SetsGrid extends StatelessWidget {
 ///
 /// Tapping navigates to [AppRoutes.mediaGridPath] for the set.
 class _SetCard extends StatelessWidget {
-  const _SetCard({required this.mediaSet});
+  const _SetCard({
+    required this.mediaSet,
+    required this.coverUrl,
+    required this.coverHeaders,
+  });
 
   final MediaSet mediaSet;
+
+  /// Absolute URL of the cover endpoint for this set
+  /// (`<base>/api/v1/sets/{id}/cover`).
+  final String coverUrl;
+
+  /// Headers attached to the cover request (session cookie).
+  final _CoverHeaders coverHeaders;
 
   @override
   Widget build(BuildContext context) {
@@ -202,7 +269,13 @@ class _SetCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Cover thumbnail: takes up ~70 % of the card height.
-            Expanded(child: _CoverImage(mediaSet: mediaSet)),
+            Expanded(
+              child: _CoverImage(
+                mediaSet: mediaSet,
+                coverUrl: coverUrl,
+                coverHeaders: coverHeaders,
+              ),
+            ),
             // Name row with podcast badge.
             _NameRow(mediaSet: mediaSet),
           ],
@@ -214,30 +287,55 @@ class _SetCard extends StatelessWidget {
 
 /// Displays the set's cover image via [CachedNetworkImage].
 ///
-/// Falls back to a grey container with a folder icon when:
-///   - [MediaSet.coverThumbnailPath] is empty.
-///   - The network request fails.
-///   - The image is still loading (shows a [CircularProgressIndicator]).
+/// Unlike the previous implementation, this widget never inspects
+/// [MediaSet.coverThumbnailPath] (which is always empty in the listSets
+/// response).  Instead it unconditionally requests `GET /api/v1/sets/{id}/cover`
+/// and lets the server tell us whether a cover exists: 200 returns the JPEG;
+/// 404 triggers [errorWidget] which renders the folder-icon placeholder.
+/// This keeps the client truthful to the API contract and reuses the same
+/// pattern already in [folder_browser_screen.dart] for folder covers.
+///
+/// The session cookie is forwarded via [CachedNetworkImage.httpHeaders] because
+/// CachedNetworkImage bypasses Dio's interceptors and would otherwise hit the
+/// 401 path on the session-gated cover endpoint.
 ///
 /// The podcast badge (microphone icon) is overlaid in the top-right corner
 /// for sets where [MediaSet.isPodcast] is true.
 class _CoverImage extends StatelessWidget {
-  const _CoverImage({required this.mediaSet});
+  const _CoverImage({
+    required this.mediaSet,
+    required this.coverUrl,
+    required this.coverHeaders,
+  });
 
   final MediaSet mediaSet;
+
+  /// Absolute URL of the cover endpoint
+  /// (`<base>/api/v1/sets/{id}/cover`).
+  final String coverUrl;
+
+  /// HTTP headers attached to the cover request (session cookie).  Empty when
+  /// the cookie has not yet been loaded — the server will return 401 and the
+  /// error widget will render the folder placeholder, which is the same
+  /// outcome as a missing cover.
+  final _CoverHeaders coverHeaders;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Cover thumbnail — use CachedNetworkImage to avoid re-downloading
-        // on every rebuild and to provide placeholder/error states.
-        if (mediaSet.coverThumbnailPath.isEmpty)
+        // Cover thumbnail: always attempt the cover endpoint when a URL is
+        // available.  404 / 401 are caught by [errorWidget] which renders the
+        // folder placeholder.  An empty URL short-circuits to the placeholder
+        // immediately (matches [_FolderCoverImage] in folder_browser_screen.dart
+        // and keeps widget tests hermetic when fakes return '').
+        if (coverUrl.isEmpty)
           _placeholderWidget(context)
         else
           CachedNetworkImage(
-            imageUrl: mediaSet.coverThumbnailPath,
+            imageUrl: coverUrl,
+            httpHeaders: coverHeaders,
             fit: BoxFit.cover,
             placeholder: (_, __) => _loadingWidget(),
             errorWidget: (_, __, ___) => _placeholderWidget(context),
