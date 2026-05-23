@@ -1317,6 +1317,104 @@ func TestSQLite_SchemaInitialization(t *testing.T) {
 		}
 	})
 
+	t.Run("delete_appledouble_media migration purges sidecar rows", func(t *testing.T) {
+		// Open a raw DB *without* migrations so we can insert junk rows
+		// before the cleanup migration runs, then call New() to apply
+		// migrations and verify they sweep the sidecars away.
+		db, err := sql.Open("sqlite", ":memory:")
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		defer db.Close()
+
+		// Create only the tables needed for this test; we don't want the
+		// regular initializeSchema path because we need to seed rows
+		// *before* the migration runs.
+		if _, err := db.Exec(`
+CREATE TABLE sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    root_path TEXT UNIQUE NOT NULL,
+    cover_thumbnail_path TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    set_id INTEGER NOT NULL REFERENCES sets(id) ON DELETE CASCADE,
+    rel_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    abs_path TEXT NOT NULL,
+    type TEXT CHECK(type IN ('video','audio','image')) NOT NULL,
+    duration REAL,
+    codec TEXT,
+    resolution TEXT,
+    bitrate INTEGER,
+    file_size_bytes INTEGER,
+    width INTEGER,
+    height INTEGER,
+    exif_camera TEXT,
+    exif_lens TEXT,
+    exif_date TEXT,
+    exif_iso TEXT,
+    exif_f_number TEXT,
+    exif_exposure TEXT,
+    exif_focal_length TEXT,
+    thumbnail_path TEXT,
+    play_count INTEGER NOT NULL DEFAULT 0,
+    deleted_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(set_id, rel_path)
+);
+INSERT INTO sets (id, name, root_path) VALUES (1, 'Music', 'Music');
+INSERT INTO media (set_id, rel_path, file_name, abs_path, type) VALUES
+    (1, 'foo.mp3',       'foo.mp3',       '/m/foo.mp3',       'audio'),
+    (1, '._foo.mp3',     '._foo.mp3',     '/m/._foo.mp3',     'audio'),
+    (1, '._bar.jpg',     '._bar.jpg',     '/m/._bar.jpg',     'image'),
+    (1, '.gitignore.mp3','.gitignore.mp3','/m/.gitignore.mp3','audio');
+`); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+
+		s, err := New(db)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		defer s.Close()
+
+		var sidecars int
+		if err := s.db.QueryRow(
+			`SELECT COUNT(*) FROM media WHERE file_name LIKE '.\_%' ESCAPE '\'`,
+		).Scan(&sidecars); err != nil {
+			t.Fatalf("count sidecars: %v", err)
+		}
+		if sidecars != 0 {
+			t.Fatalf("expected 0 AppleDouble rows after migration, got %d", sidecars)
+		}
+
+		// The literal-dot sibling (".gitignore.mp3") must NOT be deleted —
+		// it does not start with "._". Together with "foo.mp3" we expect
+		// exactly 2 surviving rows.
+		var total int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM media`).Scan(&total); err != nil {
+			t.Fatalf("count total: %v", err)
+		}
+		if total != 2 {
+			t.Fatalf("expected 2 surviving rows, got %d", total)
+		}
+
+		// Re-running migrations on the now-clean DB must be a no-op
+		// (idempotency check — protects against future startups).
+		if err := runMigrations(s.db); err != nil {
+			t.Fatalf("rerun migrations: %v", err)
+		}
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM media`).Scan(&total); err != nil {
+			t.Fatalf("count after rerun: %v", err)
+		}
+		if total != 2 {
+			t.Fatalf("expected idempotent migration, got %d rows", total)
+		}
+	})
+
 	t.Run("stale pre-podcast sets schema is upgraded", func(t *testing.T) {
 		db, err := sql.Open("sqlite", ":memory:")
 		if err != nil {

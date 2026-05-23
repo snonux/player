@@ -628,4 +628,54 @@ func TestFSScanner_collectFiles(t *testing.T) {
 			t.Fatalf("expected only mp3, got %v", files)
 		}
 	})
+
+	// macOS writes "._foo.mp3" AppleDouble sidecars next to real files when
+	// the destination is not HFS. These sidecars share the same extension
+	// so IsSupportedExt would otherwise accept them; the discoverer must
+	// drop them before they ever reach the prober.
+	t.Run("skips macOS AppleDouble sidecars", func(t *testing.T) {
+		mfs := &mockFS{
+			walkList: []walkEntry{
+				{path: "/music", isDir: true},
+				{path: "/music/foo.mp3", isDir: false},
+				{path: "/music/._foo.mp3", isDir: false},
+				{path: "/music/._cover.jpg", isDir: false},
+				{path: "/music/cover.jpg", isDir: false},
+			},
+		}
+		s := newTestScanner(nil, nil, nil, nil, mfs)
+		files, err := s.collectFiles("/music")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		for _, f := range files {
+			if strings.HasPrefix(filepath.Base(f), "._") {
+				t.Fatalf("AppleDouble sidecar leaked into results: %v", files)
+			}
+		}
+		// We still expect the real files (mp3 + cover) to be discovered.
+		if len(files) != 2 {
+			t.Fatalf("expected 2 real files, got %v", files)
+		}
+	})
+}
+
+func TestIsAppleDoubleSidecar(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"._foo.mp3", true},
+		{"._cover.jpg", true},
+		{"._", true},
+		{"foo.mp3", false},
+		{".hidden", false},
+		{".gitignore", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := isAppleDoubleSidecar(c.name); got != c.want {
+			t.Errorf("isAppleDoubleSidecar(%q) = %v, want %v", c.name, got, c.want)
+		}
+	}
 }

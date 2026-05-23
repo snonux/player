@@ -270,6 +270,17 @@ ALTER TABLE podcast_feeds ADD COLUMN next_check_at DATETIME;
 		name: "add_playback_progress_finished",
 		sql:  `ALTER TABLE playback_progress ADD COLUMN finished BOOLEAN NOT NULL DEFAULT 0;`,
 	},
+	{
+		// Heals existing databases that ingested macOS AppleDouble sidecars
+		// (file names starting with "._") before the scanner learned to skip
+		// them. Idempotent: a re-run on a clean database simply deletes zero
+		// rows. The underscore in LIKE is a wildcard matching any single
+		// character, so we escape it via ESCAPE '\' to anchor the literal
+		// "._" prefix and avoid sweeping up unrelated dot-prefixed names
+		// such as ".gitignore" or ".hidden.mp3".
+		name: "delete_appledouble_media",
+		sql:  `DELETE FROM media WHERE file_name LIKE '.\_%' ESCAPE '\';`,
+	},
 }
 
 // runMigrations applies each migration in order, skipping ones whose SQL
