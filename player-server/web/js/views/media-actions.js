@@ -3,6 +3,7 @@ import { currentElement } from '../selection.js';
 import { currentMediaId } from '../player.js';
 import { open as openNotes } from '../notes.js';
 import { toast } from '../utils.js';
+import { copyShareLink } from '../share-link.js';
 
 export async function shareSelected() {
   const el = currentElement();
@@ -11,9 +12,9 @@ export async function shareSelected() {
   try {
     const res = await API.share(id);
     const token = res?.token || res?.share?.token;
+    if (!token) throw new Error('Share link was not returned');
     const url = `${location.origin}/s/${token}`;
-    navigator.clipboard?.writeText(url);
-    toast('Share link copied');
+    await copyShareLink(url);
   } catch (err) {
     toast(err.message || 'Share failed', 'error');
   }

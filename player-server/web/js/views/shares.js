@@ -2,6 +2,7 @@ import { API } from '../api.js';
 import { state } from '../state.js';
 import { fmtDate } from '../dom.js';
 import { escapeHtml, toast } from '../utils.js';
+import { copyShareLink } from '../share-link.js';
 
 export function initShares() {
   const modal = document.getElementById('shares-modal');
@@ -53,17 +54,16 @@ function renderSharesList(shares) {
       <div class="share-row flex gap-2 align-center py-1 border-b${i === 0 ? ' selected' : ''}" data-index="${i}" tabindex="0">
         <span class="flex-1 text-sm truncate">${escapeHtml(sh.file_name || 'Unknown')}</span>
         <span class="text-xs text-muted">${sh.media_type === 'video' ? '🎬' : sh.media_type === 'image' ? '🖼️' : '🎵'} ${expired ? '<span class="text-danger">Expired</span>' : fmtDate(expires)}</span>
-        <button class="icon-btn btn-sm" title="Copy link" data-copy="${url}">&#128203;</button>
-        <button class="icon-btn btn-sm" title="Revoke" data-revoke="${sh.token}">&#10005;</button>
+        <button class="icon-btn btn-sm" title="Copy link" data-copy="${escapeHtml(url)}">&#128203;</button>
+        <button class="icon-btn btn-sm" title="Revoke" data-revoke="${escapeHtml(sh.token)}">&#10005;</button>
       </div>
     `;
   }).join('');
   state.sharesCurrentRow = 0;
   updateSharesSelection();
   el.querySelectorAll('[data-copy]').forEach((b) => {
-    b.addEventListener('click', () => {
-      navigator.clipboard?.writeText(b.dataset.copy);
-      toast('Link copied');
+    b.addEventListener('click', async () => {
+      await copyShareLink(b.dataset.copy);
     });
   });
   el.querySelectorAll('[data-revoke]').forEach((b) => {
@@ -95,7 +95,7 @@ export function sharesNav(delta) {
   updateSharesSelection();
 }
 
-export function copySelectedShare() {
+export async function copySelectedShare() {
   const rows = document.querySelectorAll('#shares-list .share-row');
   const row = rows[state.sharesCurrentRow];
   if (!row) return;
@@ -104,7 +104,7 @@ export function copySelectedShare() {
     toast('Nothing to copy');
     return;
   }
-  navigator.clipboard?.writeText(copyBtn.dataset.copy).then(() => toast('Share link copied'));
+  await copyShareLink(copyBtn.dataset.copy);
 }
 
 export async function deleteSelectedShare() {

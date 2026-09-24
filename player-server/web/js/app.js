@@ -29,6 +29,7 @@ import { state } from './state.js';
 import { initPWA } from './pwa.js';
 import { closeAllModals } from './dom.js';
 import { toast } from './utils.js';
+import { initShareLinkFallback } from './share-link.js';
 import { showAdmin, triggerRescan } from './views/admin-status.js';
 import { initHelp, showSearch, toggleHelp, toggleSidebar } from './views/help.js';
 import {
@@ -198,6 +199,7 @@ async function initApp() {
   initUpload({ onLoadMedia: loadMedia });
   initHelp();
   initShares();
+  initShareLinkFallback();
   initMediaInfo({
     markAsFinished: markAsFinishedAndRefresh,
     markAsNotStarted: markAsNotStartedAndRefresh,

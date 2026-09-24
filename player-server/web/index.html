@@ -301,5 +301,18 @@
   </div>
 </div>
 
+<!-- Manual share-link copy when clipboard access is unavailable -->
+<div id="share-link-fallback-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="share-link-fallback-title">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="share-link-fallback-title">Copy share link</h3>
+      <div class="spacer"></div>
+      <button id="share-link-fallback-close" class="icon-btn" aria-label="Close">&#10005;</button>
+    </div>
+    <p class="text-muted text-sm">Clipboard access is unavailable. Select and copy this link manually:</p>
+    <input id="share-link-fallback-url" type="text" readonly aria-label="Share link" class="share-link-fallback-url mt-1">
+  </div>
+</div>
+
 </body>
 </html>
