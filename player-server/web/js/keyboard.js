@@ -42,6 +42,9 @@ export function initKeyboard(handlers) {
 
     // Shares modal keyboard navigation (overrides global keys while open)
     if (handlers.isSharesOpen?.()) {
+      // Enter on a focused Copy, Revoke, or Close button must activate that
+      // button. The row shortcut applies only when focus is on a share row.
+      if (nativeControl && e.key === 'Enter') return;
       switch (e.key) {
         case 'ArrowUp':
         case 'k':

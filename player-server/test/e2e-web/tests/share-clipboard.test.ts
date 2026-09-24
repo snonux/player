@@ -120,3 +120,29 @@ test('successful clipboard write reports success without opening fallback', asyn
   await expect(page.locator('#toast')).toContainText('Share link copied');
   await expect(page.locator('#share-link-fallback-modal')).not.toHaveClass(/open/);
 });
+
+test('Enter activates focused Revoke and Close buttons in My Shares', async ({ page }) => {
+  const card = await openApp(page, 'working');
+  const id = Number(await card.getAttribute('data-id'));
+  const created = await page.request.post(`/api/media/${id}/shares`, { data: {} });
+  expect(created.status()).toBe(200);
+  const { token } = await created.json() as { token: string };
+
+  await page.keyboard.press('Shift+L');
+  await expect(page.locator('#shares-modal')).toBeVisible();
+  const revoke = page.locator(`#shares-list [data-revoke="${token}"]`);
+  await revoke.focus();
+  await expect(revoke).toBeFocused();
+  const revoked = page.waitForResponse(response =>
+    response.url().endsWith(`/api/shares/${token}`) && response.request().method() === 'DELETE');
+  await page.keyboard.press('Enter');
+  expect((await revoked).status()).toBe(200);
+  await expect(revoke).toHaveCount(0);
+  await expect(revoke).toHaveCount(0);
+  await expect(page.locator('#toast')).toContainText('Share revoked');
+
+  await page.locator('#shares-close').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#shares-modal')).not.toHaveClass(/open/);
+  await expect(page.locator('#toast')).not.toContainText('copied');
+});

@@ -60,10 +60,26 @@ function testEscapeStillWorksOnNativeControl() {
   assert(!prevented, 'Escape on a focused button should preserve existing keyboard behavior');
 }
 
+function testSharesEnterLeavesNativeControlsAlone() {
+  let copied = 0;
+  initKeyboard({ isSharesOpen: () => true, sharesCopy: () => { copied += 1; } });
+
+  for (const tagName of ['BUTTON', 'A', 'INPUT']) {
+    const prevented = pressKey('Enter', { tagName, isContentEditable: false });
+    assert(!prevented, `Enter on ${tagName} inside My Shares should preserve native activation`);
+  }
+  assert(copied === 0, 'Enter on a native My Shares control must not copy the selected row');
+
+  const rowPrevented = pressKey('Enter', { tagName: 'DIV', isContentEditable: false });
+  assert(rowPrevented, 'Enter on a share row should prevent native default handling');
+  assert(copied === 1, 'Enter on a share row should copy the selected link once');
+}
+
 console.log('Running keyboard Enter tests...');
 testEnterActivatesGridHandler();
 testEnterLeavesFocusedButtonNative();
 testEscapeStillWorksOnNativeControl();
+testSharesEnterLeavesNativeControlsAlone();
 
 if (failures.length) {
   console.error('FAILURES:');
