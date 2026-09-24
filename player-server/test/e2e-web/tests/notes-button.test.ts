@@ -1,6 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import { bootstrap, triggerRescan, waitForServer } from './helpers/server';
 
+test.use({ serviceWorkers: 'block' });
+
 let adminCookie: string;
 let setId: number;
 
@@ -82,6 +84,91 @@ for (const view of ['browse', 'filtered'] as const) {
     });
   }
 }
+
+test('failed note load does not expose an empty editor or overwrite the original on retry', async ({ page }) => {
+  await openMedia(page, 'browse');
+  const noteButton = page.locator('#media-grid .media-card').first().locator('[data-action="notes"]');
+  let failLoad = true;
+  const writes: string[] = [];
+  await page.route(/\/api\/media\/\d+\/notes$/, async route => {
+    const request = route.request();
+    if (request.method() === 'GET' && failLoad) {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"read failed"}' });
+      return;
+    }
+    if (request.method() === 'POST') {
+      writes.push((request.postDataJSON() as { content: string }).content);
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"content":"Original note"}' });
+  });
+
+  await noteButton.click({ force: true });
+  await expect(page.locator('#toast')).toContainText('Could not load note. Try again.');
+  await expect(page.locator('#notes-modal')).not.toHaveClass(/open/);
+  expect(writes).toEqual([]);
+
+  failLoad = false;
+  await noteButton.click({ force: true });
+  await expect(page.locator('#notes-modal')).toHaveClass(/open/);
+  await expect(page.locator('#notes-textarea')).toHaveValue('Original note');
+  await page.locator('#notes-save').click();
+  expect(writes).toEqual(['Original note']);
+});
+
+test('a confirmed missing note opens an empty editor', async ({ page }) => {
+  await openMedia(page, 'browse');
+  await page.route(/\/api\/media\/\d+\/notes$/, route =>
+    route.fulfill({ status: 204, body: '' }));
+  await page.locator('#media-grid .media-card').first().locator('[data-action="notes"]').click({ force: true });
+  await expect(page.locator('#notes-modal')).toHaveClass(/open/);
+  await expect(page.locator('#notes-textarea')).toHaveValue('');
+});
+
+test('a malformed 200 null note does not open an empty editor', async ({ page }) => {
+  await openMedia(page, 'browse');
+  await page.route(/\/api\/media\/\d+\/notes$/, route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: 'null' }));
+  await page.locator('#media-grid .media-card').first().locator('[data-action="notes"]').click({ force: true });
+  await expect(page.locator('#toast')).toContainText('Could not load note. Try again.');
+  await expect(page.locator('#notes-modal')).not.toHaveClass(/open/);
+});
+
+test('an older note load cannot replace a newer dirty note', async ({ page }) => {
+  await openMedia(page, 'browse');
+  const cards = page.locator('#media-grid .media-card');
+  const firstId = await cards.nth(0).getAttribute('data-id');
+  const secondId = await cards.nth(1).getAttribute('data-id');
+  expect(firstId).toBeTruthy();
+  expect(secondId).toBeTruthy();
+  let firstStarted!: () => void;
+  const started = new Promise<void>(resolve => { firstStarted = resolve; });
+  let releaseFirst!: () => void;
+  const firstResponse = new Promise<void>(resolve => { releaseFirst = resolve; });
+  await page.route(/\/api\/media\/\d+\/notes$/, async route => {
+    const id = new URL(route.request().url()).pathname.split('/')[3];
+    if (id === firstId) {
+      firstStarted();
+      await firstResponse;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ content: `Saved ${id}` }) });
+  });
+  let prompts = 0;
+  page.on('dialog', async dialog => {
+    prompts += 1;
+    await dialog.dismiss();
+  });
+
+  await cards.nth(0).locator('[data-action="notes"]').click({ force: true });
+  await started;
+  await cards.nth(1).locator('[data-action="notes"]').click({ force: true });
+  await expect(page.locator('#notes-textarea')).toHaveValue(`Saved ${secondId}`);
+  await page.locator('#notes-textarea').fill('Second draft');
+  releaseFirst();
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('#notes-modal')).toHaveClass(/open/);
+  await expect(page.locator('#notes-textarea')).toHaveValue('Second draft');
+  expect(prompts).toBe(0);
+});
 
 test('unsaved notes require explicit discard; save and delete close without a prompt', async ({ page }) => {
   await openMedia(page, 'browse');

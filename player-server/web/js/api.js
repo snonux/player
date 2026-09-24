@@ -1,5 +1,7 @@
 const API_BASE = '';
 
+export const NO_NOTE = Symbol('no note');
+
 async function api(path, options = {}) {
   const url = `${API_BASE}${path}`;
   const isForm = options.body instanceof FormData;
@@ -15,7 +17,7 @@ async function api(path, options = {}) {
     body: isForm ? options.body : (options.body ? JSON.stringify(options.body) : undefined),
   });
 
-  if (res.status === 204) return null;
+  if (res.status === 204) return 'noContentValue' in options ? options.noContentValue : null;
   if (res.status === 401) {
     let msg = 'Unauthorized';
     try {
@@ -65,7 +67,7 @@ export const API = {
   },
   inProgress: () => api('/api/in-progress'),
   favorite: (id) => api(`/api/media/${id}/favorite`, { method: 'POST' }),
-  notes: (id) => api(`/api/media/${id}/notes`),
+  notes: (id) => api(`/api/media/${id}/notes`, { noContentValue: NO_NOTE }),
   saveNote: (id, content) => api(`/api/media/${id}/notes`, { method: 'POST', body: { content } }),
   deleteNote: (id) => api(`/api/media/${id}/notes`, { method: 'DELETE' }),
   share: (id) => api(`/api/media/${id}/shares`, { method: 'POST' }),

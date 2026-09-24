@@ -1,9 +1,11 @@
-import { API } from '../api.js';
+import { API, NO_NOTE } from '../api.js';
 import { currentElement } from '../selection.js';
 import { currentMediaId } from '../player.js';
 import { open as openNotes } from '../notes.js';
 import { toast } from '../utils.js';
 import { copyShareLink } from '../share-link.js';
+
+let latestNoteLoad = 0;
 
 export async function shareSelected() {
   const el = currentElement();
@@ -54,12 +56,18 @@ export async function openNotesForSelected() {
   const el = currentElement();
   if (!el) return;
   const id = el.dataset.id;
-  let content = '';
+  const request = ++latestNoteLoad;
   try {
     const note = await API.notes(id);
-    content = note?.content || '';
-  } catch {}
-  openNotes(id, content);
+    if (request !== latestNoteLoad || currentElement()?.dataset.id !== id) return;
+    if (note !== NO_NOTE && typeof note?.content !== 'string') {
+      throw new Error('Invalid note response');
+    }
+    openNotes(id, note === NO_NOTE ? '' : note.content);
+  } catch {
+    if (request !== latestNoteLoad || currentElement()?.dataset.id !== id) return;
+    toast('Could not load note. Try again.', 'error');
+  }
 }
 
 export async function downloadSelected() {
