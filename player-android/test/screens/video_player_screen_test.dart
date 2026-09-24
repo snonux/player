@@ -117,10 +117,10 @@ class _FakeProgressQueue implements ProgressQueueBase {
   @override
   Future<void> clearAndSuspend() async {}
   @override
-  Future<void> init({bool suspended = false}) async {}
+  Future<void> init({ProgressScope? scope}) async {}
 
   @override
-  Future<void> resume() async {}
+  Future<void> resume(ProgressScope scope) async {}
 
   @override
   Future<void> enqueue(

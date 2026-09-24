@@ -11,9 +11,11 @@ const _kColMediaId = 'media_id';
 const _kColPositionSeconds = 'position_seconds';
 const _kColFinished = 'finished';
 const _kColQueuedAt = 'queued_at';
+const _kColOrigin = 'origin';
+const _kColUserId = 'user_id';
 
 // Database schema version. Bump when columns change so onUpgrade fires.
-const _kDbVersion = 1;
+const _kDbVersion = 2;
 
 // Database filename stored in the default sqflite databases path.
 const _kDbName = 'progress_queue.db';
@@ -46,13 +48,14 @@ abstract class ProgressSyncClient {
 /// implementations (in-memory, no-op) are substitutable without breaking
 /// callers (Liskov Substitution).
 abstract class ProgressQueueBase {
-  /// Opens the backing store and subscribes to connectivity changes.
+  /// Opens the backing store for [scope] and subscribes to connectivity.
   ///
-  /// Must be called once before [enqueue].
-  Future<void> init({bool suspended = false});
+  /// A null scope clears pending rows and suspends sync. Must be called before
+  /// [enqueue].
+  Future<void> init({ProgressScope? scope});
 
-  /// Reactivates a queue already opened at app startup.
-  Future<void> resume();
+  /// Reactivates a queue already opened at app startup for [scope].
+  Future<void> resume(ProgressScope scope);
 
   /// Persists a playback-progress update and, if online, flushes immediately.
   Future<void> enqueue(int mediaId, double positionSeconds,
@@ -61,8 +64,25 @@ abstract class ProgressQueueBase {
   /// Cancels subscriptions and closes the backing store.
   Future<void> dispose();
 
-  /// Discards account-owned progress and stops automatic sync until [init].
+  /// Discards pending progress and stops automatic sync until [resume].
   Future<void> clearAndSuspend();
+}
+
+/// Server and account that own locally recorded progress.
+class ProgressScope {
+  const ProgressScope({required this.origin, required this.userId});
+
+  final String origin;
+  final int userId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ProgressScope &&
+      origin == other.origin &&
+      userId == other.userId;
+
+  @override
+  int get hashCode => Object.hash(origin, userId);
 }
 
 // ---------------------------------------------------------------------------
@@ -126,8 +146,10 @@ class ProgressUpdate {
 ///     Inversion); [ProgressQueue] only depends on the one method it uses.
 ///   - [databaseFactory] is injected so tests can supply an in-memory opener
 ///     without touching the filesystem (Dependency Inversion).
-///   - [Database] may also be injected directly via [db] for tests that have
-///     already opened a connection.
+  ///   - [Database] may also be injected directly via [db] for tests that have
+  ///     already opened a connection.
+  ///   - Rows from another scope remain on disk but are never submitted under
+  ///     the active credentials. Logout explicitly discards all pending rows.
 ///   - Concurrent flush is prevented with [_isFlushing]; a second connectivity
 ///     event while a flush is in progress is silently ignored — the flush will
 ///     drain all rows anyway.
@@ -141,6 +163,7 @@ class ProgressQueue implements ProgressQueueBase {
   /// When null, [init] calls [openDatabase] with the default on-disk path.
   /// Inject a custom factory in tests to get an in-memory database without
   /// touching the filesystem (Dependency Inversion).
+  /// [databasePath] overrides that path for persistent database tests.
   ///
   /// [db] is an already-opened [Database]; when non-null it takes precedence
   /// over [databaseFactory] and no additional open call is made.
@@ -150,10 +173,12 @@ class ProgressQueue implements ProgressQueueBase {
   ProgressQueue({
     required ProgressSyncClient apiClient,
     Future<Database> Function()? databaseFactory,
+    String? databasePath,
     Database? db,
     Connectivity? connectivity,
   })  : _apiClient = apiClient,
         _databaseFactory = databaseFactory,
+        _databasePath = databasePath,
         _db = db,
         _connectivity = connectivity ?? Connectivity();
 
@@ -162,6 +187,7 @@ class ProgressQueue implements ProgressQueueBase {
   // Optional factory for opening the on-disk database; null means use the
   // built-in [_openDatabase] helper which calls sqflite's openDatabase().
   final Future<Database> Function()? _databaseFactory;
+  final String? _databasePath;
   final Connectivity _connectivity;
 
   // Non-null after [init] has been called.
@@ -171,6 +197,7 @@ class ProgressQueue implements ProgressQueueBase {
   bool _isFlushing = false;
   int? _retryEpoch;
   bool _suspended = false;
+  ProgressScope? _scope;
   int _accountEpoch = 0;
   Future<void> _dbMutationTail = Future.value();
 
@@ -207,11 +234,16 @@ class ProgressQueue implements ProgressQueueBase {
   /// supplied, falling back to [_openDatabase] which calls sqflite's
   /// [openDatabase] with the default on-disk path.
   @override
-  Future<void> init({bool suspended = false}) async {
-    _suspended = suspended;
+  Future<void> init({ProgressScope? scope}) async {
+    if (scope != null && (scope.origin.isEmpty || scope.userId <= 0)) {
+      throw ArgumentError('Progress scope requires an origin and user ID');
+    }
+    final changed = scope != _scope;
+    if (changed) _accountEpoch++;
+    _scope = scope;
+    _suspended = scope == null;
     _db ??= await (_databaseFactory?.call() ?? _openDatabase());
-    if (suspended) {
-      _accountEpoch++;
+    if (_suspended) {
       await _connectivitySub?.cancel();
       _connectivitySub = null;
       await _runDbMutation(() => _db!.delete(_kTable));
@@ -221,13 +253,14 @@ class ProgressQueue implements ProgressQueueBase {
   }
 
   @override
-  Future<void> resume() async {
-    if (_db != null) await init();
+  Future<void> resume(ProgressScope scope) async {
+    if (_db != null) await init(scope: scope);
   }
 
   @override
   Future<void> clearAndSuspend() async {
     _suspended = true;
+    _scope = null;
     _accountEpoch++;
     _retryEpoch = null;
     await _connectivitySub?.cancel();
@@ -276,16 +309,20 @@ class ProgressQueue implements ProgressQueueBase {
 
     final now = DateTime.now().toUtc().toIso8601String();
     final epoch = _accountEpoch;
+    final scope = _scope;
+    if (scope == null) return;
     await _runDbMutation(() async {
-      if (_suspended || epoch != _accountEpoch) return;
+      if (_suspended || epoch != _accountEpoch || scope != _scope) return;
       await db.insert(_kTable, {
         _kColMediaId: mediaId,
         _kColPositionSeconds: positionSeconds,
         _kColFinished: finished ? 1 : 0,
         _kColQueuedAt: now,
+        _kColOrigin: scope.origin,
+        _kColUserId: scope.userId,
       });
     });
-    if (_suspended || epoch != _accountEpoch) return;
+    if (_suspended || epoch != _accountEpoch || scope != _scope) return;
 
     // Opportunistic online flush: attempt immediately on enqueue so that
     // updates sent while online bypass the DB round-trip latency.
@@ -337,15 +374,18 @@ class ProgressQueue implements ProgressQueueBase {
   /// "load → send → delete" pipeline independently readable.
   Future<void> _flushPendingRows() async {
     final epoch = _accountEpoch;
+    final scope = _scope;
     final db = _db;
-    if (db == null) return;
+    if (db == null || scope == null) return;
 
     final rows = await db.query(
       _kTable,
+      where: '$_kColOrigin = ? AND $_kColUserId = ?',
+      whereArgs: [scope.origin, scope.userId],
       orderBy: '$_kColQueuedAt ASC',
     );
     if (rows.isEmpty) return;
-    if (_suspended || epoch != _accountEpoch) return;
+    if (_suspended || epoch != _accountEpoch || scope != _scope) return;
 
     final updates = rows.map(_rowToUpdate).toList();
 
@@ -355,12 +395,12 @@ class ProgressQueue implements ProgressQueueBase {
     // Send — if this throws (network error, server 5xx) we skip deletion and
     // let the next connectivity event retry.
     await _apiClient.batchUpdateProgress(payload);
-    if (_suspended || epoch != _accountEpoch) return;
+    if (_suspended || epoch != _accountEpoch || scope != _scope) return;
 
     // Delete the rows that were just sent successfully.
     final ids = updates.map((u) => u.rowId!).toList();
     await _runDbMutation(() async {
-      if (_suspended || epoch != _accountEpoch) return;
+      if (_suspended || epoch != _accountEpoch || scope != _scope) return;
       await _deleteRows(db, ids);
     });
   }
@@ -394,9 +434,17 @@ class ProgressQueue implements ProgressQueueBase {
   /// Opens (or creates) the on-disk SQLite database and runs migrations.
   Future<Database> _openDatabase() {
     return openDatabase(
-      _kDbName,
+      _databasePath ?? _kDbName,
       version: _kDbVersion,
       onCreate: (db, version) => _createSchema(db),
+      onUpgrade: (db, oldVersion, newVersion) async {
+        // v1 rows have no owner; assigning them to the currently signed-in
+        // account could disclose another account's playback history.
+        if (oldVersion < 2) {
+          await db.execute('DROP TABLE $_kTable');
+          await _createSchema(db);
+        }
+      },
     );
   }
 
@@ -408,7 +456,9 @@ class ProgressQueue implements ProgressQueueBase {
         $_kColMediaId        INTEGER NOT NULL,
         $_kColPositionSeconds REAL    NOT NULL,
         $_kColFinished       INTEGER NOT NULL DEFAULT 0,
-        $_kColQueuedAt       TEXT    NOT NULL
+        $_kColQueuedAt       TEXT    NOT NULL,
+        $_kColOrigin         TEXT    NOT NULL,
+        $_kColUserId         INTEGER NOT NULL
       )
     ''');
   }

@@ -112,10 +112,10 @@ class _FakeProgressQueue implements ProgressQueueBase {
   Future<void> clearAndSuspend() async {}
   @override
   Future<void> init(
-      {bool suspended = false}) async {} // no-op — no DB needed in widget tests
+      {ProgressScope? scope}) async {} // no-op — no DB needed in widget tests
 
   @override
-  Future<void> resume() async {}
+  Future<void> resume(ProgressScope scope) async {}
 
   @override
   Future<void> enqueue(

@@ -21,6 +21,7 @@
 // Run with: flutter test test/services/progress_queue_test.dart
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
@@ -146,24 +147,32 @@ class _FakeConnectivity implements Connectivity {
 // Fixture factory
 // ---------------------------------------------------------------------------
 
+const _scopeA = ProgressScope(origin: 'https://a.example', userId: 1);
+const _scopeB = ProgressScope(origin: 'https://a.example', userId: 2);
+const _scopeOtherServer = ProgressScope(origin: 'https://b.example', userId: 1);
+
 /// Creates an in-memory [Database] with the production schema.
-Future<Database> _openInMemoryDb() async {
+Future<Database> _openTestDb(String path) async {
   return databaseFactoryFfi.openDatabase(
-    inMemoryDatabasePath,
+    path,
     options: OpenDatabaseOptions(
-      version: 1,
+      version: 2,
       onCreate: (db, _) => db.execute('''
         CREATE TABLE progress_queue (
           id               INTEGER PRIMARY KEY AUTOINCREMENT,
           media_id         INTEGER NOT NULL,
           position_seconds REAL    NOT NULL,
           finished         INTEGER NOT NULL DEFAULT 0,
-          queued_at        TEXT    NOT NULL
+          queued_at        TEXT    NOT NULL,
+          origin           TEXT    NOT NULL,
+          user_id          INTEGER NOT NULL
         )
       '''),
     ),
   );
 }
+
+Future<Database> _openInMemoryDb() => _openTestDb(inMemoryDatabasePath);
 
 /// Builds a [ProgressQueue] with in-memory DB and fake connectivity.
 Future<({ProgressQueue queue, _FakeApiClient client, _FakeConnectivity conn})>
@@ -172,7 +181,7 @@ Future<({ProgressQueue queue, _FakeApiClient client, _FakeConnectivity conn})>
   final client = _FakeApiClient();
   final conn = _FakeConnectivity();
   final queue = ProgressQueue(apiClient: client, db: db, connectivity: conn);
-  await queue.init();
+  await queue.init(scope: _scopeA);
   return (queue: queue, client: client, conn: conn);
 }
 
@@ -208,22 +217,135 @@ void main() {
       'position_seconds': 12.5,
       'finished': 0,
       'queued_at': DateTime.now().toUtc().toIso8601String(),
+      'origin': _scopeA.origin,
+      'user_id': _scopeA.userId,
     });
     final client = _FakeApiClient();
     final conn = _FakeConnectivity();
     conn.emitStatus([ConnectivityResult.wifi]);
     final queue = ProgressQueue(apiClient: client, db: db, connectivity: conn);
 
-    await queue.init(suspended: true);
+    await queue.init();
     await _pump();
     expect(client.calls, isEmpty);
     expect(await db.query('progress_queue'), isEmpty);
-    await queue.init();
+    await queue.init(scope: _scopeA);
     conn.emitStatus([ConnectivityResult.wifi]);
     await _pump();
     expect(client.calls, isEmpty);
     await queue.dispose();
     conn.close();
+  });
+
+  test('account and server switches flush only matching pending rows',
+      () async {
+    final db = await _openInMemoryDb();
+    final client = _FakeApiClient();
+    final conn = _FakeConnectivity();
+    final queue = ProgressQueue(apiClient: client, db: db, connectivity: conn);
+    await queue.init(scope: _scopeA);
+    await queue.enqueue(42, 10);
+    await queue.init(scope: _scopeB);
+    await queue.enqueue(42, 20);
+    await queue.init(scope: _scopeOtherServer);
+    await queue.enqueue(42, 30);
+
+    conn.emitStatus([ConnectivityResult.wifi]);
+    await _pump();
+    expect(client.calls, hasLength(1));
+    expect(client.calls.last.single['position_seconds'], 30);
+    expect(await db.query('progress_queue'), hasLength(2));
+
+    await queue.init(scope: _scopeB);
+    conn.emitStatus([ConnectivityResult.wifi]);
+    await _pump();
+    expect(client.calls.last.single['position_seconds'], 20);
+    await queue.init(scope: _scopeA);
+    conn.emitStatus([ConnectivityResult.wifi]);
+    await _pump();
+    expect(client.calls.last.single['position_seconds'], 10);
+    expect(await db.query('progress_queue'), isEmpty);
+    await queue.dispose();
+    conn.close();
+  });
+
+  test('matching authenticated scope survives database reopen', () async {
+    final dir = await Directory.systemTemp.createTemp('progress-queue-');
+    final path = '${dir.path}/progress.db';
+    try {
+      final connA = _FakeConnectivity();
+      final first = ProgressQueue(
+        apiClient: _FakeApiClient(),
+        databasePath: path,
+        connectivity: connA,
+      );
+      await first.init(scope: _scopeA);
+      await first.enqueue(42, 12);
+      await first.dispose();
+      connA.close();
+
+      final client = _FakeApiClient();
+      final connB = _FakeConnectivity();
+      final second = ProgressQueue(
+        apiClient: client,
+        databasePath: path,
+        connectivity: connB,
+      );
+      await second.init(scope: _scopeB);
+      connB.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.calls, isEmpty);
+      await second.init(scope: _scopeA);
+      connB.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.calls.single.single['position_seconds'], 12);
+      await second.dispose();
+      connB.close();
+    } finally {
+      await dir.delete(recursive: true);
+    }
+  });
+
+  test('v1 rows without ownership are dropped during migration', () async {
+    final dir = await Directory.systemTemp.createTemp('progress-v1-');
+    final path = '${dir.path}/progress.db';
+    try {
+      final oldDb = await databaseFactoryFfi.openDatabase(path,
+          options: OpenDatabaseOptions(
+            version: 1,
+            onCreate: (db, _) => db.execute('''
+              CREATE TABLE progress_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                media_id INTEGER NOT NULL,
+                position_seconds REAL NOT NULL,
+                finished INTEGER NOT NULL DEFAULT 0,
+                queued_at TEXT NOT NULL
+              )
+            '''),
+          ));
+      await oldDb.insert('progress_queue', {
+        'media_id': 42,
+        'position_seconds': 12.0,
+        'queued_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      await oldDb.close();
+      final conn = _FakeConnectivity();
+      final client = _FakeApiClient();
+      final queue = ProgressQueue(
+        apiClient: client,
+        databasePath: path,
+        connectivity: conn,
+      );
+      await queue.init(scope: _scopeA);
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.calls, isEmpty);
+      await queue.enqueue(43, 4);
+      await queue.dispose();
+      conn.close();
+    } finally {
+      await dir.delete(recursive: true);
+    }
   });
 
   test('logout discards old progress and suspends sync until next login',
@@ -236,7 +358,7 @@ void main() {
     await _pump();
     expect(client.calls, isEmpty);
 
-    await queue.init();
+    await queue.init(scope: _scopeA);
     conn.emitStatus([ConnectivityResult.wifi]);
     await _pump();
     expect(client.calls, isEmpty);
@@ -252,7 +374,7 @@ void main() {
     final conn = _FakeConnectivity();
     final queue =
         ProgressQueue(apiClient: _FakeApiClient(), db: db, connectivity: conn);
-    await queue.init();
+    await queue.init(scope: _scopeA);
     final enqueueFuture = queue.enqueue(1, 1.0);
     await db.insertStarted.future;
     final clearFuture = queue.clearAndSuspend();
@@ -260,7 +382,7 @@ void main() {
     await Future.wait([enqueueFuture, clearFuture]);
     expect(await delegate.query('progress_queue'), isEmpty);
 
-    await queue.resume();
+    await queue.resume(_scopeB);
     await queue.enqueue(2, 2.0);
     expect((await delegate.query('progress_queue')).single['media_id'], 2);
     await queue.dispose();
@@ -276,13 +398,13 @@ void main() {
       final conn = _FakeConnectivity();
       final queue =
           ProgressQueue(apiClient: client, db: db, connectivity: conn);
-      await queue.init();
+      await queue.init(scope: _scopeA);
       await queue.enqueue(1, 1.0);
       conn.emitStatus([ConnectivityResult.wifi]);
       await client.firstStarted.future;
 
       await queue.clearAndSuspend();
-      await queue.init();
+      await queue.init(scope: _scopeA);
       conn.emitStatus([ConnectivityResult.none]);
       await queue.enqueue(2, 2.0);
       client.shouldThrowOnNextCall = !oldRequestSucceeds;
@@ -305,13 +427,13 @@ void main() {
     final client = _DelayedProgressClient();
     final conn = _FakeConnectivity();
     final queue = ProgressQueue(apiClient: client, db: db, connectivity: conn);
-    await queue.init();
+    await queue.init(scope: _scopeA);
     await queue.enqueue(1, 1.0);
     conn.emitStatus([ConnectivityResult.wifi]);
     await client.firstStarted.future;
 
     await queue.clearAndSuspend();
-    await queue.resume();
+    await queue.resume(_scopeB);
     await queue.enqueue(2, 2.0);
     // This online enqueue asks to flush B while A's request still owns the
     // guard. No second connectivity event is sent after A completes.

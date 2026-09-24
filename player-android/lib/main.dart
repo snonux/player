@@ -6,10 +6,12 @@ import 'package:just_audio/just_audio.dart';
 import 'providers/audio_handler_provider.dart';
 import 'providers/auth_state_provider.dart';
 import 'providers/progress_queue_provider.dart';
+import 'providers/api_client_provider.dart';
 import 'providers/theme_provider.dart';
 import 'navigation_key.dart';
 import 'router.dart';
 import 'services/audio_handler.dart';
+import 'services/progress_queue.dart';
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -65,9 +67,13 @@ void main() async {
   // Initialise the offline progress queue (opens SQLite DB, subscribes to
   // connectivity). Must be done before any player screen opens so that the
   // queue is ready to accept enqueue calls immediately.
-  await container
-      .read(progressQueueProvider)
-      .init(suspended: !auth.isAuthenticated);
+  await container.read(progressQueueProvider).init(
+      scope: auth.isAuthenticated
+          ? ProgressScope(
+              origin: container.read(playerBaseUrlProvider).origin,
+              userId: auth.user!.id,
+            )
+          : null);
 
   runApp(
     UncontrolledProviderScope(

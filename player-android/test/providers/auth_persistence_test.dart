@@ -216,10 +216,10 @@ class _PausingResumeQueue implements ProgressQueueBase {
   bool suspended = false;
 
   @override
-  Future<void> init({bool suspended = false}) async {}
+  Future<void> init({ProgressScope? scope}) async {}
 
   @override
-  Future<void> resume() async {
+  Future<void> resume(ProgressScope scope) async {
     resumeStarted.complete();
     await releaseResume.future;
     suspended = false;

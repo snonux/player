@@ -7,6 +7,7 @@ import '../models/user.dart';
 import 'api_client_provider.dart';
 import 'audio_handler_provider.dart';
 import 'progress_queue_provider.dart';
+import '../services/progress_queue.dart';
 
 const _kLogoutRequestTimeout = Duration(seconds: 10);
 
@@ -132,6 +133,9 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
         if (generation != queue.generation) {
           throw StateError('Login superseded by a newer auth action');
         }
+        if (ref.exists(progressQueueProvider)) {
+          await ref.read(progressQueueProvider).clearAndSuspend();
+        }
         await _clearCredentials(prefs);
       });
       if (generation != queue.generation) {
@@ -171,7 +175,10 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
                 .millisecondsSinceEpoch);
         await prefs.setBool(_kAuthSessionPresentKey, true);
         if (ref.exists(progressQueueProvider)) {
-          await ref.read(progressQueueProvider).resume();
+          await ref.read(progressQueueProvider).resume(ProgressScope(
+                origin: ref.read(playerBaseUrlProvider).origin,
+                userId: user.id,
+              ));
         }
         if (generation != queue.generation) {
           throw StateError('Login superseded by a newer auth action');
