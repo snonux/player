@@ -345,8 +345,8 @@ type ShareRepo interface {
 	ListSharesByMedia(ctx context.Context, mediaID int64) ([]model.Share, error)
 	// ListSharesByUser returns all shares created by a user.
 	ListSharesByUser(ctx context.Context, userID int64) ([]model.Share, error)
-	// UseShare records one use of a share link.
-	UseShare(ctx context.Context, token string) error
+	// UseShare atomically claims one use if the share has not expired or reached its limit.
+	UseShare(ctx context.Context, token string, now time.Time) (bool, error)
 	// DeleteShare removes a share link by token.
 	DeleteShare(ctx context.Context, token string) error
 	// DeleteExpiredShares removes shares that expired before now.

@@ -158,7 +158,7 @@ type ShareInfo struct {
 // MediaShareService handles creation, validation and revocation of share links.
 type MediaShareService interface {
 	// CreateShare creates a public share link for a media item.
-	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
+	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error)
 	// ListShares returns shares for a media item visible to a user.
 	ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
 	// RevokeShare removes a share link owned by a user.

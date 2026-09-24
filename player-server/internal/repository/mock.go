@@ -367,8 +367,8 @@ func (m *MockStore) ListSharesByUser(ctx context.Context, userID int64) ([]model
 }
 
 // UseShare implements ShareRepo.
-func (m *MockStore) UseShare(ctx context.Context, token string) error {
-	return m.ShareRepo.UseShare(ctx, token)
+func (m *MockStore) UseShare(ctx context.Context, token string, now time.Time) (bool, error) {
+	return m.ShareRepo.UseShare(ctx, token, now)
 }
 
 // DeleteShare implements ShareRepo.
@@ -937,7 +937,7 @@ type MockShareRepo struct {
 	GetShareByTokenFunc     func(ctx context.Context, token string) (*model.Share, error)
 	ListSharesByMediaFunc   func(ctx context.Context, mediaID int64) ([]model.Share, error)
 	ListSharesByUserFunc    func(ctx context.Context, userID int64) ([]model.Share, error)
-	UseShareFunc            func(ctx context.Context, token string) error
+	UseShareFunc            func(ctx context.Context, token string, now time.Time) (bool, error)
 	DeleteShareFunc         func(ctx context.Context, token string) error
 	DeleteExpiredSharesFunc func(ctx context.Context, now time.Time) error
 }
@@ -975,11 +975,11 @@ func (m *MockShareRepo) ListSharesByUser(ctx context.Context, userID int64) ([]m
 }
 
 // UseShare calls UseShareFunc or returns nil.
-func (m *MockShareRepo) UseShare(ctx context.Context, token string) error {
+func (m *MockShareRepo) UseShare(ctx context.Context, token string, now time.Time) (bool, error) {
 	if m.UseShareFunc != nil {
-		return m.UseShareFunc(ctx, token)
+		return m.UseShareFunc(ctx, token, now)
 	}
-	return nil
+	return true, nil
 }
 
 // DeleteShare calls DeleteShareFunc or returns nil.

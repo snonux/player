@@ -4,6 +4,11 @@ import 'package:flutter/services.dart';
 import '../api/player_api_client.dart';
 import '../utils/error_mappers.dart';
 
+/// The selected calendar date is inclusive; the API expiry is the next local
+/// midnight. Constructing it by calendar day also handles DST transitions.
+DateTime shareExpiryAfterDate(DateTime date) =>
+    DateTime(date.year, date.month, date.day + 1);
+
 // ---------------------------------------------------------------------------
 // showCreateShareDialog — public entry point
 // ---------------------------------------------------------------------------
@@ -62,7 +67,7 @@ class _CreateShareDialog extends StatefulWidget {
 }
 
 class _CreateShareDialogState extends State<_CreateShareDialog> {
-  // Default expiry is today + 7 days, matching the server's default.
+  // The dialog displays a calendar date, which stays valid through that day.
   late DateTime _expiresAt = DateTime.now().add(const Duration(days: 7));
 
   // Controller for the optional max-uses text field.
@@ -115,8 +120,8 @@ class _CreateShareDialogState extends State<_CreateShareDialog> {
     // Parse max uses — empty input means unlimited (null).
     final maxUsesText = _maxUsesController.text.trim();
     final int? maxUses = maxUsesText.isEmpty ? null : int.tryParse(maxUsesText);
-    if (maxUsesText.isNotEmpty && maxUses == null) {
-      setState(() => _error = 'Max uses must be a whole number.');
+    if (maxUsesText.isNotEmpty && (maxUses == null || maxUses < 1)) {
+      setState(() => _error = 'Max uses must be a positive whole number.');
       return;
     }
 
@@ -128,7 +133,7 @@ class _CreateShareDialogState extends State<_CreateShareDialog> {
     try {
       final share = await widget.client.createShare(
         widget.mediaId,
-        expiresAt: _expiresAt,
+        expiresAt: shareExpiryAfterDate(_expiresAt),
         maxUses: maxUses,
       );
 

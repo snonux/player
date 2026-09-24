@@ -873,7 +873,7 @@ func TestMediaService_CreateShare(t *testing.T) {
 		},
 	}
 	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-	share, err := svc.CreateShare(ctx, 1, 1, now.Add(24*time.Hour))
+	share, err := svc.CreateShare(ctx, 1, 1, now.Add(24*time.Hour), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -882,6 +882,60 @@ func TestMediaService_CreateShare(t *testing.T) {
 	}
 	if share.Token == "" {
 		t.Fatal("expected non-empty token")
+	}
+}
+
+func TestMediaService_CreateShare_PersistsLimits(t *testing.T) {
+	ctx := context.Background()
+	now := newMockClock().T
+	limit := 2
+	var saved *model.Share
+	store := &repository.MockStore{
+		MediaRepo: repository.MockMediaRepo{GetMediaByIDFunc: func(context.Context, int64) (*model.Media, error) {
+			return &model.Media{ID: 1, SetID: 1}, nil
+		}},
+		UserRepo: repository.MockUserRepo{GetUserByIDFunc: func(context.Context, int64) (*model.User, error) {
+			return &model.User{ID: 1, IsAdmin: true}, nil
+		}},
+		ShareRepo: repository.MockShareRepo{CreateShareFunc: func(_ context.Context, share *model.Share) error {
+			saved = share
+			return nil
+		}},
+	}
+	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+	expiry := now.Add(time.Hour)
+	_, err := svc.CreateShare(ctx, 1, 1, expiry, &limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || !saved.ExpiresAt.Equal(expiry) || saved.MaxUses == nil || *saved.MaxUses != limit {
+		t.Fatalf("saved share limits: %+v", saved)
+	}
+}
+
+func TestMediaService_StreamSharedMedia_UseLimitRace(t *testing.T) {
+	ctx := context.Background()
+	now := newMockClock().T
+	used := false
+	store := &repository.MockStore{
+		ShareRepo: repository.MockShareRepo{
+			GetShareByTokenFunc: func(context.Context, string) (*model.Share, error) {
+				return &model.Share{Token: "abc", MediaID: 1, ExpiresAt: now.Add(time.Hour)}, nil
+			},
+			UseShareFunc: func(context.Context, string, time.Time) (bool, error) { return used, nil },
+		},
+		MediaRepo: repository.MockMediaRepo{GetMediaByIDFunc: func(context.Context, int64) (*model.Media, error) {
+			return &model.Media{ID: 1, AbsPath: "/tmp/a.mp4"}, nil
+		}},
+	}
+	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+	_, err := svc.StreamSharedMedia(ctx, "abc")
+	if !errors.Is(err, ErrShareExpired) {
+		t.Fatalf("expected ErrShareExpired, got %v", err)
+	}
+	used = true
+	if _, err := svc.StreamSharedMedia(ctx, "abc"); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -977,8 +1031,8 @@ func TestMediaService_StreamSharedMedia(t *testing.T) {
 					GetShareByTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
 						return tt.share, nil
 					},
-					UseShareFunc: func(ctx context.Context, token string) error {
-						return nil
+					UseShareFunc: func(ctx context.Context, token string, now time.Time) (bool, error) {
+						return true, nil
 					},
 				},
 			}
@@ -1461,7 +1515,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 	t.Run("unauthorized cannot create share", func(t *testing.T) {
 		store := makeUnauthorizedStore(1, 1)
 		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-		_, err := svc.CreateShare(ctx, 9, 1, time.Now().Add(time.Hour))
+		_, err := svc.CreateShare(ctx, 9, 1, time.Now().Add(time.Hour), nil)
 		if !errors.Is(err, ErrForbidden) {
 			t.Fatalf("expected ErrForbidden, got %v", err)
 		}
@@ -2254,7 +2308,7 @@ func TestMediaService_StreamSharedMedia_MissingMedia(t *testing.T) {
 			GetShareByTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
 				return &model.Share{Token: "abc", MediaID: 1, ExpiresAt: now.Add(time.Hour)}, nil
 			},
-			UseShareFunc: func(ctx context.Context, token string) error { return nil },
+			UseShareFunc: func(ctx context.Context, token string, now time.Time) (bool, error) { return true, nil },
 		},
 		MediaRepo: repository.MockMediaRepo{
 			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
@@ -2297,7 +2351,7 @@ func TestMediaService_CreateShare_StoreError(t *testing.T) {
 		},
 	}
 	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-	_, err := svc.CreateShare(ctx, 1, 1, now.Add(time.Hour))
+	_, err := svc.CreateShare(ctx, 1, 1, now.Add(time.Hour), nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}

@@ -82,12 +82,14 @@ func (s *SQLite) ListSharesByUser(ctx context.Context, userID int64) ([]model.Sh
 }
 
 // UseShare increments the used_count of a share token.
-func (s *SQLite) UseShare(ctx context.Context, token string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE shares SET used_count = used_count + 1 WHERE token = ?`, token)
+func (s *SQLite) UseShare(ctx context.Context, token string, now time.Time) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE shares SET used_count = used_count + 1
+		WHERE token = ? AND expires_at > ? AND (max_uses IS NULL OR used_count < max_uses)`, token, now)
 	if err != nil {
-		return fmt.Errorf("use share: %w", err)
+		return false, fmt.Errorf("use share: %w", err)
 	}
-	return nil
+	rows, err := result.RowsAffected()
+	return rows == 1, err
 }
 
 // DeleteShare removes a share by token.

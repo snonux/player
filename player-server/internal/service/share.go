@@ -37,7 +37,7 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (s *shareService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+func (s *shareService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error) {
 	_, err := s.helper.verifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return nil, err
@@ -54,6 +54,7 @@ func (s *shareService) CreateShare(ctx context.Context, userID, mediaID int64, e
 		CreatedBy: userID,
 		CreatedAt: s.clock.Now(),
 		ExpiresAt: expiresAt,
+		MaxUses:   maxUses,
 	}
 
 	if err := s.store.CreateShare(ctx, share); err != nil {
@@ -99,7 +100,7 @@ func (s *shareService) ValidateShareToken(ctx context.Context, token string) (*m
 	}
 
 	now := s.clock.Now()
-	if now.After(share.ExpiresAt) {
+	if !now.Before(share.ExpiresAt) {
 		return nil, ErrShareExpired
 	}
 
@@ -124,7 +125,13 @@ func (s *shareService) StreamSharedMedia(ctx context.Context, token string) (*Fi
 		return nil, ErrMediaNotFound
 	}
 
-	_ = s.store.UseShare(ctx, token)
+	used, err := s.store.UseShare(ctx, token, s.clock.Now())
+	if err != nil {
+		return nil, fmt.Errorf("use share: %w", err)
+	}
+	if !used {
+		return nil, ErrShareExpired
+	}
 
 	return &FileResult{
 		Path:     media.AbsPath,

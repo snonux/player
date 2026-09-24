@@ -45,7 +45,7 @@ func TestMockMediaService_Defaults(t *testing.T) {
 	if _, err := m.UploadMedia(ctx, 1, 1, "x.mp3", strings.NewReader("x"), 1); err == nil {
 		t.Fatal("expected error")
 	}
-	if _, err := m.CreateShare(ctx, 1, 1, time.Now()); err == nil {
+	if _, err := m.CreateShare(ctx, 1, 1, time.Now(), nil); err == nil {
 		t.Fatal("expected error")
 	}
 	if _, err := m.StreamSharedMedia(ctx, "abc"); err == nil {
@@ -74,7 +74,7 @@ func TestMockMediaService_WithFuncs(t *testing.T) {
 		UploadMediaFunc: func(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error) {
 			return nil, nil
 		},
-		CreateShareFunc: func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+		CreateShareFunc: func(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error) {
 			return nil, nil
 		},
 		ListSharesFunc:         func(ctx context.Context, mediaID, userID int64) ([]model.Share, error) { return nil, nil },
@@ -100,7 +100,7 @@ func TestMockMediaService_WithFuncs(t *testing.T) {
 	m.SoftDeleteMedia(ctx, 1, 1)
 	m.RestoreMedia(ctx, 1, 1)
 	m.UploadMedia(ctx, 1, 1, "x.mp3", strings.NewReader("x"), 1)
-	m.CreateShare(ctx, 1, 1, time.Now())
+	m.CreateShare(ctx, 1, 1, time.Now(), nil)
 	m.ListShares(ctx, 1, 1)
 	m.RevokeShare(ctx, "abc", 1)
 	m.ValidateShareToken(ctx, "abc")

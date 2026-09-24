@@ -945,7 +945,7 @@ func TestServer_CreateShare_negative(t *testing.T) {
 			var ms service.MediaService
 			if !tt.svcNil {
 				ms = &service.MockMediaService{
-					CreateShareFunc: func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+					CreateShareFunc: func(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error) {
 						return nil, tt.svcErr
 					},
 				}

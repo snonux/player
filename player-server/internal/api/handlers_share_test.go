@@ -30,9 +30,11 @@ func TestCreateShare_UsesInjectedClock(t *testing.T) {
 	wantExpiresAt := fixedNow.Add(expiryDays * 24 * time.Hour)
 
 	var capturedExpiresAt time.Time
+	var capturedMaxUses *int
 	ms := &service.MockMediaService{
-		CreateShareFunc: func(_ context.Context, _, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+		CreateShareFunc: func(_ context.Context, _, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error) {
 			capturedExpiresAt = expiresAt
+			capturedMaxUses = maxUses
 			return &model.Share{Token: "tok", MediaID: mediaID}, nil
 		},
 	}
@@ -84,6 +86,36 @@ func TestCreateShare_UsesInjectedClock(t *testing.T) {
 	}
 	if !capturedExpiresAt.Equal(wantExpiresAt) {
 		t.Fatalf("expected expiresAt %v, got %v", wantExpiresAt, capturedExpiresAt)
+	}
+
+	customExpiry := fixedNow.Add(48 * time.Hour)
+	tests := []struct {
+		name     string
+		body     string
+		wantCode int
+	}{
+		{"Android request", `{"expires_at":"2024-01-03T12:00:00Z","max_uses":1}`, http.StatusOK},
+		{"past expiry", `{"expires_at":"2024-01-01T12:00:00Z"}`, http.StatusBadRequest},
+		{"zero uses", `{"max_uses":0}`, http.StatusBadRequest},
+		{"negative uses", `{"max_uses":-1}`, http.StatusBadRequest},
+		{"malformed expiry", `{"expires_at":"tomorrow"}`, http.StatusBadRequest},
+		{"unknown field", `{"max_use":1}`, http.StatusBadRequest},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/media/1/shares", strings.NewReader(tc.body))
+			req.AddCookie(addSessionCookie(t, store, sm, 1))
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != tc.wantCode {
+				t.Fatalf("status = %d, want %d: %s", rr.Code, tc.wantCode, rr.Body.String())
+			}
+			if tc.name == "Android request" {
+				if !capturedExpiresAt.Equal(customExpiry) || capturedMaxUses == nil || *capturedMaxUses != 1 {
+					t.Fatalf("share limits = %v, %v; want %v, 1", capturedExpiresAt, capturedMaxUses, customExpiry)
+				}
+			}
+		})
 	}
 }
 

@@ -1,7 +1,9 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -9,6 +11,11 @@ import (
 	"codeberg.org/snonux/player/internal/service"
 	"codeberg.org/snonux/player/internal/web"
 )
+
+type createShareRequest struct {
+	ExpiresAt *time.Time `json:"expires_at"`
+	MaxUses   *int       `json:"max_uses"`
+}
 
 // ------------------------------------------------------------------
 // Share routes
@@ -26,8 +33,30 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 	// Use the injected clock so tests can pin "now" and assert deterministic
 	// share-expiry semantics (e.g. assert that expiresAt is exactly
 	// ShareDefaultExpiryDays * 24h after the mock clock's T).
-	expiresAt := s.clk.Now().Add(time.Duration(s.cfg.ShareDefaultExpiryDays) * 24 * time.Hour)
-	share, err := s.media.Share.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt)
+	now := s.clk.Now()
+	expiresAt := now.Add(time.Duration(s.cfg.ShareDefaultExpiryDays) * 24 * time.Hour)
+	var req createShareRequest
+	if r.Body != nil {
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			badRequest(w, "invalid request body")
+			return
+		}
+		var extra any
+		if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+			badRequest(w, "invalid request body")
+			return
+		}
+	}
+	if req.ExpiresAt != nil {
+		expiresAt = *req.ExpiresAt
+	}
+	if !expiresAt.After(now) || (req.MaxUses != nil && *req.MaxUses < 1) {
+		badRequest(w, "expiry must be in the future and max_uses must be positive")
+		return
+	}
+	share, err := s.media.Share.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt, req.MaxUses)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -69,6 +98,7 @@ func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if !requireService(w, s.media.Share) {
 		return
 	}
@@ -83,7 +113,6 @@ func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Vary", "Accept")
 
 	accept := r.Header.Get("Accept")
@@ -115,6 +144,7 @@ func (s *Server) handleSharePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if !requireService(w, s.media.Share) {
 		return
 	}
@@ -136,11 +166,11 @@ func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Cache-Control", "no-cache")
 	s.serveFileResult(w, r, fr, false)
 }
 
 func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if !requireService(w, s.media.Share) {
 		return
 	}
@@ -166,6 +196,7 @@ func (s *Server) handleShareStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShareDownload(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if !requireService(w, s.media.Share) {
 		return
 	}

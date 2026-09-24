@@ -1694,7 +1694,7 @@ func TestServer_InProgress(t *testing.T) {
 
 func TestServer_Shares(t *testing.T) {
 	ms := &service.MockMediaService{
-		CreateShareFunc: func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+		CreateShareFunc: func(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error) {
 			return &model.Share{Token: "abc", MediaID: mediaID}, nil
 		},
 		ListSharesFunc: func(ctx context.Context, mediaID, userID int64) ([]model.Share, error) {
@@ -2119,8 +2119,8 @@ func (m *mockPingStore) ListSharesByMedia(ctx context.Context, mediaID int64) ([
 func (m *mockPingStore) ListSharesByUser(ctx context.Context, userID int64) ([]model.Share, error) {
 	return m.store.ListSharesByUser(ctx, userID)
 }
-func (m *mockPingStore) UseShare(ctx context.Context, token string) error {
-	return m.store.UseShare(ctx, token)
+func (m *mockPingStore) UseShare(ctx context.Context, token string, now time.Time) (bool, error) {
+	return m.store.UseShare(ctx, token, now)
 }
 func (m *mockPingStore) DeleteShare(ctx context.Context, token string) error {
 	return m.store.DeleteShare(ctx, token)

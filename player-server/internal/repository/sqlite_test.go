@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,66 @@ func newTestStore(t *testing.T) *SQLite {
 		t.Fatalf("open in-memory db: %v", err)
 	}
 	return s
+}
+
+func TestSQLite_UseShareConcurrentLimit(t *testing.T) {
+	s := newTestStore(t)
+	t.Cleanup(func() { _ = s.Close() })
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	uid, err := s.CreateUser(ctx, &model.User{Username: "share-owner", PasswordHash: "h", CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sid, err := s.CreateSet(ctx, &model.Set{Name: "share-set", RootPath: "/share-set", CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mid, err := s.CreateMedia(ctx, &model.Media{SetID: sid, RelPath: "a.mp4", FileName: "a.mp4", AbsPath: "/share-set/a.mp4", Type: model.MediaTypeVideo, CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	limit := 3
+	if err := s.CreateShare(ctx, &model.Share{Token: "limited", MediaID: mid, CreatedBy: uid, CreatedAt: now, ExpiresAt: now.Add(time.Hour), MaxUses: &limit}); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	results := make(chan bool, 20)
+	errors := make(chan error, 20)
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			used, err := s.UseShare(ctx, "limited", now)
+			results <- used
+			errors <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	claimed := 0
+	for used := range results {
+		if used {
+			claimed++
+		}
+	}
+	if claimed != limit {
+		t.Fatalf("claimed %d uses, want %d", claimed, limit)
+	}
+	if used, err := s.UseShare(ctx, "limited", now.Add(time.Hour)); err != nil || used {
+		t.Fatalf("expired share claimed: used=%v err=%v", used, err)
+	}
+	share, err := s.GetShareByToken(ctx, "limited")
+	if err != nil || share.UsedCount != limit {
+		t.Fatalf("share count = %+v, err=%v", share, err)
+	}
 }
 
 func TestSQLite_UserRepo(t *testing.T) {
@@ -749,7 +810,7 @@ func TestSQLite_ShareRepo(t *testing.T) {
 				if got.Token != "tok1" {
 					t.Fatalf("unexpected: %+v", got)
 				}
-				if err := s.UseShare(ctx, "tok1"); err != nil {
+				if _, err := s.UseShare(ctx, "tok1", now); err != nil {
 					t.Fatalf("use: %v", err)
 				}
 				got, _ = s.GetShareByToken(ctx, "tok1")
@@ -1877,7 +1938,7 @@ func TestSQLite_ErrorPaths(t *testing.T) {
 			name: "UseShare error on closed db",
 			run: func(t *testing.T, ctx context.Context, s *SQLite) {
 				s.Close()
-				err := s.UseShare(ctx, "abc")
+				_, err := s.UseShare(ctx, "abc", time.Now())
 				if err == nil {
 					t.Fatal("expected error")
 				}

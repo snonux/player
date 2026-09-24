@@ -97,7 +97,8 @@ class _FakeApiClient extends PlayerApiClient {
   String thumbnailUrl(int mediaId) => '';
 
   @override
-  String streamUrl(int mediaId) => 'http://test.local/api/v1/media/$mediaId/stream';
+  String streamUrl(int mediaId) =>
+      'http://test.local/api/v1/media/$mediaId/stream';
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +218,16 @@ Future<void> _pumpMediaDetailScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  test('selected expiry date remains valid until the next local midnight', () {
+    final today = DateTime.now();
+    final expiry = shareExpiryAfterDate(today);
+    expect(expiry.isAfter(today), isTrue);
+    expect(expiry, DateTime(today.year, today.month, today.day + 1));
+
+    final yearEnd = shareExpiryAfterDate(DateTime(2026, 12, 31));
+    expect(yearEnd, DateTime(2027, 1, 1));
+  });
+
   // ---------------------------------------------------------------------------
   // Dialog rendering
   // ---------------------------------------------------------------------------
@@ -300,7 +311,8 @@ void main() {
       );
     });
 
-    testWidgets('passes expiresAt and null maxUses to createShare when field is blank',
+    testWidgets(
+        'passes expiresAt and null maxUses to createShare when field is blank',
         (tester) async {
       final fakeClient = await _pumpDialog(tester, shareResult: _kShare);
 
@@ -313,6 +325,8 @@ void main() {
 
       expect(fakeClient.capturedMaxUses, isNull);
       expect(fakeClient.capturedExpiresAt, isNotNull);
+      final displayed = DateTime.now().add(const Duration(days: 7));
+      expect(fakeClient.capturedExpiresAt, shareExpiryAfterDate(displayed));
     });
 
     testWidgets('passes parsed maxUses to createShare when field is filled',
@@ -396,6 +410,17 @@ void main() {
       expect(fakeClient.createShareCallCount, equals(0));
       expect(find.byKey(const Key('create_share_error')), findsOneWidget);
       expect(find.textContaining('whole number'), findsOneWidget);
+    });
+
+    testWidgets('rejects zero max uses before calling the API',
+        (tester) async {
+      final fakeClient = await _pumpDialog(tester, shareResult: _kShare);
+      await tester.enterText(find.byKey(const Key('create_share_max_uses')), '0');
+      await tester.tap(find.byKey(const Key('create_share_submit')));
+      await tester.pumpAndSettle();
+
+      expect(fakeClient.createShareCallCount, 0);
+      expect(find.textContaining('positive whole number'), findsOneWidget);
     });
   });
 

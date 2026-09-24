@@ -825,8 +825,23 @@ curl -s https://player.example.com/api/v1/media/42/playback \
 
 ### `POST /api/media/{id}/shares` · `POST /api/v1/media/{id}/shares`
 
-Create a public share link for a media item. Expiry is controlled by
-`SHARE_DEFAULT_EXPIRY_DAYS` (default 7 days).
+Create a public share link for a media item. The optional JSON body accepts
+`expires_at` (an RFC 3339 timestamp in the future) and `max_uses` (a positive
+integer). Omit either field to use the defaults: `SHARE_DEFAULT_EXPIRY_DAYS`
+(7 days by default) and unlimited uses.
+
+```json
+{"expires_at":"2099-05-24T10:00:00Z","max_uses":1}
+```
+
+Replace the example timestamp with your intended future expiry.
+
+A use is one stream or download HTTP request, including each `Range` request.
+Opening the share page or loading its thumbnail does not use the link. Media
+players may issue several range requests for one playback, so choose a limit
+that allows those requests when sharing audio or video. Once the expiry or use
+limit is reached, the public endpoint returns `410` while the share record
+remains. A deleted share returns `404`.
 
 **Response `200`:**
 
@@ -850,7 +865,8 @@ Share the public URL: `https://player.example.com/s/<token>`
 
 ### `GET /api/media/{id}/shares` · `GET /api/v1/media/{id}/shares`
 
-List active shares for a specific media item.
+List shares for a specific media item, including links that have reached their
+use limit or expired but have not been revoked.
 
 **Response `200`:** Array of `Share` objects (same schema as above).
 

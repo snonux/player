@@ -41,7 +41,7 @@ type MockMediaService struct {
 	SoftDeleteMediaFunc     func(ctx context.Context, mediaID, userID int64) error
 	RestoreMediaFunc        func(ctx context.Context, mediaID, userID int64) error
 	UploadMediaFunc         func(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error)
-	CreateShareFunc         func(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error)
+	CreateShareFunc         func(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error)
 	ListSharesFunc          func(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
 	ListMySharesFunc        func(ctx context.Context, userID int64) ([]ShareInfo, error)
 	RevokeShareFunc         func(ctx context.Context, token string, userID int64) error
@@ -191,9 +191,9 @@ func (m *MockMediaService) UploadMedia(ctx context.Context, setID, userID int64,
 }
 
 // CreateShare calls CreateShareFunc or returns a not implemented error.
-func (m *MockMediaService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time) (*model.Share, error) {
+func (m *MockMediaService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error) {
 	if m.CreateShareFunc != nil {
-		return m.CreateShareFunc(ctx, userID, mediaID, expiresAt)
+		return m.CreateShareFunc(ctx, userID, mediaID, expiresAt, maxUses)
 	}
 	return nil, errors.New("not implemented")
 }
