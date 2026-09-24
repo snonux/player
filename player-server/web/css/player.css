@@ -174,12 +174,28 @@
 .player .controls {
   flex: 0 0 auto;
   display: flex;
-  align-items: center;
-  gap: 0.35rem;
+  flex-direction: column;
+  gap: 0.2rem;
   padding: 0.35rem 0.5rem;
   border-top: 1px solid var(--border);
 }
 .player .controls .spacer { flex: 1 1 auto; }
+.player .transport-controls,
+.player .seek-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  width: 100%;
+}
+.player .transport-controls { flex-wrap: wrap; }
+.player .transport-controls .icon-btn {
+  flex: 0 0 2rem;
+  width: 2rem;
+  height: 2rem;
+}
+.player .transport-controls .volume-control { margin-left: auto; }
+.player .seek-controls { gap: 0.4rem; min-height: 1.25rem; }
+.player.has-image .seek-controls { display: none; }
 
 .player .time {
   font-family: var(--font-mono);
@@ -192,16 +208,25 @@
 .progress-track {
   position: relative;
   flex: 1 1 auto;
+  min-width: 3rem;
+  height: 1.5rem;
+  background: transparent;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.progress-track::before {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 0.175rem) 0 auto;
   height: 0.35rem;
   background: var(--player-progress-bg);
   border-radius: 999px;
-  cursor: pointer;
-  overflow: hidden;
+  pointer-events: none;
 }
-.progress-track:hover { height: 0.5rem; }
 .progress-buffered {
   position: absolute;
-  inset: 0;
+  inset: calc(50% - 0.175rem) 0 auto;
+  height: 0.35rem;
   width: 100%;
   border-radius: 999px;
   background: transparent;
@@ -210,7 +235,8 @@
 }
 .progress-fill {
   position: absolute;
-  inset: 0 auto 0 0;
+  inset: calc(50% - 0.175rem) auto auto 0;
+  height: 0.35rem;
   width: 0%;
   background: var(--player-progress-fill);
   border-radius: 999px;
@@ -245,7 +271,7 @@
     padding: 0.4rem 0.5rem;
   }
   .volume-slider {
-    width: 3.5rem;
+    width: 4rem;
   }
   .big-play .play-icon {
     width: 2.8rem;
@@ -259,7 +285,7 @@
   gap: 0.25rem;
 }
 .volume-slider {
-  width: 5rem;
+  width: 4rem;
   height: 0.25rem;
   cursor: pointer;
   accent-color: var(--accent);

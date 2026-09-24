@@ -90,23 +90,27 @@
     </div>
   </div>
   <div class="controls">
-    <button id="btn-minimize" class="icon-btn" aria-label="Minimize player (Shift+C)">▾</button>
-    <button id="btn-play" class="icon-btn" aria-label="Play/Pause (Space/p)">▶</button>
-    <div class="time" id="time-elapsed">0:00</div>
-    <div id="progress-track" class="progress-track" tabindex="0" aria-label="Seek">
-      <div id="progress-buffered" class="progress-buffered"></div>
-      <div id="progress-fill" class="progress-fill"></div>
-      <div id="progress-thumb" class="progress-thumb" aria-hidden="true"></div>
+    <div class="transport-controls">
+      <button id="btn-minimize" class="icon-btn" aria-label="Minimize player (Shift+C)">▾</button>
+      <button id="btn-play" class="icon-btn" aria-label="Play/Pause (Space/p)">▶</button>
+      <button id="btn-prev" class="icon-btn" aria-label="Previous">⏮</button>
+      <button id="btn-next" class="icon-btn" aria-label="Next">⏭</button>
+      <div class="volume-control video-only">
+        <button id="btn-mute" class="icon-btn" aria-label="Mute">🔊</button>
+        <input id="volume-slider" type="range" min="0" max="1" step="0.05" value="1" class="volume-slider" aria-label="Volume">
+      </div>
+      <button id="btn-fullscreen" class="icon-btn" aria-label="Fullscreen (f)">⛶</button>
+      <span id="crop-indicator" class="crop-indicator hidden" title="Crop mode active (c)">✂️</span>
     </div>
-    <div class="time" id="time-total">0:00</div>
-    <button id="btn-prev" class="icon-btn" aria-label="Previous">⏮</button>
-    <button id="btn-next" class="icon-btn" aria-label="Next">⏭</button>
-    <div class="volume-control video-only">
-      <button id="btn-mute" class="icon-btn" aria-label="Mute">🔊</button>
-      <input id="volume-slider" type="range" min="0" max="1" step="0.05" value="1" class="volume-slider" aria-label="Volume">
+    <div class="seek-controls">
+      <div class="time" id="time-elapsed">0:00</div>
+      <div id="progress-track" class="progress-track" tabindex="0" aria-label="Seek">
+        <div id="progress-buffered" class="progress-buffered"></div>
+        <div id="progress-fill" class="progress-fill"></div>
+        <div id="progress-thumb" class="progress-thumb" aria-hidden="true"></div>
+      </div>
+      <div class="time" id="time-total">0:00</div>
     </div>
-    <button id="btn-fullscreen" class="icon-btn" aria-label="Fullscreen (f)">⛶</button>
-    <span id="crop-indicator" class="crop-indicator hidden" title="Crop mode active (c)">✂️</span>
   </div>
   <button id="btn-restore-player" class="player-restore" type="button" aria-label="Restore player">
     <span id="player-restore-title">Player minimized</span>
