@@ -145,8 +145,7 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 /// Allows tests to inspect the UI state between the tap and the API response
 /// (the optimistic update window).  Tag methods return empty/no-op defaults.
 class _DelayedToggleFakeApiClient extends PlayerApiClient {
-  _DelayedToggleFakeApiClient({required this.mediaResult})
-      : super(dio: Dio());
+  _DelayedToggleFakeApiClient({required this.mediaResult}) : super(dio: Dio());
 
   /// The media item returned synchronously by [getMedia].
   final Media mediaResult;
@@ -224,6 +223,24 @@ const _kAudio = Media(
   tags: [],
 );
 
+const _kImage = Media(
+  id: 9,
+  setId: 5,
+  relPath: 'photos/cygnus-loop-pia17172.jpg',
+  fileName: 'cygnus-loop-pia17172.jpg',
+  absPath: '/media/photos/cygnus-loop-pia17172.jpg',
+  type: 'image',
+  duration: 0,
+  codec: 'jpeg',
+  resolution: '4096x4096',
+  bitrate: 0,
+  fileSizeBytes: 1000000,
+  width: 4096,
+  height: 4096,
+  thumbnailPath: '',
+  playCount: 0,
+);
+
 // ---------------------------------------------------------------------------
 // Helper: pump MediaDetailScreen inside a minimal ProviderScope + GoRouter
 // ---------------------------------------------------------------------------
@@ -256,6 +273,15 @@ GoRouter _buildRouter(PlayerApiClient fakeClient, String mediaId) {
         builder: (context, state) => Scaffold(
           body: Text(
             'Audio ${state.pathParameters['mediaId']}',
+            key: _kDestinationKey,
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/image/:mediaId',
+        builder: (context, state) => Scaffold(
+          body: Text(
+            'Image ${state.pathParameters['mediaId']}',
             key: _kDestinationKey,
           ),
         ),
@@ -422,6 +448,27 @@ void main() {
       expect(find.byKey(_kDestinationKey), findsOneWidget);
       expect(find.text('Audio 7'), findsOneWidget);
     });
+
+    testWidgets('image action opens image route', (tester) async {
+      final fakeClient = _FakeApiClient()..mediaResult = _kImage;
+      await _pumpScreen(tester, fakeClient, mediaId: '9');
+      await tester.pumpAndSettle();
+      expect(find.text('View Image'), findsOneWidget);
+      expect(find.text('Play Audio'), findsNothing);
+
+      await tester.ensureVisible(find.byKey(const Key('media_detail_play')));
+      await tester.tap(find.byKey(const Key('media_detail_play')));
+      await tester.pumpAndSettle();
+      expect(find.text('Image 9'), findsOneWidget);
+    });
+
+    testWidgets('unsupported media has no playback action', (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..mediaResult = Media.fromJson(_kImage.toJson()..['type'] = 'unknown');
+      await _pumpScreen(tester, fakeClient, mediaId: '9');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('media_detail_play')), findsNothing);
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -512,8 +559,7 @@ void main() {
       );
     });
 
-    testWidgets(
-        'optimistic update: icon flips before toggleFavorite returns',
+    testWidgets('optimistic update: icon flips before toggleFavorite returns',
         (tester) async {
       // Use the delayed client so we can observe the UI before the API responds.
       final fakeClient = _DelayedToggleFakeApiClient(

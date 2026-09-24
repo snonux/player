@@ -10,6 +10,7 @@ import 'screens/audio_player_screen.dart';
 import 'screens/bootstrap_screen.dart';
 import 'screens/continue_watching_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/image_viewer_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/media_detail_screen.dart';
 import 'screens/media_grid_screen.dart';
@@ -216,6 +217,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: AppRoutes.imageViewer,
+        builder: (context, state) => ImageViewerScreen(
+          mediaId: state.pathParameters['mediaId']!,
+          imageUrl: state.extra is String ? state.extra as String : null,
+        ),
+      ),
+      GoRoute(
         // Notes editor — shows and edits the user's personal note for a media
         // item.  The ':mediaId' segment is the numeric media item identifier.
         path: AppRoutes.notes,
@@ -279,8 +287,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           final path = state.uri.queryParameters['path'];
           // setName is optionally passed as a String extra so the screen can
           // show the set name in the app bar without an extra API call.
-          final setName =
-              state.extra is String ? state.extra as String : null;
+          final setName = state.extra is String ? state.extra as String : null;
           return FolderBrowserScreen(
             setId: setId,
             path: path,

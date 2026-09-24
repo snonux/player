@@ -33,6 +33,9 @@ abstract final class AppRoutes {
   /// The ':mediaId' segment identifies the media item to play.
   static const audioPlayer = '/audio/:mediaId';
 
+  /// Full-size image viewer for an authenticated media item.
+  static const imageViewer = '/image/:mediaId';
+
   /// Route that lists all podcast feeds (sets where isPodcast is true).
   /// Opens [PodcastListScreen] and supports the SubscribeDialog FAB.
   static const podcasts = '/podcasts';
@@ -68,6 +71,8 @@ abstract final class AppRoutes {
 
   /// Returns the concrete path for the audio player of a given [mediaId].
   static String audioPlayerPath(String mediaId) => '/audio/$mediaId';
+
+  static String imageViewerPath(String mediaId) => '/image/$mediaId';
 
   /// Returns the appropriate player path for [type] and [mediaId].
   ///

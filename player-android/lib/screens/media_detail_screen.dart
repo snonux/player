@@ -201,7 +201,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   // Navigation
   // ---------------------------------------------------------------------------
 
-  /// Routes to the video or audio player based on [media.type].
+  /// Opens the viewer or player appropriate for [media.type].
   ///
   /// The stream URL is obtained via [PlayerApiClient.streamUrl] — keeping the
   /// API path in one place and preventing Dio internals from leaking into the
@@ -216,13 +216,17 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     // the underlying Dio base URL or request structure.
     final streamUrl = client.streamUrl(media.id);
 
-    if (media.type == 'video') {
+    if (media.type == 'image') {
+      context.push(
+        AppRoutes.imageViewerPath(media.id.toString()),
+        extra: streamUrl,
+      );
+    } else if (media.type == 'video') {
       context.go(
         AppRoutes.videoPlayerPath(media.id.toString()),
         extra: streamUrl,
       );
-    } else {
-      // audio / podcast / unknown — default to the audio player.
+    } else if (media.type == 'audio') {
       context.go(
         AppRoutes.audioPlayerPath(media.id.toString()),
         extra: streamUrl,
@@ -422,11 +426,11 @@ class _MediaDetailContent extends StatelessWidget {
             ),
           ),
 
-          // Play button anchored at the bottom of the scrollable area.
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _PlayButton(type: media.type, onPlay: onPlay),
-          ),
+          if (const {'video', 'audio', 'image'}.contains(media.type))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _PlayButton(type: media.type, onPlay: onPlay),
+            ),
 
           const SizedBox(height: 24),
         ],
@@ -635,11 +639,20 @@ class _PlayButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVideo = type == 'video';
+    final isImage = type == 'image';
     return FilledButton.icon(
       key: const Key('media_detail_play'),
       onPressed: onPlay,
-      icon: Icon(isVideo ? Icons.play_circle_outline : Icons.headphones),
-      label: Text(isVideo ? 'Play Video' : 'Play Audio'),
+      icon: Icon(isImage
+          ? Icons.image_outlined
+          : isVideo
+              ? Icons.play_circle_outline
+              : Icons.headphones),
+      label: Text(isImage
+          ? 'View Image'
+          : isVideo
+              ? 'Play Video'
+              : 'Play Audio'),
       style: FilledButton.styleFrom(
         minimumSize: const Size.fromHeight(48),
       ),
