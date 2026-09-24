@@ -23,5 +23,9 @@ export function fmtSize(bytes) {
 }
 
 export function closeAllModals() {
-  document.querySelectorAll('.modal-overlay.open').forEach((m) => m.classList.remove('open'));
+  document.querySelectorAll('.modal-overlay.open').forEach((modal) => {
+    if (modal.dispatchEvent(new Event('modalbeforeclose', { cancelable: true }))) {
+      modal.classList.remove('open');
+    }
+  });
 }

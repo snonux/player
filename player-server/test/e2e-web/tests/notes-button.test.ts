@@ -82,3 +82,164 @@ for (const view of ['browse', 'filtered'] as const) {
     });
   }
 }
+
+test('unsaved notes require explicit discard; save and delete close without a prompt', async ({ page }) => {
+  await openMedia(page, 'browse');
+  const noteButton = page.locator('#media-grid .media-card').first().locator('[data-action="notes"]');
+  let storedContent = 'Saved note';
+  const methods: string[] = [];
+  await page.route(/\/api\/media\/\d+\/notes$/, async route => {
+    const request = route.request();
+    methods.push(request.method());
+    if (request.method() === 'POST') {
+      storedContent = (request.postDataJSON() as { content: string }).content;
+    } else if (request.method() === 'DELETE') {
+      storedContent = '';
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ content: storedContent }) });
+  });
+
+  const modal = page.locator('#notes-modal');
+  const area = page.locator('#notes-textarea');
+  const prompts: string[] = [];
+  let discard = false;
+  page.on('dialog', async dialog => {
+    prompts.push(dialog.message());
+    if (discard) await dialog.accept();
+    else await dialog.dismiss();
+  });
+
+  await noteButton.click({ force: true });
+  await expect(area).toHaveValue('Saved note');
+  await area.fill('Unsaved draft');
+  await page.locator('#notes-close').click();
+  await expect(modal).toHaveClass(/open/);
+  await expect(area).toHaveValue('Unsaved draft');
+  await modal.click({ position: { x: 5, y: 5 } });
+  await expect(modal).toHaveClass(/open/);
+  await area.press('Escape');
+  await expect(modal).toHaveClass(/open/);
+  expect(prompts).toHaveLength(3);
+
+  discard = true;
+  await modal.click({ position: { x: 5, y: 5 } });
+  await expect(modal).toBeHidden();
+  await noteButton.dispatchEvent('click');
+  await expect(modal).toHaveClass(/open/);
+  await expect(area).toHaveValue('Saved note');
+  await area.fill('Updated note');
+  await page.locator('#notes-save').click();
+  await expect(modal).toBeHidden();
+  await noteButton.dispatchEvent('click');
+  await expect(modal).toHaveClass(/open/);
+  await expect(area).toHaveValue('Updated note');
+  await page.locator('#notes-delete').click();
+  await expect(modal).toBeHidden();
+  await noteButton.dispatchEvent('click');
+  await expect(modal).toHaveClass(/open/);
+  await expect(area).toHaveValue('');
+  expect(methods).toEqual(['GET', 'GET', 'POST', 'GET', 'DELETE', 'GET']);
+  expect(prompts).toHaveLength(4);
+});
+
+for (const operation of ['save', 'delete'] as const) {
+  test(`late ${operation} response leaves a newer note draft open`, async ({ page }) => {
+    await openMedia(page, 'browse');
+    const method = operation === 'save' ? 'POST' : 'DELETE';
+    let requestStarted!: () => void;
+    const started = new Promise<void>(resolve => { requestStarted = resolve; });
+    let releaseResponse!: () => void;
+    const responseGate = new Promise<void>(resolve => { releaseResponse = resolve; });
+    await page.route(/\/api\/media\/1\/notes$/, async route => {
+      if (route.request().method() === method) {
+        requestStarted();
+        await responseGate;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"content":"First saved"}' });
+    });
+    const openNote = (id: string, content: string) => page.evaluate(async args => {
+      const modulePath = '/js/notes.js';
+      const notes = await import(modulePath);
+      notes.open(args.id, args.content);
+    }, { id, content });
+    let discard = false;
+    let prompts = 0;
+    page.on('dialog', async dialog => {
+      prompts += 1;
+      if (discard) await dialog.accept();
+      else await dialog.dismiss();
+    });
+
+    await openNote('1', 'First saved');
+    const modal = page.locator('#notes-modal');
+    const area = page.locator('#notes-textarea');
+    await area.fill('First edited');
+    await page.locator(`#notes-${operation}`).click();
+    await started;
+
+    await openNote('1', 'Stale server content');
+    await expect(area).toHaveValue('First edited');
+    expect(prompts).toBe(0);
+    await openNote('2', 'Second saved');
+    await expect(area).toHaveValue('First edited');
+    expect(prompts).toBe(1);
+    discard = true;
+    await openNote('2', 'Second saved');
+    await expect(area).toHaveValue('Second saved');
+    await area.fill('Second draft');
+
+    releaseResponse();
+    await expect.poll(() => page.locator('#toast').textContent()).toContain('Note saved');
+    await expect(modal).toHaveClass(/open/);
+    await expect(area).toHaveValue('Second draft');
+  });
+}
+
+test('a second note write waits for the first response', async ({ page }) => {
+  await openMedia(page, 'browse');
+  let releaseFirst!: () => void;
+  const firstResponse = new Promise<void>(resolve => { releaseFirst = resolve; });
+  let firstStarted!: () => void;
+  const started = new Promise<void>(resolve => { firstStarted = resolve; });
+  const saved: string[] = [];
+  let deletes = 0;
+  await page.route(/\/api\/media\/1\/notes$/, async route => {
+    const request = route.request();
+    if (request.method() === 'POST') {
+      saved.push((request.postDataJSON() as { content: string }).content);
+      if (saved.length === 1) {
+        firstStarted();
+        await firstResponse;
+      }
+    } else if (request.method() === 'DELETE') {
+      deletes += 1;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await page.evaluate(async () => {
+    const modulePath = '/js/notes.js';
+    (await import(modulePath)).open('1', 'Original');
+  });
+  const area = page.locator('#notes-textarea');
+  const save = page.locator('#notes-save');
+  const del = page.locator('#notes-delete');
+  await area.fill('A');
+  await save.click();
+  await started;
+  await area.fill('B');
+  await expect(save).toBeDisabled();
+  await expect(del).toBeDisabled();
+  await save.dispatchEvent('click');
+  await del.dispatchEvent('click');
+  expect(saved).toEqual(['A']);
+  expect(deletes).toBe(0);
+
+  releaseFirst();
+  await expect(save).toBeEnabled();
+  await expect(page.locator('#notes-modal')).toHaveClass(/open/);
+  await expect(area).toHaveValue('B');
+  await save.click();
+  await expect(page.locator('#notes-modal')).toBeHidden();
+  expect(saved).toEqual(['A', 'B']);
+  expect(deletes).toBe(0);
+});
