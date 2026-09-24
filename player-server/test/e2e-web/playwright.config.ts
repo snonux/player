@@ -7,6 +7,9 @@ const baseURL = process.env.PLAYER_URL || 'http://localhost:8080';
 export default defineConfig({
   // Look for test files only inside the tests/ subdirectory.
   testDir: './tests',
+  // Scenario specs use separate credentials and are run only by the scenario
+  // runner's dedicated Playwright configuration.
+  testIgnore: /scenario-S\d+\.test\.ts$/,
 
   // Run each test file in its own isolated context. Tests within the same
   // file share a browser context by default (serial execution per file).

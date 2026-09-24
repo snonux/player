@@ -1,5 +1,5 @@
 /**
- * index.ts — LLM e2e harness runner.
+ * index.ts — Explicit scenario Playwright runner.
  *
  * Reads YAML front-matter + Markdown scenario files from ../scenarios/,
  * invokes the Playwright CLI (npx playwright test --reporter=json),
@@ -10,10 +10,8 @@
  *   node dist/index.js                    # run all scenarios
  *   node dist/index.js scenarios/S01.md  # run one scenario
  *
- * The runner drives tests by injecting the scenario id as SCENARIO_ID so
- * the Playwright suite can filter on it when a scenario-specific test file
- * exists in e2e-web/tests/.  If no matching test is found, Playwright exits 0
- * with zero test results, which the runner treats as a skip.
+ * Only explicitly mapped scenario specs are run. Unmapped scenarios are
+ * reported as unsupported, never as tested or passed.
  */
 
 import * as fs from 'fs';
@@ -54,6 +52,8 @@ interface PlaywrightReport {
   suites?: PlaywrightSuite[];
 }
 
+type ScenarioResult = { status: 'passed' | 'failed' | 'unsupported'; reason: string };
+
 interface PlaywrightSuite {
   title: string;
   specs?: PlaywrightSpec[];
@@ -71,10 +71,21 @@ interface PlaywrightSpec {
 // ---------------------------------------------------------------------------
 
 // Playwright config is at test/e2e-web/ — three levels up from runner/dist/.
-const PLAYWRIGHT_CONFIG = path.resolve(__dirname, '../../../e2e-web/playwright.config.ts');
+const PLAYWRIGHT_CONFIG = path.resolve(__dirname, '../../../e2e-web/playwright.scenarios.config.ts');
 
 // Scenario files are at test/e2e-llm/scenarios/ — two levels up from runner/dist/.
 const SCENARIOS_DIR = path.resolve(__dirname, '../../scenarios');
+
+// Each entry is a dedicated executable implementation of that scenario's
+// workflow. A smoke test is not evidence that an unrelated scenario passed.
+export const SCENARIO_SPECS: Readonly<Record<string, string>> = {
+  S05: 'scenario-S05.test.ts',
+  S14: 'scenario-S14.test.ts',
+};
+
+export function scenarioSpec(id: string): string | undefined {
+  return Object.hasOwn(SCENARIO_SPECS, id) ? SCENARIO_SPECS[id] : undefined;
+}
 
 // How long to wait between a first failure and the retry, in ms.
 const RETRY_DELAY_MS = 5_000;
@@ -151,24 +162,17 @@ function discoverScenarios(specificFile?: string): Scenario[] {
 // ---------------------------------------------------------------------------
 
 /**
- * runPlaywright invokes `npx playwright test --reporter=json` with the
- * scenario id injected as SCENARIO_ID so the test suite can filter.
- * Returns the raw stdout string (JSON reporter output).
+ * runPlaywright invokes only the dedicated spec for a supported scenario.
  */
-function runPlaywright(scenario: Scenario): SpawnSyncReturns<string> {
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    SCENARIO_ID: scenario.meta.id,
-  };
-
+function runPlaywright(spec: string): SpawnSyncReturns<string> {
   // The Playwright config is in e2e-web/; we run npx from there so that
   // node_modules/.bin/playwright is available without a separate install.
   const cwd = path.dirname(PLAYWRIGHT_CONFIG);
 
   return spawnSync(
     'npx',
-    ['playwright', 'test', '--reporter=json', '--config', PLAYWRIGHT_CONFIG],
-    { cwd, env, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 },
+    ['playwright', 'test', spec, '--reporter=json', '--config', PLAYWRIGHT_CONFIG],
+    { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 },
   );
 }
 
@@ -180,7 +184,10 @@ function runPlaywright(scenario: Scenario): SpawnSyncReturns<string> {
  * parseReport extracts pass/fail information from Playwright JSON reporter
  * output. Returns { passed, reason } where reason is populated on failure.
  */
-function parseReport(stdout: string): { passed: boolean; reason: string } {
+export function parseReport(run: SpawnSyncReturns<string>): { passed: boolean; reason: string } {
+  if (run.error) return { passed: false, reason: `Playwright could not start: ${run.error.message}` };
+  if (run.signal) return { passed: false, reason: `Playwright terminated by ${run.signal}` };
+  const stdout = run.stdout ?? '';
   let report: PlaywrightReport;
   try {
     // Try the full output first (clean JSON). When Playwright emits debug lines
@@ -199,13 +206,16 @@ function parseReport(stdout: string): { passed: boolean; reason: string } {
     return { passed: false, reason: `Cannot parse Playwright JSON: ${stdout.slice(0, 200)}` };
   }
 
+  if (!report.stats || !Number.isInteger(report.stats.expected) ||
+      !Number.isInteger(report.stats.unexpected) || !Number.isInteger(report.stats.skipped)) {
+    return { passed: false, reason: 'Playwright report has invalid statistics' };
+  }
   const { unexpected, expected, skipped } = report.stats;
 
-  // Zero tests means the scenario filter matched nothing — treat as skip/pass
-  // so that adding a scenario file before its Playwright spec does not fail.
-  if (expected === 0 && unexpected === 0 && skipped === 0) {
-    return { passed: true, reason: 'no tests matched (scenario not yet implemented in e2e-web)' };
-  }
+  if (expected === 0) return { passed: false, reason: 'No scenario tests passed (zero or skipped tests)' };
+  if (skipped > 0) return { passed: false, reason: `${skipped} scenario test(s) skipped` };
+  if (report.errors?.length) return { passed: false, reason: collectFirstError(report) ?? 'Playwright setup error' };
+  if (run.status !== 0) return { passed: false, reason: collectFirstError(report) ?? `Playwright exited ${run.status}` };
 
   if (unexpected === 0) {
     return { passed: true, reason: '' };
@@ -286,25 +296,36 @@ function openAskTask(scenario: Scenario, reason: string, playwrightOutput: strin
 /**
  * runScenario executes a scenario once, retries on failure after a short
  * delay, and calls openAskTask on double-failure.
- * Returns true if the scenario ultimately passed (or was skipped).
+ * Returns a distinct passed, failed, or unsupported result.
  */
-function runScenario(scenario: Scenario): boolean {
+function runScenario(scenario: Scenario): ScenarioResult {
   const { id, title, skip } = scenario.meta;
 
   if (skip) {
     console.log(`[runner] SKIP  ${id}: ${title} — ${skip}`);
-    return true;
+    return { status: 'unsupported', reason: skip };
+  }
+
+  const spec = scenarioSpec(id);
+  if (!spec) {
+    const reason = 'no executable scenario spec';
+    console.log(`[runner] UNSUPPORTED ${id}: ${title} — ${reason}`);
+    return { status: 'unsupported', reason };
+  }
+  if (!fs.existsSync(path.join(path.dirname(PLAYWRIGHT_CONFIG), 'tests', spec))) {
+    console.error(`[runner] FAIL  ${id}: ${title} — mapped spec ${spec} is missing`);
+    return { status: 'failed', reason: `mapped spec ${spec} is missing` };
   }
 
   console.log(`[runner] RUN   ${id}: ${title}`);
 
   // First attempt.
-  const first = runPlaywright(scenario);
-  const firstResult = parseReport(first.stdout ?? '');
+  const first = runPlaywright(spec);
+  const firstResult = parseReport(first);
 
   if (firstResult.passed) {
     console.log(`[runner] PASS  ${id}: ${title}`);
-    return true;
+    return { status: 'passed', reason: '' };
   }
 
   console.warn(`[runner] FAIL  ${id}: ${title} — ${firstResult.reason}`);
@@ -316,17 +337,17 @@ function runScenario(scenario: Scenario): boolean {
   spawnSync('sleep', [String(RETRY_DELAY_MS / 1000)]);
 
   // Single retry.
-  const second = runPlaywright(scenario);
-  const secondResult = parseReport(second.stdout ?? '');
+  const second = runPlaywright(spec);
+  const secondResult = parseReport(second);
 
   if (secondResult.passed) {
     console.log(`[runner] PASS  ${id}: ${title} (passed on retry — flaky)`);
-    return true;
+    return { status: 'passed', reason: 'passed on retry' };
   }
 
   console.error(`[runner] FAIL  ${id}: ${title} — double-failure, opening ask task`);
   openAskTask(scenario, secondResult.reason, second.stdout ?? '');
-  return false;
+  return { status: 'failed', reason: secondResult.reason };
 }
 
 // ---------------------------------------------------------------------------
@@ -351,18 +372,22 @@ const PRECHECK_POLL_INTERVAL_MS = 200;
  * Using a synchronous loop (spawnSync sleep) keeps the runner's overall
  * control flow synchronous, matching how runScenario invokes Playwright.
  */
-function waitForServer(timeoutMs: number): boolean {
+export function waitForServer(timeoutMs: number, playerURL = PLAYER_URL): boolean {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    const remainingMs = Math.max(1, deadline - Date.now());
     // Use curl for the probe so we don't need to depend on a Node fetch
     // shim — keeps the harness usable on older Node where fetch is missing.
+    // Bound a connected-but-stalled server to the same overall deadline.
     const probe = spawnSync(
       'curl',
-      ['-fsS', '-o', '/dev/null', '-w', '%{http_code}', `${PLAYER_URL}/healthz`],
-      { encoding: 'utf8' },
+      ['-fsS', '--max-time', (remainingMs / 1000).toFixed(3), '-o', '/dev/null',
+        '-w', '%{http_code}', `${playerURL}/healthz`],
+      { encoding: 'utf8', timeout: remainingMs },
     );
     if (probe.status === 0 && probe.stdout.trim().startsWith('2')) return true;
-    spawnSync('sleep', [String(PRECHECK_POLL_INTERVAL_MS / 1000)]);
+    const sleepMs = Math.min(PRECHECK_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now()));
+    if (sleepMs > 0) spawnSync('sleep', [String(sleepMs / 1000)]);
   }
   return false;
 }
@@ -403,29 +428,31 @@ function main(): void {
   const scenarios = discoverScenarios(specificFile);
 
   if (scenarios.length === 0) {
-    console.log('[runner] No scenario files found — nothing to run.');
-    process.exit(0);
+    console.error('[runner] No scenario files found.');
+    process.exit(2);
   }
 
   // Fail fast with a clear hint if the server is down. Without this the
   // runner would spawn Playwright per scenario, time out on each, and file
   // a duplicate ask task per failure — exactly what produced the legacy
   // "Server at http://localhost:8080 did not become healthy" task pile.
-  precheckServer();
+  if (scenarios.some(s => !s.meta.skip && scenarioSpec(s.meta.id))) precheckServer();
 
   console.log(`[runner] Running ${scenarios.length} scenario(s)…`);
 
   let failures = 0;
+  let passed = 0;
+  let unsupported = 0;
   for (const scenario of scenarios) {
-    const passed = runScenario(scenario);
-    if (!passed) failures++;
+    const result = runScenario(scenario);
+    if (result.status === 'passed') passed++;
+    if (result.status === 'failed') failures++;
+    if (result.status === 'unsupported') unsupported++;
   }
 
-  const total = scenarios.length;
-  const passed = total - failures;
-  console.log(`\n[runner] Results: ${passed}/${total} passed, ${failures} failed.`);
+  console.log(`\n[runner] Results: ${passed} passed, ${failures} failed, ${unsupported} unsupported.`);
 
   process.exit(failures > 0 ? 1 : 0);
 }
 
-main();
+if (require.main === module) main();
