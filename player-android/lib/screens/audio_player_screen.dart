@@ -349,20 +349,27 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   /// The main playback UI: cover art placeholder, seek bar, and controls.
   Widget _buildPlayerView() {
     final handler = ref.read(audioHandlerProvider);
-    return Padding(
-      key: const Key('audio_player_view'),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _buildCoverArt(),
-          const SizedBox(height: 32),
-          _buildSeekBar(handler),
-          const SizedBox(height: 16),
-          _buildControls(handler),
-          const SizedBox(height: 16),
-          _buildSpeedSelector(),
-        ],
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        key: const Key('audio_player_view'),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildCoverArt(),
+                const SizedBox(height: 32),
+                _buildSeekBar(handler),
+                const SizedBox(height: 16),
+                _buildControls(handler),
+                const SizedBox(height: 16),
+                _buildSpeedSelector(),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -424,19 +431,30 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
               inactiveColor: Colors.white24,
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    _formatDuration(position),
-                    key: const Key('audio_player_position'),
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  Flexible(
+                    child: Text(
+                      _formatDuration(position),
+                      key: const Key('audio_player_position'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
                   ),
-                  Text(
-                    _formatDuration(duration),
-                    key: const Key('audio_player_duration'),
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  Flexible(
+                    child: Text(
+                      _formatDuration(duration),
+                      key: const Key('audio_player_duration'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
                   ),
                 ],
               ),
@@ -500,20 +518,26 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     );
   }
 
-  /// Speed selector rendered as a row of text buttons.
+  /// Speed selector wraps into more rows at narrow widths or larger text.
   ///
   /// The active speed is highlighted; inactive speeds are white70 so the
   /// selection is clear at a glance.
   Widget _buildSpeedSelector() {
-    return Row(
+    return Wrap(
       key: const Key('audio_player_speed_selector'),
-      mainAxisAlignment: MainAxisAlignment.center,
+      alignment: WrapAlignment.center,
+      spacing: 4,
+      runSpacing: 4,
       children: _kSpeedOptions.map((speed) {
         final isSelected = _playbackSpeed == speed;
         return TextButton(
           key: Key(
               'audio_player_speed_${speed.toString().replaceAll('.', '_')}'),
           onPressed: () => _setSpeed(speed),
+          style: TextButton.styleFrom(
+            minimumSize: const Size(56, 48),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          ),
           child: Text(
             '${speed}x',
             style: TextStyle(

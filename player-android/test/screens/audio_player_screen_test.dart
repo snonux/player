@@ -169,6 +169,7 @@ class _PlayableAudioPlayer extends AudioPlayer {
   int sourceRequests = 0;
   Duration elapsed = Duration.zero;
   bool isPlaying = false;
+  double selectedSpeed = 1.0;
   final playingChanges = StreamController<bool>.broadcast();
 
   @override
@@ -213,6 +214,11 @@ class _PlayableAudioPlayer extends AudioPlayer {
   Future<void> stop() async {
     isPlaying = false;
     playingChanges.add(false);
+  }
+
+  @override
+  Future<void> setSpeed(double speed) async {
+    selectedSpeed = speed;
   }
 }
 
@@ -265,6 +271,7 @@ Future<void> _pumpScreen(
   _FakePlayerAudioHandler? fakeHandler,
   PlayerAudioHandler? handlerOverride,
   _FakeProgressQueue? progressQueue,
+  double textScale = 1.0,
 }) async {
   final handler = handlerOverride ?? fakeHandler ?? _FakePlayerAudioHandler();
 
@@ -294,7 +301,14 @@ Future<void> _pumpScreen(
         progressQueueProvider
             .overrideWithValue(progressQueue ?? _FakeProgressQueue()),
       ],
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(
+        routerConfig: router,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
+      ),
     ),
   );
 }
@@ -306,6 +320,54 @@ Future<void> _pumpScreen(
 void main() {
   setUp(_setupAudioSessionMock);
   tearDown(_teardownAudioSessionMock);
+
+  for (final (width, scale) in [
+    (360.0, 1.0),
+    (360.0, 2.0),
+    (320.0, 2.0),
+  ]) {
+    testWidgets('speed choices fit ${width.toInt()}dp at ${scale}x text',
+        (tester) async {
+      tester.view.physicalSize = Size(width, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      final player = _PlayableAudioPlayer();
+      final handler = _PlayableHandler(player);
+      await _pumpScreen(tester, _FakeApiClient(),
+          handlerOverride: handler, textScale: scale);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('audio_player_view')), findsOneWidget);
+
+      final selector =
+          tester.getRect(find.byKey(const Key('audio_player_speed_selector')));
+      for (final key in [
+        'audio_player_speed_0_5',
+        'audio_player_speed_1_0',
+        'audio_player_speed_1_25',
+        'audio_player_speed_1_5',
+        'audio_player_speed_2_0',
+      ]) {
+        final rect = tester.getRect(find.byKey(Key(key)));
+        expect(rect.width, greaterThanOrEqualTo(48));
+        expect(rect.height, greaterThanOrEqualTo(48));
+        expect(rect.left, greaterThanOrEqualTo(selector.left));
+        expect(rect.right, lessThanOrEqualTo(selector.right));
+      }
+      expect(tester.takeException(), isNull);
+
+      await tester
+          .ensureVisible(find.byKey(const Key('audio_player_speed_2_0')));
+      await tester.tap(find.byKey(const Key('audio_player_speed_2_0')));
+      await tester.pump();
+      expect(player.selectedSpeed, 2.0);
+      await handler.endProgress();
+      await player.playingChanges.close();
+    });
+  }
 
   testWidgets('hardware Back leaves audio playing on previous route',
       (tester) async {
