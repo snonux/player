@@ -150,7 +150,10 @@ void main() {
     expect(image.imageUrl, client.streamUrl(9));
     expect(image.httpHeaders?['Authorization'], 'Bearer pt-image-test');
 
-    await tester.tap(find.byTooltip('Back'));
+    await tester.tap(find.descendant(
+      of: find.byType(ImageViewerScreen),
+      matching: find.byTooltip('Back'),
+    ));
     await tester.pumpAndSettle();
     expect(find.byType(MediaDetailScreen), findsOneWidget);
     expect(find.byType(ImageViewerScreen), findsNothing);

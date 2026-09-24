@@ -167,7 +167,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   void _openNotes() {
     final media = _media;
     if (media == null) return;
-    context.go(AppRoutes.notesPath(media.id.toString()));
+    context.push(AppRoutes.notesPath(media.id.toString()));
   }
 
   // ---------------------------------------------------------------------------
@@ -222,12 +222,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
         extra: streamUrl,
       );
     } else if (media.type == 'video') {
-      context.go(
+      context.push(
         AppRoutes.videoPlayerPath(media.id.toString()),
         extra: streamUrl,
       );
     } else if (media.type == 'audio') {
-      context.go(
+      context.push(
         AppRoutes.audioPlayerPath(media.id.toString()),
         extra: streamUrl,
       );

@@ -554,7 +554,7 @@ class _MediaCard extends StatelessWidget {
       key: Key('media_card_${item.id}'),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.go(AppRoutes.mediaDetailPath(item.id)),
+        onTap: () => context.push(AppRoutes.mediaDetailPath(item.id)),
         child: Stack(
           fit: StackFit.expand,
           children: [

@@ -222,7 +222,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 title: const Text('API Tokens'),
                 subtitle: const Text('Create and revoke Bearer API tokens'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.go(AppRoutes.apiTokens),
+                onTap: () => context.push(AppRoutes.apiTokens),
               ),
 
               const SizedBox(height: 24),
@@ -287,7 +287,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 title: const Text('My Shares'),
                 subtitle: const Text('View and revoke your share links'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.go(AppRoutes.shares),
+                onTap: () => context.push(AppRoutes.shares),
               ),
 
               // Admin section: only visible to admin users.
@@ -415,7 +415,7 @@ class _AdminSection extends ConsumerWidget {
           title: const Text('Manage Users'),
           subtitle: const Text('Create and delete user accounts'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.go(AppRoutes.adminUsers),
+          onTap: () => context.push(AppRoutes.adminUsers),
         ),
 
         // Permissions tile — navigates to /admin/permissions.
@@ -426,7 +426,7 @@ class _AdminSection extends ConsumerWidget {
           title: const Text('Permissions'),
           subtitle: const Text('Manage set access per user'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.go(AppRoutes.adminPermissions),
+          onTap: () => context.push(AppRoutes.adminPermissions),
         ),
 
         // Rescan tile — navigates to /admin/rescan.
@@ -437,7 +437,7 @@ class _AdminSection extends ConsumerWidget {
           title: const Text('Rescan Library'),
           subtitle: const Text('Trigger a full media library scan'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.go(AppRoutes.adminRescan),
+          onTap: () => context.push(AppRoutes.adminRescan),
         ),
 
         // Trash tile — navigates to /admin/trash.
@@ -448,7 +448,7 @@ class _AdminSection extends ConsumerWidget {
           title: const Text('Trash'),
           subtitle: const Text('Restore or permanently delete trashed items'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.go(AppRoutes.adminTrash),
+          onTap: () => context.push(AppRoutes.adminTrash),
         ),
       ],
     );

@@ -144,7 +144,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
           icon: const Icon(Icons.settings_outlined),
           tooltip: 'Settings',
           // Navigate to the settings screen when the icon is tapped.
-          onPressed: () => context.go(AppRoutes.settings),
+          onPressed: () => context.push(AppRoutes.settings),
         ),
       ],
     );
@@ -265,7 +265,7 @@ class _SetCard extends StatelessWidget {
       child: InkWell(
         // Pass the set name as a route extra so MediaGridScreen can show it in
         // the app bar immediately, without making a second API call.
-        onTap: () => context.go(
+        onTap: () => context.push(
           AppRoutes.mediaGridPath(mediaSet.id),
           extra: mediaSet.name,
         ),

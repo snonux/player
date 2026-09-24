@@ -171,8 +171,11 @@ class _ContinueWatchingScreenState
     final mediaIdStr = mediaId.toString();
     // Delegate audio-vs-video path selection to the centralised helper so this
     // call-site does not duplicate the routing logic (OCP).
-    context.go(AppRoutes.playerPathForType(item.type, mediaIdStr),
+    await context.push(AppRoutes.playerPathForType(item.type, mediaIdStr),
         extra: extra);
+    // The route remains mounted under the player. Re-read server progress so
+    // finished items disappear when Back returns here.
+    if (mounted) await _load();
   }
 }
 

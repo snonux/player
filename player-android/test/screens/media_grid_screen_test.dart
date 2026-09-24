@@ -319,7 +319,7 @@ const _kFavorite = Media(
 /// Destination route shown after navigating away from [MediaGridScreen].
 ///
 /// Used in navigation tests: when a media card is tapped, [MediaGridScreen]
-/// calls `context.go('/media/:id')` which this route catches.
+/// pushes `/media/:id`, which this route catches.
 const _kDestinationKey = Key('nav_destination');
 
 /// Builds a [GoRouter] with [MediaGridScreen] at `/sets/:setId` and a stub
@@ -338,6 +338,7 @@ GoRouter _buildRouter(PlayerApiClient fakeClient) {
       GoRoute(
         path: '/media/:id',
         builder: (context, state) => Scaffold(
+          appBar: AppBar(title: const Text('Media detail')),
           body: Text(
             'Media ${state.pathParameters['id']}',
             key: _kDestinationKey,
@@ -351,7 +352,7 @@ GoRouter _buildRouter(PlayerApiClient fakeClient) {
 /// Pumps [MediaGridScreen] (set 10, name "Movies") inside a [ProviderScope]
 /// that overrides [apiClientProvider] and [tokenStorageProvider] with fakes.
 ///
-/// Uses a [GoRouter] so `context.go('/media/:id')` works without an
+/// Uses a [GoRouter] so `context.push('/media/:id')` works without an
 /// "unsupported ancestor" error.  The `/media/:id` stub route lets
 /// navigation tests verify that the correct destination was reached.
 Future<void> _pumpScreen(
@@ -409,8 +410,7 @@ void main() {
   group('renders grid', () {
     testWidgets('shows a card for each item returned by listMedia',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..mediaResult = [_kVideo, _kAudio];
+      final fakeClient = _FakeApiClient()..mediaResult = [_kVideo, _kAudio];
 
       await _pumpScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -464,8 +464,7 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('tap navigates to media detail', () {
-    testWidgets('tapping a media card navigates to /media/:id',
-        (tester) async {
+    testWidgets('tapping a media card navigates to /media/:id', (tester) async {
       final fakeClient = _FakeApiClient()..mediaResult = [_kVideo];
 
       await _pumpScreen(tester, fakeClient);
@@ -474,13 +473,16 @@ void main() {
       // The media card must be visible before tapping.
       expect(find.byKey(const Key('media_card_1')), findsOneWidget);
 
-      // Tap the card; go_router handles `context.go('/media/1')`.
+      // Tap the card; go_router pushes `/media/1` above the grid.
       await tester.tap(find.byKey(const Key('media_card_1')));
       await tester.pumpAndSettle();
 
       // The stub route at '/media/:id' is now on screen.
       expect(find.byKey(_kDestinationKey), findsOneWidget);
       expect(find.text('Media 1'), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('media_grid')), findsOneWidget);
     });
   });
 
@@ -565,7 +567,8 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('pull-to-refresh', () {
-    testWidgets('pull-to-refresh calls listMedia a second time', (tester) async {
+    testWidgets('pull-to-refresh calls listMedia a second time',
+        (tester) async {
       final fakeClient = _FakeApiClient()..mediaResult = [_kVideo];
 
       await _pumpScreen(tester, fakeClient);

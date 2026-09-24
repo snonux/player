@@ -139,13 +139,16 @@ class _PodcastEpisodesScreenState
   /// Fetches the first page of episodes for [widget.setId] and resets all
   /// pagination state.
   ///
-  /// Called on first mount and on pull-to-refresh.  Resetting [_offset] to 0
-  /// and [_hasMore] to true ensures subsequent scroll-triggered loads start
-  /// cleanly from the beginning.  Errors are mapped by [episodeListErrorMessage]
-  /// so the widget stays free of Dio.
-  Future<void> _load() async {
+  /// Called on first mount, pull-to-refresh, and after returning from playback.
+  /// [preservePages] refreshes the already-loaded range so Back does not drop
+  /// a page-2 episode or jump the list back to the first page.
+  Future<void> _load({bool preservePages = false}) async {
     if (!mounted) return;
 
+    final limit = preservePages && _offset > _kEpisodePageSize
+        ? _offset
+        : _kEpisodePageSize;
+    final hadMore = _hasMore;
     // Bump the generation before the async gap so stale callbacks from the
     // previous load detect the change and drop their result.
     final generation = ++_loadGeneration;
@@ -153,12 +156,14 @@ class _PodcastEpisodesScreenState
     setState(() {
       _isLoading = true;
       _error = null;
-      // Reset pagination so page 1 is fetched from scratch.
-      // Also clear _isLoadingMore so a stale _loadMore that was in-flight when
-      // _load was triggered (e.g. pull-to-refresh during pagination) does not
-      // leave the spinner stuck after the generation-mismatch early return fires.
-      _offset = 0;
-      _hasMore = true;
+      // A pull-to-refresh starts over; returning from a player retains the
+      // loaded range and scrollable list while its rows are refreshed.
+      if (!preservePages) {
+        _offset = 0;
+        _hasMore = true;
+      }
+      // Clear an in-flight pagination spinner; its response is invalidated
+      // by the generation bump above.
       _isLoadingMore = false;
     });
 
@@ -166,7 +171,7 @@ class _PodcastEpisodesScreenState
       final client = ref.read(apiClientProvider);
       final items = await client.listEpisodes(
         widget.setId,
-        limit: _kEpisodePageSize,
+        limit: limit,
         offset: 0,
       );
 
@@ -176,7 +181,9 @@ class _PodcastEpisodesScreenState
         _episodes = items;
         _isLoading = false;
         _offset = items.length;
-        _hasMore = items.length >= _kEpisodePageSize;
+        _hasMore = preservePages
+            ? hadMore && items.length >= limit
+            : items.length >= _kEpisodePageSize;
       });
     } catch (e) {
       if (!mounted || generation != _loadGeneration) return;
@@ -328,6 +335,12 @@ class _PodcastEpisodesScreenState
     }
   }
 
+  /// Re-fetch episode completion and progress after the player is popped.
+  Future<void> _openPlayer(int mediaId) async {
+    await context.push(AppRoutes.audioPlayerPath(mediaId.toString()));
+    if (mounted) await _load(preservePages: true);
+  }
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -389,9 +402,7 @@ class _PodcastEpisodesScreenState
                 onToggleComplete: _toggleCompleteAt,
                 onDownload: _downloadEpisodeAt,
                 // mediaId is non-null: _EpisodeRow only invokes onPlay when episode.mediaId is set.
-                onPlay: (mediaId) => context.go(
-                  AppRoutes.audioPlayerPath(mediaId.toString()),
-                ),
+                onPlay: _openPlayer,
                 isLoadingMore: _isLoadingMore,
                 hasMore: _hasMore,
               ),

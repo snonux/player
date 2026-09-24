@@ -262,6 +262,7 @@ GoRouter _buildRouter(PlayerApiClient fakeClient, String mediaId) {
       GoRoute(
         path: '/video/:mediaId',
         builder: (context, state) => Scaffold(
+          appBar: AppBar(title: const Text('Video player')),
           body: Text(
             'Video ${state.pathParameters['mediaId']}',
             key: _kDestinationKey,
@@ -271,6 +272,7 @@ GoRouter _buildRouter(PlayerApiClient fakeClient, String mediaId) {
       GoRoute(
         path: '/audio/:mediaId',
         builder: (context, state) => Scaffold(
+          appBar: AppBar(title: const Text('Audio player')),
           body: Text(
             'Audio ${state.pathParameters['mediaId']}',
             key: _kDestinationKey,
@@ -280,10 +282,18 @@ GoRouter _buildRouter(PlayerApiClient fakeClient, String mediaId) {
       GoRoute(
         path: '/image/:mediaId',
         builder: (context, state) => Scaffold(
+          appBar: AppBar(title: const Text('Image viewer')),
           body: Text(
             'Image ${state.pathParameters['mediaId']}',
             key: _kDestinationKey,
           ),
+        ),
+      ),
+      GoRoute(
+        path: '/notes/:mediaId',
+        builder: (context, state) => Scaffold(
+          appBar: AppBar(title: const Text('Notes')),
+          body: Text('Notes ${state.pathParameters['mediaId']}'),
         ),
       ),
     ],
@@ -413,6 +423,24 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('play button routing', () {
+    testWidgets('Notes opens above detail and hardware Back returns',
+        (tester) async {
+      final fakeClient = _FakeApiClient()..mediaResult = _kVideo;
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('media_detail_overflow_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('media_detail_notes_menu_item')));
+      await tester.pumpAndSettle();
+      expect(find.text('Notes 42'), findsOneWidget);
+      expect(find.byType(BackButton), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(MediaDetailScreen), findsOneWidget);
+    });
+
     testWidgets('tapping play on a video item routes to /video/:id',
         (tester) async {
       final fakeClient = _FakeApiClient()..mediaResult = _kVideo;
@@ -429,6 +457,10 @@ void main() {
       // The stub route at /video/:mediaId must be visible.
       expect(find.byKey(_kDestinationKey), findsOneWidget);
       expect(find.text('Video 42'), findsOneWidget);
+      expect(find.byType(BackButton), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(MediaDetailScreen), findsOneWidget);
     });
 
     testWidgets('tapping play on an audio item routes to /audio/:id',
@@ -447,6 +479,9 @@ void main() {
       // The stub route at /audio/:mediaId must be visible.
       expect(find.byKey(_kDestinationKey), findsOneWidget);
       expect(find.text('Audio 7'), findsOneWidget);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.byType(MediaDetailScreen), findsOneWidget);
     });
 
     testWidgets('image action opens image route', (tester) async {

@@ -64,6 +64,8 @@ class _FakeApiClient extends PlayerApiClient {
 
   /// When non-null, [listEpisodes] returns this list.
   List<PodcastEpisode>? episodesResult;
+  List<PodcastEpisode> Function(int limit, int offset)? episodesForPage;
+  final requestedPages = <(int, int)>[];
 
   /// When non-null, [listEpisodes] throws this instead of returning.
   Object? episodesError;
@@ -102,7 +104,11 @@ class _FakeApiClient extends PlayerApiClient {
     int? offset,
   }) async {
     listEpisodesCallCount++;
+    requestedPages.add((limit ?? 50, offset ?? 0));
     if (episodesError != null) throw episodesError!;
+    if (episodesForPage != null) {
+      return episodesForPage!(limit ?? 50, offset ?? 0);
+    }
     return episodesResult!;
   }
 
@@ -130,8 +136,7 @@ class _DelayedFakeApiClient extends PlayerApiClient {
   final _completer = Completer<List<PodcastEpisode>>();
 
   /// Resolves the pending [listEpisodes] call with [episodes].
-  void complete(List<PodcastEpisode> episodes) =>
-      _completer.complete(episodes);
+  void complete(List<PodcastEpisode> episodes) => _completer.complete(episodes);
 
   @override
   Future<List<PodcastEpisode>> listEpisodes(
@@ -530,7 +535,8 @@ void main() {
       // Fail the API call — the screen should revert.
       fakeClient.failToggle(
         DioException(
-          requestOptions: RequestOptions(path: '/api/v1/podcasts/episodes/1/complete'),
+          requestOptions:
+              RequestOptions(path: '/api/v1/podcasts/episodes/1/complete'),
           type: DioExceptionType.connectionError,
         ),
       );
@@ -559,11 +565,12 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('progress bar visibility', () {
-    testWidgets(
-        'shows progress bar when positionSeconds > 0 and not completed',
+    testWidgets('shows progress bar when positionSeconds > 0 and not completed',
         (tester) async {
       final fakeClient = _FakeApiClient()
-        ..episodesResult = [_kEpisodeInProgress]; // pos=900, dur=1800, not completed
+        ..episodesResult = [
+          _kEpisodeInProgress
+        ]; // pos=900, dur=1800, not completed
 
       await _pumpScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -634,8 +641,7 @@ void main() {
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..episodesError = DioException(
-          requestOptions:
-              RequestOptions(path: '/api/v1/podcasts/10/episodes'),
+          requestOptions: RequestOptions(path: '/api/v1/podcasts/10/episodes'),
           type: DioExceptionType.connectionError,
         );
 
@@ -654,8 +660,7 @@ void main() {
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..episodesError = DioException(
-          requestOptions:
-              RequestOptions(path: '/api/v1/podcasts/10/episodes'),
+          requestOptions: RequestOptions(path: '/api/v1/podcasts/10/episodes'),
           type: DioExceptionType.connectionError,
         );
 
@@ -797,8 +802,76 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('play button', () {
-    testWidgets(
-        'shows play button when episode has a mediaId (is downloaded)',
+    testWidgets('page-2 playback return keeps loaded rows and scroll',
+        (tester) async {
+      final rows = List.generate(51, (index) => PodcastEpisode.fromJson(
+            _kEpisodeDownloaded.toJson()
+              ..['id'] = index + 1
+              ..['media_id'] = index + 101
+              ..['title'] = 'Episode ${index + 1}',
+          ));
+      final fakeClient = _FakeApiClient()
+        ..episodesForPage =
+            (limit, offset) => rows.skip(offset).take(limit).toList();
+      await _pumpScreenWithRouter(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('episode_play_button_51')),
+        400,
+        scrollable: find.byType(Scrollable).first,
+        maxScrolls: 40,
+      );
+      await tester.pumpAndSettle();
+      expect(fakeClient.requestedPages, contains((50, 50)));
+      final scrollable =
+          tester.state<ScrollableState>(find.byType(Scrollable).first);
+      final before = scrollable.position.pixels;
+
+      await tester.tap(find.byKey(const Key('episode_play_button_51')));
+      await tester.pumpAndSettle();
+      rows[50] = PodcastEpisode.fromJson(
+          rows[50].toJson()..['is_completed'] = true);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(fakeClient.requestedPages.last, (51, 0));
+      expect(find.byKey(const Key('episode_row_51')), findsOneWidget);
+      expect(scrollable.position.pixels, closeTo(before, 1));
+      final toggle = find.byKey(const Key('episode_played_toggle_51'));
+      expect(find.descendant(of: toggle, matching: find.byIcon(Icons.check_circle)),
+          findsOneWidget);
+    });
+
+    testWidgets('returning from player refreshes completion and progress',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..episodesResult = [_kEpisodeDownloaded];
+      await _pumpScreenWithRouter(tester, fakeClient);
+      await tester.pumpAndSettle();
+      expect(fakeClient.listEpisodesCallCount, 1);
+
+      await tester.tap(find.byKey(const Key('episode_play_button_4')));
+      await tester.pumpAndSettle();
+      fakeClient.episodesResult = [
+        PodcastEpisode.fromJson(
+          _kEpisodeDownloaded.toJson()
+            ..['is_completed'] = true
+            ..['position_seconds'] = 1800.0,
+        )
+      ];
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(fakeClient.listEpisodesCallCount, 2);
+      final toggle = find.byKey(const Key('episode_played_toggle_4'));
+      expect(
+          find.descendant(
+              of: toggle, matching: find.byIcon(Icons.check_circle)),
+          findsOneWidget);
+    });
+
+    testWidgets('shows play button when episode has a mediaId (is downloaded)',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..episodesResult = [_kEpisodeDownloaded]; // mediaId: 99
@@ -817,8 +890,7 @@ void main() {
       );
     });
 
-    testWidgets(
-        'tapping play button navigates to audio player screen',
+    testWidgets('tapping play button navigates to audio player screen',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..episodesResult = [_kEpisodeDownloaded]; // mediaId: 99
@@ -860,8 +932,7 @@ void main() {
       );
     });
 
-    testWidgets(
-        'tapping download button calls downloadEpisode',
+    testWidgets('tapping download button calls downloadEpisode',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..episodesResult = [_kEpisode1]
@@ -876,8 +947,7 @@ void main() {
       expect(fakeClient.downloadEpisodeCallCount, equals(1));
     });
 
-    testWidgets(
-        'successful download replaces download button with play button',
+    testWidgets('successful download replaces download button with play button',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..episodesResult = [_kEpisode1]
@@ -903,8 +973,7 @@ void main() {
       );
     });
 
-    testWidgets(
-        'download error shows SnackBar with error message',
+    testWidgets('download error shows SnackBar with error message',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..episodesResult = [_kEpisode1]
@@ -925,8 +994,7 @@ void main() {
       expect(find.textContaining('Could not reach'), findsOneWidget);
     });
 
-    testWidgets(
-        'double-tap download button only fires one API call',
+    testWidgets('double-tap download button only fires one API call',
         (tester) async {
       // Hold the first download in-flight so the button is still showing when
       // the second tap happens — this is the window the guard must close.
@@ -937,8 +1005,7 @@ void main() {
       await _pumpScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      final downloadButton =
-          find.byKey(const Key('episode_download_button_1'));
+      final downloadButton = find.byKey(const Key('episode_download_button_1'));
       expect(downloadButton, findsOneWidget);
 
       // First tap: starts the download; future not yet resolved.

@@ -15,11 +15,14 @@
 //
 // Run with: flutter test test/screens/settings_screen_test.dart
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:player_android/api/dio_client.dart';
+import 'package:player_android/api/player_api_client.dart';
+import 'package:player_android/app_routes.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/navigation_key.dart';
 import 'package:player_android/providers/api_client_provider.dart';
@@ -28,6 +31,8 @@ import 'package:player_android/providers/current_user_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
 import 'package:player_android/providers/theme_provider.dart';
 import 'package:player_android/screens/settings_screen.dart';
+import 'package:player_android/screens/home_screen.dart';
+import 'package:player_android/screens/api_tokens_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ---------------------------------------------------------------------------
@@ -101,6 +106,16 @@ class _FailedServerLogoutNotifier extends AuthStateNotifier {
   }
 }
 
+class _NavigationApiClient extends PlayerApiClient {
+  _NavigationApiClient() : super(dio: Dio());
+
+  @override
+  Future<List<MediaSet>> listSets() async => [];
+
+  @override
+  Future<List<Map<String, dynamic>>> listAPITokens() async => [];
+}
+
 // ---------------------------------------------------------------------------
 // Helper: pump SettingsScreen inside a minimal ProviderScope.
 // ---------------------------------------------------------------------------
@@ -145,7 +160,10 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
       ),
       GoRoute(
         path: '/admin/users',
-        builder: (_, __) => const Scaffold(body: Text('Admin Users')),
+        builder: (_, __) => Scaffold(
+          appBar: AppBar(title: const Text('Admin Users')),
+          body: const Text('Users'),
+        ),
       ),
     ],
   );
@@ -181,6 +199,66 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets('admin drilldown returns to Settings with Up', (tester) async {
+    await _pumpSettingsScreen(tester,
+        currentUser: const User(id: 1, username: 'admin', isAdmin: true));
+    await tester.ensureVisible(find.byKey(const Key('settings_manage_users')));
+    await tester.tap(find.byKey(const Key('settings_manage_users')));
+    await tester.pumpAndSettle();
+    expect(find.text('Admin Users'), findsOneWidget);
+    expect(find.byType(BackButton), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsScreen), findsOneWidget);
+  });
+
+  testWidgets('Library, Settings and Tokens retain hardware Back and Up',
+      (tester) async {
+    final router = GoRouter(initialLocation: AppRoutes.home, routes: [
+      GoRoute(path: AppRoutes.home, builder: (_, __) => const SetsListScreen()),
+      GoRoute(
+          path: AppRoutes.settings, builder: (_, __) => const SettingsScreen()),
+      GoRoute(
+          path: AppRoutes.apiTokens,
+          builder: (_, __) => const ApiTokensScreen()),
+    ]);
+    final storage = _FakeTokenStorage().._token = 'test-token';
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        tokenStorageProvider.overrideWithValue(storage),
+        credentialMutationQueueProvider.overrideWithValue(
+            CredentialMutationQueue(credentialsEnabled: true)),
+        playerBaseUrlProvider
+            .overrideWithValue(Uri.parse('http://test.invalid')),
+        apiClientProvider.overrideWithValue(_NavigationApiClient()),
+        settingsProvider
+            .overrideWith(() => _FakeSettingsNotifier('http://test.invalid')),
+        currentUserProvider.overrideWith((ref) async =>
+            const User(id: 1, username: 'alice', isAdmin: false)),
+      ],
+      child: MaterialApp.router(routerConfig: router),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('home_settings_button')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsScreen), findsOneWidget);
+    expect(find.byType(BackButton), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('settings_api_tokens')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ApiTokensScreen), findsOneWidget);
+    expect(find.byType(BackButton), findsOneWidget);
+
+    await tester.binding.handlePopRoute(); // Android hardware Back
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsScreen), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton)); // app-bar Up
+    await tester.pumpAndSettle();
+    expect(find.byType(SetsListScreen), findsOneWidget);
+  });
   // --------------------------------------------------------------------------
   // Username display
   // --------------------------------------------------------------------------

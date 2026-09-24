@@ -39,6 +39,7 @@ import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
+import 'package:player_android/app_routes.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
@@ -305,6 +306,54 @@ Future<void> _pumpScreen(
 void main() {
   setUp(_setupAudioSessionMock);
   tearDown(_teardownAudioSessionMock);
+
+  testWidgets('hardware Back leaves audio playing on previous route',
+      (tester) async {
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    final queue = _FakeProgressQueue();
+    final router = GoRouter(initialLocation: AppRoutes.home, routes: [
+      GoRoute(
+          path: AppRoutes.home,
+          builder: (context, _) => Scaffold(
+                appBar: AppBar(title: const Text('Library')),
+                body: TextButton(
+                  onPressed: () =>
+                      context.push(AppRoutes.audioPlayerPath('42')),
+                  child: const Text('Open audio'),
+                ),
+              )),
+      GoRoute(
+          path: AppRoutes.audioPlayer,
+          builder: (_, state) =>
+              AudioPlayerScreen(mediaId: state.pathParameters['mediaId']!)),
+    ]);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
+        apiClientProvider.overrideWithValue(_FakeApiClient()),
+        audioHandlerProvider.overrideWithValue(handler),
+        progressQueueProvider.overrideWithValue(queue),
+      ],
+      child: MaterialApp.router(routerConfig: router),
+    ));
+    await tester.tap(find.text('Open audio'));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(player.isPlaying, isTrue);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Library'), findsOneWidget);
+    expect(player.isPlaying, isTrue);
+    player.elapsed = const Duration(seconds: 24);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    expect(queue.updates, contains((42, 24.0)));
+    await handler.endProgress();
+    await player.playingChanges.close();
+  });
 
   testWidgets('screen disposal keeps progress for the loaded media ID',
       (tester) async {

@@ -174,7 +174,7 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
     // The stream URL is passed as a route extra so the player uses it directly
     // without deriving it from a media ID (Dependency Inversion).
     final playerPath = AppRoutes.playerPathForType(_page!.type, '0');
-    context.go(playerPath, extra: absoluteStreamUrl);
+    context.push(playerPath, extra: absoluteStreamUrl);
   }
 
   // ---------------------------------------------------------------------------

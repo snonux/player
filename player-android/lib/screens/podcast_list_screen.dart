@@ -221,7 +221,7 @@ class _PodcastTile extends StatelessWidget {
       // Navigate to the dedicated podcast episodes screen.
       // The set name is forwarded as a query parameter so the episodes
       // screen app bar shows it immediately without an extra API call.
-      onTap: () => context.go(
+      onTap: () => context.push(
         AppRoutes.podcastEpisodesPath(podcast.id, setName: podcast.name),
       ),
     );

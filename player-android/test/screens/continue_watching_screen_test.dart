@@ -235,7 +235,8 @@ void main() {
       // Pump one frame: addPostFrameCallback fires but Future not yet resolved.
       await tester.pump();
 
-      expect(find.byKey(const Key('continue_watching_loading')), findsOneWidget);
+      expect(
+          find.byKey(const Key('continue_watching_loading')), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
       // Resolve to avoid "async work pending" warnings at test teardown.
@@ -324,7 +325,8 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('error state', () {
-    testWidgets('shows error message when listInProgress throws', (tester) async {
+    testWidgets('shows error message when listInProgress throws',
+        (tester) async {
       final fakeClient = _FakeApiClient()
         ..inProgressError = DioException(
           requestOptions: RequestOptions(path: '/api/v1/in-progress'),
@@ -405,6 +407,23 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('tap navigation', () {
+    testWidgets('completed item disappears after returning from player',
+        (tester) async {
+      final fakeClient = _FakeApiClient()..inProgressResult = [_kVideo];
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('resume_card_1')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('resume_card_1')));
+      await tester.pumpAndSettle();
+      fakeClient.inProgressResult = []; // player marked it finished
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('resume_card_1')), findsNothing);
+      expect(fakeClient.listInProgressCallCount, 2);
+    });
+
     testWidgets('tapping a video card routes to /video/:id', (tester) async {
       final fakeClient = _FakeApiClient()..inProgressResult = [_kVideo];
 
