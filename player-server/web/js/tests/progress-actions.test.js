@@ -70,7 +70,7 @@ function jsonResponse(body) {
 
 async function testProgressStatusAPIWrapper() {
   requests.length = 0;
-  await API.progressStatus(7, 'finished');
+  await API.progressStatus('7', 'finished');
   const req = requests[0];
   assert(req?.url === '/api/progress/status', 'progressStatus should call the progress status endpoint');
   assert(req?.options?.method === 'POST', 'progressStatus should POST');
@@ -78,6 +78,16 @@ async function testProgressStatusAPIWrapper() {
     req?.options?.body === JSON.stringify({ media_id: 7, status: 'finished' }),
     'progressStatus should send media_id and status',
   );
+  for (const invalid of ['', '7abc', '0', '-7', '9007199254740992', 7.5]) {
+    let rejected = false;
+    try {
+      await API.progressStatus(invalid, 'not_started');
+    } catch {
+      rejected = true;
+    }
+    assert(rejected, `progressStatus should reject invalid ID ${JSON.stringify(invalid)}`);
+  }
+  assert(requests.length === 1, 'invalid IDs should never reach the server');
 }
 
 async function testInProgressAPIWrapper() {

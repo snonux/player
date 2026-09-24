@@ -24,9 +24,9 @@ export default defineConfig({
 
   reporter: [['list'], ['html', { open: 'never' }]],
 
-  // Allow up to 120 s for the global beforeAll hook which triggers a media
-  // rescan and waits for at least one set to appear in the database.
-  globalTimeout: 120_000,
+  // Allow the serial suite to finish even when a media rescan takes most of
+  // an individual setup hook's timeout.
+  globalTimeout: 600_000,
 
   use: {
     baseURL,

@@ -56,7 +56,13 @@ export const API = {
   },
   mediaDetail: (id) => api(`/api/media/${id}`),
   progress: (mediaId, positionSeconds) => api('/api/progress', { method: 'POST', body: { media_id: mediaId, position_seconds: positionSeconds } }),
-  progressStatus: (mediaId, status) => api('/api/progress/status', { method: 'POST', body: { media_id: mediaId, status } }),
+  progressStatus: (mediaId, status) => {
+    const id = typeof mediaId === 'string' && /^\d+$/.test(mediaId) ? Number(mediaId) : mediaId;
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new Error('Invalid media ID');
+    }
+    return api('/api/progress/status', { method: 'POST', body: { media_id: id, status } });
+  },
   inProgress: () => api('/api/in-progress'),
   favorite: (id) => api(`/api/media/${id}/favorite`, { method: 'POST' }),
   notes: (id) => api(`/api/media/${id}/notes`),
