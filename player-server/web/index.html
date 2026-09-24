@@ -220,7 +220,11 @@
     </div>
     <form id="upload-form" class="flex flex-col gap-2">
       <input id="upload-file" type="file" required>
-      <button type="submit" class="btn btn-primary btn-sm">Upload to current set</button>
+      <button id="upload-submit" type="submit" class="btn btn-primary btn-sm">Upload to current set</button>
+      <div id="upload-status" class="hidden text-muted text-sm" role="status" aria-live="polite">
+        <progress id="upload-progress" aria-label="Upload in progress"></progress>
+        <span id="upload-status-text">Uploading…</span>
+      </div>
     </form>
   </div>
 </div>

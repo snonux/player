@@ -10,15 +10,38 @@ export function initUpload({ onLoadMedia } = {}) {
   const closeBtn = document.getElementById('upload-close');
   const form = document.getElementById('upload-form');
   const fileInput = document.getElementById('upload-file');
+  const submitBtn = document.getElementById('upload-submit');
+  const status = document.getElementById('upload-status');
+  const statusText = document.getElementById('upload-status-text');
+  const progress = document.getElementById('upload-progress');
+  let uploading = false;
 
-  closeBtn?.addEventListener('click', () => modal?.classList.remove('open'));
+  const setUploading = (busy) => {
+    uploading = busy;
+    if (submitBtn) submitBtn.disabled = busy;
+    if (fileInput) fileInput.disabled = busy;
+    if (closeBtn) closeBtn.disabled = busy;
+    form?.setAttribute('aria-busy', String(busy));
+    status?.classList.toggle('hidden', !busy);
+    progress?.classList.toggle('hidden', !busy);
+    if (busy && statusText) statusText.textContent = 'Uploading…';
+  };
+
+  closeBtn?.addEventListener('click', () => {
+    if (!uploading) modal?.classList.remove('open');
+  });
   modal?.addEventListener('click', (e) => {
-    if (e.target === modal) modal.classList.remove('open');
+    if (e.target === modal && !uploading) modal.classList.remove('open');
+  });
+  modal?.addEventListener('modalbeforeclose', (e) => {
+    if (uploading) e.preventDefault();
   });
 
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!state.selectedSetId) {
+    if (uploading) return;
+    const setId = state.selectedSetId;
+    if (!setId) {
       toast('Select a set first', 'error');
       return;
     }
@@ -29,19 +52,34 @@ export function initUpload({ onLoadMedia } = {}) {
     }
     const fd = new FormData();
     fd.append('file', file);
+    setUploading(true);
     try {
-      await API.upload(state.selectedSetId, fd);
+      await API.upload(setId, fd);
       toast('Upload complete');
       fileInput.value = '';
+      status?.classList.add('hidden');
+      progress?.classList.add('hidden');
       modal?.classList.remove('open');
       loadMediaCallback();
     } catch (err) {
       toast(err.message || 'Upload failed', 'error');
+      if (statusText) statusText.textContent = 'Upload failed. Try again.';
+      status?.classList.remove('hidden');
+      progress?.classList.add('hidden');
+    } finally {
+      uploading = false;
+      if (submitBtn) submitBtn.disabled = false;
+      if (fileInput) fileInput.disabled = false;
+      if (closeBtn) closeBtn.disabled = false;
+      form?.setAttribute('aria-busy', 'false');
     }
   });
 }
 
 export function showUpload() {
   const modal = document.getElementById('upload-modal');
+  if (document.getElementById('upload-form')?.getAttribute('aria-busy') !== 'true') {
+    document.getElementById('upload-status')?.classList.add('hidden');
+  }
   modal?.classList.add('open');
 }
