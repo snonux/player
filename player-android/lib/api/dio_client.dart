@@ -99,7 +99,8 @@ Future<Map<String, String>> accountRequestHeaders({
 
 /// CookieJar's domain matching ignores ports, so bind it to the API origin.
 class _OriginBoundCookieJar implements CookieJar {
-  _OriginBoundCookieJar(this._origin) : _delegate = CookieJar();
+  _OriginBoundCookieJar(this._origin, [CookieJar? delegate])
+      : _delegate = delegate ?? CookieJar();
 
   final String _origin;
   final CookieJar _delegate;
@@ -128,6 +129,20 @@ class _OriginBoundCookieJar implements CookieJar {
 
   @override
   Future<void> deleteAll() => _delegate.deleteAll();
+}
+
+/// Capture the request's account before cookie loading can yield. Otherwise a
+/// request started before an account switch could pick up the new credentials.
+class _AuthGenerationInterceptor extends Interceptor {
+  _AuthGenerationInterceptor(this._mutationQueue);
+
+  final CredentialMutationQueue _mutationQueue;
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    options.extra['authGeneration'] = _mutationQueue.generation;
+    handler.next(options);
+  }
 }
 
 /// Snapshot logout requests must not overwrite a newer login's cookie when
@@ -197,8 +212,10 @@ class _AuthInterceptor extends Interceptor {
       return;
     }
     final requestGeneration = options.extra['credentialEpoch'];
-    if (requestGeneration is int &&
-        requestGeneration != _mutationQueue.generation) {
+    final sentGeneration = options.extra['authGeneration'];
+    if ((requestGeneration is int &&
+            requestGeneration != _mutationQueue.generation) ||
+        sentGeneration != _mutationQueue.generation) {
       handler.reject(
           DioException(requestOptions: options, type: DioExceptionType.cancel));
       return;
@@ -216,6 +233,7 @@ class _AuthInterceptor extends Interceptor {
     final token = await _storage.readToken();
     if ((requestGeneration is int &&
             requestGeneration != _mutationQueue.generation) ||
+        sentGeneration != _mutationQueue.generation ||
         !_mutationQueue.credentialsEnabled) {
       handler.reject(
           DioException(requestOptions: options, type: DioExceptionType.cancel));
@@ -270,7 +288,9 @@ class _UnauthorizedInterceptor extends Interceptor {
     if (err.response?.statusCode == 401 &&
         err.requestOptions.uri.origin == _origin) {
       if (err.requestOptions.path.endsWith('/auth/login') ||
-          err.requestOptions.path.endsWith('/auth/bootstrap')) {
+          err.requestOptions.path.endsWith('/auth/bootstrap') ||
+          err.requestOptions.extra.containsKey('logoutBearer') ||
+          err.requestOptions.extra.containsKey('logoutCookie')) {
         handler.next(err);
         return;
       }
@@ -281,19 +301,22 @@ class _UnauthorizedInterceptor extends Interceptor {
           authorization is String && authorization.startsWith('Bearer ')
               ? authorization.substring('Bearer '.length)
               : null;
-      if (sentToken == null) {
-        handler.next(err);
-        return;
-      }
+      final sentGeneration = err.requestOptions.extra['authGeneration'];
       final invalidated = await _mutationQueue.run(() async {
-        String? currentToken;
-        try {
-          currentToken = await _storage.readToken();
-        } catch (_) {
-          // A failing keychain read cannot prove this was a stale response.
-          currentToken = sentToken;
+        if (sentGeneration != _mutationQueue.generation ||
+            !_mutationQueue.credentialsEnabled) {
+          return false;
         }
-        if (currentToken != sentToken) return false;
+        String? currentToken;
+        if (sentToken != null) {
+          try {
+            currentToken = await _storage.readToken();
+          } catch (_) {
+            // A failing keychain read cannot prove this was a stale response.
+            currentToken = sentToken;
+          }
+          if (currentToken != sentToken) return false;
+        }
         _mutationQueue.beginAuthChange();
         try {
           if (_onUnauthorized != null) {
@@ -340,8 +363,9 @@ class DioClient {
     Future<void> Function()? onUnauthorized,
     String loginRoute = '/login',
     BaseOptions? baseOptions,
+    CookieJar? cookieJar,
   }) {
-    final jar = _OriginBoundCookieJar(baseUrl.origin);
+    final jar = _OriginBoundCookieJar(baseUrl.origin, cookieJar);
     final dio = _buildDio(
       baseUrl: baseUrl,
       storage: storage,
@@ -391,7 +415,8 @@ class DioClient {
 
     return Dio(options)
       ..interceptors.addAll([
-        // Cookie manager runs first so the session cookie is replayed before
+        _AuthGenerationInterceptor(mutationQueue),
+        // Cookie loading follows the generation snapshot, then runs before
         // _AuthInterceptor decides whether to add a Bearer fallback.
         _SnapshotAwareCookieManager(cookieJar),
         _AuthInterceptor(storage, baseUrl.origin, mutationQueue),

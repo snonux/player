@@ -14,7 +14,11 @@ import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/models/user.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
+import 'package:player_android/providers/first_run_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
+import 'package:player_android/router.dart';
+import 'package:player_android/screens/home_screen.dart';
+import 'package:player_android/screens/login_screen.dart';
 import 'package:player_android/services/progress_queue.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -264,6 +268,36 @@ class _DelayedUnauthorizedAdapter implements HttpClientAdapter {
 
   @override
   void close({bool force = false}) {}
+}
+
+class _PausingCookieJar implements CookieJar {
+  final CookieJar _delegate = CookieJar();
+  final loadStarted = Completer<void>();
+  final releaseLoad = Completer<void>();
+
+  @override
+  bool get ignoreExpires => _delegate.ignoreExpires;
+
+  @override
+  Future<void> saveFromResponse(Uri uri, List<Cookie> cookies) =>
+      _delegate.saveFromResponse(uri, cookies);
+
+  @override
+  Future<void> delete(Uri uri, [bool withDomainSharedCookie = false]) =>
+      _delegate.delete(uri, withDomainSharedCookie);
+
+  @override
+  Future<void> deleteAll() => _delegate.deleteAll();
+
+  @override
+  Future<List<Cookie>> loadForRequest(Uri uri) async {
+    final cookies = await _delegate.loadForRequest(uri);
+    if (!loadStarted.isCompleted) {
+      loadStarted.complete();
+      await releaseLoad.future;
+    }
+    return cookies;
+  }
 }
 
 void main() {
@@ -918,6 +952,157 @@ void main() {
 
     expect(storage.token, isNull);
     expect(logoutCalls, 1);
+  });
+
+  testWidgets('cookie-only 401 clears persisted auth and opens login',
+      (tester) async {
+    late ProviderContainer container;
+    late _MemoryTokenStorage storage;
+    late CredentialMutationQueue queue;
+    late _DelayedUnauthorizedAdapter adapter;
+    late DioClient dio;
+    await tester.runAsync(() async {
+      SharedPreferences.setMockInitialValues({
+        'auth_session_present': true,
+        'auth_user': '{"id":1,"username":"alice","is_admin":false}',
+        'auth_origin': 'https://player.example',
+        'auth_expires_at':
+            DateTime.now().add(const Duration(days: 1)).millisecondsSinceEpoch,
+      });
+      storage = _MemoryTokenStorage()..token = 'pt-current';
+      queue = CredentialMutationQueue();
+      adapter = _DelayedUnauthorizedAdapter();
+      container = ProviderContainer(overrides: [
+        tokenStorageProvider.overrideWithValue(storage),
+        credentialMutationQueueProvider.overrideWithValue(queue),
+        playerBaseUrlProvider
+            .overrideWithValue(Uri.parse('https://player.example')),
+        firstRunProvider.overrideWith((ref) async => false),
+        cookieJarProvider.overrideWith((ref) => dio.cookieJar),
+        apiClientProvider.overrideWith((ref) {
+          dio = DioClient(
+            baseUrl: ref.read(playerBaseUrlProvider),
+            storage: storage,
+            mutationQueue: queue,
+            navigatorKey: GlobalKey<NavigatorState>(),
+            onUnauthorized: () async {
+              await ref
+                  .read(authStateProvider.notifier)
+                  .clearAfterUnauthorized(advanceGeneration: false);
+            },
+          );
+          dio.dio.httpClientAdapter = adapter;
+          return DioPlayerApiClient(dio: dio.dio);
+        }),
+      ]);
+      addTearDown(container.dispose);
+      expect((await container.read(authStateProvider.future)).isAuthenticated,
+          isTrue);
+      container.read(apiClientProvider);
+      await dio.cookieJar.saveFromResponse(
+          Uri.parse('https://player.example/api/v1/sets'),
+          [Cookie('session', 'expired-session')]);
+      // The keychain credential disappears while the cookie remains in memory.
+      storage.token = null;
+    });
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp.router(routerConfig: container.read(routerProvider)),
+    ));
+    await tester.pump();
+    expect(find.byType(SetsListScreen), findsOneWidget);
+    expect(find.text('Library'), findsOneWidget);
+
+    final sent = await tester.runAsync(() async {
+      final failedRequest = expectLater(
+          container.read(apiClientProvider).listSets(),
+          throwsA(isA<DioException>()));
+      final sent =
+          await adapter.received.future.timeout(const Duration(seconds: 5));
+      expect(sent.headers['Authorization'], isNull);
+      expect(sent.headers['cookie'], 'session=expired-session');
+      adapter.response.complete(ResponseBody.fromString('{}', 401));
+      await failedRequest;
+      expect(queue.credentialsEnabled, isFalse);
+      return sent;
+    });
+    await tester.pumpAndSettle();
+    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(SetsListScreen), findsNothing);
+    expect(container.read(authStateProvider).valueOrNull?.isUnauthenticated,
+        isTrue);
+    expect(queue.credentialsEnabled, isFalse);
+    expect(
+        (await SharedPreferences.getInstance()).getBool('auth_session_present'),
+        isNull);
+    expect(await dio.cookieJar.loadForRequest(sent!.uri), isEmpty);
+  });
+
+  test('stale cookie-only 401 does not clear a newer login', () async {
+    final storage = _MemoryTokenStorage();
+    final queue = CredentialMutationQueue();
+    queue.enable(queue.generation);
+    final adapter = _DelayedUnauthorizedAdapter();
+    var invalidations = 0;
+    final client = DioClient(
+      baseUrl: Uri.parse('https://player.example'),
+      storage: storage,
+      mutationQueue: queue,
+      navigatorKey: GlobalKey<NavigatorState>(),
+      onUnauthorized: () async {
+        invalidations++;
+      },
+    );
+    client.dio.httpClientAdapter = adapter;
+    await client.cookieJar.saveFromResponse(
+        Uri.parse('https://player.example/api/v1/sets'),
+        [Cookie('session', 'old-session')]);
+    final failedRequest = expectLater(
+        client.dio.get('/api/v1/sets'), throwsA(isA<DioException>()));
+    final sent = await adapter.received.future;
+    expect(sent.headers['cookie'], 'session=old-session');
+    final newerGeneration = queue.beginAuthChange();
+    await storage.writeToken('pt-new');
+    queue.enable(newerGeneration);
+    adapter.response.complete(ResponseBody.fromString('{}', 401));
+    await failedRequest;
+
+    expect(storage.token, 'pt-new');
+    expect(invalidations, 0);
+    expect(queue.credentialsEnabled, isTrue);
+  });
+
+  test('request paused in cookie loading cannot send newer account credentials',
+      () async {
+    final storage = _MemoryTokenStorage();
+    final queue = CredentialMutationQueue();
+    queue.enable(queue.generation);
+    final jar = _PausingCookieJar();
+    final adapter = _CaptureAdapter();
+    final client = DioClient(
+      baseUrl: Uri.parse('https://player.example'),
+      storage: storage,
+      mutationQueue: queue,
+      cookieJar: jar,
+      navigatorKey: GlobalKey<NavigatorState>(),
+    );
+    client.dio.httpClientAdapter = adapter;
+    await jar.saveFromResponse(Uri.parse('https://player.example/api/v1/sets'),
+        [Cookie('session', 'old-session')]);
+    final pending = expectLater(
+        client.dio.get('/api/v1/sets'),
+        throwsA(isA<DioException>()
+            .having((error) => error.type, 'type', DioExceptionType.cancel)));
+    await jar.loadStarted.future;
+    final newerGeneration = queue.beginAuthChange();
+    await storage.writeToken('pt-new-account');
+    queue.enable(newerGeneration);
+    jar.releaseLoad.complete();
+    await pending;
+
+    expect(adapter.captured, isNull);
+    expect(storage.token, 'pt-new-account');
+    expect(queue.credentialsEnabled, isTrue);
   });
 
   test('login commit waits for in-progress 401 invalidation', () async {
