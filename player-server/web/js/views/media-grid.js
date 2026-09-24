@@ -442,6 +442,7 @@ function bindMediaItems(grid) {
     });
     noteBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
+      selectByElement(el);
       callbacks.openNotesForSelected?.();
     });
     downloadBtn?.addEventListener('click', (e) => {
