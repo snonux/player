@@ -77,7 +77,7 @@ const els = () => ({
   btnSlideshow: document.getElementById('btn-slideshow'),
   btnMute: document.getElementById('btn-mute'),
   btnFs: document.getElementById('btn-fullscreen'),
-  btnMinimize: document.getElementById('btn-minimize-player'),
+  btnMinimize: document.getElementById('btn-minimize'),
   btnRestore: document.getElementById('btn-restore-player'),
   restoreTitle: document.getElementById('player-restore-title'),
   bigPlay: document.getElementById('big-play'),
