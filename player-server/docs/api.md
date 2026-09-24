@@ -1081,7 +1081,8 @@ List all share links created by the authenticated user.
 
 ### `DELETE /api/shares/{token}` · `DELETE /api/v1/shares/{token}`
 
-Revoke a share link. Only the creator can revoke their own share.
+Revoke a share link. The creator or an admin can revoke it, including after its
+media item has been moved to trash.
 
 **Response `200`:**
 
@@ -1089,7 +1090,7 @@ Revoke a share link. Only the creator can revoke their own share.
 { "status": "ok" }
 ```
 
-**Status codes:** `200`, `400`, `401`, `404`, `500`
+**Status codes:** `200`, `400`, `401`, `403`, `404`, `500`
 
 ---
 

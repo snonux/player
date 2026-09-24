@@ -2217,7 +2217,7 @@ func TestMediaService_RevokeShare(t *testing.T) {
 		},
 		{
 			name:    "access denied",
-			share:   &model.Share{Token: "abc", MediaID: 1, CreatedBy: 1, ExpiresAt: now.Add(time.Hour)},
+			share:   &model.Share{Token: "abc", MediaID: 1, CreatedBy: 2, ExpiresAt: now.Add(time.Hour)},
 			media:   &model.Media{ID: 1, SetID: 1},
 			wantErr: true,
 		},

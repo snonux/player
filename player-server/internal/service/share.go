@@ -82,9 +82,14 @@ func (s *shareService) RevokeShare(ctx context.Context, token string, userID int
 		return ErrShareNotFound
 	}
 
-	_, err = s.helper.verifyAccess(ctx, share.MediaID, userID)
-	if err != nil {
-		return err
+	if share.CreatedBy != userID {
+		user, err := s.helper.store.GetUserByID(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("get user: %w", err)
+		}
+		if user == nil || !user.IsAdmin {
+			return ErrForbidden
+		}
 	}
 
 	return s.store.DeleteShare(ctx, token)
