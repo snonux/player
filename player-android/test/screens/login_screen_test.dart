@@ -25,6 +25,7 @@ import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/login_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -131,6 +132,7 @@ Future<_FakeTokenStorage> _pumpLoginScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   // --------------------------------------------------------------------------
   // Form validation
   // --------------------------------------------------------------------------
@@ -176,8 +178,7 @@ void main() {
 
       await _pumpLoginScreen(tester, fakeClient);
 
-      await tester.enterText(
-          find.byKey(const Key('login_username')), 'alice');
+      await tester.enterText(find.byKey(const Key('login_username')), 'alice');
       await tester.enterText(
           find.byKey(const Key('login_password')), 'mysecret');
 
@@ -190,14 +191,15 @@ void main() {
       expect(fakeClient.capturedPassword, equals('mysecret'));
     });
 
-    testWidgets('persists returned username as session token', (tester) async {
+    testWidgets('retains returned identity without writing a bearer token',
+        (tester) async {
       final fakeClient = _FakeApiClient()
         ..loginResult = const User(id: 2, username: 'bob', isAdmin: false);
 
       final fakeStorage = await _pumpLoginScreen(tester, fakeClient);
+      fakeStorage._token = 'stale-bearer';
 
-      await tester.enterText(
-          find.byKey(const Key('login_username')), 'bob');
+      await tester.enterText(find.byKey(const Key('login_username')), 'bob');
       await tester.enterText(
           find.byKey(const Key('login_password')), 'supersecret');
 
@@ -205,8 +207,9 @@ void main() {
       await tester.pump();
       await tester.pumpAndSettle();
 
-      // Username is persisted as the session marker (mirrors BootstrapScreen).
-      expect(fakeStorage._token, equals('bob'));
+      expect(fakeStorage._token, isNull);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('auth_session_present'), isTrue);
     });
 
     testWidgets('shows submit button initially and no loading indicator',
@@ -235,8 +238,7 @@ void main() {
 
       await _pumpLoginScreen(tester, fakeClient);
 
-      await tester.enterText(
-          find.byKey(const Key('login_username')), 'alice');
+      await tester.enterText(find.byKey(const Key('login_username')), 'alice');
       await tester.enterText(
           find.byKey(const Key('login_password')), 'supersecret');
 
@@ -280,8 +282,7 @@ void main() {
 
       await _pumpLoginScreen(tester, fakeClient);
 
-      await tester.enterText(
-          find.byKey(const Key('login_username')), 'alice');
+      await tester.enterText(find.byKey(const Key('login_username')), 'alice');
       await tester.enterText(
           find.byKey(const Key('login_password')), 'wrongpassword');
 
@@ -310,8 +311,7 @@ void main() {
 
       await _pumpLoginScreen(tester, fakeClient);
 
-      await tester.enterText(
-          find.byKey(const Key('login_username')), 'alice');
+      await tester.enterText(find.byKey(const Key('login_username')), 'alice');
       await tester.enterText(
           find.byKey(const Key('login_password')), 'wrongpassword');
 
@@ -332,10 +332,8 @@ void main() {
 
       await _pumpLoginScreen(tester, fakeClient);
 
-      await tester.enterText(
-          find.byKey(const Key('login_username')), 'alice');
-      await tester.enterText(
-          find.byKey(const Key('login_password')), 'secret');
+      await tester.enterText(find.byKey(const Key('login_username')), 'alice');
+      await tester.enterText(find.byKey(const Key('login_password')), 'secret');
 
       await tester.tap(find.byKey(const Key('login_submit')));
       await tester.pump();
@@ -362,10 +360,8 @@ void main() {
 
       await _pumpLoginScreen(tester, fakeClient);
 
-      await tester.enterText(
-          find.byKey(const Key('login_username')), 'alice');
-      await tester.enterText(
-          find.byKey(const Key('login_password')), 'secret');
+      await tester.enterText(find.byKey(const Key('login_username')), 'alice');
+      await tester.enterText(find.byKey(const Key('login_password')), 'secret');
 
       await tester.tap(find.byKey(const Key('login_submit')));
       await tester.pump();

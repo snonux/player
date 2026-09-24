@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'providers/audio_handler_provider.dart';
+import 'providers/auth_state_provider.dart';
 import 'providers/progress_queue_provider.dart';
 import 'providers/theme_provider.dart';
 import 'router.dart';
@@ -57,8 +58,13 @@ void main() async {
     overrides: [audioHandlerProvider.overrideWithValue(handler)],
   );
 
+  // Finish legacy credential cleanup before any protected screen or request
+  // can run. The progress queue may send requests as soon as it initialises.
+  // The in-memory cookie jar cannot authenticate a new process.
+  await container.read(authStateProvider.future);
+
   // Initialise the offline progress queue (opens SQLite DB, subscribes to
-  // connectivity).  Must be done before any player screen opens so that the
+  // connectivity). Must be done before any player screen opens so that the
   // queue is ready to accept enqueue calls immediately.
   await container.read(progressQueueProvider).init();
 
@@ -102,8 +108,7 @@ class PlayerAndroidApp extends ConsumerWidget {
 
     // Default to ThemeMode.system while the preference is loading so the app
     // does not flash an incorrect theme during startup.
-    final themeMode =
-        ref.watch(themeProvider).valueOrNull ?? ThemeMode.system;
+    final themeMode = ref.watch(themeProvider).valueOrNull ?? ThemeMode.system;
 
     return MaterialApp.router(
       title: 'Player',

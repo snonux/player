@@ -27,6 +27,7 @@ import 'package:player_android/providers/current_user_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
 import 'package:player_android/providers/theme_provider.dart';
 import 'package:player_android/screens/settings_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -59,8 +60,7 @@ class _FakeSettingsNotifier extends SettingsNotifier {
   String? savedUrl;
 
   @override
-  Future<AppSettings> build() async =>
-      AppSettings(serverBaseUrl: _initialUrl);
+  Future<AppSettings> build() async => AppSettings(serverBaseUrl: _initialUrl);
 
   @override
   Future<void> setServerBaseUrl(String url) async {
@@ -168,14 +168,15 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
 // ---------------------------------------------------------------------------
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   // --------------------------------------------------------------------------
   // Username display
   // --------------------------------------------------------------------------
 
   group('username display', () {
-    testWidgets('shows the token stored in TokenStorage as the username',
-        (tester) async {
-      await _pumpSettingsScreen(tester, initialToken: 'alice');
+    testWidgets('shows the authenticated user name', (tester) async {
+      await _pumpSettingsScreen(tester,
+          currentUser: const User(id: 1, username: 'alice', isAdmin: false));
 
       // The settings_username widget should show the stored token value.
       expect(find.byKey(const Key('settings_username')), findsOneWidget);
@@ -323,7 +324,8 @@ void main() {
 
       // Scroll the segmented button into view before tapping — the settings
       // screen content may exceed the test viewport height.
-      await tester.ensureVisible(find.byKey(const Key('settings_theme_toggle')));
+      await tester
+          .ensureVisible(find.byKey(const Key('settings_theme_toggle')));
       await tester.pumpAndSettle();
 
       // Tap the "Dark" segment label.
@@ -354,22 +356,24 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
-    testWidgets('tapping logout clears the token from TokenStorage',
-        (tester) async {
-      final result = await _pumpSettingsScreen(
+    testWidgets('tapping logout clears the saved identity', (tester) async {
+      await _pumpSettingsScreen(
         tester,
         initialToken: 'alice',
       );
-
-      // Verify the token is set before logout.
-      expect(result.storage._token, equals('alice'));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('auth_session_present', true);
+      await prefs.setString(
+          'auth_user', '{"id":1,"username":"alice","is_admin":false}');
+      expect(prefs.getBool('auth_session_present'), isTrue);
+      expect(prefs.getString('auth_user'), isNotNull);
 
       // Tap the logout button.
       await tester.tap(find.byKey(const Key('settings_logout')));
       await tester.pumpAndSettle();
 
-      // AuthStateNotifier.logout() should have deleted the token.
-      expect(result.storage._token, isNull);
+      expect(prefs.getString('auth_user'), isNull);
+      expect(prefs.getBool('auth_session_present'), isNull);
     });
 
     testWidgets('tapping logout updates auth state to unauthenticated',

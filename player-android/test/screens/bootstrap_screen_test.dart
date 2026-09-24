@@ -22,6 +22,7 @@ import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/bootstrap_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -123,6 +124,7 @@ Future<_FakeTokenStorage> _pumpBootstrapScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   // --------------------------------------------------------------------------
   // Form validation
   // --------------------------------------------------------------------------
@@ -206,10 +208,11 @@ void main() {
       // No validation-error text should appear.
       expect(find.text('This field is required.'), findsNothing);
       expect(find.text('Passwords do not match.'), findsNothing);
-      expect(find.text('Password must be at least 8 characters.'), findsNothing);
+      expect(
+          find.text('Password must be at least 8 characters.'), findsNothing);
 
       // Token should have been persisted via the fake storage.
-      expect(fakeStorage._token, isNotNull);
+      expect(fakeStorage._token, isNull);
     });
   });
 
@@ -243,7 +246,8 @@ void main() {
       expect(find.text('This field is required.'), findsNothing);
     });
 
-    testWidgets('persists token to storage after success', (tester) async {
+    testWidgets('retains bootstrap identity without a bearer token',
+        (tester) async {
       final fakeClient = _FakeApiClient()
         ..bootstrapResult = const User(
           id: 1,
@@ -264,14 +268,15 @@ void main() {
       await tester.pumpAndSettle();
 
       // The username is stored as the session marker token.
-      expect(fakeStorage._token, equals('admin'));
+      expect(fakeStorage._token, isNull);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('auth_session_present'), isTrue);
     });
 
     testWidgets('submit button visible initially, no loading indicator',
         (tester) async {
       final fakeClient = _FakeApiClient()
-        ..bootstrapResult =
-            const User(id: 1, username: 'admin', isAdmin: true);
+        ..bootstrapResult = const User(id: 1, username: 'admin', isAdmin: true);
 
       await _pumpBootstrapScreen(tester, fakeClient);
 

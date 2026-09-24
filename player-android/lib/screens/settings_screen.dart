@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../app_routes.dart';
-import '../providers/api_client_provider.dart';
 import '../providers/auth_state_provider.dart';
 import '../providers/current_user_provider.dart';
 import '../providers/settings_provider.dart';
@@ -17,7 +16,7 @@ import '../providers/theme_provider.dart';
 ///     throughout the async logout path without storing a stale ref.
 ///   - The base URL is pre-filled from [settingsProvider] and saved on every
 ///     submit (Enter key or "Save" button).
-///   - Logout clears the bearer token via [AuthStateNotifier.logout], which
+///   - Logout clears the saved identity via [AuthStateNotifier.logout], which
 ///     triggers go_router's redirect callback (via [refreshListenable]) and
 ///     navigates to /login automatically.  An explicit [context.go] acts as a
 ///     safety net in case the redirect has not fired yet.
@@ -39,7 +38,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // persisted settings value and disposed when the widget leaves the tree.
   final _urlController = TextEditingController();
 
-  // True while the logout round-trip (token deletion + state update) is in
+  // True while the logout state update is in
   // progress; prevents double-tapping the logout button.
   bool _isLoggingOut = false;
 
@@ -77,9 +76,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // Logout logic
   // ---------------------------------------------------------------------------
 
-  /// Clears the stored bearer token and transitions to the unauthenticated state.
+  /// Clears the saved identity and transitions to the unauthenticated state.
   ///
-  /// [AuthStateNotifier.logout] deletes the token from secure storage and sets
+  /// [AuthStateNotifier.logout] removes the session marker and identity and sets
   /// state to [AuthStatus.unauthenticated].  The router's [refreshListenable]
   /// picks up the change and the redirect callback routes to /login automatically.
   /// The explicit [context.go] below acts as a safety net.
@@ -107,7 +106,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     // Watch the current user to conditionally show the Admin section.
     // currentUserProvider is autoDispose and resolves to null for non-admins.
-    final isAdmin = ref.watch(currentUserProvider).valueOrNull?.isAdmin ?? false;
+    final isAdmin =
+        ref.watch(currentUserProvider).valueOrNull?.isAdmin ?? false;
 
     // Seed the URL text field exactly once, after settings have loaded.
     // Doing this in build (rather than initState) ensures we have the loaded
@@ -119,11 +119,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     });
 
-    // Read the stored token as the username display.  The token stored by
-    // AuthStateNotifier is the username string (LoginScreen and BootstrapScreen
-    // both call `authStateProvider.notifier.login(user.username)`).
-    final usernameAsync = ref.watch(_currentUsernameProvider);
-    final username = usernameAsync.valueOrNull ?? '—';
+    final username =
+        ref.watch(currentUserProvider).valueOrNull?.username ?? '—';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -180,15 +177,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
               const SizedBox(height: 24),
 
-              // Logout button: shows a spinner while the token is being deleted.
+              // Logout button: shows a spinner while auth state is cleared.
               _isLoggingOut
                   ? const Center(child: CircularProgressIndicator())
                   : OutlinedButton(
                       key: const Key('settings_logout'),
                       onPressed: _logout,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor:
-                            Theme.of(context).colorScheme.error,
+                        foregroundColor: Theme.of(context).colorScheme.error,
                         side: BorderSide(
                           color: Theme.of(context).colorScheme.error,
                         ),
@@ -411,17 +407,3 @@ class _AdminSection extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 // File-level helpers
 // ---------------------------------------------------------------------------
-
-/// Reads the current username from [tokenStorageProvider].
-///
-/// The username is stored as the bearer token value by [AuthStateNotifier.login]
-/// (both LoginScreen and BootstrapScreen call `login(user.username)`).
-/// This autoDispose FutureProvider is re-evaluated whenever the provider scope
-/// changes, ensuring the display is up-to-date after logout/login transitions.
-///
-/// Kept private (underscore prefix) because it is an implementation detail of
-/// this screen — no other file should depend on it.
-final _currentUsernameProvider = FutureProvider.autoDispose<String?>((ref) {
-  final storage = ref.watch(tokenStorageProvider);
-  return storage.readToken();
-});

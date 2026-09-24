@@ -9,7 +9,7 @@ import '../utils/error_mappers.dart';
 /// Sign-in screen shown to returning users who already have an account.
 ///
 /// Displays a username and password form; on successful authentication the
-/// session token is persisted via [TokenStorage] and the auth state transitions
+/// returned user is retained by [AuthStateNotifier] and auth transitions
 /// to [AuthStatus.authenticated], which causes go_router to redirect to the
 /// home screen automatically (no explicit navigation call needed).
 ///
@@ -65,9 +65,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   /// Validates the form and submits the login request to the server.
   ///
-  /// On success, stores the username as the session token via [AuthStateNotifier.login]
-  /// so that [AuthStateNotifier.build] can restore the session on the next app
-  /// start; go_router's redirect callback then navigates to [AppRoutes.home]
+  /// On success, retains the returned user via [AuthStateNotifier.login];
+  /// go_router's redirect callback then navigates to [AppRoutes.home]
   /// automatically.
   ///
   /// On failure, a human-readable error is shown in a [SnackBar].  All async
@@ -91,12 +90,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         password: password,
       );
 
-      // Persist the session marker so [AuthStateNotifier.build] can restore
-      // auth state on the next cold start without requiring re-login.
-      // The username acts as the session presence marker here; a follow-up
-      // task will replace this with a real bearer token from createAPIToken.
+      // Clear bearer values left by older versions before using the cookie.
       if (!mounted) return;
-      await ref.read(authStateProvider.notifier).login(user.username);
+      await ref.read(tokenStorageProvider).deleteToken();
+      await ref.read(authStateProvider.notifier).login(user);
     } on DioException catch (e) {
       // Guard against stale BuildContext if the widget was disposed during
       // the async gap (e.g. a rapid navigation triggered by another listener).

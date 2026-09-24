@@ -93,7 +93,7 @@ class _BootstrapScreenState extends ConsumerState<BootstrapScreen> {
 
   /// Validates the form and submits the bootstrap request.
   ///
-  /// On success, persists the authenticated session via [AuthStateNotifier.login]
+  /// On success, retains the authenticated user via [AuthStateNotifier.login]
   /// and lets go_router's redirect logic navigate to [AppRoutes.home].
   ///
   /// On server error, extracts a human-readable message from the [DioException]
@@ -111,9 +111,8 @@ class _BootstrapScreenState extends ConsumerState<BootstrapScreen> {
 
       // Call POST /api/v1/auth/bootstrap.  On success the server creates the
       // admin user and sets a session cookie.  The returned User confirms the
-      // account was created; we use its username as the session marker stored
-      // in TokenStorage so that [AuthStateNotifier.build] recognises a prior
-      // successful login on the next app start.
+      // account was created; AuthStateNotifier retains this identity for
+      // settings and admin controls.
       //
       // NOTE: The server uses cookie-based session auth.  For a full mobile
       // bearer-token flow a follow-up task should call createAPIToken after
@@ -123,11 +122,10 @@ class _BootstrapScreenState extends ConsumerState<BootstrapScreen> {
         password: password,
       );
 
-      // Persist the session marker and update auth state → router redirects
+      // Clear legacy bearer values and update auth state → router redirects
       // automatically to AppRoutes.home via the refreshListenable.
-      await ref
-          .read(authStateProvider.notifier)
-          .login(user.username);
+      await ref.read(tokenStorageProvider).deleteToken();
+      await ref.read(authStateProvider.notifier).login(user);
     } on DioException catch (e) {
       // Only show the snack-bar if the widget is still mounted; async gaps can
       // occur between the await above and this error handler.
@@ -209,8 +207,7 @@ class _BootstrapScreenState extends ConsumerState<BootstrapScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Password',
                     border: OutlineInputBorder(),
-                    helperText:
-                        'Minimum $_kMinPasswordLength characters.',
+                    helperText: 'Minimum $_kMinPasswordLength characters.',
                   ),
                   obscureText: true,
                   textInputAction: TextInputAction.next,
