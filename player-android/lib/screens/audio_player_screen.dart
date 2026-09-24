@@ -11,15 +11,6 @@ import '../providers/api_client_provider.dart';
 import '../providers/audio_handler_provider.dart';
 import '../providers/progress_queue_provider.dart';
 import '../services/audio_handler.dart';
-import '../services/progress_queue.dart';
-
-// How often progress updates are emitted to the server while playing.
-// Mirrors VideoPlayerScreen._kProgressInterval exactly.
-const _kProgressInterval = Duration(seconds: 5);
-
-// Playback fraction at which the item is considered finished (95 %).
-// Mirrors VideoPlayerScreen._kFinishedThreshold exactly.
-const _kFinishedThreshold = 0.95;
 
 // Available playback speed options for the speed selector.
 const _kSpeedOptions = [0.5, 1.0, 1.25, 1.5, 2.0];
@@ -43,13 +34,8 @@ const _kSkipDuration = Duration(seconds: 15);
 ///   - The [PlayerAudioHandler] (obtained via [audioHandlerProvider]) wraps
 ///     the underlying [AudioPlayer] and bridges it to the Android media
 ///     session, enabling lock-screen controls and background playback.
-///   - Progress updates (every [_kProgressInterval]) and the finished mark are
-///     fire-and-forget: errors are swallowed so a transient network blip never
-///     interrupts playback.
-///   - The progress-sync timer intentionally stays in the screen (not in the
-///     handler) so it can call [updateProgress] via [apiClientProvider] without
-///     the handler needing a reference to the API layer — preserving the
-///     Single Responsibility of each class.
+///   - The handler owns progress reporting so route disposal does not stop
+///     updates while audio continues in the background.
 ///   - All async continuations guard on [mounted] before calling [setState].
 class AudioPlayerScreen extends ConsumerStatefulWidget {
   const AudioPlayerScreen({
@@ -81,17 +67,13 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
 // ---------------------------------------------------------------------------
 
 class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
+  // Invalidates older async setup attempts when Retry starts a new one.
+  int _initGeneration = 0;
   // Non-null when initialisation failed; shown in the error view.
   String? _error;
 
   // True while the player is being set up; shows a full-screen spinner.
   bool _isLoading = true;
-
-  // Prevents emitting a "finished" update more than once per playback session.
-  bool _finishedEmitted = false;
-
-  // Periodic timer that fires every [_kProgressInterval] while playing.
-  Timer? _progressTimer;
 
   // Current playback speed; updated by the speed selector.
   double _playbackSpeed = 1.0;
@@ -108,14 +90,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _initPlayer());
   }
 
-  @override
-  void dispose() {
-    // Cancel the timer before the player is detached so the callback cannot
-    // fire with a stale player reference (mirrors VideoPlayerScreen order).
-    _progressTimer?.cancel();
-    super.dispose();
-  }
-
   // ---------------------------------------------------------------------------
   // Player initialisation
   // ---------------------------------------------------------------------------
@@ -128,7 +102,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   Future<void> _initPlayer() async {
     if (!mounted) return;
 
+    final initGeneration = _initGeneration;
     final handler = ref.read(audioHandlerProvider);
+    final stopGeneration = handler.stopGeneration;
+    bool current() =>
+        mounted &&
+        _initGeneration == initGeneration &&
+        handler.stopGeneration == stopGeneration;
     final player = handler.player;
     final client = ref.read(apiClientProvider);
     final storage = ref.read(tokenStorageProvider);
@@ -143,15 +123,17 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
         ref.read(credentialMutationQueueProvider),
         ref.read(playerBaseUrlProvider),
         Uri.parse(url));
-    if (!mounted) return;
+    if (!current()) return;
 
-    // Step 3: load the authenticated source; show error UI on failure.
-    final loaded = await _loadSource(player, url, headers);
-    if (!loaded || !mounted) return;
+    // Step 3: flush the previous item before replacing its source, then load.
+    await handler.endProgress();
+    if (!current()) return;
+    final loaded = await _loadSource(player, url, headers, current);
+    if (!loaded || !current()) return;
 
     // Step 4: seek to the saved position (non-fatal if unavailable).
     await _resumeFromSavedPosition(player, client, mediaIdInt);
-    if (!mounted) return;
+    if (!current()) return;
 
     // Step 5: publish media-session metadata to notification/lock-screen.
     handler.setMediaItem(
@@ -161,12 +143,17 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
 
     setState(() => _isLoading = false);
 
-    // Step 6: begin playback and start the periodic progress ticker.
-    // The queue is read once here so the timer callback does not access [ref]
-    // after the widget may have been disposed (mirrors the client capture).
-    unawaited(handler.play());
+    // The callbacks capture dependencies, never the screen/ref. The handler's
+    // session outlives this route during background playback.
     final queue = ref.read(progressQueueProvider);
-    _startProgressTicker(mediaIdInt, client, player, queue);
+    handler.startProgress(
+      savePosition: (seconds) => queue.enqueue(mediaIdInt, seconds),
+      markFinished: () => client.updateProgressStatus(
+        mediaId: mediaIdInt,
+        status: 'finished',
+      ),
+    );
+    unawaited(handler.play());
   }
 
   /// Builds the headers map for an authenticated stream request.
@@ -200,6 +187,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     AudioPlayer player,
     String url,
     Map<String, String> headers,
+    bool Function() current,
   ) async {
     try {
       await player.setAudioSource(
@@ -207,7 +195,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
       );
       return true;
     } catch (e) {
-      if (!mounted) return false;
+      if (!current()) return false;
       setState(() {
         _error = _initErrorMessage(e);
         _isLoading = false;
@@ -240,70 +228,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Progress reporting
-  // ---------------------------------------------------------------------------
-
-  /// Starts a periodic timer that emits progress updates every
-  /// [_kProgressInterval] and marks the item finished at [_kFinishedThreshold].
-  ///
-  /// Progress updates are routed through [queue] rather than calling
-  /// [client.updateProgress] directly so that offline buffering and
-  /// online batch-flush are handled transparently (Open-Closed: screens
-  /// need not change if the queue strategy changes).
-  ///
-  /// The [client], [player], and [queue] references are captured once here so
-  /// we avoid accessing [ref] inside the timer callback after the widget may
-  /// have been disposed.
-  ///
-  /// The timer intentionally lives in the screen — not in the handler — so
-  /// that [PlayerApiClient] (an HTTP concern) is not imported into
-  /// [PlayerAudioHandler] (an audio-session concern), preserving SRP.
-  void _startProgressTicker(
-    int mediaId,
-    PlayerApiClient client,
-    AudioPlayer player,
-    ProgressQueueBase queue,
-  ) {
-    _progressTimer = Timer.periodic(_kProgressInterval, (_) async {
-      // Skip updates while paused — no progress to record and avoids
-      // unnecessary DB writes when the user has paused playback.
-      if (player.playing == false) return;
-
-      final position = player.position;
-      final duration = player.duration;
-
-      // Enqueue position update — fire-and-forget so a transient error
-      // never interrupts playback.  The queue handles online/offline.
-      try {
-        await queue.enqueue(
-          mediaId,
-          position.inMilliseconds / 1000.0,
-        );
-      } catch (_) {}
-
-      // Mark finished once when playback fraction reaches the threshold.
-      // Guard with [_finishedEmitted] to avoid duplicate server calls.
-      if (!_finishedEmitted &&
-          duration != null &&
-          duration.inMilliseconds > 0 &&
-          position.inMilliseconds / duration.inMilliseconds >=
-              _kFinishedThreshold) {
-        _finishedEmitted = true;
-        try {
-          // The finished status update is still sent directly to the API
-          // because it is a distinct endpoint and should not be queued with
-          // position updates (different semantics: idempotent status vs.
-          // position accumulation).
-          await client.updateProgressStatus(
-            mediaId: mediaId,
-            status: 'finished',
-          );
-        } catch (_) {}
-      }
-    });
-  }
-
-  // ---------------------------------------------------------------------------
   // Error mapping
   // ---------------------------------------------------------------------------
 
@@ -327,11 +251,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   ///
   /// Extracted to keep [_buildErrorView] below 30 lines (style guideline).
   void _onRetry() {
-    _progressTimer?.cancel();
+    _initGeneration++;
     setState(() {
       _error = null;
       _isLoading = true;
-      _finishedEmitted = false;
       _playbackSpeed = 1.0;
     });
     _initPlayer();

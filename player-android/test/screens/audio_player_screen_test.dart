@@ -28,6 +28,8 @@
 //
 // Run with: flutter test test/screens/audio_player_screen_test.dart
 
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -108,6 +110,7 @@ class _FakeApiClient extends PlayerApiClient {
 /// created in the test harness (Liskov Substitution — any [ProgressQueueBase]
 /// can be injected wherever the interface is required).
 class _FakeProgressQueue implements ProgressQueueBase {
+  final updates = <(int, double)>[];
   @override
   Future<void> clearAndSuspend() async {}
   @override
@@ -122,7 +125,9 @@ class _FakeProgressQueue implements ProgressQueueBase {
     int mediaId,
     double positionSeconds, {
     bool finished = false,
-  }) async {} // no-op — prevent SQLite calls in widget tests
+  }) async {
+    updates.add((mediaId, positionSeconds));
+  }
 
   @override
   Future<void> dispose() async {} // no-op
@@ -155,6 +160,73 @@ class _FakePlayerAudioHandler extends PlayerAudioHandler {
 
   @override
   Future<void> stop() async {} // no-op
+}
+
+class _PlayableAudioPlayer extends AudioPlayer {
+  Completer<Duration?>? pendingLoad;
+  bool failNextLoad = false;
+  int sourceRequests = 0;
+  Duration elapsed = Duration.zero;
+  bool isPlaying = false;
+  final playingChanges = StreamController<bool>.broadcast();
+
+  @override
+  Future<Duration?> setAudioSource(AudioSource source,
+      {bool preload = true, int? initialIndex, Duration? initialPosition}) {
+    sourceRequests++;
+    elapsed = Duration.zero;
+    if (failNextLoad) {
+      failNextLoad = false;
+      return Future.error(StateError('first load failed'));
+    }
+    return pendingLoad?.future ?? Future.value(const Duration(seconds: 100));
+  }
+
+  @override
+  Future<void> seek(Duration? position, {int? index}) async {
+    elapsed = position ?? Duration.zero;
+  }
+
+  @override
+  Duration get position => elapsed;
+  @override
+  Duration? get duration => const Duration(seconds: 100);
+  @override
+  bool get playing => isPlaying;
+  @override
+  Stream<bool> get playingStream => playingChanges.stream;
+  @override
+  Stream<PlaybackEvent> get playbackEventStream => const Stream.empty();
+  @override
+  Stream<ProcessingState> get processingStateStream => const Stream.empty();
+  @override
+  ProcessingState get processingState => ProcessingState.ready;
+
+  @override
+  Future<void> play() async {
+    isPlaying = true;
+    playingChanges.add(true);
+  }
+
+  @override
+  Future<void> stop() async {
+    isPlaying = false;
+    playingChanges.add(false);
+  }
+}
+
+class _PlayableHandler extends PlayerAudioHandler {
+  _PlayableHandler(super.player);
+  int playCalls = 0;
+
+  @override
+  void setMediaItem({required String id, required String title}) {}
+
+  @override
+  Future<void> play() async {
+    playCalls++;
+    await super.play();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -190,8 +262,10 @@ Future<void> _pumpScreen(
   String mediaId = '42',
   String? mediaUrl,
   _FakePlayerAudioHandler? fakeHandler,
+  PlayerAudioHandler? handlerOverride,
+  _FakeProgressQueue? progressQueue,
 }) async {
-  final handler = fakeHandler ?? _FakePlayerAudioHandler();
+  final handler = handlerOverride ?? fakeHandler ?? _FakePlayerAudioHandler();
 
   final router = GoRouter(
     initialLocation: '/audio/$mediaId',
@@ -216,7 +290,8 @@ Future<void> _pumpScreen(
         audioHandlerProvider.overrideWithValue(handler),
         // Override progressQueueProvider so no real SQLite DB is opened and
         // no connectivity subscription is created during widget tests.
-        progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
+        progressQueueProvider
+            .overrideWithValue(progressQueue ?? _FakeProgressQueue()),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
@@ -230,6 +305,95 @@ Future<void> _pumpScreen(
 void main() {
   setUp(_setupAudioSessionMock);
   tearDown(_teardownAudioSessionMock);
+
+  testWidgets('screen disposal keeps progress for the loaded media ID',
+      (tester) async {
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    final queue = _FakeProgressQueue();
+    addTearDown(() async {
+      await handler.endProgress();
+      await player.playingChanges.close();
+    });
+    await _pumpScreen(tester, _FakeApiClient(),
+        mediaId: '42', handlerOverride: handler, progressQueue: queue);
+    await tester.pump();
+    await tester.pump();
+    expect(handler.playCalls, 1);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    player.elapsed = const Duration(seconds: 19);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    expect(queue.updates, contains((42, 19.0)));
+
+    await _pumpScreen(tester, _FakeApiClient(),
+        mediaId: '43', handlerOverride: handler, progressQueue: queue);
+    await tester.pump();
+    await tester.pump();
+    player.elapsed = const Duration(seconds: 7);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    expect(queue.updates.last, (43, 7.0));
+    await handler.endProgress();
+  });
+
+  testWidgets('logout stop during source load cannot restart playback',
+      (tester) async {
+    final player = _PlayableAudioPlayer()..pendingLoad = Completer<Duration?>();
+    final handler = _PlayableHandler(player);
+    final queue = _FakeProgressQueue();
+    addTearDown(() async {
+      await handler.endProgress();
+      await player.playingChanges.close();
+    });
+    await _pumpScreen(tester, _FakeApiClient(),
+        handlerOverride: handler, progressQueue: queue);
+    await tester.pump();
+    await tester.pump();
+    expect(player.sourceRequests, 1);
+
+    await tester.runAsync(handler.stop);
+    player.pendingLoad!.complete(const Duration(seconds: 100));
+    await tester.pump();
+    expect(handler.playCalls, 0);
+    expect(player.isPlaying, isFalse);
+    player.elapsed = const Duration(seconds: 15);
+    await tester.pump(const Duration(seconds: 5));
+    expect(queue.updates, isEmpty);
+  });
+
+  testWidgets('two Retry taps start one progress session', (tester) async {
+    final player = _PlayableAudioPlayer()..failNextLoad = true;
+    final handler = _PlayableHandler(player);
+    final queue = _FakeProgressQueue();
+    addTearDown(() async {
+      await handler.endProgress();
+      await player.playingChanges.close();
+    });
+    await _pumpScreen(tester, _FakeApiClient(),
+        handlerOverride: handler, progressQueue: queue);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('audio_player_retry')), findsOneWidget);
+
+    player.pendingLoad = Completer<Duration?>();
+    await tester.tap(find.byKey(const Key('audio_player_retry')));
+    await tester.tap(find.byKey(const Key('audio_player_retry')));
+    await tester.pump();
+    await tester.pump();
+    // The first retry may already be loading when the second tap arrives.
+    expect(player.sourceRequests, inInclusiveRange(2, 3));
+
+    player.pendingLoad!.complete(const Duration(seconds: 100));
+    await tester.pump();
+    expect(handler.playCalls, 1);
+    player.elapsed = const Duration(seconds: 12);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    expect(queue.updates, [(42, 12.0)]);
+    await handler.endProgress();
+  });
 
   // --------------------------------------------------------------------------
   // Loading state

@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+
+import 'audio_progress_session.dart';
 
 // ---------------------------------------------------------------------------
 // PlayerAudioHandler
@@ -14,9 +18,8 @@ import 'package:just_audio/just_audio.dart';
 ///   - Bluetooth headset media buttons (play, pause, next, previous) are
 ///     forwarded by [AudioService] and handled here.
 ///
-/// Single Responsibility: this class only translates between the
-/// [BaseAudioHandler] protocol and [AudioPlayer]'s API.  All progress
-/// reporting and navigation logic lives in [AudioPlayerScreen].
+/// The active progress session belongs to this handler so reporting continues
+/// when the player screen is disposed during background playback.
 ///
 /// The handler is registered once via [AudioService.init] in [main].
 /// Consumers retrieve the singleton through [audioHandlerProvider].
@@ -25,20 +28,38 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   ///
   /// The player is injected so that tests can supply a mock without any
   /// platform channels (Dependency Inversion Principle).
-  PlayerAudioHandler(this._player) {
+  PlayerAudioHandler(AudioPlayer player) : _player = player {
     // Propagate just_audio's playback state into the audio_service stream so
     // the notification, lock screen, and Wear OS clients see live updates.
     _player.playbackEventStream.listen(_onPlaybackEvent);
 
     // Propagate playing/paused transitions, which are not always carried in
     // playback events (just_audio emits them separately).
-    _player.playingStream.listen((_) => _broadcastState());
+    _player.playingStream.listen((playing) {
+      _broadcastState();
+      final progress = _progress;
+      if (!playing && progress != null) {
+        unawaited(progress.record(force: true));
+      }
+    });
 
     // Propagate processing-state changes (e.g. loading → ready → completed).
-    _player.processingStateStream.listen((_) => _broadcastState());
+    _player.processingStateStream.listen((state) {
+      _broadcastState();
+      final progress = _progress;
+      if (state == ProcessingState.completed && progress != null) {
+        unawaited(progress.record(force: true));
+      }
+    });
   }
 
   final AudioPlayer _player;
+  AudioProgressSession? _progress;
+  int _stopGeneration = 0;
+
+  /// Changes immediately when playback is stopped (including logout).
+  /// Pending screen setup must not restart playback from an older generation.
+  int get stopGeneration => _stopGeneration;
 
   // ---------------------------------------------------------------------------
   // Public accessors (used by AudioPlayerScreen to avoid a second Player)
@@ -47,10 +68,33 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// The underlying [AudioPlayer] so the screen can subscribe to position /
   /// duration streams and still use bearer-token authenticated sources.
   ///
-  /// Exposing the player directly is intentional: [AudioPlayerScreen] owns the
-  /// progress-sync timer and needs raw position/duration access.  No extra
-  /// abstraction layer is needed here (YAGNI).
   AudioPlayer get player => _player;
+
+  /// Starts tracking the loaded item. Call after the source and resume seek
+  /// complete. The callbacks capture account-scoped API/queue dependencies
+  /// without making the media handler depend on HTTP or local persistence.
+  void startProgress({
+    required Future<void> Function(double) savePosition,
+    required Future<void> Function() markFinished,
+  }) {
+    if (_progress != null) {
+      throw StateError('End the current audio progress session first');
+    }
+    _progress = AudioProgressSession(
+      position: () => _player.position,
+      duration: () => _player.duration,
+      playing: () => _player.playing,
+      savePosition: savePosition,
+      markFinished: markFinished,
+    );
+  }
+
+  /// Flushes and detaches the current item before its source is replaced.
+  Future<void> endProgress() async {
+    final session = _progress;
+    _progress = null;
+    await session?.close();
+  }
 
   // ---------------------------------------------------------------------------
   // BaseAudioHandler — playback controls
@@ -60,10 +104,15 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> play() => _player.play();
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() async {
+    await _player.pause();
+    await _progress?.record(force: true);
+  }
 
   @override
   Future<void> stop() async {
+    _stopGeneration++;
+    await endProgress();
     await _player.stop();
     await super.stop();
   }
@@ -81,7 +130,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> skipToNext() async {
     final current = _player.position;
     final total = _player.duration ?? Duration.zero;
-    final next = _clamp(current + const Duration(seconds: 15), Duration.zero, total);
+    final next =
+        _clamp(current + const Duration(seconds: 15), Duration.zero, total);
     await _player.seek(next);
   }
 
@@ -90,7 +140,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> skipToPrevious() async {
     final current = _player.position;
     final total = _player.duration ?? Duration.zero;
-    final prev = _clamp(current - const Duration(seconds: 15), Duration.zero, total);
+    final prev =
+        _clamp(current - const Duration(seconds: 15), Duration.zero, total);
     await _player.seek(prev);
   }
 
