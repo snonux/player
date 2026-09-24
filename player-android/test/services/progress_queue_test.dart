@@ -81,6 +81,49 @@ class _DelayedProgressClient extends _FakeApiClient {
   }
 }
 
+class _RejectingProgressClient extends _FakeApiClient {
+  final rejected = <int, int>{};
+  final attempts = <List<int>>[];
+  DioException? overrideError;
+  int transientFailures = 0;
+
+  @override
+  Future<void> batchUpdateProgress(List<Map<String, dynamic>> updates) async {
+    final ids = updates.map((update) => update['media_id'] as int).toList();
+    attempts.add(ids);
+    final error = overrideError;
+    if (error != null) throw error;
+    for (var index = 0; index < ids.length; index++) {
+      final status = rejected[ids[index]];
+      if (status == null) continue;
+      final request = RequestOptions(path: '/api/v1/progress/batch');
+      throw DioException(
+        requestOptions: request,
+        response: Response(
+          requestOptions: request,
+          statusCode: status,
+          data: {'error': 'updates[$index]: rejected media'},
+        ),
+        type: DioExceptionType.badResponse,
+      );
+    }
+    if (transientFailures > 0) {
+      transientFailures--;
+      final request = RequestOptions(path: '/api/v1/progress/batch');
+      throw DioException(
+        requestOptions: request,
+        response: Response(
+          requestOptions: request,
+          statusCode: 500,
+          data: {'error': 'temporary failure'},
+        ),
+        type: DioExceptionType.badResponse,
+      );
+    }
+    await super.batchUpdateProgress(updates);
+  }
+}
+
 class _DelayedInsertDatabase implements Database {
   _DelayedInsertDatabase(this.delegate);
 
@@ -559,6 +602,101 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('flush retains rows on server error', () {
+    test('indexed 404 and 403 rows do not block valid or future updates',
+        () async {
+      final db = await _openInMemoryDb();
+      final client = _RejectingProgressClient()
+        ..rejected.addAll({2: 404, 4: 403});
+      final conn = _FakeConnectivity();
+      final queue =
+          ProgressQueue(apiClient: client, db: db, connectivity: conn);
+      await queue.init(scope: _scopeA);
+      for (final id in [1, 2, 3, 4, 5]) {
+        await queue.enqueue(id, id.toDouble());
+      }
+
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.attempts, [
+        [1, 2, 3, 4, 5],
+        [1, 3, 4, 5],
+        [1, 3, 5],
+      ]);
+      expect(client.calls.single.map((u) => u['media_id']).toList(), [1, 3, 5]);
+      expect(await db.query('progress_queue'), isEmpty);
+
+      await queue.enqueue(6, 6.0);
+      expect(client.calls.last.single['media_id'], 6);
+      await queue.dispose();
+      conn.close();
+    });
+
+    test('generic 403 and server 500 retain all rows for retry', () async {
+      for (final status in [403, 500]) {
+        final db = await _openInMemoryDb();
+        final client = _RejectingProgressClient();
+        final conn = _FakeConnectivity();
+        final queue =
+            ProgressQueue(apiClient: client, db: db, connectivity: conn);
+        await queue.init(scope: _scopeA);
+        await queue.enqueue(1, 1.0);
+        await queue.enqueue(2, 2.0);
+        final request = RequestOptions(path: '/api/v1/progress/batch');
+        client.overrideError = DioException(
+          requestOptions: request,
+          response: Response(
+            requestOptions: request,
+            statusCode: status,
+            data: {'error': 'generic failure'},
+          ),
+          type: DioExceptionType.badResponse,
+        );
+        conn.emitStatus([ConnectivityResult.wifi]);
+        await _pump();
+        expect(await db.query('progress_queue'), hasLength(2));
+        expect(client.calls, isEmpty);
+
+        client.overrideError = null;
+        conn.emitStatus([ConnectivityResult.wifi]);
+        await _pump();
+        expect(client.calls.single, hasLength(2));
+        expect(await db.query('progress_queue'), isEmpty);
+        await queue.dispose();
+        conn.close();
+      }
+    });
+
+    test('transient failure after isolating a bad row retains valid rows',
+        () async {
+      final db = await _openInMemoryDb();
+      final client = _RejectingProgressClient()
+        ..rejected[2] = 404
+        ..transientFailures = 1;
+      final conn = _FakeConnectivity();
+      final queue =
+          ProgressQueue(apiClient: client, db: db, connectivity: conn);
+      await queue.init(scope: _scopeA);
+      await queue.enqueue(1, 1.0);
+      await queue.enqueue(2, 2.0);
+      await queue.enqueue(3, 3.0);
+
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(
+          (await db.query('progress_queue'))
+              .map((row) => row['media_id'])
+              .toList(),
+          [1, 3]);
+      expect(client.calls, isEmpty);
+
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.calls.single.map((u) => u['media_id']).toList(), [1, 3]);
+      expect(await db.query('progress_queue'), isEmpty);
+      await queue.dispose();
+      conn.close();
+    });
+
     test('rows survive a failed flush and are sent on the next attempt',
         () async {
       final (:queue, :client, :conn) = await _makeQueue();

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:dio/dio.dart';
 import 'package:sqflite/sqflite.dart';
 
 // SQLite table and column names — kept as constants to avoid typos and make
@@ -146,10 +147,10 @@ class ProgressUpdate {
 ///     Inversion); [ProgressQueue] only depends on the one method it uses.
 ///   - [databaseFactory] is injected so tests can supply an in-memory opener
 ///     without touching the filesystem (Dependency Inversion).
-  ///   - [Database] may also be injected directly via [db] for tests that have
-  ///     already opened a connection.
-  ///   - Rows from another scope remain on disk but are never submitted under
-  ///     the active credentials. Logout explicitly discards all pending rows.
+///   - [Database] may also be injected directly via [db] for tests that have
+///     already opened a connection.
+///   - Rows from another scope remain on disk but are never submitted under
+///     the active credentials. Logout explicitly discards all pending rows.
 ///   - Concurrent flush is prevented with [_isFlushing]; a second connectivity
 ///     event while a flush is in progress is silently ignored — the flush will
 ///     drain all rows anyway.
@@ -340,10 +341,9 @@ class ProgressQueue implements ProgressQueueBase {
 
   /// Sends all queued rows to the server via [batchUpdateProgress].
   ///
-  /// Rows that are successfully sent are deleted from the DB.  Rows that fail
-  /// (e.g., the server returns an error for a specific item) are retained for
-  /// the next flush.  The entire batch succeeds or fails atomically from the
-  /// client perspective — if the call throws, no rows are deleted.
+  /// Successfully sent rows are deleted. An indexed 403/404 drops only the
+  /// rejected row and retries the remaining atomic batch. Network, server,
+  /// and unclassified errors leave their rows queued for a later flush.
   ///
   /// [_isFlushing] prevents re-entrant flushes.  The flag is cleared in a
   /// `finally` block so a thrown exception never permanently blocks flushing.
@@ -368,7 +368,8 @@ class ProgressQueue implements ProgressQueueBase {
     return _flushFuture!;
   }
 
-  /// Loads pending rows, sends them, and removes the ones that succeeded.
+  /// Loads pending rows, sends them, and removes the ones that succeeded or
+  /// were permanently rejected for a specific media item.
   ///
   /// Extracted from [_flush] to keep each method under ~30 lines and make the
   /// "load → send → delete" pipeline independently readable.
@@ -387,22 +388,51 @@ class ProgressQueue implements ProgressQueueBase {
     if (rows.isEmpty) return;
     if (_suspended || epoch != _accountEpoch || scope != _scope) return;
 
-    final updates = rows.map(_rowToUpdate).toList();
-
-    // Build the batch payload for the server.
-    final payload = updates.map((u) => u.toBatchMap()).toList();
-
-    // Send — if this throws (network error, server 5xx) we skip deletion and
-    // let the next connectivity event retry.
-    await _apiClient.batchUpdateProgress(payload);
-    if (_suspended || epoch != _accountEpoch || scope != _scope) return;
-
-    // Delete the rows that were just sent successfully.
-    final ids = updates.map((u) => u.rowId!).toList();
-    await _runDbMutation(() async {
+    final pending = rows.map(_rowToUpdate).toList();
+    while (pending.isNotEmpty) {
       if (_suspended || epoch != _accountEpoch || scope != _scope) return;
-      await _deleteRows(db, ids);
-    });
+      try {
+        await _apiClient.batchUpdateProgress(
+            pending.map((update) => update.toBatchMap()).toList());
+      } catch (error) {
+        if (_suspended || epoch != _accountEpoch || scope != _scope) return;
+        final index = _permanentlyRejectedIndex(error, pending.length);
+        if (index == null) return; // Network/5xx/unknown errors remain queued.
+
+        // The server verifies access for every item before applying an atomic
+        // batch. Its indexed 403/404 identifies one row that cannot succeed.
+        final rejected = pending.removeAt(index);
+        await _runDbMutation(() async {
+          if (_suspended || epoch != _accountEpoch || scope != _scope) return;
+          await _deleteRows(db, [rejected.rowId!]);
+        });
+        continue;
+      }
+      if (_suspended || epoch != _accountEpoch || scope != _scope) return;
+      await _runDbMutation(() async {
+        if (_suspended || epoch != _accountEpoch || scope != _scope) return;
+        await _deleteRows(db, pending.map((update) => update.rowId!).toList());
+      });
+      return;
+    }
+  }
+
+  /// Accept only item-indexed access failures from the progress batch API.
+  /// A generic 403/404 (proxy, route or account issue) is not evidence that a
+  /// queued media row is permanently invalid and must remain retryable.
+  int? _permanentlyRejectedIndex(Object error, int count) {
+    if (error is! DioException) return null;
+    final response = error.response;
+    if (response?.statusCode != 403 && response?.statusCode != 404) {
+      return null;
+    }
+    final data = response?.data;
+    if (data is! Map || data['error'] is! String) return null;
+    final match =
+        RegExp(r'^updates\[(\d+)\]:').firstMatch(data['error'] as String);
+    if (match == null) return null;
+    final index = int.tryParse(match.group(1)!);
+    return index != null && index >= 0 && index < count ? index : null;
   }
 
   // ---------------------------------------------------------------------------
