@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:dio/dio.dart';
+import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
@@ -22,6 +24,15 @@ class _MemoryTokenStorage implements TokenStorage {
   Future<void> deleteToken() async => token = null;
 }
 
+class _FakeApiClient extends PlayerApiClient {
+  _FakeApiClient() : super(dio: Dio());
+
+  @override
+  Future<Map<String, dynamic>> createAPIToken(
+          {required String name, int? expiresInDays}) async =>
+      {'token': 'pt-test-token'};
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -34,6 +45,7 @@ void main() {
     test('login retains ${user.username} identity for this session', () async {
       final container = ProviderContainer(overrides: [
         tokenStorageProvider.overrideWithValue(_MemoryTokenStorage()),
+        apiClientProvider.overrideWithValue(_FakeApiClient()),
       ]);
       addTearDown(container.dispose);
       await container.read(authStateProvider.future);

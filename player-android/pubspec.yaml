@@ -23,6 +23,7 @@ dependencies:
   # cached_network_image: downloads and caches remote images (e.g. set covers)
   # so repeated visits do not re-fetch from the server.
   cached_network_image: ^3.4.1
+  crypto: ^3.0.7
   # video_player: low-level Flutter plugin for video playback via platform codecs.
   video_player: ^2.9.2
   # chewie: opinionated UI controls (play/pause, seek bar, fullscreen) built on

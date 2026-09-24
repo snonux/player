@@ -60,6 +60,15 @@ class _FakeApiClient extends PlayerApiClient {
   /// When non-null, [login] throws this exception instead of returning.
   Object? loginError;
 
+  Object? tokenError;
+
+  @override
+  Future<Map<String, dynamic>> createAPIToken(
+      {required String name, int? expiresInDays}) async {
+    if (tokenError != null) throw tokenError!;
+    return {'token': 'pt-test-token'};
+  }
+
   // Captures the last credentials passed to login for assertion in tests.
   String? capturedUsername;
   String? capturedPassword;
@@ -83,6 +92,11 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 
   // Completer that the test resolves at a chosen point in time.
   final _completer = Completer<User>();
+
+  @override
+  Future<Map<String, dynamic>> createAPIToken(
+          {required String name, int? expiresInDays}) async =>
+      {'token': 'pt-test-token'};
 
   /// Resolves the pending login call with [user].
   void complete(User user) => _completer.complete(user);
@@ -191,7 +205,7 @@ void main() {
       expect(fakeClient.capturedPassword, equals('mysecret'));
     });
 
-    testWidgets('retains returned identity without writing a bearer token',
+    testWidgets('stores a bearer token with the returned identity',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..loginResult = const User(id: 2, username: 'bob', isAdmin: false);
@@ -207,7 +221,7 @@ void main() {
       await tester.pump();
       await tester.pumpAndSettle();
 
-      expect(fakeStorage._token, isNull);
+      expect(fakeStorage._token, 'pt-test-token');
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool('auth_session_present'), isTrue);
     });
@@ -223,6 +237,24 @@ void main() {
       expect(find.byKey(const Key('login_submit')), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
+  });
+
+  testWidgets('token issuance failure leaves the user signed out',
+      (tester) async {
+    final fakeClient = _FakeApiClient()
+      ..loginResult = const User(id: 1, username: 'alice', isAdmin: false)
+      ..tokenError = StateError('token issuance failed');
+    final storage = await _pumpLoginScreen(tester, fakeClient);
+    await tester.enterText(find.byKey(const Key('login_username')), 'alice');
+    await tester.enterText(find.byKey(const Key('login_password')), 'secret');
+    await tester.tap(find.byKey(const Key('login_submit')));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('auth_session_present'), isNull);
+    expect(storage._token, isNull);
+    expect(find.text('An unexpected error occurred. Please try again.'),
+        findsOneWidget);
   });
 
   // --------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import '../api/dio_client.dart';
 import '../api/dio_player_api_client.dart';
 import '../api/player_api_client.dart';
 import '../navigation_key.dart';
+import 'auth_state_provider.dart';
 
 /// Base URL for the player-server API, resolved at compile time via
 /// the PLAYER_BASE_URL environment variable (or the default below).
@@ -22,6 +23,8 @@ const kPlayerBaseUrl = String.fromEnvironment(
   defaultValue: 'http://10.0.2.2:8080',
 );
 
+final playerBaseUrlProvider = Provider<Uri>((ref) => Uri.parse(kPlayerBaseUrl));
+
 /// Provides the production [TokenStorage] backed by the OS keychain.
 ///
 /// Riverpod keeps a single instance for the lifetime of [ProviderScope], so
@@ -30,6 +33,9 @@ const kPlayerBaseUrl = String.fromEnvironment(
 final tokenStorageProvider = Provider<TokenStorage>((ref) {
   return SecureTokenStorage();
 });
+
+final credentialMutationQueueProvider =
+    Provider<CredentialMutationQueue>((ref) => CredentialMutationQueue());
 
 /// Provides a fully configured [PlayerApiClient] wired with bearer-token
 /// injection and global 401 → /login redirect.
@@ -44,11 +50,14 @@ final tokenStorageProvider = Provider<TokenStorage>((ref) {
 final _dioClientProvider = Provider<DioClient>((ref) {
   final storage = ref.watch(tokenStorageProvider);
   return DioClient(
-    baseUrl: Uri.parse(kPlayerBaseUrl),
+    baseUrl: ref.watch(playerBaseUrlProvider),
     storage: storage,
+    mutationQueue: ref.watch(credentialMutationQueueProvider),
     // Share the navigator key with go_router so 401 redirects go through the
     // correct router instance rather than the raw Navigator.
     navigatorKey: navigatorKey,
+    onUnauthorized: () =>
+        ref.read(authStateProvider.notifier).clearAfterUnauthorized(),
     loginRoute: '/login',
   );
 });

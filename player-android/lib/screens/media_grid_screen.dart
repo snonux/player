@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
+import '../widgets/authenticated_network_image.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/search_filter_bar.dart';
@@ -346,7 +346,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
       actions: [
         IconButton(
           key: const Key('media_grid_favorites_filter'),
-          tooltip: _filter.favoritesOnly ? 'Show all items' : 'Show favourites only',
+          tooltip:
+              _filter.favoritesOnly ? 'Show all items' : 'Show favourites only',
           icon: Icon(
             _filter.favoritesOnly ? Icons.favorite : Icons.favorite_border,
             color: _filter.favoritesOnly
@@ -655,7 +656,7 @@ class _ThumbnailImage extends StatelessWidget {
     // immediately — consistent with the set-cover image pattern.
     if (thumbnailUrl.isEmpty) return _placeholder(context);
 
-    return CachedNetworkImage(
+    return AuthenticatedNetworkImage(
       imageUrl: thumbnailUrl,
       fit: BoxFit.cover,
       placeholder: (_, __) => _loading(),
@@ -663,8 +664,7 @@ class _ThumbnailImage extends StatelessWidget {
     );
   }
 
-  static Widget _loading() =>
-      const Center(child: CircularProgressIndicator());
+  static Widget _loading() => const Center(child: CircularProgressIndicator());
 
   static Widget _placeholder(BuildContext context) => ColoredBox(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,

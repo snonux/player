@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
+import '../widgets/authenticated_network_image.dart';
 import '../utils/error_mappers.dart';
 
 /// HTTP header map type used to authenticate cover-image requests against the
@@ -46,12 +47,12 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
   // True while the initial or refresh load is in flight.
   bool _isLoading = false;
 
-  // Headers used to authenticate cover-image requests.  Computed once from the
-  // session cookie jar after the first frame; an empty map is a safe default
+  // Headers used to authenticate cover-image requests. Computed once from the
+  // secure bearer store and cookie jar after the first frame; an empty map is a safe default
   // because CachedNetworkImage simply omits the header and the server will
   // respond 401 — falling back to the placeholder via [_CoverImage]'s
   // errorWidget.  Stored on the state (not rebuilt per frame) so the cookie
-  // is read from the jar exactly once per screen lifecycle.
+  // is read once per screen lifecycle.
   _CoverHeaders _coverHeaders = const {};
 
   @override
@@ -59,9 +60,9 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
     super.initState();
     // Defer the first load until after the first frame so [ref] is fully bound
     // and any provider overrides in the test environment are applied.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _load();
-      _loadCoverHeaders();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadCoverHeaders();
+      if (mounted) await _load();
     });
   }
 
@@ -97,24 +98,26 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
     }
   }
 
-  /// Reads the current session cookie from the shared [cookieJarProvider] and
-  /// stores it as a `Cookie:` HTTP header so [_CoverImage] can authenticate
-  /// against the session-cookie-gated `/api/v1/sets/{id}/cover` endpoint.
+  /// Reads the bearer token and current session cookie for cover requests.
   ///
   /// CachedNetworkImage bypasses Dio (it uses its own http.Client), so the
-  /// session cookie that Dio normally attaches automatically must be replayed
-  /// manually via [CachedNetworkImage.httpHeaders] — mirroring the pattern in
+  /// credentials that Dio normally attaches must be replayed manually via
+  /// [CachedNetworkImage.httpHeaders] — mirroring the pattern in
   /// [audio_player_screen.dart] and [video_player_screen.dart].
   Future<void> _loadCoverHeaders() async {
     final client = ref.read(apiClientProvider);
+    final storage = ref.read(tokenStorageProvider);
     final jar = ref.read(cookieJarProvider);
     final uri = Uri.parse(client.baseUrl);
+    final token = await storage.readToken();
     final cookies = await jar.loadForRequest(uri);
-    if (!mounted || cookies.isEmpty) return;
     final header = cookies.map((c) => '${c.name}=${c.value}').join('; ');
-    if (header.isEmpty) return;
+    if (!mounted) return;
     setState(() {
-      _coverHeaders = {'Cookie': header};
+      _coverHeaders = {
+        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+        if (header.isNotEmpty) 'Cookie': header,
+      };
     });
   }
 
@@ -301,7 +304,7 @@ class _SetCard extends StatelessWidget {
 ///
 /// The podcast badge (microphone icon) is overlaid in the top-right corner
 /// for sets where [MediaSet.isPodcast] is true.
-class _CoverImage extends StatelessWidget {
+class _CoverImage extends ConsumerWidget {
   const _CoverImage({
     required this.mediaSet,
     required this.coverUrl,
@@ -314,14 +317,19 @@ class _CoverImage extends StatelessWidget {
   /// (`<base>/api/v1/sets/{id}/cover`).
   final String coverUrl;
 
-  /// HTTP headers attached to the cover request (session cookie).  Empty when
-  /// the cookie has not yet been loaded — the server will return 401 and the
+  /// HTTP headers attached to the cover request. Empty when
+  /// no credential is available — the server will return 401 and the
   /// error widget will render the folder placeholder, which is the same
   /// outcome as a missing cover.
   final _CoverHeaders coverHeaders;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final allowedOrigin = ref.read(playerBaseUrlProvider).origin;
+    final coverUri = Uri.tryParse(coverUrl);
+    final isAllowed = coverUri != null &&
+        (coverUri.scheme == 'http' || coverUri.scheme == 'https') &&
+        coverUri.origin == allowedOrigin;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -330,11 +338,12 @@ class _CoverImage extends StatelessWidget {
         // folder placeholder.  An empty URL short-circuits to the placeholder
         // immediately (matches [_FolderCoverImage] in folder_browser_screen.dart
         // and keeps widget tests hermetic when fakes return '').
-        if (coverUrl.isEmpty)
+        if (!isAllowed)
           _placeholderWidget(context)
         else
           CachedNetworkImage(
             imageUrl: coverUrl,
+            cacheKey: authenticatedImageCacheKey(coverUrl, coverHeaders),
             httpHeaders: coverHeaders,
             fit: BoxFit.cover,
             placeholder: (_, __) => _loadingWidget(),

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -9,13 +11,13 @@ import 'api_client_provider.dart';
 /// Using a sealed-like enum keeps the router redirect logic exhaustive and
 /// avoids stringly-typed checks throughout the codebase.
 enum AuthStatus {
-  /// Initial state while the app checks for a saved session marker.
+  /// Initial state while the app checks the saved credential.
   loading,
 
-  /// A prior session was marked present; the user is logged in.
+  /// A valid local credential and identity were restored or just created.
   authenticated,
 
-  /// No session is marked present (e.g. after logout).
+  /// No usable credential is present (e.g. after logout).
   unauthenticated,
 }
 
@@ -65,24 +67,43 @@ class AuthState {
 /// Notifier that owns the mutable [AuthState] and exposes mutation methods
 /// for login / logout.
 ///
-/// [AsyncNotifier] is used because the initial state check is async (it reads
-/// the session marker). Downstream consumers can call [login] and
+/// [AsyncNotifier] is used because the initial state check is async. Downstream
+/// consumers can call [login] and
 /// [logout] to drive route redirects via the router's [refreshListenable].
-// Legacy session marker. Cookie persistence is not yet implemented, so a
-// marker cannot authenticate a fresh process and is cleared on cold start.
 const _kAuthSessionPresentKey = 'auth_session_present';
 const _kAuthUserKey = 'auth_user';
+const _kAuthOriginKey = 'auth_origin';
+const _kAuthExpiresKey = 'auth_expires_at';
 
 class AuthStateNotifier extends AsyncNotifier<AuthState> {
   @override
   Future<AuthState> build() async {
-    // Dio's CookieJar is currently in memory. A marker from an earlier process
-    // cannot prove that a session credential survived. Clear legacy markers
-    // so the user can sign in again; real restoration belongs to task bh2.
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_kAuthSessionPresentKey);
-    await prefs.remove(_kAuthUserKey);
-    await ref.read(tokenStorageProvider).deleteToken();
+    final storage = ref.read(tokenStorageProvider);
+    final token = await storage.readToken();
+    final origin = ref.read(playerBaseUrlProvider).origin;
+    final expiresAt = prefs.getInt(_kAuthExpiresKey);
+    final userJson = prefs.getString(_kAuthUserKey);
+    if (token != null &&
+        token.isNotEmpty &&
+        prefs.getBool(_kAuthSessionPresentKey) == true &&
+        prefs.getString(_kAuthOriginKey) == origin &&
+        expiresAt != null &&
+        DateTime.now().millisecondsSinceEpoch < expiresAt &&
+        userJson != null) {
+      try {
+        final user =
+            User.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
+        if (user.id > 0 && user.username.isNotEmpty) {
+          return AuthState.authenticated(user: user);
+        }
+      } on FormatException {
+        // Corrupt identity is treated like a missing credential.
+      } on TypeError {
+        // Malformed JSON types must never grant authenticated UI access.
+      }
+    }
+    await _clearCredentials(prefs);
     return const AuthState.unauthenticated();
   }
 
@@ -90,17 +111,64 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
   Future<void> login(User user) async {
     await future;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kAuthSessionPresentKey, true);
-    state = AsyncData(AuthState.authenticated(user: user));
+    final queue = ref.read(credentialMutationQueueProvider);
+    await queue.run(() => _clearCredentials(prefs));
+    try {
+      // The login/bootstrap response sets a session cookie. Mint a dedicated
+      // mobile token while that cookie is available in the shared Dio client.
+      final result = await ref.read(apiClientProvider).createAPIToken(
+            name: 'android-client',
+            expiresInDays: 365,
+          );
+      final token = result['token'];
+      if (token is! String || token.isEmpty) {
+        throw const FormatException('Token creation returned no credential');
+      }
+      await queue.run(() async {
+        await ref.read(tokenStorageProvider).writeToken(token);
+        await prefs.setString(_kAuthUserKey, jsonEncode(user.toJson()));
+        await prefs.setString(
+            _kAuthOriginKey, ref.read(playerBaseUrlProvider).origin);
+        // The server starts the 365-day clock before sending its response.
+        // Expire locally one day early to avoid presenting an expired token.
+        await prefs.setInt(
+            _kAuthExpiresKey,
+            DateTime.now()
+                .add(const Duration(days: 364))
+                .millisecondsSinceEpoch);
+        await prefs.setBool(_kAuthSessionPresentKey, true);
+        state = AsyncData(AuthState.authenticated(user: user));
+      });
+    } catch (_) {
+      await queue.run(() async {
+        await _clearCredentials(prefs);
+        await ref.read(cookieJarProvider).deleteAll();
+        state = const AsyncData(AuthState.unauthenticated());
+      });
+      rethrow;
+    }
   }
 
-  /// Called on explicit logout. Clears the legacy session marker and identity.
+  /// Called on explicit logout or an invalid protected request.
   Future<void> logout() async {
     await future;
+    await ref.read(credentialMutationQueueProvider).run(clearAfterUnauthorized);
+  }
+
+  /// Called only while the shared credential queue is held by a 401 handler.
+  Future<void> clearAfterUnauthorized() async {
     final prefs = await SharedPreferences.getInstance();
+    await _clearCredentials(prefs);
+    await ref.read(cookieJarProvider).deleteAll();
+    state = const AsyncData(AuthState.unauthenticated());
+  }
+
+  Future<void> _clearCredentials(SharedPreferences prefs) async {
     await prefs.remove(_kAuthSessionPresentKey);
     await prefs.remove(_kAuthUserKey);
-    state = const AsyncData(AuthState.unauthenticated());
+    await prefs.remove(_kAuthOriginKey);
+    await prefs.remove(_kAuthExpiresKey);
+    await ref.read(tokenStorageProvider).deleteToken();
   }
 }
 

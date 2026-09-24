@@ -114,17 +114,12 @@ class _BootstrapScreenState extends ConsumerState<BootstrapScreen> {
       // account was created; AuthStateNotifier retains this identity for
       // settings and admin controls.
       //
-      // NOTE: The server uses cookie-based session auth.  For a full mobile
-      // bearer-token flow a follow-up task should call createAPIToken after
-      // bootstrap and persist that token instead.
       final user = await apiClient.bootstrap(
         username: username,
         password: password,
       );
 
-      // Clear legacy bearer values and update auth state → router redirects
-      // automatically to AppRoutes.home via the refreshListenable.
-      await ref.read(tokenStorageProvider).deleteToken();
+      // Mint and save the mobile credential before entering protected routes.
       await ref.read(authStateProvider.notifier).login(user);
     } on DioException catch (e) {
       // Only show the snack-bar if the widget is still mounted; async gaps can

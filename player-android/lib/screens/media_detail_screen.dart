@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +7,7 @@ import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/authenticated_network_image.dart';
 import '../widgets/tag_picker.dart';
 import 'create_share_dialog.dart';
 
@@ -459,7 +459,7 @@ class _ThumbnailBanner extends StatelessWidget {
       aspectRatio: type == 'video' ? 16 / 9 : 4 / 3,
       child: thumbnailUrl.isEmpty
           ? _placeholder(context)
-          : CachedNetworkImage(
+          : AuthenticatedNetworkImage(
               key: const Key('media_detail_thumbnail'),
               imageUrl: thumbnailUrl,
               fit: BoxFit.cover,
@@ -586,7 +586,9 @@ class _MetadataRow extends StatelessWidget {
     if (media.codec.isNotEmpty) parts.add(media.codec);
     if (media.resolution.isNotEmpty) parts.add(media.resolution);
     if (media.duration > 0) parts.add(_formatDuration(media.duration));
-    if (media.fileSizeBytes > 0) parts.add(_formatFileSize(media.fileSizeBytes));
+    if (media.fileSizeBytes > 0) {
+      parts.add(_formatFileSize(media.fileSizeBytes));
+    }
     return parts;
   }
 

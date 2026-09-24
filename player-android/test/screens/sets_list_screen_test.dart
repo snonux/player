@@ -34,10 +34,12 @@ import 'package:player_android/utils/error_mappers.dart';
 
 /// In-memory [TokenStorage] used to avoid the platform-specific OS keychain.
 class _FakeTokenStorage implements TokenStorage {
-  const _FakeTokenStorage();
+  const _FakeTokenStorage([this.token = 'test-token']);
+
+  final String? token;
 
   @override
-  Future<String?> readToken() async => 'test-token';
+  Future<String?> readToken() async => token;
 
   @override
   Future<void> writeToken(String token) async {}
@@ -138,14 +140,15 @@ const _kPodcasts = MediaSet(
 ///
 /// Returns the pumped [WidgetTester] for further interaction.
 Future<void> _pumpSetsListScreen(
-  WidgetTester tester,
-  PlayerApiClient fakeClient,
-) async {
+    WidgetTester tester, PlayerApiClient fakeClient,
+    {TokenStorage storage = const _FakeTokenStorage()}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         // Avoid OS keychain in tests.
-        tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
+        tokenStorageProvider.overrideWithValue(storage),
+        playerBaseUrlProvider
+            .overrideWithValue(Uri.parse('http://test.invalid')),
         // Use the controllable fake instead of a real HTTP client.
         apiClientProvider.overrideWithValue(fakeClient),
       ],
@@ -194,8 +197,7 @@ void main() {
   group('renders sets', () {
     testWidgets('shows a card for each set returned by listSets',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..setsResult = [_kMovies, _kPodcasts];
+      final fakeClient = _FakeApiClient()..setsResult = [_kMovies, _kPodcasts];
 
       await _pumpSetsListScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -209,7 +211,8 @@ void main() {
       expect(find.byKey(const Key('set_card_2')), findsOneWidget);
     });
 
-    testWidgets('renders the sets grid after a successful load', (tester) async {
+    testWidgets('renders the sets grid after a successful load',
+        (tester) async {
       final fakeClient = _FakeApiClient()..setsResult = [_kMovies];
 
       await _pumpSetsListScreen(tester, fakeClient);
@@ -226,8 +229,7 @@ void main() {
 
   group('podcast badge', () {
     testWidgets('shows podcast badge for podcast sets', (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..setsResult = [_kMovies, _kPodcasts];
+      final fakeClient = _FakeApiClient()..setsResult = [_kMovies, _kPodcasts];
 
       await _pumpSetsListScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -254,6 +256,78 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('cover image', () {
+    testWidgets('cover cache is isolated across bearer credentials',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..setsResult = [_kMovies]
+        ..coverUrlBuilder = (int setId, {String? folder}) =>
+            'http://test.invalid/api/v1/sets/$setId/cover';
+
+      Future<String?> cacheKeyFor(String token) async {
+        await _pumpSetsListScreen(tester, fakeClient,
+            storage: _FakeTokenStorage(token));
+        await tester.pump();
+        await tester.pump();
+        return tester
+            .widget<CachedNetworkImage>(find.byType(CachedNetworkImage))
+            .cacheKey;
+      }
+
+      final firstKey = await cacheKeyFor('pt-account-a');
+      await tester.pumpWidget(const SizedBox.shrink());
+      final secondKey = await cacheKeyFor('pt-account-b');
+
+      expect(firstKey, isNotNull);
+      expect(secondKey, isNot(equals(firstKey)));
+    });
+
+    testWidgets('does not send cover credentials to another origin',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..setsResult = [_kMovies]
+        ..coverUrlBuilder = (int setId, {String? folder}) =>
+            'https://other.example/api/v1/sets/$setId/cover';
+
+      await _pumpSetsListScreen(tester, fakeClient);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(CachedNetworkImage), findsNothing);
+    });
+
+    testWidgets('uses restored bearer for covers when cookie jar is empty',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..setsResult = [_kMovies]
+        ..coverUrlBuilder = (int setId, {String? folder}) =>
+            'http://test.invalid/api/v1/sets/$setId/cover';
+
+      await _pumpSetsListScreen(tester, fakeClient);
+      await tester.pump();
+      await tester.pump();
+
+      final cover =
+          tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
+      expect(cover.httpHeaders?['Authorization'], 'Bearer test-token');
+      expect(cover.httpHeaders?.containsKey('Cookie'), isFalse);
+    });
+
+    testWidgets('omits bearer header when no token is stored', (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..setsResult = [_kMovies]
+        ..coverUrlBuilder = (int setId, {String? folder}) =>
+            'http://test.invalid/api/v1/sets/$setId/cover';
+
+      await _pumpSetsListScreen(tester, fakeClient,
+          storage: const _FakeTokenStorage(null));
+      await tester.pump();
+      await tester.pump();
+
+      final cover =
+          tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
+      expect(cover.httpHeaders?.containsKey('Authorization'), isFalse);
+    });
+
     testWidgets(
         'requests <base>/api/v1/sets/{id}/cover for every set with a builder',
         (tester) async {
@@ -286,8 +360,7 @@ void main() {
       );
     });
 
-    testWidgets(
-        'renders folder-icon placeholder when no cover URL is provided',
+    testWidgets('renders folder-icon placeholder when no cover URL is provided',
         (tester) async {
       // Default fake returns '' for setFolderCoverUrl — same outcome as a 404.
       final fakeClient = _FakeApiClient()..setsResult = [_kMovies];
@@ -302,8 +375,7 @@ void main() {
       expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
     });
 
-    testWidgets(
-        'podcast badge is overlaid on the cover image for podcast sets',
+    testWidgets('podcast badge is overlaid on the cover image for podcast sets',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..setsResult = [_kPodcasts]

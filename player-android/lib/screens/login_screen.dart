@@ -90,9 +90,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         password: password,
       );
 
-      // Clear bearer values left by older versions before using the cookie.
       if (!mounted) return;
-      await ref.read(tokenStorageProvider).deleteToken();
       await ref.read(authStateProvider.notifier).login(user);
     } on DioException catch (e) {
       // Guard against stale BuildContext if the widget was disposed during

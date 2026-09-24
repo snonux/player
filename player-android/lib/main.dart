@@ -58,9 +58,7 @@ void main() async {
     overrides: [audioHandlerProvider.overrideWithValue(handler)],
   );
 
-  // Finish legacy credential cleanup before any protected screen or request
-  // can run. The progress queue may send requests as soon as it initialises.
-  // The in-memory cookie jar cannot authenticate a new process.
+  // Restore the saved credential before protected screens or queued requests.
   await container.read(authStateProvider.future);
 
   // Initialise the offline progress queue (opens SQLite DB, subscribes to

@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
+import '../widgets/authenticated_network_image.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 
@@ -66,10 +66,8 @@ _BrowseResult _parseBrowseResult(Map<String, dynamic> raw) {
       .where((f) => f.name.isNotEmpty)
       .toList();
 
-  final media = rawMedia
-      .whereType<Map<String, dynamic>>()
-      .map(Media.fromJson)
-      .toList();
+  final media =
+      rawMedia.whereType<Map<String, dynamic>>().map(Media.fromJson).toList();
 
   return _BrowseResult(
     currentPath: currentPath,
@@ -328,9 +326,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                   );
                 }
                 final folder = result.folders[index - 1];
-                final folderPath = path.isEmpty
-                    ? folder.name
-                    : '$path/${folder.name}';
+                final folderPath =
+                    path.isEmpty ? folder.name : '$path/${folder.name}';
                 return _FolderTile(
                   key: Key('folder_tile_${folder.name}'),
                   folder: folder,
@@ -534,7 +531,7 @@ class _FolderCoverImage extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CachedNetworkImage(
+      child: AuthenticatedNetworkImage(
         imageUrl: coverUrl,
         fit: BoxFit.cover,
         placeholder: (_, __) =>
@@ -653,7 +650,7 @@ class _MediaThumbnail extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CachedNetworkImage(
+      child: AuthenticatedNetworkImage(
         imageUrl: thumbnailUrl,
         fit: BoxFit.cover,
         placeholder: (_, __) =>

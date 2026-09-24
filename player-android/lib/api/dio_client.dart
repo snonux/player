@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
@@ -36,20 +38,77 @@ class SecureTokenStorage implements TokenStorage {
   Future<void> deleteToken() => _storage.delete(key: _kTokenKey);
 }
 
+/// Serializes credential writes and 401 invalidation in one provider scope.
+class CredentialMutationQueue {
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> run<T>(Future<T> Function() action) async {
+    final previous = _tail;
+    final release = Completer<void>();
+    _tail = release.future;
+    await previous;
+    try {
+      return await action();
+    } finally {
+      release.complete();
+    }
+  }
+}
+
+/// CookieJar's domain matching ignores ports, so bind it to the API origin.
+class _OriginBoundCookieJar implements CookieJar {
+  _OriginBoundCookieJar(this._origin) : _delegate = CookieJar();
+
+  final String _origin;
+  final CookieJar _delegate;
+
+  bool _matchesOrigin(Uri uri) =>
+      (uri.scheme == 'http' || uri.scheme == 'https') && uri.origin == _origin;
+
+  @override
+  bool get ignoreExpires => _delegate.ignoreExpires;
+
+  @override
+  Future<List<Cookie>> loadForRequest(Uri uri) =>
+      _matchesOrigin(uri) ? _delegate.loadForRequest(uri) : Future.value([]);
+
+  @override
+  Future<void> saveFromResponse(Uri uri, List<Cookie> cookies) =>
+      _matchesOrigin(uri)
+          ? _delegate.saveFromResponse(uri, cookies)
+          : Future.value();
+
+  @override
+  Future<void> delete(Uri uri, [bool withDomainSharedCookie = false]) =>
+      _matchesOrigin(uri)
+          ? _delegate.delete(uri, withDomainSharedCookie)
+          : Future.value();
+
+  @override
+  Future<void> deleteAll() => _delegate.deleteAll();
+}
+
 /// Interceptor that attaches a Bearer token to every outgoing request.
 ///
 /// The token is read lazily from [TokenStorage] so that changes (login /
 /// logout) are picked up without restarting the Dio instance.
 class _AuthInterceptor extends Interceptor {
-  _AuthInterceptor(this._storage);
+  _AuthInterceptor(this._storage, this._origin);
 
   final TokenStorage _storage;
+  final String _origin;
 
   @override
   Future<void> onRequest(
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
+    // A caller may pass an absolute URL to Dio; never send the mobile token
+    // to a different server even when it uses this shared client.
+    if (options.uri.origin != _origin) {
+      handler.next(options);
+      return;
+    }
     final token = await _storage.readToken();
     if (token != null && token.isNotEmpty) {
       // Only attach the bearer token when no Authorization header has been set
@@ -73,14 +132,23 @@ class _UnauthorizedInterceptor extends Interceptor {
   _UnauthorizedInterceptor({
     required TokenStorage storage,
     required GlobalKey<NavigatorState> navigatorKey,
+    required String origin,
+    required CredentialMutationQueue mutationQueue,
+    Future<void> Function()? onUnauthorized,
     String loginRoute = '/login',
   })  : _storage = storage,
         _navigatorKey = navigatorKey,
+        _origin = origin,
+        _mutationQueue = mutationQueue,
+        _onUnauthorized = onUnauthorized,
         _loginRoute = loginRoute;
 
   // Private fields consistent with _AuthInterceptor naming conventions.
   final TokenStorage _storage;
   final GlobalKey<NavigatorState> _navigatorKey;
+  final String _origin;
+  final CredentialMutationQueue _mutationQueue;
+  final Future<void> Function()? _onUnauthorized;
   final String _loginRoute;
 
   @override
@@ -88,9 +156,34 @@ class _UnauthorizedInterceptor extends Interceptor {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
-    if (err.response?.statusCode == 401) {
-      // Purge the stale token so subsequent requests start unauthenticated.
-      await _storage.deleteToken();
+    if (err.response?.statusCode == 401 &&
+        err.requestOptions.uri.origin == _origin) {
+      if (err.requestOptions.path.endsWith('/auth/login') ||
+          err.requestOptions.path.endsWith('/auth/bootstrap')) {
+        handler.next(err);
+        return;
+      }
+      // A response from an older request must not erase credentials minted by
+      // a newer login while the request was in flight.
+      final authorization = err.requestOptions.headers['Authorization'];
+      final sentToken =
+          authorization is String && authorization.startsWith('Bearer ')
+              ? authorization.substring('Bearer '.length)
+              : null;
+      if (sentToken == null) {
+        handler.next(err);
+        return;
+      }
+      final invalidated = await _mutationQueue.run(() async {
+        if (await _storage.readToken() != sentToken) return false;
+        await _storage.deleteToken();
+        await _onUnauthorized?.call();
+        return true;
+      });
+      if (!invalidated) {
+        handler.next(err);
+        return;
+      }
 
       // Redirect via go_router (the app's router) rather than the classic
       // Navigator.  pushNamedAndRemoveUntil would throw "Navigator.onGenerateRoute
@@ -117,14 +210,18 @@ class DioClient {
     required Uri baseUrl,
     required TokenStorage storage,
     required GlobalKey<NavigatorState> navigatorKey,
+    CredentialMutationQueue? mutationQueue,
+    Future<void> Function()? onUnauthorized,
     String loginRoute = '/login',
     BaseOptions? baseOptions,
   }) {
-    final jar = CookieJar();
+    final jar = _OriginBoundCookieJar(baseUrl.origin);
     final dio = _buildDio(
       baseUrl: baseUrl,
       storage: storage,
       navigatorKey: navigatorKey,
+      mutationQueue: mutationQueue ?? CredentialMutationQueue(),
+      onUnauthorized: onUnauthorized,
       loginRoute: loginRoute,
       baseOptions: baseOptions,
       cookieJar: jar,
@@ -152,6 +249,8 @@ class DioClient {
     required Uri baseUrl,
     required TokenStorage storage,
     required GlobalKey<NavigatorState> navigatorKey,
+    required CredentialMutationQueue mutationQueue,
+    Future<void> Function()? onUnauthorized,
     required String loginRoute,
     BaseOptions? baseOptions,
     required CookieJar cookieJar,
@@ -168,10 +267,13 @@ class DioClient {
         // Cookie manager runs first so the session cookie is replayed before
         // _AuthInterceptor decides whether to add a Bearer fallback.
         CookieManager(cookieJar),
-        _AuthInterceptor(storage),
+        _AuthInterceptor(storage, baseUrl.origin),
         _UnauthorizedInterceptor(
           storage: storage,
           navigatorKey: navigatorKey,
+          origin: baseUrl.origin,
+          mutationQueue: mutationQueue,
+          onUnauthorized: onUnauthorized,
           loginRoute: loginRoute,
         ),
       ]);

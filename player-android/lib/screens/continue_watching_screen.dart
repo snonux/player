@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +6,7 @@ import '../api/player_api_client.dart';
 import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
+import '../widgets/authenticated_network_image.dart';
 import '../utils/error_mappers.dart';
 
 /// Continue Watching screen: lists all media items the authenticated user has
@@ -171,7 +171,8 @@ class _ContinueWatchingScreenState
     final mediaIdStr = mediaId.toString();
     // Delegate audio-vs-video path selection to the centralised helper so this
     // call-site does not duplicate the routing logic (OCP).
-    context.go(AppRoutes.playerPathForType(item.type, mediaIdStr), extra: extra);
+    context.go(AppRoutes.playerPathForType(item.type, mediaIdStr),
+        extra: extra);
   }
 }
 
@@ -280,7 +281,7 @@ class _Thumbnail extends StatelessWidget {
     return SizedBox(
       width: 100,
       height: 75,
-      child: CachedNetworkImage(
+      child: AuthenticatedNetworkImage(
         imageUrl: url,
         fit: BoxFit.cover,
         width: 100,

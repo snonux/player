@@ -58,6 +58,11 @@ class _FakeApiClient extends PlayerApiClient {
   Object? bootstrapError;
 
   @override
+  Future<Map<String, dynamic>> createAPIToken(
+          {required String name, int? expiresInDays}) async =>
+      {'token': 'pt-test-token'};
+
+  @override
   Future<User> bootstrap({
     required String username,
     required String password,
@@ -74,6 +79,11 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 
   // Completer that the test resolves at a chosen point in time.
   final _completer = Completer<User>();
+
+  @override
+  Future<Map<String, dynamic>> createAPIToken(
+          {required String name, int? expiresInDays}) async =>
+      {'token': 'pt-test-token'};
 
   /// Resolves the pending bootstrap call with [user].
   void complete(User user) => _completer.complete(user);
@@ -212,7 +222,7 @@ void main() {
           find.text('Password must be at least 8 characters.'), findsNothing);
 
       // Token should have been persisted via the fake storage.
-      expect(fakeStorage._token, isNull);
+      expect(fakeStorage._token, 'pt-test-token');
     });
   });
 
@@ -267,8 +277,7 @@ void main() {
       await tester.pump();
       await tester.pumpAndSettle();
 
-      // The username is stored as the session marker token.
-      expect(fakeStorage._token, isNull);
+      expect(fakeStorage._token, 'pt-test-token');
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool('auth_session_present'), isTrue);
     });
