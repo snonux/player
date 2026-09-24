@@ -65,6 +65,53 @@ func TestGCWorker_RunOnce(t *testing.T) {
 	}
 }
 
+func TestGCWorker_PreservesGeneratedCover(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	cover := filepath.Join(root, "set", ".cover.jpg")
+	nestedCover := filepath.Join(root, "set", "album", ".cover.jpg")
+	media := filepath.Join(root, "set", "photo.jpg")
+	if err := os.MkdirAll(filepath.Dir(nestedCover), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{cover, nestedCover, media} {
+		if err := os.WriteFile(path, []byte("image"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deletedAt := now.Add(-8 * 24 * time.Hour)
+	var deletedIDs []int64
+	store := &repository.MockStore{MediaRepo: repository.MockMediaRepo{
+		ListDeletedMediaFunc: func(context.Context) ([]model.Media, error) {
+			return []model.Media{
+				{ID: 1, RelPath: ".cover.jpg", AbsPath: cover, DeletedAt: &deletedAt},
+				{ID: 2, RelPath: "photo.jpg", AbsPath: media, DeletedAt: &deletedAt},
+				{ID: 3, RelPath: "album/.cover.jpg", AbsPath: nestedCover, DeletedAt: &deletedAt},
+			}, nil
+		},
+		HardDeleteMediaFunc: func(_ context.Context, id int64) error {
+			deletedIDs = append(deletedIDs, id)
+			return nil
+		},
+	}}
+	w := NewGCWorker(store, &clock.MockClock{T: now}, root, time.Minute, nil).WithAge(7 * 24 * time.Hour)
+	if err := w.RunOnce(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cover); err != nil {
+		t.Fatalf("generated cover should remain after GC: %v", err)
+	}
+	if _, err := os.Stat(nestedCover); err != nil {
+		t.Fatalf("generated folder cover should remain after GC: %v", err)
+	}
+	if _, err := os.Stat(media); !os.IsNotExist(err) {
+		t.Fatalf("ordinary deleted media should be removed, stat err = %v", err)
+	}
+	if len(deletedIDs) != 3 || deletedIDs[0] != 1 || deletedIDs[1] != 2 || deletedIDs[2] != 3 {
+		t.Fatalf("hard-deleted row IDs = %v, want [1 2 3]", deletedIDs)
+	}
+}
+
 func TestGCWorker_FileRemovedBeforeDBHardDelete(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	tmpDir := t.TempDir()

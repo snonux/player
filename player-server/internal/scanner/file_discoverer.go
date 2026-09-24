@@ -38,8 +38,8 @@ func newFileDiscoverer(fs FS) *fileDiscoverer {
 }
 
 // Discover walks setPath and returns the absolute paths of all supported media
-// files, skipping hidden directories (names starting with ".") and macOS
-// AppleDouble sidecars (names starting with "._").
+// files, skipping hidden directories, macOS AppleDouble sidecars, and the
+// application-generated .cover.jpg artwork file.
 func (d *fileDiscoverer) Discover(setPath string) ([]string, error) {
 	var files []string
 	walkErr := d.fs.WalkDir(setPath, func(path string, entry fs.DirEntry, err error) error {
@@ -57,7 +57,7 @@ func (d *fileDiscoverer) Discover(setPath string) ([]string, error) {
 		// AppleDouble sidecars share the same extension as the real file
 		// they shadow, so the extension check below would otherwise accept
 		// them. Filter them out before classification.
-		if isAppleDoubleSidecar(entry.Name()) {
+		if isAppleDoubleSidecar(entry.Name()) || entry.Name() == ".cover.jpg" {
 			return nil
 		}
 		if !mediatype.IsSupportedExt(path) {

@@ -126,7 +126,10 @@ func (w *GCWorker) run(ctx context.Context) {
 			absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
 		}
 
-		if absPath != "" {
+		// .cover.jpg is generated artwork shared by the set/folder, not media
+		// owned by this legacy row. Keep it when collecting a row imported by
+		// an older scanner (including rows already soft-deleted before the fix).
+		if absPath != "" && filepath.Base(filepath.FromSlash(item.RelPath)) != ".cover.jpg" {
 			if err := os.Remove(absPath); err != nil {
 				if os.IsNotExist(err) {
 					// File already gone; safe to proceed with DB deletion.
