@@ -5,6 +5,7 @@ import {
   initImageViewer,
   resetCropPosition,
   resetImageZoom,
+  pauseSlideshow,
   stopSlideshow,
   toggleCrop,
   shiftCropPosition,
@@ -99,8 +100,8 @@ export function initPlayer(options = {}) {
   if (!e.video && !e.audio) return;
 
   e.btnPlay?.addEventListener('click', togglePlay);
-  e.btnPrev?.addEventListener('click', () => triggerPrevious({ forcePlay: true }));
-  e.btnNext?.addEventListener('click', () => triggerNext({ forcePlay: true }));
+  e.btnPrev?.addEventListener('click', () => isImageMode() ? navigateImage(-1, { manual: true }) : triggerPrevious({ forcePlay: true }));
+  e.btnNext?.addEventListener('click', () => isImageMode() ? navigateImage(1, { manual: true }) : triggerNext({ forcePlay: true }));
   e.btnMute?.addEventListener('click', toggleMute);
   e.btnFs?.addEventListener('click', toggleFullscreen);
   e.btnMinimize?.addEventListener('click', minimizePlayer);
@@ -108,7 +109,7 @@ export function initPlayer(options = {}) {
   e.bigPlay?.addEventListener('click', togglePlay);
   e.bigPlay?.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); togglePlay(); } });
 
-  initImageViewer({ els, isImageMode, playNext });
+  initImageViewer({ els, isImageMode, playNext: () => navigateImage(1) });
   initDetach({
     els,
     currentMediaElement,
@@ -391,9 +392,9 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
     e.timeElapsed?.classList.add('hidden');
     e.timeTotal?.classList.add('hidden');
     e.btnPlay?.classList.add('hidden');
-    e.btnZoomIn?.classList.add('hidden');
-    e.btnZoomOut?.classList.add('hidden');
-    e.btnSlideshow?.classList.add('hidden');
+    e.btnZoomIn?.classList.remove('hidden');
+    e.btnZoomOut?.classList.remove('hidden');
+    e.btnSlideshow?.classList.remove('hidden');
     e.image.classList.remove('hidden');
     e.image.src = streamUrl;
     e.player?.classList.add('open', 'has-image');
@@ -401,6 +402,7 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
     return;
   }
   const isVideo = media.type === 'video';
+  stopSlideshow();
   const src = streamUrl;
   e.video.classList.remove('hidden');
   e.audio.classList.remove('hidden');
@@ -471,9 +473,9 @@ function loadMedia(media, resumeFrom = 0) {
     e.timeElapsed?.classList.add('hidden');
     e.timeTotal?.classList.add('hidden');
     e.btnPlay?.classList.add('hidden');
-    e.btnZoomIn?.classList.add('hidden');
-    e.btnZoomOut?.classList.add('hidden');
-    e.btnSlideshow?.classList.add('hidden');
+    e.btnZoomIn?.classList.remove('hidden');
+    e.btnZoomOut?.classList.remove('hidden');
+    e.btnSlideshow?.classList.remove('hidden');
     e.image.classList.remove('hidden');
     e.image.src = `/api/media/${media.id}/stream`;
     e.player?.classList.add('open', 'has-image');
@@ -481,6 +483,7 @@ function loadMedia(media, resumeFrom = 0) {
     return;
   }
   const isVideo = media.type === 'video';
+  stopSlideshow();
   const src = `/api/media/${media.id}/stream`;
   e.video.classList.remove('hidden');
   e.audio.classList.remove('hidden');
@@ -680,6 +683,17 @@ export function playNext() {
   const currentIdx = currentMediaListIndex();
   const idx = currentIdx >= 0 && currentIdx + 1 < list.length ? currentIdx + 1 : 0;
   selectAndPlay(list[idx], idx);
+}
+
+export function navigateImage(delta, { manual = false } = {}) {
+  if (!isImageMode()) return false;
+  const images = state.media.filter((media) => media.type === 'image');
+  if (!images.length) return false;
+  const index = images.findIndex((media) => media.id === currentMedia?.id);
+  const next = images[(index + delta + images.length) % images.length];
+  if (manual) pauseSlideshow();
+  selectAndPlay(next, state.media.indexOf(next));
+  return true;
 }
 
 function currentMediaListIndex() {

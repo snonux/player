@@ -18,6 +18,8 @@ import {
   zoomIn as playerZoomIn,
   zoomOut as playerZoomOut,
   isImageMode as playerIsImageMode,
+  navigateImage,
+  toggleSlideshow,
 } from './player.js';
 import { initSearch, parseQuery, showSearchHelp } from './search.js';
 import { initShuffle, enable as enableShuffle, isOn as isShuffle, revision as shuffleRevision } from './shuffle.js';
@@ -318,6 +320,11 @@ function keyboardHandlers() {
     sharesCopy: copySelectedShare,
     sharesDelete: deleteSelectedShare,
     isImageMode: () => currentMediaInfo()?.type === 'image',
+    isLightboxOpen: () => playerIsImageMode() && document.getElementById('player')?.classList.contains('open') && !document.querySelector('.modal-overlay.open'),
+    lightboxPrev: () => navigateImage(-1, { manual: true }),
+    lightboxNext: () => navigateImage(1, { manual: true }),
+    closeLightbox: () => stopAndClose(),
+    toggleSlideshow: () => toggleSlideshow(),
     imageFullscreenNavigate: (delta) => {
       if (!document.fullscreenElement || !playerIsImageMode()) return false;
       navigatePlayable(delta, { forcePlay: true });

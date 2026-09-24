@@ -6,6 +6,7 @@ export function initKeyboard(handlers) {
 
     // Lightbox keyboard navigation (overrides global keys while open)
     if (handlers.isLightboxOpen?.()) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.shiftKey && e.code === 'KeyS') {
         e.preventDefault();
         handlers.toggleSlideshow?.(e);
@@ -170,7 +171,7 @@ export function initKeyboard(handlers) {
     }
     if (e.code === 'KeyS') {
       e.preventDefault();
-      handlers.share?.(e);
+      if (!e.shiftKey) handlers.share?.(e);
       return;
     }
 

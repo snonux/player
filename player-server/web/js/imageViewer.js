@@ -27,8 +27,8 @@ export function initImageViewer(options = {}) {
   playNext = typeof options.playNext === 'function' ? options.playNext : playNext;
 
   const e = els();
-  e.btnZoomIn?.addEventListener('click', () => { zoomIn(); pauseSlideshow(); });
-  e.btnZoomOut?.addEventListener('click', () => { zoomOut(); pauseSlideshow(); });
+  e.btnZoomIn?.addEventListener('click', zoomIn);
+  e.btnZoomOut?.addEventListener('click', zoomOut);
   e.btnSlideshow?.addEventListener('click', toggleSlideshow);
 
   e.image?.addEventListener('mousedown', (ev) => {
@@ -80,10 +80,12 @@ export function resetImageZoom() {
 
 export function zoomIn() {
   setImageZoom(zoomScale * 1.25);
+  pauseSlideshow();
 }
 
 export function zoomOut() {
   setImageZoom(zoomScale / 1.25);
+  pauseSlideshow();
 }
 
 export function resetZoom() {
@@ -91,6 +93,7 @@ export function resetZoom() {
 }
 
 export function toggleSlideshow() {
+  if (!isImageMode()) return;
   if (slideshowTimer) stopSlideshow();
   else startSlideshow();
 }
@@ -101,20 +104,21 @@ export function isSlideshowActive() {
 
 function startSlideshow() {
   if (slideshowTimer) clearInterval(slideshowTimer);
+  slideshowPausedUntil = 0;
   slideshowTimer = setInterval(() => {
     if (Date.now() < slideshowPausedUntil) return;
     if (!isImageMode()) { stopSlideshow(); return; }
     playNext();
   }, 5000);
   const btn = els().btnSlideshow;
-  if (btn) btn.textContent = '⏸';
+  if (btn) { btn.textContent = '⏸'; btn.setAttribute('aria-label', 'Pause slideshow'); }
 }
 
 export function stopSlideshow() {
   clearInterval(slideshowTimer);
   slideshowTimer = null;
   const btn = els().btnSlideshow;
-  if (btn) btn.textContent = '⏵';
+  if (btn) { btn.textContent = '⏵'; btn.setAttribute('aria-label', 'Start slideshow'); }
 }
 
 export function pauseSlideshow() {

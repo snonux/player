@@ -2,7 +2,7 @@
 .player {
   position: fixed;
   inset: auto auto 1rem 1rem;
-  width: var(--floating-w, 320px);
+  width: min(var(--floating-w, 320px), calc(100vw - 2rem));
   height: var(--floating-h, 240px);
   background: var(--player-bg);
   color: var(--text-primary);
@@ -192,6 +192,11 @@
   flex: 0 0 2rem;
   width: 2rem;
   height: 2rem;
+}
+.player .transport-controls .image-only {
+  flex-basis: 2.5rem;
+  width: 2.5rem;
+  height: 2.5rem;
 }
 .player .transport-controls .volume-control { margin-left: auto; }
 .player .seek-controls { gap: 0.4rem; min-height: 1.25rem; }
