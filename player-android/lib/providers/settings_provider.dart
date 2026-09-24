@@ -9,7 +9,27 @@ const _kBaseUrlKey = 'server_base_url';
 // runnable out-of-the-box without any manual configuration.
 // Private: only referenced within this file; callers read the resolved URL
 // through [AppSettings.serverBaseUrl] obtained from [settingsProvider].
-const _kDefaultBaseUrl = 'http://10.0.2.2:8080';
+const kPlayerBaseUrl = String.fromEnvironment(
+  'PLAYER_BASE_URL',
+  defaultValue: 'http://10.0.2.2:8080',
+);
+
+/// Accept only a server origin. API paths are rooted at /api/v1 and a URL
+/// containing credentials, a path, or a query would be misleading or unsafe.
+Uri parseServerBaseUrl(String value) {
+  final uri = Uri.tryParse(value.trim());
+  if (uri == null ||
+      (uri.scheme != 'http' && uri.scheme != 'https') ||
+      uri.host.isEmpty ||
+      uri.userInfo.isNotEmpty ||
+      (uri.path.isNotEmpty && uri.path != '/') ||
+      uri.hasQuery ||
+      uri.hasFragment) {
+    throw const FormatException(
+        'Enter an HTTP or HTTPS server address without a path.');
+  }
+  return Uri.parse(uri.origin);
+}
 
 /// Immutable snapshot of persisted app settings.
 ///
@@ -39,8 +59,8 @@ class AppSettings {
 /// Manages persisted app settings via [SharedPreferences].
 ///
 /// Uses [AsyncNotifier] because the initial state load is async (disk read).
-/// After initialisation, [setServerBaseUrl] writes to disk and updates state
-/// synchronously so the UI reflects changes immediately.
+/// After initialisation, [setServerBaseUrl] validates and persists the new
+/// origin before publishing it to API consumers.
 ///
 /// Design notes (SRP / ISP):
 ///   - This notifier owns only settings persistence; auth is handled separately
@@ -55,33 +75,35 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
     // SharedPreferences instance is a singleton; obtaining it here is cheap
     // because subsequent calls return the cached instance.
     final prefs = await SharedPreferences.getInstance();
-    final url = prefs.getString(_kBaseUrlKey) ?? _kDefaultBaseUrl;
-    return AppSettings(serverBaseUrl: url);
+    final saved = prefs.getString(_kBaseUrlKey);
+    try {
+      return AppSettings(
+          serverBaseUrl:
+              parseServerBaseUrl(saved ?? kPlayerBaseUrl).toString());
+    } on FormatException {
+      return AppSettings(
+          serverBaseUrl: parseServerBaseUrl(kPlayerBaseUrl).toString());
+    }
   }
 
   /// Persists [url] as the new server base URL and updates the in-memory state.
   ///
   /// The UI calls this when the user edits the URL field and submits.  The
   /// async write to [SharedPreferences] is awaited so that a subsequent cold
-  /// start will see the new value; the in-memory state is updated first so the
-  /// UI is not blocked on the disk write.
+  /// start and current API consumers agree on the same origin.
   Future<void> setServerBaseUrl(String url) async {
-    // Update in-memory state first for immediate UI feedback.
-    state = AsyncData(AppSettings(serverBaseUrl: url));
-
-    // Persist to disk so the value survives app restarts.
+    final normalized = parseServerBaseUrl(url).toString();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kBaseUrlKey, url);
+    if (!await prefs.setString(_kBaseUrlKey, normalized)) {
+      throw StateError('Could not save server address');
+    }
+    state = AsyncData(AppSettings(serverBaseUrl: normalized));
   }
 }
 
 /// The single source of truth for persisted app settings.
 ///
-/// Currently consumed by [SettingsScreen] for displaying and editing settings.
-/// Will also be consumed by [apiClientProvider] (for the server base URL) once
-/// that provider is wired to read from settings rather than
-/// [String.fromEnvironment] — tracked as a future task.
-final settingsProvider =
-    AsyncNotifierProvider<SettingsNotifier, AppSettings>(
+/// The same setting feeds authenticated, public, and media clients.
+final settingsProvider = AsyncNotifierProvider<SettingsNotifier, AppSettings>(
   SettingsNotifier.new,
 );

@@ -11,16 +11,13 @@ import 'api_client_provider.dart';
 /// Implementation notes:
 ///   - Uses [FutureProvider] so the loading/error states are handled uniformly
 ///     alongside [authStateProvider] in the router's redirect callback.
-///   - [FutureProvider] caches its result for the lifetime of the enclosing
-///     [ProviderScope]; the value is re-fetched only when the provider is
-///     explicitly invalidated (e.g. via `ref.invalidate`) or the scope is
-///     recreated.  After bootstrap completes the app navigates away and the
-///     cached value is simply never re-read in the same session.
+///   - [FutureProvider] caches its result until the API client changes (for
+///     example when the saved server URL changes) or it is invalidated.
 ///   - Errors (e.g. server unreachable) are treated as non-first-run so the
 ///     login screen is shown and the user can retry; this avoids looping to
 ///     /bootstrap on connectivity failures.
 final firstRunProvider = FutureProvider<bool>((ref) async {
-  final apiClient = ref.read(apiClientProvider);
+  final apiClient = ref.watch(apiClientProvider);
   try {
     final count = await apiClient.countUsers();
     return count == 0;

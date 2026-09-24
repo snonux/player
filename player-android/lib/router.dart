@@ -71,12 +71,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoginRoute = location == AppRoutes.login;
       // Bootstrap is a public route (user is unauthenticated by definition).
       final isBootstrapRoute = location == AppRoutes.bootstrap;
+      final isServerRoute = location == AppRoutes.server;
       // Share-viewer routes (/share/:token) are public — no session required.
       // The token is embedded in the URL path; authentication is irrelevant.
       // Uses [AppRoutes.shareViewerPrefix] rather than a raw string literal so
       // a rename of the share-viewer path is reflected here automatically (DIP).
       final isShareViewerRoute =
           location.startsWith(AppRoutes.shareViewerPrefix);
+
+      if (auth.isUnauthenticated &&
+          isLoginRoute &&
+          ref.read(firstRunProvider).valueOrNull == true) {
+        return AppRoutes.bootstrap;
+      }
 
       if (auth.isAuthenticated && (isLoginRoute || isBootstrapRoute)) {
         // Prevent already-authenticated users from viewing auth/setup screens.
@@ -86,6 +93,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (auth.isUnauthenticated &&
           !isLoginRoute &&
           !isBootstrapRoute &&
+          !isServerRoute &&
           !isShareViewerRoute) {
         // Unauthenticated: any route other than /login, /bootstrap, and
         // /share/:token is protected.  This covers /home, /media/:id,
@@ -170,6 +178,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.settings,
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.server,
+        builder: (context, state) => const SettingsScreen(serverOnly: true),
       ),
       GoRoute(
         // Podcast list screen — shows all sets with isPodcast == true.

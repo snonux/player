@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/api_client_provider.dart';
 import '../providers/auth_state_provider.dart';
+import '../app_routes.dart';
+import 'package:go_router/go_router.dart';
 import '../utils/error_mappers.dart';
 
 // Minimum password length enforced by the server (see handlers_auth.go,
@@ -233,6 +235,11 @@ class _BootstrapScreenState extends ConsumerState<BootstrapScreen> {
                         onPressed: _submit,
                         child: const Text('Create Admin Account'),
                       ),
+                TextButton(
+                  key: const Key('bootstrap_server_setup'),
+                  onPressed: () => context.go(AppRoutes.server),
+                  child: const Text('Change server'),
+                ),
               ],
             ),
           ),

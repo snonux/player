@@ -7,6 +7,7 @@ import '../models/user.dart';
 import 'api_client_provider.dart';
 import 'audio_handler_provider.dart';
 import 'progress_queue_provider.dart';
+import 'settings_provider.dart';
 import '../services/progress_queue.dart';
 
 const _kLogoutRequestTimeout = Duration(seconds: 10);
@@ -84,6 +85,7 @@ const _kAuthTokenIdKey = 'auth_token_id';
 class AuthStateNotifier extends AsyncNotifier<AuthState> {
   @override
   Future<AuthState> build() async {
+    await ref.read(settingsProvider.future);
     final queue = ref.read(credentialMutationQueueProvider);
     final generation = queue.generation;
     try {
@@ -118,6 +120,22 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
       } catch (_) {}
     }
     return const AuthState.unauthenticated();
+  }
+
+  /// End the old server session before replacing the origin. The credential
+  /// gate closes at the start of logout, so no request to the new server can
+  /// carry the previous server's bearer token or cookie.
+  Future<void> switchServer(String url) async {
+    final next = parseServerBaseUrl(url);
+    if (next == ref.read(playerBaseUrlProvider)) return;
+    final auth = await future;
+    if (auth.isAuthenticated) {
+      await logout();
+    } else {
+      ref.read(credentialMutationQueueProvider).beginAuthChange();
+      await clearAfterUnauthorized(advanceGeneration: false);
+    }
+    await ref.read(settingsProvider.notifier).setServerBaseUrl(next.toString());
   }
 
   /// Retains the server's authenticated user separately from credentials.

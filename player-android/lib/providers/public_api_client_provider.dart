@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/dio_player_api_client.dart';
 import '../api/player_api_client.dart';
-import 'api_client_provider.dart' show kPlayerBaseUrl;
+import 'api_client_provider.dart' show playerBaseUrlProvider;
 
 /// Provides an unauthenticated [PlayerApiClient] for public endpoints.
 ///
@@ -20,7 +20,7 @@ final publicApiClientProvider = Provider<PlayerApiClient>((ref) {
   // but without any auth or redirect interceptors.
   final dio = Dio(
     BaseOptions(
-      baseUrl: kPlayerBaseUrl,
+      baseUrl: ref.watch(playerBaseUrlProvider).toString(),
       contentType: 'application/json',
       responseType: ResponseType.json,
     ),

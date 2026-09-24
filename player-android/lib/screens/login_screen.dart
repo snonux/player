@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/api_client_provider.dart';
 import '../providers/auth_state_provider.dart';
+import '../app_routes.dart';
+import 'package:go_router/go_router.dart';
 import '../utils/error_mappers.dart';
 
 /// Sign-in screen shown to returning users who already have an account.
@@ -189,6 +191,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         onPressed: _submit,
                         child: const Text('Sign In'),
                       ),
+                TextButton(
+                  key: const Key('login_server_setup'),
+                  onPressed: () => context.go(AppRoutes.server),
+                  child: const Text('Change server'),
+                ),
               ],
             ),
           ),

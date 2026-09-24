@@ -7,6 +7,7 @@ import 'providers/audio_handler_provider.dart';
 import 'providers/auth_state_provider.dart';
 import 'providers/progress_queue_provider.dart';
 import 'providers/api_client_provider.dart';
+import 'providers/settings_provider.dart';
 import 'providers/theme_provider.dart';
 import 'navigation_key.dart';
 import 'router.dart';
@@ -61,6 +62,9 @@ void main() async {
     overrides: [audioHandlerProvider.overrideWithValue(handler)],
   );
 
+  // Resolve the persisted origin before restoring credentials. The restore
+  // check binds the token to this origin and must never use the fallback URL.
+  await container.read(settingsProvider.future);
   // Restore the saved credential before protected screens or queued requests.
   final auth = await container.read(authStateProvider.future);
 

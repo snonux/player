@@ -6,24 +6,14 @@ import '../api/dio_player_api_client.dart';
 import '../api/player_api_client.dart';
 import '../navigation_key.dart';
 import 'auth_state_provider.dart';
+import 'settings_provider.dart';
 
-/// Base URL for the player-server API, resolved at compile time via
-/// the PLAYER_BASE_URL environment variable (or the default below).
-///
-/// Declared as a package-level identifier (no underscore) so it can be
-/// shared by [publicApiClientProvider] in [public_api_client_provider.dart].
-/// The value is set once at compile time and never changes at runtime,
-/// making it safe to share across providers.
-///
-/// In production this is injected via `--dart-define=PLAYER_BASE_URL=...`.
-/// The default points to the Android emulator host loopback address so the
-/// app is runnable out-of-the-box without extra configuration.
-const kPlayerBaseUrl = String.fromEnvironment(
-  'PLAYER_BASE_URL',
-  defaultValue: 'http://10.0.2.2:8080',
-);
-
-final playerBaseUrlProvider = Provider<Uri>((ref) => Uri.parse(kPlayerBaseUrl));
+/// A synchronous URL for clients, with the compile-time default only while
+/// settings are loading. App startup awaits settings before restoring auth.
+final playerBaseUrlProvider = Provider<Uri>((ref) {
+  final saved = ref.watch(settingsProvider).valueOrNull?.serverBaseUrl;
+  return parseServerBaseUrl(saved ?? kPlayerBaseUrl);
+});
 
 /// Provides the production [TokenStorage] backed by the OS keychain.
 ///

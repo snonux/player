@@ -17,6 +17,7 @@ abstract final class AppRoutes {
   static const shareViewer = '/share/:token';
 
   static const settings = '/settings';
+  static const server = '/server';
 
   /// First-run setup route shown when no admin account exists yet.
   static const bootstrap = '/bootstrap';

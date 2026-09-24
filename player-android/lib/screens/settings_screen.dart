@@ -7,6 +7,7 @@ import '../navigation_key.dart';
 import '../providers/auth_state_provider.dart';
 import '../providers/current_user_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/first_run_provider.dart';
 import '../providers/theme_provider.dart';
 
 /// Settings screen: editable server base URL, current username, and logout.
@@ -28,7 +29,10 @@ import '../providers/theme_provider.dart';
 ///   - All async continuations guard on [mounted] to prevent setState/context
 ///     calls after widget disposal.
 class SettingsScreen extends ConsumerStatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.serverOnly = false});
+
+  /// Public server connection page shown before authentication.
+  final bool serverOnly;
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -46,6 +50,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // Tracks whether the URL controller has been seeded from the loaded settings
   // so we populate it exactly once (on the first non-loading build).
   bool _urlInitialised = false;
+  bool _isSavingUrl = false;
+  String? _urlError;
 
   @override
   void dispose() {
@@ -63,14 +69,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// not get saved as part of the URL.
   Future<void> _saveBaseUrl() async {
     final url = _urlController.text.trim();
-    if (url.isEmpty) return;
-
-    // Persist the new URL; [SettingsNotifier] updates in-memory state first so
-    // the UI reflects the change immediately without waiting for the disk write.
-    await ref.read(settingsProvider.notifier).setServerBaseUrl(url);
-
-    // Dismiss the keyboard now that the value has been committed.
-    if (mounted) FocusScope.of(context).unfocus();
+    try {
+      parseServerBaseUrl(url);
+      setState(() {
+        _isSavingUrl = true;
+        _urlError = null;
+      });
+      // The notifier owns the full transition, even if logout redirects and
+      // disposes this screen before the persisted URL write completes.
+      await ref.read(authStateProvider.notifier).switchServer(url);
+      if (!mounted) return;
+      ref.invalidate(firstRunProvider);
+      FocusScope.of(context).unfocus();
+      if (widget.serverOnly) context.go(AppRoutes.home);
+    } on FormatException catch (e) {
+      if (mounted) setState(() => _urlError = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _urlError = 'Could not save server address.');
+    } finally {
+      if (mounted) setState(() => _isSavingUrl = false);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -119,11 +137,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // Watch settings to seed the URL field on first load.
     final settingsAsync = ref.watch(settingsProvider);
 
-    // Watch the current user to conditionally show the Admin section.
-    // currentUserProvider is autoDispose and resolves to null for non-admins.
-    final isAdmin =
-        ref.watch(currentUserProvider).valueOrNull?.isAdmin ?? false;
-
     // Seed the URL text field exactly once, after settings have loaded.
     // Doing this in build (rather than initState) ensures we have the loaded
     // value; [_urlInitialised] prevents clobbering an in-progress edit.
@@ -134,8 +147,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     });
 
-    final username =
-        ref.watch(currentUserProvider).valueOrNull?.username ?? '—';
+    if (widget.serverOnly) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Server')),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Connect to Player',
+                    style: Theme.of(context).textTheme.headlineMedium),
+                const SizedBox(height: 24),
+                _serverSection(context),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final currentUser = ref.watch(currentUserProvider).valueOrNull;
+    final isAdmin = currentUser?.isAdmin ?? false;
+
+    final username = currentUser?.username ?? '—';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -214,35 +249,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // ----------------------------------------------------------------
               // Server section: editable base URL.
               // ----------------------------------------------------------------
-              Text(
-                'Server',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 12),
-
-              // Server base URL field pre-filled from persisted settings.
-              TextField(
-                key: const Key('settings_base_url'),
-                controller: _urlController,
-                decoration: const InputDecoration(
-                  labelText: 'Server base URL',
-                  border: OutlineInputBorder(),
-                  helperText:
-                      'e.g. https://player.example.com  or  http://10.0.2.2:8080',
-                ),
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                textInputAction: TextInputAction.done,
-                // Persist when the user presses "Done" on the keyboard.
-                onSubmitted: (_) => _saveBaseUrl(),
-              ),
-              const SizedBox(height: 12),
-
-              ElevatedButton(
-                key: const Key('settings_save_url'),
-                onPressed: _saveBaseUrl,
-                child: const Text('Save URL'),
-              ),
+              _serverSection(context),
 
               const SizedBox(height: 32),
               const Divider(),
@@ -293,6 +300,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
   }
+
+  Widget _serverSection(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Server', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          TextField(
+            key: const Key('settings_base_url'),
+            controller: _urlController,
+            decoration: InputDecoration(
+              labelText: 'Server base URL',
+              border: const OutlineInputBorder(),
+              helperText:
+                  'e.g. https://player.example.com or http://10.0.2.2:8080',
+              errorText: _urlError,
+            ),
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _isSavingUrl ? null : _saveBaseUrl(),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton(
+            key: const Key('settings_save_url'),
+            onPressed: _isSavingUrl ? null : _saveBaseUrl,
+            child: const Text('Save URL'),
+          ),
+        ],
+      );
 }
 
 // ---------------------------------------------------------------------------
