@@ -863,6 +863,37 @@ func TestServer_Logout(t *testing.T) {
 		}
 	})
 
+	t.Run("session deletion failure is not reported as success", func(t *testing.T) {
+		deleteErr := errors.New("session store unavailable")
+		repo := repository.MockSessionRepo{
+			GetSessionByIDFunc: func(ctx context.Context, id string) (*model.Session, error) {
+				return &model.Session{ID: id, UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}, nil
+			},
+			DeleteSessionFunc: func(ctx context.Context, id string) error {
+				return deleteErr
+			},
+		}
+		sm := auth.NewSessionManager(&repo, &clock.MockClock{T: time.Now()}, time.Hour)
+		store := &repository.MockStore{UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil }}}
+		srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/logout", nil)
+		req.AddCookie(&http.Cookie{Name: "session", Value: "abc"})
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Fatalf("expected %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "delete session") {
+			t.Fatalf("expected deletion error, got %q", rr.Body.String())
+		}
+		for _, cookie := range rr.Result().Cookies() {
+			if cookie.Name == "session" && cookie.MaxAge != -1 {
+				t.Fatal("expected cleared session cookie after deletion failure")
+			}
+		}
+	})
+
 	t.Run("no cookie logout", func(t *testing.T) {
 		store := &repository.MockStore{UserRepo: repository.MockUserRepo{CountUsersFunc: func(ctx context.Context) (int, error) { return 1, nil }}}
 		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)

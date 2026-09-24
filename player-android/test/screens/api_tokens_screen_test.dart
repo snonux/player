@@ -64,8 +64,7 @@ class _FakeTokenStorage implements TokenStorage {
 /// [listAPITokens], [createAPIToken], and [revokeAPIToken] are the primary
 /// subjects.  All other methods remain [UnimplementedError].
 class _FakeApiClient extends PlayerApiClient {
-  _FakeApiClient()
-      : super(dio: Dio(BaseOptions(baseUrl: 'http://test.local')));
+  _FakeApiClient() : super(dio: Dio(BaseOptions(baseUrl: 'http://test.local')));
 
   // ---- listAPITokens ----
 
@@ -119,7 +118,7 @@ class _FakeApiClient extends PlayerApiClient {
   int? revokedId;
 
   @override
-  Future<void> revokeAPIToken(int tokenId) async {
+  Future<void> revokeAPIToken(int tokenId, {String? bearerToken}) async {
     revokedId = tokenId;
     if (revokeError != null) throw revokeError!;
   }
@@ -246,8 +245,7 @@ void main() {
   group('renders token list', () {
     testWidgets('shows a tile for each token returned by listAPITokens',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..tokensResult = [_kTokenA, _kTokenB];
+      final fakeClient = _FakeApiClient()..tokensResult = [_kTokenA, _kTokenB];
 
       await _pumpApiTokensScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -286,8 +284,7 @@ void main() {
     });
 
     testWidgets('shows a revoke button for each token', (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..tokensResult = [_kTokenA, _kTokenB];
+      final fakeClient = _FakeApiClient()..tokensResult = [_kTokenA, _kTokenB];
 
       await _pumpApiTokensScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -303,8 +300,7 @@ void main() {
 
   group('revoke action', () {
     testWidgets('confirmation cancel leaves the row intact', (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..tokensResult = [_kTokenA, _kTokenB];
+      final fakeClient = _FakeApiClient()..tokensResult = [_kTokenA, _kTokenB];
 
       await _pumpApiTokensScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -322,8 +318,7 @@ void main() {
 
     testWidgets('confirmation confirm removes the row optimistically',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..tokensResult = [_kTokenA, _kTokenB];
+      final fakeClient = _FakeApiClient()..tokensResult = [_kTokenA, _kTokenB];
 
       await _pumpApiTokensScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -339,7 +334,8 @@ void main() {
       expect(find.byKey(const Key('api_token_tile_2')), findsOneWidget);
 
       expect(fakeClient.revokedId, equals(1));
-      expect(find.byKey(const Key('api_tokens_revoke_snackbar')), findsOneWidget);
+      expect(
+          find.byKey(const Key('api_tokens_revoke_snackbar')), findsOneWidget);
     });
   });
 
@@ -348,7 +344,8 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('revoke optimistic UI', () {
-    testWidgets('reverts row and shows error SnackBar on revokeAPIToken failure',
+    testWidgets(
+        'reverts row and shows error SnackBar on revokeAPIToken failure',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..tokensResult = [_kTokenA, _kTokenB]
@@ -371,7 +368,8 @@ void main() {
       expect(find.byKey(const Key('api_token_tile_1')), findsOneWidget);
 
       // Error SnackBar shown.
-      expect(find.byKey(const Key('api_tokens_error_snackbar')), findsOneWidget);
+      expect(
+          find.byKey(const Key('api_tokens_error_snackbar')), findsOneWidget);
       expect(find.textContaining('Could not reach the server'), findsOneWidget);
     });
   });
@@ -456,8 +454,10 @@ void main() {
       expect(find.byKey(const Key('api_tokens_create_dialog')), findsNothing);
 
       // Plaintext dialog shown with the one-time token.
-      expect(find.byKey(const Key('api_tokens_plaintext_dialog')), findsOneWidget);
-      expect(find.byKey(const Key('api_tokens_plaintext_value')), findsOneWidget);
+      expect(
+          find.byKey(const Key('api_tokens_plaintext_dialog')), findsOneWidget);
+      expect(
+          find.byKey(const Key('api_tokens_plaintext_value')), findsOneWidget);
       expect(find.text('secret-plaintext-token'), findsOneWidget);
 
       expect(fakeClient.createdName, equals('my-token'));
@@ -581,7 +581,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Plaintext dialog is open.
-      expect(find.byKey(const Key('api_tokens_plaintext_dialog')), findsOneWidget);
+      expect(
+          find.byKey(const Key('api_tokens_plaintext_dialog')), findsOneWidget);
 
       // Tap the copy button.
       await tester.tap(find.byKey(const Key('api_tokens_plaintext_copy')));
@@ -634,7 +635,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Plaintext dialog dismissed.
-      expect(find.byKey(const Key('api_tokens_plaintext_dialog')), findsNothing);
+      expect(
+          find.byKey(const Key('api_tokens_plaintext_dialog')), findsNothing);
     });
   });
 
@@ -720,7 +722,8 @@ void main() {
       expect(find.byKey(const Key('api_token_tile_0')), findsNothing);
 
       // Error SnackBar shown.
-      expect(find.byKey(const Key('api_tokens_error_snackbar')), findsOneWidget);
+      expect(
+          find.byKey(const Key('api_tokens_error_snackbar')), findsOneWidget);
       expect(find.textContaining('name required'), findsOneWidget);
     });
   });

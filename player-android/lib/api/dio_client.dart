@@ -40,7 +40,24 @@ class SecureTokenStorage implements TokenStorage {
 
 /// Serializes credential writes and 401 invalidation in one provider scope.
 class CredentialMutationQueue {
+  CredentialMutationQueue({bool credentialsEnabled = false})
+      : _credentialsEnabled = credentialsEnabled;
+
   Future<void> _tail = Future<void>.value();
+  int _generation = 0;
+  bool _credentialsEnabled;
+
+  int get generation => _generation;
+  bool get credentialsEnabled => _credentialsEnabled;
+
+  int beginAuthChange() {
+    _credentialsEnabled = false;
+    return ++_generation;
+  }
+
+  void enable(int generation) {
+    if (_generation == generation) _credentialsEnabled = true;
+  }
 
   Future<T> run<T>(Future<T> Function() action) async {
     final previous = _tail;
@@ -53,6 +70,31 @@ class CredentialMutationQueue {
       release.complete();
     }
   }
+}
+
+/// Builds headers for image and native media clients that bypass Dio.
+/// Rechecking after both async reads prevents a logout/account switch from
+/// returning a credential captured for the previous account.
+Future<Map<String, String>> accountRequestHeaders({
+  required Uri uri,
+  required Uri baseUrl,
+  required TokenStorage storage,
+  required CookieJar cookieJar,
+  required CredentialMutationQueue mutations,
+}) async {
+  final generation = mutations.generation;
+  if (!mutations.credentialsEnabled || uri.origin != baseUrl.origin) return {};
+  final token = await storage.readToken();
+  final cookies = await cookieJar.loadForRequest(uri);
+  if (!mutations.credentialsEnabled || generation != mutations.generation) {
+    return {};
+  }
+  final cookieHeader =
+      cookies.map((cookie) => '${cookie.name}=${cookie.value}').join('; ');
+  return {
+    if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    if (cookieHeader.isNotEmpty) 'Cookie': cookieHeader,
+  };
 }
 
 /// CookieJar's domain matching ignores ports, so bind it to the API origin.
@@ -88,15 +130,46 @@ class _OriginBoundCookieJar implements CookieJar {
   Future<void> deleteAll() => _delegate.deleteAll();
 }
 
+/// Snapshot logout requests must not overwrite a newer login's cookie when
+/// their responses arrive later.
+class _SnapshotAwareCookieManager extends CookieManager {
+  _SnapshotAwareCookieManager(super.cookieJar);
+
+  bool _isSnapshot(RequestOptions options) =>
+      options.extra.containsKey('logoutBearer') ||
+      options.extra.containsKey('logoutCookie');
+
+  @override
+  Future<void> onResponse(
+      Response response, ResponseInterceptorHandler handler) async {
+    if (_isSnapshot(response.requestOptions)) {
+      handler.next(response);
+    } else {
+      await super.onResponse(response, handler);
+    }
+  }
+
+  @override
+  Future<void> onError(
+      DioException err, ErrorInterceptorHandler handler) async {
+    if (_isSnapshot(err.requestOptions)) {
+      handler.next(err);
+    } else {
+      await super.onError(err, handler);
+    }
+  }
+}
+
 /// Interceptor that attaches a Bearer token to every outgoing request.
 ///
 /// The token is read lazily from [TokenStorage] so that changes (login /
 /// logout) are picked up without restarting the Dio instance.
 class _AuthInterceptor extends Interceptor {
-  _AuthInterceptor(this._storage, this._origin);
+  _AuthInterceptor(this._storage, this._origin, this._mutationQueue);
 
   final TokenStorage _storage;
   final String _origin;
+  final CredentialMutationQueue _mutationQueue;
 
   @override
   Future<void> onRequest(
@@ -109,7 +182,45 @@ class _AuthInterceptor extends Interceptor {
       handler.next(options);
       return;
     }
+    final logoutBearer = options.extra['logoutBearer'];
+    final logoutCookie = options.extra['logoutCookie'];
+    if (logoutBearer is String) {
+      options.headers.remove('cookie');
+      options.headers['Authorization'] = 'Bearer $logoutBearer';
+      handler.next(options);
+      return;
+    }
+    if (logoutCookie is String) {
+      options.headers.remove('Authorization');
+      options.headers['cookie'] = logoutCookie;
+      handler.next(options);
+      return;
+    }
+    final requestGeneration = options.extra['credentialEpoch'];
+    if (requestGeneration is int &&
+        requestGeneration != _mutationQueue.generation) {
+      handler.reject(
+          DioException(requestOptions: options, type: DioExceptionType.cancel));
+      return;
+    }
+    if (!_mutationQueue.credentialsEnabled) {
+      options.headers.remove('Authorization');
+      // Minting the mobile token needs the new password-login session cookie.
+      if (!(options.uri.path.endsWith('/auth/tokens') &&
+          options.method == 'POST')) {
+        options.headers.remove('cookie');
+      }
+      handler.next(options);
+      return;
+    }
     final token = await _storage.readToken();
+    if ((requestGeneration is int &&
+            requestGeneration != _mutationQueue.generation) ||
+        !_mutationQueue.credentialsEnabled) {
+      handler.reject(
+          DioException(requestOptions: options, type: DioExceptionType.cancel));
+      return;
+    }
     if (token != null && token.isNotEmpty) {
       // Only attach the bearer token when no Authorization header has been set
       // explicitly by the caller (e.g. public endpoints may supply their own
@@ -175,9 +286,24 @@ class _UnauthorizedInterceptor extends Interceptor {
         return;
       }
       final invalidated = await _mutationQueue.run(() async {
-        if (await _storage.readToken() != sentToken) return false;
-        await _storage.deleteToken();
-        await _onUnauthorized?.call();
+        String? currentToken;
+        try {
+          currentToken = await _storage.readToken();
+        } catch (_) {
+          // A failing keychain read cannot prove this was a stale response.
+          currentToken = sentToken;
+        }
+        if (currentToken != sentToken) return false;
+        _mutationQueue.beginAuthChange();
+        try {
+          if (_onUnauthorized != null) {
+            await _onUnauthorized();
+          } else {
+            await _storage.deleteToken();
+          }
+        } catch (_) {
+          // The gate is already closed; always finish the Dio error handler.
+        }
         return true;
       });
       if (!invalidated) {
@@ -220,7 +346,8 @@ class DioClient {
       baseUrl: baseUrl,
       storage: storage,
       navigatorKey: navigatorKey,
-      mutationQueue: mutationQueue ?? CredentialMutationQueue(),
+      mutationQueue:
+          mutationQueue ?? CredentialMutationQueue(credentialsEnabled: true),
       onUnauthorized: onUnauthorized,
       loginRoute: loginRoute,
       baseOptions: baseOptions,
@@ -266,8 +393,8 @@ class DioClient {
       ..interceptors.addAll([
         // Cookie manager runs first so the session cookie is replayed before
         // _AuthInterceptor decides whether to add a Bearer fallback.
-        CookieManager(cookieJar),
-        _AuthInterceptor(storage, baseUrl.origin),
+        _SnapshotAwareCookieManager(cookieJar),
+        _AuthInterceptor(storage, baseUrl.origin, mutationQueue),
         _UnauthorizedInterceptor(
           storage: storage,
           navigatorKey: navigatorKey,

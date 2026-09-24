@@ -59,6 +59,58 @@ class _FakeApiClient extends PlayerApiClient {
   }
 }
 
+class _DelayedProgressClient extends _FakeApiClient {
+  final firstStarted = Completer<void>();
+  final releaseFirst = Completer<void>();
+  bool _first = true;
+
+  @override
+  Future<void> batchUpdateProgress(List<Map<String, dynamic>> updates) async {
+    if (_first) {
+      _first = false;
+      firstStarted.complete();
+      await releaseFirst.future;
+      if (shouldThrowOnNextCall) {
+        shouldThrowOnNextCall = false;
+        throw Exception('old request failed');
+      }
+      return;
+    }
+    await super.batchUpdateProgress(updates);
+  }
+}
+
+class _DelayedInsertDatabase implements Database {
+  _DelayedInsertDatabase(this.delegate);
+
+  final Database delegate;
+  final insertStarted = Completer<void>();
+  final releaseInsert = Completer<void>();
+  bool _firstInsert = true;
+
+  @override
+  Future<int> insert(String table, Map<String, Object?> values,
+      {String? nullColumnHack, ConflictAlgorithm? conflictAlgorithm}) async {
+    if (_firstInsert) {
+      _firstInsert = false;
+      insertStarted.complete();
+      await releaseInsert.future;
+    }
+    return delegate.insert(table, values,
+        nullColumnHack: nullColumnHack, conflictAlgorithm: conflictAlgorithm);
+  }
+
+  @override
+  Future<int> delete(String table, {String? where, List<Object?>? whereArgs}) =>
+      delegate.delete(table, where: where, whereArgs: whereArgs);
+
+  @override
+  Future<void> close() => delegate.close();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 /// Fake [Connectivity] driven by the test via [emitStatus].
 ///
 /// Defaults to offline ([ConnectivityResult.none]) so enqueue tests do not
@@ -129,10 +181,11 @@ Future<({ProgressQueue queue, _FakeApiClient client, _FakeConnectivity conn})>
 ///
 /// A single [Future<void>.delayed(Duration.zero)] is not sufficient because
 /// stream listeners schedule their work one microtask turn later; the DB calls
-/// inside the listener add further async hops.  Five round-trips covers the
+/// inside the listener add further async hops.  Twenty round-trips covers the
 /// full async chain (stream delivery → listener body → DB query → DB delete).
 Future<void> _pump() async {
-  for (var i = 0; i < 5; i++) {
+  await Future<void>.delayed(const Duration(milliseconds: 20));
+  for (var i = 0; i < 20; i++) {
     await Future<void>.delayed(Duration.zero);
   }
 }
@@ -145,6 +198,129 @@ void main() {
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+  });
+
+  test('unauthenticated startup clears pending rows before subscribing',
+      () async {
+    final db = await _openInMemoryDb();
+    await db.insert('progress_queue', {
+      'media_id': 42,
+      'position_seconds': 12.5,
+      'finished': 0,
+      'queued_at': DateTime.now().toUtc().toIso8601String(),
+    });
+    final client = _FakeApiClient();
+    final conn = _FakeConnectivity();
+    conn.emitStatus([ConnectivityResult.wifi]);
+    final queue = ProgressQueue(apiClient: client, db: db, connectivity: conn);
+
+    await queue.init(suspended: true);
+    await _pump();
+    expect(client.calls, isEmpty);
+    expect(await db.query('progress_queue'), isEmpty);
+    await queue.init();
+    conn.emitStatus([ConnectivityResult.wifi]);
+    await _pump();
+    expect(client.calls, isEmpty);
+    await queue.dispose();
+    conn.close();
+  });
+
+  test('logout discards old progress and suspends sync until next login',
+      () async {
+    final (:queue, :client, :conn) = await _makeQueue();
+    await queue.enqueue(42, 12.5);
+    await queue.clearAndSuspend();
+    await queue.enqueue(43, 4.0);
+    conn.emitStatus([ConnectivityResult.wifi]);
+    await _pump();
+    expect(client.calls, isEmpty);
+
+    await queue.init();
+    conn.emitStatus([ConnectivityResult.wifi]);
+    await _pump();
+    expect(client.calls, isEmpty);
+    await queue.enqueue(44, 8.0);
+    expect(client.calls, hasLength(1));
+    expect(client.calls.single.single['media_id'], 44);
+    await queue.dispose();
+  });
+
+  test('in-flight enqueue is removed before a new account resumes', () async {
+    final delegate = await _openInMemoryDb();
+    final db = _DelayedInsertDatabase(delegate);
+    final conn = _FakeConnectivity();
+    final queue =
+        ProgressQueue(apiClient: _FakeApiClient(), db: db, connectivity: conn);
+    await queue.init();
+    final enqueueFuture = queue.enqueue(1, 1.0);
+    await db.insertStarted.future;
+    final clearFuture = queue.clearAndSuspend();
+    db.releaseInsert.complete();
+    await Future.wait([enqueueFuture, clearFuture]);
+    expect(await delegate.query('progress_queue'), isEmpty);
+
+    await queue.resume();
+    await queue.enqueue(2, 2.0);
+    expect((await delegate.query('progress_queue')).single['media_id'], 2);
+    await queue.dispose();
+    conn.close();
+  });
+
+  for (final oldRequestSucceeds in [true, false]) {
+    test(
+        'old in-flight flush cannot affect next account '
+        '(${oldRequestSucceeds ? 'success' : 'failure'})', () async {
+      final db = await _openInMemoryDb();
+      final client = _DelayedProgressClient();
+      final conn = _FakeConnectivity();
+      final queue =
+          ProgressQueue(apiClient: client, db: db, connectivity: conn);
+      await queue.init();
+      await queue.enqueue(1, 1.0);
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await client.firstStarted.future;
+
+      await queue.clearAndSuspend();
+      await queue.init();
+      conn.emitStatus([ConnectivityResult.none]);
+      await queue.enqueue(2, 2.0);
+      client.shouldThrowOnNextCall = !oldRequestSucceeds;
+      client.releaseFirst.complete();
+      await _pump();
+      expect((await db.query('progress_queue')).single['media_id'], 2);
+
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.calls, hasLength(1));
+      expect(client.calls.single.single['media_id'], 2);
+      await queue.dispose();
+      conn.close();
+    });
+  }
+
+  test('new account flush retries after an old request releases the guard',
+      () async {
+    final db = await _openInMemoryDb();
+    final client = _DelayedProgressClient();
+    final conn = _FakeConnectivity();
+    final queue = ProgressQueue(apiClient: client, db: db, connectivity: conn);
+    await queue.init();
+    await queue.enqueue(1, 1.0);
+    conn.emitStatus([ConnectivityResult.wifi]);
+    await client.firstStarted.future;
+
+    await queue.clearAndSuspend();
+    await queue.resume();
+    await queue.enqueue(2, 2.0);
+    // This online enqueue asks to flush B while A's request still owns the
+    // guard. No second connectivity event is sent after A completes.
+    client.releaseFirst.complete();
+    await _pump();
+    expect(client.calls, hasLength(1));
+    expect(client.calls.single.single['media_id'], 2);
+    await queue.dispose();
+    conn.close();
   });
 
   // --------------------------------------------------------------------------
@@ -162,7 +338,8 @@ void main() {
       await queue.dispose();
     });
 
-    test('stores multiple items while offline without calling the API', () async {
+    test('stores multiple items while offline without calling the API',
+        () async {
       final (:queue, :client, :conn) = await _makeQueue();
 
       await queue.enqueue(1, 5.0);
@@ -213,7 +390,8 @@ void main() {
       await queue.dispose();
     });
 
-    test('payload contains media_id, position_seconds, and observed_at', () async {
+    test('payload contains media_id, position_seconds, and observed_at',
+        () async {
       final (:queue, :client, :conn) = await _makeQueue();
 
       await queue.enqueue(5, 99.5);
@@ -259,7 +437,8 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('flush retains rows on server error', () {
-    test('rows survive a failed flush and are sent on the next attempt', () async {
+    test('rows survive a failed flush and are sent on the next attempt',
+        () async {
       final (:queue, :client, :conn) = await _makeQueue();
 
       await queue.enqueue(30, 5.0);
@@ -312,7 +491,8 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('concurrent flush guard', () {
-    test('two rapid connectivity events result in at most one API call', () async {
+    test('two rapid connectivity events result in at most one API call',
+        () async {
       final (:queue, :client, :conn) = await _makeQueue();
 
       await queue.enqueue(50, 1.0);

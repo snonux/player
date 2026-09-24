@@ -60,7 +60,7 @@ class _FakeApiClient extends PlayerApiClient {
   @override
   Future<Map<String, dynamic>> createAPIToken(
           {required String name, int? expiresInDays}) async =>
-      {'token': 'pt-test-token'};
+      {'id': 7, 'token': 'pt-test-token'};
 
   @override
   Future<User> bootstrap({
@@ -83,7 +83,7 @@ class _DelayedFakeApiClient extends PlayerApiClient {
   @override
   Future<Map<String, dynamic>> createAPIToken(
           {required String name, int? expiresInDays}) async =>
-      {'token': 'pt-test-token'};
+      {'id': 7, 'token': 'pt-test-token'};
 
   /// Resolves the pending bootstrap call with [user].
   void complete(User user) => _completer.complete(user);

@@ -109,7 +109,13 @@ class _FakeApiClient extends PlayerApiClient {
 /// can be injected wherever the interface is required).
 class _FakeProgressQueue implements ProgressQueueBase {
   @override
-  Future<void> init() async {} // no-op — no DB needed in widget tests
+  Future<void> clearAndSuspend() async {}
+  @override
+  Future<void> init(
+      {bool suspended = false}) async {} // no-op — no DB needed in widget tests
+
+  @override
+  Future<void> resume() async {}
 
   @override
   Future<void> enqueue(
@@ -246,7 +252,8 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
 
-    testWidgets('loading indicator is still shown after one pump (initState fires but platform call is pending)',
+    testWidgets(
+        'loading indicator is still shown after one pump (initState fires but platform call is pending)',
         (tester) async {
       final fakeClient = _FakeApiClient();
       await _pumpScreen(tester, fakeClient);
@@ -296,14 +303,22 @@ void main() {
       // have the expected values (compile-time check via Key() equality).
       // The actual widgets only appear after a successful platform init, which
       // is not available in the test harness.
-      expect(const Key('audio_player_error'), equals(const Key('audio_player_error')));
-      expect(const Key('audio_player_error_message'), equals(const Key('audio_player_error_message')));
-      expect(const Key('audio_player_retry'), equals(const Key('audio_player_retry')));
-      expect(const Key('audio_player_play_pause'), equals(const Key('audio_player_play_pause')));
-      expect(const Key('audio_player_seek_bar'), equals(const Key('audio_player_seek_bar')));
-      expect(const Key('audio_player_skip_back'), equals(const Key('audio_player_skip_back')));
-      expect(const Key('audio_player_skip_forward'), equals(const Key('audio_player_skip_forward')));
-      expect(const Key('audio_player_speed_selector'), equals(const Key('audio_player_speed_selector')));
+      expect(const Key('audio_player_error'),
+          equals(const Key('audio_player_error')));
+      expect(const Key('audio_player_error_message'),
+          equals(const Key('audio_player_error_message')));
+      expect(const Key('audio_player_retry'),
+          equals(const Key('audio_player_retry')));
+      expect(const Key('audio_player_play_pause'),
+          equals(const Key('audio_player_play_pause')));
+      expect(const Key('audio_player_seek_bar'),
+          equals(const Key('audio_player_seek_bar')));
+      expect(const Key('audio_player_skip_back'),
+          equals(const Key('audio_player_skip_back')));
+      expect(const Key('audio_player_skip_forward'),
+          equals(const Key('audio_player_skip_forward')));
+      expect(const Key('audio_player_speed_selector'),
+          equals(const Key('audio_player_speed_selector')));
     });
   });
 
@@ -312,7 +327,8 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('stream URL resolution', () {
-    testWidgets('shows loading state when mediaUrl is null (falls back to client.streamUrl)',
+    testWidgets(
+        'shows loading state when mediaUrl is null (falls back to client.streamUrl)',
         (tester) async {
       // When mediaUrl is null the screen calls client.streamUrl(mediaId).
       // The platform call blocks in the test harness so we see the loading state.
@@ -381,7 +397,8 @@ void main() {
       );
 
       expect(find.byKey(const Key('audio_player_error')), findsOneWidget);
-      expect(find.byKey(const Key('audio_player_error_message')), findsOneWidget);
+      expect(
+          find.byKey(const Key('audio_player_error_message')), findsOneWidget);
       expect(find.byKey(const Key('audio_player_retry')), findsOneWidget);
 
       // Error message must be non-empty.

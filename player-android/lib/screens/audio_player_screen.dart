@@ -137,7 +137,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     final url = widget.mediaUrl ?? client.streamUrl(mediaIdInt);
 
     // Step 1–2: build auth headers (Bearer + session cookie).
-    final headers = await _buildAuthHeaders(storage, cookieJar, Uri.parse(url));
+    final headers = await _buildAuthHeaders(
+        storage,
+        cookieJar,
+        ref.read(credentialMutationQueueProvider),
+        ref.read(playerBaseUrlProvider),
+        Uri.parse(url));
     if (!mounted) return;
 
     // Step 3: load the authenticated source; show error UI on failure.
@@ -174,17 +179,17 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   Future<Map<String, String>> _buildAuthHeaders(
     TokenStorage storage,
     CookieJar jar,
+    CredentialMutationQueue mutations,
+    Uri baseUrl,
     Uri url,
   ) async {
-    final token = await storage.readToken();
-    final cookies = await jar.loadForRequest(url);
-    final cookieHeader = cookies
-        .map((c) => '${c.name}=${c.value}')
-        .join('; ');
-    return <String, String>{
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-      if (cookieHeader.isNotEmpty) 'Cookie': cookieHeader,
-    };
+    return accountRequestHeaders(
+      uri: url,
+      baseUrl: baseUrl,
+      storage: storage,
+      cookieJar: jar,
+      mutations: mutations,
+    );
   }
 
   /// Loads [url] into [player] with [headers]; returns `true` on success.
@@ -535,7 +540,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
             // Skip back 15 s
             IconButton(
               key: const Key('audio_player_skip_back'),
-              icon: const Icon(Icons.fast_rewind, color: Colors.white, size: 36),
+              icon:
+                  const Icon(Icons.fast_rewind, color: Colors.white, size: 36),
               onPressed: () => _skip(-_kSkipDuration),
               tooltip: 'Skip back 15 seconds',
             ),
@@ -544,7 +550,9 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
             IconButton(
               key: const Key('audio_player_play_pause'),
               icon: Icon(
-                isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                isPlaying
+                    ? Icons.pause_circle_filled
+                    : Icons.play_circle_filled,
                 color: Colors.white,
                 size: 64,
               ),
@@ -580,14 +588,14 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
       children: _kSpeedOptions.map((speed) {
         final isSelected = _playbackSpeed == speed;
         return TextButton(
-          key: Key('audio_player_speed_${speed.toString().replaceAll('.', '_')}'),
+          key: Key(
+              'audio_player_speed_${speed.toString().replaceAll('.', '_')}'),
           onPressed: () => _setSpeed(speed),
           child: Text(
             '${speed}x',
             style: TextStyle(
               color: isSelected ? Colors.white : Colors.white54,
-              fontWeight:
-                  isSelected ? FontWeight.bold : FontWeight.normal,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
         );

@@ -407,6 +407,23 @@ curl -s -X DELETE https://player.example.com/api/v1/auth/tokens/7 \
 
 ---
 
+### `DELETE /api/auth/tokens/current` · `DELETE /api/v1/auth/tokens/current`
+
+Revoke the Bearer token used for this request. This supports clients that have
+the token value but did not retain its numeric ID. A session cookie alone cannot
+use this endpoint. The token stops authenticating immediately after success.
+
+**Response `204 No Content`** (no body).
+
+**Status codes:** `204`, `401`, `500`
+
+```bash
+curl -s -X DELETE https://player.example.com/api/v1/auth/tokens/current \
+  -H "Authorization: Bearer pt_xxxxxxxxxxxxxxxxxxxx"
+```
+
+---
+
 ## Configuration
 
 ### `GET /api/config` · `GET /api/v1/config`
@@ -1432,6 +1449,7 @@ Toggle the per-user completion state of a podcast episode.
 | `POST` | `auth/tokens` | session | Mint API token |
 | `GET` | `auth/tokens` | session | List API tokens |
 | `DELETE` | `auth/tokens/{id}` | session | Revoke API token |
+| `DELETE` | `auth/tokens/current` | Bearer | Revoke the presented API token |
 | `GET` | `config` | session | Client configuration |
 | `GET` | `sets` | session | List sets |
 | `GET` | `sets/{id}/browse` | session | Browse set folders |

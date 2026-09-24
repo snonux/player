@@ -56,8 +56,11 @@ final _dioClientProvider = Provider<DioClient>((ref) {
     // Share the navigator key with go_router so 401 redirects go through the
     // correct router instance rather than the raw Navigator.
     navigatorKey: navigatorKey,
-    onUnauthorized: () =>
-        ref.read(authStateProvider.notifier).clearAfterUnauthorized(),
+    onUnauthorized: () async {
+      await ref
+          .read(authStateProvider.notifier)
+          .clearAfterUnauthorized(advanceGeneration: false);
+    },
     loginRoute: '/login',
   );
 });
@@ -67,7 +70,10 @@ final apiClientProvider = Provider<PlayerApiClient>((ref) {
   // PlayerApiClient method to a real HTTP call via Dio.  The base class now
   // acts as the public interface (dependency inversion); callers depend on
   // PlayerApiClient, not on this concrete class.
-  return DioPlayerApiClient(dio: ref.watch(_dioClientProvider).dio);
+  return DioPlayerApiClient(
+    dio: ref.watch(_dioClientProvider).dio,
+    credentialEpoch: () => ref.read(credentialMutationQueueProvider).generation,
+  );
 });
 
 /// Provides the same [CookieJar] backing [apiClientProvider]'s Dio stack so

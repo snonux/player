@@ -66,7 +66,7 @@ class _FakeApiClient extends PlayerApiClient {
   Future<Map<String, dynamic>> createAPIToken(
       {required String name, int? expiresInDays}) async {
     if (tokenError != null) throw tokenError!;
-    return {'token': 'pt-test-token'};
+    return {'id': 7, 'token': 'pt-test-token'};
   }
 
   // Captures the last credentials passed to login for assertion in tests.
@@ -96,7 +96,7 @@ class _DelayedFakeApiClient extends PlayerApiClient {
   @override
   Future<Map<String, dynamic>> createAPIToken(
           {required String name, int? expiresInDays}) async =>
-      {'token': 'pt-test-token'};
+      {'id': 7, 'token': 'pt-test-token'};
 
   /// Resolves the pending login call with [user].
   void complete(User user) => _completer.complete(user);

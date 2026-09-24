@@ -324,6 +324,8 @@ func TestIntegration_FullFlow(t *testing.T) {
 	// The logout route is registered from /api/logout → /api/v1/logout.
 	rr := doRequest(t, env, http.MethodPost, "/api/v1/logout", nil, cookie, "")
 	assertStatus(t, rr, http.StatusNoContent)
+	rr = doRequest(t, env, http.MethodGet, "/api/v1/sets", nil, cookie, "")
+	assertStatus(t, rr, http.StatusUnauthorized)
 
 	// 4. Log back in to get a fresh cookie for the remaining steps.
 	cookie = loginAsUser(t, env, "admin", "secret123")
@@ -535,6 +537,21 @@ func TestIntegration_APITokens(t *testing.T) {
 		rr = doRequest(t, env, http.MethodDelete, "/api/v1/auth/tokens/"+idStr, nil, cookie, "")
 		assertStatus(t, rr, http.StatusNoContent)
 	})
+
+	t.Run("revoke/current-bearer", func(t *testing.T) {
+		token := mintToken(t, env, cookie)
+		rr := doRequest(t, env, http.MethodDelete, "/api/v1/auth/tokens/current", nil, nil, token)
+		assertStatus(t, rr, http.StatusNoContent)
+		rr = doRequest(t, env, http.MethodGet, "/api/v1/sets", nil, nil, token)
+		assertStatus(t, rr, http.StatusUnauthorized)
+	})
+
+	t.Run("revoke/current-requires-bearer", func(t *testing.T) {
+		rr := doRequest(t, env, http.MethodDelete, "/api/v1/auth/tokens/current", nil, cookie, "")
+		assertStatus(t, rr, http.StatusUnauthorized)
+		rr = doRequest(t, env, http.MethodGet, "/api/v1/sets", nil, cookie, "")
+		assertStatus(t, rr, http.StatusOK)
+	})
 }
 
 // ------------------------------------------------------------------
@@ -557,6 +574,7 @@ func TestIntegration_Unauthenticated(t *testing.T) {
 		{http.MethodGet, "/api/v1/auth/tokens"},
 		{http.MethodPost, "/api/v1/auth/tokens"},
 		{http.MethodDelete, "/api/v1/auth/tokens/1"},
+		{http.MethodDelete, "/api/v1/auth/tokens/current"},
 		{http.MethodPost, "/api/v1/logout"},
 		// Config
 		{http.MethodGet, "/api/v1/config"},

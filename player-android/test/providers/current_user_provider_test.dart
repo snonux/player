@@ -30,7 +30,7 @@ class _FakeApiClient extends PlayerApiClient {
   @override
   Future<Map<String, dynamic>> createAPIToken(
           {required String name, int? expiresInDays}) async =>
-      {'token': 'pt-test-token'};
+      {'id': 7, 'token': 'pt-test-token'};
 }
 
 void main() {

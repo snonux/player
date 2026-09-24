@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -121,7 +122,11 @@ func (s *Server) handleCountUsers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session")
 	if err == nil && cookie.Value != "" {
-		_ = s.sm.DeleteSession(r.Context(), cookie.Value)
+		if err := s.sm.DeleteSession(r.Context(), cookie.Value); err != nil {
+			s.clearSessionCookie(w)
+			handleError(w, fmt.Errorf("delete session: %w", err))
+			return
+		}
 	}
 	s.clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
@@ -187,6 +192,33 @@ func (s *Server) handleRevokeAPIToken(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil || id == 0 {
 		badRequest(w, "invalid token id")
+		return
+	}
+	if err := s.authSvc.RevokeAPIToken(r.Context(), userIDFromContext(r), id); err != nil {
+		handleError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRevokeCurrentAPIToken revokes the Bearer token used for this request.
+// It lets older Android clients revoke tokens minted before they stored IDs.
+func (s *Server) handleRevokeCurrentAPIToken(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.authSvc) {
+		return
+	}
+	if _, ok := bearerToken(r); !ok {
+		http.Error(w, "bearer token required", http.StatusUnauthorized)
+		return
+	}
+	idText, ok := strings.CutPrefix(sessionIDFromContext(r), "api-token:")
+	if !ok {
+		http.Error(w, "bearer token required", http.StatusUnauthorized)
+		return
+	}
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid bearer token", http.StatusUnauthorized)
 		return
 	}
 	if err := s.authSvc.RevokeAPIToken(r.Context(), userIDFromContext(r), id); err != nil {

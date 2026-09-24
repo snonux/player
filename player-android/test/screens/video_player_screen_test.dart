@@ -115,7 +115,12 @@ class _FakeApiClient extends PlayerApiClient {
 /// can be injected wherever the interface is required).
 class _FakeProgressQueue implements ProgressQueueBase {
   @override
-  Future<void> init() async {}
+  Future<void> clearAndSuspend() async {}
+  @override
+  Future<void> init({bool suspended = false}) async {}
+
+  @override
+  Future<void> resume() async {}
 
   @override
   Future<void> enqueue(

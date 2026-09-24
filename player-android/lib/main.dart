@@ -7,6 +7,7 @@ import 'providers/audio_handler_provider.dart';
 import 'providers/auth_state_provider.dart';
 import 'providers/progress_queue_provider.dart';
 import 'providers/theme_provider.dart';
+import 'navigation_key.dart';
 import 'router.dart';
 import 'services/audio_handler.dart';
 
@@ -59,12 +60,14 @@ void main() async {
   );
 
   // Restore the saved credential before protected screens or queued requests.
-  await container.read(authStateProvider.future);
+  final auth = await container.read(authStateProvider.future);
 
   // Initialise the offline progress queue (opens SQLite DB, subscribes to
   // connectivity). Must be done before any player screen opens so that the
   // queue is ready to accept enqueue calls immediately.
-  await container.read(progressQueueProvider).init();
+  await container
+      .read(progressQueueProvider)
+      .init(suspended: !auth.isAuthenticated);
 
   runApp(
     UncontrolledProviderScope(
@@ -109,6 +112,7 @@ class PlayerAndroidApp extends ConsumerWidget {
     final themeMode = ref.watch(themeProvider).valueOrNull ?? ThemeMode.system;
 
     return MaterialApp.router(
+      scaffoldMessengerKey: appMessengerKey,
       title: 'Player',
       routerConfig: router,
       // Material 3 is enabled in both ThemeData instances; see theme_provider.dart.

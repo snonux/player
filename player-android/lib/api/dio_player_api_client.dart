@@ -24,7 +24,10 @@ class DioPlayerApiClient extends PlayerApiClient {
   /// In production [dio] should come from [DioClient] which adds bearer-token
   /// injection and 401→login redirect interceptors. In tests, pass a plain or
   /// mock [Dio] to keep tests fast and hermetic.
-  DioPlayerApiClient({required super.dio});
+  DioPlayerApiClient({required super.dio, int Function()? credentialEpoch})
+      : _credentialEpoch = credentialEpoch;
+
+  final int Function()? _credentialEpoch;
 
   // ---------------------------------------------------------------------------
   // Auth
@@ -67,8 +70,11 @@ class DioPlayerApiClient extends PlayerApiClient {
   /// POST /api/v1/logout — returns 204 No Content.
   /// Bearer-authenticated clients should revoke the token directly instead.
   @override
-  Future<void> logout() async {
-    await rawDio.post<void>('$_kApiV1/logout');
+  Future<void> logout({String? sessionCookie}) async {
+    await rawDio.post<void>('$_kApiV1/logout',
+        options: Options(extra: {
+          if (sessionCookie != null) 'logoutCookie': sessionCookie,
+        }));
   }
 
   // ---------------------------------------------------------------------------
@@ -628,7 +634,8 @@ class DioPlayerApiClient extends PlayerApiClient {
   /// The optional [folder] query parameter scopes the cover to a subfolder.
   @override
   Future<Uint8List> getSetCover(int setId, {String? folder}) {
-    final query = folder != null ? '?folder=${Uri.encodeComponent(folder)}' : '';
+    final query =
+        folder != null ? '?folder=${Uri.encodeComponent(folder)}' : '';
     return _getBytesFromUrl('$_kApiV1/sets/$setId/cover$query');
   }
 
@@ -720,6 +727,9 @@ class DioPlayerApiClient extends PlayerApiClient {
     await rawDio.post<void>(
       '$_kApiV1/progress/batch',
       data: {'updates': updates},
+      options: Options(extra: {
+        if (_credentialEpoch != null) 'credentialEpoch': _credentialEpoch(),
+      }),
     );
   }
 
@@ -960,6 +970,9 @@ class DioPlayerApiClient extends PlayerApiClient {
     final response = await rawDio.post<Map<String, dynamic>>(
       '$_kApiV1/auth/tokens',
       data: body,
+      options: Options(extra: {
+        if (_credentialEpoch != null) 'credentialEpoch': _credentialEpoch(),
+      }),
     );
     return response.data!;
   }
@@ -969,8 +982,19 @@ class DioPlayerApiClient extends PlayerApiClient {
   /// DELETE /api/v1/auth/tokens/{id} — returns 204 No Content.
   /// Only the owning user can revoke their own tokens.
   @override
-  Future<void> revokeAPIToken(int tokenId) async {
-    await rawDio.delete<void>('$_kApiV1/auth/tokens/$tokenId');
+  Future<void> revokeAPIToken(int tokenId, {String? bearerToken}) async {
+    await rawDio.delete<void>('$_kApiV1/auth/tokens/$tokenId',
+        options: Options(extra: {
+          if (bearerToken != null) 'logoutBearer': bearerToken,
+        }));
+  }
+
+  /// DELETE /api/v1/auth/tokens/current — legacy mobile installs saved the
+  /// Bearer token but not its numeric ID.
+  @override
+  Future<void> revokeCurrentAPIToken({required String bearerToken}) async {
+    await rawDio.delete<void>('$_kApiV1/auth/tokens/current',
+        options: Options(extra: {'logoutBearer': bearerToken}));
   }
 
   // ---------------------------------------------------------------------------

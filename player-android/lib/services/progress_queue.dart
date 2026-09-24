@@ -49,7 +49,10 @@ abstract class ProgressQueueBase {
   /// Opens the backing store and subscribes to connectivity changes.
   ///
   /// Must be called once before [enqueue].
-  Future<void> init();
+  Future<void> init({bool suspended = false});
+
+  /// Reactivates a queue already opened at app startup.
+  Future<void> resume();
 
   /// Persists a playback-progress update and, if online, flushes immediately.
   Future<void> enqueue(int mediaId, double positionSeconds,
@@ -57,6 +60,9 @@ abstract class ProgressQueueBase {
 
   /// Cancels subscriptions and closes the backing store.
   Future<void> dispose();
+
+  /// Discards account-owned progress and stops automatic sync until [init].
+  Future<void> clearAndSuspend();
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +169,22 @@ class ProgressQueue implements ProgressQueueBase {
 
   // Guards against concurrent flush operations.
   bool _isFlushing = false;
+  int? _retryEpoch;
+  bool _suspended = false;
+  int _accountEpoch = 0;
+  Future<void> _dbMutationTail = Future.value();
+
+  Future<T> _runDbMutation<T>(Future<T> Function() action) async {
+    final previous = _dbMutationTail;
+    final release = Completer<void>();
+    _dbMutationTail = release.future;
+    await previous;
+    try {
+      return await action();
+    } finally {
+      release.complete();
+    }
+  }
 
   // Holds the in-flight flush future so [dispose] can await it before closing
   // the database, preventing "database_closed" errors on shutdown.
@@ -185,9 +207,34 @@ class ProgressQueue implements ProgressQueueBase {
   /// supplied, falling back to [_openDatabase] which calls sqflite's
   /// [openDatabase] with the default on-disk path.
   @override
-  Future<void> init() async {
+  Future<void> init({bool suspended = false}) async {
+    _suspended = suspended;
     _db ??= await (_databaseFactory?.call() ?? _openDatabase());
-    _subscribeToConnectivity();
+    if (suspended) {
+      _accountEpoch++;
+      await _connectivitySub?.cancel();
+      _connectivitySub = null;
+      await _runDbMutation(() => _db!.delete(_kTable));
+    } else {
+      _subscribeToConnectivity();
+    }
+  }
+
+  @override
+  Future<void> resume() async {
+    if (_db != null) await init();
+  }
+
+  @override
+  Future<void> clearAndSuspend() async {
+    _suspended = true;
+    _accountEpoch++;
+    _retryEpoch = null;
+    await _connectivitySub?.cancel();
+    _connectivitySub = null;
+    await _runDbMutation(() async {
+      await _db?.delete(_kTable);
+    });
   }
 
   /// Cancels the connectivity subscription and closes the database.
@@ -203,6 +250,7 @@ class ProgressQueue implements ProgressQueueBase {
     // Ignore errors from the in-flight flush — they are already handled inside
     // [_flush] via try/finally; swallowing here avoids double-reporting.
     await _flushFuture?.catchError((_) {});
+    await _dbMutationTail;
     await _db?.close();
     _db = null;
   }
@@ -222,16 +270,22 @@ class ProgressQueue implements ProgressQueueBase {
     double positionSeconds, {
     bool finished = false,
   }) async {
+    if (_suspended) return;
     final db = _db;
     if (db == null) return; // Defensive: init not called.
 
     final now = DateTime.now().toUtc().toIso8601String();
-    await db.insert(_kTable, {
-      _kColMediaId: mediaId,
-      _kColPositionSeconds: positionSeconds,
-      _kColFinished: finished ? 1 : 0,
-      _kColQueuedAt: now,
+    final epoch = _accountEpoch;
+    await _runDbMutation(() async {
+      if (_suspended || epoch != _accountEpoch) return;
+      await db.insert(_kTable, {
+        _kColMediaId: mediaId,
+        _kColPositionSeconds: positionSeconds,
+        _kColFinished: finished ? 1 : 0,
+        _kColQueuedAt: now,
+      });
     });
+    if (_suspended || epoch != _accountEpoch) return;
 
     // Opportunistic online flush: attempt immediately on enqueue so that
     // updates sent while online bypass the DB round-trip latency.
@@ -260,11 +314,19 @@ class ProgressQueue implements ProgressQueueBase {
   /// The future is stored in [_flushFuture] so [dispose] can await it before
   /// closing the database, preventing use-after-close crashes on shutdown.
   Future<void> _flush() {
-    if (_isFlushing) return Future.value();
+    if (_suspended) return Future.value();
+    if (_isFlushing) {
+      _retryEpoch = _accountEpoch;
+      return Future.value();
+    }
     _isFlushing = true;
     _flushFuture = _flushPendingRows().whenComplete(() {
       _isFlushing = false;
       _flushFuture = null;
+      if (!_suspended && _retryEpoch == _accountEpoch) {
+        _retryEpoch = null;
+        unawaited(_flush().catchError((_) {}));
+      }
     });
     return _flushFuture!;
   }
@@ -274,6 +336,7 @@ class ProgressQueue implements ProgressQueueBase {
   /// Extracted from [_flush] to keep each method under ~30 lines and make the
   /// "load → send → delete" pipeline independently readable.
   Future<void> _flushPendingRows() async {
+    final epoch = _accountEpoch;
     final db = _db;
     if (db == null) return;
 
@@ -282,6 +345,7 @@ class ProgressQueue implements ProgressQueueBase {
       orderBy: '$_kColQueuedAt ASC',
     );
     if (rows.isEmpty) return;
+    if (_suspended || epoch != _accountEpoch) return;
 
     final updates = rows.map(_rowToUpdate).toList();
 
@@ -291,10 +355,14 @@ class ProgressQueue implements ProgressQueueBase {
     // Send — if this throws (network error, server 5xx) we skip deletion and
     // let the next connectivity event retry.
     await _apiClient.batchUpdateProgress(payload);
+    if (_suspended || epoch != _accountEpoch) return;
 
     // Delete the rows that were just sent successfully.
     final ids = updates.map((u) => u.rowId!).toList();
-    await _deleteRows(db, ids);
+    await _runDbMutation(() async {
+      if (_suspended || epoch != _accountEpoch) return;
+      await _deleteRows(db, ids);
+    });
   }
 
   // ---------------------------------------------------------------------------

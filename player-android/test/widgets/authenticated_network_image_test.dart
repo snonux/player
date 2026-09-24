@@ -44,6 +44,8 @@ void main() {
         playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
         tokenStorageProvider.overrideWithValue(_TokenStorage('pt-restored')),
         cookieJarProvider.overrideWithValue(jar),
+        credentialMutationQueueProvider.overrideWithValue(
+            CredentialMutationQueue(credentialsEnabled: true)),
       ],
       child: image(imageUrl),
     ));
@@ -93,6 +95,8 @@ void main() {
       playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
       tokenStorageProvider.overrideWithValue(storage),
       cookieJarProvider.overrideWithValue(CookieJar()),
+      credentialMutationQueueProvider
+          .overrideWithValue(CredentialMutationQueue(credentialsEnabled: true)),
     ]);
     addTearDown(container.dispose);
     Future<String?> pumpImage() async {
@@ -115,5 +119,27 @@ void main() {
     expect(secondKey, isNot(equals(firstKey)));
     expect(firstKey, isNot(contains('pt-account-a')));
     expect(secondKey, isNot(contains('pt-account-b')));
+  });
+
+  testWidgets('disabled credential gate omits stored bearer and cookie',
+      (tester) async {
+    final jar = CookieJar();
+    await jar.saveFromResponse(
+        Uri.parse(imageUrl), [Cookie('session', 'old-session')]);
+    final gate = CredentialMutationQueue(credentialsEnabled: true)
+      ..beginAuthChange();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
+        tokenStorageProvider.overrideWithValue(_TokenStorage('pt-stale')),
+        cookieJarProvider.overrideWithValue(jar),
+        credentialMutationQueueProvider.overrideWithValue(gate),
+      ],
+      child: image(imageUrl),
+    ));
+    await tester.pump();
+    final cached =
+        tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
+    expect(cached.httpHeaders, isEmpty);
   });
 }

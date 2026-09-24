@@ -46,7 +46,7 @@ class PlayerApiClient implements ProgressSyncClient {
   }) =>
       throw UnimplementedError();
 
-  Future<void> logout() => throw UnimplementedError();
+  Future<void> logout({String? sessionCookie}) => throw UnimplementedError();
 
   // ---------------------------------------------------------------------------
   // Health
@@ -65,8 +65,7 @@ class PlayerApiClient implements ProgressSyncClient {
   // Shared / public endpoints (no auth required)
   // ---------------------------------------------------------------------------
 
-  Future<String> getSharedMediaPage(String token) =>
-      throw UnimplementedError();
+  Future<String> getSharedMediaPage(String token) => throw UnimplementedError();
 
   Future<Uint8List> streamSharedMedia(String token, {String? range}) =>
       throw UnimplementedError();
@@ -183,8 +182,7 @@ class PlayerApiClient implements ProgressSyncClient {
   /// (e.g., `/s/abc123/stream`) without reaching into [rawDio] directly.
   /// Encapsulating this lookup here prevents the Dio transport detail from
   /// leaking into the UI layer (Interface Segregation, Dependency Inversion).
-  String get baseUrl =>
-      rawDio.options.baseUrl.replaceAll(RegExp(r'/$'), '');
+  String get baseUrl => rawDio.options.baseUrl.replaceAll(RegExp(r'/$'), '');
 
   Future<void> regenerateThumbnail(int mediaId) => throw UnimplementedError();
 
@@ -202,8 +200,7 @@ class PlayerApiClient implements ProgressSyncClient {
 
   Future<void> addTag(int mediaId, String tag) => throw UnimplementedError();
 
-  Future<void> removeTag(int mediaId, String tag) =>
-      throw UnimplementedError();
+  Future<void> removeTag(int mediaId, String tag) => throw UnimplementedError();
 
   // ---------------------------------------------------------------------------
   // Shares
@@ -308,8 +305,7 @@ class PlayerApiClient implements ProgressSyncClient {
   /// GET /api/v1/admin/permissions — returns a map with keys `sets`, `users`,
   /// and `permissions`.  The raw map is returned because the response combines
   /// three distinct object types that have no single unified model.
-  Future<Map<String, dynamic>> listPermissions() =>
-      throw UnimplementedError();
+  Future<Map<String, dynamic>> listPermissions() => throw UnimplementedError();
 
   Future<void> grantPermission({
     required int setId,
@@ -361,7 +357,12 @@ class PlayerApiClient implements ProgressSyncClient {
   /// Revokes a Bearer API token by its numeric [tokenId].
   ///
   /// DELETE /api/v1/auth/tokens/{id} — returns 204 No Content.
-  Future<void> revokeAPIToken(int tokenId) => throw UnimplementedError();
+  Future<void> revokeAPIToken(int tokenId, {String? bearerToken}) =>
+      throw UnimplementedError();
+
+  /// Revokes the presented Bearer token when older clients did not save its ID.
+  Future<void> revokeCurrentAPIToken({required String bearerToken}) =>
+      throw UnimplementedError();
 
   // ---------------------------------------------------------------------------
   // Progress (batch)

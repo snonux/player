@@ -44,8 +44,8 @@ type Server struct {
 	// expiry, session cookie Expires, API token expiry). Injected so tests
 	// can substitute a clock.MockClock and assert deterministic semantics
 	// instead of racing the wall clock.
-	clk    clock.Clock
-	mux    *http.ServeMux
+	clk     clock.Clock
+	mux     *http.ServeMux
 	handler http.Handler
 	// media groups all media-domain services (browse, write, share, tags,
 	// favorites, notes, progress, playback hints) into a single vertical slice.
@@ -128,16 +128,16 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 	// Populate the media vertical-slice sub-struct directly from the nested
 	// ServerServices.Media group so the Server never sees the flat list.
 	s := &Server{
-		store:   deps.Store,
-		hasher:  deps.Hasher,
-		sm:      deps.SessionManager,
-		cfg:     deps.Config,
-		clk:     deps.Clock,
-		mux:     http.NewServeMux(),
-		media:   deps.Services.Media,
-		authSvc: deps.Services.Auth,
-		adminSvc: deps.Services.Admin,
-		podcastSvc: deps.Services.Podcast,
+		store:         deps.Store,
+		hasher:        deps.Hasher,
+		sm:            deps.SessionManager,
+		cfg:           deps.Config,
+		clk:           deps.Clock,
+		mux:           http.NewServeMux(),
+		media:         deps.Services.Media,
+		authSvc:       deps.Services.Auth,
+		adminSvc:      deps.Services.Admin,
+		podcastSvc:    deps.Services.Podcast,
 		streamer:      deps.MediaStreamer,
 		staticFS:      deps.StaticFS,
 		shareRenderer: web.NewSharePageRenderer(deps.StaticFS),
@@ -279,6 +279,7 @@ func (s *Server) routesAuth() {
 	s.handleBoth(http.MethodPost, "/api/logout", s.requireSession(s.handleLogout))
 	s.handleBoth(http.MethodPost, "/api/auth/tokens", s.requireSession(s.handleCreateAPIToken))
 	s.handleBoth(http.MethodGet, "/api/auth/tokens", s.requireSession(s.handleListAPITokens))
+	s.handleBoth(http.MethodDelete, "/api/auth/tokens/current", s.requireSession(s.handleRevokeCurrentAPIToken))
 	s.handleBoth(http.MethodDelete, "/api/auth/tokens/{id}", s.requireSession(s.handleRevokeAPIToken))
 }
 

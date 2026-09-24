@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
 import '../api/player_api_client.dart';
+import '../api/dio_client.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/progress_queue_provider.dart';
 import '../services/progress_queue.dart';
@@ -127,16 +128,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     // without routing bytes through Dart.  Both Bearer (API-token auth) and
     // Cookie (session auth) headers are attached because ExoPlayer has its
     // own HTTP stack and does not share Dio's cookie jar.
-    final token = await storage.readToken();
-    final cookies = await cookieJar.loadForRequest(Uri.parse(url));
+    final headers = await accountRequestHeaders(
+      uri: Uri.parse(url),
+      baseUrl: ref.read(playerBaseUrlProvider),
+      storage: storage,
+      cookieJar: cookieJar,
+      mutations: ref.read(credentialMutationQueueProvider),
+    );
     if (!mounted) return;
-
-    final cookieHeader =
-        cookies.map((c) => '${c.name}=${c.value}').join('; ');
-    final headers = <String, String>{
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-      if (cookieHeader.isNotEmpty) 'Cookie': cookieHeader,
-    };
 
     // Step 3: create and initialise the VideoPlayerController.
     VideoPlayerController videoController;

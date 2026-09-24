@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/models/models.dart';
+import 'package:player_android/navigation_key.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/current_user_provider.dart';
@@ -86,6 +87,17 @@ class _FakeThemeNotifier extends ThemeNotifier {
     capturedMode = mode;
     // Mirror the production behaviour: update in-memory state immediately.
     state = AsyncData(mode);
+  }
+}
+
+class _FailedServerLogoutNotifier extends AuthStateNotifier {
+  @override
+  Future<AuthState> build() async => const AuthState.authenticated();
+
+  @override
+  Future<bool> logout() async {
+    state = const AsyncData(AuthState.unauthenticated());
+    return false;
   }
 }
 
@@ -348,6 +360,31 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('logout flow', () {
+    testWidgets('server warning remains visible after login navigation',
+        (tester) async {
+      final router = GoRouter(initialLocation: '/', routes: [
+        GoRoute(path: '/', builder: (_, __) => const SettingsScreen()),
+        GoRoute(
+            path: '/login',
+            builder: (_, __) => const Scaffold(body: Text('Login'))),
+      ]);
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          authStateProvider.overrideWith(_FailedServerLogoutNotifier.new),
+          settingsProvider.overrideWith(
+              () => _FakeSettingsNotifier('https://player.example')),
+          tokenStorageProvider.overrideWithValue(_FakeTokenStorage()),
+        ],
+        child: MaterialApp.router(
+            scaffoldMessengerKey: appMessengerKey, routerConfig: router),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_logout')));
+      await tester.pumpAndSettle();
+      expect(find.text('Login'), findsOneWidget);
+      expect(find.textContaining('Server sign-out could not be confirmed'),
+          findsOneWidget);
+    });
     testWidgets('logout button is visible and enabled initially',
         (tester) async {
       await _pumpSettingsScreen(tester);

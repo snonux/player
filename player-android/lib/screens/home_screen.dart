@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../app_routes.dart';
+import '../api/dio_client.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../widgets/authenticated_network_image.dart';
@@ -105,19 +106,19 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
   /// [CachedNetworkImage.httpHeaders] — mirroring the pattern in
   /// [audio_player_screen.dart] and [video_player_screen.dart].
   Future<void> _loadCoverHeaders() async {
-    final client = ref.read(apiClientProvider);
     final storage = ref.read(tokenStorageProvider);
     final jar = ref.read(cookieJarProvider);
-    final uri = Uri.parse(client.baseUrl);
-    final token = await storage.readToken();
-    final cookies = await jar.loadForRequest(uri);
-    final header = cookies.map((c) => '${c.name}=${c.value}').join('; ');
+    final uri = ref.read(playerBaseUrlProvider);
+    final headers = await accountRequestHeaders(
+      uri: uri,
+      baseUrl: ref.read(playerBaseUrlProvider),
+      storage: storage,
+      cookieJar: jar,
+      mutations: ref.read(credentialMutationQueueProvider),
+    );
     if (!mounted) return;
     setState(() {
-      _coverHeaders = {
-        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-        if (header.isNotEmpty) 'Cookie': header,
-      };
+      _coverHeaders = headers;
     });
   }
 

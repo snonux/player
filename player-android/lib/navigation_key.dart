@@ -7,3 +7,5 @@ import 'package:flutter/material.dart';
 /// Kept in a dedicated file to break any circular import that would arise
 /// if router.dart and api_client_provider.dart tried to import each other.
 final navigatorKey = GlobalKey<NavigatorState>(debugLabel: 'go_router');
+final appMessengerKey =
+    GlobalKey<ScaffoldMessengerState>(debugLabel: 'app_messenger');

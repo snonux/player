@@ -147,6 +147,8 @@ Future<void> _pumpSetsListScreen(
       overrides: [
         // Avoid OS keychain in tests.
         tokenStorageProvider.overrideWithValue(storage),
+        credentialMutationQueueProvider.overrideWithValue(
+            CredentialMutationQueue(credentialsEnabled: true)),
         playerBaseUrlProvider
             .overrideWithValue(Uri.parse('http://test.invalid')),
         // Use the controllable fake instead of a real HTTP client.

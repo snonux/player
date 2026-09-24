@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../app_routes.dart';
+import '../navigation_key.dart';
 import '../providers/auth_state_provider.dart';
 import '../providers/current_user_provider.dart';
 import '../providers/settings_provider.dart';
@@ -85,7 +86,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _logout() async {
     setState(() => _isLoggingOut = true);
     try {
-      await ref.read(authStateProvider.notifier).logout();
+      var serverRevoked = false;
+      try {
+        serverRevoked = await ref.read(authStateProvider.notifier).logout();
+      } catch (_) {
+        // The notifier still clears local auth on failures; keep the warning
+        // and login navigation available if an unexpected error escapes.
+      }
+      if (!serverRevoked) {
+        final messenger = appMessengerKey.currentState ??
+            (mounted ? ScaffoldMessenger.maybeOf(context) : null);
+        messenger?.showSnackBar(const SnackBar(
+          content: Text('Signed out on this device. Server sign-out could not '
+              'be confirmed; check API Tokens from another session.'),
+        ));
+      }
       // Safety-net navigation in case the router redirect has not fired yet.
       if (mounted) context.go(AppRoutes.login);
     } finally {

@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/api_client_provider.dart';
+import '../providers/auth_state_provider.dart';
+import '../api/dio_client.dart';
 
 /// Keep protected image caches separate across credentials and accounts.
 /// Only the digest is stored in the cache key, never the token or cookie.
@@ -23,14 +25,14 @@ String authenticatedImageCacheKey(
 final authenticatedImageHeadersProvider = FutureProvider.autoDispose
     .family<Map<String, String>?, Uri>((ref, uri) async {
   if (uri.origin != ref.read(playerBaseUrlProvider).origin) return null;
-  final token = await ref.read(tokenStorageProvider).readToken();
-  final cookies = await ref.read(cookieJarProvider).loadForRequest(uri);
-  final cookieHeader =
-      cookies.map((cookie) => '${cookie.name}=${cookie.value}').join('; ');
-  return {
-    if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-    if (cookieHeader.isNotEmpty) 'Cookie': cookieHeader,
-  };
+  if (ref.exists(authStateProvider)) ref.watch(authStateProvider);
+  return accountRequestHeaders(
+    uri: uri,
+    baseUrl: ref.read(playerBaseUrlProvider),
+    storage: ref.read(tokenStorageProvider),
+    cookieJar: ref.read(cookieJarProvider),
+    mutations: ref.read(credentialMutationQueueProvider),
+  );
 });
 
 /// Cached image whose request uses the same credentials as protected API calls.
