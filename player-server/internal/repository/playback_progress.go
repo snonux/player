@@ -16,8 +16,14 @@ func (s *SQLite) UpsertProgress(ctx context.Context, progress *model.PlaybackPro
 
 func upsertProgress(ctx context.Context, db sqlExecer, progress *model.PlaybackProgress) error {
 	_, err := db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO playback_progress (user_id, media_id, position_seconds, finished, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		progress.UserID, progress.MediaID, progress.PositionSeconds, progress.Finished, progress.UpdatedAt,
+		`INSERT INTO playback_progress (user_id, media_id, position_seconds, accumulated_seconds, finished, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(user_id, media_id) DO UPDATE SET
+		 position_seconds = excluded.position_seconds,
+		 accumulated_seconds = CASE WHEN excluded.finished THEN 0 ELSE MAX(playback_progress.accumulated_seconds, excluded.accumulated_seconds) END,
+		 finished = excluded.finished,
+		 updated_at = excluded.updated_at`,
+		progress.UserID, progress.MediaID, progress.PositionSeconds, progress.AccumulatedSeconds, progress.Finished, progress.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert progress: %w", err)
@@ -32,11 +38,11 @@ func (s *SQLite) GetProgress(ctx context.Context, userID, mediaID int64) (*model
 
 func getProgress(ctx context.Context, db sqlQueryRower, userID, mediaID int64) (*model.PlaybackProgress, error) {
 	row := db.QueryRowContext(ctx,
-		`SELECT user_id, media_id, position_seconds, finished, updated_at FROM playback_progress WHERE user_id = ? AND media_id = ?`,
+		`SELECT user_id, media_id, position_seconds, accumulated_seconds, finished, updated_at FROM playback_progress WHERE user_id = ? AND media_id = ?`,
 		userID, mediaID,
 	)
 	var p model.PlaybackProgress
-	if err := row.Scan(&p.UserID, &p.MediaID, &p.PositionSeconds, &p.Finished, &p.UpdatedAt); err == sql.ErrNoRows {
+	if err := row.Scan(&p.UserID, &p.MediaID, &p.PositionSeconds, &p.AccumulatedSeconds, &p.Finished, &p.UpdatedAt); err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
 		return nil, err
@@ -53,10 +59,62 @@ func (s *SQLite) DeleteProgress(ctx context.Context, userID, mediaID int64) erro
 	return nil
 }
 
+// ResetProgress removes one user's progress and transient playback counters.
+func (s *SQLite) ResetProgress(ctx context.Context, userID, mediaID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin reset progress: %w", err)
+	}
+	if err := deleteUserAccumulators(ctx, tx, userID, mediaID); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_progress WHERE user_id = ? AND media_id = ?`, userID, mediaID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete user progress: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit reset progress: %w", err)
+	}
+	return nil
+}
+
+// FinishProgress saves a finished position and starts a fresh playback cycle.
+func (s *SQLite) FinishProgress(ctx context.Context, progress *model.PlaybackProgress) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin finish progress: %w", err)
+	}
+	if err := deleteUserAccumulators(ctx, tx, progress.UserID, progress.MediaID); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := upsertProgress(ctx, tx, progress); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("finish progress: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit finish progress: %w", err)
+	}
+	return nil
+}
+
+func deleteUserAccumulators(ctx context.Context, db sqlExecer, userID, mediaID int64) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM playback_accumulator
+WHERE media_id = ? AND (
+    session_id IN (SELECT id FROM sessions WHERE user_id = ?)
+    OR session_id IN (SELECT 'api-token:' || id FROM api_tokens WHERE user_id = ?)
+)`, mediaID, userID, userID)
+	if err != nil {
+		return fmt.Errorf("delete user accumulators: %w", err)
+	}
+	return nil
+}
+
 // MarkFinished marks playback progress finished for a user and media.
 func (s *SQLite) MarkFinished(ctx context.Context, userID, mediaID int64) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE playback_progress SET finished = 1, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND media_id = ?`,
+		`UPDATE playback_progress SET finished = 1, accumulated_seconds = 0, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND media_id = ?`,
 		userID, mediaID,
 	)
 	if err != nil {
@@ -68,7 +126,7 @@ func (s *SQLite) MarkFinished(ctx context.Context, userID, mediaID int64) error 
 // ListProgressByUser returns all progress records for a user.
 func (s *SQLite) ListProgressByUser(ctx context.Context, userID int64) ([]model.PlaybackProgress, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT user_id, media_id, position_seconds, finished, updated_at FROM playback_progress WHERE user_id = ? ORDER BY updated_at DESC`, userID)
+		`SELECT user_id, media_id, position_seconds, accumulated_seconds, finished, updated_at FROM playback_progress WHERE user_id = ? ORDER BY updated_at DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list progress: %w", err)
 	}
@@ -76,7 +134,7 @@ func (s *SQLite) ListProgressByUser(ctx context.Context, userID int64) ([]model.
 	var pp []model.PlaybackProgress
 	for rows.Next() {
 		var p model.PlaybackProgress
-		if err := rows.Scan(&p.UserID, &p.MediaID, &p.PositionSeconds, &p.Finished, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.UserID, &p.MediaID, &p.PositionSeconds, &p.AccumulatedSeconds, &p.Finished, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		pp = append(pp, p)
@@ -91,14 +149,7 @@ func (s *SQLite) ListInProgressMedia(ctx context.Context, userID int64, filter M
 		`pp.user_id = ?`,
 		`pp.finished = 0`,
 		`media.deleted_at IS NULL`,
-		`EXISTS (
-			SELECT 1
-			FROM playback_accumulator pa
-			INNER JOIN sessions s ON s.id = pa.session_id
-			WHERE pa.media_id = media.id
-				AND s.user_id = pp.user_id
-				AND pa.accumulated_seconds >= 60
-		)`,
+		`pp.accumulated_seconds >= 60`,
 	}
 	query := `SELECT media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at FROM playback_progress pp INNER JOIN media ON media.id = pp.media_id`
 

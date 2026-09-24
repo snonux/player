@@ -339,6 +339,10 @@ func TestProgressService_MarkFinished(t *testing.T) {
 	var saved *model.PlaybackProgress
 
 	store := &repository.MockStore{
+		FinishProgressFunc: func(ctx context.Context, progress *model.PlaybackProgress) error {
+			saved = progress
+			return nil
+		},
 		MediaRepo: repository.MockMediaRepo{
 			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
 				return &model.Media{ID: id, SetID: 7, Duration: 123.5}, nil
@@ -347,12 +351,6 @@ func TestProgressService_MarkFinished(t *testing.T) {
 		UserRepo: repository.MockUserRepo{
 			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
 				return &model.User{ID: id, IsAdmin: true}, nil
-			},
-		},
-		PlaybackProgressRepo: repository.MockPlaybackProgressRepo{
-			UpsertProgressFunc: func(ctx context.Context, progress *model.PlaybackProgress) error {
-				saved = progress
-				return nil
 			},
 		},
 	}
@@ -383,10 +381,13 @@ func TestProgressService_MarkFinished_Validation(t *testing.T) {
 
 func TestProgressService_MarkNotStarted(t *testing.T) {
 	ctx := context.Background()
-	var deletedProgress bool
-	var deletedAccumulator bool
+	var reset bool
 
 	store := &repository.MockStore{
+		ResetProgressFunc: func(ctx context.Context, userID, mediaID int64) error {
+			reset = userID == 1 && mediaID == 10
+			return nil
+		},
 		MediaRepo: repository.MockMediaRepo{
 			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
 				return &model.Media{ID: id, SetID: 7}, nil
@@ -397,29 +398,14 @@ func TestProgressService_MarkNotStarted(t *testing.T) {
 				return &model.User{ID: id, IsAdmin: true}, nil
 			},
 		},
-		PlaybackProgressRepo: repository.MockPlaybackProgressRepo{
-			DeleteProgressFunc: func(ctx context.Context, userID, mediaID int64) error {
-				deletedProgress = userID == 1 && mediaID == 10
-				return nil
-			},
-		},
-		PlaybackAccumulatorRepo: repository.MockPlaybackAccumulatorRepo{
-			DeleteAccumulatorByMediaFunc: func(ctx context.Context, mediaID int64) error {
-				deletedAccumulator = mediaID == 10
-				return nil
-			},
-		},
 	}
 
 	svc := NewProgressService(store, newMockClock())
 	if err := svc.MarkNotStarted(ctx, 1, 10); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !deletedProgress {
-		t.Fatal("expected DeleteProgress called")
-	}
-	if !deletedAccumulator {
-		t.Fatal("expected DeleteAccumulatorByMedia called")
+	if !reset {
+		t.Fatal("expected ResetProgress called")
 	}
 }
 

@@ -40,6 +40,8 @@ func NewMockStore() *MockStore {
 // Each embedded struct provides default no-op / zero-value behavior;
 // callers override individual func fields to inject test behavior.
 type MockStore struct {
+	FinishProgressFunc      func(ctx context.Context, progress *model.PlaybackProgress) error
+	ResetProgressFunc       func(ctx context.Context, userID, mediaID int64) error
 	UserRepo                MockUserRepo
 	APITokenRepo            MockAPITokenRepo
 	SetRepo                 MockSetRepo
@@ -53,6 +55,22 @@ type MockStore struct {
 	ShareRepo               MockShareRepo
 	NoteRepo                MockNoteRepo
 	PodcastRepo             MockPodcastRepo
+}
+
+// FinishProgress calls FinishProgressFunc or returns nil.
+func (m *MockStore) FinishProgress(ctx context.Context, progress *model.PlaybackProgress) error {
+	if m.FinishProgressFunc != nil {
+		return m.FinishProgressFunc(ctx, progress)
+	}
+	return nil
+}
+
+// ResetProgress calls ResetProgressFunc or returns nil.
+func (m *MockStore) ResetProgress(ctx context.Context, userID, mediaID int64) error {
+	if m.ResetProgressFunc != nil {
+		return m.ResetProgressFunc(ctx, userID, mediaID)
+	}
+	return nil
 }
 
 // CreateUser implements UserRepo.

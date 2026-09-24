@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS playback_progress (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
     position_seconds REAL NOT NULL,
+    accumulated_seconds REAL NOT NULL DEFAULT 0,
     finished BOOLEAN NOT NULL DEFAULT 0,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, media_id)
@@ -106,7 +107,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE TABLE IF NOT EXISTS playback_accumulator (
-    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL,
     media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
     last_position REAL NOT NULL DEFAULT 0,
     accumulated_seconds REAL NOT NULL DEFAULT 0,
@@ -223,6 +224,12 @@ func initializeSchema(db *sql.DB) error {
 	if err := runMigrations(db); err != nil {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
+	if err := migratePlaybackProgress(db); err != nil {
+		return fmt.Errorf("migrate playback progress: %w", err)
+	}
+	if err := migratePlaybackAccumulator(db); err != nil {
+		return fmt.Errorf("migrate playback accumulator: %w", err)
+	}
 	if err := execSchema(db, "indexes", indexesSchema); err != nil {
 		return err
 	}
@@ -305,4 +312,89 @@ func isDuplicateColumnError(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "duplicate column name") || strings.Contains(msg, "already exists")
+}
+
+// migratePlaybackProgress backfills live session playback only when adding the
+// column. Repeating the backfill would restore eligibility after finishing.
+func migratePlaybackProgress(db *sql.DB) error {
+	var column string
+	err := db.QueryRow(`SELECT name FROM pragma_table_info('playback_progress') WHERE name = 'accumulated_seconds'`).Scan(&column)
+	if err == nil {
+		return nil
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE playback_progress ADD COLUMN accumulated_seconds REAL NOT NULL DEFAULT 0;`); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE playback_progress
+SET accumulated_seconds = COALESCE((
+    SELECT SUM(pa.accumulated_seconds)
+    FROM playback_accumulator pa
+    JOIN sessions s ON s.id = pa.session_id
+    WHERE s.user_id = playback_progress.user_id AND pa.media_id = playback_progress.media_id
+), 0)
+WHERE finished = 0;`); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// migratePlaybackAccumulator removes the session foreign key so Bearer tokens
+// can use their synthetic session IDs for per-token delta accounting.
+func migratePlaybackAccumulator(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA foreign_key_list(playback_accumulator)`)
+	if err != nil {
+		return err
+	}
+	needsMigration := false
+	for rows.Next() {
+		var id, seq int
+		var table, from, to, onUpdate, onDelete, match string
+		if err := rows.Scan(&id, &seq, &table, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if table == "sessions" {
+			needsMigration = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !needsMigration {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`CREATE TABLE playback_accumulator_new (
+    session_id TEXT NOT NULL,
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    last_position REAL NOT NULL DEFAULT 0,
+    accumulated_seconds REAL NOT NULL DEFAULT 0,
+    counted INTEGER NOT NULL DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (session_id, media_id)
+);
+INSERT INTO playback_accumulator_new SELECT * FROM playback_accumulator;
+DROP TABLE playback_accumulator;
+ALTER TABLE playback_accumulator_new RENAME TO playback_accumulator;`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }

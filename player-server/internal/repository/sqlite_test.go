@@ -527,11 +527,11 @@ func TestSQLite_PlaybackProgressRepo(t *testing.T) {
 				}
 
 				progress := []model.PlaybackProgress{
-					{UserID: uid, MediaID: keepID, PositionSeconds: 10, UpdatedAt: now.Add(3 * time.Second)},
-					{UserID: uid, MediaID: belowThresholdID, PositionSeconds: 10, UpdatedAt: now.Add(4 * time.Second)},
-					{UserID: uid, MediaID: finishedID, PositionSeconds: 20, Finished: true, UpdatedAt: now.Add(2 * time.Second)},
-					{UserID: uid, MediaID: deletedID, PositionSeconds: 30, UpdatedAt: now.Add(time.Second)},
-					{UserID: uid, MediaID: otherID, PositionSeconds: 40, UpdatedAt: now},
+					{UserID: uid, MediaID: keepID, PositionSeconds: 10, AccumulatedSeconds: 61, UpdatedAt: now.Add(3 * time.Second)},
+					{UserID: uid, MediaID: belowThresholdID, PositionSeconds: 10, AccumulatedSeconds: 59, UpdatedAt: now.Add(4 * time.Second)},
+					{UserID: uid, MediaID: finishedID, PositionSeconds: 20, AccumulatedSeconds: 61, Finished: true, UpdatedAt: now.Add(2 * time.Second)},
+					{UserID: uid, MediaID: deletedID, PositionSeconds: 30, AccumulatedSeconds: 61, UpdatedAt: now.Add(time.Second)},
+					{UserID: uid, MediaID: otherID, PositionSeconds: 40, AccumulatedSeconds: 61, UpdatedAt: now},
 				}
 				for i := range progress {
 					if err := s.UpsertProgress(ctx, &progress[i]); err != nil {

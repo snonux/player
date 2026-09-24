@@ -118,11 +118,12 @@ type Note struct {
 
 // PlaybackProgress stores the last known playback position.
 type PlaybackProgress struct {
-	UserID          int64     `json:"user_id"`
-	MediaID         int64     `json:"media_id"`
-	PositionSeconds float64   `json:"position_seconds"`
-	Finished        bool      `json:"finished"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	UserID             int64     `json:"user_id"`
+	MediaID            int64     `json:"media_id"`
+	PositionSeconds    float64   `json:"position_seconds"`
+	AccumulatedSeconds float64   `json:"-"`
+	Finished           bool      `json:"finished"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // PlaybackAccumulator tracks deltas for the 60-second playback counter rule.

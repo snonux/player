@@ -73,11 +73,20 @@ func (s *SQLite) ListByUser(ctx context.Context, userID int64) ([]model.APIToken
 
 // DeleteByID removes an API token by database ID.
 func (s *SQLite) DeleteByID(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("begin delete api token: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_accumulator WHERE session_id = ?`, fmt.Sprintf("api-token:%d", id)); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete api token accumulators: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, `DELETE FROM api_tokens WHERE id = ?`, id)
+	if err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("delete api token: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // TouchLastUsed updates an API token's last-used timestamp.

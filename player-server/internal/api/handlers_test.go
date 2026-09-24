@@ -2065,6 +2065,12 @@ func (m *mockPingStore) ListFavoritesByUser(ctx context.Context, userID int64) (
 func (m *mockPingStore) UpsertProgress(ctx context.Context, progress *model.PlaybackProgress) error {
 	return m.store.UpsertProgress(ctx, progress)
 }
+func (m *mockPingStore) ResetProgress(ctx context.Context, userID, mediaID int64) error {
+	return m.store.ResetProgress(ctx, userID, mediaID)
+}
+func (m *mockPingStore) FinishProgress(ctx context.Context, progress *model.PlaybackProgress) error {
+	return m.store.FinishProgress(ctx, progress)
+}
 func (m *mockPingStore) GetProgress(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error) {
 	return m.store.GetProgress(ctx, userID, mediaID)
 }

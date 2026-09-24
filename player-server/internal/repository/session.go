@@ -36,20 +36,38 @@ func (s *SQLite) GetSessionByID(ctx context.Context, id string) (*model.Session,
 
 // DeleteSession removes a session by ID.
 func (s *SQLite) DeleteSession(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("begin delete session: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_accumulator WHERE session_id = ?`, id); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete session accumulators: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
+	if err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("delete session: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // DeleteExpiredSessions removes all sessions with expires_at older than now.
 func (s *SQLite) DeleteExpiredSessions(ctx context.Context, now time.Time) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < ?`, now)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("begin delete expired sessions: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_accumulator WHERE session_id IN (SELECT id FROM sessions WHERE expires_at < ?)`, now); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete expired session accumulators: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < ?`, now)
+	if err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("delete expired sessions: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 func sqlNullTime(t *time.Time) sql.NullTime {

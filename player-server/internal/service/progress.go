@@ -44,7 +44,13 @@ func (s *progressService) UpdateProgress(ctx context.Context, sessionID string, 
 		return err
 	}
 
-	return s.applyProgress(ctx, s.store, sessionID, userID, mediaID, position, s.clock.Now())
+	apply := func(store repository.ProgressUpdateStore) error {
+		return s.applyProgress(ctx, store, sessionID, userID, mediaID, position, s.clock.Now())
+	}
+	if txStore, ok := s.store.(repository.ProgressTransactionStore); ok {
+		return txStore.WithProgressTransaction(ctx, apply)
+	}
+	return apply(s.store)
 }
 
 func (s *progressService) BatchUpdateProgress(ctx context.Context, sessionID string, userID int64, updates []ProgressUpdate) error {
@@ -112,24 +118,19 @@ func (s *progressService) applyProgress(
 		return nil
 	}
 
-	if err := store.UpsertProgress(ctx, &model.PlaybackProgress{
-		UserID:          userID,
-		MediaID:         mediaID,
-		PositionSeconds: position,
-		UpdatedAt:       observedAt,
-	}); err != nil {
-		return fmt.Errorf("upsert progress: %w", err)
-	}
-
 	acc, err := store.GetAccumulator(ctx, sessionID, mediaID)
 	if err != nil {
 		return fmt.Errorf("get accumulator: %w", err)
 	}
 	if acc == nil {
+		lastPosition := float64(0)
+		if existing != nil && !existing.Finished {
+			lastPosition = existing.PositionSeconds
+		}
 		acc = &model.PlaybackAccumulator{
 			SessionID:          sessionID,
 			MediaID:            mediaID,
-			LastPosition:       0,
+			LastPosition:       lastPosition,
 			AccumulatedSeconds: 0,
 			Counted:            false,
 			UpdatedAt:          observedAt,
@@ -146,6 +147,20 @@ func (s *progressService) applyProgress(
 	acc.AccumulatedSeconds += delta
 	acc.LastPosition = position
 	acc.UpdatedAt = observedAt
+
+	var total float64
+	if existing != nil {
+		total = existing.AccumulatedSeconds
+	}
+	if err := store.UpsertProgress(ctx, &model.PlaybackProgress{
+		UserID:             userID,
+		MediaID:            mediaID,
+		PositionSeconds:    position,
+		AccumulatedSeconds: total + delta,
+		UpdatedAt:          observedAt,
+	}); err != nil {
+		return fmt.Errorf("upsert progress: %w", err)
+	}
 
 	if acc.AccumulatedSeconds >= 60 && !acc.Counted {
 		if err := store.IncrementPlayCount(ctx, mediaID); err != nil {
@@ -171,7 +186,7 @@ func (s *progressService) MarkFinished(ctx context.Context, userID, mediaID int6
 		return err
 	}
 
-	if err := s.store.UpsertProgress(ctx, &model.PlaybackProgress{
+	if err := s.store.FinishProgress(ctx, &model.PlaybackProgress{
 		UserID:          userID,
 		MediaID:         mediaID,
 		PositionSeconds: media.Duration,
@@ -193,11 +208,8 @@ func (s *progressService) MarkNotStarted(ctx context.Context, userID, mediaID in
 		return err
 	}
 
-	if err := s.store.DeleteProgress(ctx, userID, mediaID); err != nil {
-		return fmt.Errorf("delete progress: %w", err)
-	}
-	if err := s.store.DeleteAccumulatorByMedia(ctx, mediaID); err != nil {
-		return fmt.Errorf("delete accumulator: %w", err)
+	if err := s.store.ResetProgress(ctx, userID, mediaID); err != nil {
+		return fmt.Errorf("reset progress: %w", err)
 	}
 
 	return nil

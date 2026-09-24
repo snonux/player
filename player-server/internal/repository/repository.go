@@ -10,6 +10,8 @@ import (
 
 // Store is the composite interface for all repositories.
 type Store interface {
+	FinishProgress(ctx context.Context, progress *model.PlaybackProgress) error
+	ResetProgress(ctx context.Context, userID, mediaID int64) error
 	UserRepo
 	APITokenRepo
 	SetRepo
@@ -65,6 +67,10 @@ type ProgressServiceStore interface {
 	AccessHelperStore
 	PlaybackProgressRepo
 	PlaybackAccumulatorRepo
+	// FinishProgress marks one user's media finished and clears its session counters atomically.
+	FinishProgress(ctx context.Context, progress *model.PlaybackProgress) error
+	// ResetProgress clears one user's progress and session counters atomically.
+	ResetProgress(ctx context.Context, userID, mediaID int64) error
 }
 
 // GCStore is the subset of Store required by service.GCWorker.

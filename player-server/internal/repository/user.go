@@ -76,11 +76,22 @@ func scanUsers(rows *sql.Rows) ([]model.User, error) {
 
 // DeleteUser removes a user by ID.
 func (s *SQLite) DeleteUser(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("begin delete user: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_accumulator
+WHERE session_id IN (SELECT id FROM sessions WHERE user_id = ?)
+   OR session_id IN (SELECT 'api-token:' || id FROM api_tokens WHERE user_id = ?)`, id, id); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete user accumulators: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
+	if err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("delete user: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // CountUsers returns the number of users.
