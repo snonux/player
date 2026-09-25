@@ -313,6 +313,31 @@ body {
   transition: opacity var(--transition-fast);
   z-index: 2;
 }
+.set-card .set-open,
+.folder-card .folder-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.set-card .set-open:focus-visible,
+.folder-card .folder-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.set-card .card-actions,
+.folder-card .card-actions {
+  top: 0.35rem;
+  right: 0.35rem;
+  bottom: auto;
+  left: auto;
+  opacity: 1;
+}
 .media-card:hover .card-actions,
 .media-card.selected .card-actions,
 .media-card.playing .card-actions {
@@ -403,6 +428,10 @@ body {
 .modal-overlay.open {
   opacity: 1;
   visibility: visible;
+  /* Become visible immediately on open so dialogs can focus their first
+     field synchronously; browsers ignore focus() on visibility:hidden. The
+     base rule keeps the delayed hide so closing still fades out. */
+  transition: opacity var(--transition-base), visibility 0s;
 }
 .modal {
   background: var(--bg-surface);

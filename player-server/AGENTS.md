@@ -23,7 +23,7 @@ The project is a **self-hosted media player** designed for simplicity (KISS): mi
 | Entrypoint | `cmd/player` | Flags, config, dependency wiring, server start |
 
 | `mage build` | Compile the binary (`go build -o player ./cmd/player`) |
-| `mage test` | Run `go test ./...` |
+| `mage test` | Run `go test -race ./...` and the web JS unit tests (`mage webTest`) |
 | `mage install` | Build and copy `player` to `$GOPATH/bin` (or `~/go/bin`) |
 | `mage clean` | Remove the `player` binary |
 | `mage docker-build` | Build container image as `player:latest` |
@@ -122,7 +122,12 @@ Option B — separate file (if you prefer a stylesheet swap):
 
 ## Keyboard Shortcuts
 
-Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** while the user is focused on an `INPUT`, `TEXTAREA`, or `contentEditable` element (except `Escape` to blur).
+The web UI is keyboard-first and favors vi-style navigation. Keep shortcuts and
+visible focus usable after every UI action, including modal close and button
+clicks. Preserve native typing and control activation; mouse and touch remain
+available as supplementary paths. Cover real keyboard journeys in browser tests.
+
+Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** while the user is focused on an `INPUT`, `TEXTAREA`, `SELECT`, or `contentEditable` element (except `Escape` to blur). A focused button or link keeps native `Enter` activation but no longer blocks letter shortcuts. `Space` activates buttons natively only inside dialogs; elsewhere it stays play/pause. On the set/folder open buttons `Enter` opens the grid selection, because `j/k/h/l` move the selection without moving DOM focus. While a dialog (`.modal-overlay.open`) is open, only its own keys, `Escape`, and `?` are handled; `Escape` closes it, keeps the selection, and returns focus to the selected card.
 
 | Key | Action |
 |-----|--------|

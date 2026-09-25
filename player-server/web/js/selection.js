@@ -8,6 +8,19 @@ export function initSelection() {
     if (!card) return;
     selectByElement(card);
   });
+  grid.addEventListener('focusin', (e) => {
+    const card = e.target.closest('.media-card, .media-row');
+    if (card) selectByElement(card);
+  });
+}
+
+// Moves keyboard focus to the selected card. Set and folder cards are not
+// focusable themselves; their primary open button is.
+export function focusSelectedCard() {
+  const el = currentElement();
+  const target = el?.matches('.set-card, .folder-card') ? el.querySelector('.set-open, .folder-open') : el;
+  target?.focus();
+  return Boolean(target);
 }
 
 export function clearSelection() {

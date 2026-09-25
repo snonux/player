@@ -25,9 +25,26 @@ func Build() error {
 	return sh.RunV("go", "build", "-o", binaryName, "./cmd/player")
 }
 
-// Test runs all tests in the project with the race detector enabled.
+// Test runs the Go tests with the race detector, then the web UI unit tests.
 func Test() error {
-	return sh.RunV("go", "test", "-race", "-count=1", "./...")
+	if err := sh.RunV("go", "test", "-race", "-count=1", "./..."); err != nil {
+		return err
+	}
+	return WebTest()
+}
+
+// WebTest runs the dependency-free Node unit tests for the web UI modules.
+func WebTest() error {
+	files, err := filepath.Glob(filepath.Join("web", "js", "tests", "*.test.js"))
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if err := sh.RunV("node", file); err != nil {
+			return fmt.Errorf("%s: %w", file, err)
+		}
+	}
+	return nil
 }
 
 // Install builds and copies the binary to GOPATH/bin.

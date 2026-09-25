@@ -102,3 +102,46 @@ test('floating, mobile, and fullscreen controls leave seek and volume usable', a
   await assertControls(80);
   await seekTo(0.4);
 });
+
+test('big play and progress track keys act once, not again through global shortcuts', async ({ page }) => {
+  const origin = new URL(baseURL);
+  await page.context().addCookies([{
+    name: 'session', value: adminCookie.slice('session='.length),
+    domain: origin.hostname, path: '/', sameSite: 'Strict',
+  }]);
+  // The big play overlay is shown for video only.
+  const videos = await (await fetch(`${baseURL}/api/media?type=video`, { headers: { Cookie: adminCookie } })).json() as Array<{ id: number }>;
+  expect(videos.length).toBeGreaterThan(0);
+  await page.goto('/');
+  await page.evaluate(media => {
+    const modulePath = '/js/playback.js';
+    return import(modulePath).then(({ loadMediaDirect }) =>
+      loadMediaDirect({ ...media, type: 'video' }, `/api/media/${media.id}/stream`, ''));
+  }, videos[0]);
+  const element = page.locator('#media-video');
+  await expect.poll(() => element.evaluate((m: any) => m.duration)).toBeGreaterThan(12);
+  // The overlay reappears on a pause event, so play (muted) and pause first.
+  await element.evaluate(async (m: any) => { m.muted = true; await m.play(); m.pause(); m.currentTime = 2; });
+
+  // Space on the overlay used to toggle twice (overlay + global) and cancel out.
+  const bigPlay = page.locator('#big-play');
+  await expect(bigPlay).toBeVisible();
+  await bigPlay.focus();
+  await expect(bigPlay).toBeFocused();
+  await page.keyboard.press(' ');
+  await expect.poll(() => element.evaluate((m: any) => m.paused)).toBe(false);
+  await element.evaluate((m: any) => m.pause());
+
+  // One ArrowRight on the track seeks 5 s once, not twice. The global arrow
+  // seek is active only in fullscreen, so test there.
+  await page.locator('#btn-fullscreen').click();
+  await expect.poll(() => page.evaluate(() => Boolean((globalThis as any).document.fullscreenElement))).toBe(true);
+  await element.evaluate((m: any) => { m.currentTime = 2; });
+  const track = page.locator('#progress-track');
+  await track.focus();
+  await expect(track).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  const position = await element.evaluate((m: any) => m.currentTime);
+  expect(position).toBeGreaterThanOrEqual(6.5);
+  expect(position).toBeLessThan(9);
+});

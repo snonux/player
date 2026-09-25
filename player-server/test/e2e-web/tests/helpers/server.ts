@@ -181,6 +181,25 @@ export async function triggerRescan(adminCookie: string, timeoutMs = 30_000): Pr
 }
 
 /**
+ * waitForScanIdle polls the admin scan progress until no scan is running.
+ *
+ * triggerRescan returns once the first set row exists, but a set's media rows
+ * arrive later in the same scan. Journeys that open a specific set and expect
+ * its cards must wait for the scan to finish, or a fresh server shows an empty
+ * folder.
+ */
+export async function waitForScanIdle(adminCookie: string, timeoutMs = 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const progress = await getJSON('/api/v1/admin/scan-progress', adminCookie);
+    const body = progress.body as { running?: boolean } | null;
+    if (progress.status === 200 && body && body.running === false) return;
+    await new Promise(r => setTimeout(r, 250));
+  }
+  throw new Error(`waitForScanIdle: scan still running after ${timeoutMs}ms`);
+}
+
+/**
  * waitForServer polls /healthz until the server responds or the timeout is
  * exceeded. Useful when the server is started just before the test run.
  */

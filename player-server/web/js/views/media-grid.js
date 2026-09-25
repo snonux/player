@@ -50,7 +50,7 @@ export function initMediaGrid(options = {}) {
 
   grid?.addEventListener('click', (e) => {
     const folder = e.target.closest('.folder-card');
-    if (folder) {
+    if (folder && !e.target.closest('[data-action="regen-folder-cover"]')) {
       e.stopPropagation();
       enterFolder(folder.dataset.name);
     }
@@ -233,17 +233,19 @@ function renderSetGrid(sets) {
 
 function renderSetCard(set, index) {
   return `
-    <div class="media-card set-card" data-set-id="${set.id}" data-index="${index}" tabindex="0" role="button" aria-label="Set ${escapeHtml(set.name)}">
-      <div class="thumb-wrap">
-        <img src="/api/sets/${set.id}/cover" alt="" loading="lazy" onerror="this.remove();">
-        <span class="placeholder">▦</span>
-        <div class="card-actions">
-          <button class="icon-btn btn-sm" data-action="regen-set-cover" title="Regenerate cover">🔄</button>
+    <div class="media-card set-card" data-set-id="${set.id}" data-index="${index}">
+      <button class="set-open" type="button" aria-label="Set ${escapeHtml(set.name)}">
+        <div class="thumb-wrap">
+          <img src="/api/sets/${set.id}/cover" alt="" loading="lazy" onerror="this.remove();">
+          <span class="placeholder">▦</span>
         </div>
-      </div>
-      <div class="meta">
-        <div class="title">${escapeHtml(set.name)}</div>
-        <div class="subtitle">${set.is_podcast ? 'Podcast set' : 'Set'}</div>
+        <div class="meta">
+          <div class="title">${escapeHtml(set.name)}</div>
+          <div class="subtitle">${set.is_podcast ? 'Podcast set' : 'Set'}</div>
+        </div>
+      </button>
+      <div class="card-actions">
+        <button class="icon-btn btn-sm" type="button" data-action="regen-set-cover" aria-label="Regenerate cover for ${escapeHtml(set.name)}" title="Regenerate cover">🔄</button>
       </div>
     </div>
   `;
@@ -251,9 +253,14 @@ function renderSetCard(set, index) {
 
 function bindSetCards(grid) {
   grid.querySelectorAll('.set-card').forEach((el) => {
-    el.addEventListener('click', (e) => {
+    el.querySelector('.set-open')?.addEventListener('click', (e) => {
+      e.stopPropagation();
       selectByElement(el);
-      if (e.target.closest('.card-actions, button')) return;
+      callbacks.openSet?.(parseInt(el.dataset.setId, 10));
+    });
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      selectByElement(el);
       e.stopPropagation();
       callbacks.openSet?.(parseInt(el.dataset.setId, 10));
     });
@@ -349,16 +356,18 @@ function renderFolder(folder, index) {
     ? `<img src="/api/sets/${state.selectedSetId}/cover?folder=${encodeURIComponent(state.folderPath ? `${state.folderPath}/${name}` : name)}" alt="" loading="lazy">`
     : null;
   return `
-    <div class="media-card folder-card" data-name="${escapeHtml(name)}" data-index="${index}" tabindex="0" role="button" aria-label="Folder ${escapeHtml(name)}">
-      <div class="thumb-wrap">
-        ${hasCover ? coverImg : '<span class="placeholder">📁</span>'}
-        <div class="card-actions">
-          <button class="icon-btn btn-sm" data-action="regen-folder-cover" title="Regenerate cover">🔄</button>
+    <div class="media-card folder-card" data-name="${escapeHtml(name)}" data-index="${index}">
+      <button class="folder-open" type="button" aria-label="Folder ${escapeHtml(name)}">
+        <div class="thumb-wrap">
+          ${hasCover ? coverImg : '<span class="placeholder">📁</span>'}
         </div>
-      </div>
-      <div class="meta">
-        <div class="title">${escapeHtml(name)}</div>
-        <div class="subtitle">Folder</div>
+        <div class="meta">
+          <div class="title">${escapeHtml(name)}</div>
+          <div class="subtitle">Folder</div>
+        </div>
+      </button>
+      <div class="card-actions">
+        <button class="icon-btn btn-sm" type="button" data-action="regen-folder-cover" aria-label="Regenerate cover for folder ${escapeHtml(name)}" title="Regenerate cover">🔄</button>
       </div>
     </div>
   `;

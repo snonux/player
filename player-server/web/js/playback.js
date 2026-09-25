@@ -107,7 +107,16 @@ export function initPlayer(options = {}) {
   e.btnMinimize?.addEventListener('click', minimizePlayer);
   e.btnRestore?.addEventListener('click', toggleMinimize);
   e.bigPlay?.addEventListener('click', togglePlay);
-  e.bigPlay?.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); togglePlay(); } });
+  // The big play overlay handles its own activation keys; stopping
+  // propagation keeps the global Space/Enter shortcuts from toggling again
+  // or opening the selected grid item.
+  e.bigPlay?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      togglePlay();
+    }
+  });
 
   initImageViewer({ els, isImageMode, playNext: () => navigateImage(1) });
   initDetach({
@@ -215,8 +224,9 @@ export function initPlayer(options = {}) {
     const m = currentMediaElement();
     const dur = effectiveDuration();
     if (!m || !dur) return;
-    if (ev.key === 'ArrowLeft') { ev.preventDefault(); m.currentTime = Math.max(0, m.currentTime - 5); }
-    if (ev.key === 'ArrowRight') { ev.preventDefault(); m.currentTime = Math.min(dur, m.currentTime + 5); }
+    // Stop propagation so the global arrow seek does not seek a second time.
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); ev.stopPropagation(); m.currentTime = Math.max(0, m.currentTime - 5); }
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); ev.stopPropagation(); m.currentTime = Math.min(dur, m.currentTime + 5); }
   });
 }
 

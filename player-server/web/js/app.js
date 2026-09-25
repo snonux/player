@@ -1,6 +1,6 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
-import { initSelection, selectByElement, currentElement, navUp, navDown, navLeft, navRight } from './selection.js';
+import { initSelection, selectByElement, currentElement, focusSelectedCard, navUp, navDown, navLeft, navRight } from './selection.js';
 import {
   initPlayer,
   togglePlay,
@@ -81,7 +81,7 @@ import {
   sharesNav,
   toggleShares,
 } from './views/shares.js';
-import { initTags, openTagsForElement, openTagsForSelected } from './views/tags.js';
+import { cancelTagsLoad, initTags, openTagsForElement, openTagsForSelected } from './views/tags.js';
 import { initUpload, showUpload } from './views/upload.js';
 
 const pageMap = { '/index.html': 'spa', '/login.html': 'login', '/bootstrap.html': 'bootstrap' };
@@ -246,6 +246,11 @@ function applySearchSet(parsed) {
   updateSetRowsUI();
 }
 
+// True while any modal overlay (help, notes, tags, admin, ...) is shown.
+function isDialogOpen() {
+  return Boolean(document.querySelector('.modal-overlay.open'));
+}
+
 function keyboardHandlers() {
   return {
     navUp: () => navUp(),
@@ -263,13 +268,19 @@ function keyboardHandlers() {
     prevSet: () => setSetByDelta(-1),
     selectSetByHotkey: (key) => selectSetByHotkey(key),
     isSidebarOpen: () => document.getElementById('sidebar')?.classList.contains('open'),
-    isSidebarFocused: () => {
-      const sidebar = document.getElementById('sidebar');
-      return sidebar?.contains(document.activeElement);
+    // True only for a focused set row: Space toggles that set's selection.
+    // Sidebar buttons (Close, a row's Regenerate cover) keep Space as
+    // play/pause like other buttons outside dialogs.
+    isSidebarFocused: () => Boolean(document.activeElement?.matches?.('#sidebar .set-row')),
+    // Help is the only dialog open, so ? may close it. Opening help over
+    // another dialog would stack it underneath and let Escape close both.
+    isOnlyHelpOpen: () => {
+      const open = document.querySelectorAll('.modal-overlay.open');
+      return open.length === 1 && open[0].id === 'help-modal';
     },
     toggleSetSelect: () => toggleSetSelection(),
     enter: () => {
-      activateGridElement(focusedGridElement() || currentElement() || firstGridElement());
+      activateGridElement(currentElement() || focusedGridElement() || firstGridElement());
     },
     playPause: () => togglePlay(),
     nextTrack: () => navigatePlayable(1, { forcePlay: true }),
@@ -284,7 +295,25 @@ function keyboardHandlers() {
     toggleCrop: () => toggleCrop(),
     shiftCropPosition: (dx, dy) => shiftCropPosition(dx, dy),
     cycleCropPosition: () => cycleCropPosition(),
-    escape: () => {
+    escape: (e) => {
+      // With a dialog open, Escape only closes it and keeps the selection.
+      // Focus left on a hidden dialog control (or body) moves back to the
+      // selected card so j/k and Enter continue from there. A dialog that
+      // refuses to close (unsaved notes, running upload) gets its focused
+      // field back, since keyboard.js already blurred it.
+      if (isDialogOpen()) {
+        closeAllModals();
+        if (isDialogOpen()) {
+          if (e?.target?.closest?.('.modal-overlay.open')) e.target.focus();
+          return;
+        }
+        const active = document.activeElement;
+        if (!active || active === document.body || active.closest('.modal-overlay:not(.open)')) {
+          focusSelectedCard();
+        }
+        return;
+      }
+      cancelTagsLoad();
       exitFullscreenIfNeeded();
       const el = currentElement();
       if (el) el.classList.remove('selected');
@@ -304,6 +333,7 @@ function keyboardHandlers() {
     help: toggleHelp,
     backspace: () => { navigateBack(); },
     isMediaInfoOpen,
+    isModalOpen: isDialogOpen,
     closeMediaInfo,
     mediaInfoScroll: scrollMediaInfo,
     sidebar: toggleSidebar,

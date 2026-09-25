@@ -1,8 +1,17 @@
 export function initKeyboard(handlers) {
   document.addEventListener('keydown', (e) => {
     const tag = e.target.tagName;
-    const nativeControl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
-      tag === 'BUTTON' || tag === 'A' || e.target.isContentEditable;
+    const textControl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable;
+    const buttonLike = tag === 'BUTTON' || tag === 'A';
+    const inDialog = Boolean(e.target.closest?.('.modal-overlay'));
+    // Enter activates a focused button or link natively. Space does so only
+    // inside dialogs; elsewhere it stays play/pause, so a toolbar or card
+    // button that kept focus after a mouse click cannot capture it.
+    const nativeActivation = buttonLike && (e.key === 'Enter' || (e.key === ' ' && inDialog));
+    // Set/folder open buttons keep DOM focus while j/k/h/l move the
+    // selection, so Enter there opens the selected card instead of
+    // whichever card button happens to hold focus.
+    const gridNavigation = e.target.matches?.('.set-open, .folder-open');
 
     // Lightbox keyboard navigation (overrides global keys while open)
     if (handlers.isLightboxOpen?.()) {
@@ -45,7 +54,7 @@ export function initKeyboard(handlers) {
     if (handlers.isSharesOpen?.()) {
       // Enter on a focused Copy, Revoke, or Close button must activate that
       // button. The row shortcut applies only when focus is on a share row.
-      if (nativeControl && e.key === 'Enter') return;
+      if ((textControl || nativeActivation) && e.key === 'Enter') return;
       switch (e.key) {
         case 'ArrowUp':
         case 'k':
@@ -95,10 +104,31 @@ export function initKeyboard(handlers) {
       return;
     }
 
-    if (nativeControl) {
+    if (textControl) {
       if (e.key === 'Escape') {
         e.target.blur();
         handlers.escape?.(e);
+      }
+      return;
+    }
+
+    // Let Enter and Space activate a focused button or link. Letter shortcuts
+    // remain available after clicking toolbar and card controls.
+    if (nativeActivation && !gridNavigation) return;
+    // Escape releases focus from a button so the next shortcut starts clean;
+    // the dialog guard or the global Escape handler below still runs.
+    if (buttonLike && e.key === 'Escape') e.target.blur?.();
+
+    // Any other open dialog (help, notes, tags, upload, admin, podcasts) owns
+    // the keyboard. Focused dialog buttons no longer swallow letter keys, so
+    // grid, playback, and rescan shortcuts must not act behind the dialog.
+    // Only Escape and ? (closing help itself) pass through.
+    if (handlers.isModalOpen?.()) {
+      if (e.key === 'Escape') {
+        handlers.escape?.(e);
+      } else if (e.key === '?' && handlers.isOnlyHelpOpen?.()) {
+        e.preventDefault();
+        handlers.help?.(e);
       }
       return;
     }
@@ -116,7 +146,8 @@ export function initKeyboard(handlers) {
       return;
     }
 
-    // Space toggles focused set selection when sidebar is focused/open
+    // Space toggles the focused set row's selection; any other element
+    // outside a dialog gets play/pause.
     if (e.key === ' ') {
       if (handlers.isSidebarFocused?.()) {
         e.preventDefault();
