@@ -160,6 +160,18 @@ function testSpaceOnButtonsOutsideDialogsPlays() {
   assert(!dialogButton, 'Space on a dialog button should keep native activation');
 }
 
+function testItemShortcutsDispatch() {
+  const calls = [];
+  initKeyboard({
+    tags: () => calls.push('tags'),
+    favorite: () => calls.push('favorite'),
+    admin: () => calls.push('admin'),
+    fullscreen: () => calls.push('fullscreen'),
+  });
+  for (const key of ['t', 'F', 'A', 'f']) pressKey(key);
+  assert(calls.join(',') === 'tags,favorite,admin,fullscreen', `t/F/A/f should dispatch distinct handlers, got ${calls.join(',')}`);
+}
+
 console.log('Running keyboard Enter tests...');
 testEnterActivatesGridHandler();
 testEnterLeavesFocusedButtonNative();
@@ -171,6 +183,7 @@ testGridOpenButtonFollowsSelection();
 testOpenDialogBlocksGlobalShortcuts();
 testSpaceOnButtonsOutsideDialogsPlays();
 testSpaceOnSidebarButtonPlays();
+testItemShortcutsDispatch();
 
 if (failures.length) {
   console.error('FAILURES:');

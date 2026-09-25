@@ -26,6 +26,7 @@ import { initShuffle, enable as enableShuffle, isOn as isShuffle, revision as sh
 import { initThemes } from './themes.js';
 import { initNotes } from './notes.js';
 import { initAdmin } from './admin.js';
+import { initModalFocus } from './modal-focus.js';
 import { initPodcasts } from './podcasts.js';
 import { state } from './state.js';
 import { initPWA } from './pwa.js';
@@ -61,6 +62,7 @@ import {
 import {
   navigatePlayable,
   initPlaybackNav,
+  playMediaById,
   playRandom,
   playSelected,
   seekByKeyboard,
@@ -187,6 +189,7 @@ async function initApp() {
     openTagsForElement,
     openSet,
     playSelected,
+    playMediaById,
     regenThumb,
     markAsFinished: markAsFinishedAndRefresh,
     markAsNotStarted: markAsNotStartedAndRefresh,
@@ -196,6 +199,9 @@ async function initApp() {
   initKeyboard(keyboardHandlers());
   initNotes(() => toast('Note saved'));
   initAdmin();
+  initModalFocus();
+  // Admin actions such as restoring from trash change what the grid shows.
+  document.addEventListener('library:changed', () => loadMedia());
   initPodcasts();
   initPWA();
   initUpload({ onLoadMedia: loadMedia });
@@ -327,6 +333,15 @@ function keyboardHandlers() {
     search: () => showSearch(),
     notes: openNotesForSelected,
     tags: openTagsForSelected,
+    favorite: () => {
+      const el = currentElement();
+      if (el?.dataset.id) toggleFavorite(el.dataset.id, el.querySelector('[data-action="favorite"]'));
+    },
+    // The admin toggle is hidden for non-admins; A does nothing for them.
+    admin: () => {
+      const toggle = document.getElementById('admin-toggle');
+      if (toggle && !toggle.classList.contains('hidden')) toggle.click();
+    },
     toggleDetach: () => toggleDetach(),
     stopAndClose: () => stopAndClose(),
     download: downloadSelected,
@@ -343,6 +358,7 @@ function keyboardHandlers() {
     regenThumbnail: () => {
       const id = selectedMediaId();
       if (id) regenThumb(id);
+      else toast('Select a media item first', 'info');
     },
     isSharesOpen,
     sharesNavUp: () => sharesNav(-1),
@@ -389,6 +405,12 @@ function activateGridElement(el) {
   }
   if (el.classList.contains('folder-card')) {
     enterFolder(el.dataset.name);
+    return;
+  }
+  if (el.classList.contains('episode-card')) {
+    // Episode cards stand for episodes not yet downloaded; Enter behaves
+    // like their Play button (download, then play).
+    el.querySelector('[data-action="play"]')?.click();
     return;
   }
   const idx = parseInt(el.dataset.index, 10);

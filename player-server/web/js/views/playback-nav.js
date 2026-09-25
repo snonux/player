@@ -40,6 +40,23 @@ export async function playSelected() {
   }
 }
 
+// playMediaById plays a media item from the loaded list by ID, selecting its
+// card when the current page shows it. Returns false when it is not loaded.
+export async function playMediaById(id) {
+  const idx = state.media.findIndex((m) => String(m.id) === String(id));
+  if (idx < 0) return false;
+  // Folder cards also use data-index, so select by media ID.
+  const card = document.querySelector(`#media-grid .media-card[data-id="${CSS.escape(String(id))}"]`);
+  if (card) selectByElement(card);
+  try {
+    const detail = await API.mediaDetail(state.media[idx].id);
+    selectAndPlay(state.media[idx], idx, detail?.progress?.position_seconds ?? 0);
+  } catch {
+    selectAndPlay(state.media[idx], idx, 0);
+  }
+  return true;
+}
+
 export async function playRandom() {
   if (!state.media.length) return;
   const idx = Math.floor(Math.random() * state.media.length);

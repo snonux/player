@@ -1,4 +1,5 @@
 import { API } from './api.js';
+import { fmtDateTime } from './dom.js';
 import { escapeHtml, toast } from './utils.js';
 import { triggerRescan } from './views/admin-status.js';
 
@@ -13,6 +14,7 @@ export function initAdmin() {
   btn?.addEventListener('click', () => {
     modal?.classList.add('open');
     refreshAdmin();
+    if (!document.getElementById('admin-trash-section')?.classList.contains('hidden')) refreshTrash();
   });
   closeBtn?.addEventListener('click', () => modal?.classList.remove('open'));
   modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
@@ -20,14 +22,22 @@ export function initAdmin() {
   rescanBtn?.addEventListener('click', async () => {
     rescanBtn.disabled = true;
     try { await triggerRescan(); }
-    finally { rescanBtn.disabled = false; }
+    finally {
+      rescanBtn.disabled = false;
+      // Disabling the focused button dropped focus to <body>; give it back.
+      if (document.activeElement === document.body) rescanBtn.focus();
+    }
   });
 
+  // Trash has its own section so the user list stays visible; the button
+  // toggles it and reloads the items each time it opens.
   trashBtn?.addEventListener('click', async () => {
-    try {
-      const data = await API.trash();
-      renderTrash(data);
-    } catch (err) { toast(err.message, 'error'); }
+    const section = document.getElementById('admin-trash-section');
+    const open = section?.classList.contains('hidden');
+    section?.classList.toggle('hidden', !open);
+    trashBtn.setAttribute('aria-expanded', String(Boolean(open)));
+    trashBtn.textContent = open ? 'Hide trash' : 'View trash';
+    if (open) await refreshTrash();
   });
 
   form?.addEventListener('submit', async (e) => {
@@ -61,11 +71,15 @@ function renderUsers(users) {
   el.innerHTML = `<ul class="admin-list">
     ${users.map((u) => `<li class="${u.is_admin ? 'is-admin' : ''}">
       <span>${escapeHtml(u.username)}${u.is_admin ? ' <span class="badge">admin</span>' : ''}</span>
-      <button class="btn btn-danger btn-sm" data-id="${u.id}">Remove</button>
+      <button class="btn btn-danger btn-sm" data-id="${u.id}" aria-label="Remove user ${escapeHtml(u.username)}">Remove</button>
     </li>`).join('')}
   </ul>`;
   el.querySelectorAll('button[data-id]').forEach((b) => {
     b.addEventListener('click', async () => {
+      // Removing a user also deletes their notes, progress, favorites and
+      // shares, so it needs an explicit confirmation.
+      const name = users.find((u) => String(u.id) === b.dataset.id)?.username || 'this user';
+      if (!confirm(`Remove user "${name}"? Their notes, progress, favorites and shares are deleted too.`)) return;
       try {
         await API.deleteUser(b.dataset.id);
         toast('User removed');
@@ -89,80 +103,108 @@ function renderPermissions(data) {
     el.innerHTML = '<p class="text-muted text-xs">No sets or users to manage.</p>';
     return;
   }
+  el.innerHTML = permissionsTableHtml(data);
+  el.querySelectorAll('.perm-select').forEach(bindPermissionSelect);
+}
 
-  // Build a lookup: setId -> userId -> role
-  const roleMap = {};
+// permissionsTableHtml renders one row per set and one role select per user.
+function permissionsTableHtml(data) {
+  const roleMap = {}; // setId -> userId -> role
   data.permissions?.forEach((p) => {
     if (!roleMap[p.set_id]) roleMap[p.set_id] = {};
     roleMap[p.set_id][p.user_id] = p.role;
   });
-
-  let html = '<table class="admin-table"><thead><tr><th>Set</th>';
-  data.users.forEach((u) => {
-    html += `<th>${escapeHtml(u.username)}</th>`;
-  });
-  html += '</tr></thead><tbody>';
-
-  data.sets.forEach((s) => {
-    html += `<tr><td>${escapeHtml(s.name)}</td>`;
-    data.users.forEach((u) => {
+  const head = data.users.map((u) => `<th>${escapeHtml(u.username)}</th>`).join('');
+  const rows = data.sets.map((s) => {
+    const cells = data.users.map((u) => {
       const role = roleMap[s.id]?.[u.id] || '';
-      const selectId = `perm-${s.id}-${u.id}`;
-      html += `<td>
-        <select id="${selectId}" class="perm-select" data-set="${s.id}" data-user="${u.id}">
+      return `<td>
+        <select id="perm-${s.id}-${u.id}" class="perm-select" data-set="${s.id}" data-user="${u.id}"
+          aria-label="Permission for ${escapeHtml(u.username)} on ${escapeHtml(s.name)}">
           <option value="" ${!role ? 'selected' : ''}>—</option>
           <option value="viewer" ${role === 'viewer' ? 'selected' : ''}>Viewer</option>
           <option value="owner" ${role === 'owner' ? 'selected' : ''}>Owner</option>
         </select>
       </td>`;
-    });
-    html += '</tr>';
-  });
+    }).join('');
+    return `<tr><td>${escapeHtml(s.name)}</td>${cells}</tr>`;
+  }).join('');
+  return `<table class="admin-table"><thead><tr><th>Set</th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+}
 
-  html += '</tbody></table>';
-  el.innerHTML = html;
-
-  el.querySelectorAll('.perm-select').forEach((sel) => {
-    sel.addEventListener('change', async () => {
-      const setId = sel.dataset.set;
-      const userId = sel.dataset.user;
-      const role = sel.value;
-      try {
-        if (role) {
-          await API.setPermissions({ set_id: parseInt(setId), user_id: parseInt(userId), role });
-          toast('Permission granted');
-        } else {
-          await API.delPermissions({ set_id: parseInt(setId), user_id: parseInt(userId) });
-          toast('Permission revoked');
-        }
-      } catch (err) { toast(err.message, 'error'); }
+// bindPermissionSelect saves role changes in the order they were made: each
+// save waits for the previous one, so quick arrow-key changes cannot reach the
+// server out of order. The select stays enabled (disabling it would drop
+// keyboard focus); aria-busy marks pending saves. Once the queue drains, the
+// select shows the role the server last confirmed, so a failed save is undone
+// even when later changes were queued behind it.
+function bindPermissionSelect(sel) {
+  sel.dataset.saved = sel.value;
+  let queue = Promise.resolve();
+  let pending = 0;
+  sel.addEventListener('change', () => {
+    const role = sel.value;
+    pending++;
+    sel.setAttribute('aria-busy', 'true');
+    queue = queue.then(() => savePermission(sel, role)).finally(() => {
+      if (--pending > 0) return;
+      sel.value = sel.dataset.saved;
+      sel.removeAttribute('aria-busy');
     });
   });
 }
 
+async function savePermission(sel, role) {
+  const body = { set_id: parseInt(sel.dataset.set, 10), user_id: parseInt(sel.dataset.user, 10) };
+  try {
+    if (role) {
+      await API.setPermissions({ ...body, role });
+      toast('Permission granted');
+    } else {
+      await API.delPermissions(body);
+      toast('Permission revoked');
+    }
+    sel.dataset.saved = role;
+  } catch (err) {
+    toast(err.message || 'Permission change failed', 'error');
+  }
+}
+
+async function refreshTrash() {
+  try {
+    renderTrash(await API.trash());
+  } catch (err) { toast(err.message || 'Failed to load trash', 'error'); }
+}
+
 function renderTrash(data) {
-  const el = document.getElementById('admin-users');
+  const el = document.getElementById('admin-trash-list');
   if (!el || !Array.isArray(data)) return;
   if (!data.length) {
-    el.innerHTML = '<h4 class="text-90">Trash</h4><p class="text-muted text-xs">No deleted items.</p>';
+    el.innerHTML = '<p class="text-muted text-xs">No deleted items.</p>';
     return;
   }
-  el.innerHTML = `<h4 class="text-90">Trash</h4><ul class="admin-list">
+  el.innerHTML = `<ul class="admin-list">
     ${data.map((m) => `<li>
       <span>${escapeHtml(m.file_name)}</span>
-      <span class="text-muted text-75">${escapeHtml(m.deleted_at || '')}</span>
-      <button class="btn btn-primary btn-sm" data-id="${m.id}">Restore</button>
+      <span class="text-muted text-75">${escapeHtml(fmtDateTime(m.deleted_at))}</span>
+      <button class="btn btn-primary btn-sm" data-id="${m.id}" aria-label="Restore ${escapeHtml(m.file_name)}">Restore</button>
     </li>`).join('')}
   </ul>`;
 
   el.querySelectorAll('button[data-id]').forEach((b) => {
     b.addEventListener('click', async () => {
+      b.disabled = true;
       try {
         await API.restore(b.dataset.id);
         toast('Item restored');
-        const data = await API.trash();
-        renderTrash(data);
-      } catch (err) { toast(err.message, 'error'); }
+        // Let the library grid show the restored item without a reload.
+        document.dispatchEvent(new CustomEvent('library:changed'));
+        await refreshTrash();
+      } catch (err) {
+        b.disabled = false;
+        if (document.activeElement === document.body) b.focus();
+        toast(err.message, 'error');
+      }
     });
   });
 }

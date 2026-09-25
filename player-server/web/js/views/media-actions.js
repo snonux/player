@@ -7,10 +7,18 @@ import { copyShareLink } from '../share-link.js';
 
 let latestNoteLoad = 0;
 
+// selectedCardMediaId returns the media ID of the selected grid card, or ''
+// when the selection is a set, folder or podcast-episode card. Those carry no
+// data-id, and item actions must not fall through to an unrelated media.
+function selectedCardMediaId() {
+  const id = currentElement()?.dataset?.id || '';
+  if (!id) toast('Select a media item first', 'info');
+  return id;
+}
+
 export async function shareSelected() {
-  const el = currentElement();
-  if (!el) return;
-  const id = el.dataset.id;
+  const id = selectedCardMediaId();
+  if (!id) return;
   try {
     const res = await API.share(id);
     const token = res?.token || res?.share?.token;
@@ -22,10 +30,15 @@ export async function shareSelected() {
   }
 }
 
+// toggleFavorite flips the favorite flag and shows the state the server
+// reports, so the heart and the toast stay right even after a stale render.
 export async function toggleFavorite(id, btn) {
   try {
-    await API.favorite(id);
-    btn?.classList.toggle('active');
+    const res = await API.favorite(id);
+    const favorite = typeof res?.favorite === 'boolean' ? res.favorite : !btn?.classList.contains('active');
+    btn?.classList.toggle('active', favorite);
+    btn?.setAttribute('aria-pressed', String(favorite));
+    toast(favorite ? 'Added to favorites' : 'Removed from favorites');
   } catch (err) {
     toast(err.message || 'Favorite failed', 'error');
   }
@@ -33,7 +46,10 @@ export async function toggleFavorite(id, btn) {
 
 async function setProgressStatus(id, status, successMessage) {
   const mediaId = id || selectedMediaId();
-  if (!mediaId) return false;
+  if (!mediaId) {
+    toast('Select a media item first', 'info');
+    return false;
+  }
   try {
     await API.progressStatus(mediaId, status);
     toast(successMessage);
@@ -53,9 +69,8 @@ export function markAsNotStarted(id) {
 }
 
 export async function openNotesForSelected() {
-  const el = currentElement();
-  if (!el) return;
-  const id = el.dataset.id;
+  const id = selectedCardMediaId();
+  if (!id) return;
   const request = ++latestNoteLoad;
   try {
     const note = await API.notes(id);
@@ -71,14 +86,19 @@ export async function openNotesForSelected() {
 }
 
 export async function downloadSelected() {
-  const el = currentElement();
-  if (!el) return;
-  window.open(`/api/media/${el.dataset.id}/download`, '_blank');
+  const id = selectedCardMediaId();
+  if (!id) return;
+  window.open(`/api/media/${id}/download`, '_blank');
 }
 
+// selectedMediaId prefers the selected media card and otherwise falls back to
+// the playing media (e.g. i while a set or folder card is selected). A
+// selected podcast-episode card yields '': its episode is not a media item,
+// and mark-finished must not silently hit whatever is playing instead.
 export function selectedMediaId() {
   const el = currentElement();
   if (el?.dataset?.id) return el.dataset.id;
+  if (el?.classList.contains('episode-card')) return '';
   const id = currentMediaId();
   return id ? String(id) : '';
 }

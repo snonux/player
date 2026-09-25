@@ -270,6 +270,18 @@ export function initKeyboard(handlers) {
       case 'n':
         handlers.notes?.(e);
         break;
+      case 't':
+        e.preventDefault();
+        handlers.tags?.(e);
+        break;
+      case 'F':
+        e.preventDefault();
+        handlers.favorite?.(e);
+        break;
+      case 'A':
+        e.preventDefault();
+        handlers.admin?.(e);
+        break;
       case 'p':
         e.preventDefault();
         handlers.playPause?.(e);

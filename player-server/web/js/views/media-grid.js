@@ -56,8 +56,15 @@ export function initMediaGrid(options = {}) {
     }
   });
 
-  grid?.addEventListener('podcast:episode-downloaded', () => {
-    loadMedia();
+  // A downloaded episode becomes a normal media card; reload so it shows up
+  // and, for Play, start it once the card exists.
+  // Play works even when the new card sorts onto another page, because it
+  // plays from the loaded list by media ID rather than from the DOM.
+  grid?.addEventListener('podcast:episode-downloaded', async (e) => {
+    await loadMedia();
+    const mediaId = e.detail?.media?.id;
+    if (!e.detail?.play || !mediaId) return;
+    if (!(await callbacks.playMediaById?.(mediaId))) toast('Episode downloaded; select it to play', 'info');
   });
 }
 

@@ -143,6 +143,10 @@ Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** w
 | `s` | Generate a share link for the selected media |
 | `/` | Focus the quick search bar (debounced) |
 | `n` | Open notes modal for the selected media |
+| `t` | Open tags for the selected media |
+| `F` | Toggle favorite for the selected media |
+| `A` | Open the admin panel (admins only) |
+| `u` | Upload to the current set |
 
 ---
 

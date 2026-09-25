@@ -120,6 +120,7 @@ export const API = {
     return api(`/api/podcasts/${setId}/episodes?${params}`);
   },
   subscribePodcast: (feedUrl, setName) => api('/api/podcasts', { method: 'POST', body: { feed_url: feedUrl, set_name: setName } }),
+  unsubscribePodcast: (feedId) => api(`/api/podcasts/${feedId}`, { method: 'DELETE' }),
   downloadEpisode: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/download`, { method: 'POST' }),
   toggleEpisodeComplete: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/complete`, { method: 'POST' }),
 };

@@ -145,3 +145,36 @@ test('big play and progress track keys act once, not again through global shortc
   expect(position).toBeGreaterThanOrEqual(6.5);
   expect(position).toBeLessThan(9);
 });
+
+test('d detaches playback into a popup and d in the popup reattaches', async ({ page }) => {
+  const origin = new URL(baseURL);
+  await page.context().addCookies([{
+    name: 'session', value: adminCookie.slice('session='.length),
+    domain: origin.hostname, path: '/', sameSite: 'Strict',
+  }]);
+  await page.goto('/');
+  await page.evaluate(media => {
+    const modulePath = '/js/playback.js';
+    return import(modulePath).then(({ loadMediaDirect }) =>
+      loadMediaDirect({ ...media, type: 'audio' }, `/api/media/${media.id}/stream`, ''));
+  }, audio);
+  await expect(page.locator('#player')).toHaveClass(/open/);
+  await expect.poll(() => page.locator('#media-audio').evaluate((m: any) => m.duration)).toBeGreaterThan(0);
+
+  const popupPromise = page.waitForEvent('popup');
+  await page.keyboard.press('d');
+  const popup = await popupPromise;
+  await popup.waitForLoadState();
+  // The main player hides and the popup loads the same stream.
+  await expect(page.locator('#player')).toHaveClass(/hidden/);
+  await expect.poll(() => popup.evaluate(() => {
+    const doc = (globalThis as any).document;
+    return [...doc.querySelectorAll('audio, video')].map((m: any) => m.currentSrc).join(' ');
+  })).toContain(`/api/media/${audio.id}/stream`);
+
+  // The popup closes during the key press, so only the close event counts.
+  const closed = popup.waitForEvent('close');
+  await popup.keyboard.press('d').catch(() => {});
+  await closed;
+  await expect(page.locator('#player')).not.toHaveClass(/hidden/);
+});

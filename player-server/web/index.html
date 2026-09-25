@@ -139,8 +139,11 @@
       <div class="help-shortcuts">
         <div class="help-row"><span><kbd>↑</kbd> <kbd>↓</kbd></span><span>Navigate media list</span></div>
         <div class="help-row"><span><kbd>k</kbd> <kbd>j</kbd></span><span>Navigate media list</span></div>
-        <div class="help-row"><span><kbd>←</kbd> <kbd>→</kbd></span><span>Seek or switch pages</span></div>
-        <div class="help-row"><span><kbd>h</kbd> <kbd>l</kbd></span><span>Seek or switch pages</span></div>
+        <div class="help-row"><span><kbd>←</kbd> <kbd>→</kbd></span><span>Move left / right (seek in fullscreen)</span></div>
+        <div class="help-row"><span><kbd>h</kbd> <kbd>l</kbd></span><span>Move left / right (seek in fullscreen)</span></div>
+        <div class="help-row"><span><kbd>/</kbd></span><span>Search</span></div>
+        <div class="help-row"><span><kbd>1</kbd>–<kbd>9</kbd></span><span>Open set by position</span></div>
+        <div class="help-row"><span><kbd>Tab</kbd> <kbd>Shift+Tab</kbd></span><span>Next / previous set (sidebar open)</span></div>
         <div class="help-row"><span><kbd>Enter</kbd></span><span>Open selected item</span></div>
         <div class="help-row"><span><kbd>Space</kbd> <kbd>p</kbd></span><span>Play / pause</span></div>
         <div class="help-row"><span><kbd>N</kbd> <kbd>P</kbd></span><span>Next / previous track</span></div>
@@ -148,8 +151,10 @@
         <div class="help-row"><span><kbd>M</kbd></span><span>Rescan media library</span></div>
         <div class="help-row"><span><kbd>i</kbd></span><span>Show / hide media info</span></div>
         <div class="help-row"><span><kbd>n</kbd></span><span>Open notes</span></div>
+        <div class="help-row"><span><kbd>t</kbd></span><span>Edit tags</span></div>
+        <div class="help-row"><span><kbd>F</kbd></span><span>Toggle favorite</span></div>
         <div class="help-row"><span><kbd>f</kbd></span><span>Toggle fullscreen</span></div>
-        <div class="help-row"><span><kbd>PgUp</kbd> <kbd>PgDn</kbd></span><span>Seek +10% / −10% (fullscreen)</span></div>
+        <div class="help-row"><span><kbd>PgUp</kbd> <kbd>PgDn</kbd></span><span>Seek −10% / +10% (fullscreen)</span></div>
         <div class="help-row"><span><kbd>C</kbd></span><span>Minimize player</span></div>
         <div class="help-row"><span><kbd>d</kbd></span><span>Detach / attach player</span></div>
         <div class="help-row"><span><kbd>D</kbd></span><span>Download selected media</span></div>
@@ -163,6 +168,9 @@
         <div class="help-row"><span><kbd>Shift+↑</kbd> <kbd>Shift+↓</kbd> <kbd>Shift+←</kbd> <kbd>Shift+→</kbd></span><span>Nudge crop position</span></div>
         <div class="help-row"><span><kbd>x</kbd></span><span>Cycle crop anchor preset</span></div>
         <div class="help-row"><span><kbd>L</kbd></span><span>My Shares</span></div>
+        <div class="help-row"><span><kbd>u</kbd></span><span>Upload to current set</span></div>
+        <div class="help-row"><span><kbd>A</kbd></span><span>Admin panel (admins)</span></div>
+        <div class="help-row"><span><kbd>h</kbd> <kbd>l</kbd> <kbd>+</kbd> <kbd>−</kbd> <kbd>Shift+S</kbd></span><span>Image viewer: previous / next, zoom, slideshow</span></div>
         <div class="help-row"><span><kbd>?</kbd></span><span>Show / hide help</span></div>
       </div>
       <div class="help-search text-muted text-xs mt-2">
@@ -264,9 +272,13 @@
     </div>
     <div class="flex gap-2 mt-3">
       <button id="admin-rescan" class="btn btn-primary btn-sm">Trigger rescan</button>
-      <button id="admin-trash" class="btn btn-danger btn-sm">View trash</button>
+      <button id="admin-trash" class="btn btn-danger btn-sm" aria-expanded="false" aria-controls="admin-trash-section">View trash</button>
       <button id="admin-podcasts" class="btn btn-primary btn-sm">Podcasts</button>
     </div>
+    <section id="admin-trash-section" class="hidden mt-3" aria-labelledby="admin-trash-title">
+      <h4 id="admin-trash-title" class="my-1 text-90">Trash</h4>
+      <div id="admin-trash-list"></div>
+    </section>
   </div>
 </div>
 

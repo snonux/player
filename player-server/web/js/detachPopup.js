@@ -88,6 +88,11 @@ document.addEventListener('keydown', (ev) => {
   } else if (ev.key === 'P') {
     ev.preventDefault();
     post({ type: 'detach-prev', play: shouldContinuePlayback() });
+  } else if (ev.key === 'd') {
+    // Same key as in the main window: closing reattaches the player there,
+    // and beforeunload hands over the playback position.
+    ev.preventDefault();
+    window.close();
   }
 });
 
