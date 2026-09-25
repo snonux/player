@@ -3,7 +3,7 @@
  *
  * Coverage:
  *   1. Create a share via API, navigate to /s/{token} → page loads (HTTP 200) and
- *      the shared media title is reflected somewhere in the rendered HTML.
+ *      the shared media title is visible in the heading and document title.
  *   2. The shared media playback element exists in the page (the share page uses
  *      a combined <video>+<audio> stage; for an audio share the <audio> element
  *      receives the source and the <video> is hidden).
@@ -14,11 +14,6 @@
  * still need an admin session to create a share via /api/v1/media/{id}/shares,
  * so the file mirrors smoke.test.ts and runs bootstrap + rescan in beforeAll.
  *
- * Note on feature gaps:
- *   - The current share.html does not render the original file name in the title
- *     bar — the <title> is the static "Shared Media" string and the file name is
- *     only embedded inside the JSON payload at #share-meta. We therefore assert
- *     against the static title and the JSON payload, not against a visible label.
  */
 
 import { test, expect, Page, BrowserContext } from '@playwright/test';
@@ -34,10 +29,11 @@ let adminCookie: string = '';
 
 // Allow 60 s for beforeAll: the rescan may take 30+ seconds on a large library.
 test.beforeAll(async () => {
+  test.setTimeout(60_000);
   await waitForServer(15_000);
   adminCookie = await bootstrap();
   await triggerRescan(adminCookie, 30_000);
-}, 60_000);
+});
 
 /**
  * createShareForFirstMedia uses the admin session to find the first available
@@ -87,21 +83,23 @@ test('share page loads and exposes the share metadata payload', async ({ page })
   const response = await page.goto(`/s/${token}`);
   expect(response?.status()).toBe(200);
 
-  // The static title of share.html is "Shared Media".
-  await expect(page).toHaveTitle('Shared Media');
-
-  // The <h1> heading in share.html reads "Shared Media".
-  await expect(page.locator('h1')).toHaveText('Shared Media');
-
   // The share metadata is embedded as a JSON script tag — confirm it parsed.
   // The handler replaces the placeholder <!--SHARE_MEDIA--> with a JSON object
   // containing media + stream_url. We check the tag exists and that its text
   // is valid JSON referencing the media id we created.
   const metaText = await page.locator('#share-meta').textContent();
   expect(metaText, 'share-meta script tag should contain JSON payload').toBeTruthy();
-  const meta = JSON.parse(metaText || '{}') as { media?: { id: number; type: string }; stream_url?: string };
+  const meta = JSON.parse(metaText || '{}') as { media?: { id: number; type: string; file_name: string }; stream_url?: string };
   expect(meta.media?.id).toBeGreaterThan(0);
   expect(meta.stream_url).toContain(token);
+  // The server HTML-escapes the payload (html.EscapeString emits &#34; and
+  // &#39; for quotes); decode named and numeric entities, &amp; last.
+  const decoder = (meta.media?.file_name || '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&amp;/g, '&');
+  await expect(page.locator('h1')).toHaveText(decoder);
+  await expect(page).toHaveTitle(`${decoder} — Shared Media`);
 
   // No JS console errors should have fired while the page initialised.
   // We allow a brief settle to let initPlayer() finish wiring the audio source.

@@ -60,7 +60,7 @@
 <body>
 <div class="page-wrap">
   <div class="container">
-    <h1>Shared Media</h1>
+    <h1 id="share-title">Shared Media</h1>
     <aside id="player" class="player open" aria-label="Player">
       <div class="stage">
         <video id="media-video" playsinline controlslist="nodownload"></video>
@@ -103,6 +103,11 @@
   } catch {}
 
   if (data && data.media) {
+    const decoder = document.createElement('textarea');
+    decoder.innerHTML = data.media.file_name || '';
+    const name = decoder.value || 'Shared Media';
+    document.getElementById('share-title').textContent = name;
+    document.title = `${name} — Shared Media`;
     loadMediaDirect(data.media, data.stream_url, data.thumb_url, 0);
     const dlBtn = document.getElementById('btn-download');
     if (dlBtn && data.download_url) {
