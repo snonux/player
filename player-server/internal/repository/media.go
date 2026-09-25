@@ -173,85 +173,44 @@ func (s *SQLite) HardDeleteMedia(ctx context.Context, id int64) error {
 	return nil
 }
 
+// mediaListColumns is the column list scanMedia expects, qualified with the
+// media table because ListMedia may join favorites and tags.
+const mediaListColumns = `media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at`
+
+// mediaQuery collects SQL fragments with their bind arguments. JOIN and WHERE
+// arguments are kept apart because JOIN placeholders precede WHERE
+// placeholders in the final SQL, whatever order the filters are added in.
+// Mixing them in one slice bound the favorites user ID to a search pattern.
+type mediaQuery struct {
+	joins    []string
+	joinArgs []any
+	conds    []string
+	condArgs []any
+}
+
+func (q *mediaQuery) join(clause string, args ...any) {
+	q.joins = append(q.joins, clause)
+	q.joinArgs = append(q.joinArgs, args...)
+}
+
+func (q *mediaQuery) where(cond string, args ...any) {
+	q.conds = append(q.conds, cond)
+	q.condArgs = append(q.condArgs, args...)
+}
+
 // ListMedia returns media matching the filter.
 func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Media, error) {
-	var args []any
-	var conds []string
-	var joins string
-	query := `SELECT DISTINCT media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at FROM media`
-
-	if filter.Search != "" {
-		// escapeLike escapes LIKE wildcards so user input is treated as a literal substring.
-		conds = append(conds, `(media.file_name LIKE ? ESCAPE '\' OR media.rel_path LIKE ? ESCAPE '\')`)
-		like := "%" + escapeLike(filter.Search) + "%"
-		args = append(args, like, like)
+	q := mediaFilterQuery(filter)
+	query := `SELECT DISTINCT ` + mediaListColumns + ` FROM media` + strings.Join(q.joins, "")
+	if len(q.conds) > 0 {
+		query += " WHERE " + strings.Join(q.conds, " AND ")
 	}
-	if filter.Favorites {
-		joins += ` INNER JOIN favorites f ON f.media_id = media.id AND f.user_id = ?`
-		args = append(args, filter.UserID)
-	}
+	args := append(append([]any{}, q.joinArgs...), q.condArgs...)
 	if len(filter.Tags) > 0 {
-		joins += ` INNER JOIN media_tags mt ON mt.media_id = media.id INNER JOIN tags t ON t.id = mt.tag_id`
-		conds = append(conds, `t.name IN (`+placeholders(len(filter.Tags))+`)`)
-		for _, t := range filter.Tags {
-			args = append(args, t)
-		}
-		// Require all tags by grouping and checking count
-		// This is handled below via HAVING
+		// Require every requested tag, not just one of them.
+		query += fmt.Sprintf(" GROUP BY media.id HAVING COUNT(DISTINCT t.name) = %d", len(filter.Tags))
 	}
-
-	if filter.SetID != nil {
-		conds = append(conds, `media.set_id = ?`)
-		args = append(args, *filter.SetID)
-	}
-	if len(filter.SetIDs) > 0 {
-		conds = append(conds, "media.set_id IN ("+placeholders(len(filter.SetIDs))+")")
-		for _, id := range filter.SetIDs {
-			args = append(args, id)
-		}
-	}
-	if len(filter.AllowedSetIDs) > 0 {
-		conds = append(conds, "media.set_id IN ("+placeholders(len(filter.AllowedSetIDs))+")")
-		for _, id := range filter.AllowedSetIDs {
-			args = append(args, id)
-		}
-	}
-	if filter.Type != nil {
-		conds = append(conds, `media.type = ?`)
-		args = append(args, string(*filter.Type))
-	}
-	if filter.MinDuration != nil {
-		conds = append(conds, `media.duration >= ?`)
-		args = append(args, *filter.MinDuration)
-	}
-	if filter.MaxDuration != nil {
-		conds = append(conds, `media.duration <= ?`)
-		args = append(args, *filter.MaxDuration)
-	}
-	if !filter.IncludeDeleted {
-		conds = append(conds, `media.deleted_at IS NULL`)
-	}
-
-	query += joins
-	if len(conds) > 0 {
-		query += " WHERE " + strings.Join(conds, " AND ")
-	}
-	if len(filter.Tags) > 0 {
-		query += ` GROUP BY media.id HAVING COUNT(DISTINCT t.name) = ` + fmt.Sprintf("%d", len(filter.Tags))
-	}
-	switch filter.Sort {
-	case "duration":
-		query += " ORDER BY media.duration"
-	case "play_count":
-		query += " ORDER BY media.play_count DESC"
-	case "date":
-		query += " ORDER BY media.created_at DESC"
-	case "random":
-		query += " ORDER BY RANDOM()"
-	default:
-		query += " ORDER BY media.file_name"
-	}
-
+	query += mediaOrderBy(filter.Sort)
 	if filter.Limit > 0 {
 		query += " LIMIT ?"
 		args = append(args, filter.Limit)
@@ -260,7 +219,73 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 		query += " OFFSET ?"
 		args = append(args, filter.Offset)
 	}
+	return s.queryMedia(ctx, query, args)
+}
 
+// mediaFilterQuery translates filter into joins and conditions.
+func mediaFilterQuery(filter MediaFilter) *mediaQuery {
+	q := &mediaQuery{}
+	if filter.Search != "" {
+		// escapeLike escapes LIKE wildcards so user input is treated as a literal substring.
+		like := "%" + escapeLike(filter.Search) + "%"
+		q.where(`(media.file_name LIKE ? ESCAPE '\' OR media.rel_path LIKE ? ESCAPE '\')`, like, like)
+	}
+	if filter.Favorites {
+		q.join(` INNER JOIN favorites f ON f.media_id = media.id AND f.user_id = ?`, filter.UserID)
+	}
+	if len(filter.Tags) > 0 {
+		q.join(` INNER JOIN media_tags mt ON mt.media_id = media.id INNER JOIN tags t ON t.id = mt.tag_id`)
+		q.where(`t.name IN (`+placeholders(len(filter.Tags))+`)`, anySlice(filter.Tags)...)
+	}
+	if filter.SetID != nil {
+		q.where(`media.set_id = ?`, *filter.SetID)
+	}
+	if len(filter.SetIDs) > 0 {
+		q.where("media.set_id IN ("+placeholders(len(filter.SetIDs))+")", anySlice(filter.SetIDs)...)
+	}
+	if len(filter.AllowedSetIDs) > 0 {
+		q.where("media.set_id IN ("+placeholders(len(filter.AllowedSetIDs))+")", anySlice(filter.AllowedSetIDs)...)
+	}
+	if filter.Type != nil {
+		q.where(`media.type = ?`, string(*filter.Type))
+	}
+	if filter.MinDuration != nil {
+		q.where(`media.duration >= ?`, *filter.MinDuration)
+	}
+	if filter.MaxDuration != nil {
+		q.where(`media.duration <= ?`, *filter.MaxDuration)
+	}
+	if filter.MinFileSize != nil {
+		q.where(`media.file_size_bytes >= ?`, *filter.MinFileSize)
+	}
+	if filter.MaxFileSize != nil {
+		q.where(`media.file_size_bytes <= ?`, *filter.MaxFileSize)
+	}
+	if !filter.IncludeDeleted {
+		q.where(`media.deleted_at IS NULL`)
+	}
+	return q
+}
+
+// mediaOrderBy maps the API sort name to an ORDER BY clause; unknown values
+// sort by file name.
+func mediaOrderBy(sort string) string {
+	switch sort {
+	case "duration":
+		return " ORDER BY media.duration"
+	case "play_count":
+		return " ORDER BY media.play_count DESC"
+	case "date":
+		return " ORDER BY media.created_at DESC"
+	case "random":
+		return " ORDER BY RANDOM()"
+	default:
+		return " ORDER BY media.file_name"
+	}
+}
+
+// queryMedia runs a query selecting mediaListColumns and scans every row.
+func (s *SQLite) queryMedia(ctx context.Context, query string, args []any) ([]model.Media, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list media: %w", err)
@@ -276,6 +301,15 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 		media = append(media, *m)
 	}
 	return media, rows.Err()
+}
+
+// anySlice converts typed values to database/sql bind arguments.
+func anySlice[T any](values []T) []any {
+	out := make([]any, len(values))
+	for i, v := range values {
+		out[i] = v
+	}
+	return out
 }
 
 // ListDeletedMedia returns all soft-deleted media.

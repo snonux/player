@@ -617,10 +617,10 @@ List or search media visible to the authenticated user. Supports rich filtering.
 | `type` | string | `video`, `audio`, or `image` |
 | `favorites` | string | `true` or `1` to show favourites only |
 | `tags` | string | Comma-separated tag names (AND match) |
-| `min_duration` | float | Minimum duration in minutes |
-| `max_duration` | float | Maximum duration in minutes |
-| `filesize_min` | integer | Minimum file size in MB |
-| `filesize_max` | integer | Maximum file size in MB |
+| `min_duration` | float | Minimum duration in seconds |
+| `max_duration` | float | Maximum duration in seconds |
+| `filesize_min` | integer | Minimum file size in bytes (inclusive) |
+| `filesize_max` | integer | Maximum file size in bytes (inclusive) |
 | `sort` | string | `name`, `date`, `duration`, `play_count`, or `random` |
 | `limit` | integer | Page size (1–1000, default 100) |
 | `offset` | integer | Page offset (default 0) |

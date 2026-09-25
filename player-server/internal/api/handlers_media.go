@@ -165,6 +165,23 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 // Media
 // ------------------------------------------------------------------
 
+// parseTagList splits a comma-separated tag query into trimmed, unique,
+// non-empty names. The repository requires all listed tags by counting
+// distinct matches, so a duplicate or blank entry would never match.
+func parseTagList(v string) []string {
+	var tags []string
+	seen := map[string]bool{}
+	for _, tag := range strings.Split(v, ",") {
+		tag = strings.TrimSpace(tag)
+		if tag == "" || seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		tags = append(tags, tag)
+	}
+	return tags
+}
+
 // parseMediaListQuery extracts and validates query parameters from the request
 // and returns a populated service.MediaQueryFilter with sensible defaults.
 func parseMediaListQuery(q url.Values) service.MediaQueryFilter {
@@ -195,7 +212,7 @@ func parseMediaListQuery(q url.Values) service.MediaQueryFilter {
 		filter.Favorites = true
 	}
 	if v := q.Get("tags"); v != "" {
-		filter.Tags = strings.Split(v, ",")
+		filter.Tags = parseTagList(v)
 	}
 	if v := q.Get("min_duration"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
