@@ -191,3 +191,24 @@ test('Space toggles a focused set row but not sidebar buttons', async ({ page })
   expect(coverPosts).toBe(0);
   await expect(page.locator('#sidebar')).toHaveClass(/open/);
 });
+
+test('a keyboard-focused set row shows the accent focus outline', async ({ page }) => {
+  await page.locator('#sidebar-toggle').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#sidebar')).toHaveClass(/open/);
+  const row = page.locator('#set-list .set-row').filter({ hasText: 'images' });
+  // Focus follows a keyboard action (Enter above), so :focus-visible applies.
+  await row.focus();
+  await expect(row).toBeFocused();
+  const style = await row.evaluate(el => {
+    const css = (globalThis as any).getComputedStyle(el);
+    const probe = (globalThis as any).document.createElement('span');
+    probe.style.color = css.getPropertyValue('--accent');
+    el.appendChild(probe);
+    const accent = (globalThis as any).getComputedStyle(probe).color;
+    probe.remove();
+    return { outline: css.outlineStyle, color: css.outlineColor, accent };
+  });
+  expect(style.outline).toBe('solid');
+  expect(style.color).toBe(style.accent);
+});

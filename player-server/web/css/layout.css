@@ -141,7 +141,7 @@ body {
   user-select: none;
 }
 .sidebar .set-item:hover,
-.sidebar .set-item:focus-visible {
+.sidebar .set-row:focus-visible .set-item {
   background: var(--bg-surface-hover);
   color: var(--text-primary);
   outline: none;
@@ -644,6 +644,11 @@ body {
   align-items: center;
   gap: 0.25rem;
   padding-right: 0.25rem;
+}
+/* The row, not its inner label, takes keyboard focus. */
+.sidebar .set-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .tag-chip {
   display: inline-flex;
