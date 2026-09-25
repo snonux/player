@@ -14,7 +14,11 @@ abstract final class AppRoutes {
   /// The ':token' segment is the opaque share token issued by the server.
   /// This route is intentionally outside the authenticated route set so
   /// anyone with a share link can view the shared media without logging in.
-  static const shareViewer = '/share/:token';
+  static const shareViewer = '/s/:token';
+
+  /// Public playback routes use the share token instead of a media ID.
+  static const sharedAudioPlayer = '/s/:token/audio';
+  static const sharedVideoPlayer = '/s/:token/video';
 
   static const settings = '/settings';
   static const server = '/server';
@@ -48,18 +52,10 @@ abstract final class AppRoutes {
   /// The ':mediaId' segment identifies the media item whose note is edited.
   static const notes = '/notes/:mediaId';
 
-  /// URL prefix used in the router redirect guard to identify share-viewer URLs.
-  ///
-  /// The go_router pattern [shareViewer] is a template string with a `:token`
-  /// placeholder and cannot be used directly as a prefix check.  This constant
-  /// encapsulates the literal prefix so [router.dart]'s redirect logic can
-  /// reference a named constant rather than embedding a raw string literal
-  /// (Dependency Inversion — high-level routing policy depends on this abstraction,
-  /// not on a hardcoded '/share/' string).
-  static const shareViewerPrefix = '/share/';
-
   /// Returns the concrete path for the share-viewer page of a given [token].
-  static String shareViewerPath(String token) => '/share/$token';
+  static String shareViewerPath(String token) => '/s/$token';
+  static String sharedPlayerPath(String token, String type) =>
+      '/s/$token/${type == 'audio' ? 'audio' : 'video'}';
 
   /// Returns the concrete path for a media-detail page given a numeric [id].
   static String mediaDetailPath(int id) => '/media/$id';

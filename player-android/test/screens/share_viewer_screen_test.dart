@@ -22,10 +22,20 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:player_android/api/player_api_client.dart';
+import 'package:player_android/providers/auth_state_provider.dart';
+import 'package:player_android/providers/first_run_provider.dart';
 import 'package:player_android/providers/public_api_client_provider.dart';
+import 'package:player_android/router.dart';
 import 'package:player_android/screens/share_viewer_screen.dart';
 import 'package:player_android/utils/error_mappers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class _Unauthenticated extends AuthStateNotifier {
+  @override
+  Future<AuthState> build() async => const AuthState.unauthenticated();
+}
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -162,6 +172,54 @@ Future<void> _pumpShareViewerScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets('real router opens /s token without a session', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final client = _FakePublicApiClient()..pageJson = _kAudioShareJson;
+    final container = ProviderContainer(overrides: [
+      authStateProvider.overrideWith(_Unauthenticated.new),
+      firstRunProvider.overrideWith((ref) async => false),
+      publicApiClientProvider.overrideWithValue(client),
+    ]);
+    addTearDown(container.dispose);
+    final router = container.read(routerProvider);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp.router(routerConfig: router),
+    ));
+    router.go(AppRoutes.shareViewerPath('tok7'));
+    await tester.pumpAndSettle();
+    expect(find.text('podcast.mp3'), findsOneWidget);
+    expect(find.byKey(const Key('login_username')), findsNothing);
+    expect(client.callCount, 1);
+  });
+
+  testWidgets('Play opens a public share player path', (tester) async {
+    final client = _FakePublicApiClient()..pageJson = _kAudioShareJson;
+    final router = GoRouter(initialLocation: '/s/tok7', routes: [
+      GoRoute(
+        path: AppRoutes.shareViewer,
+        builder: (context, state) =>
+            ShareViewerScreen(token: state.pathParameters['token']!),
+      ),
+      GoRoute(
+        path: AppRoutes.sharedAudioPlayer,
+        builder: (context, state) =>
+            Text('playing ${state.pathParameters['token']}'),
+      ),
+    ]);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [publicApiClientProvider.overrideWithValue(client)],
+      child: MaterialApp.router(routerConfig: router),
+    ));
+    await tester.pumpAndSettle();
+    await tester
+        .ensureVisible(find.byKey(const Key('share_viewer_play_button')));
+    await tester.tap(find.byKey(const Key('share_viewer_play_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('playing tok7'), findsOneWidget);
+  });
   // --------------------------------------------------------------------------
   // Loading state
   // --------------------------------------------------------------------------
@@ -259,7 +317,8 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('play button', () {
-    testWidgets('play button is present after a successful load', (tester) async {
+    testWidgets('play button is present after a successful load',
+        (tester) async {
       final fakeClient = _FakePublicApiClient()..pageJson = _kVideoShareJson;
 
       await _pumpShareViewerScreen(tester, fakeClient);
@@ -325,7 +384,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('share_viewer_error')), findsOneWidget);
-      expect(find.textContaining('invalid or has been revoked'), findsOneWidget);
+      expect(
+          find.textContaining('invalid or has been revoked'), findsOneWidget);
     });
 
     testWidgets('shows 410 error message for an expired token', (tester) async {
@@ -413,7 +473,8 @@ void main() {
         ),
         type: DioExceptionType.badResponse,
       );
-      expect(shareViewerErrorMessage(err), contains('invalid or has been revoked'));
+      expect(shareViewerErrorMessage(err),
+          contains('invalid or has been revoked'));
     });
 
     test('returns expired-link message for 410', () {
@@ -433,11 +494,13 @@ void main() {
         requestOptions: RequestOptions(path: '/s/tok'),
         type: DioExceptionType.connectionError,
       );
-      expect(shareViewerErrorMessage(err), contains('Could not reach the server'));
+      expect(
+          shareViewerErrorMessage(err), contains('Could not reach the server'));
     });
 
     test('returns generic message for non-Dio error', () {
-      expect(shareViewerErrorMessage(Exception('boom')), contains('Unexpected error'));
+      expect(shareViewerErrorMessage(Exception('boom')),
+          contains('Unexpected error'));
     });
   });
 }

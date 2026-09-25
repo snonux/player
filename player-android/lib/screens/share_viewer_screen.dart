@@ -72,10 +72,10 @@ class SharePageMetadata {
 
 /// Public share-viewer screen — no authentication required.
 ///
-/// Accepts a [token] from the go_router path parameter (/share/:token).
+/// Accepts a [token] from the go_router path parameter (/s/:token).
 /// Calls the unauthenticated [publicApiClientProvider] to fetch share metadata
 /// and renders the file name, type, duration, and thumbnail.  A "Play" button
-/// navigates to the appropriate video or audio player with the stream URL so
+/// navigates to the appropriate public video or audio player so
 /// the viewer can watch or listen without a user account.
 ///
 /// Design notes:
@@ -86,9 +86,7 @@ class SharePageMetadata {
 ///     keeping the screen layer decoupled from the HTTP transport (DIP).
 ///   - The screen does not import any authenticated provider, ensuring it cannot
 ///     accidentally attach a session to a public request.
-///   - Progress updates sent by the player screen will fail silently for
-///     public shares (the progress endpoint requires auth) — this is acceptable
-///     because progress tracking is a per-user authenticated feature.
+///   - Public players skip account-only progress tracking.
 class ShareViewerScreen extends ConsumerStatefulWidget {
   const ShareViewerScreen({super.key, required this.token});
 
@@ -154,27 +152,11 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
   // Play action
   // ---------------------------------------------------------------------------
 
-  /// Navigates to the appropriate player screen with the absolute stream URL.
-  ///
-  /// Builds the absolute URL from [PlayerApiClient.baseUrl] and the relative
-  /// [SharePageMetadata.streamUrl] path so the player screen receives a fully
-  /// qualified URL it can pass directly to ExoPlayer / just_audio.
-  ///
-  /// The player screen's [mediaId] is set to '0' as a placeholder because
-  /// progress tracking (which requires auth) is not available for public shares;
-  /// failed progress-update calls in the player are already fire-and-forget and
-  /// do not affect playback.
+  /// Opens the public audio or video player for this share token.
   void _play() {
     if (_page == null) return;
 
-    final client = ref.read(publicApiClientProvider);
-    final absoluteStreamUrl = '${client.baseUrl}${_page!.streamUrl}';
-
-    // Navigate to the audio or video player based on the media type.
-    // The stream URL is passed as a route extra so the player uses it directly
-    // without deriving it from a media ID (Dependency Inversion).
-    final playerPath = AppRoutes.playerPathForType(_page!.type, '0');
-    context.push(playerPath, extra: absoluteStreamUrl);
+    context.push(AppRoutes.sharedPlayerPath(widget.token, _page!.type));
   }
 
   // ---------------------------------------------------------------------------

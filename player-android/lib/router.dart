@@ -6,6 +6,7 @@ import 'app_routes.dart';
 import 'navigation_key.dart';
 import 'providers/auth_state_provider.dart';
 import 'providers/first_run_provider.dart';
+import 'providers/public_api_client_provider.dart';
 import 'screens/audio_player_screen.dart';
 import 'screens/bootstrap_screen.dart';
 import 'screens/continue_watching_screen.dart';
@@ -72,12 +73,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Bootstrap is a public route (user is unauthenticated by definition).
       final isBootstrapRoute = location == AppRoutes.bootstrap;
       final isServerRoute = location == AppRoutes.server;
-      // Share-viewer routes (/share/:token) are public — no session required.
-      // The token is embedded in the URL path; authentication is irrelevant.
-      // Uses [AppRoutes.shareViewerPrefix] rather than a raw string literal so
-      // a rename of the share-viewer path is reflected here automatically (DIP).
-      final isShareViewerRoute =
-          location.startsWith(AppRoutes.shareViewerPrefix);
+      // Share pages and their players use the public token in the path.
+      // Compare route templates so other /s/* paths never bypass auth.
+      final isShareViewerRoute = state.fullPath == AppRoutes.shareViewer ||
+          state.fullPath == AppRoutes.sharedAudioPlayer ||
+          state.fullPath == AppRoutes.sharedVideoPlayer;
 
       if (auth.isUnauthenticated &&
           isLoginRoute &&
@@ -96,7 +96,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           !isServerRoute &&
           !isShareViewerRoute) {
         // Unauthenticated: any route other than /login, /bootstrap, and
-        // /share/:token is protected.  This covers /home, /media/:id,
+        // the public share routes is protected. This covers /home, /media/:id,
         // /share (list), /settings, and any future authenticated routes added
         // to the route table.
         //
@@ -174,6 +174,24 @@ final routerProvider = Provider<GoRouter>((ref) {
           final token = state.pathParameters['token']!;
           return ShareViewerScreen(token: token);
         },
+      ),
+      GoRoute(
+        path: AppRoutes.sharedAudioPlayer,
+        builder: (context, state) => AudioPlayerScreen(
+          mediaId: '0',
+          mediaUrl:
+              '${ref.read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
+          isPublicShare: true,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.sharedVideoPlayer,
+        builder: (context, state) => VideoPlayerScreen(
+          mediaId: '0',
+          mediaUrl:
+              '${ref.read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
+          isPublicShare: true,
+        ),
       ),
       GoRoute(
         path: AppRoutes.settings,

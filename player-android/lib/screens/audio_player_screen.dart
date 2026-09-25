@@ -43,6 +43,7 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
     required this.mediaId,
     this.mediaUrl,
     this.startPosition,
+    this.isPublicShare = false,
   });
 
   /// The media item identifier extracted from the '/audio/:mediaId' route path.
@@ -57,6 +58,7 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
   /// screen to resume at the saved position without an extra API round-trip.
   /// When null, [PlayerApiClient.getMediaProgress] is called instead.
   final double? startPosition;
+  final bool isPublicShare;
 
   @override
   ConsumerState<AudioPlayerScreen> createState() => _AudioPlayerScreenState();
@@ -117,12 +119,14 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     final url = widget.mediaUrl ?? client.streamUrl(mediaIdInt);
 
     // Step 1–2: build auth headers (Bearer + session cookie).
-    final headers = await _buildAuthHeaders(
-        storage,
-        cookieJar,
-        ref.read(credentialMutationQueueProvider),
-        ref.read(playerBaseUrlProvider),
-        Uri.parse(url));
+    final headers = widget.isPublicShare
+        ? <String, String>{}
+        : await _buildAuthHeaders(
+            storage,
+            cookieJar,
+            ref.read(credentialMutationQueueProvider),
+            ref.read(playerBaseUrlProvider),
+            Uri.parse(url));
     if (!current()) return;
 
     // Step 3: flush the previous item before replacing its source, then load.
@@ -132,27 +136,32 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     if (!loaded || !current()) return;
 
     // Step 4: seek to the saved position (non-fatal if unavailable).
-    await _resumeFromSavedPosition(player, client, mediaIdInt);
+    if (!widget.isPublicShare) {
+      await _resumeFromSavedPosition(player, client, mediaIdInt);
+    }
     if (!current()) return;
 
     // Step 5: publish media-session metadata to notification/lock-screen.
     handler.setMediaItem(
       id: widget.mediaId,
-      title: 'Audio – ${widget.mediaId}',
+      title:
+          widget.isPublicShare ? 'Shared Audio' : 'Audio – ${widget.mediaId}',
     );
 
     setState(() => _isLoading = false);
 
     // The callbacks capture dependencies, never the screen/ref. The handler's
     // session outlives this route during background playback.
-    final queue = ref.read(progressQueueProvider);
-    handler.startProgress(
-      savePosition: (seconds) => queue.enqueue(mediaIdInt, seconds),
-      markFinished: () => client.updateProgressStatus(
-        mediaId: mediaIdInt,
-        status: 'finished',
-      ),
-    );
+    if (!widget.isPublicShare) {
+      final queue = ref.read(progressQueueProvider);
+      handler.startProgress(
+        savePosition: (seconds) => queue.enqueue(mediaIdInt, seconds),
+        markFinished: () => client.updateProgressStatus(
+          mediaId: mediaIdInt,
+          status: 'finished',
+        ),
+      );
+    }
     unawaited(handler.play());
   }
 
@@ -293,7 +302,9 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text('Audio – ${widget.mediaId}'),
+        title: Text(widget.isPublicShare
+            ? 'Shared Audio'
+            : 'Audio – ${widget.mediaId}'),
       ),
       body: _buildBody(),
     );

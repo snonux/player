@@ -76,6 +76,7 @@ class _FakeApiClient extends PlayerApiClient {
 
   /// Records how many times [getMediaProgress] was called.
   int getMediaProgressCallCount = 0;
+  int updateStatusCallCount = 0;
 
   /// When non-null, [getMediaProgress] returns this value.
   double? progressResult;
@@ -96,7 +97,9 @@ class _FakeApiClient extends PlayerApiClient {
   Future<void> updateProgressStatus({
     required int mediaId,
     required String status,
-  }) async {}
+  }) async {
+    updateStatusCallCount++;
+  }
 
   /// Returns a synthetic stream URL for construction in tests.
   @override
@@ -167,6 +170,7 @@ class _PlayableAudioPlayer extends AudioPlayer {
   Completer<Duration?>? pendingLoad;
   bool failNextLoad = false;
   int sourceRequests = 0;
+  AudioSource? loadedSource;
   Duration elapsed = Duration.zero;
   bool isPlaying = false;
   double selectedSpeed = 1.0;
@@ -176,6 +180,7 @@ class _PlayableAudioPlayer extends AudioPlayer {
   Future<Duration?> setAudioSource(AudioSource source,
       {bool preload = true, int? initialIndex, Duration? initialPosition}) {
     sourceRequests++;
+    loadedSource = source;
     elapsed = Duration.zero;
     if (failNextLoad) {
       failNextLoad = false;
@@ -320,6 +325,46 @@ Future<void> _pumpScreen(
 void main() {
   setUp(_setupAudioSessionMock);
   tearDown(_teardownAudioSessionMock);
+
+  testWidgets('public share audio plays without credentials or progress writes',
+      (tester) async {
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    final client = _FakeApiClient();
+    final queue = _FakeProgressQueue();
+    final router = GoRouter(initialLocation: '/s/tok7/audio', routes: [
+      GoRoute(
+        path: AppRoutes.sharedAudioPlayer,
+        builder: (_, __) => const AudioPlayerScreen(
+          mediaId: '0',
+          mediaUrl: 'http://test.local/s/tok7/stream',
+          isPublicShare: true,
+        ),
+      ),
+    ]);
+    addTearDown(() async {
+      router.dispose();
+      await handler.endProgress();
+      await player.playingChanges.close();
+    });
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        apiClientProvider.overrideWithValue(client),
+        audioHandlerProvider.overrideWithValue(handler),
+        progressQueueProvider.overrideWithValue(queue),
+      ],
+      child: MaterialApp.router(routerConfig: router),
+    ));
+    await tester.pump();
+    await tester.pump();
+    expect(handler.playCalls, 1);
+    expect((player.loadedSource as UriAudioSource).headers, isEmpty);
+    expect(client.getMediaProgressCallCount, 0);
+    player.elapsed = const Duration(seconds: 97);
+    await tester.pump(const Duration(seconds: 5));
+    expect(queue.updates, isEmpty);
+    expect(client.updateStatusCallCount, 0);
+  });
 
   for (final (width, scale) in [
     (360.0, 1.0),

@@ -40,6 +40,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     required this.mediaId,
     this.mediaUrl,
     this.startPosition,
+    this.isPublicShare = false,
   });
 
   /// The media item identifier extracted from the '/video/:mediaId' route path.
@@ -54,6 +55,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   /// screen to resume at the saved position without an extra API round-trip.
   /// When null, [PlayerApiClient.getMediaProgress] is called instead.
   final double? startPosition;
+  final bool isPublicShare;
 
   @override
   ConsumerState<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
@@ -128,13 +130,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     // without routing bytes through Dart.  Both Bearer (API-token auth) and
     // Cookie (session auth) headers are attached because ExoPlayer has its
     // own HTTP stack and does not share Dio's cookie jar.
-    final headers = await accountRequestHeaders(
-      uri: Uri.parse(url),
-      baseUrl: ref.read(playerBaseUrlProvider),
-      storage: storage,
-      cookieJar: cookieJar,
-      mutations: ref.read(credentialMutationQueueProvider),
-    );
+    final headers = widget.isPublicShare
+        ? <String, String>{}
+        : await accountRequestHeaders(
+            uri: Uri.parse(url),
+            baseUrl: ref.read(playerBaseUrlProvider),
+            storage: storage,
+            cookieJar: cookieJar,
+            mutations: ref.read(credentialMutationQueueProvider),
+          );
     if (!mounted) return;
 
     // Step 3: create and initialise the VideoPlayerController.
@@ -164,8 +168,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     // to avoid a redundant API round-trip.  Fall back to [getMediaProgress] so
     // videos opened from other screens still resume correctly.
     try {
-      final savedSeconds =
-          widget.startPosition ?? await client.getMediaProgress(mediaIdInt);
+      final savedSeconds = widget.isPublicShare
+          ? null
+          : widget.startPosition ?? await client.getMediaProgress(mediaIdInt);
       if (savedSeconds != null && savedSeconds > 0) {
         await videoController.seekTo(
           Duration(milliseconds: (savedSeconds * 1000).round()),
@@ -200,8 +205,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     // Start the periodic progress ticker now that playback is ready.
     // The queue is read once here so the timer callback does not access [ref]
     // after the widget may have been disposed (mirrors the client capture).
-    final queue = ref.read(progressQueueProvider);
-    _startProgressTicker(mediaIdInt, client, queue);
+    if (!widget.isPublicShare) {
+      final queue = ref.read(progressQueueProvider);
+      _startProgressTicker(mediaIdInt, client, queue);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -292,7 +299,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text('Video – ${widget.mediaId}'),
+        title: Text(widget.isPublicShare
+            ? 'Shared Video'
+            : 'Video – ${widget.mediaId}'),
       ),
       body: _buildBody(),
     );
