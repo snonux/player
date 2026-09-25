@@ -1,0 +1,12 @@
+# Keep the image build context small: only Go sources, go.mod/go.sum and
+# web/ are needed (see Dockerfile). testmedia/ is a large local media
+# library that would otherwise be copied into every build.
+testmedia/
+test/
+testdata/
+docs/
+k8s/
+player
+*.db
+coverage*
+**/node_modules/
