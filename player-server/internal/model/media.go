@@ -79,6 +79,10 @@ type Media struct {
 	PlayCount       int        `json:"play_count"`
 	DeletedAt       *time.Time `json:"deleted_at"`
 	CreatedAt       time.Time  `json:"created_at"`
+
+	// PositionSeconds is the requesting user's saved playback position. Only
+	// the in-progress list fills it; elsewhere it is nil and omitted.
+	PositionSeconds *float64 `json:"position_seconds,omitempty"`
 }
 
 // Tag is a label that can be attached to media items.

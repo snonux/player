@@ -1035,9 +1035,13 @@ Mark a media item as finished or reset its progress.
 
 ### `GET /api/in-progress` · `GET /api/v1/in-progress`
 
-Return media items the authenticated user has started but not finished.
+Return media items the authenticated user has started but not finished,
+most recently played first.
 
-**Response `200`:** Array of `Media` objects (same schema as `GET /api/media`).
+**Response `200`:** Array of `Media` objects (same schema as `GET /api/media`),
+each with an extra `position_seconds` field holding the user's saved playback
+position. Clients can show progress and resume without a request per item.
+Other media listings omit this field.
 
 **Status codes:** `200`, `401`, `500`
 

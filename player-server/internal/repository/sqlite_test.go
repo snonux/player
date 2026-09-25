@@ -626,6 +626,11 @@ func TestSQLite_PlaybackProgressRepo(t *testing.T) {
 				if media[0].ID != keepID {
 					t.Fatalf("expected media %d, got %d", keepID, media[0].ID)
 				}
+				// The user's saved position travels with each item.
+				want := progress[0].PositionSeconds
+				if got := media[0].PositionSeconds; got == nil || *got != want {
+					t.Fatalf("position = %v, want %v", got, want)
+				}
 			},
 		},
 	}

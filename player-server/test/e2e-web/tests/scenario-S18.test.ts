@@ -6,7 +6,9 @@ test('S18: accumulated playback controls in-progress and validates negative requ
     for (const position_seconds of positions) expect(await api('POST', '/progress', { media_id: item.id, position_seconds })).toEqual({ status: 'ok' });
   }
   expect((await api('GET', `/media/${a.id}`)).progress.position_seconds).toBe(72);
-  expect(await api('GET', '/in-progress')).toEqual(expect.arrayContaining([expect.objectContaining({ id: a.id }), expect.objectContaining({ id: b.id })]));
+  expect(await api('GET', '/in-progress')).toEqual(expect.arrayContaining([expect.objectContaining({ id: a.id, position_seconds: 72 }), expect.objectContaining({ id: b.id, position_seconds: 150 })]));
+  // Other media listings do not carry a per-user position.
+  expect((await api('GET', '/media?limit=1000')).some((m: any) => 'position_seconds' in m)).toBe(false);
   for (const body of [{}, { media_id: 0, position_seconds: 5 }]) {
     const res = await call('POST', '/api/v1/progress', { cookie, body }); expect(res.status).toBe(400); expect(await res.text()).toContain('media_id required');
   }

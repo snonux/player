@@ -26,7 +26,9 @@ func (s *SQLite) CreateMedia(ctx context.Context, media *model.Media) (int64, er
 	return res.LastInsertId()
 }
 
-func scanMedia(row sqlScanner) (*model.Media, error) {
+// scanMedia scans the standard media column list. extra receives any columns
+// a query selects after it (e.g. the saved position for in-progress media).
+func scanMedia(row sqlScanner, extra ...any) (*model.Media, error) {
 	var m model.Media
 	var deleted sql.NullTime
 	var mediaType string
@@ -45,13 +47,14 @@ func scanMedia(row sqlScanner) (*model.Media, error) {
 	var exifFocalLength sql.NullString
 	var width sql.NullInt64
 	var height sql.NullInt64
-	err := row.Scan(
+	dest := []any{
 		&m.ID, &m.SetID, &m.RelPath, &m.FileName, &m.AbsPath, &mediaType,
 		&duration, &codec, &resolution, &bitrate, &fileSize,
 		&width, &height, &exifCamera, &exifLens, &exifDate, &exifISO,
 		&exifFNumber, &exifExposure, &exifFocalLength,
 		&thumbnail, &m.PlayCount, &deleted, &m.CreatedAt,
-	)
+	}
+	err := row.Scan(append(dest, extra...)...)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

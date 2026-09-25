@@ -142,7 +142,9 @@ func (s *SQLite) ListProgressByUser(ctx context.Context, userID int64) ([]model.
 	return pp, rows.Err()
 }
 
-// ListInProgressMedia returns unfinished, non-deleted media with at least 60s accumulated playback.
+// ListInProgressMedia returns unfinished, non-deleted media with at least 60s
+// accumulated playback, most recently played first. Each item carries the
+// user's saved position so clients can show progress and resume directly.
 func (s *SQLite) ListInProgressMedia(ctx context.Context, userID int64, filter MediaFilter) ([]model.Media, error) {
 	args := []any{userID}
 	conds := []string{
@@ -151,7 +153,7 @@ func (s *SQLite) ListInProgressMedia(ctx context.Context, userID int64, filter M
 		`media.deleted_at IS NULL`,
 		`pp.accumulated_seconds >= 60`,
 	}
-	query := `SELECT media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at FROM playback_progress pp INNER JOIN media ON media.id = pp.media_id`
+	query := `SELECT media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at, pp.position_seconds FROM playback_progress pp INNER JOIN media ON media.id = pp.media_id`
 
 	if len(filter.AllowedSetIDs) > 0 {
 		conds = append(conds, "media.set_id IN ("+placeholders(len(filter.AllowedSetIDs))+")")
@@ -171,10 +173,12 @@ func (s *SQLite) ListInProgressMedia(ctx context.Context, userID int64, filter M
 
 	var media []model.Media
 	for rows.Next() {
-		m, err := scanMedia(rows)
+		var position float64
+		m, err := scanMedia(rows, &position)
 		if err != nil {
 			return nil, err
 		}
+		m.PositionSeconds = &position
 		media = append(media, *m)
 	}
 	return media, rows.Err()
