@@ -23,6 +23,8 @@
 //
 // Run with: flutter test test/screens/video_player_screen_test.dart
 
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,6 +36,7 @@ import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/screens/video_player_screen.dart';
 import 'package:player_android/services/progress_queue.dart';
+import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -114,6 +117,8 @@ class _FakeApiClient extends PlayerApiClient {
 /// created in the test harness (Liskov Substitution — any [ProgressQueueBase]
 /// can be injected wherever the interface is required).
 class _FakeProgressQueue implements ProgressQueueBase {
+  final positions = <(int, double)>[];
+  final finishedItems = <int>[];
   @override
   Future<void> clearAndSuspend() async {}
   @override
@@ -123,14 +128,59 @@ class _FakeProgressQueue implements ProgressQueueBase {
   Future<void> resume(ProgressScope scope) async {}
 
   @override
-  Future<void> enqueue(
-    int mediaId,
-    double positionSeconds, {
-    bool finished = false,
-  }) async {}
+  Future<void> enqueue(int mediaId, double positionSeconds) async {
+    positions.add((mediaId, positionSeconds));
+  }
+
+  @override
+  Future<void> enqueueFinished(int mediaId) async {
+    finishedItems.add(mediaId);
+  }
 
   @override
   Future<void> dispose() async {}
+}
+
+class _PlayableVideoPlatform extends VideoPlayerPlatform {
+  final events = StreamController<VideoEvent>();
+  Duration position = Duration.zero;
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<int?> create(DataSource source) async {
+    scheduleMicrotask(() => events.add(VideoEvent(
+          eventType: VideoEventType.initialized,
+          duration: const Duration(seconds: 100),
+          size: const Size(400, 300),
+        )));
+    return 1;
+  }
+
+  @override
+  Stream<VideoEvent> videoEventsFor(int playerId) => events.stream;
+  @override
+  Future<void> dispose(int playerId) async {}
+  @override
+  Future<void> play(int playerId) async {}
+  @override
+  Future<void> pause(int playerId) async {}
+  @override
+  Future<void> setLooping(int playerId, bool looping) async {}
+  @override
+  Future<void> setVolume(int playerId, double volume) async {}
+  @override
+  Future<void> setPlaybackSpeed(int playerId, double speed) async {}
+  @override
+  Future<void> seekTo(int playerId, Duration position) async {
+    this.position = position;
+  }
+
+  @override
+  Future<Duration> getPosition(int playerId) async => position;
+  @override
+  Widget buildView(int playerId) => const SizedBox.shrink();
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +200,7 @@ Future<void> _pumpScreen(
   _FakeApiClient fakeClient, {
   String mediaId = '42',
   String? mediaUrl,
+  _FakeProgressQueue? progressQueue,
 }) async {
   final router = GoRouter(
     initialLocation: '/video/$mediaId',
@@ -171,7 +222,8 @@ Future<void> _pumpScreen(
         apiClientProvider.overrideWithValue(fakeClient),
         // Override progressQueueProvider so no real SQLite DB is opened and
         // no connectivity subscription is created during widget tests.
-        progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
+        progressQueueProvider
+            .overrideWithValue(progressQueue ?? _FakeProgressQueue()),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
@@ -183,6 +235,35 @@ Future<void> _pumpScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets('video threshold queues one durable completion', (tester) async {
+    final previousPlatform = VideoPlayerPlatform.instance;
+    final platform = _PlayableVideoPlatform();
+    VideoPlayerPlatform.instance = platform;
+    addTearDown(() async {
+      VideoPlayerPlatform.instance = previousPlatform;
+      await platform.events.close();
+    });
+    final queue = _FakeProgressQueue();
+    final client = _FakeApiClient();
+    await _pumpScreen(tester, client, progressQueue: queue);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('video_player_error')), findsNothing);
+
+    platform.position = const Duration(seconds: 96);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    expect(queue.finishedItems, [42]);
+    expect(client.updateProgressStatusCallCount, 0);
+
+    platform.position = const Duration(seconds: 99);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    expect(queue.finishedItems, [42]);
+    expect(queue.positions, hasLength(1));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
   // --------------------------------------------------------------------------
   // Loading state
   // --------------------------------------------------------------------------

@@ -42,6 +42,9 @@ class AudioProgressSession {
     // Serialize snapshots: an older in-flight request must never be sent
     // after a later pause/stop position for the same media item.
     _pending = _pending.then((_) async {
+      // A later position would reset the server's finished flag, so the
+      // durable completion command must be this session's final write.
+      if (_finishedEmitted) return;
       if (elapsedMs != _lastPositionMs) {
         try {
           await savePosition(elapsedMs / 1000.0);

@@ -55,6 +55,7 @@ dev_dependencies:
   # sqflite_common_ffi: in-memory SQLite backend for pure-Dart tests; allows
   # ProgressQueue tests to run without a real Android device or platform channel.
   sqflite_common_ffi: ^2.3.4
+  video_player_platform_interface: ^6.9.0
 
 flutter:
   uses-material-design: true

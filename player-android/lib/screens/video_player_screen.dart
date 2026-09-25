@@ -29,9 +29,8 @@ const _kFinishedThreshold = 0.95;
 ///   - Bearer token is attached via `httpHeaders` on [VideoPlayerController]
 ///     so the native platform layer (ExoPlayer / AVPlayer) can authenticate
 ///     directly without routing bytes through Dart.
-///   - Progress updates (every [_kProgressInterval]) and the finished mark
-///     are fire-and-forget: errors are swallowed silently so a transient
-///     network blip never interrupts playback.
+///   - Progress updates and the finished command are stored by the queue,
+///     which retries network failures without interrupting playback.
 ///   - Both controllers are disposed in [dispose] to prevent resource leaks.
 ///   - All async continuations guard on [mounted] before calling [setState].
 class VideoPlayerScreen extends ConsumerStatefulWidget {
@@ -78,6 +77,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
   // Prevents emitting a "finished" update more than once per playback session.
   bool _finishedEmitted = false;
+  bool _finishedPending = false;
 
   // Periodic timer that fires every [_kProgressInterval] while playing.
   Timer? _progressTimer;
@@ -207,7 +207,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     // after the widget may have been disposed (mirrors the client capture).
     if (!widget.isPublicShare) {
       final queue = ref.read(progressQueueProvider);
-      _startProgressTicker(mediaIdInt, client, queue);
+      _startProgressTicker(mediaIdInt, queue);
     }
   }
 
@@ -223,17 +223,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   /// online batch-flush are handled transparently (Open-Closed: screens
   /// need not change if the queue strategy changes).
   ///
-  /// The [client] and [queue] references are captured once here so we avoid
+  /// The [queue] reference is captured once here so we avoid
   /// accessing [ref] inside the timer callback after the widget may have been
   /// disposed.
   void _startProgressTicker(
     int mediaId,
-    PlayerApiClient client,
     ProgressQueueBase queue,
   ) {
     _progressTimer = Timer.periodic(_kProgressInterval, (_) async {
       final vc = _videoController;
-      if (vc == null) return;
+      if (vc == null || _finishedEmitted || _finishedPending) return;
 
       // Skip updates while paused — no progress to record and avoids
       // unnecessary DB writes when the user has paused playback.
@@ -241,6 +240,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
       final position = vc.value.position;
       final duration = vc.value.duration;
+      final reachedFinish = duration.inMilliseconds > 0 &&
+          position.inMilliseconds / duration.inMilliseconds >=
+              _kFinishedThreshold;
+      if (reachedFinish) _finishedPending = true;
 
       // Enqueue position update — fire-and-forget so a transient error
       // never interrupts playback.  The queue handles online/offline.
@@ -251,23 +254,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         );
       } catch (_) {}
 
-      // Mark finished once when playback fraction reaches the threshold.
-      // Guard with [_finishedEmitted] to avoid duplicate server calls.
-      if (!_finishedEmitted &&
-          duration.inMilliseconds > 0 &&
-          position.inMilliseconds / duration.inMilliseconds >=
-              _kFinishedThreshold) {
-        _finishedEmitted = true;
+      // A successful enqueue is durable even when the status request fails.
+      // Guard the in-flight write so overlapping timer ticks cannot duplicate it.
+      if (reachedFinish) {
         try {
-          // The finished status update is still sent directly to the API
-          // because it is a distinct endpoint and should not be queued with
-          // position updates (different semantics: idempotent status vs.
-          // position accumulation).
-          await client.updateProgressStatus(
-            mediaId: mediaId,
-            status: 'finished',
-          );
-        } catch (_) {}
+          await queue.enqueueFinished(mediaId);
+          _finishedEmitted = true;
+        } catch (_) {
+          // A failed local write can be retried on the next tick.
+        } finally {
+          _finishedPending = false;
+        }
       }
     });
   }
@@ -382,6 +379,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       _error = null;
       _isLoading = true;
       _finishedEmitted = false;
+      _finishedPending = false;
     });
     _initPlayer();
   }

@@ -40,4 +40,22 @@ void main() {
     await session.close();
     expect((saveCalls, finishCalls), (2, 2));
   });
+
+  testWidgets('successful completion is the final queued update',
+      (tester) async {
+    var position = const Duration(seconds: 96);
+    final writes = <String>[];
+    final session = AudioProgressSession(
+      position: () => position,
+      duration: () => const Duration(seconds: 100),
+      playing: () => true,
+      savePosition: (seconds) async => writes.add('position:$seconds'),
+      markFinished: () async => writes.add('finished'),
+    );
+    await session.record();
+    position = const Duration(seconds: 99);
+    await tester.pump(const Duration(seconds: 5));
+    await session.close();
+    expect(writes, ['position:96.0', 'finished']);
+  });
 }

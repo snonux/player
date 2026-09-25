@@ -125,12 +125,15 @@ class _FakeProgressQueue implements ProgressQueueBase {
   Future<void> resume(ProgressScope scope) async {}
 
   @override
-  Future<void> enqueue(
-    int mediaId,
-    double positionSeconds, {
-    bool finished = false,
-  }) async {
+  Future<void> enqueue(int mediaId, double positionSeconds) async {
     updates.add((mediaId, positionSeconds));
+  }
+
+  final finishedItems = <int>[];
+
+  @override
+  Future<void> enqueueFinished(int mediaId) async {
+    finishedItems.add(mediaId);
   }
 
   @override
@@ -325,6 +328,34 @@ Future<void> _pumpScreen(
 void main() {
   setUp(_setupAudioSessionMock);
   tearDown(_teardownAudioSessionMock);
+
+  testWidgets('audio threshold queues one durable finished command',
+      (tester) async {
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    final queue = _FakeProgressQueue();
+    final client = _FakeApiClient();
+    addTearDown(() async {
+      await handler.endProgress();
+      await player.playingChanges.close();
+    });
+    await _pumpScreen(tester, client,
+        handlerOverride: handler, progressQueue: queue);
+    await tester.pump();
+    await tester.pump();
+    player.elapsed = const Duration(seconds: 96);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    expect(queue.finishedItems, [42]);
+    expect(client.updateStatusCallCount, 0);
+
+    player.elapsed = const Duration(seconds: 99);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    expect(queue.finishedItems, [42]);
+    expect(queue.updates, [(42, 96.0)]);
+    await tester.runAsync(handler.endProgress);
+  });
 
   testWidgets('public share audio plays without credentials or progress writes',
       (tester) async {

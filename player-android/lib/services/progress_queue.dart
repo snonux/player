@@ -25,10 +25,10 @@ const _kDbName = 'progress_queue.db';
 // ProgressSyncClient — narrow interface (ISP)
 // ---------------------------------------------------------------------------
 
-/// Narrow interface for the single API operation that [ProgressQueue] needs.
+/// Narrow interface for the progress API operations that [ProgressQueue] needs.
 ///
 /// Interface Segregation: [ProgressQueue] depends only on
-/// [batchUpdateProgress], not on the full [PlayerApiClient] surface.
+/// [batchUpdateProgress] and [updateProgressStatus], not on the full client.
 /// Production code passes a [PlayerApiClient] (which implements this);
 /// tests can provide a lightweight stub without subclassing the entire client.
 abstract class ProgressSyncClient {
@@ -36,6 +36,12 @@ abstract class ProgressSyncClient {
   ///
   /// Each map must include `media_id`, `position_seconds`, and `observed_at`.
   Future<void> batchUpdateProgress(List<Map<String, dynamic>> updates);
+
+  /// Marks an item finished after all earlier queued positions have synced.
+  Future<void> updateProgressStatus({
+    required int mediaId,
+    required String status,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -58,9 +64,12 @@ abstract class ProgressQueueBase {
   /// Reactivates a queue already opened at app startup for [scope].
   Future<void> resume(ProgressScope scope);
 
-  /// Persists a playback-progress update and, if online, flushes immediately.
-  Future<void> enqueue(int mediaId, double positionSeconds,
-      {bool finished = false});
+  /// Persists a playback position and, if online, flushes immediately.
+  Future<void> enqueue(int mediaId, double positionSeconds);
+
+  /// Durably queues a separate finished-status command for this media item.
+  /// Throws if the command could not be stored under the active account.
+  Future<void> enqueueFinished(int mediaId);
 
   /// Cancels subscriptions and closes the backing store.
   Future<void> dispose();
@@ -117,13 +126,16 @@ class ProgressUpdate {
   /// updates that have not been written to the DB yet.
   final int? rowId;
 
-  /// Converts this update to the JSON shape expected by
-  /// [ProgressSyncClient.batchUpdateProgress].
-  Map<String, dynamic> toBatchMap() => {
-        'media_id': mediaId,
-        'position_seconds': positionSeconds,
-        'observed_at': queuedAt,
-      };
+  /// Converts a position update to the batch shape. Finished rows use the
+  /// separate status endpoint and must never be serialized as positions.
+  Map<String, dynamic> toBatchMap() {
+    if (finished) throw StateError('Finished command is not a batch position');
+    return {
+      'media_id': mediaId,
+      'position_seconds': positionSeconds,
+      'observed_at': queuedAt,
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -177,11 +189,13 @@ class ProgressQueue implements ProgressQueueBase {
     String? databasePath,
     Database? db,
     Connectivity? connectivity,
+    Duration retryDelay = const Duration(seconds: 5),
   })  : _apiClient = apiClient,
         _databaseFactory = databaseFactory,
         _databasePath = databasePath,
         _db = db,
-        _connectivity = connectivity ?? Connectivity();
+        _connectivity = connectivity ?? Connectivity(),
+        _retryDelay = retryDelay;
 
   final ProgressSyncClient _apiClient;
 
@@ -190,6 +204,7 @@ class ProgressQueue implements ProgressQueueBase {
   final Future<Database> Function()? _databaseFactory;
   final String? _databasePath;
   final Connectivity _connectivity;
+  final Duration _retryDelay;
 
   // Non-null after [init] has been called.
   Database? _db;
@@ -197,6 +212,9 @@ class ProgressQueue implements ProgressQueueBase {
   // Guards against concurrent flush operations.
   bool _isFlushing = false;
   int? _retryEpoch;
+  Timer? _retryTimer;
+  int _retryAttempts = 0;
+  bool _disposed = false;
   bool _suspended = false;
   ProgressScope? _scope;
   int _accountEpoch = 0;
@@ -240,7 +258,10 @@ class ProgressQueue implements ProgressQueueBase {
       throw ArgumentError('Progress scope requires an origin and user ID');
     }
     final changed = scope != _scope;
-    if (changed) _accountEpoch++;
+    if (changed) {
+      _accountEpoch++;
+      _clearRetry();
+    }
     _scope = scope;
     _suspended = scope == null;
     _db ??= await (_databaseFactory?.call() ?? _openDatabase());
@@ -250,6 +271,7 @@ class ProgressQueue implements ProgressQueueBase {
       await _runDbMutation(() => _db!.delete(_kTable));
     } else {
       _subscribeToConnectivity();
+      unawaited(_flushIfOnline());
     }
   }
 
@@ -264,6 +286,7 @@ class ProgressQueue implements ProgressQueueBase {
     _scope = null;
     _accountEpoch++;
     _retryEpoch = null;
+    _clearRetry();
     await _connectivitySub?.cancel();
     _connectivitySub = null;
     await _runDbMutation(() async {
@@ -278,6 +301,8 @@ class ProgressQueue implements ProgressQueueBase {
   /// (prevents "database_closed" errors during app shutdown or test teardown).
   @override
   Future<void> dispose() async {
+    _disposed = true;
+    _clearRetry();
     await _connectivitySub?.cancel();
     _connectivitySub = null;
     // Wait for any ongoing flush to finish before closing the database.
@@ -293,25 +318,38 @@ class ProgressQueue implements ProgressQueueBase {
   // Public API
   // ---------------------------------------------------------------------------
 
-  /// Persists a progress update locally and, if the device is currently online,
-  /// triggers an immediate flush.
+  /// Persists a position locally and, if online, triggers an immediate flush.
   ///
   /// Fire-and-forget in the player screens: any DB write failure is swallowed
   /// so a storage error never interrupts playback.
   @override
-  Future<void> enqueue(
-    int mediaId,
-    double positionSeconds, {
-    bool finished = false,
-  }) async {
-    if (_suspended) return;
+  Future<void> enqueue(int mediaId, double positionSeconds) =>
+      _enqueue(mediaId, positionSeconds, finished: false);
+
+  @override
+  Future<void> enqueueFinished(int mediaId) =>
+      _enqueue(mediaId, 0, finished: true);
+
+  Future<void> _enqueue(int mediaId, double positionSeconds,
+      {required bool finished}) async {
+    if (_suspended) {
+      if (finished) throw StateError('Progress queue is suspended');
+      return;
+    }
     final db = _db;
-    if (db == null) return; // Defensive: init not called.
+    if (db == null) {
+      if (finished) throw StateError('Progress queue is not initialized');
+      return;
+    }
 
     final now = DateTime.now().toUtc().toIso8601String();
     final epoch = _accountEpoch;
     final scope = _scope;
-    if (scope == null) return;
+    if (scope == null) {
+      if (finished) throw StateError('Progress queue has no account');
+      return;
+    }
+    var stored = false;
     await _runDbMutation(() async {
       if (_suspended || epoch != _accountEpoch || scope != _scope) return;
       await db.insert(_kTable, {
@@ -322,17 +360,50 @@ class ProgressQueue implements ProgressQueueBase {
         _kColOrigin: scope.origin,
         _kColUserId: scope.userId,
       });
+      stored = true;
     });
-    if (_suspended || epoch != _accountEpoch || scope != _scope) return;
+    if (!stored || _suspended || epoch != _accountEpoch || scope != _scope) {
+      if (finished) throw StateError('Progress account changed before save');
+      return;
+    }
 
     // Opportunistic online flush: attempt immediately on enqueue so that
     // updates sent while online bypass the DB round-trip latency.
-    // Errors are swallowed — the row is already persisted so the next
-    // connectivity event will retry.
-    final results = await _connectivity.checkConnectivity();
-    if (_isOnline(results)) {
-      await _flush().catchError((_) {});
+    // Once inserted, success means durable storage. Connectivity and HTTP
+    // failures must never make the caller enqueue a duplicate completion.
+    await _flushIfOnline();
+  }
+
+  Future<void> _flushIfOnline() async {
+    if (_disposed || _suspended) return;
+    try {
+      if (_isOnline(await _connectivity.checkConnectivity())) {
+        await _flush();
+      }
+    } catch (_) {
+      // A persisted row remains available for the next retry/connectivity event.
+      _scheduleRetry();
     }
+  }
+
+  void _clearRetry() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _retryAttempts = 0;
+  }
+
+  void _scheduleRetry() {
+    if (_disposed || _suspended || _retryTimer != null) return;
+    final epoch = _accountEpoch;
+    final multiplier = 1 << _retryAttempts.clamp(0, 6);
+    final delay = _retryDelay * multiplier;
+    _retryAttempts++;
+    _retryTimer = Timer(delay, () {
+      _retryTimer = null;
+      if (!_disposed && !_suspended && epoch == _accountEpoch) {
+        unawaited(_flushIfOnline());
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -351,7 +422,7 @@ class ProgressQueue implements ProgressQueueBase {
   /// The future is stored in [_flushFuture] so [dispose] can await it before
   /// closing the database, preventing use-after-close crashes on shutdown.
   Future<void> _flush() {
-    if (_suspended) return Future.value();
+    if (_disposed || _suspended) return Future.value();
     if (_isFlushing) {
       _retryEpoch = _accountEpoch;
       return Future.value();
@@ -378,43 +449,72 @@ class ProgressQueue implements ProgressQueueBase {
     final scope = _scope;
     final db = _db;
     if (db == null || scope == null) return;
+    bool current() =>
+        !_disposed && !_suspended && epoch == _accountEpoch && scope == _scope;
 
     final rows = await db.query(
       _kTable,
       where: '$_kColOrigin = ? AND $_kColUserId = ?',
       whereArgs: [scope.origin, scope.userId],
-      orderBy: '$_kColQueuedAt ASC',
+      orderBy: '$_kColQueuedAt ASC, $_kColId ASC',
     );
-    if (rows.isEmpty) return;
-    if (_suspended || epoch != _accountEpoch || scope != _scope) return;
+    if (rows.isEmpty) {
+      if (current()) _clearRetry();
+      return;
+    }
+    if (!current()) return;
 
     final pending = rows.map(_rowToUpdate).toList();
-    while (pending.isNotEmpty) {
-      if (_suspended || epoch != _accountEpoch || scope != _scope) return;
+    while (pending.isNotEmpty && current()) {
+      if (pending.first.finished) {
+        final command = pending.first;
+        try {
+          await _apiClient.updateProgressStatus(
+              mediaId: command.mediaId, status: 'finished');
+        } catch (error) {
+          if (!current()) return;
+          if (!_permanentlyRejectedStatus(error)) {
+            _scheduleRetry();
+            return; // Transient status failure retains ordering for retry.
+          }
+          // The server confirmed this item no longer exists or is forbidden.
+          // Drop only that command so later valid media can still sync.
+        }
+        if (!current()) return;
+        await _runDbMutation(() async {
+          if (current()) await _deleteRows(db, [command.rowId!]);
+        });
+        pending.removeAt(0);
+        continue;
+      }
+
+      final positions = pending.takeWhile((row) => !row.finished).toList();
       try {
         await _apiClient.batchUpdateProgress(
-            pending.map((update) => update.toBatchMap()).toList());
+            positions.map((row) => row.toBatchMap()).toList());
       } catch (error) {
-        if (_suspended || epoch != _accountEpoch || scope != _scope) return;
-        final index = _permanentlyRejectedIndex(error, pending.length);
-        if (index == null) return; // Network/5xx/unknown errors remain queued.
-
-        // The server verifies access for every item before applying an atomic
-        // batch. Its indexed 403/404 identifies one row that cannot succeed.
-        final rejected = pending.removeAt(index);
+        if (!current()) return;
+        final index = _permanentlyRejectedIndex(error, positions.length);
+        if (index == null) {
+          _scheduleRetry();
+          return; // Network/5xx/unknown errors stay queued.
+        }
+        final rejected = positions[index];
+        pending.remove(rejected);
         await _runDbMutation(() async {
-          if (_suspended || epoch != _accountEpoch || scope != _scope) return;
-          await _deleteRows(db, [rejected.rowId!]);
+          if (current()) await _deleteRows(db, [rejected.rowId!]);
         });
         continue;
       }
-      if (_suspended || epoch != _accountEpoch || scope != _scope) return;
+      if (!current()) return;
       await _runDbMutation(() async {
-        if (_suspended || epoch != _accountEpoch || scope != _scope) return;
-        await _deleteRows(db, pending.map((update) => update.rowId!).toList());
+        if (current()) {
+          await _deleteRows(db, positions.map((row) => row.rowId!).toList());
+        }
       });
-      return;
+      pending.removeRange(0, positions.length);
     }
+    if (current() && pending.isEmpty) _clearRetry();
   }
 
   /// Accept only item-indexed access failures from the progress batch API.
@@ -433,6 +533,15 @@ class ProgressQueue implements ProgressQueueBase {
     if (match == null) return null;
     final index = int.tryParse(match.group(1)!);
     return index != null && index >= 0 && index < count ? index : null;
+  }
+
+  bool _permanentlyRejectedStatus(Object error) {
+    if (error is! DioException) return false;
+    final response = error.response;
+    final data = response?.data;
+    if (data is! Map) return false;
+    return (response?.statusCode == 404 && data['error'] == 'not found') ||
+        (response?.statusCode == 403 && data['error'] == 'forbidden');
   }
 
   // ---------------------------------------------------------------------------

@@ -229,8 +229,10 @@ class _PausingResumeQueue implements ProgressQueueBase {
   Future<void> clearAndSuspend() async => suspended = true;
 
   @override
-  Future<void> enqueue(int mediaId, double positionSeconds,
-      {bool finished = false}) async {}
+  Future<void> enqueue(int mediaId, double positionSeconds) async {}
+
+  @override
+  Future<void> enqueueFinished(int mediaId) async {}
 
   @override
   Future<void> dispose() async {}

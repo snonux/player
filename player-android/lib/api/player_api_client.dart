@@ -241,6 +241,7 @@ class PlayerApiClient implements ProgressSyncClient {
   }) =>
       throw UnimplementedError();
 
+  @override
   Future<void> updateProgressStatus({
     required int mediaId,
     required String status,

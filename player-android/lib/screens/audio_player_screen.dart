@@ -156,10 +156,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
       final queue = ref.read(progressQueueProvider);
       handler.startProgress(
         savePosition: (seconds) => queue.enqueue(mediaIdInt, seconds),
-        markFinished: () => client.updateProgressStatus(
-          mediaId: mediaIdInt,
-          status: 'finished',
-        ),
+        markFinished: () => queue.enqueueFinished(mediaIdInt),
       );
     }
     unawaited(handler.play());

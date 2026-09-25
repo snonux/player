@@ -69,7 +69,9 @@ void main() {
 
     player.elapsed = const Duration(seconds: 97);
     await handler.pause(); // media-session pause after route disposal
-    expect(saved.last, 97);
+    // Completion must remain the final command: a later position would
+    // unset the finished state on the server.
+    expect(saved.last, 96);
     await tester
         .runAsync(handler.stop); // notification stop after route disposal
     expect(finished, 1);

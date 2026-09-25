@@ -44,6 +44,10 @@ class _FakeApiClient extends PlayerApiClient {
 
   // Accumulated payloads (each entry = one batchUpdateProgress call).
   final List<List<Map<String, dynamic>>> calls = [];
+  final List<(int, String)> statusCalls = [];
+  final List<String> operationOrder = [];
+  int statusFailures = 0;
+  final statusRejections = <int, int>{};
 
   // When true, the next call throws instead of recording.
   bool shouldThrowOnNextCall = false;
@@ -57,6 +61,38 @@ class _FakeApiClient extends PlayerApiClient {
       throw Exception('simulated server error');
     }
     calls.add(List.unmodifiable(updates));
+    operationOrder.add('batch');
+  }
+
+  @override
+  Future<void> updateProgressStatus({
+    required int mediaId,
+    required String status,
+  }) async {
+    final rejected = statusRejections[mediaId];
+    if (rejected != null) {
+      final request = RequestOptions(path: '/api/v1/progress/status');
+      throw DioException(
+        requestOptions: request,
+        response: Response(
+          requestOptions: request,
+          statusCode: rejected,
+          data: {'error': rejected == 404 ? 'not found' : 'forbidden'},
+        ),
+        type: DioExceptionType.badResponse,
+      );
+    }
+    if (statusFailures > 0) {
+      statusFailures--;
+      final request = RequestOptions(path: '/api/v1/progress/status');
+      throw DioException(
+        requestOptions: request,
+        response: Response(requestOptions: request, statusCode: 500),
+        type: DioExceptionType.badResponse,
+      );
+    }
+    statusCalls.add((mediaId, status));
+    operationOrder.add('status');
   }
 }
 
@@ -149,6 +185,68 @@ class _DelayedInsertDatabase implements Database {
       delegate.delete(table, where: where, whereArgs: whereArgs);
 
   @override
+  Future<int> rawDelete(String sql, [List<Object?>? arguments]) =>
+      delegate.rawDelete(sql, arguments);
+
+  @override
+  Future<void> close() => delegate.close();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _DelayedEmptyQueryDatabase implements Database {
+  _DelayedEmptyQueryDatabase(this.delegate);
+
+  final Database delegate;
+  final queryStarted = Completer<void>();
+  final releaseQuery = Completer<void>();
+  bool _delayFirst = true;
+
+  @override
+  Future<List<Map<String, Object?>>> query(String table,
+      {bool? distinct,
+      List<String>? columns,
+      String? where,
+      List<Object?>? whereArgs,
+      String? groupBy,
+      String? having,
+      String? orderBy,
+      int? limit,
+      int? offset}) async {
+    final rows = await delegate.query(table,
+        distinct: distinct,
+        columns: columns,
+        where: where,
+        whereArgs: whereArgs,
+        groupBy: groupBy,
+        having: having,
+        orderBy: orderBy,
+        limit: limit,
+        offset: offset);
+    if (_delayFirst) {
+      _delayFirst = false;
+      queryStarted.complete();
+      await releaseQuery.future;
+    }
+    return rows;
+  }
+
+  @override
+  Future<int> insert(String table, Map<String, Object?> values,
+          {String? nullColumnHack, ConflictAlgorithm? conflictAlgorithm}) =>
+      delegate.insert(table, values,
+          nullColumnHack: nullColumnHack, conflictAlgorithm: conflictAlgorithm);
+
+  @override
+  Future<int> delete(String table, {String? where, List<Object?>? whereArgs}) =>
+      delegate.delete(table, where: where, whereArgs: whereArgs);
+
+  @override
+  Future<int> rawDelete(String sql, [List<Object?>? arguments]) =>
+      delegate.rawDelete(sql, arguments);
+
+  @override
   Future<void> close() => delegate.close();
 
   @override
@@ -166,6 +264,8 @@ class _FakeConnectivity implements Connectivity {
 
   late final StreamController<List<ConnectivityResult>> _controller;
   List<ConnectivityResult> _current = [ConnectivityResult.none];
+  bool throwOnNextCheck = false;
+  int failedChecks = 0;
 
   /// Pushes [results] to the stream and updates [checkConnectivity] state.
   void emitStatus(List<ConnectivityResult> results) {
@@ -173,12 +273,23 @@ class _FakeConnectivity implements Connectivity {
     _controller.add(results);
   }
 
+  void setStatusSilently(List<ConnectivityResult> results) {
+    _current = results;
+  }
+
   @override
   Stream<List<ConnectivityResult>> get onConnectivityChanged =>
       _controller.stream;
 
   @override
-  Future<List<ConnectivityResult>> checkConnectivity() async => _current;
+  Future<List<ConnectivityResult>> checkConnectivity() async {
+    if (throwOnNextCheck) {
+      throwOnNextCheck = false;
+      failedChecks++;
+      throw StateError('connectivity plugin unavailable');
+    }
+    return _current;
+  }
 
   void close() => _controller.close();
 
@@ -447,8 +558,8 @@ void main() {
       await client.firstStarted.future;
 
       await queue.clearAndSuspend();
-      await queue.init(scope: _scopeA);
       conn.emitStatus([ConnectivityResult.none]);
+      await queue.init(scope: _scopeA);
       await queue.enqueue(2, 2.0);
       client.shouldThrowOnNextCall = !oldRequestSucceeds;
       client.releaseFirst.complete();
@@ -767,6 +878,238 @@ void main() {
       expect(client.calls.length, lessThanOrEqualTo(1),
           reason: '_isFlushing should prevent double-flush');
       await queue.dispose();
+    });
+  });
+
+  group('durable finished commands', () {
+    test('old empty query cannot cancel new account completion retry',
+        () async {
+      final delegate = await _openInMemoryDb();
+      final db = _DelayedEmptyQueryDatabase(delegate);
+      final client = _FakeApiClient();
+      final conn = _FakeConnectivity();
+      final queue = ProgressQueue(
+        apiClient: client,
+        db: db,
+        connectivity: conn,
+        retryDelay: const Duration(milliseconds: 20),
+      );
+      await queue.init(scope: _scopeA);
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await db.queryStarted.future;
+
+      conn.emitStatus([ConnectivityResult.none]);
+      await queue.init(scope: _scopeB);
+      await _pump();
+      conn.throwOnNextCheck = true;
+      await queue.enqueueFinished(43);
+      expect(conn.failedChecks, 1);
+      conn.setStatusSilently([ConnectivityResult.wifi]);
+      db.releaseQuery.complete(); // A's empty result arrives after B's retry.
+      await _pump();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await _pump();
+
+      expect(client.statusCalls, [(43, 'finished')]);
+      expect(await delegate.query('progress_queue'), isEmpty);
+      await queue.dispose();
+      conn.close();
+    });
+
+    test('500 completion retries while connectivity remains online', () async {
+      final db = await _openInMemoryDb();
+      final client = _FakeApiClient()..statusFailures = 1;
+      final conn = _FakeConnectivity();
+      final queue = ProgressQueue(
+        apiClient: client,
+        db: db,
+        connectivity: conn,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      await queue.init(scope: _scopeA);
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await queue.enqueueFinished(42);
+      expect(await db.query('progress_queue'), hasLength(1));
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      await _pump();
+      expect(client.statusCalls, [(42, 'finished')]);
+      expect(await db.query('progress_queue'), isEmpty);
+      await queue.dispose();
+      conn.close();
+    });
+
+    test(
+        'connectivity check failure after insert does not duplicate completion',
+        () async {
+      final db = await _openInMemoryDb();
+      final client = _FakeApiClient();
+      final conn = _FakeConnectivity();
+      final queue = ProgressQueue(
+        apiClient: client,
+        db: db,
+        connectivity: conn,
+      );
+      await queue.init(scope: _scopeA);
+      await _pump();
+      conn.throwOnNextCheck = true;
+      await queue.enqueueFinished(42);
+      expect(conn.failedChecks, 1);
+      final rows = await db.query('progress_queue');
+      expect(rows, hasLength(1));
+      expect(rows.single['finished'], 1);
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.statusCalls, [(42, 'finished')]);
+      expect(await db.query('progress_queue'), isEmpty);
+      await queue.dispose();
+      conn.close();
+    });
+
+    test('offline completion syncs after earlier positions, before later ones',
+        () async {
+      final db = await _openInMemoryDb();
+      final client = _FakeApiClient();
+      final conn = _FakeConnectivity();
+      final queue =
+          ProgressQueue(apiClient: client, db: db, connectivity: conn);
+      await queue.init(scope: _scopeA);
+      await queue.enqueue(42, 94);
+      await queue.enqueueFinished(42);
+      await queue.enqueue(43, 4);
+      final rows = await db.query('progress_queue', orderBy: 'id ASC');
+      expect(rows.map((row) => row['finished']).toList(), [0, 1, 0]);
+      expect(client.calls, isEmpty);
+
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.operationOrder, ['batch', 'status', 'batch']);
+      expect(client.calls[0].single['media_id'], 42);
+      expect(client.calls[1].single['media_id'], 43);
+      expect(client.statusCalls, [(42, 'finished')]);
+      expect(await db.query('progress_queue'), isEmpty);
+      await queue.dispose();
+      conn.close();
+    });
+
+    test('500 on status keeps only completion for reconnect retry', () async {
+      final db = await _openInMemoryDb();
+      final client = _FakeApiClient()..statusFailures = 1;
+      final conn = _FakeConnectivity();
+      final queue =
+          ProgressQueue(apiClient: client, db: db, connectivity: conn);
+      await queue.init(scope: _scopeA);
+      await queue.enqueue(42, 96);
+      await queue.enqueueFinished(42);
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.calls, hasLength(1));
+      expect(client.statusCalls, isEmpty);
+      final remaining = await db.query('progress_queue');
+      expect(remaining, hasLength(1));
+      expect(remaining.single['finished'], 1);
+
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.calls, hasLength(1));
+      expect(client.statusCalls, [(42, 'finished')]);
+      expect(await db.query('progress_queue'), isEmpty);
+      await queue.dispose();
+      conn.close();
+    });
+
+    test('server-confirmed deleted completion does not block later media',
+        () async {
+      final db = await _openInMemoryDb();
+      final client = _FakeApiClient()..statusRejections[42] = 404;
+      final conn = _FakeConnectivity();
+      final queue =
+          ProgressQueue(apiClient: client, db: db, connectivity: conn);
+      await queue.init(scope: _scopeA);
+      await queue.enqueueFinished(42);
+      await queue.enqueue(43, 8);
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.statusCalls, isEmpty);
+      expect(client.calls.single.single['media_id'], 43);
+      expect(await db.query('progress_queue'), isEmpty);
+      await queue.dispose();
+      conn.close();
+    });
+
+    test('completion survives database reopen without becoming a position',
+        () async {
+      final dir = await Directory.systemTemp.createTemp('progress-finished-');
+      final path = '${dir.path}/progress.db';
+      try {
+        final firstConn = _FakeConnectivity();
+        final first = ProgressQueue(
+          apiClient: _FakeApiClient(),
+          databasePath: path,
+          connectivity: firstConn,
+        );
+        await first.init(scope: _scopeA);
+        await first.enqueue(42, 95);
+        await first.enqueueFinished(42);
+        await first.dispose();
+        firstConn.close();
+
+        final client = _FakeApiClient();
+        final conn = _FakeConnectivity();
+        conn.emitStatus([ConnectivityResult.wifi]);
+        final reopened = ProgressQueue(
+          apiClient: client,
+          databasePath: path,
+          connectivity: conn,
+        );
+        await reopened.init(scope: _scopeA);
+        await _pump();
+        expect(client.operationOrder, ['batch', 'status']);
+        expect(client.statusCalls, [(42, 'finished')]);
+        await reopened.dispose();
+        conn.close();
+      } finally {
+        await dir.delete(recursive: true);
+      }
+    });
+
+    test('completion remains scoped to its server and account', () async {
+      final db = await _openInMemoryDb();
+      final client = _FakeApiClient();
+      final conn = _FakeConnectivity();
+      final queue =
+          ProgressQueue(apiClient: client, db: db, connectivity: conn);
+      await queue.init(scope: _scopeA);
+      await queue.enqueueFinished(42);
+      await queue.init(scope: _scopeB);
+      await queue.enqueueFinished(43);
+      await queue.init(scope: _scopeOtherServer);
+      await queue.enqueueFinished(44);
+
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.statusCalls, [(44, 'finished')]);
+      await queue.init(scope: _scopeB);
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.statusCalls.last, (43, 'finished'));
+      await queue.init(scope: _scopeA);
+      conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(client.statusCalls.last, (42, 'finished'));
+      expect(await db.query('progress_queue'), isEmpty);
+      await queue.dispose();
+      conn.close();
+    });
+
+    test('completion is not acknowledged when the queue is suspended',
+        () async {
+      final fixture = await _makeQueue();
+      final queue = fixture.queue;
+      final conn = fixture.conn;
+      await queue.clearAndSuspend();
+      await expectLater(queue.enqueueFinished(42), throwsStateError);
+      await queue.dispose();
+      conn.close();
     });
   });
 }
