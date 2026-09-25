@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"codeberg.org/snonux/player/internal/model"
@@ -67,31 +68,77 @@ func TestFSResolver_Resolve(t *testing.T) {
 		}
 	})
 
-	t.Run("non-image with missing thumb returns wrapped stat error", func(t *testing.T) {
+	t.Run("non-image with missing thumb file is not found", func(t *testing.T) {
+		// The database can still reference artwork deleted from disk; clients
+		// must get a 404, not a 500.
 		missing := filepath.Join(tmpDir, "nope.jpg")
 		_, err := r.Resolve(&model.Media{
 			ID:            1,
 			ThumbnailPath: missing,
 			AbsPath:       imgPath,
-			Type:          model.MediaTypeVideo,
+			Type:          model.MediaTypeAudio,
 		})
-		if err == nil {
-			t.Fatal("expected error for missing video thumb")
-		}
-		if errors.Is(err, ErrNotFound) {
-			t.Fatalf("did not expect ErrNotFound for video, got %v", err)
+		if !errors.Is(err, ErrNotFound) || !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected ErrNotFound wrapping os.ErrNotExist, got %v", err)
 		}
 	})
 
-	t.Run("image with missing thumb and missing AbsPath surfaces stat error", func(t *testing.T) {
+	t.Run("image with missing thumb and missing AbsPath is not found", func(t *testing.T) {
 		_, err := r.Resolve(&model.Media{
 			ID:            1,
 			ThumbnailPath: filepath.Join(tmpDir, "gone.jpg"),
 			AbsPath:       filepath.Join(tmpDir, "also-gone.jpg"),
 			Type:          model.MediaTypeImage,
 		})
-		if err == nil {
-			t.Fatal("expected error when both files are missing")
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected ErrNotFound when both files are missing, got %v", err)
+		}
+	})
+
+	t.Run("unreadable original names the original in the error", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root bypasses directory permissions")
+		}
+		locked := filepath.Join(tmpDir, "locked-original")
+		if err := os.Mkdir(locked, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(locked, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+		_, err := r.Resolve(&model.Media{
+			ID:            1,
+			ThumbnailPath: filepath.Join(tmpDir, "no-thumb.jpg"),
+			AbsPath:       filepath.Join(locked, "photo.jpg"),
+			Type:          model.MediaTypeImage,
+		})
+		if err == nil || errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "stat original image") {
+			t.Fatalf("expected a stat original image I/O error, got %v", err)
+		}
+	})
+
+	t.Run("permission failure is an I/O error, not not-found", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root bypasses directory permissions")
+		}
+		locked := filepath.Join(tmpDir, "locked")
+		if err := os.Mkdir(locked, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		thumb := filepath.Join(locked, "thumb.jpg")
+		if err := os.WriteFile(thumb, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(locked, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+		for _, typ := range []model.MediaType{model.MediaTypeAudio, model.MediaTypeImage} {
+			_, err := r.Resolve(&model.Media{ID: 1, ThumbnailPath: thumb, AbsPath: imgPath, Type: typ})
+			if err == nil || errors.Is(err, ErrNotFound) {
+				t.Fatalf("%s: expected a non-not-found I/O error, got %v", typ, err)
+			}
 		}
 	})
 }

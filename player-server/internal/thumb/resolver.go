@@ -49,32 +49,39 @@ func NewFSResolver() *FSResolver {
 // Resolve looks up the thumbnail file on disk for media, falling back to
 // the original AbsPath for image media when the generated thumbnail is
 // missing. A missing or empty thumbnail path with no fallback yields
-// ErrNotFound so callers can map it to a 404 cleanly.
+// ErrNotFound so callers can map it to a 404 cleanly. This includes a
+// thumbnail path that is still recorded in the database but whose file was
+// deleted from disk. Other stat failures (for example permission denied) are
+// real I/O problems and are returned wrapped, not as ErrNotFound.
 func (FSResolver) Resolve(media *model.Media) (*ResolvedFile, error) {
-	if media == nil {
+	if media == nil || media.ThumbnailPath == "" {
 		return nil, ErrNotFound
 	}
-	if media.ThumbnailPath == "" {
-		return nil, ErrNotFound
+	file, err := statFile(media.ThumbnailPath)
+	if err == nil {
+		return file, nil
 	}
-	if info, err := os.Stat(media.ThumbnailPath); err == nil {
-		return &ResolvedFile{
-			Path:     media.ThumbnailPath,
-			FileName: filepath.Base(media.ThumbnailPath),
-			FileSize: info.Size(),
-		}, nil
-	} else if media.Type == model.MediaTypeImage {
+	what := "thumbnail"
+	if media.Type == model.MediaTypeImage && errors.Is(err, os.ErrNotExist) {
 		// Generated thumbnail missing: for images, fall back to the
 		// original file so cover.jpg / folder.jpg etc. still render.
-		if info, statErr := os.Stat(media.AbsPath); statErr == nil {
-			return &ResolvedFile{
-				Path:     media.AbsPath,
-				FileName: filepath.Base(media.AbsPath),
-				FileSize: info.Size(),
-			}, nil
+		what = "original image"
+		file, err = statFile(media.AbsPath)
+		if err == nil {
+			return file, nil
 		}
-		return nil, fmt.Errorf("stat thumbnail: %w", err)
-	} else {
-		return nil, fmt.Errorf("stat thumbnail: %w", err)
 	}
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("%w: %s: %w", ErrNotFound, what, err)
+	}
+	return nil, fmt.Errorf("stat %s: %w", what, err)
+}
+
+// statFile describes path as a ResolvedFile, or returns the os.Stat error.
+func statFile(path string) (*ResolvedFile, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	return &ResolvedFile{Path: path, FileName: filepath.Base(path), FileSize: info.Size()}, nil
 }
