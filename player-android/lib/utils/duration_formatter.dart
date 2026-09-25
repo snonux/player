@@ -27,3 +27,16 @@ String formatDuration(double seconds) {
   }
   return '$m:${s.toString().padLeft(2, '0')}';
 }
+
+/// Whether a media item of [type] has a duration worth showing.
+///
+/// Still images get a tiny probe duration from ffprobe (e.g. 0.04 s), which
+/// would render as a meaningless `0:00`; unknown or non-positive values are
+/// hidden too.
+bool hasShownDuration(String type, double? seconds) =>
+    type != 'image' && seconds != null && seconds > 0;
+
+/// Returns [formatDuration] of [seconds], or null when [hasShownDuration] is
+/// false.
+String? mediaDurationLabel(String type, double? seconds) =>
+    hasShownDuration(type, seconds) ? formatDuration(seconds!) : null;

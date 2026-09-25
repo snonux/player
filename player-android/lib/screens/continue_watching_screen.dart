@@ -7,10 +7,12 @@ import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../widgets/authenticated_network_image.dart';
+import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 
 /// Continue Watching screen: lists all media items the authenticated user has
-/// started but not finished, with a thumbnail, title, type icon, and duration.
+/// started but not finished, with a thumbnail, title, type icon, and the
+/// saved position (as `position / duration` plus a progress bar).
 ///
 /// Design notes:
 ///   - [ConsumerStatefulWidget] is used so we can manage local loading and
@@ -144,19 +146,22 @@ class _ContinueWatchingScreenState
   /// seek to the saved position without a separate [getMediaProgress] call
   /// (avoids an extra API round-trip per resume action).
   ///
-  /// [getMediaProgress] is called here to obtain the saved position.  A null
-  /// result (no progress row) starts the player from the beginning.
+  /// The in-progress list carries the saved position; [getMediaProgress] is
+  /// only called for servers that do not send it. A null result (no progress
+  /// row) starts the player from the beginning.
   Future<void> _onCardTap(Media item) async {
     final client = ref.read(apiClientProvider);
     final mediaId = item.id;
     final mediaUrl = client.streamUrl(mediaId);
 
     // Fetch saved position best-effort; null means "start from beginning".
-    double? position;
-    try {
-      position = await client.getMediaProgress(mediaId);
-    } catch (_) {
-      // Position fetch failure is non-fatal; the player starts from the start.
+    double? position = item.positionSeconds;
+    if (position == null) {
+      try {
+        position = await client.getMediaProgress(mediaId);
+      } catch (_) {
+        // Position fetch failure is non-fatal; the player starts from the start.
+      }
     }
 
     if (!mounted) return;
@@ -218,7 +223,7 @@ class _ResumeList extends StatelessWidget {
   }
 }
 
-/// A single resume card showing thumbnail, title, type icon, and duration.
+/// A single resume card showing thumbnail, title, type icon, and progress.
 ///
 /// Tapping the card delegates navigation back to [_ContinueWatchingScreenState]
 /// via [onTap] (Single Responsibility — this widget is purely presentational).
@@ -316,7 +321,8 @@ class _Thumbnail extends StatelessWidget {
       );
 }
 
-/// Right-side details: title, type icon badge, and total duration.
+/// Right-side details: title, type icon badge, and saved position of total
+/// duration with a progress bar.
 ///
 /// Shows a video/audio icon badge next to the title so the user can identify
 /// the media type at a glance without relying on colour alone.
@@ -352,29 +358,44 @@ class _CardDetails extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          // Total duration: provides a rough "how much is left" sense even
-          // without the saved position in the list response.
+          // "position / duration" when the server sent the saved position,
+          // otherwise the total duration alone.
           Text(
-            _formatDuration(item.duration),
+            _progressLabel(item),
             key: Key('resume_card_duration_${item.id}'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          if (_progressFraction(item) case final fraction?) ...[
+            const SizedBox(height: 6),
+            LinearProgressIndicator(
+              key: Key('resume_card_progress_${item.id}'),
+              value: fraction,
+              semanticsLabel: 'Playback progress',
+              semanticsValue: '${(fraction * 100).round()}%',
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-/// Formats [durationSeconds] as `mm:ss` or `h:mm:ss`.
-///
-/// Top-level function (consistent with the audio player screen pattern) so it
-/// can be reused without an instance and is easy to unit-test in isolation.
-String _formatDuration(double durationSeconds) {
-  final d = Duration(milliseconds: (durationSeconds * 1000).round());
-  final h = d.inHours;
-  final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-  final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-  return h > 0 ? '$h:$m:$s' : '$m:$s';
+/// Describes playback progress with the app-wide [formatDuration]:
+/// `position / duration` when both are known, the position alone when the
+/// duration is not probed yet, and the duration alone without a position.
+String _progressLabel(Media item) {
+  final position = item.positionSeconds;
+  final hasDuration = item.duration > 0;
+  if (position == null) return hasDuration ? formatDuration(item.duration) : '';
+  if (!hasDuration) return formatDuration(position);
+  return '${formatDuration(position)} / ${formatDuration(item.duration)}';
+}
+
+/// Played fraction in 0..1, or null when position or duration is unknown.
+double? _progressFraction(Media item) {
+  final position = item.positionSeconds;
+  if (position == null || item.duration <= 0) return null;
+  return (position / item.duration).clamp(0.0, 1.0);
 }
 
 /// Small type-icon badge for video or audio items.

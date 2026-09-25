@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../api/player_api_client.dart';
 import '../app_routes.dart';
 import '../models/models.dart';
+import '../utils/duration_formatter.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/authenticated_network_image.dart';
@@ -589,7 +590,10 @@ class _MetadataRow extends StatelessWidget {
     final parts = <String>[];
     if (media.codec.isNotEmpty) parts.add(media.codec);
     if (media.resolution.isNotEmpty) parts.add(media.resolution);
-    if (media.duration > 0) parts.add(_formatDuration(media.duration));
+    // Still images report a tiny probe duration; see [hasShownDuration].
+    if (hasShownDuration(media.type, media.duration)) {
+      parts.add(_formatDuration(media.duration));
+    }
     if (media.fileSizeBytes > 0) {
       parts.add(_formatFileSize(media.fileSizeBytes));
     }

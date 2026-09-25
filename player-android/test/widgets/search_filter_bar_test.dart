@@ -254,19 +254,14 @@ void main() {
   // Favourites toggle
   // --------------------------------------------------------------------------
 
-  group('favourites toggle', () {
-    testWidgets('toggling favourites sets favoritesOnly to true',
-        (tester) async {
-      MediaFilter? emitted;
-      await _pumpBar(tester, onChanged: (f) => emitted = f);
-
-      await tester.tap(find.byKey(const Key('favorites_toggle')));
-      await tester.pumpAndSettle();
-
-      expect(emitted!.favoritesOnly, isTrue);
+  group('favourites filter', () {
+    testWidgets('has no own toggle; the app bar heart owns it', (tester) async {
+      await _pumpBar(tester, onChanged: (_) {});
+      expect(find.byKey(const Key('favorites_toggle')), findsNothing);
+      expect(find.byIcon(Icons.star_border), findsNothing);
     });
 
-    testWidgets('toggling favourites a second time sets favoritesOnly to false',
+    testWidgets('keeps favoritesOnly when another filter changes',
         (tester) async {
       MediaFilter? emitted;
       await _pumpBar(
@@ -275,10 +270,11 @@ void main() {
         onChanged: (f) => emitted = f,
       );
 
-      await tester.tap(find.byKey(const Key('favorites_toggle')));
+      await tester.tap(find.text('Video'));
       await tester.pumpAndSettle();
 
-      expect(emitted!.favoritesOnly, isFalse);
+      expect(emitted!.type, 'video');
+      expect(emitted!.favoritesOnly, isTrue);
     });
   });
 
@@ -371,37 +367,24 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('external filter update', () {
-    testWidgets(
-        'favourites star updates when initialFilter is changed externally',
+    testWidgets('an external favourites change is kept by later chip changes',
         (tester) async {
+      MediaFilter? emitted;
       final key = await _pumpControlledBar(
         tester,
         initialFilter: const MediaFilter(favoritesOnly: false),
-        onChanged: (_) {},
+        onChanged: (f) => emitted = f,
       );
       await tester.pumpAndSettle();
 
-      // Star should initially be the outlined (inactive) variant.
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('favorites_toggle')),
-          matching: find.byIcon(Icons.star_border),
-        ),
-        findsOneWidget,
-      );
-
-      // Push a new filter with favoritesOnly = true from outside.
+      // The app bar heart changes the filter from outside the bar.
       key.currentState!.pushFilter(const MediaFilter(favoritesOnly: true));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Audio'));
+      await tester.pumpAndSettle();
 
-      // Star should now be filled (active).
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('favorites_toggle')),
-          matching: find.byIcon(Icons.star),
-        ),
-        findsOneWidget,
-      );
+      expect(emitted!.type, 'audio');
+      expect(emitted!.favoritesOnly, isTrue);
     });
 
     testWidgets('search text updates when query is changed externally',

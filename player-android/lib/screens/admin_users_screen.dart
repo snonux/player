@@ -176,7 +176,9 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete user'),
-        content: Text('Delete "$username"? This cannot be undone.'),
+        // Deleting cascades on the server; say what else goes with the user.
+        content: Text('Delete "$username"? Their notes, progress, favorites '
+            'and shares are deleted too. This cannot be undone.'),
         actions: [
           TextButton(
             key: const Key('admin_users_confirm_cancel'),
@@ -382,7 +384,8 @@ class _RoleBadge extends StatelessWidget {
         isAdmin ? 'Admin' : 'User',
         style: TextStyle(
           fontSize: 12,
-          color: isAdmin ? colorScheme.onPrimaryContainer : colorScheme.onSurface,
+          color:
+              isAdmin ? colorScheme.onPrimaryContainer : colorScheme.onSurface,
         ),
       ),
       backgroundColor: isAdmin
@@ -573,8 +576,7 @@ class _CreateUserDialogState extends State<_CreateUserDialog> {
                 : Icons.visibility_outlined,
           ),
           tooltip: _passwordVisible ? 'Hide password' : 'Show password',
-          onPressed: () =>
-              setState(() => _passwordVisible = !_passwordVisible),
+          onPressed: () => setState(() => _passwordVisible = !_passwordVisible),
         ),
       ),
       obscureText: !_passwordVisible,

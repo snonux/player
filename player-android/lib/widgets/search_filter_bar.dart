@@ -51,7 +51,9 @@ const List<({String label, String? value})> _kTypeOptions = [
 // ---------------------------------------------------------------------------
 
 /// A composite filter bar that combines a debounced text search field,
-/// media-type filter chips, a favourites toggle, and a sort dropdown.
+/// media-type filter chips, and a sort dropdown. It carries
+/// [MediaFilter.favoritesOnly] through unchanged; the toggle for it is the
+/// heart in [MediaGridScreen]'s app bar.
 ///
 /// The widget is intentionally a pure `StatefulWidget` (not a
 /// `ConsumerWidget`) — it owns only local UI state (text controller, timer)
@@ -184,11 +186,6 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
     _applyFilter(_filter.copyWith(type: type));
   }
 
-  /// Called when the user toggles the favourites button.
-  void _onFavoritesToggled() {
-    _applyFilter(_filter.copyWith(favoritesOnly: !_filter.favoritesOnly));
-  }
-
   /// Called when the user picks a sort option.
   void _onSortSelected(String? sortBy) {
     _applyFilter(_filter.copyWith(sortBy: sortBy));
@@ -210,13 +207,12 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Row 1: text search + favourites toggle + sort dropdown.
+        // Row 1: text search + sort dropdown. The favourites filter lives in
+        // the screen's app bar (a heart, matching the cards), not here.
         _SearchRow(
           controller: _searchController,
-          favoritesOnly: _filter.favoritesOnly,
           sortBy: _filter.sortBy,
           onSearchChanged: _onSearchChanged,
-          onFavoritesToggled: _onFavoritesToggled,
           onSortSelected: _onSortSelected,
         ),
         // Row 2: media-type filter chips (All / Video / Audio / Image).
@@ -233,25 +229,21 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
 // _SearchRow
 // ---------------------------------------------------------------------------
 
-/// Top row of the filter bar: search field, favourites toggle, sort dropdown.
+/// Top row of the filter bar: search field and sort dropdown.
 ///
 /// Extracted to keep [_SearchFilterBarState.build] concise and to allow
 /// independent widget tests for just the top row (Single Responsibility).
 class _SearchRow extends StatelessWidget {
   const _SearchRow({
     required this.controller,
-    required this.favoritesOnly,
     required this.sortBy,
     required this.onSearchChanged,
-    required this.onFavoritesToggled,
     required this.onSortSelected,
   });
 
   final TextEditingController controller;
-  final bool favoritesOnly;
   final String? sortBy;
   final ValueChanged<String> onSearchChanged;
-  final VoidCallback onFavoritesToggled;
   final ValueChanged<String?> onSortSelected;
 
   @override
@@ -279,18 +271,6 @@ class _SearchRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          // Favourites toggle — filled star when active.
-          IconButton(
-            key: const Key('favorites_toggle'),
-            tooltip: favoritesOnly ? 'All items' : 'Favourites only',
-            icon: Icon(
-              favoritesOnly ? Icons.star : Icons.star_border,
-              color: favoritesOnly
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
-            ),
-            onPressed: onFavoritesToggled,
-          ),
           // Sort dropdown — a small icon button that opens a pop-up menu.
           _SortDropdown(
             sortBy: sortBy,

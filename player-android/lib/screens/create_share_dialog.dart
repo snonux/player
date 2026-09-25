@@ -310,8 +310,12 @@ class _MaxUsesField extends StatelessWidget {
       key: const Key('create_share_max_uses'),
       controller: controller,
       keyboardType: TextInputType.number,
+      // The label stays short so it fits narrow dialogs; the explanation
+      // goes to helper text, which wraps instead of being cut off.
       decoration: const InputDecoration(
-        labelText: 'Max uses (leave blank for unlimited)',
+        labelText: 'Max uses',
+        helperText: 'Leave blank for unlimited uses.',
+        helperMaxLines: 2,
         hintText: 'e.g. 10',
         border: OutlineInputBorder(),
         isDense: true,

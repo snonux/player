@@ -241,6 +241,9 @@ void main() {
       expect(find.byKey(const Key('create_share_max_uses')), findsOneWidget);
       expect(find.byKey(const Key('create_share_submit')), findsOneWidget);
       expect(find.byKey(const Key('create_share_cancel')), findsOneWidget);
+      // Short label plus wrapping helper text, so nothing is cut off.
+      expect(find.text('Max uses'), findsOneWidget);
+      expect(find.text('Leave blank for unlimited uses.'), findsOneWidget);
     });
 
     testWidgets('default expiry date is approximately today + 7 days',

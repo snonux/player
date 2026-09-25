@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../app_routes.dart';
+import '../providers/auth_state_provider.dart';
 import '../providers/public_api_client_provider.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
@@ -167,8 +168,27 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Shared Media')),
+      appBar: AppBar(
+        title: const Text('Shared Media'),
+        leading: _libraryButton(context),
+      ),
       body: _buildBody(context),
+    );
+  }
+
+  /// A share link opens this page as the only route, so there is no back
+  /// arrow and system Back leaves the app. Signed-in users get a way into
+  /// their library; everyone else keeps the default (no) leading widget.
+  Widget? _libraryButton(BuildContext context) {
+    if (Navigator.of(context).canPop()) return null;
+    final signedIn =
+        ref.watch(authStateProvider).valueOrNull?.isAuthenticated ?? false;
+    if (!signedIn) return null;
+    return IconButton(
+      key: const Key('share_viewer_library_button'),
+      tooltip: 'Open library',
+      icon: const Icon(Icons.video_library_outlined),
+      onPressed: () => context.go(AppRoutes.home),
     );
   }
 
@@ -347,8 +367,8 @@ class _MetadataRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final typeLabel = _capitalise(page.type);
-    final durationLabel =
-        page.duration != null ? formatDuration(page.duration!) : null;
+    // Still images report a tiny probe duration; see [hasShownDuration].
+    final durationLabel = mediaDurationLabel(page.type, page.duration);
 
     final parts = [typeLabel, if (durationLabel != null) durationLabel];
 

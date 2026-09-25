@@ -196,6 +196,34 @@ class _FakeApiClientWithToggle extends PlayerApiClient {
   String thumbnailUrl(int mediaId) => '';
 }
 
+/// Returns no media while the favourites filter is on, like a set without
+/// favourites.
+class _FavoritesEmptyClient extends _FakeApiClientWithToggle {
+  _FavoritesEmptyClient({required super.initialMedia});
+
+  @override
+  Future<List<Media>> listMedia({
+    String? search,
+    int? setId,
+    List<int>? setIds,
+    String? type,
+    bool? favorites,
+    List<String>? tags,
+    double? minDuration,
+    double? maxDuration,
+    int? fileSizeMin,
+    int? fileSizeMax,
+    String? sort,
+    int? limit,
+    int? offset,
+    String? folder,
+    String? parent,
+  }) async {
+    final all = await super.listMedia(favorites: favorites);
+    return favorites == true ? [] : all;
+  }
+}
+
 /// [PlayerApiClient] stub for pagination tests.
 ///
 /// Each call to [listMedia] pops the next response from [pages].  Supports an
@@ -522,6 +550,49 @@ void main() {
       expect(find.byKey(const Key('media_empty')), findsOneWidget);
       expect(find.byKey(const Key('media_grid')), findsNothing);
       expect(find.byKey(const Key('media_loading')), findsNothing);
+      // Unfiltered: suggest a refresh, not clearing filters.
+      expect(find.text('No media found'), findsOneWidget);
+      expect(find.byKey(const Key('media_empty_clear_filters')), findsNothing);
+    });
+
+    testWidgets('filtered empty result offers Clear filters, which restores',
+        (tester) async {
+      final fakeClient = _FavoritesEmptyClient(initialMedia: [_kVideo]);
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('media_grid_favorites_filter')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Nothing matches these filters'), findsOneWidget);
+      expect(find.text('Pull down to refresh.'), findsNothing);
+      await tester.tap(find.byKey(const Key('media_empty_clear_filters')));
+      await tester.pumpAndSettle();
+
+      expect(fakeClient.lastFavoritesOnlyFlag, isNull);
+      expect(find.byKey(const Key('media_card_1')), findsOneWidget);
+    });
+  });
+
+  group('card duration', () {
+    testWidgets('still images show no 0:00 duration',
+        (tester) async {
+      final image = Media.fromJson({
+        ..._kVideo.toJson(),
+        'id': 7,
+        'type': 'image',
+        // ffprobe reports a tiny duration for still images.
+        'duration': 0.04,
+        'file_name': 'cover.jpg',
+      });
+      final fakeClient = _FakeApiClient()..mediaResult = [_kAudio, image];
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('media_duration_2')), findsOneWidget);
+      expect(find.byKey(const Key('media_duration_7')), findsNothing);
+      expect(find.text('0:00'), findsNothing);
     });
   });
 

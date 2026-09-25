@@ -40,6 +40,11 @@ class _Unauthenticated extends AuthStateNotifier {
   Future<AuthState> build() async => const AuthState.unauthenticated();
 }
 
+class _Authenticated extends AuthStateNotifier {
+  @override
+  Future<AuthState> build() async => const AuthState.authenticated();
+}
+
 // ---------------------------------------------------------------------------
 // Fakes
 // ---------------------------------------------------------------------------
@@ -180,7 +185,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final client = _FakePublicApiClient()
       ..pageJson = jsonEncode({
-        'media': {'file_name': 'photo.jpg', 'type': 'image'},
+        'media': {'file_name': 'photo.jpg', 'type': 'image', 'duration': 0.04},
         'has_thumb': false,
       });
     final container = ProviderContainer(overrides: [
@@ -202,6 +207,9 @@ void main() {
     router.go(AppRoutes.shareViewerPath('image-token'));
     await tester.pumpAndSettle();
     expect(find.text('View Image'), findsOneWidget);
+    // A still image's tiny probe duration is not shown as 0:00.
+    expect(find.text('Image'), findsOneWidget);
+    expect(find.textContaining('0:00'), findsNothing);
     await tester.ensureVisible(find.text('View Image'));
     await tester.tap(find.text('View Image'));
     await tester.pumpAndSettle();
@@ -240,6 +248,66 @@ void main() {
     expect(find.text('podcast.mp3'), findsOneWidget);
     expect(find.byKey(const Key('login_username')), findsNothing);
     expect(client.callCount, 1);
+    // Anonymous viewers get no library shortcut.
+    expect(find.byKey(const Key('share_viewer_library_button')), findsNothing);
+  });
+
+  testWidgets('a share opened from inside the app keeps its back arrow',
+      (tester) async {
+    final client = _FakePublicApiClient()..pageJson = _kAudioShareJson;
+    final router = GoRouter(initialLocation: AppRoutes.home, routes: [
+      GoRoute(
+        path: AppRoutes.home,
+        builder: (context, state) => const Text('library home'),
+      ),
+      GoRoute(
+        path: AppRoutes.shareViewer,
+        builder: (context, state) =>
+            ShareViewerScreen(token: state.pathParameters['token']!),
+      ),
+    ]);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        authStateProvider.overrideWith(_Authenticated.new),
+        publicApiClientProvider.overrideWithValue(client),
+      ],
+      child: MaterialApp.router(routerConfig: router),
+    ));
+    router.push(AppRoutes.shareViewerPath('tok7'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('share_viewer_library_button')), findsNothing);
+    expect(find.byType(BackButton), findsOneWidget);
+  });
+
+  testWidgets('signed-in users can leave a share link for their library',
+      (tester) async {
+    final client = _FakePublicApiClient()..pageJson = _kAudioShareJson;
+    final router = GoRouter(initialLocation: '/s/tok7', routes: [
+      GoRoute(
+        path: AppRoutes.shareViewer,
+        builder: (context, state) =>
+            ShareViewerScreen(token: state.pathParameters['token']!),
+      ),
+      GoRoute(
+        path: AppRoutes.home,
+        builder: (context, state) => const Text('library home'),
+      ),
+    ]);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        authStateProvider.overrideWith(_Authenticated.new),
+        publicApiClientProvider.overrideWithValue(client),
+      ],
+      child: MaterialApp.router(routerConfig: router),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('share_viewer_library_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('library home'), findsOneWidget);
   });
 
   testWidgets('Play opens a public share player path', (tester) async {

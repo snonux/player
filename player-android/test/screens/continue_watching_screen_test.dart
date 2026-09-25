@@ -81,9 +81,16 @@ class _FakeApiClient extends PlayerApiClient {
   @override
   String thumbnailUrl(int mediaId) => '';
 
+  /// Number of [getMediaProgress] calls; the list's saved position should
+  /// make them unnecessary.
+  int progressCallCount = 0;
+
   /// Returns `null` so the player starts from the beginning in tests.
   @override
-  Future<double?> getMediaProgress(int mediaId) async => null;
+  Future<double?> getMediaProgress(int mediaId) async {
+    progressCallCount++;
+    return null;
+  }
 }
 
 /// [PlayerApiClient] stub that delays [listInProgress] until [complete] is called.
@@ -162,6 +169,9 @@ const _kAudio = Media(
 /// Captures navigated routes via a [GoRouter] stub so tap tests can assert
 /// the correct player route was pushed.  Captured routes are stored in
 /// [_lastNavigatedRoutes] and reset by [setUp] before each test.
+/// Route extra passed to the most recently opened stub video player.
+Object? _lastPlayerExtra;
+
 Future<void> _pumpScreen(
   WidgetTester tester,
   PlayerApiClient fakeClient,
@@ -181,6 +191,7 @@ Future<void> _pumpScreen(
         path: '/video/:mediaId',
         builder: (_, state) {
           navigatedRoutes.add('/video/${state.pathParameters['mediaId']}');
+          _lastPlayerExtra = state.extra;
           return const Scaffold(body: Text('video player'));
         },
       ),
@@ -293,6 +304,59 @@ void main() {
       // _kVideo has duration 7200.0 s → 2:00:00.
       expect(find.byKey(const Key('resume_card_duration_1')), findsOneWidget);
       expect(find.text('2:00:00'), findsOneWidget);
+      // Without a saved position there is no progress bar.
+      expect(find.byKey(const Key('resume_card_progress_1')), findsNothing);
+    });
+
+    testWidgets('shows saved position and progress from the list',
+        (tester) async {
+      final resumed = Media.fromJson({
+        ..._kVideo.toJson(),
+        'position_seconds': 1800,
+      });
+      final fakeClient = _FakeApiClient()..inProgressResult = [resumed];
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      expect(find.text('30:00 / 2:00:00'), findsOneWidget);
+      final bar = tester.widget<LinearProgressIndicator>(
+          find.byKey(const Key('resume_card_progress_1')));
+      expect(bar.value, closeTo(0.25, 0.0001));
+    });
+
+    testWidgets('unprobed duration shows the position alone', (tester) async {
+      final unprobed = Media.fromJson({
+        ..._kVideo.toJson(),
+        'duration': 0,
+        'position_seconds': 83,
+      });
+      final fakeClient = _FakeApiClient()..inProgressResult = [unprobed];
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      expect(find.text('1:23'), findsOneWidget);
+      expect(find.textContaining('0:00'), findsNothing);
+      expect(find.byKey(const Key('resume_card_progress_1')), findsNothing);
+    });
+
+    testWidgets('resuming uses the listed position without another request',
+        (tester) async {
+      final resumed = Media.fromJson({
+        ..._kVideo.toJson(),
+        'position_seconds': 42,
+      });
+      final fakeClient = _FakeApiClient()..inProgressResult = [resumed];
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('resume_card_title_1')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('video player'), findsOneWidget);
+      expect((_lastPlayerExtra as Map)['position'], 42);
+      expect(fakeClient.progressCallCount, 0);
     });
   });
 

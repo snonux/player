@@ -230,7 +230,8 @@ const _kImage = Media(
   fileName: 'cygnus-loop-pia17172.jpg',
   absPath: '/media/photos/cygnus-loop-pia17172.jpg',
   type: 'image',
-  duration: 0,
+  // ffprobe reports a tiny duration for still images.
+  duration: 0.04,
   codec: 'jpeg',
   resolution: '4096x4096',
   bitrate: 0,
@@ -490,6 +491,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('View Image'), findsOneWidget);
       expect(find.text('Play Audio'), findsNothing);
+      // No bogus 0:00 duration for a still image.
+      expect(find.text('0:00'), findsNothing);
+      expect(find.textContaining('4096x4096'), findsOneWidget);
 
       await tester.ensureVisible(find.byKey(const Key('media_detail_play')));
       await tester.tap(find.byKey(const Key('media_detail_play')));

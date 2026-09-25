@@ -593,11 +593,12 @@ class _MediaTile extends StatelessWidget {
         children: [
           Icon(_typeIcon(item.type), size: 12),
           const SizedBox(width: 4),
-          Text(
-            _formatDuration(item.duration),
-            key: Key('media_tile_duration_${item.id}'),
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          if (mediaDurationLabel(item.type, item.duration) case final label?)
+            Text(
+              label,
+              key: Key('media_tile_duration_${item.id}'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
         ],
       ),
       onTap: onTap,
@@ -617,12 +618,6 @@ class _MediaTile extends StatelessWidget {
         return Icons.insert_drive_file_outlined;
     }
   }
-
-  /// Formats [seconds] as `h:mm:ss` or `m:ss`, omitting leading zeros.
-  ///
-  /// Delegates to the shared [formatDuration] helper (DRY) so the formatting
-  /// logic lives in exactly one place across all screen widgets.
-  static String _formatDuration(double seconds) => formatDuration(seconds);
 }
 
 /// Small square thumbnail for a media tile.

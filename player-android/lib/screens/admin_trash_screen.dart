@@ -296,10 +296,13 @@ class _TrashTile extends StatelessWidget {
       key: Key('admin_trash_tile_${item.id}'),
       leading: _TypeIcon(type: item.type),
       title: Text(item.fileName, overflow: TextOverflow.ellipsis),
+      // The set-relative path and deletion time identify the item; the
+      // server's absolute path is noise and exposes server layout.
       subtitle: Text(
-        item.absPath,
+        trashSubtitle(item),
+        key: Key('admin_trash_subtitle_${item.id}'),
         overflow: TextOverflow.ellipsis,
-        maxLines: 1,
+        maxLines: 2,
         style: Theme.of(context).textTheme.bodySmall,
       ),
       // Restore and hard-delete actions side by side in the trailing slot.
@@ -418,4 +421,21 @@ class _ErrorView extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Describes a trashed [item] as `rel/path · deleted YYYY-MM-DD HH:MM`
+/// (local time), leaving out whichever part is unknown.
+@visibleForTesting
+String trashSubtitle(Media item) {
+  final parts = <String>[
+    if (item.relPath.isNotEmpty) item.relPath,
+    if (item.deletedAt case final deleted?) 'deleted ${_formatLocal(deleted)}',
+  ];
+  return parts.join(' · ');
+}
+
+String _formatLocal(DateTime time) {
+  final t = time.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
 }

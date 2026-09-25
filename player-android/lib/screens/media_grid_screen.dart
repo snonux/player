@@ -252,6 +252,12 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     _load();
   }
 
+  /// True when search, type or favourites narrow the list (sort does not).
+  bool get _hasActiveFilters =>
+      (_filter.query?.isNotEmpty ?? false) ||
+      _filter.type != null ||
+      _filter.favoritesOnly;
+
   // ---------------------------------------------------------------------------
   // Favourite toggle
   // ---------------------------------------------------------------------------
@@ -394,7 +400,11 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: _media == null || _media!.isEmpty
-          ? const _EmptyView()
+          ? _EmptyView(
+              filtered: _hasActiveFilters,
+              onClearFilters: () =>
+                  _onFiltersChanged(MediaFilter(sortBy: _filter.sortBy)),
+            )
           : _MediaGrid(
               media: _media!,
               thumbnailUrlBuilder: _thumbnailUrl,
@@ -749,13 +759,16 @@ class _InfoOverlay extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 2),
-          // Duration formatted as mm:ss or hh:mm:ss.
-          Text(
-            _formatDuration(item.duration),
-            key: Key('media_duration_${item.id}'),
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
-          ),
+          // Duration formatted as mm:ss or hh:mm:ss; still images and
+          // unprobed media show none rather than a bogus 0:00.
+          if (hasShownDuration(item.type, item.duration)) ...[
+            const SizedBox(height: 2),
+            Text(
+              _formatDuration(item.duration),
+              key: Key('media_duration_${item.id}'),
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+          ],
         ],
       ),
     );
@@ -786,10 +799,16 @@ class _InfoOverlay extends StatelessWidget {
 
 /// Full-screen empty-state view, shown when [listMedia] returns an empty list.
 ///
+/// When filters are active the set is usually not empty, so the view says so
+/// and offers to clear them instead of suggesting a refresh.
+///
 /// Wrapped in a [ListView] with [AlwaysScrollableScrollPhysics] so the
 /// [RefreshIndicator] parent can still trigger a pull-to-refresh gesture.
 class _EmptyView extends StatelessWidget {
-  const _EmptyView();
+  const _EmptyView({required this.filtered, required this.onClearFilters});
+
+  final bool filtered;
+  final VoidCallback onClearFilters;
 
   @override
   Widget build(BuildContext context) {
@@ -802,21 +821,28 @@ class _EmptyView extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                Icons.video_library_outlined,
+                filtered ? Icons.filter_alt_off : Icons.video_library_outlined,
                 size: 72,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               const SizedBox(height: 16),
               Text(
-                'No media found',
+                filtered ? 'Nothing matches these filters' : 'No media found',
                 key: const Key('media_empty'),
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
-              Text(
-                'Pull down to refresh.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              if (filtered)
+                FilledButton.tonal(
+                  key: const Key('media_empty_clear_filters'),
+                  onPressed: onClearFilters,
+                  child: const Text('Clear filters'),
+                )
+              else
+                Text(
+                  'Pull down to refresh.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
             ],
           ),
         ),

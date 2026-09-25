@@ -129,7 +129,8 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 ///
 /// Only the fields that the trash screen reads are populated; all other fields
 /// use sensible zero values.
-Media _makeMedia({required int id, required String fileName, String type = 'video'}) {
+Media _makeMedia(
+    {required int id, required String fileName, String type = 'video'}) {
   return Media(
     id: id,
     setId: 1,
@@ -223,6 +224,27 @@ void main() {
       expect(find.text('video_a.mp4'), findsOneWidget);
       expect(find.text('video_b.mp4'), findsOneWidget);
       expect(find.text('audio_c.mp3'), findsOneWidget);
+      // The set-relative path is shown, never the server's absolute path.
+      expect(find.text('path/video_a.mp4'), findsOneWidget);
+      expect(find.textContaining('/media/'), findsNothing);
+    });
+  });
+
+  group('trashSubtitle', () {
+    test('joins the relative path and local deletion time', () {
+      final deleted = DateTime(2026, 9, 25, 7, 5);
+      final item = Media.fromJson({
+        ..._kVideoA.toJson(),
+        'deleted_at': deleted.toUtc().toIso8601String(),
+      });
+      expect(
+          trashSubtitle(item), 'path/video_a.mp4 · deleted 2026-09-25 07:05');
+    });
+
+    test('leaves out unknown parts', () {
+      final noPath = Media.fromJson({..._kVideoA.toJson(), 'rel_path': ''});
+      expect(trashSubtitle(noPath), '');
+      expect(trashSubtitle(_kVideoA), 'path/video_a.mp4');
     });
   });
 
@@ -233,8 +255,7 @@ void main() {
   group('restore action', () {
     testWidgets('restore calls restoreMedia and removes item from list',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..trashResult = [_kVideoA, _kVideoB];
+      final fakeClient = _FakeApiClient()..trashResult = [_kVideoA, _kVideoB];
 
       await _pumpTrashScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -286,7 +307,8 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('hard-delete action', () {
-    testWidgets('tapping hard-delete shows confirmation dialog', (tester) async {
+    testWidgets('tapping hard-delete shows confirmation dialog',
+        (tester) async {
       final fakeClient = _FakeApiClient()..trashResult = [_kVideoA];
 
       await _pumpTrashScreen(tester, fakeClient);
@@ -298,8 +320,10 @@ void main() {
       // Confirmation dialog should be visible.
       expect(find.text('Permanently delete?'), findsOneWidget);
       // Both action buttons should be present.
-      expect(find.byKey(const Key('admin_trash_confirm_cancel')), findsOneWidget);
-      expect(find.byKey(const Key('admin_trash_confirm_delete')), findsOneWidget);
+      expect(
+          find.byKey(const Key('admin_trash_confirm_cancel')), findsOneWidget);
+      expect(
+          find.byKey(const Key('admin_trash_confirm_delete')), findsOneWidget);
     });
 
     testWidgets('cancelling confirmation does NOT call deleteMedia',
@@ -427,7 +451,8 @@ void main() {
       expect(find.textContaining('Could not reach the server'), findsOneWidget);
     });
 
-    testWidgets('retry button re-calls listTrash after an error', (tester) async {
+    testWidgets('retry button re-calls listTrash after an error',
+        (tester) async {
       final fakeClient = _FakeApiClient()
         ..trashError = DioException(
           requestOptions: RequestOptions(path: '/api/v1/admin/trash'),
