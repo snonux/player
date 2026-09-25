@@ -19,7 +19,7 @@ func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, items)
+	writeJSON(w, http.StatusOK, jsonArray(items))
 }
 
 func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +49,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, users)
+	writeJSON(w, http.StatusOK, jsonArray(users))
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +102,14 @@ func (s *Server) handleListPermissions(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleError(w, err)
 		return
+	}
+	if perms != nil {
+		perms.Sets = jsonArray(perms.Sets)
+		perms.Users = jsonArray(perms.Users)
+		perms.Permissions = jsonArray(perms.Permissions)
+		for i := range perms.Sets {
+			perms.Sets[i].Permissions = jsonArray(perms.Sets[i].Permissions)
+		}
 	}
 	writeJSON(w, http.StatusOK, perms)
 }

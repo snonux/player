@@ -126,5 +126,5 @@ func (s *Server) handleInProgress(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, media)
+	writeJSON(w, http.StatusOK, jsonArray(media))
 }

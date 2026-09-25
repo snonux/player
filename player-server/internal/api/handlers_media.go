@@ -27,7 +27,10 @@ func (s *Server) handleListSets(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, sets)
+	for i := range sets {
+		sets[i].Permissions = jsonArray(sets[i].Permissions)
+	}
+	writeJSON(w, http.StatusOK, jsonArray(sets))
 }
 
 func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +103,10 @@ func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
 		}
 		handleError(w, err)
 		return
+	}
+	if result != nil {
+		result.Folders = jsonArray(result.Folders)
+		result.Media = jsonArray(result.Media)
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -246,7 +253,7 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("api list media", "path", path, "set_id", setID, "set_ids", setIDs, "search", search, "type", typ, "favorites", fav, "min_duration", minDur, "max_duration", maxDur, "returned", len(media), "duration", dur)
-	writeJSON(w, http.StatusOK, media)
+	writeJSON(w, http.StatusOK, jsonArray(media))
 }
 
 func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
@@ -266,6 +273,9 @@ func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
 	if detail == nil {
 		notFound(w)
 		return
+	}
+	if detail != nil {
+		detail.Tags = jsonArray(detail.Tags)
 	}
 	writeJSON(w, http.StatusOK, detail)
 }
@@ -296,7 +306,7 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, tags)
+	writeJSON(w, http.StatusOK, jsonArray(tags))
 }
 
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {

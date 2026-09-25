@@ -78,7 +78,7 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, shares)
+	writeJSON(w, http.StatusOK, jsonArray(shares))
 }
 
 func (s *Server) handleRevokeShare(w http.ResponseWriter, r *http.Request) {
@@ -230,5 +230,5 @@ func (s *Server) handleMyShares(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, shares)
+	writeJSON(w, http.StatusOK, jsonArray(shares))
 }

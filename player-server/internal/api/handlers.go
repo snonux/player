@@ -39,6 +39,14 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	_, _ = w.Write(buf.Bytes())
 }
 
+// jsonArray preserves the JSON array contract when a service returns a nil slice.
+func jsonArray[T any](items []T) []T {
+	if items == nil {
+		return []T{}
+	}
+	return items
+}
+
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
@@ -182,4 +190,3 @@ func (s *Server) serveBootstrap(w http.ResponseWriter, r *http.Request) {
 func (s *Server) serveDetach(w http.ResponseWriter, r *http.Request) {
 	s.serveFile(w, r, "detach.html")
 }
-

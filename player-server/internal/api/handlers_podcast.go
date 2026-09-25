@@ -24,7 +24,7 @@ func (s *Server) handleListPodcasts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, feeds)
+	writeJSON(w, http.StatusOK, jsonArray(feeds))
 }
 
 func (s *Server) handleSubscribePodcast(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +100,7 @@ func (s *Server) handleListEpisodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, episodes)
+	writeJSON(w, http.StatusOK, jsonArray(episodes))
 }
 
 func (s *Server) handleDownloadEpisode(w http.ResponseWriter, r *http.Request) {
