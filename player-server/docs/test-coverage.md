@@ -76,7 +76,7 @@ These functions have 0% statement coverage and contain real logic (excluding moc
 
 #### `internal/service/podcast_sub.go`
 
-- `ListFeeds` (0%), `EditFeed` (0%), `UnsubscribeFeed` (0%) — podcast subscription lifecycle beyond the initial subscribe path
+- `ListFeeds` (0%), `EditFeed` (0%) — podcast subscription lifecycle beyond the subscribe and unsubscribe paths (`UnsubscribeFeed` is covered by `podcast_unsubscribe_test.go`)
 - `rollbackSet` (0%) — error-cleanup path
 
 #### `internal/service/podcast_episode.go`

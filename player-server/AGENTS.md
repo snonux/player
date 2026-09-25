@@ -235,6 +235,7 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 |--------|------|-------------|
 | `GET` | `/api/podcasts` | List subscribed podcast feeds |
 | `POST` | `/api/podcasts` | Subscribe to a new feed (admin) |
+| `DELETE` | `/api/podcasts/{id}` | Unsubscribe a feed and delete its downloaded episodes (admin) |
 | `GET` | `/api/podcasts/{id}/episodes` | List episodes with status |
 | `POST` | `/api/podcasts/episodes/{id}/download` | Server-side download |
 | `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle completion |

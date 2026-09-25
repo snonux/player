@@ -159,3 +159,33 @@ func (s *Server) handleToggleComplete(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// handleUnsubscribePodcast removes a feed together with its downloaded
+// episode media and folder. Admin only, like subscribing.
+func (s *Server) handleUnsubscribePodcast(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.podcastSvc) {
+		return
+	}
+
+	feedID, err := pathID(r, "id")
+	if err != nil || feedID == 0 {
+		badRequest(w, "invalid feed id")
+		return
+	}
+
+	if err := s.podcastSvc.UnsubscribeFeed(r.Context(), feedID, userIDFromContext(r)); err != nil {
+		if errors.Is(err, service.ErrForbidden) {
+			forbidden(w, "access denied")
+			return
+		}
+		if errors.Is(err, service.ErrNotFound) {
+			notFound(w)
+			return
+		}
+		s.logger.Error("unsubscribe podcast", "err", err)
+		handleError(w, fmt.Errorf("failed to unsubscribe: %w", err))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

@@ -254,13 +254,44 @@ func (s *SQLite) ListEpisodesByFeed(ctx context.Context, feedID int64, limit, of
 	return episodes, rows.Err()
 }
 
-// UpdateEpisodeMedia links an episode to a media row after downloading.
+// ListEpisodeMediaIDs returns the media IDs linked to downloaded episodes of
+// feedIDs, ordered by ID. It is unpaged on purpose: LIMIT/OFFSET over a
+// non-unique sort could skip or repeat rows.
+func (s *SQLite) ListEpisodeMediaIDs(ctx context.Context, feedIDs []int64) ([]int64, error) {
+	if len(feedIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT media_id FROM podcast_episodes WHERE media_id IS NOT NULL AND feed_id IN (`+placeholders(len(feedIDs))+`) ORDER BY media_id`,
+		anySlice(feedIDs)...)
+	if err != nil {
+		return nil, fmt.Errorf("list episode media ids: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan episode media id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// UpdateEpisodeMedia links an episode to a media row after downloading. It
+// returns an error wrapping sql.ErrNoRows when the episode no longer exists
+// (its feed was unsubscribed during the download), so the caller can undo
+// the download instead of leaving an unlinked media row behind.
 func (s *SQLite) UpdateEpisodeMedia(ctx context.Context, episodeID, mediaID int64, fileName string) error {
-	_, err := s.db.ExecContext(ctx,
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE podcast_episodes SET media_id = ?, file_name = ?, is_downloaded = 1 WHERE id = ?`,
 		mediaID, fileName, episodeID)
 	if err != nil {
 		return fmt.Errorf("update episode media: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("update episode media: episode %d: %w", episodeID, sql.ErrNoRows)
 	}
 	return nil
 }

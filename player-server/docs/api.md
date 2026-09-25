@@ -1385,6 +1385,29 @@ Subscribe to a new podcast feed. Admin only.
 
 ---
 
+### `DELETE /api/podcasts/{id}` · `DELETE /api/v1/podcasts/{id}`
+
+Unsubscribe from a podcast feed. Admin only. `{id}` is the **feed ID**.
+Deletes the feed, its episodes, and its downloaded episodes (media rows and
+files). Its folders (the current-title folder and any older-title folders
+its episodes were stored in) lose the feed artwork (`cover.jpg`,
+`.cover.jpg`) and are removed once empty. Anything else is kept: a folder
+another remaining feed uses by title, a folder that still holds other
+indexed media (uploads, another feed's episodes), and files that were never
+indexed.
+
+Deleting media also deletes every user's notes, progress, favorites and
+shares for it. After the feed is deleted, the remaining steps are
+best-effort: a failure to remove a file is reported as `500`, but the feed is
+already gone (a retry returns `404`) and the other items were still
+processed.
+
+**Response `204`:** No body.
+
+**Status codes:** `204`, `400`, `401`, `403`, `404`, `500`
+
+---
+
 ### `GET /api/podcasts/{id}/episodes` · `GET /api/v1/podcasts/{id}/episodes`
 
 List episodes for a podcast feed. `{id}` is the **set ID** (not the feed ID).

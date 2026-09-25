@@ -261,36 +261,3 @@ func (s *podcastSubscriptionService) EditFeed(ctx context.Context, feedID int64,
 	}
 	return s.podcastService.store.UpdateFeed(ctx, feed)
 }
-
-// UnsubscribeFeed removes a podcast feed and optionally cleans up on-disk files.
-func (s *podcastSubscriptionService) UnsubscribeFeed(ctx context.Context, feedID int64, userID int64) error {
-	feed, err := s.podcastService.store.GetFeedByID(ctx, feedID)
-	if err != nil {
-		return fmt.Errorf("get feed: %w", err)
-	}
-	if feed == nil {
-		return ErrNotFound
-	}
-
-	// Verify owner permission on the set.
-	if err := s.podcastService.helper.verifySetModifyAccess(ctx, feed.SetID, userID); err != nil {
-		return err
-	}
-
-	set, err := s.podcastService.store.GetSetByID(ctx, feed.SetID)
-	if err != nil {
-		return fmt.Errorf("get set: %w", err)
-	}
-
-	if err := s.podcastService.store.DeleteFeed(ctx, feedID); err != nil {
-		return fmt.Errorf("delete feed: %w", err)
-	}
-
-	// Optionally delete the folder contents on disk.
-	if set != nil {
-		folder := podcastFolderName("", feed.Title, feed.ID)
-		_ = os.RemoveAll(filepath.Join(s.podcastService.mediaRoot, set.RootPath, folder))
-	}
-
-	return nil
-}

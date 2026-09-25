@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"codeberg.org/snonux/player/internal/mediatype"
@@ -77,14 +79,11 @@ func (s *podcastEpisodeService) DownloadEpisode(ctx context.Context, episodeID, 
 	// Arm a top-level cleanup guard: if anything after the file write fails,
 	// remove the file so no orphaned partial downloads are left on disk.
 	succeeded := false
+	feedGone := false
 	var dbCleanup func()
 	defer func() {
 		if !succeeded {
-			if dbCleanup != nil {
-				dbCleanup()
-			} else {
-				s.removeAndLog(path)
-			}
+			s.undoDownload(ctx, set, path, dbCleanup, feedGone)
 		}
 	}()
 
@@ -93,13 +92,43 @@ func (s *podcastEpisodeService) DownloadEpisode(ctx context.Context, episodeID, 
 		return nil, err
 	}
 
-	// Post-persistence failure: link episode to media row.
+	// Post-persistence failure: link episode to media row. If the episode
+	// vanished (feed unsubscribed mid-download) the deferred cleanup removes
+	// the new file and media row, and an emptied feed folder goes too.
 	if err := s.svc.store.UpdateEpisodeMedia(ctx, episode.ID, media.ID, filepath.Base(path)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			feedGone = true
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("update episode media: %w", err)
 	}
 
 	succeeded = true
 	return media, nil
+}
+
+// undoDownload removes a failed download's file and media row. When the
+// feed was unsubscribed meanwhile, the unsubscribe may have skipped the
+// folder while the new row existed, so the folder is tidied now (feed
+// artwork, then the directory once empty).
+func (s *podcastEpisodeService) undoDownload(ctx context.Context, set *model.Set, path string, dbCleanup func(), feedGone bool) {
+	// Cleanup must finish even if the request was cancelled.
+	ctx = context.WithoutCancel(ctx)
+	if dbCleanup != nil {
+		dbCleanup()
+	} else {
+		s.removeAndLog(path)
+	}
+	if !feedGone {
+		return
+	}
+	folder := topFolder(relPathIn(s.svc.mediaRoot, set, path))
+	if folder == "" {
+		return
+	}
+	if err := s.svc.tidyFolders(ctx, set, map[string]bool{folder: true}); err != nil {
+		s.svc.logger.Warn("tidy podcast folder after unsubscribe", "folder", folder, "err", err)
+	}
 }
 
 // resolveEpisodeAndSet fetches the episode, feed, and set, verifies user
@@ -223,7 +252,8 @@ func (s *podcastEpisodeService) persistDownloadedEpisode(ctx context.Context, ep
 
 	cleanup := func() {
 		s.removeAndLog(path)
-		_ = s.svc.store.HardDeleteMedia(ctx, media.ID)
+		// Detached: a cancelled request must not leave a row whose file is gone.
+		_ = s.svc.store.HardDeleteMedia(context.WithoutCancel(ctx), media.ID)
 	}
 
 	if err := ImportMediaFile(ctx, s.svc.store, media, s.svc.prober, s.svc.thumbGen); err != nil {
@@ -276,4 +306,14 @@ func (s *podcastEpisodeService) ToggleEpisodeComplete(ctx context.Context, episo
 		UpdatedAt:   now,
 	}
 	return s.svc.store.UpsertEpisodeProgress(ctx, newStatus)
+}
+
+// relPathIn returns path relative to the set root, in slash form, or "" when
+// it does not lie inside it.
+func relPathIn(mediaRoot string, set *model.Set, path string) string {
+	rel, err := filepath.Rel(filepath.Join(mediaRoot, set.RootPath), path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }

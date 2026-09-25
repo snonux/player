@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -307,5 +309,53 @@ func TestPodcastRepo_ListEpisodesByFeedIDsWithStatus(t *testing.T) {
 	}
 	if len(eps) != 0 {
 		t.Fatalf("expected 0 episodes for empty feed ids, got %d", len(eps))
+	}
+}
+
+func TestSQLite_UpdateEpisodeMediaMissingEpisode(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+	err := s.UpdateEpisodeMedia(context.Background(), 404, 1, "x.mp3")
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("got %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestSQLite_ListEpisodeMediaIDs(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	defer s.Close()
+	now := time.Now()
+	set, _ := s.CreateSet(ctx, &model.Set{Name: "p", RootPath: "p", CreatedAt: now})
+	feedA, _ := s.CreateFeed(ctx, &model.PodcastFeed{SetID: set, FeedURL: "a", Title: "A", CheckIntervalMinutes: 60, CreatedAt: now})
+	feedB, _ := s.CreateFeed(ctx, &model.PodcastFeed{SetID: set, FeedURL: "b", Title: "B", CheckIntervalMinutes: 60, CreatedAt: now})
+	link := func(feed int64, name string, download bool) int64 {
+		ep, err := s.CreateEpisode(ctx, &model.PodcastEpisode{FeedID: feed, GUID: name, Title: name, EpisodeURL: name, CreatedAt: now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !download {
+			return 0
+		}
+		mid, _ := s.CreateMedia(ctx, &model.Media{SetID: set, RelPath: name, FileName: name, AbsPath: "/" + name, Type: model.MediaTypeAudio, CreatedAt: now})
+		if err := s.UpdateEpisodeMedia(ctx, ep, mid, name); err != nil {
+			t.Fatal(err)
+		}
+		return mid
+	}
+	a1 := link(feedA, "a1", true)
+	link(feedA, "a2", false)
+	b1 := link(feedB, "b1", true)
+
+	got, err := s.ListEpisodeMediaIDs(ctx, []int64{feedA})
+	if err != nil || len(got) != 1 || got[0] != a1 {
+		t.Fatalf("feed A: got %v, %v; want [%d]", got, err, a1)
+	}
+	got, _ = s.ListEpisodeMediaIDs(ctx, []int64{feedA, feedB})
+	if len(got) != 2 || got[0] != a1 || got[1] != b1 {
+		t.Fatalf("both feeds: got %v, want [%d %d]", got, a1, b1)
+	}
+	if got, err := s.ListEpisodeMediaIDs(ctx, nil); err != nil || got != nil {
+		t.Fatalf("no feeds: got %v, %v", got, err)
 	}
 }

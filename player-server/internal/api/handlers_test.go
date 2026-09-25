@@ -2178,6 +2178,9 @@ func (m *mockPingStore) GetEpisodeByGUID(ctx context.Context, feedID int64, guid
 func (m *mockPingStore) ListEpisodesByFeed(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error) {
 	return m.store.ListEpisodesByFeed(ctx, feedID, limit, offset)
 }
+func (m *mockPingStore) ListEpisodeMediaIDs(ctx context.Context, feedIDs []int64) ([]int64, error) {
+	return m.store.ListEpisodeMediaIDs(ctx, feedIDs)
+}
 func (m *mockPingStore) ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
 	return m.store.ListEpisodesByFeedIDsWithStatus(ctx, userID, feedIDs, limit, offset)
 }
