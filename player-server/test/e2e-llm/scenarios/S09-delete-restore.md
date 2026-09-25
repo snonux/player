@@ -6,7 +6,7 @@ preconditions:
   server_state: running        # server running with an existing admin account
   fixtures: []
 assertions:
-  - db: "SELECT id FROM media WHERE is_deleted=0"
+  - db: "SELECT id FROM media WHERE deleted_at IS NULL"
   - status_code: "GET /api/v1/admin/trash 200"
 skip: false
 ---

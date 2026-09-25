@@ -66,12 +66,10 @@ media ID to cover both items.
    is HTTP 200. This proves the status endpoint accepts both transitions for
    the IDs that were just batch-updated.
 
-9. Verify both items still appear in the in-progress list (the batch update
-   recorded real progress for each): call `GET /api/v1/in-progress` with the
-   session cookie. Confirm the response is HTTP 200 and the returned array
-   contains entries whose `id` matches `media_id_1` and `media_id_2`
-   respectively. Note: the in-progress listing requires accumulated playback
-   time on the server side; if either media item is missing because the
-   accumulator threshold has not been crossed, treat its absence as
-   acceptable — the authoritative check is the DB assertion in the YAML
-   front-matter.
+9. Fetch `GET /api/v1/in-progress` and verify it is an array. The first
+   item must be absent after `not_started`, which removes its progress row;
+   assert that its detail no longer contains `progress`. The second item
+   retains position 60, but a single batch update only accumulates 12
+   seconds and does not necessarily qualify for in-progress. S18 exercises
+   actual threshold crossing. Check the persisted position-30 row before
+   resetting it, not after scenario cleanup.

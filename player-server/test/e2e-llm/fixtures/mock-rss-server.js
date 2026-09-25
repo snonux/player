@@ -12,8 +12,8 @@
  *
  * The server serves:
  *   GET /feed.xml  — podcast RSS feed with two episodes
- *   GET /episode1.mp3  — tiny fake audio blob (not real audio, just non-empty)
- *   GET /episode2.mp3  — tiny fake audio blob (not real audio, just non-empty)
+ *   GET /episode1.mp3  — valid fixture MP3 audio
+ *   GET /episode2.mp3  — valid fixture MP3 audio
  *
  * All other paths return 404.
  */
@@ -23,7 +23,7 @@
 const http = require("http");
 
 const PORT = parseInt(process.env.PORT || "8888", 10);
-const BASE_URL = `http://localhost:${PORT}`;
+let BASE_URL;
 
 // A minimal valid RSS 2.0 podcast feed with two episodes.
 // Duration values use HH:MM:SS format as accepted by most podcast parsers.
@@ -66,15 +66,9 @@ function buildFeed() {
 </rss>`;
 }
 
-// A tiny non-empty blob returned for episode download requests.
-// The Player server probes the file with ffprobe after download; since this is
-// not real audio the probe will fail, but the download step itself will succeed
-// (HTTP 200 with Content-Type audio/mpeg). The scenario only asserts the HTTP
-// status of the download trigger, not the resulting ffprobe output.
-const FAKE_AUDIO = Buffer.from(
-  "ID3\x03\x00\x00\x00\x00\x00\x00" + "fake-mp3-content-for-e2e-testing",
-  "ascii",
-);
+// Use valid recorded audio so ffprobe and playback exercise the real import path.
+const AUDIO = require("fs").readFileSync(require("path").resolve(
+  __dirname, "../../../testdata/media/audiobooks/aesops-fables/10-chapter.mp3"));
 
 // Route the incoming request to the appropriate response.
 function handleRequest(req, res) {
@@ -93,13 +87,13 @@ function handleRequest(req, res) {
   }
 
   if (url === "/episode1.mp3" || url === "/episode2.mp3") {
-    // Serve a fake audio blob so the Player download endpoint can retrieve it.
+    // Serve valid fixture MP3 audio so the Player download endpoint can retrieve it.
     res.writeHead(200, {
       "Content-Type": "audio/mpeg",
-      "Content-Length": FAKE_AUDIO.length,
+      "Content-Length": AUDIO.length,
       "Accept-Ranges": "bytes",
     });
-    res.end(FAKE_AUDIO);
+    res.end(AUDIO);
     return;
   }
 
@@ -131,6 +125,7 @@ function handleRequest(req, res) {
 const server = http.createServer(handleRequest);
 
 server.listen(PORT, "127.0.0.1", () => {
+  BASE_URL = `http://127.0.0.1:${server.address().port}`;
   console.log(`mock-rss-server: listening on ${BASE_URL}`);
   console.log(`mock-rss-server: feed available at ${BASE_URL}/feed.xml`);
 });

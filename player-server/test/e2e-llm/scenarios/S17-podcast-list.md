@@ -8,7 +8,7 @@ preconditions:
     - mock-rss-server          # start the mock RSS server so we have a feed to list if the DB is empty
 assertions:
   - status_code: "GET /api/v1/podcasts 200"
-  - db: "SELECT id FROM podcasts"
+  - db: "SELECT id FROM podcast_feeds"
 skip: false
 ---
 
@@ -71,9 +71,9 @@ Do NOT re-test the download / complete flow here; that lives in S02.
    - `check_interval_minutes` (integer)
    - `auto_download` (boolean)
    - `created_at` (ISO-8601 timestamp string)
-   Save the `id` of the first entry as `feed_id`.
+   Save the `id` of the first entry as `feed_id` and its `set_id` as `set_id`. The episode-list route is set-scoped.
 
-5. List episodes for that feed: call `GET /api/v1/podcasts/{feed_id}/episodes`
+5. List episodes for that feed: call `GET /api/v1/podcasts/{set_id}/episodes`
    with `ADMIN_COOKIE`. Confirm the response is HTTP 200 and the returned JSON
    body is an array. The array may be empty if no feed poll has imported
    episodes yet, or non-empty if S02 already populated episodes. If the array

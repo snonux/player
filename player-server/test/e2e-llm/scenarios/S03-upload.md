@@ -48,15 +48,15 @@ YAML front-matter is used instead.
 
 6. Confirm the media is in the database: call
    `GET /api/v1/media/{media_id}` with the session cookie. Confirm the response
-   is HTTP 200, the `file_name` field is `test-audio-e2e.mp3`, and the
-   `type` field is `audio`.
+   is HTTP 200, the nested `media.file_name` field is `test-audio-e2e.mp3`, and
+   `media.type` is `audio`. The detail response wraps metadata under `media`.
 
 7. Trigger a media rescan so the server reindexes the upload:
    call `POST /api/v1/admin/rescan` with the session cookie. Confirm the
    response is HTTP 200.
 
 8. Wait for the scan to complete: poll `GET /api/v1/admin/scan-progress` until
-   the response indicates the scan is done (e.g. `"scanning": false` or an
+   the response indicates the scan is done (e.g. `"running": false` or an
    empty progress object). Poll up to 30 seconds with 2-second intervals.
 
 9. Open the web UI in a Playwright browser context: navigate to

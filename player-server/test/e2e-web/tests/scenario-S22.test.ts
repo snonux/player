@@ -1,0 +1,23 @@
+import { test, expect, admin } from './helpers/scenario-fixture';
+import { call } from './helpers/scenario-http';
+test('S22: share expiry, maximum uses, validation and unique tokens', async ({ sandbox }) => {
+  const { cookie, api, media } = await admin(); const item = media.find((m: any) => m.type === 'video');
+  const { token } = await api('POST', `/media/${item.id}/shares`);
+  expect((await call('GET', `/s/${token}/thumbnail`)).status).toBe(200);
+  expect(token).toMatch(/^[a-f0-9]{32}$/);
+  sandbox.sql(`UPDATE shares SET expires_at='2020-01-01T00:00:00Z' WHERE token='${token}'`);
+  expect(sandbox.sql(`SELECT expires_at FROM shares WHERE token='${token}'`)).toBe('2020-01-01T00:00:00Z');
+  for (const suffix of ['', '/thumbnail', '/stream', '/download']) expect((await call('GET', `/s/${token}${suffix}`)).status).toBe(410);
+  await api('DELETE', `/shares/${token}`);
+  const tokens: string[] = [];
+  for (let i=0; i<5; i++) tokens.push((await api('POST', `/media/${item.id}/shares`)).token);
+  expect(new Set(tokens).size).toBe(5); for (const value of tokens) expect(value).toMatch(/^[a-f0-9]{32}$/);
+  expect((await api('GET', '/shares')).map((s: any) => s.token).sort()).toEqual([...tokens].sort());
+  expect(sandbox.sql("SELECT count(DISTINCT token) || ':' || count(*) FROM shares")).toBe('5:5');
+  for (const value of tokens) await api('DELETE', `/shares/${value}`);
+  for (const body of [{ max_uses: 0 }, { max_uses: -1 }, { expires_at: '2020-01-01T00:00:00Z' }]) expect((await call('POST', `/api/v1/media/${item.id}/shares`, { cookie, body })).status).toBe(400);
+  const limited = await api('POST', `/media/${item.id}/shares`, { max_uses: 1 });
+  expect((await call('GET', `/s/${limited.token}/stream`)).status).toBe(200);
+  for (const suffix of ['', '/thumbnail', '/stream', '/download']) expect((await call('GET', `/s/${limited.token}${suffix}`)).status).toBe(410);
+  await api('DELETE', `/shares/${limited.token}`); expect(await api('GET', '/shares')).toEqual([]);
+});

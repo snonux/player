@@ -44,7 +44,8 @@ async function openApp(page: Page, clipboard: 'absent' | 'denied' | 'working') {
   await page.goto('/');
   await page.locator(`.set-row[data-id="${setId}"]`).waitFor({ state: 'attached' });
   await page.evaluate(async (id) => {
-    const { selectSet } = await import('/js/views/sets.js');
+    const modulePath = '/js/views/sets.js';
+    const { selectSet } = await import(modulePath);
     selectSet(id);
   }, setId);
   const card = page.locator('#media-grid .media-card').first();
@@ -57,7 +58,7 @@ async function expectManualLink(page: Page) {
   await expect(modal).toHaveClass(/open/);
   const input = page.locator('#share-link-fallback-url');
   await expect(input).toHaveValue(/^https?:\/\/[^/]+\/s\/[A-Za-z0-9_-]+$/);
-  const selected = await input.evaluate((el: HTMLInputElement) =>
+  const selected = await input.evaluate((el: any) =>
     el.selectionStart === 0 && el.selectionEnd === el.value.length);
   expect(selected).toBe(true);
   await expect(page.locator('#toast')).toContainText('Clipboard unavailable');

@@ -36,12 +36,8 @@ A few server-side details that shape the assertions below (see
   It does NOT embed the current `position_seconds` for each entry; the
   authoritative position lives in the `playback_progress` table and is
   reachable per-item via `GET /api/v1/media/{id}` (see step 7 below).
-- The handler does NOT call `verifyAccess` before upsert. A POST with a
-  non-existent `media_id` triggers a SQLite foreign-key violation
-  (`media_id REFERENCES media(id)`) which falls through `handleError` as a
-  default-case 500 — not a clean 404. The negative step that exercises this
-  path accepts either 500 or 4xx so the scenario does not fail on the current
-  behaviour, but treat a 500 here as a real defect worth investigating.
+- Missing media is rejected by the service access check with HTTP 404.
+  HTTP 500 is a failure, not an acceptable alternative.
 
 ---
 
@@ -112,14 +108,8 @@ A few server-side details that shape the assertions below (see
 11. Negative case — non-existent media_id: call `POST /api/v1/progress` with
     the session cookie and body
     `{"media_id": 999999999, "position_seconds": 1}`. Confirm the response
-    status code is `>= 400`. The handler does NOT call `verifyAccess`, so the
-    SQLite foreign-key constraint
-    (`playback_progress.media_id REFERENCES media(id)`) fires inside the
-    upsert and falls through `handleError` as the default case (HTTP 500).
-    A future fix that adds an explicit existence check and returns HTTP 404
-    here is acceptable — both 404 and 500 satisfy this step. Treat a 200
-    response as a real defect (a row was written referencing a non-existent
-    media item).
+    status code is HTTP 404. The service checks media existence before
+    updating progress; neither 200 nor 500 is acceptable.
 
 12. Negative case — malformed JSON body: call `POST /api/v1/progress` with
     the session cookie and the raw request body `not-json` (Content-Type

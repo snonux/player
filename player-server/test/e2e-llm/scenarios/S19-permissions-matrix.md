@@ -126,7 +126,7 @@ returning 403) would be a regression.
 
 14. As `U1`, fetch a media item in the permitted set: call
     `GET /api/v1/media/{MEDIA_A_ID}` with `U1_COOKIE`. Confirm the response
-    is HTTP 200 and the JSON has an `id` equal to `MEDIA_A_ID`.
+    is HTTP 200 and the JSON has a nested `media.id` equal to `MEDIA_A_ID`.
 
 ## D) U1 — viewer write surface (verify actual behaviour)
 
@@ -147,7 +147,7 @@ returning 403) would be a regression.
 
 17. As `U1`, upsert a note on the media item: call
     `POST /api/v1/media/{MEDIA_A_ID}/notes` with `U1_COOKIE`,
-    `Content-Type: application/json` and body `{"text": "viewer note"}`.
+    `Content-Type: application/json` and body `{"content": "viewer note"}`.
     Expected behaviour (per `noteService.UpsertNote` which uses
     `verifyAccess`): HTTP 200. Flag any 403 as a tightening of viewer
     privileges.

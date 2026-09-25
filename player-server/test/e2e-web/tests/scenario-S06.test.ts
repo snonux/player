@@ -1,0 +1,22 @@
+import { test, expect, admin } from './helpers/scenario-fixture';
+import { call, json } from './helpers/scenario-http';
+test('S06: configuration, nested browsing, and regenerated set cover', async () => {
+  const { cookie, api, sets } = await admin();
+  expect((await api('GET', '/config')).media_page_size).toBeGreaterThan(0);
+  const set = sets.find((s: any) => s.name === 'images');
+  const browse = await api('GET', `/sets/${set.id}/browse`);
+  expect(browse).toMatchObject({ current_path: '', folders: expect.any(Array), media: expect.any(Array) });
+  expect(browse.media.length).toBeGreaterThan(0);
+  const audioSet = sets.find((s: any) => s.name === 'audiobooks');
+  const root = await api('GET', `/sets/${audioSet.id}/browse`);
+  expect(root.folders).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'aesops-fables' })]));
+  const nested = await api('GET', `/sets/${audioSet.id}/browse?parent=aesops-fables`);
+  expect(nested.current_path).toBe('aesops-fables');
+  expect(nested.media.length).toBeGreaterThan(0);
+  expect((await call('GET', `/api/v1/sets/${set.id}/cover`, { cookie })).status).toBe(200);
+  const form = new FormData(); form.append('file', new Blob(['ignored']), 'unused.png');
+  expect(await json(await call('POST', `/api/v1/sets/${set.id}/cover`, { cookie, form }))).toEqual({ status: 'ok' });
+  const cover = await call('GET', `/api/v1/sets/${set.id}/cover`, { cookie });
+  expect(cover.status).toBe(200); expect(cover.headers.get('content-type')).toMatch(/^image\//);
+  expect((await cover.arrayBuffer()).byteLength).toBeGreaterThan(0);
+});

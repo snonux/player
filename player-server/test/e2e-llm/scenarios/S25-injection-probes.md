@@ -145,8 +145,7 @@ query string.
 ## Part B — XSS probes via writable fields
 
 The Player server is API-first; XSS prevention for any content the user
-stores (notes, tag names) is the UI's responsibility (Vue auto-escapes
-text bindings; HTML interpolation is opt-in). The server's job is:
+stores (notes, tag names) is the UI's responsibility (the vanilla JavaScript UI must render untrusted strings as text). The server's job is:
 
 - store the literal string the user submitted, byte-for-byte,
 - return it byte-for-byte on read, and

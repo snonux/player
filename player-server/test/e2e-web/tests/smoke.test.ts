@@ -48,6 +48,7 @@ let adminCookie: string = '';
 
 // Allow 60 s for beforeAll: the rescan can take 30+ seconds on large libraries.
 test.beforeAll(async () => {
+  test.setTimeout(60_000);
   // Wait for the server to be reachable before running any tests.
   await waitForServer(15_000);
 
@@ -61,7 +62,7 @@ test.beforeAll(async () => {
 
   // Ensure the non-admin user exists for the admin-gate tests.
   await ensureRegularUser(adminCookie);
-}, 60_000);
+});
 
 // -----------------------------------------------------------------------
 // Helper: inject a session cookie into a browser context so subsequent

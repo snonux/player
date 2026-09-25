@@ -59,11 +59,11 @@ means the cascade did not propagate.
    HTTP 200 and the body contains at least one media object. Save the `id` of
    the first item as `media_id` and the `set_id` field as `set_id`.
 
-4. Grant `U` viewer access on the chosen set so that share creation and media
+4. Grant `U` owner access on the chosen set so that share creation and media
    access are allowed: call `POST /api/v1/admin/permissions` with `ADMIN_COOKIE`
-   and body `{"user_id": <U_id>, "set_id": <set_id>, "role": "viewer"}`.
+   and body `{"user_id": <U_id>, "set_id": <set_id>, "role": "owner"}`.
    Confirm the response is HTTP 200 and the returned JSON body is
-   `{"status": "ok"}`. This step is the precondition for `U` to create a
+   `{"status": "ok"}`. Owner access is needed for the global tag mutation in step 8 (S19 verifies viewers cannot modify tags). This step also allows `U` to create a
    `shares` row in step 11.
 
 5. Log in as `U`: call `POST /api/v1/auth/login` with body

@@ -98,7 +98,7 @@ If `MAX_UPLOAD_SIZE_MB` cannot be lowered for the run, the actual 413 step
 7. Plain-text payload with a `.txt` filename: build a multipart body whose
    `file` part has `filename="e2e-s21.txt"` and content `hello world`. POST
    it to `/api/v1/sets/{set_id}/upload` with `ADMIN_COOKIE`. Confirm the
-   response is HTTP **400** and the body contains `unsupported extension`
+   response is HTTP **400** and the body contains `unsupported file extension`
    (the wrapped `ErrUnsupportedExtension` message includes the rejected
    extension, e.g. `.txt`). Confirm via `GET /api/v1/media?set_id={set_id}&search=e2e-s21`
    that NO row with `file_name = "e2e-s21.txt"` exists — the service must
@@ -196,11 +196,10 @@ If `MAX_UPLOAD_SIZE_MB` cannot be lowered for the run, the actual 413 step
 
 15. Build a multipart body whose `file` part has `filename=""` (empty
     string) and a short payload. POST it to
-    `/api/v1/sets/{set_id}/upload` with `ADMIN_COOKIE`. The expected
-    behaviour is HTTP **400** because `IsSupportedExt("")` is false (the
-    extension is empty), so the service returns `ErrUnsupportedExtension`.
-    Confirm the body contains `unsupported extension`. A 500 response or a
-    200 response that writes an empty-named row is a defect — flag it.
+    `/api/v1/sets/{set_id}/upload` with `ADMIN_COOKIE`. Confirm HTTP **400**
+    and `missing file`: Go's multipart parser treats an empty filename as
+    a regular form field, so `FormFile("file")` fails before extension
+    validation. A 500 or a successful empty-named upload is a defect.
 
 ## I) Filename deduplication
 

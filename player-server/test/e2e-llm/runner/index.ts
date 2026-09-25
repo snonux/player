@@ -79,8 +79,31 @@ const SCENARIOS_DIR = path.resolve(__dirname, '../../scenarios');
 // Each entry is a dedicated executable implementation of that scenario's
 // workflow. A smoke test is not evidence that an unrelated scenario passed.
 export const SCENARIO_SPECS: Readonly<Record<string, string>> = {
+  S01: 'scenario-S01.test.ts',
+  S02: 'scenario-S02.test.ts',
+  S03: 'scenario-S03.test.ts',
+  S04: 'scenario-S04.test.ts',
   S05: 'scenario-S05.test.ts',
+  S06: 'scenario-S06.test.ts',
+  S07: 'scenario-S07.test.ts',
+  S08: 'scenario-S08.test.ts',
+  S09: 'scenario-S09.test.ts',
+  S10: 'scenario-S10.test.ts',
+  S11: 'scenario-S11.test.ts',
+  S12: 'scenario-S12.test.ts',
+  S13: 'scenario-S13.test.ts',
   S14: 'scenario-S14.test.ts',
+  S15: 'scenario-S15.test.ts',
+  S16: 'scenario-S16.test.ts',
+  S17: 'scenario-S17.test.ts',
+  S18: 'scenario-S18.test.ts',
+  S19: 'scenario-S19.test.ts',
+  S20: 'scenario-S20.test.ts',
+  S21: 'scenario-S21.test.ts',
+  S22: 'scenario-S22.test.ts',
+  S23: 'scenario-S23.test.ts',
+  S24: 'scenario-S24.test.ts',
+  S25: 'scenario-S25.test.ts',
 };
 
 export function scenarioSpec(id: string): string | undefined {
@@ -212,7 +235,7 @@ export function parseReport(run: SpawnSyncReturns<string>): { passed: boolean; r
   }
   const { unexpected, expected, skipped } = report.stats;
 
-  if (expected === 0) return { passed: false, reason: 'No scenario tests passed (zero or skipped tests)' };
+  if (expected === 0) return { passed: false, reason: collectFirstError(report) ?? 'No scenario tests passed (zero or skipped tests)' };
   if (skipped > 0) return { passed: false, reason: `${skipped} scenario test(s) skipped` };
   if (report.errors?.length) return { passed: false, reason: collectFirstError(report) ?? 'Playwright setup error' };
   if (run.status !== 0) return { passed: false, reason: collectFirstError(report) ?? `Playwright exited ${run.status}` };
@@ -273,20 +296,53 @@ function collectFirstError(report: PlaywrightReport): string | undefined {
  * on both the initial run and its retry. The task title includes the scenario
  * title and the failure reason so it is actionable without further context.
  */
-function openAskTask(scenario: Scenario, reason: string, playwrightOutput: string): void {
-  const truncated = playwrightOutput.slice(0, MAX_OUTPUT_CHARS);
-  const title = `+test-llm-e2e LLM e2e failure: ${scenario.meta.title} — ${reason}`;
+type TaskCommand = (args: string[], cwd: string) => SpawnSyncReturns<string>;
 
-  // Use spawnSync to avoid shell injection from scenario titles that contain
-  // backticks, dollar signs, or quotes.
-  const result = spawnSync('ask', ['add', title], { stdio: 'inherit' });
-  if (result.status !== 0) {
-    console.error(`[runner] Failed to open ask task for scenario ${scenario.meta.id}`);
+// Task titles stay one short line even when the reason is a multi-line
+// Playwright error or a captured server log.
+const MAX_TITLE_REASON_CHARS = 160;
+
+/** Removes ANSI colour escapes that Playwright embeds in error messages. */
+export function stripAnsi(text: string): string {
+  return text.replace(/\u001b\[[0-9;]*m/g, '');
+}
+
+/** Returns the first non-empty line of reason, without colour, capped for a title. */
+export function titleReason(reason: string): string {
+  const line = stripAnsi(reason).split('\n').map(l => l.trim()).find(Boolean) ?? 'failed';
+  return line.length > MAX_TITLE_REASON_CHARS ? `${line.slice(0, MAX_TITLE_REASON_CHARS - 1)}…` : line;
+}
+
+export function openAskTask(
+  scenario: Scenario,
+  reason: string,
+  playwrightOutput: string,
+  command: TaskCommand = (args, cwd) => spawnSync('ask', args, { cwd, encoding: 'utf8' }),
+): boolean {
+  const cwd = path.resolve(__dirname, '../../../..'); // player-server task scope
+  const title = `E2E ${scenario.meta.id}: ${scenario.meta.title} — ${titleReason(reason)}`;
+  const result = command(['add', '+testing', title], cwd);
+  const id = result.stdout?.match(/^created task ([a-z0-9]+)\s*$/m)?.[1];
+  if (result.status !== 0 || !id) {
+    console.error(`[runner] Failed to open ask task: ${result.error?.message ?? result.stderr ?? result.stdout}`);
+    return false;
   }
-
-  // Print the truncated output so CI logs capture it even if ask is unavailable.
-  console.error(`[runner] Playwright output (truncated to ${MAX_OUTPUT_CHARS} chars):`);
-  console.error(truncated);
+  const annotation = [
+    'Agent workflow: read agent-task-management, applicable language best practices, SOLID guidance, and player-server/AGENTS.md before editing.',
+    `Scenario: ${scenario.filePath}`,
+    `Executable spec: test/e2e-web/tests/${scenarioSpec(scenario.meta.id)}`,
+    'Reproduce using the isolated setup in test/e2e-llm/README.md, then run the selected scenario with PLAYER_SCENARIO_BINARY set.',
+    `Failure after retry: ${stripAnsi(reason).slice(0, MAX_OUTPUT_CHARS)}`,
+    // The JSON reporter starts with a long config preamble; results and
+    // errors are at the end, so keep the tail.
+    `Playwright output (last ${MAX_OUTPUT_CHARS} characters):\n${stripAnsi(playwrightOutput).slice(-MAX_OUTPUT_CHARS)}`,
+  ].join('\n');
+  const annotated = command(['annotate', id, annotation], cwd);
+  if (annotated.status !== 0) {
+    console.error(`[runner] Created task ${id}, but adding reproduction context failed: ${annotated.error?.message ?? annotated.stderr}`);
+    return false;
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -345,73 +401,24 @@ function runScenario(scenario: Scenario): ScenarioResult {
     return { status: 'passed', reason: 'passed on retry' };
   }
 
-  console.error(`[runner] FAIL  ${id}: ${title} — double-failure, opening ask task`);
-  openAskTask(scenario, secondResult.reason, second.stdout ?? '');
+  console.error(`[runner] FAIL  ${id}: ${title} — double-failure`);
+  if (process.env.LLM_E2E_CREATE_TASKS !== 'false') {
+    openAskTask(scenario, secondResult.reason, (second.stdout ?? '') + (second.stderr ?? ''));
+  }
   return { status: 'failed', reason: secondResult.reason };
 }
 
 // ---------------------------------------------------------------------------
-// Server precheck
+// Managed server setup check
 // ---------------------------------------------------------------------------
 
-// PLAYER_URL is the base URL the harness uses (matches the README + Playwright
-// config). Centralising the constant keeps the precheck and any future direct
-// HTTP calls aligned with the rest of the harness.
-const PLAYER_URL = process.env['PLAYER_URL'] || 'http://localhost:8080';
-
-// How long to wait for /healthz before declaring the server missing. The
-// Playwright suite waits up to 15 s per scenario internally; doing the same
-// up-front means we surface a missing server as a single clear error instead
-// of one Playwright failure (and one bogus ask task) per scenario.
-const PRECHECK_TIMEOUT_MS = 15_000;
-const PRECHECK_POLL_INTERVAL_MS = 200;
-
-/**
- * waitForServer polls `${PLAYER_URL}/healthz` until it responds 2xx or the
- * deadline passes. Returns true if the server became healthy, false otherwise.
- * Using a synchronous loop (spawnSync sleep) keeps the runner's overall
- * control flow synchronous, matching how runScenario invokes Playwright.
- */
-export function waitForServer(timeoutMs: number, playerURL = PLAYER_URL): boolean {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const remainingMs = Math.max(1, deadline - Date.now());
-    // Use curl for the probe so we don't need to depend on a Node fetch
-    // shim — keeps the harness usable on older Node where fetch is missing.
-    // Bound a connected-but-stalled server to the same overall deadline.
-    const probe = spawnSync(
-      'curl',
-      ['-fsS', '--max-time', (remainingMs / 1000).toFixed(3), '-o', '/dev/null',
-        '-w', '%{http_code}', `${playerURL}/healthz`],
-      { encoding: 'utf8', timeout: remainingMs },
-    );
-    if (probe.status === 0 && probe.stdout.trim().startsWith('2')) return true;
-    const sleepMs = Math.min(PRECHECK_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now()));
-    if (sleepMs > 0) spawnSync('sleep', [String(sleepMs / 1000)]);
+function precheckManagedBinary(): void {
+  const binary = process.env['PLAYER_SCENARIO_BINARY'];
+  if (binary) {
+    try { fs.accessSync(binary, fs.constants.X_OK); return; } catch { /* explain below */ }
   }
-  return false;
-}
-
-/**
- * precheckServer fails fast with a clear, actionable message if the server
- * is not reachable. Without this, each scenario would individually fail with
- * the same "did not become healthy" error and openAskTask would file one
- * spurious task per scenario — drowning the queue in duplicates of the same
- * root cause. Returning a non-zero exit before the scenario loop avoids both.
- */
-function precheckServer(): void {
-  if (waitForServer(PRECHECK_TIMEOUT_MS)) return;
-
-  console.error(
-    `[runner] ERROR: Player server at ${PLAYER_URL} is not reachable on /healthz ` +
-      `after ${PRECHECK_TIMEOUT_MS / 1000}s.`,
-  );
-  console.error('[runner] Start it from player-server/ before running the e2e suite:');
-  console.error(
-    '[runner]   MEDIA_ROOT=./testdata/media SECURE_COOKIES=false ' +
-      'DB_PATH=/tmp/player-e2e-llm.db ./player',
-  );
-  console.error('[runner] Override the target URL with PLAYER_URL.');
+  console.error('[runner] PLAYER_SCENARIO_BINARY must point to an executable Player build.');
+  console.error('[runner] See test/e2e-llm/README.md. Each scenario starts its own disposable server; do not start an external server.');
   process.exit(2);
 }
 
@@ -432,11 +439,8 @@ function main(): void {
     process.exit(2);
   }
 
-  // Fail fast with a clear hint if the server is down. Without this the
-  // runner would spawn Playwright per scenario, time out on each, and file
-  // a duplicate ask task per failure — exactly what produced the legacy
-  // "Server at http://localhost:8080 did not become healthy" task pile.
-  if (scenarios.some(s => !s.meta.skip && scenarioSpec(s.meta.id))) precheckServer();
+  // Missing setup should fail once, before spawning tests or creating tasks.
+  if (scenarios.some(s => !s.meta.skip && scenarioSpec(s.meta.id))) precheckManagedBinary();
 
   console.log(`[runner] Running ${scenarios.length} scenario(s)…`);
 

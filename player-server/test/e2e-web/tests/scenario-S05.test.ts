@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/scenario-fixture';
 import { call, json, login } from './helpers/scenario-http';
 
 type Token = { id: number; name: string; token: string };

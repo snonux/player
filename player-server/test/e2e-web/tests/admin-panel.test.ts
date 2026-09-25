@@ -30,10 +30,11 @@ import {
 let adminCookie: string = '';
 
 test.beforeAll(async () => {
+  test.setTimeout(60_000);
   await waitForServer(15_000);
   adminCookie = await bootstrap();
   await triggerRescan(adminCookie, 30_000);
-}, 60_000);
+});
 
 async function injectSessionCookie(
   context: BrowserContext,

@@ -172,7 +172,7 @@ soft-delete in step 20). A regression in either fires this scenario.
     rescans will not re-import them because the dedup map sees them.
 
 23. Revoke the API token: call `DELETE /api/v1/auth/tokens/{token_id}` with
-    the `admin_session` cookie. Confirm the response is HTTP 200.
+    the `admin_session` cookie. Confirm the response is HTTP 204.
 
 24. Final assertions:
     - The active media list (`GET /api/v1/media`) must not contain either

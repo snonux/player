@@ -46,9 +46,10 @@ the Go standard library:
   ranges concatenated as MIME parts.
 - An entirely unsatisfiable Range (start past EOF) returns 416 with
   `Content-Range: bytes */<size>` and an empty body.
-- A syntactically malformed `Range` header (e.g. `bytes=garbage`, no `=`,
-  no digits) is treated as "no Range" — the server returns the full body
-  with status 200, NOT 416. This matches RFC 7233 §3.1.
+- A syntactically malformed Range such as `bytes=garbage` returns 416
+  with an `invalid range` error. This is the direct `http.ServeContent`
+  behavior: `parseRange` rejects the syntax. It is distinct from choosing
+  to ignore the Range header, which HTTP permits but Go does not do here.
 - `If-Modified-Since` matching the `Last-Modified` returns 304. The handler
   also emits a strong `ETag` header derived from file size and mtime, so
   `If-None-Match` matching that ETag returns 304 too. Both conditional
@@ -134,16 +135,9 @@ flag it: every one of them affects iOS / podcast-app playback.
     proves Go's `http.ServeContent` rejects unsatisfiable ranges instead
     of silently truncating.
 
-11. GET stream with a malformed Range header: issue
-    `GET /api/v1/media/{media_id}/stream` with the session cookie and an
-    additional `Range: bytes=garbage` request header. Per RFC 7233 §3.1
-    and the Go stdlib implementation, an unparseable Range is treated as
-    "no Range" — confirm the response is HTTP 200, the `Content-Length`
-    response header equals the full `file_size`, the `Accept-Ranges`
-    response header equals `bytes`, and no `Content-Range` response
-    header is present. If the server returns 416 here instead, flag it as
-    a deviation from Go's `http.ServeContent` behaviour (an explicit
-    upstream change would have been required).
+11. GET stream with `Range: bytes=garbage`. Confirm HTTP 416 and an
+    `invalid range` error. Go's `http.ServeContent` rejects malformed range
+    syntax; the earlier assertion of HTTP 200 misstated stdlib behavior.
 
 12. GET stream with a multi-range request: issue
     `GET /api/v1/media/{media_id}/stream` with the session cookie and an

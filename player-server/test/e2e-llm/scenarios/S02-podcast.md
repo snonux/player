@@ -32,13 +32,13 @@ Stop it after the scenario completes with `kill %1` (or equivalent).
 2. Subscribe to the mock podcast feed: call `POST /api/v1/podcasts` with body
    `{"feed_url": "http://localhost:8888/feed.xml", "set_name": "Test Podcast"}`.
    Confirm the response is HTTP 200 and the returned JSON object contains a
-   non-zero `id` field. Save `feed_id` from the response.
+   non-zero `id` field. Save `feed_id` and `set_id` from the response. Episode listing takes the shared podcast set ID, not the feed ID.
 
 3. Confirm `GET /api/v1/podcasts` returns HTTP 200 and the list contains an
    entry whose `feed_url` is `http://localhost:8888/feed.xml`.
 
 4. Retrieve the list of episodes for the new feed: call
-   `GET /api/v1/podcasts/{feed_id}/episodes`. Confirm the response is HTTP 200
+   `GET /api/v1/podcasts/{set_id}/episodes`. Confirm the response is HTTP 200
    and contains at least one episode object. Save the `id` of the first episode
    as `episode_id`.
 
@@ -52,21 +52,20 @@ Stop it after the scenario completes with `kill %1` (or equivalent).
    `media_id`.
 
 7. Confirm the episode now appears in the list returned by
-   `GET /api/v1/podcasts/{feed_id}/episodes` with `is_downloaded: true`.
+   `GET /api/v1/podcasts/{set_id}/episodes` with `is_downloaded: true`.
 
-8. Record playback progress for the downloaded media: call
-   `POST /api/v1/progress` with body
-   `{"media_id": <media_id from step 6>, "position_seconds": 120.0}`.
-   Confirm the response is HTTP 200.
+8. Record playback progress for the downloaded media using one session.
+   Call `POST /api/v1/progress` with `media_id` and successively increasing
+   `position_seconds`: 12, 24, 36, 48, 60, 72, then 120. Confirm each
+   response is HTTP 200. A single seek to 120 is insufficient to cross the
+   60-second playback accumulator threshold.
 
-9. Confirm the episode appears in the in-progress list: call
-   `GET /api/v1/in-progress` and verify the list contains a media item whose
-   `id` matches the media from step 6.
+9. Confirm `GET /api/v1/in-progress` contains the downloaded `media_id`.
 
 10. Mark the episode as complete: call
     `POST /api/v1/podcasts/episodes/{episode_id}/complete`. Confirm the response
     is HTTP 204 (No Content).
 
 11. Retrieve the episode list again:
-    `GET /api/v1/podcasts/{feed_id}/episodes`. Confirm the target episode now
+    `GET /api/v1/podcasts/{set_id}/episodes`. Confirm the target episode now
     has `is_completed: true` in its status fields.
