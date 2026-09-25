@@ -38,6 +38,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     super.key,
     required this.mediaId,
     this.mediaUrl,
+    this.mediaTitle,
     this.startPosition,
     this.isPublicShare = false,
   });
@@ -49,6 +50,10 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   /// When null, [PlayerApiClient.streamUrl] is called to derive the URL so the
   /// base URL stays in a single place (Dependency Inversion Principle).
   final String? mediaUrl;
+
+  /// Readable file name or episode title for the app bar. Falls back to a generic label when the
+  /// caller has no loaded metadata.
+  final String? mediaTitle;
 
   /// Optional start position in seconds, forwarded from the continue-watching
   /// screen to resume at the saved position without an extra API round-trip.
@@ -296,9 +301,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text(widget.isPublicShare
-            ? 'Shared Video'
-            : 'Video – ${widget.mediaId}'),
+        title: Text(widget.mediaTitle ??
+            (widget.isPublicShare
+                ? 'Shared Video'
+                : 'Video – ${widget.mediaId}')),
       ),
       body: _buildBody(),
     );

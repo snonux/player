@@ -77,7 +77,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Compare route templates so other /s/* paths never bypass auth.
       final isShareViewerRoute = state.fullPath == AppRoutes.shareViewer ||
           state.fullPath == AppRoutes.sharedAudioPlayer ||
-          state.fullPath == AppRoutes.sharedVideoPlayer;
+          state.fullPath == AppRoutes.sharedVideoPlayer ||
+          state.fullPath == AppRoutes.sharedImageViewer;
 
       if (auth.isUnauthenticated &&
           isLoginRoute &&
@@ -179,6 +180,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.sharedAudioPlayer,
         builder: (context, state) => AudioPlayerScreen(
           mediaId: '0',
+          mediaTitle: _parsePlayerExtra(state.extra).$3,
           mediaUrl:
               '${ref.read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
           isPublicShare: true,
@@ -188,7 +190,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.sharedVideoPlayer,
         builder: (context, state) => VideoPlayerScreen(
           mediaId: '0',
+          mediaTitle: _parsePlayerExtra(state.extra).$3,
           mediaUrl:
+              '${ref.read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
+          isPublicShare: true,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.sharedImageViewer,
+        builder: (context, state) => ImageViewerScreen(
+          mediaId: '0',
+          mediaTitle: _parsePlayerExtra(state.extra).$3,
+          imageUrl:
               '${ref.read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
           isPublicShare: true,
         ),
@@ -225,10 +238,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           // ':mediaId' is guaranteed present by the route pattern.
           final mediaId = state.pathParameters['mediaId']!;
-          final (mediaUrl, startPosition) = _parsePlayerExtra(state.extra);
+          final (mediaUrl, startPosition, title) =
+              _parsePlayerExtra(state.extra);
           return VideoPlayerScreen(
             mediaId: mediaId,
             mediaUrl: mediaUrl,
+            mediaTitle: title,
             startPosition: startPosition,
           );
         },
@@ -238,20 +253,26 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           // ':mediaId' is guaranteed present by the route pattern.
           final mediaId = state.pathParameters['mediaId']!;
-          final (mediaUrl, startPosition) = _parsePlayerExtra(state.extra);
+          final (mediaUrl, startPosition, title) =
+              _parsePlayerExtra(state.extra);
           return AudioPlayerScreen(
             mediaId: mediaId,
             mediaUrl: mediaUrl,
+            mediaTitle: title,
             startPosition: startPosition,
           );
         },
       ),
       GoRoute(
         path: AppRoutes.imageViewer,
-        builder: (context, state) => ImageViewerScreen(
-          mediaId: state.pathParameters['mediaId']!,
-          imageUrl: state.extra is String ? state.extra as String : null,
-        ),
+        builder: (context, state) {
+          final (imageUrl, _, title) = _parsePlayerExtra(state.extra);
+          return ImageViewerScreen(
+            mediaId: state.pathParameters['mediaId']!,
+            imageUrl: imageUrl,
+            mediaTitle: title,
+          );
+        },
       ),
       GoRoute(
         // Notes editor — shows and edits the user's personal note for a media
@@ -333,23 +354,28 @@ final routerProvider = Provider<GoRouter>((ref) {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Parses the route [extra] passed to video and audio player routes.
+/// Parses the route [extra] passed to video, audio, and image viewer routes.
 ///
 /// Accepts two shapes forwarded by different call-sites:
-///   - `Map<String, dynamic>`: `{mediaUrl: String, position: double}` from
-///     [ContinueWatchingScreen] so the player can seek immediately without an
-///     extra [getMediaProgress] round-trip.
-///   - `String`: plain stream URL forwarded by [MediaDetailScreen].
+///   - `Map<String, dynamic>`: optional `mediaUrl`, `position`, and `title`
+///     supplied by detail, continue-watching, podcast, and public-share screens.
+///     Reuses loaded titles and saved positions without extra API calls.
+///   - `String`: a plain stream URL, retained for older callers.
 ///
-/// Returns a record `(mediaUrl, startPosition)` with null for absent values.
+/// Returns `(mediaUrl, startPosition, title)` with null for absent values.
 /// Extracted to avoid duplicating this logic across the video and audio routes.
-(String?, double?) _parsePlayerExtra(Object? extra) {
+(String?, double?, String?) _parsePlayerExtra(Object? extra) {
   if (extra is Map<String, dynamic>) {
     final mediaUrl = extra['mediaUrl'] as String?;
     final startPosition = (extra['position'] as num?)?.toDouble();
-    return (mediaUrl, startPosition);
+    final title = extra['title'] as String?;
+    return (
+      mediaUrl,
+      startPosition,
+      title?.trim().isEmpty == true ? null : title
+    );
   }
-  return (extra is String ? extra : null, null);
+  return (extra is String ? extra : null, null, null);
 }
 
 /// Bridges Riverpod's auth and first-run providers to [GoRouter.refreshListenable].

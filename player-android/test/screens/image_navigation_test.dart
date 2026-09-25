@@ -103,10 +103,14 @@ void main() {
         ),
         GoRoute(
           path: AppRoutes.imageViewer,
-          builder: (_, state) => ImageViewerScreen(
-            mediaId: state.pathParameters['mediaId']!,
-            imageUrl: state.extra as String?,
-          ),
+          builder: (_, state) {
+            final extra = state.extra as Map<String, dynamic>;
+            return ImageViewerScreen(
+              mediaId: state.pathParameters['mediaId']!,
+              imageUrl: extra['mediaUrl'] as String?,
+              mediaTitle: extra['title'] as String?,
+            );
+          },
         ),
         GoRoute(
           path: AppRoutes.audioPlayer,
@@ -143,6 +147,16 @@ void main() {
     expect(find.byType(ImageViewerScreen), findsOneWidget);
     expect(find.byType(AudioPlayerScreen), findsNothing);
     expect(find.byKey(const Key('image_viewer_zoom')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.descendant(
+          of: find.byType(ImageViewerScreen),
+          matching: find.byType(AppBar),
+        ),
+        matching: find.text('cygnus-loop-pia17172.jpg'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Unexpected audio route'), findsNothing);
     final image = tester.widget<CachedNetworkImage>(
       find.byType(CachedNetworkImage),

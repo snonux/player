@@ -233,9 +233,12 @@ class _PlayableAudioPlayer extends AudioPlayer {
 class _PlayableHandler extends PlayerAudioHandler {
   _PlayableHandler(super.player);
   int playCalls = 0;
+  String? lastTitle;
 
   @override
-  void setMediaItem({required String id, required String title}) {}
+  void setMediaItem({required String id, required String title}) {
+    lastTitle = title;
+  }
 
   @override
   Future<void> play() async {
@@ -276,6 +279,7 @@ Future<void> _pumpScreen(
   _FakeApiClient fakeClient, {
   String mediaId = '42',
   String? mediaUrl,
+  String? mediaTitle,
   _FakePlayerAudioHandler? fakeHandler,
   PlayerAudioHandler? handlerOverride,
   _FakeProgressQueue? progressQueue,
@@ -291,6 +295,7 @@ Future<void> _pumpScreen(
         builder: (context, state) => AudioPlayerScreen(
           mediaId: state.pathParameters['mediaId']!,
           mediaUrl: mediaUrl,
+          mediaTitle: mediaTitle,
         ),
       ),
     ],
@@ -326,6 +331,23 @@ Future<void> _pumpScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets('loaded title identifies the player and audio notification',
+      (tester) async {
+    _setupAudioSessionMock();
+    addTearDown(_teardownAudioSessionMock);
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    await _pumpScreen(tester, _FakeApiClient(),
+        handlerOverride: handler, mediaTitle: 'Chapter One.mp3');
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Chapter One.mp3'), findsOneWidget);
+    expect(handler.lastTitle, 'Chapter One.mp3');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await handler.endProgress();
+    await player.playingChanges.close();
+  });
+
   setUp(_setupAudioSessionMock);
   tearDown(_teardownAudioSessionMock);
 
@@ -369,6 +391,7 @@ void main() {
         builder: (_, __) => const AudioPlayerScreen(
           mediaId: '0',
           mediaUrl: 'http://test.local/s/tok7/stream',
+          mediaTitle: 'Shared podcast.mp3',
           isPublicShare: true,
         ),
       ),
@@ -390,6 +413,8 @@ void main() {
     await tester.pump();
     expect(handler.playCalls, 1);
     expect((player.loadedSource as UriAudioSource).headers, isEmpty);
+    expect(handler.lastTitle, 'Shared podcast.mp3');
+    expect(find.text('Shared podcast.mp3'), findsOneWidget);
     expect(client.getMediaProgressCallCount, 0);
     player.elapsed = const Duration(seconds: 97);
     await tester.pump(const Duration(seconds: 5));

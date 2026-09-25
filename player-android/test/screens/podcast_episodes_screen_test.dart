@@ -804,12 +804,14 @@ void main() {
   group('play button', () {
     testWidgets('page-2 playback return keeps loaded rows and scroll',
         (tester) async {
-      final rows = List.generate(51, (index) => PodcastEpisode.fromJson(
-            _kEpisodeDownloaded.toJson()
-              ..['id'] = index + 1
-              ..['media_id'] = index + 101
-              ..['title'] = 'Episode ${index + 1}',
-          ));
+      final rows = List.generate(
+          51,
+          (index) => PodcastEpisode.fromJson(
+                _kEpisodeDownloaded.toJson()
+                  ..['id'] = index + 1
+                  ..['media_id'] = index + 101
+                  ..['title'] = 'Episode ${index + 1}',
+              ));
       final fakeClient = _FakeApiClient()
         ..episodesForPage =
             (limit, offset) => rows.skip(offset).take(limit).toList();
@@ -830,8 +832,8 @@ void main() {
 
       await tester.tap(find.byKey(const Key('episode_play_button_51')));
       await tester.pumpAndSettle();
-      rows[50] = PodcastEpisode.fromJson(
-          rows[50].toJson()..['is_completed'] = true);
+      rows[50] =
+          PodcastEpisode.fromJson(rows[50].toJson()..['is_completed'] = true);
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
 
@@ -839,7 +841,9 @@ void main() {
       expect(find.byKey(const Key('episode_row_51')), findsOneWidget);
       expect(scrollable.position.pixels, closeTo(before, 1));
       final toggle = find.byKey(const Key('episode_played_toggle_51'));
-      expect(find.descendant(of: toggle, matching: find.byIcon(Icons.check_circle)),
+      expect(
+          find.descendant(
+              of: toggle, matching: find.byIcon(Icons.check_circle)),
           findsOneWidget);
     });
 
@@ -912,6 +916,57 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('download button', () {
+    testWidgets('episode controls expose labels, button roles and 48dp targets',
+        (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final semantics = tester.ensureSemantics();
+
+      final client = _FakeApiClient()
+        ..episodesResult = [_kEpisode1, _kEpisodeDownloaded]
+        ..downloadCompleter = Completer<Media>();
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      for (final label in [
+        'Download episode',
+        'Play episode',
+        'Mark listened'
+      ]) {
+        final buttons = find.byTooltip(label);
+        expect(buttons, findsWidgets);
+        final size = tester.getSize(buttons.first);
+        expect(size.width, greaterThanOrEqualTo(48));
+        expect(size.height, greaterThanOrEqualTo(48));
+        expect(
+            tester.getSemantics(buttons.first),
+            matchesSemantics(
+              tooltip: label,
+              hasFocusAction: true,
+              isButton: true,
+              hasTapAction: true,
+              hasEnabledState: true,
+              isEnabled: true,
+              isFocusable: true,
+            ));
+      }
+      await tester.tap(find.byTooltip('Download episode'));
+      await tester.pump();
+      final downloading = find.byTooltip('Downloading episode');
+      expect(downloading, findsOneWidget);
+      expect(
+          tester
+              .widget<IconButton>(
+                  find.byKey(const Key('episode_download_button_1')))
+              .onPressed,
+          isNull);
+      client.downloadCompleter!.complete(_kDownloadedMedia);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      semantics.dispose();
+    });
+
     testWidgets(
         'shows download button when episode has no mediaId (not downloaded)',
         (tester) async {

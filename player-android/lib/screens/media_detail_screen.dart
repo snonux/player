@@ -219,17 +219,17 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     if (media.type == 'image') {
       context.push(
         AppRoutes.imageViewerPath(media.id.toString()),
-        extra: streamUrl,
+        extra: {'mediaUrl': streamUrl, 'title': media.fileName},
       );
     } else if (media.type == 'video') {
       context.push(
         AppRoutes.videoPlayerPath(media.id.toString()),
-        extra: streamUrl,
+        extra: {'mediaUrl': streamUrl, 'title': media.fileName},
       );
     } else if (media.type == 'audio') {
       context.push(
         AppRoutes.audioPlayerPath(media.id.toString()),
-        extra: streamUrl,
+        extra: {'mediaUrl': streamUrl, 'title': media.fileName},
       );
     }
   }

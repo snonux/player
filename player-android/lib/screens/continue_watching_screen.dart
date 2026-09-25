@@ -165,6 +165,7 @@ class _ContinueWatchingScreenState
     // immediately without a second round-trip to the server.
     final extra = <String, dynamic>{
       'mediaUrl': mediaUrl,
+      'title': item.fileName,
       if (position != null) 'position': position,
     };
 

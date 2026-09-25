@@ -156,7 +156,8 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
   void _play() {
     if (_page == null) return;
 
-    context.push(AppRoutes.sharedPlayerPath(widget.token, _page!.type));
+    context.push(AppRoutes.sharedPlayerPath(widget.token, _page!.type),
+        extra: {'title': _page!.fileName});
   }
 
   // ---------------------------------------------------------------------------
@@ -241,8 +242,8 @@ class _MetadataView extends StatelessWidget {
           FilledButton.icon(
             key: const Key('share_viewer_play_button'),
             onPressed: onPlay,
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Play'),
+            icon: Icon(page.type == 'image' ? Icons.image : Icons.play_arrow),
+            label: Text(page.type == 'image' ? 'View Image' : 'Play'),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
@@ -309,6 +310,7 @@ class _FallbackThumbnail extends StatelessWidget {
   static const _typeIcons = {
     'audio': Icons.audio_file,
     'video': Icons.movie,
+    'image': Icons.image,
   };
 
   @override

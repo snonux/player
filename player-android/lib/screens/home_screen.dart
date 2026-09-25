@@ -130,6 +130,33 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: _buildAppBar(context),
+      drawer: Drawer(
+        child: SafeArea(
+          child: ListView(
+            children: [
+              const ListTile(title: Text('Library')),
+              for (final destination in [
+                (
+                  Icons.history,
+                  'Continue Watching',
+                  AppRoutes.continueWatching
+                ),
+                (Icons.podcasts, 'Podcasts', AppRoutes.podcasts),
+                (Icons.share_outlined, 'My Shares', AppRoutes.shares),
+                (Icons.settings_outlined, 'Settings', AppRoutes.settings),
+              ])
+                ListTile(
+                  leading: Icon(destination.$1),
+                  title: Text(destination.$2),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    context.push(destination.$3);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
       body: _buildBody(context),
     );
   }

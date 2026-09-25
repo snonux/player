@@ -19,6 +19,7 @@ abstract final class AppRoutes {
   /// Public playback routes use the share token instead of a media ID.
   static const sharedAudioPlayer = '/s/:token/audio';
   static const sharedVideoPlayer = '/s/:token/video';
+  static const sharedImageViewer = '/s/:token/image';
 
   static const settings = '/settings';
   static const server = '/server';
@@ -55,7 +56,11 @@ abstract final class AppRoutes {
   /// Returns the concrete path for the share-viewer page of a given [token].
   static String shareViewerPath(String token) => '/s/$token';
   static String sharedPlayerPath(String token, String type) =>
-      '/s/$token/${type == 'audio' ? 'audio' : 'video'}';
+      '/s/$token/${switch (type) {
+        'audio' => 'audio',
+        'image' => 'image',
+        _ => 'video',
+      }}';
 
   /// Returns the concrete path for a media-detail page given a numeric [id].
   static String mediaDetailPath(int id) => '/media/$id';

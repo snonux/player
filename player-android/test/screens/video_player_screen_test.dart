@@ -200,6 +200,7 @@ Future<void> _pumpScreen(
   _FakeApiClient fakeClient, {
   String mediaId = '42',
   String? mediaUrl,
+  String? mediaTitle,
   _FakeProgressQueue? progressQueue,
 }) async {
   final router = GoRouter(
@@ -210,6 +211,7 @@ Future<void> _pumpScreen(
         builder: (context, state) => VideoPlayerScreen(
           mediaId: state.pathParameters['mediaId']!,
           mediaUrl: mediaUrl,
+          mediaTitle: mediaTitle,
         ),
       ),
     ],
@@ -245,11 +247,13 @@ void main() {
     });
     final queue = _FakeProgressQueue();
     final client = _FakeApiClient();
-    await _pumpScreen(tester, client, progressQueue: queue);
+    await _pumpScreen(tester, client,
+        progressQueue: queue, mediaTitle: 'Example movie.mp4');
     await tester.pump();
     await tester.pump();
     expect(find.byKey(const Key('video_player_error')), findsNothing);
 
+    expect(find.text('Example movie.mp4'), findsOneWidget);
     platform.position = const Duration(seconds: 96);
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(seconds: 5));

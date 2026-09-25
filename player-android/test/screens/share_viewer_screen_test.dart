@@ -17,6 +17,7 @@
 // Run with: flutter test test/screens/share_viewer_screen_test.dart
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +30,8 @@ import 'package:player_android/providers/first_run_provider.dart';
 import 'package:player_android/providers/public_api_client_provider.dart';
 import 'package:player_android/router.dart';
 import 'package:player_android/screens/share_viewer_screen.dart';
+import 'package:player_android/screens/image_viewer_screen.dart';
+import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/utils/error_mappers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -172,6 +175,51 @@ Future<void> _pumpShareViewerScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets('public image share opens without account requests or headers',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final client = _FakePublicApiClient()
+      ..pageJson = jsonEncode({
+        'media': {'file_name': 'photo.jpg', 'type': 'image'},
+        'has_thumb': false,
+      });
+    final container = ProviderContainer(overrides: [
+      authStateProvider.overrideWith(_Unauthenticated.new),
+      firstRunProvider.overrideWith((ref) async => false),
+      publicApiClientProvider.overrideWithValue(client),
+      publicShareBaseUrlProvider
+          .overrideWithValue(Uri.parse('https://share.example')),
+      apiClientProvider
+          .overrideWith((ref) => throw StateError('No account API')),
+    ]);
+    addTearDown(container.dispose);
+    final router = container.read(routerProvider);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp.router(routerConfig: router),
+    ));
+    router.go(AppRoutes.shareViewerPath('image-token'));
+    await tester.pumpAndSettle();
+    expect(find.text('View Image'), findsOneWidget);
+    await tester.ensureVisible(find.text('View Image'));
+    await tester.tap(find.text('View Image'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerScreen), findsOneWidget);
+    // The viewer reuses the loaded share file name rather than a generic label.
+    expect(
+      find.descendant(
+          of: find.byType(AppBar), matching: find.text('photo.jpg')),
+      findsOneWidget,
+    );
+    final image = tester.widget<Image>(find.byType(Image));
+    final source = image.image as NetworkImage;
+    expect(source.url, 'https://share.example/s/image-token/stream');
+    expect(source.headers, isNull);
+    expect(find.byKey(const Key('image_viewer_zoom')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('real router opens /s token without a session', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final client = _FakePublicApiClient()..pageJson = _kAudioShareJson;

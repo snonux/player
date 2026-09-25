@@ -42,6 +42,7 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
     super.key,
     required this.mediaId,
     this.mediaUrl,
+    this.mediaTitle,
     this.startPosition,
     this.isPublicShare = false,
   });
@@ -53,6 +54,11 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
   /// When null, [PlayerApiClient.streamUrl] is called to derive the URL so the
   /// base URL stays in a single place (Dependency Inversion Principle).
   final String? mediaUrl;
+
+  /// Readable file name or episode title for the app bar and the system
+  /// media notification. Falls back to a generic label when the
+  /// caller has no loaded metadata.
+  final String? mediaTitle;
 
   /// Optional start position in seconds, forwarded from the continue-watching
   /// screen to resume at the saved position without an extra API round-trip.
@@ -144,8 +150,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     // Step 5: publish media-session metadata to notification/lock-screen.
     handler.setMediaItem(
       id: widget.mediaId,
-      title:
-          widget.isPublicShare ? 'Shared Audio' : 'Audio – ${widget.mediaId}',
+      title: widget.mediaTitle ??
+          (widget.isPublicShare ? 'Shared Audio' : 'Audio – ${widget.mediaId}'),
     );
 
     setState(() => _isLoading = false);
@@ -299,9 +305,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text(widget.isPublicShare
-            ? 'Shared Audio'
-            : 'Audio – ${widget.mediaId}'),
+        title: Text(widget.mediaTitle ??
+            (widget.isPublicShare
+                ? 'Shared Audio'
+                : 'Audio – ${widget.mediaId}')),
       ),
       body: _buildBody(),
     );

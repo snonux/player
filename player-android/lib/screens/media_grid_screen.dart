@@ -345,6 +345,15 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
       title: Text(widget.setName ?? 'Set ${widget.setId}'),
       actions: [
         IconButton(
+          key: const Key('media_grid_folders'),
+          tooltip: 'Browse folders',
+          icon: const Icon(Icons.folder_open),
+          onPressed: () => context.push(
+            AppRoutes.folderBrowserPath(widget.setId),
+            extra: widget.setName,
+          ),
+        ),
+        IconButton(
           key: const Key('media_grid_favorites_filter'),
           tooltip:
               _filter.favoritesOnly ? 'Show all items' : 'Show favourites only',

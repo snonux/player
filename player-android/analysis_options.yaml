@@ -4,6 +4,10 @@
 # The analyzer can be invoked from the command line by running
 # `flutter analyze`.
 
+analyzer:
+  exclude:
+    - build/**
+    - android/**
 include: package:flutter_lints/flutter.yaml
 
 linter:

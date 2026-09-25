@@ -73,8 +73,7 @@ class PodcastEpisodesScreen extends ConsumerStatefulWidget {
 // player-server/docs/api.md §GET /api/podcasts/{id}/episodes).
 const _kEpisodePageSize = 50;
 
-class _PodcastEpisodesScreenState
-    extends ConsumerState<PodcastEpisodesScreen> {
+class _PodcastEpisodesScreenState extends ConsumerState<PodcastEpisodesScreen> {
   // Nullable: null means "not yet loaded" (loading indicator is shown).
   List<PodcastEpisode>? _episodes;
 
@@ -337,7 +336,10 @@ class _PodcastEpisodesScreenState
 
   /// Re-fetch episode completion and progress after the player is popped.
   Future<void> _openPlayer(int mediaId) async {
-    await context.push(AppRoutes.audioPlayerPath(mediaId.toString()));
+    final episode =
+        _episodes?.where((episode) => episode.mediaId == mediaId).firstOrNull;
+    await context.push(AppRoutes.audioPlayerPath(mediaId.toString()),
+        extra: {'title': episode?.title});
     if (mounted) await _load(preservePages: true);
   }
 
@@ -707,8 +709,18 @@ class _MetaLine extends StatelessWidget {
   /// Uses pure Dart arithmetic so there is no dependency on the `intl` package.
   static String _formatDate(DateTime date) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
@@ -741,8 +753,7 @@ class _PlaybackProgressBar extends StatelessWidget {
       key: const Key('episode_progress_bar'),
       value: fraction,
       minHeight: 3,
-      backgroundColor:
-          Theme.of(context).colorScheme.surfaceContainerHighest,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
     );
   }
 }
@@ -762,16 +773,18 @@ class _EpisodeActionButton extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.onTap,
+    required this.label,
     this.isLoading = false,
   });
 
-  /// Widget key forwarded directly to the [GestureDetector] so callers can
+  /// Widget key forwarded directly to the [IconButton] so callers can
   /// assign test-discoverable keys (e.g. `Key('episode_play_button_42')`).
   final Key widgetKey;
 
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
+  final String label;
 
   /// When true, taps are ignored and the icon is dimmed to signal that an
   /// operation is already in-flight (prevents duplicate API calls).
@@ -779,21 +792,13 @@ class _EpisodeActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return IconButton(
       key: widgetKey,
-      behavior: HitTestBehavior.opaque,
-      // Suppress taps while loading to act as a lightweight disabled state.
-      onTap: isLoading ? null : onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Icon(
-          icon,
-          size: 24,
-          // Dim the icon when loading so the user has visual feedback that
-          // the button is temporarily inactive.
-          color: isLoading ? color.withAlpha(100) : color,
-        ),
-      ),
+      tooltip: isLoading ? 'Downloading episode' : label,
+      onPressed: isLoading ? null : onTap,
+      color: color,
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+      icon: Icon(icon),
     );
   }
 }
@@ -817,6 +822,7 @@ class _PlayButton extends StatelessWidget {
     return _EpisodeActionButton(
       widgetKey: Key('episode_play_button_$episodeId'),
       icon: Icons.play_circle_outline,
+      label: 'Play episode',
       color: Theme.of(context).colorScheme.primary,
       onTap: onTap,
     );
@@ -850,6 +856,7 @@ class _DownloadButton extends StatelessWidget {
     return _EpisodeActionButton(
       widgetKey: Key('episode_download_button_$episodeId'),
       icon: Icons.download_outlined,
+      label: 'Download episode',
       color: Theme.of(context).colorScheme.onSurfaceVariant,
       isLoading: isLoading,
       onTap: onTap,
@@ -860,9 +867,7 @@ class _DownloadButton extends StatelessWidget {
 /// Icon button that reflects the played/unplayed state of an episode.
 ///
 /// Renders a filled check-circle icon when [isCompleted] is true and an
-/// outlined one otherwise.  Uses a [GestureDetector] with
-/// [HitTestBehavior.opaque] to consume taps without propagating to parent
-/// [InkWell] widgets (mirrors [_FavoriteIconButton] in media_grid_screen.dart).
+/// outlined one otherwise, with an accessible label for the next action.
 ///
 /// Extracted as a separate widget so it is independently testable and to keep
 /// [_EpisodeRow.build] under 30 lines (Single Responsibility).
@@ -879,20 +884,14 @@ class _PlayedToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      key: Key('episode_played_toggle_$episodeId'),
-      behavior: HitTestBehavior.opaque,
+    return _EpisodeActionButton(
+      widgetKey: Key('episode_played_toggle_$episodeId'),
+      label: isCompleted ? 'Mark unlistened' : 'Mark listened',
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Icon(
-          isCompleted ? Icons.check_circle : Icons.check_circle_outline,
-          size: 24,
-          color: isCompleted
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
+      icon: isCompleted ? Icons.check_circle : Icons.check_circle_outline,
+      color: isCompleted
+          ? Theme.of(context).colorScheme.primary
+          : Theme.of(context).colorScheme.onSurfaceVariant,
     );
   }
 }

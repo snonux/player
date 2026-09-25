@@ -21,6 +21,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:player_android/app_routes.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/models/models.dart';
@@ -166,6 +168,47 @@ Future<void> _pumpSetsListScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets('Library menu reaches each feature and Back returns to Library',
+      (tester) async {
+    final client = _FakeApiClient()..setsResult = [];
+    final destinations = {
+      'Continue Watching': AppRoutes.continueWatching,
+      'Podcasts': AppRoutes.podcasts,
+      'My Shares': AppRoutes.shares,
+      'Settings': AppRoutes.settings,
+    };
+    final router = GoRouter(initialLocation: AppRoutes.home, routes: [
+      GoRoute(path: AppRoutes.home, builder: (_, __) => const SetsListScreen()),
+      for (final entry in destinations.entries)
+        GoRoute(
+            path: entry.value,
+            builder: (_, __) => Scaffold(
+                  appBar: AppBar(title: Text('Destination ${entry.key}')),
+                )),
+    ]);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(ProviderScope(overrides: [
+      apiClientProvider.overrideWithValue(client),
+      tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
+      credentialMutationQueueProvider
+          .overrideWithValue(CredentialMutationQueue(credentialsEnabled: true)),
+      playerBaseUrlProvider.overrideWithValue(Uri.parse('http://test.invalid')),
+    ], child: MaterialApp.router(routerConfig: router)));
+    await tester.pumpAndSettle();
+    for (final entry in destinations.entries) {
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(
+          of: find.byType(Drawer), matching: find.text(entry.key)));
+      await tester.pumpAndSettle();
+      expect(find.text('Destination ${entry.key}'), findsOneWidget);
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Library'), findsOneWidget);
+      expect(find.byType(Drawer), findsNothing);
+    }
+  });
+
   // --------------------------------------------------------------------------
   // Loading state
   // --------------------------------------------------------------------------

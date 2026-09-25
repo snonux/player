@@ -336,6 +336,13 @@ GoRouter _buildRouter(PlayerApiClient fakeClient) {
         },
       ),
       GoRoute(
+        path: '/browse/:setId',
+        builder: (context, state) => Scaffold(
+          appBar: AppBar(title: const Text('Folders')),
+          body: Text('Folders ${state.pathParameters['setId']} ${state.extra}'),
+        ),
+      ),
+      GoRoute(
         path: '/media/:id',
         builder: (context, state) => Scaffold(
           appBar: AppBar(title: const Text('Media detail')),
@@ -464,6 +471,19 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('tap navigates to media detail', () {
+    testWidgets('folder action preserves the set and returns to the grid',
+        (tester) async {
+      final client = _FakeApiClient()..mediaResult = [_kVideo];
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Browse folders'));
+      await tester.pumpAndSettle();
+      expect(find.text('Folders 10 Movies'), findsOneWidget);
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('media_grid')), findsOneWidget);
+    });
+
     testWidgets('tapping a media card navigates to /media/:id', (tester) async {
       final fakeClient = _FakeApiClient()..mediaResult = [_kVideo];
 
