@@ -79,21 +79,27 @@ jobs:
 
       - name: Verify all APKs use the release certificate
         run: |
-          apksigner=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -1)
-          test -n "$apksigner"
-          expected=$(
-            "$apksigner" verify --print-certs build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
-              | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
-          )
-          test -n "$expected"
-          test "$(find build/app/outputs/flutter-apk -maxdepth 1 -name 'app-*-release.apk' | wc -l)" -eq 3
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$sdk" ]; then
+            echo "::error::Android SDK path is unavailable"
+            exit 1
+          fi
+          apksigner=$(find "$sdk/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -1)
+          if [ -z "$apksigner" ]; then
+            echo "::error::apksigner is unavailable under $sdk/build-tools"
+            exit 1
+          fi
+          expected=8437806042a169d73b6ccf0331edeef7b6841f59872ad9d61b0b9ca36625a88b
           for abi in armeabi-v7a arm64-v8a x86_64; do
             apk="build/app/outputs/flutter-apk/app-$abi-release.apk"
+            if [ ! -s "$apk" ]; then
+              echo "::error::Missing or empty APK: $apk"
+              exit 1
+            fi
             certs=$("$apksigner" verify --print-certs "$apk")
             echo "$apk: $certs"
-            echo "$certs" | grep -q "Signer #1 certificate SHA-256 digest: $expected"
-            if echo "$certs" | grep -q 'CN=Android Debug'; then
-              echo "::error::$apk is signed with the debug key"
+            if ! grep -Fqi "$expected" <<< "$certs"; then
+              echo "::error::$apk is not signed with the pinned Player release certificate"
               exit 1
             fi
           done
