@@ -1,0 +1,5 @@
+Player is the Android client for your self-hosted Player server. Enter your server address in Settings, sign in, and browse and play the media in your library.
+
+Browse sets, listen to audio in the background, and watch videos. Playback progress syncs with the server, including updates queued while your device is offline.
+
+Source code and releases: https://github.com/snonux/player

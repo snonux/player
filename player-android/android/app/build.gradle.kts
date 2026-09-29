@@ -1,5 +1,7 @@
 import java.net.URI
 import java.util.Base64
+import java.util.Properties
+import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
@@ -37,6 +39,15 @@ val playerSharePort = when {
     else -> playerShareOrigin.port
 }
 
+// CI restores this ignored file before building a release. A local build
+// without it remains installable with Flutter's usual debug signing key.
+val keyPropertiesFile = rootProject.file("key.properties")
+val keyProperties = Properties()
+val hasReleaseSigning = keyPropertiesFile.exists()
+if (hasReleaseSigning) {
+    FileInputStream(keyPropertiesFile).use { keyProperties.load(it) }
+}
+
 android {
     namespace = "zone.foo.player_android"
     compileSdk = flutter.compileSdkVersion
@@ -65,9 +76,22 @@ android {
         resValue("string", "player_share_origin", playerBaseUrl)
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(keyProperties.getProperty("storeFile"))
+                storePassword = keyProperties.getProperty("storePassword")
+                keyAlias = keyProperties.getProperty("keyAlias")
+                keyPassword = keyProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(
+                if (hasReleaseSigning) "release" else "debug"
+            )
         }
     }
 }

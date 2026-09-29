@@ -1,0 +1,124 @@
+# Publish the Android client from a vX.Y.Z tag. The F-Droid repo imports the
+# signed split APKs and store listing from this exact tag.
+name: Android release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build, e.g. v0.1.0
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ inputs.tag || github.ref_name }}
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  FDROID_DISPATCH_TOKEN: ${{ secrets.FDROID_DISPATCH_TOKEN }}
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: player-android
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Check release version
+        id: version
+        run: |
+          version=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match player-android/pubspec.yaml ($version)"
+            exit 1
+          fi
+          echo "flutter=$(tr -d '[:space:]' < .flutter-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.version.outputs.flutter }}
+          channel: stable
+          cache: true
+
+      - name: Restore Android release key
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE" ] || [ -z "$ANDROID_KEY_ALIAS" ] || \
+             [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "::error::Android signing secrets are missing; see player-android/docs/fdroid-release.md"
+            exit 1
+          fi
+          keystore="$RUNNER_TEMP/player-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE" | base64 -d > "$keystore"
+          chmod 600 "$keystore"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$keystore" "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" \
+            > android/key.properties
+          chmod 600 android/key.properties
+
+      - name: Build ABI split APKs
+        run: |
+          flutter pub get
+          flutter build apk --release --split-per-abi
+
+      - name: Verify all APKs use the release certificate
+        run: |
+          apksigner=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -1)
+          test -n "$apksigner"
+          expected=$(
+            "$apksigner" verify --print-certs build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+              | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
+          )
+          test -n "$expected"
+          test "$(find build/app/outputs/flutter-apk -maxdepth 1 -name 'app-*-release.apk' | wc -l)" -eq 3
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            apk="build/app/outputs/flutter-apk/app-$abi-release.apk"
+            certs=$("$apksigner" verify --print-certs "$apk")
+            echo "$apk: $certs"
+            echo "$certs" | grep -q "Signer #1 certificate SHA-256 digest: $expected"
+            if echo "$certs" | grep -q 'CN=Android Debug'; then
+              echo "::error::$apk is signed with the debug key"
+              exit 1
+            fi
+          done
+
+      - name: Attach APKs to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apks=()
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            apk="player-$TAG-$abi.apk"
+            cp "build/app/outputs/flutter-apk/app-$abi-release.apk" "$apk"
+            apks+=("$apk")
+          done
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" "${apks[@]}" --clobber
+
+      - name: Refresh the F-Droid repo
+        if: env.FDROID_DISPATCH_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ env.FDROID_DISPATCH_TOKEN }}
+        run: gh api repos/snonux/fdroid/dispatches -f event_type=app-release
+
+      - name: Remove key material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/player-release.jks" android/key.properties

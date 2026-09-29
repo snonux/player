@@ -15,6 +15,29 @@ flutter build apk --debug
 
 The REST API contract lives in [../player-server/docs/api.md](../player-server/docs/api.md).
 
+## Install from F-Droid
+
+Add the [snonux F-Droid repository](https://github.com/snonux/fdroid) to the
+F-Droid app, then install Player. Releases contain separate APKs for
+armeabi-v7a, arm64-v8a, and x86_64, so each device downloads only its ABI.
+
+Releases are built from `vX.Y.Z` tags by
+[`release.yml`](../.github/workflows/release.yml). The tag must match the
+version name in `pubspec.yaml`; increment its build number for every release.
+The APKs use the release keystore supplied through GitHub Actions secrets.
+See [the release setup guide](docs/fdroid-release.md) for the one-time setup.
+
+To build the same split APKs locally:
+
+```sh
+flutter build apk --release --split-per-abi
+```
+
+Without `android/key.properties`, local release builds use the debug key and
+cannot update an app installed from F-Droid.
+The published APK does not claim a public share-link host. Enter your own
+server address in Settings after installation.
+
 ## Share links on Android
 
 Build with `--dart-define=PLAYER_BASE_URL=https://player.example.com` to register
