@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/auth_state_provider.dart';
 import '../app_routes.dart';
+import '../library_navigation.dart';
 import 'package:go_router/go_router.dart';
 import '../utils/error_mappers.dart';
 
@@ -123,6 +124,7 @@ class _BootstrapScreenState extends ConsumerState<BootstrapScreen> {
 
       // Mint and save the mobile credential before entering protected routes.
       await ref.read(authStateProvider.notifier).login(user);
+      await initializeServerProgressQueue(ref, user);
     } on DioException catch (e) {
       // Only show the snack-bar if the widget is still mounted; async gaps can
       // occur between the await above and this error handler.
@@ -239,6 +241,11 @@ class _BootstrapScreenState extends ConsumerState<BootstrapScreen> {
                   key: const Key('bootstrap_server_setup'),
                   onPressed: () => context.go(AppRoutes.server),
                   child: const Text('Change server'),
+                ),
+                TextButton(
+                  key: const Key('bootstrap_local_library'),
+                  onPressed: () => switchToLocalLibrary(ref, context),
+                  child: const Text('Use files on this device'),
                 ),
               ],
             ),

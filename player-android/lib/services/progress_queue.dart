@@ -64,6 +64,9 @@ abstract class ProgressQueueBase {
   /// Reactivates a queue already opened at app startup for [scope].
   Future<void> resume(ProgressScope scope);
 
+  /// Stops automatic sync without discarding rows or changing their scope.
+  Future<void> suspend();
+
   /// Persists a playback position and, if online, flushes immediately.
   Future<void> enqueue(int mediaId, double positionSeconds);
 
@@ -278,6 +281,17 @@ class ProgressQueue implements ProgressQueueBase {
   @override
   Future<void> resume(ProgressScope scope) async {
     if (_db != null) await init(scope: scope);
+  }
+
+  @override
+  Future<void> suspend() async {
+    _suspended = true;
+    _accountEpoch++;
+    _retryEpoch = null;
+    _clearRetry();
+    await _connectivitySub?.cancel();
+    _connectivitySub = null;
+    await _flushFuture?.catchError((_) {});
   }
 
   @override

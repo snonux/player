@@ -11,6 +11,7 @@ import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/first_run_provider.dart';
 import 'package:player_android/providers/public_api_client_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
+import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -42,6 +43,17 @@ class _Requests implements HttpClientAdapter {
 class _Unauthenticated extends AuthStateNotifier {
   @override
   Future<AuthState> build() async => const AuthState.unauthenticated();
+}
+
+class _CountingUnauthenticated extends AuthStateNotifier {
+  _CountingUnauthenticated(this.onBuild);
+  final void Function() onBuild;
+
+  @override
+  Future<AuthState> build() async {
+    onBuild();
+    return const AuthState.unauthenticated();
+  }
 }
 
 void main() {
@@ -128,6 +140,80 @@ void main() {
         'https://example.com');
   });
 
+  test('fresh settings choose local without adopting the build URL', () async {
+    SharedPreferences.setMockInitialValues({});
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final settings = await container.read(settingsProvider.future);
+    expect(settings.serverBaseUrl, isNull);
+    expect(settings.destination, LibraryDestination.local);
+    expect(container.read(playerBaseUrlProvider).origin,
+        parseServerBaseUrl(kPlayerBaseUrl).origin);
+  });
+
+  test('legacy auth origin migrates even when its credential expired',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'auth_origin': 'https://legacy.example/',
+      'auth_session_present': true,
+      'auth_expires_at': 1,
+    });
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final settings = await container.read(settingsProvider.future);
+    final prefs = await SharedPreferences.getInstance();
+    expect(settings.serverBaseUrl, 'https://legacy.example');
+    expect(settings.destination, LibraryDestination.server);
+    expect(prefs.getString('server_base_url'), 'https://legacy.example');
+  });
+
+  test('invalid saved origin opens local mode with an editable error',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'server_base_url': 'https://example.test/api/v1',
+    });
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final settings = await container.read(settingsProvider.future);
+    expect(settings.destination, LibraryDestination.local);
+    expect(settings.serverBaseUrl, isNull);
+    expect(settings.configurationError, isNotNull);
+  });
+
+  testWidgets('fresh local router does not start auth or count-users checks',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    var authBuilds = 0;
+    var firstRunBuilds = 0;
+    final container = ProviderContainer(overrides: [
+      authStateProvider
+          .overrideWith(() => _CountingUnauthenticated(() => authBuilds++)),
+      firstRunProvider.overrideWith((ref) async {
+        firstRunBuilds++;
+        return false;
+      }),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(settingsProvider.future);
+    final router = container.read(routerProvider);
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp.router(routerConfig: router),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your device library is empty'), findsOneWidget);
+    expect(authBuilds, 0);
+    expect(firstRunBuilds, 0);
+    expect(container.exists(apiClientProvider), isFalse);
+    expect(container.exists(progressQueueProvider), isFalse);
+  });
+
   test('share URLs omit explicit default HTTP and HTTPS ports', () {
     for (final (input, expected) in [
       ('http://example.com:80', 'http://example.com/s/abc'),
@@ -166,7 +252,9 @@ void main() {
 
   testWidgets('server setup is reachable from login without authentication',
       (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'server_base_url': 'https://player.example',
+    });
     final container = ProviderContainer(overrides: [
       authStateProvider.overrideWith(_Unauthenticated.new),
       firstRunProvider.overrideWith((ref) async => false),

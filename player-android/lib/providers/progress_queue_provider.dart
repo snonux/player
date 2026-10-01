@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/progress_queue.dart';
 import 'api_client_provider.dart';
 
+/// Enabled by the production composition root. Widget/unit tests keep server
+/// background services off unless a queue is explicitly supplied.
+final serverProgressQueueLifecycleProvider = Provider<bool>((ref) => false);
+
 /// Provides the singleton [ProgressQueueBase] for the whole application.
 ///
 /// The provider return type is [ProgressQueueBase] (not the concrete

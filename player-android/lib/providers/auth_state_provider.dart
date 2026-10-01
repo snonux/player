@@ -127,7 +127,23 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
   /// carry the previous server's bearer token or cookie.
   Future<void> switchServer(String url) async {
     final next = parseServerBaseUrl(url);
-    if (next == ref.read(playerBaseUrlProvider)) return;
+    final configured = (await ref.read(settingsProvider.future)).serverBaseUrl;
+    if (configured == next.toString()) {
+      final auth = await future;
+      if (auth.isAuthenticated &&
+          ref.read(serverProgressQueueLifecycleProvider)) {
+        await ref.read(progressQueueProvider).init(
+              scope: ProgressScope(
+                origin: next.origin,
+                userId: auth.user!.id,
+              ),
+            );
+      }
+      await ref.read(settingsProvider.notifier).selectDestination(
+            LibraryDestination.server,
+          );
+      return;
+    }
     final auth = await future;
     if (auth.isAuthenticated) {
       await logout();
@@ -152,7 +168,10 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
           throw StateError('Login superseded by a newer auth action');
         }
         if (ref.exists(progressQueueProvider)) {
-          await ref.read(progressQueueProvider).clearAndSuspend();
+          // A login can re-establish the same account after local browsing or
+          // an expired session. Keep its queued progress scoped on disk; the
+          // subsequent resume only flushes rows for the authenticated scope.
+          await ref.read(progressQueueProvider).suspend();
         }
         await _clearCredentials(prefs);
       });
@@ -308,18 +327,26 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
   }
 
   /// Called only while the shared credential queue is held by a 401 handler.
-  Future<bool> clearAfterUnauthorized({bool advanceGeneration = true}) async {
+  Future<bool> clearAfterUnauthorized({
+    bool advanceGeneration = true,
+    bool preserveServerQueue = false,
+  }) async {
     if (advanceGeneration) {
       ref.read(credentialMutationQueueProvider).beginAuthChange();
     }
     var cleared = true;
+    final serverSelected =
+        ref.read(settingsProvider).valueOrNull?.destination ==
+            LibraryDestination.server;
     try {
-      await ref.read(progressQueueProvider).clearAndSuspend();
+      if (!preserveServerQueue || serverSelected) {
+        await ref.read(progressQueueProvider).clearAndSuspend();
+      }
     } catch (_) {
       cleared = false;
     }
     try {
-      if (ref.exists(audioHandlerProvider)) {
+      if (serverSelected && ref.exists(audioHandlerProvider)) {
         await ref.read(audioHandlerProvider).stop();
       }
     } catch (_) {

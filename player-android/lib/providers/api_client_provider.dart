@@ -1,5 +1,6 @@
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../api/dio_client.dart';
 import '../api/dio_player_api_client.dart';
@@ -38,6 +39,7 @@ final credentialMutationQueueProvider =
 // API client uses Dio; ExoPlayer/video_player/CachedNetworkImage bypass Dio
 // and need the cookie jar to attach the session cookie manually.
 final _dioClientProvider = Provider<DioClient>((ref) {
+  final container = ref.container;
   final storage = ref.watch(tokenStorageProvider);
   return DioClient(
     baseUrl: ref.watch(playerBaseUrlProvider),
@@ -47,9 +49,23 @@ final _dioClientProvider = Provider<DioClient>((ref) {
     // correct router instance rather than the raw Navigator.
     navigatorKey: navigatorKey,
     onUnauthorized: () async {
-      await ref
-          .read(authStateProvider.notifier)
-          .clearAfterUnauthorized(advanceGeneration: false);
+      final preserveQueue =
+          container.read(settingsProvider).valueOrNull?.destination ==
+              LibraryDestination.local;
+      await container.read(authStateProvider.notifier).clearAfterUnauthorized(
+            advanceGeneration: false,
+            preserveServerQueue: preserveQueue,
+          );
+    },
+    shouldRedirectOnUnauthorized: () {
+      final selected =
+          container.read(settingsProvider).valueOrNull?.destination;
+      final context = navigatorKey.currentContext;
+      if (selected != LibraryDestination.server || context == null) {
+        return false;
+      }
+      final path = GoRouter.of(context).state.uri.path;
+      return !path.startsWith('/local');
     },
     loginRoute: '/login',
   );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +9,10 @@ import 'navigation_key.dart';
 import 'providers/auth_state_provider.dart';
 import 'providers/first_run_provider.dart';
 import 'providers/public_api_client_provider.dart';
+import 'providers/settings_provider.dart';
+import 'providers/api_client_provider.dart';
+import 'providers/progress_queue_provider.dart';
+import 'services/progress_queue.dart';
 import 'screens/audio_player_screen.dart';
 import 'screens/bootstrap_screen.dart';
 import 'screens/continue_watching_screen.dart';
@@ -29,6 +35,7 @@ import 'screens/admin_users_screen.dart';
 import 'screens/api_tokens_screen.dart';
 import 'screens/folder_browser_screen.dart';
 import 'screens/video_player_screen.dart';
+import 'screens/local_library_screen.dart';
 
 // Re-export AppRoutes so existing callers that import router.dart for routes
 // do not need to change their import path.
@@ -47,7 +54,8 @@ final routerProvider = Provider<GoRouter>((ref) {
   // Watch auth state so the router is rebuilt when it changes.
   // Using a ChangeNotifier bridge because GoRouter's refreshListenable expects
   // a Listenable, while Riverpod exposes streams/notifiers.
-  final notifier = _RouterRefreshNotifier(ref);
+  final notifier = _RouterRefreshNotifier(ref.container);
+  ref.onDispose(notifier.dispose);
 
   return GoRouter(
     // Share the navigator key with DioClient so imperative 401 redirects
@@ -61,28 +69,41 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: AppRoutes.home,
 
     redirect: (context, state) {
-      final authAsync = ref.read(authStateProvider);
+      final location = state.matchedLocation;
+      final isShareViewerRoute = state.fullPath == AppRoutes.shareViewer ||
+          state.fullPath == AppRoutes.sharedAudioPlayer ||
+          state.fullPath == AppRoutes.sharedVideoPlayer ||
+          state.fullPath == AppRoutes.sharedImageViewer;
+      final isPublicSetupRoute =
+          location == AppRoutes.server || location == AppRoutes.settings;
+      if (isShareViewerRoute || isPublicSetupRoute) return null;
+
+      final container = ProviderScope.containerOf(context, listen: false);
+      final settings = container.read(settingsProvider).valueOrNull;
+      if (settings == null) return null;
+      if (settings.destination == LibraryDestination.local) {
+        return location == AppRoutes.localLibrary
+            ? null
+            : AppRoutes.localLibrary;
+      }
+
+      final authAsync = container.read(authStateProvider);
 
       // While the initial token check is in-flight, hold the current path.
       // The router will re-evaluate once refreshListenable fires.
       if (authAsync.isLoading || authAsync.hasError) return null;
 
       final auth = authAsync.requireValue;
-      final location = state.matchedLocation;
       final isLoginRoute = location == AppRoutes.login;
       // Bootstrap is a public route (user is unauthenticated by definition).
       final isBootstrapRoute = location == AppRoutes.bootstrap;
       final isServerRoute = location == AppRoutes.server;
       // Share pages and their players use the public token in the path.
       // Compare route templates so other /s/* paths never bypass auth.
-      final isShareViewerRoute = state.fullPath == AppRoutes.shareViewer ||
-          state.fullPath == AppRoutes.sharedAudioPlayer ||
-          state.fullPath == AppRoutes.sharedVideoPlayer ||
-          state.fullPath == AppRoutes.sharedImageViewer;
 
       if (auth.isUnauthenticated &&
           isLoginRoute &&
-          ref.read(firstRunProvider).valueOrNull == true) {
+          container.read(firstRunProvider).valueOrNull == true) {
         return AppRoutes.bootstrap;
       }
 
@@ -107,7 +128,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         //
         // While the check is loading we stay put; the router re-evaluates when
         // firstRunProvider's AsyncValue settles (via refreshListenable).
-        final firstRunAsync = ref.read(firstRunProvider);
+        final firstRunAsync = container.read(firstRunProvider);
         if (firstRunAsync.isLoading) return null;
 
         // On first-run redirect to /bootstrap so the admin account can be set
@@ -128,6 +149,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.login,
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.localLibrary,
+        builder: (context, state) => const LocalLibraryScreen(),
       ),
       GoRoute(
         path: AppRoutes.home,
@@ -182,7 +207,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           mediaId: '0',
           mediaTitle: _parsePlayerExtra(state.extra).$3,
           mediaUrl:
-              '${ref.read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
+              '${ProviderScope.containerOf(context, listen: false).read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
           isPublicShare: true,
         ),
       ),
@@ -192,7 +217,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           mediaId: '0',
           mediaTitle: _parsePlayerExtra(state.extra).$3,
           mediaUrl:
-              '${ref.read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
+              '${ProviderScope.containerOf(context, listen: false).read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
           isPublicShare: true,
         ),
       ),
@@ -202,7 +227,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           mediaId: '0',
           mediaTitle: _parsePlayerExtra(state.extra).$3,
           imageUrl:
-              '${ref.read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
+              '${ProviderScope.containerOf(context, listen: false).read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
           isPublicShare: true,
         ),
       ),
@@ -385,27 +410,72 @@ final routerProvider = Provider<GoRouter>((ref) {
 /// [firstRunProvider], calling [notifyListeners] on every change so the router
 /// re-runs its redirect callback whenever auth state or first-run status settles.
 class _RouterRefreshNotifier extends ChangeNotifier {
-  _RouterRefreshNotifier(Ref ref) {
-    // Listen to auth state changes (login, logout, token expiry).
-    _authSubscription = ref.listen<AsyncValue<AuthState>>(
-      authStateProvider,
-      (_, __) => notifyListeners(),
-    );
-    // Listen to first-run state so the router re-evaluates after the initial
-    // user-count check resolves from loading to a concrete true/false value.
-    _firstRunSubscription = ref.listen<AsyncValue<bool>>(
-      firstRunProvider,
-      (_, __) => notifyListeners(),
+  _RouterRefreshNotifier(this._container) {
+    _settingsSubscription = _container.listen<AsyncValue<AppSettings>>(
+      settingsProvider,
+      (previous, next) {
+        _syncServerSubscriptions(next.valueOrNull);
+        final wasLocal =
+            previous?.valueOrNull?.destination == LibraryDestination.local;
+        if (wasLocal &&
+            next.valueOrNull?.destination == LibraryDestination.server) {
+          _initializeRestoredServerQueue();
+        }
+        notifyListeners();
+      },
+      fireImmediately: true,
     );
   }
 
-  late final ProviderSubscription<AsyncValue<AuthState>> _authSubscription;
-  late final ProviderSubscription<AsyncValue<bool>> _firstRunSubscription;
+  void _initializeRestoredServerQueue() {
+    if (!_container.read(serverProgressQueueLifecycleProvider) ||
+        !_container.exists(authStateProvider)) {
+      return;
+    }
+    final auth = _container.read(authStateProvider).valueOrNull;
+    if (auth?.isAuthenticated != true) return;
+    unawaited(
+      _container
+          .read(progressQueueProvider)
+          .init(
+            scope: ProgressScope(
+              origin: _container.read(playerBaseUrlProvider).origin,
+              userId: auth!.user!.id,
+            ),
+          )
+          .catchError((_) {}),
+    );
+  }
+
+  final ProviderContainer _container;
+  ProviderSubscription<AsyncValue<AppSettings>>? _settingsSubscription;
+  ProviderSubscription<AsyncValue<AuthState>>? _authSubscription;
+  ProviderSubscription<AsyncValue<bool>>? _firstRunSubscription;
+
+  void _syncServerSubscriptions(AppSettings? settings) {
+    if (settings?.destination == LibraryDestination.server) {
+      _authSubscription ??= _container.listen<AsyncValue<AuthState>>(
+        authStateProvider,
+        (_, __) => notifyListeners(),
+        fireImmediately: true,
+      );
+      _firstRunSubscription ??= _container.listen<AsyncValue<bool>>(
+        firstRunProvider,
+        (_, __) => notifyListeners(),
+      );
+    } else {
+      _authSubscription?.close();
+      _authSubscription = null;
+      _firstRunSubscription?.close();
+      _firstRunSubscription = null;
+    }
+  }
 
   @override
   void dispose() {
-    _authSubscription.close();
-    _firstRunSubscription.close();
+    _settingsSubscription?.close();
+    _authSubscription?.close();
+    _firstRunSubscription?.close();
     super.dispose();
   }
 }

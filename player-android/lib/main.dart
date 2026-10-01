@@ -59,25 +59,27 @@ void main() async {
   // Create the ProviderScope first so we can read providers before runApp.
   // The scope is then passed to PlayerAndroidApp so it is the single root.
   final container = ProviderContainer(
-    overrides: [audioHandlerProvider.overrideWithValue(handler)],
+    overrides: [
+      audioHandlerProvider.overrideWithValue(handler),
+      serverProgressQueueLifecycleProvider.overrideWithValue(true),
+    ],
   );
 
-  // Resolve the persisted origin before restoring credentials. The restore
-  // check binds the token to this origin and must never use the fallback URL.
+  // Resolve local/server selection before the router is created. A fresh local
+  // install never restores credentials or creates network services here.
   await container.read(settingsProvider.future);
-  // Restore the saved credential before protected screens or queued requests.
-  final auth = await container.read(authStateProvider.future);
-
-  // Initialise the offline progress queue (opens SQLite DB, subscribes to
-  // connectivity). Must be done before any player screen opens so that the
-  // queue is ready to accept enqueue calls immediately.
-  await container.read(progressQueueProvider).init(
-      scope: auth.isAuthenticated
-          ? ProgressScope(
+  if (container.read(settingsProvider).requireValue.destination ==
+      LibraryDestination.server) {
+    final auth = await container.read(authStateProvider.future);
+    if (auth.isAuthenticated) {
+      await container.read(progressQueueProvider).init(
+            scope: ProgressScope(
               origin: container.read(playerBaseUrlProvider).origin,
               userId: auth.user!.id,
-            )
-          : null);
+            ),
+          );
+    }
+  }
 
   runApp(
     UncontrolledProviderScope(

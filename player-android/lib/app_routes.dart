@@ -6,6 +6,7 @@
 abstract final class AppRoutes {
   static const login = '/login';
   static const home = '/home';
+  static const localLibrary = '/local';
   static const mediaDetail = '/media/:id';
   static const share = '/share';
 

@@ -125,6 +125,9 @@ class _FakeProgressQueue implements ProgressQueueBase {
   Future<void> resume(ProgressScope scope) async {}
 
   @override
+  Future<void> suspend() async {}
+
+  @override
   Future<void> enqueue(int mediaId, double positionSeconds) async {
     updates.add((mediaId, positionSeconds));
   }

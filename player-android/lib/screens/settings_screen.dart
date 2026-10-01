@@ -9,6 +9,7 @@ import '../providers/current_user_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/first_run_provider.dart';
 import '../providers/theme_provider.dart';
+import '../library_navigation.dart';
 
 /// Settings screen: editable server base URL, current username, and logout.
 ///
@@ -71,6 +72,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final url = _urlController.text.trim();
     try {
       parseServerBaseUrl(url);
+      final wasLocal = ref.read(settingsProvider).valueOrNull?.destination ==
+          LibraryDestination.local;
       setState(() {
         _isSavingUrl = true;
         _urlError = null;
@@ -81,7 +84,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (!mounted) return;
       ref.invalidate(firstRunProvider);
       FocusScope.of(context).unfocus();
-      if (widget.serverOnly) context.go(AppRoutes.home);
+      if (widget.serverOnly || wasLocal) context.go(AppRoutes.home);
     } on FormatException catch (e) {
       if (mounted) setState(() => _urlError = e.message);
     } catch (_) {
@@ -142,7 +145,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // value; [_urlInitialised] prevents clobbering an in-progress edit.
     settingsAsync.whenData((settings) {
       if (!_urlInitialised) {
-        _urlController.text = settings.serverBaseUrl;
+        _urlController.text = settings.serverBaseUrl ?? kPlayerBaseUrl;
         _urlInitialised = true;
       }
     });
@@ -167,7 +170,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
     }
 
-    final currentUser = ref.watch(currentUserProvider).valueOrNull;
+    final destination = settingsAsync.valueOrNull?.destination;
+    final currentUser = destination == LibraryDestination.server
+        ? ref.watch(currentUserProvider).valueOrNull
+        : null;
     final isAdmin = currentUser?.isAdmin ?? false;
 
     final username = currentUser?.username ?? '—';
@@ -180,125 +186,163 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ----------------------------------------------------------------
-              // Account section: signed-in username + logout.
-              // ----------------------------------------------------------------
-              Text(
-                'Account',
-                style: Theme.of(context).textTheme.titleMedium,
+              ListTile(
+                key: const Key('settings_local_library'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.phone_android),
+                title: const Text('On this device'),
+                subtitle: const Text('Switch to files stored on this device'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _openLocalLibrary,
               ),
-              const SizedBox(height: 12),
-
-              // Current username row.
-              Row(
-                children: [
-                  const Icon(Icons.person_outline),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Signed in as',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      Text(
-                        username,
-                        key: const Key('settings_username'),
-                        style: Theme.of(context).textTheme.bodyLarge,
-                      ),
-                    ],
+              if (destination != LibraryDestination.server)
+                ListTile(
+                  key: const Key('settings_connect_server'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.cloud_outlined),
+                  title: const Text('Connect to server'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push(AppRoutes.server),
+                ),
+              if (destination != LibraryDestination.server) ...[
+                const SizedBox(height: 24),
+                Text('Appearance',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                const _ThemeToggle(),
+                const SizedBox(height: 32),
+                if (settingsAsync.valueOrNull?.configurationError != null)
+                  Text(
+                    settingsAsync.valueOrNull!.configurationError!,
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
-                ],
-              ),
-              const SizedBox(height: 24),
+                _serverSection(context),
+              ] else ...[
+                // ----------------------------------------------------------------
+                // Account section: signed-in username + logout.
+                // ----------------------------------------------------------------
+                Text(
+                  'Account',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
 
-              // API Tokens tile — navigates to /settings/api-tokens.
-              // Available to all authenticated users (not admin-only) so they
-              // can manage their own Bearer tokens for external integrations.
-              ListTile(
-                key: const Key('settings_api_tokens'),
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.key_outlined),
-                title: const Text('API Tokens'),
-                subtitle: const Text('Create and revoke Bearer API tokens'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoutes.apiTokens),
-              ),
-
-              const SizedBox(height: 24),
-
-              // Logout button: shows a spinner while auth state is cleared.
-              _isLoggingOut
-                  ? const Center(child: CircularProgressIndicator())
-                  : OutlinedButton(
-                      key: const Key('settings_logout'),
-                      onPressed: _logout,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Theme.of(context).colorScheme.error,
-                        side: BorderSide(
-                          color: Theme.of(context).colorScheme.error,
+                // Current username row.
+                Row(
+                  children: [
+                    const Icon(Icons.person_outline),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Signed in as',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
-                      ),
-                      child: const Text('Log Out'),
+                        Text(
+                          username,
+                          key: const Key('settings_username'),
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ],
                     ),
+                  ],
+                ),
+                const SizedBox(height: 24),
 
-              const SizedBox(height: 32),
-              const Divider(),
-              const SizedBox(height: 24),
+                // API Tokens tile — navigates to /settings/api-tokens.
+                // Available to all authenticated users (not admin-only) so they
+                // can manage their own Bearer tokens for external integrations.
+                ListTile(
+                  key: const Key('settings_api_tokens'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.key_outlined),
+                  title: const Text('API Tokens'),
+                  subtitle: const Text('Create and revoke Bearer API tokens'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push(AppRoutes.apiTokens),
+                ),
 
-              // ----------------------------------------------------------------
-              // Server section: editable base URL.
-              // ----------------------------------------------------------------
-              _serverSection(context),
+                const SizedBox(height: 24),
 
-              const SizedBox(height: 32),
-              const Divider(),
-              const SizedBox(height: 24),
+                // Logout button: shows a spinner while auth state is cleared.
+                _isLoggingOut
+                    ? const Center(child: CircularProgressIndicator())
+                    : OutlinedButton(
+                        key: const Key('settings_logout'),
+                        onPressed: _logout,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Theme.of(context).colorScheme.error,
+                          side: BorderSide(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                        child: const Text('Log Out'),
+                      ),
 
-              // ----------------------------------------------------------------
-              // Appearance section: light / dark / system theme toggle.
-              // ----------------------------------------------------------------
-              Text(
-                'Appearance',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 32),
+                const Divider(),
+                const SizedBox(height: 24),
 
-              const _ThemeToggle(),
+                // ----------------------------------------------------------------
+                // Server section: editable base URL.
+                // ----------------------------------------------------------------
+                _serverSection(context),
 
-              const SizedBox(height: 32),
-              const Divider(),
-              const SizedBox(height: 24),
+                const SizedBox(height: 32),
+                const Divider(),
+                const SizedBox(height: 24),
 
-              // ----------------------------------------------------------------
-              // Sharing section: navigate to MyShares screen.
-              // ----------------------------------------------------------------
-              Text(
-                'Sharing',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 12),
+                // ----------------------------------------------------------------
+                // Appearance section: light / dark / system theme toggle.
+                // ----------------------------------------------------------------
+                Text(
+                  'Appearance',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
 
-              // My Shares tile — navigates to /shares.
-              ListTile(
-                key: const Key('settings_my_shares'),
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.link_outlined),
-                title: const Text('My Shares'),
-                subtitle: const Text('View and revoke your share links'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoutes.shares),
-              ),
+                const _ThemeToggle(),
 
-              // Admin section: only visible to admin users.
-              // Non-admin users are gated out here; the server enforces this
-              // independently via 403 responses, making this defence-in-depth.
-              if (isAdmin) const _AdminSection(),
+                const SizedBox(height: 32),
+                const Divider(),
+                const SizedBox(height: 24),
+
+                // ----------------------------------------------------------------
+                // Sharing section: navigate to MyShares screen.
+                // ----------------------------------------------------------------
+                Text(
+                  'Sharing',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+
+                // My Shares tile — navigates to /shares.
+                ListTile(
+                  key: const Key('settings_my_shares'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.link_outlined),
+                  title: const Text('My Shares'),
+                  subtitle: const Text('View and revoke your share links'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push(AppRoutes.shares),
+                ),
+
+                // Admin section: only visible to admin users.
+                // Non-admin users are gated out here; the server enforces this
+                // independently via 403 responses, making this defence-in-depth.
+                if (isAdmin) const _AdminSection(),
+              ],
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _openLocalLibrary() async {
+    await switchToLocalLibrary(ref, context);
   }
 
   Widget _serverSection(BuildContext context) => Column(

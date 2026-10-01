@@ -264,12 +264,14 @@ class _UnauthorizedInterceptor extends Interceptor {
     required String origin,
     required CredentialMutationQueue mutationQueue,
     Future<void> Function()? onUnauthorized,
+    bool Function()? shouldRedirectOnUnauthorized,
     String loginRoute = '/login',
   })  : _storage = storage,
         _navigatorKey = navigatorKey,
         _origin = origin,
         _mutationQueue = mutationQueue,
         _onUnauthorized = onUnauthorized,
+        _shouldRedirectOnUnauthorized = shouldRedirectOnUnauthorized,
         _loginRoute = loginRoute;
 
   // Private fields consistent with _AuthInterceptor naming conventions.
@@ -278,6 +280,7 @@ class _UnauthorizedInterceptor extends Interceptor {
   final String _origin;
   final CredentialMutationQueue _mutationQueue;
   final Future<void> Function()? _onUnauthorized;
+  final bool Function()? _shouldRedirectOnUnauthorized;
   final String _loginRoute;
 
   @override
@@ -340,7 +343,9 @@ class _UnauthorizedInterceptor extends Interceptor {
       // underlying Navigator.  Using the navigatorKey's currentContext lets us
       // resolve the active GoRouter instance without a widget-tree BuildContext.
       final ctx = _navigatorKey.currentContext;
-      if (ctx != null && ctx.mounted) {
+      if (ctx != null &&
+          ctx.mounted &&
+          (_shouldRedirectOnUnauthorized?.call() ?? true)) {
         GoRouter.of(ctx).go(_loginRoute);
       }
     }
@@ -361,6 +366,7 @@ class DioClient {
     required GlobalKey<NavigatorState> navigatorKey,
     CredentialMutationQueue? mutationQueue,
     Future<void> Function()? onUnauthorized,
+    bool Function()? shouldRedirectOnUnauthorized,
     String loginRoute = '/login',
     BaseOptions? baseOptions,
     CookieJar? cookieJar,
@@ -373,6 +379,7 @@ class DioClient {
       mutationQueue:
           mutationQueue ?? CredentialMutationQueue(credentialsEnabled: true),
       onUnauthorized: onUnauthorized,
+      shouldRedirectOnUnauthorized: shouldRedirectOnUnauthorized,
       loginRoute: loginRoute,
       baseOptions: baseOptions,
       cookieJar: jar,
@@ -402,6 +409,7 @@ class DioClient {
     required GlobalKey<NavigatorState> navigatorKey,
     required CredentialMutationQueue mutationQueue,
     Future<void> Function()? onUnauthorized,
+    bool Function()? shouldRedirectOnUnauthorized,
     required String loginRoute,
     BaseOptions? baseOptions,
     required CookieJar cookieJar,
@@ -426,6 +434,7 @@ class DioClient {
           origin: baseUrl.origin,
           mutationQueue: mutationQueue,
           onUnauthorized: onUnauthorized,
+          shouldRedirectOnUnauthorized: shouldRedirectOnUnauthorized,
           loginRoute: loginRoute,
         ),
       ]);

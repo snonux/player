@@ -343,6 +343,7 @@ void main() {
       );
 
       // Tap Save URL.
+      await tester.ensureVisible(find.byKey(const Key('settings_save_url')));
       await tester.tap(find.byKey(const Key('settings_save_url')));
       await tester.pumpAndSettle();
 
@@ -382,6 +383,7 @@ void main() {
 
       // Clear the field and tap Save.
       await tester.enterText(find.byKey(const Key('settings_base_url')), '');
+      await tester.ensureVisible(find.byKey(const Key('settings_save_url')));
       await tester.tap(find.byKey(const Key('settings_save_url')));
       await tester.pumpAndSettle();
 

@@ -7,6 +7,7 @@ import '../app_routes.dart';
 import '../api/dio_client.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
+import '../library_navigation.dart';
 import '../widgets/authenticated_network_image.dart';
 import '../utils/error_mappers.dart';
 
@@ -135,6 +136,15 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
           child: ListView(
             children: [
               const ListTile(title: Text('Library')),
+              ListTile(
+                key: const Key('server_switch_to_local'),
+                leading: const Icon(Icons.phone_android),
+                title: const Text('On this device'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await switchToLocalLibrary(ref, context);
+                },
+              ),
               for (final destination in [
                 (
                   Icons.history,

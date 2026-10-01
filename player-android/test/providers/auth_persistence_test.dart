@@ -214,6 +214,8 @@ class _PausingResumeQueue implements ProgressQueueBase {
   final resumeStarted = Completer<void>();
   final releaseResume = Completer<void>();
   bool suspended = false;
+  int suspendCalls = 0;
+  int clearCalls = 0;
 
   @override
   Future<void> init({ProgressScope? scope}) async {}
@@ -226,7 +228,16 @@ class _PausingResumeQueue implements ProgressQueueBase {
   }
 
   @override
-  Future<void> clearAndSuspend() async => suspended = true;
+  Future<void> suspend() async {
+    suspendCalls++;
+    suspended = true;
+  }
+
+  @override
+  Future<void> clearAndSuspend() async {
+    clearCalls++;
+    suspended = true;
+  }
 
   @override
   Future<void> enqueue(int mediaId, double positionSeconds) async {}
@@ -677,6 +688,31 @@ void main() {
         container.read(authStateProvider).valueOrNull?.isAuthenticated, isTrue);
   });
 
+  test('login suspends queued progress without clearing it before resume',
+      () async {
+    final queue = _PausingResumeQueue();
+    final api = _DelayedMintApiClient();
+    api.release.complete({'id': 7, 'token': 'pt-reconnected'});
+    final container = ProviderContainer(overrides: [
+      tokenStorageProvider.overrideWithValue(_MemoryTokenStorage()),
+      apiClientProvider.overrideWithValue(api),
+      progressQueueProvider.overrideWithValue(queue),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(authStateProvider.future);
+    container.read(progressQueueProvider);
+
+    const user = User(id: 1, username: 'alice', isAdmin: false);
+    final login = container.read(authStateProvider.notifier).login(user);
+    await queue.resumeStarted.future;
+
+    expect(queue.suspendCalls, 1);
+    expect(queue.clearCalls, 0);
+    queue.releaseResume.complete();
+    await login;
+    expect(queue.suspended, isFalse);
+  });
+
   test('logout during paused resume keeps progress sync suspended', () async {
     final storage = _MemoryTokenStorage();
     final queue = _PausingResumeQueue();
@@ -701,6 +737,33 @@ void main() {
     expect(storage.token, isNull);
     expect(container.read(authStateProvider).valueOrNull?.isUnauthenticated,
         isTrue);
+  });
+
+  test('late server 401 in local mode preserves queued server progress',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'server_base_url': 'https://player.example',
+      'library_destination': 'local',
+    });
+    final queue = _PausingResumeQueue();
+    final container = ProviderContainer(overrides: [
+      tokenStorageProvider.overrideWithValue(_MemoryTokenStorage()),
+      progressQueueProvider.overrideWithValue(queue),
+      cookieJarProvider.overrideWithValue(CookieJar()),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(authStateProvider.future);
+    container.read(progressQueueProvider);
+
+    final cleared =
+        await container.read(authStateProvider.notifier).clearAfterUnauthorized(
+              advanceGeneration: false,
+              preserveServerQueue: true,
+            );
+
+    expect(cleared, isTrue);
+    expect(queue.clearCalls, 0);
+    expect(queue.suspended, isFalse);
   });
 
   test('pending restore cannot re-enable bearer after logout starts', () async {

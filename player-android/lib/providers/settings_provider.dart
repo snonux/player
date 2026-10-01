@@ -1,21 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// SharedPreferences key for the server base URL setting.
 const _kBaseUrlKey = 'server_base_url';
-
-// Default base URL used when the user has not yet configured one.
-// Points to the local Android emulator loopback address so the app is
-// runnable out-of-the-box without any manual configuration.
-// Private: only referenced within this file; callers read the resolved URL
-// through [AppSettings.serverBaseUrl] obtained from [settingsProvider].
+const _kLibraryDestinationKey = 'library_destination';
+const _kLegacyAuthOriginKey = 'auth_origin';
 const kPlayerBaseUrl = String.fromEnvironment(
   'PLAYER_BASE_URL',
   defaultValue: 'http://10.0.2.2:8080',
 );
 
-/// Accept only a server origin. API paths are rooted at /api/v1 and a URL
-/// containing credentials, a path, or a query would be misleading or unsafe.
 Uri parseServerBaseUrl(String value) {
   final uri = Uri.tryParse(value.trim());
   if (uri == null ||
@@ -31,79 +24,114 @@ Uri parseServerBaseUrl(String value) {
   return Uri.parse(uri.origin);
 }
 
-/// Immutable snapshot of persisted app settings.
-///
-/// Keeping settings as a value object means every state change produces a new
-/// instance, which plays well with Riverpod's equality-based rebuild suppression
-/// and keeps the notifier's contract straightforward.
-class AppSettings {
-  const AppSettings({required this.serverBaseUrl});
+enum LibraryDestination { local, server }
 
-  /// The base URL of the player-server API (e.g. "https://player.example.com").
-  final String serverBaseUrl;
+class AppSettings {
+  const AppSettings({
+    required this.serverBaseUrl,
+    this.destination = LibraryDestination.server,
+    this.configurationError,
+  });
+
+  final String? serverBaseUrl;
+  final LibraryDestination destination;
+  final String? configurationError;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is AppSettings &&
           runtimeType == other.runtimeType &&
-          serverBaseUrl == other.serverBaseUrl;
+          serverBaseUrl == other.serverBaseUrl &&
+          destination == other.destination &&
+          configurationError == other.configurationError;
 
   @override
-  int get hashCode => serverBaseUrl.hashCode;
+  int get hashCode =>
+      Object.hash(serverBaseUrl, destination, configurationError);
 
   @override
-  String toString() => 'AppSettings(serverBaseUrl: $serverBaseUrl)';
+  String toString() =>
+      'AppSettings(serverBaseUrl: $serverBaseUrl, destination: $destination)';
 }
 
-/// Manages persisted app settings via [SharedPreferences].
-///
-/// Uses [AsyncNotifier] because the initial state load is async (disk read).
-/// After initialisation, [setServerBaseUrl] validates and persists the new
-/// origin before publishing it to API consumers.
-///
-/// Design notes (SRP / ISP):
-///   - This notifier owns only settings persistence; auth is handled separately
-///     by [AuthStateNotifier] to maintain single responsibility.
-///   - [SharedPreferences] is created internally rather than injected because
-///     it is a platform singleton; tests override the entire provider via
-///     [ProviderScope] overrides instead.
 class SettingsNotifier extends AsyncNotifier<AppSettings> {
   @override
   Future<AppSettings> build() async {
-    // Load persisted settings from disk on first access.  The platform
-    // SharedPreferences instance is a singleton; obtaining it here is cheap
-    // because subsequent calls return the cached instance.
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_kBaseUrlKey);
-    try {
-      return AppSettings(
-          serverBaseUrl:
-              parseServerBaseUrl(saved ?? kPlayerBaseUrl).toString());
-    } on FormatException {
-      return AppSettings(
-          serverBaseUrl: parseServerBaseUrl(kPlayerBaseUrl).toString());
+    final selected = prefs.getString(_kLibraryDestinationKey);
+    String? origin;
+    String? error;
+    var hasConfiguredOrigin = false;
+
+    if (saved != null) {
+      try {
+        origin = parseServerBaseUrl(saved).toString();
+        hasConfiguredOrigin = true;
+      } on FormatException catch (e) {
+        error = e.message;
+      }
+    } else {
+      // Older installs stored the origin only alongside auth state. Preserve
+      // it even when credentials expired so the user can sign in again.
+      final legacyOrigin = prefs.getString(_kLegacyAuthOriginKey);
+      if (legacyOrigin != null) {
+        try {
+          origin = parseServerBaseUrl(legacyOrigin).toString();
+          hasConfiguredOrigin = true;
+          await prefs.setString(_kBaseUrlKey, origin);
+        } on FormatException {
+          error = 'Saved server address is invalid.';
+        }
+      }
     }
+
+    final destination = switch (selected) {
+      'local' => LibraryDestination.local,
+      'server' => LibraryDestination.server,
+      _ => hasConfiguredOrigin
+          ? LibraryDestination.server
+          : LibraryDestination.local,
+    };
+    // Repeating this write after an interrupted migration is harmless.
+    await prefs.setString(_kLibraryDestinationKey,
+        destination == LibraryDestination.server ? 'server' : 'local');
+    return AppSettings(
+      serverBaseUrl: origin,
+      destination: error == null ? destination : LibraryDestination.local,
+      configurationError: error,
+    );
   }
 
-  /// Persists [url] as the new server base URL and updates the in-memory state.
-  ///
-  /// The UI calls this when the user edits the URL field and submits.  The
-  /// async write to [SharedPreferences] is awaited so that a subsequent cold
-  /// start and current API consumers agree on the same origin.
   Future<void> setServerBaseUrl(String url) async {
     final normalized = parseServerBaseUrl(url).toString();
     final prefs = await SharedPreferences.getInstance();
-    if (!await prefs.setString(_kBaseUrlKey, normalized)) {
+    if (!await prefs.setString(_kBaseUrlKey, normalized) ||
+        !await prefs.setString(_kLibraryDestinationKey, 'server')) {
       throw StateError('Could not save server address');
     }
-    state = AsyncData(AppSettings(serverBaseUrl: normalized));
+    state = AsyncData(AppSettings(
+      serverBaseUrl: normalized,
+      destination: LibraryDestination.server,
+    ));
+  }
+
+  Future<void> selectDestination(LibraryDestination destination) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setString(_kLibraryDestinationKey,
+        destination == LibraryDestination.server ? 'server' : 'local')) {
+      throw StateError('Could not save library selection');
+    }
+    final current = await future;
+    state = AsyncData(AppSettings(
+      serverBaseUrl: current.serverBaseUrl,
+      destination: destination,
+      configurationError: current.configurationError,
+    ));
   }
 }
 
-/// The single source of truth for persisted app settings.
-///
-/// The same setting feeds authenticated, public, and media clients.
 final settingsProvider = AsyncNotifierProvider<SettingsNotifier, AppSettings>(
   SettingsNotifier.new,
 );

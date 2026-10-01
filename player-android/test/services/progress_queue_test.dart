@@ -522,6 +522,24 @@ void main() {
     await queue.dispose();
   });
 
+  test('library suspension preserves server progress for the same account',
+      () async {
+    final (:queue, :client, :conn) = await _makeQueue();
+    await queue.enqueue(42, 12.5);
+    await queue.suspend();
+    conn.emitStatus([ConnectivityResult.wifi]);
+    await _pump();
+    expect(client.calls, isEmpty);
+
+    await queue.resume(_scopeA);
+    conn.emitStatus([ConnectivityResult.wifi]);
+    await _pump();
+    expect(client.calls, hasLength(1));
+    expect(client.calls.single.single['media_id'], 42);
+    await queue.dispose();
+    conn.close();
+  });
+
   test('in-flight enqueue is removed before a new account resumes', () async {
     final delegate = await _openInMemoryDb();
     final db = _DelayedInsertDatabase(delegate);
