@@ -43,6 +43,7 @@ void main() {
         title: 'Track one',
         mimeType: 'audio/mpeg',
         sizeBytes: 1234,
+        ownsPersistedReadGrant: true,
       );
       await media.markOpened(added.id, at: DateTime.utc(2026, 10, 1, 12));
       await progress.savePosition(added.id, 32.5);
@@ -57,6 +58,7 @@ void main() {
       expect(loadedMedia!.uri, 'content://documents/audio/one');
       expect(loadedMedia.lastOpenedAt, DateTime.utc(2026, 10, 1, 12));
       expect(loadedMedia.durationMs, isNull);
+      expect(loadedMedia.ownsPersistedReadGrant, isTrue);
       expect(loadedProgress!.positionSeconds, 32.5);
       expect(loadedProgress.finished, isFalse);
       await reopened.close();
@@ -89,6 +91,26 @@ void main() {
     expect(duplicate.title, 'Original title');
     expect(different.id, isNot(first.id));
     expect(await media.list(), hasLength(2));
+    await library.close();
+  });
+
+  test('reimporting a URI with queued cleanup retains grant ownership',
+      () async {
+    final library = LocalLibraryDatabase(databasePath: inMemoryDatabasePath);
+    final media = SqliteLocalMediaRepository(library);
+    final cleanup = SqliteLocalGrantCleanupRepository(library);
+    const uri = 'content://provider/reimport';
+    await cleanup.scheduleRelease(uri);
+
+    final added = await media.importDocument(
+      uri: uri,
+      title: 'Reimported',
+      mimeType: 'audio/mpeg',
+      ownsPersistedReadGrant: false,
+    );
+
+    expect(added.ownsPersistedReadGrant, isTrue);
+    expect(await cleanup.pendingUris(), isEmpty);
     await library.close();
   });
 
@@ -312,10 +334,13 @@ void main() {
       final migratedProgress =
           await SqliteLocalProgressRepository(current).get(id);
       expect(migratedMedia!.lastOpenedAt, isNull);
+      expect(migratedMedia.ownsPersistedReadGrant, isFalse);
       expect(migratedProgress!.positionSeconds, 4.5);
       final version =
           await (await current.database).rawQuery('PRAGMA user_version');
-      expect(version.single['user_version'], 2);
+      expect(version.single['user_version'], 4);
+      expect(await SqliteLocalGrantCleanupRepository(current).pendingUris(),
+          isEmpty);
       await current.close();
     } finally {
       await directory.delete(recursive: true);

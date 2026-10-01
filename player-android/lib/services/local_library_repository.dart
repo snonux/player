@@ -5,9 +5,10 @@ import 'package:sqflite/sqflite.dart';
 import '../models/local_media.dart';
 
 const _databaseName = 'local_library.db';
-const _databaseVersion = 2;
+const _databaseVersion = 4;
 const _mediaTable = 'local_media';
 const _progressTable = 'local_progress';
+const _grantCleanupTable = 'local_grant_cleanup';
 
 /// Owns the separate SQLite database used only by the on-device library.
 /// Writes are serialized across repositories so a delayed progress callback
@@ -68,7 +69,8 @@ class LocalLibraryDatabase {
         size_bytes INTEGER,
         duration_ms INTEGER,
         added_at INTEGER NOT NULL,
-        last_opened_at INTEGER
+        last_opened_at INTEGER,
+        owns_read_grant INTEGER NOT NULL DEFAULT 0
       )
     ''');
     await db.execute('''
@@ -81,6 +83,7 @@ class LocalLibraryDatabase {
           ON DELETE CASCADE
       )
     ''');
+    await _createGrantCleanupSchema(db);
   }
 
   static Future<void> _createVersionOneSchema(DatabaseExecutor db) async {
@@ -118,7 +121,23 @@ class LocalLibraryDatabase {
         'ALTER TABLE $_mediaTable ADD COLUMN last_opened_at INTEGER',
       );
     }
+    if (oldVersion < 3 && newVersion >= 3) {
+      await db.execute('''
+        ALTER TABLE $_mediaTable ADD COLUMN owns_read_grant INTEGER NOT NULL DEFAULT 0
+      ''');
+    }
+    if (oldVersion < 4 && newVersion >= 4) {
+      await _createGrantCleanupSchema(db);
+    }
   }
+
+  static Future<void> _createGrantCleanupSchema(DatabaseExecutor db) =>
+      db.execute('''
+        CREATE TABLE $_grantCleanupTable (
+          uri TEXT PRIMARY KEY,
+          scheduled_at INTEGER NOT NULL
+        )
+      ''');
 }
 
 /// Metadata operations for device documents. Implementations must keep imports
@@ -135,6 +154,7 @@ abstract interface class LocalMediaRepository {
     required String mimeType,
     int? sizeBytes,
     int? durationMs,
+    bool ownsPersistedReadGrant = false,
   });
 
   /// Replaces metadata and URI while retaining the local record ID.
@@ -145,6 +165,8 @@ abstract interface class LocalMediaRepository {
     required String mimeType,
     int? sizeBytes,
     int? durationMs,
+    bool retainProgress = true,
+    bool? ownsPersistedReadGrant,
   });
 
   Future<bool> markOpened(int id, {DateTime? at});
@@ -165,6 +187,55 @@ abstract interface class LocalProgressRepository {
   Future<bool> markFinished(int localMediaId);
 
   Future<bool> clear(int localMediaId);
+}
+
+/// Durable retry queue for Android URI grants that the library no longer
+/// references but the OS did not release on the first attempt.
+abstract interface class LocalGrantCleanupRepository {
+  Future<List<String>> pendingUris();
+  Future<void> scheduleRelease(String uri);
+  Future<void> forget(String uri);
+}
+
+class SqliteLocalGrantCleanupRepository implements LocalGrantCleanupRepository {
+  SqliteLocalGrantCleanupRepository(this._database);
+
+  final LocalLibraryDatabase _database;
+
+  @override
+  Future<List<String>> pendingUris() async {
+    final rows = await (await _database.database).query(
+      _grantCleanupTable,
+      columns: ['uri'],
+      orderBy: 'scheduled_at ASC',
+    );
+    return rows.map((row) => row['uri'] as String).toList(growable: false);
+  }
+
+  @override
+  Future<void> scheduleRelease(String uri) async {
+    await _database.write((transaction) async {
+      await transaction.insert(
+        _grantCleanupTable,
+        {
+          'uri': uri,
+          'scheduled_at': DateTime.now().toUtc().millisecondsSinceEpoch
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+  }
+
+  @override
+  Future<void> forget(String uri) async {
+    await _database.write((transaction) async {
+      await transaction.delete(
+        _grantCleanupTable,
+        where: 'uri = ?',
+        whereArgs: [uri],
+      );
+    });
+  }
 }
 
 class SqliteLocalMediaRepository implements LocalMediaRepository {
@@ -210,16 +281,48 @@ class SqliteLocalMediaRepository implements LocalMediaRepository {
     required String mimeType,
     int? sizeBytes,
     int? durationMs,
+    bool ownsPersistedReadGrant = false,
   }) async {
     _validateDocument(uri, title, mimeType, sizeBytes, durationMs);
     return _database.write((transaction) async {
+      final pendingGrant = await transaction.query(
+        _grantCleanupTable,
+        columns: ['uri'],
+        where: 'uri = ?',
+        whereArgs: [uri],
+        limit: 1,
+      );
+      final ownsGrant = ownsPersistedReadGrant || pendingGrant.isNotEmpty;
       final existing = await transaction.query(
         _mediaTable,
         where: 'uri = ?',
         whereArgs: [uri],
         limit: 1,
       );
-      if (existing.isNotEmpty) return _mediaFromRow(existing.single);
+      if (existing.isNotEmpty) {
+        final row = existing.single;
+        await transaction.delete(
+          _grantCleanupTable,
+          where: 'uri = ?',
+          whereArgs: [uri],
+        );
+        if (ownsGrant && (row['owns_read_grant'] as int) == 0) {
+          await transaction.update(
+            _mediaTable,
+            {'owns_read_grant': 1},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+          return _mediaFromRow((await transaction.query(
+            _mediaTable,
+            where: 'id = ?',
+            whereArgs: [row['id']],
+            limit: 1,
+          ))
+              .single);
+        }
+        return _mediaFromRow(row);
+      }
 
       final now = DateTime.now().toUtc();
       final id = await transaction.insert(_mediaTable, {
@@ -229,7 +332,13 @@ class SqliteLocalMediaRepository implements LocalMediaRepository {
         'size_bytes': sizeBytes,
         'duration_ms': durationMs,
         'added_at': now.millisecondsSinceEpoch,
+        'owns_read_grant': ownsGrant ? 1 : 0,
       });
+      await transaction.delete(
+        _grantCleanupTable,
+        where: 'uri = ?',
+        whereArgs: [uri],
+      );
       return _mediaFromRow((await transaction.query(
         _mediaTable,
         where: 'id = ?',
@@ -248,6 +357,8 @@ class SqliteLocalMediaRepository implements LocalMediaRepository {
     required String mimeType,
     int? sizeBytes,
     int? durationMs,
+    bool retainProgress = true,
+    bool? ownsPersistedReadGrant,
   }) async {
     _validateDocument(uri, title, mimeType, sizeBytes, durationMs);
     return _database.write((transaction) async {
@@ -264,6 +375,29 @@ class SqliteLocalMediaRepository implements LocalMediaRepository {
         throw StateError('That document is already in the local library');
       }
 
+      if (record['uri'] != uri && (record['owns_read_grant'] as int) != 0) {
+        await transaction.insert(
+          _grantCleanupTable,
+          {
+            'uri': record['uri'],
+            'scheduled_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      final pendingGrant = await transaction.query(
+        _grantCleanupTable,
+        columns: ['uri'],
+        where: 'uri = ?',
+        whereArgs: [uri],
+        limit: 1,
+      );
+      await transaction.delete(
+        _grantCleanupTable,
+        where: 'uri = ?',
+        whereArgs: [uri],
+      );
+
       await transaction.update(
         _mediaTable,
         {
@@ -272,10 +406,23 @@ class SqliteLocalMediaRepository implements LocalMediaRepository {
           'mime_type': mimeType,
           'size_bytes': sizeBytes,
           'duration_ms': durationMs,
+          'owns_read_grant': ((ownsPersistedReadGrant ??
+                      (record['uri'] == uri &&
+                          (record['owns_read_grant'] as int) != 0)) ||
+                  pendingGrant.isNotEmpty)
+              ? 1
+              : 0,
         },
         where: 'id = ?',
         whereArgs: [id],
       );
+      if (!retainProgress) {
+        await transaction.delete(
+          _progressTable,
+          where: 'local_media_id = ?',
+          whereArgs: [id],
+        );
+      }
       if (durationMs != null) await _clampProgress(transaction, id, durationMs);
       return _mediaFromRow((await _mediaRow(transaction, id))!);
     });
@@ -317,6 +464,18 @@ class SqliteLocalMediaRepository implements LocalMediaRepository {
 
   @override
   Future<bool> remove(int id) => _database.write((transaction) async {
+        final record = await _mediaRow(transaction, id);
+        if (record == null) return false;
+        if ((record['owns_read_grant'] as int) != 0) {
+          await transaction.insert(
+            _grantCleanupTable,
+            {
+              'uri': record['uri'],
+              'scheduled_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
         final removed = await transaction.delete(
           _mediaTable,
           where: 'id = ?',
@@ -451,6 +610,7 @@ LocalMedia _mediaFromRow(Map<String, Object?> row) => LocalMedia(
       uri: row['uri'] as String,
       title: row['title'] as String,
       mimeType: row['mime_type'] as String,
+      ownsPersistedReadGrant: (row['owns_read_grant'] as int? ?? 0) != 0,
       sizeBytes: row['size_bytes'] as int?,
       durationMs: row['duration_ms'] as int?,
       addedAt: _dateFromEpoch(row['added_at'] as int),

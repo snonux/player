@@ -7,6 +7,7 @@ class LocalMedia {
     required this.title,
     required this.mimeType,
     required this.addedAt,
+    this.ownsPersistedReadGrant = false,
     this.sizeBytes,
     this.durationMs,
     this.lastOpenedAt,
@@ -16,6 +17,7 @@ class LocalMedia {
   final String uri;
   final String title;
   final String mimeType;
+  final bool ownsPersistedReadGrant;
   final int? sizeBytes;
   final int? durationMs;
   final DateTime addedAt;

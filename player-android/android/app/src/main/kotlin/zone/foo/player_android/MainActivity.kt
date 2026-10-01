@@ -65,6 +65,14 @@ class MainActivity : AudioServiceActivity() {
                         }
                     }
                 }
+                "checkReadable" -> {
+                    val rawUri = call.argument<String>("uri")
+                    if (rawUri == null) {
+                        result.error("invalid_uri", "URI is required", null)
+                    } else {
+                        result.success(isDocumentReadable(Uri.parse(rawUri)))
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -81,8 +89,9 @@ class MainActivity : AudioServiceActivity() {
             return
         }
         val readGrant = data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
-        if (readGrant == 0) {
-            callback.error("grant_failed", "Picker did not grant read access", null)
+        val persistableGrant = data.flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+        if (readGrant == 0 || persistableGrant == 0) {
+            callback.error("grant_failed", "Picker did not grant persistent read access", null)
             return
         }
         val alreadyPersisted = contentResolver.persistedUriPermissions.any {
@@ -94,10 +103,24 @@ class MainActivity : AudioServiceActivity() {
                 contentResolver.takePersistableUriPermission(uri, readGrant)
                 acquiredPersistedReadGrant = true
             }
+            // Metadata is best-effort: providers may omit name, size, or type
+            // while still returning a readable document URI.
+            val metadata = try {
+                documentMetadata(uri)
+            } catch (_: Exception) {
+                null to null
+            }
+            val mimeType = try {
+                contentResolver.getType(uri)
+            } catch (_: Exception) {
+                null
+            }
             callback.success(mapOf(
                 "uri" to uri.toString(),
-                "name" to displayName(uri),
-                "mimeType" to contentResolver.getType(uri)
+                "name" to metadata.first,
+                "mimeType" to mimeType,
+                "sizeBytes" to metadata.second,
+                "newPersistedReadGrant" to acquiredPersistedReadGrant
             ))
         } catch (error: Exception) {
             if (acquiredPersistedReadGrant) {
@@ -109,10 +132,30 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
-    private fun displayName(uri: Uri): String? = contentResolver.query(
-        uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+    private fun documentMetadata(uri: Uri): Pair<String?, Long?> = contentResolver.query(
+        uri,
+        arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+        null,
+        null,
+        null
     )?.use { cursor ->
-        if (cursor.moveToFirst()) cursor.getString(0) else null
+        if (!cursor.moveToFirst()) return@use null to null
+        val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        val sizeColumn = cursor.getColumnIndex(OpenableColumns.SIZE)
+        val name = if (nameColumn >= 0) cursor.getString(nameColumn) else null
+        val size = if (sizeColumn >= 0 && !cursor.isNull(sizeColumn)) {
+            cursor.getLong(sizeColumn).takeIf { it >= 0 }
+        } else {
+            null
+        }
+        name to size
+    } ?: (null to null)
+
+    private fun isDocumentReadable(uri: Uri): Boolean = try {
+        contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+    } catch (_: Exception) {
+        // Revoked grants and disconnected providers can be repaired or removed.
+        false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -12,6 +12,7 @@ import 'package:player_android/providers/first_run_provider.dart';
 import 'package:player_android/providers/public_api_client_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
+import 'package:player_android/providers/local_library_provider.dart';
 import 'package:player_android/router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -189,6 +190,7 @@ void main() {
     var authBuilds = 0;
     var firstRunBuilds = 0;
     final container = ProviderContainer(overrides: [
+      localMediaListProvider.overrideWith((ref) async => []),
       authStateProvider
           .overrideWith(() => _CountingUnauthenticated(() => authBuilds++)),
       firstRunProvider.overrideWith((ref) async {
