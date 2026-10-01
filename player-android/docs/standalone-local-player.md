@@ -131,6 +131,10 @@ copy entire files into memory or a cache if URI playback fails. A bounded,
 disk-backed import would be a separate fallback design with storage limits and
 cleanup rules. No decoder/plugin upgrades are assumed by this plan.
 
+The emulator compatibility check and its limitations are recorded in
+[`content-uri-compatibility.md`](content-uri-compatibility.md). Physical-device
+and removable-storage checks remain open.
+
 Store local records in a separate SQLite database using the existing sqflite
 dependency. A minimal schema contains `local_media` (stable generated ID,
 unique URI, display name, MIME type, optional size/duration, added/last-opened
