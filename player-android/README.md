@@ -15,6 +15,9 @@ flutter build apk --debug
 
 The REST API contract lives in [../player-server/docs/api.md](../player-server/docs/api.md).
 
+The [standalone local playback plan](docs/standalone-local-player.md) describes
+proposed support for playing device files without a configured server.
+
 ## Install from F-Droid
 
 Add the [snonux F-Droid repository](https://github.com/snonux/fdroid) to the
