@@ -78,7 +78,8 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
 // State
 // ---------------------------------------------------------------------------
 
-class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
+class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
+    with WidgetsBindingObserver {
   // Nullable until initialisation completes (or fails).
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
@@ -110,6 +111,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Defer initialisation so all Riverpod provider overrides are applied
     // before we read from [ref] (important for widget tests).
     WidgetsBinding.instance.addPostFrameCallback((_) => _initPlayer());
@@ -137,7 +139,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Do not replace durable resume with the initial position during setup.
+    if (_isLoading || state == AppLifecycleState.resumed) return;
+    final request = _activeRequest;
+    final lease = _sessionLease;
+    if (request != null && lease?.isCurrent == true) {
+      unawaited(_recordProgress(request, lease: lease, force: true));
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _disposing = true;
     _progressTimer?.cancel();
     final lease = _sessionLease;

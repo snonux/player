@@ -119,3 +119,30 @@ of physical-device testing. Notification buttons and lock-screen gestures were
 not tapped directly; background control was verified through Android's media
 session commands. Physical devices and other document providers remain outside
 this emulator result.
+
+## Production local video result (2026-10-02)
+
+Tested the regular debug APK on the same API 34 emulator with a disposable
+90-second H.264/AAC MP4 selected through **Add files → Choose video**. Airplane
+mode remained enabled, with Wi-Fi/mobile data disabled.
+
+- The production content-URI player rendered the moving test pattern. Chewie
+  showed its play/pause, skip, seek bar, mute, and full-screen controls and the
+  expected 1:30 duration.
+- Periodic progress appeared in the real local database (for example, 17.345
+  seconds). Sending the app Home saved 83.436 seconds, before the completion
+  threshold, while the Android video plugin paused background video.
+- A repeatable restart check saved 23.898 seconds, force-stopped/relaunched the
+  app, opened the same durable library entry, and saved 26.600 seconds after
+  playing briefly. This verifies actual video resume and persisted URI access.
+- Deleting the disposable source after leaving the video screen and reopening
+  its entry produced a playback error with **Retry**. The source was restored
+  from the temporary fixture afterward. No media file is part of the repository.
+
+The lifecycle regressions separately verify that background transitions do not
+save zero while durable resume is still loading, that a ready controller saves
+its fractional position, and that disposed sources do not write again. Existing
+native-platform-stub tests cover initialization failures, disposal barriers,
+unknown duration/completion, stale ownership, local dependency isolation, and
+remote/public source construction. These automated checks do not establish
+compatibility with every physical device, provider, storage volume, or codec.

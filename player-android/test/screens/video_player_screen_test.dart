@@ -500,6 +500,117 @@ void main() {
     });
   }
 
+  testWidgets('video lifecycle does not overwrite pending durable resume',
+      (tester) async {
+    final previousPlatform = VideoPlayerPlatform.instance;
+    final platform = _PlayableVideoPlatform();
+    VideoPlayerPlatform.instance = platform;
+    addTearDown(() async {
+      VideoPlayerPlatform.instance = previousPlatform;
+      await platform.events.close();
+    });
+    final resume = Completer<double?>();
+    final positions = <double>[];
+    var readingResume = false;
+    await _pumpScreen(
+      tester,
+      _FakeApiClient(),
+      forbidServerDependencies: true,
+      request: LocalPlaybackRequest(
+        localMediaId: 92,
+        sourceUri: Uri.parse('content://provider/video/92'),
+        title: 'Resuming movie',
+        readPosition: () {
+          readingResume = true;
+          return resume.future;
+        },
+        savePosition: (seconds) async => positions.add(seconds),
+        markFinished: () async {},
+      ),
+    );
+    for (var attempt = 0; attempt < 100 && !readingResume; attempt++) {
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+    }
+    expect(readingResume, isTrue);
+    expect(platform.position, Duration.zero);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(positions, isEmpty);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    resume.complete(23);
+    await tester.pumpAndSettle();
+    expect(platform.position, const Duration(seconds: 23));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(positions, [23]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets(
+      'local video lifecycle flushes partial progress and excludes stale sources',
+      (tester) async {
+    final previousPlatform = VideoPlayerPlatform.instance;
+    final platform = _PlayableVideoPlatform();
+    VideoPlayerPlatform.instance = platform;
+    addTearDown(() async {
+      VideoPlayerPlatform.instance = previousPlatform;
+      await platform.events.close();
+    });
+    final positions = <double>[];
+    final coordinator = PlaybackSessionCoordinator();
+    await _pumpScreen(
+      tester,
+      _FakeApiClient(),
+      forbidServerDependencies: true,
+      coordinator: coordinator,
+      request: LocalPlaybackRequest(
+        localMediaId: 91,
+        sourceUri: Uri.parse('content://provider/video/91'),
+        title: 'Local movie',
+        savePosition: (seconds) async => positions.add(seconds),
+        markFinished: () async {},
+      ),
+    );
+    await tester.pumpAndSettle();
+    platform.position = const Duration(milliseconds: 12300);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    final before = positions.length;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(positions.skip(before), [12.3]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(positions.length, before + 1);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    for (var attempt = 0;
+        attempt < 100 &&
+            coordinator.isLocalSourceInUse('content://provider/video/91');
+        attempt++) {
+      await tester.pump();
+      await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    }
+    expect(platform.disposeCalls, 1);
+    expect(
+        coordinator.isLocalSourceInUse('content://provider/video/91'), isFalse);
+    final afterDispose = positions.length;
+    platform.position = const Duration(seconds: 88);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(positions.length, afterDispose);
+    expect(platform.disposeCalls, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
   testWidgets('local video uses content URI without server providers',
       (tester) async {
     final previousPlatform = VideoPlayerPlatform.instance;
