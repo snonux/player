@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/local_library_provider.dart';
+import 'package:player_android/providers/playback_session_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/screens/audio_player_screen.dart';
 import 'package:player_android/screens/local_playback_route.dart';
@@ -49,6 +51,11 @@ class _ReadyPlayer extends AudioPlayer {
   @override
   Future<void> play() async {
     isPlaying = true;
+  }
+
+  @override
+  Future<void> pause() async {
+    isPlaying = false;
   }
 
   @override
@@ -93,6 +100,111 @@ void main() {
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+  });
+
+  testWidgets(
+      'local audio survives database reopen without server dependencies',
+      (tester) async {
+    final directory = (await tester
+        .runAsync(() => Directory.systemTemp.createTemp('player-local-')))!;
+    final path = '${directory.path}/library.sqlite';
+    Future<void> finishWrite(Future<void> operation) async {
+      var finished = false;
+      final completion = operation.whenComplete(() => finished = true);
+      for (var attempt = 0; attempt < 100 && !finished; attempt++) {
+        await tester.pump(const Duration(milliseconds: 1));
+        await tester.runAsync(
+            () async => Future<void>.delayed(const Duration(milliseconds: 10)));
+      }
+      expect(finished, isTrue, reason: 'SQLite progress write must finish');
+      await completion;
+    }
+
+    ProviderContainer scopeFor(
+            LocalLibraryDatabase database, PlayerAudioHandler handler) =>
+        ProviderContainer(overrides: [
+          localLibraryDatabaseProvider.overrideWithValue(database),
+          audioHandlerProvider.overrideWithValue(handler),
+          apiClientProvider
+              .overrideWith((_) => throw StateError('Server API read')),
+          progressQueueProvider
+              .overrideWith((_) => throw StateError('Server queue read')),
+          tokenStorageProvider
+              .overrideWith((_) => throw StateError('Server token read')),
+        ]);
+    final firstDatabase = LocalLibraryDatabase(databasePath: path);
+    final firstPlayer = _ReadyPlayer();
+    final firstHandler = PlayerAudioHandler(firstPlayer);
+    final firstScope = scopeFor(firstDatabase, firstHandler);
+    var firstDisposed = false;
+    var firstClosed = false;
+    addTearDown(() async {
+      await tester.runAsync(firstHandler.stop);
+      if (!firstDisposed) firstScope.dispose();
+      if (!firstClosed) await tester.runAsync(firstDatabase.close);
+      await tester.runAsync(() => directory.delete(recursive: true));
+    });
+    final item = (await tester.runAsync(() => firstScope
+        .read(localMediaRepositoryProvider)
+        .importDocument(
+            uri: 'content://provider/persisted',
+            title: 'Persistent track',
+            mimeType: 'audio/mpeg')))!;
+    await _showRoute(tester, firstScope, item.id);
+    for (var attempt = 0; attempt < 100 && !firstPlayer.isPlaying; attempt++) {
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    expect(firstPlayer.isPlaying, isTrue);
+    firstPlayer.elapsed = const Duration(milliseconds: 12300);
+    await finishWrite(firstHandler.pause());
+    final saved = await tester.runAsync(
+        () => firstScope.read(localProgressRepositoryProvider).get(item.id));
+    expect(saved!.positionSeconds, 12.3);
+    expect(saved.finished, isFalse);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await finishWrite(
+        firstScope.read(playbackSessionCoordinatorProvider).stopCurrent());
+    await tester.runAsync(firstDatabase.close);
+    firstClosed = true;
+    firstScope.dispose();
+    firstDisposed = true;
+
+    final reopenedDatabase = LocalLibraryDatabase(databasePath: path);
+    final resumedPlayer = _ReadyPlayer();
+    final resumedHandler = PlayerAudioHandler(resumedPlayer);
+    final resumedScope = scopeFor(reopenedDatabase, resumedHandler);
+    addTearDown(() async {
+      await tester.runAsync(resumedHandler.stop);
+      resumedScope.dispose();
+      await tester.runAsync(reopenedDatabase.close);
+    });
+    await _showRoute(tester, resumedScope, item.id);
+    for (var attempt = 0;
+        attempt < 100 && !resumedPlayer.isPlaying;
+        attempt++) {
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    expect(resumedPlayer.isPlaying, isTrue);
+    expect(resumedPlayer.elapsed, const Duration(milliseconds: 12300));
+    final source = resumedPlayer.loadedSource as UriAudioSource;
+    expect(source.uri.toString(), item.uri);
+    expect(source.headers, isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await finishWrite(
+        resumedScope.read(playbackSessionCoordinatorProvider).stopCurrent());
+    await tester.runAsync(
+        () => resumedScope.read(localMediaRepositoryProvider).remove(item.id));
+    resumedScope.invalidate(localMediaByIdProvider(item.id));
+    await _showRoute(tester, resumedScope, item.id);
+    expect(find.text('This item is no longer in the local library.'),
+        findsOneWidget);
+    expect(find.byType(AudioPlayerScreen), findsNothing);
+    expect(resumedPlayer.isPlaying, isFalse);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('durable ID reloads relinked media and rejects a removed record',

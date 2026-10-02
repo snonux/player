@@ -1,6 +1,13 @@
-# Standalone local playback plan
+# Standalone local playback design
 
-Task: `zn2`. Status: implementation proposal, 2026-10-01.
+Planning task: `zn2`; implementation tasks: `b03`–`i03`.
+Status: implemented and verified on an Android 14/API 34 emulator, 2026-10-02.
+See [shipped usage](../README.md) and the
+[verification matrix](standalone-playback-verification.md). Physical devices,
+other document providers, and removable storage remain unverified.
+
+The sections below retain the design agreed on 2026-10-01. The implementation
+sequence is now complete; it is not a list of pending work.
 
 ## Outcome and scope
 
@@ -18,10 +25,12 @@ cross-device progress synchronization are later work. Local media remains on
 the device; removing an entry removes its library record, not the original file.
 Supported formats depend on device decoders; no server transcoding is available.
 
-## What needs to change
+## Coupling before implementation
 
-The current code already has Riverpod, SQLite, just_audio, audio_service, and
-video_player. Reuse those dependencies and keep the server API contract intact.
+The original code already had Riverpod, SQLite, just_audio, audio_service, and
+video_player. The implementation reused those dependencies and kept the server
+API contract intact. This table describes the original coupling, before the
+local-player changes.
 
 | Existing area | Coupling to address |
 | --- | --- |
@@ -96,7 +105,8 @@ and leave it unindexed in this first version.
 Track grants acquired by an import so cancellation or database failure releases
 only newly acquired, unreferenced grants. Removing a record stops it if active,
 removes its progress, and releases its grant when no record/playback uses it.
-Moved, deleted, or permission-revoked files show **Choose file again** and
+Moved, deleted, or permission-revoked files can show a player error with
+**Retry**. Return to the library entry's menu for **Choose file again** and
 **Remove from library**. Relinking preserves the local ID; confirm whether to
 keep resume position if the replacement is a different file. Never delete the
 source document. Provider errors or unavailable removable storage are recoverable.
@@ -154,8 +164,9 @@ must survive login, logout, server changes, and server queue cleanup.
 
 ## Implementation sequence and acceptance
 
-These are proposed implementation slices, not additional tasks started by this
-planning task. Execute them in order; each adds its own focused regression tests.
+These implementation slices were completed in order, with focused regression
+tests and Android platform checks. The verification matrix distinguishes
+emulator journeys from automated checks and unverified hardware/provider cases.
 
 1. **Validate Android document playback.** Exercise real persisted content URIs
    with the locked audio/video plugins, pause/seek, background audio, process
@@ -182,5 +193,6 @@ planning task. Execute them in order; each adds its own focused regression tests
    picker/grants and decoding on Android; unit/widget tests alone cannot cover
    these. Update README with the shipped behavior and any proven format limits.
 
-No server API or deployment changes are required. Completion of this document
-does not claim these future behaviors have been implemented or device-tested.
+No server API or deployment changes were required. Completion establishes the
+documented emulator and automated results, not compatibility with every Android
+device, document provider, removable volume, or codec.

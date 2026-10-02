@@ -1,6 +1,46 @@
 # Player Android
 
-Flutter Android client scaffold for the Player server.
+Android audio/video player for device files and the Player server.
+
+## Play files on this device
+
+A fresh install opens **On this device**. No server, account, or network
+connection is needed. Tap **Add files**, choose audio or video, then select a
+file in Android's document picker. Tap its library entry to play it again.
+
+Player retains permission to read the selected document and stores its resume
+position locally. It does not copy the file. Audio keeps playing after Back or
+Home, with Android notification and lock-screen controls. Video saves progress
+when leaving the player or putting the app in the background. Replaying a
+finished item starts from the beginning. Force-stopping the app can lose
+progress since the last save.
+
+Use an entry's menu for **Choose file again** or **Remove from library**.
+Removal stops that item if it is playing and removes its local history and
+retained permission; the original file stays on your device. If a file moves,
+becomes unreadable, or cannot be decoded, the player may show **Retry**. Return
+to the library to choose a replacement or remove the entry.
+
+Formats depend on Android's decoders. MP3 audio and H.264/AAC MP4 video were
+verified with the normal app on Android 14/API 34 using the Downloads provider.
+Physical devices, other document providers, and removable storage have not
+been verified. See the [verification results](docs/standalone-playback-verification.md)
+for the exact platform checks and automated coverage.
+
+Folder scanning, playlists, server downloads, local tags/notes, and syncing local
+history across devices are outside this feature.
+
+## Connect to a server
+
+Tap **Connect to server**, enter the server origin, and save it. Create the first
+admin account if the server is new, or sign in to an existing account. The server
+library retains streaming, server progress, and public shares. Open **On this
+device** from the server navigation menu to return to local files.
+
+Switching libraries stops the current playback session. Browsing away from the
+audio player within the same library keeps audio playing. Local settings remain
+available without a connection. Server logout or expired credentials preserve
+local files and history; a delayed server error cannot stop a local session.
 
 ## Quickstart
 
@@ -10,13 +50,14 @@ When Flutter is installed, finish or refresh the generated Android project files
 cd player-android
 flutter create --org zone.foo --project-name player_android --platforms=android --description 'Player Android client' .
 flutter analyze
+flutter test
 flutter build apk --debug
 ```
 
 The REST API contract lives in [../player-server/docs/api.md](../player-server/docs/api.md).
 
-The [standalone local playback plan](docs/standalone-local-player.md) describes
-proposed support for playing device files without a configured server.
+The [standalone local playback design](docs/standalone-local-player.md) records
+the implemented scope and its acceptance results.
 
 ## Install from F-Droid
 

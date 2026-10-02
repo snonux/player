@@ -11,7 +11,9 @@ import 'package:player_android/models/local_media.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/local_library_provider.dart';
+import 'package:player_android/providers/playback_session_provider.dart';
 import 'package:player_android/services/local_library_repository.dart';
+import 'package:player_android/services/playback_request.dart';
 
 class _NoTokenStorage implements TokenStorage {
   @override
@@ -368,12 +370,27 @@ void main() {
       mimeType: 'audio/mpeg',
     );
     await container.read(authStateProvider.future);
+    final progress = container.read(localProgressRepositoryProvider);
+    await progress.savePosition(added.id, 12.3);
+    var localStops = 0;
+    final lease =
+        await container.read(playbackSessionCoordinatorProvider).claim(
+              kind: PlaybackSourceKind.local,
+              identity: 'local:${added.id}',
+              stop: () async => localStops++,
+            );
 
     expect(await container.read(authStateProvider.notifier).logout(), isTrue);
+    expect(localStops, 0);
+    expect(lease!.isCurrent, isTrue);
+    expect((await progress.get(added.id))!.positionSeconds, 12.3);
     await container
         .read(authStateProvider.notifier)
         .switchServer('https://player.example');
 
+    expect(localStops, 1, reason: 'Switching libraries ends local playback');
+    expect(lease.isCurrent, isFalse);
+    expect((await progress.get(added.id))!.positionSeconds, 12.3);
     expect(
         (await media.getById(added.id))!.uri, 'content://provider/independent');
   });

@@ -116,9 +116,11 @@ stale writes after stop. Existing automated cases cover missing/unreadable
 records, failed source loads, stale source ownership, completion/replay, and
 local/server progress isolation. Those cases are automated checks, not claims
 of physical-device testing. Notification buttons and lock-screen gestures were
-not tapped directly; background control was verified through Android's media
-session commands. Physical devices and other document providers remain outside
-this emulator result.
+not tapped directly in this audio check; background control was verified through
+Android's media session commands. The later
+[journey verification](standalone-playback-verification.md) directly tapped
+lock-screen Play/Pause on the same emulator. Physical devices and other document
+providers remain outside this emulator result.
 
 ## Production local video result (2026-10-02)
 
