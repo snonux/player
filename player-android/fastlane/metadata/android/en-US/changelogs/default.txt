@@ -1,1 +1,4 @@
-Initial Android release with media browsing, audio and video playback, and playback progress sync.
+Play audio and video stored on your device without an account or network connection.
+Keep a local library with saved playback positions, background audio, and lock-screen controls.
+Choose files again or remove library entries without deleting the originals.
+Connect to your Player server for browsing, streaming, progress sync, and public shares.

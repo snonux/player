@@ -41,7 +41,8 @@ four secrets and checks the APK signatures before upload.
    `FDROID_DISPATCH_TOKEN` repository secret can trigger the refresh from the
    release workflow.
 
-The release APK uses the app's default local-emulator URL only as a fallback.
-It does not claim a public share-link host. Users enter their own Player server
-address in Settings. Android share-link handling needs a future build tied to
+The release APK opens the device library without a configured server. The
+local-emulator URL can prefill server setup but does not trigger requests on
+local startup. It does not claim a public share-link host. Users enter their own
+Player server address in Settings. Android share-link handling needs a build tied to
 a specific public host and that host's Digital Asset Links configuration.
