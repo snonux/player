@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../app_routes.dart';
 import '../navigation_key.dart';
@@ -40,6 +41,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  late final _packageInfo = PackageInfo.fromPlatform();
   // Controller for the server base URL text field.  Initialised once from the
   // persisted settings value and disposed when the widget leaves the tree.
   final _urlController = TextEditingController();
@@ -334,6 +336,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 // independently via 403 responses, making this defence-in-depth.
                 if (isAdmin) const _AdminSection(),
               ],
+              const SizedBox(height: 32),
+              const Divider(),
+              FutureBuilder<PackageInfo>(
+                future: _packageInfo,
+                builder: (context, snapshot) {
+                  final info = snapshot.data;
+                  return ListTile(
+                    key: const Key('settings_app_version'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.info_outline),
+                    title: const Text('Player'),
+                    subtitle: Text(info != null
+                        ? 'Version ${info.version} (build ${info.buildNumber})'
+                        : snapshot.hasError
+                            ? 'Version unavailable'
+                            : 'Loading version…'),
+                  );
+                },
+              ),
             ],
           ),
         ),

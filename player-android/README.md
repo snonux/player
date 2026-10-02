@@ -2,6 +2,8 @@
 
 Android audio/video player for device files and the Player server.
 
+The installed app version and build number appear at the bottom of **Settings**.
+
 ## Play files on this device
 
 A fresh install opens **On this device**. No server, account, or network
