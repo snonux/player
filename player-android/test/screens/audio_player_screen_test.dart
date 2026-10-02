@@ -42,10 +42,13 @@ import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/app_routes.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/audio_handler_provider.dart';
+import 'package:player_android/providers/playback_session_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/screens/audio_player_screen.dart';
 import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/progress_queue.dart';
+import 'package:player_android/services/playback_request.dart';
+import 'package:player_android/services/playback_session_coordinator.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -179,12 +182,14 @@ class _PlayableAudioPlayer extends AudioPlayer {
   AudioSource? loadedSource;
   Duration elapsed = Duration.zero;
   bool isPlaying = false;
+  bool isStopped = false;
   double selectedSpeed = 1.0;
   final playingChanges = StreamController<bool>.broadcast();
 
   @override
   Future<Duration?> setAudioSource(AudioSource source,
       {bool preload = true, int? initialIndex, Duration? initialPosition}) {
+    isStopped = false;
     sourceRequests++;
     loadedSource = source;
     elapsed = Duration.zero;
@@ -213,16 +218,19 @@ class _PlayableAudioPlayer extends AudioPlayer {
   @override
   Stream<ProcessingState> get processingStateStream => const Stream.empty();
   @override
-  ProcessingState get processingState => ProcessingState.ready;
+  ProcessingState get processingState =>
+      isStopped ? ProcessingState.idle : ProcessingState.ready;
 
   @override
   Future<void> play() async {
+    isStopped = false;
     isPlaying = true;
     playingChanges.add(true);
   }
 
   @override
   Future<void> stop() async {
+    isStopped = true;
     isPlaying = false;
     playingChanges.add(false);
   }
@@ -237,9 +245,11 @@ class _PlayableHandler extends PlayerAudioHandler {
   _PlayableHandler(super.player);
   int playCalls = 0;
   String? lastTitle;
+  String? lastId;
 
   @override
   void setMediaItem({required String id, required String title}) {
+    lastId = id;
     lastTitle = title;
   }
 
@@ -286,6 +296,9 @@ Future<void> _pumpScreen(
   _FakePlayerAudioHandler? fakeHandler,
   PlayerAudioHandler? handlerOverride,
   _FakeProgressQueue? progressQueue,
+  PlaybackRequest? request,
+  PlaybackSessionCoordinator? coordinator,
+  bool forbidServerDependencies = false,
   double textScale = 1.0,
 }) async {
   final handler = handlerOverride ?? fakeHandler ?? _FakePlayerAudioHandler();
@@ -299,6 +312,7 @@ Future<void> _pumpScreen(
           mediaId: state.pathParameters['mediaId']!,
           mediaUrl: mediaUrl,
           mediaTitle: mediaTitle,
+          request: request,
         ),
       ),
     ],
@@ -307,15 +321,25 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
-        apiClientProvider.overrideWithValue(fakeClient),
+        if (coordinator != null)
+          playbackSessionCoordinatorProvider.overrideWithValue(coordinator),
+        tokenStorageProvider.overrideWith((ref) {
+          if (forbidServerDependencies) throw StateError('Server token read');
+          return const _FakeTokenStorage();
+        }),
+        apiClientProvider.overrideWith((ref) {
+          if (forbidServerDependencies) throw StateError('Server API read');
+          return fakeClient;
+        }),
         // Override audioHandlerProvider so no real AudioService or AudioPlayer
         // platform channels are invoked during widget tests.
         audioHandlerProvider.overrideWithValue(handler),
         // Override progressQueueProvider so no real SQLite DB is opened and
         // no connectivity subscription is created during widget tests.
-        progressQueueProvider
-            .overrideWithValue(progressQueue ?? _FakeProgressQueue()),
+        progressQueueProvider.overrideWith((ref) {
+          if (forbidServerDependencies) throw StateError('Server queue read');
+          return progressQueue ?? _FakeProgressQueue();
+        }),
       ],
       child: MaterialApp.router(
         routerConfig: router,
@@ -334,6 +358,301 @@ Future<void> _pumpScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets('same local ID with a new URI replaces the loaded audio source',
+      (tester) async {
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    addTearDown(() async {
+      await tester.runAsync(handler.stop);
+      await player.playingChanges.close();
+    });
+    Future<void> showSource(String uri) => tester.pumpWidget(ProviderScope(
+          overrides: [
+            audioHandlerProvider.overrideWithValue(handler),
+            apiClientProvider
+                .overrideWith((_) => throw StateError('Server API read')),
+            progressQueueProvider
+                .overrideWith((_) => throw StateError('Server queue read')),
+            tokenStorageProvider
+                .overrideWith((_) => throw StateError('Server token read')),
+          ],
+          child: MaterialApp(
+              home: AudioPlayerScreen(
+            mediaId: '7',
+            request: LocalPlaybackRequest(
+              localMediaId: 7,
+              sourceUri: Uri.parse(uri),
+              title: 'Local track',
+            ),
+          )),
+        ));
+    await showSource('content://provider/old');
+    await tester.pump();
+    await tester.pump();
+    expect((player.loadedSource as UriAudioSource).uri.toString(),
+        'content://provider/old');
+    await showSource('content://provider/new');
+    for (var attempt = 0; attempt < 100 && handler.playCalls < 2; attempt++) {
+      await tester.pump();
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    expect((player.loadedSource as UriAudioSource).uri.toString(),
+        'content://provider/new');
+    expect(handler.playCalls, 2);
+    expect(handler.lastId, 'local:7');
+    player.failNextLoad = true;
+    await showSource('content://provider/unreadable');
+    for (var attempt = 0;
+        attempt < 100 &&
+            find.byKey(const Key('audio_player_error')).evaluate().isEmpty;
+        attempt++) {
+      await tester.pump();
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    expect(find.byKey(const Key('audio_player_error')), findsOneWidget);
+    expect(handler.playCalls, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('disposed audio route stops a source waiting for resume data',
+      (tester) async {
+    final coordinator = PlaybackSessionCoordinator();
+    final resume = Completer<double?>();
+    var readingResume = false;
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    const uri = 'content://provider/pending-resume';
+    await _pumpScreen(tester, _FakeApiClient(),
+        handlerOverride: handler,
+        coordinator: coordinator,
+        forbidServerDependencies: true,
+        request: LocalPlaybackRequest(
+            localMediaId: 7,
+            sourceUri: Uri.parse(uri),
+            title: 'Waiting track',
+            readPosition: () {
+              readingResume = true;
+              return resume.future;
+            }));
+    for (var attempt = 0; attempt < 100 && !readingResume; attempt++) {
+      await tester.pump();
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    expect(readingResume, isTrue);
+    expect(player.sourceRequests, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    for (var attempt = 0;
+        attempt < 100 && coordinator.isLocalSourceInUse(uri);
+        attempt++) {
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+    }
+    expect(coordinator.activeKind, isNull);
+    expect(coordinator.isLocalSourceInUse(uri), isFalse);
+    resume.complete(8);
+    await tester.pump();
+    await tester.pump();
+    expect(handler.playCalls, 0);
+    expect(player.isPlaying, isFalse);
+    expect(player.elapsed, Duration.zero);
+    await tester.runAsync(handler.stop);
+    await player.playingChanges.close();
+  });
+
+  testWidgets('disposed audio route releases a deferred source claim',
+      (tester) async {
+    final coordinator = PlaybackSessionCoordinator();
+    final stopping = Completer<void>();
+    await coordinator.claim(
+        kind: PlaybackSourceKind.server,
+        identity: 'server:old-video',
+        stop: () => stopping.future);
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    const uri = 'content://provider/abandoned';
+    await _pumpScreen(tester, _FakeApiClient(),
+        handlerOverride: handler,
+        coordinator: coordinator,
+        forbidServerDependencies: true,
+        request: LocalPlaybackRequest(
+            localMediaId: 7,
+            sourceUri: Uri.parse(uri),
+            title: 'Abandoned track'));
+    await tester.pump();
+    expect(coordinator.isLocalSourceInUse(uri), isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    stopping.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(coordinator.activeKind, isNull);
+    expect(coordinator.isLocalSourceInUse(uri), isFalse);
+    expect(player.sourceRequests, 0);
+    await tester.runAsync(handler.stop);
+    await player.playingChanges.close();
+  });
+
+  testWidgets('notification stop followed by screen play reloads progress',
+      (tester) async {
+    _setupAudioSessionMock();
+    addTearDown(_teardownAudioSessionMock);
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    final saved = <double>[];
+    double? resumePosition;
+    addTearDown(() async {
+      await tester.runAsync(handler.stop);
+      await player.playingChanges.close();
+    });
+    await _pumpScreen(
+      tester,
+      _FakeApiClient(),
+      handlerOverride: handler,
+      forbidServerDependencies: true,
+      request: LocalPlaybackRequest(
+          localMediaId: 7,
+          sourceUri: Uri.parse('content://provider/audio'),
+          title: 'Track',
+          readPosition: () async => resumePosition,
+          savePosition: (seconds) async {
+            saved.add(seconds);
+            resumePosition = seconds;
+          },
+          markFinished: () async {}),
+    );
+    for (var attempt = 0; attempt < 100 && handler.playCalls == 0; attempt++) {
+      await tester.pump();
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    expect(handler.playCalls, 1);
+    player.elapsed = const Duration(seconds: 8);
+    await tester.runAsync(handler.stop);
+    await handler.play(); // Notification Play cannot restart a stopped source.
+    expect(player.isPlaying, isFalse);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('audio_player_play_pause')));
+    for (var attempt = 0; attempt < 100 && !player.isPlaying; attempt++) {
+      await tester.pump();
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    expect(player.sourceRequests, 2);
+    expect(player.isPlaying, isTrue);
+    expect(player.elapsed, const Duration(seconds: 8));
+    player.elapsed = const Duration(seconds: 19);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(saved, contains(19));
+    await tester.tap(find.byKey(const Key('audio_player_skip_forward')));
+    await tester.pump();
+    expect(player.elapsed, const Duration(seconds: 34));
+    await tester.runAsync(handler.stop);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('retained audio controls cannot restart or change a new owner',
+      (tester) async {
+    _setupAudioSessionMock();
+    addTearDown(_teardownAudioSessionMock);
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    addTearDown(() async {
+      await tester.runAsync(handler.stop);
+      await player.playingChanges.close();
+    });
+    await _pumpScreen(
+      tester,
+      _FakeApiClient(),
+      handlerOverride: handler,
+      request: LocalPlaybackRequest(
+          localMediaId: 7,
+          sourceUri: Uri.parse('content://provider/old'),
+          title: 'Old track'),
+      forbidServerDependencies: true,
+    );
+    for (var attempt = 0; attempt < 100 && handler.playCalls == 0; attempt++) {
+      await tester.pump();
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    expect(handler.playCalls, 1);
+    final container = ProviderScope.containerOf(
+        tester.element(find.byType(AudioPlayerScreen)),
+        listen: false);
+    await tester.runAsync(() => container
+        .read(playbackSessionCoordinatorProvider)
+        .claim(
+            kind: PlaybackSourceKind.publicShare,
+            identity: 'public-share:new',
+            stop: () async {}));
+    await tester.pump();
+    expect(player.isPlaying, isFalse);
+    await tester.tap(find.byKey(const Key('audio_player_play_pause')));
+    await tester.tap(find.byKey(const Key('audio_player_speed_1_5')));
+    await tester.pump();
+    expect(handler.playCalls, 1);
+    expect(player.isPlaying, isFalse);
+    expect(player.selectedSpeed, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('local audio uses a content URI and local progress callbacks',
+      (tester) async {
+    _setupAudioSessionMock();
+    addTearDown(_teardownAudioSessionMock);
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    final queue = _FakeProgressQueue();
+    final localPositions = <double>[];
+    var localFinished = 0;
+    final request = LocalPlaybackRequest(
+      localMediaId: 77,
+      sourceUri: Uri.parse('content://provider/audio/77'),
+      title: 'On-device track',
+      startPosition: 14,
+      savePosition: (seconds) async => localPositions.add(seconds),
+      markFinished: () async {
+        localFinished++;
+      },
+    );
+    final client = _FakeApiClient();
+    addTearDown(() async {
+      await tester.runAsync(handler.stop);
+      await player.playingChanges.close();
+    });
+
+    await _pumpScreen(
+      tester,
+      client,
+      mediaId: '77',
+      handlerOverride: handler,
+      progressQueue: queue,
+      request: request,
+      forbidServerDependencies: true,
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final source = player.loadedSource! as UriAudioSource;
+    expect(source.uri, request.sourceUri);
+    expect(source.headers, isEmpty);
+    expect(player.elapsed, const Duration(seconds: 14));
+    expect(handler.lastId, 'local:77');
+    expect(handler.lastTitle, 'On-device track');
+    expect(client.getMediaProgressCallCount, 0);
+
+    await handler.endProgress();
+    expect(localPositions, [14]);
+    expect(localFinished, 0);
+    expect(queue.updates, isEmpty);
+    expect(queue.finishedItems, isEmpty);
+  });
+
   testWidgets('loaded title identifies the player and audio notification',
       (tester) async {
     _setupAudioSessionMock();
@@ -601,6 +920,13 @@ void main() {
     expect(player.sourceRequests, inInclusiveRange(2, 3));
 
     player.pendingLoad!.complete(const Duration(seconds: 100));
+    await tester.runAsync(() async {
+      for (var attempt = 0;
+          attempt < 100 && handler.playCalls == 0;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
     await tester.pump();
     expect(handler.playCalls, 1);
     player.elapsed = const Duration(seconds: 12);

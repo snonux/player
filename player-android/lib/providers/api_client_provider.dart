@@ -6,7 +6,9 @@ import '../api/dio_client.dart';
 import '../api/dio_player_api_client.dart';
 import '../api/player_api_client.dart';
 import '../navigation_key.dart';
+import '../services/playback_request.dart';
 import 'auth_state_provider.dart';
+import 'playback_session_provider.dart';
 import 'settings_provider.dart';
 
 /// A synchronous URL for clients, with the compile-time default only while
@@ -62,6 +64,12 @@ final _dioClientProvider = Provider<DioClient>((ref) {
           container.read(settingsProvider).valueOrNull?.destination;
       final context = navigatorKey.currentContext;
       if (selected != LibraryDestination.server || context == null) {
+        return false;
+      }
+      final activeKind =
+          container.read(playbackSessionCoordinatorProvider).activeKind;
+      if (activeKind == PlaybackSourceKind.local ||
+          activeKind == PlaybackSourceKind.publicShare) {
         return false;
       }
       final path = GoRouter.of(context).state.uri.path;

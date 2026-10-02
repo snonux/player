@@ -6,9 +6,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import 'api_client_provider.dart';
 import 'audio_handler_provider.dart';
+import 'playback_session_provider.dart';
 import 'progress_queue_provider.dart';
 import 'settings_provider.dart';
 import '../services/progress_queue.dart';
+import '../services/playback_request.dart';
 
 const _kLogoutRequestTimeout = Duration(seconds: 10);
 
@@ -127,8 +129,12 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
   /// carry the previous server's bearer token or cookie.
   Future<void> switchServer(String url) async {
     final next = parseServerBaseUrl(url);
-    final configured = (await ref.read(settingsProvider.future)).serverBaseUrl;
+    final settings = await ref.read(settingsProvider.future);
+    final configured = settings.serverBaseUrl;
     if (configured == next.toString()) {
+      if (settings.destination == LibraryDestination.local) {
+        await ref.read(playbackSessionCoordinatorProvider).stopCurrent();
+      }
       final auth = await future;
       if (auth.isAuthenticated &&
           ref.read(serverProgressQueueLifecycleProvider)) {
@@ -144,6 +150,7 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
           );
       return;
     }
+    await ref.read(playbackSessionCoordinatorProvider).stopCurrent();
     final auth = await future;
     if (auth.isAuthenticated) {
       await logout();
@@ -346,7 +353,14 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
       cleared = false;
     }
     try {
-      if (serverSelected && ref.exists(audioHandlerProvider)) {
+      final playback = ref.read(playbackSessionCoordinatorProvider);
+      final activeKind = playback.activeKind;
+      if (activeKind == PlaybackSourceKind.server) {
+        await playback.stopServerSession();
+      } else if (activeKind == null &&
+          serverSelected &&
+          ref.exists(audioHandlerProvider)) {
+        // Compatibility for pre-coordinator server playback owners.
         await ref.read(audioHandlerProvider).stop();
       }
     } catch (_) {

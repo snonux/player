@@ -2,6 +2,44 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/services/audio_progress_session.dart';
 
 void main() {
+  testWidgets('unknown-duration completion retries a failed finish write',
+      (tester) async {
+    var attempts = 0;
+    final session = AudioProgressSession(
+      position: () => const Duration(seconds: 8),
+      duration: () => null,
+      playing: () => false,
+      savePosition: (_) async {},
+      markFinished: () async {
+        if (++attempts == 1) throw StateError('database busy');
+      },
+    );
+    await session.record(force: true, completed: true);
+    expect(attempts, 1);
+    await session.close();
+    expect(attempts, 2);
+  });
+
+  for (final duration in <Duration?>[null, Duration.zero]) {
+    testWidgets('unknown duration $duration waits for actual completion',
+        (tester) async {
+      final writes = <String>[];
+      final session = AudioProgressSession(
+        position: () => const Duration(seconds: 8),
+        duration: () => duration,
+        playing: () => true,
+        savePosition: (seconds) async => writes.add('position:$seconds'),
+        markFinished: () async => writes.add('finished'),
+      );
+      await session.record();
+      expect(writes, ['position:8.0']);
+      await session.record(force: true, completed: true);
+      await session.record(force: true, completed: true);
+      await session.close();
+      expect(writes, ['position:8.0', 'finished']);
+    });
+  }
+
   testWidgets('stop saves final position after a partial tick', (tester) async {
     var position = const Duration(milliseconds: 1200);
     final saved = <double>[];

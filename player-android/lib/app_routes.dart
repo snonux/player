@@ -7,6 +7,7 @@ abstract final class AppRoutes {
   static const login = '/login';
   static const home = '/home';
   static const localLibrary = '/local';
+  static const localPlayer = '/local/player/:localMediaId';
   static const mediaDetail = '/media/:id';
   static const share = '/share';
 
@@ -76,6 +77,9 @@ abstract final class AppRoutes {
   static String audioPlayerPath(String mediaId) => '/audio/$mediaId';
 
   static String imageViewerPath(String mediaId) => '/image/$mediaId';
+
+  static String localPlayerPath(int localMediaId) =>
+      '/local/player/$localMediaId';
 
   /// Returns the appropriate player path for [type] and [mediaId].
   ///

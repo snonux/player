@@ -2,11 +2,15 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:player_android/services/local_document_picker.dart';
 import 'package:player_android/services/local_library_manager.dart';
 import 'package:player_android/services/local_library_repository.dart';
+import 'package:player_android/providers/local_library_provider.dart';
+import 'package:player_android/providers/playback_session_provider.dart';
+import 'package:player_android/services/playback_request.dart';
 
 class _FakePicker implements LocalDocumentPicker {
   final results = <PickedLocalDocument?>[];
@@ -63,6 +67,99 @@ void main() {
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+  });
+
+  test('removing playing local media stops before deleting and releasing',
+      () async {
+    final database = LocalLibraryDatabase(databasePath: inMemoryDatabasePath);
+    final picker = _FakePicker();
+    final container = ProviderContainer(overrides: [
+      localLibraryDatabaseProvider.overrideWithValue(database),
+      localDocumentPickerProvider.overrideWithValue(picker),
+    ]);
+    addTearDown(container.dispose);
+    addTearDown(database.close);
+    final media = container.read(localMediaRepositoryProvider);
+    final progress = container.read(localProgressRepositoryProvider);
+    final item = await media.importDocument(
+      uri: 'content://provider/playing',
+      title: 'Playing',
+      mimeType: 'audio/mpeg',
+      ownsPersistedReadGrant: true,
+    );
+    var stopped = false;
+    final lease =
+        await container.read(playbackSessionCoordinatorProvider).claim(
+              kind: PlaybackSourceKind.local,
+              identity: 'local:${item.id}',
+              sourceUri: item.uri,
+              stop: () async {
+                expect(await media.getById(item.id), isNotNull);
+                expect(picker.releasedUris, isEmpty);
+                await progress.savePosition(item.id, 44);
+                stopped = true;
+              },
+            );
+
+    final result =
+        await container.read(localLibraryManagerProvider).remove(item.id);
+    expect(stopped, isTrue);
+    expect(lease!.isCurrent, isFalse);
+    expect(result.grantReleased, isTrue);
+    expect(picker.releasedUris, [item.uri]);
+    expect(await media.getById(item.id), isNull);
+    expect(await progress.get(item.id), isNull);
+  });
+
+  test('cancelled relink keeps playback; confirmed relink retains final sample',
+      () async {
+    final database = LocalLibraryDatabase(databasePath: inMemoryDatabasePath);
+    final picker = _FakePicker()
+      ..results.addAll([
+        _picked('content://provider/cancelled'),
+        _picked('content://provider/replacement'),
+      ]);
+    final container = ProviderContainer(overrides: [
+      localLibraryDatabaseProvider.overrideWithValue(database),
+      localDocumentPickerProvider.overrideWithValue(picker),
+    ]);
+    addTearDown(container.dispose);
+    addTearDown(database.close);
+    final media = container.read(localMediaRepositoryProvider);
+    final progress = container.read(localProgressRepositoryProvider);
+    final item = await media.importDocument(
+      uri: 'content://provider/original',
+      title: 'Original',
+      mimeType: 'audio/mpeg',
+      ownsPersistedReadGrant: true,
+    );
+    final lease =
+        await container.read(playbackSessionCoordinatorProvider).claim(
+              kind: PlaybackSourceKind.local,
+              identity: 'local:${item.id}',
+              sourceUri: item.uri,
+              stop: () async => progress.savePosition(item.id, 44),
+            );
+    final manager = container.read(localLibraryManagerProvider);
+    expect(
+        await manager.relink(
+          id: item.id,
+          confirmRetainProgress: (_, __) async => null,
+        ),
+        isNull);
+    expect(lease!.isCurrent, isTrue);
+    expect(await progress.get(item.id), isNull);
+    expect(picker.releasedUris, ['content://provider/cancelled']);
+
+    await manager.relink(
+      id: item.id,
+      confirmRetainProgress: (_, __) async => true,
+    );
+    expect(lease.isCurrent, isFalse);
+    expect((await progress.get(item.id))!.positionSeconds, 44);
+    expect(
+        (await media.getById(item.id))!.uri, 'content://provider/replacement');
+    expect(picker.releasedUris, contains(item.uri));
   });
 
   test('picker cancellation leaves the library unchanged', () async {

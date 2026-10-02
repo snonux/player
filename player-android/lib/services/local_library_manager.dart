@@ -9,6 +9,12 @@ abstract interface class LocalDocumentUsage {
   bool isInUse(String uri);
 }
 
+/// Flushes and stops a document before removing or replacing its record.
+abstract interface class LocalDocumentPlaybackUsage
+    implements LocalDocumentUsage {
+  Future<void> stopUsing(String uri);
+}
+
 class NoActiveLocalDocumentUsage implements LocalDocumentUsage {
   const NoActiveLocalDocumentUsage();
 
@@ -99,6 +105,7 @@ class LocalLibraryManager {
             retainProgress = choice;
           }
 
+          await _stopUsing(current.uri);
           final relinked = await _media.relink(
             id: id,
             uri: picked.uri,
@@ -134,6 +141,7 @@ class LocalLibraryManager {
         if (current == null) {
           return const LocalRemovalResult(removed: false, grantReleased: false);
         }
+        await _stopUsing(current.uri);
         final removed = await _media.remove(id);
         if (!removed) {
           return const LocalRemovalResult(removed: false, grantReleased: false);
@@ -165,6 +173,11 @@ class LocalLibraryManager {
           await _retryUri(uri);
         }
       });
+
+  Future<void> _stopUsing(String uri) async {
+    final usage = _usage;
+    if (usage is LocalDocumentPlaybackUsage) await usage.stopUsing(uri);
+  }
 
   Future<T> _serialize<T>(Future<T> Function() operation) {
     final previous = _operationTail;

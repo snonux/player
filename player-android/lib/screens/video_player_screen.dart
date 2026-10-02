@@ -4,12 +4,17 @@ import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
+import 'package:video_player_platform_interface/video_player_platform_interface.dart'
+    as platform;
 
 import '../api/player_api_client.dart';
 import '../api/dio_client.dart';
 import '../providers/api_client_provider.dart';
+import '../providers/playback_session_provider.dart';
 import '../providers/progress_queue_provider.dart';
-import '../services/progress_queue.dart';
+import '../services/playback_request.dart';
+import '../services/shared_video_events.dart';
+import '../services/playback_session_coordinator.dart';
 
 // How often progress updates are emitted to the server while playing.
 const _kProgressInterval = Duration(seconds: 5);
@@ -41,6 +46,8 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     this.mediaTitle,
     this.startPosition,
     this.isPublicShare = false,
+    this.request,
+    this.serverUserId = 0,
   });
 
   /// The media item identifier extracted from the '/video/:mediaId' route path.
@@ -60,6 +67,8 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   /// When null, [PlayerApiClient.getMediaProgress] is called instead.
   final double? startPosition;
   final bool isPublicShare;
+  final PlaybackRequest? request;
+  final int serverUserId;
 
   @override
   ConsumerState<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
@@ -83,6 +92,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   // Prevents emitting a "finished" update more than once per playback session.
   bool _finishedEmitted = false;
   bool _finishedPending = false;
+  int _initGeneration = 0;
+  PlaybackRequest? _activeRequest;
+  PlaybackSessionLease? _sessionLease;
+  StreamSubscription<platform.VideoEvent>? _completionSubscription;
+  bool _nativeCompleted = false;
+  int? _nativePlayerId;
+  Future<void> _progressWrite = Future<void>.value();
 
   // Periodic timer that fires every [_kProgressInterval] while playing.
   Timer? _progressTimer;
@@ -100,10 +116,36 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant VideoPlayerScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.request?.identity != widget.request?.identity ||
+        oldWidget.request?.sourceUri != widget.request?.sourceUri ||
+        oldWidget.request?.title != widget.request?.title ||
+        oldWidget.request?.startPosition != widget.request?.startPosition ||
+        oldWidget.mediaId != widget.mediaId ||
+        oldWidget.serverUserId != widget.serverUserId ||
+        oldWidget.startPosition != widget.startPosition ||
+        oldWidget.mediaUrl != widget.mediaUrl ||
+        oldWidget.isPublicShare != widget.isPublicShare) {
+      _initGeneration++;
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _initPlayer());
+    }
+  }
+
+  @override
   void dispose() {
+    _disposing = true;
     _progressTimer?.cancel();
-    _chewieController?.dispose();
-    _videoController?.dispose();
+    final lease = _sessionLease;
+    if (lease != null && lease.isCurrent) {
+      unawaited(lease.stop());
+    } else {
+      unawaited(_stopOwnedSession());
+    }
     super.dispose();
   }
 
@@ -111,109 +153,254 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   // Player initialisation
   // ---------------------------------------------------------------------------
 
-  /// Initialises [VideoPlayerController] and [ChewieController].
-  ///
-  /// Steps:
-  ///   1. Resolve the stream URL (from route extra or [PlayerApiClient]).
-  ///   2. Read the bearer token for the `Authorization` header.
-  ///   3. Create and initialise [VideoPlayerController.networkUrl].
-  ///   4. Fetch the saved position via [getMediaProgress] and seek to it.
-  ///   5. Wrap in [ChewieController] and start the progress ticker.
+  /// Initializes the typed source with a content-URI or network controller,
+  /// applies its resume position, and starts controls and progress reporting.
+  /// Only server requests read account credentials. Ownership is checked after
+  /// each async step before the controller can start playback.
   Future<void> _initPlayer() async {
     if (!mounted) return;
+    final initGeneration = _initGeneration;
+    final request = _effectiveRequest();
+    final coordinator = ref.read(playbackSessionCoordinatorProvider);
+    final PlaybackSessionLease? lease;
+    try {
+      lease = await coordinator.claim(
+        kind: request.kind,
+        identity: request.identity,
+        stop: _stopOwnedSession,
+        sourceUri: request.sourceUri.toString(),
+      );
+    } catch (error) {
+      if (mounted && _initGeneration == initGeneration) {
+        setState(() {
+          _error = _initErrorMessage(error);
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+    if (lease == null) return;
+    if (!mounted || initGeneration != _initGeneration) {
+      await lease.release();
+      return;
+    }
+    _sessionLease = lease;
+    _activeRequest = request;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    bool current() =>
+        mounted &&
+        initGeneration == _initGeneration &&
+        lease?.isCurrent == true;
+
+    Map<String, String> headers;
+    try {
+      headers = request is ServerPlaybackRequest
+          ? await accountRequestHeaders(
+              uri: request.sourceUri,
+              baseUrl: Uri.parse(request.serverOrigin),
+              storage: ref.read(tokenStorageProvider),
+              cookieJar: ref.read(cookieJarProvider),
+              mutations: ref.read(credentialMutationQueueProvider),
+            )
+          : <String, String>{};
+    } catch (error) {
+      if (current()) {
+        await lease.release();
+        if (!mounted || _initGeneration != initGeneration) return;
+        setState(() {
+          _error = _initErrorMessage(error);
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+    if (!current()) return;
+
+    VideoPlayerController? videoController;
+    try {
+      videoController = request is LocalPlaybackRequest
+          ? VideoPlayerController.contentUri(request.sourceUri)
+          : VideoPlayerController.networkUrl(
+              request.sourceUri,
+              httpHeaders: headers,
+            );
+      // Track the controller while initialization is pending so a library
+      // mutation or ownership transfer can dispose its URI before releasing it.
+      _videoController = videoController;
+      SharedVideoEvents.install();
+      await videoController.initialize();
+      if (!current()) {
+        await _disposeController(videoController);
+        return;
+      }
+
+      // ignore: invalid_use_of_visible_for_testing_member
+      final nativePlayerId = videoController.playerId;
+      _nativePlayerId = nativePlayerId;
+
+      double? resumePosition = request.startPosition;
+      if (resumePosition == null && request.readPosition != null) {
+        try {
+          resumePosition = await request.readPosition!();
+        } catch (_) {
+          // Resume lookup is optional; start at zero on provider errors.
+        }
+      }
+      if (!current()) {
+        await _disposeController(videoController);
+        return;
+      }
+      if (resumePosition != null && resumePosition > 0) {
+        try {
+          final position =
+              Duration(milliseconds: (resumePosition * 1000).round());
+          if (videoController.value.duration <= Duration.zero) {
+            await platform.VideoPlayerPlatform.instance
+                .seekTo(nativePlayerId, position);
+            videoController.value = videoController.value
+                .copyWith(position: position, isCompleted: false);
+          } else {
+            await videoController.seekTo(position);
+          }
+        } catch (_) {
+          // A stale saved position must not prevent playback.
+        }
+      }
+      if (!current()) {
+        await _disposeController(videoController);
+        return;
+      }
+
+      // Observe the shared native event stream
+      // rather than isCompleted, which also becomes true on zero-duration polls.
+      final events =
+          platform.VideoPlayerPlatform.instance.videoEventsFor(nativePlayerId);
+      _nativeCompleted = false;
+      if (events.isBroadcast) {
+        _completionSubscription = events.listen((event) {
+          if (event.eventType == platform.VideoEventType.completed &&
+              current()) {
+            _nativeCompleted = true;
+            unawaited(_recordProgress(request, lease: lease, force: true));
+          }
+        }, onError: (Object _) {
+          // The controller's existing subscription handles native errors.
+        });
+      }
+
+      final chewieController = ChewieController(
+        videoPlayerController: videoController,
+        autoPlay: false,
+        looping: false,
+        allowFullScreen: true,
+        allowMuting: true,
+        showOptions: false,
+        customControls: videoController.value.duration <= Duration.zero
+            ? _UnknownDurationControls(
+                controller: videoController,
+                onPlay: () =>
+                    _playController(videoController!, lease!, nativePlayerId),
+              )
+            : null,
+      );
+      setState(() {
+        _videoController = videoController;
+        _chewieController = chewieController;
+        _isLoading = false;
+        _error = null;
+      });
+      if (request.savePosition != null && request.markFinished != null) {
+        _startProgressTicker(request, lease);
+      }
+      await _playController(videoController, lease, nativePlayerId);
+    } catch (error) {
+      // The plugin exposes no production creation-status API. Its player ID
+      // distinguishes failed creation from errors after a native player exists.
+      // ignore: invalid_use_of_visible_for_testing_member
+      final creationFailed = videoController?.playerId == -1;
+      if (creationFailed && videoController != null) {
+        // Failed creation leaves the plugin's creation completer unresolved.
+        // No native resource exists, so dispose must not block source cleanup.
+        if (identical(_videoController, videoController)) {
+          _videoController = null;
+        }
+        unawaited(_disposeController(videoController).catchError((_) {}));
+      }
+      try {
+        if (lease.isCurrent) {
+          await lease.stop();
+        } else if (videoController != null && !creationFailed) {
+          await _disposeController(videoController);
+        }
+      } catch (_) {
+        // Surface the original initialization failure after cleanup is attempted.
+      }
+      if (mounted && _initGeneration == initGeneration) {
+        setState(() {
+          _error = _initErrorMessage(error);
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _playController(
+    VideoPlayerController controller,
+    PlaybackSessionLease lease,
+    int nativePlayerId,
+  ) async {
+    if (!lease.isCurrent) return;
+    if (controller.value.duration <= Duration.zero) {
+      final backend = platform.VideoPlayerPlatform.instance;
+      final position = backend is SharedVideoEvents
+          ? backend.latestPosition(nativePlayerId) ?? controller.value.position
+          : controller.value.position;
+      // play() treats position == duration as end-of-file. Zero duration is
+      // unknown, so preserve the native elapsed position before resuming.
+      controller.value =
+          controller.value.copyWith(position: position, isCompleted: false);
+    }
+    await controller.play();
+  }
+
+  PlaybackRequest _effectiveRequest() {
+    final request = widget.request;
+    if (request != null) return request;
+    final title = widget.mediaTitle ??
+        (widget.isPublicShare ? 'Shared Video' : 'Video – ${widget.mediaId}');
+    if (widget.isPublicShare) {
+      final url = widget.mediaUrl;
+      if (url == null) throw StateError('Public video share has no stream URL');
+      final segments = Uri.parse(url).pathSegments;
+      return PublicSharePlaybackRequest(
+        shareToken: segments.length > 1 && segments.first == 's'
+            ? segments[1]
+            : 'unknown',
+        sourceUri: Uri.parse(url),
+        title: title,
+      );
+    }
 
     final client = ref.read(apiClientProvider);
-    final storage = ref.read(tokenStorageProvider);
-    final cookieJar = ref.read(cookieJarProvider);
-    final mediaIdInt = int.tryParse(widget.mediaId) ?? 0;
-
-    // Step 1: resolve the stream URL — prefer the route-extra URL so the
-    // calling screen can forward a pre-computed URL; fall back to streamUrl.
-    final url = widget.mediaUrl ?? client.streamUrl(mediaIdInt);
-
-    // Step 2: read the auth artefacts so the native player can authenticate
-    // without routing bytes through Dart.  Both Bearer (API-token auth) and
-    // Cookie (session auth) headers are attached because ExoPlayer has its
-    // own HTTP stack and does not share Dio's cookie jar.
-    final headers = widget.isPublicShare
-        ? <String, String>{}
-        : await accountRequestHeaders(
-            uri: Uri.parse(url),
-            baseUrl: ref.read(playerBaseUrlProvider),
-            storage: storage,
-            cookieJar: cookieJar,
-            mutations: ref.read(credentialMutationQueueProvider),
-          );
-    if (!mounted) return;
-
-    // Step 3: create and initialise the VideoPlayerController.
-    VideoPlayerController videoController;
-    try {
-      videoController = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        httpHeaders: headers,
-      );
-      await videoController.initialize();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = _initErrorMessage(e);
-        _isLoading = false;
-      });
-      return;
-    }
-
-    if (!mounted) {
-      videoController.dispose();
-      return;
-    }
-
-    // Step 4: resume from the saved position.
-    // Prefer [widget.startPosition] (forwarded by the continue-watching screen)
-    // to avoid a redundant API round-trip.  Fall back to [getMediaProgress] so
-    // videos opened from other screens still resume correctly.
-    try {
-      final savedSeconds = widget.isPublicShare
-          ? null
-          : widget.startPosition ?? await client.getMediaProgress(mediaIdInt);
-      if (savedSeconds != null && savedSeconds > 0) {
-        await videoController.seekTo(
-          Duration(milliseconds: (savedSeconds * 1000).round()),
-        );
-      }
-    } catch (_) {
-      // Progress fetch failure is non-fatal; start from the beginning.
-    }
-
-    if (!mounted) {
-      videoController.dispose();
-      return;
-    }
-
-    // Step 5: wrap in ChewieController with sensible defaults for a
-    // distraction-free full-screen experience.
-    final chewieController = ChewieController(
-      videoPlayerController: videoController,
-      autoPlay: true,
-      looping: false,
-      allowFullScreen: true,
-      allowMuting: true,
-      showOptions: false,
+    final mediaId = int.tryParse(widget.mediaId) ?? 0;
+    final url = widget.mediaUrl ?? client.streamUrl(mediaId);
+    final queue = ref.read(progressQueueProvider);
+    return ServerPlaybackRequest(
+      mediaId: mediaId,
+      serverOrigin: ref.read(playerBaseUrlProvider).origin,
+      userId: widget.serverUserId,
+      sourceUri: Uri.parse(url),
+      title: title,
+      startPosition: widget.startPosition,
+      readPosition: widget.startPosition == null
+          ? () => client.getMediaProgress(mediaId)
+          : null,
+      savePosition: (seconds) => queue.enqueue(mediaId, seconds),
+      markFinished: () => queue.enqueueFinished(mediaId),
     );
-
-    setState(() {
-      _videoController = videoController;
-      _chewieController = chewieController;
-      _isLoading = false;
-    });
-
-    // Start the periodic progress ticker now that playback is ready.
-    // The queue is read once here so the timer callback does not access [ref]
-    // after the widget may have been disposed (mirrors the client capture).
-    if (!widget.isPublicShare) {
-      final queue = ref.read(progressQueueProvider);
-      _startProgressTicker(mediaIdInt, queue);
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -223,55 +410,134 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   /// Starts a periodic timer that emits progress updates every
   /// [_kProgressInterval] and marks the item finished at [_kFinishedThreshold].
   ///
-  /// Progress updates are routed through [queue] rather than calling
-  /// [client.updateProgress] directly so that offline buffering and
-  /// online batch-flush are handled transparently (Open-Closed: screens
-  /// need not change if the queue strategy changes).
-  ///
-  /// The [queue] reference is captured once here so we avoid
-  /// accessing [ref] inside the timer callback after the widget may have been
-  /// disposed.
+  /// The request captures server queue or local repository callbacks, keeping
+  /// progress bound to the source without reading providers after disposal.
   void _startProgressTicker(
-    int mediaId,
-    ProgressQueueBase queue,
+    PlaybackRequest request,
+    PlaybackSessionLease lease,
   ) {
-    _progressTimer = Timer.periodic(_kProgressInterval, (_) async {
-      final vc = _videoController;
-      if (vc == null || _finishedEmitted || _finishedPending) return;
+    _finishedEmitted = false;
+    _finishedPending = false;
+    _progressTimer?.cancel();
+    _videoController?.addListener(_onVideoValueChanged);
+    _progressTimer = Timer.periodic(_kProgressInterval, (_) {
+      unawaited(_recordProgress(request, lease: lease));
+    });
+  }
 
-      // Skip updates while paused — no progress to record and avoids
-      // unnecessary DB writes when the user has paused playback.
-      if (!vc.value.isPlaying) return;
+  void _onVideoValueChanged() {
+    final controller = _videoController;
+    final request = _activeRequest;
+    final lease = _sessionLease;
+    if (controller == null || request == null || lease == null) return;
+    if (!controller.value.isPlaying && lease.isCurrent) {
+      unawaited(_recordProgress(request, lease: lease, force: true));
+    }
+  }
 
-      final position = vc.value.position;
-      final duration = vc.value.duration;
-      final reachedFinish = duration.inMilliseconds > 0 &&
-          position.inMilliseconds / duration.inMilliseconds >=
-              _kFinishedThreshold;
-      if (reachedFinish) _finishedPending = true;
+  Future<void> _recordProgress(
+    PlaybackRequest request, {
+    PlaybackSessionLease? lease,
+    bool force = false,
+    bool allowStaleLease = false,
+  }) {
+    final controller = _videoController;
+    final savePosition = request.savePosition;
+    final markFinished = request.markFinished;
+    if (controller == null || savePosition == null || markFinished == null) {
+      return _progressWrite;
+    }
+    if (!controller.value.isInitialized) return _progressWrite;
+    if (_finishedEmitted || (_finishedPending && !force)) return _progressWrite;
+    if (!force && !controller.value.isPlaying) return _progressWrite;
+    if (!allowStaleLease && (lease == null || !lease.isCurrent)) {
+      return _progressWrite;
+    }
 
-      // Enqueue position update — fire-and-forget so a transient error
-      // never interrupts playback.  The queue handles online/offline.
+    final duration = controller.value.duration;
+    final backend = platform.VideoPlayerPlatform.instance;
+    // The video plugin clamps positions to its duration, including zero.
+    // Preserve the real native sample for unknown-duration progress.
+    final position = duration <= Duration.zero && backend is SharedVideoEvents
+        ? backend.latestPosition(_nativePlayerId) ?? controller.value.position
+        : controller.value.position;
+    final reachedFinish = _nativeCompleted ||
+        (duration.inMilliseconds > 0 &&
+            position.inMilliseconds / duration.inMilliseconds >=
+                _kFinishedThreshold);
+    if (reachedFinish) _finishedPending = true;
+    _progressWrite = _progressWrite.then((_) async {
+      if (_finishedEmitted) return;
       try {
-        await queue.enqueue(
-          mediaId,
-          position.inMilliseconds / 1000.0,
-        );
+        await savePosition(position.inMilliseconds / 1000.0);
       } catch (_) {}
-
-      // A successful enqueue is durable even when the status request fails.
-      // Guard the in-flight write so overlapping timer ticks cannot duplicate it.
-      if (reachedFinish) {
-        try {
-          await queue.enqueueFinished(mediaId);
+      if (!reachedFinish) return;
+      try {
+        await markFinished();
+        if (lease?.isCurrent == true || allowStaleLease) {
           _finishedEmitted = true;
-        } catch (_) {
-          // A failed local write can be retried on the next tick.
-        } finally {
-          _finishedPending = false;
         }
+      } catch (_) {
+        // The next tick or final save retries failed local/database writes.
+      } finally {
+        _finishedPending = false;
       }
     });
+    return _progressWrite;
+  }
+
+  Future<void>? _ownedStop;
+  bool _disposing = false;
+  final _controllerDisposals =
+      Expando<Future<void>>('video controller disposal');
+
+  Future<void> _disposeController(VideoPlayerController controller) =>
+      _controllerDisposals[controller] ??= controller.dispose();
+
+  Future<void> _stopOwnedSession() {
+    final pending = _ownedStop;
+    if (pending != null) return pending;
+    final stopping = _performOwnedStop();
+    _ownedStop = stopping;
+    return stopping.whenComplete(() {
+      if (identical(_ownedStop, stopping)) _ownedStop = null;
+    });
+  }
+
+  Future<void> _performOwnedStop() async {
+    if (mounted && !_disposing) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Playback stopped. Tap Retry to play this item again.';
+      });
+    }
+    await _completionSubscription?.cancel();
+    _completionSubscription = null;
+    final hadProgress = _progressTimer != null;
+    _progressTimer?.cancel();
+    _progressTimer = null;
+    final request = _activeRequest;
+    final controller = _videoController;
+    final lease = _sessionLease;
+    if (request != null && controller != null) {
+      try {
+        await controller.pause();
+      } catch (_) {}
+      if (hadProgress) {
+        await _recordProgress(
+          request,
+          lease: lease,
+          force: true,
+          allowStaleLease: true,
+        );
+      }
+    }
+    controller?.removeListener(_onVideoValueChanged);
+    _chewieController?.dispose();
+    _chewieController = null;
+    _videoController = null;
+    _sessionLease = null;
+    if (controller != null) await _disposeController(controller);
   }
 
   // ---------------------------------------------------------------------------
@@ -301,7 +567,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text(widget.mediaTitle ??
+        title: Text(_activeRequest?.title ??
+            widget.mediaTitle ??
             (widget.isPublicShare
                 ? 'Shared Video'
                 : 'Video – ${widget.mediaId}')),
@@ -314,6 +581,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   Widget _buildBody() {
     if (_isLoading) return _buildLoadingView();
     if (_error != null) return _buildErrorView(_error!);
+    if (_videoController == null || _chewieController == null) {
+      return _buildLoadingView();
+    }
     return _buildPlayerView();
   }
 
@@ -376,17 +646,74 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   ///
   /// Extracted to keep [_buildErrorView] below 30 lines (style guideline).
   void _onRetry() {
-    _progressTimer?.cancel();
-    _chewieController?.dispose();
-    _videoController?.dispose();
+    unawaited(_retry());
+  }
+
+  Future<void> _retry() async {
+    _initGeneration++;
     setState(() {
-      _chewieController = null;
-      _videoController = null;
       _error = null;
       _isLoading = true;
       _finishedEmitted = false;
       _finishedPending = false;
     });
+    await _stopOwnedSession();
+    await _sessionLease?.release();
+    _sessionLease = null;
+    if (!mounted) return;
     _initPlayer();
   }
+}
+
+/// Unknown-duration media cannot provide a seek fraction. Keep playback,
+/// muting and fullscreen available without dividing by a zero duration.
+class _UnknownDurationControls extends StatelessWidget {
+  const _UnknownDurationControls(
+      {required this.controller, required this.onPlay});
+
+  final VideoPlayerController controller;
+  final Future<void> Function() onPlay;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) => Align(
+          alignment: Alignment.bottomCenter,
+          child: ColoredBox(
+            color: Colors.black54,
+            child: Row(
+              key: const Key('video_unknown_duration_controls'),
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                IconButton(
+                  tooltip: controller.value.isPlaying ? 'Pause' : 'Play',
+                  color: Colors.white,
+                  icon: Icon(controller.value.isPlaying
+                      ? Icons.pause
+                      : Icons.play_arrow),
+                  onPressed: () => controller.value.isPlaying
+                      ? controller.pause()
+                      : onPlay(),
+                ),
+                IconButton(
+                  tooltip: controller.value.volume == 0 ? 'Unmute' : 'Mute',
+                  color: Colors.white,
+                  icon: Icon(controller.value.volume == 0
+                      ? Icons.volume_off
+                      : Icons.volume_up),
+                  onPressed: () => controller
+                      .setVolume(controller.value.volume == 0 ? 1 : 0),
+                ),
+                IconButton(
+                  tooltip: 'Toggle fullscreen',
+                  color: Colors.white,
+                  icon: const Icon(Icons.fullscreen),
+                  onPressed: () =>
+                      ChewieController.of(context).toggleFullScreen(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 }

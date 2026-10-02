@@ -16,10 +16,12 @@ import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/first_run_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
+import 'package:player_android/providers/playback_session_provider.dart';
 import 'package:player_android/router.dart';
 import 'package:player_android/screens/home_screen.dart';
 import 'package:player_android/screens/login_screen.dart';
 import 'package:player_android/services/progress_queue.dart';
+import 'package:player_android/services/playback_request.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _MemoryTokenStorage implements TokenStorage {
@@ -755,6 +757,14 @@ void main() {
     await container.read(authStateProvider.future);
     container.read(progressQueueProvider);
 
+    var localStops = 0;
+    final localLease =
+        await container.read(playbackSessionCoordinatorProvider).claim(
+              kind: PlaybackSourceKind.local,
+              identity: 'local:7',
+              stop: () async => localStops++,
+            );
+
     final cleared =
         await container.read(authStateProvider.notifier).clearAfterUnauthorized(
               advanceGeneration: false,
@@ -764,6 +774,8 @@ void main() {
     expect(cleared, isTrue);
     expect(queue.clearCalls, 0);
     expect(queue.suspended, isFalse);
+    expect(localStops, 0);
+    expect(localLease!.isCurrent, isTrue);
   });
 
   test('pending restore cannot re-enable bearer after logout starts', () async {

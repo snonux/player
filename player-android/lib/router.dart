@@ -36,6 +36,7 @@ import 'screens/api_tokens_screen.dart';
 import 'screens/folder_browser_screen.dart';
 import 'screens/video_player_screen.dart';
 import 'screens/local_library_screen.dart';
+import 'screens/local_playback_route.dart';
 
 // Re-export AppRoutes so existing callers that import router.dart for routes
 // do not need to change their import path.
@@ -76,15 +77,15 @@ final routerProvider = Provider<GoRouter>((ref) {
           state.fullPath == AppRoutes.sharedImageViewer;
       final isPublicSetupRoute =
           location == AppRoutes.server || location == AppRoutes.settings;
-      if (isShareViewerRoute || isPublicSetupRoute) return null;
+      final isLocalRoute = location == AppRoutes.localLibrary ||
+          state.fullPath == AppRoutes.localPlayer;
+      if (isShareViewerRoute || isPublicSetupRoute || isLocalRoute) return null;
 
       final container = ProviderScope.containerOf(context, listen: false);
       final settings = container.read(settingsProvider).valueOrNull;
       if (settings == null) return null;
       if (settings.destination == LibraryDestination.local) {
-        return location == AppRoutes.localLibrary
-            ? null
-            : AppRoutes.localLibrary;
+        return isLocalRoute ? null : AppRoutes.localLibrary;
       }
 
       final authAsync = container.read(authStateProvider);
@@ -153,6 +154,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.localLibrary,
         builder: (context, state) => const LocalLibraryScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.localPlayer,
+        builder: (context, state) => LocalPlaybackRoute(
+          localMediaId:
+              int.tryParse(state.pathParameters['localMediaId'] ?? '') ?? -1,
+        ),
       ),
       GoRoute(
         path: AppRoutes.home,
@@ -265,11 +273,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           final mediaId = state.pathParameters['mediaId']!;
           final (mediaUrl, startPosition, title) =
               _parsePlayerExtra(state.extra);
+          final userId = ProviderScope.containerOf(context, listen: false)
+                  .read(authStateProvider)
+                  .valueOrNull
+                  ?.user
+                  ?.id ??
+              0;
           return VideoPlayerScreen(
             mediaId: mediaId,
             mediaUrl: mediaUrl,
             mediaTitle: title,
             startPosition: startPosition,
+            serverUserId: userId,
           );
         },
       ),
@@ -280,11 +295,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           final mediaId = state.pathParameters['mediaId']!;
           final (mediaUrl, startPosition, title) =
               _parsePlayerExtra(state.extra);
+          final userId = ProviderScope.containerOf(context, listen: false)
+                  .read(authStateProvider)
+                  .valueOrNull
+                  ?.user
+                  ?.id ??
+              0;
           return AudioPlayerScreen(
             mediaId: mediaId,
             mediaUrl: mediaUrl,
             mediaTitle: title,
             startPosition: startPosition,
+            serverUserId: userId,
           );
         },
       ),

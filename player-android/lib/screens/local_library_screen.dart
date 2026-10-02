@@ -111,6 +111,7 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
               title: Text(media.title,
                   maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text(_subtitle(media)),
+              onTap: () => context.push(AppRoutes.localPlayerPath(media.id)),
               trailing: PopupMenuButton<_LocalMediaAction>(
                 tooltip: 'Manage ${media.title}',
                 onSelected: (action) => switch (action) {
@@ -195,6 +196,7 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
             },
           );
       if (relinked != null) {
+        ref.invalidate(localMediaByIdProvider(media.id));
         ref.invalidate(localMediaListProvider);
         final message = relinked.previousFileWasUnavailable
             ? 'The previous file was unavailable. Updated ${relinked.media.title}.'
@@ -230,6 +232,7 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
     await _runOperation(() async {
       final result =
           await ref.read(localLibraryManagerProvider).remove(media.id);
+      ref.invalidate(localMediaByIdProvider(media.id));
       ref.invalidate(localMediaListProvider);
       if (result.releaseFailed) {
         _showMessage(

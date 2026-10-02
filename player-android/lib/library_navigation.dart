@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'app_routes.dart';
 import 'providers/audio_handler_provider.dart';
+import 'providers/playback_session_provider.dart';
 import 'providers/progress_queue_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/api_client_provider.dart';
@@ -12,11 +13,15 @@ import 'models/user.dart';
 
 Future<void> switchToLocalLibrary(WidgetRef ref, BuildContext context) async {
   try {
+    final playback = ref.read(playbackSessionCoordinatorProvider);
+    final hadOwner = playback.activeKind != null;
+    await playback.stopCurrent();
+    if (!hadOwner && ref.exists(audioHandlerProvider)) {
+      // Compatibility for an audio session created before ownership tracking.
+      await ref.read(audioHandlerProvider).stop();
+    }
     if (ref.exists(progressQueueProvider)) {
       await ref.read(progressQueueProvider).suspend();
-    }
-    if (ref.exists(audioHandlerProvider)) {
-      await ref.read(audioHandlerProvider).stop();
     }
     await ref
         .read(settingsProvider.notifier)

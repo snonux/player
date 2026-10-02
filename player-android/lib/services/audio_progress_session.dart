@@ -25,19 +25,22 @@ class AudioProgressSession {
   Future<void> _pending = Future.value();
   int? _lastPositionMs;
   bool _finishedEmitted = false;
+  bool _completionReceived = false;
   bool _closed = false;
 
   /// A regular tick skips paused audio; transitions force one final sample.
-  Future<void> record({bool force = false}) {
+  Future<void> record({bool force = false, bool completed = false}) {
     if (_closed || (!force && !playing())) return _pending;
+    if (completed) _completionReceived = true;
     final elapsed = position();
     final total = duration();
     final elapsedMs = elapsed.inMilliseconds;
     if (elapsedMs < 0) return _pending;
 
-    final reachedFinish = total != null &&
-        total.inMilliseconds > 0 &&
-        elapsedMs / total.inMilliseconds >= 0.95;
+    final reachedFinish = _completionReceived ||
+        (total != null &&
+            total.inMilliseconds > 0 &&
+            elapsedMs / total.inMilliseconds >= 0.95);
 
     // Serialize snapshots: an older in-flight request must never be sent
     // after a later pause/stop position for the same media item.

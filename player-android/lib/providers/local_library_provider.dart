@@ -6,6 +6,8 @@ import '../models/local_media.dart';
 import '../services/local_library_repository.dart';
 import '../services/local_document_picker.dart';
 import '../services/local_library_manager.dart';
+import '../services/playback_session_coordinator.dart';
+import 'playback_session_provider.dart';
 
 /// Opens the standalone local database only when a local repository is used.
 /// It is independent of server auth, settings, and the network progress queue.
@@ -35,12 +37,23 @@ final localDocumentPickerProvider = Provider<LocalDocumentPicker>(
   (ref) => MethodChannelLocalDocumentPicker(),
 );
 
-/// Playback owns additional URI grants while it is actively using a source.
-/// Replace this default with the active-session tracker when local playback is
-/// connected; the empty implementation is correct for the current library UI.
 final localDocumentUsageProvider = Provider<LocalDocumentUsage>(
-  (ref) => const NoActiveLocalDocumentUsage(),
+  (ref) => _PlaybackDocumentUsage(
+    ref.watch(playbackSessionCoordinatorProvider),
+  ),
 );
+
+class _PlaybackDocumentUsage implements LocalDocumentPlaybackUsage {
+  _PlaybackDocumentUsage(this.playback);
+
+  final PlaybackSessionCoordinator playback;
+
+  @override
+  bool isInUse(String uri) => playback.isLocalSourceInUse(uri);
+
+  @override
+  Future<void> stopUsing(String uri) => playback.stopLocalSource(uri);
+}
 
 final localLibraryManagerProvider = Provider<LocalLibraryManager>((ref) {
   return LocalLibraryManager(
@@ -58,3 +71,8 @@ final localMediaListProvider = FutureProvider<List<LocalMedia>>(
     return items;
   },
 );
+
+final localMediaByIdProvider =
+    FutureProvider.autoDispose.family<LocalMedia?, int>((ref, id) {
+  return ref.watch(localMediaRepositoryProvider).getById(id);
+});

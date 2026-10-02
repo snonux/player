@@ -27,6 +27,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -34,8 +35,11 @@ import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
+import 'package:player_android/providers/playback_session_provider.dart';
 import 'package:player_android/screens/video_player_screen.dart';
 import 'package:player_android/services/progress_queue.dart';
+import 'package:player_android/services/playback_request.dart';
+import 'package:player_android/services/playback_session_coordinator.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
 // ---------------------------------------------------------------------------
@@ -147,28 +151,56 @@ class _FakeProgressQueue implements ProgressQueueBase {
 class _PlayableVideoPlatform extends VideoPlayerPlatform {
   final events = StreamController<VideoEvent>();
   Duration position = Duration.zero;
+  DataSource? lastSource;
+  Completer<void>? pendingPause;
+  Completer<void>? pendingDispose;
+  int playCalls = 0;
+  int positionPolls = 0;
+  int disposeCalls = 0;
+  bool failInitialize = false;
+  Object? createError;
+  Duration duration = const Duration(seconds: 100);
 
   @override
   Future<void> init() async {}
 
   @override
   Future<int?> create(DataSource source) async {
-    scheduleMicrotask(() => events.add(VideoEvent(
-          eventType: VideoEventType.initialized,
-          duration: const Duration(seconds: 100),
-          size: const Size(400, 300),
-        )));
+    lastSource = source;
+    if (createError != null) throw createError!;
+    Timer.run(() {
+      if (failInitialize) {
+        events.addError(
+            PlatformException(code: 'unreadable', message: 'unreadable'));
+        return;
+      }
+      events.add(VideoEvent(
+        eventType: VideoEventType.initialized,
+        duration: duration,
+        size: const Size(400, 300),
+      ));
+    });
     return 1;
   }
 
   @override
   Stream<VideoEvent> videoEventsFor(int playerId) => events.stream;
   @override
-  Future<void> dispose(int playerId) async {}
+  Future<void> dispose(int playerId) async {
+    disposeCalls++;
+    await pendingDispose?.future;
+  }
+
   @override
-  Future<void> play(int playerId) async {}
+  Future<void> play(int playerId) async {
+    playCalls++;
+  }
+
   @override
-  Future<void> pause(int playerId) async {}
+  Future<void> pause(int playerId) async {
+    await pendingPause?.future;
+  }
+
   @override
   Future<void> setLooping(int playerId, bool looping) async {}
   @override
@@ -181,7 +213,11 @@ class _PlayableVideoPlatform extends VideoPlayerPlatform {
   }
 
   @override
-  Future<Duration> getPosition(int playerId) async => position;
+  Future<Duration> getPosition(int playerId) async {
+    positionPolls++;
+    return position;
+  }
+
   @override
   Widget buildView(int playerId) => const SizedBox.shrink();
 }
@@ -205,6 +241,9 @@ Future<void> _pumpScreen(
   String? mediaUrl,
   String? mediaTitle,
   _FakeProgressQueue? progressQueue,
+  PlaybackRequest? request,
+  bool forbidServerDependencies = false,
+  PlaybackSessionCoordinator? coordinator,
 }) async {
   final router = GoRouter(
     initialLocation: '/video/$mediaId',
@@ -215,6 +254,7 @@ Future<void> _pumpScreen(
           mediaId: state.pathParameters['mediaId']!,
           mediaUrl: mediaUrl,
           mediaTitle: mediaTitle,
+          request: request,
         ),
       ),
     ],
@@ -223,12 +263,22 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
-        apiClientProvider.overrideWithValue(fakeClient),
+        if (coordinator != null)
+          playbackSessionCoordinatorProvider.overrideWithValue(coordinator),
+        tokenStorageProvider.overrideWith((ref) {
+          if (forbidServerDependencies) throw StateError('Server token read');
+          return const _FakeTokenStorage();
+        }),
+        apiClientProvider.overrideWith((ref) {
+          if (forbidServerDependencies) throw StateError('Server API read');
+          return fakeClient;
+        }),
         // Override progressQueueProvider so no real SQLite DB is opened and
         // no connectivity subscription is created during widget tests.
-        progressQueueProvider
-            .overrideWithValue(progressQueue ?? _FakeProgressQueue()),
+        progressQueueProvider.overrideWith((ref) {
+          if (forbidServerDependencies) throw StateError('Server queue read');
+          return progressQueue ?? _FakeProgressQueue();
+        }),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
@@ -240,6 +290,272 @@ Future<void> _pumpScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets('native creation failure releases local source and shows error',
+      (tester) async {
+    final previousPlatform = VideoPlayerPlatform.instance;
+    final platform = _PlayableVideoPlatform()
+      ..createError = PlatformException(code: 'permission-denied');
+    VideoPlayerPlatform.instance = platform;
+    addTearDown(() async {
+      VideoPlayerPlatform.instance = previousPlatform;
+      unawaited(platform.events.close());
+    });
+    final coordinator = PlaybackSessionCoordinator();
+    const uri = 'content://provider/denied';
+    await _pumpScreen(
+      tester,
+      _FakeApiClient(),
+      coordinator: coordinator,
+      forbidServerDependencies: true,
+      request: LocalPlaybackRequest(
+        localMediaId: 7,
+        sourceUri: Uri.parse(uri),
+        title: 'Denied file',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('video_player_error')), findsOneWidget);
+    expect(coordinator.isLocalSourceInUse(uri), isFalse);
+    final next = await coordinator.claim(
+      kind: PlaybackSourceKind.publicShare,
+      identity: 'public-share:next',
+      stop: () async {},
+    );
+    expect(next?.isCurrent, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('zero-duration video waits for actual completion',
+      (tester) async {
+    final previousPlatform = VideoPlayerPlatform.instance;
+    final platform = _PlayableVideoPlatform()..duration = Duration.zero;
+    VideoPlayerPlatform.instance = platform;
+    addTearDown(() async {
+      VideoPlayerPlatform.instance = previousPlatform;
+      await platform.events.close();
+    });
+    var finished = 0;
+    final saved = <double>[];
+    await _pumpScreen(
+      tester,
+      _FakeApiClient(),
+      forbidServerDependencies: true,
+      request: LocalPlaybackRequest(
+        localMediaId: 7,
+        sourceUri: Uri.parse('content://provider/unknown'),
+        title: 'Unknown duration',
+        readPosition: () async => 8,
+        savePosition: (seconds) async => saved.add(seconds),
+        markFinished: () async => finished++,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('video_unknown_duration_controls')),
+        findsOneWidget);
+    expect(platform.playCalls, greaterThan(0));
+    expect(platform.position, const Duration(seconds: 8));
+    platform.position = const Duration(seconds: 8);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(platform.positionPolls, greaterThan(0));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(finished, 0);
+    expect(saved, contains(8));
+    await tester.tap(find.byTooltip('Pause'));
+    await tester.pumpAndSettle();
+    expect(finished, 0);
+    await tester.tap(find.byTooltip('Play'));
+    await tester.pumpAndSettle();
+    expect(platform.position, const Duration(seconds: 8));
+    platform.events.add(VideoEvent(eventType: VideoEventType.completed));
+    await tester.pumpAndSettle();
+    expect(finished, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    expect(finished, 1);
+    expect(saved, isNotEmpty);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('failed local initialization retains its URI until disposal ends',
+      (tester) async {
+    final previousPlatform = VideoPlayerPlatform.instance;
+    final platform = _PlayableVideoPlatform()
+      ..failInitialize = true
+      ..pendingDispose = Completer<void>();
+    VideoPlayerPlatform.instance = platform;
+    addTearDown(() async {
+      VideoPlayerPlatform.instance = previousPlatform;
+      await platform.events.close();
+    });
+    final coordinator = PlaybackSessionCoordinator();
+    const uri = 'content://provider/unreadable';
+    await _pumpScreen(
+      tester,
+      _FakeApiClient(),
+      coordinator: coordinator,
+      forbidServerDependencies: true,
+      request: LocalPlaybackRequest(
+        localMediaId: 7,
+        sourceUri: Uri.parse(uri),
+        title: 'Unreadable file',
+      ),
+    );
+    for (var attempt = 0;
+        attempt < 100 && platform.disposeCalls == 0;
+        attempt++) {
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+    }
+    expect(platform.disposeCalls, 1);
+    expect(coordinator.isLocalSourceInUse(uri), isTrue);
+    var replacementStarted = false;
+    final next = coordinator
+        .claim(
+      kind: PlaybackSourceKind.publicShare,
+      identity: 'public-share:next',
+      stop: () async {},
+    )
+        .then((lease) {
+      replacementStarted = true;
+      return lease;
+    });
+    await tester.pump();
+    expect(replacementStarted, isFalse);
+    expect(coordinator.isLocalSourceInUse(uri), isTrue);
+    platform.pendingDispose!.complete();
+    for (var attempt = 0; attempt < 100 && !replacementStarted; attempt++) {
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+    }
+    expect(replacementStarted, isTrue);
+    expect((await tester.runAsync(() => next))!.isCurrent, isTrue);
+    await tester.pump();
+    expect(coordinator.isLocalSourceInUse(uri), isFalse);
+    expect(find.textContaining('unreadable'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  for (final disposeRoute in [true, false]) {
+    testWidgets(
+        disposeRoute
+            ? 'video route disposal blocks replacement until pause finishes'
+            : 'retained video route shows stopped state during replacement',
+        (tester) async {
+      final previousPlatform = VideoPlayerPlatform.instance;
+      final platform = _PlayableVideoPlatform();
+      VideoPlayerPlatform.instance = platform;
+      addTearDown(() async {
+        VideoPlayerPlatform.instance = previousPlatform;
+        await platform.events.close();
+      });
+      final coordinator = PlaybackSessionCoordinator();
+      await _pumpScreen(
+        tester,
+        _FakeApiClient(),
+        coordinator: coordinator,
+        request: PublicSharePlaybackRequest(
+          shareToken: 'example',
+          sourceUri: Uri.parse('https://player.example/s/example/stream'),
+          title: 'Shared video',
+        ),
+        forbidServerDependencies: true,
+      );
+      await tester.pump();
+      await tester.pump();
+      platform.pendingPause = Completer<void>();
+      if (disposeRoute) await tester.pumpWidget(const SizedBox.shrink());
+      var replacementStarted = false;
+      final next = coordinator
+          .claim(
+        kind: PlaybackSourceKind.local,
+        identity: 'local:replacement',
+        stop: () async {},
+      )
+          .then((lease) {
+        replacementStarted = true;
+        return lease;
+      });
+      await tester.pump();
+      expect(replacementStarted, isFalse);
+      if (!disposeRoute) {
+        expect(
+            find.text('Playback stopped. Tap Retry to play this item again.'),
+            findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+      platform.pendingPause!.complete();
+      for (var attempt = 0; attempt < 100 && !replacementStarted; attempt++) {
+        await tester.pump(const Duration(milliseconds: 10));
+        await tester.runAsync(
+            () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+      }
+      expect(replacementStarted, isTrue);
+      final lease = await tester.runAsync(() => next);
+      expect(lease!.isCurrent, isTrue);
+      expect(coordinator.activeIdentity, 'local:replacement');
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets('local video uses content URI without server providers',
+      (tester) async {
+    final previousPlatform = VideoPlayerPlatform.instance;
+    final platform = _PlayableVideoPlatform();
+    VideoPlayerPlatform.instance = platform;
+    addTearDown(() async {
+      VideoPlayerPlatform.instance = previousPlatform;
+      await platform.events.close();
+    });
+    final queue = _FakeProgressQueue();
+    final client = _FakeApiClient();
+    final localPositions = <double>[];
+    final request = LocalPlaybackRequest(
+      localMediaId: 91,
+      sourceUri: Uri.parse('content://provider/video/91'),
+      title: 'On-device movie',
+      startPosition: 23,
+      readPosition: () async => 71,
+      savePosition: (seconds) async => localPositions.add(seconds),
+      markFinished: () async {},
+    );
+
+    await _pumpScreen(
+      tester,
+      client,
+      progressQueue: queue,
+      request: request,
+      forbidServerDependencies: true,
+      mediaId: '91',
+    );
+    await tester.pumpAndSettle();
+
+    expect(platform.lastSource!.sourceType, DataSourceType.contentUri);
+    expect(platform.lastSource!.uri, request.sourceUri.toString());
+    expect(platform.lastSource!.httpHeaders, isEmpty);
+    expect(platform.position, const Duration(seconds: 23));
+    expect(client.getMediaProgressCallCount, 0);
+    expect(queue.positions, isEmpty);
+    expect(queue.finishedItems, isEmpty);
+    platform.position = const Duration(seconds: 40);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 5));
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    expect(localPositions, contains(40));
+    platform.position = const Duration(seconds: 41);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    expect(localPositions.last, 41);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
   testWidgets('video threshold queues one durable completion', (tester) async {
     final previousPlatform = VideoPlayerPlatform.instance;
     final platform = _PlayableVideoPlatform();
@@ -252,13 +568,13 @@ void main() {
     final client = _FakeApiClient();
     await _pumpScreen(tester, client,
         progressQueue: queue, mediaTitle: 'Example movie.mp4');
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('video_player_error')), findsNothing);
 
     expect(find.text('Example movie.mp4'), findsOneWidget);
     platform.position = const Duration(seconds: 96);
     await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
     await tester.pump(const Duration(seconds: 5));
     await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
     expect(queue.finishedItems, [42]);
@@ -270,6 +586,9 @@ void main() {
     expect(queue.finishedItems, [42]);
     expect(queue.positions, hasLength(1));
     await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
   });
   // --------------------------------------------------------------------------
   // Loading state

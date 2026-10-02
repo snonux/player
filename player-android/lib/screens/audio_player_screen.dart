@@ -6,11 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../api/dio_client.dart';
-import '../api/player_api_client.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/audio_handler_provider.dart';
 import '../providers/progress_queue_provider.dart';
+import '../providers/playback_session_provider.dart';
+import '../services/playback_session_coordinator.dart';
 import '../services/audio_handler.dart';
+import '../services/playback_request.dart';
 
 // Available playback speed options for the speed selector.
 const _kSpeedOptions = [0.5, 1.0, 1.25, 1.5, 2.0];
@@ -45,6 +47,8 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
     this.mediaTitle,
     this.startPosition,
     this.isPublicShare = false,
+    this.request,
+    this.serverUserId = 0,
   });
 
   /// The media item identifier extracted from the '/audio/:mediaId' route path.
@@ -65,6 +69,8 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
   /// When null, [PlayerApiClient.getMediaProgress] is called instead.
   final double? startPosition;
   final bool isPublicShare;
+  final PlaybackRequest? request;
+  final int serverUserId;
 
   @override
   ConsumerState<AudioPlayerScreen> createState() => _AudioPlayerScreenState();
@@ -79,12 +85,15 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   int _initGeneration = 0;
   // Non-null when initialisation failed; shown in the error view.
   String? _error;
+  PlaybackRequest? _activeRequest;
+  int? _activeSourceGeneration;
 
   // True while the player is being set up; shows a full-screen spinner.
   bool _isLoading = true;
 
   // Current playback speed; updated by the speed selector.
   double _playbackSpeed = 1.0;
+  PlaybackSessionLease? _sessionLease;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -98,74 +107,204 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _initPlayer());
   }
 
+  @override
+  void didUpdateWidget(covariant AudioPlayerScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.request?.identity != widget.request?.identity ||
+        oldWidget.request?.sourceUri != widget.request?.sourceUri ||
+        oldWidget.request?.title != widget.request?.title ||
+        oldWidget.request?.startPosition != widget.request?.startPosition ||
+        oldWidget.mediaId != widget.mediaId ||
+        oldWidget.serverUserId != widget.serverUserId ||
+        oldWidget.startPosition != widget.startPosition ||
+        oldWidget.mediaUrl != widget.mediaUrl ||
+        oldWidget.isPublicShare != widget.isPublicShare) {
+      _initGeneration++;
+      setState(() {
+        _error = null;
+        _isLoading = true;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _initPlayer());
+    }
+  }
+
+  @override
+  void dispose() {
+    _initGeneration++;
+    // Completed setup belongs to the background handler. An abandoned setup
+    // must release its source, even when credentials or resume reads are pending.
+    final lease = _sessionLease;
+    if (_isLoading && lease?.isCurrent == true) {
+      unawaited(lease!.stop());
+    }
+    super.dispose();
+  }
+
   // ---------------------------------------------------------------------------
   // Player initialisation
   // ---------------------------------------------------------------------------
 
-  /// Top-level orchestrator for player setup.
-  ///
-  /// Delegates each step to a focused helper so this method stays under 30
-  /// lines and each concern (auth, source loading, seek) is independently
-  /// testable and readable (Separation of Concerns).
+  /// Loads the selected source, applies its resume position, and transfers
+  /// progress ownership to the background handler. Ownership is checked after
+  /// async setup so an older screen cannot restart a replacement source.
   Future<void> _initPlayer() async {
     if (!mounted) return;
 
     final initGeneration = _initGeneration;
     final handler = ref.read(audioHandlerProvider);
+    final request = _effectiveRequest();
+    _activeRequest = request;
+    final coordinator = ref.read(playbackSessionCoordinatorProvider);
+    final PlaybackSessionLease? lease;
+    try {
+      lease = await coordinator.claim(
+        kind: request.kind,
+        identity: request.identity,
+        stop: handler.stop,
+        sourceUri: request.sourceUri.toString(),
+      );
+    } catch (error) {
+      if (mounted && _initGeneration == initGeneration) {
+        setState(() {
+          _error = _initErrorMessage(error);
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+    if (lease == null) return;
+    if (!mounted || initGeneration != _initGeneration) {
+      await lease.release();
+      return;
+    }
+    _sessionLease = lease;
+    final sourceGeneration =
+        handler.beginSourceSession(ownsSource: () => lease!.isCurrent);
+    _activeSourceGeneration = sourceGeneration;
     final stopGeneration = handler.stopGeneration;
     bool current() =>
         mounted &&
         _initGeneration == initGeneration &&
-        handler.stopGeneration == stopGeneration;
-    final player = handler.player;
-    final client = ref.read(apiClientProvider);
-    final storage = ref.read(tokenStorageProvider);
-    final cookieJar = ref.read(cookieJarProvider);
-    final mediaIdInt = int.tryParse(widget.mediaId) ?? 0;
-    final url = widget.mediaUrl ?? client.streamUrl(mediaIdInt);
+        handler.stopGeneration == stopGeneration &&
+        lease?.isCurrent == true;
 
-    // Step 1–2: build auth headers (Bearer + session cookie).
-    final headers = widget.isPublicShare
-        ? <String, String>{}
-        : await _buildAuthHeaders(
-            storage,
-            cookieJar,
-            ref.read(credentialMutationQueueProvider),
-            ref.read(playerBaseUrlProvider),
-            Uri.parse(url));
-    if (!current()) return;
-
-    // Step 3: flush the previous item before replacing its source, then load.
-    await handler.endProgress();
-    if (!current()) return;
-    final loaded = await _loadSource(player, url, headers, current);
-    if (!loaded || !current()) return;
-
-    // Step 4: seek to the saved position (non-fatal if unavailable).
-    if (!widget.isPublicShare) {
-      await _resumeFromSavedPosition(player, client, mediaIdInt);
+    // Local and public-share requests carry no account credentials.
+    Map<String, String> headers;
+    try {
+      headers = request is ServerPlaybackRequest
+          ? await _buildAuthHeaders(
+              ref.read(tokenStorageProvider),
+              ref.read(cookieJarProvider),
+              ref.read(credentialMutationQueueProvider),
+              Uri.parse(request.serverOrigin),
+              request.sourceUri,
+            )
+          : <String, String>{};
+    } catch (error) {
+      if (current()) {
+        await lease.release();
+        if (!mounted || _initGeneration != initGeneration) return;
+        setState(() {
+          _error = _initErrorMessage(error);
+          _isLoading = false;
+        });
+      }
+      return;
     }
     if (!current()) return;
 
-    // Step 5: publish media-session metadata to notification/lock-screen.
+    // Flush the previous item before replacing its source, then load.
+    await handler.endProgress();
+    if (!current()) return;
+    final loaded = await _loadSource(
+      handler,
+      sourceGeneration,
+      request.sourceUri.toString(),
+      headers,
+      current,
+    );
+    if (!loaded || !current()) {
+      if (lease.isCurrent) await lease.release();
+      return;
+    }
+
+    // Resolve and apply the source-specific resume point.
+    double? resumePosition = request.startPosition;
+    if (resumePosition == null && request.readPosition != null) {
+      try {
+        resumePosition = await request.readPosition!();
+      } catch (_) {
+        // Progress lookup is optional; a provider error starts at zero.
+      }
+    }
+    if (!current()) return;
+    if (resumePosition != null && resumePosition > 0) {
+      try {
+        await handler.seekForSession(
+          Duration(milliseconds: (resumePosition * 1000).round()),
+          sourceGeneration,
+        );
+      } catch (_) {
+        // A bad or stale resume position must not prevent playback.
+      }
+    }
+    if (!current()) return;
+
     handler.setMediaItem(
-      id: widget.mediaId,
-      title: widget.mediaTitle ??
-          (widget.isPublicShare ? 'Shared Audio' : 'Audio – ${widget.mediaId}'),
+      id: request.identity,
+      title: request.title,
     );
 
     setState(() => _isLoading = false);
 
     // The callbacks capture dependencies, never the screen/ref. The handler's
     // session outlives this route during background playback.
-    if (!widget.isPublicShare) {
-      final queue = ref.read(progressQueueProvider);
+    if (request.savePosition != null && request.markFinished != null) {
       handler.startProgress(
-        savePosition: (seconds) => queue.enqueue(mediaIdInt, seconds),
-        markFinished: () => queue.enqueueFinished(mediaIdInt),
+        savePosition: request.savePosition!,
+        markFinished: request.markFinished!,
       );
     }
-    unawaited(handler.play());
+    if (current() && handler.activateSourceSession(sourceGeneration)) {
+      unawaited(handler.play());
+    }
+  }
+
+  PlaybackRequest _effectiveRequest() {
+    final request = widget.request;
+    if (request != null) return request;
+    final title = widget.mediaTitle ??
+        (widget.isPublicShare ? 'Shared Audio' : 'Audio – ${widget.mediaId}');
+    if (widget.isPublicShare) {
+      final url = widget.mediaUrl;
+      if (url == null) throw StateError('Public audio share has no stream URL');
+      final segments = Uri.parse(url).pathSegments;
+      return PublicSharePlaybackRequest(
+        shareToken: segments.length > 1 && segments.first == 's'
+            ? segments[1]
+            : 'unknown',
+        sourceUri: Uri.parse(url),
+        title: title,
+      );
+    }
+
+    final client = ref.read(apiClientProvider);
+    final mediaId = int.tryParse(widget.mediaId) ?? 0;
+    final url = widget.mediaUrl ?? client.streamUrl(mediaId);
+    final queue = ref.read(progressQueueProvider);
+    return ServerPlaybackRequest(
+      mediaId: mediaId,
+      serverOrigin: ref.read(playerBaseUrlProvider).origin,
+      userId: widget.serverUserId,
+      sourceUri: Uri.parse(url),
+      title: title,
+      startPosition: widget.startPosition,
+      readPosition: widget.startPosition == null
+          ? () => client.getMediaProgress(mediaId)
+          : null,
+      savePosition: (seconds) => queue.enqueue(mediaId, seconds),
+      markFinished: () => queue.enqueueFinished(mediaId),
+    );
   }
 
   /// Builds the headers map for an authenticated stream request.
@@ -196,14 +335,16 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   /// On failure, sets the error UI state and returns `false` so [_initPlayer]
   /// can short-circuit without nesting the remaining steps inside a try/catch.
   Future<bool> _loadSource(
-    AudioPlayer player,
+    PlayerAudioHandler handler,
+    int sourceGeneration,
     String url,
     Map<String, String> headers,
     bool Function() current,
   ) async {
     try {
-      await player.setAudioSource(
+      await handler.loadSourceForSession(
         AudioSource.uri(Uri.parse(url), headers: headers),
+        sourceGeneration,
       );
       return true;
     } catch (e) {
@@ -213,29 +354,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
         _isLoading = false;
       });
       return false;
-    }
-  }
-
-  /// Seeks [player] to the saved position for this media item.
-  ///
-  /// Prefers [widget.startPosition] to avoid a redundant API round-trip; falls
-  /// back to [client.getMediaProgress].  Failure is non-fatal — the player
-  /// simply starts from the beginning.
-  Future<void> _resumeFromSavedPosition(
-    AudioPlayer player,
-    PlayerApiClient client,
-    int mediaId,
-  ) async {
-    try {
-      final savedSeconds =
-          widget.startPosition ?? await client.getMediaProgress(mediaId);
-      if (savedSeconds != null && savedSeconds > 0) {
-        await player.seek(
-          Duration(milliseconds: (savedSeconds * 1000).round()),
-        );
-      }
-    } catch (_) {
-      // Progress fetch failure is non-fatal; start from the beginning.
     }
   }
 
@@ -283,12 +401,25 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     final next = raw < Duration.zero
         ? Duration.zero
         : (total > Duration.zero && raw > total ? total : raw);
-    await handler.seek(next);
+    final sourceGeneration = _activeSourceGeneration;
+    if (sourceGeneration != null) {
+      await handler.seekForSession(next, sourceGeneration);
+    }
+  }
+
+  Future<void> _seek(Duration position) async {
+    final generation = _activeSourceGeneration;
+    if (generation == null) return;
+    await ref.read(audioHandlerProvider).seekForSession(position, generation);
   }
 
   /// Applies [speed] to the handler and updates the UI state.
   Future<void> _setSpeed(double speed) async {
     final handler = ref.read(audioHandlerProvider);
+    final generation = _activeSourceGeneration;
+    if (generation == null || !handler.isSourceSessionCurrent(generation)) {
+      return;
+    }
     await handler.setSpeed(speed);
     if (!mounted) return;
     setState(() => _playbackSpeed = speed);
@@ -305,7 +436,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text(widget.mediaTitle ??
+        title: Text(_activeRequest?.title ??
+            widget.mediaTitle ??
             (widget.isPublicShare
                 ? 'Shared Audio'
                 : 'Audio – ${widget.mediaId}')),
@@ -440,7 +572,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
               // Route through the handler so the media-session notification
               // stays in sync with the slider position during a drag.
               onChanged: total > 0
-                  ? (v) => handler.seek(Duration(milliseconds: v.round()))
+                  ? (v) => _seek(Duration(milliseconds: v.round()))
                   : null,
               activeColor: Colors.white,
               inactiveColor: Colors.white24,
@@ -512,7 +644,20 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
                 color: Colors.white,
                 size: 64,
               ),
-              onPressed: isPlaying ? handler.pause : handler.play,
+              onPressed: () {
+                if (_sessionLease?.isCurrent != true) return;
+                final generation = _activeSourceGeneration;
+                if (generation == null ||
+                    !handler.isSourceSessionCurrent(generation)) {
+                  _onRetry();
+                  return;
+                }
+                if (isPlaying) {
+                  handler.pause();
+                } else {
+                  handler.play();
+                }
+              },
               tooltip: isPlaying ? 'Pause' : 'Play',
             ),
             const SizedBox(width: 16),

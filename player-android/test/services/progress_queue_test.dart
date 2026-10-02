@@ -26,10 +26,20 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/services/progress_queue.dart';
+import 'package:player_android/library_navigation.dart';
+import 'package:player_android/providers/progress_queue_provider.dart';
+import 'package:player_android/providers/playback_session_provider.dart';
+import 'package:player_android/providers/settings_provider.dart';
+import 'package:player_android/services/playback_request.dart';
+import 'package:player_android/services/playback_session_coordinator.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -358,6 +368,92 @@ Future<void> _pump() async {
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets(
+      'overlapping library switches save the server sample before suspension',
+      (tester) async {
+    sqfliteFfiInit();
+    SharedPreferences.setMockInitialValues({
+      'server_base_url': _scopeA.origin,
+      'library_destination': 'server',
+    });
+    final fixture = (await tester.runAsync(_makeQueue))!;
+    final coordinator = PlaybackSessionCoordinator();
+    final container = ProviderContainer(overrides: [
+      progressQueueProvider.overrideWithValue(fixture.queue),
+      playbackSessionCoordinatorProvider.overrideWithValue(coordinator),
+    ]);
+    container.read(progressQueueProvider);
+    addTearDown(container.dispose);
+    addTearDown(fixture.conn.close);
+    addTearDown(() => tester.runAsync(fixture.queue.dispose));
+    await tester.runAsync(() => container.read(settingsProvider.future));
+    final signals = (await tester.runAsync(
+        () async => (started: Completer<void>(), release: Completer<void>())))!;
+    final saveStarted = signals.started;
+    final releaseSave = signals.release;
+    await coordinator.claim(
+      kind: PlaybackSourceKind.server,
+      identity: 'server:${_scopeA.origin}:1:42',
+      stop: () async {
+        saveStarted.complete();
+        await releaseSave.future;
+        await fixture.queue.enqueue(42, 37);
+      },
+    );
+    late WidgetRef widgetRef;
+    late BuildContext widgetContext;
+    final router = GoRouter(initialLocation: '/server-library', routes: [
+      GoRoute(
+        path: '/server-library',
+        builder: (_, __) => Consumer(builder: (context, ref, _) {
+          widgetRef = ref;
+          widgetContext = context;
+          return const Text('server library');
+        }),
+      ),
+      GoRoute(
+        path: '/local',
+        builder: (_, __) => const Text('local library'),
+      ),
+    ]);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp.router(routerConfig: router),
+    ));
+    var switchesDone = false;
+    await tester.runAsync(() async {
+      final firstSwitch = switchToLocalLibrary(widgetRef, widgetContext);
+      await saveStarted.future;
+      final secondSwitch = switchToLocalLibrary(widgetRef, widgetContext);
+      await _pump();
+      expect(container.read(settingsProvider).value!.destination,
+          LibraryDestination.server);
+      releaseSave.complete();
+      unawaited(Future.wait([firstSwitch, secondSwitch])
+          .then((_) => switchesDone = true));
+    });
+    for (var attempt = 0; attempt < 100 && !switchesDone; attempt++) {
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.runAsync(_pump);
+    }
+    expect(switchesDone, isTrue);
+    await tester.pumpAndSettle();
+    expect(find.text('local library'), findsOneWidget);
+    expect(container.read(settingsProvider).value!.destination,
+        LibraryDestination.local);
+    await tester.runAsync(() async {
+      fixture.conn.emitStatus([ConnectivityResult.wifi]);
+      await _pump();
+      expect(fixture.client.calls, isEmpty);
+      await fixture.queue.resume(_scopeA);
+      await _pump();
+    });
+    expect(fixture.client.calls.single.single['media_id'], 42);
+    expect(fixture.client.calls.single.single['position_seconds'], 37);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;

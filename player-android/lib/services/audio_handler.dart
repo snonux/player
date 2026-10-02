@@ -48,7 +48,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _broadcastState();
       final progress = _progress;
       if (state == ProcessingState.completed && progress != null) {
-        unawaited(progress.record(force: true));
+        unawaited(progress.record(force: true, completed: true));
       }
     });
   }
@@ -56,6 +56,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player;
   AudioProgressSession? _progress;
   int _stopGeneration = 0;
+  int _sourceGeneration = 0;
+  bool _controlsEnabled = false;
+  bool Function()? _ownsSource;
+  Future<void>? _sourceOperationTail;
 
   /// Changes immediately when playback is stopped (including logout).
   /// Pending screen setup must not restart playback from an older generation.
@@ -69,6 +73,46 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// duration streams and still use bearer-token authenticated sources.
   ///
   AudioPlayer get player => _player;
+
+  /// Invalidates pending source work from the previous audio session.
+  int beginSourceSession({bool Function()? ownsSource}) {
+    _controlsEnabled = false;
+    _ownsSource = ownsSource;
+    return ++_sourceGeneration;
+  }
+
+  /// Enables media controls only after loading and restoring this source.
+  bool activateSourceSession(int generation) {
+    if (generation != _sourceGeneration || _ownsSource?.call() == false) {
+      return false;
+    }
+    _controlsEnabled = true;
+    return true;
+  }
+
+  bool isSourceSessionCurrent(int generation) =>
+      generation == _sourceGeneration && _canControlSource;
+
+  bool get _canControlSource =>
+      _controlsEnabled && _ownsSource?.call() != false;
+
+  /// Loads only while [generation] still owns the shared player.
+  Future<void> loadSourceForSession(
+    AudioSource source,
+    int generation,
+  ) =>
+      _serializeSourceOperation(() async {
+        if (generation != _sourceGeneration) return;
+        await _player.setAudioSource(source);
+      });
+
+  /// A delayed seek from an old screen cannot seek a replacement source.
+  Future<bool> seekForSession(Duration position, int generation) =>
+      _serializeSourceOperation(() async {
+        if (generation != _sourceGeneration) return false;
+        await _player.seek(position);
+        return generation == _sourceGeneration;
+      });
 
   /// Starts tracking the loaded item. Call after the source and resume seek
   /// complete. The callbacks capture account-scoped API/queue dependencies
@@ -101,7 +145,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   // ---------------------------------------------------------------------------
 
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() async {
+    if (_canControlSource) await _player.play();
+  }
 
   @override
   Future<void> pause() async {
@@ -111,8 +157,13 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
+    _controlsEnabled = false;
     _stopGeneration++;
+    _sourceGeneration++;
     await endProgress();
+    // Stop immediately even when setAudioSource is still pending. The bumped
+    // generation prevents that stale screen from seeking or starting playback
+    // after the source operation finishes.
     await _player.stop();
     await super.stop();
   }
@@ -122,32 +173,60 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// [SeekHandler] mixin provides the default [fastForward] / [rewind]
   /// implementations in terms of this method.
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) async {
+    if (_canControlSource) await seekForSession(position, _sourceGeneration);
+  }
+
+  Future<T> _serializeSourceOperation<T>(Future<T> Function() operation) {
+    final previous = _sourceOperationTail;
+    final release = Completer<void>();
+    final tail = release.future;
+    _sourceOperationTail = tail;
+    return _runSourceOperation(previous, release, tail, operation);
+  }
+
+  Future<T> _runSourceOperation<T>(
+    Future<void>? previous,
+    Completer<void> release,
+    Future<void> tail,
+    Future<T> Function() operation,
+  ) async {
+    if (previous != null) await previous;
+    try {
+      return await operation();
+    } finally {
+      release.complete();
+      if (identical(_sourceOperationTail, tail)) _sourceOperationTail = null;
+    }
+  }
 
   /// Skip forward 15 seconds (media-button "next" maps to a short skip for
   /// podcast and audiobook use-cases rather than a full track change).
   @override
   Future<void> skipToNext() async {
+    if (!_canControlSource) return;
     final current = _player.position;
     final total = _player.duration ?? Duration.zero;
     final next =
         _clamp(current + const Duration(seconds: 15), Duration.zero, total);
-    await _player.seek(next);
+    await seek(next);
   }
 
   /// Skip back 15 seconds.
   @override
   Future<void> skipToPrevious() async {
+    if (!_canControlSource) return;
     final current = _player.position;
     final total = _player.duration ?? Duration.zero;
     final prev =
         _clamp(current - const Duration(seconds: 15), Duration.zero, total);
-    await _player.seek(prev);
+    await seek(prev);
   }
 
   /// Changes playback speed and refreshes the notification state.
   @override
   Future<void> setSpeed(double speed) async {
+    if (!_canControlSource) return;
     await _player.setSpeed(speed);
     _broadcastState();
   }
