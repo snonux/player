@@ -78,3 +78,44 @@ may have different seek, offline, or descriptor behavior; these results do not
 promise support for every provider or codec. The harness does not exercise the
 production server routes; they remain on the existing app entrypoint and were
 not changed by this check.
+
+## Production local audio result (2026-10-02)
+
+Tested the regular `lib/main.dart` debug APK on the same API 34 emulator,
+using a disposable 180-second MP3 imported through **Add files → Choose audio**.
+Airplane mode was enabled and Wi-Fi/mobile data were disabled throughout.
+
+The first production run exposed a difference from the harness: passing an
+empty headers map to `AudioSource.uri` enabled just_audio's HTTP proxy, which
+failed with `Unsupported scheme content`. Production audio now passes null
+when no headers are needed, letting Android open the document URI directly.
+Nonempty authenticated server headers are retained and checked by a widget
+regression. Local/public sources are checked for null headers.
+
+Actual emulator checks with the updated production APK:
+
+- The imported DownloadProvider URI loaded and played without a network
+  connection; Android reported a playing media session with the local filename.
+- The on-screen forward control changed a paused position from 55.366 to
+  70.366 seconds. Selecting 1.5× speed was reflected in the Android session.
+- Playback continued after Back to the local library and Home to the Android
+  launcher. Android posted the transport notification with three actions.
+- System media-session pause/play commands changed the background session to
+  paused/playing. A paused sample of 30.641 seconds was present in the real
+  app's `local_progress` SQLite table.
+- After another pause, the database held 42.080 seconds. Force-stop/relaunch
+  preserved the library record and URI grant; opening that entry again reported
+  a playing session at 42.739 seconds, confirming durable resume.
+- Removing the playing entry through **Remove from library** stopped its
+  Android session (inactive, state NONE), emptied the library, and removed its
+  persisted URI grant. The disposable original file stayed in Downloads.
+
+The lifecycle widget regression additionally checks a fractional position save
+when the UI pauses, continued periodic saves, no save on resumed alone, and no
+stale writes after stop. Existing automated cases cover missing/unreadable
+records, failed source loads, stale source ownership, completion/replay, and
+local/server progress isolation. Those cases are automated checks, not claims
+of physical-device testing. Notification buttons and lock-screen gestures were
+not tapped directly; background control was verified through Android's media
+session commands. Physical devices and other document providers remain outside
+this emulator result.

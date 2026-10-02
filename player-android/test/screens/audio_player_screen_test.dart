@@ -293,6 +293,7 @@ Future<void> _pumpScreen(
   String mediaId = '42',
   String? mediaUrl,
   String? mediaTitle,
+  Uri? serverBaseUrl,
   _FakePlayerAudioHandler? fakeHandler,
   PlayerAudioHandler? handlerOverride,
   _FakeProgressQueue? progressQueue,
@@ -321,6 +322,12 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (serverBaseUrl != null) ...[
+          playerBaseUrlProvider.overrideWithValue(serverBaseUrl),
+          credentialMutationQueueProvider.overrideWithValue(
+            CredentialMutationQueue(credentialsEnabled: true),
+          ),
+        ],
         if (coordinator != null)
           playbackSessionCoordinatorProvider.overrideWithValue(coordinator),
         tokenStorageProvider.overrideWith((ref) {
@@ -640,7 +647,7 @@ void main() {
 
     final source = player.loadedSource! as UriAudioSource;
     expect(source.uri, request.sourceUri);
-    expect(source.headers, isEmpty);
+    expect(source.headers, isNull);
     expect(player.elapsed, const Duration(seconds: 14));
     expect(handler.lastId, 'local:77');
     expect(handler.lastTitle, 'On-device track');
@@ -660,11 +667,16 @@ void main() {
     final player = _PlayableAudioPlayer();
     final handler = _PlayableHandler(player);
     await _pumpScreen(tester, _FakeApiClient(),
-        handlerOverride: handler, mediaTitle: 'Chapter One.mp3');
+        handlerOverride: handler,
+        mediaTitle: 'Chapter One.mp3',
+        serverBaseUrl: Uri.parse('http://localhost:8080'));
     await tester.pump();
     await tester.pump();
     expect(find.text('Chapter One.mp3'), findsOneWidget);
     expect(handler.lastTitle, 'Chapter One.mp3');
+    expect((player.loadedSource as UriAudioSource).headers, {
+      'Authorization': 'Bearer test-token',
+    });
     await tester.pumpWidget(const SizedBox.shrink());
     await handler.endProgress();
     await player.playingChanges.close();
@@ -734,7 +746,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(handler.playCalls, 1);
-    expect((player.loadedSource as UriAudioSource).headers, isEmpty);
+    expect((player.loadedSource as UriAudioSource).headers, isNull);
     expect(handler.lastTitle, 'Shared podcast.mp3');
     expect(find.text('Shared podcast.mp3'), findsOneWidget);
     expect(client.getMediaProgressCallCount, 0);

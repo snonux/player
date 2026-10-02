@@ -12,6 +12,7 @@ import 'providers/theme_provider.dart';
 import 'navigation_key.dart';
 import 'router.dart';
 import 'services/audio_handler.dart';
+import 'services/audio_progress_lifecycle.dart';
 import 'services/progress_queue.dart';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,11 @@ void main() async {
       // expectation on Android — mirrors Spotify / Podcast Addict behaviour).
       androidNotificationOngoing: false,
     ),
+  );
+
+  // Flush the active source at lifecycle boundaries while audio keeps playing.
+  WidgetsBinding.instance.addObserver(
+    AudioProgressLifecycle(handler.saveProgress),
   );
 
   // Create the ProviderScope first so we can read providers before runApp.

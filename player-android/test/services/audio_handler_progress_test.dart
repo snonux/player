@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:player_android/services/audio_handler.dart';
+import 'package:player_android/services/audio_progress_lifecycle.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 
@@ -82,6 +83,41 @@ class _Player extends AudioPlayer {
 }
 
 void main() {
+  testWidgets('lifecycle saves a partial tick while background audio continues',
+      (tester) async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    final positions = <double>[];
+    handler.startProgress(
+      savePosition: (seconds) async => positions.add(seconds),
+      markFinished: () async {},
+    );
+    final observer = AudioProgressLifecycle(handler.saveProgress);
+    tester.binding.addObserver(observer);
+    addTearDown(() => tester.binding.removeObserver(observer));
+
+    player.elapsed = const Duration(milliseconds: 12300);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    expect(positions, [12.3]);
+    expect(player.isPlaying, isTrue);
+    player.elapsed = const Duration(milliseconds: 14600);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(positions, [12.3]);
+    await tester.pump(const Duration(seconds: 5));
+    expect(positions, [12.3, 14.6]);
+
+    await tester.runAsync(handler.stop);
+    player.elapsed = const Duration(seconds: 88);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    expect(positions, [12.3, 14.6]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await player.changes.close();
+    await player.processing.close();
+  });
+
   test('media controls cannot restart audio after ownership transfer',
       () async {
     final player = _Player();

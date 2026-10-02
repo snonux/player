@@ -133,6 +133,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
+  /// Saves the current session without pausing background playback.
+  Future<void> saveProgress() async {
+    await _progress?.record(force: true);
+  }
+
   /// Flushes and detaches the current item before its source is replaced.
   Future<void> endProgress() async {
     final session = _progress;

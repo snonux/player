@@ -343,7 +343,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   ) async {
     try {
       await handler.loadSourceForSession(
-        AudioSource.uri(Uri.parse(url), headers: headers),
+        // A nonnull map, even empty, enables just_audio's HTTP proxy. Content
+        // URIs must reach Android's document provider directly.
+        AudioSource.uri(Uri.parse(url),
+            headers: headers.isEmpty ? null : headers),
         sourceGeneration,
       );
       return true;
