@@ -30,3 +30,7 @@ The Flutter project is intentionally small for now. Keep Android client changes 
 Root files provide monorepo orientation only. Component-specific commands, generated files, local databases, media samples, and build outputs belong under their component directories.
 
 Keep local media and generated build artifacts out of git.
+
+## License
+
+MIT; see [LICENSE](LICENSE).
