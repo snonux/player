@@ -4,6 +4,12 @@ Android audio/video player for device files and the Player server.
 
 The installed app version and build number appear at the bottom of **Settings**.
 
+## Screenshots
+
+| On this device | Empty library | Audio player |
+| --- | --- | --- |
+| <img src="../docs/screenshots/android-local-library.png" alt="Local library with audio and video files" width="240"> | <img src="../docs/screenshots/android-empty-library.png" alt="Empty library with Add files and Connect to server" width="240"> | <img src="../docs/screenshots/android-audio-player.png" alt="Audio player with seek bar and speed choices" width="240"> |
+
 ## Play files on this device
 
 A fresh install opens **On this device**. No server, account, or network
