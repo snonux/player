@@ -2,6 +2,20 @@
 
 Player is a self-hosted media player split into a Go server and a Flutter Android client. The server owns the web UI, media library, playback APIs, accounts, and storage; the Android project is the mobile client scaffold that targets the same REST API. This repository is the monorepo root after the split, so start here for orientation and then work in the component directory that matches the change.
 
+## Screenshots
+
+Web UI (served by `player-server`):
+
+| Library | Image viewer | Audio playback |
+| --- | --- | --- |
+| ![Web library with sets](docs/screenshots/web-library.png) | ![Image set with the mini viewer](docs/screenshots/web-image-viewer.png) | ![Audiobook chapter playing](docs/screenshots/web-audio.png) |
+
+Android client (`player-android`):
+
+| On this device | Empty library | Audio player |
+| --- | --- | --- |
+| <img src="docs/screenshots/android-local-library.png" alt="Local library on Android" width="240"> | <img src="docs/screenshots/android-empty-library.png" alt="Empty local library on Android" width="240"> | <img src="docs/screenshots/android-audio-player.png" alt="Android audio player" width="240"> |
+
 ## Repository Layout
 
 ```text
