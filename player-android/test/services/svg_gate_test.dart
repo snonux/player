@@ -545,6 +545,9 @@ void main() {
   });
 
   group('budgets', _budgetTests);
+  group('documented defaults', _defaultsTests);
+  group('documented grammar', _grammarListTests);
+  group('budget edges', _edgeTests);
 }
 
 void _budgetTests() {
@@ -554,7 +557,9 @@ void _budgetTests() {
       expect(() => checkSvgAllowed(document, limits: limits), _rejects(reason));
     });
   }
+}
 
+void _defaultsTests() {
   test('the defaults are the documented budgets', () {
     const limits = SvgLimits();
     expect(limits.maxElements, 2000);
@@ -576,7 +581,9 @@ void _budgetTests() {
     expect(limits.maxExpandedTextChars, 10000);
     expect(kMaxSvgBytes, 1024 * 1024);
   });
+}
 
+void _grammarListTests() {
   test('the grammar allows exactly the documented elements', () {
     expect(kSvgGrammar.keys.toSet(), {
       'svg', 'g', 'defs', 'title', 'desc', 'metadata', 'path', 'rect', //
@@ -603,7 +610,9 @@ void _budgetTests() {
     final text = _overBudget['text multiplied by use']!.$1;
     checkSvgAllowed(text, limits: const SvgLimits(maxExpandedTextChars: 100));
   });
+}
 
+void _edgeTests() {
   test('white space between elements is not counted as text', () {
     final document = svgDocument(body: '${' ' * 5000}<g>\n\n$_rect\n</g>');
     checkSvgAllowed(document, limits: const SvgLimits(maxTextChars: 10));

@@ -23,6 +23,7 @@ void main() {
   group('compileSvg rejects sizes and empty drawings', _rejectShapeTests);
   group('compileSvg rejects risky features', _rejectFeatureTests);
   group('compileSvg complexity limits', _complexityTests);
+  group('compileSvg size limits', _sizeLimitTests);
 }
 
 void _isSvgSourceTests() {
@@ -188,15 +189,16 @@ void _rejectFeatureTests() {
   });
 }
 
-void _complexityTests() {
-  CompiledSvg compile(String body, SvgLimits limits) =>
-      compileSvg(svgBytes(svgDocument(body: body)), limits: limits);
+CompiledSvg _compileBody(String body, SvgLimits limits) =>
+    compileSvg(svgBytes(svgDocument(body: body)), limits: limits);
 
+void _complexityTests() {
   test('more drawing commands than allowed', () {
     final body = '<rect width="1" height="1"/>' * 5;
-    expect(() => compile(body, const SvgLimits(maxCommands: 4)),
+    expect(() => _compileBody(body, const SvgLimits(maxCommands: 4)),
         _rejects('too complex'));
-    expect((compile(body, const SvgLimits(maxCommands: 5))).data, isNotEmpty);
+    expect(
+        (_compileBody(body, const SvgLimits(maxCommands: 5))).data, isNotEmpty);
   });
 
   test('layers nested through <use> are counted after compiling', () {
@@ -205,24 +207,27 @@ void _complexityTests() {
     const body = '<defs><g id="a" opacity="0.5"><rect width="1" height="1"/>'
         '<rect width="2" height="2"/></g></defs>'
         '<g opacity="0.5"><use href="#a"/><rect width="4" height="4"/></g>';
-    expect(() => compile(body, const SvgLimits(maxLayerDepth: 1)),
+    expect(() => _compileBody(body, const SvgLimits(maxLayerDepth: 1)),
         _rejects('too complex'));
-    expect((compile(body, const SvgLimits(maxLayerDepth: 2))).data, isNotEmpty);
+    expect((_compileBody(body, const SvgLimits(maxLayerDepth: 2))).data,
+        isNotEmpty);
   });
 
   test('sibling layers do not add up', () {
     const layer = '<g opacity="0.5"><rect width="1" height="1"/>'
         '<rect width="2" height="2"/></g>';
-    expect((compile(layer * 20, const SvgLimits(maxLayerDepth: 1))).data,
+    expect((_compileBody(layer * 20, const SvgLimits(maxLayerDepth: 1))).data,
         isNotEmpty);
   });
+}
 
+void _sizeLimitTests() {
   test('a single path too large once compiled', () {
     // One command, many segments: only the compiled size bounds it.
     final path = '<path d="M0 0${' l1 1 l-1 0' * 2000}" fill="#f00"/>';
-    expect(() => compile(path, const SvgLimits(maxCompiledBytes: 4096)),
+    expect(() => _compileBody(path, const SvgLimits(maxCompiledBytes: 4096)),
         _rejects('too complex'));
-    expect((compile(path, const SvgLimits())).data, isNotEmpty);
+    expect((_compileBody(path, const SvgLimits())).data, isNotEmpty);
   });
 
   test('nested <use> references that multiply are refused quickly', () {
@@ -234,7 +239,7 @@ void _complexityTests() {
     ];
     final watch = Stopwatch()..start();
     expect(
-        () => compile('<defs>${levels.join()}</defs><use href="#l20"/>',
+        () => _compileBody('<defs>${levels.join()}</defs><use href="#l20"/>',
             const SvgLimits()),
         throwsA(isA<SvgException>()));
     expect(watch.elapsed, lessThan(const Duration(seconds: 5)));

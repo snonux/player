@@ -91,6 +91,21 @@ const _wideOutside = '<line x1="-400" y1="-400" x2="-399" y2="-400" '
 final _hugeGlyphs = '<text id="t" font-size="400" fill-opacity="0.5">'
     '${'<tspan x="0" y="90">W</tspan>' * 97}</text>';
 
+/// A clip path whose even-odd outline crosses the drawing [crossings]
+/// times, spread evenly over its width.
+String _zigzagClip(int crossings, {String id = 'c'}) =>
+    '<clipPath id="$id"><path clip-rule="evenodd" d="M0 0${[
+      for (var i = 0; i < crossings; i++)
+        'L${(i * 1440 / crossings).round()} ${i.isEven ? 3120 : 0}',
+    ].join()}Z"/></clipPath>';
+
+/// 97 glyphs about twice as tall as the drawing, to be drawn under a clip.
+String _clippedGlyphs({String stroke = ''}) =>
+    '<text id="t" font-size="6000" fill="#f00"$stroke>'
+    '${'<tspan x="0" y="3120">W</tspan>' * 97}</text>';
+
+const _translucentRect = '<rect $_full fill="#f00" fill-opacity="0.5"/>';
+
 const _radial = '<defs><radialGradient id="r" spreadMethod="repeat" r="0.1">'
     '<stop offset="0" stop-color="#f00"/><stop offset="1" stop-color="#00f"/>'
     '</radialGradient></defs>';
@@ -150,6 +165,58 @@ final _refused = <String, (String, String)>{
         size: _box, body: '<path fill-rule="evenodd" d="${_zigzag(13000)}"/>'),
     'oversized path',
   ),
+  // Drawing under a complex clip cost ten times what was counted; only
+  // simple clips are accepted now.
+  '4,268 huge glyphs under a 250-crossing clip': (
+    svgDocument(
+        size: _box,
+        body: '<defs>${_zigzagClip(250)}${_clippedGlyphs()}</defs>'
+            '<g clip-path="url(#c)">${'<use href="#t"/>' * 44}</g>'),
+    'clip path is too complex',
+  ),
+  'the same glyphs with a stroke 1000 wide': (
+    svgDocument(
+        size: _box,
+        body: '<defs>${_zigzagClip(250)}'
+            '${_clippedGlyphs(stroke: ' stroke="#00f" stroke-width="1000"')}'
+            '</defs><g clip-path="url(#c)">${'<use href="#t"/>' * 44}</g>'),
+    'clip path is too complex',
+  ),
+  '1,900 rectangles under a 5,500-crossing clip': (
+    svgDocument(
+        size: _box,
+        body: '<defs>${_zigzagClip(5500)}</defs>'
+            '<g clip-path="url(#c)">${_translucentRect * 1900}</g>'),
+    'clip path is too complex',
+  ),
+  '2,870 rectangles through use under a 400-crossing clip': (
+    svgDocument(
+        size: _box,
+        body: '<defs>${_zigzagClip(400)}<g id="g">${_translucentRect * 41}</g>'
+            '</defs><g clip-path="url(#c)">${'<use href="#g"/>' * 70}</g>'),
+    'clip path is too complex',
+  ),
+  '617 rectangles under a 700-crossing clip': (
+    svgDocument(
+        size: _box,
+        body: '<defs>${_zigzagClip(700)}</defs>'
+            '<g clip-path="url(#c)">${_translucentRect * 617}</g>'),
+    'clip path is too complex',
+  ),
+  'a clip path with few crossings but many commands': (
+    svgDocument(
+        size: _box,
+        body: '<defs><clipPath id="c"><path d="M0 0${' h1 v1' * 40}"/>'
+            '</clipPath></defs><g clip-path="url(#c)">$_rect</g>'),
+    'clip path is too complex',
+  ),
+  'too many glyphs under a simple clip': (
+    svgDocument(
+        size: _box,
+        body: '<defs>${_zigzagClip(32)}${_clippedGlyphs()}</defs>'
+            '<g clip-path="url(#c)">${'<use href="#t"/>' * 44}</g>'),
+    'too expensive to draw',
+  ),
   // Cheap to describe, slow to paint: refused by the count of operations.
   '1,999 wide strokes on tiny centre lines': (
     svgDocument(size: _square, body: _wideDot * 1999),
@@ -204,10 +271,31 @@ final _accepted = <String, String>{
           '1440 3120 A1e-30 1e30 45 0 0 0 0 Z"/>'),
   'a use of a group with clipped shapes': svgDocument(
       size: _box,
-      body: '<defs><clipPath id="c">${_path(8 * 1024)}</clipPath>'
-          '<g id="g">${'<rect width="500" height="500" '
+      body: '<defs><clipPath id="c"><circle cx="700" cy="700" r="600"/>'
+          '</clipPath><g id="g">${'<rect width="500" height="500" '
               'clip-path="url(#c)"/>' * 10}</g></defs>'
           '${'<use href="#g"/>' * 10}'),
+  // Drawing under the most complex clip that is accepted.
+  'at the clip limit: 700 full-size rectangles under a 32-crossing clip':
+      svgDocument(
+          size: _box,
+          body: '<defs>${_zigzagClip(32)}</defs>'
+              '<g clip-path="url(#c)">${_translucentRect * 700}</g>'),
+  'at the clip limit: 170 rectangles under two nested clips': svgDocument(
+      size: _box,
+      body: '<defs>${_zigzagClip(32)}${_zigzagClip(30, id: 'd')}</defs>'
+          '<g clip-path="url(#c)"><g clip-path="url(#d)">'
+          '${_translucentRect * 170}</g></g>'),
+  'at the clip limit: 97 huge glyphs used 5 times under a clip': svgDocument(
+      size: _box,
+      body: '<defs>${_zigzagClip(32)}${_clippedGlyphs()}</defs>'
+          '<g clip-path="url(#c)">${'<use href="#t"/>' * 5}</g>'),
+  'at the clip limit: 97 huge stroked glyphs used twice under a clip':
+      svgDocument(
+          size: _box,
+          body: '<defs>${_zigzagClip(32)}'
+              '${_clippedGlyphs(stroke: ' stroke="#00f" stroke-width="1000"')}'
+              '</defs><g clip-path="url(#c)">${'<use href="#t"/>' * 2}</g>'),
   'a 64 KB points list of short segments': svgDocument(
       size: _box,
       body: '<polyline fill="none" stroke="#000" '

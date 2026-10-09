@@ -14,12 +14,23 @@ const double kMaxSvgDimension = 100000;
 const double kMaxSvgFontScale = 4;
 
 /// The budget for rasterising one drawing: weighted drawing operations
-/// (see `svg_raster_cost.dart`) times pixels of the bitmap. Rasterising
-/// costs at most a constant per operation and pixel, measured at 2 to 3 ns
-/// with the software rasteriser of `flutter test`, so this budget keeps
-/// the one pass that makes the bitmap between half a second and a second
-/// there.
+/// (see `svg_raster_cost.dart`) times pixels of the bitmap.
+///
+/// The weights are measured, not proven. For unclipped fills, strokes and
+/// gradients one counted operation costs 2 to 3 ns per pixel with the
+/// software rasteriser of `flutter test`, which puts this budget between
+/// half a second and a second; work under a clip is weighted up to match.
+/// A drawing that the weights misjudge can take longer than that, which is
+/// what happened with complex clip paths before they were refused.
 const double kSvgRasterBudget = 3e8;
+
+/// The most complex clip path accepted: how often its outline may cross
+/// the full height of the drawing, and how many path commands it may have.
+/// A clip in an ordinary drawing is a rectangle, a circle or another
+/// simple shape. Everything drawn under a clip is intersected with it, so
+/// a clip with a long outline multiplies the cost of what it clips.
+const double kMaxSvgClipCrossings = 32;
+const int kMaxSvgClipCommands = 64;
 
 /// A drawing over budget is rasterised smaller, down to this many pixels
 /// on its longer side. A drawing that is over budget even then is refused.
@@ -67,8 +78,10 @@ class CompiledSvg {
 /// drawing is [kSvgRasterBudget]: operations times pixels, with the bitmap
 /// made smaller for drawings with many operations. That time is spent
 /// once, on the raster thread, when a drawing first appears at a given
-/// size; the worst cases are measured in svg_hostile_input_test.dart
-/// (0.55 to 0.75 s for the most expensive accepted document).
+/// size. The worst accepted documents found so far are kept in
+/// svg_hostile_input_test.dart, each with a 2 s bound; the slowest takes
+/// 0.55 to 0.9 s there. That is a record of what was tried, not a
+/// guarantee for every possible document.
 class SvgLimits {
   const SvgLimits({
     this.maxElements = 2000,

@@ -67,10 +67,14 @@ void main() {
   group('SvgRequest', _requestTests);
   group('loading', _loadingTests);
   group('bitmaps', _bitmapTests);
+  group('shared downloads', _sharedLoadTests);
+  group('bitmap lifetime', _bitmapLifetimeTests);
   group('retry and account separation', _retryTests);
   group('cancellation', _cancellationTests);
   group('content that is not SVG', _notSvgTests);
+  group('content that is not SVG: scope', _notSvgScopeTests);
   group('session cache', _sessionCacheTests);
+  group('work in flight', _inFlightTests);
   group('SvgMemoryCache', _memoryCacheTests);
 }
 
@@ -153,7 +157,9 @@ void _bitmapTests() {
     expect(compiler.calls, 1);
     expect(container.read(svgImageCacheProvider).length, 2);
   });
+}
 
+void _sharedLoadTests() {
   test('two sizes requested together share one download and compilation',
       () async {
     final fetcher = RecordingSvgFetcher()..gate = Completer<void>();
@@ -201,7 +207,9 @@ void _bitmapTests() {
     fetcher.gate!.complete();
     expect((await container.read(screen.future)).image.width, 1536);
   });
+}
 
+void _bitmapLifetimeTests() {
   test('a cached bitmap is reused without the compiled drawing', () async {
     final container = _container(RecordingSvgFetcher());
     await _showOnce(container, _request);
@@ -309,7 +317,9 @@ void _notSvgTests() {
 
     expect(compiler.calls, 0);
   });
+}
 
+void _notSvgScopeTests() {
   test('is remembered per credential, not per URL alone', () async {
     final fetcher = RecordingSvgFetcher(body: 'BBBB');
     final container = _container(fetcher);
@@ -405,7 +415,9 @@ void _sessionCacheTests() {
     expect(cache.isKnownNotSvg(notSvg), isFalse);
     expect(container.read(svgImageCacheProvider).length, 0);
   });
+}
 
+void _inFlightTests() {
   test('work in flight during a logout does not refill the caches', () async {
     final fetcher = RecordingSvgFetcher()..gate = Completer<void>();
     final container = await _sessionContainer(fetcher);
