@@ -26,3 +26,7 @@ func (osFS) MkdirAll(path string, perm os.FileMode) error {
 func (osFS) WalkDir(root string, walkFn fs.WalkDirFunc) error {
 	return filepath.WalkDir(root, walkFn)
 }
+
+// Remove is not part of FS: a scan deletes nothing but obsolete thumbnails
+// and stale temporary thumbnail files (see fileRemover in thumb_migrate.go).
+func (osFS) Remove(name string) error { return os.Remove(name) }
