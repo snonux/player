@@ -21,7 +21,7 @@ import '../support/svg_test_support.dart';
 const _url = 'https://player.example/s/token/stream';
 const _boundary = Key('boundary');
 final _error = find.text('image unavailable');
-final _picture = find.byType(SvgPictureBox);
+final _picture = find.byType(SvgImageBox);
 
 /// The image in a 100x100 box at the top left, inside a repaint boundary
 /// whose pixels the tests read back. [show] false removes the image while
@@ -72,7 +72,7 @@ Future<void> _show(WidgetTester tester, String document, {BoxFit? fit}) async {
   await pumpUntilFound(
       tester,
       find.byWidgetPredicate((w) =>
-          w is SvgPictureBox || (w is Text && w.data == 'image unavailable')));
+          w is SvgImageBox || (w is Text && w.data == 'image unavailable')));
 }
 
 void main() {
@@ -100,7 +100,7 @@ void _renderingTests() {
     expect(fetcher.requests.single.headers, {'Authorization': 'Bearer t'});
   });
 
-  testWidgets('a small SVG is scaled up to the box as a vector',
+  testWidgets('the bitmap is made for the box, not for the declared size',
       (tester) async {
     // Left half red, right half blue, declared as only 2x2 units. A bitmap
     // of that size stretched to 100 px would blur across the middle.
@@ -116,6 +116,21 @@ void _renderingTests() {
     expect(await pixelAt(tester, boundary, const Alignment(-0.06, 0)), kSvgRed);
     expect(await pixelAt(tester, boundary, const Alignment(0.06, 0)),
         const Color(0xff0000ff));
+    // 100 logical pixels at the test device pixel ratio of 3, rounded up
+    // to the next bitmap step.
+    final box = tester.widget<SvgImageBox>(_picture);
+    expect(box.raster.image.width, 384);
+  });
+
+  testWidgets('the drawing is painted as a bitmap, never replayed',
+      (tester) async {
+    await _show(tester, kValidSvg);
+
+    final image =
+        find.descendant(of: _picture, matching: find.byType(RawImage));
+    expect(tester.widget<RawImage>(image).image, isNotNull);
+    expect(find.descendant(of: _picture, matching: find.byType(CustomPaint)),
+        findsNothing);
   });
 }
 

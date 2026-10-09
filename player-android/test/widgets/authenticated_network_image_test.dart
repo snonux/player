@@ -54,7 +54,7 @@ Widget signedIn(Widget child, {RecordingSvgFetcher? fetcher}) => ProviderScope(
     );
 
 final _error = find.text('image unavailable');
-final _picture = find.byType(SvgPictureBox);
+final _picture = find.byType(SvgImageBox);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -186,7 +186,7 @@ void _credentialGateTests() {
 }
 
 void _svgTests() {
-  testWidgets('renders as a vector with the bearer token', (tester) async {
+  testWidgets('renders the SVG, fetched with the bearer token', (tester) async {
     final fetcher = RecordingSvgFetcher();
     await tester.pumpWidget(signedIn(
         image(imageUrl, sourceName: 'sample-svg.svg'),

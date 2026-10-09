@@ -2,7 +2,7 @@
 //
 // The server returns the original SVG for both the stream and the thumbnail
 // of an SVG file. These tests check that every screen showing such an image
-// paints it as a vector with the right credentials, and that an image that
+// renders it, fetched with the right credentials, and that an image that
 // cannot be decoded (malformed SVG, corrupt bitmap) shows a visible error.
 //
 // SVG downloads are scripted through `svgFetcherProvider`; parsing, decoding
@@ -40,7 +40,7 @@ import '../support/svg_test_support.dart';
 const _base = 'https://player.example';
 const _shareStream = '$_base/s/tok/stream';
 const _errorKey = Key('image_viewer_error');
-final _picture = find.byType(SvgPictureBox);
+final _picture = find.byType(SvgImageBox);
 
 const _svgJson = <String, dynamic>{
   'id': 9,

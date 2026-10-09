@@ -50,6 +50,29 @@ audio player within the same library keeps audio playing. Local settings remain
 available without a connection. Server logout or expired credentials preserve
 local files and history; a delayed server error cannot stop a local session.
 
+## SVG images
+
+SVG files from the server are shown in the image viewer and as thumbnails.
+The app accepts simple vector drawings only and treats every SVG as
+untrusted, because one can arrive through a public share link.
+
+Supported: paths and basic shapes, groups, gradients, clip paths, `<use>`
+of plain content, and short text. Not supported, and shown as "Image
+unavailable" instead of being drawn wrongly: style sheets, patterns,
+embedded bitmaps, masks, filters, dashed strokes, blend modes, markers,
+symbols, animation, references outside the file, and drawings beyond the
+size and complexity budgets in `lib/services/svg_limits.dart` (for example
+more than 2,000 elements, 256 KB of path data or 1 MB in total).
+
+A drawing is turned into a bitmap once, sized for the place it is shown in
+and never larger than 2048 pixels a side. Zooming in the viewer enlarges
+that bitmap; it does not redraw the vectors. Making the bitmap is the only
+expensive step: for ordinary drawings it takes a few milliseconds, but a
+file built to be slow can stay within every budget and still take about a
+second the first time it appears. The worst case found in the tests took
+about 1.3 s with the software rasteriser used by `flutter test`
+(`test/services/svg_hostile_input_test.dart`).
+
 ## Quickstart
 
 When Flutter is installed, finish or refresh the generated Android project files:

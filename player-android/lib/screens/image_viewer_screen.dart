@@ -12,8 +12,9 @@ import '../widgets/public_network_image.dart';
 /// metadata confirms the image type. Public shares load the share stream
 /// directly, never calling account APIs or sending credentials.
 ///
-/// SVG images are drawn as vectors that fill the screen; bitmaps keep their
-/// own pixel size unless they are larger than the screen. An image of any
+/// SVG images are rendered at the size of the screen and fill it; bitmaps
+/// keep their own pixel size unless they are larger than the screen.
+/// Zooming enlarges the pixels of either kind. An image of any
 /// type that cannot be downloaded or decoded shows a labelled error instead
 /// of a blank screen.
 class ImageViewerScreen extends ConsumerStatefulWidget {
@@ -116,7 +117,7 @@ class _ZoomableImage extends StatelessWidget {
   /// The viewer shrink-wraps its child: a bitmap smaller than the screen is
   /// shown centred at its own size rather than blown up and blurred. An SVG
   /// asks for all available space by itself (see `NetworkSvgImage`), so it
-  /// fills the screen and stays sharp when zoomed.
+  /// fills the screen, rendered for that size.
   @override
   Widget build(BuildContext context) => Center(
         child: InteractiveViewer(

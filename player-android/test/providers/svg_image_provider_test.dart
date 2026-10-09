@@ -1,6 +1,6 @@
-// Tests for svgPictureProvider (svg_picture_provider.dart): caching, retry,
-// cancellation, account separation and the session cache. Compilation and
-// picture decoding run for real; only the download is scripted.
+// Tests for svgImageProvider (svg_image_provider.dart): caching, retry,
+// cancellation, account separation and the session caches. Compilation,
+// decoding and rasterisation run for real; only the download is scripted.
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
-import 'package:player_android/providers/svg_picture_provider.dart';
+import 'package:player_android/providers/svg_image_provider.dart';
 import 'package:player_android/services/svg_compiler.dart';
 import 'package:player_android/services/svg_document.dart';
 import 'package:player_android/services/svg_fetcher.dart';
@@ -18,6 +18,10 @@ import '../support/svg_test_support.dart';
 
 final _uri = Uri.parse('https://player.example/s/secret-token/stream');
 final _request = SvgRequest(uri: _uri);
+
+/// [source] rasterised for a 100x100 pixel box.
+SvgImageRequest _image(SvgRequest source, {double side = 100}) =>
+    SvgImageRequest(source: source, width: side, height: side);
 
 /// Wraps the real compiler and counts how often it is asked to work.
 class _CountingCompiler {
@@ -46,9 +50,9 @@ ProviderContainer _container(
 /// The provider is auto-disposed once the event loop turns.
 Future<void> _showOnce(ProviderContainer container, SvgRequest request) async {
   final subscription =
-      container.listen(svgPictureProvider(request), (_, __) {});
+      container.listen(svgImageProvider(_image(request)), (_, __) {});
   try {
-    await container.read(svgPictureProvider(request).future);
+    await container.read(svgImageProvider(_image(request)).future);
   } finally {
     subscription.close();
     await Future<void>.delayed(Duration.zero);
@@ -62,6 +66,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   group('SvgRequest', _requestTests);
   group('loading', _loadingTests);
+  group('bitmaps', _bitmapTests);
   group('retry and account separation', _retryTests);
   group('cancellation', _cancellationTests);
   group('content that is not SVG', _notSvgTests);
@@ -97,10 +102,10 @@ void _loadingTests() {
     final container = _container(fetcher);
     final request = SvgRequest(uri: _uri, headers: const {'Cookie': 's=1'});
     final subscription =
-        container.listen(svgPictureProvider(request), (_, __) {});
+        container.listen(svgImageProvider(_image(request)), (_, __) {});
     addTearDown(subscription.close);
 
-    final info = await container.read(svgPictureProvider(request).future);
+    final info = await container.read(svgImageProvider(_image(request)).future);
 
     expect(info.size.width, 30);
     expect(info.size.height, 20);
@@ -118,6 +123,60 @@ void _loadingTests() {
 
     expect(fetcher.requests, hasLength(1));
     expect(compiler.calls, 1);
+  });
+}
+
+/// Loads [request] at [side] pixels and returns the size of its bitmap.
+Future<int> _bitmapWidth(
+    ProviderContainer container, SvgRequest request, double side) async {
+  final provider = svgImageProvider(_image(request, side: side));
+  final subscription = container.listen(provider, (_, __) {});
+  try {
+    return (await container.read(provider.future)).image.width;
+  } finally {
+    subscription.close();
+    await Future<void>.delayed(Duration.zero);
+  }
+}
+
+void _bitmapTests() {
+  test('a tile and the viewer get bitmaps of their own from one download',
+      () async {
+    final fetcher = RecordingSvgFetcher();
+    final compiler = _CountingCompiler();
+    final container = _container(fetcher, compiler: compiler);
+
+    expect(await _bitmapWidth(container, _request, 144), 192);
+    expect(await _bitmapWidth(container, _request, 1440), 1536);
+
+    expect(fetcher.requests, hasLength(1));
+    expect(compiler.calls, 1);
+    expect(container.read(svgImageCacheProvider).length, 2);
+  });
+
+  test('a cached bitmap is reused without the compiled drawing', () async {
+    final container = _container(RecordingSvgFetcher());
+    await _showOnce(container, _request);
+    // Drop the compiled drawing; only the bitmap is left.
+    container.read(svgMemoryCacheProvider).clear();
+
+    await _showOnce(container, _request);
+
+    expect(container.read(svgMemoryCacheProvider).get(_request), isNull);
+  });
+
+  test('the bitmap is released when nothing shows it or caches it', () async {
+    final container = _container(RecordingSvgFetcher());
+    final provider = svgImageProvider(_image(_request));
+    final subscription = container.listen(provider, (_, __) {});
+    final raster = await container.read(provider.future);
+    expect(raster.image.debugDisposed, isFalse);
+
+    container.read(svgImageCacheProvider).clear();
+    subscription.close();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(raster.image.debugDisposed, isTrue);
   });
 }
 
@@ -165,7 +224,7 @@ void _cancellationTests() {
     final container = _container(fetcher, compiler: compiler);
 
     final subscription =
-        container.listen(svgPictureProvider(_request), (_, __) {});
+        container.listen(svgImageProvider(_image(_request)), (_, __) {});
     await Future<void>.delayed(Duration.zero);
     expect(fetcher.requests.single.cancel.isCancelled, isFalse);
 
@@ -268,6 +327,7 @@ void _sessionCacheTests() {
     await _showOnce(container, _request);
     final cache = container.read(svgMemoryCacheProvider)..markNotSvg(notSvg);
     expect(cache.get(_request), isNotNull);
+    expect(container.read(svgImageCacheProvider).length, 1);
     return cache;
   }
 
@@ -281,6 +341,7 @@ void _sessionCacheTests() {
     // The same object the widgets hold is empty, not merely replaced.
     expect(cache.get(_request), isNull);
     expect(cache.isKnownNotSvg(notSvg), isFalse);
+    expect(container.read(svgImageCacheProvider).length, 0);
   });
 
   test('is emptied at once when the server changes', () async {
@@ -292,6 +353,7 @@ void _sessionCacheTests() {
 
     expect(cache.get(_request), isNull);
     expect(cache.isKnownNotSvg(notSvg), isFalse);
+    expect(container.read(svgImageCacheProvider).length, 0);
   });
 
   test('bytes that fail to decode are never cached', () async {

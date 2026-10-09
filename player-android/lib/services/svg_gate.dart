@@ -16,12 +16,14 @@ import 'svg_limits.dart';
 //
 // The gate does not try to predict what the compiler does with unusual
 // input; the compiler has quirks (it matches attributes by local name,
-// drops the value `inherit`, and loses track of its element stack after a
-// self-closing `<clipPath/>`). Instead the gate defines a small grammar of
-// its own that is stricter than the compiler's: which element may contain
-// which, where character data may appear, and that every property of an
-// element has exactly one value. A document inside this grammar leaves the
-// compiler no room for a second interpretation.
+// drops the value `inherit`, cuts a style value at its second colon, and
+// loses track of its element stack after a self-closing `<clipPath/>`).
+// Instead the gate defines a small grammar of its own that is stricter
+// than the compiler's: which element may contain which, where character
+// data may appear, which properties a `style` may set, and that every
+// property of an element has exactly one plain value. The aim is that a
+// document inside this grammar leaves the compiler no room for a second
+// interpretation.
 //
 // What the grammar and the budgets are is spelled out by the constants
 // below and by `SvgLimits`.
@@ -74,6 +76,18 @@ const Set<String> kSvgForbiddenProperties = {
   'mask',
 };
 
+/// The only properties a `style` attribute may set: presentation only.
+/// Anything structural (`id`, `href`, `d`, `points`, `transform`, ...)
+/// must be a real attribute, so that references and geometry have exactly
+/// one spelling.
+const Set<String> kSvgStyleProperties = {
+  'fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width', //
+  'stroke-opacity', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit',
+  'opacity', 'stop-color', 'stop-opacity', 'font-size', 'font-family',
+  'font-weight', 'font-style', 'text-anchor', 'display', 'visibility',
+  'clip-path', 'clip-rule', 'color',
+};
+
 /// Properties that must be plain numbers without a unit.
 const Set<String> _opacityProperties = {
   'opacity',
@@ -90,7 +104,6 @@ const Set<String> _layerElements = {'svg', 'g', 'use', 'text', 'tspan'};
 const Set<String> _pathData = {'d', 'points'};
 
 final RegExp _plainNumber = RegExp(r'^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$');
-final RegExp _lengthUnit = RegExp(r'(px|pt|pc|mm|cm|in|em|ex)$');
 
 /// Throws [SvgException] unless [xml] is inside the grammar and budgets.
 void checkSvgAllowed(String xml, {SvgLimits limits = const SvgLimits()}) {
@@ -174,8 +187,10 @@ class _SvgGate {
     // Every `<use>` copies what it references and every `clip-path`
     // reference copies the clip path, and a used group may itself contain
     // clipped elements. Without resolving references, the product below is
-    // an upper bound for how often any part of the document is copied
-    // (chains of `<use>` are ruled out above).
+    // an upper bound for how often any part of the document is copied,
+    // provided the check above caught every chain of `<use>`. That check
+    // relies on this gate and the compiler agreeing on the `id` and `href`
+    // of every element, which is why both may only be plain attributes.
     final copies = (1 + _uses) * (1 + _clipReferences);
     if (copies * _pathChars > _limits.maxExpandedPathChars ||
         copies * _elements > _limits.maxExpandedElements ||
@@ -276,6 +291,8 @@ class _SvgGate {
       if (previous != null && previous != value) {
         _reject('SVG gives $name more than one value');
       }
+      // The compiler treats `inherit` as if the attribute were absent.
+      if (value == 'inherit') _reject('SVG value inherit is not supported');
       properties[name] = value;
     }
 
@@ -316,10 +333,18 @@ class _SvgGate {
       final colon = declaration.indexOf(':');
       if (colon < 0) _reject('Invalid SVG: malformed style');
       final name = declaration.substring(0, colon).trim().toLowerCase();
+      final value = declaration.substring(colon + 1).trim();
+      if (!kSvgStyleProperties.contains(name)) {
+        final shown = name.length > 40 ? name.substring(0, 40) : name;
+        _reject('SVG style property $shown is not supported');
+      }
+      // The compiler splits a declaration at every colon and keeps only
+      // the second part, so it would read a shorter value than this gate.
+      if (value.contains(':')) _reject('SVG style is not supported');
       if (declarations.containsKey(name)) {
         _reject('SVG gives $name more than one value');
       }
-      declarations[name] = declaration.substring(colon + 1).trim();
+      declarations[name] = value;
     }
     return declarations;
   }
@@ -347,13 +372,16 @@ class _SvgGate {
     }
   }
 
-  /// Stroke width and opacities must be plain numbers. Keywords such as
-  /// `inherit` are refused: the compiler drops them and would fall back to
-  /// a value this gate never saw.
+  /// Stroke width and opacities must be plain numbers. Keywords are
+  /// refused, and so are units on a stroke width other than `px`: the
+  /// compiler converts `1000em` to 14000, far above the cap checked here.
   void _checkNumbers(Map<String, String> properties) {
     final strokeWidth = properties['stroke-width'];
     if (strokeWidth != null) {
-      final width = _parseNumber(strokeWidth.replaceFirst(_lengthUnit, ''));
+      final number = strokeWidth.endsWith('px')
+          ? strokeWidth.substring(0, strokeWidth.length - 2)
+          : strokeWidth;
+      final width = _parseNumber(number);
       if (width == null || width < 0 || width > _limits.maxStrokeWidth) {
         _reject('SVG has an unusable stroke width');
       }
@@ -377,8 +405,10 @@ class _SvgGate {
     if (name == 'text' || name == 'tspan') _textElements++;
     if (name == 'stop') _stops++;
     if (properties.containsKey('clip-path')) _clipReferences++;
-    _pathChars +=
+    final pathChars =
         (properties['d']?.length ?? 0) + (properties['points']?.length ?? 0);
+    if (pathChars > _limits.maxPathChars) _reject('SVG has an oversized path');
+    _pathChars += pathChars;
     if (_uses > _limits.maxUses) _reject('SVG has too many <use> elements');
     if (_textElements > _limits.maxTextElements) {
       _reject('SVG has too many text elements');

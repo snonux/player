@@ -299,7 +299,7 @@ class _ThumbnailWidget extends ConsumerWidget {
       child: AspectRatio(
         aspectRatio: 16 / 9,
         // No credentials: the share token is in the URL. The thumbnail of
-        // an SVG share is the SVG itself and is drawn as a vector. If the
+        // an SVG share is the SVG itself, rendered for this box. If the
         // image fails to load or decode, fall back to the type icon so the
         // viewer always sees something meaningful.
         child: PublicNetworkImage(

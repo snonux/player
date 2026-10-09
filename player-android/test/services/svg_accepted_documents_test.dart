@@ -1,5 +1,5 @@
 // Property-style test: every document that the gate and the compiler
-// accept also decodes into a picture and paints.
+// accept also decodes and rasterises into a bitmap.
 //
 // Documents are generated from a fixed seed, mixing allowed elements with
 // the occasional forbidden one, so both outcomes occur. What matters is the
@@ -10,8 +10,9 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:player_android/providers/svg_picture_provider.dart';
+import 'package:player_android/providers/svg_image_provider.dart';
 import 'package:player_android/services/svg_document.dart';
+import 'package:player_android/services/svg_raster.dart';
 
 import '../support/svg_test_support.dart';
 
@@ -72,14 +73,18 @@ class _Generator {
           '</g></defs>${_group(0)}');
 }
 
-/// Decodes [compiled] and rasterises the picture once.
+final _box = SvgImageRequest(
+  source: SvgRequest(uri: Uri.parse('https://player.example/x.svg')),
+  width: 64,
+  height: 64,
+);
+
+/// Decodes and rasterises [compiled] the way the app does.
 Future<void> _decodeAndPaint(Uint8List compiled) async {
-  final info = await decodeSvgPicture(ByteData.sublistView(compiled));
-  expect(info.size.width, 100);
-  final image = await info.picture.toImage(64, 64);
-  expect(image.width, 64);
-  image.dispose();
-  info.picture.dispose();
+  final raster = await rasterizeSvg(ByteData.sublistView(compiled), _box);
+  expect(raster.size.width, 100);
+  expect(raster.image.width, 64);
+  raster.dispose();
 }
 
 void main() {

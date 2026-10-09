@@ -71,7 +71,7 @@ final _accepted = <String, String>{
   'four nested opacity groups':
       svgDocument(body: '${'<g opacity="0.5">' * 4}$_rect${'</g>' * 4}'),
   'many sibling opacity groups':
-      svgDocument(body: '<g opacity="0.5">$_rect</g>' * 50),
+      svgDocument(body: '<g opacity="0.5">$_rect</g>' * 20),
   'opacity of exactly 1 is no layer':
       svgDocument(body: '${'<g opacity="1">' * 10}$_rect${'</g>' * 10}'),
   'anything inside title, desc and metadata': svgDocument(
@@ -86,6 +86,19 @@ final _accepted = <String, String>{
       '<defs><g id="a">$_rect</g></defs><use href="#a" xlink:href="#a"/>'),
   'self-closing text, groups, defs and gradients':
       svgDocument(body: '<defs/><g/><text/><linearGradient id="g"/>$_rect'),
+  'every style property of the allowlist': svgDocument(
+      body: '<defs><clipPath id="c">$_rect</clipPath><linearGradient id="g">'
+          '<stop offset="0" style="stop-color:#f00;stop-opacity:0.5"/>'
+          '</linearGradient></defs>'
+          '<rect width="9" height="9" style="fill:url(#g);fill-opacity:1;'
+          'fill-rule:evenodd;stroke:#000;stroke-width:2px;stroke-opacity:1;'
+          'stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;'
+          'opacity:1;display:inline;visibility:visible;clip-path:url(#c);'
+          'clip-rule:nonzero;color:#00f"/>'
+          '<text y="8" style="font-size:4px;font-family:serif;'
+          'font-weight:bold;font-style:italic;text-anchor:middle">t</text>'),
+  'a stroke width in px': svgDocument(
+      body: '<line x2="1" y2="1" stroke="#000" stroke-width="1000px"/>'),
   'white space and comments between elements':
       svgDocument(body: '\n  <!-- note -->\n  <g>\n $_rect \n</g>\n'),
   'a same-document reference':
@@ -141,11 +154,11 @@ final _rejected = <String, (String, String)>{
     ),
     'style property $property': (
       _withAttribute('style="fill:#f00; $property : 1"'),
-      'attribute $property is not supported',
+      'style property $property is not supported',
     ),
     'upper-case style property $property': (
       _withAttribute('style="${property.toUpperCase()}:1"'),
-      'attribute $property is not supported',
+      'style property $property is not supported',
     ),
     'upper-case attribute $property': (
       _withAttribute('${property.toUpperCase()}="1"'),
@@ -207,7 +220,7 @@ final _rejected = <String, (String, String)>{
     _withAttribute('stroke-width="calc(1e9)"'),
     'stroke width',
   ),
-  for (final keyword in ['inherit', 'initial', 'unset', 'auto', '']) ...{
+  for (final keyword in ['initial', 'unset', 'auto', '']) ...{
     'stroke-width "$keyword"': (
       _withAttribute('stroke-width="$keyword"'),
       'stroke width',
@@ -217,6 +230,67 @@ final _rejected = <String, (String, String)>{
       'unusable opacity',
     ),
   },
+  // The compiler treats `inherit` as "attribute absent", whatever it is on.
+  for (final attribute in ['stroke-width', 'opacity', 'id', 'd', 'fill'])
+    '$attribute="inherit"': (
+      svgDocument(body: '<path d="M0 0h9v9z" $attribute="inherit"/>'),
+      attribute == 'd' ? 'more than one value' : 'inherit is not supported',
+    ),
+  'inherit in a style': (
+    _withAttribute('style="fill:inherit"'),
+    'inherit is not supported',
+  ),
+  for (final unit in ['em', 'ex', 'pt', 'pc', 'mm', 'cm', 'in', '%'])
+    'a stroke width in $unit': (
+      _withAttribute('stroke-width="2$unit"'),
+      'unusable stroke width',
+    ),
+  // Only presentation properties may be set through style.
+  for (final property in [
+    'id', 'href', 'd', 'points', 'transform', 'x', 'width', 'class', //
+    'style', 'font', 'marker', 'clip', 'stroke-dasharray2',
+  ])
+    'style property $property': (
+      _withAttribute('style="$property:a"'),
+      'style property $property is not supported',
+    ),
+  'a style value with a second colon': (
+    _withAttribute('style="fill:#f00:x"'),
+    'style is not supported',
+  ),
+  'a style value with a colon in a url': (
+    _withAttribute('style="clip-path:url(#a:b)"'),
+    'style is not supported',
+  ),
+  // The compiler reads `id:a:x` as id "a"; the gate used to read "a:x" and
+  // so missed that this group, which contains a use, is what the use copies.
+  'a use chain behind a style id with a second colon': (
+    svgDocument(body: '<g style="id:a:x">$_rect<use href="#a"/></g>'),
+    'style property id is not supported',
+  ),
+  'the 625-fold use chain behind style ids': (
+    svgDocument(
+        body: '<defs><g style="id:g0:x"><path d="${'M0 0h9' * 9000}"/></g>'
+            '${[
+      for (var level = 1; level <= 3; level++)
+        '<g style="id:g$level:x">${'<use href="#g${level - 1}"/>' * 5}</g>',
+    ].join()}</defs>${'<use href="#g3"/>' * 5}'),
+    'style property id is not supported',
+  ),
+  'the same chain with real id attributes': (
+    svgDocument(
+        body: '<defs><g id="g0">$_rect</g><g id="g1"><use href="#g0"/></g>'
+            '</defs><use href="#g1"/>'),
+    '<use> may not reference content that contains <use>',
+  ),
+  'a single path over the per-path cap': (
+    svgDocument(body: '<path d="M0 0${' h1' * (22 * 1024)}"/>'),
+    'oversized path',
+  ),
+  'a points list over the per-path cap': (
+    svgDocument(body: '<polygon points="${'1,1 ' * (17 * 1024)}"/>'),
+    'oversized path',
+  ),
   'an opacity with a unit': (
     svgDocument(body: '<g style="fill-opacity:50%">$_rect</g>'),
     'unusable fill-opacity',
@@ -240,7 +314,7 @@ final _rejected = <String, (String, String)>{
   ),
   'stroke width as attribute and inherit in style': (
     _withAttribute('stroke-width="1e9" style="stroke-width:inherit"'),
-    'stroke',
+    'gives stroke-width more than one value',
   ),
   'a property twice in one style': (
     _withAttribute('style="fill:#f00;fill:#f00"'),
@@ -483,18 +557,21 @@ void _budgetTests() {
 
   test('the defaults are the documented budgets', () {
     const limits = SvgLimits();
-    expect(limits.maxElements, 5000);
+    expect(limits.maxElements, 2000);
     expect(limits.maxElementDepth, 32);
     expect(limits.maxLayerDepth, 4);
-    expect(limits.maxUses, 200);
+    expect(limits.maxUses, 100);
     expect(limits.maxTextChars, 2000);
     expect(limits.maxTextElements, 100);
-    expect(limits.maxPathDataChars, 512 * 1024);
+    expect(limits.maxPathChars, 64 * 1024);
+    expect(limits.maxPathDataChars, 256 * 1024);
     expect(limits.maxStrokeWidth, 1000);
     expect(limits.maxGradientStops, 256);
     expect(limits.maxAttributeChars, 4096);
-    expect(limits.maxExpandedPathChars, 2 * 1024 * 1024);
-    expect(limits.maxExpandedElements, 100000);
+    expect(limits.maxExpandedPathChars, 1024 * 1024);
+    expect(limits.maxExpandedElements, 20000);
+    expect(limits.maxCoverage, 80);
+    expect(limits.maxOutlineLength, 1000);
     expect(limits.maxExpandedTextChars, 10000);
     expect(kMaxSvgBytes, 1024 * 1024);
   });
@@ -506,6 +583,13 @@ void _budgetTests() {
       'radialGradient', 'stop', 'clipPath', 'use', 'text', 'tspan',
     });
     expect(kSvgForbiddenProperties, _forbiddenProperties.toSet());
+    expect(kSvgStyleProperties, {
+      'fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width', //
+      'stroke-opacity', 'stroke-linecap', 'stroke-linejoin',
+      'stroke-miterlimit', 'opacity', 'stop-color', 'stop-opacity',
+      'font-size', 'font-family', 'font-weight', 'font-style', 'text-anchor',
+      'display', 'visibility', 'clip-path', 'clip-rule', 'color',
+    });
   });
 
   test('each expansion budget is exact', () {

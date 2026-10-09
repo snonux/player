@@ -8,7 +8,7 @@ import 'providers/auth_state_provider.dart';
 import 'providers/progress_queue_provider.dart';
 import 'providers/api_client_provider.dart';
 import 'providers/settings_provider.dart';
-import 'providers/svg_picture_provider.dart';
+import 'providers/svg_image_provider.dart';
 import 'providers/theme_provider.dart';
 import 'navigation_key.dart';
 import 'router.dart';

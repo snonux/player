@@ -34,23 +34,37 @@ class NotSvgException extends SvgException {
 ///
 /// The first group is checked on the raw XML before the compiler runs (see
 /// `svg_gate.dart`), the second on the compiler's output.
+///
+/// Two purposes are mixed here and should not be confused. The grammar and
+/// the reference budgets keep the compiler from allocating without bound;
+/// that is safety. The sizes below them (elements, path data, coverage,
+/// outline length) are sized for the simple drawings this app shows and
+/// bound the one-off cost of rasterising a drawing into its bitmap. They
+/// do not make that cost negligible: the most expensive accepted document
+/// in svg_hostile_input_test.dart takes about 1.3 s to rasterise for a
+/// 1440x3120 screen with the software rasteriser of `flutter test`, and
+/// documents at a single budget take 0.3 to 1 s. That time is spent once,
+/// on the raster thread, when the drawing first appears at a given size.
 class SvgLimits {
   const SvgLimits({
-    this.maxElements = 5000,
+    this.maxElements = 2000,
     this.maxElementDepth = 32,
     this.maxLayerDepth = 4,
-    this.maxUses = 200,
+    this.maxUses = 100,
     this.maxTextChars = 2000,
     this.maxTextElements = 100,
-    this.maxPathDataChars = 512 * 1024,
+    this.maxPathChars = 64 * 1024,
+    this.maxPathDataChars = 256 * 1024,
     this.maxStrokeWidth = 1000,
     this.maxGradientStops = 256,
     this.maxAttributeChars = 4096,
-    this.maxExpandedPathChars = 2 * 1024 * 1024,
-    this.maxExpandedElements = 100000,
+    this.maxExpandedPathChars = 1024 * 1024,
+    this.maxExpandedElements = 20000,
     this.maxExpandedTextChars = 10000,
     this.maxCommands = 100000,
     this.maxCompiledBytes = 4 * 1024 * 1024,
+    this.maxCoverage = 80,
+    this.maxOutlineLength = 1000,
   });
 
   /// Most elements in the document, drawn or not.
@@ -76,10 +90,13 @@ class SvgLimits {
   final int maxTextChars;
   final int maxTextElements;
 
-  /// Most characters of path data (`d` and `points` attributes) in total.
+  /// Most characters of path data (`d` and `points` attributes) in one
+  /// element and in the document.
+  final int maxPathChars;
   final int maxPathDataChars;
 
-  /// Widest accepted stroke in user units.
+  /// Widest accepted stroke in user units. Only plain numbers and `px` are
+  /// accepted, so the value checked is the value the compiler uses.
   final double maxStrokeWidth;
 
   /// Most gradient `<stop>` elements. Every paint that uses a gradient
@@ -99,12 +116,25 @@ class SvgLimits {
   final int maxExpandedElements;
   final int maxExpandedTextChars;
 
-  /// Most drawing commands. The picture is replayed on the raster thread
-  /// for every frame that repaints it, so the count must stay bounded.
+  /// Most drawing commands in the compiled drawing, which the rasteriser
+  /// executes one by one when the bitmap is made.
   final int maxCommands;
 
   /// Largest compiled drawing. It equals the largest entry the memory cache
   /// keeps: anything accepted is cached and not compiled again each time it
   /// appears.
   final int maxCompiledBytes;
+
+  /// How often the drawing may paint over its own area: the areas touched
+  /// by all drawing commands, added up, as a multiple of the drawing's
+  /// area. A filled shape counts with its bounding box inside the drawing,
+  /// a stroke with its length times its width, an offscreen layer with the
+  /// whole drawing.
+  final double maxCoverage;
+
+  /// Total length of all outlines, as a multiple of the drawing's
+  /// diagonal. The rasteriser's work grows with the length of the edges it
+  /// has to scan, so one path zigzagging across the drawing thousands of
+  /// times is far more expensive than its size in bytes suggests.
+  final double maxOutlineLength;
 }

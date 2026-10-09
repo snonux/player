@@ -5,6 +5,7 @@ import 'package:vector_graphics_compiler/vector_graphics_compiler.dart';
 
 import 'svg_gate.dart';
 import 'svg_limits.dart';
+import 'svg_raster_cost.dart';
 
 export 'svg_limits.dart';
 
@@ -22,9 +23,10 @@ export 'svg_limits.dart';
 //     attribute rules and budgets, checked on the raw XML. The compiler
 //     only ever sees documents that passed it.
 //  3. [_validate]: checks on the compiler's output. Partly independent
-//     (size, compiled size), partly defence in depth for stage 2 (patterns,
-//     bitmaps, layer nesting), in case the compiler derives something from
-//     an input the gate did not anticipate.
+//     (size, compiled size, the estimate of what the drawing costs to
+//     rasterise in svg_raster_cost.dart), partly defence in depth for stage
+//     2 (patterns, bitmaps, layer nesting), in case the compiler derives
+//     something from an input the gate did not anticipate.
 //
 // Not supported, and therefore shown as an error rather than drawn wrongly:
 // `<style>` sheets, `<pattern>`, `<image>`, `<mask>`, `<filter>`, `<symbol>`,
@@ -174,6 +176,7 @@ void _validate(VectorInstructions instructions, SvgLimits limits) {
   if (!commands.any((c) => visible.contains(c.type))) {
     throw const SvgException('SVG has nothing to draw');
   }
+  checkRasterCost(instructions, limits);
 }
 
 /// The deepest nesting of offscreen layers in [commands].

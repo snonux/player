@@ -8,9 +8,9 @@ import 'network_svg_image.dart';
 /// cookie is attached.
 ///
 /// A file known to be SVG ([sourceName] or the URL, see [isSvgSource]) is
-/// drawn as a vector. Anything else goes to the bitmap decoder; if that
-/// cannot decode it, the content is checked for SVG before [errorWidget] is
-/// shown (see [bitmapErrorOrSvg]). This covers a share opened without its
+/// shown by [NetworkSvgImage]. Anything else goes to the bitmap decoder;
+/// if that cannot decode it, the content is checked for SVG before
+/// [errorWidget] is shown (see [bitmapErrorOrSvg]). This covers a share opened without its
 /// file name, for example after the route was restored.
 class PublicNetworkImage extends StatelessWidget {
   const PublicNetworkImage({
