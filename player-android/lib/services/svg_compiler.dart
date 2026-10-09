@@ -10,13 +10,13 @@ import 'svg_document.dart';
 /// Compiles downloaded SVG bytes to the vector_graphics binary format.
 /// [isCancelled] is asked right before the work starts, so a request that
 /// was dropped while waiting costs nothing.
-typedef SvgCompiler = Future<Uint8List> Function(
+typedef SvgCompiler = Future<CompiledSvg> Function(
   Uint8List bytes, {
   bool Function()? isCancelled,
 });
 
 /// The work done in the isolate; must be a top-level or static function.
-typedef SvgCompileWork = Uint8List Function(Uint8List bytes);
+typedef SvgCompileWork = CompiledSvg Function(Uint8List bytes);
 
 /// Runs [compileSvg] in short-lived background isolates.
 ///
@@ -45,7 +45,7 @@ class IsolateSvgCompiler {
   int _running = 0;
   final Queue<Completer<void>> _waiting = Queue();
 
-  Future<Uint8List> call(
+  Future<CompiledSvg> call(
     Uint8List bytes, {
     bool Function()? isCancelled,
   }) async {
@@ -79,9 +79,10 @@ class IsolateSvgCompiler {
     }
   }
 
-  /// The isolate answers with the compiled bytes, or with the error text.
-  /// `null` arrives when it exits without an answer (killed or crashed).
-  Future<Uint8List> _compileInIsolate(Uint8List bytes) async {
+  /// The isolate answers with the compiled drawing, or with the error
+  /// text. `null` arrives when it exits without an answer (killed or
+  /// crashed).
+  Future<CompiledSvg> _compileInIsolate(Uint8List bytes) async {
     final port = ReceivePort();
     Isolate? isolate;
     try {
@@ -92,7 +93,7 @@ class IsolateSvgCompiler {
         debugName: 'Compile SVG',
       );
       final answer = await port.first.timeout(deadline);
-      if (answer is Uint8List) return answer;
+      if (answer is CompiledSvg) return answer;
       throw SvgException(answer is String ? answer : 'SVG compiler stopped');
     } on TimeoutException {
       throw const SvgException('SVG is too complex');

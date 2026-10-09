@@ -2,135 +2,153 @@ import 'dart:math' as math;
 
 import 'package:vector_graphics_compiler/vector_graphics_compiler.dart';
 
-import 'svg_limits.dart';
+// How much work it is to rasterise a compiled SVG.
+//
+// A drawing is rasterised once into a bitmap (see svg_raster.dart). No
+// single drawing operation can touch more than the whole bitmap, so the
+// time for that pass is at most
+//
+//     (number of drawing operations) x (pixels of the bitmap) x constant.
+//
+// This file counts the operations; svg_raster.dart then picks a bitmap
+// small enough that the product stays within `kSvgRasterBudget`. The count
+// does not try to work out which pixels an operation really touches: every
+// operation is charged the whole bitmap. Earlier attempts to estimate the
+// painted area were wrong for strokes much wider than their centre line
+// and for text, and a wrong guess there means seconds of rasterisation.
+//
+// One operation is one fill of the whole bitmap with a flat colour, the
+// unit the budget was calibrated in. What is counted, on the commands the
+// compiler produced after expanding every `<use>`:
+//
+//   * a filled path: 1, a stroked path: 1 (both: 2);
+//   * a clip path applied, an offscreen layer, a mask: 1 each;
+//   * a character of text: 1;
+//   * twice that when the paint is a gradient;
+//   * plus, per path, a term for its outline (see [_PathMeter]): a fill
+//     whose outline crosses the drawing a thousand times costs hundreds of
+//     plain fills.
 
-// An estimate of what it costs to rasterise a compiled SVG.
-//
-// A drawing is rasterised once, into a bitmap (see svg_image_provider.dart).
-// That one pass can still be slow for a document that is small in bytes:
-// hundreds of shapes each covering the whole drawing, or one path whose
-// outline crosses the drawing thousands of times. Neither shows in element
-// counts or path sizes, so the compiled drawing commands are measured:
-//
-//  * coverage: how much area the commands paint, added up, in units of the
-//    drawing's own area;
-//  * outline length: how much edge the rasteriser has to scan, in units of
-//    the drawing's diagonal.
-//
-// Both are estimates from bounding boxes and control points, not exact
-// geometry, and they bound time, not memory. All coordinates are clamped
-// to the drawing first, so geometry far outside it, which costs nothing to
-// rasterise, counts for nothing here either.
+/// One span between two edge crossings on a scan line costs about this
+/// fraction of filling the whole line, measured on an even-odd zigzag.
+const double _spanCost = 0.25;
 
-/// Throws [SvgException] when [instructions] exceed the coverage or outline
-/// budget of [limits]. The compiler has already applied all transforms, so
-/// paths and stroke widths are in the units of the drawing's size.
-void checkRasterCost(VectorInstructions instructions, SvgLimits limits) {
-  final meter = _PathMeter(instructions.width, instructions.height);
-  final measured = <int, _PathSize>{};
-  var coverage = 0.0;
-  var outline = 0.0;
+/// The weighted number of drawing operations in [instructions]. The
+/// compiler has already applied all transforms, so paths and stroke widths
+/// are in the units of the drawing's size.
+double svgDrawOperations(VectorInstructions instructions) {
+  final meter = _PathMeter(instructions.height);
+  final measured = <int, _Outline>{};
+  var operations = 0.0;
   for (final command in instructions.commands) {
+    final paint =
+        command.paintId == null ? null : instructions.paints[command.paintId!];
     switch (command.type) {
       case DrawCommandType.saveLayer:
       case DrawCommandType.mask:
-        // An offscreen buffer of up to the whole drawing, drawn back once.
-        coverage += 1;
-      case DrawCommandType.path:
+        operations += 1;
       case DrawCommandType.clip:
-        final id = command.objectId!;
-        final size = measured[id] ??= meter.measure(instructions.paths[id]);
-        final paint = command.paintId == null
-            ? null
-            : instructions.paints[command.paintId!];
-        final strokeWidth = paint?.stroke?.width ?? 0;
-        // A clip has no paint but is filled into the clip mask.
-        if (paint?.fill != null || paint == null) coverage += size.boxArea;
-        coverage += size.length * strokeWidth / meter.area;
-        // A stroke has two sides.
-        outline += size.length / meter.diagonal * (strokeWidth > 0 ? 3 : 1);
+        final outline = measured[command.objectId!] ??=
+            meter.measure(instructions.paths[command.objectId!]);
+        operations += 1 + outline.fillCrossings * _spanCost;
+      case DrawCommandType.path:
+        final outline = measured[command.objectId!] ??=
+            meter.measure(instructions.paths[command.objectId!]);
+        operations += _pathOperations(outline, paint, meter);
+      case DrawCommandType.text:
+        final characters = instructions.text[command.objectId!].text.length;
+        operations += characters * _paintFactor(paint?.fill?.shader);
       default:
         break;
     }
   }
-  if (coverage > limits.maxCoverage || outline > limits.maxOutlineLength) {
-    throw const SvgException('SVG is too expensive to draw');
+  return operations;
+}
+
+double _paintFactor(Gradient? shader) => shader == null ? 1 : 2;
+
+double _pathOperations(_Outline outline, Paint? paint, _PathMeter meter) {
+  var operations = 0.0;
+  final fill = paint?.fill;
+  if (fill != null) {
+    operations +=
+        _paintFactor(fill.shader) * (1 + outline.fillCrossings * _spanCost);
   }
+  final stroke = paint?.stroke;
+  if (stroke != null) {
+    final crossings = meter.strokeCrossings(outline, stroke.width ?? 1);
+    operations += _paintFactor(stroke.shader) * (1 + crossings * _spanCost);
+  }
+  return operations;
 }
 
-/// What one path contributes: the area of its bounding box as a fraction
-/// of the drawing, and the length of its outline in drawing units.
-class _PathSize {
-  const _PathSize(this.boxArea, this.length);
+/// What the outline of one path contributes, in "crossings": how many times
+/// its edges cross the full height of the drawing, added up.
+class _Outline {
+  const _Outline(this.segments, this.fillCrossings, this.strokeCrossings);
 
-  final double boxArea;
-  final double length;
+  final int segments;
+
+  /// For a fill: only the parts of edges inside the drawing count.
+  final double fillCrossings;
+
+  /// For the centre line of a stroke: every edge counts, with at most one
+  /// full height each, wherever it lies.
+  final double strokeCrossings;
 }
 
-/// Measures paths against a drawing of [width] x [height].
+/// Measures how much edge a scan-line rasteriser has to walk for a path.
+///
+/// The work per scan line grows with the number of edges crossing it. Added
+/// up over all scan lines that is the vertical extent of all edges, here in
+/// units of the drawing's [height]. A curve is measured by the polygon
+/// through its control points, whose vertical extent is at least the
+/// curve's.
 class _PathMeter {
-  _PathMeter(this.width, this.height);
+  _PathMeter(this.height);
 
-  final double width;
   final double height;
 
-  double get area => width * height;
-  double get diagonal => math.sqrt(width * width + height * height);
-
-  double _left = 0;
-  double _top = 0;
-  double _right = 0;
-  double _bottom = 0;
-  double _x = 0;
-  double _y = 0;
-  double _length = 0;
-
-  /// Walks the control points of [path]. For a curve the polygon through
-  /// its control points is at least as long as the curve and contains it.
-  _PathSize measure(Path path) {
-    _left = _top = double.infinity;
-    _right = _bottom = double.negativeInfinity;
-    _length = 0;
-    var startX = 0.0;
+  _Outline measure(Path path) {
+    var segments = 0;
+    var inside = 0.0;
+    var anywhere = 0.0;
+    var y = 0.0;
     var startY = 0.0;
+    void edgeTo(double nextY) {
+      if (nextY.isNaN) return;
+      segments++;
+      inside += (_clamp(nextY) - _clamp(y)).abs();
+      final rise = (nextY - y).abs();
+      anywhere += rise.isFinite ? math.min(rise, height) : height;
+      y = nextY;
+    }
+
     for (final command in path.commands) {
       if (command is MoveToCommand) {
-        _moveTo(command.x, command.y);
-        startX = _x;
-        startY = _y;
+        y = startY = command.y.isNaN ? 0 : command.y;
       } else if (command is LineToCommand) {
-        _lineTo(command.x, command.y);
+        edgeTo(command.y);
       } else if (command is CubicToCommand) {
-        _lineTo(command.x1, command.y1);
-        _lineTo(command.x2, command.y2);
-        _lineTo(command.x3, command.y3);
+        edgeTo(command.y1);
+        edgeTo(command.y2);
+        edgeTo(command.y3);
       } else if (command is CloseCommand) {
-        _lineTo(startX, startY);
+        edgeTo(startY);
       }
     }
-    if (_right < _left) return const _PathSize(0, 0);
-    return _PathSize((_right - _left) * (_bottom - _top) / area, _length);
+    return _Outline(segments, inside / height, anywhere / height);
   }
 
-  /// Clamps a coordinate into the drawing; NaN counts as the origin.
-  double _clamp(double value, double max) =>
-      value.isNaN ? 0 : value.clamp(0, max).toDouble();
+  double _clamp(double y) => y.clamp(0, height).toDouble();
 
-  void _moveTo(double x, double y) {
-    _x = _clamp(x, width);
-    _y = _clamp(y, height);
-    _left = math.min(_left, _x);
-    _right = math.max(_right, _x);
-    _top = math.min(_top, _y);
-    _bottom = math.max(_bottom, _y);
-  }
-
-  void _lineTo(double x, double y) {
-    final fromX = _x;
-    final fromY = _y;
-    _moveTo(x, y);
-    final dx = _x - fromX;
-    final dy = _y - fromY;
-    _length += math.sqrt(dx * dx + dy * dy);
+  /// A stroke has two sides, each following the centre line, and every
+  /// join and cap adds an edge of up to the stroke [width]. The centre line
+  /// is not clamped to the drawing: a wide stroke reaches into the drawing
+  /// from a centre line outside it.
+  double strokeCrossings(_Outline outline, double width) {
+    final reach = (width.isFinite ? width.abs() : height) / height;
+    final joinsAndCaps = (outline.segments + 2) * math.min(reach, 1);
+    return 2 * (outline.strokeCrossings + joinsAndCaps);
   }
 }

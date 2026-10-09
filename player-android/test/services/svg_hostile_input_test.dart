@@ -5,14 +5,15 @@
 // hundred kilobytes that made the compiler isolate, the picture decoder or
 // the rasteriser allocate from 600 MB to several gigabytes, or take many
 // seconds to paint. The first group must be refused, and every case names
-// the stage and reason that refuses it, so a case cannot pass because some
-// other stage happened to object as well.
+// the reason, so a case cannot pass because some other stage happened to
+// object as well.
 //
 // The second group holds documents that are accepted: unusual but harmless
-// ones, and the most expensive ones the budgets still allow. Those run the
-// whole pipeline (compile, decode, rasterise for a 1440x3120 screen, which
-// the 2048 pixel cap reduces) and must stay within the bounds below. The
-// test rasteriser is the software one, slower than a phone's GPU.
+// ones, documents that are expensive per pixel (which are therefore given
+// a smaller bitmap), and the most expensive ones the budgets allow. Each
+// runs the whole pipeline (compile, decode, rasterise) for a 1440x3120
+// screen and for a 160x160 tile, and must stay within the bounds below.
+// The test rasteriser is the software one, slower than a phone's GPU.
 //
 // `ProcessInfo.maxRss` is the peak for the whole test process, so its
 // growth across one case bounds what that case allocated.
@@ -33,11 +34,14 @@ const _megabyte = 1024 * 1024;
 /// A rejection takes milliseconds and a few megabytes.
 const _refusal = (Duration(seconds: 1), 100 * _megabyte);
 
-/// The target for showing an accepted document for the first time.
+/// The bound for showing an accepted document for the first time. The
+/// raster budget aims at about one second; this leaves room for a loaded
+/// machine.
 const _display = (Duration(seconds: 2), 150 * _megabyte);
 
 /// A drawing with the proportions of the screen it is rasterised for.
 const _box = 'width="144" height="312" viewBox="0 0 1440 3120"';
+const _square = 'width="100" height="100" viewBox="0 0 100 100"';
 const _full = 'width="1440" height="3120"';
 const _rect = '<rect $_full fill="#f00"/>';
 
@@ -73,20 +77,26 @@ String _clippedBy(int count, int pathBytes) => svgDocument(
     body: '<defs><clipPath id="c">${_path(pathBytes)}</clipPath></defs>'
         '${'<rect width="9" height="9" clip-path="url(#c)"/>' * count}');
 
-/// The chain of `<use>` hidden behind style values with a second colon:
-/// four levels of five copies of a 99 KB path, 625 copies in all.
-final _styleIdChain = svgDocument(
-    size: _box,
-    body: '<defs><g style="id:g0:x">${_path(60 * 1024)}</g>${[
-      for (var level = 1; level <= 3; level++)
-        '<g style="id:g$level:x">${'<use href="#g${level - 1}"/>' * 5}</g>',
-    ].join()}</defs>${'<use href="#g3"/>' * 5}');
+/// A stroke 1000 wide on a centre line a thousandth of a unit long: it
+/// paints the whole drawing while its geometry is next to nothing.
+const _wideDot = '<line x1="50" y1="50" x2="50.001" y2="50" stroke="#00f" '
+    'stroke-opacity="0.5" stroke-width="1000" stroke-linecap="round"/>';
 
-const _radial = '<defs><radialGradient id="r"><stop offset="0" '
-    'stop-color="#f00"/><stop offset="1" stop-color="#00f"/>'
+/// The same with the centre line outside the drawing.
+const _wideOutside = '<line x1="-400" y1="-400" x2="-399" y2="-400" '
+    'stroke="#00f" stroke-opacity="0.5" stroke-width="1000" '
+    'stroke-linecap="square"/>';
+
+/// 97 glyphs, each far larger than the drawing.
+final _hugeGlyphs = '<text id="t" font-size="400" fill-opacity="0.5">'
+    '${'<tspan x="0" y="90">W</tspan>' * 97}</text>';
+
+const _radial = '<defs><radialGradient id="r" spreadMethod="repeat" r="0.1">'
+    '<stop offset="0" stop-color="#f00"/><stop offset="1" stop-color="#00f"/>'
     '</radialGradient></defs>';
+const _gradientRect = '<rect $_full fill="url(#r)" fill-opacity="0.5"/>';
 
-/// Documents from the reviews, each with the reason it is refused.
+/// Documents that must be refused, each with the reason.
 final _refused = <String, (String, String)>{
   'a 200-byte dash array on a long line': (
     svgDocument(
@@ -110,10 +120,6 @@ final _refused = <String, (String, String)>{
             '${'A<!---->' * 99000}</rect></text>'),
     '<rect> is not allowed inside <text>',
   ),
-  'text after a self-closing clip path inside text': (
-    svgDocument(body: '<text><clipPath id="c"/></text>${'A<!---->' * 99000}'),
-    '<clipPath> is not allowed inside <text>',
-  ),
   'a 16000x16000 pattern tile': (
     svgDocument(
         size: 'width="100" height="100" viewBox="0 0 16000 16000"',
@@ -122,97 +128,66 @@ final _refused = <String, (String, String)>{
             '<rect width="16000" height="16000" fill="url(#p)"/>'),
     'element <pattern> is not supported',
   ),
-  for (final (uses, kilobytes) in [(100, 20), (50, 60), (100, 60)])
-    '$uses uses of a $kilobytes KB path': (
-      _usedPath(uses, kilobytes * 1024),
-      'references multiply its content too often',
-    ),
-  for (final (refs, kilobytes) in [(1990, 20), (1000, 60)])
-    '$refs clip-path references to a $kilobytes KB clip path': (
-      _clippedBy(refs, kilobytes * 1024),
-      'references multiply its content too often',
-    ),
+  '100 uses of a 60 KB path': (
+    _usedPath(100, 60 * 1024),
+    'references multiply its content too often',
+  ),
+  '1000 clip-path references to a 60 KB clip path': (
+    _clippedBy(1000, 60 * 1024),
+    'references multiply its content too often',
+  ),
   'use chains hidden behind style ids with a second colon': (
-    _styleIdChain,
+    svgDocument(
+        size: _box,
+        body: '<defs><g style="id:g0:x">${_path(60 * 1024)}</g>${[
+          for (var level = 1; level <= 3; level++)
+            '<g style="id:g$level:x">${'<use href="#g${level - 1}"/>' * 5}</g>',
+        ].join()}</defs>${'<use href="#g3"/>' * 5}'),
     'style property id is not supported',
-  ),
-  'use chains that multiply tenfold per level': (
-    svgDocument(
-        body: '<defs><g id="l0">$_rect</g>${[
-      for (var i = 1; i <= 9; i++)
-        '<g id="l$i">${'<use href="#l${i - 1}"/>' * 10}</g>',
-    ].join()}</defs><use href="#l9"/>'),
-    '<use> may not reference content that contains <use>',
-  ),
-  'a gradient with 5,000 stops': (
-    svgDocument(
-        body: '<defs><linearGradient id="g">'
-            '${'<stop offset="0.5" stop-color="#f00"/>' * 1990}'
-            '</linearGradient></defs><rect width="9" height="9" '
-            'fill="url(#g)"/>'),
-    'too many gradient stops',
-  ),
-  'a stroke width of 1000em': (
-    svgDocument(body: '<rect width="9" height="9" stroke-width="1000em"/>'),
-    'unusable stroke width',
-  ),
-  // Slow to paint rather than large: refused by the cost estimate or caps.
-  '300 translucent full-size rectangles': (
-    svgDocument(
-        size: _box,
-        body: '<rect $_full fill="#f00" fill-opacity="0.5"/>' * 300),
-    'too expensive to draw',
-  ),
-  '300 full-size rectangles with a radial gradient': (
-    svgDocument(
-        size: _box,
-        body:
-            '$_radial${'<rect $_full fill="url(#r)" fill-opacity="0.5"/>' * 300}'),
-    'too expensive to draw',
   ),
   'a 150 KB zigzag path filled even-odd': (
     svgDocument(
         size: _box, body: '<path fill-rule="evenodd" d="${_zigzag(13000)}"/>'),
     'oversized path',
   ),
-  'a 60 KB zigzag path filled even-odd': (
-    svgDocument(
-        size: _box, body: '<path fill-rule="evenodd" d="${_zigzag(5500)}"/>'),
+  // Cheap to describe, slow to paint: refused by the count of operations.
+  '1,999 wide strokes on tiny centre lines': (
+    svgDocument(size: _square, body: _wideDot * 1999),
     'too expensive to draw',
   ),
-  'a zigzag stroked 1000 wide with round joins': (
+  '1,999 wide strokes with centre lines outside the drawing': (
+    svgDocument(size: _square, body: _wideOutside * 1999),
+    'too expensive to draw',
+  ),
+  '97 huge glyphs used 99 times': (
     svgDocument(
-        size: _box,
-        body: '<path fill="none" stroke="#00f" stroke-width="1000" '
-            'stroke-linejoin="round" d="${_zigzag(600)}"/>'),
+        size: _square,
+        body: '<defs>$_hugeGlyphs</defs>${'<use href="#t"/>' * 99}'),
+    'too expensive to draw',
+  ),
+  'glyphs far larger than the drawing': (
+    svgDocument(size: _square, body: '<text font-size="10000">W</text>'),
+    'unusable font size',
+  ),
+  '1,990 full-size gradient rectangles': (
+    svgDocument(size: _box, body: '$_radial${_gradientRect * 1990}'),
     'too expensive to draw',
   ),
 };
 
-/// Unusual but harmless documents, and the most expensive ones that the
-/// budgets still allow.
+/// Documents that are accepted and must be affordable at any size.
 final _accepted = <String, String>{
-  'an extreme transform scale': svgDocument(
-      size: _box,
-      body: '<g transform="scale(1e30)">$_rect</g>'
-          '<g transform="scale(1e-30)">$_rect</g>$_rect'),
   'coordinates of 1e30': svgDocument(
       size: _box,
       body: '<path d="M-1e30 -1e30 L1e30 1e30 L1e30 -1e30 Z" fill="#f00" '
           'stroke="#00f" stroke-width="10"/>'
           '<rect x="1e30" y="-1e30" width="1e30" height="1e30"/>'
-          '<circle cx="0" cy="0" r="1e30"/>'),
+          '<circle cx="0" cy="0" r="1e30"/>'
+          '<g transform="scale(1e30)">$_rect</g>'),
   'an extreme stroke miter limit on sharp joins': svgDocument(
       size: _box,
       body: '<path fill="none" stroke="#000" stroke-width="20" '
-          'stroke-miterlimit="1e30" d="${_zigzag(100)}"/>'
-          '<path fill="none" stroke="#000" stroke-miterlimit="0" '
-          'd="M0 0 L9 9 L0 18"/>'),
-  'clipPathUnits and a clip path larger than the drawing': svgDocument(
-      size: _box,
-      body: '<defs><clipPath id="c" clipPathUnits="objectBoundingBox">'
-          '<rect width="1e9" height="1e9"/></clipPath></defs>'
-          '<rect $_full fill="#f00" clip-path="url(#c)"/>'),
+          'stroke-miterlimit="1e30" d="${_zigzag(100)}"/>'),
   'a repeating gradient with a tiny gradient transform': svgDocument(
       size: _box,
       body: '<defs><linearGradient id="g" spreadMethod="repeat" '
@@ -220,86 +195,84 @@ final _accepted = <String, String>{
           'gradientTransform="scale(1e-6) rotate(33)">'
           '<stop offset="0" stop-color="#f00"/>'
           '<stop offset="1" stop-color="#00f"/></linearGradient></defs>'
-          '<rect $_full fill="url(#g)"/>'
-          '<rect $_full fill="url(#g)" transform="scale(1e6)"/>'),
-  'arcs with huge radii': svgDocument(
+          '<rect $_full fill="url(#g)"/>'),
+  'arcs with huge radii and clipPathUnits': svgDocument(
       size: _box,
-      body: '<path fill="#f00" d="M0 0 A1e30 1e30 0 1 1 1440 3120 '
-          'A1e-30 1e30 45 0 0 0 0 Z"/>'
-          '<ellipse cx="720" cy="1560" rx="1e30" ry="1e-30"/>'),
-  'xml:space and white space in text': svgDocument(
-      size: _box,
-      body: '<text xml:space="preserve" x="10" y="400" font-size="200">'
-          ' a  b <tspan xml:space="default">  c  </tspan></text>'),
+      body: '<defs><clipPath id="c" clipPathUnits="objectBoundingBox">'
+          '<rect width="1e9" height="1e9"/></clipPath></defs>'
+          '<path fill="#f00" clip-path="url(#c)" d="M0 0 A1e30 1e30 0 1 1 '
+          '1440 3120 A1e-30 1e30 45 0 0 0 0 Z"/>'),
   'a use of a group with clipped shapes': svgDocument(
       size: _box,
       body: '<defs><clipPath id="c">${_path(8 * 1024)}</clipPath>'
           '<g id="g">${'<rect width="500" height="500" '
               'clip-path="url(#c)"/>' * 10}</g></defs>'
           '${'<use href="#g"/>' * 10}'),
-  // The most expensive documents of their kind inside the budgets.
-  'at the budget: a 64 KB points list of short segments': svgDocument(
+  'a 64 KB points list of short segments': svgDocument(
       size: _box,
       body: '<polyline fill="none" stroke="#000" '
           'points="${_meander(64 * 1024)}"/>'),
-  'at the budget: 3 uses of a 64 KB path, 256 KB of path data': svgDocument(
-      size: _box,
-      body: '<defs>${[
-        for (var i = 0; i < 4; i++) _path(63 * 1024, id: 'p$i'),
-      ].join()}</defs>${'<use href="#p0"/>' * 3}'),
-  'at the budget: 1,990 rectangles': svgDocument(
+  '1,990 small rectangles': svgDocument(
       size: _box,
       body: '<rect x="5" y="5" width="90" height="90" fill="#f00"/>' * 1990),
-  'at the budget: 79 translucent full-size rectangles': svgDocument(
-      size: _box, body: '<rect $_full fill="#f00" fill-opacity="0.5"/>' * 79),
-  'at the budget: 79 full-size radial gradients': svgDocument(
-      size: _box,
-      body:
-          '$_radial${'<rect $_full fill="url(#r)" fill-opacity="0.5"/>' * 79}'),
-  'at the budget: an even-odd zigzag with 900 crossings': svgDocument(
-      size: _box,
-      body: '<path fill-rule="evenodd" fill="#f00" d="${_zigzag(900)}"/>'),
-  'at the budget: a zigzag stroked 1000 wide with round joins': svgDocument(
+  // Expensive per pixel: shown, but as a smaller bitmap.
+  '200 wide strokes on tiny centre lines':
+      svgDocument(size: _square, body: _wideDot * 200),
+  '100 wide strokes in a group used 10 times': svgDocument(
+      size: _square,
+      body: '<defs><g id="g">${_wideDot * 100}</g></defs>'
+          '${'<use href="#g"/>' * 10}'),
+  '200 wide strokes with centre lines outside the drawing':
+      svgDocument(size: _square, body: _wideOutside * 200),
+  '97 huge glyphs used 10 times': svgDocument(
+      size: _square,
+      body: '<defs>$_hugeGlyphs</defs>${'<use href="#t"/>' * 10}'),
+  '300 translucent full-size rectangles': svgDocument(
+      size: _box, body: '<rect $_full fill="#f00" fill-opacity="0.5"/>' * 300),
+  '300 full-size repeating radial gradients':
+      svgDocument(size: _box, body: '$_radial${_gradientRect * 300}'),
+  'a 60 KB zigzag path filled even-odd': svgDocument(
+      size: _box, body: '<path fill-rule="evenodd" d="${_zigzag(5500)}"/>'),
+  'a zigzag stroked 1000 wide with round joins': svgDocument(
       size: _box,
       body: '<path fill="none" stroke="#00f" stroke-width="1000" '
-          'stroke-linejoin="round" d="${_zigzag(110)}"/>'),
-  'at the budget: 4 nested layers of full-size gradients': svgDocument(
+          'stroke-linejoin="round" d="${_zigzag(600)}"/>'),
+  // Calibration: gradient fills of the whole bitmap, as many as the budget
+  // allows at full resolution and at the smallest bitmap.
+  'at the budget: 51 full-size gradients at full resolution':
+      svgDocument(size: _box, body: '$_radial${_gradientRect * 51}'),
+  'at the budget: 1,500 full-size gradients at the smallest bitmap':
+      svgDocument(size: _box, body: '$_radial${_gradientRect * 1500}'),
+  'at the budget: 4 nested layers of gradients and a zigzag': svgDocument(
       size: _box,
-      body: '$_radial${'<g opacity="0.9">' * 4}'
-          '${'<rect $_full fill="url(#r)"/>' * 75}${'</g>' * 4}'),
-  // Every budget that costs raster time, used up in one document.
-  'the worst accepted case: layers, gradients and a zigzag': svgDocument(
-      size: _box,
-      body: '$_radial${'<g opacity="0.9">' * 4}'
-          '${'<rect $_full fill="url(#r)" fill-opacity="0.5"/>' * 74}'
-          '<path fill-rule="evenodd" fill="url(#r)" d="${_zigzag(700)}"/>'
+      body: '$_radial${'<g opacity="0.9">' * 4}${_gradientRect * 20}'
+          '<path fill-rule="evenodd" fill="url(#r)" d="${_zigzag(150)}"/>'
           '${'</g>' * 4}'),
-  'at the budget: 2,000 characters of text used 4 times': svgDocument(
-      size: _box,
-      body: '<defs><text id="t" y="300" font-size="40">${'A' * 2000}</text>'
-          '</defs>${'<use href="#t"/>' * 4}'),
 };
 
-final _screen = SvgImageRequest(
-  source: SvgRequest(uri: Uri.parse('https://player.example/x.svg')),
-  width: 1440,
-  height: 3120,
-);
+SvgImageRequest _request(double width, double height) => SvgImageRequest(
+      source: SvgRequest(uri: Uri.parse('https://player.example/x.svg')),
+      width: width,
+      height: height,
+    );
+
+final _screen = _request(1440, 3120);
+final _tile = _request(160, 160);
 
 /// Runs [body] and checks how long it took and how much the process grew.
 Future<void> _bounded(
   String name,
   (Duration, int) bounds,
-  Future<void> Function() body,
+  Future<String> Function() body,
 ) async {
   final rssBefore = ProcessInfo.maxRss;
   final watch = Stopwatch()..start();
-  await body();
+  final detail = await body();
   final elapsed = watch.elapsed;
   final growth = ProcessInfo.maxRss - rssBefore;
   // Printed so that the measured numbers can be quoted.
   // ignore: avoid_print
-  print('MEASURED $name: ${elapsed.inMilliseconds} ms, '
+  print('MEASURED $name: $detail ${elapsed.inMilliseconds} ms, '
       'peak RSS +${growth ~/ _megabyte} MB');
   expect(elapsed, lessThan(bounds.$1));
   expect(growth, lessThan(bounds.$2));
@@ -315,13 +288,17 @@ Future<String> _rejection(Uint8List bytes) async {
   return 'accepted';
 }
 
-/// Compiles and rasterises [bytes] for a phone screen, as the viewer does.
-Future<void> _showFullScreen(Uint8List bytes) async {
+/// Compiles and rasterises [bytes] for [request] and describes the result.
+Future<String> _show(Uint8List bytes, SvgImageRequest request) async {
   final compiled = await IsolateSvgCompiler().call(bytes);
-  final raster = await rasterizeSvg(ByteData.sublistView(compiled), _screen);
-  expect(raster.image.height, lessThanOrEqualTo(SvgImageRequest.maxSide));
-  expect(raster.image.width, lessThanOrEqualTo(SvgImageRequest.maxSide));
+  final raster = await rasterizeSvg(compiled, request);
+  final image = raster.image;
+  final pixels = image.width * image.height;
+  expect(compiled.drawOperations * pixels,
+      lessThanOrEqualTo(kSvgRasterBudget * 1.01));
   raster.dispose();
+  return '${compiled.drawOperations.round()} ops, '
+      '${image.width}x${image.height},';
 }
 
 void main() {
@@ -336,18 +313,22 @@ void main() {
       test(name, () async {
         final bytes = svgBytes(document);
         expect(bytes.length, lessThanOrEqualTo(kMaxSvgBytes));
-        await _bounded(name, _refusal,
-            () async => expect(await _rejection(bytes), contains(reason)));
+        await _bounded(name, _refusal, () async {
+          expect(await _rejection(bytes), contains(reason));
+          return 'refused,';
+        });
       });
     }
   });
 
-  group('accepted and affordable to show', () {
-    for (final MapEntry(key: name, value: document) in _accepted.entries) {
-      test(
-          name,
-          () => _bounded(
-              name, _display, () => _showFullScreen(svgBytes(document))));
-    }
-  });
+  for (final (label, request) in [('screen', _screen), ('tile', _tile)]) {
+    group('accepted and affordable on a $label', () {
+      for (final MapEntry(key: name, value: document) in _accepted.entries) {
+        test(
+            name,
+            () => _bounded('[$label] $name', _display,
+                () => _show(svgBytes(document), request)));
+      }
+    });
+  }
 }

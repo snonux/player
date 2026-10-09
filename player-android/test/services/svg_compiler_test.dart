@@ -15,7 +15,7 @@ Matcher _rejects(String message) => throwsA(
 
 /// Work that never finishes. [bytes] is the path of a file it keeps
 /// appending to, so the test can see from outside whether it still runs.
-Uint8List _spinForever(Uint8List bytes) {
+CompiledSvg _spinForever(Uint8List bytes) {
   final heartbeat = File(utf8.decode(bytes));
   while (true) {
     heartbeat.writeAsStringSync('.', mode: FileMode.append, flush: true);
@@ -30,7 +30,8 @@ void main() {
 
 void _compileTests() {
   test('compiles a valid SVG in a background isolate', () async {
-    expect(await IsolateSvgCompiler().call(svgBytes(kValidSvg)), isNotEmpty);
+    expect((await IsolateSvgCompiler().call(svgBytes(kValidSvg))).data,
+        isNotEmpty);
   });
 
   test('reports the reason a document was rejected', () async {
@@ -89,7 +90,7 @@ void _queueTests() {
     final first = compiler(svgBytes(kValidSvg));
     final second = compiler(svgBytes(kValidSvg), isCancelled: () => true);
     await expectLater(second, _rejects('cancelled'));
-    expect(await first, isNotEmpty);
+    expect((await first).data, isNotEmpty);
   });
 
   test('a timed-out call frees its slot for the next one', () async {

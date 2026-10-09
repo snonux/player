@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 
+import 'svg_limits.dart';
+
 /// One SVG download: where from and with which credentials.
 ///
 /// Two requests are equal only when URL and headers both match, so another
@@ -64,22 +66,28 @@ class SvgMemoryCache {
   final int maxBytes;
   final int maxNotSvg;
   int _bytes = 0;
-  final LinkedHashMap<SvgRequest, ByteData> _entries = LinkedHashMap();
+  final LinkedHashMap<SvgRequest, CompiledSvg> _entries = LinkedHashMap();
   final LinkedHashSet<SvgRequest> _notSvg = LinkedHashSet();
 
+  /// Counts how often the cache was cleared. Work that started before a
+  /// clear (a logout) compares this before storing its result, so that it
+  /// cannot put the previous account's drawing back.
+  int get generation => _generation;
+  int _generation = 0;
+
   /// Returns the entry and marks it as most recently used.
-  ByteData? get(SvgRequest request) {
-    final data = _entries.remove(request);
-    if (data != null) _entries[request] = data;
-    return data;
+  CompiledSvg? get(SvgRequest request) {
+    final compiled = _entries.remove(request);
+    if (compiled != null) _entries[request] = compiled;
+    return compiled;
   }
 
-  void put(SvgRequest request, ByteData data) {
-    _bytes -= _entries.remove(request)?.lengthInBytes ?? 0;
-    _entries[request] = data;
-    _bytes += data.lengthInBytes;
+  void put(SvgRequest request, CompiledSvg compiled) {
+    _bytes -= _entries.remove(request)?.data.length ?? 0;
+    _entries[request] = compiled;
+    _bytes += compiled.data.length;
     while (_bytes > maxBytes) {
-      _bytes -= _entries.remove(_entries.keys.first)!.lengthInBytes;
+      _bytes -= _entries.remove(_entries.keys.first)!.data.length;
     }
   }
 
@@ -92,6 +100,7 @@ class SvgMemoryCache {
 
   /// Forgets everything.
   void clear() {
+    _generation++;
     _entries.clear();
     _notSvg.clear();
     _bytes = 0;
@@ -124,7 +133,8 @@ class SvgImageRequest {
   /// screen. The image viewer zooms into that bitmap.
   static const int maxSide = 2048;
 
-  static const List<int> _steps = [
+  /// The bitmap sizes in use, smallest first.
+  static const List<int> steps = [
     64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, maxSide, //
   ];
 
@@ -132,7 +142,7 @@ class SvgImageRequest {
   /// finite (an unbounded box) get a middle step.
   static int bucket(double pixels) {
     if (!pixels.isFinite || pixels <= 0) return 512;
-    return _steps.firstWhere((s) => s >= pixels, orElse: () => maxSide);
+    return steps.firstWhere((s) => s >= pixels, orElse: () => maxSide);
   }
 
   @override
@@ -208,4 +218,14 @@ class SvgImageCache {
 
   /// Releases every bitmap.
   void clear() => _entries.keys.toList().forEach(_remove);
+
+  /// Empties the cache and refuses whatever work in flight would store.
+  void reset() {
+    _generation++;
+    clear();
+  }
+
+  /// See [SvgMemoryCache.generation].
+  int get generation => _generation;
+  int _generation = 0;
 }

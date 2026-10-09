@@ -1,7 +1,7 @@
 // Tests for rasterising SVGs once (svg_raster.dart), the bitmap cache
-// (svg_cache.dart) and the raster cost estimate (svg_raster_cost.dart).
+// (svg_cache.dart) and the count of drawing operations that decides how
+// large a bitmap may be (svg_raster_cost.dart).
 
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -23,8 +23,7 @@ Future<SvgRaster> _raster(SvgImageRequest request,
   final document = body == null
       ? svgDocument(size: size)
       : svgDocument(size: size, body: body);
-  final compiled = compileSvg(svgBytes(document));
-  return rasterizeSvg(ByteData.sublistView(compiled), request);
+  return rasterizeSvg(compileSvg(svgBytes(document)), request);
 }
 
 Matcher _rejects(String message) => throwsA(
@@ -35,7 +34,8 @@ void main() {
   group('SvgImageRequest', _requestTests);
   group('rasterizeSvg', _rasterTests);
   group('SvgImageCache', _cacheTests);
-  group('raster cost', _costTests);
+  group('drawing operations', _costTests);
+  group('raster budget', _budgetTests);
 }
 
 void _requestTests() {
@@ -183,55 +183,133 @@ void _cacheTests() {
 
 void _costTests() {
   const full = '<rect width="100" height="100" fill="#f00"/>';
-  Uint8List compile(String body, SvgLimits limits) => compileSvg(
-      svgBytes(svgDocument(size: 'width="100" height="100"', body: body)),
-      limits: limits);
+  const gradient = '<defs><linearGradient id="g"><stop offset="0" '
+      'stop-color="#f00"/><stop offset="1" stop-color="#00f"/>'
+      '</linearGradient></defs>';
+  double operations(String body) => compileSvg(
+          svgBytes(svgDocument(size: 'width="100" height="100"', body: body)))
+      .drawOperations;
 
-  test('coverage adds up the area every shape paints', () {
-    expect(compile(full * 5, const SvgLimits(maxCoverage: 5)), isNotEmpty);
-    expect(() => compile(full * 6, const SvgLimits(maxCoverage: 5)),
-        _rejects('too expensive to draw'));
+  test('a fill is one operation plus a term for its outline', () {
+    // A rectangle has two edges crossing the full height: 2 x 0.25.
+    expect(operations(full), closeTo(1.5, 0.01));
+    expect(operations(full * 10), closeTo(15, 0.1));
   });
 
-  test('small shapes cost little, shapes outside the drawing nothing', () {
-    const small = '<rect width="10" height="10"/>';
-    const outside = '<rect x="1e6" y="1e6" width="1e9" height="1e9"/>';
-    const limits = SvgLimits(maxCoverage: 1.5);
-    expect(compile(full + small * 40, limits), isNotEmpty);
-    expect(compile(full + outside * 500, limits), isNotEmpty);
+  test('a gradient costs twice a flat colour', () {
+    final flat = operations(full);
+    final shaded =
+        operations('$gradient<rect width="100" height="100" fill="url(#g)"/>');
+    expect(shaded, closeTo(2 * flat, 0.01));
   });
 
-  test('a stroke costs its length times its width', () {
-    // 100 long, 50 wide: half the drawing per line.
-    const line = '<line y1="50" x2="100" y2="50" stroke="#000" '
-        'stroke-width="50"/>';
-    expect(compile(line * 4, const SvgLimits(maxCoverage: 2)), isNotEmpty);
-    expect(() => compile(line * 5, const SvgLimits(maxCoverage: 2)),
-        _rejects('too expensive to draw'));
+  test('a stroke is charged in addition to the fill', () {
+    const stroked = '<rect width="100" height="100" fill="#f00" '
+        'stroke="#000" stroke-width="2"/>';
+    expect(operations(stroked), greaterThan(operations(full) + 1));
   });
 
-  test('an offscreen layer costs the whole drawing', () {
-    const layer = '<g opacity="0.5"><rect width="1" height="1"/>'
-        '<rect width="2" height="2"/></g>';
-    expect(compile(layer * 3, const SvgLimits(maxCoverage: 3.5)), isNotEmpty);
-    expect(() => compile(layer * 4, const SvgLimits(maxCoverage: 3.5)),
-        _rejects('too expensive to draw'));
+  test('a wide stroke on a tiny or off-drawing line is a full operation', () {
+    // The centre line has no length inside the drawing, yet the stroke
+    // paints all of it.
+    const dot = '<line x1="50" y1="50" x2="50.001" y2="50" stroke="#000" '
+        'stroke-opacity="0.5" stroke-width="1000" stroke-linecap="round"/>';
+    const outside = '<line x1="-400" y1="-400" x2="-300" y2="-400" '
+        'stroke="#000" stroke-width="1000" stroke-linecap="square"/>';
+    expect(operations(dot), greaterThanOrEqualTo(1));
+    expect(operations(outside), greaterThanOrEqualTo(1));
+    expect(operations(dot * 200), greaterThanOrEqualTo(200));
   });
 
-  test('outline length counts how often edges cross the drawing', () {
-    // Each crossing is about 100 units; the diagonal is 141.
-    String zigzag(int crossings) => '<path d="M0 0${[
+  test('every character of text is an operation', () {
+    final one = operations('$full<text y="50" font-size="40">a</text>');
+    final many =
+        operations('$full<text y="50" font-size="40">${'a' * 21}</text>');
+    expect(many - one, closeTo(20, 0.01));
+  });
+
+  test('layers and clips are one operation each', () {
+    const small = '<rect width="1" height="1"/>';
+    final plain = operations('<g>$small$small</g>');
+    expect(operations('<g opacity="0.5">$small$small</g>'),
+        closeTo(plain + 1, 0.01));
+    final clipped = operations('<defs><clipPath id="c">$small</clipPath>'
+        '</defs><g>${small.replaceFirst('/>', ' clip-path="url(#c)"/>')}'
+        '$small</g>');
+    expect(clipped, greaterThanOrEqualTo(plain + 1));
+  });
+
+  test('copies made by use are counted like the original', () {
+    final copies =
+        operations('<defs><g id="g">$full</g></defs>${'<use href="#g"/>' * 6}');
+    expect(copies, closeTo(6 * operations(full), 0.01));
+  });
+
+  test('an outline crossing the drawing many times costs many fills', () {
+    String zigzag(int crossings) => '<path fill-rule="evenodd" d="M0 0${[
           for (var i = 0; i < crossings; i++) 'L$i ${i.isEven ? 100 : 0}',
         ].join()}"/>';
-    const limits = SvgLimits(maxOutlineLength: 10);
-    expect(compile(zigzag(12), limits), isNotEmpty);
-    expect(
-        () => compile(zigzag(20), limits), _rejects('too expensive to draw'));
+    // About a quarter of a fill per crossing.
+    expect(operations(zigzag(900)), closeTo(226, 3));
+    // Edges outside the drawing are not scanned and cost nothing.
+    const outside = '<path d="M0 0 L1e6 1e6 L-1e6 1e6 L0 -1e6 Z"/>';
+    expect(operations(outside), lessThan(3));
   });
 
-  test('copies made by use are measured like the original', () {
-    final body = '<defs><g id="g">$full</g></defs>${'<use href="#g"/>' * 6}';
-    expect(() => compile(body, const SvgLimits(maxCoverage: 5)),
+  test('a drawing with more operations than allowed is refused', () {
+    final bytes = svgBytes(
+        svgDocument(size: 'width="100" height="100"', body: full * 10));
+    expect(
+        compileSvg(bytes, limits: const SvgLimits(maxDrawOperations: 15))
+            .drawOperations,
+        closeTo(15, 0.01));
+    expect(
+        () =>
+            compileSvg(bytes, limits: const SvgLimits(maxDrawOperations: 14.9)),
         _rejects('too expensive to draw'));
+  });
+}
+
+void _budgetTests() {
+  const screen = ui.Size(1536, 1536);
+
+  test('a drawing with few operations keeps the size its box asks for', () {
+    expect(svgRasterSizeInBudget(screen, 100), screen);
+    expect(svgRasterSizeInBudget(const ui.Size(2048, 2048), 71),
+        const ui.Size(2048, 2048));
+  });
+
+  test('more operations give a smaller bitmap, at one of the size steps', () {
+    expect(svgRasterSizeInBudget(screen, 200), const ui.Size(1024, 1024));
+    expect(svgRasterSizeInBudget(screen, 1000), const ui.Size(512, 512));
+    expect(svgRasterSizeInBudget(screen, 4500), const ui.Size(256, 256));
+    expect(svgRasterSizeInBudget(const ui.Size(945, 2048), 400),
+        const ui.Size(472.5, 1024));
+  });
+
+  test('the product of operations and pixels stays within the budget', () {
+    for (final operations in <double>[1, 71, 72, 150, 999, 4577]) {
+      for (final wanted in [screen, const ui.Size(2048, 945), screen / 4]) {
+        final size = svgRasterSizeInBudget(wanted, operations);
+        expect(operations * size.width * size.height,
+            lessThanOrEqualTo(kSvgRasterBudget),
+            reason: '$operations operations at $wanted');
+      }
+    }
+  });
+
+  test('a bitmap is never shrunk below the minimum side', () {
+    expect(svgRasterSizeInBudget(const ui.Size(192, 192), 4577),
+        const ui.Size(192, 192));
+    expect(svgRasterSizeInBudget(screen, 4577).longestSide, 256);
+  });
+
+  test('rasterizeSvg applies the budget', () async {
+    const full = '<rect width="100" height="100" fill="#f00"/>';
+    final raster = await _raster(_box(1536, 1536),
+        size: 'width="100" height="100"', body: full * 400);
+    // 600 operations: 512 x 512 is the largest step within the budget.
+    expect((raster.image.width, raster.image.height), (512, 512));
+    raster.dispose();
   });
 }

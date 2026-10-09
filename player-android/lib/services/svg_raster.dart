@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:vector_graphics/vector_graphics.dart';
 
 import 'svg_cache.dart';
+import 'svg_limits.dart';
 
 /// Turns compiled SVG bytes into a picture clipped to the SVG's view box.
 ///
@@ -19,22 +20,27 @@ Future<PictureInfo> decodeSvgPicture(ByteData data) =>
 ///
 /// The app paints this bitmap from then on and never replays the drawing
 /// itself: replaying happens on the raster thread for every frame that
-/// repaints, and a drawing within all budgets can take a second or more per
-/// pass. As a bitmap that cost is paid once, off the UI isolate, and
-/// scrolling or zooming afterwards costs what any image costs.
+/// repaints, and a drawing within all budgets can take a second per pass.
+/// As a bitmap that cost is paid once, off the UI isolate, and scrolling or
+/// zooming afterwards costs what any image costs.
 ///
-/// The bitmap has the aspect ratio of the drawing, scaled to fit the box
-/// (or to cover it), with neither side above [SvgImageRequest.maxSide].
-Future<SvgRaster> rasterizeSvg(ByteData data, SvgImageRequest request) async {
-  final info = await decodeSvgPicture(data);
+/// The bitmap has the aspect ratio of the drawing. Its size is the smaller
+/// of what the box asks for (see [svgRasterScale]) and what the drawing's
+/// operations allow (see [svgRasterSizeInBudget]).
+Future<SvgRaster> rasterizeSvg(
+  CompiledSvg compiled,
+  SvgImageRequest request,
+) async {
+  final info = await decodeSvgPicture(ByteData.sublistView(compiled.data));
   try {
     final size = info.size;
-    final scale = svgRasterScale(size, request);
-    final width = math.max(1, (size.width * scale).round());
-    final height = math.max(1, (size.height * scale).round());
+    final wanted = size * svgRasterScale(size, request);
+    final pixels = svgRasterSizeInBudget(wanted, compiled.drawOperations);
+    final width = math.max(1, pixels.width.round());
+    final height = math.max(1, pixels.height.round());
     final recorder = ui.PictureRecorder();
     ui.Canvas(recorder)
-      ..scale(scale)
+      ..scale(pixels.width / size.width, pixels.height / size.height)
       ..drawPicture(info.picture);
     final scaled = recorder.endRecording();
     try {
@@ -47,7 +53,9 @@ Future<SvgRaster> rasterizeSvg(ByteData data, SvgImageRequest request) async {
   }
 }
 
-/// Pixels per SVG unit for a drawing of [size] shown in [request]'s box.
+/// Pixels per SVG unit for a drawing of [size] shown in [request]'s box:
+/// scaled to fit the box (or to cover it), with neither side above
+/// [SvgImageRequest.maxSide].
 @visibleForTesting
 double svgRasterScale(ui.Size size, SvgImageRequest request) {
   final horizontal = request.width / size.width;
@@ -57,6 +65,28 @@ double svgRasterScale(ui.Size size, SvgImageRequest request) {
       : math.min(horizontal, vertical);
   final cap = SvgImageRequest.maxSide / math.max(size.width, size.height);
   return math.min(wanted, cap);
+}
+
+/// Shrinks a bitmap of [wanted] pixels until [operations] times its pixel
+/// count is within [kSvgRasterBudget].
+///
+/// No drawing operation can touch more than the whole bitmap, so that
+/// product bounds the time to rasterise. A drawing with few operations
+/// keeps the size its box asks for; one with many is made at the largest
+/// of the usual size steps that fits the budget, but not below
+/// [kMinSvgRasterSide] on its longer side: the compiler has already
+/// refused drawings that would be over budget even there.
+@visibleForTesting
+ui.Size svgRasterSizeInBudget(ui.Size wanted, double operations) {
+  bool affordable(ui.Size size) =>
+      operations * size.width * size.height <= kSvgRasterBudget;
+  if (affordable(wanted) || wanted.longestSide <= kMinSvgRasterSide) {
+    return wanted;
+  }
+  final smaller = SvgImageRequest.steps.reversed
+      .where((step) => step < wanted.longestSide && step >= kMinSvgRasterSide)
+      .map((step) => wanted * (step / wanted.longestSide));
+  return smaller.firstWhere(affordable, orElse: () => smaller.last);
 }
 
 /// Hands already compiled bytes to vector_graphics. Identity-based equality

@@ -28,7 +28,7 @@ class _CountingCompiler {
   final _inner = IsolateSvgCompiler();
   int calls = 0;
 
-  Future<Uint8List> call(Uint8List bytes, {bool Function()? isCancelled}) {
+  Future<CompiledSvg> call(Uint8List bytes, {bool Function()? isCancelled}) {
     calls++;
     return _inner(bytes, isCancelled: isCancelled);
   }
@@ -152,6 +152,54 @@ void _bitmapTests() {
     expect(fetcher.requests, hasLength(1));
     expect(compiler.calls, 1);
     expect(container.read(svgImageCacheProvider).length, 2);
+  });
+
+  test('two sizes requested together share one download and compilation',
+      () async {
+    final fetcher = RecordingSvgFetcher()..gate = Completer<void>();
+    final compiler = _CountingCompiler();
+    final container = _container(fetcher, compiler: compiler);
+    final tile = svgImageProvider(_image(_request, side: 144));
+    final screen = svgImageProvider(_image(_request, side: 1440));
+    final subscriptions = [
+      container.listen(tile, (_, __) {}),
+      container.listen(screen, (_, __) {}),
+    ];
+    addTearDown(() {
+      for (final subscription in subscriptions) {
+        subscription.close();
+      }
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    fetcher.gate!.complete();
+    final widths = [
+      (await container.read(tile.future)).image.width,
+      (await container.read(screen.future)).image.width,
+    ];
+
+    expect(widths, [192, 1536]);
+    expect(fetcher.requests, hasLength(1));
+    expect(compiler.calls, 1);
+  });
+
+  test('a shared download survives one of its two requesters leaving',
+      () async {
+    final fetcher = RecordingSvgFetcher()..gate = Completer<void>();
+    final container = _container(fetcher);
+    final tile = svgImageProvider(_image(_request, side: 144));
+    final screen = svgImageProvider(_image(_request, side: 1440));
+    final leaving = container.listen(tile, (_, __) {});
+    final staying = container.listen(screen, (_, __) {});
+    addTearDown(staying.close);
+    await Future<void>.delayed(Duration.zero);
+
+    leaving.close();
+    await Future<void>.delayed(Duration.zero);
+    expect(fetcher.requests.single.cancel.isCancelled, isFalse);
+
+    fetcher.gate!.complete();
+    expect((await container.read(screen.future)).image.width, 1536);
   });
 
   test('a cached bitmap is reused without the compiled drawing', () async {
@@ -307,9 +355,11 @@ final _serverUrl = StateProvider<Uri>((ref) => Uri.parse('https://a.example'));
 
 /// A container wired like the app: the reset provider is kept alive, as
 /// the root widget does, and auth state and server URL can be changed.
-Future<ProviderContainer> _sessionContainer() async {
+Future<ProviderContainer> _sessionContainer(
+    [RecordingSvgFetcher? fetcher]) async {
   final container = ProviderContainer(overrides: [
-    svgFetcherProvider.overrideWithValue(RecordingSvgFetcher().fetcher),
+    svgFetcherProvider
+        .overrideWithValue((fetcher ?? RecordingSvgFetcher()).fetcher),
     authStateProvider.overrideWith(_SwitchableAuth.new),
     playerBaseUrlProvider.overrideWith((ref) => ref.watch(_serverUrl)),
   ]);
@@ -356,12 +406,30 @@ void _sessionCacheTests() {
     expect(container.read(svgImageCacheProvider).length, 0);
   });
 
+  test('work in flight during a logout does not refill the caches', () async {
+    final fetcher = RecordingSvgFetcher()..gate = Completer<void>();
+    final container = await _sessionContainer(fetcher);
+    final provider = svgImageProvider(_image(_request));
+    final subscription = container.listen(provider, (_, __) {});
+    addTearDown(subscription.close);
+    await Future<void>.delayed(Duration.zero);
+
+    // The download is still running when the user logs out.
+    (container.read(authStateProvider.notifier) as _SwitchableAuth).logOut();
+    await Future<void>.delayed(Duration.zero);
+    fetcher.gate!.complete();
+    await container.read(provider.future);
+
+    expect(container.read(svgMemoryCacheProvider).get(_request), isNull);
+    expect(container.read(svgImageCacheProvider).length, 0);
+  });
+
   test('bytes that fail to decode are never cached', () async {
     final container = ProviderContainer(overrides: [
       svgFetcherProvider.overrideWithValue(RecordingSvgFetcher().fetcher),
       // A compiler result that is not valid vector_graphics data.
-      svgCompilerProvider.overrideWithValue(
-          (bytes, {isCancelled}) async => Uint8List.fromList([1, 2, 3, 4])),
+      svgCompilerProvider.overrideWithValue((bytes, {isCancelled}) async =>
+          CompiledSvg(Uint8List.fromList([1, 2, 3, 4]), 1)),
     ]);
     addTearDown(container.dispose);
 
@@ -372,7 +440,7 @@ void _sessionCacheTests() {
 }
 
 void _memoryCacheTests() {
-  ByteData bytes(int length) => ByteData(length);
+  CompiledSvg bytes(int length) => CompiledSvg(Uint8List(length), 1);
   SvgRequest request(int id) =>
       SvgRequest(uri: Uri.parse('https://player.example/$id'));
 

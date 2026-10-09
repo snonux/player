@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:vector_graphics_compiler/vector_graphics_compiler.dart';
@@ -23,8 +24,8 @@ export 'svg_limits.dart';
 //     attribute rules and budgets, checked on the raw XML. The compiler
 //     only ever sees documents that passed it.
 //  3. [_validate]: checks on the compiler's output. Partly independent
-//     (size, compiled size, the estimate of what the drawing costs to
-//     rasterise in svg_raster_cost.dart), partly defence in depth for stage
+//     (size, compiled size, the count of drawing operations from
+//     svg_raster_cost.dart), partly defence in depth for stage
 //     2 (patterns, bitmaps, layer nesting), in case the compiler derives
 //     something from an input the gate did not anticipate.
 //
@@ -133,7 +134,8 @@ String _decodeText(Uint8List bytes) {
 /// exist in build-time tooling. The document is parsed twice by the
 /// compiler (once to inspect the result, once inside `encodeSvg`) because
 /// it has no public way to encode already parsed instructions.
-Uint8List compileSvg(Uint8List bytes, {SvgLimits limits = const SvgLimits()}) {
+CompiledSvg compileSvg(Uint8List bytes,
+    {SvgLimits limits = const SvgLimits()}) {
   final xml = decodeSvgText(bytes);
   checkSvgAllowed(xml, limits: limits);
   final VectorInstructions instructions;
@@ -143,7 +145,7 @@ Uint8List compileSvg(Uint8List bytes, {SvgLimits limits = const SvgLimits()}) {
     // The parser throws assorted StateError/FormatException/XML exceptions.
     throw SvgException('Invalid SVG: $error');
   }
-  _validate(instructions, limits);
+  final operations = _validate(instructions, limits);
   final data = encodeSvg(
     xml: xml,
     debugName: 'network svg',
@@ -154,12 +156,13 @@ Uint8List compileSvg(Uint8List bytes, {SvgLimits limits = const SvgLimits()}) {
   if (data.length > limits.maxCompiledBytes) {
     throw const SvgException('SVG is too complex');
   }
-  return data;
+  return CompiledSvg(data, operations);
 }
 
 /// Rejects compiler output that would paint nothing, cost too much to
-/// paint, or use a feature the renderer implements with bitmaps.
-void _validate(VectorInstructions instructions, SvgLimits limits) {
+/// paint, or use a feature the renderer implements with bitmaps. Returns
+/// the weighted number of drawing operations.
+double _validate(VectorInstructions instructions, SvgLimits limits) {
   _validateSize(instructions);
   _validateFeatures(instructions);
   final commands = instructions.commands;
@@ -176,7 +179,11 @@ void _validate(VectorInstructions instructions, SvgLimits limits) {
   if (!commands.any((c) => visible.contains(c.type))) {
     throw const SvgException('SVG has nothing to draw');
   }
-  checkRasterCost(instructions, limits);
+  final operations = svgDrawOperations(instructions);
+  if (operations > limits.maxDrawOperations) {
+    throw const SvgException('SVG is too expensive to draw');
+  }
+  return operations;
 }
 
 /// The deepest nesting of offscreen layers in [commands].
@@ -235,8 +242,10 @@ void _validateFeatures(VectorInstructions instructions) {
   if (usesBitmap) {
     throw const SvgException('SVG embedded bitmaps are not supported');
   }
+  final largest =
+      kMaxSvgFontScale * math.max(instructions.width, instructions.height);
   final fontSizes = instructions.text.map((t) => t.fontSize);
-  if (fontSizes.any((s) => !(s > 0 && s <= kMaxSvgFontSize))) {
+  if (fontSizes.any((s) => !(s > 0 && s <= largest))) {
     throw const SvgException('SVG has an unusable font size');
   }
 }

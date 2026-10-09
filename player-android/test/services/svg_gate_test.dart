@@ -528,7 +528,7 @@ void main() {
       test(name, () {
         checkSvgAllowed(document);
         // What the gate accepts must also satisfy the compiler.
-        expect(compileSvg(svgBytes(document)), isNotEmpty);
+        expect((compileSvg(svgBytes(document))).data, isNotEmpty);
       });
     }
   });
@@ -570,8 +570,9 @@ void _budgetTests() {
     expect(limits.maxAttributeChars, 4096);
     expect(limits.maxExpandedPathChars, 1024 * 1024);
     expect(limits.maxExpandedElements, 20000);
-    expect(limits.maxCoverage, 80);
-    expect(limits.maxOutlineLength, 1000);
+    expect(limits.maxDrawOperations, closeTo(4577.6, 0.1));
+    expect(kSvgRasterBudget, 3e8);
+    expect(kMinSvgRasterSide, 256);
     expect(limits.maxExpandedTextChars, 10000);
     expect(kMaxSvgBytes, 1024 * 1024);
   });

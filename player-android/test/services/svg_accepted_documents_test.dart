@@ -1,5 +1,6 @@
 // Property-style test: every document that the gate and the compiler
-// accept also decodes and rasterises into a bitmap.
+// accept also decodes and rasterises into a bitmap, and the bitmap chosen
+// for it is within the raster budget.
 //
 // Documents are generated from a fixed seed, mixing allowed elements with
 // the occasional forbidden one, so both outcomes occur. What matters is the
@@ -8,7 +9,6 @@
 
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/providers/svg_image_provider.dart';
 import 'package:player_android/services/svg_document.dart';
@@ -73,6 +73,12 @@ class _Generator {
           '</g></defs>${_group(0)}');
 }
 
+final _screen = SvgImageRequest(
+  source: SvgRequest(uri: Uri.parse('https://player.example/x.svg')),
+  width: 1440,
+  height: 3120,
+);
+
 final _box = SvgImageRequest(
   source: SvgRequest(uri: Uri.parse('https://player.example/x.svg')),
   width: 64,
@@ -80,11 +86,19 @@ final _box = SvgImageRequest(
 );
 
 /// Decodes and rasterises [compiled] the way the app does.
-Future<void> _decodeAndPaint(Uint8List compiled) async {
-  final raster = await rasterizeSvg(ByteData.sublistView(compiled), _box);
+Future<void> _decodeAndPaint(CompiledSvg compiled) async {
+  final raster = await rasterizeSvg(compiled, _box);
   expect(raster.size.width, 100);
   expect(raster.image.width, 64);
   raster.dispose();
+  // Whatever the box, the bitmap chosen for this drawing is within the
+  // raster budget.
+  for (final box in [_box, _screen]) {
+    final wanted = raster.size * svgRasterScale(raster.size, box);
+    final pixels = svgRasterSizeInBudget(wanted, compiled.drawOperations);
+    expect(compiled.drawOperations * pixels.width * pixels.height,
+        lessThanOrEqualTo(kSvgRasterBudget));
+  }
 }
 
 void main() {
@@ -96,7 +110,7 @@ void main() {
     var rejected = 0;
     for (var i = 0; i < 400; i++) {
       final document = generator.document();
-      final Uint8List compiled;
+      final CompiledSvg compiled;
       try {
         compiled = compileSvg(svgBytes(document));
       } on SvgException {

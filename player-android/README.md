@@ -66,12 +66,23 @@ more than 2,000 elements, 256 KB of path data or 1 MB in total).
 
 A drawing is turned into a bitmap once, sized for the place it is shown in
 and never larger than 2048 pixels a side. Zooming in the viewer enlarges
-that bitmap; it does not redraw the vectors. Making the bitmap is the only
-expensive step: for ordinary drawings it takes a few milliseconds, but a
-file built to be slow can stay within every budget and still take about a
-second the first time it appears. The worst case found in the tests took
-about 1.3 s with the software rasteriser used by `flutter test`
-(`test/services/svg_hostile_input_test.dart`).
+that bitmap; it does not redraw the vectors.
+
+Making the bitmap is the only expensive step, and it is bounded: the app
+counts the drawing operations of a file (fills, strokes, gradients, layers,
+characters of text, and how often outlines cross the drawing) and chooses
+the bitmap so that operations times pixels stays within a fixed budget. A
+drawing with many operations is therefore shown at a lower resolution, down
+to 256 pixels, and one that is over budget even then (about 4,600
+operations) is not shown.
+
+With the software rasteriser used by `flutter test`, which is slower than a
+phone's GPU, the budget corresponds to between half a second and a second.
+The most expensive accepted case in
+`test/services/svg_hostile_input_test.dart`, 970 oversized glyphs, took
+0.55 to 0.75 s for a full-screen bitmap and 0.1 s for a list thumbnail; 51
+full-screen repeating radial gradients at full resolution took 0.5 to
+0.65 s. That time is spent once per drawing and size.
 
 ## Quickstart
 

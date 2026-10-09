@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// Largest SVG accepted, as a download and as a document. Vector drawings
 /// of the kind this app shows are far smaller; the cap bounds the memory a
 /// list of thumbnails can hold while their downloads wait to be compiled.
@@ -7,8 +9,21 @@ const int kMaxSvgBytes = 1024 * 1024;
 const double kMinSvgDimension = 0.01;
 const double kMaxSvgDimension = 100000;
 
-/// Largest accepted font size in SVG user units.
-const double kMaxSvgFontSize = 10000;
+/// Largest accepted font size, as a multiple of the larger side of the
+/// drawing. A glyph bigger than that is a shape, not text.
+const double kMaxSvgFontScale = 4;
+
+/// The budget for rasterising one drawing: weighted drawing operations
+/// (see `svg_raster_cost.dart`) times pixels of the bitmap. Rasterising
+/// costs at most a constant per operation and pixel, measured at 2 to 3 ns
+/// with the software rasteriser of `flutter test`, so this budget keeps
+/// the one pass that makes the bitmap between half a second and a second
+/// there.
+const double kSvgRasterBudget = 3e8;
+
+/// A drawing over budget is rasterised smaller, down to this many pixels
+/// on its longer side. A drawing that is over budget even then is refused.
+const int kMinSvgRasterSide = 256;
 
 /// An SVG that cannot or must not be shown. [message] holds no document
 /// content beyond element and attribute names and what the compiler itself
@@ -29,6 +44,16 @@ class NotSvgException extends SvgException {
   const NotSvgException() : super('Not an SVG document');
 }
 
+/// A drawing in the vector_graphics binary format, with the weighted number
+/// of drawing operations it takes to rasterise (see svg_raster_cost.dart),
+/// from which the size of its bitmap is chosen.
+class CompiledSvg {
+  const CompiledSvg(this.data, this.drawOperations);
+
+  final Uint8List data;
+  final double drawOperations;
+}
+
 /// Bounds for one SVG. The defaults apply in the app; tests pass smaller
 /// values to reach a limit with a small document.
 ///
@@ -37,14 +62,13 @@ class NotSvgException extends SvgException {
 ///
 /// Two purposes are mixed here and should not be confused. The grammar and
 /// the reference budgets keep the compiler from allocating without bound;
-/// that is safety. The sizes below them (elements, path data, coverage,
-/// outline length) are sized for the simple drawings this app shows and
-/// bound the one-off cost of rasterising a drawing into its bitmap. They
-/// do not make that cost negligible: the most expensive accepted document
-/// in svg_hostile_input_test.dart takes about 1.3 s to rasterise for a
-/// 1440x3120 screen with the software rasteriser of `flutter test`, and
-/// documents at a single budget take 0.3 to 1 s. That time is spent once,
-/// on the raster thread, when the drawing first appears at a given size.
+/// that is safety. The sizes below them (elements, path data) are sized for
+/// the simple drawings this app shows. What bounds the time to rasterise a
+/// drawing is [kSvgRasterBudget]: operations times pixels, with the bitmap
+/// made smaller for drawings with many operations. That time is spent
+/// once, on the raster thread, when a drawing first appears at a given
+/// size; the worst cases are measured in svg_hostile_input_test.dart
+/// (0.55 to 0.75 s for the most expensive accepted document).
 class SvgLimits {
   const SvgLimits({
     this.maxElements = 2000,
@@ -63,8 +87,8 @@ class SvgLimits {
     this.maxExpandedTextChars = 10000,
     this.maxCommands = 100000,
     this.maxCompiledBytes = 4 * 1024 * 1024,
-    this.maxCoverage = 80,
-    this.maxOutlineLength = 1000,
+    this.maxDrawOperations =
+        kSvgRasterBudget / (kMinSvgRasterSide * kMinSvgRasterSide),
   });
 
   /// Most elements in the document, drawn or not.
@@ -125,16 +149,9 @@ class SvgLimits {
   /// appears.
   final int maxCompiledBytes;
 
-  /// How often the drawing may paint over its own area: the areas touched
-  /// by all drawing commands, added up, as a multiple of the drawing's
-  /// area. A filled shape counts with its bounding box inside the drawing,
-  /// a stroke with its length times its width, an offscreen layer with the
-  /// whole drawing.
-  final double maxCoverage;
-
-  /// Total length of all outlines, as a multiple of the drawing's
-  /// diagonal. The rasteriser's work grows with the length of the edges it
-  /// has to scan, so one path zigzagging across the drawing thousands of
-  /// times is far more expensive than its size in bytes suggests.
-  final double maxOutlineLength;
+  /// Most weighted drawing operations (see `svg_raster_cost.dart`). The
+  /// default is what [kSvgRasterBudget] allows for the smallest bitmap, a
+  /// little under 4,600; a drawing with fewer operations is shown, at a
+  /// lower resolution if need be, and one with more is refused.
+  final double maxDrawOperations;
 }
