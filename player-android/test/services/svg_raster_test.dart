@@ -200,7 +200,7 @@ double _operations(String body) => compileSvg(
 
 void _costTests() {
   test('a fill is one operation plus a term for its outline', () {
-    // A rectangle has two edges crossing the _fullRect height: 2 x 0.25.
+    // A rectangle has two edges crossing the full height: 2 x 0.25.
     expect(_operations(_fullRect), closeTo(1.5, 0.01));
     expect(_operations(_fullRect * 10), closeTo(15, 0.1));
   });
@@ -218,8 +218,7 @@ void _costTests() {
     expect(_operations(stroked), greaterThan(_operations(_fullRect) + 1));
   });
 
-  test('a wide stroke on a tiny or off-drawing line is a _fullRect operation',
-      () {
+  test('a wide stroke on a tiny or off-drawing line is a full operation', () {
     // The centre line has no length inside the drawing, yet the stroke
     // paints all of it.
     const dot = '<line x1="50" y1="50" x2="50.001" y2="50" stroke="#000" '
@@ -259,7 +258,7 @@ void _clipCostTests() {
     final unclipped = _operations(_fullRect * 10);
     final clipped =
         _operations('$clip<g clip-path="url(#c)">${_fullRect * 10}</g>');
-    // Ten fills times four, plus the clip itself (1 + two _fullRect edges).
+    // Ten fills times four, plus the clip itself (1 + two full-height edges).
     expect(clipped, closeTo(4 * unclipped + 1.5, 0.01));
     final text = _operations('$clip<g clip-path="url(#c)">'
         '<text y="50" font-size="40">${'a' * 10}</text></g>');
@@ -272,7 +271,7 @@ void _clipCostTests() {
         '</clipPath></defs>';
     final nested = _operations('$clips<g clip-path="url(#c)">'
         '<g clip-path="url(#d)">$_fullRect</g></g>');
-    // Outer clip 1.5; inner clip 1 + one _fullRect height of edges = 1.25; the
+    // Outer clip 1.5; inner clip 1 + one full height of edges = 1.25; the
     // fill sixteen times.
     expect(nested, closeTo(1.5 + 1.25 + 16 * 1.5, 0.01));
     // After the clipped group the factor no longer applies.

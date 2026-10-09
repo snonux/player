@@ -70,8 +70,9 @@ double svgRasterScale(ui.Size size, SvgImageRequest request) {
 /// Shrinks a bitmap of [wanted] pixels until [operations] times its pixel
 /// count is within [kSvgRasterBudget].
 ///
-/// No drawing operation can touch more than the whole bitmap, so that
-/// product bounds the time to rasterise. A drawing with few operations
+/// The product tracks the time to rasterise: the operation weights are
+/// measured, not proven (see svg_raster_cost.dart for what they simplify).
+/// A drawing with few operations
 /// keeps the size its box asks for; one with many is made at the largest
 /// of the usual size steps that fits the budget, but not below
 /// [kMinSvgRasterSide] on its longer side: the compiler has already

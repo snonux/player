@@ -23,7 +23,10 @@ import 'svg_limits.dart';
 // the commands the compiler produced after expanding every `<use>`:
 //
 //   * a filled path: 1, a stroked path: 1 (both: 2);
-//   * a clip path applied, an offscreen layer, a mask: 1 each;
+//   * an offscreen layer, a mask: 1 each;
+//   * a clip path applied: 1 plus the term for its outline, like a fill;
+//   * everything drawn while a clip is in force: times [kSvgClipFactor]
+//     per active clip ([kSvgClippedTextFactor] for text);
 //   * a character of text: 1, and 1 more when the text is also stroked;
 //   * twice that when the paint is a gradient;
 //   * per path, a term for its outline (see [_PathMeter]): a fill whose
