@@ -77,6 +77,11 @@ func (m *mockFS) Stat(name string) (os.FileInfo, error) {
 
 func (m *mockFS) MkdirAll(path string, perm os.FileMode) error { return m.mkdirErr }
 
+// Rename and Remove are only reached by the thumbnail migration, which has
+// its own real-filesystem tests in thumb_migrate_test.go.
+func (m *mockFS) Rename(oldPath, newPath string) error { return nil }
+func (m *mockFS) Remove(name string) error             { return nil }
+
 func (m *mockFS) WalkDir(root string, walkFn fs.WalkDirFunc) error {
 	if m.walkErr != nil {
 		return m.walkErr

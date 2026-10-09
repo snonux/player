@@ -70,7 +70,10 @@ func probeMedia(ctx context.Context, prober probe.Prober, path string) (*model.M
 
 // generateThumbnail creates a thumbnail for video and image media.
 // Thumbnail directory + filename are derived via internal/thumb to share the
-// on-disk convention with the scanner and RegenerateThumbnail.
+// naming convention with the scanner and RegenerateThumbnail. The thumbnail
+// lives in .thumbnails beside the source and is named after its full
+// basename ("clip.mp4.jpg"), so a same-stem sibling ("clip.png") gets its
+// own file instead of overwriting this one.
 func generateThumbnail(ctx context.Context, thumbGen thumb.Generator, media *model.Media, duration float64) error {
 	ext := strings.ToLower(filepath.Ext(media.AbsPath))
 	if ext == ".svg" {

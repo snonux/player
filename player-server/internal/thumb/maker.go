@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 )
 
 // Maker creates thumbnail files for media items. The scanner uses it to
@@ -72,7 +73,7 @@ func NewFSMaker(gen Generator, fs MakerFS, logger *slog.Logger) *FSMaker {
 }
 
 // MakeVideo creates a thumbnail for a video file inside parent/.thumbnails/.
-// The path layout mirrors ThumbnailPathFor so importers, the scanner, and
+// The path comes from ThumbnailPathFor so importers, the scanner, and
 // the resolver all agree on where thumbnails live. Generator failures are
 // logged and swallowed so a single bad file does not abort the scan.
 func (m *FSMaker) MakeVideo(ctx context.Context, srcPath, parent string, duration float64) (string, error) {
@@ -86,16 +87,17 @@ func (m *FSMaker) MakeImage(ctx context.Context, srcPath, parent string) (string
 }
 
 // make is the shared implementation behind MakeVideo / MakeImage. It
-// ensures the .thumbnails directory exists, derives the canonical
-// thumbnail path via ThumbnailPathFor, and delegates the actual frame
+// derives the canonical thumbnail path via ThumbnailPathFor, ensures its
+// directory exists (parent/.thumbnails, plus the mirrored subdirectory
+// when srcPath is nested below parent), and delegates the actual frame
 // extraction to the Generator. Generator errors are logged and reported
 // as ("", nil) so the scanner can continue with the next file.
 func (m *FSMaker) make(ctx context.Context, srcPath, parent string, duration float64) (string, error) {
-	dir := ThumbnailDir(parent)
+	thumbnailPath := ThumbnailPathFor(srcPath, parent)
+	dir := filepath.Dir(thumbnailPath)
 	if err := m.fs.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir thumbnails %q: %w", dir, err)
 	}
-	thumbnailPath := ThumbnailPathFor(srcPath, parent)
 	if err := m.gen.Generate(ctx, srcPath, thumbnailPath, duration); err != nil {
 		m.logger.Warn("thumb maker skipping thumbnail", "path", srcPath, "err", err)
 		return "", nil

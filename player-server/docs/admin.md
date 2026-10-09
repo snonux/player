@@ -41,6 +41,36 @@ This triggers `FSScanner.Scan()`, which:
 4. Generates thumbnails for video files
 5. Inserts new records into the `media` table
 
+### Thumbnail Naming and Upgrades
+
+Generated thumbnails live in a hidden `.thumbnails` directory and are named
+after the source file's full name plus `.jpg`, so every media file has its
+own thumbnail:
+
+| Source | Created by | Thumbnail |
+|--------|------------|-----------|
+| `set/holiday.mp4` | rescan or upload | `set/.thumbnails/holiday.mp4.jpg` |
+| `set/holiday.png` | rescan or upload | `set/.thumbnails/holiday.png.jpg` |
+| `set/a/clip.mp4` | rescan | `set/.thumbnails/a/clip.mp4.jpg` |
+| `set/a/clip.mp4` | upload | `set/a/.thumbnails/clip.mp4.jpg` |
+
+Releases up to v0.2.2 named thumbnails after the stem only (`holiday.jpg`)
+and the scanner kept them flat in the set's `.thumbnails` directory. Files
+sharing a stem (`holiday.mp4` and `holiday.png`), or a name in two folders of
+one set, overwrote each other's thumbnail.
+
+After upgrading, **run one Rescan**. Until then nothing breaks: stored
+thumbnail paths keep working, and affected cards simply keep showing the
+shared thumbnail. The rescan then, for every already indexed video and image:
+
+- renames a thumbnail used by a single media item to its new name (no
+  re-encoding, a manually regenerated frame is kept);
+- generates a fresh thumbnail for each item that shared one with another item;
+- deletes old thumbnail files nothing refers to any more.
+
+An item whose migration fails keeps its old thumbnail and is retried on the
+next rescan. Later rescans find nothing left to migrate.
+
 ### Managing Trash
 
 - `GET /api/admin/trash` — list soft-deleted media

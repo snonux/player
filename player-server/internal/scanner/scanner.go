@@ -263,6 +263,9 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		}
 	}
 	s.reconcileOrphans(ctx, existing, seenRel, setName)
+	// Must run before the probe workers: a new file's thumbnail may land on
+	// a path that a not-yet-migrated row still uses under the old naming.
+	s.migrateThumbnails(ctx, existing, seenRel, setPath, setName)
 
 	if progress != nil {
 		progress.AddFilesTotal(len(files))

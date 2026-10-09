@@ -124,15 +124,21 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 		return fmt.Errorf("probe media: %w", err)
 	}
 
-	// Thumbnail destination is derived via internal/thumb so re-generation
-	// targets the exact same path used by scanner + import; otherwise stale
-	// JPEGs would linger alongside the freshly written one.
-	parent := filepath.Dir(media.AbsPath)
-	thumbDir := thumb.ThumbnailDir(parent)
-	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir thumbnails: %w", err)
+	// Re-generate inside the .thumbnails tree the media's thumbnail already
+	// lives in, so a scanner-made thumbnail (kept under the set directory) is
+	// overwritten in place instead of leaving a stale JPEG behind next to a
+	// second copy. Media without a generated thumbnail gets one beside the
+	// source file, like an upload. A row still pointing at a pre-extension
+	// name ("clip.jpg") moves to the current name here; its old file may be
+	// shared with another row, so it is left for the rescan migration.
+	parent, ok := thumb.ParentOf(media.ThumbnailPath)
+	if !ok {
+		parent = filepath.Dir(media.AbsPath)
 	}
 	thumbnailPath := thumb.ThumbnailPathFor(media.AbsPath, parent)
+	if err := os.MkdirAll(filepath.Dir(thumbnailPath), 0o755); err != nil {
+		return fmt.Errorf("mkdir thumbnails: %w", err)
+	}
 
 	if err := s.thumbGen.Generate(ctx, media.AbsPath, thumbnailPath, meta.Duration); err != nil {
 		return fmt.Errorf("generate thumbnail: %w", err)

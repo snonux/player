@@ -38,7 +38,7 @@ func TestFSMaker_MakeVideo_DelegatesToGenerator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	wantPath := filepath.Join("/set", DirName, "movie.jpg")
+	wantPath := filepath.Join("/set", DirName, "movie.mp4.jpg")
 	if got != wantPath {
 		t.Fatalf("path = %q, want %q", got, wantPath)
 	}
@@ -98,5 +98,28 @@ func TestFSMaker_MkdirErrorPropagates(t *testing.T) {
 	_, err := m.MakeImage(context.Background(), "/s/x.jpg", "/s")
 	if err == nil {
 		t.Fatal("expected mkdir error to propagate")
+	}
+}
+
+// TestFSMaker_NestedSourceGetsOwnThumbnail covers the scanner layout: the
+// set directory owns the thumbnails, so same-named files in two subfolders
+// must not overwrite each other and the mirrored subfolder must be created.
+func TestFSMaker_NestedSourceGetsOwnThumbnail(t *testing.T) {
+	fs := &recordingFS{}
+	m := NewFSMaker(&MockGenerator{}, fs, nil)
+
+	a, errA := m.MakeVideo(context.Background(), "/set/a/clip.mp4", "/set", 1)
+	b, errB := m.MakeVideo(context.Background(), "/set/b/clip.mp4", "/set", 1)
+	if errA != nil || errB != nil {
+		t.Fatalf("unexpected errors: %v, %v", errA, errB)
+	}
+	if want := filepath.Join("/set", DirName, "a", "clip.mp4.jpg"); a != want {
+		t.Fatalf("path = %q, want %q", a, want)
+	}
+	if a == b {
+		t.Fatalf("both sources map to %q", a)
+	}
+	if len(fs.calls) != 2 || fs.calls[0] != filepath.Dir(a) || fs.calls[1] != filepath.Dir(b) {
+		t.Fatalf("mkdir calls = %v", fs.calls)
 	}
 }
