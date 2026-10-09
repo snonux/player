@@ -3,79 +3,39 @@ import 'dart:typed_data';
 
 import 'package:vector_graphics_compiler/vector_graphics_compiler.dart';
 
+import 'svg_gate.dart';
+import 'svg_limits.dart';
+
+export 'svg_limits.dart';
+
 // Turns the bytes of an SVG file into the vector_graphics binary format.
 //
 // Everything here is plain Dart without Flutter bindings, because it runs
 // in a background isolate (see `svg_compiler.dart`). An SVG can come from a
 // public share, so the document is treated as hostile input. The app shows
-// simple vector drawings only: a document that is oversized, nonsensical or
-// uses a feature that would allocate memory at a size the file chooses is
-// rejected with an [SvgException], which the image widgets show as their
-// error state.
+// simple vector drawings only. A document passes three stages, and failing
+// any of them throws an [SvgException], which the image widgets show as
+// their error state:
 //
-// Rejected on purpose (see [_validate]):
-//  * `<pattern>` fills: the renderer turns every pattern tile into a bitmap
-//    of the size the file declares.
-//  * Embedded bitmaps (`<image href="data:...">`): they are decoded at
-//    their full pixel size, however small the drawing is shown.
+//  1. [decodeSvgText]: size cap, text encoding, "is this SVG at all".
+//  2. `checkSvgAllowed` (svg_gate.dart): an allowlist of elements, attribute
+//     rules and budgets, checked on the raw XML. The compiler only ever
+//     sees documents that passed it.
+//  3. [_validate]: checks on the compiler's output. Partly independent
+//     (size, compiled size), partly defence in depth for stage 2 (patterns,
+//     bitmaps, layer nesting), in case the compiler derives something from
+//     an input the gate did not anticipate.
 //
-// Limits of the compiler that cannot be fixed here:
-//  * `<style>` blocks (CSS classes) are ignored, so a drawing styled only
-//    through classes is painted with the default black fill.
+// Not supported, and therefore shown as an error rather than drawn wrongly:
+// `<style>` sheets, `<pattern>`, `<image>`, `<mask>`, `<filter>`, `<symbol>`,
+// `<marker>`, `<a>`, `<switch>`, `<foreignObject>`, scripts and animation,
+// dashed strokes, blend modes, references to anything outside the document.
+//
+// Limits of the compiler that remain:
 //  * A root element with neither `width`/`height` nor `viewBox` is rejected
 //    ("SVG did not specify dimensions") instead of getting the 300x150
 //    default a browser would use.
-//  * `<image>` elements pointing at a URL are skipped, so a shared SVG
-//    cannot make the app contact third-party servers.
-//  * Nested `<svg>` elements, scripts, animation and filters are ignored.
 //  * Gzip-compressed `.svgz` is not supported; the server does not serve it.
-
-/// Largest SVG download accepted. Vector drawings of the kind this app
-/// shows are far smaller; the cap bounds the memory a list of thumbnails
-/// can hold while their downloads wait to be compiled.
-const int kMaxSvgBytes = 2 * 1024 * 1024;
-
-/// Bounds for one SVG. The defaults apply in the app; tests pass smaller
-/// values to reach a limit with a small document.
-class SvgLimits {
-  const SvgLimits({
-    this.maxCommands = 100000,
-    this.maxLayers = 64,
-    this.maxCompiledBytes = 4 * 1024 * 1024,
-  });
-
-  /// Most drawing commands. The picture is replayed on the raster thread
-  /// for every frame that repaints it, so the count must stay bounded.
-  final int maxCommands;
-
-  /// Most group opacity layers and masks. Each one is an offscreen buffer
-  /// of up to screen size while the picture is rasterised.
-  final int maxLayers;
-
-  /// Largest compiled drawing. Commands are counted, path segments are not,
-  /// so this is what bounds a single path with hundreds of thousands of
-  /// segments. It equals the largest entry the memory cache keeps: anything
-  /// accepted is cached and not compiled again each time it appears.
-  final int maxCompiledBytes;
-}
-
-/// Smallest and largest accepted width or height in SVG user units.
-const double kMinSvgDimension = 0.01;
-const double kMaxSvgDimension = 100000;
-
-/// Largest accepted font size in SVG user units.
-const double kMaxSvgFontSize = 10000;
-
-/// An SVG that cannot or must not be shown. [message] holds no document
-/// content beyond what the compiler itself reports.
-class SvgException implements Exception {
-  const SvgException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'SvgException: $message';
-}
 
 /// True when [fileName] or the path of [url] names an SVG document.
 ///
@@ -96,6 +56,35 @@ bool isSvgSource({String? fileName, required String url}) {
   return hasSvgExtension(fileName) || hasSvgExtension(Uri.tryParse(url)?.path);
 }
 
+/// What the first bytes of a download say about it.
+enum SvgStart {
+  /// Nothing but white space (or nothing at all) so far.
+  undecided,
+
+  /// Starts with `<` like every XML document.
+  markup,
+
+  /// Starts with something else: a bitmap, JSON, plain text.
+  other,
+}
+
+/// Classifies the beginning of a response without decoding it.
+///
+/// Skips a byte order mark and white space (and the zero bytes that pad
+/// UTF-16), then looks at the first real byte. This lets the downloader
+/// stop after the first chunk of a file that cannot be SVG.
+SvgStart classifySvgStart(List<int> head) {
+  const whitespaceAndPadding = {0x00, 0x09, 0x0a, 0x0d, 0x20};
+  const byteOrderMarks = {0xef, 0xbb, 0xbf, 0xff, 0xfe};
+  for (var i = 0; i < head.length; i++) {
+    final byte = head[i];
+    if (whitespaceAndPadding.contains(byte)) continue;
+    if (i < 3 && byteOrderMarks.contains(byte)) continue;
+    return byte == 0x3c ? SvgStart.markup : SvgStart.other;
+  }
+  return SvgStart.undecided;
+}
+
 /// True when an `<svg` tag opens within the first few kilobytes of [bytes],
 /// which leaves room for an XML declaration, a doctype and a licence
 /// comment. Bitmaps, JSON error bodies and HTML pages fail this test. Only
@@ -105,7 +94,8 @@ bool looksLikeSvg(Uint8List bytes) {
   final head = bytes.length > headBytes
       ? Uint8List.sublistView(bytes, 0, headBytes)
       : bytes;
-  return RegExp(r'<svg[\s>]').hasMatch(_decodeText(head));
+  return classifySvgStart(head) == SvgStart.markup &&
+      RegExp(r'<svg[\s>]').hasMatch(_decodeText(head));
 }
 
 /// Decodes the bytes of an SVG file to text: UTF-8 with or without a byte
@@ -113,7 +103,7 @@ bool looksLikeSvg(Uint8List bytes) {
 /// input that is too large or does not start like an SVG document.
 String decodeSvgText(Uint8List bytes) {
   if (bytes.length > kMaxSvgBytes) throw const SvgException('SVG too large');
-  if (!looksLikeSvg(bytes)) throw const SvgException('Not an SVG document');
+  if (!looksLikeSvg(bytes)) throw const NotSvgException();
   return _decodeText(bytes);
 }
 
@@ -133,15 +123,16 @@ String _decodeText(Uint8List bytes) {
   ]);
 }
 
-/// Parses and validates the SVG in [bytes] and returns it in the
+/// Checks and compiles the SVG in [bytes] and returns it in the
 /// vector_graphics binary format; throws when it must not be shown.
 ///
 /// The compiler's optimizers stay off: they need native libraries that only
-/// exist in build-time tooling. The document is parsed twice (once to
-/// inspect it, once inside `encodeSvg`) because the compiler has no public
-/// way to encode already parsed instructions.
+/// exist in build-time tooling. The document is parsed twice by the
+/// compiler (once to inspect the result, once inside `encodeSvg`) because
+/// it has no public way to encode already parsed instructions.
 Uint8List compileSvg(Uint8List bytes, {SvgLimits limits = const SvgLimits()}) {
   final xml = decodeSvgText(bytes);
+  checkSvgAllowed(xml, limits: limits);
   final VectorInstructions instructions;
   try {
     instructions = parseWithoutOptimizers(xml, key: 'network svg');
@@ -163,29 +154,52 @@ Uint8List compileSvg(Uint8List bytes, {SvgLimits limits = const SvgLimits()}) {
   return data;
 }
 
-/// Rejects drawings that would paint nothing, cost too much to paint, or
-/// use a feature the renderer implements with file-sized bitmaps.
+/// Rejects compiler output that would paint nothing, cost too much to
+/// paint, or use a feature the renderer implements with bitmaps.
 void _validate(VectorInstructions instructions, SvgLimits limits) {
   _validateSize(instructions);
   _validateFeatures(instructions);
   final commands = instructions.commands;
-  int count(Set<DrawCommandType> types) =>
-      commands.where((c) => types.contains(c.type)).length;
-  const layers = {DrawCommandType.saveLayer, DrawCommandType.mask};
   if (commands.length > limits.maxCommands ||
-      count(layers) > limits.maxLayers) {
+      _layerDepth(commands) > limits.maxLayerDepth) {
     throw const SvgException('SVG is too complex');
   }
-  // An empty `<svg>`, or one whose only content is an external image, would
-  // otherwise show as a blank area.
+  // An empty `<svg>` would otherwise show as a blank area.
   const visible = {
     DrawCommandType.path,
     DrawCommandType.vertices,
     DrawCommandType.text,
   };
-  if (count(visible) == 0) {
+  if (!commands.any((c) => visible.contains(c.type))) {
     throw const SvgException('SVG has nothing to draw');
   }
+}
+
+/// The deepest nesting of offscreen layers in [commands].
+///
+/// Layers, masks and clips each open a scope that the next unmatched
+/// `restore` closes; layers and masks are the scopes that allocate a
+/// buffer. Unlike the gate's count on the XML, this sees nesting that only
+/// arises when `<use>` copies one group into another.
+int _layerDepth(List<DrawCommand> commands) {
+  const opening = {
+    DrawCommandType.saveLayer,
+    DrawCommandType.mask,
+    DrawCommandType.clip,
+  };
+  final scopes = <bool>[];
+  var depth = 0;
+  var deepest = 0;
+  for (final command in commands) {
+    if (opening.contains(command.type)) {
+      final isLayer = command.type != DrawCommandType.clip;
+      scopes.add(isLayer);
+      if (isLayer && ++depth > deepest) deepest = depth;
+    } else if (command.type == DrawCommandType.restore && scopes.isNotEmpty) {
+      if (scopes.removeLast()) depth--;
+    }
+  }
+  return deepest;
 }
 
 /// A zero, negative, non-finite or absurd size cannot be laid out. The
@@ -202,8 +216,9 @@ void _validateSize(VectorInstructions instructions) {
   }
 }
 
-/// See the file comment for why patterns and embedded bitmaps are refused.
-/// Text is allowed with a bounded font size.
+/// Defence in depth behind the gate: the renderer turns every pattern tile
+/// into a bitmap of the size the file declares and decodes embedded
+/// bitmaps at their full pixel size, so neither may reach it.
 void _validateFeatures(VectorInstructions instructions) {
   final usesPattern = instructions.patternData.isNotEmpty ||
       instructions.commands.any((c) => c.type == DrawCommandType.pattern);

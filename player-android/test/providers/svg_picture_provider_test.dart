@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/svg_picture_provider.dart';
 import 'package:player_android/services/svg_compiler.dart';
@@ -214,13 +215,24 @@ void _notSvgTests() {
     expect(fetcher.requests, hasLength(2));
   });
 
+  test('noticed by the downloader in the first bytes is remembered too',
+      () async {
+    final fetcher = RecordingSvgFetcher(error: const NotSvgException());
+    final container = _container(fetcher);
+
+    await expectLater(_showOnce(container, _request), _rejects('Not an SVG'));
+    await expectLater(_showOnce(container, _request), _rejects('Not an SVG'));
+
+    expect(fetcher.requests, hasLength(1));
+  });
+
   test('an embedded bitmap is refused, not decoded', () async {
     final png = await makePng(2, 2);
     final container = _container(
         RecordingSvgFetcher(body: svgDocument(body: embeddedImage(png))));
 
     await expectLater(_showOnce(container, _request),
-        _rejects('embedded bitmaps are not supported'));
+        _rejects('element <image> is not supported'));
   });
 }
 
@@ -232,24 +244,68 @@ class _SwitchableAuth extends AuthStateNotifier {
   void logOut() => state = const AsyncData(AuthState.unauthenticated());
 }
 
-void _sessionCacheTests() {
-  test('is emptied when the auth state changes', () async {
-    final fetcher = RecordingSvgFetcher();
-    final container = ProviderContainer(overrides: [
-      svgFetcherProvider.overrideWithValue(fetcher.fetcher),
-      authStateProvider.overrideWith(_SwitchableAuth.new),
-    ]);
-    addTearDown(container.dispose);
-    await container.read(authStateProvider.future);
+final _serverUrl = StateProvider<Uri>((ref) => Uri.parse('https://a.example'));
 
+/// A container wired like the app: the reset provider is kept alive, as
+/// the root widget does, and auth state and server URL can be changed.
+Future<ProviderContainer> _sessionContainer() async {
+  final container = ProviderContainer(overrides: [
+    svgFetcherProvider.overrideWithValue(RecordingSvgFetcher().fetcher),
+    authStateProvider.overrideWith(_SwitchableAuth.new),
+    playerBaseUrlProvider.overrideWith((ref) => ref.watch(_serverUrl)),
+  ]);
+  addTearDown(container.dispose);
+  container.listen(svgCacheResetProvider, (_, __) {});
+  await container.read(authStateProvider.future);
+  return container;
+}
+
+void _sessionCacheTests() {
+  final notSvg = SvgRequest(uri: Uri.parse('https://player.example/photo'));
+
+  /// Fills the cache with one drawing and one not-SVG note.
+  Future<SvgMemoryCache> filledCache(ProviderContainer container) async {
     await _showOnce(container, _request);
-    expect(container.read(svgMemoryCacheProvider).get(_request), isNotNull);
+    final cache = container.read(svgMemoryCacheProvider)..markNotSvg(notSvg);
+    expect(cache.get(_request), isNotNull);
+    return cache;
+  }
+
+  test('is emptied at once on logout', () async {
+    final container = await _sessionContainer();
+    final cache = await filledCache(container);
 
     (container.read(authStateProvider.notifier) as _SwitchableAuth).logOut();
+    await Future<void>.delayed(Duration.zero);
+
+    // The same object the widgets hold is empty, not merely replaced.
+    expect(cache.get(_request), isNull);
+    expect(cache.isKnownNotSvg(notSvg), isFalse);
+  });
+
+  test('is emptied at once when the server changes', () async {
+    final container = await _sessionContainer();
+    final cache = await filledCache(container);
+
+    container.read(_serverUrl.notifier).state = Uri.parse('https://b.example');
+    await Future<void>.delayed(Duration.zero);
+
+    expect(cache.get(_request), isNull);
+    expect(cache.isKnownNotSvg(notSvg), isFalse);
+  });
+
+  test('bytes that fail to decode are never cached', () async {
+    final container = ProviderContainer(overrides: [
+      svgFetcherProvider.overrideWithValue(RecordingSvgFetcher().fetcher),
+      // A compiler result that is not valid vector_graphics data.
+      svgCompilerProvider.overrideWithValue(
+          (bytes, {isCancelled}) async => Uint8List.fromList([1, 2, 3, 4])),
+    ]);
+    addTearDown(container.dispose);
+
+    await expectLater(_showOnce(container, _request), throwsA(anything));
 
     expect(container.read(svgMemoryCacheProvider).get(_request), isNull);
-    await _showOnce(container, _request);
-    expect(fetcher.requests, hasLength(2));
   });
 }
 

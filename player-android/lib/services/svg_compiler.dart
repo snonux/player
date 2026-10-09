@@ -23,12 +23,11 @@ typedef SvgCompileWork = Uint8List Function(Uint8List bytes);
 /// Parsing is too slow for the UI isolate, and the document is untrusted:
 ///  * At most [maxConcurrent] isolates run at once, so a grid full of SVG
 ///    thumbnails queues up instead of starting one isolate per card.
-///  * An isolate that is not done after [deadline] is killed. No input is
-///    known that takes this long within the download size cap (nested
-///    `<use>` references that multiply, for one, are rejected within
-///    milliseconds); the deadline is a backstop so that a parser weakness
-///    nobody has found yet costs a bounded amount of CPU instead of running
-///    forever.
+///  * An isolate that is not done after [deadline] is killed. This bounds
+///    CPU time only. It does not bound memory: a document can make the
+///    compiler allocate gigabytes within a second. What keeps such
+///    documents away from the compiler is the allowlist gate that
+///    [compileSvg] applies to the raw XML first (see `svg_gate.dart`).
 class IsolateSvgCompiler {
   IsolateSvgCompiler({
     this.maxConcurrent = 2,

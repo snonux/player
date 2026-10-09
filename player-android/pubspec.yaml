@@ -57,6 +57,10 @@ dependencies:
   # (see lib/services/svg_document.dart).
   vector_graphics: ^1.2.3
   vector_graphics_compiler: ^1.3.0
+  # xml: streaming XML parser, already shipped as a dependency of
+  # vector_graphics_compiler. Used directly by lib/services/svg_gate.dart to
+  # check an SVG against an allowlist before the compiler sees it.
+  xml: ^6.5.0
 
 dev_dependencies:
   flutter_test:

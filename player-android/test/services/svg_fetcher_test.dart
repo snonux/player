@@ -17,12 +17,15 @@ final _uri = Uri.parse('https://player.example/api/v1/media/9/thumbnail');
 /// Transport that answers with [status] and the chunks of [body]. While
 /// [hold] is set the response headers are not sent, like a stalled server.
 class _Adapter implements HttpClientAdapter {
-  _Adapter({this.status = 200, List<List<int>>? body, this.hold})
+  _Adapter({this.status = 200, List<List<int>>? body, this.hold, this.onChunk})
       : body = body ?? [svgBytes(kValidSvg)];
 
   final int status;
   final List<List<int>> body;
   final Completer<void>? hold;
+
+  /// Told the index of each chunk as it is handed to the downloader.
+  final void Function(int index)? onChunk;
   final List<RequestOptions> requests = [];
 
   @override
@@ -33,8 +36,19 @@ class _Adapter implements HttpClientAdapter {
   ) async {
     requests.add(options);
     await hold?.future;
-    final chunks = Stream.fromIterable(body.map(Uint8List.fromList));
-    return ResponseBody(chunks, status);
+    var cancelled = false;
+    unawaited(cancelFuture?.then((_) => cancelled = true));
+    return ResponseBody(_chunks(() => cancelled), status);
+  }
+
+  /// Sends one chunk per turn of the event loop and stops when the request
+  /// is cancelled, as a socket does, so the test sees how far it was read.
+  Stream<Uint8List> _chunks(bool Function() isCancelled) async* {
+    for (var i = 0; i < body.length && !isCancelled(); i++) {
+      onChunk?.call(i);
+      yield Uint8List.fromList(body[i]);
+      await Future<void>.delayed(Duration.zero);
+    }
   }
 
   @override
@@ -61,6 +75,7 @@ Matcher _rejects(String message) => throwsA(
 void main() {
   group('download', _downloadTests);
   group('limits', _limitTests);
+  group('content sniffing', _sniffTests);
   group('providers', _providerTests);
 }
 
@@ -135,6 +150,54 @@ void _limitTests() {
         download,
         throwsA(isA<DioException>()
             .having((e) => e.type, 'type', DioExceptionType.cancel)));
+  });
+}
+
+void _sniffTests() {
+  Future<Uint8List> fetch(_Adapter adapter, CancelToken cancel) =>
+      _fetcher(adapter)(_uri, const {}, cancel);
+
+  test('stops at the first chunk of a body that is not markup', () async {
+    // A JPEG: megabytes would follow, but the first bytes settle it.
+    final served = <int>[];
+    final adapter = _Adapter(body: [
+      [0xff, 0xd8, 0xff, 0xe0, 0, 16],
+      for (var i = 0; i < 200; i++) List.filled(1024, 0x42),
+    ], onChunk: served.add);
+    final cancel = CancelToken();
+
+    await expectLater(fetch(adapter, cancel), throwsA(isA<NotSvgException>()));
+
+    expect(cancel.isCancelled, isTrue);
+    // A chunk or two may already be on the way when the request is
+    // cancelled, but the 200 KB body is not transferred.
+    expect(served.length, lessThan(5));
+  });
+
+  test('JSON and plain text are not markup either', () async {
+    for (final body in ['{"error":"gone"}', 'Not Found', '  \n GIF89a']) {
+      await expectLater(fetch(_Adapter(body: [svgBytes(body)]), CancelToken()),
+          throwsA(isA<NotSvgException>()));
+    }
+  });
+
+  test('white space and byte order marks before the markup are fine', () async {
+    final bodies = <List<List<int>>>[
+      [svgBytes('  \n\t'), svgBytes('\n<svg/>')],
+      [
+        [0xef, 0xbb, 0xbf, ...svgBytes('<svg/>')]
+      ],
+      [
+        [0xff, 0xfe, 0x3c, 0x00, 0x73, 0x00]
+      ],
+      [
+        [0xfe, 0xff, 0x00, 0x3c, 0x00, 0x73]
+      ],
+    ];
+    for (final body in bodies) {
+      final bytes = await fetch(_Adapter(body: body), CancelToken());
+      expect(bytes, isNotEmpty);
+    }
   });
 }
 

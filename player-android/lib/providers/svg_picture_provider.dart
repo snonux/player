@@ -57,7 +57,8 @@ class SvgRequest {
 /// again every time it scrolls into view.
 ///
 /// Download failures and rejected SVG documents are not remembered, so they
-/// are retried on the next visit. There is deliberately no disk cache: the
+/// are retried on the next visit. A drawing is stored only after it was
+/// decoded successfully, so the cache never holds bytes that cannot be shown. There is deliberately no disk cache: the
 /// one used for bitmaps belongs to a package this app does not depend on
 /// directly, and a second private one would need its own eviction and
 /// per-account separation for small files.
@@ -92,20 +93,32 @@ class SvgMemoryCache {
     _notSvg.add(request);
     if (_notSvg.length > maxNotSvg) _notSvg.remove(_notSvg.first);
   }
+
+  /// Forgets everything.
+  void clear() {
+    _entries.clear();
+    _notSvg.clear();
+    _bytes = 0;
+  }
 }
 
-/// The cache of the current session. It is replaced by an empty one when
-/// the auth state or the server changes, so drawings fetched for one
-/// account do not stay in memory after logout. (They could not be shown to
-/// another account anyway, since the keys include the credentials.)
+/// The app-wide cache. See [svgCacheResetProvider] for when it is emptied.
+final svgMemoryCacheProvider =
+    Provider<SvgMemoryCache>((ref) => SvgMemoryCache());
+
+/// Empties the SVG cache the moment the auth state or the server changes,
+/// so drawings fetched for one account do not stay in memory after logout.
+/// (They could not be shown to another account anyway: the cache keys
+/// include the credentials.)
 ///
-/// Like `authenticatedImageHeadersProvider`, this only watches providers
-/// that already exist, so tests without an auth setup are not forced to
-/// create one.
-final svgMemoryCacheProvider = Provider<SvgMemoryCache>((ref) {
-  if (ref.exists(authStateProvider)) ref.watch(authStateProvider);
-  if (ref.exists(playerBaseUrlProvider)) ref.watch(playerBaseUrlProvider);
-  return SvgMemoryCache();
+/// The root widget watches this provider, which keeps the two listeners
+/// alive for the lifetime of the app. It is separate from the cache itself
+/// so that showing an SVG does not require an auth setup, as on the public
+/// share screens.
+final svgCacheResetProvider = Provider<void>((ref) {
+  void clear() => ref.read(svgMemoryCacheProvider).clear();
+  ref.listen(authStateProvider, (_, __) => clear());
+  ref.listen(playerBaseUrlProvider, (_, __) => clear());
 });
 
 /// Downloads, compiles and decodes an SVG into a picture ready to paint.
@@ -128,15 +141,16 @@ final svgPictureProvider =
       disposed = true;
       cancel.cancel('SVG no longer shown');
     });
-    // Read, not watched: a picture on screen need not reload when the cache
-    // is replaced at logout.
-    final cache = ref.read(svgMemoryCacheProvider);
+    final cache = ref.watch(svgMemoryCacheProvider);
     final fetch = ref.watch(svgFetcherProvider);
     final compile = ref.watch(svgCompilerProvider);
 
-    final data = cache.get(request) ??
+    final cached = cache.get(request);
+    final data = cached ??
         await _download(cache, request, fetch, compile, cancel, () => disposed);
     final info = await decodeSvgPicture(data);
+    // Stored only now: bytes that fail to decode must not be cached.
+    if (cached == null) cache.put(request, data);
     if (disposed) {
       info.picture.dispose();
       throw const SvgException('SVG request cancelled');
@@ -146,7 +160,9 @@ final svgPictureProvider =
   },
 );
 
-/// Fetches and compiles [request] and records the outcome in [cache].
+/// Fetches and compiles [request]. Content that is not SVG is noted in
+/// [cache], whether the downloader noticed it in the first bytes or the
+/// complete body fails the check.
 Future<ByteData> _download(
   SvgMemoryCache cache,
   SvgRequest request,
@@ -155,27 +171,25 @@ Future<ByteData> _download(
   CancelToken cancel,
   bool Function() isDisposed,
 ) async {
-  if (cache.isKnownNotSvg(request)) {
-    throw const SvgException('Not an SVG document');
-  }
-  final bytes = await fetch(request.uri, request.headers, cancel);
-  // A transport may deliver a body despite the cancelled token.
-  if (isDisposed()) throw const SvgException('SVG request cancelled');
-  if (!looksLikeSvg(bytes)) {
+  if (cache.isKnownNotSvg(request)) throw const NotSvgException();
+  try {
+    final bytes = await fetch(request.uri, request.headers, cancel);
+    // A transport may deliver a body despite the cancelled token.
+    if (isDisposed()) throw const SvgException('SVG request cancelled');
+    if (!looksLikeSvg(bytes)) throw const NotSvgException();
+    final compiled = await compile(bytes, isCancelled: isDisposed);
+    return ByteData.sublistView(compiled);
+  } on NotSvgException {
     cache.markNotSvg(request);
-    throw const SvgException('Not an SVG document');
+    rethrow;
   }
-  final compiled = await compile(bytes, isCancelled: isDisposed);
-  final data = ByteData.sublistView(compiled);
-  cache.put(request, data);
-  return data;
 }
 
 /// Turns compiled SVG bytes into a picture clipped to the SVG's view box.
 ///
 /// Decoding only records drawing commands: the features that would decode
-/// or allocate bitmaps here (patterns, embedded images) were rejected by the
-/// compiler step, see `svg_document.dart`.
+/// or allocate bitmaps here (patterns, embedded images) cannot get this
+/// far, see `svg_document.dart`.
 Future<PictureInfo> decodeSvgPicture(ByteData data) =>
     vg.loadPicture(_CompiledSvgLoader(data), null);
 

@@ -21,6 +21,11 @@ typedef SvgFetcher = Future<Uint8List> Function(
 /// as a stream and the transfer is aborted once it passes [maxBytes], and
 /// the whole request must finish within [deadline]. A non-2xx status makes
 /// Dio throw; every failure ends up as the image's error state.
+///
+/// Images of unknown type are probed for SVG after the bitmap decoder gave
+/// up on them, and most of those are bitmaps. The transfer is therefore
+/// also aborted with a [NotSvgException] as soon as the first bytes show
+/// that the body is not markup, instead of reading megabytes of a photo.
 class DioSvgFetcher {
   DioSvgFetcher(
     this._dio, {
@@ -55,7 +60,13 @@ class DioSvgFetcher {
     final body = response.data;
     if (body == null) return Uint8List(0);
     final bytes = BytesBuilder(copy: false);
+    var start = SvgStart.undecided;
     await for (final chunk in body.stream) {
+      if (start == SvgStart.undecided) start = classifySvgStart(chunk);
+      if (start == SvgStart.other) {
+        cancel.cancel('Not an SVG document');
+        throw const NotSvgException();
+      }
       bytes.add(chunk);
       if (bytes.length > maxBytes) {
         cancel.cancel('SVG too large');

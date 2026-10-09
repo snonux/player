@@ -14,9 +14,9 @@ typedef ImageErrorBuilder = Widget Function(BuildContext, String, Object);
 /// Renders an SVG document from the network as a vector drawing.
 ///
 /// [errorWidget] is shown for a failed download and for every document
-/// that is rejected (not SVG, malformed, unusable size, nothing to draw,
-/// too large, too complex, or using pattern fills or embedded bitmaps; see
-/// `svg_document.dart`).
+/// that is rejected: not SVG, malformed, unusable size, nothing to draw,
+/// too large or complex, or using anything outside the allowlist of simple
+/// vector features (see `svg_document.dart` and `svg_gate.dart`).
 ///
 /// Sizing: an SVG has no pixel size, so without [width]/[height] the
 /// drawing takes all the space its parent offers and is placed in it

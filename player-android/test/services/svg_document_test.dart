@@ -1,6 +1,7 @@
-// Unit tests for SVG detection, text decoding and validation
-// (svg_document.dart). No Flutter binding is needed: this code runs in a
-// background isolate in the app.
+// Unit tests for SVG detection, text decoding and the checks on the
+// compiler's output (svg_document.dart). The allowlist applied before the
+// compiler has its own table in svg_gate_test.dart. No Flutter binding is
+// needed: this code runs in a background isolate in the app.
 
 import 'dart:typed_data';
 
@@ -116,14 +117,6 @@ void _acceptTests() {
             '<text x="1" y="8" font-size="4">Hi</text>');
     expect(compileSvg(svgBytes(document)), isNotEmpty);
   });
-
-  test('CSS classes are ignored by the compiler, not an error', () {
-    // Documented limit: the rect is drawn with the default fill.
-    final document = svgDocument(
-        body: '<style>.a{fill:#00f}</style>'
-            '<rect class="a" width="10" height="10"/>');
-    expect(compileSvg(svgBytes(document)), isNotEmpty);
-  });
 }
 
 void _rejectShapeTests() {
@@ -159,37 +152,33 @@ void _rejectShapeTests() {
   test('a drawing whose only content is an external image', () {
     const image = '<image width="10" height="10" '
         'href="http://tracker.example/pixel.png"/>';
-    _expectRejected(svgDocument(body: image), 'nothing to draw');
+    _expectRejected(svgDocument(body: image), 'element <image>');
   });
 }
 
 void _rejectFeatureTests() {
   test('a pattern fill, whose tile the renderer would rasterise', () {
-    // The renderer allocates a 16000x16000 bitmap for this tile.
-    final document = svgDocument(
-        size: 'width="100" height="100" viewBox="0 0 16000 16000"',
-        body: '<defs><pattern id="p" width="16000" height="16000" '
-            'patternUnits="userSpaceOnUse">'
-            '<rect width="8000" height="8000" fill="#f00"/></pattern></defs>'
-            '<rect width="16000" height="16000" fill="url(#p)"/>');
-    _expectRejected(document, 'pattern fills are not supported');
-  });
-
-  test('a small pattern fill is rejected as well', () {
     final document = svgDocument(
         body: '<defs><pattern id="p" width="2" height="2" '
             'patternUnits="userSpaceOnUse">'
             '<rect width="1" height="1" fill="#f00"/></pattern></defs>'
             '<rect width="10" height="10" fill="url(#p)"/>');
-    _expectRejected(document, 'pattern fills are not supported');
+    _expectRejected(document, 'element <pattern> is not supported');
   });
 
   test('an embedded bitmap, alone or next to vector shapes', () {
     final image = embeddedImage(Uint8List.fromList([1, 2, 3, 4]));
-    _expectRejected(
-        svgDocument(body: image), 'embedded bitmaps are not supported');
+    _expectRejected(svgDocument(body: image), 'element <image>');
     _expectRejected(svgDocument(body: '<rect width="5" height="5"/>$image'),
-        'embedded bitmaps are not supported');
+        'element <image>');
+  });
+
+  test('a style sheet, which the compiler would silently ignore', () {
+    _expectRejected(
+        svgDocument(
+            body: '<style>.a{fill:#00f}</style>'
+                '<rect class="a" width="10" height="10"/>'),
+        'element <style>');
   });
 
   test('text with an absurd font size', () {
@@ -210,12 +199,23 @@ void _complexityTests() {
     expect(compile(body, const SvgLimits(maxCommands: 5)), isNotEmpty);
   });
 
-  test('more opacity layers than allowed', () {
+  test('layers nested through <use> are counted after compiling', () {
+    // In the XML every group is at layer depth 1; copied into each other
+    // by <use> they nest three deep.
+    const body = '<defs><g id="a" opacity="0.5"><rect width="1" height="1"/>'
+        '<rect width="2" height="2"/></g>'
+        '<g id="b" opacity="0.5"><use href="#a"/><rect width="3" height="3"/>'
+        '</g></defs>'
+        '<g opacity="0.5"><use href="#b"/><rect width="4" height="4"/></g>';
+    expect(() => compile(body, const SvgLimits(maxLayerDepth: 2)),
+        _rejects('too complex'));
+    expect(compile(body, const SvgLimits(maxLayerDepth: 3)), isNotEmpty);
+  });
+
+  test('sibling layers do not add up', () {
     const layer = '<g opacity="0.5"><rect width="1" height="1"/>'
         '<rect width="2" height="2"/></g>';
-    expect(() => compile(layer * 3, const SvgLimits(maxLayers: 2)),
-        _rejects('too complex'));
-    expect(compile(layer * 2, const SvgLimits(maxLayers: 2)), isNotEmpty);
+    expect(compile(layer * 20, const SvgLimits(maxLayerDepth: 1)), isNotEmpty);
   });
 
   test('a single path too large once compiled', () {
