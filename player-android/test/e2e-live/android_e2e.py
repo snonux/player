@@ -302,9 +302,14 @@ def test_favourite(api, media):
     only = [l.split(" / ")[0] for l in labels() if l.startswith("sample-")]
     record("favourite is set from the app and filters the grid", in_ui and on_server and only == ["sample-mp3.mp3"], f"ui={in_ui} server={on_server} filtered={only}")
     adrv.tap("favourites") ; time.sleep(2)
-    open_detail("test-audio", "sample-mp3.mp3")
-    adrv.tap("^Remove from favourites$"); time.sleep(2)
-    off = item["id"] not in [m["id"] for m in api.call("GET", "/api/v1/media?favorites=true") or []]
+    if not open_detail("test-audio", "sample-mp3.mp3"):
+        return record("favourite can be removed again", False, "detail not opened")
+    adrv.tap("^Remove from favourites$")
+    # The app's request may still be on its way when the tap returns.
+    off, deadline = False, time.time() + 15
+    while not off and time.time() < deadline:
+        time.sleep(1)
+        off = item["id"] not in [m["id"] for m in api.call("GET", "/api/v1/media?favorites=true") or []]
     record("favourite can be removed again", off)
     back()
 
