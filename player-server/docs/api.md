@@ -309,8 +309,9 @@ support and the same `HEAD` readiness probe. Responses carry
 `Cache-Control: no-store`.
 
 Share uses are counted as on `/s/{token}/stream`: every `GET` that is served
-counts, including each `Range` request. `HEAD` requests never count, and
-neither do answers without content (`503` while transcoding or busy, errors).
+counts, including each `Range` request. A use is counted only once content is
+certain to be delivered; `HEAD` requests never count, and neither do answers
+without content (`503` while transcoding or busy, errors).
 All share links together may have two transcodes pending; beyond that the
 answer is `503` with status `busy`.
 
@@ -816,7 +817,7 @@ Every `503` of this endpoint, for `GET` and `HEAD`, carries
 | `415` | Images have no rendition |
 | `500` | `{"error":"transcode failed"}` — ffmpeg could not convert the file. Not retried by the server for 1 minute (doubling up to 30 minutes; 24 hours after a job timed out); details are in the server log only |
 | `503` | Retry after `Retry-After` seconds; `X-Transcode-Status` is `transcoding` or `busy` |
-| `507` | The transcode cache has no room for this rendition |
+| `507` | The transcode cache has no room for this rendition: the volume is full, or the rendition would exceed the cache budget (`TRANSCODE_CACHE_MAX_MB`; remembered until the file changes) |
 
 Error bodies contain only the fixed messages above, never file paths.
 

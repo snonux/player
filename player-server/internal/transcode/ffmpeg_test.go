@@ -254,6 +254,32 @@ func TestFFmpegRunner_StreamCopyFallback(t *testing.T) {
 	}
 }
 
+// A copied video stream is as big as in the source: a source over the cap is
+// refused before ffmpeg writes anything.
+func TestFFmpegRunner_StreamCopyOverCapIsRefusedUpFront(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	src := filepath.Join(dir, "big.flv")
+	if err := os.WriteFile(src, make([]byte, 2000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const good = `{"format":{"duration":"3"},"streams":[{"codec_type":"video","codec_name":"h264"}]}`
+	r := &FFmpegRunner{binary: script(t, "ffmpeg", `echo run >> `+log+"\n"+writeLastArg), probeBinary: copyableProbe(t, good), threads: 1}
+	job := Job{Source: Source{Path: src, Kind: KindVideo}, Output: filepath.Join(dir, "out.tmp"), MaxBytes: 1000}
+
+	if err := r.Transcode(context.Background(), job); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("Transcode = %v, want ErrTooLarge", err)
+	}
+	if _, err := os.Stat(log); err == nil {
+		t.Error("ffmpeg ran although the copy could not fit")
+	}
+	// Under the cap the copy goes ahead.
+	job.MaxBytes = 5000
+	if err := r.Transcode(context.Background(), job); err != nil {
+		t.Fatalf("Transcode under the cap: %v", err)
+	}
+}
+
 func TestFFmpegRunner_RunsUnderNice(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "nice-args")
 	nice := script(t, "nice", `echo "$1 $2" > `+log+`; shift 2; exec "$@"`)

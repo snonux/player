@@ -69,7 +69,7 @@ func compatEnvReturning(t *testing.T, r *transcode.Rendition, err error) compatT
 	t.Helper()
 	return newCompatTestEnv(t, &service.MockCompatStreamService{
 		CompatStreamFunc:       func(context.Context, int64, int64) (*transcode.Rendition, error) { return r, err },
-		SharedCompatStreamFunc: func(context.Context, string, bool) (*transcode.Rendition, error) { return r, err },
+		SharedCompatStreamFunc: func(context.Context, string) (*transcode.Rendition, error) { return r, err },
 	})
 }
 
@@ -318,20 +318,68 @@ func TestCompatStream_HeadTerminalStatuses(t *testing.T) {
 	}
 }
 
-// Only a GET may consume a share use; a HEAD probe tells the service not to.
-func TestHandleShareCompatStream_HeadDoesNotCountUse(t *testing.T) {
-	rendition := writeRendition(t)
-	var counted []bool
-	env := newCompatTestEnv(t, &service.MockCompatStreamService{
-		SharedCompatStreamFunc: func(_ context.Context, _ string, countUse bool) (*transcode.Rendition, error) {
-			counted = append(counted, countUse)
-			return rendition, nil
+// shareUseEnv is an env whose service returns rendition and counts the share
+// uses the handler asks for.
+func shareUseEnv(t *testing.T, rendition *transcode.Rendition, useErr error) (compatTestEnv, *int) {
+	t.Helper()
+	uses := new(int)
+	return newCompatTestEnv(t, &service.MockCompatStreamService{
+		SharedCompatStreamFunc: func(context.Context, string) (*transcode.Rendition, error) { return rendition, nil },
+		ConsumeShareUseFunc: func(_ context.Context, token string) error {
+			if token != "tok" {
+				t.Errorf("use counted for token %q", token)
+			}
+			*uses++
+			return useErr
 		},
-	})
-	env.send(context.Background(), http.MethodHead, "/s/tok/compat", false, nil)
-	env.send(context.Background(), http.MethodGet, "/s/tok/compat", false, nil)
-	if len(counted) != 2 || counted[0] || !counted[1] {
-		t.Errorf("countUse per request = %v, want [false true] for HEAD then GET", counted)
+	}), uses
+}
+
+// A share use is counted exactly when content is delivered: per GET (each
+// Range request, as on /s/{token}/stream), never for a HEAD probe.
+func TestHandleShareCompatStream_CountsUsePerDeliveredGet(t *testing.T) {
+	env, uses := shareUseEnv(t, writeRendition(t), nil)
+	steps := []struct {
+		method   string
+		header   http.Header
+		wantCode int
+		wantUses int
+	}{
+		{http.MethodHead, nil, http.StatusOK, 0},
+		{http.MethodHead, nil, http.StatusOK, 0},
+		{http.MethodGet, nil, http.StatusOK, 1},
+		{http.MethodGet, http.Header{"Range": {"bytes=0-4"}}, http.StatusPartialContent, 2},
+		{http.MethodHead, nil, http.StatusOK, 2},
+	}
+	for i, st := range steps {
+		rr := env.send(context.Background(), st.method, "/s/tok/compat", false, st.header)
+		if rr.Code != st.wantCode || *uses != st.wantUses {
+			t.Fatalf("step %d (%s): status %d, uses %d; want %d, %d", i, st.method, rr.Code, *uses, st.wantCode, st.wantUses)
+		}
+	}
+}
+
+// A rendition evicted before it could be opened answers 503 — and must not
+// have cost the share a use, since nothing was delivered.
+func TestHandleShareCompatStream_NoUseWhenRenditionCannotBeOpened(t *testing.T) {
+	gone := &transcode.Rendition{Path: filepath.Join(t.TempDir(), "gone.mp4")}
+	env, uses := shareUseEnv(t, gone, nil)
+	rr := env.send(context.Background(), http.MethodGet, "/s/tok/compat", false, nil)
+	if rr.Code != http.StatusServiceUnavailable || rr.Header().Get("X-Transcode-Status") != "transcoding" {
+		t.Fatalf("status %d %v, want 503 transcoding", rr.Code, rr.Header())
+	}
+	if *uses != 0 {
+		t.Errorf("share uses = %d, want 0", *uses)
+	}
+}
+
+// The share ran out between the lookup and the count (another request took
+// the last use): 410 and no content.
+func TestHandleShareCompatStream_UseRefused(t *testing.T) {
+	env, uses := shareUseEnv(t, writeRendition(t), service.ErrShareExpired)
+	rr := env.send(context.Background(), http.MethodGet, "/s/tok/compat", false, nil)
+	if rr.Code != http.StatusGone || strings.Contains(rr.Body.String(), compatBody) || *uses != 1 {
+		t.Fatalf("status %d body %q uses %d, want 410 without content", rr.Code, rr.Body.String(), *uses)
 	}
 }
 
@@ -439,7 +487,7 @@ func TestHandleShareCompatStream(t *testing.T) {
 			rendition := writeRendition(t)
 			var gotToken string
 			env := newCompatTestEnv(t, &service.MockCompatStreamService{
-				SharedCompatStreamFunc: func(_ context.Context, token string, _ bool) (*transcode.Rendition, error) {
+				SharedCompatStreamFunc: func(_ context.Context, token string) (*transcode.Rendition, error) {
 					gotToken = token
 					return rendition, tt.err
 				},

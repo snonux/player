@@ -303,15 +303,16 @@ func TestCache_RealFFmpegRejectsGarbage(t *testing.T) {
 	wantNames(t, c.opts.Dir)
 }
 
-// With real ffmpeg, "-fs" stops a rendition that would outgrow the space the
-// cache may use; the truncated file is reported as "no space", not published.
+// With real ffmpeg, a rendition that would outgrow the cache budget is
+// reported as too large and never published (whether "-fs" stopped it or the
+// source was refused up front depends on the sample's size).
 func TestCache_RealFFmpegOutputCap(t *testing.T) {
 	requireFFmpeg(t)
 	noise := []string{"-f", "lavfi", "-i", "testsrc2=duration=4:size=640x480:rate=25", "-c:v", "mpeg4", "-q:v", "2"}
 	src := makeSample(t, "big.avi", noise...)
 	c := realCache(t, 20_000)
-	if _, err := c.Ensure(context.Background(), Source{MediaID: 1, Path: src, Kind: KindVideo}); !errors.Is(err, ErrNoSpace) {
-		t.Fatalf("Ensure = %v, want ErrNoSpace", err)
+	if _, err := c.Ensure(context.Background(), Source{MediaID: 1, Path: src, Kind: KindVideo}); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("Ensure = %v, want ErrTooLarge", err)
 	}
 	stop(c)
 	wantNames(t, c.opts.Dir)

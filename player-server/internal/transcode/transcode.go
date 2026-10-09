@@ -45,9 +45,14 @@ var (
 	// (it was modified moments ago, or changed while it was transcoded, as
 	// during an upload or copy). Nothing was published; retry later.
 	ErrSourceChanged = errors.New("transcode source is still changing")
-	// ErrNoSpace reports that the cache volume or the cache budget has no
-	// room for the rendition.
+	// ErrNoSpace reports that the cache volume is too full right now to
+	// write the rendition. It heals when space is freed, so it is never
+	// remembered.
 	ErrNoSpace = errors.New("transcode cache volume is full")
+	// ErrTooLarge reports that the rendition of this source cannot fit the
+	// cache budget (Options.MaxBytes) at all. Unlike ErrNoSpace this does
+	// not heal by itself, so it is remembered until the source changes.
+	ErrTooLarge = errors.New("rendition exceeds the transcode cache budget")
 	// ErrFailedRecently reports that this media item failed to transcode a
 	// while ago and is not retried yet (negative cache with backoff).
 	ErrFailedRecently = errors.New("transcode failed recently")

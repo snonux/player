@@ -20,10 +20,14 @@ type CompatStreamService interface {
 	// being produced.
 	CompatStream(ctx context.Context, mediaID, userID int64) (*transcode.Rendition, error)
 	// SharedCompatStream returns the rendition of the media item behind a
-	// public share token. countUse says whether delivering it consumes one
-	// use of the share: true for a GET that returns content, false for a
-	// HEAD readiness probe.
-	SharedCompatStream(ctx context.Context, token string, countUse bool) (*transcode.Rendition, error)
+	// public share token. It does not count a share use; see
+	// ConsumeShareUse.
+	SharedCompatStream(ctx context.Context, token string) (*transcode.Rendition, error)
+	// ConsumeShareUse counts one use of the share. The caller invokes it
+	// when it is certain to deliver content: after it has opened the
+	// rendition, and not for HEAD probes. It returns ErrShareExpired when
+	// the share ran out in the meantime.
+	ConsumeShareUse(ctx context.Context, token string) error
 }
 
 // shareRequester is the requester identity of every anonymous share request.
@@ -79,29 +83,25 @@ func (s *compatStreamService) CompatStream(ctx context.Context, mediaID, userID 
 	return s.rendition(ctx, media, "user:"+strconv.FormatInt(userID, 10))
 }
 
-// SharedCompatStream validates the share token, obtains the rendition, and
-// only then records a share use (when countUse is set).
+// SharedCompatStream validates the share token and obtains the rendition.
 //
-// Use counting matches /s/{token}/stream: every GET that is served counts,
-// including each Range request of one playback. What does not count are
-// answers without content — "still transcoding", "busy", failures, and HEAD
-// probes — so a client polling for a rendition does not burn through
-// max_uses before a single byte was delivered.
-func (s *compatStreamService) SharedCompatStream(ctx context.Context, token string, countUse bool) (*transcode.Rendition, error) {
+// It deliberately does not count a share use. Uses are counted as on
+// /s/{token}/stream — every GET that is served counts, including each Range
+// request of one playback — but only by the API layer, at the moment content
+// is really about to be sent (ConsumeShareUse). Counting here would spend a
+// use on answers that deliver nothing: "still transcoding", "busy",
+// failures, HEAD probes, and a rendition evicted before it could be opened.
+func (s *compatStreamService) SharedCompatStream(ctx context.Context, token string) (*transcode.Rendition, error) {
 	media, err := s.shares.ResolveSharedMedia(ctx, token)
 	if err != nil {
 		return nil, err
 	}
-	rendition, err := s.rendition(ctx, media, shareRequester)
-	if err != nil {
-		return nil, err
-	}
-	if countUse {
-		if err := s.shares.ConsumeShareUse(ctx, token); err != nil {
-			return nil, err
-		}
-	}
-	return rendition, nil
+	return s.rendition(ctx, media, shareRequester)
+}
+
+// ConsumeShareUse counts one use of the share behind token.
+func (s *compatStreamService) ConsumeShareUse(ctx context.Context, token string) error {
+	return s.shares.ConsumeShareUse(ctx, token)
 }
 
 // rendition checks that the item is eligible and asks the provider for it.
@@ -145,7 +145,9 @@ func mapRenditionError(mediaID int64, err error) error {
 		// During shutdown the client is told to retry; the next instance
 		// will take the job.
 		return ErrTranscodeBusy
-	case errors.Is(err, transcode.ErrNoSpace):
+	case errors.Is(err, transcode.ErrNoSpace), errors.Is(err, transcode.ErrTooLarge):
+		// Both mean "no room for this rendition"; the client cannot tell
+		// (or do anything about) whether the disk or the budget is short.
 		return ErrTranscodeNoSpace
 	case errors.Is(err, transcode.ErrSourceMissing):
 		return ErrNotFound

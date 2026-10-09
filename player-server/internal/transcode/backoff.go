@@ -12,26 +12,28 @@ const (
 	// per consecutive failure up to maxFailureBackoff.
 	failureBackoff    = time.Minute
 	maxFailureBackoff = 30 * time.Minute
-	// timeoutBackoff is the pause after a job hit the job timeout. Such a
-	// job has already burned hours of CPU and would do so again on every
-	// retry, so it is only repeated a day later or when the source changes.
-	timeoutBackoff = 24 * time.Hour
+	// longBackoff is the pause for outcomes that cost a lot and will repeat
+	// unchanged: a job that hit the job timeout (hours of CPU) and a
+	// rendition that does not fit the cache budget (possibly gigabytes
+	// written). They are only tried again a day later or when the source
+	// file changes.
+	longBackoff = 24 * time.Hour
 )
 
-// failure is a negative-cache entry. Entries are keyed by media id, not by
-// rendition name: a file that keeps changing (a slow copy) gets a new
-// rendition name with every change, and a per-name backoff would never
-// apply to it.
+// failure is a negative-cache entry, kept per media id.
 type failure struct {
 	count   int
 	retryAt time.Time
 	// err is what requests get during the backoff: ErrSourceChanged for a
-	// source that was still changing (clients are told to retry), otherwise
-	// ErrFailedRecently.
+	// source that was still changing (clients are told to retry),
+	// ErrTooLarge for a rendition over budget, otherwise ErrFailedRecently.
 	err error
-	// name is set for timeouts only and ties the entry to one version of
-	// the source: a replaced file deserves a new attempt despite the long
-	// timeout backoff.
+	// name ties the entry to one version of the source (its rendition
+	// name): a replaced file deserves a new attempt at once, whatever the
+	// previous file did. It is empty only for ErrSourceChanged entries,
+	// which must survive the name changing — a file that is still being
+	// copied gets a new name with every write, and a per-name entry would
+	// never apply to it.
 	name string
 }
 
@@ -58,7 +60,7 @@ func (c *Cache) backoffError(mediaID int64, name string) error {
 //
 // Context errors are replaced, never wrapped: waiters must not mistake a
 // stopped job for their own request being cancelled. Conditions that are
-// nobody's fault and heal by themselves (shutdown, full disk) are not
+// nobody's fault and heal by themselves (shutdown, a full disk) are not
 // remembered. Everything else is, so that polling clients cannot start one
 // ffmpeg run per request for a file that will fail again.
 func (c *Cache) settle(jobCtx, workCtx context.Context, name string, src Source, err error) error {
@@ -75,42 +77,54 @@ func (c *Cache) settle(jobCtx, workCtx context.Context, name string, src Source,
 	case errors.Is(err, ErrNoSpace):
 		c.logger.Warn("transcode skipped: no space", "media_id", src.MediaID, "source", src.Path, "err", err)
 		return err
-	case errors.Is(err, ErrSourceChanged):
-		retryIn := c.recordFailure(src.MediaID, failure{err: ErrSourceChanged})
-		c.logger.Warn("transcode discarded: source changed while it ran", "media_id", src.MediaID, "source", src.Path, "retry_in", retryIn)
-		return err
 	case workCtx.Err() != nil:
 		err = fmt.Errorf("transcode timed out after %s", c.opts.JobTimeout)
-		c.recordFailure(src.MediaID, failure{err: ErrFailedRecently, name: name})
-		c.logger.Error("transcode timed out; not retried until the source changes or the pause is over",
-			"media_id", src.MediaID, "source", src.Path, "timeout", c.opts.JobTimeout, "retry_in", timeoutBackoff)
-		return err
 	}
-	retryIn := c.recordFailure(src.MediaID, failure{err: ErrFailedRecently})
-	c.logger.Error("transcode failed", "media_id", src.MediaID, "source", src.Path, "retry_in", retryIn, "err", err)
+	return c.remember(name, src, err, workCtx.Err() != nil)
+}
+
+// remember records a failed job in the negative cache, logs it once, and
+// returns the error for the waiting requests.
+func (c *Cache) remember(name string, src Source, err error, timedOut bool) error {
+	attrs := []any{"media_id", src.MediaID, "source", src.Path}
+	switch {
+	case errors.Is(err, ErrTooLarge):
+		c.recordFailure(src.MediaID, failure{err: ErrTooLarge, name: name}, longBackoff)
+		c.logger.Warn("transcode refused: rendition does not fit the cache budget; not retried until the source changes",
+			append(attrs, "budget_bytes", c.opts.MaxBytes, "err", err)...)
+	case errors.Is(err, ErrSourceChanged):
+		retryIn := c.recordFailure(src.MediaID, failure{err: ErrSourceChanged}, 0)
+		c.logger.Warn("transcode discarded: source changed while it ran", append(attrs, "retry_in", retryIn)...)
+	case timedOut:
+		c.recordFailure(src.MediaID, failure{err: ErrFailedRecently, name: name}, longBackoff)
+		c.logger.Error("transcode timed out; not retried until the source changes or the pause is over",
+			append(attrs, "timeout", c.opts.JobTimeout, "retry_in", longBackoff)...)
+	default:
+		retryIn := c.recordFailure(src.MediaID, failure{err: ErrFailedRecently, name: name}, 0)
+		c.logger.Error("transcode failed", append(attrs, "retry_in", retryIn, "err", err)...)
+	}
 	return err
 }
 
 // recordFailure stores a negative-cache entry and returns how long new
-// attempts are refused. The pause doubles with every consecutive failure of
-// the same media item; a timeout entry (f.name set) always pauses for
-// timeoutBackoff.
-func (c *Cache) recordFailure(mediaID int64, f failure) time.Duration {
+// attempts are refused: fixed when given, otherwise a pause that doubles
+// with every consecutive failure of the same media item.
+func (c *Cache) recordFailure(mediaID int64, f failure, fixed time.Duration) time.Duration {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	now := c.clk.Now()
 	// Forget entries that expired long ago so the map cannot grow forever.
 	for id, old := range c.failures {
-		if now.Sub(old.retryAt) > timeoutBackoff {
+		if now.Sub(old.retryAt) > longBackoff {
 			delete(c.failures, id)
 		}
 	}
 	f.count = c.failures[mediaID].count + 1
 	backoff := maxFailureBackoff
 	switch {
-	case f.name != "":
-		backoff = timeoutBackoff
+	case fixed > 0:
+		backoff = fixed
 	case f.count < 6: // 1m, 2m, 4m, 8m, 16m, then the 30m cap
 		backoff = failureBackoff << (f.count - 1)
 	}

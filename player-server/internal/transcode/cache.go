@@ -52,6 +52,16 @@ const (
 	// pruneGrace protects renditions handed out very recently from eviction,
 	// so a request that just finished waiting can still open its file.
 	pruneGrace = time.Minute
+	// implausibleShrink is the up-front size check: a source more than this
+	// many times larger than the cache budget is refused without running
+	// ffmpeg. Re-encoding legacy video to H.264 at these settings typically
+	// shrinks it to between a half and a quarter (DVD-era MPEG-2 being the
+	// best case); nothing realistic shrinks eightfold, so such a rendition
+	// could never fit. Sources between one and eight times the budget are
+	// tried once: "-fs" stops them at the budget and the result is
+	// remembered (see ErrTooLarge). Stream copies, whose output is about the
+	// size of the source, are refused by the runner before it starts.
+	implausibleShrink = 8
 )
 
 // Rendition file names are "m<mediaID>-<srcSize>-<srcMtimeNs>-v<profile>"
@@ -193,8 +203,11 @@ func (c *Cache) Ensure(ctx context.Context, src Source) (Rendition, error) {
 		return r, nil
 	}
 	// Starting ffmpeg on a file that is still being written would transcode
-	// a truncated source (and be thrown away); wait until it settled.
-	if c.clk.Now().Sub(st.modTime) < c.opts.SourceSettle {
+	// a truncated source (and be thrown away); wait until it settled. A
+	// modification time in the future (wrong camera clock, clock skew on a
+	// network mount) says nothing about recent writes and counts as
+	// settled — otherwise such a file would never play.
+	if age := c.clk.Now().Sub(st.modTime); age >= 0 && age < c.opts.SourceSettle {
 		return Rendition{}, ErrSourceChanged
 	}
 
@@ -214,7 +227,7 @@ func (c *Cache) Ensure(ctx context.Context, src Source) (Rendition, error) {
 }
 
 // Prune deletes abandoned temporary files and then the least recently used
-// renditions until the cache fits Options.MaxBytes. It runs before every
+// renditions until the cache fits Options.MaxBytes. It runs after every
 // transcode and periodically from the GC worker.
 func (c *Cache) Prune(ctx context.Context) error {
 	return c.prune(ctx, 0)
@@ -476,7 +489,7 @@ func (c *Cache) produce(ctx context.Context, name string, src Source) error {
 	// ffmpeg stops quietly (exit status 0) when "-fs" is reached, leaving a
 	// truncated file that is at least as large as the cap. Never publish it.
 	if info.Size() >= maxBytes {
-		return fmt.Errorf("%w: rendition exceeds the %d bytes available", ErrNoSpace, maxBytes)
+		return c.capExceeded(maxBytes)
 	}
 	// A source that changed during the run (upload or copy still in
 	// progress) would leave a rendition of a truncated file under a name
@@ -490,30 +503,64 @@ func (c *Cache) produce(ctx context.Context, name string, src Source) error {
 	return nil
 }
 
-// makeRoom evicts old renditions and returns the size the new rendition may
-// have at most: what the volume can give while keeping its free-space
-// reserve, and never more than the whole cache budget. The cap is enforced
-// while ffmpeg writes (Job.MaxBytes), because the size of a rendition cannot
-// be predicted: video usually shrinks, but low-bitrate audio can grow
-// several times. The source size only serves as a hint for how much to
-// evict up front.
+// capExceeded classifies an output that reached its size cap. When the cap
+// was the cache budget, the rendition can never fit (ErrTooLarge, which is
+// remembered); when the volume's free space set a lower cap, the disk is
+// simply full right now (ErrNoSpace, which is not).
+func (c *Cache) capExceeded(maxBytes int64) error {
+	if maxBytes >= c.opts.MaxBytes {
+		return fmt.Errorf("%w of %d bytes", ErrTooLarge, c.opts.MaxBytes)
+	}
+	return fmt.Errorf("%w: rendition needs more than the %d bytes available", ErrNoSpace, maxBytes)
+}
+
+// makeRoom returns the size the new rendition may have at most: what the
+// volume can give while keeping its free-space reserve, and never more than
+// the whole cache budget. The cap is enforced while ffmpeg writes
+// (Job.MaxBytes), because the size of a rendition cannot be predicted: video
+// usually shrinks, but low-bitrate audio can grow several times.
+//
+// Nothing is evicted for a job up front unless the volume really lacks the
+// space. A job that then fails has cost other renditions nothing; a job that
+// succeeds triggers the regular prune afterwards (cleanupAfter), which
+// brings the cache back under its budget.
 func (c *Cache) makeRoom(ctx context.Context, src Source) (int64, error) {
 	st, err := statSource(src)
 	if err != nil {
 		return 0, ErrSourceChanged
 	}
-	if err := c.prune(ctx, st.size); err != nil {
-		c.logger.Warn("transcode cache prune", "err", err)
+	if st.size/implausibleShrink > c.opts.MaxBytes {
+		return 0, fmt.Errorf("%w of %d bytes: source has %d bytes", ErrTooLarge, c.opts.MaxBytes, st.size)
 	}
+	// The source size, limited to the budget, is the most a job is assumed
+	// to need — never evict more than it could ever use.
+	want := min(st.size, c.opts.MaxBytes)
+	avail, err := c.available()
+	if err != nil {
+		return 0, err
+	}
+	if avail < want {
+		if err := c.prune(ctx, want-avail); err != nil {
+			c.logger.Warn("transcode cache prune", "err", err)
+		}
+		if avail, err = c.available(); err != nil {
+			return 0, err
+		}
+	}
+	if avail <= 0 {
+		return 0, fmt.Errorf("%w: free space is below the reserve of %d bytes", ErrNoSpace, c.opts.MinFreeBytes)
+	}
+	return min(avail, c.opts.MaxBytes), nil
+}
+
+// available returns how many bytes the cache volume can still take while
+// keeping the free-space reserve (negative when it is already below it).
+func (c *Cache) available() (int64, error) {
 	free, err := c.opts.FreeSpace(c.opts.Dir)
 	if err != nil {
 		return 0, fmt.Errorf("check transcode cache free space: %w", err)
 	}
-	maxBytes := min(free-c.opts.MinFreeBytes, c.opts.MaxBytes)
-	if maxBytes <= 0 {
-		return 0, fmt.Errorf("%w: %d bytes free, reserve is %d", ErrNoSpace, free, c.opts.MinFreeBytes)
-	}
-	return maxBytes, nil
+	return free - c.opts.MinFreeBytes, nil
 }
 
 // cleanupAfter drops renditions of older versions of the same source.

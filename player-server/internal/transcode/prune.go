@@ -19,8 +19,9 @@ type cached struct {
 	recent bool
 }
 
-// prune implements Prune. reserve is extra room to free for a rendition that
-// is about to be produced.
+// prune implements Prune: it brings the cache back under Options.MaxBytes.
+// extra is a number of bytes to free on top of that, used when the volume
+// itself is short of space for a rendition that is about to be produced.
 //
 // Recently handed-out renditions are skipped even when that leaves the cache
 // over its limit for a moment: evicting a file a request is just about to
@@ -31,14 +32,14 @@ type cached struct {
 // while it is being played, and every following Range request would start
 // the transcode again. The cache can therefore exceed MaxBytes by that one
 // file.
-func (c *Cache) prune(ctx context.Context, reserve int64) error {
+func (c *Cache) prune(ctx context.Context, extra int64) error {
 	files, total, err := c.scan()
 	if err != nil {
 		return err
 	}
 	sort.Slice(files, func(i, k int) bool { return files[i].lastUse.Before(files[k].lastUse) })
 
-	limit := max(c.opts.MaxBytes-reserve, 0)
+	limit := max(min(c.opts.MaxBytes, total-extra), 0)
 	var errs []error
 	for _, f := range files[:max(len(files)-1, 0)] {
 		if total <= limit || ctx.Err() != nil {

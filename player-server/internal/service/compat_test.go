@@ -13,6 +13,7 @@ import (
 
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/thumb"
 	"codeberg.org/snonux/player/internal/transcode"
 )
 
@@ -184,6 +185,7 @@ func TestCompatStream_ProviderErrors(t *testing.T) {
 		{"transcoder busy", transcode.ErrBusy, ErrTranscodeBusy, http.StatusServiceUnavailable, "transcoder busy"},
 		{"shutting down", transcode.ErrClosed, ErrTranscodeBusy, http.StatusServiceUnavailable, "transcoder busy"},
 		{"disk full", withPath(transcode.ErrNoSpace), ErrTranscodeNoSpace, http.StatusInsufficientStorage, "insufficient storage for transcode"},
+		{"rendition over budget", withPath(transcode.ErrTooLarge), ErrTranscodeNoSpace, http.StatusInsufficientStorage, "insufficient storage for transcode"},
 		{"source file missing", withPath(transcode.ErrSourceMissing), ErrNotFound, http.StatusNotFound, "not found"},
 		{"ffmpeg failure", ffmpegErr, ffmpegErr, 0, ""},
 		{"failed recently", transcode.ErrFailedRecently, transcode.ErrFailedRecently, 0, ""},
@@ -211,7 +213,6 @@ type sharedCase struct {
 	media     *model.Media
 	ensureErr error
 	wantErr   error // nil: success
-	wantUses  int
 }
 
 func sharedCases(root string) []sharedCase {
@@ -225,20 +226,22 @@ func sharedCases(root string) []sharedCase {
 	usedUp := &model.Share{Token: "tok", MediaID: 5, ExpiresAt: now.Add(time.Hour), MaxUses: &one, UsedCount: 1}
 	boom := errors.New("ffmpeg transcode: exit status 1")
 	return []sharedCase{
-		{name: "ok counts one use", share: valid, media: video, wantUses: 1},
+		{name: "ok", share: valid, media: video},
 		{name: "unknown token", media: video, wantErr: ErrShareNotFound},
 		{name: "expired", share: expired, media: video, wantErr: ErrShareExpired},
 		{name: "max uses reached", share: usedUp, media: video, wantErr: ErrShareExpired},
 		{name: "media gone", share: valid, wantErr: ErrMediaNotFound},
 		{name: "image media", share: valid, media: image, wantErr: ErrNotTranscodable},
 		{name: "native media", share: valid, media: native, wantErr: ErrCompatNotNeeded},
-		// Answers without content must not consume share uses.
-		{name: "pending does not count a use", share: valid, media: video, ensureErr: transcode.ErrPending, wantErr: ErrTranscodePending},
-		{name: "busy does not count a use", share: valid, media: video, ensureErr: transcode.ErrBusy, wantErr: ErrTranscodeBusy},
-		{name: "ffmpeg failure does not count a use", share: valid, media: video, ensureErr: boom, wantErr: boom},
+		{name: "pending", share: valid, media: video, ensureErr: transcode.ErrPending, wantErr: ErrTranscodePending},
+		{name: "busy", share: valid, media: video, ensureErr: transcode.ErrBusy, wantErr: ErrTranscodeBusy},
+		{name: "ffmpeg failure", share: valid, media: video, ensureErr: boom, wantErr: boom},
 	}
 }
 
+// SharedCompatStream never counts a share use itself, whatever the outcome:
+// the API layer counts one (ConsumeShareUse) only when it is certain to
+// deliver content.
 func TestSharedCompatStream(t *testing.T) {
 	root := mediaTree(t, "set/a.flv", "set/a.png", "set/a.mp4")
 	for _, tt := range sharedCases(root) {
@@ -256,45 +259,52 @@ func TestSharedCompatStream(t *testing.T) {
 			renditions := &fakeRenditions{err: tt.ensureErr}
 			svc := NewCompatStreamService(helper, NewShareService(store, newMockClock(), helper), renditions, root)
 
-			got, err := svc.SharedCompatStream(context.Background(), "tok", true)
-			if uses != tt.wantUses {
-				t.Errorf("share uses = %d, want %d", uses, tt.wantUses)
-			}
+			got, err := svc.SharedCompatStream(context.Background(), "tok")
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+			if uses != 0 {
+				t.Errorf("SharedCompatStream consumed %d share uses, want none", uses)
 			}
 			// Every share request uses the one common requester budget.
 			if tt.wantErr == nil && (got == nil || renditions.calls[0].Requester != shareRequester) {
 				t.Errorf("rendition %+v, source %+v", got, renditions.calls)
 			}
-
-			// A HEAD probe (countUse=false) gives the same answer and never
-			// consumes a use.
-			before := uses
-			_, probeErr := svc.SharedCompatStream(context.Background(), "tok", false)
-			if !errors.Is(probeErr, tt.wantErr) || uses != before {
-				t.Errorf("probe: error = %v (want %v), uses %d -> %d", probeErr, tt.wantErr, before, uses)
-			}
 		})
 	}
 }
 
-func TestSharedCompatStream_ShareUsedUpWhileTranscoding(t *testing.T) {
-	// The share's last use is taken by another request while the rendition
-	// is being produced: the atomic UseShare then refuses.
-	root := mediaTree(t, "a.avi")
-	now := newMockClock().T
-	store := compatStore(&model.Media{ID: 5, Type: model.MediaTypeVideo, FileName: "a.avi", AbsPath: filepath.Join(root, "a.avi")})
-	store.ShareRepo = repository.MockShareRepo{
-		GetShareByTokenFunc: func(context.Context, string) (*model.Share, error) {
-			return &model.Share{Token: "tok", MediaID: 5, ExpiresAt: now.Add(time.Hour)}, nil
-		},
-		UseShareFunc: func(context.Context, string, time.Time) (bool, error) { return false, nil },
+// ConsumeShareUse is the one place a compat share use is counted. It is
+// atomic in the store, so a share whose last use was taken meanwhile (by
+// another request, or while the rendition was being produced) is refused.
+func TestCompatStreamService_ConsumeShareUse(t *testing.T) {
+	tests := []struct {
+		name    string
+		used    bool
+		wantErr error
+	}{
+		{"counts one use", true, nil},
+		{"share ran out meanwhile", false, ErrShareExpired},
 	}
-	helper := NewAccessHelper(store)
-	svc := NewCompatStreamService(helper, NewShareService(store, newMockClock(), helper), &fakeRenditions{}, root)
-	if _, err := svc.SharedCompatStream(context.Background(), "tok", true); !errors.Is(err, ErrShareExpired) {
-		t.Fatalf("error = %v, want ErrShareExpired", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var tokens []string
+			store := compatStore(nil)
+			store.ShareRepo = repository.MockShareRepo{
+				UseShareFunc: func(_ context.Context, token string, _ time.Time) (bool, error) {
+					tokens = append(tokens, token)
+					return tt.used, nil
+				},
+			}
+			helper := NewAccessHelper(store)
+			svc := NewCompatStreamService(helper, NewShareService(store, newMockClock(), helper), &fakeRenditions{}, "")
+			if err := svc.ConsumeShareUse(context.Background(), "tok"); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+			if len(tokens) != 1 || tokens[0] != "tok" {
+				t.Errorf("store asked for %v, want one use of tok", tokens)
+			}
+		})
 	}
 }
 
@@ -450,6 +460,53 @@ func TestGetSharedMedia_PlaybackURL(t *testing.T) {
 			}
 			if res.PlaybackURL != tt.wantURL || res.Transcoded != tt.transcoded || res.StreamURL != "/s/tok/stream" {
 				t.Errorf("got playback_url=%q transcoded=%v stream_url=%q", res.PlaybackURL, res.Transcoded, res.StreamURL)
+			}
+		})
+	}
+}
+
+// Purging an item removes everything derived from it: the generated
+// thumbnail (task 683) and the cached transcode renditions, here with the
+// real cache and real files. If the row cannot be deleted the item still
+// exists, and both must stay.
+func TestGCWorker_PurgeRemovesThumbnailAndRenditions(t *testing.T) {
+	for _, rowDeleted := range []bool{true, false} {
+		name := map[bool]string{true: "purged", false: "row delete fails"}[rowDeleted]
+		t.Run(name, func(t *testing.T) {
+			now := newMockClock().T
+			root, cacheDir := t.TempDir(), t.TempDir()
+			video := filepath.Join(root, "set", "clip.avi")
+			videoThumb := thumb.ThumbnailPathFor(video)
+			rendition := filepath.Join(cacheDir, "m1-10-1-v3.mp4")
+			other := filepath.Join(cacheDir, "m11-10-1-v3.mp4") // another item's
+			for _, f := range []string{video, videoThumb, rendition, other} {
+				writeThumbFile(t, f)
+			}
+			deletedAt := now.Add(-8 * 24 * time.Hour)
+			store := &repository.MockStore{MediaRepo: repository.MockMediaRepo{
+				ListDeletedMediaFunc: func(context.Context) ([]model.Media, error) {
+					return []model.Media{{ID: 1, RelPath: "clip.avi", AbsPath: video, ThumbnailPath: videoThumb, DeletedAt: &deletedAt}}, nil
+				},
+				HardDeleteMediaFunc: func(context.Context, int64) error {
+					if !rowDeleted {
+						return errors.New("database is locked")
+					}
+					return nil
+				},
+			}}
+			cache := transcode.NewCache(context.Background(), nil, newMockClock(), nil, transcode.Options{Dir: cacheDir, MaxBytes: 1 << 20})
+			w := NewGCWorker(store, newMockClock(), root, time.Minute, nil).WithRenditionCache(cache)
+			if err := w.RunOnce(); err != nil {
+				t.Fatal(err)
+			}
+			if gone := !fileExists(videoThumb); gone != rowDeleted {
+				t.Errorf("thumbnail removed = %v, want %v", gone, rowDeleted)
+			}
+			if gone := !fileExists(rendition); gone != rowDeleted {
+				t.Errorf("rendition removed = %v, want %v", gone, rowDeleted)
+			}
+			if !fileExists(other) {
+				t.Error("rendition of another media item was removed")
 			}
 		})
 	}

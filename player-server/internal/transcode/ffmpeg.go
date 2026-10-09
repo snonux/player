@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -108,6 +109,12 @@ func (f *FFmpegRunner) Transcode(ctx context.Context, job Job) error {
 
 	src := f.probe(ctx, job.Source.Path)
 	if p := planFor(job.Source.Kind, src); p.copyVideo || p.copyAudio {
+		// A copied video stream is as large as it is in the source, so a
+		// source over the cap cannot produce a rendition under it. Refuse
+		// before writing gigabytes only to hit "-fs".
+		if p.copyVideo && job.MaxBytes > 0 && fileSize(job.Source.Path) > job.MaxBytes {
+			return fmt.Errorf("%w: stream copy of a %d byte source", ErrTooLarge, fileSize(job.Source.Path))
+		}
 		err := f.run(ctx, f.args(p, input, out, job.MaxBytes))
 		if err == nil && f.copyLooksRight(ctx, job.Source.Kind, src, out) {
 			return nil
@@ -118,6 +125,15 @@ func (f *FFmpegRunner) Transcode(ctx context.Context, job Job) error {
 		}
 	}
 	return f.run(ctx, f.args(plan{kind: job.Source.Kind}, input, out, job.MaxBytes))
+}
+
+// fileSize returns the size of a file, or 0 when it cannot be read.
+func fileSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
 }
 
 // run executes one ffmpeg invocation.

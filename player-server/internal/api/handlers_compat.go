@@ -57,25 +57,45 @@ func (s *Server) handleCompatStream(w http.ResponseWriter, r *http.Request) {
 		s.writeCompatError(w, r, err)
 		return
 	}
-	s.serveRendition(w, r, rendition)
+	f, ok := s.openRendition(w, rendition)
+	if !ok {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	s.serveRendition(w, r, rendition, f)
 }
 
 // handleShareCompatStream is the public share equivalent of
 // handleCompatStream. Like the other share routes it is never cached by
-// intermediaries, because the token is the only credential. A HEAD probe
-// never consumes a share use; only a GET that delivers content does.
+// intermediaries, because the token is the only credential.
+//
+// A share use is counted only for a GET, and only after the rendition file
+// has been opened: from then on content is certain to be delivered. A HEAD
+// probe, or a rendition that was evicted before it could be opened (503),
+// never costs a use.
 func (s *Server) handleShareCompatStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if !requireService(w, s.media.Compat) {
 		return
 	}
-	countUse := r.Method != http.MethodHead
-	rendition, err := s.media.Compat.SharedCompatStream(r.Context(), r.PathValue("token"), countUse)
+	token := r.PathValue("token")
+	rendition, err := s.media.Compat.SharedCompatStream(r.Context(), token)
 	if err != nil {
 		s.writeCompatError(w, r, err)
 		return
 	}
-	s.serveRendition(w, r, rendition)
+	f, ok := s.openRendition(w, rendition)
+	if !ok {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	if r.Method != http.MethodHead {
+		if err := s.media.Compat.ConsumeShareUse(r.Context(), token); err != nil {
+			s.writeCompatError(w, r, err)
+			return
+		}
+	}
+	s.serveRendition(w, r, rendition, f)
 }
 
 // writeCompatError maps compat-stream errors to responses.
@@ -137,16 +157,15 @@ func writeCompatRetry(w http.ResponseWriter, status, message string) {
 	})
 }
 
-// serveRendition streams a finished rendition with Range support.
+// openRendition opens a finished rendition file. On failure it has written
+// the response and returns false.
 //
 // It does not go through serveFileResult/MediaStreamer: those confine paths
-// to the media root, while renditions live in the transcode cache. The ETag
-// comes from the rendition (it identifies the exact encode) and no
-// Last-Modified is sent, so the ETag is the only validator.
-func (s *Server) serveRendition(w http.ResponseWriter, r *http.Request, rendition *transcode.Rendition) {
+// to the media root, while renditions live in the transcode cache.
+func (s *Server) openRendition(w http.ResponseWriter, rendition *transcode.Rendition) (*os.File, bool) {
 	if rendition == nil {
 		notFound(w)
-		return
+		return nil, false
 	}
 	f, err := os.Open(rendition.Path)
 	if err != nil {
@@ -155,10 +174,15 @@ func (s *Server) serveRendition(w http.ResponseWriter, r *http.Request, renditio
 		// players give up on a file that is merely not cached right now.
 		s.logger.Warn("compat stream open failed", "rendition", filepath.Base(rendition.Path), "err", err)
 		writeCompatRetry(w, compatStatusTranscoding, service.ErrTranscodePending.Error())
-		return
+		return nil, false
 	}
-	defer func() { _ = f.Close() }()
+	return f, true
+}
 
+// serveRendition streams an opened rendition with Range support. The ETag
+// comes from the rendition (it identifies the exact encode) and no
+// Last-Modified is sent, so the ETag is the only validator.
+func (s *Server) serveRendition(w http.ResponseWriter, r *http.Request, rendition *transcode.Rendition, f *os.File) {
 	// The handler may have spent up to 20 s waiting for the transcode, and
 	// the server's write deadline has been running since the request was
 	// read. Restart it so the body gets the same time budget a /stream

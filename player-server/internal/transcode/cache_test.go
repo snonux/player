@@ -310,7 +310,7 @@ func TestCache_BackoffIsCapped(t *testing.T) {
 	c, _, _ := newTestCache(t, &fakeRunner{}, Options{})
 	var last time.Duration
 	for range 12 {
-		last = c.recordFailure(1, failure{err: ErrFailedRecently})
+		last = c.recordFailure(1, failure{err: ErrFailedRecently}, 0)
 	}
 	if last != maxFailureBackoff {
 		t.Errorf("backoff after many failures = %s, want cap %s", last, maxFailureBackoff)
@@ -462,11 +462,11 @@ func TestCache_TimeoutRetriedAfterADay(t *testing.T) {
 	c, src, clk := newTestCache(t, runner, Options{JobTimeout: 20 * time.Millisecond})
 	_, _ = c.Ensure(context.Background(), src)
 	waitIdle(t, c)
-	clk.T = clk.T.Add(timeoutBackoff + time.Minute)
+	clk.T = clk.T.Add(longBackoff + time.Minute)
 	_, _ = c.Ensure(context.Background(), src)
 	waitIdle(t, c)
 	if runner.calls.Load() != 2 {
-		t.Errorf("runner calls = %d, want a second attempt after %s", runner.calls.Load(), timeoutBackoff)
+		t.Errorf("runner calls = %d, want a second attempt after %s", runner.calls.Load(), longBackoff)
 	}
 }
 
@@ -699,7 +699,7 @@ func TestCache_SourceChangedDuringTranscode(t *testing.T) {
 func TestCache_WaitsForSourceToSettle(t *testing.T) {
 	runner := &fakeRunner{payload: "x"}
 	c, src, clk := newTestCache(t, runner, Options{})
-	age(t, src.Path, 0)
+	age(t, src.Path, 2*time.Second) // written two seconds ago
 
 	if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrSourceChanged) {
 		t.Fatalf("fresh source = %v, want ErrSourceChanged", err)
@@ -718,22 +718,164 @@ func TestCache_WaitsForSourceToSettle(t *testing.T) {
 }
 
 // ffmpeg's "-fs" stops the output at the allowed size and exits successfully;
-// such a truncated file must never be published.
-func TestCache_OutputReachingSizeCapIsNoSpace(t *testing.T) {
+// such a truncated file must never be published. When the cap was the cache
+// budget the rendition can never fit: that is remembered, so repeated
+// requests (or anonymous HEAD probes) do not write the budget's worth of
+// data again each time — and it costs the other renditions nothing.
+func TestCache_RenditionOverBudgetIsRememberedAndEvictsNothing(t *testing.T) {
 	var gotCap int64
 	runner := &capRunner{payload: "0123456789", gotCap: &gotCap}
-	c, src, _ := newTestCache(t, runner, Options{MaxBytes: 10})
+	c, src, clk := newTestCache(t, runner, Options{Dir: t.TempDir(), MaxBytes: 10})
+	// Unrelated renditions filling the budget; none of them may be evicted
+	// for a job that cannot succeed.
+	writeCached(t, c.opts.Dir, "m1-10-1-v1.mp4", 4, time.Now().Add(-3*time.Hour))
+	writeCached(t, c.opts.Dir, "m2-10-1-v1.mp4", 4, time.Now().Add(-2*time.Hour))
+	ensure := func() error {
+		_, err := c.Ensure(context.Background(), src)
+		waitIdle(t, c)
+		return err
+	}
 
-	for range 2 { // not backed off: space may be freed any time
-		if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrNoSpace) {
+	for range 3 {
+		if err := ensure(); !errors.Is(err, ErrTooLarge) || errors.Is(err, ErrNoSpace) {
+			t.Fatalf("Ensure error = %v, want ErrTooLarge", err)
+		}
+	}
+	if runner.calls != 1 || gotCap != 10 {
+		t.Errorf("runner ran %d times with cap %d, want once with the budget 10", runner.calls, gotCap)
+	}
+	wantNames(t, c.opts.Dir, "m1-10-1-v1.mp4", "m2-10-1-v1.mp4")
+
+	// Still remembered hours later, but a replaced source is tried at once.
+	clk.T = clk.T.Add(2 * maxFailureBackoff)
+	if err := ensure(); !errors.Is(err, ErrTooLarge) || runner.calls != 1 {
+		t.Fatalf("an hour later: %v after %d runs, want ErrTooLarge without a new run", err, runner.calls)
+	}
+	rewrite(t, src.Path)
+	_ = ensure()
+	if runner.calls != 2 {
+		t.Errorf("runner ran %d times, want a new attempt for the replaced source", runner.calls)
+	}
+}
+
+// A source many times larger than the whole budget is refused before ffmpeg
+// starts: no rendition of it could plausibly fit.
+func TestCache_ImplausiblyLargeSourceIsRefusedUpFront(t *testing.T) {
+	runner := &capRunner{payload: "x", gotCap: new(int64)}
+	c, src, _ := newTestCache(t, runner, Options{Dir: t.TempDir(), MaxBytes: 10})
+	writeCached(t, c.opts.Dir, "m1-10-1-v1.mp4", 9, time.Now().Add(-time.Hour))
+	if err := os.WriteFile(src.Path, make([]byte, 10*implausibleShrink+implausibleShrink), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	age(t, src.Path, time.Hour)
+
+	for range 2 {
+		if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrTooLarge) {
+			t.Fatalf("Ensure error = %v, want ErrTooLarge", err)
+		}
+		waitIdle(t, c)
+	}
+	if runner.calls != 0 {
+		t.Errorf("ffmpeg ran %d times for a source that can never fit", runner.calls)
+	}
+	wantNames(t, c.opts.Dir, "m1-10-1-v1.mp4")
+
+	// Just inside the limit it is given its one try.
+	if err := os.WriteFile(src.Path, make([]byte, 10*implausibleShrink), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	age(t, src.Path, 2*time.Hour)
+	if _, err := c.Ensure(context.Background(), src); err != nil {
+		t.Fatalf("source within the plausible range: %v", err)
+	}
+}
+
+// When the volume's free space, not the budget, set the cap, hitting it means
+// "disk full right now". That heals when space is freed and is not remembered.
+func TestCache_CapFromFreeSpaceIsNoSpaceAndNotRemembered(t *testing.T) {
+	var gotCap int64
+	runner := &capRunner{payload: "0123456789", gotCap: &gotCap}
+	free := int64(1005)
+	c, src, _ := newTestCache(t, runner, Options{
+		MaxBytes: 1 << 20, MinFreeBytes: 1000,
+		FreeSpace: func(string) (int64, error) { return free, nil },
+	})
+	for range 2 {
+		if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrNoSpace) || errors.Is(err, ErrTooLarge) {
 			t.Fatalf("Ensure error = %v, want ErrNoSpace", err)
 		}
 		waitIdle(t, c)
 	}
-	if gotCap != 10 {
-		t.Errorf("runner was given cap %d, want the cache budget 10", gotCap)
+	if runner.calls != 2 || gotCap != 5 {
+		t.Errorf("runner ran %d times with cap %d, want twice (not remembered) with cap 5", runner.calls, gotCap)
 	}
-	wantNames(t, c.opts.Dir)
+	free = 5000
+	if _, err := c.Ensure(context.Background(), src); err != nil {
+		t.Fatalf("after space was freed: %v", err)
+	}
+}
+
+// Old renditions are evicted for a new job only when the volume really lacks
+// the space, and then only as much as the job is assumed to need.
+func TestCache_EvictsForAJobOnlyWhenTheVolumeIsShort(t *testing.T) {
+	runner := &capRunner{payload: "x", gotCap: new(int64)}
+	var dir string
+	used := func() (n int64) {
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if info, err := e.Info(); err == nil {
+				n += info.Size()
+			}
+		}
+		return n
+	}
+	// A 100 byte volume holding nothing but the cache.
+	c, src, _ := newTestCache(t, runner, Options{
+		Dir: t.TempDir(), MaxBytes: 1 << 20, MinFreeBytes: 1,
+		FreeSpace: func(string) (int64, error) { return 100 - used(), nil },
+	})
+	dir = c.opts.Dir
+	writeCached(t, dir, "m1-10-1-v1.mp4", 50, time.Now().Add(-3*time.Hour))
+	writeCached(t, dir, "m2-10-1-v1.mp4", 45, time.Now().Add(-2*time.Hour))
+
+	// 4 bytes are available, the 6 byte source is assumed to need 6:
+	// freeing the oldest rendition is enough, the newer one stays.
+	r, err := c.Ensure(context.Background(), src)
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitIdle(t, c)
+	wantNames(t, dir, "m2-10-1-v1.mp4", filepath.Base(r.Path))
+}
+
+// A modification time in the future (camera clock, clock skew) must not be
+// mistaken for "modified just now" forever.
+func TestCache_FutureMtimeCountsAsSettled(t *testing.T) {
+	runner := &fakeRunner{payload: "x"}
+	c, src, _ := newTestCache(t, runner, Options{})
+	age(t, src.Path, -72*time.Hour) // three days ahead
+
+	if _, err := c.Ensure(context.Background(), src); err != nil {
+		t.Fatalf("source dated in the future: %v", err)
+	}
+}
+
+// Replacing a broken file with a good one must not keep answering from the
+// old file's failure backoff.
+func TestCache_FailureBackoffEndsWhenSourceIsReplaced(t *testing.T) {
+	runner := &fakeRunner{err: errors.New("ffmpeg exploded")}
+	c, src, _ := newTestCache(t, runner, Options{})
+	_, _ = c.Ensure(context.Background(), src)
+	waitIdle(t, c)
+	if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrFailedRecently) {
+		t.Fatalf("same file = %v, want ErrFailedRecently", err)
+	}
+
+	rewrite(t, src.Path)
+	runner.err, runner.payload = nil, "ok"
+	if _, err := c.Ensure(context.Background(), src); err != nil {
+		t.Fatalf("replaced file: %v", err)
+	}
 }
 
 // The cap handed to the runner is what the volume can spare, never more
@@ -770,12 +912,15 @@ func TestCache_RunnerNoSpaceIsNotBackedOff(t *testing.T) {
 }
 
 // capRunner records the size cap it was given and writes a fixed payload.
+// Its fields are read by tests only while no job runs.
 type capRunner struct {
 	payload string
 	gotCap  *int64
+	calls   int
 }
 
 func (r *capRunner) Transcode(_ context.Context, job Job) error {
+	r.calls++
 	*r.gotCap = job.MaxBytes
 	return os.WriteFile(job.Output, []byte(r.payload), 0o644)
 }
