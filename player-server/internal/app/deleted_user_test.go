@@ -44,6 +44,11 @@ func (e *e2e) signIn(user string) (cookie, bearer string) {
 
 // A deleted user must be signed out at once, with the cookie and with the
 // API token, and must lose the sets that were granted to them.
+//
+// This checks the behaviour through the HTTP API on a healthy connection,
+// where the schema's cascade alone is enough. The regressions themselves (a
+// replaced connection without foreign keys, an orphaned session row) are
+// pinned in internal/repository/connection_test.go.
 func TestDeletedUser_IsSignedOutImmediately(t *testing.T) {
 	e := newE2E(t, &fakeRunner{})
 	aliceCookie, aliceToken := e.signIn("alice")

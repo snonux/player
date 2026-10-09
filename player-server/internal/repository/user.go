@@ -75,7 +75,8 @@ func scanUsers(rows *sql.Rows) ([]model.User, error) {
 }
 
 // DeleteUser removes a user by ID together with everything the user owns
-// (sessions, API tokens, permissions, favourites, progress, notes, shares).
+// (sessions, API tokens, permissions, favourites, progress, notes, shares,
+// podcast status; see userOwned).
 func (s *SQLite) DeleteUser(ctx context.Context, id int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
