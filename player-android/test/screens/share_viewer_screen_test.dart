@@ -35,6 +35,7 @@ import 'package:player_android/screens/video_player_screen.dart';
 import 'package:player_android/services/playback_preparer.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/utils/error_mappers.dart';
+import 'package:player_android/widgets/public_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Unauthenticated extends AuthStateNotifier {
@@ -524,6 +525,204 @@ void main() {
     test('dot segments that stay on the endpoint are normalised away', () {
       expect(pick('https://share.example/s/./tok7/x/../compat'),
           'https://share.example/s/tok7/compat');
+    });
+
+    test('keeps the viewing credential, the only query it accepts', () {
+      const view = '1791570469.t1SgGrk2dxCyNpl4ugVK0eAaNUbwCSDJvJ8G9rDi4DU';
+      expect(pick('https://share.example/s/tok7/compat?view=$view'),
+          'https://share.example/s/tok7/compat?view=$view');
+      expect(pick('https://share.example/s/tok7/stream?view=$view'),
+          'https://share.example/s/tok7/stream?view=$view');
+      expect(
+        pick('https://share.example/player/s/tok7/compat?view=$view',
+            base: prefixed),
+        'https://share.example/player/s/tok7/compat?view=$view',
+      );
+      // Normalising the path leaves the credential alone.
+      expect(pick('https://share.example/s/./tok7/x/../compat?view=$view'),
+          'https://share.example/s/tok7/compat?view=$view');
+      // Every character of the credential alphabet.
+      expect(pick('https://share.example/s/tok7/stream?view=aZ09._-'),
+          'https://share.example/s/tok7/stream?view=aZ09._-');
+      // The longest value still taken for a credential.
+      final longest = 'a' * 128;
+      expect(pick('https://share.example/s/tok7/stream?view=$longest'),
+          'https://share.example/s/tok7/stream?view=$longest');
+    });
+
+    test('rejects any other query, also dressed up as a credential', () {
+      const fallback = 'https://share.example/s/tok7/stream';
+      for (final query in [
+        // Not the credential parameter, or not only it.
+        'next=/x',
+        'view=abc&next=/x',
+        'next=/x&view=abc',
+        'view=abc&view=def',
+        'view=abc&',
+        '&view=abc',
+        'View=abc',
+        'view',
+        'view=',
+        '',
+        // Values outside the credential alphabet, raw or percent-encoded.
+        'view=a b',
+        'view=a+b',
+        'view=a/b',
+        'view=a%2Fb',
+        'view=a%26next%3D1',
+        'view=a%00',
+        'view=a%0d%0aX-Injected:1',
+        'view=a;b',
+        'view=a=b',
+        'view=a,b',
+        'view=a@evil.example',
+        'view=https://evil.example/',
+        'view=..%2F..%2Fapi',
+        'view=ä',
+        'view=%C3%A4',
+        // Too long to be a credential.
+        'view=${'a' * 129}',
+        'view=${'a' * 5000}',
+      ]) {
+        expect(pick('https://share.example/s/tok7/compat?$query'), fallback,
+            reason: query);
+      }
+      // A credential does not make a foreign URL acceptable.
+      for (final candidate in [
+        'https://evil.example/s/tok7/compat?view=abc',
+        'https://share.example/s/other/compat?view=abc',
+        'https://share.example/s/tok7/download?view=abc',
+        'https://share.example/s/tok7/../other/compat?view=abc',
+        'https://share.example/s/tok7/compat?view=abc#frag',
+        'https://share.example/s/tok7/compat#?view=abc',
+      ]) {
+        expect(pick(candidate), fallback, reason: candidate);
+      }
+    });
+  });
+
+  group('viewing credential', () {
+    const view = '1791570469.t1SgGrk2dxCyNpl4ugVK0eAaNUbwCSDJvJ8G9rDi4DU';
+
+    /// Share JSON as a server with viewings sends it: every URL carries the
+    /// credential.
+    String shareJson({
+      required String type,
+      required String fileName,
+      String endpoint = 'stream',
+      bool hasThumb = false,
+    }) =>
+        jsonEncode({
+          'media': {'id': 42, 'file_name': fileName, 'type': type},
+          'has_thumb': hasThumb,
+          'transcoded': endpoint == 'compat',
+          'stream_url': '/s/abc123/stream?view=$view',
+          'playback_url': '/s/abc123/$endpoint?view=$view',
+          'download_url': '/s/abc123/download?view=$view',
+          if (hasThumb) 'thumb_url': '/s/abc123/thumbnail?view=$view',
+          'view': view,
+          'view_expires_at': '2026-10-09T18:27:49Z',
+        });
+
+    test('the model keeps the credentialed URLs exactly as sent', () {
+      final page = SharePageMetadata.fromJson(shareJson(
+          type: 'video',
+          fileName: 'holiday.wmv',
+          endpoint: 'compat',
+          hasThumb: true));
+      expect(page.streamUrl, '/s/abc123/stream?view=$view');
+      expect(page.playbackUrl, '/s/abc123/compat?view=$view');
+      expect(page.downloadUrl, '/s/abc123/download?view=$view');
+      expect(page.thumbUrl, '/s/abc123/thumbnail?view=$view');
+    });
+
+    test('without playback_url the credentialed stream_url is played', () {
+      final json = jsonDecode(shareJson(type: 'video', fileName: 'a.mp4'))
+          as Map<String, dynamic>
+        ..remove('playback_url');
+      expect(SharePageMetadata.fromJson(jsonEncode(json)).playbackUrl,
+          '/s/abc123/stream?view=$view');
+    });
+
+    testWidgets('the player and its readiness probe carry the credential',
+        (tester) async {
+      final client = _FakePublicApiClient()
+        ..pageJson = shareJson(
+            type: 'video', fileName: 'holiday.wmv', endpoint: 'compat');
+      final player = await _playShareThroughRouter(tester, client);
+
+      expect(player.mediaUrl, 'http://test.local/s/abc123/compat?view=$view');
+      expect(client.probedUrls,
+          [Uri.parse('http://test.local/s/abc123/compat?view=$view')]);
+      // One metadata fetch is one viewing: playing must not fetch again.
+      expect(client.callCount, 1);
+    });
+
+    testWidgets('an ordinary share plays the credentialed original stream',
+        (tester) async {
+      final client = _FakePublicApiClient()
+        ..pageJson = shareJson(type: 'video', fileName: 'holiday.mp4');
+      final player = await _playShareThroughRouter(tester, client);
+
+      expect(player.mediaUrl, 'http://test.local/s/abc123/stream?view=$view');
+      expect(client.callCount, 1);
+    });
+
+    testWidgets('a tampered credential falls back to the plain stream',
+        (tester) async {
+      final client = _FakePublicApiClient()
+        ..pageJson = shareJson(type: 'video', fileName: 'holiday.mp4')
+            .replaceAll('?view=$view', '?view=$view&next=/api/v1/media');
+      final player = await _playShareThroughRouter(tester, client);
+
+      expect(player.mediaUrl, 'http://test.local/s/abc123/stream');
+    });
+
+    testWidgets('the thumbnail is requested with the credential',
+        (tester) async {
+      final client = _FakePublicApiClient()
+        ..pageJson =
+            shareJson(type: 'video', fileName: 'holiday.mp4', hasThumb: true);
+      await _pumpShareViewerScreen(tester, client);
+      await tester.pumpAndSettle();
+
+      final thumbnail = tester.widget<PublicNetworkImage>(
+          find.byKey(const Key('share_viewer_thumbnail')));
+      expect(
+          thumbnail.imageUrl, 'http://test.local/s/abc123/thumbnail?view=$view');
+    });
+
+    testWidgets('an image share opens the credentialed original',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _FakePublicApiClient()
+        ..pageJson = shareJson(type: 'image', fileName: 'photo.jpg');
+      final container = ProviderContainer(overrides: [
+        authStateProvider.overrideWith(_Unauthenticated.new),
+        firstRunProvider.overrideWith((ref) async => false),
+        publicApiClientProvider.overrideWithValue(client),
+        publicShareBaseUrlProvider.overrideWithValue(Uri.parse(client.base)),
+        apiClientProvider
+            .overrideWith((ref) => throw StateError('No account API')),
+      ]);
+      addTearDown(container.dispose);
+      final router = container.read(routerProvider);
+      addTearDown(router.dispose);
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ));
+      router.go(AppRoutes.shareViewerPath('abc123'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('View Image'));
+      await tester.tap(find.text('View Image'));
+      await tester.pumpAndSettle();
+
+      final viewer =
+          tester.widget<ImageViewerScreen>(find.byType(ImageViewerScreen));
+      expect(viewer.imageUrl, 'http://test.local/s/abc123/stream?view=$view');
+      expect(viewer.isPublicShare, isTrue);
+      expect(tester.takeException(), isNull);
     });
   });
 

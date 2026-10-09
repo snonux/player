@@ -60,7 +60,7 @@ func TestShareService_GetSharedThumbnail(t *testing.T) {
 				},
 			}
 			svc := NewShareService(store, newMockClock(), &accessHelper{store: store})
-			_, err := svc.GetSharedThumbnail(ctx, "abc")
+			_, err := svc.GetSharedThumbnail(ctx, "abc", "")
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -113,7 +113,7 @@ func TestShareService_GetSharedMedia_ThumbnailURL(t *testing.T) {
 				},
 			}
 			svc := NewShareService(store, newMockClock(), &accessHelper{store: store})
-			got, err := svc.GetSharedMedia(ctx, "abc")
+			got, err := svc.GetSharedMedia(ctx, ShareAccess{Token: "abc"})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

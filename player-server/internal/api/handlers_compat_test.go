@@ -69,7 +69,7 @@ func compatEnvReturning(t *testing.T, r *transcode.Rendition, err error) compatT
 	t.Helper()
 	return newCompatTestEnv(t, &service.MockCompatStreamService{
 		CompatStreamFunc:       func(context.Context, int64, int64) (*transcode.Rendition, error) { return r, err },
-		SharedCompatStreamFunc: func(context.Context, string) (*transcode.Rendition, error) { return r, err },
+		SharedCompatStreamFunc: func(context.Context, string, string) (*transcode.Rendition, error) { return r, err },
 	})
 }
 
@@ -318,43 +318,66 @@ func TestCompatStream_HeadTerminalStatuses(t *testing.T) {
 	}
 }
 
+// fakeViewCredential is the only viewing credential shareUseEnv accepts.
+const fakeViewCredential = "good-credential"
+
 // shareUseEnv is an env whose service returns rendition and counts the share
-// uses the handler asks for.
+// uses the handler asks for: one per viewing it has to open, i.e. per call
+// without fakeViewCredential.
 func shareUseEnv(t *testing.T, rendition *transcode.Rendition, useErr error) (compatTestEnv, *int) {
 	t.Helper()
 	uses := new(int)
 	return newCompatTestEnv(t, &service.MockCompatStreamService{
-		SharedCompatStreamFunc: func(context.Context, string) (*transcode.Rendition, error) { return rendition, nil },
-		ConsumeShareUseFunc: func(_ context.Context, token string) error {
+		SharedCompatStreamFunc: func(context.Context, string, string) (*transcode.Rendition, error) { return rendition, nil },
+		EnsureShareViewingFunc: func(_ context.Context, token, credential string) (service.ShareViewing, error) {
 			if token != "tok" {
-				t.Errorf("use counted for token %q", token)
+				t.Errorf("viewing requested for token %q", token)
+			}
+			if credential == fakeViewCredential {
+				return service.ShareViewing{Credential: credential}, nil
 			}
 			*uses++
-			return useErr
+			if useErr != nil {
+				return service.ShareViewing{}, useErr
+			}
+			return service.ShareViewing{Credential: fakeViewCredential, ExpiresAt: time.Now().Add(time.Hour), Opened: true}, nil
 		},
 	}), uses
 }
 
-// A share use is counted exactly when content is delivered: per GET (each
-// Range request, as on /s/{token}/stream), never for a HEAD probe.
-func TestHandleShareCompatStream_CountsUsePerDeliveredGet(t *testing.T) {
+// A share use is counted per viewing: a GET without a viewing credential
+// opens one (and is handed the cookie), requests that present the credential
+// — as cookie or as "view" parameter — are free, and so is every HEAD probe.
+func TestHandleShareCompatStream_CountsUsePerViewing(t *testing.T) {
 	env, uses := shareUseEnv(t, writeRendition(t), nil)
+	cookie := http.Header{"Cookie": {shareViewCookie + "=" + fakeViewCredential}}
+	ranged := http.Header{"Range": {"bytes=0-4"}}
 	steps := []struct {
-		method   string
-		header   http.Header
-		wantCode int
-		wantUses int
+		method     string
+		path       string
+		header     http.Header
+		wantCode   int
+		wantUses   int
+		wantCookie bool
 	}{
-		{http.MethodHead, nil, http.StatusOK, 0},
-		{http.MethodHead, nil, http.StatusOK, 0},
-		{http.MethodGet, nil, http.StatusOK, 1},
-		{http.MethodGet, http.Header{"Range": {"bytes=0-4"}}, http.StatusPartialContent, 2},
-		{http.MethodHead, nil, http.StatusOK, 2},
+		{http.MethodHead, "/s/tok/compat", nil, http.StatusOK, 0, false},
+		{http.MethodGet, "/s/tok/compat", nil, http.StatusOK, 1, true},
+		{http.MethodGet, "/s/tok/compat", cookie, http.StatusOK, 1, false},
+		{http.MethodGet, "/s/tok/compat?view=" + fakeViewCredential, ranged, http.StatusPartialContent, 1, false},
+		{http.MethodHead, "/s/tok/compat", nil, http.StatusOK, 1, false},
+		{http.MethodGet, "/s/tok/compat?view=forged", nil, http.StatusOK, 2, true},
 	}
 	for i, st := range steps {
-		rr := env.send(context.Background(), st.method, "/s/tok/compat", false, st.header)
+		rr := env.send(context.Background(), st.method, st.path, false, st.header)
 		if rr.Code != st.wantCode || *uses != st.wantUses {
 			t.Fatalf("step %d (%s): status %d, uses %d; want %d, %d", i, st.method, rr.Code, *uses, st.wantCode, st.wantUses)
+		}
+		setCookie := rr.Header().Get("Set-Cookie")
+		if got := setCookie != ""; got != st.wantCookie {
+			t.Fatalf("step %d: Set-Cookie %q, want cookie = %v", i, setCookie, st.wantCookie)
+		}
+		if st.wantCookie && !strings.HasPrefix(setCookie, shareViewCookie+"="+fakeViewCredential+"; Path=/s/tok;") {
+			t.Fatalf("step %d: Set-Cookie %q is not the viewing cookie scoped to the share", i, setCookie)
 		}
 	}
 }
@@ -487,7 +510,7 @@ func TestHandleShareCompatStream(t *testing.T) {
 			rendition := writeRendition(t)
 			var gotToken string
 			env := newCompatTestEnv(t, &service.MockCompatStreamService{
-				SharedCompatStreamFunc: func(_ context.Context, token string) (*transcode.Rendition, error) {
+				SharedCompatStreamFunc: func(_ context.Context, token, _ string) (*transcode.Rendition, error) {
 					gotToken = token
 					return rendition, tt.err
 				},

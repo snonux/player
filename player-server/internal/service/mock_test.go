@@ -48,7 +48,7 @@ func TestMockMediaService_Defaults(t *testing.T) {
 	if _, err := m.CreateShare(ctx, 1, 1, time.Now(), nil); err == nil {
 		t.Fatal("expected error")
 	}
-	if _, err := m.StreamSharedMedia(ctx, "abc"); err == nil {
+	if _, _, err := m.StreamSharedMedia(ctx, ShareAccess{Token: "abc"}); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -80,10 +80,12 @@ func TestMockMediaService_WithFuncs(t *testing.T) {
 		ListSharesFunc:         func(ctx context.Context, mediaID, userID int64) ([]model.Share, error) { return nil, nil },
 		RevokeShareFunc:        func(ctx context.Context, token string, userID int64) error { return nil },
 		ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) { return nil, nil },
-		StreamSharedMediaFunc:  func(ctx context.Context, token string) (*FileResult, error) { return nil, nil },
-		GetNoteFunc:            func(ctx context.Context, mediaID, userID int64) (*model.Note, error) { return nil, nil },
-		UpsertNoteFunc:         func(ctx context.Context, note *model.Note) error { return nil },
-		DeleteNoteFunc:         func(ctx context.Context, mediaID, userID int64) error { return nil },
+		StreamSharedMediaFunc: func(ctx context.Context, access ShareAccess) (*FileResult, ShareViewing, error) {
+			return nil, ShareViewing{}, nil
+		},
+		GetNoteFunc:    func(ctx context.Context, mediaID, userID int64) (*model.Note, error) { return nil, nil },
+		UpsertNoteFunc: func(ctx context.Context, note *model.Note) error { return nil },
+		DeleteNoteFunc: func(ctx context.Context, mediaID, userID int64) error { return nil },
 	}
 
 	m.ListSets(ctx, 1)
@@ -104,7 +106,7 @@ func TestMockMediaService_WithFuncs(t *testing.T) {
 	m.ListShares(ctx, 1, 1)
 	m.RevokeShare(ctx, "abc", 1)
 	m.ValidateShareToken(ctx, "abc")
-	m.StreamSharedMedia(ctx, "abc")
+	m.StreamSharedMedia(ctx, ShareAccess{Token: "abc"})
 	m.GetNote(ctx, 1, 1)
 	m.UpsertNote(ctx, &model.Note{MediaID: 1, UserID: 1, Content: "hi"})
 	m.DeleteNote(ctx, 1, 1)

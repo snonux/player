@@ -310,6 +310,43 @@ def test_share(api, media):
     record("revoked share stops working", token and anon_status(f"/s/{token}/stream") >= 400)
     back()
 
+def anon_get(path, headers=None):
+    """Anonymous GET without a cookie jar; returns (status, body)."""
+    req = urllib.request.Request(BASE + path, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as res: return res.status, res.read()
+    except urllib.error.HTTPError as err: return err.code, b""
+
+def test_single_use_share(api, media):
+    """A max_uses=1 share serves one whole viewing, not one HTTP request.
+
+    Server-side only, acting as the app's share viewer does: this script has
+    no way to open a share link inside the app (it drives the UI by taps and
+    never sends a VIEW intent). The app fetches the share JSON once, which
+    opens the viewing, and then plays the JSON's playback_url; that URL
+    carries the viewing credential (?view=), so the player's ranged requests
+    cost no further use. Any client without the credential is turned away.
+    """
+    item = media["sample-mp4.mp4"]
+    status, body = api.call("POST", f"/api/v1/media/{item['id']}/shares", {"max_uses": 1}, raw=True)
+    token = json.loads(body).get("token", "") if status == 200 else ""
+    if not token: return record("single-use share", False, f"create share HTTP {status}")
+    try:
+        status, body = anon_get(f"/s/{token}", {"Accept": "application/json"})
+        meta = json.loads(body) if status == 200 else {}
+        url = meta.get("playback_url", "")
+        record("single-use share: the metadata fetch opens a viewing with a credential",
+               status == 200 and bool(meta.get("view")) and url == f"/s/{token}/stream?view={meta.get('view')}", f"HTTP {status}")
+        ranges = [anon_get(url, {"Range": r})[0] for r in ("bytes=0-1023", "bytes=1024-4095", "bytes=0-")] if url else []
+        record("single-use share: three ranged requests of the viewing are all served", ranges == [206, 206, 206], f"HTTP {ranges}")
+        second, _ = anon_get(f"/s/{token}", {"Accept": "application/json"})
+        direct = anon_status(f"/s/{token}/stream")
+        record("single-use share: a second client is refused", second == 410 and direct == 410, f"metadata HTTP {second}, stream HTTP {direct}")
+        used = next((s["used_count"] for s in api.call("GET", "/api/v1/shares") or [] if s["token"] == token), None)
+        record("single-use share: exactly one use was counted", used == 1, f"used_count={used}")
+    finally:
+        api.call("DELETE", f"/api/v1/shares/{token}", raw=True)
+
 def test_progress(api, media):
     item = media["sample-mkv.mkv"]
     api.call("POST", "/api/v1/progress/status", {"media_id": item["id"], "status": "not_started"}, raw=True)
@@ -373,7 +410,8 @@ def main():
     for ext in FORMATS["test-audio"]: test_audio(ext)
     for ext in FORMATS["test-images"]: test_image(ext)
     for step in (test_search_and_filter, lambda: test_favourite(api, media), lambda: test_tag(api, media),
-                 lambda: test_notes(api, media), lambda: test_share(api, media), lambda: test_progress(api, media),
+                 lambda: test_notes(api, media), lambda: test_share(api, media), lambda: test_single_use_share(api, media),
+                 lambda: test_progress(api, media),
                  lambda: test_settings_admin_logout(expect_admin=True), lambda: test_regular_user(api)):
         try: step()
         except Exception as err: record(f"step crashed: {getattr(step, '__name__', 'step')}", False, repr(err)[:200])

@@ -238,11 +238,15 @@ func (s *Server) routesPublic() {
 // Share routes are dynamic (/s/{token}/...), so we register both the
 // specific mux patterns and a /s/ prefix in the public route registry to
 // cover every concrete token-bearing URL.
+//
+// A share's max_uses counts viewings, not requests: the first GET of a
+// client opens a viewing (one use) and hands it a credential that makes its
+// further requests free; see share_viewing.go. GET patterns also serve HEAD,
+// which never opens a viewing and so never consumes a use on any of these
+// routes; clients use it on the compat route as a readiness probe.
 func (s *Server) routesSharePublic() {
 	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
 	s.mux.HandleFunc("GET /s/{token}/stream", s.handleShareStream)
-	// GET patterns also serve HEAD; clients use HEAD on the compat route as
-	// a readiness probe (it never consumes a share use).
 	s.mux.HandleFunc("GET /s/{token}/compat", s.handleShareCompatStream)
 	s.mux.HandleFunc("GET /s/{token}/thumbnail", s.handleShareThumbnail)
 	s.mux.HandleFunc("GET /s/{token}/download", s.handleShareDownload)

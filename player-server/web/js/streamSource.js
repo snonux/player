@@ -59,9 +59,10 @@ export function mediaErrorReason(error) {
 }
 
 // waitForCompatStream repeats a HEAD request of the compat URL until the
-// rendition exists. HEAD starts/observes the transcode like GET, and the
-// probe itself consumes no use of a share link (the media element's own GET
-// requests still do). It resolves (never rejects) with one of:
+// rendition exists. HEAD starts/observes the transcode like GET and never
+// consumes a use of a share link. (Neither do the media element's GET
+// requests on the share page: the page's viewing cookie covers them.) It
+// resolves (never rejects) with one of:
 //   { state: 'ready' }                  200/206: safe to assign the URL to src
 //   { state: 'failed', reason, status } terminal status (status 0: no answer)
 //   { state: 'cancelled' }              options.signal was aborted
@@ -97,6 +98,11 @@ function failed(status, reason) {
 // probe sends one HEAD request and returns the response, or null when there
 // was none: network error, per-request timeout, or abort (the caller tells
 // the latter apart through the signal).
+//
+// credentials: 'same-origin' is fetch's default, spelled out because it is
+// load-bearing: the probe must carry the session cookie (library) or the
+// share page's viewing cookie. Without the latter, a share whose uses are
+// spent would answer the probe 410 although this viewing may still play.
 async function probe(url, { signal, fetchImpl = fetch, timeoutMs = PROBE_TIMEOUT_MS }) {
   const request = new AbortController();
   const abort = () => request.abort();
@@ -104,7 +110,7 @@ async function probe(url, { signal, fetchImpl = fetch, timeoutMs = PROBE_TIMEOUT
   signal?.addEventListener('abort', abort, { once: true });
   if (signal?.aborted) abort();
   try {
-    return await fetchImpl(url, { method: 'HEAD', cache: 'no-store', signal: request.signal });
+    return await fetchImpl(url, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin', signal: request.signal });
   } catch {
     return null;
   } finally {

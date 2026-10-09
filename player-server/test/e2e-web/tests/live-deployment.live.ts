@@ -287,25 +287,60 @@ test.describe('library as admin', () => {
     expect(state.ok, state.reason).toBe(true);
   });
 
-  // Known limitation (server side, tracked separately): every ranged GET of
-  // /s/{token}/stream or /compat consumes one share use, and a browser sends
-  // several per viewing. A max_uses: 1 share therefore breaks after the first
-  // chunk (second request: 410, MediaError 2). Do not add a single-use
-  // playback assertion here before the server counts one use per viewing;
-  // the shares below have ample uses and must play to the end without error.
+  // A share's max_uses counts viewings, not HTTP requests: opening the share
+  // (page or JSON) costs one use and yields a viewing credential — a cookie
+  // for browsers, the "view" parameter in the JSON's URLs for other clients —
+  // that covers every ranged request of that viewing.
   test('a transcoded share plays to the end through its playback_url without a session', async ({ page, browser }) => {
     const item = await mediaByName(page, 'sample-wmv.wmv');
     await withShare(page, browser, item.id, {}, async (guest, token) => {
-      const meta = (await (await guest.request.get(`/s/${token}`, { headers: { Accept: 'application/json' } })).json()) as { playback_url: string; transcoded: boolean };
+      const meta = (await (await guest.request.get(`/s/${token}`, { headers: { Accept: 'application/json' } })).json()) as { playback_url: string; transcoded: boolean; view: string };
       expect(meta.transcoded).toBe(true);
-      expect(meta.playback_url).toBe(`/s/${token}/compat`);
+      // The JSON form carries the credential in its URLs; the page does not
+      // need it (cookie) and plays the plain path.
+      expect(meta.view).toBeTruthy();
+      expect(meta.playback_url).toBe(`/s/${token}/compat?view=${meta.view}`);
       await guest.goto(`/s/${token}`);
       // The share page does not autoplay; the click is honoured once the stream is ready.
       await guest.locator('#btn-play').click();
       const state = await playbackState(guest, 'video', TRANSCODE_START_MS);
       expect(state.ok, state.reason).toBe(true);
-      expect(await guest.locator('#media-video').getAttribute('src')).toBe(meta.playback_url);
+      expect(await guest.locator('#media-video').getAttribute('src')).toBe(`/s/${token}/compat`);
       await expectCleanPlayback(guest, 'video', 'end');
+    });
+  });
+
+  // The regression this suite once had to leave out: with one use per HTTP
+  // request a max_uses: 1 share broke after the first chunk (second ranged
+  // request: 410, MediaError 2), for transcoded media as for plain MP4.
+  test('a single-use transcoded share plays to the end and is then spent for others', async ({ page, browser }) => {
+    const item = await mediaByName(page, 'sample-wmv.wmv');
+    await withShare(page, browser, item.id, { max_uses: 1 }, async (guest, token) => {
+      const refused: string[] = [];
+      guest.on('response', res => {
+        if (new URL(res.url()).pathname.startsWith(`/s/${token}`) && res.status() === 410) refused.push(res.url());
+      });
+      await guest.goto(`/s/${token}`);
+      await guest.locator('#btn-play').click();
+      const state = await playbackState(guest, 'video', TRANSCODE_START_MS);
+      expect(state.ok, state.reason).toBe(true);
+      await expectCleanPlayback(guest, 'video', 'end');
+      // A reload in the same browser is the same viewing.
+      expect((await guest.reload())?.status()).toBe(200);
+      expect(refused, 'no request of the viewing may be refused').toEqual([]);
+
+      const shares = (await (await page.request.get('/api/v1/shares')).json()) as Array<{ token: string; used_count: number }>;
+      expect(shares.find(s => s.token === token)?.used_count).toBe(1);
+
+      // Any other browser finds the single use spent.
+      const stranger = await browser.newContext();
+      try {
+        for (const path of [`/s/${token}`, `/s/${token}/compat`, `/s/${token}/stream`]) {
+          expect((await stranger.request.get(path)).status(), `${path} for another browser`).toBe(410);
+        }
+      } finally {
+        await stranger.close();
+      }
     });
   });
 

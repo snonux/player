@@ -89,7 +89,13 @@ func newE2E(t *testing.T, runner transcode.Runner) *e2e {
 		stopTranscoding(deps)
 		_ = store.Close()
 	})
-	server, err := NewAPIServer(deps, http.Dir(t.TempDir()), logger)
+	// The static files hold just the share page template, enough for the
+	// HTML form of GET /s/{token}.
+	static := t.TempDir()
+	if err := os.WriteFile(filepath.Join(static, "share.html"), []byte(`<script id="share-meta"><!--SHARE_MEDIA--></script>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewAPIServer(deps, http.Dir(static), logger)
 	if err != nil {
 		t.Fatalf("NewAPIServer: %v", err)
 	}
@@ -269,7 +275,7 @@ func TestCompatStream_ClientContractFields(t *testing.T) {
 		{"media detail", "/api/v1/media/" + id, "alice", []string{`"transcoded":true`}},
 		{"media list", "/api/v1/media", "alice", []string{`"transcoded":true`, `"transcoded":false`}},
 		{"playback hint", "/api/v1/media/" + id + "/playback", "alice", []string{`"playback_url":"/api/v1/media/` + id + `/compat"`, `"transcoded":true`}},
-		{"share metadata", "/s/" + token, "", []string{`"playback_url":"/s/` + token + `/compat"`, `"transcoded":true`}},
+		{"share metadata", "/s/" + token, "", []string{`"playback_url":"/s/` + token + `/compat?view=`, `"transcoded":true`, `"view":"`}},
 	}
 	for _, tt := range tests {
 		rr := e.get(tt.path, tt.user)

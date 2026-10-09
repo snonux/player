@@ -69,17 +69,19 @@ func (s *Server) handleCompatStream(w http.ResponseWriter, r *http.Request) {
 // handleCompatStream. Like the other share routes it is never cached by
 // intermediaries, because the token is the only credential.
 //
-// A share use is counted only for a GET, and only after the rendition file
-// has been opened: from then on content is certain to be delivered. A HEAD
-// probe, or a rendition that was evicted before it could be opened (503),
-// never costs a use.
+// Share uses are counted per viewing (see service/share_viewing.go). A
+// request with a valid viewing credential never costs a use. One without
+// opens a viewing of its own, but only for a GET and only after the
+// rendition file has been opened: from then on content is certain to be
+// delivered. A HEAD probe, or a rendition that was evicted before it could
+// be opened (503), never costs a use.
 func (s *Server) handleShareCompatStream(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
+	preparePublicShare(w)
 	if !requireService(w, s.media.Compat) {
 		return
 	}
-	token := r.PathValue("token")
-	rendition, err := s.media.Compat.SharedCompatStream(r.Context(), token)
+	access := shareAccess(r)
+	rendition, err := s.media.Compat.SharedCompatStream(r.Context(), access.Token, access.Credential)
 	if err != nil {
 		s.writeCompatError(w, r, err)
 		return
@@ -89,11 +91,13 @@ func (s *Server) handleShareCompatStream(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer func() { _ = f.Close() }()
-	if r.Method != http.MethodHead {
-		if err := s.media.Compat.ConsumeShareUse(r.Context(), token); err != nil {
+	if !access.Probe {
+		viewing, err := s.media.Compat.EnsureShareViewing(r.Context(), access.Token, access.Credential)
+		if err != nil {
 			s.writeCompatError(w, r, err)
 			return
 		}
+		s.handOverShareViewing(w, access.Token, viewing)
 	}
 	s.serveRendition(w, r, rendition, f)
 }

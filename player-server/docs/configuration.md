@@ -14,7 +14,7 @@ All settings are environment variables. Unset variables use defaults.
 | `SHARE_DEFAULT_EXPIRY_DAYS` | `7` | ≥ 1 | Default share link lifetime |
 | `PODCAST_CHECK_INTERVAL_MINUTES` | `60` | ≥ 1 | Podcast feed refresh interval |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` | Log verbosity |
-| `SECURE_COOKIES` | `true` | `true` / `false` | Set `Secure` flag on session cookies; set to `false` for plain-HTTP local deployments |
+| `SECURE_COOKIES` | `true` | `true` / `false` | Set `Secure` flag on session cookies and share viewing cookies; set to `false` for plain-HTTP local deployments |
 | `PLAYER_CORS_ORIGINS` | unset | comma-separated origins | Allowed browser origins for credentialed CORS requests; unset/empty emits no CORS headers |
 | `TRANSCODE_CACHE_DIR` | `<DB_PATH>.transcode-cache` | writable directory outside `MEDIA_ROOT` | Cache for compatibility renditions (H.264/AAC) of legacy media; created on first use |
 | `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first); also the largest single rendition |

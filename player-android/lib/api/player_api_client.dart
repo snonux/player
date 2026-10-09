@@ -76,15 +76,23 @@ class PlayerApiClient implements ProgressSyncClient {
   // Shared / public endpoints (no auth required)
   // ---------------------------------------------------------------------------
 
+  // A share's `max_uses` counts viewings. Fetching the share JSON opens one
+  // and returns its credential (`view`); the media calls below take it as
+  // [view] so that they belong to that viewing instead of opening their own.
+
   Future<String> getSharedMediaPage(String token) => throw UnimplementedError();
 
-  Future<Uint8List> streamSharedMedia(String token, {String? range}) =>
+  Future<Uint8List> streamSharedMedia(
+    String token, {
+    String? range,
+    String? view,
+  }) =>
       throw UnimplementedError();
 
-  Future<Uint8List> getSharedThumbnail(String token) =>
+  Future<Uint8List> getSharedThumbnail(String token, {String? view}) =>
       throw UnimplementedError();
 
-  Future<Uint8List> downloadSharedMedia(String token) =>
+  Future<Uint8List> downloadSharedMedia(String token, {String? view}) =>
       throw UnimplementedError();
 
   // ---------------------------------------------------------------------------

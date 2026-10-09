@@ -114,6 +114,13 @@
     // "transcoded" (formats browsers cannot decode); the flag makes the player
     // wait for the rendition instead of loading a 503. Servers without the
     // hint only send stream_url. The decoded name is used in error toasts.
+    //
+    // The URLs are plain same-origin paths without a credential. Loading
+    // this page opened a "viewing" (one use of a share's max_uses) and set
+    // an HttpOnly cookie scoped to /s/{token}; the browser sends it with the
+    // player's HEAD probe, with every ranged media request, the thumbnail
+    // and the download, so none of them costs another use — and neither
+    // does reloading this page.
     const media = { ...data.media, file_name: name, transcoded: !!data.transcoded };
     loadMediaDirect(media, data.playback_url || data.stream_url, data.thumb_url, 0);
     const dlBtn = document.getElementById('btn-download');

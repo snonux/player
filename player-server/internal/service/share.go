@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"codeberg.org/snonux/player/internal/clock"
@@ -13,11 +14,18 @@ import (
 	"codeberg.org/snonux/player/internal/repository"
 )
 
-// shareService handles creation, validation and revocation of share links.
+// shareService handles creation, validation and revocation of share links,
+// and the viewings that count their uses (see share_viewing.go).
 type shareService struct {
 	store  repository.ShareServiceStore
 	clock  clock.Clock
 	helper *accessHelper
+
+	// keyMu guards key, the viewing-credential signing key cached from the
+	// store. The key never changes, so instances that load it separately
+	// (app.wireTranscoding builds a second one) agree.
+	keyMu sync.Mutex
+	key   []byte
 }
 
 // NewShareService creates a ShareService.
@@ -95,7 +103,19 @@ func (s *shareService) RevokeShare(ctx context.Context, token string, userID int
 	return s.store.DeleteShare(ctx, token)
 }
 
+// ValidateShareToken returns the share for a token that a client without a
+// viewing may still open: it exists, has not expired and has uses left.
 func (s *shareService) ValidateShareToken(ctx context.Context, token string) (*model.Share, error) {
+	return s.usableShare(ctx, token, "")
+}
+
+// usableShare returns the share behind token if this request may use it.
+//
+// The share row is loaded on every request, so a revoked (deleted) share
+// answers ErrShareNotFound and an expired one ErrShareExpired at once, also
+// for a client inside a viewing. Only the max_uses check depends on the
+// credential: a valid one means the use was already paid for.
+func (s *shareService) usableShare(ctx context.Context, token, credential string) (*model.Share, error) {
 	share, err := s.store.GetShareByToken(ctx, token)
 	if err != nil {
 		return nil, fmt.Errorf("get share: %w", err)
@@ -103,23 +123,26 @@ func (s *shareService) ValidateShareToken(ctx context.Context, token string) (*m
 	if share == nil {
 		return nil, ErrShareNotFound
 	}
-
-	now := s.clock.Now()
-	if !now.Before(share.ExpiresAt) {
+	if !s.clock.Now().Before(share.ExpiresAt) {
 		return nil, ErrShareExpired
 	}
-
-	if share.MaxUses != nil && share.UsedCount >= *share.MaxUses {
+	if share.MaxUses == nil || share.UsedCount < *share.MaxUses {
+		return share, nil
+	}
+	_, active, err := s.activeViewing(ctx, token, credential)
+	if err != nil {
+		return nil, err
+	}
+	if !active {
 		return nil, ErrShareExpired
 	}
-
 	return share, nil
 }
 
-// ResolveSharedMedia validates a share token and returns the media item it
-// shares, without counting a use.
-func (s *shareService) ResolveSharedMedia(ctx context.Context, token string) (*model.Media, error) {
-	share, err := s.ValidateShareToken(ctx, token)
+// ResolveSharedMedia checks that the request may use the share (see
+// usableShare) and returns the media item it shares. It never counts a use.
+func (s *shareService) ResolveSharedMedia(ctx context.Context, token, credential string) (*model.Media, error) {
+	share, err := s.usableShare(ctx, token, credential)
 	if err != nil {
 		return nil, err
 	}
@@ -134,51 +157,47 @@ func (s *shareService) ResolveSharedMedia(ctx context.Context, token string) (*m
 	return media, nil
 }
 
-// ConsumeShareUse atomically counts one use of a share. It returns
-// ErrShareExpired when the share expired or ran out of uses in the meantime
-// (e.g. another request took the last one).
-func (s *shareService) ConsumeShareUse(ctx context.Context, token string) error {
-	used, err := s.store.UseShare(ctx, token, s.clock.Now())
+// resolveForContent resolves the shared media and the viewing the request
+// runs under. The share is checked first so that a use is only consumed for
+// a share whose media exists. A probe gets no viewing.
+func (s *shareService) resolveForContent(ctx context.Context, access ShareAccess) (*model.Media, ShareViewing, error) {
+	media, err := s.ResolveSharedMedia(ctx, access.Token, access.Credential)
+	if err != nil || access.Probe {
+		return media, ShareViewing{}, err
+	}
+	viewing, err := s.EnsureShareViewing(ctx, access.Token, access.Credential)
 	if err != nil {
-		return fmt.Errorf("use share: %w", err)
+		return nil, ShareViewing{}, err
 	}
-	if !used {
-		return ErrShareExpired
-	}
-	return nil
+	return media, viewing, nil
 }
 
-func (s *shareService) StreamSharedMedia(ctx context.Context, token string) (*FileResult, error) {
-	media, err := s.ResolveSharedMedia(ctx, token)
+// StreamSharedMedia returns the shared original file. A request without a
+// valid viewing credential opens a viewing (one use); the returned viewing
+// then has Opened set and the caller hands its credential to the client.
+func (s *shareService) StreamSharedMedia(ctx context.Context, access ShareAccess) (*FileResult, ShareViewing, error) {
+	media, viewing, err := s.resolveForContent(ctx, access)
 	if err != nil {
-		return nil, err
+		return nil, ShareViewing{}, err
 	}
-	if err := s.ConsumeShareUse(ctx, token); err != nil {
-		return nil, err
-	}
-
 	return &FileResult{
 		Path:     media.AbsPath,
 		FileName: media.FileName,
 		FileSize: media.FileSizeBytes,
 		Duration: media.Duration,
-	}, nil
+	}, viewing, nil
 }
 
-func (s *shareService) GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error) {
-	share, err := s.ValidateShareToken(ctx, token)
+// GetSharedMedia returns the metadata behind the share page and its JSON.
+// Fetching it is what normally opens a viewing; a client that already has
+// one (a page reload) keeps it and is not charged again.
+func (s *shareService) GetSharedMedia(ctx context.Context, access ShareAccess) (*GetSharedMediaResult, error) {
+	media, viewing, err := s.resolveForContent(ctx, access)
 	if err != nil {
 		return nil, err
 	}
 
-	media, err := s.store.GetMediaByID(ctx, share.MediaID)
-	if err != nil {
-		return nil, fmt.Errorf("get media: %w", err)
-	}
-	if media == nil {
-		return nil, ErrMediaNotFound
-	}
-
+	token := access.Token
 	hasThumb := media.ThumbnailPath != ""
 	thumbURL := ""
 	if hasThumb {
@@ -195,37 +214,39 @@ func (s *shareService) GetSharedMedia(ctx context.Context, token string) (*GetSh
 	}
 
 	return &GetSharedMediaResult{
-		Media: &SharedMediaView{
-			ID:            media.ID,
-			FileName:      media.FileName,
-			Type:          media.Type,
-			Duration:      media.Duration,
-			Codec:         media.Codec,
-			Resolution:    media.Resolution,
-			Bitrate:       media.Bitrate,
-			FileSizeBytes: media.FileSizeBytes,
-		},
+		Media:       sharedMediaView(media),
 		HasThumb:    hasThumb,
 		StreamURL:   streamURL,
 		PlaybackURL: playbackURL,
 		Transcoded:  transcoded,
 		DownloadURL: fmt.Sprintf("/s/%s/download", token),
 		ThumbURL:    thumbURL,
+		Viewing:     viewing,
 	}, nil
 }
 
-func (s *shareService) GetSharedThumbnail(ctx context.Context, token string) (*FileResult, error) {
-	share, err := s.ValidateShareToken(ctx, token)
+// sharedMediaView copies the public subset of a media item.
+func sharedMediaView(media *model.Media) *SharedMediaView {
+	return &SharedMediaView{
+		ID:            media.ID,
+		FileName:      media.FileName,
+		Type:          media.Type,
+		Duration:      media.Duration,
+		Codec:         media.Codec,
+		Resolution:    media.Resolution,
+		Bitrate:       media.Bitrate,
+		FileSizeBytes: media.FileSizeBytes,
+	}
+}
+
+// GetSharedThumbnail returns the shared item's thumbnail. It never opens a
+// viewing: a thumbnail is not the shared content, and link previews must not
+// spend uses. It is served to a client inside a viewing, and — as before
+// viewings existed — to anyone while the share still has uses left.
+func (s *shareService) GetSharedThumbnail(ctx context.Context, token, credential string) (*FileResult, error) {
+	media, err := s.ResolveSharedMedia(ctx, token, credential)
 	if err != nil {
 		return nil, err
-	}
-
-	media, err := s.store.GetMediaByID(ctx, share.MediaID)
-	if err != nil {
-		return nil, fmt.Errorf("get media: %w", err)
-	}
-	if media == nil {
-		return nil, ErrMediaNotFound
 	}
 	if media.ThumbnailPath == "" {
 		return nil, ErrMediaNotFound

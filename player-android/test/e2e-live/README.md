@@ -12,6 +12,13 @@ regular user with one granted set, and log out.
 It is not part of `flutter test`: it needs an emulator, a released APK and a
 reachable server, and it takes about 20 minutes per server.
 
+One check is server-side only: the single-use share (`max_uses: 1`). The
+script cannot open a share link inside the app (it drives the UI by taps and
+sends no VIEW intent), so it acts as the app's share viewer does over HTTP:
+one metadata fetch, three ranged requests of the returned `playback_url`
+(which carries the viewing credential), and then a second client that must be
+refused with `410`.
+
 ## Why adb and not integration_test
 
 The run is meant to exercise the released, signed APK exactly as F-Droid
