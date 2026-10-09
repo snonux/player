@@ -68,6 +68,23 @@ function card(page: Page, fileName: string) {
   return page.locator(`#media-grid .media-card[aria-label="${fileName}"]`);
 }
 
+// clickCardAction presses one of a card's action buttons the way a user
+// does: hover the card (the buttons only show on hover or selection), then
+// click with Playwright's normal checks. A forced click skips the "element
+// is stable" check and, while the grid is still settling, can land on the
+// neighbouring card and start the wrong item.
+async function clickCardAction(page: Page, fileName: string, action: string) {
+  const target = card(page, fileName);
+  await target.scrollIntoViewIfNeeded();
+  await target.hover();
+  await target.locator(`[data-action="${action}"]`).click();
+}
+
+async function resetProgress(page: Page, mediaId: number) {
+  const res = await page.request.post('/api/v1/progress/status', { data: { media_id: mediaId, status: 'not_started' } });
+  expect(res.ok()).toBeTruthy();
+}
+
 async function allMedia(page: Page): Promise<Media[]> {
   const res = await page.request.get('/api/v1/media?limit=500');
   expect(res.ok()).toBeTruthy();
@@ -131,7 +148,11 @@ const CLEAN_PLAY_SECONDS = 3;
 async function playAndObserve(page: Page, set: string, kind: 'video' | 'audio', ext: string) {
   await openSet(page, set);
   const item = await mediaByName(page, `sample-${ext}.${ext}`);
-  await card(page, item.file_name).locator('[data-action="play"]').click({ force: true });
+  // Start from the beginning: progress saved by an earlier run would make
+  // the player resume near the end of these short samples, finish within a
+  // second and move on to the next file, which this test would then observe.
+  await resetProgress(page, item.id);
+  await clickCardAction(page, item.file_name, 'play');
   await expect(page.locator('#player')).toHaveClass(/open/);
   const state = await playbackState(page, kind, item.transcoded ? TRANSCODE_START_MS : PLAIN_START_MS);
   const src = await page.locator(`#media-${kind}`).evaluate((el: HTMLMediaElement) => el.getAttribute('src') || '');
@@ -249,7 +270,7 @@ test.describe('library as admin', () => {
     test(`image .${ext} opens in the viewer`, async ({ page }) => {
       await openSet(page, 'test-images');
       const item = await mediaByName(page, `sample-${ext}.${ext}`);
-      await card(page, item.file_name).locator('[data-action="play"]').click({ force: true });
+      await clickCardAction(page, item.file_name, 'play');
       await expect(page.locator('#player')).toHaveClass(/open.*has-image/);
       const image = page.locator('#media-image');
       await expect(image).toHaveAttribute('src', new RegExp(`/api/media/${item.id}/stream$`));
@@ -266,7 +287,7 @@ test.describe('library as admin', () => {
       body: Buffer.alloc(64 * 1024, 0x5a),
     }));
     await openSet(page, 'test-videos');
-    await card(page, item.file_name).locator('[data-action="play"]').click({ force: true });
+    await clickCardAction(page, item.file_name, 'play');
     await expect(page.locator('#toast')).toContainText(`Cannot play ${item.file_name}:`, { timeout: 15_000 });
     await expect(page.locator('#toast')).toHaveClass(/error/);
     await expect(page.locator('#btn-play')).toHaveText('▶');
@@ -283,7 +304,7 @@ test.describe('library as admin', () => {
       body: JSON.stringify({ error: 'transcode failed' }),
     }));
     await openSet(page, 'test-videos');
-    await card(page, item.file_name).locator('[data-action="play"]').click({ force: true });
+    await clickCardAction(page, item.file_name, 'play');
     await expect(page.locator('#toast')).toContainText(`Cannot play ${item.file_name}: the server could not convert this file`);
     await expect(page.locator('#btn-play')).toHaveText('▶');
     expect(await page.locator('#media-video').getAttribute('src')).toBeNull();
@@ -436,7 +457,7 @@ test.describe('library as admin', () => {
   test('playback progress is stored on the server', async ({ page }) => {
     const item = await mediaByName(page, 'sample-ogg.ogg');
     await openSet(page, 'test-audio');
-    await card(page, item.file_name).locator('[data-action="play"]').click({ force: true });
+    await clickCardAction(page, item.file_name, 'play');
     // The player posts its position every 3s while playing. /in-progress is
     // not usable here: it needs 60s of accumulated playback and the samples
     // are 12s long, so the saved position is read from the media detail.
@@ -450,7 +471,7 @@ test.describe('library as admin', () => {
 
     // Reopening the item resumes from the saved position instead of 0.
     await openSet(page, 'test-audio');
-    await card(page, item.file_name).locator('[data-action="play"]').click({ force: true });
+    await clickCardAction(page, item.file_name, 'play');
     await expect.poll(() => page.locator('#media-audio').evaluate((el: HTMLMediaElement) => el.currentTime), { timeout: 10_000 }).toBeGreaterThan(2.5);
     const firstSeen = await page.locator('#media-audio').evaluate((el: HTMLMediaElement) => el.currentTime);
     expect(firstSeen, 'playback should resume near the saved position').toBeGreaterThan((detail.progress?.position_seconds ?? 0) - 0.5);
@@ -486,7 +507,7 @@ test.describe('library as admin', () => {
     const item = await mediaByName(page, 'sample-wav.wav');
     await openSet(page, 'test-audio');
     const downloading = page.waitForEvent('download');
-    await card(page, item.file_name).locator('[data-action="download"]').click({ force: true });
+    await clickCardAction(page, item.file_name, 'download');
     const download = await downloading;
     expect(download.suggestedFilename()).toBe(item.file_name);
     const { statSync } = await import('node:fs');
@@ -547,7 +568,7 @@ test.describe('permissions and logout', () => {
     await expect(page.locator('.set-card')).toHaveCount(1);
     await expect(page.locator('.set-card')).toContainText('test-images');
     await openSet(page, 'test-images');
-    await card(page, 'sample-jpg.jpg').locator('[data-action="play"]').click({ force: true });
+    await clickCardAction(page, 'sample-jpg.jpg', 'play');
     await expect.poll(() => page.locator('#media-image').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
     const video = (await allMedia(adminPage)).find(m => m.file_name === 'sample-mp4.mp4')!;
     expect((await page.request.get(`/api/v1/media/${video.id}/stream`)).status()).toBeGreaterThanOrEqual(400);

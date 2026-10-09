@@ -205,6 +205,19 @@ def test_library_listing():
 # copy and shows "Preparing playback…" until the server has it ready.
 TRANSCODED = set()
 
+# Filled in main(): the admin API client and media ids by file name.
+SERVER = {"api": None, "ids": {}}
+
+def reset_progress(name):
+    """Forget saved progress, so playback starts at 0:00.
+
+    Progress left by an earlier run would resume these short samples near
+    their end; the clip then finishes before the screenshots are taken.
+    """
+    media_id = SERVER["ids"].get(name)
+    if SERVER["api"] and media_id:
+        SERVER["api"].call("POST", "/api/v1/progress/status", {"media_id": media_id, "status": "not_started"}, raw=True)
+
 def start_playback(button, name, settle):
     """Tap the play button and return once playback should be running.
 
@@ -213,6 +226,7 @@ def start_playback(button, name, settle):
     poll is a slow UI dump, which is why plain files skip it: their short
     samples would be over before the screenshots are taken).
     """
+    reset_progress(name)
     adrv.tap(button)
     if name not in TRANSCODED:
         time.sleep(settle); return
@@ -436,6 +450,7 @@ def main():
     api = API(ENV["E2E_ADMIN_USER"], ENV["E2E_ADMIN_PASS"])
     media = {m["file_name"]: m for m in api.call("GET", "/api/v1/media?limit=500")}
     TRANSCODED.update(name for name, m in media.items() if m.get("transcoded"))
+    SERVER.update(api=api, ids={name: m["id"] for name, m in media.items()})
     record("admin can sign in", connect_and_login(ENV["E2E_ADMIN_USER"], ENV["E2E_ADMIN_PASS"], check_wrong_password=True))
     test_library_listing()
     for ext in FORMATS["test-videos"]: test_video(ext)
