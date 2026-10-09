@@ -1,131 +1,27 @@
-import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
 
-import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:vector_graphics/vector_graphics.dart';
-import 'package:vector_graphics_compiler/vector_graphics_compiler.dart'
-    show encodeSvg;
+import 'package:vector_graphics/vector_graphics.dart' show PictureInfo;
 
-/// Downloads the raw bytes of an SVG document.
-typedef SvgFetcher = Future<Uint8List> Function(
-    Uri uri, Map<String, String> headers);
+import '../providers/svg_picture_provider.dart';
 
-/// True when [fileName] or the path of [url] names an SVG document.
+/// Builders shared by the bitmap and SVG image widgets; the signatures are
+/// those of `CachedNetworkImage`.
+typedef ImagePlaceholderBuilder = Widget Function(BuildContext, String);
+typedef ImageErrorBuilder = Widget Function(BuildContext, String, Object);
+
+/// Renders an SVG document from the network as a vector drawing.
 ///
-/// The server picks the media type from the file extension and returns the
-/// original SVG for both the stream and the thumbnail of such a file. Those
-/// endpoint URLs carry no extension, so callers pass the media file name;
-/// the URL path is checked as well for links that do end in `.svg`.
-/// Flutter's bitmap decoders cannot read SVG, so these images must take the
-/// vector path instead of `Image`/`CachedNetworkImage`.
-bool isSvgSource({String? fileName, required String url}) {
-  bool hasSvgExtension(String? name) =>
-      name != null && name.trim().toLowerCase().endsWith('.svg');
-  return hasSvgExtension(fileName) || hasSvgExtension(Uri.tryParse(url)?.path);
-}
-
-/// Fetches SVG bytes with a bare Dio client.
+/// [errorWidget] is shown for a failed download and for every document
+/// that is rejected (not SVG, malformed, unusable size, nothing to draw,
+/// too large or too complex; see `svg_document.dart`).
 ///
-/// The client has no interceptors on purpose: the caller decides which
-/// headers a request carries, so a public share never receives account
-/// credentials. A non-2xx status throws and becomes the image's error state.
-/// Tests override this provider to serve documents without a network.
-final svgFetcherProvider = Provider<SvgFetcher>((ref) {
-  final dio = Dio();
-  ref.onDispose(dio.close);
-  return (uri, headers) async {
-    final response = await dio.getUri<Uint8List>(
-      uri,
-      options: Options(headers: headers, responseType: ResponseType.bytes),
-    );
-    return response.data ?? Uint8List(0);
-  };
-});
-
-/// One SVG download. Equality uses only [cacheKey], so widgets showing the
-/// same image for the same account share one download and one parse.
-@immutable
-class SvgRequest {
-  const SvgRequest({
-    required this.uri,
-    required this.cacheKey,
-    this.headers = const {},
-  });
-
-  final Uri uri;
-  final Map<String, String> headers;
-
-  /// Must change when [headers] select another account. It must not hold
-  /// credentials, as it ends up in provider debug output.
-  final String cacheKey;
-
-  @override
-  bool operator ==(Object other) =>
-      other is SvgRequest && other.cacheKey == cacheKey;
-
-  @override
-  int get hashCode => cacheKey.hashCode;
-}
-
-/// Downloads an SVG and compiles it to the vector_graphics binary format.
-///
-/// Both steps happen here rather than inside a vector_graphics loader:
-/// `VectorGraphic` reports a failing loader as an unhandled async error in
-/// addition to calling its error builder. Here a failed download or a
-/// document that is not valid SVG is an ordinary provider error. The result
-/// lives while a widget shows it; a later visit downloads again, which also
-/// retries after a failure.
-final compiledSvgProvider =
-    FutureProvider.autoDispose.family<ByteData, SvgRequest>(
-  (ref, request) async {
-    final fetch = ref.watch(svgFetcherProvider);
-    final bytes = await fetch(request.uri, request.headers);
-    return compute(_compileSvg, bytes, debugLabel: 'Compile SVG');
-  },
-);
-
-/// Parses SVG text; throws when the document is not valid SVG.
-///
-/// Runs in a background isolate because parsing a large drawing is slow.
-/// The optimizers stay off: they need native libraries that only exist in
-/// the build-time tooling, not in the app.
-ByteData _compileSvg(Uint8List bytes) => encodeSvg(
-      xml: utf8.decode(bytes, allowMalformed: true),
-      debugName: 'network svg',
-      enableMaskingOptimizer: false,
-      enableClippingOptimizer: false,
-      enableOverdrawOptimizer: false,
-    ).buffer.asByteData();
-
-/// Hands already compiled bytes to [VectorGraphic]; it cannot fail.
-///
-/// Equality is the identity of [bytes], so every widget fed by the same
-/// [compiledSvgProvider] result shares one decoded picture.
-class _CompiledSvgLoader extends BytesLoader {
-  const _CompiledSvgLoader(this.bytes);
-
-  final ByteData bytes;
-
-  @override
-  Future<ByteData> loadBytes(BuildContext? context) =>
-      SynchronousFuture<ByteData>(bytes);
-
-  @override
-  bool operator ==(Object other) =>
-      other is _CompiledSvgLoader && identical(other.bytes, bytes);
-
-  @override
-  int get hashCode => identityHashCode(bytes);
-}
-
-/// Renders an SVG document from the network.
-///
-/// [placeholder] and [errorWidget] use the same signatures as
-/// `CachedNetworkImage`, so one pair of builders serves bitmaps and SVGs.
-/// [errorWidget] is shown for a failed download as well as for a document
-/// that is not valid SVG, so a broken image is never a blank area.
+/// Sizing: an SVG has no pixel size, so without [width]/[height] the
+/// drawing takes all the space its parent offers and is placed in it
+/// according to [fit]. Only under unbounded constraints does it fall back
+/// to the size declared in the document.
 class NetworkSvgImage extends ConsumerWidget {
   const NetworkSvgImage({
     super.key,
@@ -133,22 +29,17 @@ class NetworkSvgImage extends ConsumerWidget {
     required this.placeholder,
     required this.errorWidget,
     this.headers = const {},
-    this.cacheKey,
     this.fit,
     this.width,
     this.height,
   });
 
   final String imageUrl;
-  final Widget Function(BuildContext, String) placeholder;
-  final Widget Function(BuildContext, String, Object) errorWidget;
+  final ImagePlaceholderBuilder placeholder;
+  final ImageErrorBuilder errorWidget;
 
   /// Request headers. Empty for public shares, whose URL holds the token.
   final Map<String, String> headers;
-
-  /// See [SvgRequest.cacheKey]; defaults to [imageUrl], which is enough when
-  /// no [headers] are sent.
-  final String? cacheKey;
   final BoxFit? fit;
   final double? width;
   final double? height;
@@ -158,21 +49,125 @@ class NetworkSvgImage extends ConsumerWidget {
     final uri = Uri.tryParse(imageUrl);
     if (uri == null) {
       return errorWidget(
-          context, imageUrl, FormatException('Invalid image URL', imageUrl));
+          context, imageUrl, const FormatException('Invalid image URL'));
     }
-    final request =
-        SvgRequest(uri: uri, headers: headers, cacheKey: cacheKey ?? imageUrl);
-    return ref.watch(compiledSvgProvider(request)).when(
+    final request = SvgRequest(uri: uri, headers: headers);
+    return ref.watch(svgPictureProvider(request)).when(
           loading: () => placeholder(context, imageUrl),
           error: (error, _) => errorWidget(context, imageUrl, error),
-          data: (bytes) => VectorGraphic(
-            loader: _CompiledSvgLoader(bytes),
+          data: (info) => SvgPictureBox(
+            info: info,
             fit: fit ?? BoxFit.contain,
             width: width,
             height: height,
-            errorBuilder: (context, error, _) =>
-                errorWidget(context, imageUrl, error),
           ),
         );
   }
+}
+
+/// Paints a decoded SVG picture scaled into a box.
+///
+/// The picture is replayed by the canvas at the final scale: nothing is
+/// rasterised up front, so the drawing stays sharp at any zoom level and its
+/// declared size (which the file controls) never becomes a bitmap size.
+class SvgPictureBox extends StatelessWidget {
+  const SvgPictureBox({
+    super.key,
+    required this.info,
+    required this.fit,
+    this.width,
+    this.height,
+  });
+
+  final PictureInfo info;
+  final BoxFit fit;
+  final double? width;
+  final double? height;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final size = _boxSize(constraints);
+          return SizedBox(
+            width: size.width,
+            height: size.height,
+            child: FittedBox(
+              fit: fit,
+              clipBehavior: Clip.hardEdge,
+              child: SizedBox.fromSize(
+                size: info.size,
+                child: CustomPaint(painter: _PicturePainter(info.picture)),
+              ),
+            ),
+          );
+        },
+      );
+
+  /// Explicit sizes win, then the space on offer; a side that is neither
+  /// given nor bounded follows the drawing's aspect ratio.
+  Size _boxSize(BoxConstraints constraints) {
+    final w =
+        width ?? (constraints.hasBoundedWidth ? constraints.maxWidth : null);
+    final h =
+        height ?? (constraints.hasBoundedHeight ? constraints.maxHeight : null);
+    final aspect = info.size.width / info.size.height;
+    if (w != null && h != null) return Size(w, h);
+    if (w != null) return Size(w, w / aspect);
+    if (h != null) return Size(h * aspect, h);
+    return info.size;
+  }
+}
+
+class _PicturePainter extends CustomPainter {
+  const _PicturePainter(this.picture);
+
+  final ui.Picture picture;
+
+  @override
+  void paint(Canvas canvas, Size size) => canvas.drawPicture(picture);
+
+  @override
+  bool shouldRepaint(_PicturePainter oldDelegate) =>
+      !identical(oldDelegate.picture, picture);
+}
+
+/// True when [error] from a bitmap loader may mean "this is not a bitmap".
+///
+/// Transport failures (HTTP status, socket, TLS) say nothing about the
+/// format, and retrying them as SVG would only repeat a request that just
+/// failed. Anything else is treated as a decode failure.
+bool isBitmapDecodeFailure(Object error) =>
+    error is! IOException && error is! NetworkImageLoadException;
+
+/// Error handler for bitmap loaders showing an image of unknown type.
+///
+/// Folder and set covers and some public shares have no file name, so an
+/// SVG among them is first handed to the bitmap decoder and fails there.
+/// For such a failure this returns a [NetworkSvgImage], which downloads the
+/// file again and accepts it only if its content is SVG; otherwise, and for
+/// transport errors, it returns [errorWidget] right away.
+Widget bitmapErrorOrSvg(
+  BuildContext context, {
+  required Object error,
+  required String imageUrl,
+  required ImagePlaceholderBuilder placeholder,
+  required ImageErrorBuilder errorWidget,
+  Map<String, String> headers = const {},
+  BoxFit? fit,
+  double? width,
+  double? height,
+}) {
+  if (!isBitmapDecodeFailure(error)) {
+    return errorWidget(context, imageUrl, error);
+  }
+  return NetworkSvgImage(
+    imageUrl: imageUrl,
+    headers: headers,
+    fit: fit,
+    width: width,
+    height: height,
+    placeholder: placeholder,
+    // Report the bitmap failure: it describes the image the caller asked for.
+    errorWidget: (context, url, _) => errorWidget(context, url, error),
+  );
 }

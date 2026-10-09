@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/auth_state_provider.dart';
 import '../api/dio_client.dart';
+import '../services/svg_document.dart';
 import 'network_svg_image.dart';
 
 /// Keep protected image caches separate across credentials and accounts.
@@ -38,11 +39,12 @@ final authenticatedImageHeadersProvider = FutureProvider.autoDispose
 
 /// Image whose request uses the same credentials as protected API calls.
 ///
-/// Bitmaps load through [CachedNetworkImage]. SVG documents, recognised by
-/// [sourceName] or the URL (see [isSvgSource]), load through
-/// [NetworkSvgImage] with the same headers and an equally account-specific
-/// cache key. In both cases [errorWidget] replaces an image that cannot be
-/// downloaded or decoded.
+/// Bitmaps load through [CachedNetworkImage]. SVG documents load through
+/// [NetworkSvgImage] with the same headers. An SVG is recognised up front
+/// by [sourceName] or the URL (see [isSvgSource]); an image without a name,
+/// such as a folder cover, is recognised by content after the bitmap
+/// decoder rejected it (see [bitmapErrorOrSvg]). In every case [errorWidget]
+/// replaces an image that cannot be downloaded or decoded.
 class AuthenticatedNetworkImage extends ConsumerWidget {
   const AuthenticatedNetworkImage({
     super.key,
@@ -60,16 +62,21 @@ class AuthenticatedNetworkImage extends ConsumerWidget {
   /// File name of the media behind [imageUrl], used to recognise SVG:
   /// thumbnail and stream URLs do not carry the file extension.
   final String? sourceName;
-  final Widget Function(BuildContext, String) placeholder;
-  final Widget Function(BuildContext, String, Object) errorWidget;
+  final ImagePlaceholderBuilder placeholder;
+  final ImageErrorBuilder errorWidget;
   final BoxFit? fit;
   final double? width;
   final double? height;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final headers =
-        ref.watch(authenticatedImageHeadersProvider(Uri.parse(imageUrl)));
+    // A malformed URL is an image error like any other, not a build failure.
+    final uri = Uri.tryParse(imageUrl);
+    if (uri == null) {
+      return errorWidget(
+          context, imageUrl, const FormatException('Invalid image URL'));
+    }
+    final headers = ref.watch(authenticatedImageHeadersProvider(uri));
     return headers.when(
       loading: () => placeholder(context, imageUrl),
       error: (error, _) => errorWidget(context, imageUrl, error),
@@ -81,11 +88,9 @@ class AuthenticatedNetworkImage extends ConsumerWidget {
   }
 
   Widget _image(Map<String, String> headers) {
-    final cacheKey = authenticatedImageCacheKey(imageUrl, headers);
     if (isSvgSource(fileName: sourceName, url: imageUrl)) {
       return NetworkSvgImage(
         imageUrl: imageUrl,
-        cacheKey: cacheKey,
         headers: headers,
         fit: fit,
         width: width,
@@ -96,13 +101,23 @@ class AuthenticatedNetworkImage extends ConsumerWidget {
     }
     return CachedNetworkImage(
       imageUrl: imageUrl,
-      cacheKey: cacheKey,
+      cacheKey: authenticatedImageCacheKey(imageUrl, headers),
       httpHeaders: headers,
       fit: fit,
       width: width,
       height: height,
       placeholder: placeholder,
-      errorWidget: errorWidget,
+      errorWidget: (context, _, error) => bitmapErrorOrSvg(
+        context,
+        error: error,
+        imageUrl: imageUrl,
+        headers: headers,
+        fit: fit,
+        width: width,
+        height: height,
+        placeholder: placeholder,
+        errorWidget: errorWidget,
+      ),
     );
   }
 }

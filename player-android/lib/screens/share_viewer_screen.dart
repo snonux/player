@@ -9,7 +9,7 @@ import '../providers/auth_state_provider.dart';
 import '../providers/public_api_client_provider.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
-import '../widgets/network_svg_image.dart';
+import '../widgets/public_network_image.dart';
 
 // ---------------------------------------------------------------------------
 // Share page metadata model
@@ -298,33 +298,19 @@ class _ThumbnailWidget extends ConsumerWidget {
       borderRadius: BorderRadius.circular(8),
       child: AspectRatio(
         aspectRatio: 16 / 9,
-        child: _image(absoluteThumbUrl),
+        // No credentials: the share token is in the URL. The thumbnail of
+        // an SVG share is the SVG itself and is drawn as a vector. If the
+        // image fails to load or decode, fall back to the type icon so the
+        // viewer always sees something meaningful.
+        child: PublicNetworkImage(
+          key: const Key('share_viewer_thumbnail'),
+          imageUrl: absoluteThumbUrl,
+          sourceName: page.fileName,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => const SizedBox.shrink(),
+          errorWidget: (_, __, ___) => _FallbackThumbnail(type: page.type),
+        ),
       ),
-    );
-  }
-
-  /// Builds the thumbnail without credentials: the share token is in the URL.
-  ///
-  /// The thumbnail of an SVG share is the SVG itself, so it is drawn as a
-  /// vector. Either kind falls back to the type icon if the image fails to
-  /// load or decode, so the viewer always sees something meaningful.
-  Widget _image(String url) {
-    const key = Key('share_viewer_thumbnail');
-    Widget fallback() => _FallbackThumbnail(type: page.type);
-    if (isSvgSource(fileName: page.fileName, url: url)) {
-      return NetworkSvgImage(
-        key: key,
-        imageUrl: url,
-        fit: BoxFit.cover,
-        placeholder: (_, __) => const SizedBox.shrink(),
-        errorWidget: (_, __, ___) => fallback(),
-      );
-    }
-    return Image.network(
-      url,
-      key: key,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => fallback(),
     );
   }
 }

@@ -5,10 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
+import 'package:player_android/services/svg_fetcher.dart';
 import 'package:player_android/widgets/authenticated_network_image.dart';
 import 'package:player_android/widgets/network_svg_image.dart';
-import 'package:vector_graphics/vector_graphics.dart';
 
+import '../support/fake_http.dart';
+import '../support/real_image_loading.dart';
 import '../support/svg_test_support.dart';
 
 class _TokenStorage implements TokenStorage {
@@ -23,22 +25,50 @@ class _TokenStorage implements TokenStorage {
   Future<void> deleteToken() async => token = null;
 }
 
+const baseUrl = 'https://player.example';
+const imageUrl = '$baseUrl/api/v1/media/1/thumbnail';
+
+Widget image(String url, {String? sourceName}) => MaterialApp(
+      home: Scaffold(
+        body: AuthenticatedNetworkImage(
+          imageUrl: url,
+          sourceName: sourceName,
+          placeholder: (_, __) => const Text('loading'),
+          errorWidget: (_, __, ___) => const Text('image unavailable'),
+        ),
+      ),
+    );
+
+/// Scope with a signed-in account; [fetcher] serves SVG downloads.
+Widget signedIn(Widget child, {RecordingSvgFetcher? fetcher}) => ProviderScope(
+      overrides: [
+        playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
+        tokenStorageProvider.overrideWithValue(_TokenStorage('pt-restored')),
+        cookieJarProvider.overrideWithValue(CookieJar()),
+        credentialMutationQueueProvider.overrideWithValue(
+            CredentialMutationQueue(credentialsEnabled: true)),
+        if (fetcher != null)
+          svgFetcherProvider.overrideWithValue(fetcher.fetcher),
+      ],
+      child: child,
+    );
+
+final _error = find.text('image unavailable');
+final _picture = find.byType(SvgPictureBox);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const baseUrl = 'https://player.example';
-  const imageUrl = '$baseUrl/api/v1/media/1/thumbnail';
+  // Must stay the first group that creates a CachedNetworkImage: the image
+  // cache keeps the HTTP client it was first used with.
+  group('real bitmap pipeline', _realBitmapTests);
+  group('SVG by file name', _svgTests);
+  group('request credentials', _credentialTests);
+  group('origin check', _originTests);
+  group('cache key', _cacheKeyTests);
+  group('credential gate', _credentialGateTests);
+}
 
-  Widget image(String url, {String? sourceName}) => MaterialApp(
-        home: Scaffold(
-          body: AuthenticatedNetworkImage(
-            imageUrl: url,
-            sourceName: sourceName,
-            placeholder: (_, __) => const Text('loading'),
-            errorWidget: (_, __, ___) => const Text('image unavailable'),
-          ),
-        ),
-      );
-
+void _credentialTests() {
   testWidgets('protected image receives restored bearer and session cookie',
       (tester) async {
     final jar = CookieJar();
@@ -77,7 +107,9 @@ void main() {
         tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
     expect(cached.httpHeaders?.containsKey('Authorization'), isFalse);
   });
+}
 
+void _originTests() {
   testWidgets('different origin does not create an image request',
       (tester) async {
     await tester.pumpWidget(ProviderScope(
@@ -92,7 +124,9 @@ void main() {
     expect(find.byType(CachedNetworkImage), findsNothing);
     expect(find.text('image unavailable'), findsOneWidget);
   });
+}
 
+void _cacheKeyTests() {
   testWidgets('image cache key changes when the account token changes',
       (tester) async {
     final storage = _TokenStorage('pt-account-a');
@@ -125,7 +159,9 @@ void main() {
     expect(firstKey, isNot(contains('pt-account-a')));
     expect(secondKey, isNot(contains('pt-account-b')));
   });
+}
 
+void _credentialGateTests() {
   testWidgets('disabled credential gate omits stored bearer and cookie',
       (tester) async {
     final jar = CookieJar();
@@ -147,61 +183,104 @@ void main() {
         tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
     expect(cached.httpHeaders, isEmpty);
   });
+}
 
-  group('SVG', () {
-    Future<void> pumpSvg(WidgetTester tester, RecordingSvgFetcher fetcher) =>
-        tester.pumpWidget(ProviderScope(
-          overrides: [
-            playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
-            tokenStorageProvider
-                .overrideWithValue(_TokenStorage('pt-restored')),
-            cookieJarProvider.overrideWithValue(CookieJar()),
-            credentialMutationQueueProvider.overrideWithValue(
-                CredentialMutationQueue(credentialsEnabled: true)),
-            svgFetcherProvider.overrideWithValue(fetcher.fetcher),
-          ],
-          child: image(imageUrl, sourceName: 'sample-svg.svg'),
-        ));
+void _svgTests() {
+  testWidgets('renders as a vector with the bearer token', (tester) async {
+    final fetcher = RecordingSvgFetcher();
+    await tester.pumpWidget(signedIn(
+        image(imageUrl, sourceName: 'sample-svg.svg'),
+        fetcher: fetcher));
+    await pumpUntilFound(tester, _picture);
 
-    testWidgets('SVG source renders as a vector with the bearer token',
-        (tester) async {
-      final fetcher = RecordingSvgFetcher();
-      await pumpSvg(tester, fetcher);
-      await pumpUntilFound(tester, find.byType(VectorGraphic));
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(fetcher.requests.single.uri.toString(), imageUrl);
+    expect(
+        fetcher.requests.single.headers['Authorization'], 'Bearer pt-restored');
+  });
 
-      expect(find.byType(VectorGraphic), findsOneWidget);
-      expect(find.byType(CachedNetworkImage), findsNothing);
-      final (uri, headers) = fetcher.requests.single;
-      expect(uri.toString(), imageUrl);
-      expect(headers['Authorization'], 'Bearer pt-restored');
-      final svg = tester.widget<NetworkSvgImage>(find.byType(NetworkSvgImage));
-      expect(svg.cacheKey, isNot(contains('pt-restored')));
-      expect(svg.cacheKey, isNot(imageUrl));
-    });
+  testWidgets('malformed SVG shows the error widget', (tester) async {
+    await tester.pumpWidget(signedIn(
+        image(imageUrl, sourceName: 'sample-svg.svg'),
+        fetcher: RecordingSvgFetcher(body: kMalformedSvg)));
+    await pumpUntilFound(tester, _error);
 
-    testWidgets('malformed SVG shows the error widget', (tester) async {
-      await pumpSvg(tester, RecordingSvgFetcher(body: kMalformedSvg));
-      await pumpUntilFound(tester, find.text('image unavailable'));
+    expect(_picture, findsNothing);
+  });
 
-      expect(find.text('image unavailable'), findsOneWidget);
-      expect(find.byType(VectorGraphic), findsNothing);
-    });
+  testWidgets('SVG on another origin is not requested', (tester) async {
+    final fetcher = RecordingSvgFetcher();
+    await tester.pumpWidget(
+        signedIn(image('https://other.example/logo.svg'), fetcher: fetcher));
+    await tester.pump();
 
-    testWidgets('SVG on another origin is not requested', (tester) async {
-      final fetcher = RecordingSvgFetcher();
-      await tester.pumpWidget(ProviderScope(
-        overrides: [
-          playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
-          tokenStorageProvider.overrideWithValue(_TokenStorage('pt-restored')),
-          cookieJarProvider.overrideWithValue(CookieJar()),
-          svgFetcherProvider.overrideWithValue(fetcher.fetcher),
-        ],
-        child: image('https://other.example/logo.svg'),
-      ));
-      await tester.pump();
+    expect(fetcher.requests, isEmpty);
+    expect(_error, findsOneWidget);
+  });
 
-      expect(fetcher.requests, isEmpty);
-      expect(find.text('image unavailable'), findsOneWidget);
-    });
+  testWidgets('an invalid URL shows the error widget instead of throwing',
+      (tester) async {
+    await tester.pumpWidget(signedIn(image('http://[bad')));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(_error, findsOneWidget);
+  });
+}
+
+/// Shows the image at [path] and waits for [result] to appear. The SVG
+/// fetcher serves the same kind of content as the fake server does there.
+Future<RecordingSvgFetcher> _loadReal(
+    WidgetTester tester, String path, Finder result) async {
+  final fetcher =
+      RecordingSvgFetcher(body: path == '/cover' ? kValidSvg : 'not an image');
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pumpWidget(signedIn(image('$baseUrl$path'), fetcher: fetcher));
+  await pumpUntilFound(tester, result);
+  return fetcher;
+}
+
+/// Downloads through the real `CachedNetworkImage` pipeline and its disk
+/// cache, so failures come from the actual bitmap decoder. The scenarios
+/// share one test because only one test per file may use that cache (see
+/// real_image_loading.dart).
+void _realBitmapTests() {
+  useRealImageLoading();
+  final replies = <String, FakeHttpReply>{
+    '/garbage': FakeHttpReply(List.filled(64, 0x42)),
+    '/missing': const FakeHttpReply([], status: 404),
+    '/cover': FakeHttpReply(svgBytes(kValidSvg)),
+  };
+
+  testWidgets('decode failures, missing files, SVG content and bitmaps',
+      (tester) async {
+    replies['/photo'] =
+        FakeHttpReply((await tester.runAsync(() => makePng(4, 4)))!);
+    final server =
+        startRealImageLoading(tester, (uri, _) => replies[uri.path]!);
+
+    // Not an image: downloaded with credentials, rejected by the decoder,
+    // checked once for SVG content, then the error widget.
+    var fetcher = await _loadReal(tester, '/garbage', _error);
+    expect(server.requests.single.$2['authorization'], 'Bearer pt-restored');
+    expect(fetcher.requests, hasLength(1));
+    expect(_picture, findsNothing);
+
+    // Missing: a transport error, so no SVG attempt.
+    fetcher = await _loadReal(tester, '/missing', _error);
+    expect(fetcher.requests, isEmpty);
+
+    // A folder cover that is an SVG: neither URL nor caller name the
+    // format, the content decides.
+    fetcher = await _loadReal(tester, '/cover', _picture);
+    expect(_error, findsNothing);
+    expect(
+        fetcher.requests.single.headers['Authorization'], 'Bearer pt-restored');
+
+    // A real bitmap never touches the SVG path.
+    fetcher = await _loadReal(tester, '/photo', find.byType(RawImage));
+    expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
+    expect(fetcher.requests, isEmpty);
+    await settleImageCache(tester);
   });
 }
