@@ -23,8 +23,9 @@ import (
 // the first rescan. A rescan then treats every such row the same way:
 //
 //  1. staleThumbnails picks the rows whose generated thumbnail is not at
-//     the path the current scheme (thumb.ThumbnailPathFor) gives it, plus
-//     those whose thumbnail file has gone missing;
+//     the path the current scheme (thumb.ThumbnailPathFor) gives it. It
+//     also picks rows whose thumbnail is missing or was never made, which
+//     the same steps repair;
 //  2. a probeWorker generates a fresh thumbnail from the row's own source
 //     at that path (probeWorker.refreshThumbnail), in the same worker pool
 //     that probes new files;
@@ -56,54 +57,86 @@ type fileRemover interface {
 	Remove(name string) error
 }
 
-// staleThumbnails returns the relPaths of the rows whose generated thumbnail
-// has to be (re)generated. existing holds all rows of the set at setPath
-// keyed by relPath (soft-deleted ones included, since trashed media can be
-// restored), seenRel the relPaths of the media files found on disk, and
-// exists reports whether a file is there.
+// staleKind says why an indexed row gets a new thumbnail.
+type staleKind int
+
+const (
+	// staleOldName: the generated thumbnail is stored under an older
+	// naming scheme. This is the migration.
+	staleOldName staleKind = iota + 1
+	// staleMissing: the generated thumbnail is at its current path but the
+	// file is gone.
+	staleMissing
+	// staleNone: there is no generated thumbnail: a video without one, or
+	// an image standing in as its own. An earlier attempt failed.
+	staleNone
+)
+
+// staleThumbnails returns, by relPath, the rows that get a thumbnail
+// generated in this scan, and why. existing holds all rows of the set at
+// setPath keyed by relPath (soft-deleted ones included, since trashed media
+// can be restored), seenRel the relPaths of the media files found on disk,
+// and exists reports whether a file is there.
 //
-// A row qualifies when it is a video or image whose source file is on disk
-// and whose stored thumbnail
-//   - is a generated one: directly inside a .thumbnails directory, and not
-//     itself the source file of an indexed media item. The scanner never
-//     indexes anything below a hidden directory, but rows of files in a
-//     directory called .thumbnails can exist from uploads and older
-//     releases, and such a file may be stored as a thumbnail;
-//   - lies inside the set, so a stale absolute path (media root moved,
-//     database copied from another host) never leads to files elsewhere
-//     being deleted;
-//   - is not at its current path (the migration), or is at its current path
-//     but missing on disk.
-//
-// The last case repairs rows no other step would: a thumbnail deleted by
-// hand, or lost to the one race the migration leaves open (see
-// thumbSwitcher.reserved). It costs one stat per indexed video and image.
-//
-// Audio covers and images serving as their own thumbnail are ordinary
-// files, not generated thumbnails, and are left alone.
-func staleThumbnails(existing map[string]model.Media, seenRel map[string]struct{}, setPath string, exists func(path string) bool) map[string]struct{} {
-	stale := make(map[string]struct{})
+// Only videos and images whose source file is on disk qualify, SVG images
+// excepted (an SVG always is its own thumbnail).
+func staleThumbnails(existing map[string]model.Media, seenRel map[string]struct{}, setPath string, exists func(path string) bool) map[string]staleKind {
+	stale := make(map[string]staleKind)
 	for relPath, m := range existing {
 		if m.Type != model.MediaTypeVideo && m.Type != model.MediaTypeImage {
 			continue
 		}
-		if _, onDisk := seenRel[relPath]; !onDisk {
-			continue
-		}
-		if !isGeneratedIn(setPath, m.ThumbnailPath, existing) {
+		if _, onDisk := seenRel[relPath]; !onDisk || strings.EqualFold(filepath.Ext(relPath), ".svg") {
 			continue
 		}
 		// Derive the source from relPath: AbsPath may be stale on old rows.
 		src := filepath.Join(setPath, filepath.FromSlash(relPath))
-		if thumb.ThumbnailPathFor(src) != m.ThumbnailPath || !exists(m.ThumbnailPath) {
-			stale[relPath] = struct{}{}
+		if kind := staleKindOf(m.ThumbnailPath, src, setPath, existing, exists); kind != 0 {
+			stale[relPath] = kind
 		}
 	}
 	return stale
 }
 
+// staleKindOf classifies the thumbnail path stored for the media file src,
+// returning 0 when it is fine as it is.
+//
+// A stored path counts as a generated thumbnail when it is directly inside
+// a .thumbnails directory of the set and is not itself the source file of
+// an indexed media item (see isGeneratedIn). Such a thumbnail is stale when
+// it is not at its current path, or is there but missing on disk. The
+// latter repairs rows no other step would: a thumbnail deleted by hand, or
+// lost to the one race the migration leaves open (see
+// thumbSwitcher.reserved). It costs one stat per indexed video and image.
+//
+// No thumbnail at all, or the image itself, means generation failed when
+// the file was indexed (unwritable folder, a frame that could not be
+// extracted). It is tried again once per rescan; for a file ffmpeg cannot
+// read at all that is one wasted ffmpeg run per rescan.
+//
+// Anything else is an ordinary file that was chosen as the thumbnail, or a
+// path outside the set, and is left alone: a stale absolute path (media
+// root moved, database copied from another host) must never lead to files
+// elsewhere being replaced or deleted.
+func staleKindOf(stored, src, setPath string, existing map[string]model.Media, exists func(path string) bool) staleKind {
+	switch {
+	case stored == "" || stored == src:
+		return staleNone
+	case !isGeneratedIn(setPath, stored, existing):
+		return 0
+	case stored != thumb.ThumbnailPathFor(src):
+		return staleOldName
+	case !exists(stored):
+		return staleMissing
+	}
+	return 0
+}
+
 // isGeneratedIn reports whether path is a generated thumbnail inside the set
-// at setPath and not the source file of one of the set's indexed media.
+// at setPath and not the source file of one of the set's indexed media. The
+// scanner never indexes anything below a hidden directory, but rows of
+// files in a directory called .thumbnails can exist from uploads and older
+// releases, and such a file may be stored as a thumbnail.
 func isGeneratedIn(setPath, path string, existing map[string]model.Media) bool {
 	if !thumb.IsGenerated(path) {
 		return false
@@ -206,18 +239,23 @@ func newThumbSwitcher(store thumbnailUpdater, remover fileRemover, logger *slog.
 // simply overwritten when the next rescan retries the row.
 //
 // A row whose thumbnail was regenerated at the path it already stored (the
-// file was missing) needs neither an update nor a cleanup.
+// file was missing) needs neither an update nor a cleanup. result.replaced
+// is empty when the row had no generated thumbnail before; then there is
+// no old file to delete.
 func (ts *thumbSwitcher) apply(ctx context.Context, result fileResult) {
 	from, to := result.replaced, result.media.ThumbnailPath
 	if from == to {
 		return
 	}
 	if err := ts.store.UpdateMediaThumbnail(ctx, result.media.ID, to); err != nil {
-		ts.logger.Warn("scanner thumbnail migration update failed", "path", result.path, "err", err)
+		ts.logger.Warn("scanner thumbnail update failed", "path", result.path, "err", err)
+		return
+	}
+	ts.stored[to]++
+	if from == "" {
 		return
 	}
 	ts.stored[from]--
-	ts.stored[to]++
 	if _, isReserved := ts.reserved[from]; isReserved || ts.stored[from] > 0 {
 		return
 	}

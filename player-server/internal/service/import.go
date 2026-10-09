@@ -36,9 +36,7 @@ func ImportMediaFile(
 
 	made := false
 	if media.Type == model.MediaTypeVideo || media.Type == model.MediaTypeImage {
-		if made, err = generateThumbnail(ctx, thumbs, media, meta.Duration); err != nil {
-			return fmt.Errorf("generate thumbnail: %w", err)
-		}
+		made = generateThumbnail(ctx, thumbs, media, meta.Duration)
 	}
 
 	if err := store.UpdateMedia(ctx, media); err != nil {
@@ -88,6 +86,11 @@ func probeMedia(ctx context.Context, prober probe.Prober, path string) (*model.M
 // own file instead of overwriting this one; and it is generated into a
 // temporary file and verified before it is put in place.
 //
+// A thumbnail that cannot be made is no reason to reject the upload or the
+// download: the maker logs why, and the media is stored like the scanner
+// would index it, a video without thumbnail, an image standing in as its
+// own. A later rescan tries again.
+//
 // Without a maker (a service built without a generator) the path is
 // recorded but no file is written.
 //
@@ -98,19 +101,29 @@ func probeMedia(ctx context.Context, prober probe.Prober, path string) (*model.M
 // picture until the rescan gives it a thumbnail of its own. It is not
 // guarded against because the collision needs such a pair of names and
 // heals itself; see docs/admin.md.
-func generateThumbnail(ctx context.Context, thumbs ThumbnailMaker, media *model.Media, duration float64) (made bool, err error) {
+func generateThumbnail(ctx context.Context, thumbs ThumbnailMaker, media *model.Media, duration float64) (made bool) {
+	isImage := media.Type == model.MediaTypeImage
 	if strings.ToLower(filepath.Ext(media.AbsPath)) == ".svg" {
 		media.ThumbnailPath = media.AbsPath
-		return false, nil
+		return false
 	}
 	if thumbs == nil {
 		media.ThumbnailPath = thumb.ThumbnailPathFor(media.AbsPath)
-		return false, nil
+		return false
 	}
-	thumbnailPath, err := thumbs.Make(ctx, media.AbsPath, duration)
-	if err != nil {
-		return false, err
+	var thumbnailPath string
+	if isImage {
+		thumbnailPath = thumbs.MakeImage(ctx, media.AbsPath)
+	} else {
+		thumbnailPath = thumbs.MakeVideo(ctx, media.AbsPath, duration)
 	}
-	media.ThumbnailPath = thumbnailPath
-	return true, nil
+	switch {
+	case thumbnailPath != "":
+		media.ThumbnailPath = thumbnailPath
+	case isImage:
+		media.ThumbnailPath = media.AbsPath
+	default:
+		media.ThumbnailPath = ""
+	}
+	return thumbnailPath != ""
 }

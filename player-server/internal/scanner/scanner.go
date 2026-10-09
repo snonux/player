@@ -277,9 +277,9 @@ type setScan struct {
 	existing    map[string]model.Media
 	coverImages map[string]string
 	files       []string
-	// stale holds the relPaths of the rows whose thumbnail must be
-	// regenerated because it is stored under an older naming scheme.
-	stale map[string]struct{}
+	// stale holds the relPaths of the rows that get a thumbnail generated
+	// in this scan, and why (see staleThumbnails).
+	stale map[string]staleKind
 }
 
 // scanSet scans a single set in three phases: discoverSet finds the files
@@ -320,8 +320,8 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 // cover images into sc, then reconciles the already indexed rows with what
 // is on disk: rows whose file disappeared are soft-deleted, temporary
 // thumbnail files of a killed generation are swept, and the rows whose
-// thumbnail is stored under an older naming scheme or is missing are noted
-// in sc.stale for probeAndStore to regenerate.
+// thumbnail is stored under an older naming scheme, is missing or was never
+// made are noted in sc.stale for probeAndStore to generate.
 func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *model.ScanProgress) error {
 	disc := newFileDiscoverer(s.fs)
 	sc.coverImages = disc.gatherCoverImages(sc.path)
@@ -344,7 +344,15 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 	s.sweepStaleTemporaries(files)
 	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path, s.fileExists)
 	if len(sc.stale) > 0 {
-		s.log().Info("scanner regenerating thumbnails", "set", sc.name, "rows", len(sc.stale))
+		// old_names is the migration backlog; it reaches zero. The other
+		// two can recur: files no thumbnail can be made for are retried
+		// on every rescan.
+		var counts [staleNone + 1]int
+		for _, kind := range sc.stale {
+			counts[kind]++
+		}
+		s.log().Info("scanner regenerating thumbnails", "set", sc.name,
+			"old_names", counts[staleOldName], "missing", counts[staleMissing], "without", counts[staleNone])
 	}
 
 	if progress != nil {

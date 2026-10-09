@@ -40,6 +40,8 @@ type MakerFS interface {
 	// ends in the thumbnail extension, and returns its path.
 	CreateTemp(dir string) (string, error)
 	Stat(name string) (os.FileInfo, error)
+	// Lstat is Stat that does not follow a symbolic link.
+	Lstat(name string) (os.FileInfo, error)
 	Rename(oldPath, newPath string) error
 	Remove(name string) error
 }
@@ -63,6 +65,7 @@ type osMakerFS struct{}
 
 func (osMakerFS) MkdirAll(path string, perm os.FileMode) error { return os.MkdirAll(path, perm) }
 func (osMakerFS) Stat(name string) (os.FileInfo, error)        { return os.Stat(name) }
+func (osMakerFS) Lstat(name string) (os.FileInfo, error)       { return os.Lstat(name) }
 func (osMakerFS) Rename(oldPath, newPath string) error         { return os.Rename(oldPath, newPath) }
 func (osMakerFS) Remove(name string) error                     { return os.Remove(name) }
 
@@ -205,8 +208,14 @@ func (m *FSMaker) Remove(thumbPath string) {
 		m.logger.Warn("thumbnail removal failed", "path", thumbPath, "err", err)
 		return
 	}
-	// Non-recursive: fails, harmlessly, while other thumbnails remain.
-	_ = m.fs.Remove(filepath.Dir(thumbPath))
+	// Only a real directory is removed: a .thumbnails that is a symbolic
+	// link (thumbnails kept on another volume) would be unlinked by the
+	// same call, emptied target or not. The removal is non-recursive and
+	// fails, harmlessly, while other thumbnails remain.
+	dir := filepath.Dir(thumbPath)
+	if info, err := m.fs.Lstat(dir); err == nil && info.IsDir() {
+		_ = m.fs.Remove(dir)
+	}
 }
 
 // render runs the generator and checks that it really produced something.

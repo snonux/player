@@ -37,6 +37,12 @@ type faultyStore struct {
 	*repository.SQLite
 	updateErr    error
 	beforeUpdate func()
+	listSets     atomic.Int32 // number of ListSets calls
+}
+
+func (s *faultyStore) ListSets(ctx context.Context) ([]model.Set, error) {
+	s.listSets.Add(1)
+	return s.SQLite.ListSets(ctx)
 }
 
 func (s *faultyStore) UpdateMediaThumbnail(ctx context.Context, id int64, path string) error {
@@ -451,18 +457,19 @@ func TestMigrateThumbnails_DestinationStoredByUnmigratableRow(t *testing.T) {
 	}
 }
 
-// TestMigrateThumbnails_LeavesOthersAlone lists everything the migration
-// must not touch: current names, thumbnails that are ordinary files, rows
-// without a thumbnail, and rows whose source file is gone.
+// TestMigrateThumbnails_LeavesOthersAlone lists everything a rescan must not
+// touch: thumbnails at their current path, thumbnails that are ordinary
+// files chosen for the purpose (an audio cover, an SVG standing in for
+// itself), and rows whose source file is gone.
 func TestMigrateThumbnails_LeavesOthersAlone(t *testing.T) {
 	f := newMigrationFixture(t, []seededMedia{
 		{rel: "new.mp4", thumb: ".thumbnails/new.mp4.jpg"},
 		{rel: "sub/new.mp4", thumb: "sub/.thumbnails/new.mp4.jpg"},
-		{rel: "own.png", thumb: "own.png"}, // image serving as its own thumbnail
-		{rel: "album/art.png", thumb: "album/art.png"},
+		{rel: "logo.svg", thumb: "logo.svg"},
+		{rel: "album/art.png", thumb: "album/.thumbnails/art.png.jpg"},
 		{rel: "album/track.mp3", thumb: "album/art.png"}, // audio cover
-		{rel: "bare.mp4"},
 		{rel: "gone.mp4", thumb: ".thumbnails/gone.jpg", noSource: true},
+		{rel: "gone-bare.mp4", noSource: true},
 	})
 	f.scan()
 	f.scan() // a second rescan must be a no-op as well
@@ -470,12 +477,50 @@ func TestMigrateThumbnails_LeavesOthersAlone(t *testing.T) {
 	f.assertThumb("new.mp4", ".thumbnails/new.mp4.jpg", old("new.mp4.jpg"))
 	f.assertThumb("sub/new.mp4", "sub/.thumbnails/new.mp4.jpg", old("new.mp4.jpg"))
 	f.assertThumb("gone.mp4", ".thumbnails/gone.jpg", old("gone.jpg"))
-	f.assertThumb("own.png", "own.png", "source")
+	f.assertThumb("logo.svg", "logo.svg", "source")
 	f.assertThumb("album/track.mp3", "album/art.png", "source")
+	if got := f.row("gone-bare.mp4").ThumbnailPath; got != "" {
+		t.Errorf("thumbnail of gone-bare.mp4 = %q, want none", got)
+	}
+	f.assertNothingGenerated()
+}
+
+// TestScan_RetriesMediaWithoutThumbnail: a video indexed without a thumbnail
+// and an image standing in as its own (generation failed when they were
+// indexed) get one on the next rescan. The image is a media file and must
+// of course not be deleted as "the old thumbnail".
+func TestScan_RetriesMediaWithoutThumbnail(t *testing.T) {
+	f := newMigrationFixture(t, []seededMedia{
+		{rel: "bare.mp4"},
+		{rel: "a/own.png", thumb: "a/own.png"},
+		{rel: "trashed.mp4", deleted: true},
+	})
+	f.scan()
+	f.assertFresh("bare.mp4")
+	f.assertFresh("a/own.png")
+	f.assertFresh("trashed.mp4")
+	if got, err := os.ReadFile(f.abs("a/own.png")); err != nil || string(got) != "source" {
+		t.Errorf("the image itself was deleted or changed: %q, %v", got, err)
+	}
+}
+
+// TestScan_RetryWithoutThumbnailIsBoundedAndHarmless: while generation keeps
+// failing, such rows stay as they are and each rescan tries exactly once.
+func TestScan_RetryWithoutThumbnailIsBoundedAndHarmless(t *testing.T) {
+	f := newMigrationFixture(t, []seededMedia{{rel: "bare.mp4"}, {rel: "own.png", thumb: "own.png"}})
+	f.gen = func(string, string) error { return errors.New("ffmpeg boom") }
+	f.scan()
+	f.scan()
 	if got := f.row("bare.mp4").ThumbnailPath; got != "" {
 		t.Errorf("thumbnail of bare.mp4 = %q, want none", got)
 	}
-	f.assertNothingGenerated()
+	f.assertThumb("own.png", "own.png", "source")
+	f.mu.Lock()
+	attempts := len(f.generated)
+	f.mu.Unlock()
+	if attempts != 4 {
+		t.Errorf("generator ran %d times for 2 rows in 2 rescans, want 4", attempts)
+	}
 }
 
 // TestMigrateThumbnails_IsRepeatable: once migrated, a rescan generates
@@ -723,6 +768,12 @@ func TestMigrateThumbnails_CancelledBeforeStart(t *testing.T) {
 	if err := f.scanner().Scan(ctx, f.root, nil); !errors.Is(err, context.Canceled) {
 		t.Errorf("Scan error = %v, want context.Canceled", err)
 	}
+	// Scan must give up right after it got its turn, before touching the
+	// database or the disk: a rescan superseded while it waited for the
+	// previous one must not start working with a dead context.
+	if n := f.store.listSets.Load(); n != 0 {
+		t.Errorf("the cancelled scan queried the store %d times", n)
+	}
 	f.assertThumb("holiday.mp4", ".thumbnails/holiday.jpg", old("holiday.jpg"))
 	f.assertThumb("holiday.png", ".thumbnails/holiday.jpg", old("holiday.jpg"))
 	f.assertNothingGenerated()
@@ -803,31 +854,36 @@ func TestScan_ThumbnailsDirectoryIsNotASet(t *testing.T) {
 	}
 }
 
-// TestStaleThumbnails pins which rows get a new thumbnail. As in a real
-// scan, files below a hidden directory are never "seen" on disk: the only
-// thing telling a media file in a .thumbnails directory from a generated
-// thumbnail is that a row exists for it.
+// TestStaleThumbnails pins which rows get a thumbnail generated, and why.
+// As in a real scan, files below a hidden directory are never "seen" on
+// disk: the only thing telling a media file in a .thumbnails directory from
+// a generated thumbnail is that a row exists for it.
 func TestStaleThumbnails(t *testing.T) {
 	const set = "/m/set"
 	row := func(rel, stored string) model.Media {
 		return model.Media{RelPath: rel, Type: mediatype.TypeForExt(rel), ThumbnailPath: stored}
 	}
 	rows := []model.Media{
-		row("old.mp4", "/m/set/.thumbnails/old.jpg"),                // stale
-		row("a/old.png", "/m/set/.thumbnails/old.jpg"),              // stale (old scanner layout)
-		row("lost.mp4", "/m/set/.thumbnails/lost.mp4.jpg"),          // current path, file missing
-		row("current.mp4", "/m/set/.thumbnails/current.mp4.jpg"),    // current path, file present
-		row("own.png", "/m/set/own.png"),                            // its own thumbnail
-		row("song.mp3", "/m/set/.thumbnails/song.jpg"),              // audio is never migrated
-		row("none.mp4", ""),                                         // no thumbnail
+		row("old.mp4", "/m/set/.thumbnails/old.jpg"),             // old name
+		row("a/old.png", "/m/set/.thumbnails/old.jpg"),           // old name (old scanner layout)
+		row("lost.mp4", "/m/set/.thumbnails/lost.mp4.jpg"),       // current path, file missing
+		row("current.mp4", "/m/set/.thumbnails/current.mp4.jpg"), // current path, file present
+		row("none.mp4", ""),                                         // video without thumbnail
+		row("own.png", "/m/set/own.png"),                            // image as its own thumbnail
+		row("logo.svg", "/m/set/logo.svg"),                          // an SVG always is
+		row("logo2.SVG", ""),                                        // ... whatever is stored
+		row("song.mp3", "/m/set/.thumbnails/song.jpg"),              // audio is never touched
+		row("silent.mp3", ""),                                       //
 		row("gone.mp4", "/m/set/.thumbnails/gone.jpg"),              // source not on disk
+		row("gone2.mp4", ""),                                        //
 		row("outside.mp4", "/elsewhere/.thumbnails/outside.jpg"),    // not inside the set
 		row("escape.mp4", "/m/set/../other/.thumbnails/escape.jpg"), // not inside the set either
+		row("chosen.mp4", "/m/set/poster.jpg"),                      // an ordinary file as thumbnail
 		row(".thumbnails/pic.png", ""),                              // media file in a .thumbnails dir
 		row("uses-media.mp4", "/m/set/.thumbnails/pic.png"),         // "thumbnail" is that media file
 		row("deep.mp4", "/m/set/.thumbnails/sub/deep.jpg"),          // not directly in .thumbnails
 	}
-	notOnDisk := map[string]bool{"gone.mp4": true, ".thumbnails/pic.png": true}
+	notOnDisk := map[string]bool{"gone.mp4": true, "gone2.mp4": true, ".thumbnails/pic.png": true}
 	existing := map[string]model.Media{}
 	seen := map[string]struct{}{}
 	for _, m := range rows {
@@ -839,10 +895,13 @@ func TestStaleThumbnails(t *testing.T) {
 	exists := func(path string) bool { return path != "/m/set/.thumbnails/lost.mp4.jpg" }
 
 	got := staleThumbnails(existing, seen, set, exists)
-	want := map[string]bool{"old.mp4": true, "a/old.png": true, "lost.mp4": true}
+	want := map[string]staleKind{
+		"old.mp4": staleOldName, "a/old.png": staleOldName, "lost.mp4": staleMissing,
+		"none.mp4": staleNone, "own.png": staleNone,
+	}
 	for _, m := range rows {
-		if _, isStale := got[m.RelPath]; isStale != want[m.RelPath] {
-			t.Errorf("stale[%q] = %v, want %v", m.RelPath, isStale, want[m.RelPath])
+		if got[m.RelPath] != want[m.RelPath] {
+			t.Errorf("stale[%q] = %d, want %d", m.RelPath, got[m.RelPath], want[m.RelPath])
 		}
 	}
 }

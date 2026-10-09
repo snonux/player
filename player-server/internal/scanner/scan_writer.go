@@ -28,8 +28,8 @@ func newScanWriter(store repository.ScannerStore, thumbs *thumbSwitcher, logger 
 }
 
 // run reads fileResults from resultChan and persists each: a new media
-// record is inserted, a migrated thumbnail (result.replaced set) is passed
-// to the thumbSwitcher. It logs progress every 25 new files and accumulates
+// record is inserted, the new thumbnail of an indexed row (result.refresh)
+// is passed to the thumbSwitcher. It logs progress every 25 new files and accumulates
 // their count in newFiles. Exits when resultChan is closed; once scanCtx is
 // cancelled the remaining results are drained without being persisted.
 func (sw *scanWriter) run(
@@ -45,7 +45,7 @@ func (sw *scanWriter) run(
 		if scanCtx.Err() != nil {
 			continue
 		}
-		if result.replaced != "" {
+		if result.refresh {
 			sw.thumbs.apply(ctx, result)
 			continue
 		}

@@ -50,6 +50,14 @@ func (f *fakeFS) Stat(name string) (os.FileInfo, error) {
 	return fakeInfo{size: size}, nil
 }
 
+// Lstat reports any path that is not a file as a real directory.
+func (f *fakeFS) Lstat(name string) (os.FileInfo, error) {
+	if size, ok := f.files[name]; ok {
+		return fakeInfo{size: size}, nil
+	}
+	return fakeInfo{dir: true}, nil
+}
+
 func (f *fakeFS) Rename(oldPath, newPath string) error {
 	if f.renameErr != nil {
 		return f.renameErr
@@ -81,13 +89,16 @@ func (f *fakeFS) temporaries() []string {
 	return left
 }
 
-type fakeInfo struct{ size int64 }
+type fakeInfo struct {
+	size int64
+	dir  bool
+}
 
 func (i fakeInfo) Name() string       { return "" }
 func (i fakeInfo) Size() int64        { return i.size }
 func (i fakeInfo) Mode() os.FileMode  { return 0o644 }
 func (i fakeInfo) ModTime() time.Time { return time.Time{} }
-func (i fakeInfo) IsDir() bool        { return false }
+func (i fakeInfo) IsDir() bool        { return i.dir }
 func (i fakeInfo) Sys() any           { return nil }
 
 // writing returns a generator that "writes" size bytes to its output.
@@ -421,27 +432,102 @@ func TestIsTemporary(t *testing.T) {
 	}
 }
 
-// TestFFmpeg_PercentInNames runs the real ffmpeg on a source whose name and
-// directory contain "%03d". ffmpeg expands that in an OUTPUT file name as an
-// image sequence pattern: it then writes a differently named file, or none,
-// and can still exit successfully. Skipped where ffmpeg is not installed.
-func TestFFmpeg_PercentInNames(t *testing.T) {
+// TestFSMaker_RemoveKeepsSymlinkedDirectory: a .thumbnails that is a
+// symbolic link (thumbnails kept on another volume) must survive its last
+// thumbnail being removed; os.Remove would unlink the link itself.
+func TestFSMaker_RemoveKeepsSymlinkedDirectory(t *testing.T) {
+	dir, elsewhere := t.TempDir(), t.TempDir()
+	link := filepath.Join(dir, DirName)
+	if err := os.Symlink(elsewhere, link); err != nil {
+		t.Skipf("cannot create a symbolic link here: %v", err)
+	}
+	thumbnail := filepath.Join(link, "clip.mp4.jpg")
+	if err := os.WriteFile(thumbnail, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	NewFSMaker(nil, nil, nil).Remove(thumbnail)
+	if _, err := os.Stat(thumbnail); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("thumbnail not removed: %v", err)
+	}
+	if _, err := os.Lstat(link); err != nil {
+		t.Errorf("the symbolic link was removed: %v", err)
+	}
+	if _, err := os.Stat(elsewhere); err != nil {
+		t.Errorf("the link's target was removed: %v", err)
+	}
+}
+
+// ffmpegClip creates a test video with the real ffmpeg, or skips the test
+// where ffmpeg is missing or cannot encode one. args follow the inputs.
+func ffmpegClip(t *testing.T, path string, args ...string) {
+	t.Helper()
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg not installed")
 	}
-	dir := filepath.Join(t.TempDir(), "d%03d")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	src := filepath.Join(dir, "a%03d.mp4")
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=d=6:s=64x64", "-y", src).CombinedOutput()
-	if err != nil {
+	args = append([]string{"-loglevel", "error"}, append(args, "-y", path)...)
+	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
 		t.Skipf("cannot create a test video with this ffmpeg: %v: %s", err, out)
 	}
+}
 
-	// The generator seeks to a random offset below the duration it is given.
-	// Half the real length keeps that offset well inside the video.
-	const duration = 3
+// TestFFmpeg_ShortAndAudioTailedClips runs the real ffmpeg on the clips a
+// random seek used to fail on: a video shorter than the old minimum offset
+// of one second, a short one, and one whose audio track outlasts the video,
+// so that its reported duration lies behind the last video frame. Every
+// single run must produce a thumbnail; the offset is random, hence the
+// repetitions.
+func TestFFmpeg_ShortAndAudioTailedClips(t *testing.T) {
+	video := func(seconds string) []string {
+		return []string{"-f", "lavfi", "-i", "testsrc=d=" + seconds + ":s=64x64"}
+	}
+	clips := []struct {
+		name     string
+		duration float64 // as ffprobe reports it: the container's
+		args     []string
+	}{
+		{"0.6 s video", 0.6, video("0.6")},
+		{"2 s video", 2, video("2")},
+		{"2 s video with 3 s audio", 3, append(video("2"), "-f", "lavfi", "-i", "sine=d=3")},
+		{"1 s video with 8 s audio", 8, append(video("1"), "-f", "lavfi", "-i", "sine=d=8")},
+	}
+	const runs = 10
+	m := NewFSMaker(NewFFmpegGenerator(), nil, nil)
+	for _, clip := range clips {
+		t.Run(clip.name, func(t *testing.T) {
+			src := filepath.Join(t.TempDir(), "clip.mp4")
+			ffmpegClip(t, src, clip.args...)
+			failures := 0
+			for i := 0; i < runs; i++ {
+				got, err := m.Make(context.Background(), src, clip.duration)
+				if err != nil || got == "" {
+					failures++
+					t.Logf("run %d: %v", i, err)
+				}
+			}
+			if failures != 0 {
+				t.Errorf("%d of %d runs produced no thumbnail", failures, runs)
+			}
+		})
+	}
+}
+
+// TestFFmpeg_PercentInNames runs the real ffmpeg on a video whose name and
+// directory contain "%03d". ffmpeg expands that in an OUTPUT file name as an
+// image sequence pattern: it then writes a differently named file, or none,
+// and can still exit successfully. Skipped where ffmpeg is not installed.
+//
+// Only the output side is covered, with a video as input. A "%d" in the
+// name of a source IMAGE is a different matter that depends on the ffmpeg
+// build; see FFmpegGenerator.run.
+func TestFFmpeg_PercentInNames(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "d%03d")
+	src := filepath.Join(dir, "a%03d.mp4")
+	ffmpegClip(t, src, "-f", "lavfi", "-i", "testsrc=d=6:s=64x64")
+
+	const duration = 6
 	got, err := NewFSMaker(NewFFmpegGenerator(), nil, nil).Make(context.Background(), src, duration)
 	if err != nil {
 		t.Fatalf("Make: %v", err)

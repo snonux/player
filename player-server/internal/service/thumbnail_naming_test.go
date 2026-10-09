@@ -134,31 +134,38 @@ func TestImportMediaFile_SameStemGetsOwnThumbnail(t *testing.T) {
 	}
 }
 
+// TestImportMediaFile_ThumbnailNegativeCases: what is stored when no
+// thumbnail is generated. A failing generator never fails the import (an
+// upload or a podcast download must not be lost over a thumbnail); the item
+// is stored like the scanner would index it.
 func TestImportMediaFile_ThumbnailNegativeCases(t *testing.T) {
 	ctx := context.Background()
 	failing := &mockThumbGenerator{GenerateFunc: func(context.Context, string, string, float64) error {
 		return errors.New("ffmpeg boom")
+	}}
+	empty := &mockThumbGenerator{GenerateFunc: func(_ context.Context, _, out string, _ float64) error {
+		return os.WriteFile(out, nil, 0o644)
 	}}
 	tests := []struct {
 		name      string
 		file      string
 		mediaType model.MediaType
 		gen       *mockThumbGenerator
-		wantErr   bool
 		wantThumb string // relative to the media directory; "" for none
 	}{
-		{"svg is its own thumbnail", "logo.svg", model.MediaTypeImage, writingThumbGen(), false, "logo.svg"},
-		{"audio gets no thumbnail", "song.mp3", model.MediaTypeAudio, writingThumbGen(), false, ""},
-		{"generator failure leaves no path behind", "clip.mp4", model.MediaTypeVideo, failing, true, ""},
+		{"svg is its own thumbnail", "logo.svg", model.MediaTypeImage, writingThumbGen(), "logo.svg"},
+		{"audio gets no thumbnail", "song.mp3", model.MediaTypeAudio, writingThumbGen(), ""},
+		{"video, generator fails: no thumbnail", "clip.mp4", model.MediaTypeVideo, failing, ""},
+		{"video, generator writes nothing: no thumbnail", "clip.mp4", model.MediaTypeVideo, empty, ""},
+		{"image, generator fails: the image stands in", "pic.png", model.MediaTypeImage, failing, "pic.png"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			m := &model.Media{AbsPath: filepath.Join(dir, tt.file), Type: tt.mediaType}
 			store := &updateRecorder{}
-			err := ImportMediaFile(ctx, store, m, &mockProber{}, newThumbnailMaker(tt.gen, nil))
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			if err := ImportMediaFile(ctx, store, m, &mockProber{}, newThumbnailMaker(tt.gen, nil)); err != nil {
+				t.Fatalf("import failed: %v", err)
 			}
 			want := ""
 			if tt.wantThumb != "" {
@@ -167,10 +174,59 @@ func TestImportMediaFile_ThumbnailNegativeCases(t *testing.T) {
 			if m.ThumbnailPath != want {
 				t.Errorf("thumbnail = %q, want %q", m.ThumbnailPath, want)
 			}
-			if tt.wantErr && store.updates != 0 {
-				t.Errorf("media row updated despite the failure")
+			if store.updates != 1 {
+				t.Errorf("media row updated %d times, want 1", store.updates)
+			}
+			if left, _ := filepath.Glob(filepath.Join(dir, thumb.DirName, "*")); len(left) != 0 {
+				t.Errorf("files left in the thumbnail directory: %v", left)
 			}
 		})
+	}
+}
+
+// TestSetDirOf: the set directory is only trusted when the row's absolute
+// and relative path fit together and the result lies below the media root.
+func TestSetDirOf(t *testing.T) {
+	const mediaRoot = "/media"
+	tests := []struct {
+		name    string
+		absPath string
+		relPath string
+		want    string
+		wantOK  bool
+	}{
+		{"file at the set root", "/media/set/clip.mp4", "clip.mp4", "/media/set", true},
+		{"file in a subfolder", "/media/set/a/b/clip.mp4", "a/b/clip.mp4", "/media/set", true},
+		{"paths that do not fit together", "/media/set/clip.mp4", "other.mp4", "", false},
+		{"relative path only matches the end of a name", "/media/set/xclip.mp4", "clip.mp4", "", false},
+		{"set outside the media root", "/elsewhere/set/clip.mp4", "clip.mp4", "", false},
+		{"media root moved", "/old-media/set/clip.mp4", "clip.mp4", "", false},
+		{"the media root itself is not a set", "/media/clip.mp4", "clip.mp4", "", false},
+		{"empty relative path", "/media/set/clip.mp4", "", "", false},
+		{"empty absolute path", "", "clip.mp4", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := setDirOf(mediaRoot, &model.Media{AbsPath: tt.absPath, RelPath: tt.relPath})
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("setDirOf = %q, %v; want %q, %v", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+// TestRegenerateThumbnail_SetOutsideMediaRoot: a row whose paths place its
+// set outside the media root is stale; nothing is deleted on its word.
+func TestRegenerateThumbnail_SetOutsideMediaRoot(t *testing.T) {
+	f := newThumbFixture(t)
+	id := f.add("video.mp4", ".thumbnails/video.jpg")
+	// The same store and files, served from a different media root.
+	svc := NewMediaService(f.store, newMockClock(), filepath.Join(f.root, "moved"), writingThumbGen(), &mockProber{})
+	if err := svc.RegenerateThumbnail(context.Background(), id, f.admin); err != nil {
+		t.Fatalf("regenerate: %v", err)
+	}
+	if !fileExists(f.abs(".thumbnails/video.jpg")) {
+		t.Error("previous thumbnail deleted although the row's set is outside the media root")
 	}
 }
 

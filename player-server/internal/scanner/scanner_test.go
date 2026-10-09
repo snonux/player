@@ -159,6 +159,10 @@ func (makerFSFromScannerFS) Stat(name string) (os.FileInfo, error) {
 	return mockFileInfo{name: filepath.Base(name), size: 1}, nil
 }
 
+func (makerFSFromScannerFS) Lstat(name string) (os.FileInfo, error) {
+	return mockFileInfo{name: filepath.Base(name), isDir: true}, nil
+}
+
 func (makerFSFromScannerFS) Rename(string, string) error { return nil }
 func (makerFSFromScannerFS) Remove(string) error         { return nil }
 

@@ -18,6 +18,10 @@ type ThumbnailMaker interface {
 	// Make creates the thumbnail of srcPath (duration 0 for an image) and
 	// returns its path. A returned path names a complete, non-empty file.
 	Make(ctx context.Context, srcPath string, duration float64) (string, error)
+	// MakeVideo and MakeImage are Make for callers that carry on without
+	// a thumbnail: they log the reason and return "".
+	MakeVideo(ctx context.Context, srcPath string, duration float64) string
+	MakeImage(ctx context.Context, srcPath string) string
 	thumbnailRemover
 }
 

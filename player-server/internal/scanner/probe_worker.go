@@ -21,8 +21,11 @@ import (
 type fileResult struct {
 	media *model.Media
 	path  string // absolute path used for logging
-	// replaced is the thumbnail path the row stored before media's was
-	// generated. Empty for a new file, which has no row yet.
+	// refresh marks an already indexed row whose thumbnail was generated
+	// anew; the row is updated instead of inserted.
+	refresh bool
+	// replaced is the generated thumbnail the row stored before, which is
+	// deleted once unused. Empty when there was none.
 	replaced string
 }
 
@@ -36,14 +39,15 @@ type probeWorker struct {
 	fs       FS
 	clock    clock.Clock
 	logger   *slog.Logger
-	// stale holds the relPaths of indexed rows whose thumbnail must be
-	// regenerated (see staleThumbnails). Read-only once the workers run.
-	stale map[string]struct{}
+	// stale holds the relPaths of indexed rows that get a thumbnail
+	// generated, and why (see staleThumbnails). Read-only once the
+	// workers run.
+	stale map[string]staleKind
 }
 
 // newProbeWorker creates a probeWorker with the required dependencies.
-// stale lists the indexed rows whose thumbnail has to be regenerated.
-func newProbeWorker(prober probe.Prober, maker thumb.Maker, fs FS, clk clock.Clock, logger *slog.Logger, stale map[string]struct{}) *probeWorker {
+// stale lists the indexed rows that get a thumbnail generated.
+func newProbeWorker(prober probe.Prober, maker thumb.Maker, fs FS, clk clock.Clock, logger *slog.Logger, stale map[string]staleKind) *probeWorker {
 	return &probeWorker{
 		prober:   prober,
 		thumbMkr: maker,
@@ -120,8 +124,8 @@ func (pw *probeWorker) probeFile(
 	row, alreadyExists := existing[relPath]
 	pw.logger.Debug("scanner file checked", "set", setName, "path", relPath, "existing", alreadyExists)
 	if alreadyExists {
-		if _, isStale := pw.stale[relPath]; isStale {
-			return pw.refreshThumbnail(ctx, path, row), nil
+		if kind, isStale := pw.stale[relPath]; isStale {
+			return pw.refreshThumbnail(ctx, path, row, kind), nil
 		}
 		return nil, nil
 	}
@@ -197,11 +201,13 @@ func (pw *probeWorker) buildThumbnailPath(ctx context.Context, path, setPath str
 	return ""
 }
 
-// refreshThumbnail generates a new thumbnail for an indexed row whose stored
-// one is stale (see staleThumbnails) and returns the result for the
-// scanWriter to apply, or nil when no thumbnail could be made. In that case
-// the row keeps the path it has, and the next rescan tries again. The row's stored duration is used, so the file is not probed anew.
-func (pw *probeWorker) refreshThumbnail(ctx context.Context, path string, row model.Media) *fileResult {
+// refreshThumbnail generates a thumbnail for an indexed row that is due for
+// one (see staleThumbnails) and returns the result for the scanWriter to
+// apply, or nil when no thumbnail could be made. In that case the row keeps
+// what it has, and the next rescan tries again.
+//
+// The row's stored duration is used, so the file is not probed anew.
+func (pw *probeWorker) refreshThumbnail(ctx context.Context, path string, row model.Media, kind staleKind) *fileResult {
 	var thumbPath string
 	if row.Type == model.MediaTypeVideo {
 		thumbPath = pw.thumbMkr.MakeVideo(ctx, path, row.Duration)
@@ -211,7 +217,12 @@ func (pw *probeWorker) refreshThumbnail(ctx context.Context, path string, row mo
 	if thumbPath == "" {
 		return nil
 	}
-	replaced := row.ThumbnailPath
+	result := &fileResult{media: &row, path: path, refresh: true}
+	if kind != staleNone {
+		// Only a generated thumbnail is ever deleted. A row without one
+		// stores nothing, or the image itself.
+		result.replaced = row.ThumbnailPath
+	}
 	row.ThumbnailPath = thumbPath
-	return &fileResult{media: &row, path: path, replaced: replaced}
+	return result
 }

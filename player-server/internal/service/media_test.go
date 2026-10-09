@@ -1133,7 +1133,9 @@ func TestMediaService_UploadMedia_ProbeAndThumbnail(t *testing.T) {
 		}
 	})
 
-	t.Run("thumbnail failure cleans up", func(t *testing.T) {
+	// A thumbnail that cannot be generated must not cost the user the
+	// upload: the file is kept and indexed without a thumbnail.
+	t.Run("thumbnail failure keeps the upload", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		store := makeStore()
 		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
@@ -1144,15 +1146,15 @@ func TestMediaService_UploadMedia_ProbeAndThumbnail(t *testing.T) {
 		}}
 		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
 		data := strings.NewReader("fake video data")
-		_, err := svc.UploadMedia(ctx, 1, 1, "video.mp4", data, 16)
-		if err == nil {
-			t.Fatal("expected error")
+		media, err := svc.UploadMedia(ctx, 1, 1, "video.mp4", data, 16)
+		if err != nil {
+			t.Fatalf("upload rejected because of the thumbnail: %v", err)
 		}
-		files, _ := os.ReadDir(filepath.Join(tmpDir, "music"))
-		for _, e := range files {
-			if e.Name() != ".thumbnails" {
-				t.Fatalf("expected cleanup, found %s", e.Name())
-			}
+		if media.ThumbnailPath != "" || media.Duration != 120 {
+			t.Errorf("media = thumbnail %q, duration %v; want no thumbnail and the probed duration", media.ThumbnailPath, media.Duration)
+		}
+		if _, err := os.Stat(filepath.Join(tmpDir, "music", "video.mp4")); err != nil {
+			t.Errorf("uploaded file is gone: %v", err)
 		}
 	})
 
