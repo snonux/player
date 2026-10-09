@@ -107,6 +107,39 @@ test/e2e-web/
 | 11| admin API returns 403 for regular user   | GET /api/v1/admin/users → 403                   |
 | 12| logout redirects to login                | Session ends, browser lands on `/login.html`    |
 
+## Live-deployment suite
+
+`tests/live-deployment.live.ts` runs against an already bootstrapped,
+deployed instance instead of a throw-away local server. It is excluded from
+`npm test` (the default config only matches `*.test.ts`) and has its own
+config, `playwright.live.config.ts`.
+
+Differences from the smoke suite:
+
+- It never calls the bootstrap endpoint and contains no passwords. The
+  accounts come from the environment, so it is safe to point at an
+  internet-facing instance.
+- It uses the installed Google Chrome (`channel: 'chrome'`). The Chromium
+  bundled with Playwright has no H.264/AAC/MP3 decoders and cannot tell which
+  formats a real browser plays.
+- It expects the "all formats" library: sets `test-videos`, `test-audio` and
+  `test-images`, each holding one `sample-<ext>.<ext>` file per extension in
+  `internal/mediatype`. Stems must be unique per directory because thumbnails
+  are named after the stem.
+- AVI, WMV, FLV and WMA are asserted as *not* playable: the server streams
+  files as they are and no browser decodes these.
+
+```sh
+PLAYER_URL=https://player.example.org \
+E2E_ADMIN_USER=... E2E_ADMIN_PASS=... \
+E2E_USER=... E2E_USER_PASS=... \
+npx playwright test -c playwright.live.config.ts
+```
+
+The suite removes the favorites, notes, tags, progress, shares and
+permissions it creates. Its upload test leaves one soft-deleted
+`e2e-upload-*.png` in the admin trash (and on disk in `test-images/`).
+
 ## CI integration
 
 On CI set `CI=true` (Playwright reads this automatically) to:
