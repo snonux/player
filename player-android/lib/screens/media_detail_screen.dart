@@ -398,38 +398,7 @@ class _MediaDetailContent extends StatelessWidget {
             type: media.type,
           ),
 
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Title + favourite toggle on the same row.
-                _TitleRow(
-                  title: media.fileName,
-                  isFavorite: media.favorite,
-                  onFavoriteToggle: onFavoriteToggle,
-                ),
-
-                const SizedBox(height: 8),
-
-                // Codec · resolution · duration · file size.
-                _MetadataRow(media: media),
-
-                // Interactive tag picker: existing tags as deletable chips
-                // plus an autocomplete input for adding new tags.
-                // Always shown so users can add tags even when none exist yet.
-                const SizedBox(height: 12),
-                TagPicker(
-                  key: const Key('media_detail_tags'),
-                  mediaId: media.id,
-                  tags: media.tags,
-                  client: client,
-                ),
-
-                const SizedBox(height: 24),
-              ],
-            ),
-          ),
+          _details(),
 
           if (const {'video', 'audio', 'image'}.contains(media.type))
             Padding(
@@ -442,6 +411,40 @@ class _MediaDetailContent extends StatelessWidget {
       ),
     );
   }
+
+  /// Title, metadata and tags below the thumbnail.
+  Widget _details() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title + favourite toggle on the same row.
+            _TitleRow(
+              title: media.fileName,
+              isFavorite: media.favorite,
+              onFavoriteToggle: onFavoriteToggle,
+            ),
+
+            const SizedBox(height: 8),
+
+            // Codec · resolution · duration · file size.
+            _MetadataRow(media: media),
+
+            // Interactive tag picker: existing tags as deletable chips
+            // plus an autocomplete input for adding new tags.
+            // Always shown so users can add tags even when none exist yet.
+            const SizedBox(height: 12),
+            TagPicker(
+              key: const Key('media_detail_tags'),
+              mediaId: media.id,
+              tags: media.tags,
+              client: client,
+            ),
+
+            const SizedBox(height: 24),
+          ],
+        ),
+      );
 }
 
 // ---------------------------------------------------------------------------

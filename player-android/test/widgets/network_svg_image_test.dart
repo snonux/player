@@ -5,7 +5,10 @@
 // real. "Renders" is checked on pixels read back from the render tree, so a
 // test cannot pass merely because a widget of the right type exists.
 
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -77,7 +80,8 @@ void main() {
   group('sizing', _sizingTests);
   group('rejected documents', _errorTests);
   group('reloading', _reloadTests);
-  group('bitmap error fallback', _fallbackTests);
+  group('bitmap error classification', _fallbackTests);
+  group('bitmap error fallback', _fallbackWidgetTests);
 }
 
 void _renderingTests() {
@@ -147,19 +151,32 @@ void _sizingTests() {
   });
 }
 
-void _errorTests() {
-  final rejected = <String, String>{
-    'malformed XML': kMalformedSvg,
-    'a response that is not SVG': '{"error":"not found"}',
-    'zero dimensions': svgDocument(size: 'width="0" height="0"'),
-    'negative dimensions': svgDocument(size: 'width="-5" height="-5"'),
-    'no dimensions at all': svgDocument(size: ''),
-    'an empty drawing': svgDocument(body: ''),
-    'only an external image': svgDocument(
-        body: '<image width="10" height="10" href="http://x.example/a.png"/>'),
-  };
+/// Documents that must end in the error widget, by description.
+final _rejectedDocuments = <String, String>{
+  'malformed XML': kMalformedSvg,
+  'a response that is not SVG': '{"error":"not found"}',
+  'zero dimensions': svgDocument(size: 'width="0" height="0"'),
+  'negative dimensions': svgDocument(size: 'width="-5" height="-5"'),
+  'no dimensions at all': svgDocument(size: ''),
+  'an empty drawing': svgDocument(body: ''),
+  'only an external image': svgDocument(
+      body: '<image width="10" height="10" href="http://x.example/a.png"/>'),
+  'a size too small to lay out':
+      svgDocument(size: 'viewBox="0 0 1e-300 1e-300"'),
+  'a pattern fill': svgDocument(
+      size: 'width="100" height="100" viewBox="0 0 16000 16000"',
+      body: '<defs><pattern id="p" width="16000" height="16000" '
+          'patternUnits="userSpaceOnUse"><rect width="8000" height="8000" '
+          'fill="#f00"/></pattern></defs>'
+          '<rect width="16000" height="16000" fill="url(#p)"/>'),
+  'an embedded bitmap': svgDocument(
+      body: '<rect width="5" height="5"/>'
+          '${embeddedImage(Uint8List.fromList([1, 2, 3]))}'),
+};
 
-  for (final MapEntry(key: name, value: document) in rejected.entries) {
+void _errorTests() {
+  for (final MapEntry(key: name, value: document)
+      in _rejectedDocuments.entries) {
     testWidgets('$name shows the error widget', (tester) async {
       await _show(tester, document);
 
@@ -258,17 +275,72 @@ Future<RecordingSvgFetcher> _pumpFallback(
   return fetcher;
 }
 
+/// Same shape as `ClientException` of package:http, which the app cannot
+/// import: an exception class of its own that is not an `IOException`.
+class _ClientException implements Exception {
+  _ClientException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'ClientException: $message';
+}
+
 void _fallbackTests() {
   test('transport errors are not decode failures', () {
-    expect(isBitmapDecodeFailure(const HttpException('404')), isFalse);
-    expect(isBitmapDecodeFailure(const SocketException('offline')), isFalse);
-    expect(
-        isBitmapDecodeFailure(
-            NetworkImageLoadException(statusCode: 404, uri: Uri.parse(_url))),
-        isFalse);
-    expect(isBitmapDecodeFailure(Exception('Invalid image data')), isTrue);
+    final transport = <Object>[
+      const HttpException('404'),
+      const SocketException('offline'),
+      NetworkImageLoadException(statusCode: 404, uri: Uri.parse(_url)),
+      // What a dropped connection becomes inside the image cache.
+      _ClientException('Connection closed while receiving data'),
+      TimeoutException('stalled'),
+      StateError('Image origin does not match server'),
+    ];
+    for (final error in transport) {
+      expect(isBitmapDecodeFailure(error), isFalse, reason: '$error');
+    }
   });
 
+  testWidgets('the error of the real image codec is a decode failure',
+      (tester) async {
+    // Guards the type check against a change in how the engine reports
+    // undecodable data.
+    final error = await tester.runAsync(() async {
+      try {
+        await ui.instantiateImageCodec(Uint8List.fromList(List.filled(64, 66)));
+      } catch (error) {
+        return error;
+      }
+      return null;
+    });
+
+    expect(error, isNotNull);
+    expect(isBitmapDecodeFailure(error!), isTrue);
+  });
+}
+
+/// A bitmap that failed to decode, as [bitmapErrorOrSvg] shows it; [show]
+/// false removes it while keeping the provider container.
+Widget _probeApp(ProviderContainer container, {required bool show}) =>
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: !show
+            ? const SizedBox.shrink()
+            : Builder(
+                builder: (context) => bitmapErrorOrSvg(
+                  context,
+                  error: Exception('Invalid image data'),
+                  imageUrl: _url,
+                  placeholder: (_, __) => const Text('loading'),
+                  errorWidget: (_, __, ___) => const Text('image unavailable'),
+                ),
+              ),
+      ),
+    );
+
+void _fallbackWidgetTests() {
   testWidgets('a transport error shows the error without another request',
       (tester) async {
     final fetcher = await _pumpFallback(tester, const HttpException('404'));
@@ -293,5 +365,19 @@ void _fallbackTests() {
 
     expect(_picture, findsOneWidget);
     expect(find.textContaining('image unavailable'), findsNothing);
+  });
+
+  testWidgets('a file found not to be SVG is probed only once', (tester) async {
+    final fetcher = RecordingSvgFetcher(body: 'BBBB corrupt bitmap');
+    final container = _container(fetcher);
+    // The card scrolls into view, away, and back.
+    await tester.pumpWidget(_probeApp(container, show: true));
+    await pumpUntilFound(tester, _error);
+    await tester.pumpWidget(_probeApp(container, show: false));
+    await tester.pump();
+    await tester.pumpWidget(_probeApp(container, show: true));
+    await pumpUntilFound(tester, _error);
+
+    expect(fetcher.requests, hasLength(1));
   });
 }

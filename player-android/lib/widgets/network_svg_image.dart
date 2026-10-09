@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -16,7 +15,8 @@ typedef ImageErrorBuilder = Widget Function(BuildContext, String, Object);
 ///
 /// [errorWidget] is shown for a failed download and for every document
 /// that is rejected (not SVG, malformed, unusable size, nothing to draw,
-/// too large or too complex; see `svg_document.dart`).
+/// too large, too complex, or using pattern fills or embedded bitmaps; see
+/// `svg_document.dart`).
 ///
 /// Sizing: an SVG has no pixel size, so without [width]/[height] the
 /// drawing takes all the space its parent offers and is placed in it
@@ -131,21 +131,32 @@ class _PicturePainter extends CustomPainter {
       !identical(oldDelegate.picture, picture);
 }
 
-/// True when [error] from a bitmap loader may mean "this is not a bitmap".
+/// The runtime type of a bare `Exception('...')`.
+final Type _plainExceptionType = Exception().runtimeType;
+
+/// True when [error] from a bitmap loader means "the bytes are not a
+/// bitmap this device can decode".
 ///
-/// Transport failures (HTTP status, socket, TLS) say nothing about the
-/// format, and retrying them as SVG would only repeat a request that just
-/// failed. Anything else is treated as a decode failure.
+/// The engine's image codec reports that as a bare `Exception` ("Invalid
+/// image data"). Transport failures all have types of their own
+/// (`HttpException`, `SocketException`, `NetworkImageLoadException`, and
+/// `ClientException` from package:http, which is what a dropped connection
+/// becomes inside the image cache). They say nothing about the format, and
+/// probing them for SVG would only repeat a request that just failed, so
+/// only the exact decoder error qualifies. Comparing the type avoids both
+/// parsing the message and importing a package the app does not depend on.
 bool isBitmapDecodeFailure(Object error) =>
-    error is! IOException && error is! NetworkImageLoadException;
+    error.runtimeType == _plainExceptionType;
 
 /// Error handler for bitmap loaders showing an image of unknown type.
 ///
 /// Folder and set covers and some public shares have no file name, so an
 /// SVG among them is first handed to the bitmap decoder and fails there.
 /// For such a failure this returns a [NetworkSvgImage], which downloads the
-/// file again and accepts it only if its content is SVG; otherwise, and for
-/// transport errors, it returns [errorWidget] right away.
+/// file again and accepts it only if its content is SVG. A file found not
+/// to be SVG is remembered for the session, so a corrupt bitmap is probed
+/// once and not on every appearance. For transport errors this returns
+/// [errorWidget] right away.
 Widget bitmapErrorOrSvg(
   BuildContext context, {
   required Object error,

@@ -120,29 +120,6 @@ Future<Uint8List> makePng(int width, int height) async {
   return data!.buffer.asUint8List();
 }
 
-/// Rewrites the header of [png] so it claims [width] x [height] pixels,
-/// with a correct checksum. The pixel data no longer matches, which is fine
-/// for tests that must only get as far as reading the header.
-Uint8List pngClaimingSize(Uint8List png, int width, int height) {
-  final copy = Uint8List.fromList(png);
-  final data = ByteData.sublistView(copy);
-  data.setUint32(16, width);
-  data.setUint32(20, height);
-  data.setUint32(29, _crc32(Uint8List.sublistView(copy, 12, 29)));
-  return copy;
-}
-
-int _crc32(Uint8List bytes) {
-  var crc = 0xffffffff;
-  for (final byte in bytes) {
-    crc ^= byte;
-    for (var bit = 0; bit < 8; bit++) {
-      crc = (crc & 1) == 1 ? (crc >> 1) ^ 0xedb88320 : crc >> 1;
-    }
-  }
-  return crc ^ 0xffffffff;
-}
-
 /// An `<image>` element embedding [encoded] as a data URI.
 String embeddedImage(Uint8List encoded, {String mime = 'image/png'}) =>
     '<image width="10" height="10" '

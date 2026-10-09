@@ -7,34 +7,45 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'svg_document.dart';
 
-/// Compiles downloaded SVG bytes. [isCancelled] is asked right before the
-/// work starts, so a request that was dropped while waiting costs nothing.
-typedef SvgCompiler = Future<CompiledSvg> Function(
+/// Compiles downloaded SVG bytes to the vector_graphics binary format.
+/// [isCancelled] is asked right before the work starts, so a request that
+/// was dropped while waiting costs nothing.
+typedef SvgCompiler = Future<Uint8List> Function(
   Uint8List bytes, {
   bool Function()? isCancelled,
 });
 
+/// The work done in the isolate; must be a top-level or static function.
+typedef SvgCompileWork = Uint8List Function(Uint8List bytes);
+
 /// Runs [compileSvg] in short-lived background isolates.
 ///
-/// Parsing is too slow for the UI thread, and the document is untrusted:
+/// Parsing is too slow for the UI isolate, and the document is untrusted:
 ///  * At most [maxConcurrent] isolates run at once, so a grid full of SVG
 ///    thumbnails queues up instead of starting one isolate per card.
-///  * An isolate that is not done after [deadline] is killed. That bounds
-///    documents built to take forever, such as deeply nested `<use>`
-///    references that multiply into billions of shapes.
+///  * An isolate that is not done after [deadline] is killed. No input is
+///    known that takes this long within the download size cap (nested
+///    `<use>` references that multiply, for one, are rejected within
+///    milliseconds); the deadline is a backstop so that a parser weakness
+///    nobody has found yet costs a bounded amount of CPU instead of running
+///    forever.
 class IsolateSvgCompiler {
   IsolateSvgCompiler({
     this.maxConcurrent = 2,
     this.deadline = const Duration(seconds: 10),
+    this.work = compileSvg,
   });
 
   final int maxConcurrent;
   final Duration deadline;
 
+  /// Replaceable so tests can run work that never finishes.
+  final SvgCompileWork work;
+
   int _running = 0;
   final Queue<Completer<void>> _waiting = Queue();
 
-  Future<CompiledSvg> call(
+  Future<Uint8List> call(
     Uint8List bytes, {
     bool Function()? isCancelled,
   }) async {
@@ -68,24 +79,26 @@ class IsolateSvgCompiler {
     }
   }
 
-  /// The isolate answers with a [CompiledSvg], or with the error text.
+  /// The isolate answers with the compiled bytes, or with the error text.
   /// `null` arrives when it exits without an answer (killed or crashed).
-  Future<CompiledSvg> _compileInIsolate(Uint8List bytes) async {
+  Future<Uint8List> _compileInIsolate(Uint8List bytes) async {
     final port = ReceivePort();
-    final isolate = await Isolate.spawn(
-      _isolateMain,
-      (port.sendPort, bytes),
-      onExit: port.sendPort,
-      debugName: 'Compile SVG',
-    );
+    Isolate? isolate;
     try {
+      isolate = await Isolate.spawn(
+        _isolateMain,
+        (port.sendPort, work, bytes),
+        onExit: port.sendPort,
+        debugName: 'Compile SVG',
+      );
       final answer = await port.first.timeout(deadline);
-      if (answer is CompiledSvg) return answer;
+      if (answer is Uint8List) return answer;
       throw SvgException(answer is String ? answer : 'SVG compiler stopped');
     } on TimeoutException {
       throw const SvgException('SVG is too complex');
     } finally {
-      isolate.kill(priority: Isolate.immediate);
+      // Also reached when spawning fails, so the port never leaks.
+      isolate?.kill(priority: Isolate.immediate);
       port.close();
     }
   }
@@ -93,11 +106,11 @@ class IsolateSvgCompiler {
 
 /// Isolate entry point. Errors travel back as text because arbitrary
 /// exception objects may not be sendable between isolates.
-void _isolateMain((SendPort, Uint8List) message) {
-  final (port, bytes) = message;
+void _isolateMain((SendPort, SvgCompileWork, Uint8List) message) {
+  final (port, work, bytes) = message;
   Object answer;
   try {
-    answer = compileSvg(bytes);
+    answer = work(bytes);
   } on SvgException catch (error) {
     answer = error.message;
   } catch (error) {

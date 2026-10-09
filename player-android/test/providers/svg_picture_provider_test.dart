@@ -1,12 +1,13 @@
 // Tests for svgPictureProvider (svg_picture_provider.dart): caching, retry,
-// cancellation, account separation and embedded bitmap checks. Compilation
-// and picture decoding run for real; only the download is scripted.
+// cancellation, account separation and the session cache. Compilation and
+// picture decoding run for real; only the download is scripted.
 
 import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/svg_picture_provider.dart';
 import 'package:player_android/services/svg_compiler.dart';
 import 'package:player_android/services/svg_document.dart';
@@ -22,7 +23,7 @@ class _CountingCompiler {
   final _inner = IsolateSvgCompiler();
   int calls = 0;
 
-  Future<CompiledSvg> call(Uint8List bytes, {bool Function()? isCancelled}) {
+  Future<Uint8List> call(Uint8List bytes, {bool Function()? isCancelled}) {
     calls++;
     return _inner(bytes, isCancelled: isCancelled);
   }
@@ -62,7 +63,8 @@ void main() {
   group('loading', _loadingTests);
   group('retry and account separation', _retryTests);
   group('cancellation', _cancellationTests);
-  group('embedded bitmaps', _embeddedImageTests);
+  group('content that is not SVG', _notSvgTests);
+  group('session cache', _sessionCacheTests);
   group('SvgMemoryCache', _memoryCacheTests);
 }
 
@@ -179,23 +181,75 @@ void _cancellationTests() {
   });
 }
 
-void _embeddedImageTests() {
-  Future<void> show(String body) => _showOnce(
-      _container(RecordingSvgFetcher(body: svgDocument(body: body))), _request);
+void _notSvgTests() {
+  test('is remembered: a corrupt bitmap is probed once per session', () async {
+    final fetcher = RecordingSvgFetcher(body: 'BBBB not an image');
+    final container = _container(fetcher, compiler: _CountingCompiler());
 
-  test('a valid embedded bitmap is accepted', () async {
-    await show(embeddedImage(await makePng(2, 2)));
+    await expectLater(_showOnce(container, _request), _rejects('Not an SVG'));
+    await expectLater(_showOnce(container, _request), _rejects('Not an SVG'));
+
+    expect(fetcher.requests, hasLength(1));
   });
 
-  test('an undecodable embedded bitmap is rejected', () async {
-    final garbage = Uint8List.fromList(List.filled(64, 0x42));
-    await expectLater(
-        show(embeddedImage(garbage)), _rejects('unreadable embedded image'));
+  test('is rejected before an isolate is started for it', () async {
+    final compiler = _CountingCompiler();
+    final container = _container(RecordingSvgFetcher(body: '{"error":"gone"}'),
+        compiler: compiler);
+
+    await expectLater(_showOnce(container, _request), _rejects('Not an SVG'));
+
+    expect(compiler.calls, 0);
   });
 
-  test('an embedded bitmap claiming a huge size is rejected unread', () async {
-    final huge = pngClaimingSize(await makePng(2, 2), 20000, 20000);
-    await expectLater(show(embeddedImage(huge)), _rejects('too large'));
+  test('is remembered per credential, not per URL alone', () async {
+    final fetcher = RecordingSvgFetcher(body: 'BBBB');
+    final container = _container(fetcher);
+    final other = SvgRequest(uri: _uri, headers: const {'Cookie': 's=2'});
+
+    await expectLater(_showOnce(container, _request), _rejects('Not an SVG'));
+    fetcher.body = kValidSvg;
+    await _showOnce(container, other);
+
+    expect(fetcher.requests, hasLength(2));
+  });
+
+  test('an embedded bitmap is refused, not decoded', () async {
+    final png = await makePng(2, 2);
+    final container = _container(
+        RecordingSvgFetcher(body: svgDocument(body: embeddedImage(png))));
+
+    await expectLater(_showOnce(container, _request),
+        _rejects('embedded bitmaps are not supported'));
+  });
+}
+
+/// Auth state that a test can switch, as login and logout do in the app.
+class _SwitchableAuth extends AuthStateNotifier {
+  @override
+  Future<AuthState> build() async => const AuthState.authenticated();
+
+  void logOut() => state = const AsyncData(AuthState.unauthenticated());
+}
+
+void _sessionCacheTests() {
+  test('is emptied when the auth state changes', () async {
+    final fetcher = RecordingSvgFetcher();
+    final container = ProviderContainer(overrides: [
+      svgFetcherProvider.overrideWithValue(fetcher.fetcher),
+      authStateProvider.overrideWith(_SwitchableAuth.new),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(authStateProvider.future);
+
+    await _showOnce(container, _request);
+    expect(container.read(svgMemoryCacheProvider).get(_request), isNotNull);
+
+    (container.read(authStateProvider.notifier) as _SwitchableAuth).logOut();
+
+    expect(container.read(svgMemoryCacheProvider).get(_request), isNull);
+    await _showOnce(container, _request);
+    expect(fetcher.requests, hasLength(2));
   });
 }
 
@@ -219,9 +273,14 @@ void _memoryCacheTests() {
     expect(cache.get(request(6)), isNotNull);
   });
 
-  test('does not store a drawing that would crowd out the rest', () {
-    final cache = SvgMemoryCache(maxBytes: 100)..put(request(1), bytes(26));
-    expect(cache.get(request(1)), isNull);
+  test('forgets the oldest not-SVG note when its list is full', () {
+    final cache = SvgMemoryCache(maxNotSvg: 2)
+      ..markNotSvg(request(1))
+      ..markNotSvg(request(2))
+      ..markNotSvg(request(3));
+    expect(cache.isKnownNotSvg(request(1)), isFalse);
+    expect(cache.isKnownNotSvg(request(2)), isTrue);
+    expect(cache.isKnownNotSvg(request(3)), isTrue);
   });
 
   test('replacing an entry does not double-count its size', () {

@@ -1,5 +1,4 @@
 import 'dart:collection';
-import 'dart:ui' as ui;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -10,11 +9,8 @@ import 'package:vector_graphics/vector_graphics.dart';
 import '../services/svg_compiler.dart';
 import '../services/svg_document.dart';
 import '../services/svg_fetcher.dart';
-
-/// Most pixels all bitmaps embedded in one SVG may decode to (4 bytes each).
-/// vector_graphics decodes them at full size on the UI isolate, so a small
-/// file claiming a gigantic bitmap is rejected before that happens.
-const int kMaxSvgEmbeddedPixels = 16 * 1024 * 1024;
+import 'api_client_provider.dart';
+import 'auth_state_provider.dart';
 
 /// One SVG download: where from and with which credentials.
 ///
@@ -48,20 +44,31 @@ class SvgRequest {
       'SvgRequest(${uri.host}, #${hashCode.toRadixString(16)})';
 }
 
-/// Keeps recently compiled SVGs in memory, least recently used first out.
+/// Remembers, in memory, what recent SVG requests turned out to be.
 ///
-/// A grid card that scrolls away releases its picture; without this cache
-/// scrolling back would download and parse the file again. Only successful
-/// compilations are stored, so a failed image is retried on the next visit.
-/// There is deliberately no disk cache: the one used for bitmaps belongs to
-/// a package this app does not depend on directly, and a second private one
-/// would need its own eviction and per-account separation for small files.
+/// Compiled drawings are kept least-recently-used first out: a grid card
+/// that scrolls away releases its picture, and without this scrolling back
+/// would download and parse the file again. Every drawing the compiler
+/// accepts fits (see `SvgLimits.maxCompiledBytes`).
+///
+/// Requests whose content was not SVG at all are remembered too. Images
+/// without a file name are probed for SVG content after the bitmap decoder
+/// rejected them; without this note a corrupt bitmap would be downloaded
+/// again every time it scrolls into view.
+///
+/// Download failures and rejected SVG documents are not remembered, so they
+/// are retried on the next visit. There is deliberately no disk cache: the
+/// one used for bitmaps belongs to a package this app does not depend on
+/// directly, and a second private one would need its own eviction and
+/// per-account separation for small files.
 class SvgMemoryCache {
-  SvgMemoryCache({this.maxBytes = 16 * 1024 * 1024});
+  SvgMemoryCache({this.maxBytes = 16 * 1024 * 1024, this.maxNotSvg = 512});
 
   final int maxBytes;
+  final int maxNotSvg;
   int _bytes = 0;
   final LinkedHashMap<SvgRequest, ByteData> _entries = LinkedHashMap();
+  final LinkedHashSet<SvgRequest> _notSvg = LinkedHashSet();
 
   /// Returns the entry and marks it as most recently used.
   ByteData? get(SvgRequest request) {
@@ -71,8 +78,6 @@ class SvgMemoryCache {
   }
 
   void put(SvgRequest request, ByteData data) {
-    // One oversized drawing must not push everything else out.
-    if (data.lengthInBytes > maxBytes ~/ 4) return;
     _bytes -= _entries.remove(request)?.lengthInBytes ?? 0;
     _entries[request] = data;
     _bytes += data.lengthInBytes;
@@ -80,9 +85,26 @@ class SvgMemoryCache {
       _bytes -= _entries.remove(_entries.keys.first)!.lengthInBytes;
     }
   }
+
+  bool isKnownNotSvg(SvgRequest request) => _notSvg.contains(request);
+
+  void markNotSvg(SvgRequest request) {
+    _notSvg.add(request);
+    if (_notSvg.length > maxNotSvg) _notSvg.remove(_notSvg.first);
+  }
 }
 
+/// The cache of the current session. It is replaced by an empty one when
+/// the auth state or the server changes, so drawings fetched for one
+/// account do not stay in memory after logout. (They could not be shown to
+/// another account anyway, since the keys include the credentials.)
+///
+/// Like `authenticatedImageHeadersProvider`, this only watches providers
+/// that already exist, so tests without an auth setup are not forced to
+/// create one.
 final svgMemoryCacheProvider = Provider<SvgMemoryCache>((ref) {
+  if (ref.exists(authStateProvider)) ref.watch(authStateProvider);
+  if (ref.exists(playerBaseUrlProvider)) ref.watch(playerBaseUrlProvider);
   return SvgMemoryCache();
 });
 
@@ -106,20 +128,14 @@ final svgPictureProvider =
       disposed = true;
       cancel.cancel('SVG no longer shown');
     });
-    final cache = ref.watch(svgMemoryCacheProvider);
+    // Read, not watched: a picture on screen need not reload when the cache
+    // is replaced at logout.
+    final cache = ref.read(svgMemoryCacheProvider);
     final fetch = ref.watch(svgFetcherProvider);
     final compile = ref.watch(svgCompilerProvider);
 
-    var data = cache.get(request);
-    if (data == null) {
-      final bytes = await fetch(request.uri, request.headers, cancel);
-      // A transport may deliver a body despite the cancelled token.
-      if (disposed) throw const SvgException('SVG request cancelled');
-      final compiled = await compile(bytes, isCancelled: () => disposed);
-      await checkEmbeddedImages(compiled.images);
-      data = ByteData.sublistView(compiled.data);
-      cache.put(request, data);
-    }
+    final data = cache.get(request) ??
+        await _download(cache, request, fetch, compile, cancel, () => disposed);
     final info = await decodeSvgPicture(data);
     if (disposed) {
       info.picture.dispose();
@@ -130,47 +146,38 @@ final svgPictureProvider =
   },
 );
 
-/// Rejects embedded bitmaps that are not decodable or decode to too many
-/// pixels. Only the image headers are read here.
-Future<void> checkEmbeddedImages(List<Uint8List> images) async {
-  var pixels = 0;
-  for (final encoded in images) {
-    final buffer = await ui.ImmutableBuffer.fromUint8List(encoded);
-    try {
-      final descriptor = await ui.ImageDescriptor.encoded(buffer);
-      pixels += descriptor.width * descriptor.height;
-      descriptor.dispose();
-    } on SvgException {
-      rethrow;
-    } catch (_) {
-      throw const SvgException('SVG has an unreadable embedded image');
-    } finally {
-      buffer.dispose();
-    }
-    if (pixels > kMaxSvgEmbeddedPixels) {
-      throw const SvgException('SVG has an embedded image that is too large');
-    }
+/// Fetches and compiles [request] and records the outcome in [cache].
+Future<ByteData> _download(
+  SvgMemoryCache cache,
+  SvgRequest request,
+  SvgFetcher fetch,
+  SvgCompiler compile,
+  CancelToken cancel,
+  bool Function() isDisposed,
+) async {
+  if (cache.isKnownNotSvg(request)) {
+    throw const SvgException('Not an SVG document');
   }
+  final bytes = await fetch(request.uri, request.headers, cancel);
+  // A transport may deliver a body despite the cancelled token.
+  if (isDisposed()) throw const SvgException('SVG request cancelled');
+  if (!looksLikeSvg(bytes)) {
+    cache.markNotSvg(request);
+    throw const SvgException('Not an SVG document');
+  }
+  final compiled = await compile(bytes, isCancelled: isDisposed);
+  final data = ByteData.sublistView(compiled);
+  cache.put(request, data);
+  return data;
 }
 
 /// Turns compiled SVG bytes into a picture clipped to the SVG's view box.
 ///
-/// An embedded bitmap that fails to decode is an error in every build mode;
-/// vector_graphics alone would assert in debug builds and silently leave
-/// the bitmap out in release builds.
-Future<PictureInfo> decodeSvgPicture(ByteData data) async {
-  Object? imageError;
-  final info = await vg.loadPicture(
-    _CompiledSvgLoader(data),
-    null,
-    onError: (error, _) => imageError = error,
-  );
-  if (imageError != null) {
-    info.picture.dispose();
-    throw const SvgException('SVG has an unreadable embedded image');
-  }
-  return info;
-}
+/// Decoding only records drawing commands: the features that would decode
+/// or allocate bitmaps here (patterns, embedded images) were rejected by the
+/// compiler step, see `svg_document.dart`.
+Future<PictureInfo> decodeSvgPicture(ByteData data) =>
+    vg.loadPicture(_CompiledSvgLoader(data), null);
 
 /// Hands already compiled bytes to vector_graphics. Identity-based equality
 /// keeps the decoder's bookkeeping for different drawings apart.
