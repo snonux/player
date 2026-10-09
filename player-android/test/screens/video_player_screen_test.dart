@@ -6,6 +6,8 @@
 //   3. Retry button re-triggers initialisation and ends in an error state.
 //   4. Screen renders the AppBar title containing the mediaId.
 //   5. Stream URL resolution (route-extra URL and client.streamUrl fallback).
+//   6. Compatibility stream: preparing state while the server answers 503,
+//      terminal errors, leaving while preparing, and readable error texts.
 //
 // VideoPlayerController relies on native platform channels (ExoPlayer /
 // AVPlayer) that are unavailable in the Flutter test harness.  We exploit the
@@ -34,10 +36,12 @@ import 'package:go_router/go_router.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
+import 'package:player_android/providers/playback_preparer_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/providers/playback_session_provider.dart';
 import 'package:player_android/screens/video_player_screen.dart';
 import 'package:player_android/services/progress_queue.dart';
+import 'package:player_android/services/playback_preparer.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
@@ -80,6 +84,25 @@ class _FakeApiClient extends PlayerApiClient {
 
   /// Records how many times [updateProgressStatus] was called.
   int updateProgressStatusCallCount = 0;
+
+  /// Answers for [probePlayback], consumed in order; the last one repeats.
+  /// Empty means the test does not expect a compatibility-stream probe.
+  final probeAnswers = <PlaybackProbe>[];
+  final probedUrls = <Uri>[];
+  final probeTokens = <CancelToken?>[];
+
+  @override
+  Future<PlaybackProbe> probePlayback(
+    Uri url, {
+    CancelToken? cancelToken,
+  }) async {
+    if (probeAnswers.isEmpty) throw StateError('Unexpected probe of $url');
+    final index = probedUrls.length;
+    probedUrls.add(url);
+    probeTokens.add(cancelToken);
+    return probeAnswers[
+        index < probeAnswers.length ? index : probeAnswers.length - 1];
+  }
 
   @override
   Future<double?> getMediaProgress(int mediaId) async {
@@ -244,6 +267,7 @@ Future<void> _pumpScreen(
   PlaybackRequest? request,
   bool forbidServerDependencies = false,
   PlaybackSessionCoordinator? coordinator,
+  PlaybackPreparer? preparer,
 }) async {
   final router = GoRouter(
     initialLocation: '/video/$mediaId',
@@ -265,6 +289,8 @@ Future<void> _pumpScreen(
       overrides: [
         if (coordinator != null)
           playbackSessionCoordinatorProvider.overrideWithValue(coordinator),
+        if (preparer != null)
+          playbackPreparerProvider.overrideWithValue(preparer),
         tokenStorageProvider.overrideWith((ref) {
           if (forbidServerDependencies) throw StateError('Server token read');
           return const _FakeTokenStorage();
@@ -284,6 +310,42 @@ Future<void> _pumpScreen(
     ),
   );
 }
+
+const _kCompatUrl = 'http://localhost:8080/api/v1/media/42/compat';
+const _kPreparingLabel = Key('playback_preparing_label');
+const _kTranscoding = PlaybackProbe(
+  statusCode: 503,
+  retryAfter: Duration(seconds: 5),
+);
+
+/// Installs a playable native video platform for one test.
+_PlayableVideoPlatform _usePlayablePlatform() {
+  final previousPlatform = VideoPlayerPlatform.instance;
+  final platform = _PlayableVideoPlatform();
+  VideoPlayerPlatform.instance = platform;
+  addTearDown(() {
+    VideoPlayerPlatform.instance = previousPlatform;
+    // Not awaited: close() only completes once a listener saw the end, and
+    // tests in which no player is created never listen.
+    unawaited(platform.events.close());
+  });
+  return platform;
+}
+
+/// Lets a started player finish its play() call, then leaves the screen so
+/// the controller and its position timer are disposed before the test ends.
+/// The plugin completes both outside the fake clock, hence runAsync.
+Future<void> _leavePlayingScreen(WidgetTester tester) async {
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+  await tester.pumpAndSettle();
+}
+
+String _errorText(WidgetTester tester) => tester
+    .widget<Text>(find.byKey(const Key('video_player_error_message')))
+    .data!;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -434,7 +496,14 @@ void main() {
     expect((await tester.runAsync(() => next))!.isCurrent, isTrue);
     await tester.pump();
     expect(coordinator.isLocalSourceInUse(uri), isFalse);
-    expect(find.textContaining('unreadable'), findsOneWidget);
+    // A local file the device cannot decode: no server can convert it, and
+    // the raw PlatformException text must not be shown.
+    expect(
+      _errorText(tester),
+      'Cannot play “Unreadable file”. '
+      'This format cannot be played on this device.',
+    );
+    expect(find.textContaining('PlatformException'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
@@ -701,6 +770,188 @@ void main() {
     await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
     await tester.pumpAndSettle();
   });
+  // --------------------------------------------------------------------------
+  // Compatibility stream (server-side transcoded media)
+  // --------------------------------------------------------------------------
+
+  group('compatibility stream', () {
+    testWidgets('shows the preparing state while 503, then plays and resumes',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      final queue = _FakeProgressQueue();
+      final client = _FakeApiClient()
+        ..progressResult = 30
+        ..probeAnswers
+            .addAll([_kTranscoding, const PlaybackProbe(statusCode: 200)]);
+      await _pumpScreen(tester, client,
+          mediaUrl: _kCompatUrl, mediaTitle: 'clip.wmv', progressQueue: queue);
+      await tester.pump();
+      await tester.pump();
+
+      // First answer was 503: the player has not been handed the URL yet.
+      expect(find.byKey(_kPreparingLabel), findsOneWidget);
+      expect(find.text('Preparing playback…'), findsOneWidget);
+      expect(find.byKey(const Key('video_player_error')), findsNothing);
+      expect(platform.lastSource, isNull);
+      expect(client.probedUrls, [Uri.parse(_kCompatUrl)]);
+
+      // Retry-After elapses, the second probe is 200 and playback starts.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(client.probedUrls, hasLength(2));
+      expect(platform.lastSource!.uri, _kCompatUrl);
+      expect(find.byKey(_kPreparingLabel), findsNothing);
+      expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);
+      expect(platform.playCalls, 1);
+      // Resume and progress saving work exactly as for the original stream.
+      expect(platform.position, const Duration(seconds: 30));
+      platform.position = const Duration(seconds: 40);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+      expect(queue.positions, [(42, 40.0)]);
+
+      await _leavePlayingScreen(tester);
+    });
+
+    testWidgets('a ready stream is not held back by the preparing state',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      final client = _FakeApiClient()
+        ..probeAnswers.add(const PlaybackProbe(statusCode: 200));
+      await _pumpScreen(tester, client, mediaUrl: _kCompatUrl);
+      await tester.pumpAndSettle();
+
+      expect(client.probedUrls, hasLength(1));
+      expect(platform.lastSource!.uri, _kCompatUrl);
+      expect(find.byKey(_kPreparingLabel), findsNothing);
+      await _leavePlayingScreen(tester);
+    });
+
+    testWidgets('the original stream is played without a probe',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      // probeAnswers is empty: a probe would throw and fail playback.
+      final client = _FakeApiClient();
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+
+      expect(client.probedUrls, isEmpty);
+      expect(platform.lastSource!.uri, client.streamUrl(42));
+      expect(find.byKey(const Key('video_player_error')), findsNothing);
+      await _leavePlayingScreen(tester);
+    });
+
+    testWidgets('503 until the cap ends in a readable error', (tester) async {
+      final platform = _usePlayablePlatform();
+      final client = _FakeApiClient()..probeAnswers.add(_kTranscoding);
+      var now = DateTime(2026);
+      await _pumpScreen(
+        tester,
+        client,
+        mediaUrl: _kCompatUrl,
+        mediaTitle: 'clip.wmv',
+        preparer: PlaybackPreparer(
+          maxWait: const Duration(seconds: 12),
+          now: () => now,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      for (var retry = 0; retry < 2; retry++) {
+        expect(find.byKey(_kPreparingLabel), findsOneWidget);
+        now = now.add(const Duration(seconds: 5));
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pump();
+      }
+
+      // 10 s waited; another 5 s pause would pass the 12 s cap.
+      expect(client.probedUrls, hasLength(3));
+      expect(
+        _errorText(tester),
+        'Could not prepare “clip.wmv” in time. Please try again later.',
+      );
+      expect(find.byKey(_kPreparingLabel), findsNothing);
+      expect(platform.lastSource, isNull);
+      // Nothing keeps probing behind the error view.
+      await tester.pump(const Duration(minutes: 1));
+      expect(client.probedUrls, hasLength(3));
+    });
+
+    testWidgets('500 is terminal; Retry probes again', (tester) async {
+      final platform = _usePlayablePlatform();
+      final client = _FakeApiClient()
+        ..probeAnswers.addAll(const [
+          PlaybackProbe(statusCode: 500),
+          PlaybackProbe(statusCode: 200),
+        ]);
+      await _pumpScreen(tester, client,
+          mediaUrl: _kCompatUrl, mediaTitle: 'clip.wmv');
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        _errorText(tester),
+        'Cannot play “clip.wmv”. The server could not convert this file.',
+      );
+      expect(client.probedUrls, hasLength(1));
+      expect(platform.lastSource, isNull);
+
+      await tester.tap(find.byKey(const Key('video_player_retry')));
+      await tester.pumpAndSettle();
+      expect(client.probedUrls, hasLength(2));
+      expect(platform.lastSource!.uri, _kCompatUrl);
+      expect(find.byKey(const Key('video_player_error')), findsNothing);
+      await _leavePlayingScreen(tester);
+    });
+
+    testWidgets('leaving the screen while preparing stops the retries',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      final coordinator = PlaybackSessionCoordinator();
+      final client = _FakeApiClient()..probeAnswers.add(_kTranscoding);
+      await _pumpScreen(tester, client,
+          mediaUrl: _kCompatUrl, coordinator: coordinator);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(_kPreparingLabel), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(minutes: 1));
+
+      expect(client.probedUrls, hasLength(1));
+      expect(client.probeTokens.single!.isCancelled, isTrue);
+      expect(platform.lastSource, isNull);
+      // The abandoned attempt no longer owns the player.
+      expect(coordinator.activeKind, isNull);
+    });
+
+    testWidgets('a source the device cannot decode shows a readable error',
+        (tester) async {
+      final platform = _usePlayablePlatform()..failInitialize = true;
+      final client = _FakeApiClient();
+      await _pumpScreen(tester, client, mediaTitle: 'clip.wmv');
+      // Cleanup of the failed controller briefly shows the "stopped" text;
+      // wait for the failure message that replaces it.
+      for (var attempt = 0;
+          attempt < 100 &&
+              find.textContaining('Cannot play').evaluate().isEmpty;
+          attempt++) {
+        await tester.pump(const Duration(milliseconds: 10));
+        await tester.runAsync(
+            () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+      }
+
+      expect(platform.lastSource, isNotNull);
+      expect(
+        _errorText(tester),
+        'Cannot play “clip.wmv”. This format cannot be played on this device.',
+      );
+      expect(find.textContaining('PlatformException'), findsNothing);
+      expect(find.textContaining('Playback failed'), findsNothing);
+      await _leavePlayingScreen(tester);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+  });
+
   // --------------------------------------------------------------------------
   // Loading state
   // --------------------------------------------------------------------------

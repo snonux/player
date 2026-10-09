@@ -13,8 +13,12 @@ import '../providers/api_client_provider.dart';
 import '../providers/playback_session_provider.dart';
 import '../providers/progress_queue_provider.dart';
 import '../services/playback_request.dart';
+import '../services/playback_source_resolver.dart';
 import '../services/shared_video_events.dart';
 import '../services/playback_session_coordinator.dart';
+import '../utils/playback_errors.dart';
+import '../widgets/playback_loading_view.dart';
+import 'playback_preparation_mixin.dart';
 
 // How often progress updates are emitted to the server while playing.
 const _kProgressInterval = Duration(seconds: 5);
@@ -26,9 +30,15 @@ const _kFinishedThreshold = 0.95;
 // VideoPlayerScreen
 // ---------------------------------------------------------------------------
 
-/// Full-screen video player that streams from `/api/v1/media/{id}/stream`.
+/// Full-screen video player that streams from `/api/v1/media/{id}/stream`,
+/// or from `/compat` when the server marks the item as transcoded.
 ///
 /// Design decisions:
+///   - A compatibility stream is probed first ([PlaybackPreparationMixin]):
+///     while the server is still transcoding it answers 503, which the native
+///     player could only report as a broken source.
+///   - Failures are shown as a readable sentence ([playbackErrorMessage]),
+///     never as the raw exception text.
 ///   - [ConsumerStatefulWidget] gives access to Riverpod providers while
 ///     holding the mutable controller state in [State].
 ///   - Bearer token is attached via `httpHeaders` on [VideoPlayerController]
@@ -54,8 +64,9 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String mediaId;
 
   /// The resolved HLS/direct stream URL, optionally provided as route extra.
-  /// When null, [PlayerApiClient.streamUrl] is called to derive the URL so the
-  /// base URL stays in a single place (Dependency Inversion Principle).
+  /// When null, the screen starts from [PlayerApiClient.streamUrl] and looks
+  /// the item up to learn whether the server wants its compatibility stream
+  /// played instead, so the URL rules stay in the API client.
   final String? mediaUrl;
 
   /// Readable file name or episode title for the app bar. Falls back to a generic label when the
@@ -79,7 +90,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
 // ---------------------------------------------------------------------------
 
 class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, PlaybackPreparationMixin {
   // Nullable until initialisation completes (or fails).
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
@@ -131,6 +142,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         oldWidget.isPublicShare != widget.isPublicShare) {
       _initGeneration++;
       setState(() {
+        cancelPlaybackPreparation();
         _isLoading = true;
         _error = null;
       });
@@ -170,11 +182,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   /// Initializes the typed source with a content-URI or network controller,
   /// applies its resume position, and starts controls and progress reporting.
   /// Only server requests read account credentials. Ownership is checked after
-  /// each async step before the controller can start playback.
+  /// each async step before the controller can start playback. A server
+  /// compatibility stream is awaited before the native player is created.
   Future<void> _initPlayer() async {
     if (!mounted) return;
     final initGeneration = _initGeneration;
-    final request = _effectiveRequest();
+    final request = await _resolveRequest();
+    if (!mounted || initGeneration != _initGeneration) return;
     final coordinator = ref.read(playbackSessionCoordinatorProvider);
     final PlaybackSessionLease? lease;
     try {
@@ -187,7 +201,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     } catch (error) {
       if (mounted && _initGeneration == initGeneration) {
         setState(() {
-          _error = _initErrorMessage(error);
+          _error = _errorMessage(error, request);
           _isLoading = false;
         });
       }
@@ -225,13 +239,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         await lease.release();
         if (!mounted || _initGeneration != initGeneration) return;
         setState(() {
-          _error = _initErrorMessage(error);
+          _error = _errorMessage(error, request);
           _isLoading = false;
         });
       }
       return;
     }
     if (!current()) return;
+    if (!await _streamIsPlayable(request, lease, current)) return;
 
     VideoPlayerController? videoController;
     try {
@@ -312,6 +327,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         allowFullScreen: true,
         allowMuting: true,
         showOptions: false,
+        // Chewie shows this when the native player fails after it started
+        // (for example a codec it cannot decode further into the file).
+        errorBuilder: (context, _) => _buildMidPlaybackError(request),
         customControls: videoController.value.duration <= Duration.zero
             ? _UnknownDurationControls(
                 controller: videoController,
@@ -354,11 +372,44 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       }
       if (mounted && _initGeneration == initGeneration) {
         setState(() {
-          _error = _initErrorMessage(error);
+          _error = _errorMessage(error, request);
           _isLoading = false;
         });
       }
     }
+  }
+
+  /// Waits for a server compatibility stream to be ready. Returns false when
+  /// playback must not start: this attempt was superseded, or preparing
+  /// failed and the error view is now showing.
+  Future<bool> _streamIsPlayable(
+    PlaybackRequest request,
+    PlaybackSessionLease lease,
+    bool Function() current,
+  ) async {
+    final initGeneration = _initGeneration;
+    try {
+      return await waitUntilPlayable(request, current: current) && current();
+    } catch (error) {
+      if (!current()) return false;
+      await lease.release();
+      if (!mounted || _initGeneration != initGeneration) return false;
+      setState(() {
+        _error = _errorMessage(error, request);
+        _isLoading = false;
+      });
+      return false;
+    }
+  }
+
+  /// Builds the request, looking up the playback URL when the route supplied
+  /// only a media ID (no typed request and no URL in the route extra).
+  Future<PlaybackRequest> _resolveRequest() {
+    final request = _effectiveRequest();
+    if (widget.request != null || widget.mediaUrl != null) {
+      return Future.value(request);
+    }
+    return resolveServerPlaybackSource(request, ref.read(apiClientProvider));
   }
 
   Future<void> _playController(
@@ -558,16 +609,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   // Error mapping
   // ---------------------------------------------------------------------------
 
-  /// Converts a controller initialisation exception to a readable UI string.
+  /// Converts a playback failure to the sentence shown in the error view.
   ///
-  /// Kept in the state class because it is tightly coupled to this screen's
-  /// error UI — no general-purpose helper needed (YAGNI).
-  String _initErrorMessage(Object e) {
-    final detail = e.toString();
-    if (detail.isNotEmpty && detail != 'null') {
-      return 'Playback failed: $detail';
-    }
-    return 'Could not start video playback. Please try again.';
+  /// The raw exception only goes to the debug log; the user gets the item's
+  /// title and a plain reason from [playbackErrorMessage].
+  String _errorMessage(Object error, PlaybackRequest request) {
+    debugPrint('Video playback of ${request.identity} failed: $error');
+    return playbackErrorMessage(error, title: request.title);
   }
 
   // ---------------------------------------------------------------------------
@@ -601,11 +649,28 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     return _buildPlayerView();
   }
 
-  /// Full-screen loading spinner shown while the player initialises.
+  /// Full-screen loading spinner shown while the player initialises, with a
+  /// "preparing" label while the server is still producing the stream.
   Widget _buildLoadingView() {
-    return const Center(
-      key: Key('video_player_loading'),
-      child: CircularProgressIndicator(),
+    return PlaybackLoadingView(
+      key: const Key('video_player_loading'),
+      preparing: isPreparingPlayback,
+    );
+  }
+
+  /// Replaces Chewie's bare error icon with the same readable sentence the
+  /// error view uses. Chewie passes the native error text, which is ignored.
+  Widget _buildMidPlaybackError(PlaybackRequest request) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          unsupportedFormatMessage(request.title),
+          key: const Key('video_player_playback_error_message'),
+          style: const TextStyle(color: Colors.white70),
+          textAlign: TextAlign.center,
+        ),
+      ),
     );
   }
 
@@ -666,6 +731,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Future<void> _retry() async {
     _initGeneration++;
     setState(() {
+      cancelPlaybackPreparation();
       _error = null;
       _isLoading = true;
       _finishedEmitted = false;

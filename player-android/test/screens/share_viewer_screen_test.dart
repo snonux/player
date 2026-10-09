@@ -31,6 +31,7 @@ import 'package:player_android/providers/public_api_client_provider.dart';
 import 'package:player_android/router.dart';
 import 'package:player_android/screens/share_viewer_screen.dart';
 import 'package:player_android/screens/image_viewer_screen.dart';
+import 'package:player_android/screens/video_player_screen.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/utils/error_mappers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -123,6 +124,57 @@ const _kVideoShareJson = '''
   "thumb_url": "/s/abc123/thumbnail"
 }
 ''';
+
+/// Share-page JSON for a video the server transcodes: `playback_url` is the
+/// compatibility stream while `stream_url` stays the original file.
+const _kTranscodedShareJson = '''
+{
+  "media": {
+    "id": 42,
+    "file_name": "holiday.wmv",
+    "type": "video",
+    "duration": 60.0,
+    "transcoded": true
+  },
+  "has_thumb": false,
+  "transcoded": true,
+  "stream_url": "/s/abc123/stream",
+  "playback_url": "/s/abc123/compat",
+  "download_url": "/s/abc123/download",
+  "thumb_url": ""
+}
+''';
+
+/// Opens the share viewer for [token] through the app's real router and taps
+/// Play; returns the video player screen the router built.
+Future<VideoPlayerScreen> _playShareThroughRouter(
+  WidgetTester tester,
+  _FakePublicApiClient client, {
+  String token = 'abc123',
+}) async {
+  SharedPreferences.setMockInitialValues({});
+  final container = ProviderContainer(overrides: [
+    authStateProvider.overrideWith(_Unauthenticated.new),
+    firstRunProvider.overrideWith((ref) async => false),
+    publicApiClientProvider.overrideWithValue(client),
+    publicShareBaseUrlProvider
+        .overrideWithValue(Uri.parse('http://test.local')),
+    apiClientProvider.overrideWith((ref) => throw StateError('No account API')),
+  ]);
+  addTearDown(container.dispose);
+  final router = container.read(routerProvider);
+  addTearDown(router.dispose);
+  await tester.pumpWidget(UncontrolledProviderScope(
+    container: container,
+    child: MaterialApp.router(routerConfig: router),
+  ));
+  router.go(AppRoutes.shareViewerPath(token));
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(find.byKey(const Key('share_viewer_play_button')));
+  await tester.tap(find.byKey(const Key('share_viewer_play_button')));
+  await tester.pumpAndSettle();
+  return tester.widget<VideoPlayerScreen>(find.byType(VideoPlayerScreen));
+}
 
 /// Valid share-page JSON for an audio file without a thumbnail.
 const _kAudioShareJson = '''
@@ -336,6 +388,54 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('playing tok7'), findsOneWidget);
   });
+  group('playback URL', () {
+    test('playback_url is parsed; without it the original stream is used', () {
+      final transcoded = SharePageMetadata.fromJson(_kTranscodedShareJson);
+      expect(transcoded.playbackUrl, '/s/abc123/compat');
+      expect(transcoded.streamUrl, '/s/abc123/stream');
+
+      // A server that predates the compatibility stream.
+      final original = SharePageMetadata.fromJson(_kVideoShareJson);
+      expect(original.playbackUrl, '/s/abc123/stream');
+    });
+
+    testWidgets('a transcoded share plays the compatibility stream',
+        (tester) async {
+      final client = _FakePublicApiClient()..pageJson = _kTranscodedShareJson;
+      final player = await _playShareThroughRouter(tester, client);
+
+      expect(player.mediaUrl, 'http://test.local/s/abc123/compat');
+      expect(player.isPublicShare, isTrue);
+      expect(player.mediaTitle, 'holiday.wmv');
+      // The fake has no probe endpoint, so the readiness probe fails: that
+      // it was attempted through the anonymous client (the account client
+      // throws when read) is shown by the readable error naming the file.
+      expect(
+        find.text('Could not reach the server to play “holiday.wmv”. '
+            'Check your connection and try again.'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('video_player_retry')), findsOneWidget);
+    });
+
+    testWidgets('an ordinary share plays the original stream', (tester) async {
+      final client = _FakePublicApiClient()..pageJson = _kVideoShareJson;
+      final player = await _playShareThroughRouter(tester, client);
+
+      expect(player.mediaUrl, 'http://test.local/s/abc123/stream');
+    });
+
+    testWidgets('a playback_url for another share token is not played',
+        (tester) async {
+      final client = _FakePublicApiClient()
+        ..pageJson = _kTranscodedShareJson.replaceAll(
+            '/s/abc123/compat', '/s/other/compat');
+      final player = await _playShareThroughRouter(tester, client);
+
+      expect(player.mediaUrl, 'http://test.local/s/abc123/stream');
+    });
+  });
+
   // --------------------------------------------------------------------------
   // Loading state
   // --------------------------------------------------------------------------

@@ -13,6 +13,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http_mock_adapter/http_mock_adapter.dart';
 import 'package:player_android/api/dio_player_api_client.dart';
+import 'package:player_android/api/player_api_client.dart';
+import 'package:player_android/models/models.dart';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -147,7 +149,8 @@ void main() {
       final (:dio, :adapter) = _buildTestDio();
       adapter.onGet(
         '/api/v1/media',
-        (server) => server.reply(200, [_mediaJson(id: 5, fileName: 'clip.mp4')]),
+        (server) =>
+            server.reply(200, [_mediaJson(id: 5, fileName: 'clip.mp4')]),
         queryParameters: {
           'type': 'video',
           'set_id': 1,
@@ -719,6 +722,146 @@ void main() {
         () => client.toggleEpisodeComplete(10),
         throwsA(isA<DioException>()),
       );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Compatibility stream: URL choice and readiness probe
+  // ---------------------------------------------------------------------------
+
+  group('playback URL', () {
+    test('transcoded media plays the compatibility stream', () {
+      final client = DioPlayerApiClient(dio: _buildTestDio().dio);
+      final transcoded =
+          Media.fromJson({..._mediaJson(id: 9), 'transcoded': true});
+
+      expect(
+        client.playbackUrl(transcoded),
+        'https://player.test/api/v1/media/9/compat',
+      );
+      expect(client.compatUrl(9), 'https://player.test/api/v1/media/9/compat');
+    });
+
+    test('other media plays the original stream', () {
+      final client = DioPlayerApiClient(dio: _buildTestDio().dio);
+      // A .wmv name alone must not select the compat stream: only the
+      // server's "transcoded" flag does.
+      final original = Media.fromJson(_mediaJson(id: 9, fileName: 'clip.wmv'));
+
+      expect(client.playbackUrl(original), client.streamUrl(9));
+    });
+
+    test('isCompatStreamUrl recognises library and share compat paths', () {
+      bool compat(String url) => isCompatStreamUrl(Uri.parse(url));
+
+      expect(compat('https://player.test/api/v1/media/9/compat'), isTrue);
+      expect(compat('https://player.test/api/media/9/compat'), isTrue);
+      expect(compat('https://player.test/s/tok7/compat'), isTrue);
+      expect(compat('https://player.test/api/v1/media/9/stream'), isFalse);
+      expect(compat('https://player.test/s/tok7/stream'), isFalse);
+      expect(compat('https://player.test'), isFalse);
+    });
+  });
+
+  group('probePlayback', () {
+    final compatUri = Uri.parse('https://player.test/api/v1/media/9/compat');
+
+    test('200 — ready; asks with HEAD so no share use is spent', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onHead(
+        'https://player.test/api/v1/media/9/compat',
+        (server) => server.reply(200, null),
+      );
+
+      final probe = await DioPlayerApiClient(dio: dio).probePlayback(compatUri);
+      expect(probe.statusCode, 200);
+      expect(probe.isReady, isTrue);
+      expect(probe.retryAfter, isNull);
+    });
+
+    test('503 — preparing, with the Retry-After hint', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onHead(
+        'https://player.test/api/v1/media/9/compat',
+        (server) => server.reply(
+          503,
+          '',
+          headers: {
+            // The mock adapter needs a content type; a real HEAD has no body.
+            'content-type': ['text/plain'],
+            'retry-after': ['5'],
+            'x-transcode-status': ['transcoding'],
+          },
+        ),
+      );
+
+      final probe = await DioPlayerApiClient(dio: dio).probePlayback(compatUri);
+      expect(probe.isPreparing, isTrue);
+      expect(probe.isReady, isFalse);
+      expect(probe.retryAfter, const Duration(seconds: 5));
+    });
+
+    test('503 without a usable Retry-After leaves the interval to the caller',
+        () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onHead(
+        'https://player.test/api/v1/media/9/compat',
+        (server) => server.reply(
+          503,
+          '',
+          headers: {
+            // The mock adapter needs a content type; a real HEAD has no body.
+            'content-type': ['text/plain'],
+            'retry-after': ['soon'],
+            'x-transcode-status': ['busy'],
+          },
+        ),
+      );
+
+      final probe = await DioPlayerApiClient(dio: dio).probePlayback(compatUri);
+      expect(probe.isPreparing, isTrue);
+      expect(probe.retryAfter, isNull);
+    });
+
+    for (final status in [400, 403, 404, 410, 415, 500, 507]) {
+      test('$status — returned as a terminal status, not thrown', () async {
+        final (:dio, :adapter) = _buildTestDio();
+        adapter.onHead(
+          'https://player.test/api/v1/media/9/compat',
+          (server) => server.reply(status, null),
+        );
+
+        final probe =
+            await DioPlayerApiClient(dio: dio).probePlayback(compatUri);
+        expect(probe.statusCode, status);
+        expect(probe.isReady, isFalse);
+        expect(probe.isPreparing, isFalse);
+      });
+    }
+
+    test('401 — thrown so the sign-out interceptor still sees it', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onHead(
+        'https://player.test/api/v1/media/9/compat',
+        (server) => server.reply(401, null),
+      );
+
+      expect(
+        () => DioPlayerApiClient(dio: dio).probePlayback(compatUri),
+        throwsA(isA<DioException>()),
+      );
+    });
+
+    test('probes a public share compat URL by its absolute address', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onHead(
+        'https://player.test/s/tok7/compat',
+        (server) => server.reply(200, null),
+      );
+
+      final probe = await DioPlayerApiClient(dio: dio)
+          .probePlayback(Uri.parse('https://player.test/s/tok7/compat'));
+      expect(probe.isReady, isTrue);
     });
   });
 }

@@ -204,10 +204,14 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 
   /// Opens the viewer or player appropriate for [media.type].
   ///
-  /// The stream URL is obtained via [PlayerApiClient.streamUrl] — keeping the
-  /// API path in one place and preventing Dio internals from leaking into the
-  /// UI layer (Dependency Inversion).  The URL is passed as a route extra so
-  /// the player screen can start playback without a second API call.
+  /// The URLs are obtained from [PlayerApiClient] — keeping the API paths in
+  /// one place and preventing Dio internals from leaking into the UI layer
+  /// (Dependency Inversion).  The URL is passed as a route extra so the
+  /// player screen can start playback without a second API call.
+  ///
+  /// Audio and video use [PlayerApiClient.playbackUrl], which is the server's
+  /// compatibility stream for items it marks as transcoded. Images are always
+  /// shown from the original.
   void _play() {
     final media = _media;
     if (media == null) return;
@@ -216,6 +220,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     // Delegate URL construction to the client; avoids coupling the screen to
     // the underlying Dio base URL or request structure.
     final streamUrl = client.streamUrl(media.id);
+    final playbackUrl = client.playbackUrl(media);
 
     if (media.type == 'image') {
       context.push(
@@ -225,12 +230,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     } else if (media.type == 'video') {
       context.push(
         AppRoutes.videoPlayerPath(media.id.toString()),
-        extra: {'mediaUrl': streamUrl, 'title': media.fileName},
+        extra: {'mediaUrl': playbackUrl, 'title': media.fileName},
       );
     } else if (media.type == 'audio') {
       context.push(
         AppRoutes.audioPlayerPath(media.id.toString()),
-        extra: {'mediaUrl': streamUrl, 'title': media.fileName},
+        extra: {'mediaUrl': playbackUrl, 'title': media.fileName},
       );
     }
   }

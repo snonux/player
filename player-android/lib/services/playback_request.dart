@@ -51,6 +51,20 @@ final class ServerPlaybackRequest extends PlaybackRequest {
   final String serverOrigin;
   final int userId;
 
+  /// The same item and progress callbacks, played from [sourceUri]. Used to
+  /// switch between the original stream and the compatibility stream.
+  ServerPlaybackRequest withSourceUri(Uri sourceUri) => ServerPlaybackRequest(
+        mediaId: mediaId,
+        serverOrigin: serverOrigin,
+        userId: userId,
+        sourceUri: sourceUri,
+        title: title,
+        startPosition: startPosition,
+        readPosition: readPosition,
+        savePosition: savePosition,
+        markFinished: markFinished,
+      );
+
   @override
   PlaybackSourceKind get kind => PlaybackSourceKind.server;
 }

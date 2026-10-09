@@ -214,8 +214,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => AudioPlayerScreen(
           mediaId: '0',
           mediaTitle: _parsePlayerExtra(state.extra).$3,
-          mediaUrl:
-              '${ProviderScope.containerOf(context, listen: false).read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
+          mediaUrl: _sharedPlaybackUrl(context, state),
           isPublicShare: true,
         ),
       ),
@@ -224,8 +223,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => VideoPlayerScreen(
           mediaId: '0',
           mediaTitle: _parsePlayerExtra(state.extra).$3,
-          mediaUrl:
-              '${ProviderScope.containerOf(context, listen: false).read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
+          mediaUrl: _sharedPlaybackUrl(context, state),
           isPublicShare: true,
         ),
       ),
@@ -400,6 +398,24 @@ final routerProvider = Provider<GoRouter>((ref) {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Returns the URL a public share's audio or video player opens.
+///
+/// The share viewer passes the server's `playback_url` (the compatibility
+/// stream for formats the device cannot decode) as the `mediaUrl` extra. It
+/// is only accepted for this route's own token on the share origin; without
+/// it (a route restored without its extra) the original stream is played.
+String _sharedPlaybackUrl(BuildContext context, GoRouterState state) {
+  final origin = ProviderScope.containerOf(context, listen: false)
+      .read(publicShareBaseUrlProvider)
+      .origin;
+  final sharePath = '/s/${state.pathParameters['token']}/';
+  final fromViewer = _parsePlayerExtra(state.extra).$1;
+  if (fromViewer != null && fromViewer.startsWith('$origin$sharePath')) {
+    return fromViewer;
+  }
+  return '$origin${sharePath}stream';
+}
 
 /// Parses the route [extra] passed to video, audio, and image viewer routes.
 ///

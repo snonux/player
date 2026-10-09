@@ -3,7 +3,18 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../models/models.dart';
+import '../services/playback_preparer.dart' show PlaybackProbe;
 import '../services/progress_queue.dart' show ProgressSyncClient;
+
+/// True when [uri] is a compatibility stream (`/api/v1/media/{id}/compat` or
+/// `/s/{token}/compat`).
+///
+/// Only that endpoint answers 503 while a rendition is being produced, so
+/// only these URLs are probed before they reach a native player. The server
+/// decides *which* media get this URL ("transcoded"/"playback_url"); the app
+/// never guesses from file extensions.
+bool isCompatStreamUrl(Uri uri) =>
+    uri.pathSegments.isNotEmpty && uri.pathSegments.last == 'compat';
 
 /// High-level API surface that maps 1-to-1 with the player-server REST API
 /// (see player-server/docs/api.md for the authoritative contract).
@@ -155,6 +166,27 @@ class PlayerApiClient implements ProgressSyncClient {
   /// consistent with every other API call.
   String streamUrl(int mediaId) =>
       '${rawDio.options.baseUrl}/api/v1/media/$mediaId/stream';
+
+  /// Returns the URL of the server-transcoded rendition (H.264/AAC or AAC)
+  /// of a media item whose original this device cannot be expected to decode.
+  ///
+  /// The server only serves it for media whose `transcoded` flag is true;
+  /// use [playbackUrl] to pick between this and [streamUrl].
+  String compatUrl(int mediaId) =>
+      '${rawDio.options.baseUrl}/api/v1/media/$mediaId/compat';
+
+  /// Returns the URL a player should open for [media]: the compatibility
+  /// stream when the server marked it `transcoded`, the original otherwise.
+  String playbackUrl(Media media) =>
+      media.transcoded ? compatUrl(media.id) : streamUrl(media.id);
+
+  /// Asks whether the playback [url] can be played right now.
+  ///
+  /// A HEAD request: the compatibility stream answers 503 with `Retry-After`
+  /// while its rendition is not ready, which a native player would report as
+  /// a broken source. HEAD never consumes a use of a public share.
+  Future<PlaybackProbe> probePlayback(Uri url, {CancelToken? cancelToken}) =>
+      throw UnimplementedError();
 
   /// Returns the URL for the cover image of a set's root or subfolder.
   ///
