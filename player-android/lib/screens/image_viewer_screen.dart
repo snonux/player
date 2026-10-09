@@ -4,12 +4,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../widgets/authenticated_network_image.dart';
+import '../widgets/public_network_image.dart';
 
 /// Shows an original image with pinch zoom.
 ///
 /// Library images load through the authenticated media stream after their
 /// metadata confirms the image type. Public shares load the share stream
 /// directly, never calling account APIs or sending credentials.
+///
+/// SVG images are rendered at the size of the screen and fill it; bitmaps
+/// keep their own pixel size unless they are larger than the screen.
+/// Zooming enlarges the pixels of either kind. An image of any
+/// type that cannot be downloaded or decoded shows a labelled error instead
+/// of a blank screen.
 class ImageViewerScreen extends ConsumerStatefulWidget {
   const ImageViewerScreen({
     super.key,
@@ -23,6 +30,8 @@ class ImageViewerScreen extends ConsumerStatefulWidget {
   final String? imageUrl;
 
   /// Readable file name shown in the app bar; falls back to a generic title.
+  /// A public share has no metadata request, so this name is also the hint
+  /// that the file is an SVG; without it the content decides.
   final String? mediaTitle;
 
   /// True for `/s/:token/image`, where [imageUrl] is the public share stream.
@@ -73,6 +82,7 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
         return _ZoomableImage(
           child: AuthenticatedNetworkImage(
             imageUrl: url,
+            sourceName: snapshot.data!.fileName,
             fit: BoxFit.contain,
             placeholder: (_, __) => const _ImageLoading(),
             errorWidget: (_, __, ___) => const _UnavailableImage(),
@@ -82,18 +92,18 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
     );
   }
 
-  /// Public shares use a plain network image: the token in the URL is the
-  /// only credential, so no session cookie or bearer token is attached.
+  /// Public shares load without credentials: the token in the URL is the
+  /// only secret, so no session cookie or bearer token is attached.
   Widget _publicImage() {
     final url = widget.imageUrl;
     if (url == null) return const _UnavailableImage();
     return _ZoomableImage(
-      child: Image.network(
-        url,
+      child: PublicNetworkImage(
+        imageUrl: url,
+        sourceName: widget.mediaTitle,
         fit: BoxFit.contain,
-        loadingBuilder: (_, child, progress) =>
-            progress == null ? child : const _ImageLoading(),
-        errorBuilder: (_, __, ___) => const _UnavailableImage(),
+        placeholder: (_, __) => const _ImageLoading(),
+        errorWidget: (_, __, ___) => const _UnavailableImage(),
       ),
     );
   }
@@ -104,6 +114,10 @@ class _ZoomableImage extends StatelessWidget {
 
   final Widget child;
 
+  /// The viewer shrink-wraps its child: a bitmap smaller than the screen is
+  /// shown centred at its own size rather than blown up and blurred. An SVG
+  /// asks for all available space by itself (see `NetworkSvgImage`), so it
+  /// fills the screen, rendered for that size.
   @override
   Widget build(BuildContext context) => Center(
         child: InteractiveViewer(
@@ -123,11 +137,22 @@ class _ImageLoading extends StatelessWidget {
       const Center(child: CircularProgressIndicator(color: Colors.white));
 }
 
+/// Error state for an image that is missing, not an image, or undecodable.
+///
+/// Icon and text are white because the viewer background is always black.
 class _UnavailableImage extends StatelessWidget {
   const _UnavailableImage();
 
   @override
   Widget build(BuildContext context) => const Center(
-        child: Text('Image unavailable', style: TextStyle(color: Colors.white)),
+        key: Key('image_viewer_error'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.broken_image_outlined, color: Colors.white, size: 64),
+            SizedBox(height: 12),
+            Text('Image unavailable', style: TextStyle(color: Colors.white)),
+          ],
+        ),
       );
 }

@@ -9,6 +9,7 @@ import '../providers/auth_state_provider.dart';
 import '../providers/public_api_client_provider.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/public_network_image.dart';
 
 // ---------------------------------------------------------------------------
 // Share page metadata model
@@ -319,13 +320,17 @@ class _ThumbnailWidget extends ConsumerWidget {
       borderRadius: BorderRadius.circular(8),
       child: AspectRatio(
         aspectRatio: 16 / 9,
-        child: Image.network(
-          absoluteThumbUrl,
+        // No credentials: the share token is in the URL. The thumbnail of
+        // an SVG share is the SVG itself, rendered for this box. If the
+        // image fails to load or decode, fall back to the type icon so the
+        // viewer always sees something meaningful.
+        child: PublicNetworkImage(
           key: const Key('share_viewer_thumbnail'),
+          imageUrl: absoluteThumbUrl,
+          sourceName: page.fileName,
           fit: BoxFit.cover,
-          // Fall back to the type icon if the image fails to load (e.g. network
-          // error) so the viewer always sees something meaningful.
-          errorBuilder: (_, __, ___) => _FallbackThumbnail(type: page.type),
+          placeholder: (_, __) => const SizedBox.shrink(),
+          errorWidget: (_, __, ___) => _FallbackThumbnail(type: page.type),
         ),
       ),
     );

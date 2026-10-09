@@ -9,6 +9,7 @@ import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../library_navigation.dart';
 import '../widgets/authenticated_network_image.dart';
+import '../widgets/network_svg_image.dart';
 import '../utils/error_mappers.dart';
 
 /// HTTP header map type used to authenticate cover-image requests against the
@@ -331,8 +332,11 @@ class _SetCard extends StatelessWidget {
 /// Unlike the previous implementation, this widget never inspects
 /// [MediaSet.coverThumbnailPath] (which is always empty in the listSets
 /// response).  Instead it unconditionally requests `GET /api/v1/sets/{id}/cover`
-/// and lets the server tell us whether a cover exists: 200 returns the JPEG;
+/// and lets the server tell us whether a cover exists: 200 returns the image;
 /// 404 triggers [errorWidget] which renders the folder-icon placeholder.
+/// The cover is one of the set's thumbnails and may therefore be an SVG;
+/// a file the bitmap decoder rejects is retried as SVG with the same headers
+/// (see [bitmapErrorOrSvg]) before the placeholder is shown.
 /// This keeps the client truthful to the API contract and reuses the same
 /// pattern already in [folder_browser_screen.dart] for folder covers.
 ///
@@ -385,7 +389,15 @@ class _CoverImage extends ConsumerWidget {
             httpHeaders: coverHeaders,
             fit: BoxFit.cover,
             placeholder: (_, __) => _loadingWidget(),
-            errorWidget: (_, __, ___) => _placeholderWidget(context),
+            errorWidget: (context, _, error) => bitmapErrorOrSvg(
+              context,
+              error: error,
+              imageUrl: coverUrl,
+              headers: coverHeaders,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => _loadingWidget(),
+              errorWidget: (context, _, __) => _placeholderWidget(context),
+            ),
           ),
 
         // Podcast badge: microphone icon in the top-right corner.
