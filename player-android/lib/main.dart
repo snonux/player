@@ -8,6 +8,7 @@ import 'providers/auth_state_provider.dart';
 import 'providers/progress_queue_provider.dart';
 import 'providers/api_client_provider.dart';
 import 'providers/settings_provider.dart';
+import 'providers/svg_image_provider.dart';
 import 'providers/theme_provider.dart';
 import 'navigation_key.dart';
 import 'router.dart';
@@ -124,6 +125,9 @@ class PlayerAndroidApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    // Keeps the listeners alive that empty the SVG cache on logout and on a
+    // server change.
+    ref.watch(svgCacheResetProvider);
 
     // Default to ThemeMode.system while the preference is loading so the app
     // does not flash an incorrect theme during startup.

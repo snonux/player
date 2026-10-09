@@ -581,6 +581,7 @@ class _MediaTile extends StatelessWidget {
       leading: _MediaThumbnail(
         key: Key('media_thumb_${item.id}'),
         thumbnailUrl: thumbnailUrl,
+        fileName: item.fileName,
         type: item.type,
       ),
       title: Text(
@@ -623,15 +624,19 @@ class _MediaTile extends StatelessWidget {
 /// Small square thumbnail for a media tile.
 ///
 /// Mirrors the [_ThumbnailImage] approach from [MediaGridScreen], using
-/// [CachedNetworkImage] with placeholder and error fallback.
+/// [AuthenticatedNetworkImage] with placeholder and error fallback.
 class _MediaThumbnail extends StatelessWidget {
   const _MediaThumbnail({
     super.key,
     required this.thumbnailUrl,
+    required this.fileName,
     required this.type,
   });
 
   final String thumbnailUrl;
+
+  /// Media file name; tells the image loader when the thumbnail is an SVG.
+  final String fileName;
 
   /// Media type string used to pick the placeholder icon.
   final String type;
@@ -647,6 +652,7 @@ class _MediaThumbnail extends StatelessWidget {
       height: size,
       child: AuthenticatedNetworkImage(
         imageUrl: thumbnailUrl,
+        sourceName: fileName,
         fit: BoxFit.cover,
         placeholder: (_, __) =>
             const Center(child: CircularProgressIndicator()),

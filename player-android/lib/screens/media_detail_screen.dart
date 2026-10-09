@@ -392,40 +392,13 @@ class _MediaDetailContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Full-width thumbnail/cover image.
-          _ThumbnailBanner(thumbnailUrl: thumbnailUrl, type: media.type),
-
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Title + favourite toggle on the same row.
-                _TitleRow(
-                  title: media.fileName,
-                  isFavorite: media.favorite,
-                  onFavoriteToggle: onFavoriteToggle,
-                ),
-
-                const SizedBox(height: 8),
-
-                // Codec · resolution · duration · file size.
-                _MetadataRow(media: media),
-
-                // Interactive tag picker: existing tags as deletable chips
-                // plus an autocomplete input for adding new tags.
-                // Always shown so users can add tags even when none exist yet.
-                const SizedBox(height: 12),
-                TagPicker(
-                  key: const Key('media_detail_tags'),
-                  mediaId: media.id,
-                  tags: media.tags,
-                  client: client,
-                ),
-
-                const SizedBox(height: 24),
-              ],
-            ),
+          _ThumbnailBanner(
+            thumbnailUrl: thumbnailUrl,
+            fileName: media.fileName,
+            type: media.type,
           ),
+
+          _details(),
 
           if (const {'video', 'audio', 'image'}.contains(media.type))
             Padding(
@@ -438,6 +411,40 @@ class _MediaDetailContent extends StatelessWidget {
       ),
     );
   }
+
+  /// Title, metadata and tags below the thumbnail.
+  Widget _details() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title + favourite toggle on the same row.
+            _TitleRow(
+              title: media.fileName,
+              isFavorite: media.favorite,
+              onFavoriteToggle: onFavoriteToggle,
+            ),
+
+            const SizedBox(height: 8),
+
+            // Codec · resolution · duration · file size.
+            _MetadataRow(media: media),
+
+            // Interactive tag picker: existing tags as deletable chips
+            // plus an autocomplete input for adding new tags.
+            // Always shown so users can add tags even when none exist yet.
+            const SizedBox(height: 12),
+            TagPicker(
+              key: const Key('media_detail_tags'),
+              mediaId: media.id,
+              tags: media.tags,
+              client: client,
+            ),
+
+            const SizedBox(height: 24),
+          ],
+        ),
+      );
 }
 
 // ---------------------------------------------------------------------------
@@ -446,13 +453,20 @@ class _MediaDetailContent extends StatelessWidget {
 
 /// Full-width hero image at the top of the detail screen.
 ///
-/// Falls back to an icon placeholder when [thumbnailUrl] is empty or the
-/// network request fails — mirrors the card thumbnail pattern from
-/// [MediaGridScreen] for visual consistency.
+/// Falls back to an icon placeholder when [thumbnailUrl] is empty, the
+/// network request fails, or the image cannot be decoded — mirrors the card
+/// thumbnail pattern from [MediaGridScreen] for visual consistency.
 class _ThumbnailBanner extends StatelessWidget {
-  const _ThumbnailBanner({required this.thumbnailUrl, required this.type});
+  const _ThumbnailBanner({
+    required this.thumbnailUrl,
+    required this.fileName,
+    required this.type,
+  });
 
   final String thumbnailUrl;
+
+  /// Media file name; tells the image loader when the thumbnail is an SVG.
+  final String fileName;
 
   /// Media type string used to choose the placeholder icon.
   final String type;
@@ -467,6 +481,7 @@ class _ThumbnailBanner extends StatelessWidget {
           : AuthenticatedNetworkImage(
               key: const Key('media_detail_thumbnail'),
               imageUrl: thumbnailUrl,
+              sourceName: fileName,
               fit: BoxFit.cover,
               placeholder: (_, __) =>
                   const Center(child: CircularProgressIndicator()),

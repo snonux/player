@@ -46,6 +46,21 @@ dependencies:
   connectivity_plus: ^6.1.4
   cookie_jar: ^4.0.9
   dio_cookie_manager: ^3.4.0
+  # vector_graphics + vector_graphics_compiler: render SVG images, which the
+  # server returns unconverted for both stream and thumbnail. The compiler
+  # parses the SVG text at runtime (in a background isolate) and
+  # vector_graphics paints the result. Shipping the compiler in the app is
+  # the normal way to show SVGs that arrive over the network: flutter_svg
+  # declares both packages as regular dependencies and does exactly this.
+  # They are used directly instead of through flutter_svg so that the app
+  # controls downloading, limits and error handling for untrusted files
+  # (see lib/services/svg_document.dart).
+  vector_graphics: ^1.2.3
+  vector_graphics_compiler: ^1.3.0
+  # xml: streaming XML parser, already shipped as a dependency of
+  # vector_graphics_compiler. Used directly by lib/services/svg_gate.dart to
+  # check an SVG against an allowlist before the compiler sees it.
+  xml: ^6.5.0
 
 dev_dependencies:
   flutter_test:
