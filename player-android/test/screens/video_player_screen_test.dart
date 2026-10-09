@@ -198,6 +198,11 @@ class _PlayableVideoPlatform extends VideoPlayerPlatform {
   int positionPolls = 0;
   int disposeCalls = 0;
   bool failInitialize = false;
+
+  /// When set, a created player never reports "initialized": a network
+  /// player that is still connecting.
+  bool withholdInitialize = false;
+  int createCalls = 0;
   Object? createError;
   Duration duration = const Duration(seconds: 100);
 
@@ -210,6 +215,8 @@ class _PlayableVideoPlatform extends VideoPlayerPlatform {
     if (createError != null) throw createError!;
     if (_created) events = StreamController<VideoEvent>();
     _created = true;
+    createCalls++;
+    if (withholdInitialize) return 1;
     Timer.run(() {
       if (failInitialize) {
         events.addError(
@@ -1170,6 +1177,90 @@ void main() {
       client.pendingMedia = null;
       await tester.pumpAndSettle();
     });
+
+    testWidgets(
+        'Retry still works after a take-over while its player initializes',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      final coordinator = PlaybackSessionCoordinator();
+      await _pumpScreen(tester, _FakeApiClient(),
+          mediaTitle: 'movie.mp4', coordinator: coordinator);
+      await tester.pumpAndSettle();
+      await _failPlayingVideo(tester, platform);
+
+      // Retry; the new network player is still connecting ...
+      platform.withholdInitialize = true;
+      await tester.tap(find.byKey(const Key('video_player_retry')));
+      await _pumpPluginWork(tester);
+      expect(platform.createCalls, 2);
+      expect(find.byKey(const Key('video_player_loading')), findsOneWidget);
+
+      // ... when another item takes the shared player. The plugin drops the
+      // pending initialization, so that attempt never finishes.
+      unawaited(coordinator.claim(
+        kind: PlaybackSourceKind.publicShare,
+        identity: 'public-share:next',
+        stop: () async {},
+      ));
+      await _pumpPluginWork(tester);
+      expect(
+        _errorText(tester),
+        'Playback stopped. Tap Retry to play this item again.',
+      );
+
+      // Retry is not dead: it creates a new player and plays.
+      platform.withholdInitialize = false;
+      await tester.tap(find.byKey(const Key('video_player_retry')));
+      await _pumpPluginWork(tester);
+      expect(platform.createCalls, 3);
+      expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);
+      await _leavePlayingScreen(tester);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+    testWidgets(
+        'Retry still works after the item changed while a retry initialized',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      final url = ValueNotifier('http://localhost:8080/api/v1/media/42/stream');
+      addTearDown(url.dispose);
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
+          apiClientProvider.overrideWithValue(_FakeApiClient()),
+          progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
+        ],
+        child: MaterialApp(
+          home: ValueListenableBuilder<String>(
+            valueListenable: url,
+            builder: (context, mediaUrl, _) =>
+                VideoPlayerScreen(mediaId: '42', mediaUrl: mediaUrl),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await _failPlayingVideo(tester, platform);
+      platform.withholdInitialize = true;
+      await tester.tap(find.byKey(const Key('video_player_retry')));
+      await _pumpPluginWork(tester);
+      expect(platform.createCalls, 2);
+
+      // The route now shows another item; its own attempt replaces the
+      // retry that is still initializing.
+      platform.withholdInitialize = false;
+      url.value = 'http://localhost:8080/api/v1/media/43/stream';
+      await _pumpPluginWork(tester);
+      expect(platform.createCalls, 3);
+      expect(platform.lastSource!.uri, url.value);
+      expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);
+
+      // A later failure can be retried as usual.
+      await _failPlayingVideo(tester, platform);
+      await tester.tap(find.byKey(const Key('video_player_retry')));
+      await _pumpPluginWork(tester);
+      expect(platform.createCalls, 4);
+      expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);
+      await _leavePlayingScreen(tester);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
     testWidgets('Back in fullscreen returns to the playing player',
         (tester) async {

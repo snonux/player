@@ -115,9 +115,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   // Chewie's fullscreen route while it is open (see [_leaveFullScreen]).
   ModalRoute<Object?>? _fullScreenRoute;
 
-  // True from a Retry tap until that attempt showed the player or an error.
-  bool _retrying = false;
-
   // True while Retry stops the previous session: that stop is part of
   // starting over, so it must not replace the spinner with "stopped".
   bool _restarting = false;
@@ -414,9 +411,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           _isCurrent(attempt)) {
         _nativeCompleted = true;
         _lastKnownPosition = null;
-        _completedAt = _videoController == null
-            ? Duration.zero
-            : _playbackPosition(_videoController!);
+        // Unknown without a controller; null then, so remembering cannot
+        // get stuck waiting for a position below zero.
+        final controller = _videoController;
+        _completedAt =
+            controller == null ? null : _playbackPosition(controller);
         unawaited(_recordProgress(
           attempt.request,
           lease: attempt.lease,
@@ -989,33 +988,36 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   /// Starts over. The spinner shows from the tap until the player or an
-  /// error appears — also while the media lookup of an ID-only route runs —
-  /// and further taps before that are ignored, so one retry is one lookup.
+  /// error appears — also while the media lookup of an ID-only route runs.
+  ///
+  /// A tap while the screen is already loading is ignored, so two quick taps
+  /// are one retry and one lookup. The loading state itself is the guard, on
+  /// purpose: it ends whenever an error or the "stopped" view is published,
+  /// so Retry always works again then. A flag held until [_initPlayer]
+  /// returns would not, because that future never completes when the
+  /// session is stopped while the native player initializes (the plugin
+  /// drops the pending initialization of a disposed controller). Such an
+  /// abandoned attempt is harmless: it holds no lease and touches no state.
   Future<void> _retry() async {
-    if (_retrying) return;
-    _retrying = true;
+    if (_isLoading) return;
+    _initGeneration++;
+    setState(() {
+      cancelPlaybackPreparation();
+      _error = null;
+      _isLoading = true;
+      _finishedEmitted = false;
+      _finishedPending = false;
+    });
+    _restarting = true;
     try {
-      _initGeneration++;
-      setState(() {
-        cancelPlaybackPreparation();
-        _error = null;
-        _isLoading = true;
-        _finishedEmitted = false;
-        _finishedPending = false;
-      });
-      _restarting = true;
-      try {
-        await _stopOwnedSession();
-      } finally {
-        _restarting = false;
-      }
-      await _sessionLease?.release();
-      _sessionLease = null;
-      if (!mounted) return;
-      await _initPlayer();
+      await _stopOwnedSession();
     } finally {
-      _retrying = false;
+      _restarting = false;
     }
+    await _sessionLease?.release();
+    _sessionLease = null;
+    if (!mounted) return;
+    unawaited(_initPlayer());
   }
 }
 
