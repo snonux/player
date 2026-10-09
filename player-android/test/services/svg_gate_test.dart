@@ -1,5 +1,7 @@
-// Table-driven tests for the SVG allowlist gate (svg_gate.dart): what it
-// lets through to the compiler and what it refuses, one sample per rule.
+// Table-driven tests for the SVG gate (svg_gate.dart): the grammar and the
+// budgets, with one sample per rule. The names of forbidden properties and
+// allowed elements are written out here rather than taken from the
+// production constants, so that removing one from the gate fails a test.
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/services/svg_document.dart';
@@ -72,12 +74,46 @@ final _accepted = <String, String>{
       svgDocument(body: '<g opacity="0.5">$_rect</g>' * 50),
   'opacity of exactly 1 is no layer':
       svgDocument(body: '${'<g opacity="1">' * 10}$_rect${'</g>' * 10}'),
-  'forbidden names inside title, desc and metadata': svgDocument(
-      body: '<title>stroke-dasharray</title><desc><image/></desc>'
-          '<metadata><script>x</script></metadata>$_rect'),
+  'anything inside title, desc and metadata': svgDocument(
+      body: '<title>stroke-dasharray</title><desc><image/>text</desc>'
+          '<metadata><script>x</script><![CDATA[y]]></metadata>$_rect'),
+  'a title and a description on a shape': svgDocument(
+      body: '<rect width="10" height="10"><title>Box</title>'
+          '<desc>A box</desc></rect>'),
+  'the same value given as attribute and as style': svgDocument(
+      body: '<rect width="10" height="10" fill="#f00" style="fill:#f00"/>'),
+  'href and xlink:href with the same target': _xlinkDocument(
+      '<defs><g id="a">$_rect</g></defs><use href="#a" xlink:href="#a"/>'),
+  'self-closing text, groups, defs and gradients':
+      svgDocument(body: '<defs/><g/><text/><linearGradient id="g"/>$_rect'),
+  'white space and comments between elements':
+      svgDocument(body: '\n  <!-- note -->\n  <g>\n $_rect \n</g>\n'),
   'a same-document reference':
       svgDocument(body: '<defs><g id="a">$_rect</g></defs><use href="#a"/>'),
 };
+
+/// Written out on purpose; see the comment at the top of the file.
+const _forbiddenProperties = [
+  'stroke-dasharray',
+  'stroke-dashoffset',
+  'mix-blend-mode',
+  'filter',
+  'mask',
+];
+
+/// A document whose root declares the xlink prefix.
+String _xlinkDocument(String body) => '<svg xmlns="http://www.w3.org/2000/svg" '
+    'xmlns:xlink="http://www.w3.org/1999/xlink" width="9" height="9">'
+    '$body</svg>';
+
+/// [content] as the child of a [parent] element that is itself placed
+/// where the grammar allows it.
+String _inside(String parent, String content) => switch (parent) {
+      'tspan' => '<text><tspan>$content</tspan></text>',
+      'stop' => '<linearGradient id="g"><stop>$content</stop>'
+          '</linearGradient>',
+      _ => '<$parent>$content</$parent>',
+    };
 
 String _withAttribute(String attribute) =>
     svgDocument(body: '<rect width="10" height="10" $attribute/>');
@@ -98,7 +134,7 @@ final _rejected = <String, (String, String)>{
     svgDocument(body: '<g><g><iframe/></g></g>'),
     'element <iframe>',
   ),
-  for (final property in kSvgForbiddenProperties) ...{
+  for (final property in _forbiddenProperties) ...{
     'attribute $property': (
       _withAttribute('$property="1"'),
       'attribute $property is not supported',
@@ -111,8 +147,13 @@ final _rejected = <String, (String, String)>{
       _withAttribute('style="${property.toUpperCase()}:1"'),
       'attribute $property is not supported',
     ),
+    'upper-case attribute $property': (
+      _withAttribute('${property.toUpperCase()}="1"'),
+      'attribute $property is not supported',
+    ),
     'namespaced attribute $property': (
-      svgDocument(body: '<rect xmlns:x="urn:x" x:$property="1" width="1"/>'),
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="urn:x" width="9" '
+          'height="9"><rect x:$property="1" width="1" height="1"/></svg>',
       'attribute $property is not supported',
     ),
   },
@@ -130,9 +171,7 @@ final _rejected = <String, (String, String)>{
     'only reference its own elements',
   ),
   'xlink:href to a URL': (
-    svgDocument(
-        body: '<use xmlns:xlink="http://www.w3.org/1999/xlink" '
-            'xlink:href="http://evil.example/a.svg#x"/>'),
+    _xlinkDocument('<use xlink:href="http://evil.example/a.svg#x"/>'),
     'only reference its own elements',
   ),
   'href with a data URI': (
@@ -168,50 +207,241 @@ final _rejected = <String, (String, String)>{
     _withAttribute('stroke-width="calc(1e9)"'),
     'stroke width',
   ),
+  for (final keyword in ['inherit', 'initial', 'unset', 'auto', '']) ...{
+    'stroke-width "$keyword"': (
+      _withAttribute('stroke-width="$keyword"'),
+      'stroke width',
+    ),
+    'opacity "$keyword"': (
+      svgDocument(body: '<g opacity="$keyword">$_rect</g>'),
+      'unusable opacity',
+    ),
+  },
+  'an opacity with a unit': (
+    svgDocument(body: '<g style="fill-opacity:50%">$_rect</g>'),
+    'unusable fill-opacity',
+  ),
+  // Decoys: a second spelling or a second source for the same property.
+  'path data given twice in different case': (
+    svgDocument(body: '<path d="M0 0h9v9z" D=""/>'),
+    'gives d more than one value',
+  ),
+  'stroke width given twice in different case': (
+    _withAttribute('stroke-width="1e9" STROKE-WIDTH="1"'),
+    'gives stroke-width more than one value',
+  ),
+  'opacity given twice in different case': (
+    svgDocument(body: '<g opacity="0.5" OPACITY="1">$_rect</g>'),
+    'gives opacity more than one value',
+  ),
+  'a property as attribute and, differently, in style': (
+    _withAttribute('fill="#f00" style="fill:#00f"'),
+    'gives fill more than one value',
+  ),
+  'stroke width as attribute and inherit in style': (
+    _withAttribute('stroke-width="1e9" style="stroke-width:inherit"'),
+    'stroke',
+  ),
+  'a property twice in one style': (
+    _withAttribute('style="fill:#f00;fill:#f00"'),
+    'gives fill more than one value',
+  ),
+  'href and xlink:href with different targets': (
+    _xlinkDocument('<g id="a">$_rect</g><use href="#a" xlink:href="#b"/>'),
+    'gives href more than one value',
+  ),
+  'an attribute value over 4 KB': (
+    _withAttribute('transform="${'translate(1) ' * 400}"'),
+    'oversized attribute',
+  ),
+  'a class attribute over 4 KB': (
+    _withAttribute('class="${'a' * 4097}"'),
+    'oversized attribute',
+  ),
+  'a document over 1 MB': (
+    svgDocument(body: '<!--${'x' * (1024 * 1024)}-->$_rect'),
+    'SVG too large',
+  ),
   'a negative stroke width': (_withAttribute('stroke-width="-1"'), 'stroke'),
   'mismatched tags': ('<svg><g></svg>', 'Invalid SVG'),
+  ..._misplaced,
 };
 
-/// Documents over one budget, by description, with the limits used.
-final _overBudget = <String, (String, SvgLimits)>{
+/// Samples for the grammar: an allowed element in a place, or with content,
+/// that the grammar does not give it.
+final _misplaced = <String, (String, String)>{
+  for (final (child, parent) in [
+    ('rect', 'text'), ('g', 'text'), ('clipPath', 'text'), ('use', 'text'), //
+    ('title', 'text'), ('desc', 'tspan'), ('text', 'tspan'), ('rect', 'tspan'),
+    ('g', 'clipPath'), ('text', 'clipPath'), ('use', 'clipPath'),
+    ('title', 'clipPath'), ('clipPath', 'clipPath'), ('stop', 'clipPath'),
+    ('rect', 'linearGradient'), ('title', 'radialGradient'),
+    ('rect', 'rect'), ('g', 'path'), ('tspan', 'circle'), ('metadata', 'rect'),
+    ('rect', 'use'), ('title', 'use'), ('title', 'stop'), ('stop', 'g'),
+    ('tspan', 'g'), ('svg', 'g'), ('svg', 'defs'),
+  ])
+    '$child inside $parent': (
+      svgDocument(body: _inside(parent, '<$child></$child>')),
+      '<$child> is not allowed inside <$parent>',
+    ),
+  'a title on a shape inside a clip path': (
+    svgDocument(
+        body: '<clipPath id="c"><rect width="1" height="1"><title>t</title>'
+            '</rect></clipPath>$_rect'),
+    '<title> is not allowed inside <rect>',
+  ),
+  'a nested svg': (svgDocument(body: '<svg>$_rect</svg>'), '<svg> is not'),
+  'a root that is not svg': ('<g xmlns="http://www.w3.org/2000/svg"/>', 'root'),
+  'a self-closing clip path': (
+    svgDocument(body: '<clipPath id="c"/>$_rect'),
+    'empty clip path',
+  ),
+  'an empty clip path': (
+    svgDocument(body: '<defs><clipPath id="c"></clipPath></defs>$_rect'),
+    'empty clip path',
+  ),
+  'a clip path that is itself clipped': (
+    svgDocument(
+        body: '<clipPath id="a"><rect width="1" height="1"/></clipPath>'
+            '<clipPath id="b" clip-path="url(#a)"><rect width="1" '
+            'height="1"/></clipPath>'),
+    'may not be clipped themselves',
+  ),
+  'a clipped shape inside a clip path': (
+    svgDocument(
+        body: '<clipPath id="b"><rect width="1" height="1" '
+            'style="clip-path:url(#a)"/></clipPath>'),
+    'may not be clipped themselves',
+  ),
+  'character data in the root': (
+    svgDocument(body: '${_rect}stray'),
+    'character data outside a text element',
+  ),
+  'character data in a group': (
+    svgDocument(body: '<g>stray$_rect</g>'),
+    'character data outside a text element',
+  ),
+  'CDATA in a shape': (
+    svgDocument(body: '<rect width="1" height="1"><![CDATA[x]]></rect>'),
+    'character data outside a text element',
+  ),
+  'character data in a gradient': (
+    svgDocument(body: '<linearGradient id="g">x</linearGradient>$_rect'),
+    'character data outside a text element',
+  ),
+  'a use of content that contains a use': (
+    svgDocument(
+        body: '<g id="a">$_rect</g><g id="b"><use href="#a"/></g>'
+            '<use href="#b"/>'),
+    '<use> may not reference content that contains <use>',
+  ),
+  'a use of another use': (
+    svgDocument(
+        body: '<g id="a">$_rect</g><use id="u" href="#a"/><use href="#u"/>'),
+    '<use> may not reference content that contains <use>',
+  ),
+  'a namespace declaration below the root': (
+    svgDocument(body: '<g xmlns:x="urn:x">$_rect</g>'),
+    'namespace declarations',
+  ),
+  'a default namespace other than SVG': (
+    '<svg xmlns="http://www.w3.org/1999/xhtml"/>',
+    'namespace declarations',
+  ),
+};
+
+/// Documents over one budget: description -> (document, limits, reason).
+final _overBudget = <String, (String, SvgLimits, String)>{
   'too many elements': (
     svgDocument(body: _rect * 5),
     const SvgLimits(maxElements: 5),
+    'too many elements',
   ),
   'elements nested too deep': (
     svgDocument(body: '${'<g>' * 4}$_rect${'</g>' * 4}'),
     const SvgLimits(maxElementDepth: 5),
+    'nested too deeply',
   ),
   'five nested opacity groups': (
     svgDocument(body: '${'<g opacity="0.99">' * 5}$_rect${'</g>' * 5}'),
     const SvgLimits(),
+    'nests too many translucent groups',
   ),
-  'nested layers through style, fill-opacity and odd values': (
+  'nested layers through style, fill-opacity and stroke-opacity': (
     svgDocument(
         body: '<g style="opacity:.5"><g fill-opacity="0.5">'
-            '<g opacity="50%"><g opacity="0"><g stroke-opacity="0.1">'
+            '<g opacity="0.5"><g opacity="0"><g stroke-opacity="0.1">'
             '$_rect</g></g></g></g></g>'),
     const SvgLimits(),
+    'nests too many translucent groups',
   ),
   'too many use elements': (
     svgDocument(body: '<g id="a">$_rect</g>${'<use href="#a"/>' * 3}'),
     const SvgLimits(maxUses: 2),
+    'too many <use> elements',
   ),
   'too much text': (
     svgDocument(body: '<text>${'x' * 11}</text>'),
     const SvgLimits(maxTextChars: 10),
+    'too much text',
   ),
-  'too much text in CDATA and tspans': (
-    svgDocument(body: '<text>abc<tspan><![CDATA[defgh]]></tspan>ijk</text>'),
+  'too much text in CDATA, tspans and white space': (
+    svgDocument(
+        body: '<text>ab <tspan><![CDATA[defg]]><tspan>h</tspan></tspan>'
+            ' jk</text>'),
     const SvgLimits(maxTextChars: 10),
+    'too much text',
   ),
   'too many text elements': (
     svgDocument(body: '<text>a<tspan>b</tspan><tspan>c</tspan></text>'),
     const SvgLimits(maxTextElements: 2),
+    'too many text elements',
   ),
   'too much path data': (
     svgDocument(body: '<path d="M0 0h1"/><polygon points="0,0 1,1 2,2"/>'),
     const SvgLimits(maxPathDataChars: 15),
+    'too much path data',
+  ),
+  'too many gradient stops': (
+    svgDocument(
+        body: '<linearGradient id="g">${'<stop offset="0"/>' * 3}'
+            '</linearGradient>$_rect'),
+    const SvgLimits(maxGradientStops: 2),
+    'too many gradient stops',
+  ),
+  'path data multiplied by use': (
+    svgDocument(
+        body: '<path id="p" d="${'M0 0h9' * 10}"/>${'<use href="#p"/>' * 9}'),
+    const SvgLimits(maxExpandedPathChars: 599),
+    'references multiply its content too often',
+  ),
+  'path data multiplied by clip-path references': (
+    svgDocument(
+        body: '<clipPath id="c"><path d="${'M0 0h9' * 10}"/></clipPath>'
+            '${'<rect width="1" height="1" clip-path="url(#c)"/>' * 9}'),
+    const SvgLimits(maxExpandedPathChars: 599),
+    'references multiply its content too often',
+  ),
+  'path data multiplied by use and clip-path together': (
+    // 3 uses x 3 clip references: (1+3) x (1+3) x 60 = 960 characters.
+    svgDocument(
+        body: '<clipPath id="c"><path d="${'M0 0h9' * 10}"/></clipPath>'
+            '<g id="g">${'<rect width="1" height="1" '
+                'style="clip-path:url(#c)"/>' * 3}</g>'
+            '${'<use href="#g"/>' * 3}'),
+    const SvgLimits(maxExpandedPathChars: 959),
+    'references multiply its content too often',
+  ),
+  'elements multiplied by use': (
+    svgDocument(body: '<g id="a">${_rect * 8}</g>${'<use href="#a"/>' * 9}'),
+    const SvgLimits(maxExpandedElements: 189),
+    'references multiply its content too often',
+  ),
+  'text multiplied by use': (
+    svgDocument(
+        body: '<text id="t">${'x' * 10}</text>${'<use href="#t"/>' * 9}'),
+    const SvgLimits(maxExpandedTextChars: 99),
+    'references multiply its content too often',
   ),
 };
 
@@ -244,11 +474,10 @@ void main() {
 }
 
 void _budgetTests() {
-  for (final MapEntry(key: name, value: (document, limits))
+  for (final MapEntry(key: name, value: (document, limits, reason))
       in _overBudget.entries) {
     test(name, () {
-      expect(() => checkSvgAllowed(document, limits: limits),
-          _rejects('too complex'));
+      expect(() => checkSvgAllowed(document, limits: limits), _rejects(reason));
     });
   }
 
@@ -262,6 +491,32 @@ void _budgetTests() {
     expect(limits.maxTextElements, 100);
     expect(limits.maxPathDataChars, 512 * 1024);
     expect(limits.maxStrokeWidth, 1000);
+    expect(limits.maxGradientStops, 256);
+    expect(limits.maxAttributeChars, 4096);
+    expect(limits.maxExpandedPathChars, 2 * 1024 * 1024);
+    expect(limits.maxExpandedElements, 100000);
+    expect(limits.maxExpandedTextChars, 10000);
+    expect(kMaxSvgBytes, 1024 * 1024);
+  });
+
+  test('the grammar allows exactly the documented elements', () {
+    expect(kSvgGrammar.keys.toSet(), {
+      'svg', 'g', 'defs', 'title', 'desc', 'metadata', 'path', 'rect', //
+      'circle', 'ellipse', 'line', 'polyline', 'polygon', 'linearGradient',
+      'radialGradient', 'stop', 'clipPath', 'use', 'text', 'tspan',
+    });
+    expect(kSvgForbiddenProperties, _forbiddenProperties.toSet());
+  });
+
+  test('each expansion budget is exact', () {
+    // The samples above are one over; with that one unit they pass.
+    final path = _overBudget['path data multiplied by use']!.$1;
+    checkSvgAllowed(path, limits: const SvgLimits(maxExpandedPathChars: 600));
+    final elements = _overBudget['elements multiplied by use']!.$1;
+    checkSvgAllowed(elements,
+        limits: const SvgLimits(maxExpandedElements: 190));
+    final text = _overBudget['text multiplied by use']!.$1;
+    checkSvgAllowed(text, limits: const SvgLimits(maxExpandedTextChars: 100));
   });
 
   test('white space between elements is not counted as text', () {

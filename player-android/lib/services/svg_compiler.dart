@@ -24,10 +24,11 @@ typedef SvgCompileWork = Uint8List Function(Uint8List bytes);
 ///  * At most [maxConcurrent] isolates run at once, so a grid full of SVG
 ///    thumbnails queues up instead of starting one isolate per card.
 ///  * An isolate that is not done after [deadline] is killed. This bounds
-///    CPU time only. It does not bound memory: a document can make the
-///    compiler allocate gigabytes within a second. What keeps such
-///    documents away from the compiler is the allowlist gate that
-///    [compileSvg] applies to the raw XML first (see `svg_gate.dart`).
+///    CPU time only. It is not a memory bound: the compiler can be made to
+///    allocate gigabytes well within the deadline. Limiting what the
+///    compiler is given is the job of the gate that [compileSvg] applies
+///    to the raw XML first (see `svg_gate.dart`); the largest documents
+///    that gate accepts are measured in svg_hostile_input_test.dart.
 class IsolateSvgCompiler {
   IsolateSvgCompiler({
     this.maxConcurrent = 2,

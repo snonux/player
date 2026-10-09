@@ -18,9 +18,9 @@ export 'svg_limits.dart';
 // their error state:
 //
 //  1. [decodeSvgText]: size cap, text encoding, "is this SVG at all".
-//  2. `checkSvgAllowed` (svg_gate.dart): an allowlist of elements, attribute
-//     rules and budgets, checked on the raw XML. The compiler only ever
-//     sees documents that passed it.
+//  2. `checkSvgAllowed` (svg_gate.dart): a strict grammar of elements,
+//     attribute rules and budgets, checked on the raw XML. The compiler
+//     only ever sees documents that passed it.
 //  3. [_validate]: checks on the compiler's output. Partly independent
 //     (size, compiled size), partly defence in depth for stage 2 (patterns,
 //     bitmaps, layer nesting), in case the compiler derives something from
@@ -29,7 +29,8 @@ export 'svg_limits.dart';
 // Not supported, and therefore shown as an error rather than drawn wrongly:
 // `<style>` sheets, `<pattern>`, `<image>`, `<mask>`, `<filter>`, `<symbol>`,
 // `<marker>`, `<a>`, `<switch>`, `<foreignObject>`, scripts and animation,
-// dashed strokes, blend modes, references to anything outside the document.
+// dashed strokes, blend modes, references to anything outside the document,
+// a `<use>` of content that itself contains `<use>`, nested `<svg>`.
 //
 // Limits of the compiler that remain:
 //  * A root element with neither `width`/`height` nor `viewBox` is rejected

@@ -58,10 +58,13 @@ class SvgRequest {
 ///
 /// Download failures and rejected SVG documents are not remembered, so they
 /// are retried on the next visit. A drawing is stored only after it was
-/// decoded successfully, so the cache never holds bytes that cannot be shown. There is deliberately no disk cache: the
-/// one used for bitmaps belongs to a package this app does not depend on
-/// directly, and a second private one would need its own eviction and
-/// per-account separation for small files.
+/// decoded successfully, so the cache never holds bytes that cannot be
+/// shown.
+///
+/// There is deliberately no disk cache: the one used for bitmaps belongs to
+/// a package this app does not depend on directly, and a second private
+/// one would need its own eviction and per-account separation for small
+/// files.
 class SvgMemoryCache {
   SvgMemoryCache({this.maxBytes = 16 * 1024 * 1024, this.maxNotSvg = 512});
 

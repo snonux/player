@@ -1,7 +1,7 @@
-/// Largest SVG download accepted. Vector drawings of the kind this app
-/// shows are far smaller; the cap bounds the memory a list of thumbnails
-/// can hold while their downloads wait to be compiled.
-const int kMaxSvgBytes = 2 * 1024 * 1024;
+/// Largest SVG accepted, as a download and as a document. Vector drawings
+/// of the kind this app shows are far smaller; the cap bounds the memory a
+/// list of thumbnails can hold while their downloads wait to be compiled.
+const int kMaxSvgBytes = 1024 * 1024;
 
 /// Smallest and largest accepted width or height in SVG user units.
 const double kMinSvgDimension = 0.01;
@@ -44,6 +44,11 @@ class SvgLimits {
     this.maxTextElements = 100,
     this.maxPathDataChars = 512 * 1024,
     this.maxStrokeWidth = 1000,
+    this.maxGradientStops = 256,
+    this.maxAttributeChars = 4096,
+    this.maxExpandedPathChars = 2 * 1024 * 1024,
+    this.maxExpandedElements = 100000,
+    this.maxExpandedTextChars = 10000,
     this.maxCommands = 100000,
     this.maxCompiledBytes = 4 * 1024 * 1024,
   });
@@ -76,6 +81,23 @@ class SvgLimits {
 
   /// Widest accepted stroke in user units.
   final double maxStrokeWidth;
+
+  /// Most gradient `<stop>` elements. Every paint that uses a gradient
+  /// carries a copy of its colours.
+  final int maxGradientStops;
+
+  /// Longest value of any attribute other than path data, which has its
+  /// own budget.
+  final int maxAttributeChars;
+
+  /// Budgets for what references multiply. With `copies` being
+  /// (1 + `<use>` elements) x (1 + `clip-path` references), the products
+  /// copies x path data, copies x elements and copies x text characters
+  /// must stay within these. The gate does not resolve references, so this
+  /// deliberately overestimates what the compiler will copy.
+  final int maxExpandedPathChars;
+  final int maxExpandedElements;
+  final int maxExpandedTextChars;
 
   /// Most drawing commands. The picture is replayed on the raster thread
   /// for every frame that repaints it, so the count must stay bounded.

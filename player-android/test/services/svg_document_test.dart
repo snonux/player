@@ -200,16 +200,14 @@ void _complexityTests() {
   });
 
   test('layers nested through <use> are counted after compiling', () {
-    // In the XML every group is at layer depth 1; copied into each other
-    // by <use> they nest three deep.
+    // In the XML no translucent group is inside another, so the gate sees
+    // a nesting of one. The use copies the second group into the first.
     const body = '<defs><g id="a" opacity="0.5"><rect width="1" height="1"/>'
-        '<rect width="2" height="2"/></g>'
-        '<g id="b" opacity="0.5"><use href="#a"/><rect width="3" height="3"/>'
-        '</g></defs>'
-        '<g opacity="0.5"><use href="#b"/><rect width="4" height="4"/></g>';
-    expect(() => compile(body, const SvgLimits(maxLayerDepth: 2)),
+        '<rect width="2" height="2"/></g></defs>'
+        '<g opacity="0.5"><use href="#a"/><rect width="4" height="4"/></g>';
+    expect(() => compile(body, const SvgLimits(maxLayerDepth: 1)),
         _rejects('too complex'));
-    expect(compile(body, const SvgLimits(maxLayerDepth: 3)), isNotEmpty);
+    expect(compile(body, const SvgLimits(maxLayerDepth: 2)), isNotEmpty);
   });
 
   test('sibling layers do not add up', () {
