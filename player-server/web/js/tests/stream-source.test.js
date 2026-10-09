@@ -65,8 +65,7 @@ async function testReadyAtOnce() {
   assertEqual(result.state, 'ready', 'a 200 is ready');
   assertEqual(h.requests.length, 1, 'one probe when ready');
   assertEqual(h.requests[0].url, '/s/tok/compat', 'probes the compat URL itself');
-  // HEAD is what keeps a max_uses=1 share playable: it never consumes a use,
-  // while a GET (even for one byte) would take the only one.
+  // A HEAD probe consumes no share use; a GET (even for one byte) would.
   assertEqual(h.requests[0].init.method, 'HEAD', 'the probe is a HEAD request');
   assertEqual(h.requests[0].init.headers, undefined, 'the probe sends no Range or other headers');
   assertEqual(h.statuses.length, 0, 'no preparing state when ready');

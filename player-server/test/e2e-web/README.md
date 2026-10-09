@@ -40,7 +40,7 @@ Key environment variables for the test server:
 
 | Variable        | Value          | Reason                                              |
 |-----------------|----------------|-----------------------------------------------------|
-| `MEDIA_ROOT`    | `./testdata/media`  | Provides pre-existing sets so the grid test passes. |
+| `MEDIA_ROOT`    | `./testdata/media`  | Provides pre-existing sets so the grid test passes. The library must hold only these sets: extra ones (e.g. a `test-images` set of the live suite) make several selectors match more than one element. |
 | `SECURE_COOKIES`| `false`        | Allows the session cookie over plain HTTP.          |
 | `DB_PATH`       | `/tmp/player-e2e.db` | Isolates the test database from production.  |
 

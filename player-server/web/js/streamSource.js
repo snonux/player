@@ -59,9 +59,9 @@ export function mediaErrorReason(error) {
 }
 
 // waitForCompatStream repeats a HEAD request of the compat URL until the
-// rendition exists. HEAD starts/observes the transcode like GET but never
-// consumes a use of a share link, so a max_uses=1 share still has its one use
-// left for the media element. It resolves (never rejects) with one of:
+// rendition exists. HEAD starts/observes the transcode like GET, and the
+// probe itself consumes no use of a share link (the media element's own GET
+// requests still do). It resolves (never rejects) with one of:
 //   { state: 'ready' }                  200/206: safe to assign the URL to src
 //   { state: 'failed', reason, status } terminal status (status 0: no answer)
 //   { state: 'cancelled' }              options.signal was aborted
