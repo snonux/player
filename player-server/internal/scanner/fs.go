@@ -27,7 +27,6 @@ func (osFS) WalkDir(root string, walkFn fs.WalkDirFunc) error {
 	return filepath.WalkDir(root, walkFn)
 }
 
-// Rename and Remove are not part of FS: only the thumbnail migration needs
-// them (see migrationFS in thumb_migrate.go).
-func (osFS) Rename(oldPath, newPath string) error { return os.Rename(oldPath, newPath) }
-func (osFS) Remove(name string) error             { return os.Remove(name) }
+// Remove is not part of FS: only the thumbnail migration may delete files
+// (see fileRemover in thumb_migrate.go).
+func (osFS) Remove(name string) error { return os.Remove(name) }

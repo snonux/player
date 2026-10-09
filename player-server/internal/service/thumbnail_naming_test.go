@@ -292,7 +292,8 @@ func TestRegenerateThumbnail_FailureKeepsStoredPath(t *testing.T) {
 // against one database, in the order a user hits them after an upgrade:
 // holiday.mp4 and holiday.png share holiday.jpg, the user regenerates the
 // video's thumbnail, then an admin rescans. The image must not inherit the
-// shared file (it may show the video); the video keeps the regenerated one.
+// shared file (it may show the video); the video, already at its current
+// path, keeps the regenerated one.
 func TestRegenerateThenRescan(t *testing.T) {
 	f := newThumbFixture(t)
 	video := f.add("holiday.mp4", ".thumbnails/holiday.jpg")
@@ -313,7 +314,7 @@ func TestRegenerateThenRescan(t *testing.T) {
 
 	f.assertThumb(video, ".thumbnails/holiday.mp4.jpg", "picked frame")
 	f.assertThumb(image, ".thumbnails/holiday.png.jpg", f.fresh("holiday.png"))
-	f.assertThumb(solo, "a/.thumbnails/solo.mp4.jpg", "old") // renamed, not regenerated
+	f.assertThumb(solo, "a/.thumbnails/solo.mp4.jpg", f.fresh("a/solo.mp4"))
 	for _, stale := range []string{".thumbnails/holiday.jpg", ".thumbnails/solo.jpg"} {
 		if _, err := os.Stat(f.abs(stale)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("stale thumbnail %q left behind (stat err = %v)", stale, err)
@@ -329,28 +330,213 @@ func TestRegenerateThenRescan(t *testing.T) {
 	}
 }
 
-// TestUnsubscribeFeed_RemovesArtworkThumbnail: the scanner puts the
-// thumbnail of a feed's cover.jpg into the feed folder's own .thumbnails
-// directory, which must not keep the folder alive after unsubscribing.
-func TestUnsubscribeFeed_RemovesArtworkThumbnail(t *testing.T) {
-	f := newUnsubscribeFixture(t)
-	coverThumb := thumb.ThumbnailPathFor(f.otherCoverImg)
-	if err := os.MkdirAll(filepath.Dir(coverThumb), 0o755); err != nil {
-		t.Fatal(err)
+// failingListStore is the real store, except that listing media fails.
+type failingListStore struct{ *repository.SQLite }
+
+func (failingListStore) ListMedia(context.Context, repository.MediaFilter) ([]model.Media, error) {
+	return nil, errors.New("database is locked")
+}
+
+// TestRegenerateThumbnail_CleanupCannotListMedia: if the rows of the set
+// cannot be listed, it is unknown whether another row still uses the
+// replaced thumbnail, so it is kept; the regeneration itself succeeded.
+func TestRegenerateThumbnail_CleanupCannotListMedia(t *testing.T) {
+	f := newThumbFixture(t)
+	id := f.add("video.mp4", ".thumbnails/video.jpg")
+	svc := NewMediaService(failingListStore{f.store}, newMockClock(), f.root, writingThumbGen(), &mockProber{})
+	if err := svc.RegenerateThumbnail(context.Background(), id, f.admin); err != nil {
+		t.Fatalf("regenerate: %v", err)
 	}
-	if err := os.WriteFile(coverThumb, []byte("jpg"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.svc.UnsubscribeFeed(context.Background(), f.other, f.admin); err != nil {
-		t.Fatal(err)
-	}
-	if fileExists(filepath.Dir(f.otherFile)) {
-		t.Fatal("feed folder was left behind because of its artwork thumbnail")
+	f.assertThumb(id, ".thumbnails/video.mp4.jpg", f.fresh("video.mp4"))
+	if _, err := os.Stat(f.abs(".thumbnails/video.jpg")); err != nil {
+		t.Errorf("replaced thumbnail was removed without knowing who uses it: %v", err)
 	}
 }
 
-// TestUnsubscribeFeed_KeepsOtherThumbnails: only the artwork's thumbnail is
-// feed-owned; any other file in .thumbnails keeps the folder in place.
+// TestRegenerateThumbnail_NeverDeletesAMediaFile: a media file can live in a
+// directory called .thumbnails, and a row can point at it as its thumbnail.
+// Replacing that thumbnail must not delete the media file.
+func TestRegenerateThumbnail_NeverDeletesAMediaFile(t *testing.T) {
+	f := newThumbFixture(t)
+	f.add(".thumbnails/pic.png", ".thumbnails/pic.png")
+	id := f.add("video.mp4", ".thumbnails/pic.png")
+	f.writeFile(f.abs(".thumbnails/pic.png"), "source") // add() marked it "old"
+	f.regenerate(id)
+	f.assertThumb(id, ".thumbnails/video.mp4.jpg", f.fresh("video.mp4"))
+	if got, err := os.ReadFile(f.abs(".thumbnails/pic.png")); err != nil || string(got) != "source" {
+		t.Errorf("media file used as a thumbnail was deleted or changed: %q, %v", got, err)
+	}
+}
+
+// TestRemoveOwnThumbnail: purging a media item removes the thumbnail that is
+// its own, and nothing that might belong to something else.
+func TestRemoveOwnThumbnail(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		stored   string // relative to the temp dir
+		wantGone bool
+	}{
+		{"own generated thumbnail", "a/clip.mp4", "a/.thumbnails/clip.mp4.jpg", true},
+		{"old stem name, possibly shared", "a/clip.mp4", "a/.thumbnails/clip.jpg", false},
+		{"another item's thumbnail", "a/clip.mp4", "a/.thumbnails/other.mp4.jpg", false},
+		{"audio cover image", "a/song.mp3", "a/cover.jpg", false},
+		{"image serving as its own thumbnail", "a/pic.png", "a/pic.png", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			stored := filepath.Join(dir, filepath.FromSlash(tt.stored))
+			if err := os.MkdirAll(filepath.Dir(stored), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(stored, []byte("jpg"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			removeOwnThumbnail(&model.Media{AbsPath: filepath.Join(dir, filepath.FromSlash(tt.source)), ThumbnailPath: stored})
+			if gone := !fileExists(stored); gone != tt.wantGone {
+				t.Errorf("thumbnail gone = %v, want %v", gone, tt.wantGone)
+			}
+			if tt.wantGone && fileExists(filepath.Dir(stored)) {
+				t.Error("emptied .thumbnails directory was left behind")
+			}
+		})
+	}
+	t.Run("no paths at all", func(t *testing.T) {
+		removeOwnThumbnail(&model.Media{}) // must not panic or delete anything
+	})
+	t.Run("directory with other thumbnails stays", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "clip.mp4")
+		own, other := thumb.ThumbnailPathFor(src), filepath.Join(dir, thumb.DirName, "other.mp4.jpg")
+		for _, p := range []string{own, other} {
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte("jpg"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		removeOwnThumbnail(&model.Media{AbsPath: src, ThumbnailPath: own})
+		if fileExists(own) || !fileExists(other) {
+			t.Errorf("own gone = %v, other kept = %v; want both true", !fileExists(own), fileExists(other))
+		}
+	})
+}
+
+// TestGCWorker_RemovesPurgedMediasThumbnail: garbage collection used to
+// delete the file and the row but leave the generated thumbnail behind for
+// good. A thumbnail under an old, possibly shared name is still kept.
+func TestGCWorker_RemovesPurgedMediasThumbnail(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	write := func(path string) string {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	video := write(filepath.Join(root, "set", "a", "clip.mp4"))
+	videoThumb := write(thumb.ThumbnailPathFor(video))
+	legacy := write(filepath.Join(root, "set", "holiday.mp4"))
+	legacyThumb := write(filepath.Join(root, "set", thumb.DirName, "holiday.jpg"))
+	deletedAt := now.Add(-8 * 24 * time.Hour)
+	store := &repository.MockStore{MediaRepo: repository.MockMediaRepo{
+		ListDeletedMediaFunc: func(context.Context) ([]model.Media, error) {
+			return []model.Media{
+				{ID: 1, RelPath: "a/clip.mp4", AbsPath: video, ThumbnailPath: videoThumb, DeletedAt: &deletedAt},
+				{ID: 2, RelPath: "holiday.mp4", AbsPath: legacy, ThumbnailPath: legacyThumb, DeletedAt: &deletedAt},
+			}, nil
+		},
+	}}
+	w := NewGCWorker(store, &clock.MockClock{T: now}, root, time.Minute, nil).WithAge(7 * 24 * time.Hour)
+	if err := w.RunOnce(); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(video) || fileExists(legacy) {
+		t.Fatal("purged media files remain")
+	}
+	if fileExists(videoThumb) || fileExists(filepath.Dir(videoThumb)) {
+		t.Error("thumbnail of the purged video, or its emptied directory, was left behind")
+	}
+	if !fileExists(legacyThumb) {
+		t.Error("a thumbnail under an old, possibly shared name was deleted")
+	}
+}
+
+// TestGCWorker_KeepsThumbnailWhenPurgeFails: if the row cannot be deleted
+// the item still exists, and so must its thumbnail.
+func TestGCWorker_KeepsThumbnailWhenPurgeFails(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	video := filepath.Join(root, "set", "clip.mp4")
+	videoThumb := thumb.ThumbnailPathFor(video)
+	if err := os.MkdirAll(filepath.Dir(videoThumb), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(videoThumb, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deletedAt := now.Add(-8 * 24 * time.Hour)
+	store := &repository.MockStore{MediaRepo: repository.MockMediaRepo{
+		ListDeletedMediaFunc: func(context.Context) ([]model.Media, error) {
+			return []model.Media{{ID: 1, RelPath: "clip.mp4", AbsPath: video, ThumbnailPath: videoThumb, DeletedAt: &deletedAt}}, nil
+		},
+		HardDeleteMediaFunc: func(context.Context, int64) error { return errors.New("database is locked") },
+	}}
+	w := NewGCWorker(store, &clock.MockClock{T: now}, root, time.Minute, nil).WithAge(7 * 24 * time.Hour)
+	if err := w.RunOnce(); err != nil {
+		t.Fatal(err)
+	}
+	if !fileExists(videoThumb) {
+		t.Error("thumbnail deleted although the row could not be purged")
+	}
+}
+
+// TestUnsubscribeFeed_RemovesThumbnailsOfDeletedMedia: a video episode and
+// indexed feed artwork have generated thumbnails in the feed folder's
+// .thumbnails directory. They go with their media, or the directory would
+// keep the folder in place after unsubscribing.
+func TestUnsubscribeFeed_RemovesThumbnailsOfDeletedMedia(t *testing.T) {
+	f := newUnsubscribeFixture(t)
+	ctx := context.Background()
+	feed, _ := f.store.GetFeedByID(ctx, f.other)
+	writeThumb := func(src string) string {
+		t.Helper()
+		p := thumb.ThumbnailPathFor(src)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("jpg"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// The episode, as a video podcast's would be after its download.
+	if err := f.store.UpdateMediaThumbnail(ctx, f.otherMedia, writeThumb(f.otherFile)); err != nil {
+		t.Fatal(err)
+	}
+	// The cover, as a rescan indexes it.
+	if _, err := f.store.CreateMedia(ctx, &model.Media{
+		SetID: feed.SetID, RelPath: "Other/cover.jpg", FileName: "cover.jpg", AbsPath: f.otherCoverImg,
+		Type: model.MediaTypeImage, ThumbnailPath: writeThumb(f.otherCoverImg), CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.UnsubscribeFeed(ctx, f.other, f.admin); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(filepath.Dir(f.otherFile)) {
+		t.Fatal("feed folder was left behind because of its media's thumbnails")
+	}
+}
+
+// TestUnsubscribeFeed_KeepsOtherThumbnails: a thumbnail that belongs to none
+// of the deleted media is not feed-owned and keeps the folder in place.
 func TestUnsubscribeFeed_KeepsOtherThumbnails(t *testing.T) {
 	f := newUnsubscribeFixture(t)
 	foreign := filepath.Join(thumb.ThumbnailDir(filepath.Dir(f.otherFile)), "mine.mp4.jpg")
@@ -364,6 +550,6 @@ func TestUnsubscribeFeed_KeepsOtherThumbnails(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !fileExists(foreign) {
-		t.Fatal("a thumbnail that is not feed artwork was deleted")
+		t.Fatal("a thumbnail of something else was deleted")
 	}
 }

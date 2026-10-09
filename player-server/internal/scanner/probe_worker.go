@@ -15,32 +15,42 @@ import (
 	"codeberg.org/snonux/player/internal/thumb"
 )
 
-// fileResult carries a successfully probed media record back to the scanWriter.
+// fileResult carries the outcome of handling one file back to the scanWriter:
+// the media record of a newly probed file, or an already indexed row whose
+// thumbnail was regenerated at a new path.
 type fileResult struct {
 	media *model.Media
 	path  string // absolute path used for logging
+	// replaced is the thumbnail path the row stored before media's was
+	// generated. Empty for a new file, which has no row yet.
+	replaced string
 }
 
 // probeWorker probes individual media files via ffprobe and resolves thumbnail
 // paths. It handles concurrency: multiple goroutines call run() in parallel,
 // each reading from pathChan and writing probed fileResults to resultChan.
-// All filesystem probing and thumbnail resolution happens here; no DB writes.
+// All filesystem probing and thumbnail generation happens here; no DB writes.
 type probeWorker struct {
 	prober   probe.Prober
 	thumbMkr thumb.Maker
 	fs       FS
 	clock    clock.Clock
 	logger   *slog.Logger
+	// stale holds the relPaths of indexed rows whose thumbnail must be
+	// regenerated (see staleThumbnails). Read-only once the workers run.
+	stale map[string]struct{}
 }
 
 // newProbeWorker creates a probeWorker with the required dependencies.
-func newProbeWorker(prober probe.Prober, maker thumb.Maker, fs FS, clk clock.Clock, logger *slog.Logger) *probeWorker {
+// stale lists the indexed rows whose thumbnail has to be regenerated.
+func newProbeWorker(prober probe.Prober, maker thumb.Maker, fs FS, clk clock.Clock, logger *slog.Logger, stale map[string]struct{}) *probeWorker {
 	return &probeWorker{
 		prober:   prober,
 		thumbMkr: maker,
 		fs:       fs,
 		clock:    clk,
 		logger:   logger,
+		stale:    stale,
 	}
 }
 
@@ -82,9 +92,12 @@ func (pw *probeWorker) run(
 	}
 }
 
-// probeFile probes a single file and builds a media record ready for persistence.
-// Returns nil when the file already exists in existing or cannot be probed
-// (unrecognised format — a warning is logged and the file is skipped).
+// probeFile handles a single file found on disk. A new file is probed and
+// turned into a media record ready for persistence. A file that is already
+// indexed yields nothing, unless its thumbnail is stale, in which case the
+// thumbnail is regenerated (see refreshThumbnail). Also returns nil when a
+// new file cannot be probed (unrecognised format — a warning is logged and
+// the file is skipped).
 func (pw *probeWorker) probeFile(
 	ctx context.Context,
 	path, setPath string,
@@ -104,9 +117,12 @@ func (pw *probeWorker) probeFile(
 		progress.IncrementFile()
 	}
 
-	_, alreadyExists := existing[relPath]
+	row, alreadyExists := existing[relPath]
 	pw.logger.Debug("scanner file checked", "set", setName, "path", relPath, "existing", alreadyExists)
 	if alreadyExists {
+		if _, isStale := pw.stale[relPath]; isStale {
+			return pw.refreshThumbnail(ctx, path, row), nil
+		}
 		return nil, nil
 	}
 
@@ -123,12 +139,15 @@ func (pw *probeWorker) probeFile(
 	meta.FileSizeBytes = info.Size()
 
 	mediaType := mediatype.TypeForExt(path)
-	thumbnailPath, err := pw.buildThumbnailPath(ctx, path, setPath, mediaType, coverImages, meta)
-	if err != nil {
-		return nil, err
-	}
+	thumbnailPath := pw.buildThumbnailPath(ctx, path, setPath, mediaType, coverImages, meta)
+	media := pw.newMedia(setID, relPath, path, mediaType, meta, thumbnailPath)
+	return &fileResult{media: media, path: path}, nil
+}
 
-	media := &model.Media{
+// newMedia assembles the media record of a newly found file from its probed
+// metadata.
+func (pw *probeWorker) newMedia(setID int64, relPath, path string, mediaType model.MediaType, meta *model.Metadata, thumbnailPath string) *model.Media {
+	return &model.Media{
 		SetID:           setID,
 		RelPath:         relPath,
 		FileName:        filepath.Base(path),
@@ -151,35 +170,49 @@ func (pw *probeWorker) probeFile(
 		ThumbnailPath:   thumbnailPath,
 		CreatedAt:       pw.clock.Now(),
 	}
-
-	return &fileResult{media: media, path: path}, nil
 }
 
 // buildThumbnailPath resolves the thumbnail path for a new media file.
 // Video and image thumbnails are produced via thumb.Maker; audio uses a
-// nearby cover image; SVG images are served as-is (no raster thumbnail needed).
-func (pw *probeWorker) buildThumbnailPath(ctx context.Context, path, setPath string, mediaType model.MediaType, coverImages map[string]string, meta *model.Metadata) (string, error) {
+// nearby cover image; SVG images are served as-is (no raster thumbnail
+// needed). When no thumbnail can be made (generator failure, unwritable
+// folder) the file is indexed all the same: a video without thumbnail, an
+// image with the image itself standing in.
+func (pw *probeWorker) buildThumbnailPath(ctx context.Context, path, setPath string, mediaType model.MediaType, coverImages map[string]string, meta *model.Metadata) string {
 	switch mediaType {
 	case model.MediaTypeVideo:
 		return pw.thumbMkr.MakeVideo(ctx, path, meta.Duration)
 	case model.MediaTypeAudio:
-		return findCoverImage(path, coverImages, setPath), nil
+		return findCoverImage(path, coverImages, setPath)
 	case model.MediaTypeImage:
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".svg" {
+		if strings.ToLower(filepath.Ext(path)) == ".svg" {
 			// SVG is a vector format; serve the original file directly.
-			return path, nil
+			return path
 		}
-		thumbPath, err := pw.thumbMkr.MakeImage(ctx, path)
-		if err != nil {
-			return "", err
+		if thumbPath := pw.thumbMkr.MakeImage(ctx, path); thumbPath != "" {
+			return thumbPath
 		}
-		if thumbPath != "" {
-			if _, statErr := pw.fs.Stat(thumbPath); statErr == nil {
-				return thumbPath, nil
-			}
-		}
-		return path, nil
+		return path
 	}
-	return "", nil
+	return ""
+}
+
+// refreshThumbnail generates a new thumbnail for an indexed row whose stored
+// one is stale (see thumb_migrate.go) and returns the result for the
+// scanWriter to apply, or nil when no thumbnail could be made. In that case
+// the row keeps its old path, which still works, and the next rescan tries
+// again. The row's stored duration is used, so the file is not probed anew.
+func (pw *probeWorker) refreshThumbnail(ctx context.Context, path string, row model.Media) *fileResult {
+	var thumbPath string
+	if row.Type == model.MediaTypeVideo {
+		thumbPath = pw.thumbMkr.MakeVideo(ctx, path, row.Duration)
+	} else {
+		thumbPath = pw.thumbMkr.MakeImage(ctx, path)
+	}
+	if thumbPath == "" {
+		return nil
+	}
+	replaced := row.ThumbnailPath
+	row.ThumbnailPath = thumbPath
+	return &fileResult{media: &row, path: path, replaced: replaced}
 }

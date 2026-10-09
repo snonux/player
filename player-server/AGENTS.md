@@ -187,6 +187,15 @@ This triggers `FSScanner.Scan()`, which:
 3. Probes new files with `ffprobe`
 4. Generates thumbnails for video files
 5. Inserts new records into the `media` table
+6. Regenerates thumbnails of indexed media that are still stored under an
+   older naming scheme
+
+Generated thumbnails live in `.thumbnails` next to the source file, named
+`<full source name>.jpg` (`holiday.mp4` -> `.thumbnails/holiday.mp4.jpg`);
+always derive the path with `thumb.ThumbnailPathFor`. Releases up to v0.2.2
+used `<stem>.jpg`, which made same-stem files share a thumbnail, so **one
+admin rescan is needed after upgrading** from those. See
+`docs/admin.md` ("Thumbnail Naming and Upgrades") for details and cost.
 
 ---
 

@@ -103,6 +103,7 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 
 	if err := ImportMediaFile(ctx, s.store, media, s.prober, s.thumbGen); err != nil {
 		removeAndLog(path)
+		removeOwnThumbnail(media)
 		s.store.HardDeleteMedia(ctx, media.ID)
 		return nil, err
 	}
@@ -127,6 +128,7 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 	// The destination comes from internal/thumb, the one layout scanner and
 	// import use as well. A row still pointing at a thumbnail written under
 	// an older naming scheme therefore moves to its own, current path here.
+	// See generateThumbnail for what writing there can overwrite.
 	previous := media.ThumbnailPath
 	thumbnailPath := thumb.ThumbnailPathFor(media.AbsPath)
 	if err := os.MkdirAll(filepath.Dir(thumbnailPath), 0o755); err != nil {
@@ -153,8 +155,10 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 //
 // Only a file in a .thumbnails directory of the source's own directory or
 // one of its ancestors is removed, which are the places older releases put
-// thumbnails; a stale path pointing anywhere else is left alone. Failing to
-// clean up is logged, not returned: the regeneration itself succeeded.
+// thumbnails; a stale path pointing anywhere else is left alone. So is a
+// path that is the source file of a media item: a media file can live in a
+// directory called .thumbnails and be its own thumbnail. Failing to clean
+// up is logged, not returned: the regeneration itself succeeded.
 func (s *writeService) removeReplacedThumbnail(ctx context.Context, media *model.Media, previous string) {
 	if previous == media.ThumbnailPath || !thumb.IsGenerated(previous) {
 		return
@@ -169,7 +173,7 @@ func (s *writeService) removeReplacedThumbnail(ctx context.Context, media *model
 		return
 	}
 	for i := range siblings {
-		if siblings[i].ThumbnailPath == previous {
+		if siblings[i].ThumbnailPath == previous || siblings[i].AbsPath == previous {
 			return
 		}
 	}

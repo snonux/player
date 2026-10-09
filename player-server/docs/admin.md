@@ -55,31 +55,53 @@ file has exactly one thumbnail of its own:
 | `set/a/clip.mp4` | `set/a/.thumbnails/clip.mp4.jpg` |
 
 (A source name too long to take the extra `.jpg` is shortened and suffixed
-with a hash.)
+with a hash.) A directory named `.thumbnails` directly in `MEDIA_ROOT` is
+never scanned as a set.
 
-Releases up to v0.2.2 named thumbnails after the stem only (`holiday.jpg`),
-and the scanner kept all thumbnails of a set flat in the set's `.thumbnails`
+A thumbnail is deleted together with its media item: when the trash is
+purged, and when a podcast is unsubscribed.
+
+If a folder is not writable by the server, its media is still indexed: videos
+without a thumbnail, images with the image itself standing in. Such items
+are not retried automatically; use "regenerate thumbnail" once the folder is
+writable.
+
+#### Upgrading from v0.2.2 or older
+
+Those releases named thumbnails after the stem only (`holiday.jpg`), and the
+scanner kept all thumbnails of a set flat in the set's `.thumbnails`
 directory. Files sharing a stem (`holiday.mp4` and `holiday.png`), or a name
 in two folders of one set, overwrote each other's thumbnail.
 
 After upgrading, **run one Rescan**. Until then nothing breaks: stored
 thumbnail paths keep working, and affected cards keep showing the shared
-thumbnail. The rescan then handles every already indexed video and image
-whose thumbnail is still at an old path:
+thumbnail. The rescan gives every already indexed video and image whose
+thumbnail is still at an old path a **newly generated** thumbnail at its new
+path, then deletes the old file once no item refers to it any more. Old
+thumbnails are not renamed or reused, because nothing records which of the
+colliding files an old thumbnail shows.
 
-- a thumbnail only one media item can have written is renamed to its new
-  path (no re-encoding, a manually regenerated frame is kept);
-- where several items could have written the same file, each of them gets a
-  fresh thumbnail generated from its own source;
-- an old thumbnail file is deleted once no item refers to it any more.
+What that rescan costs:
 
-The migration shows up in the scan progress as additional files. It can be
-interrupted and repeated at any point (a second click on Rescan, a restart,
-the scan timeout): an item is only switched to a thumbnail that exists, and
-an item that could not be migrated keeps its old thumbnail and is retried on
-the next rescan, with the reason logged as a warning. Only files inside the
-set directory are touched. Once everything is migrated, later rescans find
-nothing to do.
+- one ffmpeg run per indexed video and image, in parallel on all CPU cores,
+  so it takes about as long as the very first scan of the library did;
+- video thumbnails are random frames, so videos get a different frame than
+  before, including ones picked earlier with "regenerate thumbnail".
+
+The rescan can be interrupted and repeated at any point (a second click on
+Rescan, a restart, the 30-minute scan timeout): an item is switched only once
+its new thumbnail is complete, anything not done yet keeps its old thumbnail,
+and the next rescan continues where this one stopped. Run Rescan again until
+the log line `scanner migrating thumbnails` no longer appears. An item whose
+thumbnail cannot be generated keeps its old one and is retried on every
+rescan, with the reason logged as a warning. Only files inside the set
+directory are deleted.
+
+Before that first rescan, uploading or regenerating a file can overwrite the
+old thumbnail of another item in one rare case: the new file's thumbnail
+name equals the other item's old one (`holiday.mp4` and an indexed
+`holiday.mp4.png`, both mapping to `holiday.mp4.jpg`). The other item then
+shows the wrong picture until the rescan, which fixes it.
 
 "Regenerate thumbnail" on an item that still has an old path moves just that
 item to its new path and deletes the old file unless another item still

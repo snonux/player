@@ -252,6 +252,7 @@ func (s *podcastEpisodeService) persistDownloadedEpisode(ctx context.Context, ep
 
 	cleanup := func() {
 		s.removeAndLog(path)
+		removeOwnThumbnail(media)
 		// Detached: a cancelled request must not leave a row whose file is gone.
 		_ = s.svc.store.HardDeleteMedia(context.WithoutCancel(ctx), media.ID)
 	}

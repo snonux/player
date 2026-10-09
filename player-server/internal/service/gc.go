@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
 )
 
@@ -106,6 +107,7 @@ func (w *GCWorker) Stop() {
 	w.wg.Wait()
 }
 
+// run purges every soft-deleted media item older than the configured age.
 func (w *GCWorker) run(ctx context.Context) {
 	items, err := w.store.ListDeletedMedia(ctx)
 	if err != nil {
@@ -116,42 +118,49 @@ func (w *GCWorker) run(ctx context.Context) {
 	}
 
 	cutoff := w.clock.Now().Add(-w.age)
-	for _, item := range items {
-		if item.DeletedAt == nil || !item.DeletedAt.Before(cutoff) {
+	for i := range items {
+		if items[i].DeletedAt == nil || !items[i].DeletedAt.Before(cutoff) {
 			continue
 		}
+		w.purge(ctx, &items[i])
+	}
+}
 
-		absPath := item.AbsPath
-		if absPath == "" {
-			absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
-		}
+// purge deletes one media item for good: its file, then its row, then its
+// generated thumbnail. The file goes before the row so a failure never
+// leaves a file on disk that no row accounts for; if the file cannot be
+// removed the item is kept and retried on the next run. The thumbnail goes
+// last, once nothing refers to it any more; left in place it would be an
+// orphan forever, since nothing else ever looks at it again.
+func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
+	absPath := item.AbsPath
+	if absPath == "" {
+		absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
+	}
 
-		// .cover.jpg is generated artwork shared by the set/folder, not media
-		// owned by this legacy row. Keep it when collecting a row imported by
-		// an older scanner (including rows already soft-deleted before the fix).
-		if absPath != "" && filepath.Base(filepath.FromSlash(item.RelPath)) != ".cover.jpg" {
-			if err := os.Remove(absPath); err != nil {
-				if os.IsNotExist(err) {
-					// File already gone; safe to proceed with DB deletion.
-				} else {
-					if w.logger != nil {
-						w.logger.Warn("gc remove file", "path", absPath, "err", err)
-					}
-					continue
-				}
-			}
-		}
-
-		if err := w.store.HardDeleteMedia(ctx, item.ID); err != nil {
+	// .cover.jpg is generated artwork shared by the set/folder, not media
+	// owned by this legacy row. Keep it when collecting a row imported by
+	// an older scanner (including rows already soft-deleted before the fix).
+	if absPath != "" && filepath.Base(filepath.FromSlash(item.RelPath)) != ".cover.jpg" {
+		// A file that is already gone is fine; proceed with the row.
+		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
 			if w.logger != nil {
-				w.logger.Error("gc hard delete", "id", item.ID, "err", err)
+				w.logger.Warn("gc remove file", "path", absPath, "err", err)
 			}
-			continue
+			return
 		}
+	}
 
+	if err := w.store.HardDeleteMedia(ctx, item.ID); err != nil {
 		if w.logger != nil {
-			w.logger.Info("gc deleted media", "id", item.ID, "path", absPath)
+			w.logger.Error("gc hard delete", "id", item.ID, "err", err)
 		}
+		return
+	}
+	removeOwnThumbnail(item)
+
+	if w.logger != nil {
+		w.logger.Info("gc deleted media", "id", item.ID, "path", absPath)
 	}
 }
 

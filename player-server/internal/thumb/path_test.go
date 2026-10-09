@@ -1,7 +1,6 @@
 package thumb
 
 import (
-	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -102,10 +101,21 @@ func TestThumbnailNameFor_LongNames(t *testing.T) {
 			t.Error("two long sources share a thumbnail name")
 		}
 	})
-	t.Run("multi-byte names are cut at a rune boundary", func(t *testing.T) {
-		got := ThumbnailNameFor(long(254, "\u00e4", ".mp4")) // 2-byte runes
+	// 3-byte runes: the byte budget (234) is a multiple of three, so an odd
+	// number of leading ASCII bytes puts the cut inside a rune and forces
+	// the name to be shortened further, to the previous rune boundary.
+	for _, lead := range []string{"", "x", "xy"} {
+		src := lead + strings.Repeat("\u20ac", 84) + ".mp4"
+		got := ThumbnailNameFor(src)
 		if len(got) > 255 || !utf8.ValidString(got) {
-			t.Errorf("name has %d bytes, valid UTF-8 = %v", len(got), utf8.ValidString(got))
+			t.Errorf("lead %q: name has %d bytes, valid UTF-8 = %v", lead, len(got), utf8.ValidString(got))
+		}
+	}
+	t.Run("cut inside a rune backs off to its start", func(t *testing.T) {
+		got := ThumbnailNameFor("x" + strings.Repeat("\u20ac", 84) + ".mp4")
+		// 1 + 77*3 = 232 bytes fit the 234 byte budget; one more rune would not.
+		if want := "x" + strings.Repeat("\u20ac", 77) + "~"; !strings.HasPrefix(got, want) {
+			t.Errorf("name starts with %q, want prefix of 77 whole runes", got[:10])
 		}
 	})
 }
@@ -175,36 +185,6 @@ func TestIsGenerated(t *testing.T) {
 				t.Errorf("IsGenerated(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestLegacyPathsFor(t *testing.T) {
-	tests := []struct {
-		name    string
-		srcPath string
-		want    []string
-	}{
-		{"file at the set root: both layouts coincide", "/media/set1/holiday.mp4",
-			[]string{"/media/set1/.thumbnails/holiday.jpg"}},
-		{"nested file: upload and scanner layout", "/media/set1/a/clip.mp4",
-			[]string{"/media/set1/a/.thumbnails/clip.jpg", "/media/set1/.thumbnails/clip.jpg"}},
-		{"multi-dot name loses only the last extension", "/media/set1/holiday.mp4.png",
-			[]string{"/media/set1/.thumbnails/holiday.mp4.jpg"}},
-		{"dotfile collapsed to a bare extension", "/media/set1/.mp4",
-			[]string{"/media/set1/.thumbnails/.jpg"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := LegacyPathsFor(tt.srcPath, "/media/set1"); !slices.Equal(got, tt.want) {
-				t.Errorf("LegacyPathsFor(%q) = %v, want %v", tt.srcPath, got, tt.want)
-			}
-		})
-	}
-	// The reported bug, seen from the old naming: two sources, one path.
-	a := LegacyPathsFor("/media/set1/holiday.mp4", "/media/set1")
-	b := LegacyPathsFor("/media/set1/holiday.png", "/media/set1")
-	if !slices.Equal(a, b) {
-		t.Errorf("same-stem sources should map to one legacy path: %v vs %v", a, b)
 	}
 }
 

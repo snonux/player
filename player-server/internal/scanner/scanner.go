@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -29,11 +30,13 @@ type Scanner interface {
 // to a thumb.Maker. This keeps SRP intact — FSScanner orchestrates the
 // scan, thumb.Maker decides how thumbnails get produced on disk.
 //
-// Scan itself is orchestrated by delegating to four focused collaborators:
+// Scan itself is orchestrated by delegating to focused collaborators:
 //   - fileDiscoverer: walks the filesystem to find media files and cover images
-//   - thumbMigrator:  moves thumbnails of indexed media off older naming schemes
-//   - probeWorker:    runs ffprobe in parallel workers to build media records
+//   - probeWorker:    runs ffprobe in parallel workers to build media records,
+//     and regenerates thumbnails stored under an older naming scheme
 //   - scanWriter:     persists probed results to the database
+//   - thumbSwitcher:  points migrated rows at their new thumbnail and deletes
+//     the old file (driven by the scanWriter)
 type FSScanner struct {
 	store     repository.ScannerStore
 	prober    probe.Prober
@@ -41,9 +44,9 @@ type FSScanner struct {
 	clock     clock.Clock
 	mediaRoot string
 	fs        FS
-	// migFS is the filesystem the thumbnail migration works on; nil means
-	// the real one. Only tests set it, to inject failures.
-	migFS   migrationFS
+	// remover deletes thumbnails the migration made obsolete. It is
+	// separate from fs because nothing else in a scan may delete files.
+	remover fileRemover
 	logger  *slog.Logger
 	workers int
 	// scanMu serialises Scan calls, see Scan.
@@ -83,6 +86,7 @@ func NewFSScannerWithMaker(store repository.ScannerStore, prober probe.Prober, m
 		clock:     clk,
 		mediaRoot: mediaRoot,
 		fs:        osFS{},
+		remover:   osFS{},
 		logger:    logger,
 		workers:   runtime.NumCPU(),
 	}
@@ -96,13 +100,17 @@ func (s *FSScanner) log() *slog.Logger {
 }
 
 // Scan walks immediate subdirectories of root, treating each as a set.
-// It orchestrates fileDiscoverer, probeWorker, and scanWriter collaborators.
+// It orchestrates the fileDiscoverer, probeWorker, scanWriter and
+// thumbSwitcher collaborators: new files are indexed, rows whose file is
+// gone are soft-deleted, and thumbnails stored under an older naming scheme
+// are migrated (see thumb_migrate.go).
 //
 // Scans on one FSScanner run one at a time. A rescan triggered while another
 // is running cancels that one but does not wait for it, so without the lock
 // the two would briefly overlap, each working from its own snapshot of the
-// rows: both could insert the same new file or move the same thumbnail. The
-// cancelled scan stops quickly, then the new one starts from a fresh snapshot.
+// rows: both could insert the same new file or migrate the same thumbnail.
+// The cancelled scan stops quickly, then the new one starts from a fresh
+// snapshot.
 func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanProgress) error {
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
@@ -119,7 +127,7 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 	// Count total sets for progress reporting.
 	var setCount int
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if isSetDir(entry) {
 			setCount++
 		}
 	}
@@ -129,7 +137,7 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 	s.log().Info("scanner scan started", "root", root, "sets", setCount)
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !isSetDir(entry) {
 			continue
 		}
 		setPath := filepath.Join(root, entry.Name())
@@ -142,6 +150,15 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 	}
 	s.log().Info("scanner scan finished", "root", root, "sets", setCount)
 	return nil
+}
+
+// isSetDir reports whether a media root entry is scanned as a set: every
+// directory except one named .thumbnails. That name is reserved for
+// generated thumbnails (the media root gets one when a file is uploaded
+// straight into it), and indexing its content as media would make the
+// thumbnails look like source files.
+func isSetDir(entry os.DirEntry) bool {
+	return entry.IsDir() && entry.Name() != thumb.DirName
 }
 
 // ensureSet returns the set ID for the given root/relative paths, creating the set if necessary.
@@ -252,6 +269,9 @@ type setScan struct {
 	existing    map[string]model.Media
 	coverImages map[string]string
 	files       []string
+	// stale holds the relPaths of the rows whose thumbnail must be
+	// regenerated because it is stored under an older naming scheme.
+	stale map[string]struct{}
 }
 
 // scanSet scans a single set in three phases: discoverSet finds the files
@@ -290,8 +310,9 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 
 // discoverSet uses fileDiscoverer to collect the set's media files and
 // cover images into sc, then reconciles the already indexed rows with what
-// is on disk: rows whose file disappeared are soft-deleted and thumbnails
-// stored under an older naming scheme are migrated.
+// is on disk: rows whose file disappeared are soft-deleted, and the rows
+// whose thumbnail is stored under an older naming scheme are noted in
+// sc.stale for probeAndStore to migrate.
 func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *model.ScanProgress) error {
 	disc := newFileDiscoverer(s.fs)
 	sc.coverImages = disc.gatherCoverImages(sc.path)
@@ -311,15 +332,10 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 	}
 	s.reconcileOrphans(ctx, sc.existing, seenRel, sc.name)
 
-	// The migration must finish before the probe workers start: a new
-	// file's thumbnail can land on the path a row still uses under the old
-	// naming (new "holiday.mp4" -> "holiday.mp4.jpg", the old thumbnail of
-	// "holiday.mp4.png"), and that row has to move away first.
-	migFS := s.migFS
-	if migFS == nil {
-		migFS = osFS{}
+	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path)
+	if len(sc.stale) > 0 {
+		s.log().Info("scanner migrating thumbnails", "set", sc.name, "rows", len(sc.stale))
 	}
-	newThumbMigrator(s.store, s.thumbMkr, migFS, s.log()).run(ctx, sc.existing, seenRel, sc.path, sc.name, progress)
 
 	if progress != nil {
 		progress.AddFilesTotal(len(files))
@@ -328,9 +344,10 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 }
 
 // probeAndStore runs sc.files through the probe/persist pipeline and
-// returns the number of media rows created. probeWorkers probe files in
-// parallel; a single scanWriter goroutine persists the results, because
-// SQLite does not take concurrent writes. The first error cancels the rest.
+// returns the number of media rows created. probeWorkers probe new files
+// and regenerate stale thumbnails in parallel; a single scanWriter
+// goroutine persists the results, because SQLite does not take concurrent
+// writes. The first error cancels the rest.
 func (s *FSScanner) probeAndStore(ctx context.Context, sc *setScan, progress *model.ScanProgress) (int32, error) {
 	workers := max(s.workers, 1)
 	pathChan := make(chan string, len(sc.files))
@@ -348,7 +365,8 @@ func (s *FSScanner) probeAndStore(ctx context.Context, sc *setScan, progress *mo
 	workerWg := s.startProbeWorkers(ctx, scanCtx, sc, workers, pathChan, resultChan, progress, sendErr)
 
 	// scanWriter persists results sequentially to avoid SQLite write conflicts.
-	sw := newScanWriter(s.store, s.log())
+	thumbs := newThumbSwitcher(s.store, s.remover, s.log(), sc.existing, sc.files)
+	sw := newScanWriter(s.store, thumbs, s.log())
 	var newFiles int32
 	var writerWg sync.WaitGroup
 	writerWg.Add(1)
@@ -385,7 +403,7 @@ func (s *FSScanner) startProbeWorkers(
 	progress *model.ScanProgress,
 	sendErr func(error),
 ) *sync.WaitGroup {
-	pw := newProbeWorker(s.prober, s.thumbMkr, s.fs, s.clock, s.log())
+	pw := newProbeWorker(s.prober, s.thumbMkr, s.fs, s.clock, s.log(), sc.stale)
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
 		wg.Add(1)

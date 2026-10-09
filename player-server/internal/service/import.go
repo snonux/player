@@ -73,6 +73,14 @@ func probeMedia(ctx context.Context, prober probe.Prober, path string) (*model.M
 // with the scanner and RegenerateThumbnail: .thumbnails beside the source,
 // named after its full basename ("clip.mp4.jpg"), so a same-stem sibling
 // ("clip.png") gets its own file instead of overwriting this one.
+//
+// Accepted limitation, between upgrading from a release up to v0.2.2 and
+// the first rescan: the path written here can still be the thumbnail of
+// another item stored under the old stem-based naming ("holiday.mp4.jpg"
+// for an indexed "holiday.mp4.png"). That item then shows this file's
+// picture until the rescan gives it a thumbnail of its own. It is not
+// guarded against because the collision needs such a pair of names and
+// heals itself; see docs/admin.md.
 func generateThumbnail(ctx context.Context, thumbGen thumb.Generator, media *model.Media, duration float64) error {
 	ext := strings.ToLower(filepath.Ext(media.AbsPath))
 	if ext == ".svg" {
