@@ -1133,7 +1133,9 @@ func TestMediaService_UploadMedia_ProbeAndThumbnail(t *testing.T) {
 		}
 	})
 
-	t.Run("thumbnail failure cleans up", func(t *testing.T) {
+	// A thumbnail that cannot be generated must not cost the user the
+	// upload: the file is kept and indexed without a thumbnail.
+	t.Run("thumbnail failure keeps the upload", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		store := makeStore()
 		prober := &mockProber{ProbeFunc: func(ctx context.Context, path string) (*model.Metadata, error) {
@@ -1144,15 +1146,15 @@ func TestMediaService_UploadMedia_ProbeAndThumbnail(t *testing.T) {
 		}}
 		svc := NewMediaService(store, newMockClock(), tmpDir, thumbGen, prober)
 		data := strings.NewReader("fake video data")
-		_, err := svc.UploadMedia(ctx, 1, 1, "video.mp4", data, 16)
-		if err == nil {
-			t.Fatal("expected error")
+		media, err := svc.UploadMedia(ctx, 1, 1, "video.mp4", data, 16)
+		if err != nil {
+			t.Fatalf("upload rejected because of the thumbnail: %v", err)
 		}
-		files, _ := os.ReadDir(filepath.Join(tmpDir, "music"))
-		for _, e := range files {
-			if e.Name() != ".thumbnails" {
-				t.Fatalf("expected cleanup, found %s", e.Name())
-			}
+		if media.ThumbnailPath != "" || media.Duration != 120 {
+			t.Errorf("media = thumbnail %q, duration %v; want no thumbnail and the probed duration", media.ThumbnailPath, media.Duration)
+		}
+		if _, err := os.Stat(filepath.Join(tmpDir, "music", "video.mp4")); err != nil {
+			t.Errorf("uploaded file is gone: %v", err)
 		}
 	})
 
@@ -1275,9 +1277,16 @@ type mockThumbGenerator struct {
 	GenerateFunc func(ctx context.Context, inputPath, outputPath string, duration float64) error
 }
 
+// Generate calls GenerateFunc, or by default writes a small file like a real
+// generator would: the services only accept a thumbnail that exists and is
+// not empty. Tests that generate into a directory they never created (set
+// covers) keep succeeding without a file, as they did before.
 func (m *mockThumbGenerator) Generate(ctx context.Context, inputPath, outputPath string, duration float64) error {
 	if m.GenerateFunc != nil {
 		return m.GenerateFunc(ctx, inputPath, outputPath, duration)
+	}
+	if err := os.WriteFile(outputPath, []byte("jpg"), 0o644); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }

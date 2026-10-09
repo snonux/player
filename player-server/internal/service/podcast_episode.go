@@ -252,11 +252,13 @@ func (s *podcastEpisodeService) persistDownloadedEpisode(ctx context.Context, ep
 
 	cleanup := func() {
 		s.removeAndLog(path)
+		// A video episode got a thumbnail when it was imported.
+		removeOwnThumbnail(s.svc.thumbRm, media)
 		// Detached: a cancelled request must not leave a row whose file is gone.
 		_ = s.svc.store.HardDeleteMedia(context.WithoutCancel(ctx), media.ID)
 	}
 
-	if err := ImportMediaFile(ctx, s.svc.store, media, s.svc.prober, s.svc.thumbGen); err != nil {
+	if err := ImportMediaFile(ctx, s.svc.store, media, s.svc.prober, s.svc.thumbs); err != nil {
 		cleanup()
 		return nil, nil, err
 	}

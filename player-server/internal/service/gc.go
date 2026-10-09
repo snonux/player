@@ -40,6 +40,8 @@ type GCWorker struct {
 	stopOnce  sync.Once
 	wg        sync.WaitGroup
 	mediaRoot string
+	// thumbRm deletes the generated thumbnail of a purged media item.
+	thumbRm thumbnailRemover
 	// renditions is optional; nil disables transcode cache maintenance.
 	renditions RenditionGC
 	ctx        context.Context
@@ -56,6 +58,7 @@ func NewGCWorker(store repository.GCStore, clk clock.Clock, mediaRoot string, in
 		logger:    logger,
 		stopCh:    make(chan struct{}),
 		mediaRoot: mediaRoot,
+		thumbRm:   newThumbnailRemover(logger),
 	}
 }
 
@@ -72,7 +75,7 @@ func (w *GCWorker) WithInterval(interval time.Duration) *GCWorker {
 }
 
 // WithRenditionCache attaches the transcode cache so every GC run prunes it
-// and renditions of hard-deleted media are removed with their source.
+// and renditions of purged media are removed with their source.
 func (w *GCWorker) WithRenditionCache(renditions RenditionGC) *GCWorker {
 	w.renditions = renditions
 	return w
@@ -127,17 +130,17 @@ func (w *GCWorker) Stop() {
 	w.wg.Wait()
 }
 
-// run performs one GC pass: hard-delete expired trash, then prune the
-// transcode cache. The cache is pruned even when listing the trash fails,
-// because the two concerns are independent.
+// run performs one GC pass: purge expired trash, then prune the transcode
+// cache. The cache is pruned even when listing the trash fails, because the
+// two concerns are independent.
 func (w *GCWorker) run(ctx context.Context) {
-	w.collectDeletedMedia(ctx)
+	w.purgeExpired(ctx)
 	w.pruneRenditions(ctx)
 }
 
-// collectDeletedMedia hard-deletes soft-deleted media older than the age
-// threshold.
-func (w *GCWorker) collectDeletedMedia(ctx context.Context) {
+// purgeExpired purges every soft-deleted media item older than the
+// configured age.
+func (w *GCWorker) purgeExpired(ctx context.Context) {
 	items, err := w.store.ListDeletedMedia(ctx)
 	if err != nil {
 		if w.logger != nil {
@@ -147,18 +150,23 @@ func (w *GCWorker) collectDeletedMedia(ctx context.Context) {
 	}
 
 	cutoff := w.clock.Now().Add(-w.age)
-	for _, item := range items {
-		if item.DeletedAt == nil || !item.DeletedAt.Before(cutoff) {
+	for i := range items {
+		if items[i].DeletedAt == nil || !items[i].DeletedAt.Before(cutoff) {
 			continue
 		}
-		w.collect(ctx, item)
+		w.purge(ctx, &items[i])
 	}
 }
 
-// collect removes one expired item: file first, then the DB row, then its
-// cached renditions. The row is kept when the file cannot be removed so the
-// next run retries instead of orphaning the file on disk.
-func (w *GCWorker) collect(ctx context.Context, item model.Media) {
+// purge deletes one media item for good: its file, then its row, then the
+// files derived from it — the generated thumbnail and the cached transcode
+// renditions. The file goes before the row so a failure never leaves a file
+// on disk that no row accounts for; if the file cannot be removed the item
+// is kept and retried on the next run. The derived files go last, once
+// nothing refers to them any more; a thumbnail left in place would be an
+// orphan forever, and a rendition would keep deleted content playable from
+// the cache until it happened to be evicted.
+func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
 	absPath := item.AbsPath
 	if absPath == "" {
 		absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
@@ -168,7 +176,7 @@ func (w *GCWorker) collect(ctx context.Context, item model.Media) {
 	// owned by this legacy row. Keep it when collecting a row imported by
 	// an older scanner (including rows already soft-deleted before the fix).
 	if absPath != "" && filepath.Base(filepath.FromSlash(item.RelPath)) != ".cover.jpg" {
-		// A file that is already gone is fine; proceed with DB deletion.
+		// A file that is already gone is fine; proceed with the row.
 		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
 			if w.logger != nil {
 				w.logger.Warn("gc remove file", "path", absPath, "err", err)
@@ -183,6 +191,7 @@ func (w *GCWorker) collect(ctx context.Context, item model.Media) {
 		}
 		return
 	}
+	removeOwnThumbnail(w.thumbRm, item)
 	w.removeRenditions(item.ID)
 
 	if w.logger != nil {
@@ -190,8 +199,8 @@ func (w *GCWorker) collect(ctx context.Context, item model.Media) {
 	}
 }
 
-// removeRenditions drops the cached renditions of a hard-deleted item so
-// deleted content does not survive in the transcode cache.
+// removeRenditions drops the cached renditions of a purged item (and stops a
+// transcode of it that is still running).
 func (w *GCWorker) removeRenditions(mediaID int64) {
 	if w.renditions == nil {
 		return

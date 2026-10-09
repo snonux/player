@@ -17,17 +17,21 @@ import (
 // results arrive here.
 type scanWriter struct {
 	store  repository.ScannerStore
+	thumbs *thumbSwitcher
 	logger *slog.Logger
 }
 
-// newScanWriter creates a scanWriter backed by the given store.
-func newScanWriter(store repository.ScannerStore, logger *slog.Logger) *scanWriter {
-	return &scanWriter{store: store, logger: logger}
+// newScanWriter creates a scanWriter backed by the given store. thumbs
+// handles the results that migrate an indexed row's thumbnail.
+func newScanWriter(store repository.ScannerStore, thumbs *thumbSwitcher, logger *slog.Logger) *scanWriter {
+	return &scanWriter{store: store, thumbs: thumbs, logger: logger}
 }
 
-// run reads fileResults from resultChan and inserts each into the store.
-// It logs progress every 25 files and accumulates the count in newFiles.
-// Exits when resultChan is closed or scanCtx is cancelled.
+// run reads fileResults from resultChan and persists each: a new media
+// record is inserted, the new thumbnail of an indexed row (result.refresh)
+// is passed to the thumbSwitcher. It logs progress every 25 new files and accumulates
+// their count in newFiles. Exits when resultChan is closed; once scanCtx is
+// cancelled the remaining results are drained without being persisted.
 func (sw *scanWriter) run(
 	ctx context.Context,
 	scanCtx context.Context,
@@ -39,6 +43,10 @@ func (sw *scanWriter) run(
 ) {
 	for result := range resultChan {
 		if scanCtx.Err() != nil {
+			continue
+		}
+		if result.refresh {
+			sw.thumbs.apply(ctx, result)
 			continue
 		}
 		if _, err := sw.store.CreateMedia(ctx, result.media); err != nil {
