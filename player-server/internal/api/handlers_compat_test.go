@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -69,7 +70,7 @@ func compatEnvReturning(t *testing.T, r *transcode.Rendition, err error) compatT
 	t.Helper()
 	return newCompatTestEnv(t, &service.MockCompatStreamService{
 		CompatStreamFunc:       func(context.Context, int64, int64) (*transcode.Rendition, error) { return r, err },
-		SharedCompatStreamFunc: func(context.Context, string, string) (*transcode.Rendition, error) { return r, err },
+		SharedCompatStreamFunc: func(context.Context, string, ...string) (*transcode.Rendition, error) { return r, err },
 	})
 }
 
@@ -328,13 +329,13 @@ func shareUseEnv(t *testing.T, rendition *transcode.Rendition, useErr error) (co
 	t.Helper()
 	uses := new(int)
 	return newCompatTestEnv(t, &service.MockCompatStreamService{
-		SharedCompatStreamFunc: func(context.Context, string, string) (*transcode.Rendition, error) { return rendition, nil },
-		EnsureShareViewingFunc: func(_ context.Context, token, credential string) (service.ShareViewing, error) {
+		SharedCompatStreamFunc: func(context.Context, string, ...string) (*transcode.Rendition, error) { return rendition, nil },
+		EnsureShareViewingFunc: func(_ context.Context, token string, credentials ...string) (service.ShareViewing, error) {
 			if token != "tok" {
 				t.Errorf("viewing requested for token %q", token)
 			}
-			if credential == fakeViewCredential {
-				return service.ShareViewing{Credential: credential}, nil
+			if slices.Contains(credentials, fakeViewCredential) {
+				return service.ShareViewing{Credential: fakeViewCredential}, nil
 			}
 			*uses++
 			if useErr != nil {
@@ -510,7 +511,7 @@ func TestHandleShareCompatStream(t *testing.T) {
 			rendition := writeRendition(t)
 			var gotToken string
 			env := newCompatTestEnv(t, &service.MockCompatStreamService{
-				SharedCompatStreamFunc: func(_ context.Context, token, _ string) (*transcode.Rendition, error) {
+				SharedCompatStreamFunc: func(_ context.Context, token string, _ ...string) (*transcode.Rendition, error) {
 					gotToken = token
 					return rendition, tt.err
 				},

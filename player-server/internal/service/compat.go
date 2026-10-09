@@ -20,17 +20,17 @@ type CompatStreamService interface {
 	// being produced.
 	CompatStream(ctx context.Context, mediaID, userID int64) (*transcode.Rendition, error)
 	// SharedCompatStream returns the rendition of the media item behind a
-	// public share token. credential is the viewing credential the client
-	// presented, if any; a valid one keeps the share usable after max_uses
-	// is reached. It never counts a share use; see EnsureShareViewing.
-	SharedCompatStream(ctx context.Context, token, credential string) (*transcode.Rendition, error)
+	// public share token. credentials are the viewing credentials the
+	// client presented, if any; a valid one keeps the share usable after
+	// max_uses is reached. It never counts a share use; see EnsureShareViewing.
+	SharedCompatStream(ctx context.Context, token string, credentials ...string) (*transcode.Rendition, error)
 	// EnsureShareViewing returns the viewing a content request runs under:
-	// the one credential stands for, or a newly opened one, which consumes
+	// the one a credential stands for, or a newly opened one, which consumes
 	// one share use (Opened is set). The caller invokes it when it is
 	// certain to deliver content: after it has opened the rendition, and
 	// not for HEAD probes. It returns ErrShareExpired when a new viewing
 	// is needed and the share has no use left.
-	EnsureShareViewing(ctx context.Context, token, credential string) (ShareViewing, error)
+	EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error)
 }
 
 // shareRequester is the requester identity of every anonymous share request.
@@ -51,8 +51,8 @@ type RenditionProvider interface {
 // viewing (counting a use if the client has none) once content is actually
 // delivered. It is implemented by shareService.
 type SharedMediaAccess interface {
-	ResolveSharedMedia(ctx context.Context, token, credential string) (*model.Media, error)
-	EnsureShareViewing(ctx context.Context, token, credential string) (ShareViewing, error)
+	ResolveSharedMedia(ctx context.Context, token string, credentials ...string) (*model.Media, error)
+	EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error)
 }
 
 // Compile-time checks.
@@ -96,8 +96,8 @@ func (s *compatStreamService) CompatStream(ctx context.Context, mediaID, userID 
 // (EnsureShareViewing). Counting here would spend a use on answers that
 // deliver nothing: "still transcoding", "busy", failures, HEAD probes, and a
 // rendition evicted before it could be opened.
-func (s *compatStreamService) SharedCompatStream(ctx context.Context, token, credential string) (*transcode.Rendition, error) {
-	media, err := s.shares.ResolveSharedMedia(ctx, token, credential)
+func (s *compatStreamService) SharedCompatStream(ctx context.Context, token string, credentials ...string) (*transcode.Rendition, error) {
+	media, err := s.shares.ResolveSharedMedia(ctx, token, credentials...)
 	if err != nil {
 		return nil, err
 	}
@@ -106,8 +106,8 @@ func (s *compatStreamService) SharedCompatStream(ctx context.Context, token, cre
 
 // EnsureShareViewing settles the viewing of a content request to the share
 // behind token; see SharedMediaAccess.
-func (s *compatStreamService) EnsureShareViewing(ctx context.Context, token, credential string) (ShareViewing, error) {
-	return s.shares.EnsureShareViewing(ctx, token, credential)
+func (s *compatStreamService) EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error) {
+	return s.shares.EnsureShareViewing(ctx, token, credentials...)
 }
 
 // rendition checks that the item is eligible and asks the provider for it.

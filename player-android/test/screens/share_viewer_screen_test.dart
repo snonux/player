@@ -601,6 +601,68 @@ void main() {
     });
   });
 
+  group('sharePlaybackUrl fallback', () {
+    final root = Uri.parse('https://share.example');
+    const fallback = 'https://share.example/s/tok7/stream';
+    const view = '1791570469.t1SgGrk2dxCyNpl4ugVK0eAaNUbwCSDJvJ8G9rDi4DU';
+
+    String pick(String? candidate, String? view, {Uri? base}) =>
+        sharePlaybackUrl(
+          base: base ?? root,
+          token: 'tok7',
+          candidate: candidate,
+          view: view,
+        );
+
+    test('carries the share\'s credential when the candidate is rejected', () {
+      for (final candidate in [
+        null,
+        '',
+        'not a url',
+        'https://evil.example/s/tok7/compat?view=$view',
+        'https://share.example/s/other/compat?view=$view',
+        'https://share.example/s/tok7/compat?view=$view&next=/x',
+        'https://share.example/s/tok7/compat?view=bad value',
+      ]) {
+        expect(pick(candidate, view), '$fallback?view=$view',
+            reason: '$candidate');
+      }
+      expect(
+        pick(null, view, base: Uri.parse('https://share.example/player/')),
+        'https://share.example/player/s/tok7/stream?view=$view',
+      );
+    });
+
+    test('an accepted candidate keeps its own query', () {
+      expect(pick('https://share.example/s/tok7/compat?view=abc', view),
+          'https://share.example/s/tok7/compat?view=abc');
+      expect(pick('https://share.example/s/tok7/compat', view),
+          'https://share.example/s/tok7/compat');
+    });
+
+    test('drops a view value that does not look like a credential', () {
+      for (final bad in [
+        null,
+        '',
+        'a b',
+        'a&next=/x',
+        'a=b',
+        'a%26b',
+        'a/b',
+        'a#b',
+        'a\n',
+        '\r\nX-Injected: 1',
+        'ä',
+        'a' * 129,
+      ]) {
+        expect(pick(null, bad), fallback, reason: '$bad');
+        expect(pick('https://evil.example/x', bad), fallback, reason: '$bad');
+      }
+      // The longest value still taken for a credential.
+      expect(pick(null, 'a' * 128), '$fallback?view=${'a' * 128}');
+    });
+  });
+
   group('viewing credential', () {
     const view = '1791570469.t1SgGrk2dxCyNpl4ugVK0eAaNUbwCSDJvJ8G9rDi4DU';
 
@@ -668,14 +730,40 @@ void main() {
       expect(client.callCount, 1);
     });
 
-    testWidgets('a tampered credential falls back to the plain stream',
+    testWidgets(
+        'a rejected playback URL falls back to the stream of the same viewing',
         (tester) async {
+      // The URLs are unusable (an extra parameter), the view field is fine:
+      // the fallback must carry it, or every ranged request of the player
+      // would cost the share a use.
       final client = _FakePublicApiClient()
-        ..pageJson = shareJson(type: 'video', fileName: 'holiday.mp4')
+        ..pageJson = shareJson(
+                type: 'video', fileName: 'holiday.wmv', endpoint: 'compat')
             .replaceAll('?view=$view', '?view=$view&next=/api/v1/media');
       final player = await _playShareThroughRouter(tester, client);
 
+      expect(player.mediaUrl, 'http://test.local/s/abc123/stream?view=$view');
+    });
+
+    testWidgets('a fallback never carries a view value that is no credential',
+        (tester) async {
+      final json = jsonDecode(shareJson(type: 'video', fileName: 'a.mp4'))
+          as Map<String, dynamic>;
+      json['playback_url'] = '/s/other/stream';
+      json['view'] = 'x&next=/api/v1/media';
+      final client = _FakePublicApiClient()..pageJson = jsonEncode(json);
+      final player = await _playShareThroughRouter(tester, client);
+
       expect(player.mediaUrl, 'http://test.local/s/abc123/stream');
+    });
+
+    test('the model exposes the bare credential, empty when absent', () {
+      expect(
+          SharePageMetadata.fromJson(
+                  shareJson(type: 'video', fileName: 'a.mp4'))
+              .view,
+          view);
+      expect(SharePageMetadata.fromJson(_kVideoShareJson).view, '');
     });
 
     testWidgets('the thumbnail is requested with the credential',

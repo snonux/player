@@ -38,6 +38,7 @@ class SharePageMetadata {
     required this.playbackUrl,
     required this.thumbUrl,
     required this.downloadUrl,
+    this.view = '',
   });
 
   final String fileName;
@@ -64,6 +65,11 @@ class SharePageMetadata {
   /// Relative URL for downloading the original file.
   final String downloadUrl;
 
+  /// The viewing credential on its own, as the URLs above carry it in
+  /// `?view=`; empty when the server sent none. Only needed where a URL has
+  /// to be built without one of those (the route's fallback stream URL).
+  final String view;
+
   /// Parses a [SharePageMetadata] from the raw JSON string returned by
   /// [PlayerApiClient.getSharedMediaPage].
   ///
@@ -85,6 +91,7 @@ class SharePageMetadata {
           playbackUrl == null || playbackUrl.isEmpty ? streamUrl : playbackUrl,
       thumbUrl: (map['thumb_url'] as String?) ?? '',
       downloadUrl: (map['download_url'] as String?) ?? '',
+      view: (map['view'] as String?) ?? '',
     );
   }
 }
@@ -181,7 +188,10 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
   /// the compatibility stream for formats the device cannot decode; an image
   /// is shown from `stream_url`, the original file. The URL is passed on
   /// exactly as the server sent it, because it carries the viewing
-  /// credential (see [SharePageMetadata]); the route validates it.
+  /// credential (see [SharePageMetadata]); the route validates it. The
+  /// credential is passed along separately as well, so that the route's
+  /// fallback URL — used when it rejects the URL — still belongs to this
+  /// viewing instead of costing the share one use per request.
   void _play() {
     final page = _page;
     if (page == null) return;
@@ -191,6 +201,7 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
       'title': page.fileName,
       if (path.isNotEmpty)
         'mediaUrl': '${ref.read(publicApiClientProvider).baseUrl}$path',
+      if (page.view.isNotEmpty) 'view': page.view,
     });
   }
 

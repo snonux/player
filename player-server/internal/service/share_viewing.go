@@ -10,20 +10,25 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"codeberg.org/snonux/player/internal/model"
 )
 
 // A share's max_uses counts viewings, not HTTP requests: a player fetches one
 // file with many ranged requests, and counting each of them made a
 // single-use link die after the first second of playback.
 //
-// A viewing is opened by the first request of a client (normally the share
-// page or its JSON) and costs one use. The client gets a viewing credential
+// A viewing is opened by a client's first content request — the share page's
+// explicit "open viewing" request, the share JSON, or a media request — and
+// costs one use. Probes (HEAD, and the HTML share page, which every link
+// previewer fetches) never open one. The client gets a viewing credential
 // and presents it on every further request; those cost nothing and keep
 // working after max_uses is reached, until the viewing expires.
 //
 // The credential is "<expiry unix seconds>.<base64url HMAC-SHA256>". The MAC
 // covers the share token and the expiry, so a credential cannot be forged,
-// extended, or used for another share. Nothing is stored per viewing: the
+// extended, or used for another share. It is a bearer token: whoever holds
+// it can use the share until it expires or the share is revoked. Nothing is stored per viewing: the
 // only state is the signing key (repository.ShareRepo.ShareViewingKey), which
 // lives in the database and therefore survives restarts. Revocation and share
 // expiry need no viewing state either, because every request still loads the
@@ -51,7 +56,8 @@ const (
 )
 
 // ShareViewing is the viewing a share request runs under. The zero value
-// means the request has none (a probe without a credential).
+// means the request has none (a request that opens no viewing, sent without
+// a valid credential).
 type ShareViewing struct {
 	// Credential is presented by the client on later requests.
 	Credential string
@@ -66,11 +72,13 @@ type ShareViewing struct {
 type ShareAccess struct {
 	// Token is the share token from the URL path.
 	Token string
-	// Credential is the viewing credential the client presented, if any.
-	// An invalid one is treated exactly like none.
-	Credential string
-	// Probe marks a request that delivers no content (HEAD). It never
-	// opens a viewing and so never costs a use.
+	// Credentials are the viewing credentials the client presented, in
+	// order of preference (the "view" parameter, then the cookie). The
+	// first valid one counts; invalid ones are treated exactly like none.
+	Credentials []string
+	// Probe marks a request that must not open a viewing and so never
+	// costs a use: HEAD, which delivers no content, and the HTML share
+	// page, which link previewers and scanners fetch.
 	Probe bool
 }
 
@@ -84,10 +92,13 @@ func signShareViewing(key []byte, token string, expiresAt time.Time) string {
 // verifyShareViewing reports whether credential is a genuine, unexpired
 // viewing credential for token, and when it expires.
 //
-// Parsing is strict (canonical decimal expiry, canonical unpadded base64url)
-// so every viewing has exactly one accepted spelling.
+// Parsing is strict so every viewing has exactly one accepted spelling: only
+// characters of the credential alphabet, a canonical decimal expiry, and a
+// MAC whose decoding re-encodes to the very same text. The alphabet check
+// matters because Go's base64 decoder skips CR and LF even in Strict mode;
+// the re-encoding check rules out any other leniency of the decoder.
 func verifyShareViewing(key []byte, token, credential string, now time.Time) (time.Time, bool) {
-	if len(credential) > maxShareCredentialLen {
+	if len(credential) > maxShareCredentialLen || !isShareCredentialText(credential) {
 		return time.Time{}, false
 	}
 	expiry, encodedMAC, found := strings.Cut(credential, ".")
@@ -99,11 +110,27 @@ func verifyShareViewing(key []byte, token, credential string, now time.Time) (ti
 		return time.Time{}, false
 	}
 	mac, err := base64.RawURLEncoding.Strict().DecodeString(encodedMAC)
-	if err != nil || !hmac.Equal(mac, shareViewingMAC(key, token, expiry)) {
+	if err != nil || base64.RawURLEncoding.EncodeToString(mac) != encodedMAC {
+		return time.Time{}, false
+	}
+	if !hmac.Equal(mac, shareViewingMAC(key, token, expiry)) {
 		return time.Time{}, false
 	}
 	expiresAt := time.Unix(seconds, 0)
 	return expiresAt, now.Before(expiresAt)
+}
+
+// isShareCredentialText reports whether s consists only of the characters a
+// credential is made of: [A-Za-z0-9._-].
+func isShareCredentialText(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		alnum := c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9'
+		if !alnum && c != '.' && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // shareViewingMAC authenticates (token, expiry). The expiry consists of
@@ -145,38 +172,50 @@ func (s *shareService) viewingKey(ctx context.Context) ([]byte, error) {
 	return key, nil
 }
 
-// activeViewing returns the viewing the presented credential stands for, or
-// false when there is none or it is not valid for this share right now.
-func (s *shareService) activeViewing(ctx context.Context, token, credential string) (ShareViewing, bool, error) {
-	if credential == "" {
-		return ShareViewing{}, false, nil
+// activeViewing returns the viewing of the first presented credential that
+// is valid for this share right now, or false when none is. Trying all of
+// them keeps a stale "view" parameter from shadowing a good cookie.
+func (s *shareService) activeViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, bool, error) {
+	for _, credential := range credentials {
+		if credential == "" {
+			continue
+		}
+		// Loaded only when there is something to verify.
+		key, err := s.viewingKey(ctx)
+		if err != nil {
+			return ShareViewing{}, false, err
+		}
+		if expiresAt, ok := verifyShareViewing(key, token, credential, s.clock.Now()); ok {
+			return ShareViewing{Credential: credential, ExpiresAt: expiresAt}, true, nil
+		}
 	}
-	key, err := s.viewingKey(ctx)
-	if err != nil {
-		return ShareViewing{}, false, err
-	}
-	expiresAt, ok := verifyShareViewing(key, token, credential, s.clock.Now())
-	if !ok {
-		return ShareViewing{}, false, nil
-	}
-	return ShareViewing{Credential: credential, ExpiresAt: expiresAt}, true, nil
+	return ShareViewing{}, false, nil
 }
 
 // EnsureShareViewing returns the viewing a content request runs under: the
-// one the presented credential stands for, or a newly opened one. Opening
+// one a presented credential stands for, or a newly opened one. Opening
 // atomically consumes one share use and fails with ErrShareExpired when none
-// is left (e.g. a concurrent request took the last one).
+// is left (e.g. a concurrent request took the last one), or with
+// ErrShareNotFound when the share does not exist (any more).
 //
-// Callers check the share with ResolveSharedMedia first; this function alone
-// does not tell a missing share from an exhausted one.
-func (s *shareService) EnsureShareViewing(ctx context.Context, token, credential string) (ShareViewing, error) {
-	viewing, active, err := s.activeViewing(ctx, token, credential)
+// A new viewing never outlives its share: the credential's expiry — and with
+// it the advertised view_expires_at and the cookie lifetime — is capped at
+// the share's own expiry.
+func (s *shareService) EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error) {
+	viewing, active, err := s.activeViewing(ctx, token, credentials...)
 	if err != nil || active {
 		return viewing, err
 	}
 	key, err := s.viewingKey(ctx)
 	if err != nil {
 		return ShareViewing{}, err
+	}
+	share, err := s.store.GetShareByToken(ctx, token)
+	if err != nil {
+		return ShareViewing{}, fmt.Errorf("get share: %w", err)
+	}
+	if share == nil {
+		return ShareViewing{}, ErrShareNotFound
 	}
 	now := s.clock.Now()
 	used, err := s.store.UseShare(ctx, token, now)
@@ -186,11 +225,21 @@ func (s *shareService) EnsureShareViewing(ctx context.Context, token, credential
 	if !used {
 		return ShareViewing{}, ErrShareExpired
 	}
-	// Whole seconds, as the credential stores them.
-	expiresAt := now.Add(ShareViewingLifetime).Truncate(time.Second)
+	expiresAt := viewingExpiry(now, share)
 	return ShareViewing{
 		Credential: signShareViewing(key, token, expiresAt),
 		ExpiresAt:  expiresAt,
 		Opened:     true,
 	}, nil
+}
+
+// viewingExpiry returns when a viewing of share opened at now ends: after
+// ShareViewingLifetime, or with the share if that comes first. Whole seconds,
+// as the credential stores them.
+func viewingExpiry(now time.Time, share *model.Share) time.Time {
+	expiresAt := now.Add(ShareViewingLifetime)
+	if share.ExpiresAt.Before(expiresAt) {
+		expiresAt = share.ExpiresAt
+	}
+	return expiresAt.Truncate(time.Second)
 }

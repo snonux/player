@@ -143,6 +143,14 @@ async function playAndObserve(page: Page, set: string, kind: 'video' | 'audio', 
   return state;
 }
 
+// openShare loads a share page and waits until it has opened its viewing
+// (POST /s/{token}/view) and handed the media to the player. Before that the
+// player has nothing to play and a press on play would do nothing.
+async function openShare(guest: Page, token: string) {
+  expect((await guest.goto(`/s/${token}`))?.status()).toBe(200);
+  await expect(guest.locator('body')).toHaveAttribute('data-share-viewing', 'open');
+}
+
 // withShare creates a share for mediaId (body: e.g. { max_uses: 50 }), hands
 // an anonymous page and the new share's token to run, and always revokes the
 // share and closes the anonymous context, also when an assertion fails.
@@ -287,10 +295,11 @@ test.describe('library as admin', () => {
     expect(state.ok, state.reason).toBe(true);
   });
 
-  // A share's max_uses counts viewings, not HTTP requests: opening the share
-  // (page or JSON) costs one use and yields a viewing credential — a cookie
-  // for browsers, the "view" parameter in the JSON's URLs for other clients —
-  // that covers every ranged request of that viewing.
+  // A share's max_uses counts viewings, not HTTP requests. Fetching the page
+  // is free; the page opens the viewing with POST /s/{token}/view (one use)
+  // and gets a cookie, while the JSON form opens it itself and carries the
+  // credential as the "view" parameter in its URLs. Either way the credential
+  // covers every ranged request of that viewing.
   test('a transcoded share plays to the end through its playback_url without a session', async ({ page, browser }) => {
     const item = await mediaByName(page, 'sample-wmv.wmv');
     await withShare(page, browser, item.id, {}, async (guest, token) => {
@@ -300,7 +309,7 @@ test.describe('library as admin', () => {
       // need it (cookie) and plays the plain path.
       expect(meta.view).toBeTruthy();
       expect(meta.playback_url).toBe(`/s/${token}/compat?view=${meta.view}`);
-      await guest.goto(`/s/${token}`);
+      await openShare(guest, token);
       // The share page does not autoplay; the click is honoured once the stream is ready.
       await guest.locator('#btn-play').click();
       const state = await playbackState(guest, 'video', TRANSCODE_START_MS);
@@ -320,7 +329,11 @@ test.describe('library as admin', () => {
       guest.on('response', res => {
         if (new URL(res.url()).pathname.startsWith(`/s/${token}`) && res.status() === 410) refused.push(res.url());
       });
-      await guest.goto(`/s/${token}`);
+      // What a messenger does with the link before the recipient sees it:
+      // fetching the page is free and must leave the one use untouched.
+      const preview = await page.request.get(`/s/${token}`, { headers: { 'User-Agent': 'TelegramBot (like TwitterBot)' } });
+      expect(preview.status()).toBe(200);
+      await openShare(guest, token);
       await guest.locator('#btn-play').click();
       const state = await playbackState(guest, 'video', TRANSCODE_START_MS);
       expect(state.ok, state.reason).toBe(true);
@@ -347,7 +360,7 @@ test.describe('library as admin', () => {
   test('a transcoded audio share with a use limit plays to the end', async ({ page, browser }) => {
     const item = await mediaByName(page, 'sample-wma.wma');
     await withShare(page, browser, item.id, { max_uses: 50 }, async (guest, token) => {
-      await guest.goto(`/s/${token}`);
+      await openShare(guest, token);
       await guest.locator('#btn-play').click();
       const state = await playbackState(guest, 'audio', TRANSCODE_START_MS);
       expect(state.ok, state.reason).toBe(true);

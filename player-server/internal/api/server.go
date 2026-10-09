@@ -239,13 +239,18 @@ func (s *Server) routesPublic() {
 // specific mux patterns and a /s/ prefix in the public route registry to
 // cover every concrete token-bearing URL.
 //
-// A share's max_uses counts viewings, not requests: the first GET of a
-// client opens a viewing (one use) and hands it a credential that makes its
-// further requests free; see share_viewing.go. GET patterns also serve HEAD,
-// which never opens a viewing and so never consumes a use on any of these
-// routes; clients use it on the compat route as a readiness probe.
+// A share's max_uses counts viewings, not requests: a client's first content
+// request (the page's POST …/view, the JSON metadata, or a direct media GET)
+// opens a viewing (one use) and hands it a credential that makes its further
+// requests free; see share_viewing.go. The HTML page itself is free. GET
+// patterns also serve HEAD, which never opens a viewing and so never
+// consumes a use on any of these routes; clients use it on the compat route
+// as a readiness probe.
 func (s *Server) routesSharePublic() {
 	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
+	// The share page opens its viewing with this POST; see the handler for
+	// why it is not part of the page GET.
+	s.mux.HandleFunc("POST /s/{token}/view", s.handleShareOpenViewing)
 	s.mux.HandleFunc("GET /s/{token}/stream", s.handleShareStream)
 	s.mux.HandleFunc("GET /s/{token}/compat", s.handleShareCompatStream)
 	s.mux.HandleFunc("GET /s/{token}/thumbnail", s.handleShareThumbnail)

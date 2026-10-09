@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,15 +13,19 @@ import (
 	"codeberg.org/snonux/player/internal/service"
 )
 
-func TestShareCredential_QueryParameterBeforeCookie(t *testing.T) {
+// Both presented credentials are handed to the service, the parameter first:
+// the service takes the first that verifies, so a stale "view" parameter
+// cannot shadow a valid cookie.
+func TestShareCredentials_ParameterThenCookie(t *testing.T) {
 	tests := []struct {
-		name, target, cookie, want string
+		name, target, cookie string
+		want                 []string
 	}{
-		{"none", "/s/tok/stream", "", ""},
-		{"cookie", "/s/tok/stream", "c", "c"},
-		{"parameter", "/s/tok/stream?view=q", "", "q"},
-		{"parameter wins", "/s/tok/stream?view=q", "c", "q"},
-		{"empty parameter falls back to the cookie", "/s/tok/stream?view=", "c", "c"},
+		{"none", "/s/tok/stream", "", nil},
+		{"cookie", "/s/tok/stream", "c", []string{"c"}},
+		{"parameter", "/s/tok/stream?view=q", "", []string{"q"}},
+		{"both, parameter first", "/s/tok/stream?view=q", "c", []string{"q", "c"}},
+		{"empty parameter", "/s/tok/stream?view=", "c", []string{"c"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -30,8 +35,8 @@ func TestShareCredential_QueryParameterBeforeCookie(t *testing.T) {
 				req.AddCookie(&http.Cookie{Name: shareViewCookie, Value: tt.cookie})
 			}
 			got := shareAccess(req)
-			if got.Credential != tt.want || got.Token != "tok" || !got.Probe {
-				t.Errorf("shareAccess = %+v, want credential %q for a probe of tok", got, tt.want)
+			if !slices.Equal(got.Credentials, tt.want) || got.Token != "tok" || !got.Probe {
+				t.Errorf("shareAccess = %+v, want credentials %q for a probe of tok", got, tt.want)
 			}
 		})
 	}

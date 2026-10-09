@@ -400,27 +400,40 @@ final routerProvider = Provider<GoRouter>((ref) {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// The only query a share media URL may carry: the server's viewing
-/// credential, `view=<unix seconds>.<base64url MAC>`. It is matched against
-/// the raw (still percent-encoded) query string, so nothing can hide behind
-/// an escape: no second parameter, no `&`, `=`, `%`, `/` or whitespace in the
-/// value, and no value long enough to be anything but a credential (a
-/// genuine one has 54 characters).
-final _shareViewQuery = RegExp(r'^view=[A-Za-z0-9._-]{1,128}$');
+/// What a server viewing credential (`<unix seconds>.<base64url MAC>`) may
+/// look like: its alphabet, and a length no longer than anything but a
+/// credential needs (a genuine one has 54 characters).
+const _shareViewValuePattern = r'[A-Za-z0-9._-]{1,128}';
+
+/// A bare credential value, as the share JSON's `view` field carries it.
+final _shareViewValue = RegExp('^$_shareViewValuePattern\$');
+
+/// The only query a share media URL may carry: `view=<credential>`. It is
+/// matched against the raw (still percent-encoded) query string, so nothing
+/// can hide behind an escape: no second parameter, no `&`, `=`, `%`, `/` or
+/// whitespace in the value.
+final _shareViewQuery = RegExp('^view=$_shareViewValuePattern\$');
 
 /// Returns the URL a public share's audio/video player or image viewer
 /// opens.
 ///
 /// The share viewer passes the server's `playback_url` (the compatibility
 /// stream for formats the device cannot decode; for images the original
-/// stream) as the `mediaUrl` extra. Without a usable one (a route restored
-/// without its extra) the original stream is played without a credential.
+/// stream) as the `mediaUrl` extra, and the share's viewing credential as
+/// the `view` extra for the case that the URL is not usable. Without either
+/// (a route restored without its extra) the original stream is played
+/// without a credential.
 String _sharedPlaybackUrl(BuildContext context, GoRouterState state) {
   final base = ProviderScope.containerOf(context, listen: false)
       .read(publicShareBaseUrlProvider);
   final token = state.pathParameters['token'] ?? '';
-  final fromViewer = _parsePlayerExtra(state.extra).$1;
-  return sharePlaybackUrl(base: base, token: token, candidate: fromViewer);
+  final extra = state.extra;
+  return sharePlaybackUrl(
+    base: base,
+    token: token,
+    candidate: _parsePlayerExtra(extra).$1,
+    view: extra is Map<String, dynamic> ? extra['view'] as String? : null,
+  );
 }
 
 /// Picks the media URL for share [token] on the server at [base].
@@ -436,8 +449,13 @@ String _sharedPlaybackUrl(BuildContext context, GoRouterState state) {
 ///
 /// The credential is what lets the player's many ranged requests count as
 /// the one viewing the metadata fetch opened. It is kept verbatim: the app
-/// cannot verify it, the server does. The fallback URL has none, so the
-/// server treats each of its requests as a viewing of its own.
+/// cannot verify it, the server does.
+///
+/// The fallback must carry it too, or the server would treat every ranged
+/// request of the player as a viewing of its own and charge the share a use
+/// for each. So when [candidate] is rejected, the fallback gets [view] — the
+/// share JSON's own `view` field — provided it looks like a credential
+/// ([_shareViewValue]); anything else is dropped and the fallback has none.
 ///
 /// Edge case: a [token] of `.` or `..` is not a share. No candidate can
 /// match it (normalisation removes such segments), and the fallback URL
@@ -448,6 +466,7 @@ String sharePlaybackUrl({
   required Uri base,
   required String token,
   String? candidate,
+  String? view,
 }) {
   final prefix = base.pathSegments.where((segment) => segment.isNotEmpty);
   Uri endpoint(String name) =>
@@ -468,7 +487,10 @@ String sharePlaybackUrl({
       }
     }
   }
-  return endpoint('stream').toString();
+  final original = endpoint('stream');
+  final credentialed = view != null && _shareViewValue.hasMatch(view);
+  return (credentialed ? original.replace(query: 'view=$view') : original)
+      .toString();
 }
 
 /// Parses the route [extra] passed to video, audio, and image viewer routes.

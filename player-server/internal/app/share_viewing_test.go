@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // shareJSON is the part of the share metadata a media-player client uses.
@@ -20,6 +21,8 @@ type shareJSON struct {
 	PlaybackURL string `json:"playback_url"`
 	DownloadURL string `json:"download_url"`
 	View        string `json:"view"`
+	// ViewExpiresAt is when the viewing ends.
+	ViewExpiresAt time.Time `json:"view_expires_at"`
 }
 
 // shareDo sends an anonymous request with the given headers.
@@ -132,46 +135,6 @@ func TestShareViewing_SingleUseSharePlaysWithManyRangedRequests(t *testing.T) {
 	}
 }
 
-// A browser gets the credential as a cookie with the page: media requests
-// and page reloads carry it and cost nothing; another browser is refused.
-func TestShareViewing_BrowserCookie(t *testing.T) {
-	e := newE2E(t, &fakeRunner{})
-	token := e.share("movie.mp4", "alice", `{"max_uses":1}`)
-	html := http.Header{"Accept": {"text/html"}}
-
-	page := e.shareDo(http.MethodGet, "/s/"+token, html)
-	cookie := viewCookie(page)
-	if page.Code != http.StatusOK || cookie == nil {
-		t.Fatalf("share page = %d, cookie %v", page.Code, cookie)
-	}
-	if cookie.Path != "/s/"+token || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode || cookie.MaxAge <= 0 || cookie.Secure {
-		t.Errorf("cookie = %+v, want HttpOnly, SameSite=Lax, Path=/s/{token}, a lifetime, and no Secure (SECURE_COOKIES is off here)", cookie)
-	}
-	// The page must not expose the credential to scripts or in its URLs.
-	if body := page.Body.String(); strings.Contains(body, cookie.Value) || strings.Contains(body, "view") || !strings.Contains(body, `"/s/`+token+`/stream"`) {
-		t.Errorf("share page body = %s", body)
-	}
-
-	jar := http.Header{"Accept": {"text/html"}, "Cookie": {cookie.String()}}
-	for i := range 3 {
-		reload := e.shareDo(http.MethodGet, "/s/"+token, jar)
-		if reload.Code != http.StatusOK || viewCookie(reload) != nil {
-			t.Fatalf("reload %d = %d, new cookie %v", i+1, reload.Code, viewCookie(reload))
-		}
-	}
-	for i := range 4 {
-		if rr := e.shareDo(http.MethodGet, "/s/"+token+"/stream", ranged("bytes=9-13", cookie)); rr.Code != http.StatusPartialContent || rr.Body.String() != "movie" {
-			t.Fatalf("ranged GET %d with the cookie = %d %q", i+1, rr.Code, rr.Body.String())
-		}
-	}
-	if got := e.usedCount(token); got != 1 {
-		t.Fatalf("used_count = %d, want 1", got)
-	}
-	if rr := e.shareDo(http.MethodGet, "/s/"+token, html); rr.Code != http.StatusGone {
-		t.Errorf("another browser = %d, want 410", rr.Code)
-	}
-}
-
 // Anything that is not a genuine credential of this very share counts as no
 // credential: refused on an exhausted share, charged on one with uses left.
 func TestShareViewing_InvalidCredentials(t *testing.T) {
@@ -193,6 +156,9 @@ func TestShareViewing_InvalidCredentials(t *testing.T) {
 		"garbage":            "not-a-credential",
 		"oversized":          strings.Repeat("9", 5000),
 		"url-encoded tricks": good.View + "%00",
+		// Go's base64 decoder would skip these two.
+		"trailing CR": good.View + "%0D",
+		"embedded LF": expiry + "." + mac[:10] + "%0A" + mac[10:],
 	}
 	for name, credential := range invalid {
 		t.Run(name, func(t *testing.T) {

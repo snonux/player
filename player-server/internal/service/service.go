@@ -170,9 +170,10 @@ type GetSharedMediaResult struct {
 	// the viewing cookie.
 	View          string     `json:"view,omitempty"`
 	ViewExpiresAt *time.Time `json:"view_expires_at,omitempty"`
-	// Viewing is the viewing the request runs under. It is not serialized:
-	// the share page must not expose the credential to scripts, which is
-	// what the HttpOnly cookie is for.
+	// Viewing is the viewing the request runs under, whether this request
+	// opened it or not. It is not serialized: only WithViewCredential puts
+	// the credential into a response body, for clients that asked for the
+	// JSON form.
 	Viewing ShareViewing `json:"-"`
 }
 
@@ -228,8 +229,9 @@ type MediaShareService interface {
 	// a viewing under the same rule as StreamSharedMedia.
 	GetSharedMedia(ctx context.Context, access ShareAccess) (*GetSharedMediaResult, error)
 	// GetSharedThumbnail returns the shared item's thumbnail. It never
-	// consumes a use; credential lets it work after max_uses is reached.
-	GetSharedThumbnail(ctx context.Context, token, credential string) (*FileResult, error)
+	// consumes a use; a valid credential lets it work after max_uses is
+	// reached.
+	GetSharedThumbnail(ctx context.Context, token string, credentials ...string) (*FileResult, error)
 	// ListMyShares returns all shares created by a user.
 	ListMyShares(ctx context.Context, userID int64) ([]ShareInfo, error)
 }

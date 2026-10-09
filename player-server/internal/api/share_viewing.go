@@ -23,28 +23,30 @@ func preparePublicShare(w http.ResponseWriter) {
 }
 
 // shareAccess describes the share request r: its token, the viewing
-// credential the client presented, and whether it is a probe. HEAD delivers
+// credentials the client presented, and whether it is a probe. HEAD delivers
 // no content, so it never opens a viewing and never costs a share use.
 func shareAccess(r *http.Request) service.ShareAccess {
 	return service.ShareAccess{
-		Token:      r.PathValue("token"),
-		Credential: shareCredential(r),
-		Probe:      r.Method == http.MethodHead,
+		Token:       r.PathValue("token"),
+		Credentials: shareCredentials(r),
+		Probe:       r.Method == http.MethodHead,
 	}
 }
 
-// shareCredential returns the viewing credential presented with r: the
-// "view" query parameter (media players, which keep no cookies) or else the
-// viewing cookie (browsers). It is returned unverified — the service decides
-// — and must never be logged.
-func shareCredential(r *http.Request) string {
+// shareCredentials returns the viewing credentials presented with r, in the
+// order the service tries them: the "view" query parameter (media players,
+// which keep no cookies), then the viewing cookie (browsers). Both are
+// passed on, so a stale parameter does not shadow a valid cookie. They are
+// unverified — the service decides — and must never be logged.
+func shareCredentials(r *http.Request) []string {
+	var credentials []string
 	if credential := r.URL.Query().Get(service.ShareViewParam); credential != "" {
-		return credential
+		credentials = append(credentials, credential)
 	}
-	if cookie, err := r.Cookie(shareViewCookie); err == nil {
-		return cookie.Value
+	if cookie, err := r.Cookie(shareViewCookie); err == nil && cookie.Value != "" {
+		credentials = append(credentials, cookie.Value)
 	}
-	return ""
+	return credentials
 }
 
 // handOverShareViewing gives the client the credential of a viewing this
@@ -53,8 +55,10 @@ func shareCredential(r *http.Request) string {
 //
 // The cookie is scoped to the share's path: it is sent with the page and its
 // stream/compat/thumbnail/download requests and with nothing else, and one
-// share's cookie never reaches another share. HttpOnly keeps it from page
-// scripts. SameSite=Lax rather than Strict, because share links are opened
+// share's cookie never reaches another share. HttpOnly keeps the value out of
+// document.cookie, which is hygiene rather than secrecy: a script running on
+// this origin can still obtain a credential by requesting the share's JSON
+// form. SameSite=Lax rather than Strict, because share links are opened
 // from other sites (webmail, chat): Strict would withhold the cookie on such
 // a navigation and every click on the link would cost another use. The media
 // requests themselves are same-origin and unaffected by either setting.

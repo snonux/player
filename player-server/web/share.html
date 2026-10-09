@@ -56,12 +56,19 @@
     z-index: 100;
     border-radius: 0;
   }
+
+  /* Shown instead of the player when the share cannot be viewed. */
+  .share-status {
+    margin: 1rem 0 0;
+    color: var(--text-primary);
+  }
 </style>
 </head>
 <body>
 <div class="page-wrap">
   <div class="container">
     <h1 id="share-title">Shared Media</h1>
+    <p id="share-status" class="share-status hidden" role="alert"></p>
     <aside id="player" class="player open" aria-label="Player">
       <div class="stage">
         <video id="media-video" playsinline controlslist="nodownload"></video>
@@ -95,6 +102,7 @@
 
 <script type="module">
   import { initPlayer, loadMediaDirect } from '/js/player.js';
+  import { openShareViewing } from '/js/shareViewing.js';
 
   initPlayer();
 
@@ -110,23 +118,50 @@
     const name = decoder.value || 'Shared Media';
     document.getElementById('share-title').textContent = name;
     document.title = `${name} — Shared Media`;
-    // playback_url is the compat stream when the server flags the share as
-    // "transcoded" (formats browsers cannot decode); the flag makes the player
-    // wait for the rendition instead of loading a 503. Servers without the
-    // hint only send stream_url. The decoded name is used in error toasts.
-    //
-    // The URLs are plain same-origin paths without a credential. Loading
-    // this page opened a "viewing" (one use of a share's max_uses) and set
-    // an HttpOnly cookie scoped to /s/{token}; the browser sends it with the
-    // player's HEAD probe, with every ranged media request, the thumbnail
-    // and the download, so none of them costs another use — and neither
-    // does reloading this page.
+
+    // Loading this page cost nothing (link previewers load it too). The
+    // viewing — one use of the share's max_uses — is opened here, and only
+    // then may any media URL be touched: the POST sets a cookie scoped to
+    // /s/{token} that the browser sends with the player's HEAD probe, every
+    // ranged media request, the thumbnail and the download, so none of them
+    // costs another use. On a reload the cookie is still there and the POST
+    // consumes nothing. See shareViewing.js.
+    const viewing = await openShareViewing(location.pathname);
+    if (viewing.state === 'open') {
+      showSharedMedia(data, name);
+    } else {
+      showUnavailable(viewing.message);
+    }
+    // Marks the page as settled ("open", "gone" or "failed"): until then the
+    // player has nothing to play. Browser tests wait for it before pressing
+    // play.
+    document.body.dataset.shareViewing = viewing.state;
+  }
+
+  // showSharedMedia hands the share to the player. The URLs are plain
+  // same-origin paths; the viewing cookie is their credential.
+  //
+  // playback_url is the compat stream when the server flags the share as
+  // "transcoded" (formats browsers cannot decode); the flag makes the player
+  // wait for the rendition instead of loading a 503. Servers without the
+  // hint only send stream_url. The decoded name is used in error toasts.
+  function showSharedMedia(data, name) {
     const media = { ...data.media, file_name: name, transcoded: !!data.transcoded };
     loadMediaDirect(media, data.playback_url || data.stream_url, data.thumb_url, 0);
     const dlBtn = document.getElementById('btn-download');
     if (dlBtn && data.download_url) {
       dlBtn.addEventListener('click', () => { location.href = data.download_url; });
     }
+  }
+
+  // showUnavailable replaces the player with the reason the share cannot be
+  // viewed (used up, expired or revoked since the page was loaded, or the
+  // server did not answer). No media URL has been requested at this point.
+  function showUnavailable(message) {
+    document.getElementById('player').classList.add('hidden');
+    const status = document.getElementById('share-status');
+    status.textContent = message;
+    status.classList.remove('hidden');
   }
 </script>
 

@@ -52,6 +52,16 @@ func verifyCases(key []byte, good string, now, expiresAt time.Time) []verifyCase
 		{"flipped mac", key, "tok", expiry + "." + flipped + mac[1:], now, false},
 		{"extended expiry", key, "tok", later + "." + mac, now, false},
 		{"padded mac", key, "tok", good + "=", now, false},
+		// Go's base64 decoder skips CR and LF, also in Strict mode; without
+		// the alphabet check these would be further spellings of good.
+		{"trailing CR", key, "tok", good + "\r", now, false},
+		{"trailing LF", key, "tok", good + "\n", now, false},
+		{"trailing CRLF", key, "tok", good + "\r\n", now, false},
+		{"embedded LF", key, "tok", expiry + "." + mac[:7] + "\n" + mac[7:], now, false},
+		{"LF before the mac", key, "tok", expiry + ".\n" + mac, now, false},
+		{"space", key, "tok", good + " ", now, false},
+		{"NUL", key, "tok", good + "\x00", now, false},
+		{"non-ASCII", key, "tok", good + "é", now, false},
 		{"standard base64 alphabet", key, "tok", expiry + "." + strings.NewReplacer("-", "+", "_", "/").Replace(mac) + "+", now, false},
 		{"leading zero expiry", key, "tok", "0" + good, now, false},
 		{"signed expiry", key, "tok", "+" + good, now, false},
@@ -80,6 +90,75 @@ func TestVerifyShareViewing(t *testing.T) {
 	}
 	if len(good) > maxShareCredentialLen {
 		t.Errorf("a genuine credential (%d chars) exceeds the parse limit %d", len(good), maxShareCredentialLen)
+	}
+}
+
+// The first valid credential counts, wherever it stands: a stale "view"
+// parameter in front of a good cookie must not cost a use.
+func TestShareViewing_FirstValidCredentialCounts(t *testing.T) {
+	f := newViewingFixture(t, ":memory:")
+	f.share("tok", time.Hour, 1)
+	good := f.open("tok")
+
+	for _, credentials := range [][]string{{good}, {"1.AAAA", good}, {"", "junk", good}, {good, "junk"}} {
+		_, viewing, err := f.svc.StreamSharedMedia(context.Background(), ShareAccess{Token: "tok", Credentials: credentials})
+		if err != nil || viewing.Opened || viewing.Credential != good {
+			t.Errorf("credentials %q: viewing %+v, err %v; want the existing viewing", credentials, viewing, err)
+		}
+	}
+	if _, _, err := f.svc.StreamSharedMedia(context.Background(), ShareAccess{Token: "tok", Credentials: []string{"1.AAAA", "junk"}}); !errors.Is(err, ErrShareExpired) {
+		t.Errorf("only invalid credentials on the exhausted share = %v, want ErrShareExpired", err)
+	}
+	if got := f.used("tok"); got != 1 {
+		t.Errorf("used_count = %d, want 1", got)
+	}
+}
+
+// A viewing ends with its share at the latest; a share that outlives the
+// viewing lifetime does not extend it.
+func TestShareViewing_ExpiryIsCappedAtTheSharesExpiry(t *testing.T) {
+	f := newViewingFixture(t, ":memory:")
+	tests := []struct {
+		token    string
+		lifetime time.Duration
+		want     time.Duration
+	}{
+		{"short", 20 * time.Minute, 20 * time.Minute},
+		{"long", 30 * 24 * time.Hour, ShareViewingLifetime},
+	}
+	for _, tt := range tests {
+		f.share(tt.token, tt.lifetime, 0)
+		res, err := f.svc.GetSharedMedia(context.Background(), ShareAccess{Token: tt.token})
+		f.must(err)
+		if want := f.clk.T.Add(tt.want); !res.Viewing.ExpiresAt.Equal(want) {
+			t.Errorf("%s share: viewing expires %v, want %v", tt.token, res.Viewing.ExpiresAt, want)
+		}
+		if got := res.WithViewCredential().ViewExpiresAt; got == nil || !got.Equal(res.Viewing.ExpiresAt) {
+			t.Errorf("%s share: view_expires_at = %v, want the viewing's expiry", tt.token, got)
+		}
+	}
+}
+
+// A probe (HEAD, the HTML page) never opens a viewing, with or without a
+// credential, and reports the viewing its credential stands for.
+func TestShareViewing_ProbeNeverOpens(t *testing.T) {
+	f := newViewingFixture(t, ":memory:")
+	f.share("tok", time.Hour, 1)
+
+	res, err := f.svc.GetSharedMedia(context.Background(), ShareAccess{Token: "tok", Probe: true})
+	if err != nil || res.Viewing != (ShareViewing{}) || f.used("tok") != 0 {
+		t.Fatalf("probe without a credential: viewing %+v, err %v, used %d", res.Viewing, err, f.used("tok"))
+	}
+	good := f.open("tok")
+	res, err = f.svc.GetSharedMedia(context.Background(), ShareAccess{Token: "tok", Credentials: []string{good}, Probe: true})
+	if err != nil || res.Viewing.Opened || res.Viewing.Credential != good {
+		t.Errorf("probe inside the viewing: %+v, err %v", res.Viewing, err)
+	}
+	if _, err := f.svc.GetSharedMedia(context.Background(), ShareAccess{Token: "tok", Probe: true}); !errors.Is(err, ErrShareExpired) {
+		t.Errorf("probe of the exhausted share without a credential = %v, want ErrShareExpired", err)
+	}
+	if got := f.used("tok"); got != 1 {
+		t.Errorf("used_count = %d, want 1", got)
 	}
 }
 
@@ -182,7 +261,7 @@ func (f *viewingFixture) open(token string) string {
 // stream requests the shared file and reports the error and whether the
 // request opened a new viewing.
 func (f *viewingFixture) stream(token, credential string) (bool, error) {
-	_, viewing, err := f.svc.StreamSharedMedia(context.Background(), ShareAccess{Token: token, Credential: credential})
+	_, viewing, err := f.svc.StreamSharedMedia(context.Background(), ShareAccess{Token: token, Credentials: []string{credential}})
 	return viewing.Opened, err
 }
 
@@ -202,7 +281,7 @@ func TestShareViewing_LifetimeOnRealStore(t *testing.T) {
 	if _, err := f.svc.GetSharedThumbnail(context.Background(), "tok", credential); err != nil {
 		t.Errorf("thumbnail inside the viewing: %v", err)
 	}
-	if res, err := f.svc.GetSharedMedia(context.Background(), ShareAccess{Token: "tok", Credential: credential}); err != nil || res.Viewing.Opened || res.Viewing.Credential != credential {
+	if res, err := f.svc.GetSharedMedia(context.Background(), ShareAccess{Token: "tok", Credentials: []string{credential}}); err != nil || res.Viewing.Opened || res.Viewing.Credential != credential {
 		t.Errorf("metadata reload inside the viewing: %+v, err=%v", res, err)
 	}
 	if got := f.used("tok"); got != 1 {
@@ -294,7 +373,7 @@ func TestShareViewing_SurvivesRestart(t *testing.T) {
 	credential := f.open("tok")
 
 	restarted := NewShareService(f.store, f.clk, NewAccessHelper(f.store))
-	if _, _, err := restarted.StreamSharedMedia(context.Background(), ShareAccess{Token: "tok", Credential: credential}); err != nil {
+	if _, _, err := restarted.StreamSharedMedia(context.Background(), ShareAccess{Token: "tok", Credentials: []string{credential}}); err != nil {
 		t.Fatalf("credential after a restart: %v", err)
 	}
 

@@ -291,6 +291,7 @@ func TestCompatStreamService_EnsureShareViewing(t *testing.T) {
 			var tokens []string
 			store := compatStore(nil)
 			store.ShareRepo = repository.MockShareRepo{
+				GetShareByTokenFunc: existingShare,
 				UseShareFunc: func(_ context.Context, token string, _ time.Time) (bool, error) {
 					tokens = append(tokens, token)
 					return tt.used, nil
@@ -308,9 +309,15 @@ func TestCompatStreamService_EnsureShareViewing(t *testing.T) {
 	}
 }
 
+// existingShare is a store lookup that finds a share valid for another hour.
+func existingShare(_ context.Context, token string) (*model.Share, error) {
+	return &model.Share{Token: token, MediaID: 5, ExpiresAt: newMockClock().T.Add(time.Hour)}, nil
+}
+
 func TestEnsureShareViewing_StoreError(t *testing.T) {
 	store := &repository.MockStore{ShareRepo: repository.MockShareRepo{
-		UseShareFunc: func(context.Context, string, time.Time) (bool, error) { return false, errors.New("db down") },
+		GetShareByTokenFunc: existingShare,
+		UseShareFunc:        func(context.Context, string, time.Time) (bool, error) { return false, errors.New("db down") },
 	}}
 	_, err := NewShareService(store, newMockClock(), NewAccessHelper(store)).EnsureShareViewing(context.Background(), "tok", "")
 	if err == nil || errors.Is(err, ErrShareExpired) {

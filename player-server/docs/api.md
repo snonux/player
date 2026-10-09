@@ -261,42 +261,85 @@ A share's `max_uses` counts **viewings**, not HTTP requests. Players fetch one
 file with many ranged requests; all requests of one viewing together cost one
 use.
 
-- **Opening a viewing** costs one use (claimed atomically; `410` when none is
-  left). It happens on the first `GET` of a client that presents no valid
-  viewing credential — normally `GET /s/{token}` (page or JSON), but also a
-  `GET` straight to `/stream`, `/compat` or `/download`.
-- The client receives a **viewing credential**, bound to that share and valid
-  for 6 hours:
-  - as a cookie on every response that opened a viewing:
-    `share_view=<credential>; Path=/s/{token}; HttpOnly; SameSite=Lax; Max-Age=…`
-    (plus `Secure` unless `SECURE_COOKIES=false`);
-  - in the JSON form of `GET /s/{token}` as `view`, with every URL in that
-    JSON already carrying it as the query parameter `?view=<credential>`.
-- **Requests that present a valid credential** — the cookie, or the `view`
-  parameter (which wins when both are sent) — never cost a use and keep
-  working after `max_uses` is reached, until the viewing expires. That covers
-  `/s/{token}` (a page reload), `/stream`, `/compat`, `/thumbnail` and
-  `/download`.
-- **Requests without a valid credential** (none, expired, malformed, forged, or
-  issued for another share — all treated alike) open a new viewing as above.
-  A client that neither keeps cookies nor sends `view` therefore pays one use
-  per `GET`, exactly as before viewings existed; links pasted straight to
-  `/s/{token}/stream` and older apps keep working that way.
-- **`HEAD` never costs a use** and never opens a viewing, on any share route.
-  On a share with no use left it answers `410` unless it presents a valid
-  credential. `GET /s/{token}/thumbnail` never costs a use either; without a
-  credential it is served while the share has uses left.
-- **Revocation and expiry are immediate**: every request checks the share
-  itself first, so a revoked share answers `404` and an expired one `410`
-  also inside a viewing.
-- All share responses carry `Cache-Control: no-store` and
-  `Referrer-Policy: no-referrer`; the `view` parameter is a credential — do
-  not log or forward URLs that contain it.
+**What opens a viewing (one use, claimed atomically; `410` when none is
+left)** — a request of a client that presents no valid viewing credential and
+is one of:
+
+| Request | Who sends it |
+|---------|--------------|
+| `POST /s/{token}/view` | the share page's script, before it loads any media |
+| `GET /s/{token}` with `Accept: application/json` | apps and API clients |
+| `GET /s/{token}/stream`, `/compat`, `/download` | links pasted straight to the media, clients that predate viewings |
+
+**What never opens a viewing and never costs a use:**
+
+- `GET /s/{token}` as HTML — the share page. Link previewers, mail scanners
+  and prefetching browsers request exactly this, so a single-use link is not
+  spent by being sent through a chat app. The page sets no cookie.
+- `HEAD` on any share route.
+- `GET /s/{token}/thumbnail`.
+- any request that presents a valid viewing credential.
+
+Without a valid credential these free requests are answered while the share
+has uses left and `410` once it has none.
+
+**The viewing credential** is bound to its share and valid for 6 hours, or
+until the share's own `expires_at` if that comes first. The client gets it
+
+- as a cookie on every response that opened a viewing:
+  `share_view=<credential>; Path=/s/{token}; HttpOnly; SameSite=Lax; Max-Age=…`
+  (plus `Secure` unless `SECURE_COOKIES=false`);
+- in the JSON form of `GET /s/{token}` as `view` (with `view_expires_at`), and
+  every URL in that JSON already carries it as the query parameter
+  `?view=<credential>`.
+
+**Requests that present a valid credential** — the `view` parameter or the
+cookie; when both are sent the first valid one counts — never cost a use and
+keep working after `max_uses` is reached, until the viewing expires. That
+covers `/s/{token}` (a reload), `POST /s/{token}/view` (idempotent),
+`/stream`, `/compat`, `/thumbnail` and `/download`.
+
+**Anything that is not a valid credential** (none, expired, malformed, forged,
+or issued for another share) is treated exactly like no credential. A client
+that neither keeps cookies nor sends `view` therefore pays one use per media
+`GET`, as before viewings existed.
+
+**Revocation and expiry are immediate**: every request checks the share
+itself first, so a revoked share answers `404` and an expired one `410` also
+inside a viewing.
+
+All share responses carry `Cache-Control: no-store` and
+`Referrer-Policy: no-referrer`.
 
 The credential is `<expiry unix seconds>.<base64url HMAC-SHA256>` (54
-characters from `[A-Za-z0-9._-]`), signed with a key the server keeps in its
-database. Viewings therefore survive a server restart; nothing is stored per
-viewing. Clients must treat it as opaque.
+characters from `[A-Za-z0-9._-]`; anything else is rejected), signed with a
+key the server keeps in its database. Viewings therefore survive a server
+restart; nothing is stored per viewing. Clients must treat it as opaque.
+
+**Limits of this scheme — know them before relying on `max_uses`:**
+
+- The credential is a **bearer token**. Whoever holds a `?view=` URL (or the
+  cookie) can use the share until the viewing expires or the share is
+  revoked or expires — a recipient can pass such a URL on, and it then works
+  for others without costing a use. Do not log or forward URLs that contain
+  `view`; note that a reverse proxy in front of the server records query
+  strings in its access log unless told otherwise. `max_uses` limits how many
+  viewings are opened, not what the holder of one does with it for 6 hours.
+- **`HEAD` discloses metadata for free**: while uses remain, `HEAD` on
+  `/stream` and `/download` answers with the file's size, type and (for
+  `/download`) name without counting.
+- **What can still spend a use unintentionally**: a scanner that executes the
+  page's JavaScript (and so sends the `POST`), and any tool that requests the
+  JSON form.
+- **Cookies disabled or dropped** (for example `SECURE_COOKIES=true` behind
+  plain HTTP): the page's media requests then arrive without a credential and
+  each opens a viewing of its own.
+- The cookie `Path` is `/s/{token}`: it assumes the server is mounted at the
+  root of its origin. Behind a reverse proxy that serves it under a path
+  prefix the browser does not send the cookie back, with the effect above.
+- The signing key lives in the database (`server_secrets`). Anyone who can
+  read the database can forge viewings for share tokens they know — which
+  are in the same database.
 
 ---
 
@@ -305,12 +348,13 @@ viewing. Clients must treat it as opaque.
 Renders the public share viewer page (HTML). When called with
 `Accept: application/json` returns the share metadata as JSON.
 
-A `GET` without a valid viewing credential opens a viewing (one use, see
-[Share viewings](#share-viewings-how-max_uses-is-counted)) and sets the
-`share_view` cookie; with a valid one (a reload in the same browser) it costs
-nothing. The HTML page embeds the same metadata with plain URLs and without
-`view`: a browser relies on the cookie. The JSON form is for clients that do
-not, and carries the credential in every URL:
+The **HTML** form never costs a use and sets no cookie; it embeds the
+metadata with plain URLs and without `view`. Its script opens the viewing
+with [`POST /s/{token}/view`](#post-stokenview) and loads the media only
+after that succeeded. The **JSON** form is for clients that are about to
+play: a `GET` without a valid viewing credential opens a viewing (one use,
+see [Share viewings](#share-viewings-how-max_uses-is-counted)), sets the
+`share_view` cookie and carries the credential in every URL:
 
 **Response `200` (JSON):**
 
@@ -341,9 +385,26 @@ Play `playback_url` exactly as given. It equals `stream_url` unless
 `transcoded` is `true` (AVI, WMV, FLV, WMA and other legacy codecs), in which
 case it is `/s/{token}/compat?view=…`. `thumb_url` is omitted when the item
 has no thumbnail. Fetch this JSON once per viewing: every fetch without a
-credential is a new viewing.
+credential is a new viewing. `view_expires_at` is when the credential stops
+working (never later than the share's `expires_at`).
 
 **Status codes:** `200`, `404` (unknown or revoked share), `410` (share
+expired, or no use left and no valid viewing credential), `500`
+
+---
+
+### `POST /s/{token}/view`
+
+Opens the share page's viewing. No request body. Without a valid viewing
+credential it consumes one use and sets the `share_view` cookie; with one (a
+page reload sends the cookie) it changes nothing. The share page sends it
+once, before it requests any media, thumbnail or download.
+
+It is a `POST` because nothing that merely looks at a link sends one.
+
+**Response:** `204 No Content`
+
+**Status codes:** `204`, `404` (unknown or revoked share), `410` (share
 expired, or no use left and no valid viewing credential), `500`
 
 ---
@@ -1070,16 +1131,16 @@ integer). Omit either field to use the defaults: `SHARE_DEFAULT_EXPIRY_DAYS`
 
 Replace the example timestamp with your intended future expiry.
 
-A use is one **viewing**: one recipient opening the share page (or its JSON)
-in one browser or app, with all the stream, range, thumbnail and download
-requests that follow, for up to 6 hours; reloading the page in the same
-browser is the same viewing. `max_uses: 1` therefore lets exactly one browser
-or device play the file, start to end. `HEAD` requests and thumbnails never
-use the link. See
-[Share viewings](#share-viewings-how-max_uses-is-counted) for the details,
-including clients that keep no cookies. Note that anything which fetches the
-link counts as a viewer — a messenger's link preview included — so a
-single-use link may be spent before the recipient opens it.
+A use is one **viewing**: one recipient opening the share in one browser or
+app, with all the stream, range, thumbnail and download requests that follow,
+for up to 6 hours; reloading the page in the same browser is the same
+viewing. `max_uses: 1` therefore lets exactly one browser or device play the
+file, start to end. Merely fetching the share page does not use the link — a
+messenger's link preview or a mail scanner costs nothing — and neither do
+`HEAD` requests and thumbnails. See
+[Share viewings](#share-viewings-how-max_uses-is-counted) for the details and
+for the limits of the scheme (the viewing credential can be passed on while
+it is valid; clients that keep no cookies).
 
 Once the expiry is reached, or the use limit is reached for clients without a
 running viewing, the public endpoints return `410` while the share record
@@ -1727,7 +1788,8 @@ Toggle the per-user completion state of a podcast episode.
 | `POST` | `auth/login` | none | Login and receive session cookie |
 | `GET` | `—` `/healthz` | none | Liveness probe |
 | `GET` | `—` `/readyz` | none | Readiness probe |
-| `GET` | `—` `/s/{token}` | none | Share viewer page / JSON; opens a viewing (one use) |
+| `GET` | `—` `/s/{token}` | none | Share viewer page (free) / JSON (opens a viewing: one use) |
+| `POST` | `—` `/s/{token}/view` | none | Open the share page's viewing (one use; idempotent with the viewing cookie) |
 | `GET` | `—` `/s/{token}/stream` | none (viewing credential) | Stream shared media |
 | `GET`, `HEAD` | `—` `/s/{token}/compat` | none (viewing credential) | Stream transcoded rendition of shared media (range); `HEAD` = readiness probe |
 | `GET` | `—` `/s/{token}/thumbnail` | none (viewing credential) | Shared media thumbnail |

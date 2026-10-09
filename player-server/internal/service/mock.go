@@ -50,7 +50,7 @@ type MockMediaService struct {
 	ValidateShareTokenFunc  func(ctx context.Context, token string) (*model.Share, error)
 	StreamSharedMediaFunc   func(ctx context.Context, access ShareAccess) (*FileResult, ShareViewing, error)
 	GetSharedMediaFunc      func(ctx context.Context, access ShareAccess) (*GetSharedMediaResult, error)
-	GetSharedThumbnailFunc  func(ctx context.Context, token, credential string) (*FileResult, error)
+	GetSharedThumbnailFunc  func(ctx context.Context, token string, credentials ...string) (*FileResult, error)
 	GetNoteFunc             func(ctx context.Context, mediaID, userID int64) (*model.Note, error)
 	UpsertNoteFunc          func(ctx context.Context, note *model.Note) error
 	DeleteNoteFunc          func(ctx context.Context, mediaID, userID int64) error
@@ -241,9 +241,9 @@ func (m *MockMediaService) GetSharedMedia(ctx context.Context, access ShareAcces
 }
 
 // GetSharedThumbnail calls GetSharedThumbnailFunc or returns a not implemented error.
-func (m *MockMediaService) GetSharedThumbnail(ctx context.Context, token, credential string) (*FileResult, error) {
+func (m *MockMediaService) GetSharedThumbnail(ctx context.Context, token string, credentials ...string) (*FileResult, error) {
 	if m.GetSharedThumbnailFunc != nil {
-		return m.GetSharedThumbnailFunc(ctx, token, credential)
+		return m.GetSharedThumbnailFunc(ctx, token, credentials...)
 	}
 	return nil, errors.New("not implemented")
 }
@@ -457,8 +457,8 @@ func (m *MockPlaybackHintsService) GetPlaybackHint(ctx context.Context, mediaID,
 // MockCompatStreamService is a fake CompatStreamService for testing.
 type MockCompatStreamService struct {
 	CompatStreamFunc       func(ctx context.Context, mediaID, userID int64) (*transcode.Rendition, error)
-	SharedCompatStreamFunc func(ctx context.Context, token, credential string) (*transcode.Rendition, error)
-	EnsureShareViewingFunc func(ctx context.Context, token, credential string) (ShareViewing, error)
+	SharedCompatStreamFunc func(ctx context.Context, token string, credentials ...string) (*transcode.Rendition, error)
+	EnsureShareViewingFunc func(ctx context.Context, token string, credentials ...string) (ShareViewing, error)
 }
 
 // CompatStream calls CompatStreamFunc or returns nil.
@@ -470,17 +470,17 @@ func (m *MockCompatStreamService) CompatStream(ctx context.Context, mediaID, use
 }
 
 // SharedCompatStream calls SharedCompatStreamFunc or returns nil.
-func (m *MockCompatStreamService) SharedCompatStream(ctx context.Context, token, credential string) (*transcode.Rendition, error) {
+func (m *MockCompatStreamService) SharedCompatStream(ctx context.Context, token string, credentials ...string) (*transcode.Rendition, error) {
 	if m.SharedCompatStreamFunc != nil {
-		return m.SharedCompatStreamFunc(ctx, token, credential)
+		return m.SharedCompatStreamFunc(ctx, token, credentials...)
 	}
 	return nil, nil
 }
 
 // EnsureShareViewing calls EnsureShareViewingFunc or returns no viewing.
-func (m *MockCompatStreamService) EnsureShareViewing(ctx context.Context, token, credential string) (ShareViewing, error) {
+func (m *MockCompatStreamService) EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error) {
 	if m.EnsureShareViewingFunc != nil {
-		return m.EnsureShareViewingFunc(ctx, token, credential)
+		return m.EnsureShareViewingFunc(ctx, token, credentials...)
 	}
 	return ShareViewing{}, nil
 }
