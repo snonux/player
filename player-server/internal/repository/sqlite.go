@@ -18,8 +18,10 @@ const sqliteBusyTimeoutMS = 5000
 
 // New creates a SQLite store from an existing *sql.DB after initializing the schema.
 //
-// The connection must write its timestamps in UTC (see utcTimesDSN, which
-// Open applies): queries compare and sort them as text.
+// The connection must write its timestamps in UTC and enforce foreign keys
+// on every pooled connection (see connectionDSN, which Open applies):
+// queries compare and sort timestamps as text, and deletes rely on the
+// schema's ON DELETE CASCADE.
 func New(db *sql.DB) (*SQLite, error) {
 	if err := initializeSchema(db); err != nil {
 		return nil, fmt.Errorf("initialize schema: %w", err)
@@ -29,8 +31,10 @@ func New(db *sql.DB) (*SQLite, error) {
 
 // Open opens a SQLite database at the given DSN and returns a connected Store.
 func Open(dsn string) (*SQLite, error) {
-	// All timestamps are written and compared in UTC; see time_utc.go.
-	db, err := sql.Open("sqlite", utcTimesDSN(dsn))
+	// UTC timestamps, foreign keys and the busy timeout are DSN options so
+	// that they hold for every connection, including the ones database/sql
+	// opens later to replace a discarded one; see connection.go.
+	db, err := sql.Open("sqlite", connectionDSN(dsn))
 	if err != nil {
 		return nil, err
 	}
@@ -39,10 +43,6 @@ func Open(dsn string) (*SQLite, error) {
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, err
-	}
-	if _, err := db.Exec(fmt.Sprintf(`PRAGMA busy_timeout = %d;`, sqliteBusyTimeoutMS)); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("set busy timeout: %w", err)
 	}
 	s, err := New(db)
 	if err != nil {

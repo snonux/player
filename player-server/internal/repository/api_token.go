@@ -43,7 +43,9 @@ func scanAPIToken(row sqlScanner) (*model.APIToken, error) {
 // GetByHash retrieves an API token by token hash.
 func (s *SQLite) GetByHash(ctx context.Context, tokenHash string) (*model.APIToken, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, user_id, token_hash, name, last_used_at, expires_at, created_at FROM api_tokens WHERE token_hash = ?`,
+		// Joined with users: a token of a deleted user must not authenticate.
+		`SELECT t.id, t.user_id, t.token_hash, t.name, t.last_used_at, t.expires_at, t.created_at
+FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?`,
 		tokenHash,
 	)
 	return scanAPIToken(row)
