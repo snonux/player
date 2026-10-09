@@ -111,8 +111,10 @@ func staleThumbnails(existing map[string]model.Media, seenRel map[string]struct{
 //
 // No thumbnail at all, or the image itself, means generation failed when
 // the file was indexed (unwritable folder, a frame that could not be
-// extracted). It is tried again once per rescan; for a file ffmpeg cannot
-// read at all that is one wasted ffmpeg run per rescan.
+// extracted). It is tried again once per rescan. For a file ffmpeg cannot
+// read at all that attempt is wasted on every rescan: one ffmpeg run for
+// an image or a video of up to a second, two for a longer video (the
+// seeked run, then the first-frame fallback in thumb.FFmpegGenerator).
 //
 // Anything else is an ordinary file that was chosen as the thumbnail, or a
 // path outside the set, and is left alone: a stale absolute path (media

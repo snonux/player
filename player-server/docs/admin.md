@@ -92,7 +92,8 @@ gone missing. The cost per rescan: one file check per indexed video and
 image, plus one ffmpeg attempt for each file that still has no thumbnail
 (none in a folder that is not writable, where it fails before ffmpeg is
 started). A file ffmpeg cannot read at all therefore costs one failing
-attempt on every rescan.
+attempt on every rescan; for a video longer than a second that attempt is
+two ffmpeg runs, the seeked one and the first-frame fallback.
 
 #### Upgrading from v0.2.2 or older
 

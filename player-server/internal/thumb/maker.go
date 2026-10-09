@@ -124,8 +124,9 @@ func (m *FSMaker) MakeImage(ctx context.Context, srcPath string) string {
 	return m.makeOrSkip(ctx, srcPath, 0)
 }
 
-// makeOrSkip is Make for the scanner: a failure is logged and reported as
-// "" (see Maker).
+// makeOrSkip is Make for callers that index media whether or not it gets a
+// thumbnail: the scanner, upload and podcast download. A failure is logged
+// and reported as "" (see Maker).
 func (m *FSMaker) makeOrSkip(ctx context.Context, srcPath string, duration float64) string {
 	dst, err := m.Make(ctx, srcPath, duration)
 	if err != nil {
@@ -136,10 +137,10 @@ func (m *FSMaker) makeOrSkip(ctx context.Context, srcPath string, duration float
 }
 
 // Make creates the thumbnail of srcPath (duration 0 for an image) and
-// returns its path, or the reason none could be made. It is what callers
-// use that must tell their user about a failure: upload, podcast download
-// and "regenerate thumbnail". A returned path always names a complete,
-// non-empty file.
+// returns its path, or the reason none could be made. It is what a caller
+// uses that must tell its user about a failure, which is only "regenerate
+// thumbnail": there the thumbnail is the whole point of the request. A
+// returned path always names a complete, non-empty file.
 //
 // The thumbnail is generated into a temporary file in the destination
 // directory and renamed into place only once it is complete. A thumbnail
