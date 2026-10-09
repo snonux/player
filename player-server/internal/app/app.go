@@ -24,6 +24,7 @@ import (
 	"codeberg.org/snonux/player/internal/scanner"
 	"codeberg.org/snonux/player/internal/service"
 	"codeberg.org/snonux/player/internal/thumb"
+	"codeberg.org/snonux/player/internal/transcode"
 )
 
 // Deps bundles all wired service-layer dependencies assembled during
@@ -42,6 +43,7 @@ type Deps struct {
 	AuthSvc         service.AuthService
 	PodcastSvc      service.PodcastEpisodeService
 	PlaybackHintSvc service.PlaybackHintsService
+	CompatSvc       service.CompatStreamService
 	Scanner         scanner.Scanner
 	GCWorker        *service.GCWorker
 	Logger          *slog.Logger
@@ -106,7 +108,19 @@ func Wire(cfg *internal.Config, store repository.Store, logger *slog.Logger, app
 
 	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger)
 
-	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger)
+	// Compatibility renditions for formats no client decodes (AVI/WMV/FLV/
+	// WMA). Transcodes are bound to appCtx, not to the triggering request,
+	// so they finish in the background and stop on shutdown.
+	renditions := transcode.NewCache(appCtx, transcode.NewFFmpegRunner(), clk, logger, transcode.Options{
+		Dir:      cfg.TranscodeCacheDir,
+		MaxBytes: int64(cfg.TranscodeCacheMaxMB) * 1024 * 1024,
+	})
+	compatSvc := service.NewCompatStreamService(helper, mediaSvc, renditions, cfg.MediaRoot)
+
+	// The GC tick also bounds the transcode cache and drops renditions of
+	// hard-deleted media.
+	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger).
+		WithRenditionCache(renditions)
 
 	return &Deps{
 		Store:           store,
@@ -120,6 +134,7 @@ func Wire(cfg *internal.Config, store repository.Store, logger *slog.Logger, app
 		AuthSvc:         authSvc,
 		PodcastSvc:      podcastSvc,
 		PlaybackHintSvc: playbackHintSvc,
+		CompatSvc:       compatSvc,
 		Scanner:         fsScanner,
 		GCWorker:        gcWorker,
 		Logger:          logger,
@@ -222,6 +237,45 @@ func RunServer(handler http.Handler, cfg *internal.Config, logger *slog.Logger, 
 	return shutdownGracefully(gs, logger)
 }
 
+// NewAPIServer builds the HTTP API server from the wired dependencies. It is
+// separate from RunWithSignal so the service-to-route wiring (which the
+// compiler cannot check: an unset service silently turns its routes into 501)
+// can be exercised by a test without starting a listener.
+func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*api.Server, error) {
+	cfg := deps.Cfg
+	streamer := service.NewMediaStreamer(probe.NewFFRemuxer(), cfg.MediaRoot)
+	return api.NewServerWithLogger(api.ServerDeps{
+		Store:          deps.Store,
+		Hasher:         deps.Hasher,
+		SessionManager: deps.SM,
+		Config:         cfg,
+		// Use the grouped MediaServices sub-struct to wire all media-domain
+		// services in one block, reducing the width of the ServerServices literal.
+		Services: api.ServerServices{
+			Media: api.MediaServices{
+				Browse:        deps.MediaSvc,
+				Write:         deps.MediaSvc,
+				Share:         deps.MediaSvc,
+				Tag:           deps.MediaSvc,
+				Favorite:      deps.MediaSvc,
+				Note:          deps.MediaSvc,
+				Progress:      deps.ProgressSvc,
+				PlaybackHints: deps.PlaybackHintSvc,
+				Compat:        deps.CompatSvc,
+			},
+			Admin:   deps.AdminSvc,
+			Auth:    deps.AuthSvc,
+			Podcast: deps.PodcastSvc,
+		},
+		StaticFS:      staticFS,
+		MediaStreamer: streamer,
+		// Share the already-wired clock so handler-level time arithmetic
+		// (share expiry, session cookie Expires, API token expiry) uses
+		// the same source as the rest of the services (scanner, auth, etc).
+		Clock: deps.Clk,
+	}, logger)
+}
+
 // RunWithSignal is the primary application entry point after flag parsing and
 // config loading. It opens the database, wires all dependencies, starts
 // background workers, and runs the HTTP server until a shutdown signal
@@ -245,38 +299,7 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 	defer deps.GCWorker.Stop()
 	StartBackgroundWorkers(deps)
 
-	staticFS := http.Dir("web")
-	remuxer := probe.NewFFRemuxer()
-	streamer := service.NewMediaStreamer(remuxer, cfg.MediaRoot)
-	server, err := api.NewServerWithLogger(api.ServerDeps{
-		Store:          store,
-		Hasher:         deps.Hasher,
-		SessionManager: deps.SM,
-		Config:         cfg,
-		// Use the grouped MediaServices sub-struct to wire all media-domain
-		// services in one block, reducing the width of the ServerServices literal.
-		Services: api.ServerServices{
-			Media: api.MediaServices{
-				Browse:        deps.MediaSvc,
-				Write:         deps.MediaSvc,
-				Share:         deps.MediaSvc,
-				Tag:           deps.MediaSvc,
-				Favorite:      deps.MediaSvc,
-				Note:          deps.MediaSvc,
-				Progress:      deps.ProgressSvc,
-				PlaybackHints: deps.PlaybackHintSvc,
-			},
-			Admin:   deps.AdminSvc,
-			Auth:    deps.AuthSvc,
-			Podcast: deps.PodcastSvc,
-		},
-		StaticFS:      staticFS,
-		MediaStreamer: streamer,
-		// Share the already-wired clock so handler-level time arithmetic
-		// (share expiry, session cookie Expires, API token expiry) uses
-		// the same source as the rest of the services (scanner, auth, etc).
-		Clock: deps.Clk,
-	}, logger)
+	server, err := NewAPIServer(deps, http.Dir("web"), logger)
 	if err != nil {
 		return fmt.Errorf("failed to create API server: %w", err)
 	}

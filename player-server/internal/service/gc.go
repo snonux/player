@@ -10,10 +10,22 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
 )
 
-// GCWorker is a background worker that hard-deletes soft-deleted media older than a threshold.
+// RenditionGC is the part of the transcode cache the GC worker maintains.
+// It is implemented by transcode.Cache.
+type RenditionGC interface {
+	// Prune enforces the cache size bound and removes abandoned files.
+	Prune(ctx context.Context) error
+	// Remove deletes all renditions of a media item.
+	Remove(mediaID int64) error
+}
+
+// GCWorker is a background worker that hard-deletes soft-deleted media older
+// than a threshold and, when a rendition cache is attached, keeps that cache
+// bounded on the same tick.
 type GCWorker struct {
 	store     repository.GCStore
 	clock     clock.Clock
@@ -28,8 +40,10 @@ type GCWorker struct {
 	stopOnce  sync.Once
 	wg        sync.WaitGroup
 	mediaRoot string
-	ctx       context.Context
-	cancel    context.CancelFunc
+	// renditions is optional; nil disables transcode cache maintenance.
+	renditions RenditionGC
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 // NewGCWorker creates a GCWorker. Use WithAge and WithInterval to customise.
@@ -54,6 +68,13 @@ func (w *GCWorker) WithAge(age time.Duration) *GCWorker {
 // WithInterval overrides the ticker interval (used in tests that need deterministic ticks).
 func (w *GCWorker) WithInterval(interval time.Duration) *GCWorker {
 	w.interval = interval
+	return w
+}
+
+// WithRenditionCache attaches the transcode cache so every GC run prunes it
+// and renditions of hard-deleted media are removed with their source.
+func (w *GCWorker) WithRenditionCache(renditions RenditionGC) *GCWorker {
+	w.renditions = renditions
 	return w
 }
 
@@ -106,7 +127,17 @@ func (w *GCWorker) Stop() {
 	w.wg.Wait()
 }
 
+// run performs one GC pass: hard-delete expired trash, then prune the
+// transcode cache. The cache is pruned even when listing the trash fails,
+// because the two concerns are independent.
 func (w *GCWorker) run(ctx context.Context) {
+	w.collectDeletedMedia(ctx)
+	w.pruneRenditions(ctx)
+}
+
+// collectDeletedMedia hard-deletes soft-deleted media older than the age
+// threshold.
+func (w *GCWorker) collectDeletedMedia(ctx context.Context) {
 	items, err := w.store.ListDeletedMedia(ctx)
 	if err != nil {
 		if w.logger != nil {
@@ -120,38 +151,63 @@ func (w *GCWorker) run(ctx context.Context) {
 		if item.DeletedAt == nil || !item.DeletedAt.Before(cutoff) {
 			continue
 		}
+		w.collect(ctx, item)
+	}
+}
 
-		absPath := item.AbsPath
-		if absPath == "" {
-			absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
-		}
+// collect removes one expired item: file first, then the DB row, then its
+// cached renditions. The row is kept when the file cannot be removed so the
+// next run retries instead of orphaning the file on disk.
+func (w *GCWorker) collect(ctx context.Context, item model.Media) {
+	absPath := item.AbsPath
+	if absPath == "" {
+		absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
+	}
 
-		// .cover.jpg is generated artwork shared by the set/folder, not media
-		// owned by this legacy row. Keep it when collecting a row imported by
-		// an older scanner (including rows already soft-deleted before the fix).
-		if absPath != "" && filepath.Base(filepath.FromSlash(item.RelPath)) != ".cover.jpg" {
-			if err := os.Remove(absPath); err != nil {
-				if os.IsNotExist(err) {
-					// File already gone; safe to proceed with DB deletion.
-				} else {
-					if w.logger != nil {
-						w.logger.Warn("gc remove file", "path", absPath, "err", err)
-					}
-					continue
-				}
-			}
-		}
-
-		if err := w.store.HardDeleteMedia(ctx, item.ID); err != nil {
+	// .cover.jpg is generated artwork shared by the set/folder, not media
+	// owned by this legacy row. Keep it when collecting a row imported by
+	// an older scanner (including rows already soft-deleted before the fix).
+	if absPath != "" && filepath.Base(filepath.FromSlash(item.RelPath)) != ".cover.jpg" {
+		// A file that is already gone is fine; proceed with DB deletion.
+		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
 			if w.logger != nil {
-				w.logger.Error("gc hard delete", "id", item.ID, "err", err)
+				w.logger.Warn("gc remove file", "path", absPath, "err", err)
 			}
-			continue
+			return
 		}
+	}
 
+	if err := w.store.HardDeleteMedia(ctx, item.ID); err != nil {
 		if w.logger != nil {
-			w.logger.Info("gc deleted media", "id", item.ID, "path", absPath)
+			w.logger.Error("gc hard delete", "id", item.ID, "err", err)
 		}
+		return
+	}
+	w.removeRenditions(item.ID)
+
+	if w.logger != nil {
+		w.logger.Info("gc deleted media", "id", item.ID, "path", absPath)
+	}
+}
+
+// removeRenditions drops the cached renditions of a hard-deleted item so
+// deleted content does not survive in the transcode cache.
+func (w *GCWorker) removeRenditions(mediaID int64) {
+	if w.renditions == nil {
+		return
+	}
+	if err := w.renditions.Remove(mediaID); err != nil && w.logger != nil {
+		w.logger.Warn("gc remove renditions", "id", mediaID, "err", err)
+	}
+}
+
+// pruneRenditions enforces the transcode cache size bound.
+func (w *GCWorker) pruneRenditions(ctx context.Context) {
+	if w.renditions == nil {
+		return
+	}
+	if err := w.renditions.Prune(ctx); err != nil && w.logger != nil {
+		w.logger.Warn("gc prune transcode cache", "err", err)
 	}
 }
 

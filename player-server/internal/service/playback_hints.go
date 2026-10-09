@@ -9,11 +9,19 @@ import (
 	"codeberg.org/snonux/player/internal/model"
 )
 
-// PlaybackHint contains codec/container metadata needed by a client to decide
-// whether to play natively or request a transcoded variant. No actual
-// transcoding takes place — the hint is derived purely from existing DB fields.
+// PlaybackHint tells a client what to play. PlaybackURL is the URL to hand to
+// the player: the original stream, or — when Transcoded is true — the
+// server-side compatibility rendition (see CompatStreamService). The other
+// fields describe the original file. Building the hint performs no
+// transcoding; it is derived purely from existing DB fields.
 type PlaybackHint struct {
-	StreamURL       string  `json:"stream_url"`
+	// StreamURL always addresses the original bytes.
+	StreamURL string `json:"stream_url"`
+	// PlaybackURL is the URL clients should play.
+	PlaybackURL string `json:"playback_url"`
+	// Transcoded is true when PlaybackURL is the compatibility rendition
+	// because no client can decode the original (model.Media.NeedsCompatStream).
+	Transcoded      bool    `json:"transcoded"`
 	Container       string  `json:"container"`
 	VideoCodec      string  `json:"video_codec"`
 	AudioCodec      string  `json:"audio_codec"`
@@ -22,7 +30,10 @@ type PlaybackHint struct {
 	Width           int     `json:"width"`
 	Height          int     `json:"height"`
 	Bitrate         int     `json:"bitrate"`
-	NeedsTranscode  bool    `json:"needs_transcode"`
+	// NeedsTranscode is the older, much broader "may not play everywhere"
+	// heuristic (it is also true for e.g. mkv and flac, which most clients
+	// do play). Clients must use Transcoded/PlaybackURL to pick the URL.
+	NeedsTranscode bool `json:"needs_transcode"`
 }
 
 // PlaybackHintsService returns playback hints for a media item.
@@ -57,14 +68,23 @@ func (s *playbackHintsService) GetPlaybackHint(ctx context.Context, mediaID, use
 
 // buildPlaybackHint assembles a PlaybackHint from Media fields without any I/O.
 // It splits the stored codec string into separate video/audio components and
-// determines whether the file is likely to require transcoding.
+// picks the playback URL: the compatibility rendition when the shared
+// model rule says no client can decode the original, the plain stream
+// otherwise.
 func buildPlaybackHint(media *model.Media) *PlaybackHint {
 	streamURL := fmt.Sprintf("/api/v1/media/%d/stream", media.ID)
+	playbackURL := streamURL
+	transcoded := media.NeedsCompatStream()
+	if transcoded {
+		playbackURL = fmt.Sprintf("/api/v1/media/%d/compat", media.ID)
+	}
 	container := containerFromPath(media.FileName)
 	videoCodec, audioCodec := splitCodecs(media.Codec)
 
 	return &PlaybackHint{
 		StreamURL:       streamURL,
+		PlaybackURL:     playbackURL,
+		Transcoded:      transcoded,
 		Container:       container,
 		VideoCodec:      videoCodec,
 		AudioCodec:      audioCodec,

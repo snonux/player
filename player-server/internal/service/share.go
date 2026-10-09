@@ -166,6 +166,15 @@ func (s *shareService) GetSharedMedia(ctx context.Context, token string) (*GetSh
 		thumbURL = fmt.Sprintf("/s/%s/thumbnail", token)
 	}
 
+	// Same shared rule as the authenticated playback hint: legacy formats
+	// are played through the compatibility rendition.
+	streamURL := fmt.Sprintf("/s/%s/stream", token)
+	playbackURL := streamURL
+	transcoded := media.NeedsCompatStream()
+	if transcoded {
+		playbackURL = fmt.Sprintf("/s/%s/compat", token)
+	}
+
 	return &GetSharedMediaResult{
 		Media: &SharedMediaView{
 			ID:            media.ID,
@@ -178,7 +187,9 @@ func (s *shareService) GetSharedMedia(ctx context.Context, token string) (*GetSh
 			FileSizeBytes: media.FileSizeBytes,
 		},
 		HasThumb:    hasThumb,
-		StreamURL:   fmt.Sprintf("/s/%s/stream", token),
+		StreamURL:   streamURL,
+		PlaybackURL: playbackURL,
+		Transcoded:  transcoded,
 		DownloadURL: fmt.Sprintf("/s/%s/download", token),
 		ThumbURL:    thumbURL,
 	}, nil

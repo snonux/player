@@ -192,6 +192,7 @@ func clearEnv() {
 		"PODCAST_CHECK_INTERVAL_MINUTES", "MEDIA_PAGE_SIZE",
 		"LOG_LEVEL", "SECURE_COOKIES",
 		"PLAYER_CORS_ORIGINS",
+		"TRANSCODE_CACHE_DIR", "TRANSCODE_CACHE_MAX_MB",
 	} {
 		os.Unsetenv(k)
 	}
@@ -216,4 +217,48 @@ func containsSearch(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestLoadConfig_TranscodeCache(t *testing.T) {
+	tests := []struct {
+		name      string
+		env       []envPair
+		wantDir   string
+		wantMaxMB int
+	}{
+		// Local default: next to the default (relative) database file.
+		{"defaults", nil, "transcode-cache", DefaultTranscodeCacheMaxMB},
+		// Container: the cache follows DB_PATH onto the writable /data volume.
+		{"follows DB_PATH", []envPair{{"DB_PATH", "/data/media.db"}}, "/data/transcode-cache", DefaultTranscodeCacheMaxMB},
+		{"explicit dir wins", []envPair{{"DB_PATH", "/data/media.db"}, {"TRANSCODE_CACHE_DIR", " /cache/renditions "}}, "/cache/renditions", DefaultTranscodeCacheMaxMB},
+		{"max size", []envPair{{"TRANSCODE_CACHE_MAX_MB", "512"}}, "transcode-cache", 512},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearEnv()
+			t.Cleanup(clearEnv)
+			setEnvPairs(t, tt.env)
+			cfg, err := LoadConfig()
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if cfg.TranscodeCacheDir != tt.wantDir {
+				t.Errorf("TranscodeCacheDir = %q, want %q", cfg.TranscodeCacheDir, tt.wantDir)
+			}
+			if cfg.TranscodeCacheMaxMB != tt.wantMaxMB {
+				t.Errorf("TranscodeCacheMaxMB = %d, want %d", cfg.TranscodeCacheMaxMB, tt.wantMaxMB)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_TranscodeCacheInvalidMax(t *testing.T) {
+	for _, v := range []string{"0", "-5", "lots"} {
+		clearEnv()
+		t.Cleanup(clearEnv)
+		setEnvPairs(t, []envPair{{"TRANSCODE_CACHE_MAX_MB", v}})
+		if _, err := LoadConfig(); err == nil {
+			t.Errorf("TRANSCODE_CACHE_MAX_MB=%q: expected error", v)
+		}
+	}
 }

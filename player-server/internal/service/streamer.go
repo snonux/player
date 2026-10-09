@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/probe"
@@ -37,12 +35,10 @@ func (s *mediaStreamer) Open(ctx context.Context, file *FileResult, attachment b
 	// Guard against filepath-traversal: if a media root is configured, reject
 	// any path that resolves outside it. This ensures that a compromised
 	// AbsPath stored in the database cannot be used to serve arbitrary files.
-	if s.mediaRoot != "" {
-		clean := filepath.Clean(file.Path)
-		root := filepath.Clean(s.mediaRoot) + string(filepath.Separator)
-		if !strings.HasPrefix(clean, root) {
-			return nil, fmt.Errorf("%w: path escapes media root", ErrForbidden)
-		}
+	// The check itself lives in pathWithinRoot so the compatibility stream
+	// applies the identical rule.
+	if !pathWithinRoot(s.mediaRoot, file.Path) {
+		return nil, fmt.Errorf("%w: path escapes media root", ErrForbidden)
 	}
 
 	f, err := os.Open(file.Path)

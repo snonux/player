@@ -207,8 +207,12 @@ This triggers `FSScanner.Scan()`, which:
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` | Log verbosity |
 | `SECURE_COOKIES` | `true` | `true` / `false` | Set `Secure` flag on session cookies; set to `false` for plain-HTTP local deployments |
 | `PLAYER_CORS_ORIGINS` | unset | comma-separated origins | Allowed browser origins for credentialed CORS requests; unset/empty emits no CORS headers |
+| `TRANSCODE_CACHE_DIR` | `transcode-cache` next to `DB_PATH` | writable directory | Cache for compatibility renditions (H.264/AAC) of AVI/WMV/FLV/WMA media; created on first use |
+| `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first) |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
+
+**Transcode cache:** the container root filesystem is read-only and the process runs as UID 65534, so the cache must live on a writable volume. With `DB_PATH=/data/media.db` it defaults to `/data/transcode-cache`. Size the volume for `TRANSCODE_CACHE_MAX_MB` plus the largest single rendition (the newest rendition is never evicted), or point `TRANSCODE_CACHE_DIR` at a larger volume.
 
 ---
 
@@ -254,6 +258,23 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 - `internal/api/handlers_podcast.go` — REST handlers
 - `internal/service/import.go` — Shared `ImportMediaFile` helper (used by uploads + downloader)
 - `web/js/podcasts.js` — Feed manager modal and episode renderer
+
+---
+
+## Compatibility Stream (server-side transcoding)
+
+Browsers cannot decode AVI/WMV/FLV/WMA and Android ExoPlayer cannot decode WMV/FLV/WMA, so the server offers an ffmpeg-produced rendition: H.264 + AAC in MP4 for video, AAC in MP4 (M4A) for audio.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/media/{id}/compat` · `/api/v1/media/{id}/compat` | session | Rendition of a media item (registered via `handleBoth`, same access check as `/stream`) |
+| `GET` | `/s/{token}/compat` | none (share token) | Rendition of shared media |
+
+- **One rule for all clients:** `model.Media.NeedsCompatStream()` (container *or* codec is legacy). It surfaces as `"transcoded": true` in every media JSON object, and as `playback_url` + `transcoded` in `GET /api/media/{id}/playback` and the `GET /s/{token}` JSON. Clients play `playback_url`; they must not re-derive the rule from the file extension. `needs_transcode` in the playback hint is an older, broader heuristic and is not the switch.
+- **Layers:** `internal/transcode` (`Runner` interface + `FFmpegRunner`, `Cache`) → `service.CompatStreamService` (access checks, error mapping; depends on the `RenditionProvider` interface) → `api/handlers_compat.go`. Unit tests inject a fake `Runner`; `TestCache_RealFFmpeg` runs real ffmpeg when it is installed.
+- **Cache:** renditions are complete files in `TRANSCODE_CACHE_DIR`, served with `http.ServeContent` (Range/seek works). The file name encodes media id, source size, source mtime and a profile version, so a changed source or changed ffmpeg arguments (`profileVersion` in `internal/transcode/transcode.go`) invalidate the rendition. Concurrent requests for the same source share one ffmpeg run; at most two run in parallel.
+- **Bounding:** after each transcode and on every GC tick (`GC_INTERVAL_MINUTES`) the cache is pruned to `TRANSCODE_CACHE_MAX_MB`, least recently used first; abandoned `.tmp` files are removed; the GC also deletes the renditions of hard-deleted media.
+- **Waiting:** a request waits up to 20 s (below the server's 30 s `WriteTimeout`). If the transcode is not finished it answers `503` with `Retry-After: 5` and `{"status":"transcoding"}`; the transcode keeps running in the background (also when the client disconnects) and stops only on shutdown or after 2 h.
 
 ---
 

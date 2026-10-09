@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/transcode"
 )
 
 var (
@@ -20,6 +21,7 @@ var (
 	_ AuthService          = (*MockAuthService)(nil)
 	_ ProgressService      = (*MockProgressService)(nil)
 	_ PlaybackHintsService = (*MockPlaybackHintsService)(nil)
+	_ CompatStreamService  = (*MockCompatStreamService)(nil)
 )
 
 // MockMediaService is a fake MediaService for testing.
@@ -448,6 +450,28 @@ type MockPlaybackHintsService struct {
 func (m *MockPlaybackHintsService) GetPlaybackHint(ctx context.Context, mediaID, userID int64) (*PlaybackHint, error) {
 	if m.GetPlaybackHintFunc != nil {
 		return m.GetPlaybackHintFunc(ctx, mediaID, userID)
+	}
+	return nil, nil
+}
+
+// MockCompatStreamService is a fake CompatStreamService for testing.
+type MockCompatStreamService struct {
+	CompatStreamFunc       func(ctx context.Context, mediaID, userID int64) (*transcode.Rendition, error)
+	SharedCompatStreamFunc func(ctx context.Context, token string) (*transcode.Rendition, error)
+}
+
+// CompatStream calls CompatStreamFunc or returns nil.
+func (m *MockCompatStreamService) CompatStream(ctx context.Context, mediaID, userID int64) (*transcode.Rendition, error) {
+	if m.CompatStreamFunc != nil {
+		return m.CompatStreamFunc(ctx, mediaID, userID)
+	}
+	return nil, nil
+}
+
+// SharedCompatStream calls SharedCompatStreamFunc or returns nil.
+func (m *MockCompatStreamService) SharedCompatStream(ctx context.Context, token string) (*transcode.Rendition, error) {
+	if m.SharedCompatStreamFunc != nil {
+		return m.SharedCompatStreamFunc(ctx, token)
 	}
 	return nil, nil
 }

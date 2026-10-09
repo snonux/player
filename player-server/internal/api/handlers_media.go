@@ -418,9 +418,10 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 // Playback hints
 // ------------------------------------------------------------------
 
-// handlePlaybackHints returns codec/container metadata for a media item so that
-// the client can decide whether to play natively or request a future transcoded
-// variant. It performs no actual transcoding — only a DB lookup.
+// handlePlaybackHints returns the URL a client should play (the original
+// stream, or the compatibility rendition served by handleCompatStream for
+// formats no client decodes) plus codec/container metadata of the original.
+// It performs no transcoding itself — only a DB lookup.
 func (s *Server) handlePlaybackHints(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.media.PlaybackHints) {
 		return

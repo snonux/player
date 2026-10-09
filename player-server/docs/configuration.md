@@ -16,5 +16,9 @@ All settings are environment variables. Unset variables use defaults.
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` | Log verbosity |
 | `SECURE_COOKIES` | `true` | `true` / `false` | Set `Secure` flag on session cookies; set to `false` for plain-HTTP local deployments |
 | `PLAYER_CORS_ORIGINS` | unset | comma-separated origins | Allowed browser origins for credentialed CORS requests; unset/empty emits no CORS headers |
+| `TRANSCODE_CACHE_DIR` | `transcode-cache` next to `DB_PATH` | writable directory | Cache for compatibility renditions (H.264/AAC) of AVI/WMV/FLV/WMA media; created on first use |
+| `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first) |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
+
+**Transcode cache:** the container root filesystem is read-only and the process runs as UID 65534, so the cache must live on a writable volume. With `DB_PATH=/data/media.db` it defaults to `/data/transcode-cache`. Size the volume for `TRANSCODE_CACHE_MAX_MB` plus the largest single rendition (the newest rendition is never evicted), or point `TRANSCODE_CACHE_DIR` at a larger volume.
