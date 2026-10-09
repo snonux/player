@@ -187,6 +187,18 @@ This triggers `FSScanner.Scan()`, which:
 3. Probes new files with `ffprobe`
 4. Generates thumbnails for video files
 5. Inserts new records into the `media` table
+6. Regenerates thumbnails of indexed media that are still stored under an
+   older naming scheme
+
+Generated thumbnails live in `.thumbnails` next to the source file, named
+`<full source name>.jpg` (`holiday.mp4` -> `.thumbnails/holiday.mp4.jpg`);
+always derive the path with `thumb.ThumbnailPathFor`, and create or delete
+thumbnails only through `thumb.FSMaker` (`service.ThumbnailMaker` in the
+service layer), which generates into a temporary file, verifies the result
+and renames it into place. Releases up to v0.2.2
+used `<stem>.jpg`, which made same-stem files share a thumbnail, so **one
+admin rescan is needed after upgrading** from those. See
+`docs/admin.md` ("Thumbnail Naming and Upgrades") for details and cost.
 
 ---
 
@@ -207,8 +219,22 @@ This triggers `FSScanner.Scan()`, which:
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` | Log verbosity |
 | `SECURE_COOKIES` | `true` | `true` / `false` | Set `Secure` flag on session cookies; set to `false` for plain-HTTP local deployments |
 | `PLAYER_CORS_ORIGINS` | unset | comma-separated origins | Allowed browser origins for credentialed CORS requests; unset/empty emits no CORS headers |
+| `TRANSCODE_CACHE_DIR` | `<DB_PATH>.transcode-cache` | writable directory outside `MEDIA_ROOT` | Cache for compatibility renditions (H.264/AAC) of legacy media; created on first use |
+| `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first); also the largest single rendition |
+| `TRANSCODE_MAX_JOBS` | `1` | ≥ 1 | Parallel ffmpeg transcodes; each needs about 400 MB of memory at 1080p |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
+
+**Transcode cache:** the container root filesystem is read-only and the process runs as UID 65534, so the cache must live on a writable volume. It defaults to a directory named after the database file: `data.db.transcode-cache` locally (gitignored), `/data/media.db.transcode-cache` with `DB_PATH=/data/media.db`. Naming it after the database keeps several instances with databases in one directory (dev, e2e runs in `/tmp`) from sharing — and deleting — each other's renditions.
+
+- **Disk:** the cache is pruned back to `TRANSCODE_CACHE_MAX_MB` after every successful transcode and on every GC tick, always keeping the most recently used rendition. In between it can hold the budget plus one output per running job, each up to the budget (or less, if less is available): with `TRANSCODE_MAX_JOBS` = N that is up to (1 + N) times the budget. Every output is capped while ffmpeg writes it (`-fs`) to what the volume can give while keeping 512 MiB free, and to `TRANSCODE_CACHE_MAX_MB` at most. Older renditions are evicted for a new job only when the volume itself is short of space, and then no more than that job is assumed to need.
+- **Renditions over budget:** `TRANSCODE_CACHE_MAX_MB` is also the largest rendition that can exist. A source is transcoded once; if the output reaches the budget it is discarded and the item answers `507` from then on, without running ffmpeg again, until the file changes, 24 hours pass or the server restarts. A source larger than eight times the budget (32 GiB at the default) is refused the same way without even trying: ordinary legacy video shrinks to a half or a quarter at best, so the attempt would run for hours for nothing. (Lightly compressed sources such as DV or MJPEG AVI shrink far more and are refused wrongly by that rule — raise the budget for them.) A source that would be stream-copied but is larger than the space allowed is re-encoded instead, which may fit. None of this evicts other renditions. A volume that is merely full at the moment also answers `507`, but that is not remembered: playback works again as soon as space is free. With the 4 GiB default the budget matters mainly for long H.264 films with AC-3/DTS audio: raise it if such files should play.
+- **Sizes:** a rendition is usually smaller than a legacy video original but can be several times larger than low-bitrate audio (it is encoded at 128 kbit/s). The default location shares its volume with the SQLite database; for anything beyond a small library, point `TRANSCODE_CACHE_DIR` at a volume of its own.
+- **Memory and CPU:** one 1080p transcode needs about 400 MB and as many threads as the process may use CPUs (the container CPU limit counts), divided by `TRANSCODE_MAX_JOBS`. `k8s/deployment.yaml` sets a 1Gi memory limit for the server plus one job; add roughly 400Mi per additional job.
+- **Capacity of a small instance:** with the shipped limits (1 CPU, one job) a full re-encode runs on a single thread at low priority (`nice 10`) and may be slower than real time for 1080p material. A job is stopped after 2 hours of work; a film that does not finish in that time fails with `500` and is not retried for 24 hours (or until the file changes). Stream copies are not affected — they take seconds to minutes. The knobs: raise the container CPU limit (more threads per job), keep `TRANSCODE_MAX_JOBS` at 1 unless CPU and memory were raised accordingly (more jobs divide the same CPUs and only make each one slower).
+- `TRANSCODE_CACHE_DIR` must not be inside `MEDIA_ROOT` (the scanner would import renditions as media); the server refuses to start otherwise. That includes the default when `DB_PATH` itself lies inside `MEDIA_ROOT` — set `TRANSCODE_CACHE_DIR` explicitly then.
+- The cache's eviction order and failure backoff are kept in memory per process, which fits the single-replica deployment. During a rolling update two instances may briefly share the directory: that is safe (unique temporary files), each instance just evicts by its own view.
+- At startup the server logs a warning when `ffmpeg` is missing or the cache directory is not writable.
 
 ---
 
@@ -254,6 +280,31 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 - `internal/api/handlers_podcast.go` — REST handlers
 - `internal/service/import.go` — Shared `ImportMediaFile` helper (used by uploads + downloader)
 - `web/js/podcasts.js` — Feed manager modal and episode renderer
+
+---
+
+## Compatibility Stream (server-side transcoding)
+
+Browsers cannot decode AVI/WMV/FLV/WMA (nor MPEG-4 part 2, MPEG-2, AC-3/DTS audio, ...) and Android ExoPlayer cannot decode WMV/FLV/WMA, so the server offers an ffmpeg-produced rendition: H.264 + AAC in MP4 for video, AAC in MP4 (M4A) for audio.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET`, `HEAD` | `/api/media/{id}/compat` · `/api/v1/media/{id}/compat` | session | Rendition of a media item (registered via `handleBoth`, same access check as `/stream`) |
+| `GET`, `HEAD` | `/s/{token}/compat` | none (share token) | Rendition of shared media |
+
+- **One rule for all clients:** `model.Media.NeedsCompatStream()` — true when at least one client cannot decode the original (legacy container *or* legacy codec; some flagged formats, e.g. AVI, do play on Android). Audio media is judged by audio codecs only. It surfaces as `"transcoded": true` in every media JSON object, and as `playback_url` + `transcoded` in `GET /api/media/{id}/playback` and the `GET /s/{token}` JSON. Clients play `playback_url`; they must not re-derive the rule from the file extension. `needs_transcode` in the playback hint is an older, broader heuristic and is not the switch (it is never false for an item flagged `transcoded`). The endpoint only serves flagged media: other audio/video gets `400` ("play the stream endpoint instead"), images `415`.
+- **HEAD is the readiness probe:** clients poll the compat URL with `HEAD`. It runs the same access checks and starts or joins the transcode exactly like `GET`, answers `200` with the rendition's headers and no body when ready, and never consumes a share use. A share use is counted only for a `GET`, after the rendition file has been opened, i.e. when content is certain to be delivered. Every `503` (GET and HEAD) carries `X-Transcode-Status: transcoding|busy` next to `Retry-After`, because a HEAD response has no JSON body.
+- **Codec metadata:** the prober stores `"video/audio"` for video files and the audio codec alone for audio files (cover art is ignored), see `probe.codecString`. That is what lets the rule see e.g. AC-3 next to H.264. Rows probed by older versions hold the video codec only and are judged by container and video codec until re-probed.
+- **Layers:** `internal/ffsafe` (input hardening) → `internal/transcode` (`Runner` interface + `FFmpegRunner`, `Cache`) → `service.CompatStreamService` (access checks, error mapping; depends on the `RenditionProvider` and `SharedMediaAccess` interfaces) → `api/handlers_compat.go`. Unit tests inject a fake `Runner`; `internal/app/app_test.go` drives the production wiring with a real SQLite store.
+- **ffmpeg input hardening (do not relax):** every input goes through `ffsafe.InputArgs`: `-format_whitelist` (real containers only — no concat/hls/image sequences), `-protocol_whitelist file`, and `file:<absolute path>`. Without the format whitelist a file named `x.avi` that contains an ffconcat playlist makes ffmpeg read *other* files into the rendition. The container is still auto-detected among the allowed formats, so a mislabeled but genuine file (an MP4 named `.flv`) works. Use the same helper for any other ffmpeg/ffprobe call on user media (the library prober, thumbnailer and remuxer do not use it yet — task c83).
+- **Symlinks:** the service resolves symlinks and requires the real path to be inside the (resolved) `MEDIA_ROOT`. This is stricter than `/stream`, which only checks the path lexically: a set directory that is a symlink to somewhere outside `MEDIA_ROOT` plays via `/stream` but gets `403` on `/compat`.
+- **Stream copy:** the runner asks `ffprobe` what the file really contains. Video is copied only if it is 8-bit 4:2:0 H.264 within 1920x1080 / level 4.1 and not from AVI (no timestamps); audio only if it is AAC-LC with at most two channels. A copy is verified with `ffprobe` (expected streams, non-zero duration) and repeated as a full encode if ffmpeg refuses it or the result is wrong; a video stream is also encoded rather than copied when the source file is larger than the space the output may take. The runner never classifies an oversized output — only the cache knows whether the budget (`ErrTooLarge`, remembered) or low free space (`ErrNoSpace`, not remembered) set the cap. Encodes are capped at 1920x1080, deinterlaced when flagged interlaced, and run under `nice`.
+- **Cache:** renditions are complete files in `TRANSCODE_CACHE_DIR`, served with `http.ServeContent` (Range/seek works). The file name encodes media id, source size, source mtime and a profile version, so a changed source or changed ffmpeg arguments (`profileVersion` in `internal/transcode/transcode.go` — bump it when you change the arguments) invalidate the rendition. Output is written to a uniquely named `.tmp` file and renamed. The ETag also contains the rendition's creation time: a rebuilt rendition never shares an ETag with its predecessor.
+- **Limits:** concurrent requests for one source share one job; `TRANSCODE_MAX_JOBS` (default 1) ffmpeg processes run, at most 8 jobs are running or queued, at most 2 per signed-in user and 2 for *all* share links together (`503` "busy" beyond that). A job may work for 2 h (queue time not counted). A source modified in the last 10 s is not started (`503`), it is probably still being uploaded; a modification time more than 10 s in the future (wrong camera clock) counts as settled, a smaller skew still waits.
+- **Failure backoff (per media id):** a failed transcode is not retried for 1 min, doubling up to 30 min; a job that hit the 2 h timeout, or whose rendition exceeded the cache budget, is not retried for 24 h. All of these end at once when the source file is replaced (the entry is tied to the source's size and mtime), and the doubling starts over for the new file. A source that changed *during* the run is retried on the same 1 min+ schedule regardless of further changes, and answers `503` meanwhile. The failure is logged once at Error level when it happens; later requests answered from the backoff log at debug level only.
+- **Bounding:** after each successful transcode and on every GC tick (`GC_INTERVAL_MINUTES`) the cache is pruned to `TRANSCODE_CACHE_MAX_MB`, least recently used first (the most recently used rendition and anything served in the last minute are spared); `.tmp` files untouched for an hour are removed; when the GC purges a media item it deletes its file, its row, its generated thumbnail and its renditions (stopping a running job). Only files matching the exact rendition name pattern are ever deleted.
+- **Waiting and shutdown:** a request waits up to 20 s. If the transcode is not finished it answers `503` with `Retry-After: 5` and status `transcoding`; the transcode keeps running in the background (also when the client disconnects). On shutdown the cache is closed first — waiting requests return `503` busy at once, no new job starts, ffmpeg is killed — then the HTTP server drains, then the jobs are waited for at most 10 s, and the database is closed in any case.
+- **Tests with real ffmpeg:** `internal/transcode/ffmpeg_real_test.go` skips when ffmpeg/ffprobe/libx264 are missing. Set `PLAYER_REQUIRE_FFMPEG=1` to turn every such skip into a failure (the `server-transcode` CI step does); the argument list itself is pinned by `TestFFmpegArgs` without ffmpeg.
 
 ---
 

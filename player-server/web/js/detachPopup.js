@@ -1,4 +1,4 @@
-import { initPlayer, loadMediaDirect } from './player.js';
+import { hasPendingPlay, initPlayer, loadMediaDirect, requestPlay, togglePlay } from './player.js';
 
 const openerOrigin = window.location.origin;
 let currentMedia = null;
@@ -7,7 +7,9 @@ let progressInterval = null;
 let lastStateSent = 0;
 let lastKnownPosition = 0;
 
-initPlayer();
+// A failed load fires no pause event when nothing was playing yet (compat
+// stream still preparing), so the main window is told explicitly.
+initPlayer({ onPlaybackFailed: sendState });
 
 const video = document.getElementById('media-video');
 const audio = document.getElementById('media-audio');
@@ -141,7 +143,9 @@ function loadDetachedMedia(payload) {
   el.muted = !!payload.muted;
 
   seekWhenReady(el, resumeFrom);
-  if (payload.play) playWhenReady(el);
+  // requestPlay (playback.js) also covers a compat stream that is still being
+  // prepared: playback then starts as soon as the element gets its source.
+  if (payload.play) requestPlay();
   else showPlayPrompt();
   sendState();
 }
@@ -155,9 +159,7 @@ function handleCommand(payload) {
     if (!el) return;
     el.pause();
   } else if (action === 'play') {
-    const el = mediaElement();
-    if (!el) return;
-    el.play().catch(() => {});
+    requestPlay();
   } else if (action === 'seek-relative') {
     seekRelative(Number(payload.seconds || 0));
   } else if (action === 'seek-percent') {
@@ -165,11 +167,13 @@ function handleCommand(payload) {
   }
 }
 
+// togglePlayback defers to the shared player, which knows whether the element
+// has a source yet (a compat stream may still be preparing or have failed).
+// While preparing, the toggle only changes the play intent (no media event
+// fires), so the new state is reported right away.
 function togglePlayback() {
-  const el = mediaElement();
-  if (!el) return;
-  if (el.paused) el.play().catch(showPlayPrompt);
-  else el.pause();
+  togglePlay();
+  sendState();
 }
 
 function seekRelative(seconds) {
@@ -245,12 +249,6 @@ function seekWhenReady(el, seconds) {
   else el.addEventListener('loadedmetadata', seek, { once: true });
 }
 
-function playWhenReady(el) {
-  const play = () => el.play().catch(showPlayPrompt);
-  if (el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) play();
-  else el.addEventListener('canplay', play, { once: true });
-}
-
 function showPlayPrompt() {
   if (btnPlay) btnPlay.textContent = '\u25b6';
   bigPlay?.classList.remove('hidden');
@@ -289,7 +287,9 @@ function currentState() {
     currentTime: position,
     positionReady,
     duration: el?.duration || currentMedia?.duration || 0,
-    playing: currentMedia?.type === 'image' || (!!el && !el.paused),
+    // A play request waiting for a compat stream counts as playing, so the
+    // main window keeps the wish to play when the popup is reattached/closed.
+    playing: currentMedia?.type === 'image' || (!!el && !el.paused) || hasPendingPlay(),
     volume: el?.volume ?? 1,
     muted: !!el?.muted,
   };

@@ -276,10 +276,16 @@ Renders the public share viewer page (HTML). When called with
   },
   "has_thumb": true,
   "stream_url": "/s/abc123/stream",
+  "playback_url": "/s/abc123/stream",
+  "transcoded": false,
   "download_url": "/s/abc123/download",
   "thumb_url": "/s/abc123/thumbnail"
 }
 ```
+
+Play `playback_url`. It equals `stream_url` unless `transcoded` is `true`
+(AVI, WMV, FLV, WMA and other legacy codecs), in which case it is
+`/s/{token}/compat`.
 
 **Status codes:** `200`, `404`, `410` (expired share)
 
@@ -291,6 +297,26 @@ Stream shared media. Supports the `Range` header for seeking (HTTP 206 partial
 content). See [Range Header Support](#range-header-support) below.
 
 **Status codes:** `200`, `206`, `404`, `410`
+
+---
+
+### `GET /s/{token}/compat` · `HEAD /s/{token}/compat`
+
+Public equivalent of
+[`GET /api/media/{id}/compat`](#get-apimediaidcompat--get-apiv1mediaidcompat):
+the transcoded compatibility rendition of the shared media, with `Range`
+support and the same `HEAD` readiness probe. Responses carry
+`Cache-Control: no-store`.
+
+Share uses are counted as on `/s/{token}/stream`: every `GET` that is served
+counts, including each `Range` request. A use is counted only once content is
+certain to be delivered; `HEAD` requests never count, and neither do answers
+without content (`503` while transcoding or busy, errors).
+All share links together may have two transcodes pending; beyond that the
+answer is `503` with status `busy`.
+
+**Status codes:** `200`, `206`, `304`, `400`, `404`, `410`, `415`, `500`,
+`503`, `507` — see the authenticated endpoint for their meaning.
 
 ---
 
@@ -595,11 +621,20 @@ All endpoints that return a media item use this shape:
   "thumbnail_path": "/media/movies/.thumbs/movie.jpg",
   "play_count": 3,
   "deleted_at": null,
-  "created_at": "2026-01-15T12:00:00Z"
+  "created_at": "2026-01-15T12:00:00Z",
+  "transcoded": false
 }
 ```
 
 `type` is one of `"video"`, `"audio"`, or `"image"`.
+
+`transcoded` is present on every media object returned by the API. When it is
+`true` at least one of the clients cannot decode the original file (AVI, WMV,
+FLV, WMA containers, or legacy codecs in any container) and the item must be
+played from
+`/api/v1/media/{id}/compat` instead of `/api/v1/media/{id}/stream`. The
+[playback hint](#get-apimediaidplayback--get-apiv1mediaidplayback) returns the
+ready-made URL.
 
 ---
 
@@ -708,6 +743,95 @@ curl -s -r 10485760- https://player.example.com/api/v1/media/42/stream \
 
 ---
 
+### `GET /api/media/{id}/compat` · `GET /api/v1/media/{id}/compat`
+
+Also answers `HEAD` on both paths (see *Readiness probe* below).
+
+Stream the **compatibility rendition** of a media item: the server transcodes
+the original with ffmpeg and caches the result, so formats a client cannot
+decode become playable.
+
+| Media | Rendition | `Content-Type` |
+|-------|-----------|----------------|
+| video with `"transcoded": true` | H.264 video + AAC audio in MP4 | `video/mp4` |
+| audio with `"transcoded": true` | AAC audio in MP4 (M4A) | `audio/mp4` |
+| audio/video with `"transcoded": false` | not offered — play `/stream` | — (`400`) |
+| image | not available | — (`415`) |
+
+Access rules are identical to `/stream`, with one addition: the file must
+really be located inside the media root after resolving symbolic links
+(`403` otherwise), whereas `/stream` checks the path as written. The
+rendition is a complete file, so `Range` requests (seeking) work exactly as
+on `/stream`. The response has an `ETag` and no `Last-Modified`. The `ETag`
+identifies one particular encode: it changes when the source file changes and
+also when the rendition had to be produced again after cache eviction, so an
+`If-Range` resume never mixes two encodes.
+
+**First request.** The first request for an item starts the transcode and
+waits for it for up to 20 seconds. If it finishes in time the rendition is
+served directly. Otherwise the server answers:
+
+```
+HTTP/1.1 503 Service Unavailable
+Retry-After: 5
+X-Transcode-Status: transcoding
+Content-Type: application/json
+
+{"error":"transcode in progress","retry_after_seconds":5,"status":"transcoding"}
+```
+
+The transcode continues in the background (also if the client disconnects).
+Repeat the request until it returns `200`/`206`; concurrent and repeated
+requests share the one running transcode. Later requests are served from the
+cache immediately. Streams that already are client-compatible (H.264 up to
+1080p, stereo AAC-LC) are copied rather than re-encoded, which usually
+finishes within the first request.
+
+`X-Transcode-Status: busy` (body `"status":"busy"`,
+`"error":"transcoder busy"`) means the transcode could not be queued yet: too
+many jobs overall, two jobs of the same user already pending, or the server
+is shutting down. Retry the same way. A file that was modified within the
+last few seconds (an upload still in progress) also answers `transcoding`
+until it has settled.
+
+**Readiness probe.** `HEAD` on the same URL behaves exactly like `GET` —
+same access checks, and it starts or joins the transcode — but never returns
+a body:
+
+| `HEAD` answer | Meaning |
+|---------------|---------|
+| `200` with `Content-Type`, `Content-Length`, `ETag`, `Accept-Ranges` | Ready: `GET` the URL now |
+| `503` with `Retry-After` and `X-Transcode-Status: transcoding` or `busy` | Not ready: probe again after `Retry-After` seconds |
+| any other status | Same terminal status `GET` would return |
+
+Every `503` of this endpoint, for `GET` and `HEAD`, carries
+`X-Transcode-Status`. A `HEAD` never consumes a share use.
+
+**Status codes**
+
+| Code | Meaning |
+|------|---------|
+| `200`, `206`, `304` | Rendition served / range / not modified |
+| `400` | Invalid id, or the item is not flagged `transcoded` (`{"error":"media does not need transcoding; play the stream endpoint instead"}`) |
+| `401`, `403`, `404` | As on `/stream` (`404` also when the source file is missing on disk, `403` also for a symlink leaving the media root) |
+| `415` | Images have no rendition |
+| `500` | `{"error":"transcode failed"}` — ffmpeg could not convert the file. Not retried by the server for 1 minute (doubling up to 30 minutes; 24 hours after a job timed out); details are in the server log only |
+| `503` | Retry after `Retry-After` seconds; `X-Transcode-Status` is `transcoding` or `busy` |
+| `507` | The transcode cache has no room for this rendition: the volume is full, or the rendition would exceed the cache budget (`TRANSCODE_CACHE_MAX_MB`; remembered until the file changes) |
+
+Error bodies contain only the fixed messages above, never file paths.
+
+```bash
+# Probe until ready, then fetch the first megabyte
+curl -s -I https://player.example.com/api/v1/media/42/compat \
+  -H "Authorization: Bearer pt_xxxxxxxxxxxxxxxxxxxx"
+curl -s -r 0-1048575 https://player.example.com/api/v1/media/42/compat \
+  -H "Authorization: Bearer pt_xxxxxxxxxxxxxxxxxxxx" \
+  -o head.mp4
+```
+
+---
+
 ### `GET /api/media/{id}/download` · `GET /api/v1/media/{id}/download`
 
 Download the original file with `Content-Disposition: attachment`. Supports
@@ -788,14 +912,16 @@ admin.
 
 ### `GET /api/media/{id}/playback` · `GET /api/v1/media/{id}/playback`
 
-Return codec and container metadata to help the client decide whether to play
-natively or defer to a transcoded stream.
+Return the URL to play plus codec and container metadata of the original
+file.
 
 **Response `200`:**
 
 ```json
 {
   "stream_url": "/api/v1/media/42/stream",
+  "playback_url": "/api/v1/media/42/stream",
+  "transcoded": false,
   "container": "mp4",
   "video_codec": "h264",
   "audio_codec": "aac",
@@ -808,10 +934,48 @@ natively or defer to a transcoded stream.
 }
 ```
 
-`needs_transcode: true` indicates the file will be remuxed server-side when
-streamed. Native containers include `mp4`, `webm`, `ogg`, `mp3`, `m4a`, `wav`,
+Clients play `playback_url`. `stream_url` always addresses the original
+bytes. `transcoded: true` means `playback_url` is the
+[compatibility rendition](#get-apimediaidcompat--get-apiv1mediaidcompat)
+because at least one client (web or Android) cannot decode the original. The
+decision uses the container and the probed codecs:
+
+- containers `avi`, `wmv`, `wma`, `asf`, `flv`;
+- video codecs `wmv1`/`wmv2`/`wmv3`/`vc1`, `msmpeg4v1`–`v3`, `flv1`, `vp6*`,
+  `mpeg4` (Xvid/DivX), `mpeg1video`, `mpeg2video`, `h263`, `rv10`–`rv40`,
+  `svq1`/`svq3`, `theora` in any container;
+- audio codecs `wmav1`/`wmav2`/`wmapro`/`wmalossless`/`wmavoice`, `ac3`,
+  `eac3`, `dts`, `truehd`, `cook` in any container.
+
+`codec` is `"video/audio"` for video files (e.g. `"h264/ac3"`) and the audio
+codec alone for audio files (embedded cover art is ignored); in the hint an
+audio file's codec is reported as `audio_codec`. Audio files are judged by
+audio codecs only. Items scanned by older server versions carry the video
+codec only; their audio codec is unknown to the rule until the file is probed
+again. Example for an AVI file:
+
+```json
+{
+  "stream_url": "/api/v1/media/43/stream",
+  "playback_url": "/api/v1/media/43/compat",
+  "transcoded": true,
+  "container": "avi",
+  "video_codec": "mpeg4",
+  "audio_codec": "",
+  "duration_seconds": 5400.0,
+  "file_size_bytes": 734003200,
+  "width": 640,
+  "height": 480,
+  "bitrate": 1087000,
+  "needs_transcode": true
+}
+```
+
+`needs_transcode` is an older, broader heuristic ("may not play on every
+client", also true for e.g. `mkv` and `flac`) and does **not** select the URL;
+use `transcoded`. It is always `true` when `transcoded` is `true`. Its native containers include `mp4`, `webm`, `ogg`, `mp3`, `m4a`, `wav`,
 `aac`, and `opus`. Native video codecs include `h264`, `vp8`, `vp9`, `av1`,
-`hevc`, and `theora`. Native audio codecs include `aac`, `mp3`, `opus`, and
+and `hevc`. Native audio codecs include `aac`, `mp3`, `opus`, and
 `vorbis`.
 
 **Status codes:** `200`, `400`, `401`, `404`, `500`
@@ -1487,6 +1651,7 @@ Toggle the per-user completion state of a podcast episode.
 | `GET` | `—` `/readyz` | none | Readiness probe |
 | `GET` | `—` `/s/{token}` | none | Share viewer page |
 | `GET` | `—` `/s/{token}/stream` | none | Stream shared media |
+| `GET`, `HEAD` | `—` `/s/{token}/compat` | none | Stream transcoded rendition of shared media (range); `HEAD` = readiness probe |
 | `GET` | `—` `/s/{token}/thumbnail` | none | Shared media thumbnail |
 | `GET` | `—` `/s/{token}/download` | none | Download shared media |
 | `POST` | `logout` | session | Logout |
@@ -1503,6 +1668,7 @@ Toggle the per-user completion state of a podcast episode.
 | `GET` | `media` | session | List/search media |
 | `GET` | `media/{id}` | session | Get media detail |
 | `GET` | `media/{id}/stream` | session | Stream media (range) |
+| `GET`, `HEAD` | `media/{id}/compat` | session | Stream transcoded compatibility rendition (range); `HEAD` = readiness probe |
 | `GET` | `media/{id}/download` | session | Download media file |
 | `GET` | `media/{id}/thumbnail` | session | Get thumbnail |
 | `POST` | `media/{id}/thumbnail` | session | Regenerate thumbnail |

@@ -114,8 +114,7 @@ func (m *mockFS) WalkDir(root string, walkFn fs.WalkDirFunc) error {
 // newTestScanner builds an FSScanner around the in-memory mockFS while
 // wrapping the test Generator in a thumb.FSMaker. The Maker is configured
 // with the same mockFS so MkdirAll respects the test's injected error
-// (mfs.mkdirErr), preserving the previous behaviour where the scanner
-// itself called fs.MkdirAll directly.
+// (mfs.mkdirErr).
 func newTestScanner(store repository.ScannerStore, prober probe.Prober, gen thumb.Generator, clk clock.Clock, filesystem FS) *FSScanner {
 	var maker thumb.Maker
 	if gen != nil {
@@ -127,12 +126,22 @@ func newTestScanner(store repository.ScannerStore, prober probe.Prober, gen thum
 		thumbMkr: maker,
 		clock:    clk,
 		fs:       filesystem,
+		remover:  noRemover{},
 	}
 }
 
+// noRemover is the fileRemover of the mockFS based tests. They index new
+// files only, so nothing is ever due for deletion; a call is a bug.
+type noRemover struct{}
+
+func (noRemover) Remove(name string) error {
+	return errors.New("unexpected removal of " + name)
+}
+
 // makerFSFromScannerFS adapts the scanner test's FS to thumb.MakerFS so the
-// Maker's MkdirAll honours the same in-memory error injection the scanner
-// previously honoured directly.
+// Maker's MkdirAll honours the same in-memory error injection as the
+// scanner. The mock generators of these tests write no files, so the rest
+// pretends: the temporary file exists with some content and can be renamed.
 type makerFSFromScannerFS struct{ fs FS }
 
 func (a makerFSFromScannerFS) MkdirAll(path string, perm os.FileMode) error {
@@ -141,6 +150,21 @@ func (a makerFSFromScannerFS) MkdirAll(path string, perm os.FileMode) error {
 	}
 	return a.fs.MkdirAll(path, perm)
 }
+
+func (makerFSFromScannerFS) CreateTemp(dir string) (string, error) {
+	return filepath.Join(dir, ".tmp-test.jpg"), nil
+}
+
+func (makerFSFromScannerFS) Stat(name string) (os.FileInfo, error) {
+	return mockFileInfo{name: filepath.Base(name), size: 1}, nil
+}
+
+func (makerFSFromScannerFS) Lstat(name string) (os.FileInfo, error) {
+	return mockFileInfo{name: filepath.Base(name), isDir: true}, nil
+}
+
+func (makerFSFromScannerFS) Rename(string, string) error { return nil }
+func (makerFSFromScannerFS) Remove(string) error         { return nil }
 
 func TestFSScanner_Scan(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)

@@ -116,7 +116,9 @@ func (s *shareService) ValidateShareToken(ctx context.Context, token string) (*m
 	return share, nil
 }
 
-func (s *shareService) StreamSharedMedia(ctx context.Context, token string) (*FileResult, error) {
+// ResolveSharedMedia validates a share token and returns the media item it
+// shares, without counting a use.
+func (s *shareService) ResolveSharedMedia(ctx context.Context, token string) (*model.Media, error) {
 	share, err := s.ValidateShareToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -129,13 +131,30 @@ func (s *shareService) StreamSharedMedia(ctx context.Context, token string) (*Fi
 	if media == nil {
 		return nil, ErrMediaNotFound
 	}
+	return media, nil
+}
 
+// ConsumeShareUse atomically counts one use of a share. It returns
+// ErrShareExpired when the share expired or ran out of uses in the meantime
+// (e.g. another request took the last one).
+func (s *shareService) ConsumeShareUse(ctx context.Context, token string) error {
 	used, err := s.store.UseShare(ctx, token, s.clock.Now())
 	if err != nil {
-		return nil, fmt.Errorf("use share: %w", err)
+		return fmt.Errorf("use share: %w", err)
 	}
 	if !used {
-		return nil, ErrShareExpired
+		return ErrShareExpired
+	}
+	return nil
+}
+
+func (s *shareService) StreamSharedMedia(ctx context.Context, token string) (*FileResult, error) {
+	media, err := s.ResolveSharedMedia(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ConsumeShareUse(ctx, token); err != nil {
+		return nil, err
 	}
 
 	return &FileResult{
@@ -166,6 +185,15 @@ func (s *shareService) GetSharedMedia(ctx context.Context, token string) (*GetSh
 		thumbURL = fmt.Sprintf("/s/%s/thumbnail", token)
 	}
 
+	// Same shared rule as the authenticated playback hint: legacy formats
+	// are played through the compatibility rendition.
+	streamURL := fmt.Sprintf("/s/%s/stream", token)
+	playbackURL := streamURL
+	transcoded := media.NeedsCompatStream()
+	if transcoded {
+		playbackURL = fmt.Sprintf("/s/%s/compat", token)
+	}
+
 	return &GetSharedMediaResult{
 		Media: &SharedMediaView{
 			ID:            media.ID,
@@ -178,7 +206,9 @@ func (s *shareService) GetSharedMedia(ctx context.Context, token string) (*GetSh
 			FileSizeBytes: media.FileSizeBytes,
 		},
 		HasThumb:    hasThumb,
-		StreamURL:   fmt.Sprintf("/s/%s/stream", token),
+		StreamURL:   streamURL,
+		PlaybackURL: playbackURL,
+		Transcoded:  transcoded,
 		DownloadURL: fmt.Sprintf("/s/%s/download", token),
 		ThumbURL:    thumbURL,
 	}, nil

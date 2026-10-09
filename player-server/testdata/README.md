@@ -42,6 +42,23 @@ MEDIA_ROOT=./testdata/media \
 Override with an absolute path if you want to run against a different
 library (your own media collection lives outside the repository).
 
+## All-formats library for live-deployment tests
+
+The committed fixtures cover only mp3, jpg and mp4. The live-deployment
+suites (`test/e2e-web/tests/live-deployment.live.ts` and
+`player-android/test/e2e-live/`) need one file per extension the server
+accepts. That library is generated, not committed:
+
+```sh
+./gen-all-formats.sh /tmp/all-formats
+```
+
+It writes `test-videos/`, `test-audio/` and `test-images/`, each holding
+`sample-<ext>.<ext>` files made with ffmpeg's synthetic sources (about 10 MB
+in total). Copy the three directories into the `MEDIA_ROOT` of the instance
+under test and trigger a rescan. When `internal/mediatype/mediatype.go` gains
+an extension, add it to the script and to the format lists in both suites.
+
 ## Adding more fixture files
 
 1. Pick a file whose license permits redistribution (public domain,

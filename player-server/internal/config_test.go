@@ -3,6 +3,7 @@ package internal
 import (
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -192,6 +193,7 @@ func clearEnv() {
 		"PODCAST_CHECK_INTERVAL_MINUTES", "MEDIA_PAGE_SIZE",
 		"LOG_LEVEL", "SECURE_COOKIES",
 		"PLAYER_CORS_ORIGINS",
+		"TRANSCODE_CACHE_DIR", "TRANSCODE_CACHE_MAX_MB", "TRANSCODE_MAX_JOBS",
 	} {
 		os.Unsetenv(k)
 	}
@@ -216,4 +218,99 @@ func containsSearch(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestLoadConfig_TranscodeCache(t *testing.T) {
+	tests := []struct {
+		name      string
+		env       []envPair
+		wantDir   string
+		wantMaxMB int
+	}{
+		// Local default: named after the default (relative) database file.
+		{"defaults", nil, "data.db.transcode-cache", DefaultTranscodeCacheMaxMB},
+		// Container: the cache follows DB_PATH onto the writable /data volume.
+		{"follows DB_PATH", []envPair{{"DB_PATH", "/data/media.db"}}, "/data/media.db.transcode-cache", DefaultTranscodeCacheMaxMB},
+		// Two instances with databases in one directory get separate caches.
+		{"per database", []envPair{{"DB_PATH", "/tmp/player-e2e.db"}}, "/tmp/player-e2e.db.transcode-cache", DefaultTranscodeCacheMaxMB},
+		{"explicit dir wins", []envPair{{"DB_PATH", "/data/media.db"}, {"TRANSCODE_CACHE_DIR", " /cache/renditions "}}, "/cache/renditions", DefaultTranscodeCacheMaxMB},
+		{"max size", []envPair{{"TRANSCODE_CACHE_MAX_MB", "512"}}, "data.db.transcode-cache", 512},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearEnv()
+			t.Cleanup(clearEnv)
+			setEnvPairs(t, tt.env)
+			cfg, err := LoadConfig()
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if cfg.TranscodeCacheDir != tt.wantDir {
+				t.Errorf("TranscodeCacheDir = %q, want %q", cfg.TranscodeCacheDir, tt.wantDir)
+			}
+			if cfg.TranscodeCacheMaxMB != tt.wantMaxMB {
+				t.Errorf("TranscodeCacheMaxMB = %d, want %d", cfg.TranscodeCacheMaxMB, tt.wantMaxMB)
+			}
+		})
+	}
+}
+
+// The cache must not live inside the media root: the scanner would import
+// renditions as media and eviction would run next to real media files.
+func TestLoadConfig_TranscodeCacheInsideMediaRoot(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     []envPair
+		wantErr bool
+	}{
+		{"explicit dir inside media root", []envPair{{"MEDIA_ROOT", "/media"}, {"TRANSCODE_CACHE_DIR", "/media/.cache"}}, true},
+		{"explicit dir is the media root", []envPair{{"MEDIA_ROOT", "/media"}, {"TRANSCODE_CACHE_DIR", "/media/"}}, true},
+		{"dot-dot back into media root", []envPair{{"MEDIA_ROOT", "/media"}, {"TRANSCODE_CACHE_DIR", "/data/../media/c"}}, true},
+		// The derived default counts too: a database inside the media
+		// root needs an explicit TRANSCODE_CACHE_DIR.
+		{"default derived from DB_PATH in media root", []envPair{{"MEDIA_ROOT", "/media"}, {"DB_PATH", "/media/media.db"}}, true},
+		{"relative paths", []envPair{{"MEDIA_ROOT", "media"}, {"TRANSCODE_CACHE_DIR", "media/cache"}}, true},
+		{"sibling with common prefix", []envPair{{"MEDIA_ROOT", "/media"}, {"TRANSCODE_CACHE_DIR", "/media-cache"}}, false},
+		{"media root inside cache parent", []envPair{{"MEDIA_ROOT", "/data/media"}, {"DB_PATH", "/data/media.db"}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearEnv()
+			t.Cleanup(clearEnv)
+			setEnvPairs(t, tt.env)
+			_, err := LoadConfig()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("LoadConfig error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil && !strings.Contains(err.Error(), "TRANSCODE_CACHE_DIR") {
+				t.Errorf("error should name the setting: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_TranscodeCacheInvalidMax(t *testing.T) {
+	for _, name := range []string{"TRANSCODE_CACHE_MAX_MB", "TRANSCODE_MAX_JOBS"} {
+		for _, v := range []string{"0", "-5", "lots"} {
+			clearEnv()
+			t.Cleanup(clearEnv)
+			setEnvPairs(t, []envPair{{name, v}})
+			if _, err := LoadConfig(); err == nil {
+				t.Errorf("%s=%q: expected error", name, v)
+			}
+		}
+	}
+}
+
+func TestLoadConfig_TranscodeMaxJobs(t *testing.T) {
+	clearEnv()
+	t.Cleanup(clearEnv)
+	cfg, err := LoadConfig()
+	if err != nil || cfg.TranscodeMaxJobs != DefaultTranscodeMaxJobs || DefaultTranscodeMaxJobs != 1 {
+		t.Fatalf("default TranscodeMaxJobs = %d, %v; want 1", cfg.TranscodeMaxJobs, err)
+	}
+	setEnvPairs(t, []envPair{{"TRANSCODE_MAX_JOBS", "3"}})
+	if cfg, err = LoadConfig(); err != nil || cfg.TranscodeMaxJobs != 3 {
+		t.Fatalf("TRANSCODE_MAX_JOBS=3 -> %d, %v", cfg.TranscodeMaxJobs, err)
+	}
 }

@@ -6,6 +6,7 @@
 <title>Shared Media</title>
 <link rel="stylesheet" href="/css/theme.css">
 <link rel="stylesheet" href="/css/player.css">
+<link rel="stylesheet" href="/css/toast.css">
 <style>
   body {
     margin: 0;
@@ -90,6 +91,7 @@
     </aside>
   </div>
 </div>
+<footer class="toast" id="toast" role="status" aria-live="polite"></footer>
 
 <script type="module">
   import { initPlayer, loadMediaDirect } from '/js/player.js';
@@ -108,7 +110,12 @@
     const name = decoder.value || 'Shared Media';
     document.getElementById('share-title').textContent = name;
     document.title = `${name} — Shared Media`;
-    loadMediaDirect(data.media, data.stream_url, data.thumb_url, 0);
+    // playback_url is the compat stream when the server flags the share as
+    // "transcoded" (formats browsers cannot decode); the flag makes the player
+    // wait for the rendition instead of loading a 503. Servers without the
+    // hint only send stream_url. The decoded name is used in error toasts.
+    const media = { ...data.media, file_name: name, transcoded: !!data.transcoded };
+    loadMediaDirect(media, data.playback_url || data.stream_url, data.thumb_url, 0);
     const dlBtn = document.getElementById('btn-download');
     if (dlBtn && data.download_url) {
       dlBtn.addEventListener('click', () => { location.href = data.download_url; });

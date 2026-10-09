@@ -61,8 +61,13 @@ spec:
             requests:
               memory: "128Mi"
               cpu: "100m"
+            # Sized for the server plus ONE ffmpeg transcode
+            # (TRANSCODE_MAX_JOBS=1, the default): a 1080p job needs about
+            # 400 MB. Add roughly 400Mi per additional parallel job. The CPU
+            # limit also sets ffmpeg's thread count (the server divides the
+            # CPUs it may use among the jobs).
             limits:
-              memory: "512Mi"
+              memory: "1Gi"
               cpu: "1000m"
       volumes:
         - name: data
