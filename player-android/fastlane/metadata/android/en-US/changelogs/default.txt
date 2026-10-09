@@ -1,1 +1,1 @@
-Find the installed app version and build number at the bottom of Settings, in both local and server mode.
+Player is now released under the MIT license. No functional changes.
