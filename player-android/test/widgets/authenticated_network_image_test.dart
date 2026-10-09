@@ -6,6 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/widgets/authenticated_network_image.dart';
+import 'package:player_android/widgets/network_svg_image.dart';
+import 'package:vector_graphics/vector_graphics.dart';
+
+import '../support/svg_test_support.dart';
 
 class _TokenStorage implements TokenStorage {
   _TokenStorage(this.token);
@@ -24,10 +28,11 @@ void main() {
   const baseUrl = 'https://player.example';
   const imageUrl = '$baseUrl/api/v1/media/1/thumbnail';
 
-  Widget image(String url) => MaterialApp(
+  Widget image(String url, {String? sourceName}) => MaterialApp(
         home: Scaffold(
           body: AuthenticatedNetworkImage(
             imageUrl: url,
+            sourceName: sourceName,
             placeholder: (_, __) => const Text('loading'),
             errorWidget: (_, __, ___) => const Text('image unavailable'),
           ),
@@ -141,5 +146,62 @@ void main() {
     final cached =
         tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
     expect(cached.httpHeaders, isEmpty);
+  });
+
+  group('SVG', () {
+    Future<void> pumpSvg(WidgetTester tester, RecordingSvgFetcher fetcher) =>
+        tester.pumpWidget(ProviderScope(
+          overrides: [
+            playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
+            tokenStorageProvider
+                .overrideWithValue(_TokenStorage('pt-restored')),
+            cookieJarProvider.overrideWithValue(CookieJar()),
+            credentialMutationQueueProvider.overrideWithValue(
+                CredentialMutationQueue(credentialsEnabled: true)),
+            svgFetcherProvider.overrideWithValue(fetcher.fetcher),
+          ],
+          child: image(imageUrl, sourceName: 'sample-svg.svg'),
+        ));
+
+    testWidgets('SVG source renders as a vector with the bearer token',
+        (tester) async {
+      final fetcher = RecordingSvgFetcher();
+      await pumpSvg(tester, fetcher);
+      await pumpUntilFound(tester, find.byType(VectorGraphic));
+
+      expect(find.byType(VectorGraphic), findsOneWidget);
+      expect(find.byType(CachedNetworkImage), findsNothing);
+      final (uri, headers) = fetcher.requests.single;
+      expect(uri.toString(), imageUrl);
+      expect(headers['Authorization'], 'Bearer pt-restored');
+      final svg = tester.widget<NetworkSvgImage>(find.byType(NetworkSvgImage));
+      expect(svg.cacheKey, isNot(contains('pt-restored')));
+      expect(svg.cacheKey, isNot(imageUrl));
+    });
+
+    testWidgets('malformed SVG shows the error widget', (tester) async {
+      await pumpSvg(tester, RecordingSvgFetcher(body: kMalformedSvg));
+      await pumpUntilFound(tester, find.text('image unavailable'));
+
+      expect(find.text('image unavailable'), findsOneWidget);
+      expect(find.byType(VectorGraphic), findsNothing);
+    });
+
+    testWidgets('SVG on another origin is not requested', (tester) async {
+      final fetcher = RecordingSvgFetcher();
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
+          tokenStorageProvider.overrideWithValue(_TokenStorage('pt-restored')),
+          cookieJarProvider.overrideWithValue(CookieJar()),
+          svgFetcherProvider.overrideWithValue(fetcher.fetcher),
+        ],
+        child: image('https://other.example/logo.svg'),
+      ));
+      await tester.pump();
+
+      expect(fetcher.requests, isEmpty);
+      expect(find.text('image unavailable'), findsOneWidget);
+    });
   });
 }

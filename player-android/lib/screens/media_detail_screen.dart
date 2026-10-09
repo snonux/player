@@ -392,7 +392,11 @@ class _MediaDetailContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Full-width thumbnail/cover image.
-          _ThumbnailBanner(thumbnailUrl: thumbnailUrl, type: media.type),
+          _ThumbnailBanner(
+            thumbnailUrl: thumbnailUrl,
+            fileName: media.fileName,
+            type: media.type,
+          ),
 
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -446,13 +450,20 @@ class _MediaDetailContent extends StatelessWidget {
 
 /// Full-width hero image at the top of the detail screen.
 ///
-/// Falls back to an icon placeholder when [thumbnailUrl] is empty or the
-/// network request fails — mirrors the card thumbnail pattern from
-/// [MediaGridScreen] for visual consistency.
+/// Falls back to an icon placeholder when [thumbnailUrl] is empty, the
+/// network request fails, or the image cannot be decoded — mirrors the card
+/// thumbnail pattern from [MediaGridScreen] for visual consistency.
 class _ThumbnailBanner extends StatelessWidget {
-  const _ThumbnailBanner({required this.thumbnailUrl, required this.type});
+  const _ThumbnailBanner({
+    required this.thumbnailUrl,
+    required this.fileName,
+    required this.type,
+  });
 
   final String thumbnailUrl;
+
+  /// Media file name; tells the image loader when the thumbnail is an SVG.
+  final String fileName;
 
   /// Media type string used to choose the placeholder icon.
   final String type;
@@ -467,6 +478,7 @@ class _ThumbnailBanner extends StatelessWidget {
           : AuthenticatedNetworkImage(
               key: const Key('media_detail_thumbnail'),
               imageUrl: thumbnailUrl,
+              sourceName: fileName,
               fit: BoxFit.cover,
               placeholder: (_, __) =>
                   const Center(child: CircularProgressIndicator()),

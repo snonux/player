@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/auth_state_provider.dart';
 import '../api/dio_client.dart';
+import 'network_svg_image.dart';
 
 /// Keep protected image caches separate across credentials and accounts.
 /// Only the digest is stored in the cache key, never the token or cookie.
@@ -35,19 +36,30 @@ final authenticatedImageHeadersProvider = FutureProvider.autoDispose
   );
 });
 
-/// Cached image whose request uses the same credentials as protected API calls.
+/// Image whose request uses the same credentials as protected API calls.
+///
+/// Bitmaps load through [CachedNetworkImage]. SVG documents, recognised by
+/// [sourceName] or the URL (see [isSvgSource]), load through
+/// [NetworkSvgImage] with the same headers and an equally account-specific
+/// cache key. In both cases [errorWidget] replaces an image that cannot be
+/// downloaded or decoded.
 class AuthenticatedNetworkImage extends ConsumerWidget {
   const AuthenticatedNetworkImage({
     super.key,
     required this.imageUrl,
     required this.placeholder,
     required this.errorWidget,
+    this.sourceName,
     this.fit,
     this.width,
     this.height,
   });
 
   final String imageUrl;
+
+  /// File name of the media behind [imageUrl], used to recognise SVG:
+  /// thumbnail and stream URLs do not carry the file extension.
+  final String? sourceName;
   final Widget Function(BuildContext, String) placeholder;
   final Widget Function(BuildContext, String, Object) errorWidget;
   final BoxFit? fit;
@@ -64,16 +76,33 @@ class AuthenticatedNetworkImage extends ConsumerWidget {
       data: (value) => value == null
           ? errorWidget(context, imageUrl,
               StateError('Image origin does not match server'))
-          : CachedNetworkImage(
-              imageUrl: imageUrl,
-              cacheKey: authenticatedImageCacheKey(imageUrl, value),
-              httpHeaders: value,
-              fit: fit,
-              width: width,
-              height: height,
-              placeholder: placeholder,
-              errorWidget: errorWidget,
-            ),
+          : _image(value),
+    );
+  }
+
+  Widget _image(Map<String, String> headers) {
+    final cacheKey = authenticatedImageCacheKey(imageUrl, headers);
+    if (isSvgSource(fileName: sourceName, url: imageUrl)) {
+      return NetworkSvgImage(
+        imageUrl: imageUrl,
+        cacheKey: cacheKey,
+        headers: headers,
+        fit: fit,
+        width: width,
+        height: height,
+        placeholder: placeholder,
+        errorWidget: errorWidget,
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      cacheKey: cacheKey,
+      httpHeaders: headers,
+      fit: fit,
+      width: width,
+      height: height,
+      placeholder: placeholder,
+      errorWidget: errorWidget,
     );
   }
 }

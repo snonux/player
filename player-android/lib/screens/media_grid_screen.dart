@@ -578,7 +578,10 @@ class _MediaCard extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             // Thumbnail fills the full card area.
-            _ThumbnailImage(thumbnailUrl: thumbnailUrl),
+            _ThumbnailImage(
+              thumbnailUrl: thumbnailUrl,
+              fileName: item.fileName,
+            ),
             // Info overlay anchored to the bottom of the card.
             Positioned(
               left: 0,
@@ -657,17 +660,20 @@ class _FavoriteIconButton extends StatelessWidget {
   }
 }
 
-/// Thumbnail image for a media card, loaded via [CachedNetworkImage].
+/// Thumbnail image for a media card, loaded via [AuthenticatedNetworkImage].
 ///
 /// Provides a grey placeholder while loading or when [thumbnailUrl] is empty,
-/// and a broken-image icon on network error. Checking for empty URL before
-/// attempting a network request mirrors the pattern used in [_CoverImage]
-/// (home_screen.dart) and avoids unnecessary HTTP traffic when no thumbnail
-/// is available.
+/// and a broken-image icon when the download or the decoding fails. Checking
+/// for empty URL before attempting a network request mirrors the pattern used
+/// in [_CoverImage] (home_screen.dart) and avoids unnecessary HTTP traffic
+/// when no thumbnail is available.
 class _ThumbnailImage extends StatelessWidget {
-  const _ThumbnailImage({required this.thumbnailUrl});
+  const _ThumbnailImage({required this.thumbnailUrl, required this.fileName});
 
   final String thumbnailUrl;
+
+  /// Media file name; tells the image loader when the thumbnail is an SVG.
+  final String fileName;
 
   @override
   Widget build(BuildContext context) {
@@ -677,6 +683,7 @@ class _ThumbnailImage extends StatelessWidget {
 
     return AuthenticatedNetworkImage(
       imageUrl: thumbnailUrl,
+      sourceName: fileName,
       fit: BoxFit.cover,
       placeholder: (_, __) => _loading(),
       errorWidget: (_, __, ___) => _error(context),
