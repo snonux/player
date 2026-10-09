@@ -93,6 +93,43 @@ func TestVerifyShareViewing(t *testing.T) {
 	}
 }
 
+// The alphabet check on its own: verifyShareViewing has a second line of
+// defence (the re-encoding comparison), so only a direct test pins this one.
+func TestIsShareCredentialText(t *testing.T) {
+	tests := []struct {
+		name, text string
+		want       bool
+	}{
+		{"empty", "", true},
+		{"whole alphabet", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-", true},
+		{"genuine shape", "1791570469.t1SgGrk2dxCyNpl4ugVK0eAaNUbwCSDJvJ8G9rDi4DU", true},
+		{"CR", "abc\r", false},
+		{"LF", "abc\n", false},
+		{"LF inside", "ab\nc", false},
+		{"tab", "a\tb", false},
+		{"space", "a b", false},
+		{"NUL", "a\x00b", false},
+		{"DEL", "a\x7fb", false},
+		{"plus", "a+b", false},
+		{"slash", "a/b", false},
+		{"padding", "abc=", false},
+		{"percent", "a%0Ab", false},
+		{"ampersand", "a&b", false},
+		{"colon", "a:b", false},
+		{"at", "a@b", false},
+		{"backtick", "a`b", false},
+		{"bracket", "a[b", false},
+		{"brace", "a{b", false},
+		{"non-ASCII letter", "aéb", false},
+		{"high byte", "a\xffb", false},
+	}
+	for _, tt := range tests {
+		if got := isShareCredentialText(tt.text); got != tt.want {
+			t.Errorf("%s: isShareCredentialText(%q) = %v, want %v", tt.name, tt.text, got, tt.want)
+		}
+	}
+}
+
 // The first valid credential counts, wherever it stands: a stale "view"
 // parameter in front of a good cookie must not cost a use.
 func TestShareViewing_FirstValidCredentialCounts(t *testing.T) {

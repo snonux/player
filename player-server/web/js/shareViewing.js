@@ -14,9 +14,14 @@
 // a media request without the cookie would open a viewing of its own, and
 // cost a use, for each request.
 
-// What the visitor is told when the viewing cannot be opened.
+// What the visitor is told when the share cannot be shown.
 export const SHARE_GONE_MESSAGE = 'This share link is no longer valid.';
 export const SHARE_FAILED_MESSAGE = 'This share could not be opened. Reload the page to try again.';
+// The viewing is open but the page could not set up its player.
+export const SHARE_DISPLAY_FAILED_MESSAGE = 'The shared file could not be displayed here.';
+
+// How long to wait before asking once more after a 410; see openShareViewing.
+export const GONE_RETRY_DELAY_MS = 1000;
 
 // shareViewUrl returns the "open viewing" URL for the share page at pagePath
 // (location.pathname: "/s/{token}", tolerating a trailing slash).
@@ -28,12 +33,31 @@ export function shareViewUrl(pagePath) {
 //   { state: 'open' }                    the viewing exists; media may load
 //   { state: 'gone', message }           404/410: revoked, expired or used up
 //   { state: 'failed', message, status } anything else (status 0: no answer)
-// fetchImpl is injectable for tests.
+//
+// A 410 is asked about once more after a short pause. The page was served,
+// so the share had a use left a moment ago; if it is gone now, the likely
+// taker is this same browser — a second tab on the same link — whose viewing
+// cookie has arrived in the meantime and makes the repeated request succeed.
+// Without the retry the losing tab would call a working link invalid. A 404
+// (unknown or revoked) is final.
+//
+// fetchImpl, sleep and retryDelayMs are injectable for tests.
+export async function openShareViewing(pagePath, options = {}) {
+  const { sleep = defaultSleep, retryDelayMs = GONE_RETRY_DELAY_MS } = options;
+  let result = await requestViewing(pagePath, options);
+  if (result.status === 410) {
+    await sleep(retryDelayMs);
+    result = await requestViewing(pagePath, options);
+  }
+  return result;
+}
+
+// requestViewing sends one POST and classifies the answer.
 //
 // credentials: 'same-origin' is fetch's default, spelled out because the
 // call exists for its cookie: the response sets it, and on a reload the
 // request must carry it so that no second use is consumed.
-export async function openShareViewing(pagePath, { fetchImpl = fetch } = {}) {
+async function requestViewing(pagePath, { fetchImpl = fetch }) {
   let res;
   try {
     res = await fetchImpl(shareViewUrl(pagePath), { method: 'POST', cache: 'no-store', credentials: 'same-origin' });
@@ -41,6 +65,10 @@ export async function openShareViewing(pagePath, { fetchImpl = fetch } = {}) {
     return { state: 'failed', status: 0, message: SHARE_FAILED_MESSAGE };
   }
   if (res.ok) return { state: 'open' };
-  if (res.status === 404 || res.status === 410) return { state: 'gone', message: SHARE_GONE_MESSAGE };
+  if (res.status === 404 || res.status === 410) return { state: 'gone', status: res.status, message: SHARE_GONE_MESSAGE };
   return { state: 'failed', status: res.status, message: SHARE_FAILED_MESSAGE };
+}
+
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

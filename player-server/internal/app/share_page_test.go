@@ -148,6 +148,47 @@ func TestSharePage_PostViewOnUnusableShares(t *testing.T) {
 	}
 }
 
+// Wrong methods and unknown paths below /s/ are answered by the share
+// router — 405 with Allow, or 404 — not by the session-protected catch-all,
+// whose 401 "unauthorized" suggests that signing in would help. None of them
+// touches the share's uses.
+func TestShareRoutes_WrongMethodsAndUnknownPaths(t *testing.T) {
+	e := newE2E(t, &fakeRunner{})
+	token := e.share("movie.mp4", "alice", `{"max_uses":1}`)
+	tests := []struct {
+		method, path string
+		want         int
+		allow        string
+	}{
+		{http.MethodGet, "/view", http.StatusMethodNotAllowed, "POST"},
+		{http.MethodHead, "/view", http.StatusMethodNotAllowed, "POST"},
+		{http.MethodPut, "/view", http.StatusMethodNotAllowed, "POST"},
+		{http.MethodDelete, "/view", http.StatusMethodNotAllowed, "POST"},
+		{http.MethodPost, "", http.StatusMethodNotAllowed, "GET, HEAD"},
+		{http.MethodPost, "/stream", http.StatusMethodNotAllowed, "GET, HEAD"},
+		{http.MethodDelete, "/compat", http.StatusMethodNotAllowed, "GET, HEAD"},
+		{http.MethodPut, "/download", http.StatusMethodNotAllowed, "GET, HEAD"},
+		{http.MethodPost, "/thumbnail", http.StatusMethodNotAllowed, "GET, HEAD"},
+		{http.MethodPost, "/view/x", http.StatusNotFound, ""},
+		{http.MethodGet, "/view/x", http.StatusNotFound, ""},
+		{http.MethodGet, "/nothing-here", http.StatusNotFound, ""},
+		{http.MethodPost, "/stream/extra", http.StatusNotFound, ""},
+	}
+	for _, tt := range tests {
+		rr := e.shareDo(tt.method, "/s/"+token+tt.path, nil)
+		if rr.Code != tt.want || rr.Header().Get("Allow") != tt.allow || viewCookie(rr) != nil {
+			t.Errorf("%s /s/{token}%s = %d, Allow %q, cookie %v; want %d, Allow %q, no cookie",
+				tt.method, tt.path, rr.Code, rr.Header().Get("Allow"), viewCookie(rr), tt.want, tt.allow)
+		}
+	}
+	if rr := e.shareDo(http.MethodGet, "/s/", nil); rr.Code != http.StatusNotFound {
+		t.Errorf("GET /s/ = %d, want 404", rr.Code)
+	}
+	if got := e.usedCount(token); got != 0 {
+		t.Errorf("used_count = %d, want 0", got)
+	}
+}
+
 // A stale "view" parameter must not shadow the browser's valid cookie: the
 // request belongs to the cookie's viewing and costs nothing.
 func TestShareViewing_StaleParameterFallsBackToCookie(t *testing.T) {

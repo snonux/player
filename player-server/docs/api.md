@@ -309,7 +309,9 @@ itself first, so a revoked share answers `404` and an expired one `410` also
 inside a viewing.
 
 All share responses carry `Cache-Control: no-store` and
-`Referrer-Policy: no-referrer`.
+`Referrer-Policy: no-referrer`. A share route called with a method it does
+not support answers `405` with an `Allow` header (`GET, HEAD`, or `POST` for
+`/view`); any other path below `/s/` answers `404`.
 
 The credential is `<expiry unix seconds>.<base64url HMAC-SHA256>` (54
 characters from `[A-Za-z0-9._-]`; anything else is rejected), signed with a
@@ -398,14 +400,19 @@ expired, or no use left and no valid viewing credential), `500`
 Opens the share page's viewing. No request body. Without a valid viewing
 credential it consumes one use and sets the `share_view` cookie; with one (a
 page reload sends the cookie) it changes nothing. The share page sends it
-once, before it requests any media, thumbnail or download.
+once, before it requests any media, thumbnail or download. If the answer is
+`410` the page asks once more after a second: when two tabs of one browser
+open a single-use link together, the tab that lost the use finds the
+winner's cookie in place by then. Without JavaScript the page cannot open a
+viewing and says so.
 
 It is a `POST` because nothing that merely looks at a link sends one.
 
 **Response:** `204 No Content`
 
-**Status codes:** `204`, `404` (unknown or revoked share), `410` (share
-expired, or no use left and no valid viewing credential), `500`
+**Status codes:** `204`, `404` (unknown or revoked share), `405` (any other
+method), `410` (share expired, or no use left and no valid viewing
+credential), `500`
 
 ---
 

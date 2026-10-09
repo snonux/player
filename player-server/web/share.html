@@ -69,10 +69,12 @@
   <div class="container">
     <h1 id="share-title">Shared Media</h1>
     <p id="share-status" class="share-status hidden" role="alert"></p>
+    <noscript><p class="share-status">This page needs JavaScript to play the shared file.</p></noscript>
     <aside id="player" class="player open" aria-label="Player">
       <div class="stage">
         <video id="media-video" playsinline controlslist="nodownload"></video>
         <audio id="media-audio" class="hidden"></audio>
+        <img id="media-image" class="media-image hidden" alt="">
         <img id="cover-art" class="cover-art hidden" alt="Cover" loading="lazy">
         <div id="big-play" class="big-play" role="button" aria-label="Play" tabindex="0">
           <div class="play-icon">&#9654;</div>
@@ -102,20 +104,33 @@
 
 <script type="module">
   import { initPlayer, loadMediaDirect } from '/js/player.js';
-  import { openShareViewing } from '/js/shareViewing.js';
+  import { SHARE_DISPLAY_FAILED_MESSAGE, openShareViewing } from '/js/shareViewing.js';
 
-  initPlayer();
-
-  const metaEl = document.getElementById('share-meta');
-  let data = null;
+  // The page always settles in a visible state: the player with the shared
+  // file, or a message saying why not. An exception anywhere in the setup
+  // must not leave a blank page — least of all after the viewing was opened
+  // and a use of the link spent.
+  let outcome;
   try {
-    data = JSON.parse(metaEl.textContent);
-  } catch {}
+    outcome = await showShare();
+  } catch (err) {
+    console.error(err);
+    outcome = { state: 'failed', message: SHARE_DISPLAY_FAILED_MESSAGE };
+  }
+  if (outcome.state !== 'open') showStatus(outcome.message, outcome.keepPlayer);
+  // Marks the page as settled ("open", "gone" or "failed"): until then the
+  // player has nothing to play. Browser tests wait for it before pressing
+  // play.
+  document.body.dataset.shareViewing = outcome.state;
 
-  if (data && data.media) {
-    const decoder = document.createElement('textarea');
-    decoder.innerHTML = data.media.file_name || '';
-    const name = decoder.value || 'Shared Media';
+  // showShare opens the viewing and hands the shared file to the player. It
+  // resolves with { state, message, keepPlayer }; state is "open", "gone" or
+  // "failed".
+  async function showShare() {
+    initPlayer();
+    const data = JSON.parse(document.getElementById('share-meta').textContent);
+    if (!data || !data.media) throw new Error('share metadata is missing');
+    const name = decodedFileName(data.media.file_name);
     document.getElementById('share-title').textContent = name;
     document.title = `${name} — Shared Media`;
 
@@ -127,15 +142,36 @@
     // costs another use. On a reload the cookie is still there and the POST
     // consumes nothing. See shareViewing.js.
     const viewing = await openShareViewing(location.pathname);
-    if (viewing.state === 'open') {
+    if (viewing.state !== 'open') return viewing;
+
+    // First, and apart from the player: whatever happens to the player
+    // below, the visitor can still fetch the file the use was spent on.
+    const downloadable = enableDownload(data.download_url);
+    try {
       showSharedMedia(data, name);
-    } else {
-      showUnavailable(viewing.message);
+    } catch (err) {
+      console.error(err);
+      const hint = downloadable ? ' You can still download it.' : '';
+      return { state: 'failed', message: SHARE_DISPLAY_FAILED_MESSAGE + hint, keepPlayer: downloadable };
     }
-    // Marks the page as settled ("open", "gone" or "failed"): until then the
-    // player has nothing to play. Browser tests wait for it before pressing
-    // play.
-    document.body.dataset.shareViewing = viewing.state;
+    return { state: 'open' };
+  }
+
+  // decodedFileName undoes the HTML escaping the server applies to the file
+  // name it embeds; the result is only ever used as text.
+  function decodedFileName(escaped) {
+    const decoder = document.createElement('textarea');
+    decoder.innerHTML = escaped || '';
+    return decoder.value || 'Shared Media';
+  }
+
+  // enableDownload wires the download button and reports whether there is
+  // something to download. The request carries the viewing cookie.
+  function enableDownload(url) {
+    const button = document.getElementById('btn-download');
+    if (!button || !url) return false;
+    button.addEventListener('click', () => { location.href = url; });
+    return true;
   }
 
   // showSharedMedia hands the share to the player. The URLs are plain
@@ -148,17 +184,14 @@
   function showSharedMedia(data, name) {
     const media = { ...data.media, file_name: name, transcoded: !!data.transcoded };
     loadMediaDirect(media, data.playback_url || data.stream_url, data.thumb_url, 0);
-    const dlBtn = document.getElementById('btn-download');
-    if (dlBtn && data.download_url) {
-      dlBtn.addEventListener('click', () => { location.href = data.download_url; });
-    }
   }
 
-  // showUnavailable replaces the player with the reason the share cannot be
-  // viewed (used up, expired or revoked since the page was loaded, or the
-  // server did not answer). No media URL has been requested at this point.
-  function showUnavailable(message) {
-    document.getElementById('player').classList.add('hidden');
+  // showStatus tells the visitor why the share is not shown: used up, expired
+  // or revoked since the page was loaded, the server did not answer, or the
+  // player could not be set up. The player is hidden unless keepPlayer asks
+  // to leave it (its download button still works).
+  function showStatus(message, keepPlayer = false) {
+    if (!keepPlayer) document.getElementById('player')?.classList.add('hidden');
     const status = document.getElementById('share-status');
     status.textContent = message;
     status.classList.remove('hidden');

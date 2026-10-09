@@ -241,6 +241,10 @@ func initializeSchema(db *sql.DB) error {
 	if err := execSchema(db, "indexes", indexesSchema); err != nil {
 		return err
 	}
+	// Last, when every table has its final shape.
+	if err := normalizeStoredTimes(db); err != nil {
+		return fmt.Errorf("normalize stored times: %w", err)
+	}
 	return nil
 }
 
