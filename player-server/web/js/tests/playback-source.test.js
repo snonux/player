@@ -55,7 +55,7 @@ function fakeMedia(id) {
     get: () => el.getAttribute('src') || '',
     set: (value) => el.setAttribute('src', value),
   });
-  el.load = () => { el.loads += 1; el.readyState = 0; el.currentTime = 0; el.paused = true; };
+  el.load = () => { el.loads += 1; el.readyState = 0; el.currentTime = 0; el.paused = true; el.error = null; };
   el.pause = () => { el.paused = true; };
   el.play = () => { el.playCalls += 1; el.paused = false; return Promise.resolve(); };
   return el;
@@ -94,22 +94,16 @@ const settle = () => new Promise((resolve) => realSetTimeout(resolve, 20));
 
 // --- fake server ----------------------------------------------------------
 
-function response(status, body = null) {
-  return {
-    status,
-    headers: { get: (name) => (name === 'Retry-After' && status === 503 ? '5' : null) },
-    json: async () => {
-      if (body === null) throw new Error('no json body');
-      return body;
-    },
-  };
+// A HEAD response of the compat endpoint: status and headers, no body.
+function response(status, headers = {}) {
+  return { status, headers: { get: (name) => headers[name] ?? null } };
 }
-const preparing = (status = 'transcoding') => response(503, { error: 'transcode in progress', retry_after_seconds: 5, status });
+const preparing = (status = 'transcoding') => response(503, { 'Retry-After': '5', 'X-Transcode-Status': status });
 
 let requests = [];
-let answer = async () => response(206);
+let answer = async () => response(200);
 globalThis.fetch = (url, init) => {
-  requests.push({ url, signal: init?.signal });
+  requests.push({ url, method: init?.method, signal: init?.signal });
   return answer(url, init);
 };
 
@@ -120,10 +114,13 @@ function script(...answers) {
 
 const player = await import('../playback.js');
 
+let failureReports = 0;
 function setup() {
   resetDom();
-  player.initPlayer();
-  script(response(206));
+  failureReports = 0;
+  globalThis.location = { pathname: '/', href: '/' };
+  player.initPlayer({ onPlaybackFailed: () => { failureReports += 1; } });
+  script(response(200));
 }
 
 const video = () => elements['media-video'];
@@ -150,14 +147,14 @@ async function testPlainStreamIsAssignedDirectly() {
 
 async function testCompatStreamWaitsUntilReady() {
   setup();
-  script(preparing(), preparing('busy'), response(206));
+  script(preparing(), preparing('busy'), response(200));
   player.selectAndPlay(aviVideo, 0, 42);
   assertEqual(video().getAttribute('src'), null, 'compat URL is not assigned before the probe answers');
   assertEqual(video().playCalls, 0, 'nothing is played while preparing');
   assertEqual(statusText(), 'Preparing clip.avi for playback…', 'preparing state is visible immediately');
   await settle();
   assertEqual(requests.length, 3, '503 answers are retried until the stream is ready');
-  assert(requests.every((r) => r.url === '/api/media/2/compat'), 'the compat URL is probed');
+  assert(requests.every((r) => r.url === '/api/media/2/compat' && r.method === 'HEAD'), 'the compat URL is probed with HEAD');
   assertEqual(video().src, '/api/media/2/compat', 'compat URL is assigned once ready');
   assertEqual(video().playCalls, 1, 'the requested playback starts once ready');
   assertEqual(statusText(), '', 'preparing state is removed once ready');
@@ -171,7 +168,6 @@ async function testCompatStreamWaitsUntilReady() {
 async function testBusyStatusIsShown() {
   setup();
   let release;
-  script(preparing('busy'));
   answer = (() => {
     let first = true;
     return () => {
@@ -191,7 +187,7 @@ async function testBusyStatusIsShown() {
 
 async function testTerminalCompatErrorShowsToast() {
   setup();
-  script(response(500, { error: 'transcode failed' }));
+  script(response(500));
   player.selectAndPlay(aviVideo, 0);
   await settle();
   assertEqual(toastText(), 'Cannot play clip.avi: the server could not convert this file', '500 shows the error toast');
@@ -203,16 +199,69 @@ async function testTerminalCompatErrorShowsToast() {
   assertEqual(player.isPlaybackActive(), false, 'playback state is reset after the failure');
   assertEqual(statusText(), '', 'preparing state is removed after the failure');
   assertEqual(requests.length, 1, 'a terminal status is not retried');
+  assertEqual(failureReports, 1, 'the failure is reported to onPlaybackFailed');
+  assertEqual(globalThis.location.href, '/', 'a 500 does not redirect to the login page');
+}
 
-  // Pressing play now must not "play" the empty element.
+// After a failure the play button / big play / Space (all togglePlay) load
+// the item again instead of silently doing nothing.
+async function testTogglePlayRetriesFailedCompatStream() {
+  setup();
+  script(response(500), preparing(), response(200));
+  player.selectAndPlay(aviVideo, 0, 42);
+  await settle();
+  assertEqual(video().getAttribute('src'), null, 'failed first');
   player.togglePlay();
-  assertEqual(video().playCalls, 0, 'toggle play ignores an element without source');
+  assertEqual(video().playCalls, 0, 'the empty element itself is never played');
+  assertEqual(statusText(), 'Preparing clip.avi for playback…', 'retry shows the preparing state again');
+  assertEqual(elements['btn-play'].textContent, '⏸', 'retry shows the play intent');
+  await settle();
+  assertEqual(requests.length, 3, 'retry probes again until ready');
+  assertEqual(video().src, '/api/media/2/compat', 'retry assigns the compat URL once ready');
+  assertEqual(video().playCalls, 1, 'retry plays once ready');
+  video().readyState = 1;
+  video().dispatch('loadedmetadata');
+  assertEqual(video().currentTime, 42, 'retry keeps the resume position');
+}
+
+async function testTogglePlayRetriesAfterElementError() {
+  setup();
+  player.selectAndPlay(plainVideo, 0);
+  video().currentTime = 17;
+  video().error = { code: 2, message: 'network' };
+  video().dispatch('error');
+  const loads = video().loads;
+  const plays = video().playCalls;
+  player.togglePlay();
+  assertEqual(video().loads, loads + 1, 'toggle play reloads an element in error state');
+  assertEqual(video().src, '/api/media/1/stream', 'the same stream is loaded again');
+  assertEqual(video().error, null, 'the reload clears the error');
+  assertEqual(video().playCalls, plays + 1, 'the reloaded element is played');
+  video().readyState = 1;
+  video().dispatch('loadedmetadata');
+  assertEqual(video().currentTime, 17, 'the reload resumes where the error happened');
+}
+
+async function testExpiredSessionRedirectsLibraryPlaybackOnly() {
+  setup();
+  script(response(401));
+  player.selectAndPlay(aviVideo, 0);
+  await settle();
+  assertEqual(globalThis.location.href, '/login.html', 'a 401 on library playback goes to the login page');
+
+  // Share page and detached popup load directly: never navigate away.
+  setup();
+  script(response(401));
+  player.loadMediaDirect({ id: 9, file_name: 'shared.wmv', type: 'video', transcoded: true }, '/s/tok/compat', '', 0);
+  await settle();
+  assertEqual(globalThis.location.href, '/', 'a 401 on a share/popup URL does not redirect');
+  assertEqual(toastText(), 'Cannot play shared.wmv: you are not signed in', 'a 401 on a share/popup URL shows the toast');
 }
 
 async function testSwitchWhilePreparingCancels() {
   setup();
   let release;
-  answer = (url) => (url.endsWith('/compat') ? new Promise((resolve) => { release = resolve; }) : Promise.resolve(response(206)));
+  answer = (url) => (url.endsWith('/compat') ? new Promise((resolve) => { release = resolve; }) : Promise.resolve(response(200)));
   player.selectAndPlay(aviVideo, 0);
   const signal = requests[0].signal;
   player.selectAndPlay(plainVideo, 1);
@@ -220,7 +269,7 @@ async function testSwitchWhilePreparingCancels() {
   assertEqual(statusText(), '', 'preparing state is removed on switch');
   assertEqual(video().src, '/api/media/1/stream', 'the new item is loaded');
   const playsBefore = video().playCalls;
-  release(response(206));
+  release(response(200));
   await settle();
   assertEqual(video().src, '/api/media/1/stream', 'a late ready answer does not replace the new item');
   assertEqual(video().playCalls, playsBefore, 'a late ready answer does not start playback');
@@ -270,13 +319,19 @@ async function testIdleElementErrorIsIgnored() {
 
 async function testDirectLoadProbesShareCompatUrl() {
   setup();
-  script(preparing(), response(206));
+  script(preparing(), response(200));
   // Share page / detached popup: explicit URL, no autoplay until requested.
   player.loadMediaDirect({ id: 9, file_name: 'shared.wmv', type: 'video', transcoded: true }, '/s/tok/compat', '', 7);
   assertEqual(video().getAttribute('src'), null, 'share compat URL is not assigned before it is ready');
+  assertEqual(elements['btn-play'].textContent, '▶', 'a direct load waits for a play press');
+  assert(!elements['big-play'].classList.contains('hidden'), 'a direct load shows the big play prompt');
+  assertEqual(player.hasPendingPlay(), false, 'no play intent before the press');
   player.togglePlay();
+  assertEqual(player.hasPendingPlay(), true, 'the press is remembered while preparing');
+  assertEqual(elements['btn-play'].textContent, '⏸', 'the remembered press is shown');
   await settle();
-  assert(requests.every((r) => r.url === '/s/tok/compat'), 'the share playback URL is probed');
+  assert(requests.every((r) => r.url === '/s/tok/compat' && r.method === 'HEAD'), 'the share playback URL is probed with HEAD only');
+  assertEqual(player.hasPendingPlay(), false, 'no pending play once the stream is attached');
   assertEqual(video().src, '/s/tok/compat', 'share compat URL is assigned once ready');
   assertEqual(video().playCalls, 1, 'a play request made while preparing is honoured once ready');
 
@@ -294,6 +349,9 @@ for (const test of [
   testCompatStreamWaitsUntilReady,
   testBusyStatusIsShown,
   testTerminalCompatErrorShowsToast,
+  testTogglePlayRetriesFailedCompatStream,
+  testTogglePlayRetriesAfterElementError,
+  testExpiredSessionRedirectsLibraryPlaybackOnly,
   testSwitchWhilePreparingCancels,
   testSwitchDuringRetryWaitStopsRetries,
   testElementErrorShowsToast,

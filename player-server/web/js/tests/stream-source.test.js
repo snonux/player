@@ -1,8 +1,15 @@
 // Unit tests for streamSource.js: playback URL choice and the readiness probe
 // of the server's compatibility stream, against the contract of the compat
-// endpoint (200/206 ready, 503 + Retry-After while transcoding or busy,
-// anything else terminal). fetch, sleep and the clock are faked.
-import { COMPAT_MAX_WAIT_MS, mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from '../streamSource.js';
+// endpoint: HEAD answers 200/206 when ready, 503 + Retry-After (+
+// X-Transcode-Status: transcoding|busy) while preparing, anything else is
+// terminal. fetch, sleep and the clock are faked.
+import {
+  COMPAT_MAX_WAIT_MS,
+  MAX_UNRECOGNISED_503,
+  mediaErrorReason,
+  mediaPlaybackUrl,
+  waitForCompatStream,
+} from '../streamSource.js';
 
 const failures = [];
 function assert(cond, msg) {
@@ -12,19 +19,13 @@ function assertEqual(actual, expected, msg) {
   assert(actual === expected, `${msg}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 }
 
-function response(status, body = null, headers = {}) {
-  return {
-    status,
-    headers: { get: (name) => headers[name] ?? null },
-    json: async () => {
-      if (body === null) throw new Error('no json body');
-      return body;
-    },
-  };
+// A HEAD response: status and headers only, never a body.
+function response(status, headers = {}) {
+  return { status, headers: { get: (name) => headers[name] ?? null } };
 }
 
-const transcoding = () => response(503, { error: 'transcode in progress', retry_after_seconds: 5, status: 'transcoding' }, { 'Retry-After': '5' });
-const busy = () => response(503, { error: 'busy', retry_after_seconds: 5, status: 'busy' }, { 'Retry-After': '5' });
+const transcoding = () => response(503, { 'Retry-After': '5', 'X-Transcode-Status': 'transcoding' });
+const busy = () => response(503, { 'Retry-After': '5', 'X-Transcode-Status': 'busy' });
 
 // harness builds injectable fakes: a scripted fetch, a sleep that advances a
 // fake clock, and records of what the probe did.
@@ -59,40 +60,40 @@ function testMediaErrorReasons() {
 }
 
 async function testReadyAtOnce() {
-  const h = harness([response(206)]);
-  const result = await waitForCompatStream('/api/media/1/compat', h.options);
-  assertEqual(result.state, 'ready', 'a 206 is ready');
+  const h = harness([response(200)]);
+  const result = await waitForCompatStream('/s/tok/compat', h.options);
+  assertEqual(result.state, 'ready', 'a 200 is ready');
   assertEqual(h.requests.length, 1, 'one probe when ready');
-  assertEqual(h.requests[0].url, '/api/media/1/compat', 'probes the compat URL itself');
-  assertEqual(h.requests[0].init.headers.Range, 'bytes=0-0', 'probe asks for one byte only');
+  assertEqual(h.requests[0].url, '/s/tok/compat', 'probes the compat URL itself');
+  // HEAD is what keeps a max_uses=1 share playable: it never consumes a use,
+  // while a GET (even for one byte) would take the only one.
+  assertEqual(h.requests[0].init.method, 'HEAD', 'the probe is a HEAD request');
+  assertEqual(h.requests[0].init.headers, undefined, 'the probe sends no Range or other headers');
   assertEqual(h.statuses.length, 0, 'no preparing state when ready');
-  assertEqual((await waitForCompatStream('/x/compat', harness([response(200)]).options)).state, 'ready', 'a 200 is ready');
+  assertEqual((await waitForCompatStream('/x/compat', harness([response(206)]).options)).state, 'ready', 'a 206 is ready');
 }
 
 async function testPreparingThenReady() {
-  const h = harness([transcoding(), busy(), response(206)]);
+  const h = harness([transcoding(), busy(), response(200)]);
   const result = await waitForCompatStream('/api/media/1/compat', h.options);
-  assertEqual(result.state, 'ready', '503s followed by 206 end ready');
-  assertEqual(h.requests.length, 3, 'the same GET is repeated until ready');
-  assertEqual(h.statuses.join(','), 'transcoding,busy', 'both 503 flavours keep the preparing state');
+  assertEqual(result.state, 'ready', '503s followed by 200 end ready');
+  assertEqual(h.requests.length, 3, 'the same request is repeated until ready');
+  assert(h.requests.every((r) => r.init.method === 'HEAD'), 'every retry is a HEAD request');
+  assertEqual(h.statuses.join(','), 'transcoding,busy', 'X-Transcode-Status is passed on for both flavours');
   assertEqual(h.sleeps.join(','), '5000,5000', 'waits Retry-After seconds between probes');
 }
 
 async function testRetryDelayFallbacksAndClamp() {
-  const noHints = harness([response(503), response(206)]);
+  const noHints = harness([response(503), response(200)]);
   await waitForCompatStream('/c', noHints.options);
-  assertEqual(noHints.sleeps[0], 5000, 'default retry delay without hints');
-  assertEqual(noHints.statuses[0], 'transcoding', 'default status without body');
+  assertEqual(noHints.sleeps[0], 5000, 'default retry delay without Retry-After');
+  assertEqual(noHints.statuses[0], '', 'no status without X-Transcode-Status (generic preparing text)');
 
-  const bodyOnly = harness([response(503, { retry_after_seconds: 7 }), response(206)]);
-  await waitForCompatStream('/c', bodyOnly.options);
-  assertEqual(bodyOnly.sleeps[0], 7000, 'JSON hint used without header');
-
-  const huge = harness([response(503, null, { 'Retry-After': '3600' }), response(206)]);
+  const huge = harness([response(503, { 'Retry-After': '3600' }), response(200)]);
   await waitForCompatStream('/c', huge.options);
   assertEqual(huge.sleeps[0], 30000, 'retry delay is capped');
 
-  const bogus = harness([response(503, null, { 'Retry-After': 'soon' }), response(206)]);
+  const bogus = harness([response(503, { 'Retry-After': 'soon' }), response(200)]);
   await waitForCompatStream('/c', bogus.options);
   assertEqual(bogus.sleeps[0], 5000, 'non-numeric Retry-After falls back to the default');
 }
@@ -110,22 +111,46 @@ async function testPreparingUntilCap() {
   assertEqual(short.requests.length, 3, 'custom cap: probes at 0s, 5s and 10s');
 }
 
+async function testUnrecognised503IsBounded() {
+  // A proxy's 503 carries no X-Transcode-Status: retried, but not for 5 min.
+  const proxy = harness([() => response(503, { 'Retry-After': '5' })]);
+  const result = await waitForCompatStream('/c', proxy.options);
+  assertEqual(result.state, 'failed', 'endless unrecognised 503 fails');
+  assertEqual(result.status, 503, 'the failure carries the status');
+  assert(result.reason.includes('unavailable'), `unrecognised 503 reason, got ${result.reason}`);
+  assertEqual(proxy.requests.length, MAX_UNRECOGNISED_503 + 1, 'gives up after the bound');
+  assert(proxy.clock < COMPAT_MAX_WAIT_MS / 2, 'gives up long before the cap');
+
+  // A recognised answer in between resets the count: a blip does not add up.
+  const answers = [];
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < MAX_UNRECOGNISED_503; j++) answers.push(response(503));
+    answers.push(transcoding());
+  }
+  answers.push(response(200));
+  const blips = harness(answers);
+  assertEqual((await waitForCompatStream('/c', blips.options)).state, 'ready', 'blips below the bound are survived');
+}
+
 async function testTerminalStatuses() {
   const cases = [
-    [response(500, { error: 'transcode failed' }), 'could not convert'],
-    [response(507, { error: 'insufficient storage for transcode' }), 'no space left'],
-    [response(404, { error: 'not found' }), 'not found'],
-    [response(400, { error: 'media does not need transcoding; play the stream endpoint instead' }), 'does not need transcoding'],
-    [response(415, { error: 'unsupported media type' }), 'unsupported media type'],
-    [response(418), 'status 418'],
+    [500, 'could not convert'],
+    [507, 'no space left'],
+    [404, 'not found'],
+    [400, 'no converted version'],
+    [415, 'cannot be converted'],
+    [401, 'not signed in'],
+    [410, 'no longer valid'],
+    [418, 'status 418'],
   ];
-  for (const [res, expected] of cases) {
-    const h = harness([res]);
+  for (const [status, expected] of cases) {
+    const h = harness([response(status)]);
     const result = await waitForCompatStream('/c', h.options);
-    assertEqual(result.state, 'failed', `status ${res.status} is terminal`);
-    assert(result.reason.includes(expected), `status ${res.status} reason should mention "${expected}", got "${result.reason}"`);
-    assertEqual(h.requests.length, 1, `status ${res.status} is not retried`);
-    assertEqual(h.sleeps.length, 0, `status ${res.status} does not wait`);
+    assertEqual(result.state, 'failed', `status ${status} is terminal`);
+    assertEqual(result.status, status, `status ${status} is reported`);
+    assert(result.reason.includes(expected), `status ${status} reason should mention "${expected}", got "${result.reason}"`);
+    assertEqual(h.requests.length, 1, `status ${status} is not retried`);
+    assertEqual(h.sleeps.length, 0, `status ${status} does not wait`);
   }
 }
 
@@ -133,7 +158,23 @@ async function testNetworkError() {
   const h = harness([new TypeError('Failed to fetch')]);
   const result = await waitForCompatStream('/c', h.options);
   assertEqual(result.state, 'failed', 'network error fails');
-  assert(result.reason.includes('could not be reached'), 'network error reason');
+  assertEqual(result.status, 0, 'no answer is status 0');
+  assert(result.reason.includes('did not answer'), 'network error reason');
+}
+
+async function testHangingRequestTimesOut() {
+  const h = harness([]);
+  // Never answers; only the abort signal ends it, like a real fetch.
+  h.options.fetchImpl = (url, init) => new Promise((_, reject) => {
+    h.requests.push({ url, init });
+    init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+  });
+  const started = Date.now();
+  const result = await waitForCompatStream('/c', { ...h.options, timeoutMs: 30 });
+  assertEqual(result.state, 'failed', 'a hanging probe fails instead of preparing forever');
+  assert(result.reason.includes('did not answer'), `timeout reason, got ${result.reason}`);
+  assertEqual(h.requests.length, 1, 'a timed out probe is not retried');
+  assert(Date.now() - started < 2000, 'the timeout ends the request');
 }
 
 async function testCancelWhileWaiting() {
@@ -147,23 +188,24 @@ async function testCancelWhileWaiting() {
 
 async function testCancelWhileFetching() {
   const controller = new AbortController();
-  const h = harness([response(206)]);
-  const fetchImpl = h.options.fetchImpl;
-  // An aborted fetch rejects; the probe must report cancel, not a failure.
-  h.options.fetchImpl = async (url, init) => {
-    await fetchImpl(url, init);
-    controller.abort();
-    throw new DOMException('aborted', 'AbortError');
-  };
+  const h = harness([]);
+  let requestSignal = null;
+  // The caller's abort must reach the request (through the probe's own
+  // signal) and be reported as a cancel, not as a failure.
+  h.options.fetchImpl = (url, init) => new Promise((_, reject) => {
+    requestSignal = init.signal;
+    init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    setTimeout(() => controller.abort(), 0);
+  });
   const result = await waitForCompatStream('/c', { ...h.options, signal: controller.signal });
   assertEqual(result.state, 'cancelled', 'abort during the request cancels');
-  assertEqual(h.requests[0].init.signal, controller.signal, 'the signal is handed to fetch');
+  assert(requestSignal.aborted, 'the abort is forwarded to the request');
 }
 
 async function testDefaultSleepStopsOnAbort() {
   // With the real timer-based sleep, an abort must end a 30s wait at once.
   const controller = new AbortController();
-  const h = harness([response(503, null, { 'Retry-After': '30' })]);
+  const h = harness([response(503, { 'Retry-After': '30', 'X-Transcode-Status': 'transcoding' })]);
   delete h.options.sleep;
   h.options.onPreparing = () => setTimeout(() => controller.abort(), 0);
   const started = Date.now();
@@ -179,8 +221,10 @@ await testReadyAtOnce();
 await testPreparingThenReady();
 await testRetryDelayFallbacksAndClamp();
 await testPreparingUntilCap();
+await testUnrecognised503IsBounded();
 await testTerminalStatuses();
 await testNetworkError();
+await testHangingRequestTimesOut();
 await testCancelWhileWaiting();
 await testCancelWhileFetching();
 await testDefaultSleepStopsOnAbort();

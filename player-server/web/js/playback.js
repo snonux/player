@@ -1,4 +1,4 @@
-import { API } from './api.js';
+import { API, redirectToLogin } from './api.js';
 import { state } from './state.js';
 import {
   clearCropMode,
@@ -51,6 +51,11 @@ let previousHandler = null;
 // element therefore has no source yet: { controller, autoplay, announced }.
 // autoplay records a play request made in the meantime.
 let pendingSource = null;
+// Where the current audio/video item is loaded from: { url, resumeFrom,
+// library }. Kept so a failed load can be retried; null for images.
+let currentSource = null;
+// Optional initPlayer({ onPlaybackFailed }) callback, see failPlayback.
+let failureHandler = null;
 
 function currentMediaElement() {
   const e = els();
@@ -102,6 +107,7 @@ const els = () => ({
 export function initPlayer(options = {}) {
   nextHandler = typeof options.onNext === 'function' ? options.onNext : null;
   previousHandler = typeof options.onPrevious === 'function' ? options.onPrevious : null;
+  failureHandler = typeof options.onPlaybackFailed === 'function' ? options.onPlaybackFailed : null;
   const e = els();
   if (!e.video && !e.audio) return;
 
@@ -301,14 +307,18 @@ export function togglePlay() {
   }
   if (pendingSource) {
     // Nothing can play yet: toggle whether playback starts once it can.
-    pendingSource.autoplay = !pendingSource.autoplay;
-    els().btnPlay.textContent = pendingSource.autoplay ? '⏸' : '▶';
+    setPendingPlay(!pendingSource.autoplay);
     return;
   }
   const m = currentMediaElement();
-  // An element without a source (its compat stream failed) must not be
-  // "played": it would fire `play` and report position 0 as progress.
-  if (!m || !m.getAttribute('src')) return;
+  if (!m) return;
+  // No source (its compat stream failed) or an element error: play() could
+  // not recover and, on an empty element, would fire `play` and report
+  // position 0 as progress. Load the item again instead.
+  if (!m.getAttribute('src') || m.error) {
+    retrySource(m);
+    return;
+  }
   if (m.paused) playElement(m);
   else m.pause();
 }
@@ -371,6 +381,7 @@ export function stopAndClose() {
   e.btnZoomOut?.classList.add('hidden');
   e.btnSlideshow?.classList.add('hidden');
   currentMedia = null;
+  currentSource = null;
   currentMediaIndex = -1;
   isPlaying = false;
   stopProgressTimer();
@@ -413,7 +424,10 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
   currentMedia = media;
   currentMediaIndex = -1;
   reportProgress = false;
-  showMedia(media, streamUrl, thumbnailUrl, resumeFrom);
+  showMedia(media, { url: streamUrl, resumeFrom, library: false }, thumbnailUrl);
+  // A direct load does not play by itself: show the play prompt until the
+  // caller (popup) or the user (share page) asks for playback.
+  if (media.type !== 'image') updateUI(false);
 }
 
 // loadMedia shows a library item in the main window; the caller has already
@@ -421,15 +435,24 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
 function loadMedia(media, resumeFrom = 0) {
   reportProgress = true;
   const thumbnailUrl = media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
-  showMedia(media, mediaPlaybackUrl(media), thumbnailUrl, resumeFrom);
+  showMedia(media, { url: mediaPlaybackUrl(media), resumeFrom, library: true }, thumbnailUrl);
 }
 
-function showMedia(media, url, thumbnailUrl, resumeFrom) {
+// showMedia displays media from source = { url, resumeFrom, library }.
+// library marks session-authenticated library playback in the main window
+// (as opposed to share and popup URLs); see finishPendingSource.
+function showMedia(media, source, thumbnailUrl) {
   // Whatever was still being prepared belongs to the previous item.
   cancelPendingSource();
   const e = els();
-  if (media.type === 'image') showImage(e, url);
-  else showAudioVideo(e, media, url, thumbnailUrl, resumeFrom);
+  if (media.type === 'image') {
+    currentSource = null;
+    showImage(e, source.url);
+  } else {
+    // Remembered so a failed load can be retried (retrySource).
+    currentSource = source;
+    showAudioVideo(e, media, source.url, thumbnailUrl, source.resumeFrom);
+  }
   updateMinimizedTitle();
 }
 
@@ -461,8 +484,9 @@ function showAudioVideo(e, media, url, thumbnailUrl, resumeFrom) {
   const idle = isVideo ? e.audio : e.video;
   active.pause();
   idle.pause(); idle.src = '';
-  // Only the hidden class toggles visibility (no inline styles); an <audio>
-  // element without controls renders nothing either way.
+  // Only the hidden class toggles visibility (no inline styles). Its rule
+  // lives in player.css, the one stylesheet every player page loads, so an
+  // audio item also hides the empty video box on the share page.
   active.classList.remove('hidden');
   idle.classList.add('hidden');
   showCoverArt(e, isVideo ? '' : thumbnailUrl);
@@ -510,7 +534,7 @@ function startSource(m, media, url, resumeFrom) {
   m.load();
   const pending = { controller: new AbortController(), autoplay: false, announced: false };
   pendingSource = pending;
-  setPlayerStatus(preparingText(media, 'transcoding'));
+  setPlayerStatus(preparingText(media, ''));
   waitForCompatStream(url, {
     signal: pending.controller.signal,
     onPreparing: (status) => announcePreparing(pending, media, status),
@@ -531,10 +555,27 @@ function finishPendingSource(pending, m, media, url, resumeFrom, result) {
   setPlayerStatus('');
   if (result.state !== 'ready') {
     failPlayback(media, result.reason);
+    // An expired session ends library playback like every other API call
+    // (api.js): at the login page. Share and popup URLs never redirect: a
+    // share viewer has no account, and the popup must not navigate away.
+    if (result.status === 401 && currentSource?.library) redirectToLogin();
     return;
   }
   attachSource(m, url, resumeFrom);
   if (pending.autoplay) playElement(m);
+}
+
+// retrySource loads the current item again after its compat stream failed or
+// the element reported an error, and plays it: the play button, the big play
+// prompt and Space/p all end here through togglePlay, so a failure never
+// needs a page reload.
+function retrySource(m) {
+  if (!currentSource || !currentMedia) return;
+  // Read before startSource resets the element: keep the reached position.
+  const resumeFrom = m.currentTime > 0 ? m.currentTime : currentSource.resumeFrom;
+  startSource(m, currentMedia, currentSource.url, resumeFrom);
+  updateUI(true);
+  requestPlay();
 }
 
 // cancelPendingSource stops waiting for a compat stream (item switched,
@@ -590,25 +631,41 @@ function handleElementError(m) {
 }
 
 // failPlayback tells the user why nothing plays and puts the transport back
-// into the "not playing" state. pause() makes a detached popup report the
-// stopped state to the main window through its pause listener.
+// into the "not playing" state. pause() only fires a `pause` event when the
+// element was playing, and after a failed probe it never was; the
+// onPlaybackFailed callback therefore lets the detached popup report the lost
+// play intent to the main window in every case.
 function failPlayback(media, reason) {
   currentMediaElement()?.pause();
   isPlaying = false;
   stopProgressTimer();
   updateUI(false);
   toast(`Cannot play ${media?.file_name || 'this file'}: ${reason}`, 'error');
+  failureHandler?.();
 }
 
 // requestPlay starts playback of the current item, or remembers the wish
 // while its compat stream is still being prepared.
 export function requestPlay() {
   if (pendingSource) {
-    pendingSource.autoplay = true;
+    setPendingPlay(true);
     return;
   }
   const m = currentMediaElement();
   if (m) playElement(m);
+}
+
+// setPendingPlay records whether playback starts once the stream being
+// prepared is ready, and shows that wish on the play button / big play.
+function setPendingPlay(wanted) {
+  pendingSource.autoplay = wanted;
+  updateUI(wanted);
+}
+
+// hasPendingPlay tells whether a play request waits for a compat stream. The
+// detached popup reports it as "playing" so the wish survives a reattach.
+export function hasPendingPlay() {
+  return !!pendingSource?.autoplay;
 }
 
 function playElement(m) {

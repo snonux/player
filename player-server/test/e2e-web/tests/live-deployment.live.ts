@@ -13,7 +13,7 @@
  * permissions it creates. The uploaded file is soft-deleted (it stays in the
  * admin trash) so the operator can remove it from disk afterwards.
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
@@ -111,6 +111,23 @@ async function playAndObserve(page: Page, set: string, kind: 'video' | 'audio', 
   test.info().annotations.push({ type: 'playback', description: `${ext}: ${state.ok ? 'plays' : state.reason}; src=${src}; toast="${await page.locator('#toast').textContent()}"` });
   if (state.ok) expect(src).toBe(`/api/media/${item.id}/${item.transcoded ? 'compat' : 'stream'}`);
   return state;
+}
+
+// withShare creates a share for mediaId (body: e.g. { max_uses: 1 }), hands
+// an anonymous page and the new share's token to run, and always revokes the
+// share and closes the anonymous context, also when an assertion fails.
+async function withShare(page: Page, browser: Browser, mediaId: number, body: Record<string, unknown>,
+  run: (guest: Page, token: string) => Promise<void>) {
+  const created = await page.request.post(`/api/v1/media/${mediaId}/shares`, { data: body });
+  expect(created.ok()).toBeTruthy();
+  const { token } = (await created.json()) as { token: string };
+  const anonymous = await browser.newContext();
+  try {
+    await run(await anonymous.newPage(), token);
+  } finally {
+    await anonymous.close();
+    await page.request.delete(`/api/v1/shares/${token}`);
+  }
 }
 
 test.beforeAll(() => {
@@ -232,29 +249,41 @@ test.describe('library as admin', () => {
     await expect(page.locator('#toast')).toContainText(`Cannot play ${item.file_name}: the server could not convert this file`);
     await expect(page.locator('#btn-play')).toHaveText('▶');
     expect(await page.locator('#media-video').getAttribute('src')).toBeNull();
+
+    // Pressing play again retries; this time the real server answers.
+    await page.unroute(`**/api/media/${item.id}/compat`);
+    await page.locator('#btn-play').click();
+    const state = await playbackState(page, 'video', TRANSCODE_START_MS);
+    expect(state.ok, state.reason).toBe(true);
   });
 
   test('a transcoded share plays through its playback_url without a session', async ({ page, browser }) => {
     const item = await mediaByName(page, 'sample-wmv.wmv');
-    const created = await page.request.post(`/api/v1/media/${item.id}/shares`);
-    expect(created.ok()).toBeTruthy();
-    const shares = (await (await page.request.get(`/api/v1/media/${item.id}/shares`)).json()) as Array<{ token: string }>;
-    const token = shares[shares.length - 1].token;
+    await withShare(page, browser, item.id, {}, async (guest, token) => {
+      const meta = (await (await guest.request.get(`/s/${token}`, { headers: { Accept: 'application/json' } })).json()) as { playback_url: string; transcoded: boolean };
+      expect(meta.transcoded).toBe(true);
+      expect(meta.playback_url).toBe(`/s/${token}/compat`);
+      await guest.goto(`/s/${token}`);
+      // The share page does not autoplay; the click is honoured once the stream is ready.
+      await guest.locator('#btn-play').click();
+      const state = await playbackState(guest, 'video', TRANSCODE_START_MS);
+      expect(state.ok, state.reason).toBe(true);
+      expect(await guest.locator('#media-video').getAttribute('src')).toBe(meta.playback_url);
+    });
+  });
 
-    const anonymous = await browser.newContext();
-    const guest = await anonymous.newPage();
-    const meta = (await (await guest.request.get(`/s/${token}`, { headers: { Accept: 'application/json' } })).json()) as { playback_url: string; transcoded: boolean };
-    expect(meta.transcoded).toBe(true);
-    expect(meta.playback_url).toBe(`/s/${token}/compat`);
-    await guest.goto(`/s/${token}`);
-    // The share page does not autoplay; the click is honoured once the stream is ready.
-    await guest.locator('#btn-play').click();
-    const state = await playbackState(guest, 'video', TRANSCODE_START_MS);
-    expect(state.ok, state.reason).toBe(true);
-    expect(await guest.locator('#media-video').getAttribute('src')).toBe(meta.playback_url);
-
-    for (const share of shares) expect((await page.request.delete(`/api/v1/shares/${share.token}`)).ok()).toBeTruthy();
-    await anonymous.close();
+  // The readiness probe is a HEAD request, which must not consume a share
+  // use: otherwise it would take the only use and the player's own request
+  // would be refused.
+  test('a single-use transcoded share still plays', async ({ page, browser }) => {
+    const item = await mediaByName(page, 'sample-wma.wma');
+    await withShare(page, browser, item.id, { max_uses: 1 }, async (guest, token) => {
+      await guest.goto(`/s/${token}`);
+      await guest.locator('#btn-play').click();
+      const state = await playbackState(guest, 'audio', TRANSCODE_START_MS);
+      expect(state.ok, `${state.reason}; toast="${await guest.locator('#toast').textContent()}"`).toBe(true);
+      expect(await guest.locator('#media-audio').getAttribute('src')).toBe(`/s/${token}/compat`);
+    });
   });
 
   test('seeking uses HTTP range requests', async ({ page }) => {

@@ -133,6 +133,31 @@ test('share page contains audio and video stage elements', async ({ page }) => {
 });
 
 // -----------------------------------------------------------------------
+// 2b. An audio share hides the (empty) video box and offers the big play
+//     prompt. The share page gets the `.hidden` rule from player.css; it does
+//     not load layout.css.
+// -----------------------------------------------------------------------
+
+test('audio share hides the video element and shows the play prompt', async ({ page }) => {
+  const mediaRes = await page.request.get('/api/v1/media?limit=500', { headers: { Cookie: adminCookie } });
+  expect(mediaRes.ok()).toBeTruthy();
+  const audioItem = ((await mediaRes.json()) as Array<{ id: number; type: string }>).find(m => m.type === 'audio');
+  expect(audioItem, 'the test library must contain an audio file').toBeTruthy();
+  const shareRes = await page.request.post(`/api/v1/media/${audioItem!.id}/shares`, {
+    headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
+    data: JSON.stringify({}),
+  });
+  expect(shareRes.ok()).toBeTruthy();
+  const { token } = (await shareRes.json()) as { token: string };
+
+  await page.goto(`/s/${token}`);
+  await expect(page.locator('#media-audio')).toHaveAttribute('src', `/s/${token}/stream`);
+  await expect(page.locator('#media-video')).toBeHidden();
+  await expect(page.locator('#big-play')).toBeVisible();
+  await expect(page.locator('#btn-play')).toHaveText('▶');
+});
+
+// -----------------------------------------------------------------------
 // 3. /s/{invalid-token} returns a 404 (the handler explicitly writes
 //    http.StatusNotFound when shareSvc.GetSharedMedia returns nil/error).
 // -----------------------------------------------------------------------
