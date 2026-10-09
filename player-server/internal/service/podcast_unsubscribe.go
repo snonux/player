@@ -167,11 +167,13 @@ func (s *podcastSubscriptionService) tidyFolder(ctx context.Context, set *model.
 	return errors.Join(errs...)
 }
 
-// deleteMediaAndFile removes a media row, then its file. The row goes first
-// so a failure never leaves a listed item whose file is missing; the file is
-// removed explicitly because folders are never removed recursively, and a
-// leftover file would be re-imported by the next rescan. Only files under the
-// media root are touched.
+// deleteMediaAndFile removes a media row, then its file and its generated
+// thumbnail. The row goes first so a failure never leaves a listed item whose
+// file is missing; the file is removed explicitly because folders are never
+// removed recursively, and a leftover file would be re-imported by the next
+// rescan. The thumbnail (of a video episode, or of indexed feed artwork) goes
+// too, or its .thumbnails directory would keep the folder in place. Only
+// files under the media root are touched.
 func (s *podcastSubscriptionService) deleteMediaAndFile(ctx context.Context, m *model.Media) error {
 	if err := s.podcastService.store.HardDeleteMedia(ctx, m.ID); err != nil {
 		return fmt.Errorf("delete media %d: %w", m.ID, err)
@@ -182,6 +184,7 @@ func (s *podcastSubscriptionService) deleteMediaAndFile(ctx context.Context, m *
 	if err := os.Remove(m.AbsPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove media file %d: %w", m.ID, err)
 	}
+	removeOwnThumbnail(s.podcastService.thumbRm, m)
 	return nil
 }
 

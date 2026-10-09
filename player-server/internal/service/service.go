@@ -49,6 +49,20 @@ var (
 	ErrInvalidFeed          = &apiError{msg: "invalid feed", status: http.StatusBadRequest}
 	ErrCannotDeleteSelf     = &apiError{msg: "cannot delete self", status: http.StatusBadRequest}
 	ErrWeakPassword         = &apiError{msg: "password must be at least 8 characters", status: http.StatusBadRequest}
+	// ErrTranscodePending means the compatibility rendition is still being
+	// produced in the background; the client should retry shortly (503).
+	ErrTranscodePending = &apiError{msg: "transcode in progress", status: http.StatusServiceUnavailable}
+	// ErrTranscodeBusy means no transcode can be started right now (queue
+	// full or the requester's job limit reached); retry shortly (503).
+	ErrTranscodeBusy = &apiError{msg: "transcoder busy", status: http.StatusServiceUnavailable}
+	// ErrTranscodeNoSpace means the transcode cache volume is full (507).
+	ErrTranscodeNoSpace = &apiError{msg: "insufficient storage for transcode", status: http.StatusInsufficientStorage}
+	// ErrCompatNotNeeded means the item plays natively: the compatibility
+	// stream is only offered for media flagged "transcoded".
+	ErrCompatNotNeeded = &apiError{msg: "media does not need transcoding; play the stream endpoint instead", status: http.StatusBadRequest}
+	// ErrNotTranscodable means the media type (e.g. an image) has no
+	// audio/video compatibility rendition.
+	ErrNotTranscodable = &apiError{msg: "media type cannot be transcoded", status: http.StatusUnsupportedMediaType}
 
 	// ErrShareExpired is handled directly by share handlers (not via
 	// handleError); it stays a plain sentinel because no dispatch metadata
@@ -136,11 +150,15 @@ type SharedMediaView struct {
 
 // GetSharedMediaResult wraps media metadata needed to render a share page.
 type GetSharedMediaResult struct {
-	Media       *SharedMediaView `json:"media"`
-	HasThumb    bool             `json:"has_thumb"`
-	StreamURL   string           `json:"stream_url"`
-	DownloadURL string           `json:"download_url"`
-	ThumbURL    string           `json:"thumb_url,omitempty"`
+	Media     *SharedMediaView `json:"media"`
+	HasThumb  bool             `json:"has_thumb"`
+	StreamURL string           `json:"stream_url"`
+	// PlaybackURL is the URL the share viewer should play: StreamURL, or the
+	// compatibility rendition when Transcoded is true.
+	PlaybackURL string `json:"playback_url"`
+	Transcoded  bool   `json:"transcoded"`
+	DownloadURL string `json:"download_url"`
+	ThumbURL    string `json:"thumb_url,omitempty"`
 }
 
 // ShareInfo augments a share with its associated media metadata.

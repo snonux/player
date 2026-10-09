@@ -3,19 +3,20 @@ package internal
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
 // Default configuration values.
 const (
-	DefaultPort                   = 8080
-	DefaultMediaRoot              = "./media"
-	DefaultDBPath                 = "data.db"
+	DefaultPort      = 8080
+	DefaultMediaRoot = "./media"
+	DefaultDBPath    = "data.db"
 	// DefaultMaxUploadSizeMB is 10 GB, chosen to accommodate large video files
 	// without imposing an arbitrary low cap. Operators can lower it via the
 	// MAX_UPLOAD_SIZE_MB environment variable for tighter constraints.
-	DefaultMaxUploadSizeMB = 10240
+	DefaultMaxUploadSizeMB        = 10240
 	DefaultSessionTimeoutHours    = 24
 	DefaultGCIntervalMinutes      = 30
 	DefaultShareDefaultExpiryDays = 7
@@ -23,6 +24,21 @@ const (
 	DefaultMediaPageSize          = 100
 	DefaultLogLevel               = "info"
 	DefaultSecureCookies          = true
+	// DefaultTranscodeCacheDirSuffix is appended to the database path to
+	// form the cache directory when TRANSCODE_CACHE_DIR is unset
+	// ("/data/media.db" -> "/data/media.db.transcode-cache"). The database
+	// already lives on a writable volume (the container root filesystem is
+	// read-only), and tying the name to the database file gives every
+	// instance its own cache: renditions are named by media id, so two
+	// databases sharing one directory (several dev or test instances with
+	// DB_PATH=/tmp/*.db) would delete each other's files.
+	DefaultTranscodeCacheDirSuffix = ".transcode-cache"
+	// DefaultTranscodeCacheMaxMB bounds the transcode cache at 4 GiB.
+	DefaultTranscodeCacheMaxMB = 4096
+	// DefaultTranscodeMaxJobs is the number of parallel ffmpeg transcodes.
+	// One job needs roughly 400 MB of memory at 1080p, so more jobs need a
+	// larger container memory limit.
+	DefaultTranscodeMaxJobs = 1
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -39,6 +55,13 @@ type Config struct {
 	LogLevel               string
 	SecureCookies          bool
 	CORSAllowedOrigins     []string
+	// TranscodeCacheDir holds the compatibility renditions of legacy media
+	// (AVI/WMV/FLV/WMA). Defaults to DBPath + ".transcode-cache".
+	TranscodeCacheDir string
+	// TranscodeCacheMaxMB is the size the cache is pruned back to.
+	TranscodeCacheMaxMB int
+	// TranscodeMaxJobs is the number of ffmpeg transcodes run in parallel.
+	TranscodeMaxJobs int
 }
 
 // envInt reads an integer environment variable, validates it with the given check,
@@ -88,10 +111,22 @@ func defaultConfig() *Config {
 		MediaPageSize:          DefaultMediaPageSize,
 		LogLevel:               DefaultLogLevel,
 		SecureCookies:          DefaultSecureCookies,
+		TranscodeCacheMaxMB:    DefaultTranscodeCacheMaxMB,
+		TranscodeMaxJobs:       DefaultTranscodeMaxJobs,
 	}
 }
 
-// loadNumericSettings reads numeric settings from the environment.
+// atLeastOne validates settings that must be a positive integer.
+func atLeastOne(n int) error {
+	if n < 1 {
+		return fmt.Errorf("must be >= 1, got %d", n)
+	}
+	return nil
+}
+
+// loadNumericSettings reads numeric settings from the environment. PORT has
+// its own range; every other numeric setting only needs to be positive, so
+// those are driven from one table instead of repeating the validation.
 func loadNumericSettings(cfg *Config) error {
 	if err := envInt("PORT", func(n int) error {
 		// Allow 0 so tests can bind to an ephemeral port.
@@ -103,67 +138,35 @@ func loadNumericSettings(cfg *Config) error {
 		return err
 	}
 
-	if err := envInt("MAX_UPLOAD_SIZE_MB", func(n int) error {
-		if n < 1 {
-			return fmt.Errorf("must be >= 1, got %d", n)
-		}
-		return nil
-	}, func(n int) { cfg.MaxUploadSizeMB = n }); err != nil {
-		return err
+	positive := []struct {
+		name string
+		set  func(int)
+	}{
+		{"MAX_UPLOAD_SIZE_MB", func(n int) { cfg.MaxUploadSizeMB = n }},
+		{"SESSION_TIMEOUT_HOURS", func(n int) { cfg.SessionTimeoutHours = n }},
+		{"GC_INTERVAL_MINUTES", func(n int) { cfg.GCIntervalMinutes = n }},
+		{"SHARE_DEFAULT_EXPIRY_DAYS", func(n int) { cfg.ShareDefaultExpiryDays = n }},
+		{"PODCAST_CHECK_INTERVAL_MINUTES", func(n int) { cfg.PodcastCheckMinutes = n }},
+		{"MEDIA_PAGE_SIZE", func(n int) { cfg.MediaPageSize = n }},
+		{"TRANSCODE_CACHE_MAX_MB", func(n int) { cfg.TranscodeCacheMaxMB = n }},
+		{"TRANSCODE_MAX_JOBS", func(n int) { cfg.TranscodeMaxJobs = n }},
 	}
-
-	if err := envInt("SESSION_TIMEOUT_HOURS", func(n int) error {
-		if n < 1 {
-			return fmt.Errorf("must be >= 1, got %d", n)
+	for _, p := range positive {
+		if err := envInt(p.name, atLeastOne, p.set); err != nil {
+			return err
 		}
-		return nil
-	}, func(n int) { cfg.SessionTimeoutHours = n }); err != nil {
-		return err
 	}
-
-	if err := envInt("GC_INTERVAL_MINUTES", func(n int) error {
-		if n < 1 {
-			return fmt.Errorf("must be >= 1, got %d", n)
-		}
-		return nil
-	}, func(n int) { cfg.GCIntervalMinutes = n }); err != nil {
-		return err
-	}
-
-	if err := envInt("SHARE_DEFAULT_EXPIRY_DAYS", func(n int) error {
-		if n < 1 {
-			return fmt.Errorf("must be >= 1, got %d", n)
-		}
-		return nil
-	}, func(n int) { cfg.ShareDefaultExpiryDays = n }); err != nil {
-		return err
-	}
-
-	if err := envInt("PODCAST_CHECK_INTERVAL_MINUTES", func(n int) error {
-		if n < 1 {
-			return fmt.Errorf("must be >= 1, got %d", n)
-		}
-		return nil
-	}, func(n int) { cfg.PodcastCheckMinutes = n }); err != nil {
-		return err
-	}
-
-	if err := envInt("MEDIA_PAGE_SIZE", func(n int) error {
-		if n < 1 {
-			return fmt.Errorf("must be >= 1, got %d", n)
-		}
-		return nil
-	}, func(n int) { cfg.MediaPageSize = n }); err != nil {
-		return err
-	}
-
 	return nil
 }
 
-// loadStringSettings reads MEDIA_ROOT and DB_PATH from the environment.
+// loadStringSettings reads MEDIA_ROOT, DB_PATH and TRANSCODE_CACHE_DIR from
+// the environment. The transcode cache default is derived from the final
+// DB_PATH, so it must be resolved after DB_PATH has been read.
 func loadStringSettings(cfg *Config) {
 	envString("MEDIA_ROOT", func(s string) { cfg.MediaRoot = s })
 	envString("DB_PATH", func(s string) { cfg.DBPath = s })
+	cfg.TranscodeCacheDir = cfg.DBPath + DefaultTranscodeCacheDirSuffix
+	envString("TRANSCODE_CACHE_DIR", func(s string) { cfg.TranscodeCacheDir = s })
 }
 
 // loadLogLevel reads LOG_LEVEL from the environment and validates it.
@@ -222,5 +225,29 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	if err := validateTranscodeCacheDir(cfg); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+// validateTranscodeCacheDir rejects a transcode cache inside (or equal to)
+// the media root. There the library scanner would import the renditions as
+// media, and cache eviction would run in a directory holding real media.
+// This also applies to the derived default, i.e. when DB_PATH itself lies
+// in the media root: set TRANSCODE_CACHE_DIR explicitly in that case.
+func validateTranscodeCacheDir(cfg *Config) error {
+	cache, err := filepath.Abs(cfg.TranscodeCacheDir)
+	if err != nil {
+		return fmt.Errorf("invalid TRANSCODE_CACHE_DIR: %w", err)
+	}
+	root, err := filepath.Abs(cfg.MediaRoot)
+	if err != nil {
+		return fmt.Errorf("invalid MEDIA_ROOT: %w", err)
+	}
+	if cache == root || strings.HasPrefix(cache, root+string(filepath.Separator)) {
+		return fmt.Errorf("invalid TRANSCODE_CACHE_DIR: %q must not be inside MEDIA_ROOT %q", cfg.TranscodeCacheDir, cfg.MediaRoot)
+	}
+	return nil
 }
