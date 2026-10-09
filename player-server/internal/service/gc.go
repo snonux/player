@@ -29,8 +29,10 @@ type GCWorker struct {
 	stopOnce  sync.Once
 	wg        sync.WaitGroup
 	mediaRoot string
-	ctx       context.Context
-	cancel    context.CancelFunc
+	// thumbRm deletes the generated thumbnail of a purged media item.
+	thumbRm thumbnailRemover
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 // NewGCWorker creates a GCWorker. Use WithAge and WithInterval to customise.
@@ -43,6 +45,7 @@ func NewGCWorker(store repository.GCStore, clk clock.Clock, mediaRoot string, in
 		logger:    logger,
 		stopCh:    make(chan struct{}),
 		mediaRoot: mediaRoot,
+		thumbRm:   newThumbnailRemover(logger),
 	}
 }
 
@@ -157,7 +160,7 @@ func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
 		}
 		return
 	}
-	removeOwnThumbnail(item)
+	removeOwnThumbnail(w.thumbRm, item)
 
 	if w.logger != nil {
 		w.logger.Info("gc deleted media", "id", item.ID, "path", absPath)

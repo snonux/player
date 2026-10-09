@@ -35,20 +35,30 @@ type writeService struct {
 	store     repository.WriteServiceStore
 	clock     clock.Clock
 	mediaRoot string
-	thumbGen  thumb.Generator
-	prober    probe.Prober
-	helper    *accessHelper
+	// thumbGen renders set and folder covers straight to their file.
+	thumbGen thumb.Generator
+	// thumbs makes and removes media thumbnails; nil without a generator.
+	thumbs ThumbnailMaker
+	prober probe.Prober
+	helper *accessHelper
+	logger *slog.Logger
 }
 
-// NewWriteService creates a WriteService.
+// NewWriteService creates a WriteService. Media thumbnails are produced by
+// a thumb.FSMaker wrapped around thumbGen, the same implementation the
+// scanner uses. The service logs to the default logger; the constructor
+// takes none, and adding one would change every caller.
 func NewWriteService(store repository.WriteServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, helper *accessHelper) *writeService {
+	logger := slog.Default()
 	return &writeService{
 		store:     store,
 		clock:     clk,
 		mediaRoot: mediaRoot,
 		thumbGen:  thumbGen,
+		thumbs:    newThumbnailMaker(thumbGen, logger),
 		prober:    prober,
 		helper:    helper,
+		logger:    logger,
 	}
 }
 
@@ -101,9 +111,8 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 		return nil, err
 	}
 
-	if err := ImportMediaFile(ctx, s.store, media, s.prober, s.thumbGen); err != nil {
+	if err := ImportMediaFile(ctx, s.store, media, s.prober, s.thumbs); err != nil {
 		removeAndLog(path)
-		removeOwnThumbnail(media)
 		s.store.HardDeleteMedia(ctx, media.ID)
 		return nil, err
 	}
@@ -125,17 +134,19 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 		return fmt.Errorf("probe media: %w", err)
 	}
 
-	// The destination comes from internal/thumb, the one layout scanner and
-	// import use as well. A row still pointing at a thumbnail written under
-	// an older naming scheme therefore moves to its own, current path here.
-	// See generateThumbnail for what writing there can overwrite.
-	previous := media.ThumbnailPath
-	thumbnailPath := thumb.ThumbnailPathFor(media.AbsPath)
-	if err := os.MkdirAll(filepath.Dir(thumbnailPath), 0o755); err != nil {
-		return fmt.Errorf("mkdir thumbnails: %w", err)
+	// The thumbnail is made by the ThumbnailMaker, at the one path scanner
+	// and import use as well. A row still pointing at a thumbnail written
+	// under an older naming scheme therefore moves to its own, current path
+	// here; see generateThumbnail for what writing there can overwrite. The
+	// maker only reports success for a complete, verified file, so the row
+	// is never switched to, and the previous thumbnail never deleted for, a
+	// thumbnail that does not exist.
+	if s.thumbs == nil {
+		return errors.New("thumbnail generation is not configured")
 	}
-
-	if err := s.thumbGen.Generate(ctx, media.AbsPath, thumbnailPath, meta.Duration); err != nil {
+	previous := media.ThumbnailPath
+	thumbnailPath, err := s.thumbs.Make(ctx, media.AbsPath, meta.Duration)
+	if err != nil {
 		return fmt.Errorf("generate thumbnail: %w", err)
 	}
 
@@ -148,28 +159,32 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 }
 
 // removeReplacedThumbnail deletes the generated thumbnail file media pointed
-// at before RegenerateThumbnail moved it to a different path, unless another
-// media row of the set still points at that file (under the old stem-based
-// naming several rows could share one). Without this the old file would be
-// orphaned: the rescan migration only looks at paths rows still store.
+// at before RegenerateThumbnail moved it to a different path. Without this
+// the old file would be orphaned: the rescan migration only looks at paths
+// rows still store.
 //
-// Only a file in a .thumbnails directory of the source's own directory or
-// one of its ancestors is removed, which are the places older releases put
-// thumbnails; a stale path pointing anywhere else is left alone. So is a
-// path that is the source file of a media item: a media file can live in a
-// directory called .thumbnails and be its own thumbnail. Failing to clean
-// up is logged, not returned: the regeneration itself succeeded.
+// The file is kept unless all of this holds:
+//   - it is a generated thumbnail inside the directory of the row's own
+//     set, the same confinement the scanner applies. A stale stored path
+//     (media root moved, database copied) may point anywhere, also into a
+//     .thumbnails directory above the media root;
+//   - no other row of the set still points at it. Under the old stem-based
+//     naming several rows could share one thumbnail;
+//   - it is not the source file of a media item. A media file can live in a
+//     directory called .thumbnails and serve as another row's thumbnail.
+//
+// Failing to clean up is logged, not returned: the regeneration succeeded.
 func (s *writeService) removeReplacedThumbnail(ctx context.Context, media *model.Media, previous string) {
 	if previous == media.ThumbnailPath || !thumb.IsGenerated(previous) {
 		return
 	}
-	owner := filepath.Dir(filepath.Dir(previous))
-	if !strings.HasPrefix(media.AbsPath, owner+string(filepath.Separator)) {
+	setDir, ok := setDirOf(s.mediaRoot, media)
+	if !ok || !pathWithin(setDir, previous) {
 		return
 	}
 	siblings, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &media.SetID, IncludeDeleted: true})
 	if err != nil {
-		slog.Default().Warn("replaced thumbnail kept, cannot list media", "path", previous, "err", err)
+		s.logger.Warn("replaced thumbnail kept, cannot list media", "path", previous, "err", err)
 		return
 	}
 	for i := range siblings {
@@ -177,7 +192,7 @@ func (s *writeService) removeReplacedThumbnail(ctx context.Context, media *model
 			return
 		}
 	}
-	removeAndLog(previous)
+	s.thumbs.Remove(previous)
 }
 
 func (s *writeService) RegenerateSetCover(ctx context.Context, setID int64, folder string, userID int64) error {

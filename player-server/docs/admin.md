@@ -58,8 +58,25 @@ file has exactly one thumbnail of its own:
 with a hash.) A directory named `.thumbnails` directly in `MEDIA_ROOT` is
 never scanned as a set.
 
-A thumbnail is deleted together with its media item: when the trash is
-purged, and when a podcast is unsubscribed.
+Every thumbnail is generated into a temporary file (`.tmp-*.jpg` in the same
+`.thumbnails` directory) and renamed into place once complete, by rescan,
+upload, podcast download and "regenerate thumbnail" alike. A thumbnail in
+place is therefore always complete. Should the server be killed mid-way, the
+temporary file stays behind; a rescan deletes such files once they are more
+than an hour old.
+
+A thumbnail at its current path is deleted together with its media item
+(when the trash is purged, when a podcast is unsubscribed), and its
+`.thumbnails` directory once empty. Not deleted is a thumbnail still stored
+under the old naming described below, because it may be shared with another
+item: purging or unsubscribing such an item before the upgrade rescan has
+migrated it leaves its old JPEG behind for good, and that file can keep an
+otherwise empty podcast folder in place. Run the upgrade rescan first to
+avoid this.
+
+A rescan also regenerates the thumbnail of any indexed video or image whose
+thumbnail file has gone missing (this costs one file check per indexed video
+and image on every rescan).
 
 If a folder is not writable by the server, its media is still indexed: videos
 without a thumbnail, images with the image itself standing in. Such items
@@ -92,7 +109,7 @@ The rescan can be interrupted and repeated at any point (a second click on
 Rescan, a restart, the 30-minute scan timeout): an item is switched only once
 its new thumbnail is complete, anything not done yet keeps its old thumbnail,
 and the next rescan continues where this one stopped. Run Rescan again until
-the log line `scanner migrating thumbnails` no longer appears. An item whose
+the log line `scanner regenerating thumbnails` no longer appears. An item whose
 thumbnail cannot be generated keeps its old one and is retried on every
 rescan, with the reason logged as a warning. Only files inside the set
 directory are deleted.
@@ -106,6 +123,12 @@ shows the wrong picture until the rescan, which fixes it.
 "Regenerate thumbnail" on an item that still has an old path moves just that
 item to its new path and deletes the old file unless another item still
 uses it.
+
+One race is left open while that rescan runs: if a file is uploaded during
+the rescan and its thumbnail path is the old thumbnail of an item migrated
+in the same rescan (the `holiday.mp4` / `holiday.mp4.png` pair again), the
+upload's thumbnail is deleted as that item's old file. The next rescan
+notices the missing thumbnail and regenerates it.
 
 ### Managing Trash
 

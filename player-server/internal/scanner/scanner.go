@@ -44,8 +44,9 @@ type FSScanner struct {
 	clock     clock.Clock
 	mediaRoot string
 	fs        FS
-	// remover deletes thumbnails the migration made obsolete. It is
-	// separate from fs because nothing else in a scan may delete files.
+	// remover deletes thumbnails the migration made obsolete and stale
+	// temporary thumbnail files. It is separate from fs because nothing
+	// else in a scan may delete files.
 	remover fileRemover
 	logger  *slog.Logger
 	workers int
@@ -154,11 +155,18 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 
 // isSetDir reports whether a media root entry is scanned as a set: every
 // directory except one named .thumbnails. That name is reserved for
-// generated thumbnails (the media root gets one when a file is uploaded
-// straight into it), and indexing its content as media would make the
-// thumbnails look like source files.
+// generated thumbnails. The server itself never creates one directly in
+// the media root (uploads go into a set), but if one is there, indexing it
+// as a set would turn its files into media whose thumbnail is the file
+// itself, living in a directory the rest of the code treats as disposable.
 func isSetDir(entry os.DirEntry) bool {
 	return entry.IsDir() && entry.Name() != thumb.DirName
+}
+
+// fileExists reports whether path can be stat'ed.
+func (s *FSScanner) fileExists(path string) bool {
+	_, err := s.fs.Stat(path)
+	return err == nil
 }
 
 // ensureSet returns the set ID for the given root/relative paths, creating the set if necessary.
@@ -310,9 +318,10 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 
 // discoverSet uses fileDiscoverer to collect the set's media files and
 // cover images into sc, then reconciles the already indexed rows with what
-// is on disk: rows whose file disappeared are soft-deleted, and the rows
-// whose thumbnail is stored under an older naming scheme are noted in
-// sc.stale for probeAndStore to migrate.
+// is on disk: rows whose file disappeared are soft-deleted, temporary
+// thumbnail files of a killed generation are swept, and the rows whose
+// thumbnail is stored under an older naming scheme or is missing are noted
+// in sc.stale for probeAndStore to regenerate.
 func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *model.ScanProgress) error {
 	disc := newFileDiscoverer(s.fs)
 	sc.coverImages = disc.gatherCoverImages(sc.path)
@@ -332,9 +341,10 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 	}
 	s.reconcileOrphans(ctx, sc.existing, seenRel, sc.name)
 
-	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path)
+	s.sweepStaleTemporaries(files)
+	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path, s.fileExists)
 	if len(sc.stale) > 0 {
-		s.log().Info("scanner migrating thumbnails", "set", sc.name, "rows", len(sc.stale))
+		s.log().Info("scanner regenerating thumbnails", "set", sc.name, "rows", len(sc.stale))
 	}
 
 	if progress != nil {

@@ -3,8 +3,11 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,11 +27,79 @@ func writingThumbGen() *mockThumbGenerator {
 	}}
 }
 
-type updateRecorder struct{ updates int }
+type updateRecorder struct {
+	updates int
+	err     error
+}
 
 func (u *updateRecorder) UpdateMedia(context.Context, *model.Media) error {
 	u.updates++
-	return nil
+	return u.err
+}
+
+// TestImportMediaFile_RowUpdateFailureRemovesThumbnail: when the row cannot
+// be updated, upload and podcast download delete the file and the row. The
+// thumbnail generated just before must go as well, with its directory, or
+// it would be an orphan nothing ever removes.
+func TestImportMediaFile_RowUpdateFailureRemovesThumbnail(t *testing.T) {
+	dir := t.TempDir()
+	m := &model.Media{AbsPath: filepath.Join(dir, "clip.mp4"), Type: model.MediaTypeVideo}
+	store := &updateRecorder{err: errors.New("database is locked")}
+	err := ImportMediaFile(context.Background(), store, m, &mockProber{}, newThumbnailMaker(writingThumbGen(), nil))
+	if err == nil {
+		t.Fatal("expected the update failure to be reported")
+	}
+	if fileExists(thumb.ThumbnailPathFor(m.AbsPath)) || fileExists(thumb.ThumbnailDir(dir)) {
+		t.Error("thumbnail or its directory left behind after the failed import")
+	}
+}
+
+// TestImportMediaFile_RowUpdateFailureKeepsSVG: an SVG is its own thumbnail;
+// the cleanup after a failed update must not delete the media file.
+func TestImportMediaFile_RowUpdateFailureKeepsSVG(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "logo.svg")
+	if err := os.WriteFile(src, []byte("<svg/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := &model.Media{AbsPath: src, Type: model.MediaTypeImage}
+	store := &updateRecorder{err: errors.New("database is locked")}
+	if err := ImportMediaFile(context.Background(), store, m, &mockProber{}, newThumbnailMaker(writingThumbGen(), nil)); err == nil {
+		t.Fatal("expected the update failure to be reported")
+	}
+	if !fileExists(src) {
+		t.Error("the SVG itself was deleted")
+	}
+}
+
+// TestDownloadEpisode_UndoneDownloadRemovesThumbnail: a video episode gets a
+// thumbnail when it is imported. If the download is then undone because the
+// episode cannot be linked, the thumbnail goes with the file and the row.
+func TestDownloadEpisode_UndoneDownloadRemovesThumbnail(t *testing.T) {
+	f := newUnsubscribeFixture(t)
+	f.svc.thumbs = newThumbnailMaker(writingThumbGen(), nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("video"))
+	}))
+	defer server.Close()
+	episode, err := f.store.CreateEpisode(ctx, &model.PodcastEpisode{FeedID: f.other, GUID: "v", Title: "v", EpisodeURL: server.URL + "/video.mp4", CreatedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.svc.store = &cancelOnLink{SQLite: f.store, cancel: cancel}
+
+	if _, err := f.svc.DownloadEpisode(ctx, episode, f.admin); err == nil {
+		t.Fatal("expected the failed link to be reported")
+	}
+	folder := filepath.Dir(f.otherFile)
+	if left, _ := filepath.Glob(filepath.Join(folder, "*video*")); len(left) != 0 {
+		t.Fatalf("episode file left behind: %v", left)
+	}
+	if fileExists(thumb.ThumbnailDir(folder)) {
+		entries, _ := os.ReadDir(thumb.ThumbnailDir(folder))
+		t.Errorf("thumbnail of the undone download left behind: %v", entries)
+	}
 }
 
 // TestImportMediaFile_SameStemGetsOwnThumbnail is the upload/podcast side of
@@ -41,7 +112,7 @@ func TestImportMediaFile_SameStemGetsOwnThumbnail(t *testing.T) {
 	image := &model.Media{AbsPath: filepath.Join(dir, "holiday.png"), Type: model.MediaTypeImage}
 	store := &updateRecorder{}
 	for _, m := range []*model.Media{video, image} {
-		if err := ImportMediaFile(ctx, store, m, &mockProber{}, writingThumbGen()); err != nil {
+		if err := ImportMediaFile(ctx, store, m, &mockProber{}, newThumbnailMaker(writingThumbGen(), nil)); err != nil {
 			t.Fatalf("import %s: %v", m.AbsPath, err)
 		}
 	}
@@ -85,7 +156,7 @@ func TestImportMediaFile_ThumbnailNegativeCases(t *testing.T) {
 			dir := t.TempDir()
 			m := &model.Media{AbsPath: filepath.Join(dir, tt.file), Type: tt.mediaType}
 			store := &updateRecorder{}
-			err := ImportMediaFile(ctx, store, m, &mockProber{}, tt.gen)
+			err := ImportMediaFile(ctx, store, m, &mockProber{}, newThumbnailMaker(tt.gen, nil))
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -354,17 +425,87 @@ func TestRegenerateThumbnail_CleanupCannotListMedia(t *testing.T) {
 }
 
 // TestRegenerateThumbnail_NeverDeletesAMediaFile: a media file can live in a
-// directory called .thumbnails, and a row can point at it as its thumbnail.
-// Replacing that thumbnail must not delete the media file.
+// directory called .thumbnails, and another row can point at it as its
+// thumbnail. No row stores that path as *its own* thumbnail here, so the
+// only thing keeping the file is that it is a media file.
 func TestRegenerateThumbnail_NeverDeletesAMediaFile(t *testing.T) {
 	f := newThumbFixture(t)
-	f.add(".thumbnails/pic.png", ".thumbnails/pic.png")
+	f.add(".thumbnails/pic.png", "")
 	id := f.add("video.mp4", ".thumbnails/pic.png")
 	f.writeFile(f.abs(".thumbnails/pic.png"), "source") // add() marked it "old"
 	f.regenerate(id)
 	f.assertThumb(id, ".thumbnails/video.mp4.jpg", f.fresh("video.mp4"))
 	if got, err := os.ReadFile(f.abs(".thumbnails/pic.png")); err != nil || string(got) != "source" {
 		t.Errorf("media file used as a thumbnail was deleted or changed: %q, %v", got, err)
+	}
+}
+
+// TestRegenerateThumbnail_OnlyDeletesInsideTheSet: a stale stored path can
+// point into any .thumbnails directory: of another set, of the media root,
+// or above it. All of those are ancestors' or strangers' directories and
+// must be left alone, exactly like the scanner leaves them alone.
+func TestRegenerateThumbnail_OnlyDeletesInsideTheSet(t *testing.T) {
+	f := newThumbFixture(t)
+	for name, previous := range map[string]string{
+		"another set":          filepath.Join(f.root, "other", thumb.DirName, "video.jpg"),
+		"the media root":       filepath.Join(f.root, thumb.DirName, "video.jpg"),
+		"above the media root": filepath.Join(filepath.Dir(f.root), thumb.DirName, "video.jpg"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			id := f.add("a/"+strings.ReplaceAll(name, " ", "-")+".mp4", previous)
+			f.regenerate(id)
+			if !fileExists(previous) {
+				t.Errorf("thumbnail in %s was deleted", name)
+			}
+		})
+	}
+}
+
+// TestRegenerateThumbnail_UnverifiedOutputChangesNothing: a generator that
+// reports success without producing the thumbnail (ffmpeg does, for some
+// output names) must not get the row switched or the old thumbnail deleted.
+func TestRegenerateThumbnail_UnverifiedOutputChangesNothing(t *testing.T) {
+	for name, gen := range map[string]func(out string) error{
+		"no output":        func(out string) error { return os.Remove(out) },
+		"empty output":     func(out string) error { return os.WriteFile(out, nil, 0o644) },
+		"output elsewhere": func(out string) error { return os.WriteFile(out+".001.jpg", []byte("jpg"), 0o644) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newThumbFixture(t)
+			id := f.add("video.mp4", ".thumbnails/video.jpg")
+			silent := &mockThumbGenerator{GenerateFunc: func(_ context.Context, _, out string, _ float64) error { return gen(out) }}
+			svc := NewMediaService(f.store, newMockClock(), f.root, silent, &mockProber{})
+			if err := svc.RegenerateThumbnail(context.Background(), id, f.admin); err == nil {
+				t.Fatal("expected an error for a thumbnail that was not produced")
+			}
+			f.assertThumb(id, ".thumbnails/video.jpg", "old")
+			if fileExists(f.abs(".thumbnails/video.mp4.jpg")) {
+				t.Error("an unverified thumbnail was put in place")
+			}
+		})
+	}
+}
+
+// TestRegenerateThumbnail_WithoutGenerator: a service built without a
+// generator reports that instead of crashing.
+func TestRegenerateThumbnail_WithoutGenerator(t *testing.T) {
+	f := newThumbFixture(t)
+	id := f.add("video.mp4", ".thumbnails/video.jpg")
+	svc := NewMediaService(f.store, newMockClock(), f.root, nil, &mockProber{})
+	if err := svc.RegenerateThumbnail(context.Background(), id, f.admin); err == nil {
+		t.Fatal("expected an error")
+	}
+	f.assertThumb(id, ".thumbnails/video.jpg", "old")
+}
+
+// writeThumbFile creates a file (and its directory) for the removal tests.
+func writeThumbFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("jpg"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -383,17 +524,13 @@ func TestRemoveOwnThumbnail(t *testing.T) {
 		{"audio cover image", "a/song.mp3", "a/cover.jpg", false},
 		{"image serving as its own thumbnail", "a/pic.png", "a/pic.png", false},
 	}
+	rm := newThumbnailRemover(nil)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			stored := filepath.Join(dir, filepath.FromSlash(tt.stored))
-			if err := os.MkdirAll(filepath.Dir(stored), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(stored, []byte("jpg"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			removeOwnThumbnail(&model.Media{AbsPath: filepath.Join(dir, filepath.FromSlash(tt.source)), ThumbnailPath: stored})
+			writeThumbFile(t, stored)
+			removeOwnThumbnail(rm, &model.Media{AbsPath: filepath.Join(dir, filepath.FromSlash(tt.source)), ThumbnailPath: stored})
 			if gone := !fileExists(stored); gone != tt.wantGone {
 				t.Errorf("thumbnail gone = %v, want %v", gone, tt.wantGone)
 			}
@@ -402,26 +539,23 @@ func TestRemoveOwnThumbnail(t *testing.T) {
 			}
 		})
 	}
-	t.Run("no paths at all", func(t *testing.T) {
-		removeOwnThumbnail(&model.Media{}) // must not panic or delete anything
-	})
-	t.Run("directory with other thumbnails stays", func(t *testing.T) {
-		dir := t.TempDir()
-		src := filepath.Join(dir, "clip.mp4")
-		own, other := thumb.ThumbnailPathFor(src), filepath.Join(dir, thumb.DirName, "other.mp4.jpg")
-		for _, p := range []string{own, other} {
-			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(p, []byte("jpg"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		removeOwnThumbnail(&model.Media{AbsPath: src, ThumbnailPath: own})
-		if fileExists(own) || !fileExists(other) {
-			t.Errorf("own gone = %v, other kept = %v; want both true", !fileExists(own), fileExists(other))
-		}
-	})
+}
+
+// TestRemoveOwnThumbnail_EdgeCases: a row without paths is ignored, and a
+// .thumbnails directory still holding other thumbnails stays.
+func TestRemoveOwnThumbnail_EdgeCases(t *testing.T) {
+	rm := newThumbnailRemover(nil)
+	removeOwnThumbnail(rm, &model.Media{}) // must not panic or delete anything
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "clip.mp4")
+	own, other := thumb.ThumbnailPathFor(src), filepath.Join(dir, thumb.DirName, "other.mp4.jpg")
+	writeThumbFile(t, own)
+	writeThumbFile(t, other)
+	removeOwnThumbnail(rm, &model.Media{AbsPath: src, ThumbnailPath: own})
+	if fileExists(own) || !fileExists(other) {
+		t.Errorf("own gone = %v, other kept = %v; want both true", !fileExists(own), fileExists(other))
+	}
 }
 
 // TestGCWorker_RemovesPurgedMediasThumbnail: garbage collection used to

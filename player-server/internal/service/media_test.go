@@ -1275,9 +1275,16 @@ type mockThumbGenerator struct {
 	GenerateFunc func(ctx context.Context, inputPath, outputPath string, duration float64) error
 }
 
+// Generate calls GenerateFunc, or by default writes a small file like a real
+// generator would: the services only accept a thumbnail that exists and is
+// not empty. Tests that generate into a directory they never created (set
+// covers) keep succeeding without a file, as they did before.
 func (m *mockThumbGenerator) Generate(ctx context.Context, inputPath, outputPath string, duration float64) error {
 	if m.GenerateFunc != nil {
 		return m.GenerateFunc(ctx, inputPath, outputPath, duration)
+	}
+	if err := os.WriteFile(outputPath, []byte("jpg"), 0o644); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }

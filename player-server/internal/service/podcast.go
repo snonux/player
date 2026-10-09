@@ -63,12 +63,17 @@ type PodcastServiceStore interface {
 // ------------------------------------------------------------------
 
 type podcastService struct {
-	store           PodcastServiceStore
-	clock           clock.Clock
-	mediaRoot       string
-	helper          *accessHelper
-	prober          probe.Prober
-	thumbGen        thumb.Generator
+	store     PodcastServiceStore
+	clock     clock.Clock
+	mediaRoot string
+	helper    *accessHelper
+	prober    probe.Prober
+	thumbGen  thumb.Generator
+	// thumbs makes the thumbnails of downloaded video episodes; nil
+	// without a generator. thumbRm deletes thumbnails of purged media and
+	// is always set.
+	thumbs          ThumbnailMaker
+	thumbRm         thumbnailRemover
 	httpClient      *http.Client
 	checkInterval   int // minutes
 	logger          *slog.Logger
@@ -186,6 +191,8 @@ func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, med
 		helper:        helper,
 		prober:        prober,
 		thumbGen:      thumbGen,
+		thumbs:        newThumbnailMaker(thumbGen, logger),
+		thumbRm:       newThumbnailRemover(logger),
 		httpClient:    httpClient,
 		checkInterval: checkInterval,
 		logger:        logger,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -145,27 +146,32 @@ func TestFSMaker_MakeImage_PassesZeroDuration(t *testing.T) {
 	}
 }
 
-// TestFSMaker_Failures: whatever goes wrong, the maker reports "no
-// thumbnail" instead of an error, leaves no temporary file, and leaves a
-// thumbnail already at the destination exactly as it was.
-func TestFSMaker_Failures(t *testing.T) {
+// makerFailure is one way a thumbnail can fail to be made. setup arranges
+// the failure and returns the generator to run; wantGen says whether the
+// generator may be started at all.
+type makerFailure struct {
+	name    string
+	setup   func(f *fakeFS) *MockGenerator
+	wantGen bool
+}
+
+func makerFailures() []makerFailure {
 	boom := errors.New("boom")
-	tests := []struct {
-		name    string
-		setup   func(f *fakeFS) *MockGenerator
-		wantGen bool // whether the generator may be started at all
-	}{
-		{"mkdir fails (unwritable folder)", func(f *fakeFS) *MockGenerator { f.mkdirErr = fs.ErrPermission; return writing(f, 9) }, false},
-		{"temporary file cannot be created (read-only .thumbnails)", func(f *fakeFS) *MockGenerator { f.tempErr = fs.ErrPermission; return writing(f, 9) }, false},
-		{"generator fails", func(*fakeFS) *MockGenerator {
-			return &MockGenerator{GenerateFunc: func(context.Context, string, string, float64) error { return boom }}
-		}, true},
-		{"generator fails after partial output", func(f *fakeFS) *MockGenerator {
+	failing := func(partial int64) func(f *fakeFS) *MockGenerator {
+		return func(f *fakeFS) *MockGenerator {
 			return &MockGenerator{GenerateFunc: func(_ context.Context, _, out string, _ float64) error {
-				f.files[out] = 3
+				if partial > 0 {
+					f.files[out] = partial
+				}
 				return boom
 			}}
-		}, true},
+		}
+	}
+	return []makerFailure{
+		{"mkdir fails (unwritable folder)", func(f *fakeFS) *MockGenerator { f.mkdirErr = fs.ErrPermission; return writing(f, 9) }, false},
+		{"temporary file cannot be created (read-only .thumbnails)", func(f *fakeFS) *MockGenerator { f.tempErr = fs.ErrPermission; return writing(f, 9) }, false},
+		{"generator fails", failing(0), true},
+		{"generator fails after partial output", failing(3), true},
 		{"generator succeeds without output", func(f *fakeFS) *MockGenerator {
 			return &MockGenerator{GenerateFunc: func(_ context.Context, _, out string, _ float64) error {
 				delete(f.files, out)
@@ -175,7 +181,13 @@ func TestFSMaker_Failures(t *testing.T) {
 		{"generator succeeds with empty output", func(f *fakeFS) *MockGenerator { return writing(f, 0) }, true},
 		{"rename into place fails", func(f *fakeFS) *MockGenerator { f.renameErr = boom; return writing(f, 9) }, true},
 	}
-	for _, tt := range tests {
+}
+
+// TestFSMaker_Failures: whatever goes wrong, Make reports an error and the
+// scanner-facing MakeVideo "no thumbnail"; no temporary file is left, and a
+// thumbnail already at the destination stays exactly as it was.
+func TestFSMaker_Failures(t *testing.T) {
+	for _, tt := range makerFailures() {
 		t.Run(tt.name, func(t *testing.T) {
 			fsys := newFakeFS()
 			dst := ThumbnailPathFor("/s/v.mp4")
@@ -186,8 +198,12 @@ func TestFSMaker_Failures(t *testing.T) {
 				started = true
 				return inner.Generate(ctx, in, out, d)
 			}}
-			if got := NewFSMaker(gen, fsys, nil).MakeVideo(context.Background(), "/s/v.mp4", 1); got != "" {
-				t.Fatalf("path = %q, want none", got)
+			m := NewFSMaker(gen, fsys, nil)
+			if got, err := m.Make(context.Background(), "/s/v.mp4", 1); got != "" || err == nil {
+				t.Fatalf("Make = %q, %v; want no path and an error", got, err)
+			}
+			if got := m.MakeVideo(context.Background(), "/s/v.mp4", 1); got != "" {
+				t.Fatalf("MakeVideo = %q, want none", got)
 			}
 			if started != tt.wantGen {
 				t.Errorf("generator started = %v, want %v", started, tt.wantGen)
@@ -294,5 +310,160 @@ func TestFSMaker_RealUnwritableFolder(t *testing.T) {
 	}
 	if started {
 		t.Error("generator was started for an unwritable folder")
+	}
+}
+
+// TestFSMaker_ReserveSurvivesDirectoryRemoval: Remove deletes an emptied
+// .thumbnails directory, possibly between a concurrent Make creating the
+// directory and creating its temporary file. Make then creates it again.
+func TestFSMaker_ReserveSurvivesDirectoryRemoval(t *testing.T) {
+	fsys := &vanishingDirFS{fakeFS: newFakeFS(), failures: 1}
+	if got, err := NewFSMaker(writing(fsys.fakeFS, 5), fsys, nil).Make(context.Background(), "/s/v.mp4", 1); err != nil || got == "" {
+		t.Fatalf("Make = %q, %v; want it to retry and succeed", got, err)
+	}
+	if len(fsys.mkdirs) != 2 {
+		t.Errorf("directory created %d times, want 2", len(fsys.mkdirs))
+	}
+
+	fsys = &vanishingDirFS{fakeFS: newFakeFS(), failures: 5}
+	if _, err := NewFSMaker(writing(fsys.fakeFS, 5), fsys, nil).Make(context.Background(), "/s/v.mp4", 1); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Make error = %v, want it to give up with the not-exist error", err)
+	}
+}
+
+// vanishingDirFS fails the first CreateTemp calls as if the directory had
+// just been removed.
+type vanishingDirFS struct {
+	*fakeFS
+	failures int
+}
+
+func (f *vanishingDirFS) CreateTemp(dir string) (string, error) {
+	if f.failures > 0 {
+		f.failures--
+		return "", fs.ErrNotExist
+	}
+	return f.fakeFS.CreateTemp(dir)
+}
+
+// TestFSMaker_Remove: the thumbnail goes, and its directory once empty;
+// anything not directly inside a .thumbnails directory is refused.
+func TestFSMaker_Remove(t *testing.T) {
+	dir := t.TempDir()
+	write := func(path string) string {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	exists := func(path string) bool { _, err := os.Stat(path); return err == nil }
+	m := NewFSMaker(nil, nil, nil) // a maker without generator can still remove
+
+	a := write(filepath.Join(dir, DirName, "a.mp4.jpg"))
+	b := write(filepath.Join(dir, DirName, "b.mp4.jpg"))
+	media := write(filepath.Join(dir, "media.jpg"))
+	nested := write(filepath.Join(dir, DirName, "sub", "c.jpg"))
+
+	m.Remove(a)
+	if exists(a) || !exists(b) || !exists(filepath.Dir(b)) {
+		t.Fatalf("after removing a: a=%v b=%v dir=%v", exists(a), exists(b), exists(filepath.Dir(b)))
+	}
+	m.Remove(a) // already gone: no error, nothing else touched
+	m.Remove(media)
+	m.Remove(nested)
+	m.Remove("")
+	if !exists(media) || !exists(nested) {
+		t.Fatal("a file outside a .thumbnails directory was removed")
+	}
+	if err := os.RemoveAll(filepath.Dir(nested)); err != nil {
+		t.Fatal(err)
+	}
+	m.Remove(b)
+	if exists(filepath.Join(dir, DirName)) {
+		t.Error("emptied .thumbnails directory was left behind")
+	}
+}
+
+// TestFSMaker_RemoveFailureIsLoggedOnly: a thumbnail that cannot be removed
+// stays, and so does its directory.
+func TestFSMaker_RemoveFailureIsLoggedOnly(t *testing.T) {
+	fsys := newFakeFS()
+	path := filepath.Join("/s", DirName, "v.mp4.jpg")
+	fsys.files[path] = 1
+	fsys.removeErr = fs.ErrPermission
+	NewFSMaker(nil, fsys, nil).Remove(path)
+	if _, ok := fsys.files[path]; !ok {
+		t.Error("file vanished despite the failing remove")
+	}
+}
+
+func TestIsTemporary(t *testing.T) {
+	dir := t.TempDir()
+	tmp, err := osMakerFS{}.CreateTemp(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]bool{
+		filepath.Base(tmp): true, // what the maker really creates
+		".tmp-123.jpg":     true,
+		"clip.mp4.jpg":     false,
+		".tmp-123.png":     false,
+		"x.tmp-123.jpg":    false,
+		"":                 false,
+	} {
+		if got := IsTemporary(name); got != want {
+			t.Errorf("IsTemporary(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// TestFFmpeg_PercentInNames runs the real ffmpeg on a source whose name and
+// directory contain "%03d". ffmpeg expands that in an OUTPUT file name as an
+// image sequence pattern: it then writes a differently named file, or none,
+// and can still exit successfully. Skipped where ffmpeg is not installed.
+func TestFFmpeg_PercentInNames(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	dir := filepath.Join(t.TempDir(), "d%03d")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(dir, "a%03d.mp4")
+	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=d=6:s=64x64", "-y", src).CombinedOutput()
+	if err != nil {
+		t.Skipf("cannot create a test video with this ffmpeg: %v: %s", err, out)
+	}
+
+	// The generator seeks to a random offset below the duration it is given.
+	// Half the real length keeps that offset well inside the video.
+	const duration = 3
+	got, err := NewFSMaker(NewFFmpegGenerator(), nil, nil).Make(context.Background(), src, duration)
+	if err != nil {
+		t.Fatalf("Make: %v", err)
+	}
+	if want := filepath.Join(dir, DirName, "a%03d.mp4.jpg"); got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+	if info, err := os.Stat(got); err != nil || info.Size() == 0 {
+		t.Fatalf("thumbnail missing or empty: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(got))
+	if err != nil || len(entries) != 1 {
+		t.Errorf("thumbnail directory holds %d entries (err %v), want only the thumbnail", len(entries), err)
+	}
+
+	// The generator on its own, onto a final path with a pattern in it, as
+	// set covers are written.
+	cover := filepath.Join(dir, "cover%03d.jpg")
+	if err := NewFFmpegGenerator().Generate(context.Background(), src, cover, duration); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if info, err := os.Stat(cover); err != nil || info.Size() == 0 {
+		t.Fatalf("ffmpeg did not write the literal output name: %v", err)
 	}
 }

@@ -27,6 +27,6 @@ func (osFS) WalkDir(root string, walkFn fs.WalkDirFunc) error {
 	return filepath.WalkDir(root, walkFn)
 }
 
-// Remove is not part of FS: only the thumbnail migration may delete files
-// (see fileRemover in thumb_migrate.go).
+// Remove is not part of FS: a scan deletes nothing but obsolete thumbnails
+// and stale temporary thumbnail files (see fileRemover in thumb_migrate.go).
 func (osFS) Remove(name string) error { return os.Remove(name) }

@@ -51,10 +51,16 @@ func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath st
 		// Prepend -ss before -i for fast seek when we have a video.
 		args = append([]string{"-ss", fmt.Sprintf("%.3f", offset)}, args...)
 	}
+	// -update 1 makes the image muxer take outputPath literally. Without
+	// it a "%03d" anywhere in the path (file or directory name, both come
+	// from user-chosen media names) is expanded as an image sequence
+	// pattern: ffmpeg then writes a differently named file, or none, and
+	// may still exit successfully.
 	args = append(args,
 		"-vf", "scale=320:-1",
 		"-frames:v", "1",
 		"-q:v", "2",
+		"-update", "1",
 		"-y",
 		outputPath,
 	)

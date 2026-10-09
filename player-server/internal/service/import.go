@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +15,10 @@ import (
 // needed, and updates the media row with extracted metadata. It is used by both
 // UploadMedia (after writing an uploaded file) and the podcast downloader (after
 // fetching an episode enclosure).
+//
+// If the row cannot be updated, the thumbnail generated here is removed
+// again: the callers then delete the file and the row, and nothing would
+// ever find that thumbnail afterwards.
 func ImportMediaFile(
 	ctx context.Context,
 	store interface {
@@ -23,13 +26,32 @@ func ImportMediaFile(
 	},
 	media *model.Media,
 	prober probe.Prober,
-	thumbGen thumb.Generator,
+	thumbs ThumbnailMaker,
 ) error {
 	meta, err := probeMedia(ctx, prober, media.AbsPath)
 	if err != nil {
 		return fmt.Errorf("probe media: %w", err)
 	}
+	applyMetadata(media, meta)
 
+	made := false
+	if media.Type == model.MediaTypeVideo || media.Type == model.MediaTypeImage {
+		if made, err = generateThumbnail(ctx, thumbs, media, meta.Duration); err != nil {
+			return fmt.Errorf("generate thumbnail: %w", err)
+		}
+	}
+
+	if err := store.UpdateMedia(ctx, media); err != nil {
+		if made {
+			thumbs.Remove(media.ThumbnailPath)
+		}
+		return fmt.Errorf("update media metadata: %w", err)
+	}
+	return nil
+}
+
+// applyMetadata copies the probed metadata into the media row.
+func applyMetadata(media *model.Media, meta *model.Metadata) {
 	media.Duration = meta.Duration
 	media.Codec = meta.Codec
 	media.Resolution = meta.Resolution
@@ -43,17 +65,6 @@ func ImportMediaFile(
 	media.EXIFFNumber = meta.EXIFFNumber
 	media.EXIFExposure = meta.EXIFExposure
 	media.EXIFFocalLength = meta.EXIFFocalLength
-
-	if media.Type == model.MediaTypeVideo || media.Type == model.MediaTypeImage {
-		if err := generateThumbnail(ctx, thumbGen, media, meta.Duration); err != nil {
-			return fmt.Errorf("generate thumbnail: %w", err)
-		}
-	}
-
-	if err := store.UpdateMedia(ctx, media); err != nil {
-		return fmt.Errorf("update media metadata: %w", err)
-	}
-	return nil
 }
 
 // probeMedia probes a file at the given path and returns its metadata.
@@ -68,11 +79,17 @@ func probeMedia(ctx context.Context, prober probe.Prober, path string) (*model.M
 	return meta, nil
 }
 
-// generateThumbnail creates a thumbnail for video and image media.
-// The thumbnail path is derived via internal/thumb, the one layout shared
-// with the scanner and RegenerateThumbnail: .thumbnails beside the source,
-// named after its full basename ("clip.mp4.jpg"), so a same-stem sibling
-// ("clip.png") gets its own file instead of overwriting this one.
+// generateThumbnail sets media.ThumbnailPath for video and image media and
+// reports whether it generated a thumbnail file for that (made). An SVG is
+// its own thumbnail. Everything else goes through the ThumbnailMaker, the
+// one implementation shared with the scanner and RegenerateThumbnail: the
+// thumbnail lands in .thumbnails beside the source, named after its full
+// basename ("clip.mp4.jpg"), so a same-stem sibling ("clip.png") gets its
+// own file instead of overwriting this one; and it is generated into a
+// temporary file and verified before it is put in place.
+//
+// Without a maker (a service built without a generator) the path is
+// recorded but no file is written.
 //
 // Accepted limitation, between upgrading from a release up to v0.2.2 and
 // the first rescan: the path written here can still be the thumbnail of
@@ -81,24 +98,19 @@ func probeMedia(ctx context.Context, prober probe.Prober, path string) (*model.M
 // picture until the rescan gives it a thumbnail of its own. It is not
 // guarded against because the collision needs such a pair of names and
 // heals itself; see docs/admin.md.
-func generateThumbnail(ctx context.Context, thumbGen thumb.Generator, media *model.Media, duration float64) error {
-	ext := strings.ToLower(filepath.Ext(media.AbsPath))
-	if ext == ".svg" {
+func generateThumbnail(ctx context.Context, thumbs ThumbnailMaker, media *model.Media, duration float64) (made bool, err error) {
+	if strings.ToLower(filepath.Ext(media.AbsPath)) == ".svg" {
 		media.ThumbnailPath = media.AbsPath
-		return nil
+		return false, nil
 	}
-	thumbnailPath := thumb.ThumbnailPathFor(media.AbsPath)
-	if err := os.MkdirAll(filepath.Dir(thumbnailPath), 0o755); err != nil {
-		return fmt.Errorf("mkdir thumbnails: %w", err)
+	if thumbs == nil {
+		media.ThumbnailPath = thumb.ThumbnailPathFor(media.AbsPath)
+		return false, nil
 	}
-
-	if thumbGen == nil {
-		media.ThumbnailPath = thumbnailPath
-		return nil
-	}
-	if err := thumbGen.Generate(ctx, media.AbsPath, thumbnailPath, duration); err != nil {
-		return fmt.Errorf("generate thumbnail: %w", err)
+	thumbnailPath, err := thumbs.Make(ctx, media.AbsPath, duration)
+	if err != nil {
+		return false, err
 	}
 	media.ThumbnailPath = thumbnailPath
-	return nil
+	return true, nil
 }

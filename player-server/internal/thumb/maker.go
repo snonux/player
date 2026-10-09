@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Maker creates thumbnail files for media items. The scanner uses it to
@@ -43,6 +44,19 @@ type MakerFS interface {
 	Remove(name string) error
 }
 
+// tempPrefix starts the name of every temporary file the maker generates
+// into; see IsTemporary.
+const tempPrefix = ".tmp-"
+
+// IsTemporary reports whether name (a file name, not a path) is that of a
+// temporary file an FSMaker generates into before renaming it into place.
+// A maker removes its temporary file itself; one can only be left behind
+// when the process is killed mid-generation, which is why the scanner
+// sweeps old ones (see scanner.sweepStaleTemporaries).
+func IsTemporary(name string) bool {
+	return strings.HasPrefix(name, tempPrefix) && strings.HasSuffix(name, thumbExt)
+}
+
 // osMakerFS delegates to the standard library; it is used as the default
 // when NewFSMaker is called without an explicit MakerFS.
 type osMakerFS struct{}
@@ -57,7 +71,7 @@ func (osMakerFS) Remove(name string) error                     { return os.Remov
 // generator writes the thumbnail into this very file, which is then renamed
 // into place and must stay readable like any other thumbnail.
 func (osMakerFS) CreateTemp(dir string) (string, error) {
-	f, err := os.CreateTemp(dir, ".tmp-*"+thumbExt)
+	f, err := os.CreateTemp(dir, tempPrefix+"*"+thumbExt)
 	if err != nil {
 		return "", err
 	}
@@ -81,9 +95,9 @@ type FSMaker struct {
 var _ Maker = (*FSMaker)(nil)
 
 // NewFSMaker constructs an FSMaker around gen. A nil fs defaults to the
-// real OS filesystem; a nil logger defaults to slog.Default(). gen must
-// not be nil — callers always have a Generator available in production
-// and tests can pass MockGenerator.
+// real OS filesystem; a nil logger defaults to slog.Default(). gen may be
+// nil only for a maker that is never asked to make anything and is used
+// solely to Remove thumbnails (the garbage collector has no generator).
 func NewFSMaker(gen Generator, fs MakerFS, logger *slog.Logger) *FSMaker {
 	if fs == nil {
 		fs = osMakerFS{}
@@ -98,16 +112,31 @@ func NewFSMaker(gen Generator, fs MakerFS, logger *slog.Logger) *FSMaker {
 // directory next to it. The path comes from ThumbnailPathFor so importers,
 // the scanner, and the resolver all agree on where thumbnails live.
 func (m *FSMaker) MakeVideo(ctx context.Context, srcPath string, duration float64) string {
-	return m.make(ctx, srcPath, duration)
+	return m.makeOrSkip(ctx, srcPath, duration)
 }
 
 // MakeImage creates a thumbnail for an image file. Duration is irrelevant
 // for static images so 0 is forwarded to the Generator.
 func (m *FSMaker) MakeImage(ctx context.Context, srcPath string) string {
-	return m.make(ctx, srcPath, 0)
+	return m.makeOrSkip(ctx, srcPath, 0)
 }
 
-// make is the shared implementation behind MakeVideo / MakeImage.
+// makeOrSkip is Make for the scanner: a failure is logged and reported as
+// "" (see Maker).
+func (m *FSMaker) makeOrSkip(ctx context.Context, srcPath string, duration float64) string {
+	dst, err := m.Make(ctx, srcPath, duration)
+	if err != nil {
+		m.logger.Warn("thumb maker skipping thumbnail", "path", srcPath, "err", err)
+		return ""
+	}
+	return dst
+}
+
+// Make creates the thumbnail of srcPath (duration 0 for an image) and
+// returns its path, or the reason none could be made. It is what callers
+// use that must tell their user about a failure: upload, podcast download
+// and "regenerate thumbnail". A returned path always names a complete,
+// non-empty file.
 //
 // The thumbnail is generated into a temporary file in the destination
 // directory and renamed into place only once it is complete. A thumbnail
@@ -115,40 +144,69 @@ func (m *FSMaker) MakeImage(ctx context.Context, srcPath string) string {
 // failure, including a generator killed halfway) or replaced atomically,
 // never truncated or half-written. Reserving the temporary file first also
 // makes an unwritable folder fail before the generator is started, so such
-// a folder costs no ffmpeg run however often it is rescanned.
-//
-// Every failure is logged and reported as "" (see Maker).
-func (m *FSMaker) make(ctx context.Context, srcPath string, duration float64) string {
+// a folder costs no ffmpeg run however often it is rescanned. The
+// temporary file's name is chosen here, not derived from the media name.
+func (m *FSMaker) Make(ctx context.Context, srcPath string, duration float64) (string, error) {
 	dst := ThumbnailPathFor(srcPath)
 	tmp, err := m.reserve(filepath.Dir(dst))
 	if err != nil {
-		m.logger.Warn("thumb maker skipping thumbnail", "path", srcPath, "err", err)
-		return ""
+		return "", err
 	}
 	if err = m.render(ctx, srcPath, tmp, duration); err == nil {
 		err = m.fs.Rename(tmp, dst)
 	}
 	if err != nil {
-		m.logger.Warn("thumb maker skipping thumbnail", "path", srcPath, "err", err)
 		if rmErr := m.fs.Remove(tmp); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
 			m.logger.Warn("thumb maker left a temporary file behind", "path", tmp, "err", rmErr)
 		}
-		return ""
+		return "", err
 	}
-	return dst
+	return dst, nil
 }
 
 // reserve creates the thumbnail directory if needed and an empty temporary
 // file in it for the generator to write to.
+//
+// Remove deletes a .thumbnails directory once it is empty, possibly right
+// between the two steps here when another item of the same folder is being
+// purged. The directory is then simply created again; once the temporary
+// file exists the directory is no longer empty and cannot be removed.
 func (m *FSMaker) reserve(dir string) (string, error) {
-	if err := m.fs.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("mkdir thumbnails %q: %w", dir, err)
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		if err = m.fs.MkdirAll(dir, 0o755); err != nil {
+			return "", fmt.Errorf("mkdir thumbnails %q: %w", dir, err)
+		}
+		var tmp string
+		if tmp, err = m.fs.CreateTemp(dir); err == nil {
+			return tmp, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			break
+		}
 	}
-	tmp, err := m.fs.CreateTemp(dir)
-	if err != nil {
-		return "", fmt.Errorf("reserve thumbnail file in %q: %w", dir, err)
+	return "", fmt.Errorf("reserve thumbnail file in %q: %w", dir, err)
+}
+
+// Remove deletes the generated thumbnail at thumbPath, and its .thumbnails
+// directory once that leaves it empty, so purged media leaves nothing
+// behind that would keep an otherwise empty folder in place. A thumbnail
+// that is already gone is fine; any other failure is logged, since the
+// callers are cleaning up and have nothing better to do about it.
+//
+// Deciding that the thumbnail is no longer needed is the caller's job. As a
+// last line of defence Remove refuses any path that is not directly inside
+// a .thumbnails directory, so it can never delete a media file elsewhere.
+func (m *FSMaker) Remove(thumbPath string) {
+	if !IsGenerated(thumbPath) {
+		return
 	}
-	return tmp, nil
+	if err := m.fs.Remove(thumbPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		m.logger.Warn("thumbnail removal failed", "path", thumbPath, "err", err)
+		return
+	}
+	// Non-recursive: fails, harmlessly, while other thumbnails remain.
+	_ = m.fs.Remove(filepath.Dir(thumbPath))
 }
 
 // render runs the generator and checks that it really produced something.

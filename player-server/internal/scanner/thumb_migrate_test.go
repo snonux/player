@@ -31,13 +31,18 @@ type seededMedia struct {
 	deleted  bool
 }
 
-// faultyStore is the real store whose thumbnail update can be made to fail.
+// faultyStore is the real store whose thumbnail update can be made to fail,
+// or to wait (beforeUpdate) so a test can force an interleaving.
 type faultyStore struct {
 	*repository.SQLite
-	updateErr error
+	updateErr    error
+	beforeUpdate func()
 }
 
 func (s *faultyStore) UpdateMediaThumbnail(ctx context.Context, id int64, path string) error {
+	if s.beforeUpdate != nil {
+		s.beforeUpdate()
+	}
 	if s.updateErr != nil {
 		return s.updateErr
 	}
@@ -283,30 +288,120 @@ func TestMigrateThumbnails_UnsharedOldNames(t *testing.T) {
 	}
 }
 
-// TestMigrateThumbnails_OldPathIsAnotherRowsNewPath: "holiday.mp4.jpg" is the
-// old thumbnail of holiday.mp4.png and the new one of holiday.mp4. Whichever
-// row is handled first, both must end up with their own picture, and the
-// path must not be deleted as "the old file" of the image.
+// forceSwitchAfter makes the scan run in the one order in which deleting a
+// migrated row's old thumbnail can hurt another file, and returns the
+// scanner to use. The old thumbnail of "0sub/holiday.mp4.png" (old scanner
+// layout: flat in the set's .thumbnails) is ".thumbnails/holiday.mp4.jpg",
+// which is also the current thumbnail path of "holiday.mp4".
+//
+// With a single worker the files are handled in walk order, the image
+// first. Its row switch is held back until the video's thumbnail has been
+// generated at the shared path, so the switcher decides about deleting
+// "the image's old file" while that file already is the video's new
+// thumbnail and no row stores it yet.
+func (f *migrationFixture) forceSwitchAfter(videoRel string) *FSScanner {
+	generated := make(chan struct{})
+	var once, held sync.Once
+	f.gen = func(in, out string) error {
+		err := os.WriteFile(out, []byte("thumb of "+in), 0o644)
+		if in == f.abs(videoRel) {
+			once.Do(func() { close(generated) })
+		}
+		return err
+	}
+	f.store.beforeUpdate = func() {
+		held.Do(func() {
+			select {
+			case <-generated:
+			case <-time.After(10 * time.Second):
+				f.t.Error("the video's thumbnail was never generated")
+			}
+		})
+	}
+	s := f.scanner()
+	s.workers = 1
+	return s
+}
+
+// TestMigrateThumbnails_OldPathIsAnotherRowsNewPath: the old thumbnail of
+// one row is the new thumbnail of another. The path must not be deleted as
+// "the old file" of the first row, and both end up with their own picture.
 func TestMigrateThumbnails_OldPathIsAnotherRowsNewPath(t *testing.T) {
 	f := newMigrationFixture(t, []seededMedia{
+		{rel: "0sub/holiday.mp4.png", thumb: ".thumbnails/holiday.mp4.jpg"},
 		{rel: "holiday.mp4", thumb: ".thumbnails/holiday.jpg"},
-		{rel: "holiday.mp4.png", thumb: ".thumbnails/holiday.mp4.jpg"},
 	})
-	f.scan()
+	if err := f.forceSwitchAfter("holiday.mp4").Scan(context.Background(), f.root, nil); err != nil {
+		t.Fatal(err)
+	}
 	f.assertFresh("holiday.mp4")
-	f.assertFresh("holiday.mp4.png")
+	f.assertFresh("0sub/holiday.mp4.png")
 	f.assertGone(".thumbnails/holiday.jpg")
 }
 
 // TestMigrateThumbnails_NewFileOnAnIndexedRowsOldPath: the same clash with a
-// file added since the last scan, which is probed by the same worker pool
-// that migrates the indexed row.
+// file added since the last scan, which has no row at all while the indexed
+// row is switched.
 func TestMigrateThumbnails_NewFileOnAnIndexedRowsOldPath(t *testing.T) {
-	f := newMigrationFixture(t, []seededMedia{{rel: "holiday.mp4.png", thumb: ".thumbnails/holiday.mp4.jpg"}})
+	f := newMigrationFixture(t, []seededMedia{{rel: "0sub/holiday.mp4.png", thumb: ".thumbnails/holiday.mp4.jpg"}})
 	f.write(f.abs("holiday.mp4"), "source") // on disk, not indexed yet
-	f.scan()
-	f.assertFresh("holiday.mp4.png")
+	if err := f.forceSwitchAfter("holiday.mp4").Scan(context.Background(), f.root, nil); err != nil {
+		t.Fatal(err)
+	}
+	f.assertFresh("0sub/holiday.mp4.png")
 	f.assertFresh("holiday.mp4")
+}
+
+// TestMigrateThumbnails_MissingThumbnailIsRegenerated: a row whose thumbnail
+// is at its current path but gone from disk (deleted by hand, or lost to an
+// upload racing a migration) is repaired by the next rescan.
+func TestMigrateThumbnails_MissingThumbnailIsRegenerated(t *testing.T) {
+	f := newMigrationFixture(t, []seededMedia{
+		{rel: "a/clip.mp4", thumb: "a/.thumbnails/clip.mp4.jpg"},
+		{rel: "kept.mp4", thumb: ".thumbnails/kept.mp4.jpg"},
+	})
+	if err := os.Remove(f.abs("a/.thumbnails/clip.mp4.jpg")); err != nil {
+		t.Fatal(err)
+	}
+	f.scan()
+	f.assertFresh("a/clip.mp4")
+	f.assertThumb("kept.mp4", ".thumbnails/kept.mp4.jpg", old("kept.mp4.jpg")) // present: not touched
+}
+
+// TestScan_SweepsStaleTemporaryThumbnails: a generation killed with the
+// server leaves its temporary file behind. A rescan removes such files once
+// they are old, but not a recent one (a generation may be running) and
+// nothing that is not a temporary file.
+func TestScan_SweepsStaleTemporaryThumbnails(t *testing.T) {
+	f := newMigrationFixture(t, []seededMedia{
+		{rel: "new.mp4", thumb: ".thumbnails/new.mp4.jpg"},
+		{rel: "a/new.mp4", thumb: "a/.thumbnails/new.mp4.jpg"},
+	})
+	longAgo := time.Now().Add(-2 * time.Hour)
+	age := func(rel string) {
+		t.Helper()
+		f.write(f.abs(rel), "half a jp")
+		if err := os.Chtimes(f.abs(rel), longAgo, longAgo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	age(".thumbnails/.tmp-111.jpg")
+	age("a/.thumbnails/.tmp-222.jpg")
+	age(".thumbnails/old-but-not-temporary.jpg")
+	age(".tmp-333.jpg") // not in a .thumbnails directory
+	f.write(f.abs(".thumbnails/.tmp-444.jpg"), "in progress")
+	if err := os.Chtimes(f.abs(".thumbnails/new.mp4.jpg"), longAgo, longAgo); err != nil {
+		t.Fatal(err)
+	}
+
+	f.scan()
+	f.assertGone(".thumbnails/.tmp-111.jpg")
+	f.assertGone("a/.thumbnails/.tmp-222.jpg")
+	for _, kept := range []string{".thumbnails/old-but-not-temporary.jpg", ".tmp-333.jpg", ".thumbnails/.tmp-444.jpg", ".thumbnails/new.mp4.jpg"} {
+		if _, err := os.Stat(f.abs(kept)); err != nil {
+			t.Errorf("%q should have been kept: %v", kept, err)
+		}
+	}
 }
 
 // TestMigrateThumbnails_LeftoverAtDestination: a file already sitting at a
@@ -690,10 +785,10 @@ func TestScan_OverlappingScansRunOneAtATime(t *testing.T) {
 	f.assertFresh("holiday.png")
 }
 
-// TestScan_ThumbnailsDirectoryIsNotASet: a .thumbnails directory in the
-// media root holds thumbnails of files uploaded straight into the root, or
-// anything else, but never a set: indexing it would turn thumbnails into
-// media whose "thumbnail" is the file itself.
+// TestScan_ThumbnailsDirectoryIsNotASet: the server never creates a
+// .thumbnails directory directly in the media root, but if one is there it
+// is not a set: indexing it would turn its files into media whose
+// "thumbnail" is the file itself, in a directory treated as disposable.
 func TestScan_ThumbnailsDirectoryIsNotASet(t *testing.T) {
 	f := newMigrationFixture(t, nil)
 	pic := filepath.Join(f.root, thumb.DirName, "pic.svg")
@@ -708,8 +803,10 @@ func TestScan_ThumbnailsDirectoryIsNotASet(t *testing.T) {
 	}
 }
 
-// TestStaleThumbnails pins which rows are migrated, in particular that a
-// path is never taken for a generated thumbnail when it is a media file.
+// TestStaleThumbnails pins which rows get a new thumbnail. As in a real
+// scan, files below a hidden directory are never "seen" on disk: the only
+// thing telling a media file in a .thumbnails directory from a generated
+// thumbnail is that a row exists for it.
 func TestStaleThumbnails(t *testing.T) {
 	const set = "/m/set"
 	row := func(rel, stored string) model.Media {
@@ -718,28 +815,31 @@ func TestStaleThumbnails(t *testing.T) {
 	rows := []model.Media{
 		row("old.mp4", "/m/set/.thumbnails/old.jpg"),                // stale
 		row("a/old.png", "/m/set/.thumbnails/old.jpg"),              // stale (old scanner layout)
-		row("current.mp4", "/m/set/.thumbnails/current.mp4.jpg"),    // already current
+		row("lost.mp4", "/m/set/.thumbnails/lost.mp4.jpg"),          // current path, file missing
+		row("current.mp4", "/m/set/.thumbnails/current.mp4.jpg"),    // current path, file present
 		row("own.png", "/m/set/own.png"),                            // its own thumbnail
 		row("song.mp3", "/m/set/.thumbnails/song.jpg"),              // audio is never migrated
 		row("none.mp4", ""),                                         // no thumbnail
 		row("gone.mp4", "/m/set/.thumbnails/gone.jpg"),              // source not on disk
 		row("outside.mp4", "/elsewhere/.thumbnails/outside.jpg"),    // not inside the set
 		row("escape.mp4", "/m/set/../other/.thumbnails/escape.jpg"), // not inside the set either
-		row(".thumbnails/pic.png", "/m/set/.thumbnails/pic.png"),    // media file in a .thumbnails dir
+		row(".thumbnails/pic.png", ""),                              // media file in a .thumbnails dir
 		row("uses-media.mp4", "/m/set/.thumbnails/pic.png"),         // "thumbnail" is that media file
-		row("uses-file.mp4", "/m/set/.thumbnails/unindexed.png"),    // ... or an unindexed one on disk
 		row("deep.mp4", "/m/set/.thumbnails/sub/deep.jpg"),          // not directly in .thumbnails
 	}
+	notOnDisk := map[string]bool{"gone.mp4": true, ".thumbnails/pic.png": true}
 	existing := map[string]model.Media{}
-	seen := map[string]struct{}{".thumbnails/unindexed.png": {}}
+	seen := map[string]struct{}{}
 	for _, m := range rows {
 		existing[m.RelPath] = m
-		if m.RelPath != "gone.mp4" {
+		if !notOnDisk[m.RelPath] {
 			seen[m.RelPath] = struct{}{}
 		}
 	}
-	got := staleThumbnails(existing, seen, set)
-	want := map[string]bool{"old.mp4": true, "a/old.png": true}
+	exists := func(path string) bool { return path != "/m/set/.thumbnails/lost.mp4.jpg" }
+
+	got := staleThumbnails(existing, seen, set, exists)
+	want := map[string]bool{"old.mp4": true, "a/old.png": true, "lost.mp4": true}
 	for _, m := range rows {
 		if _, isStale := got[m.RelPath]; isStale != want[m.RelPath] {
 			t.Errorf("stale[%q] = %v, want %v", m.RelPath, isStale, want[m.RelPath])

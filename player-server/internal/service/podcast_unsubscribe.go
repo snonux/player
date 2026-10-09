@@ -184,7 +184,7 @@ func (s *podcastSubscriptionService) deleteMediaAndFile(ctx context.Context, m *
 	if err := os.Remove(m.AbsPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove media file %d: %w", m.ID, err)
 	}
-	removeOwnThumbnail(m)
+	removeOwnThumbnail(s.podcastService.thumbRm, m)
 	return nil
 }
 

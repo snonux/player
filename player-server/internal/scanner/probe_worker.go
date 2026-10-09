@@ -198,10 +198,9 @@ func (pw *probeWorker) buildThumbnailPath(ctx context.Context, path, setPath str
 }
 
 // refreshThumbnail generates a new thumbnail for an indexed row whose stored
-// one is stale (see thumb_migrate.go) and returns the result for the
+// one is stale (see staleThumbnails) and returns the result for the
 // scanWriter to apply, or nil when no thumbnail could be made. In that case
-// the row keeps its old path, which still works, and the next rescan tries
-// again. The row's stored duration is used, so the file is not probed anew.
+// the row keeps the path it has, and the next rescan tries again. The row's stored duration is used, so the file is not probed anew.
 func (pw *probeWorker) refreshThumbnail(ctx context.Context, path string, row model.Media) *fileResult {
 	var thumbPath string
 	if row.Type == model.MediaTypeVideo {
