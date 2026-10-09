@@ -22,6 +22,9 @@ const kPlaybackStoppedMessage =
 /// null, null)` or `(0) Source error`. Those never reach the user: the
 /// message names the item ([title], normally the file name) and says what
 /// went wrong in plain words. [source] decides how definite the cause can be.
+///
+/// This maps failures of *starting* playback. A failure after playback began
+/// is always a source failure, whatever its type: use [sourceErrorMessage].
 String playbackErrorMessage(
   Object error, {
   required String title,

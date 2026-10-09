@@ -79,7 +79,7 @@ class _FakeApiClient extends PlayerApiClient {
   int toggleCallCount = 0;
 
   @override
-  Future<Media> getMedia(int mediaId) async {
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async {
     getMediaCallCount++;
     if (mediaError != null) throw mediaError!;
     return mediaResult!;
@@ -124,7 +124,7 @@ class _DelayedFakeApiClient extends PlayerApiClient {
   void complete(Media media) => _completer.complete(media);
 
   @override
-  Future<Media> getMedia(int mediaId) => _completer.future;
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) => _completer.future;
 
   @override
   Future<List<Tag>> listTags() async => [];
@@ -159,7 +159,7 @@ class _DelayedToggleFakeApiClient extends PlayerApiClient {
   void failToggle(Object error) => _toggleCompleter.completeError(error);
 
   @override
-  Future<Media> getMedia(int mediaId) async => mediaResult;
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async => mediaResult;
 
   @override
   Future<bool> toggleFavorite(int mediaId) => _toggleCompleter.future;

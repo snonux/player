@@ -211,9 +211,10 @@ class DioPlayerApiClient extends PlayerApiClient {
   /// The server envelope wraps the media object; this method unwraps it so
   /// callers receive a plain [Media].
   @override
-  Future<Media> getMedia(int mediaId) async {
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async {
     final response = await rawDio.get<Map<String, dynamic>>(
       '$_kApiV1/media/$mediaId',
+      cancelToken: cancelToken,
     );
 
     // Guard against a null or structurally unexpected response body.  In

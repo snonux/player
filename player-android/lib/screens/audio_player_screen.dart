@@ -96,7 +96,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     with PlaybackPreparationMixin {
   // Invalidates older async setup attempts when Retry starts a new one.
   int _initGeneration = 0;
-  // Non-null when initialisation failed; shown in the error view.
+  // Shown in the error view (with Retry) when non-null: why starting or
+  // continuing playback failed, or that another item took over the player.
   String? _error;
   PlaybackRequest? _activeRequest;
   int? _activeSourceGeneration;
@@ -108,8 +109,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   double _playbackSpeed = 1.0;
   PlaybackSessionLease? _sessionLease;
 
-  // Native failures after the source was loaded (see [_watchPlaybackErrors]).
+  // Native failures after the source was loaded (see [_watchPlayback]).
   StreamSubscription<Object>? _playbackErrorSubscription;
+  StreamSubscription<Duration>? _positionSubscription;
+
+  // Where this item last was while it played on this screen; Retry resumes
+  // here. Null before playback progressed and once the item is finished.
+  Duration? _lastKnownPosition;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -136,6 +142,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         oldWidget.mediaUrl != widget.mediaUrl ||
         oldWidget.isPublicShare != widget.isPublicShare) {
       _initGeneration++;
+      // A changed widget may be a different item: its position is unknown.
+      _lastKnownPosition = null;
       setState(() {
         cancelPlaybackPreparation();
         _error = null;
@@ -148,7 +156,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   @override
   void dispose() {
     _initGeneration++;
-    unawaited(_playbackErrorSubscription?.cancel());
+    _stopWatchingPlayback();
     // Completed setup belongs to the background handler. An abandoned setup
     // must release its source, even when credentials or resume reads are pending.
     final lease = _sessionLease;
@@ -170,8 +178,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     if (!mounted) return;
 
     final generation = _initGeneration;
-    unawaited(_playbackErrorSubscription?.cancel());
-    _playbackErrorSubscription = null;
+    _stopWatchingPlayback();
     final request = await _resolveRequest();
     if (!mounted || generation != _initGeneration) return;
     final handler = ref.read(audioHandlerProvider);
@@ -212,12 +219,19 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     PlayerAudioHandler handler,
     int generation,
   ) async {
+    // The stop callback outlives this screen during background playback, so
+    // it holds the wait handle, not the state. Ending the wait there lets
+    // the screen leave "preparing" at once when another item takes over.
+    final wait = playbackWait;
     final PlaybackSessionLease? lease;
     try {
       lease = await ref.read(playbackSessionCoordinatorProvider).claim(
             kind: request.kind,
             identity: request.identity,
-            stop: handler.stop,
+            stop: () {
+              wait.cancel();
+              return handler.stop();
+            },
             sourceUri: request.sourceUri.toString(),
           );
     } catch (error) {
@@ -291,7 +305,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       if (attempt.lease.isCurrent) await attempt.lease.release();
       return false;
     }
-    _watchPlaybackErrors(attempt);
+    _watchPlayback(attempt);
 
     final resumePosition = await _readResumePosition(attempt.request);
     if (!_isCurrent(attempt)) return false;
@@ -308,9 +322,15 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     return _isCurrent(attempt);
   }
 
-  /// The position to resume at: the one the caller passed, else the saved
-  /// one. The lookup is optional; a provider error starts at zero.
+  /// The position to resume at. After a Retry that is where this screen
+  /// last saw the item play: the caller's start position and the saved one
+  /// are both older by then, and starting from them would also write that
+  /// older position over the newer progress. Otherwise it is the position
+  /// the caller passed, else the saved one; that lookup is optional and a
+  /// provider error starts at zero.
   Future<double?> _readResumePosition(PlaybackRequest request) async {
+    final lastKnown = _lastKnownPosition;
+    if (lastKnown != null) return lastKnown.inMilliseconds / 1000.0;
     final readPosition = request.readPosition;
     if (request.startPosition != null || readPosition == null) {
       return request.startPosition;
@@ -344,15 +364,47 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     }
   }
 
-  /// Shows the error view when the native player fails after the source was
-  /// loaded, e.g. a codec it cannot decode or a connection lost for good.
+  /// Follows the loaded source while this route shows it: remembers where
+  /// playback is, for Retry, and shows the error view when the native player
+  /// fails, e.g. a codec it cannot decode or a connection lost for good.
+  /// Whatever the type of that failure, it is a source failure by then.
   /// While this route is gone (background playback) nothing listens; the
   /// handler still marks the media session as failed.
-  void _watchPlaybackErrors(_PlaybackAttempt attempt) {
+  void _watchPlayback(_PlaybackAttempt attempt) {
+    final request = attempt.request;
+    final player = attempt.handler.player;
     _playbackErrorSubscription = attempt.handler.playbackErrors.listen((error) {
       if (!_isCurrent(attempt)) return;
-      _showError(error, attempt.request, attempt.generation);
+      _logFailure(error, request);
+      _showMessage(
+        sourceErrorMessage(request.title, request.kind),
+        attempt.generation,
+      );
     });
+    _positionSubscription = player.positionStream.listen((position) {
+      if (_isCurrent(attempt)) _rememberPosition(position, player.duration);
+    });
+  }
+
+  void _stopWatchingPlayback() {
+    unawaited(_playbackErrorSubscription?.cancel());
+    unawaited(_positionSubscription?.cancel());
+    _playbackErrorSubscription = null;
+    _positionSubscription = null;
+  }
+
+  /// Keeps [_lastKnownPosition] current. A failed player reports no useful
+  /// position, so it has to be noted while playback still works. A finished
+  /// item forgets it: replaying starts by the usual rules, not at the end.
+  void _rememberPosition(Duration position, Duration? duration) {
+    final finished = duration != null &&
+        duration > Duration.zero &&
+        position.inMilliseconds / duration.inMilliseconds >= 0.95;
+    if (finished) {
+      _lastKnownPosition = null;
+    } else if (position > Duration.zero) {
+      _lastKnownPosition = position;
+    }
   }
 
   /// Builds the request, looking up the playback URL when the route supplied
@@ -461,14 +513,18 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   /// error's type: the request identity carries share tokens and account
   /// IDs, and exception texts can carry URLs, none of which belong in logcat.
   void _showError(Object error, PlaybackRequest request, int generation) {
-    if (kDebugMode) {
-      debugPrint(
-        'Audio playback (${request.kind.name}) failed: ${error.runtimeType}',
-      );
-    }
+    _logFailure(error, request);
     _showMessage(
       playbackErrorMessage(error, title: request.title, source: request.kind),
       generation,
+    );
+  }
+
+  /// Debug-only, kind and type only: see [_showError].
+  void _logFailure(Object error, PlaybackRequest request) {
+    if (!kDebugMode) return;
+    debugPrint(
+      'Audio playback (${request.kind.name}) failed: ${error.runtimeType}',
     );
   }
 
@@ -571,10 +627,11 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     );
   }
 
-  /// Error view shown when initialisation fails.
+  /// Error view shown when initialisation or playback fails, and when
+  /// another item took over the player.
   ///
   /// Provides a human-readable message and a retry button so the user can
-  /// attempt re-initialisation without navigating away.
+  /// play the item again without navigating away.
   Widget _buildErrorView(String message) {
     return Center(
       key: const Key('audio_player_error'),

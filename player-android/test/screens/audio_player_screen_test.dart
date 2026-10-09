@@ -1180,7 +1180,8 @@ void main() {
             identity: 'public-share:next',
             stop: () async {},
           ));
-      await tester.pump(const Duration(seconds: 5));
+      // At once: not after the 5 s pause the wait was in.
+      await tester.pump();
       await tester.pump();
 
       expect(find.byKey(_kPreparingLabel), findsNothing);
@@ -1324,14 +1325,26 @@ void main() {
       );
     });
 
-    testWidgets('a failure reported after loading replaces the controls',
+    testWidgets(
+        'a failure reported after loading shows the error; Retry resumes there',
         (tester) async {
       final (player, handler) = _usePlayableHandler();
-      await _pumpScreen(tester, _FakeApiClient(),
-          handlerOverride: handler, mediaTitle: 'song.ac3');
+      final queue = _FakeProgressQueue();
+      // Saved progress from an earlier session: playback starts at 10 s.
+      final client = _FakeApiClient()..progressResult = 10;
+      await _pumpScreen(tester, client,
+          handlerOverride: handler,
+          progressQueue: queue,
+          mediaTitle: 'song.ac3');
       await tester.pump();
       await tester.pump();
       expect(find.byKey(const Key('audio_player_view')), findsOneWidget);
+      expect(player.elapsed, const Duration(seconds: 10));
+      // The user listens on to 60 s.
+      player.elapsed = const Duration(seconds: 60);
+      // just_audio's position stream reports on every playback event.
+      player.playbackEvents.add(PlaybackEvent());
+      await tester.pump(const Duration(milliseconds: 500));
 
       // What just_audio adds to its event stream for an undecodable source.
       // Unhandled, this would fail the test as an uncaught async error.
@@ -1349,8 +1362,48 @@ void main() {
         'interrupted, or this format is not supported.',
       );
       expect(find.byKey(const Key('audio_player_view')), findsNothing);
-      expect(find.byKey(const Key('audio_player_retry')), findsOneWidget);
       expect(tester.takeException(), isNull);
+
+      // Retry continues where playback was, not at the stale 10 s, and the
+      // next progress tick does not write an older position over a newer one.
+      await tester.runAsync(handler.endProgress);
+      queue.updates.clear();
+      await tester.tap(find.byKey(const Key('audio_player_retry')));
+      // Stopping the failed session completes outside the fake clock.
+      for (var round = 0; round < 10; round++) {
+        await tester.pump();
+        await tester.runAsync(
+            () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+      }
+      expect(find.byKey(const Key('audio_player_view')), findsOneWidget);
+      expect(player.sourceRequests, 2);
+      expect(player.elapsed, const Duration(seconds: 60));
+      expect(client.getMediaProgressCallCount, 1);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+      expect(queue.updates, [(42, 60.0)]);
+      await tester.runAsync(handler.endProgress);
+    });
+
+    testWidgets('any failure after loading is reported as a source failure',
+        (tester) async {
+      final (player, handler) = _usePlayableHandler();
+      await _pumpScreen(tester, _FakeApiClient(),
+          handlerOverride: handler, mediaTitle: 'song.mp3');
+      await tester.pump();
+      await tester.pump();
+
+      // Not one of the player's own exception types.
+      player.playbackEvents.addError(StateError('connection closed'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        _errorText(tester),
+        'Cannot play “song.mp3”. The connection may have been '
+        'interrupted, or this format is not supported.',
+      );
+      expect(find.textContaining('Could not start'), findsNothing);
       await tester.runAsync(handler.endProgress);
     });
   });

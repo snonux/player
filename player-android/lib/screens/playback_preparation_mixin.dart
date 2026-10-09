@@ -25,7 +25,10 @@ import '../services/playback_request.dart';
 ///     on the server; opening the item again picks it up.
 mixin PlaybackPreparationMixin<T extends ConsumerStatefulWidget>
     on ConsumerState<T> {
-  PlaybackPreparation? _preparation;
+  /// Ends the running wait at once. Pass it to the callback that tells the
+  /// screen it lost the shared player, so the wait does not sit out its
+  /// current pause (up to 30 s) before noticing.
+  final playbackWait = PlaybackWaitHandle();
   bool _preparing = false;
 
   /// True from the first probe until [cancelPlaybackPreparation]; the screen
@@ -54,13 +57,13 @@ mixin PlaybackPreparationMixin<T extends ConsumerStatefulWidget>
     final client = request is PublicSharePlaybackRequest
         ? ref.read(publicApiClientProvider)
         : ref.read(apiClientProvider);
-    _preparation?.cancel();
+    playbackWait.cancel();
     final preparation = ref.read(playbackPreparerProvider).prepare(
           request.sourceUri,
           probe: client.probePlayback,
           stillWanted: current,
         );
-    _preparation = preparation;
+    playbackWait._preparation = preparation;
     setState(() => _preparing = true);
     return preparation.ready;
   }
@@ -68,14 +71,26 @@ mixin PlaybackPreparationMixin<T extends ConsumerStatefulWidget>
   /// Ends a pending wait and clears the label. Call inside the `setState`
   /// that starts a new attempt (retry or a different item).
   void cancelPlaybackPreparation() {
-    _preparation?.cancel();
-    _preparation = null;
+    playbackWait.cancel();
+    playbackWait._preparation = null;
     _preparing = false;
   }
 
   @override
   void dispose() {
-    _preparation?.cancel();
+    playbackWait.cancel();
     super.dispose();
   }
+}
+
+/// The wait a player screen is currently in, if any.
+///
+/// A separate object so that long-lived callbacks (the playback session's
+/// stop callback outlives the audio screen during background playback) can
+/// end the wait without keeping the screen's state alive.
+class PlaybackWaitHandle {
+  PlaybackPreparation? _preparation;
+
+  /// Cancels the pending probe or pause; the screen's wait completes false.
+  void cancel() => _preparation?.cancel();
 }

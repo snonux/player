@@ -96,8 +96,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
 
-  // Non-null when initialisation failed; shown in the error view.
+  // Shown in the error view (with Retry) when non-null: why starting or
+  // continuing playback failed, or that another item took over the player.
   String? _error;
+
+  // While a failed session is being stopped: the reason to show instead of
+  // the generic "stopped" text, so the latter never flashes before it.
+  String? _failureMessage;
+
+  // Where this item last was while it played on this screen; Retry resumes
+  // here. Null before playback progressed and once the item is finished.
+  Duration? _lastKnownPosition;
 
   // True while the controllers are being set up; shows a full-screen spinner.
   bool _isLoading = true;
@@ -142,6 +151,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         oldWidget.mediaUrl != widget.mediaUrl ||
         oldWidget.isPublicShare != widget.isPublicShare) {
       _initGeneration++;
+      // A changed widget may be a different item: its position is unknown.
+      _lastKnownPosition = null;
       setState(() {
         cancelPlaybackPreparation();
         _isLoading = true;
@@ -316,8 +327,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _showPlayer(attempt, controller, nativePlayerId);
       await _playController(controller, attempt.lease, nativePlayerId);
     } catch (error) {
-      await _cleanUpFailedStart(attempt, controller);
-      _showError(error, request, attempt.generation);
+      final message = _failureText(error, request);
+      await _cleanUpFailedStart(attempt, controller, message);
+      _showMessage(message, attempt.generation);
     }
   }
 
@@ -332,9 +344,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     return false;
   }
 
-  /// The position to resume at: the one the caller passed, else the saved
-  /// one. The lookup is optional; a provider error starts at zero.
+  /// The position to resume at. After a Retry that is where this screen
+  /// last saw the item play: the caller's start position and the saved one
+  /// are both older by then, and starting from them would also write that
+  /// older position over the newer progress. Otherwise it is the position
+  /// the caller passed, else the saved one; that lookup is optional and a
+  /// provider error starts at zero.
   Future<double?> _readResumePosition(PlaybackRequest request) async {
+    final lastKnown = _lastKnownPosition;
+    if (lastKnown != null) return lastKnown.inMilliseconds / 1000.0;
     final readPosition = request.readPosition;
     if (request.startPosition != null || readPosition == null) {
       return request.startPosition;
@@ -380,6 +398,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       if (event.eventType == platform.VideoEventType.completed &&
           _isCurrent(attempt)) {
         _nativeCompleted = true;
+        _lastKnownPosition = null;
         unawaited(_recordProgress(
           attempt.request,
           lease: attempt.lease,
@@ -405,6 +424,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       allowFullScreen: true,
       allowMuting: true,
       showOptions: false,
+      // Safety net: [_watchPlayback] replaces the whole player with the
+      // error view, but should Chewie still get to draw a failed player
+      // (its fullscreen route, a missed event), it shows words, not an icon.
+      errorBuilder: (context, _) => _buildPlayerErrorNotice(attempt.request),
       customControls: controller.value.duration <= Duration.zero
           ? _UnknownDurationControls(
               controller: controller,
@@ -423,44 +446,102 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     if (request.savePosition != null && request.markFinished != null) {
       _startProgressTicker(request, attempt.lease);
     }
-    _watchPlaybackErrors(attempt, controller);
+    _watchPlayback(attempt, controller);
   }
 
-  /// Replaces the player with the error view (and its Retry button) when the
-  /// native player fails after it started: a connection lost for good, a
-  /// rendition that vanished, or a codec it cannot decode further in.
-  void _watchPlaybackErrors(
+  /// Follows the playing controller: remembers where playback is, for
+  /// Retry, and replaces the player with the error view (and its Retry
+  /// button) when the native player fails after it started — a connection
+  /// lost for good, a rendition that vanished, or a codec it cannot decode
+  /// further in.
+  void _watchPlayback(
     _PlaybackAttempt attempt,
     VideoPlayerController controller,
   ) {
     void listener() {
-      if (!controller.value.hasError) return;
-      controller.removeListener(listener);
-      if (_isCurrent(attempt)) unawaited(_failPlayback(attempt));
+      if (controller.value.hasError) {
+        controller.removeListener(listener);
+        if (_isCurrent(attempt)) unawaited(_failPlayback(attempt));
+      } else if (_isCurrent(attempt)) {
+        _rememberPosition(controller);
+      }
     }
 
     controller.addListener(listener);
   }
 
-  /// Saves progress and releases the failed player, then shows why.
+  /// Keeps [_lastKnownPosition] current. The plugin's error state carries no
+  /// position, so it has to be noted while playback still works. A finished
+  /// item forgets it: replaying starts by the usual rules, not at the end.
+  void _rememberPosition(VideoPlayerController controller) {
+    final value = controller.value;
+    if (!value.isInitialized || _nativeCompleted) return;
+    final position = _playbackPosition(controller);
+    final duration = value.duration;
+    final finished = duration > Duration.zero &&
+        position.inMilliseconds / duration.inMilliseconds >=
+            _kFinishedThreshold;
+    if (finished) {
+      _lastKnownPosition = null;
+    } else if (position > Duration.zero) {
+      _lastKnownPosition = position;
+    }
+  }
+
+  /// The controller's position, or the native sample for media of unknown
+  /// duration: the plugin clamps positions to its duration, including zero.
+  Duration _playbackPosition(VideoPlayerController controller) {
+    final backend = platform.VideoPlayerPlatform.instance;
+    return controller.value.duration <= Duration.zero &&
+            backend is SharedVideoEvents
+        ? backend.latestPosition(_nativePlayerId) ?? controller.value.position
+        : controller.value.position;
+  }
+
+  /// Releases the failed player (leaving fullscreen first) and shows why.
   Future<void> _failPlayback(_PlaybackAttempt attempt) async {
     final request = attempt.request;
+    final message = sourceErrorMessage(request.title, request.kind);
+    await _stopFailedSession(attempt.lease, message);
+    _showMessage(message, attempt.generation);
+  }
+
+  /// Stops the session this screen owns because playback failed. While it
+  /// stops, the screen already shows [message] rather than "stopped".
+  Future<void> _stopFailedSession(
+    PlaybackSessionLease lease,
+    String message,
+  ) async {
+    _failureMessage = message;
     try {
-      await attempt.lease.stop();
+      await lease.stop();
     } catch (_) {
       // The failure message matters more than a failed cleanup.
+    } finally {
+      _failureMessage = null;
     }
-    _showMessage(
-      sourceErrorMessage(request.title, request.kind),
-      attempt.generation,
-    );
+  }
+
+  /// Closes Chewie's fullscreen route, if open, while its controller is
+  /// still alive.
+  ///
+  /// The error view and Retry live on this screen, underneath that route.
+  /// Chewie restores orientation and system bars in a continuation that
+  /// runs once the route has popped and still uses the controller, so that
+  /// continuation gets a turn before the caller disposes the controller.
+  Future<void> _leaveFullScreen() async {
+    final chewie = _chewieController;
+    if (chewie == null || !chewie.isFullScreen) return;
+    chewie.exitFullScreen();
+    await Future<void>.delayed(Duration.zero);
   }
 
   /// Releases whatever a failed [_startPlayback] left behind, so the error
-  /// can be shown afterwards.
+  /// ([message]) can be shown afterwards.
   Future<void> _cleanUpFailedStart(
     _PlaybackAttempt attempt,
     VideoPlayerController? controller,
+    String message,
   ) async {
     // The plugin exposes no production creation-status API. Its player ID
     // distinguishes failed creation from errors after a native player exists.
@@ -472,14 +553,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       if (identical(_videoController, controller)) _videoController = null;
       unawaited(_disposeController(controller).catchError((_) {}));
     }
-    try {
-      if (attempt.lease.isCurrent) {
-        await attempt.lease.stop();
-      } else if (controller != null && !creationFailed) {
+    if (attempt.lease.isCurrent) {
+      await _stopFailedSession(attempt.lease, message);
+    } else if (controller != null && !creationFailed) {
+      try {
         await _disposeController(controller);
+      } catch (_) {
+        // Surface the original failure after cleanup is attempted.
       }
-    } catch (_) {
-      // Surface the original initialization failure after cleanup is attempted.
     }
   }
 
@@ -598,12 +679,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     }
 
     final duration = controller.value.duration;
-    final backend = platform.VideoPlayerPlatform.instance;
-    // The video plugin clamps positions to its duration, including zero.
-    // Preserve the real native sample for unknown-duration progress.
-    final position = duration <= Duration.zero && backend is SharedVideoEvents
-        ? backend.latestPosition(_nativePlayerId) ?? controller.value.position
-        : controller.value.position;
+    final position = _playbackPosition(controller);
     final reachedFinish = _nativeCompleted ||
         (duration.inMilliseconds > 0 &&
             position.inMilliseconds / duration.inMilliseconds >=
@@ -648,11 +724,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Future<void> _performOwnedStop() async {
+    // Another item may have taken the player while this one was preparing.
+    playbackWait.cancel();
     if (mounted && !_disposing) {
       setState(() {
         _isLoading = false;
-        _error = kPlaybackStoppedMessage;
+        _error = _failureMessage ?? kPlaybackStoppedMessage;
       });
+      await _leaveFullScreen();
     }
     await _completionSubscription?.cancel();
     _completionSubscription = null;
@@ -695,14 +774,21 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   /// error's type: the request identity carries share tokens and account
   /// IDs, and exception texts can carry URLs, none of which belong in logcat.
   void _showError(Object error, PlaybackRequest request, int generation) {
+    _showMessage(_failureText(error, request), generation);
+  }
+
+  /// Logs the failure (kind and type only, see [_showError]) and returns the
+  /// sentence for the user.
+  String _failureText(Object error, PlaybackRequest request) {
     if (kDebugMode) {
       debugPrint(
         'Video playback (${request.kind.name}) failed: ${error.runtimeType}',
       );
     }
-    _showMessage(
-      playbackErrorMessage(error, title: request.title, source: request.kind),
-      generation,
+    return playbackErrorMessage(
+      error,
+      title: request.title,
+      source: request.kind,
     );
   }
 
@@ -752,6 +838,22 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     return PlaybackLoadingView(
       key: const Key('video_player_loading'),
       preparing: isPreparingPlayback,
+    );
+  }
+
+  /// What Chewie draws in place of its controls for a failed player. Only
+  /// a safety net: normally the error view below replaces the player.
+  Widget _buildPlayerErrorNotice(PlaybackRequest request) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          sourceErrorMessage(request.title, request.kind),
+          key: const Key('video_player_playback_error_message'),
+          style: const TextStyle(color: Colors.white70),
+          textAlign: TextAlign.center,
+        ),
+      ),
     );
   }
 

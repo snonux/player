@@ -415,12 +415,18 @@ String _sharedPlaybackUrl(BuildContext context, GoRouterState state) {
 
 /// Picks the media URL for share [token] on the server at [base].
 ///
-/// [candidate] is only accepted when, after path normalisation, it is
-/// exactly this share's `compat` or `stream` endpoint under [base] —
-/// including a path prefix the server may be mounted under. Comparing the
-/// parsed path segments (not a string prefix) keeps `..` segments, another
-/// token, a query, or a foreign origin from steering the player elsewhere.
-/// Anything else yields this share's original stream.
+/// [candidate] is only accepted when its scheme, authority and
+/// dot-segment-normalised path string equal this share's `compat` or
+/// `stream` endpoint under [base] — including a path prefix the server may
+/// be mounted under — and it has no query or fragment. Comparing the whole
+/// normalised path (not a string prefix) keeps `..` segments, another token,
+/// or a foreign origin from steering the player elsewhere. Anything else
+/// yields this share's original stream.
+///
+/// Edge case: a [token] of `.` or `..` is not a share. No candidate can
+/// match it (normalisation removes such segments), and the fallback URL
+/// built from it resolves to a non-share path on the same server, which
+/// simply fails to play.
 @visibleForTesting
 String sharePlaybackUrl({
   required Uri base,

@@ -19,8 +19,11 @@ class _Client extends PlayerApiClient {
   /// When set, [getMedia] never answers (a hung connection).
   bool hang = false;
 
+  CancelToken? lastToken;
+
   @override
-  Future<Media> getMedia(int mediaId) async {
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async {
+    lastToken = cancelToken;
     lookups++;
     if (hang) return Completer<Media>().future;
     final found = media;
@@ -84,6 +87,14 @@ void main() {
       resolved.sourceUri.toString(),
       'https://player.test/api/v1/media/7/stream',
     );
+    // The abandoned request is cancelled, not left running.
+    expect(client.lastToken!.isCancelled, isTrue);
+  });
+
+  test('a lookup that answers in time is not cancelled', () async {
+    final client = _Client()..media = Media.fromJson({'id': 7});
+    await resolveServerPlaybackSource(_request(), client);
+    expect(client.lastToken!.isCancelled, isFalse);
   });
 
   test('local and public-share requests are never looked up', () async {

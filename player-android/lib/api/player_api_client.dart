@@ -138,7 +138,9 @@ class PlayerApiClient implements ProgressSyncClient {
   }) =>
       throw UnimplementedError();
 
-  Future<Media> getMedia(int mediaId) => throw UnimplementedError();
+  /// [cancelToken] lets a caller that stops waiting also abort the request.
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) =>
+      throw UnimplementedError();
 
   Future<Uint8List> streamMedia(int mediaId, {String? range}) =>
       throw UnimplementedError();

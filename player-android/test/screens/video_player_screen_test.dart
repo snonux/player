@@ -27,6 +27,7 @@
 
 import 'dart:async';
 
+import 'package:chewie/chewie.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -38,6 +39,7 @@ import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/playback_preparer_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
+import 'package:player_android/providers/public_api_client_provider.dart';
 import 'package:player_android/providers/playback_session_provider.dart';
 import 'package:player_android/screens/video_player_screen.dart';
 import 'package:player_android/services/progress_queue.dart';
@@ -172,7 +174,10 @@ class _FakeProgressQueue implements ProgressQueueBase {
 }
 
 class _PlayableVideoPlatform extends VideoPlayerPlatform {
-  final events = StreamController<VideoEvent>();
+  /// Events of the most recently created player. A single-subscription
+  /// stream like the real plugin's, so every player gets its own.
+  var events = StreamController<VideoEvent>();
+  bool _created = false;
   Duration position = Duration.zero;
   DataSource? lastSource;
   Completer<void>? pendingPause;
@@ -191,6 +196,8 @@ class _PlayableVideoPlatform extends VideoPlayerPlatform {
   Future<int?> create(DataSource source) async {
     lastSource = source;
     if (createError != null) throw createError!;
+    if (_created) events = StreamController<VideoEvent>();
+    _created = true;
     Timer.run(() {
       if (failInitialize) {
         events.addError(
@@ -346,6 +353,41 @@ Future<void> _leavePlayingScreen(WidgetTester tester) async {
 String _errorText(WidgetTester tester) => tester
     .widget<Text>(find.byKey(const Key('video_player_error_message')))
     .data!;
+
+const _kStreamFailure = 'The connection may have been '
+    'interrupted, or this format is not supported.';
+
+/// Reports a failure of the playing native player — what the plugin sends
+/// when the connection is lost for good or the stream turns out to be
+/// undecodable further in — and pumps until the screen shows its error.
+///
+/// Returns every error text seen on the way, so tests can check that the
+/// generic "stopped" text never shows before the real reason.
+Future<List<String>> _failPlayingVideo(
+  WidgetTester tester,
+  _PlayableVideoPlatform platform,
+) async {
+  final seen = <String>[];
+  platform.events.addError(
+    PlatformException(code: 'VideoError', message: 'Source error'),
+  );
+  for (var attempt = 0; attempt < 100; attempt++) {
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.runAsync(
+        () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+    final message = find.byKey(const Key('video_player_error_message'));
+    if (message.evaluate().isEmpty) continue;
+    seen.add(tester.widget<Text>(message).data!);
+    if (seen.last.startsWith('Cannot play')) break;
+  }
+  // The reason shows before the failed player is fully released.
+  for (var settle = 0; settle < 10; settle++) {
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.runAsync(
+        () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+  }
+  return seen;
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -942,7 +984,7 @@ void main() {
         identity: 'public-share:next',
         stop: () async {},
       );
-      await tester.pump(const Duration(seconds: 5));
+      // At once: not after the 5 s pause the wait was in.
       await tester.pump();
 
       expect(find.byKey(_kPreparingLabel), findsNothing);
@@ -957,60 +999,152 @@ void main() {
       expect(platform.lastSource, isNull);
     });
 
-    testWidgets('a failure during playback shows the error view with Retry',
+    testWidgets(
+        'a failure during playback shows the error view; Retry resumes there',
         (tester) async {
-      final platform = _usePlayablePlatform();
+      final platform = _usePlayablePlatform()
+        ..duration = const Duration(seconds: 3000);
       final queue = _FakeProgressQueue();
-      await _pumpScreen(tester, _FakeApiClient(),
+      // Saved progress from an earlier session: playback starts at 100 s.
+      final client = _FakeApiClient()..progressResult = 100;
+      await _pumpScreen(tester, client,
           mediaTitle: 'movie.mp4', progressQueue: queue);
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);
-      platform.position = const Duration(seconds: 12);
+      expect(platform.position, const Duration(seconds: 100));
+      // The user watches on to 2000 s (the plugin polls the position).
+      platform.position = const Duration(seconds: 2000);
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
 
-      // What the plugin reports when the connection is lost for good or the
-      // stream turns out to be undecodable further in.
-      platform.events.addError(
-        PlatformException(code: 'VideoError', message: 'Source error'),
-      );
-      for (var attempt = 0;
-          attempt < 100 &&
-              find.textContaining('Cannot play').evaluate().isEmpty;
-          attempt++) {
-        await tester.pump(const Duration(milliseconds: 10));
-        await tester.runAsync(
-            () async => Future<void>.delayed(const Duration(milliseconds: 1)));
-      }
+      final seen = await _failPlayingVideo(tester, platform);
 
-      expect(
-        _errorText(tester),
-        'Cannot play “movie.mp4”. The connection may have been '
-        'interrupted, or this format is not supported.',
-      );
+      expect(seen.toSet(), {'Cannot play “movie.mp4”. $_kStreamFailure'});
       expect(find.byKey(const Key('video_player_chewie')), findsNothing);
-      expect(find.byKey(const Key('video_player_retry')), findsOneWidget);
       // The failed player was released. The plugin's error state carries no
       // position, so nothing is written over the progress saved while playing.
       expect(platform.disposeCalls, 1);
       expect(queue.positions, isEmpty);
+
+      // Retry continues where playback was, not at the stale 100 s, and the
+      // next progress tick does not write an older position over a newer one.
+      platform.position = Duration.zero;
+      await tester.tap(find.byKey(const Key('video_player_retry')));
+      // Creating the new native player completes outside the fake clock.
+      for (var round = 0; round < 20; round++) {
+        await tester.pump(const Duration(milliseconds: 10));
+        await tester.runAsync(
+            () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+      }
+      expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);
+      expect(platform.position, const Duration(seconds: 2000));
+      expect(client.getMediaProgressCallCount, 1);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+      expect(queue.positions, [(42, 2000.0)]);
+      await _leavePlayingScreen(tester);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+    testWidgets('a failure in fullscreen leaves fullscreen and shows Retry',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      final orientations = <List<Object?>>[];
+      tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'SystemChrome.setPreferredOrientations') {
+          orientations.add(call.arguments as List<Object?>);
+        }
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+      await _pumpScreen(tester, _FakeApiClient(), mediaTitle: 'movie.mp4');
+      await tester.pumpAndSettle();
+
+      final chewie = tester.widget<Chewie>(find.byType(Chewie)).controller;
+      chewie.enterFullScreen();
+      await tester.pumpAndSettle();
+      expect(chewie.isFullScreen, isTrue);
+      // The screen with the error view is covered by the fullscreen route.
+      expect(find.byKey(const Key('video_player_chewie')), findsNothing);
+      final callsInFullScreen = orientations.length;
+
+      final seen = await _failPlayingVideo(tester, platform);
+      await tester.pumpAndSettle();
+
+      // Back on the player screen: the reason and Retry can be seen and
+      // tapped, instead of a bare error icon on a black fullscreen route.
+      expect(seen.last, 'Cannot play “movie.mp4”. $_kStreamFailure');
+      expect(find.byKey(const Key('video_player_error_message')).hitTestable(),
+          findsOneWidget);
+      expect(find.byKey(const Key('video_player_retry')).hitTestable(),
+          findsOneWidget);
+      expect(find.byIcon(Icons.error), findsNothing);
+      expect(find.byType(Chewie), findsNothing);
+      // Chewie restored all orientations when its route closed.
+      expect(orientations.length, greaterThan(callsInFullScreen));
+      expect(orientations.last, hasLength(DeviceOrientation.values.length));
+      expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
     }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+    testWidgets('a failing share is logged without its token or URL',
+        (tester) async {
+      _usePlayablePlatform();
+      final publicClient = _FakeApiClient()
+        ..probeAnswers.add(const PlaybackProbe(statusCode: 410));
+      final logs = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) => logs.add('$message');
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          apiClientProvider.overrideWithValue(_FakeApiClient()),
+          publicApiClientProvider.overrideWithValue(publicClient),
+          progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
+        ],
+        child: const MaterialApp(
+          home: VideoPlayerScreen(
+            mediaId: '0',
+            mediaUrl: 'http://test.local/s/secrettoken7/compat',
+            mediaTitle: 'Shared clip.wmv',
+            isPublicShare: true,
+          ),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump();
+      debugPrint = originalDebugPrint;
+
+      expect(
+        _errorText(tester),
+        'Cannot play “Shared clip.wmv”. This share link is no longer valid '
+        'or access was refused.',
+      );
+      // The failure is logged by kind and error type only.
+      expect(logs.join('\n'), contains('publicShare'));
+      expect(logs.join('\n'), isNot(contains('secrettoken7')));
+      expect(logs.join('\n'), isNot(contains('http')));
+    });
 
     testWidgets('a source the device cannot decode shows a readable error',
         (tester) async {
       final platform = _usePlayablePlatform()..failInitialize = true;
       final client = _FakeApiClient();
       await _pumpScreen(tester, client, mediaTitle: 'clip.wmv');
-      // Cleanup of the failed controller briefly shows the "stopped" text;
-      // wait for the failure message that replaces it.
-      for (var attempt = 0;
-          attempt < 100 &&
-              find.textContaining('Cannot play').evaluate().isEmpty;
-          attempt++) {
+      // No "stopped" text shows while the failed controller is cleaned up.
+      final seen = <String>[];
+      for (var attempt = 0; attempt < 100; attempt++) {
         await tester.pump(const Duration(milliseconds: 10));
         await tester.runAsync(
             () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+        final message = find.byKey(const Key('video_player_error_message'));
+        if (message.evaluate().isNotEmpty) {
+          seen.add(tester.widget<Text>(message).data!);
+        }
+        if (seen.length > 5) break;
       }
+      expect(seen.toSet(), {'Cannot play “clip.wmv”. $_kStreamFailure'});
 
       expect(platform.lastSource, isNotNull);
       expect(
