@@ -74,7 +74,8 @@ func scanUsers(rows *sql.Rows) ([]model.User, error) {
 	return users, rows.Err()
 }
 
-// DeleteUser removes a user by ID.
+// DeleteUser removes a user by ID together with everything the user owns
+// (sessions, API tokens, permissions, favourites, progress, notes, shares).
 func (s *SQLite) DeleteUser(ctx context.Context, id int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -85,6 +86,12 @@ WHERE session_id IN (SELECT id FROM sessions WHERE user_id = ?)
    OR session_id IN (SELECT 'api-token:' || id FROM api_tokens WHERE user_id = ?)`, id, id); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("delete user accumulators: %w", err)
+	}
+	// Sessions and API tokens go first and explicitly: a signed-in session
+	// must not outlive its user, whether or not the cascade runs.
+	if err := deleteUserRows(ctx, tx, id); err != nil {
+		_ = tx.Rollback()
+		return err
 	}
 	_, err = tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
 	if err != nil {

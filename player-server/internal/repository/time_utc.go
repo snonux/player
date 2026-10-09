@@ -64,11 +64,7 @@ func utcTimesDSN(dsn string) string {
 	if strings.Contains(dsn, "_timezone=") {
 		return dsn
 	}
-	separator := "?"
-	if strings.Contains(dsn, "?") {
-		separator = "&"
-	}
-	return dsn + separator + "_timezone=UTC"
+	return appendDSNOption(dsn, "_timezone=UTC")
 }
 
 // normalizeStoredTimes rewrites every stored timestamp that carries a zone

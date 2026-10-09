@@ -23,8 +23,11 @@ func (s *SQLite) CreateSession(ctx context.Context, session *model.Session) erro
 
 // GetSessionByID retrieves a session by ID.
 func (s *SQLite) GetSessionByID(ctx context.Context, id string) (*model.Session, error) {
+	// The join makes a session of a user that no longer exists unusable
+	// even if its row survived (see connection.go for how that happened).
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, user_id, expires_at, created_at FROM sessions WHERE id = ?`, id)
+		`SELECT s.id, s.user_id, s.expires_at, s.created_at
+FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?`, id)
 	var sess model.Session
 	if err := row.Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt); err == sql.ErrNoRows {
 		return nil, nil

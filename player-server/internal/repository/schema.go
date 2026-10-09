@@ -213,7 +213,10 @@ func execSchema(db *sql.DB, name, schema string) error {
 	return nil
 }
 
-// enableForeignKeys turns on SQLite foreign key enforcement.
+// enableForeignKeys turns on SQLite foreign key enforcement for the
+// connection that runs the schema setup. It covers stores built with New
+// from a caller's *sql.DB; Open also sets it in the DSN, which is what makes
+// it hold for every later connection (see connection.go).
 func enableForeignKeys(db *sql.DB) error {
 	if _, err := db.Exec(`PRAGMA foreign_keys = ON;`); err != nil {
 		return fmt.Errorf("enable foreign keys: %w", err)
@@ -244,6 +247,9 @@ func initializeSchema(db *sql.DB) error {
 	// Last, when every table has its final shape.
 	if err := normalizeStoredTimes(db); err != nil {
 		return fmt.Errorf("normalize stored times: %w", err)
+	}
+	if err := removeOrphanRows(db); err != nil {
+		return fmt.Errorf("remove orphan rows: %w", err)
 	}
 	return nil
 }

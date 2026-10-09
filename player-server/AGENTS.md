@@ -345,6 +345,7 @@ A share's `max_uses` counts **viewings**, not HTTP requests. Browsers and player
 - When modifying tests, always run `go test ./... -race -cover` before committing.
 - Do not introduce package-level mutable state; inject via constructors.
 - All repository access goes through the `repository.Store` interface.
+- SQLite settings that must hold for every query (foreign keys, busy timeout, UTC timestamps) are DSN options built by `repository.connectionDSN`, never a `PRAGMA` run once with `db.Exec`: `database/sql` replaces a pooled connection after a driver error or a cancelled query, and the replacement would not have it. Foreign keys silently switching off is how deleted users once kept their sessions. `DeleteUser` also removes a user's rows explicitly, session and API-token lookups join `users`, and `removeOrphanRows` cleans up at startup; keep all three when adding a table that references `users` or `media` (list it in `repository/orphans.go`).
 - Frontend modules are plain ES modules — no transpilation step. Keep JS vanilla.
 - CSS changes must use `var(--*)` tokens from `theme.css`.
 - If you add new env vars, update both `internal/config.go` and this document.
