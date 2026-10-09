@@ -2,11 +2,21 @@ package repository
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
+)
+
+const (
+	// shareViewingKeyName is the server_secrets row holding the key that
+	// signs share viewing credentials.
+	shareViewingKeyName = "share_viewing_key"
+	// shareViewingKeyBytes is the key length; 32 bytes is the output size of
+	// HMAC-SHA256, the recommended key size for it.
+	shareViewingKeyBytes = 32
 )
 
 // CreateShare inserts a new share link.
@@ -90,6 +100,31 @@ func (s *SQLite) UseShare(ctx context.Context, token string, now time.Time) (boo
 	}
 	rows, err := result.RowsAffected()
 	return rows == 1, err
+}
+
+// ShareViewingKey returns the key that signs share viewing credentials,
+// creating it on first use.
+//
+// The key is stored in the database rather than kept in memory or taken from
+// the environment: viewings then survive a server restart without any
+// configuration, and two instances that briefly share the database during a
+// rolling update agree on it (INSERT OR IGNORE lets the first writer win and
+// both read back the stored value).
+func (s *SQLite) ShareViewingKey(ctx context.Context) ([]byte, error) {
+	candidate := make([]byte, shareViewingKeyBytes)
+	if _, err := rand.Read(candidate); err != nil {
+		return nil, fmt.Errorf("generate share viewing key: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO server_secrets (name, value) VALUES (?, ?)`, shareViewingKeyName, candidate); err != nil {
+		return nil, fmt.Errorf("store share viewing key: %w", err)
+	}
+	var key []byte
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT value FROM server_secrets WHERE name = ?`, shareViewingKeyName).Scan(&key); err != nil {
+		return nil, fmt.Errorf("load share viewing key: %w", err)
+	}
+	return key, nil
 }
 
 // DeleteShare removes a share by token.

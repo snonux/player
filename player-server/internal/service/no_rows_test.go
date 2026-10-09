@@ -162,7 +162,7 @@ func TestService_NoRows_ReturnsNil(t *testing.T) {
 			},
 		}
 		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-		_, err := svc.StreamSharedMedia(ctx, "nope")
+		_, _, err := svc.StreamSharedMedia(ctx, ShareAccess{Token: "nope"})
 		if !errors.Is(err, ErrShareNotFound) {
 			t.Fatalf("expected ErrShareNotFound, got %v", err)
 		}

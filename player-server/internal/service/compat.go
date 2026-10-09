@@ -20,14 +20,17 @@ type CompatStreamService interface {
 	// being produced.
 	CompatStream(ctx context.Context, mediaID, userID int64) (*transcode.Rendition, error)
 	// SharedCompatStream returns the rendition of the media item behind a
-	// public share token. It does not count a share use; see
-	// ConsumeShareUse.
-	SharedCompatStream(ctx context.Context, token string) (*transcode.Rendition, error)
-	// ConsumeShareUse counts one use of the share. The caller invokes it
-	// when it is certain to deliver content: after it has opened the
-	// rendition, and not for HEAD probes. It returns ErrShareExpired when
-	// the share ran out in the meantime.
-	ConsumeShareUse(ctx context.Context, token string) error
+	// public share token. credentials are the viewing credentials the
+	// client presented, if any; a valid one keeps the share usable after
+	// max_uses is reached. It never counts a share use; see EnsureShareViewing.
+	SharedCompatStream(ctx context.Context, token string, credentials ...string) (*transcode.Rendition, error)
+	// EnsureShareViewing returns the viewing a content request runs under:
+	// the one a credential stands for, or a newly opened one, which consumes
+	// one share use (Opened is set). The caller invokes it when it is
+	// certain to deliver content: after it has opened the rendition, and
+	// not for HEAD probes. It returns ErrShareExpired when a new viewing
+	// is needed and the share has no use left.
+	EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error)
 }
 
 // shareRequester is the requester identity of every anonymous share request.
@@ -44,11 +47,12 @@ type RenditionProvider interface {
 }
 
 // SharedMediaAccess is the part of the share service the compat stream
-// needs: look up what a token shares without counting a use, and count a use
-// once content is actually delivered. It is implemented by shareService.
+// needs: look up what a token shares without counting a use, and settle the
+// viewing (counting a use if the client has none) once content is actually
+// delivered. It is implemented by shareService.
 type SharedMediaAccess interface {
-	ResolveSharedMedia(ctx context.Context, token string) (*model.Media, error)
-	ConsumeShareUse(ctx context.Context, token string) error
+	ResolveSharedMedia(ctx context.Context, token string, credentials ...string) (*model.Media, error)
+	EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error)
 }
 
 // Compile-time checks.
@@ -85,23 +89,25 @@ func (s *compatStreamService) CompatStream(ctx context.Context, mediaID, userID 
 
 // SharedCompatStream validates the share token and obtains the rendition.
 //
-// It deliberately does not count a share use. Uses are counted as on
-// /s/{token}/stream — every GET that is served counts, including each Range
-// request of one playback — but only by the API layer, at the moment content
-// is really about to be sent (ConsumeShareUse). Counting here would spend a
-// use on answers that deliver nothing: "still transcoding", "busy",
-// failures, HEAD probes, and a rendition evicted before it could be opened.
-func (s *compatStreamService) SharedCompatStream(ctx context.Context, token string) (*transcode.Rendition, error) {
-	media, err := s.shares.ResolveSharedMedia(ctx, token)
+// It deliberately does not count a share use. A use is counted per viewing,
+// not per request (see share_viewing.go): a client that presents a valid
+// viewing credential is never charged, and one without is charged by the API
+// layer only at the moment content is really about to be sent
+// (EnsureShareViewing). Counting here would spend a use on answers that
+// deliver nothing: "still transcoding", "busy", failures, HEAD probes, and a
+// rendition evicted before it could be opened.
+func (s *compatStreamService) SharedCompatStream(ctx context.Context, token string, credentials ...string) (*transcode.Rendition, error) {
+	media, err := s.shares.ResolveSharedMedia(ctx, token, credentials...)
 	if err != nil {
 		return nil, err
 	}
 	return s.rendition(ctx, media, shareRequester)
 }
 
-// ConsumeShareUse counts one use of the share behind token.
-func (s *compatStreamService) ConsumeShareUse(ctx context.Context, token string) error {
-	return s.shares.ConsumeShareUse(ctx, token)
+// EnsureShareViewing settles the viewing of a content request to the share
+// behind token; see SharedMediaAccess.
+func (s *compatStreamService) EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error) {
+	return s.shares.EnsureShareViewing(ctx, token, credentials...)
 }
 
 // rendition checks that the item is eligible and asks the provider for it.

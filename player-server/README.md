@@ -27,7 +27,7 @@ Features
 
 ### Sharing & Access
 
-- **Share links** — generate time-limited share links for any media item (no login required for recipients)
+- **Share links** — generate time-limited share links for any media item (no login required for recipients), optionally limited to a number of uses. A use is one viewing — one browser or device opening the link and playing the file, however many requests that takes — so a single-use link plays start to end exactly once. Revoking a link ends running viewings at once. Link previews of messengers and mail scanners do not use up a link: only opening it in a browser (or the app) and letting the page load does. Details and limits: [docs/api.md](docs/api.md#share-viewings-how-max_uses-is-counted)
 - **User accounts** — multi-user with login, session cookies, and logout
 - **RBAC permissions** — per-set `owner` and `viewer` roles; admins see everything implicitly
 - **Admin panel** — create/delete users, manage permissions, trigger library rescans, manage trash

@@ -1061,7 +1061,7 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("service error", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+			GetSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.GetSharedMediaResult, error) {
 				return nil, errors.New("boom")
 			},
 		}
@@ -1069,14 +1069,14 @@ func TestServer_SharePage(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/s/abc", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
-		if rr.Code != http.StatusNotFound {
-			t.Fatalf("expected %d, got %d", http.StatusNotFound, rr.Code)
+		if rr.Code != http.StatusInternalServerError {
+			t.Fatalf("expected %d, got %d", http.StatusInternalServerError, rr.Code)
 		}
 	})
 
 	t.Run("not found", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+			GetSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.GetSharedMediaResult, error) {
 				return nil, nil
 			},
 		}
@@ -1091,7 +1091,7 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("expired", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+			GetSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.GetSharedMediaResult, error) {
 				return nil, service.ErrShareExpired
 			},
 		}
@@ -1106,7 +1106,7 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("html default accept", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+			GetSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.GetSharedMediaResult, error) {
 				return &service.GetSharedMediaResult{
 					Media:     &service.SharedMediaView{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
 					StreamURL: "/s/abc/stream",
@@ -1133,7 +1133,7 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("html explicit accept", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+			GetSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.GetSharedMediaResult, error) {
 				return &service.GetSharedMediaResult{
 					Media:     &service.SharedMediaView{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
 					StreamURL: "/s/abc/stream",
@@ -1157,7 +1157,7 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("json accept", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+			GetSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.GetSharedMediaResult, error) {
 				return &service.GetSharedMediaResult{
 					Media:     &service.SharedMediaView{ID: 1, FileName: "share.mp4", Type: model.MediaTypeVideo, Duration: 120},
 					StreamURL: "/s/abc/stream",
@@ -1188,7 +1188,7 @@ func TestServer_SharePage(t *testing.T) {
 
 	t.Run("json omits empty thumbnail url", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+			GetSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.GetSharedMediaResult, error) {
 				return &service.GetSharedMediaResult{
 					Media:       &service.SharedMediaView{ID: 1, FileName: "share.mp3", Type: model.MediaTypeAudio, Duration: 120},
 					HasThumb:    false,
@@ -1236,8 +1236,8 @@ func TestServer_ShareStream(t *testing.T) {
 
 	t.Run("service error", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
-				return nil, errors.New("boom")
+			StreamSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.FileResult, service.ShareViewing, error) {
+				return nil, service.ShareViewing{}, errors.New("boom")
 			},
 		}
 		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, ms, ms, ms, ms, ms, nil, nil, nil, nil)
@@ -1251,8 +1251,8 @@ func TestServer_ShareStream(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
-				return nil, service.ErrShareNotFound
+			StreamSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.FileResult, service.ShareViewing, error) {
+				return nil, service.ShareViewing{}, service.ErrShareNotFound
 			},
 		}
 		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, ms, ms, ms, ms, ms, nil, nil, nil, nil)
@@ -1266,8 +1266,8 @@ func TestServer_ShareStream(t *testing.T) {
 
 	t.Run("expired", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
-				return nil, service.ErrShareExpired
+			StreamSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.FileResult, service.ShareViewing, error) {
+				return nil, service.ShareViewing{}, service.ErrShareExpired
 			},
 		}
 		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, ms, ms, ms, ms, ms, nil, nil, nil, nil)
@@ -1281,8 +1281,8 @@ func TestServer_ShareStream(t *testing.T) {
 
 	t.Run("media not found", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
-				return nil, service.ErrMediaNotFound
+			StreamSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.FileResult, service.ShareViewing, error) {
+				return nil, service.ShareViewing{}, service.ErrMediaNotFound
 			},
 		}
 		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, ms, ms, ms, ms, ms, nil, nil, nil, nil)
@@ -1296,8 +1296,8 @@ func TestServer_ShareStream(t *testing.T) {
 
 	t.Run("file missing", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
-				return &service.FileResult{Path: "/nonexistent", FileName: "a.mp4"}, nil
+			StreamSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.FileResult, service.ShareViewing, error) {
+				return &service.FileResult{Path: "/nonexistent", FileName: "a.mp4"}, service.ShareViewing{}, nil
 			},
 		}
 		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, ms, ms, ms, ms, ms, nil, nil, nil, nil)
@@ -1311,8 +1311,8 @@ func TestServer_ShareStream(t *testing.T) {
 
 	t.Run("ok", func(t *testing.T) {
 		ms := &service.MockMediaService{
-			StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
-				return &service.FileResult{Path: path, FileName: "a.mp4"}, nil
+			StreamSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.FileResult, service.ShareViewing, error) {
+				return &service.FileResult{Path: path, FileName: "a.mp4"}, service.ShareViewing{}, nil
 			},
 		}
 		srv := newTestServer(t, buildSessionStore(1), nil, nil, cfg, ms, ms, ms, ms, ms, ms, nil, nil, nil, nil)

@@ -1703,7 +1703,7 @@ func TestServer_Shares(t *testing.T) {
 		RevokeShareFunc: func(ctx context.Context, token string, userID int64) error {
 			return nil
 		},
-		GetSharedMediaFunc: func(ctx context.Context, token string) (*service.GetSharedMediaResult, error) {
+		GetSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.GetSharedMediaResult, error) {
 			return &service.GetSharedMediaResult{
 				Media:     &service.SharedMediaView{ID: 1, FileName: "x.mp4", Type: model.MediaTypeVideo, Duration: 120},
 				StreamURL: "/s/abc/stream",
@@ -1713,8 +1713,8 @@ func TestServer_Shares(t *testing.T) {
 		ValidateShareTokenFunc: func(ctx context.Context, token string) (*model.Share, error) {
 			return &model.Share{Token: token, MediaID: 1}, nil
 		},
-		StreamSharedMediaFunc: func(ctx context.Context, token string) (*service.FileResult, error) {
-			return &service.FileResult{Path: "", FileName: "x.mp4"}, nil
+		StreamSharedMediaFunc: func(ctx context.Context, access service.ShareAccess) (*service.FileResult, service.ShareViewing, error) {
+			return &service.FileResult{Path: "", FileName: "x.mp4"}, service.ShareViewing{}, nil
 		},
 	}
 	store := buildSessionStore(1)
@@ -2121,6 +2121,9 @@ func (m *mockPingStore) ListSharesByUser(ctx context.Context, userID int64) ([]m
 }
 func (m *mockPingStore) UseShare(ctx context.Context, token string, now time.Time) (bool, error) {
 	return m.store.UseShare(ctx, token, now)
+}
+func (m *mockPingStore) ShareViewingKey(ctx context.Context) ([]byte, error) {
+	return m.store.ShareViewingKey(ctx)
 }
 func (m *mockPingStore) DeleteShare(ctx context.Context, token string) error {
 	return m.store.DeleteShare(ctx, token)

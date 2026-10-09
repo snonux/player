@@ -65,8 +65,11 @@ async function testReadyAtOnce() {
   assertEqual(result.state, 'ready', 'a 200 is ready');
   assertEqual(h.requests.length, 1, 'one probe when ready');
   assertEqual(h.requests[0].url, '/s/tok/compat', 'probes the compat URL itself');
-  // A HEAD probe consumes no share use; a GET (even for one byte) would.
+  // A HEAD probe never opens a share viewing, so it cannot consume a use.
   assertEqual(h.requests[0].init.method, 'HEAD', 'the probe is a HEAD request');
+  // The share page's viewing cookie (or the session cookie) must travel with
+  // the probe: without it a share with no uses left answers 410.
+  assertEqual(h.requests[0].init.credentials, 'same-origin', 'the probe carries same-origin cookies');
   assertEqual(h.requests[0].init.headers, undefined, 'the probe sends no Range or other headers');
   assertEqual(h.statuses.length, 0, 'no preparing state when ready');
   assertEqual((await waitForCompatStream('/x/compat', harness([response(206)]).options)).state, 'ready', 'a 206 is ready');

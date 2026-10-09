@@ -863,5 +863,87 @@ void main() {
           .probePlayback(Uri.parse('https://player.test/s/tok7/compat'));
       expect(probe.isReady, isTrue);
     });
+
+    test('a share probe keeps the viewing credential in its URL', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'https://player.test'));
+      final asked = <String>[];
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        asked.add('${options.method} ${options.uri}');
+        handler.resolve(Response<void>(requestOptions: options, statusCode: 200));
+      }));
+
+      final probe = await DioPlayerApiClient(dio: dio).probePlayback(Uri.parse(
+          'https://player.test/s/tok7/compat?view=1791570469.t1Sg_-'));
+      expect(probe.isReady, isTrue);
+      expect(asked,
+          ['HEAD https://player.test/s/tok7/compat?view=1791570469.t1Sg_-']);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Public share media: the viewing credential travels as ?view=
+  // --------------------------------------------------------------------------
+
+  group('public share media', () {
+    /// A client whose requests are answered locally; [uris] and [ranges]
+    /// record what was asked for.
+    ({DioPlayerApiClient client, List<Uri> uris, List<Object?> ranges})
+        recording() {
+      final dio = Dio(BaseOptions(baseUrl: 'https://player.test'));
+      final uris = <Uri>[];
+      final ranges = <Object?>[];
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        uris.add(options.uri);
+        ranges.add(options.headers['Range']);
+        handler.resolve(Response<List<int>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: [1, 2, 3],
+        ));
+      }));
+      return (client: DioPlayerApiClient(dio: dio), uris: uris, ranges: ranges);
+    }
+
+    test('with a credential every media call carries it', () async {
+      final r = recording();
+      const view = '1791570469.t1Sg_-';
+
+      expect(await r.client.streamSharedMedia('tok7', view: view), [1, 2, 3]);
+      await r.client.streamSharedMedia('tok7', range: 'bytes=0-99', view: view);
+      await r.client.getSharedThumbnail('tok7', view: view);
+      await r.client.downloadSharedMedia('tok7', view: view);
+
+      expect(r.uris.map((u) => u.toString()), [
+        'https://player.test/s/tok7/stream?view=$view',
+        'https://player.test/s/tok7/stream?view=$view',
+        'https://player.test/s/tok7/thumbnail?view=$view',
+        'https://player.test/s/tok7/download?view=$view',
+      ]);
+      expect(r.ranges, [null, 'bytes=0-99', null, null]);
+    });
+
+    test('without a credential the plain paths are requested', () async {
+      final r = recording();
+
+      await r.client.streamSharedMedia('tok7');
+      await r.client.getSharedThumbnail('tok7', view: '');
+      await r.client.downloadSharedMedia('tok7');
+
+      expect(r.uris.map((u) => u.toString()), [
+        'https://player.test/s/tok7/stream',
+        'https://player.test/s/tok7/thumbnail',
+        'https://player.test/s/tok7/download',
+      ]);
+    });
+
+    test('a credential cannot add parameters or change the path', () async {
+      final r = recording();
+
+      await r.client.streamSharedMedia('tok7', view: 'a&next=/x#frag');
+
+      expect(r.uris.single.path, '/s/tok7/stream');
+      expect(r.uris.single.queryParameters, {'view': 'a&next=/x#frag'});
+      expect(r.uris.single.hasFragment, isFalse);
+    });
   });
 }

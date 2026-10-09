@@ -165,6 +165,36 @@ type GetSharedMediaResult struct {
 	Transcoded  bool   `json:"transcoded"`
 	DownloadURL string `json:"download_url"`
 	ThumbURL    string `json:"thumb_url,omitempty"`
+	// View is the viewing credential and ViewExpiresAt its expiry. They are
+	// only filled in by WithViewCredential, for clients that cannot rely on
+	// the viewing cookie.
+	View          string     `json:"view,omitempty"`
+	ViewExpiresAt *time.Time `json:"view_expires_at,omitempty"`
+	// Viewing is the viewing the request runs under, whether this request
+	// opened it or not. It is not serialized: only WithViewCredential puts
+	// the credential into a response body, for clients that asked for the
+	// JSON form.
+	Viewing ShareViewing `json:"-"`
+}
+
+// WithViewCredential returns a copy for clients that carry the viewing
+// credential themselves (media players without a cookie jar): View is set
+// and every URL already has the credential appended as the "view" query
+// parameter, so such clients need no string building. Without a viewing
+// (a HEAD probe) the copy equals the original.
+func (r GetSharedMediaResult) WithViewCredential() GetSharedMediaResult {
+	credential := r.Viewing.Credential
+	if credential == "" {
+		return r
+	}
+	expiresAt := r.Viewing.ExpiresAt.UTC()
+	r.View = credential
+	r.ViewExpiresAt = &expiresAt
+	r.StreamURL = withShareView(r.StreamURL, credential)
+	r.PlaybackURL = withShareView(r.PlaybackURL, credential)
+	r.DownloadURL = withShareView(r.DownloadURL, credential)
+	r.ThumbURL = withShareView(r.ThumbURL, credential)
+	return r
 }
 
 // ShareInfo augments a share with its associated media metadata.
@@ -187,14 +217,21 @@ type MediaShareService interface {
 	ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
 	// RevokeShare removes a share link owned by a user.
 	RevokeShare(ctx context.Context, token string, userID int64) error
-	// ValidateShareToken returns a usable share for a token.
+	// ValidateShareToken returns a share that exists, has not expired and
+	// has uses left.
 	ValidateShareToken(ctx context.Context, token string) (*model.Share, error)
-	// StreamSharedMedia returns a playable file for a share token.
-	StreamSharedMedia(ctx context.Context, token string) (*FileResult, error)
-	// GetSharedMedia returns public metadata and URLs for a share token.
-	GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error)
-	// GetSharedThumbnail returns a thumbnail for a share token.
-	GetSharedThumbnail(ctx context.Context, token string) (*FileResult, error)
+	// StreamSharedMedia returns the shared original file and the viewing
+	// the request runs under. A share use is consumed only when the request
+	// has no valid viewing credential and is not a probe; the returned
+	// viewing then has Opened set.
+	StreamSharedMedia(ctx context.Context, access ShareAccess) (*FileResult, ShareViewing, error)
+	// GetSharedMedia returns public metadata and URLs for a share, opening
+	// a viewing under the same rule as StreamSharedMedia.
+	GetSharedMedia(ctx context.Context, access ShareAccess) (*GetSharedMediaResult, error)
+	// GetSharedThumbnail returns the shared item's thumbnail. It never
+	// consumes a use; a valid credential lets it work after max_uses is
+	// reached.
+	GetSharedThumbnail(ctx context.Context, token string, credentials ...string) (*FileResult, error)
 	// ListMyShares returns all shares created by a user.
 	ListMyShares(ctx context.Context, userID int64) ([]ShareInfo, error)
 }

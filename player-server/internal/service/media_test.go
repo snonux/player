@@ -929,12 +929,12 @@ func TestMediaService_StreamSharedMedia_UseLimitRace(t *testing.T) {
 		}},
 	}
 	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-	_, err := svc.StreamSharedMedia(ctx, "abc")
+	_, _, err := svc.StreamSharedMedia(ctx, ShareAccess{Token: "abc"})
 	if !errors.Is(err, ErrShareExpired) {
 		t.Fatalf("expected ErrShareExpired, got %v", err)
 	}
 	used = true
-	if _, err := svc.StreamSharedMedia(ctx, "abc"); err != nil {
+	if _, _, err := svc.StreamSharedMedia(ctx, ShareAccess{Token: "abc"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1037,7 +1037,7 @@ func TestMediaService_StreamSharedMedia(t *testing.T) {
 				},
 			}
 			svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-			res, err := svc.StreamSharedMedia(ctx, "abc")
+			res, _, err := svc.StreamSharedMedia(ctx, ShareAccess{Token: "abc"})
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -2326,7 +2326,7 @@ func TestMediaService_StreamSharedMedia_MissingMedia(t *testing.T) {
 		},
 	}
 	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
-	_, err := svc.StreamSharedMedia(ctx, "abc")
+	_, _, err := svc.StreamSharedMedia(ctx, ShareAccess{Token: "abc"})
 	if !errors.Is(err, ErrMediaNotFound) {
 		t.Fatalf("expected ErrMediaNotFound, got %v", err)
 	}

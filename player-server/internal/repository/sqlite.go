@@ -17,6 +17,9 @@ type SQLite struct {
 const sqliteBusyTimeoutMS = 5000
 
 // New creates a SQLite store from an existing *sql.DB after initializing the schema.
+//
+// The connection must write its timestamps in UTC (see utcTimesDSN, which
+// Open applies): queries compare and sort them as text.
 func New(db *sql.DB) (*SQLite, error) {
 	if err := initializeSchema(db); err != nil {
 		return nil, fmt.Errorf("initialize schema: %w", err)
@@ -26,7 +29,8 @@ func New(db *sql.DB) (*SQLite, error) {
 
 // Open opens a SQLite database at the given DSN and returns a connected Store.
 func Open(dsn string) (*SQLite, error) {
-	db, err := sql.Open("sqlite", dsn)
+	// All timestamps are written and compared in UTC; see time_utc.go.
+	db, err := sql.Open("sqlite", utcTimesDSN(dsn))
 	if err != nil {
 		return nil, err
 	}

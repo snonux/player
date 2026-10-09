@@ -19,6 +19,15 @@ import '../widgets/public_network_image.dart';
 ///
 /// Keeps the screen layer free from raw map access: the data is extracted once
 /// here and then consumed via typed fields (Separation of Concerns).
+///
+/// Fetching this JSON opens a "viewing" on the server — one use of the
+/// share's `max_uses` — and every URL in it already ends in
+/// `?view=<credential>`. Requests that carry the credential belong to that
+/// viewing and cost nothing more, however many ranged requests a player
+/// makes. So the URLs must be used exactly as received (never rebuilt from
+/// the token), and the metadata must not be fetched again without need:
+/// each fetch is a new viewing. Servers that predate viewings send plain
+/// URLs, which work the same way here.
 class SharePageMetadata {
   const SharePageMetadata({
     required this.fileName,
@@ -29,6 +38,7 @@ class SharePageMetadata {
     required this.playbackUrl,
     required this.thumbUrl,
     required this.downloadUrl,
+    this.view = '',
   });
 
   final String fileName;
@@ -39,21 +49,26 @@ class SharePageMetadata {
 
   final bool hasThumb;
 
-  /// Relative path for the stream endpoint (e.g. "/s/abc123/stream"); always
-  /// the original file.
+  /// Relative URL of the stream endpoint (e.g.
+  /// "/s/abc123/stream?view=1791570469.t1Sg…"); always the original file.
   final String streamUrl;
 
-  /// Relative path a player should open: "/s/abc123/compat" when the server
-  /// transcodes this item, otherwise the same as [streamUrl]. Servers that
-  /// predate the compatibility stream do not send it, so it falls back to
-  /// [streamUrl].
+  /// Relative URL a player should open: "/s/abc123/compat?view=…" when the
+  /// server transcodes this item, otherwise the same as [streamUrl]. Servers
+  /// that predate the compatibility stream do not send it, so it falls back
+  /// to [streamUrl].
   final String playbackUrl;
 
-  /// Relative path for the thumbnail (e.g. "/s/abc123/thumbnail").
+  /// Relative URL of the thumbnail (e.g. "/s/abc123/thumbnail?view=…").
   final String thumbUrl;
 
-  /// Relative path for downloading the original file.
+  /// Relative URL for downloading the original file.
   final String downloadUrl;
+
+  /// The viewing credential on its own, as the URLs above carry it in
+  /// `?view=`; empty when the server sent none. Only needed where a URL has
+  /// to be built without one of those (the route's fallback stream URL).
+  final String view;
 
   /// Parses a [SharePageMetadata] from the raw JSON string returned by
   /// [PlayerApiClient.getSharedMediaPage].
@@ -76,6 +91,7 @@ class SharePageMetadata {
           playbackUrl == null || playbackUrl.isEmpty ? streamUrl : playbackUrl,
       thumbUrl: (map['thumb_url'] as String?) ?? '',
       downloadUrl: (map['download_url'] as String?) ?? '',
+      view: (map['view'] as String?) ?? '',
     );
   }
 }
@@ -166,21 +182,26 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
   // Play action
   // ---------------------------------------------------------------------------
 
-  /// Opens the public audio or video player for this share token.
+  /// Opens the public audio/video player or image viewer for this share.
   ///
   /// Audio and video are played from the server's `playback_url`, which is
-  /// the compatibility stream for formats the device cannot decode. Images
-  /// keep the route's default (the original file).
+  /// the compatibility stream for formats the device cannot decode; an image
+  /// is shown from `stream_url`, the original file. The URL is passed on
+  /// exactly as the server sent it, because it carries the viewing
+  /// credential (see [SharePageMetadata]); the route validates it. The
+  /// credential is passed along separately as well, so that the route's
+  /// fallback URL — used when it rejects the URL — still belongs to this
+  /// viewing instead of costing the share one use per request.
   void _play() {
     final page = _page;
     if (page == null) return;
 
-    final playable = page.type != 'image' && page.playbackUrl.isNotEmpty;
+    final path = page.type == 'image' ? page.streamUrl : page.playbackUrl;
     context.push(AppRoutes.sharedPlayerPath(widget.token, page.type), extra: {
       'title': page.fileName,
-      if (playable)
-        'mediaUrl':
-            '${ref.read(publicApiClientProvider).baseUrl}${page.playbackUrl}',
+      if (path.isNotEmpty)
+        'mediaUrl': '${ref.read(publicApiClientProvider).baseUrl}$path',
+      if (page.view.isNotEmpty) 'view': page.view,
     });
   }
 

@@ -371,6 +371,11 @@ func (m *MockStore) UseShare(ctx context.Context, token string, now time.Time) (
 	return m.ShareRepo.UseShare(ctx, token, now)
 }
 
+// ShareViewingKey implements ShareRepo.
+func (m *MockStore) ShareViewingKey(ctx context.Context) ([]byte, error) {
+	return m.ShareRepo.ShareViewingKey(ctx)
+}
+
 // DeleteShare implements ShareRepo.
 func (m *MockStore) DeleteShare(ctx context.Context, token string) error {
 	return m.ShareRepo.DeleteShare(ctx, token)
@@ -938,6 +943,7 @@ type MockShareRepo struct {
 	ListSharesByMediaFunc   func(ctx context.Context, mediaID int64) ([]model.Share, error)
 	ListSharesByUserFunc    func(ctx context.Context, userID int64) ([]model.Share, error)
 	UseShareFunc            func(ctx context.Context, token string, now time.Time) (bool, error)
+	ShareViewingKeyFunc     func(ctx context.Context) ([]byte, error)
 	DeleteShareFunc         func(ctx context.Context, token string) error
 	DeleteExpiredSharesFunc func(ctx context.Context, now time.Time) error
 }
@@ -980,6 +986,15 @@ func (m *MockShareRepo) UseShare(ctx context.Context, token string, now time.Tim
 		return m.UseShareFunc(ctx, token, now)
 	}
 	return true, nil
+}
+
+// ShareViewingKey calls ShareViewingKeyFunc or returns a fixed test key, so
+// services built on a bare mock can sign and verify viewing credentials.
+func (m *MockShareRepo) ShareViewingKey(ctx context.Context) ([]byte, error) {
+	if m.ShareViewingKeyFunc != nil {
+		return m.ShareViewingKeyFunc(ctx)
+	}
+	return []byte("mock-share-viewing-key-32-bytes!"), nil
 }
 
 // DeleteShare calls DeleteShareFunc or returns nil.

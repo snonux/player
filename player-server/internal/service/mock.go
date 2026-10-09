@@ -48,9 +48,9 @@ type MockMediaService struct {
 	ListMySharesFunc        func(ctx context.Context, userID int64) ([]ShareInfo, error)
 	RevokeShareFunc         func(ctx context.Context, token string, userID int64) error
 	ValidateShareTokenFunc  func(ctx context.Context, token string) (*model.Share, error)
-	StreamSharedMediaFunc   func(ctx context.Context, token string) (*FileResult, error)
-	GetSharedMediaFunc      func(ctx context.Context, token string) (*GetSharedMediaResult, error)
-	GetSharedThumbnailFunc  func(ctx context.Context, token string) (*FileResult, error)
+	StreamSharedMediaFunc   func(ctx context.Context, access ShareAccess) (*FileResult, ShareViewing, error)
+	GetSharedMediaFunc      func(ctx context.Context, access ShareAccess) (*GetSharedMediaResult, error)
+	GetSharedThumbnailFunc  func(ctx context.Context, token string, credentials ...string) (*FileResult, error)
 	GetNoteFunc             func(ctx context.Context, mediaID, userID int64) (*model.Note, error)
 	UpsertNoteFunc          func(ctx context.Context, note *model.Note) error
 	DeleteNoteFunc          func(ctx context.Context, mediaID, userID int64) error
@@ -225,25 +225,25 @@ func (m *MockMediaService) ValidateShareToken(ctx context.Context, token string)
 }
 
 // StreamSharedMedia calls StreamSharedMediaFunc or returns a not implemented error.
-func (m *MockMediaService) StreamSharedMedia(ctx context.Context, token string) (*FileResult, error) {
+func (m *MockMediaService) StreamSharedMedia(ctx context.Context, access ShareAccess) (*FileResult, ShareViewing, error) {
 	if m.StreamSharedMediaFunc != nil {
-		return m.StreamSharedMediaFunc(ctx, token)
+		return m.StreamSharedMediaFunc(ctx, access)
 	}
-	return nil, errors.New("not implemented")
+	return nil, ShareViewing{}, errors.New("not implemented")
 }
 
 // GetSharedMedia calls GetSharedMediaFunc or returns a not implemented error.
-func (m *MockMediaService) GetSharedMedia(ctx context.Context, token string) (*GetSharedMediaResult, error) {
+func (m *MockMediaService) GetSharedMedia(ctx context.Context, access ShareAccess) (*GetSharedMediaResult, error) {
 	if m.GetSharedMediaFunc != nil {
-		return m.GetSharedMediaFunc(ctx, token)
+		return m.GetSharedMediaFunc(ctx, access)
 	}
 	return nil, errors.New("not implemented")
 }
 
 // GetSharedThumbnail calls GetSharedThumbnailFunc or returns a not implemented error.
-func (m *MockMediaService) GetSharedThumbnail(ctx context.Context, token string) (*FileResult, error) {
+func (m *MockMediaService) GetSharedThumbnail(ctx context.Context, token string, credentials ...string) (*FileResult, error) {
 	if m.GetSharedThumbnailFunc != nil {
-		return m.GetSharedThumbnailFunc(ctx, token)
+		return m.GetSharedThumbnailFunc(ctx, token, credentials...)
 	}
 	return nil, errors.New("not implemented")
 }
@@ -457,8 +457,8 @@ func (m *MockPlaybackHintsService) GetPlaybackHint(ctx context.Context, mediaID,
 // MockCompatStreamService is a fake CompatStreamService for testing.
 type MockCompatStreamService struct {
 	CompatStreamFunc       func(ctx context.Context, mediaID, userID int64) (*transcode.Rendition, error)
-	SharedCompatStreamFunc func(ctx context.Context, token string) (*transcode.Rendition, error)
-	ConsumeShareUseFunc    func(ctx context.Context, token string) error
+	SharedCompatStreamFunc func(ctx context.Context, token string, credentials ...string) (*transcode.Rendition, error)
+	EnsureShareViewingFunc func(ctx context.Context, token string, credentials ...string) (ShareViewing, error)
 }
 
 // CompatStream calls CompatStreamFunc or returns nil.
@@ -470,19 +470,19 @@ func (m *MockCompatStreamService) CompatStream(ctx context.Context, mediaID, use
 }
 
 // SharedCompatStream calls SharedCompatStreamFunc or returns nil.
-func (m *MockCompatStreamService) SharedCompatStream(ctx context.Context, token string) (*transcode.Rendition, error) {
+func (m *MockCompatStreamService) SharedCompatStream(ctx context.Context, token string, credentials ...string) (*transcode.Rendition, error) {
 	if m.SharedCompatStreamFunc != nil {
-		return m.SharedCompatStreamFunc(ctx, token)
+		return m.SharedCompatStreamFunc(ctx, token, credentials...)
 	}
 	return nil, nil
 }
 
-// ConsumeShareUse calls ConsumeShareUseFunc or returns nil.
-func (m *MockCompatStreamService) ConsumeShareUse(ctx context.Context, token string) error {
-	if m.ConsumeShareUseFunc != nil {
-		return m.ConsumeShareUseFunc(ctx, token)
+// EnsureShareViewing calls EnsureShareViewingFunc or returns no viewing.
+func (m *MockCompatStreamService) EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error) {
+	if m.EnsureShareViewingFunc != nil {
+		return m.EnsureShareViewingFunc(ctx, token, credentials...)
 	}
-	return nil
+	return ShareViewing{}, nil
 }
 
 // MockProgressService is a fake ProgressService for testing.

@@ -126,6 +126,14 @@ CREATE TABLE IF NOT EXISTS shares (
     used_count INTEGER NOT NULL DEFAULT 0
 );
 
+-- Secrets the server generates for itself and must keep across restarts
+-- (currently only the key that signs share viewing credentials). Existing
+-- databases get the table from this same statement: it runs on every start.
+CREATE TABLE IF NOT EXISTS server_secrets (
+    name TEXT PRIMARY KEY,
+    value BLOB NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS media_notes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
@@ -232,6 +240,10 @@ func initializeSchema(db *sql.DB) error {
 	}
 	if err := execSchema(db, "indexes", indexesSchema); err != nil {
 		return err
+	}
+	// Last, when every table has its final shape.
+	if err := normalizeStoredTimes(db); err != nil {
+		return fmt.Errorf("normalize stored times: %w", err)
 	}
 	return nil
 }

@@ -238,15 +238,48 @@ func (s *Server) routesPublic() {
 // Share routes are dynamic (/s/{token}/...), so we register both the
 // specific mux patterns and a /s/ prefix in the public route registry to
 // cover every concrete token-bearing URL.
+//
+// A share's max_uses counts viewings, not requests: a client's first content
+// request (the page's POST …/view, the JSON metadata, or a direct media GET)
+// opens a viewing (one use) and hands it a credential that makes its further
+// requests free; see share_viewing.go. The HTML page itself is free. GET
+// patterns also serve HEAD, which never opens a viewing and so never
+// consumes a use on any of these routes; clients use it on the compat route
+// as a readiness probe.
 func (s *Server) routesSharePublic() {
-	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
-	s.mux.HandleFunc("GET /s/{token}/stream", s.handleShareStream)
-	// GET patterns also serve HEAD; clients use HEAD on the compat route as
-	// a readiness probe (it never consumes a share use).
-	s.mux.HandleFunc("GET /s/{token}/compat", s.handleShareCompatStream)
-	s.mux.HandleFunc("GET /s/{token}/thumbnail", s.handleShareThumbnail)
-	s.mux.HandleFunc("GET /s/{token}/download", s.handleShareDownload)
+	s.shareRoute(http.MethodGet, "/s/{token}", s.handleSharePage)
+	// The share page opens its viewing with this POST; see the handler for
+	// why it is not part of the page GET.
+	s.shareRoute(http.MethodPost, "/s/{token}/view", s.handleShareOpenViewing)
+	s.shareRoute(http.MethodGet, "/s/{token}/stream", s.handleShareStream)
+	s.shareRoute(http.MethodGet, "/s/{token}/compat", s.handleShareCompatStream)
+	s.shareRoute(http.MethodGet, "/s/{token}/thumbnail", s.handleShareThumbnail)
+	s.shareRoute(http.MethodGet, "/s/{token}/download", s.handleShareDownload)
+	// Everything else below /s/ is unknown. Without this the request would
+	// fall through to the session-protected catch-all and be told
+	// "unauthorized", as if signing in could help.
+	s.mux.HandleFunc("/s/", func(w http.ResponseWriter, _ *http.Request) {
+		preparePublicShare(w)
+		http.Error(w, "not found", http.StatusNotFound)
+	})
 	s.mw.RegisterPublicPrefix("/s/")
+}
+
+// shareRoute registers a public share route for one method (GET includes
+// HEAD) and answers every other method on the same path with 405 and an
+// Allow header, instead of letting it fall through to the session-protected
+// catch-all (401).
+func (s *Server) shareRoute(method, path string, handler http.HandlerFunc) {
+	allow := method
+	if method == http.MethodGet {
+		allow = "GET, HEAD"
+	}
+	s.mux.HandleFunc(method+" "+path, handler)
+	s.mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+		preparePublicShare(w)
+		w.Header().Set("Allow", allow)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	})
 }
 
 // routesStatic wires static CSS/JS asset serving.

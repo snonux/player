@@ -269,10 +269,12 @@ class DioPlayerApiClient extends PlayerApiClient {
   /// Retry-After while it is transcoding or the transcoder is busy, and
   /// 400/403/404/410/415/500/507 when it will not become available.
   ///
-  /// HEAD rather than a ranged GET because every served GET of a public
-  /// share consumes one of its uses; a probe must not spend a `max_uses`
-  /// budget before playback starts. A HEAD answer has no body, so only the
-  /// status and the Retry-After header are read.
+  /// HEAD rather than a ranged GET because a GET of a public share without a
+  /// viewing credential consumes one of its uses, while HEAD never does; a
+  /// probe must not spend a `max_uses` budget. A share URL from the share
+  /// JSON carries the credential (`?view=`), which the probe needs to be
+  /// answered at all once the share's uses are spent. A HEAD answer has no
+  /// body, so only the status and the Retry-After header are read.
   ///
   /// Every status except 401 is returned rather than thrown so the caller can
   /// tell "retry" from "failed"; 401 keeps the normal sign-out handling.
@@ -620,6 +622,11 @@ class DioPlayerApiClient extends PlayerApiClient {
   /// as a JSON string (the raw response body) so the caller can display media
   /// info without authentication.
   ///
+  /// Every call opens a new "viewing" and consumes one use of the share's
+  /// `max_uses` (this client keeps no cookies, so the server cannot recognise
+  /// a repeat). The JSON's `view` field is the viewing credential, and its
+  /// URLs already carry it as `?view=`; requests with it cost nothing more.
+  ///
   /// Note: this endpoint sits outside the /api/v1/ prefix; it has no v1 alias.
   @override
   Future<String> getSharedMediaPage(String token) async {
@@ -633,29 +640,48 @@ class DioPlayerApiClient extends PlayerApiClient {
     return (response.data as String?) ?? '';
   }
 
+  /// Path of a public share endpoint; with [view], the viewing credential
+  /// from the share JSON, appended as the `view` query parameter.
+  static String _sharePath(String token, String endpoint, String? view) {
+    final path = '/s/$token/$endpoint';
+    if (view == null || view.isEmpty) return path;
+    return '$path?view=${Uri.encodeQueryComponent(view)}';
+  }
+
   /// Streams a shared media file, optionally from a byte [range] offset.
   ///
   /// GET /s/{token}/stream — no auth required; supports the Range header.
+  /// With [view] the request belongs to that viewing and consumes no use;
+  /// without it every GET opens a viewing of its own (one use each).
   @override
-  Future<Uint8List> streamSharedMedia(String token, {String? range}) {
+  Future<Uint8List> streamSharedMedia(
+    String token, {
+    String? range,
+    String? view,
+  }) {
     final extraHeaders =
         range != null ? <String, dynamic>{'Range': range} : null;
-    return _getBytesFromUrl('/s/$token/stream', extraHeaders: extraHeaders);
+    return _getBytesFromUrl(
+      _sharePath(token, 'stream', view),
+      extraHeaders: extraHeaders,
+    );
   }
 
   /// Returns the thumbnail image for a shared media item.
   ///
-  /// GET /s/{token}/thumbnail — no auth required.
+  /// GET /s/{token}/thumbnail — no auth required; never consumes a use.
+  /// [view] keeps it reachable once the share's uses are spent.
   @override
-  Future<Uint8List> getSharedThumbnail(String token) =>
-      _getBytesFromUrl('/s/$token/thumbnail');
+  Future<Uint8List> getSharedThumbnail(String token, {String? view}) =>
+      _getBytesFromUrl(_sharePath(token, 'thumbnail', view));
 
   /// Downloads the original file for a shared media item.
   ///
   /// GET /s/{token}/download — no auth required; sets Content-Disposition.
+  /// Uses are counted as for [streamSharedMedia].
   @override
-  Future<Uint8List> downloadSharedMedia(String token) =>
-      _getBytesFromUrl('/s/$token/download');
+  Future<Uint8List> downloadSharedMedia(String token, {String? view}) =>
+      _getBytesFromUrl(_sharePath(token, 'download', view));
 
   // ---------------------------------------------------------------------------
   // Config

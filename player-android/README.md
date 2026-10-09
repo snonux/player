@@ -151,6 +151,15 @@ share URLs without an explicit port.
 If Android forwards a link with the same host but a different port, the app
 shows a server-mismatch message before sending the share token anywhere.
 
+Opening a share in the app is one "viewing" and uses the link once, however
+long playback takes: the app fetches the share's metadata a single time and
+plays the URLs from it, which carry the server's viewing credential
+(`?view=…`). Opening the same link again later (or tapping Retry after an
+error) is a new viewing, so a link limited to one use can be opened once.
+App versions up to 0.2.2 do not know the credential: with a current server
+they need one use to open the link and one more for every request their
+player makes, so links with a use limit may stop early there.
+
 The VIEW filter makes the app eligible to handle matching links. Automatic
 opening on Android 12+ requires the HTTPS server to publish a matching
 `/.well-known/assetlinks.json` for the app's signing certificate, or the user

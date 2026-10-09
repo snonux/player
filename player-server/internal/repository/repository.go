@@ -347,6 +347,9 @@ type ShareRepo interface {
 	ListSharesByUser(ctx context.Context, userID int64) ([]model.Share, error)
 	// UseShare atomically claims one use if the share has not expired or reached its limit.
 	UseShare(ctx context.Context, token string, now time.Time) (bool, error)
+	// ShareViewingKey returns the persistent key that signs share viewing
+	// credentials, creating it on first use.
+	ShareViewingKey(ctx context.Context) ([]byte, error)
 	// DeleteShare removes a share link by token.
 	DeleteShare(ctx context.Context, token string) error
 	// DeleteExpiredShares removes shares that expired before now.

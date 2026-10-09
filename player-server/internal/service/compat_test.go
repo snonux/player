@@ -240,7 +240,7 @@ func sharedCases(root string) []sharedCase {
 }
 
 // SharedCompatStream never counts a share use itself, whatever the outcome:
-// the API layer counts one (ConsumeShareUse) only when it is certain to
+// the API layer settles the viewing (EnsureShareViewing) only when it is certain to
 // deliver content.
 func TestSharedCompatStream(t *testing.T) {
 	root := mediaTree(t, "set/a.flv", "set/a.png", "set/a.mp4")
@@ -259,7 +259,7 @@ func TestSharedCompatStream(t *testing.T) {
 			renditions := &fakeRenditions{err: tt.ensureErr}
 			svc := NewCompatStreamService(helper, NewShareService(store, newMockClock(), helper), renditions, root)
 
-			got, err := svc.SharedCompatStream(context.Background(), "tok")
+			got, err := svc.SharedCompatStream(context.Background(), "tok", "")
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("error = %v, want %v", err, tt.wantErr)
 			}
@@ -274,10 +274,10 @@ func TestSharedCompatStream(t *testing.T) {
 	}
 }
 
-// ConsumeShareUse is the one place a compat share use is counted. It is
+// EnsureShareViewing is the one place a compat share use is counted. It is
 // atomic in the store, so a share whose last use was taken meanwhile (by
 // another request, or while the rendition was being produced) is refused.
-func TestCompatStreamService_ConsumeShareUse(t *testing.T) {
+func TestCompatStreamService_EnsureShareViewing(t *testing.T) {
 	tests := []struct {
 		name    string
 		used    bool
@@ -291,6 +291,7 @@ func TestCompatStreamService_ConsumeShareUse(t *testing.T) {
 			var tokens []string
 			store := compatStore(nil)
 			store.ShareRepo = repository.MockShareRepo{
+				GetShareByTokenFunc: existingShare,
 				UseShareFunc: func(_ context.Context, token string, _ time.Time) (bool, error) {
 					tokens = append(tokens, token)
 					return tt.used, nil
@@ -298,7 +299,7 @@ func TestCompatStreamService_ConsumeShareUse(t *testing.T) {
 			}
 			helper := NewAccessHelper(store)
 			svc := NewCompatStreamService(helper, NewShareService(store, newMockClock(), helper), &fakeRenditions{}, "")
-			if err := svc.ConsumeShareUse(context.Background(), "tok"); !errors.Is(err, tt.wantErr) {
+			if _, err := svc.EnsureShareViewing(context.Background(), "tok", ""); !errors.Is(err, tt.wantErr) {
 				t.Fatalf("error = %v, want %v", err, tt.wantErr)
 			}
 			if len(tokens) != 1 || tokens[0] != "tok" {
@@ -308,11 +309,17 @@ func TestCompatStreamService_ConsumeShareUse(t *testing.T) {
 	}
 }
 
-func TestConsumeShareUse_StoreError(t *testing.T) {
+// existingShare is a store lookup that finds a share valid for another hour.
+func existingShare(_ context.Context, token string) (*model.Share, error) {
+	return &model.Share{Token: token, MediaID: 5, ExpiresAt: newMockClock().T.Add(time.Hour)}, nil
+}
+
+func TestEnsureShareViewing_StoreError(t *testing.T) {
 	store := &repository.MockStore{ShareRepo: repository.MockShareRepo{
-		UseShareFunc: func(context.Context, string, time.Time) (bool, error) { return false, errors.New("db down") },
+		GetShareByTokenFunc: existingShare,
+		UseShareFunc:        func(context.Context, string, time.Time) (bool, error) { return false, errors.New("db down") },
 	}}
-	err := NewShareService(store, newMockClock(), NewAccessHelper(store)).ConsumeShareUse(context.Background(), "tok")
+	_, err := NewShareService(store, newMockClock(), NewAccessHelper(store)).EnsureShareViewing(context.Background(), "tok", "")
 	if err == nil || errors.Is(err, ErrShareExpired) {
 		t.Fatalf("error = %v, want the store error", err)
 	}
@@ -454,7 +461,7 @@ func TestGetSharedMedia_PlaybackURL(t *testing.T) {
 					return &model.Share{Token: "tok", MediaID: 1, ExpiresAt: now.Add(time.Hour)}, nil
 				},
 			}
-			res, err := NewShareService(store, newMockClock(), NewAccessHelper(store)).GetSharedMedia(context.Background(), "tok")
+			res, err := NewShareService(store, newMockClock(), NewAccessHelper(store)).GetSharedMedia(context.Background(), ShareAccess{Token: "tok"})
 			if err != nil {
 				t.Fatalf("GetSharedMedia: %v", err)
 			}
