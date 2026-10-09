@@ -38,7 +38,11 @@ import (
 // (methods of different types with one name count as one function); the
 // check does not follow the data flow, so it cannot tell whether the ffsafe
 // arguments are the ones passed on, nor see a command created through a
-// stored function value (thumb.FFmpegGenerator.execer). Those are covered
+// stored function value (thumb.FFmpegGenerator.execer). Callers are looked
+// for in the function's own package only, so rule (c) does not see another
+// package calling an exported function that runs prebuilt arguments; keep
+// such runners unexported. A command built with new(exec.Cmd) or a zero
+// exec.Cmd variable is not a command site either. Those are covered
 // by the argument-list tests: TestProbeArgs, TestRemuxArgs, TestThumbArgs
 // and TestFFmpegArgs.
 
