@@ -30,6 +30,8 @@ type MediaServices struct {
 	Note          service.MediaNoteService
 	Progress      service.ProgressService
 	PlaybackHints service.PlaybackHintsService
+	// Compat serves transcoded compatibility renditions of legacy formats.
+	Compat service.CompatStreamService
 }
 
 // Server holds HTTP handlers and dependencies.
@@ -239,6 +241,9 @@ func (s *Server) routesPublic() {
 func (s *Server) routesSharePublic() {
 	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
 	s.mux.HandleFunc("GET /s/{token}/stream", s.handleShareStream)
+	// GET patterns also serve HEAD; clients use HEAD on the compat route as
+	// a readiness probe (it never consumes a share use).
+	s.mux.HandleFunc("GET /s/{token}/compat", s.handleShareCompatStream)
 	s.mux.HandleFunc("GET /s/{token}/thumbnail", s.handleShareThumbnail)
 	s.mux.HandleFunc("GET /s/{token}/download", s.handleShareDownload)
 	s.mw.RegisterPublicPrefix("/s/")
@@ -302,6 +307,7 @@ func (s *Server) routesMedia() {
 	s.handleBoth(http.MethodGet, "/api/media", s.requireSession(s.handleListMedia))
 	s.handleBoth(http.MethodGet, "/api/media/{id}", s.requireSession(s.handleGetMedia))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/stream", s.requireSession(s.handleStream))
+	s.handleBoth(http.MethodGet, "/api/media/{id}/compat", s.requireSession(s.handleCompatStream))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/download", s.requireSession(s.handleDownload))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/thumbnail", s.requireSession(s.handleThumbnail))
 	s.handleBoth(http.MethodPost, "/api/media/{id}/thumbnail", s.requireSession(s.handleRegenThumbnail))
@@ -386,6 +392,12 @@ func (s *Server) pingStore(ctx context.Context) error {
 	return nil
 }
 
+// httpWriteTimeout is the time a handler has to write its response. Large
+// media responses that take longer are cut and resumed by the client with a
+// Range request. serveRendition restarts this budget after waiting for a
+// transcode, so both streaming endpoints get the same window for the body.
+const httpWriteTimeout = 30 * time.Second
+
 // GracefulServer wraps an http.Server with graceful shutdown support.
 type GracefulServer struct {
 	Server *http.Server
@@ -398,7 +410,7 @@ func NewGracefulServer(handler http.Handler, cfg *internal.Config) *GracefulServ
 			Addr:         addrFromPort(cfg.Port),
 			Handler:      handler,
 			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
+			WriteTimeout: httpWriteTimeout,
 			IdleTimeout:  120 * time.Second,
 		},
 	}

@@ -10,10 +10,11 @@ import (
 
 func TestParseFFprobeOutput(t *testing.T) {
 	cases := []struct {
-		name    string
-		input   string
-		want    *model.Metadata
-		wantErr bool
+		name      string
+		input     string
+		audioFile bool
+		want      *model.Metadata
+		wantErr   bool
 	}{
 		{
 			name: "video with all fields",
@@ -26,7 +27,7 @@ func TestParseFFprobeOutput(t *testing.T) {
 			}`,
 			want: &model.Metadata{
 				Duration:   123.45,
-				Codec:      "h264",
+				Codec:      "h264/aac",
 				Resolution: "1920x1080",
 				Bitrate:    500000,
 			},
@@ -44,6 +45,52 @@ func TestParseFFprobeOutput(t *testing.T) {
 				Codec:    "mp3",
 				Bitrate:  128000,
 			},
+		},
+		{
+			// The audio codec is recorded so playback decisions can see
+			// e.g. AC-3 or WMA next to H.264 video.
+			name: "audio stream listed before video",
+			input: `{
+				"format": {},
+				"streams": [
+					{"codec_name": "ac3", "codec_type": "audio"},
+					{"codec_name": "h264", "width": 1280, "height": 720, "codec_type": "video"},
+					{"codec_name": "aac", "codec_type": "audio"},
+					{"codec_name": "mjpeg", "width": 600, "height": 600, "codec_type": "video"}
+				]
+			}`,
+			want: &model.Metadata{Codec: "h264/ac3", Resolution: "1280x720"},
+		},
+		{
+			name: "silent video",
+			input: `{
+				"format": {},
+				"streams": [{"codec_name": "mpeg4", "width": 640, "height": 480, "codec_type": "video"}]
+			}`,
+			want: &model.Metadata{Codec: "mpeg4", Resolution: "640x480"},
+		},
+		{
+			// Cover art is not the codec of an audio file.
+			name:      "audio file with cover art",
+			audioFile: true,
+			input: `{
+				"format": {},
+				"streams": [
+					{"codec_name": "mjpeg", "width": 500, "height": 500, "codec_type": "video"},
+					{"codec_name": "mp3", "codec_type": "audio"}
+				]
+			}`,
+			want: &model.Metadata{Codec: "mp3", Resolution: "500x500"},
+		},
+		{
+			// An audio extension on a file without audio keeps what there is.
+			name:      "audio file without audio stream",
+			audioFile: true,
+			input: `{
+				"format": {},
+				"streams": [{"codec_name": "theora", "width": 320, "height": 240, "codec_type": "video"}]
+			}`,
+			want: &model.Metadata{Codec: "theora", Resolution: "320x240"},
 		},
 		{
 			name:    "invalid json",
@@ -69,7 +116,7 @@ func TestParseFFprobeOutput(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := parseFFprobeOutput([]byte(c.input))
+			got, err := parseFFprobeOutput([]byte(c.input), c.audioFile)
 			if (err != nil) != c.wantErr {
 				t.Fatalf("unexpected error: %v", err)
 			}

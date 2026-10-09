@@ -14,7 +14,7 @@ import (
 
 var (
 	videoExts = map[string]struct{}{
-		".mp4": {}, ".mkv": {}, ".avi": {}, ".mov": {}, ".wmv": {}, ".flv": {}, ".webm": {},
+		".mp4": {}, ".mkv": {}, ".avi": {}, ".mov": {}, ".wmv": {}, ".asf": {}, ".flv": {}, ".webm": {},
 	}
 
 	audioExts = map[string]struct{}{
@@ -76,6 +76,15 @@ func MIMETypeForExt(name string) string {
 	if t := mime.TypeByExtension(ext); t != "" {
 		return t
 	}
+	if t := fallbackVideoMIME(ext); t != "" {
+		return t
+	}
+	return fallbackAudioImageMIME(ext)
+}
+
+// fallbackVideoMIME is the hard-coded MIME mapping for video extensions the
+// OS mime database does not know. It returns "" for other extensions.
+func fallbackVideoMIME(ext string) string {
 	switch ext {
 	case ".mp4", ".m4v":
 		return "video/mp4"
@@ -87,10 +96,20 @@ func MIMETypeForExt(name string) string {
 		return "video/quicktime"
 	case ".wmv":
 		return "video/x-ms-wmv"
+	case ".asf":
+		return "video/x-ms-asf"
 	case ".flv":
 		return "video/x-flv"
 	case ".webm":
 		return "video/webm"
+	}
+	return ""
+}
+
+// fallbackAudioImageMIME is the hard-coded MIME mapping for audio and image
+// extensions; unknown extensions yield application/octet-stream.
+func fallbackAudioImageMIME(ext string) string {
+	switch ext {
 	case ".mp3":
 		return "audio/mpeg"
 	case ".flac":
