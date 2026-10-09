@@ -23,10 +23,10 @@ type Maker interface {
 	// MakeVideo produces a thumbnail for a video file. duration is the
 	// video duration in seconds and is forwarded to the underlying
 	// Generator so it can pick a sensible frame.
-	MakeVideo(ctx context.Context, srcPath, parent string, duration float64) (string, error)
+	MakeVideo(ctx context.Context, srcPath string, duration float64) (string, error)
 	// MakeImage produces a thumbnail for an image file. No duration is
 	// applicable so 0 is passed to the underlying Generator.
-	MakeImage(ctx context.Context, srcPath, parent string) (string, error)
+	MakeImage(ctx context.Context, srcPath string) (string, error)
 }
 
 // MakerFS is the small filesystem surface FSMaker needs. It mirrors the
@@ -72,28 +72,28 @@ func NewFSMaker(gen Generator, fs MakerFS, logger *slog.Logger) *FSMaker {
 	return &FSMaker{gen: gen, fs: fs, logger: logger}
 }
 
-// MakeVideo creates a thumbnail for a video file inside parent/.thumbnails/.
-// The path comes from ThumbnailPathFor so importers, the scanner, and
-// the resolver all agree on where thumbnails live. Generator failures are
-// logged and swallowed so a single bad file does not abort the scan.
-func (m *FSMaker) MakeVideo(ctx context.Context, srcPath, parent string, duration float64) (string, error) {
-	return m.make(ctx, srcPath, parent, duration)
+// MakeVideo creates a thumbnail for a video file in the .thumbnails
+// directory next to it. The path comes from ThumbnailPathFor so importers,
+// the scanner, and the resolver all agree on where thumbnails live.
+// Generator failures are logged and swallowed so a single bad file does
+// not abort the scan.
+func (m *FSMaker) MakeVideo(ctx context.Context, srcPath string, duration float64) (string, error) {
+	return m.make(ctx, srcPath, duration)
 }
 
 // MakeImage creates a thumbnail for an image file. Duration is irrelevant
 // for static images so 0 is forwarded to the Generator.
-func (m *FSMaker) MakeImage(ctx context.Context, srcPath, parent string) (string, error) {
-	return m.make(ctx, srcPath, parent, 0)
+func (m *FSMaker) MakeImage(ctx context.Context, srcPath string) (string, error) {
+	return m.make(ctx, srcPath, 0)
 }
 
 // make is the shared implementation behind MakeVideo / MakeImage. It
-// derives the canonical thumbnail path via ThumbnailPathFor, ensures its
-// directory exists (parent/.thumbnails, plus the mirrored subdirectory
-// when srcPath is nested below parent), and delegates the actual frame
-// extraction to the Generator. Generator errors are logged and reported
-// as ("", nil) so the scanner can continue with the next file.
-func (m *FSMaker) make(ctx context.Context, srcPath, parent string, duration float64) (string, error) {
-	thumbnailPath := ThumbnailPathFor(srcPath, parent)
+// derives the canonical thumbnail path via ThumbnailPathFor, ensures the
+// .thumbnails directory next to srcPath exists, and delegates the actual
+// frame extraction to the Generator. Generator errors are logged and
+// reported as ("", nil) so the scanner can continue with the next file.
+func (m *FSMaker) make(ctx context.Context, srcPath string, duration float64) (string, error) {
+	thumbnailPath := ThumbnailPathFor(srcPath)
 	dir := filepath.Dir(thumbnailPath)
 	if err := m.fs.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir thumbnails %q: %w", dir, err)

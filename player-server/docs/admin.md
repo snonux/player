@@ -43,33 +43,47 @@ This triggers `FSScanner.Scan()`, which:
 
 ### Thumbnail Naming and Upgrades
 
-Generated thumbnails live in a hidden `.thumbnails` directory and are named
-after the source file's full name plus `.jpg`, so every media file has its
-own thumbnail:
+A generated thumbnail lives in a hidden `.thumbnails` directory next to its
+source file and is named after the source's full name plus `.jpg`. Rescan,
+upload and "regenerate thumbnail" all use this one layout, so every media
+file has exactly one thumbnail of its own:
 
-| Source | Created by | Thumbnail |
-|--------|------------|-----------|
-| `set/holiday.mp4` | rescan or upload | `set/.thumbnails/holiday.mp4.jpg` |
-| `set/holiday.png` | rescan or upload | `set/.thumbnails/holiday.png.jpg` |
-| `set/a/clip.mp4` | rescan | `set/.thumbnails/a/clip.mp4.jpg` |
-| `set/a/clip.mp4` | upload | `set/a/.thumbnails/clip.mp4.jpg` |
+| Source | Thumbnail |
+|--------|-----------|
+| `set/holiday.mp4` | `set/.thumbnails/holiday.mp4.jpg` |
+| `set/holiday.png` | `set/.thumbnails/holiday.png.jpg` |
+| `set/a/clip.mp4` | `set/a/.thumbnails/clip.mp4.jpg` |
 
-Releases up to v0.2.2 named thumbnails after the stem only (`holiday.jpg`)
-and the scanner kept them flat in the set's `.thumbnails` directory. Files
-sharing a stem (`holiday.mp4` and `holiday.png`), or a name in two folders of
-one set, overwrote each other's thumbnail.
+(A source name too long to take the extra `.jpg` is shortened and suffixed
+with a hash.)
+
+Releases up to v0.2.2 named thumbnails after the stem only (`holiday.jpg`),
+and the scanner kept all thumbnails of a set flat in the set's `.thumbnails`
+directory. Files sharing a stem (`holiday.mp4` and `holiday.png`), or a name
+in two folders of one set, overwrote each other's thumbnail.
 
 After upgrading, **run one Rescan**. Until then nothing breaks: stored
-thumbnail paths keep working, and affected cards simply keep showing the
-shared thumbnail. The rescan then, for every already indexed video and image:
+thumbnail paths keep working, and affected cards keep showing the shared
+thumbnail. The rescan then handles every already indexed video and image
+whose thumbnail is still at an old path:
 
-- renames a thumbnail used by a single media item to its new name (no
-  re-encoding, a manually regenerated frame is kept);
-- generates a fresh thumbnail for each item that shared one with another item;
-- deletes old thumbnail files nothing refers to any more.
+- a thumbnail only one media item can have written is renamed to its new
+  path (no re-encoding, a manually regenerated frame is kept);
+- where several items could have written the same file, each of them gets a
+  fresh thumbnail generated from its own source;
+- an old thumbnail file is deleted once no item refers to it any more.
 
-An item whose migration fails keeps its old thumbnail and is retried on the
-next rescan. Later rescans find nothing left to migrate.
+The migration shows up in the scan progress as additional files. It can be
+interrupted and repeated at any point (a second click on Rescan, a restart,
+the scan timeout): an item is only switched to a thumbnail that exists, and
+an item that could not be migrated keeps its old thumbnail and is retried on
+the next rescan, with the reason logged as a warning. Only files inside the
+set directory are touched. Once everything is migrated, later rescans find
+nothing to do.
+
+"Regenerate thumbnail" on an item that still has an old path moves just that
+item to its new path and deletes the old file unless another item still
+uses it.
 
 ### Managing Trash
 

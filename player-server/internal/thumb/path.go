@@ -1,8 +1,11 @@
 package thumb
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // DirName is the on-disk directory name used to store generated thumbnails.
@@ -12,6 +15,15 @@ const DirName = ".thumbnails"
 // thumbExt is the canonical extension used for all generated thumbnails.
 // Thumbnails are always JPEGs regardless of the source media type.
 const thumbExt = ".jpg"
+
+// maxNameLen is the longest file name (in bytes) common filesystems accept
+// (NAME_MAX on ext4, XFS, ZFS, NFS). A source name may itself be that long,
+// so appending ".jpg" must not push the thumbnail name over the limit.
+const maxNameLen = 255
+
+// nameHashLen is the number of hex digits of the source name's SHA-256 kept
+// in a shortened thumbnail name.
+const nameHashLen = 16
 
 // ThumbnailDir returns the conventional thumbnail directory inside parent.
 // The directory is a hidden ".thumbnails" subfolder sitting next to the
@@ -26,47 +38,59 @@ func ThumbnailDir(parent string) string {
 //
 // Keeping the extension is what makes the name unique per source file:
 // "holiday.mp4" and "holiday.png" used to share "holiday.jpg" and overwrote
-// each other's thumbnail. The mapping is injective, so two different
-// basenames can never yield the same name. Dotfiles need no special case
-// (".bashrc" -> ".bashrc.jpg"); the previous stem-based scheme collapsed
-// every dotfile to a bare ".jpg".
-func ThumbnailNameFor(srcPath string) string {
-	return filepath.Base(srcPath) + thumbExt
-}
-
-// ThumbnailPathFor returns the full path to the thumbnail for srcPath stored
-// under parent/.thumbnails/. parent is the directory that owns the thumbnail
-// folder: the source's own directory for uploads, the set directory for the
-// scanner.
+// each other's thumbnail. Dotfiles need no special case (".bashrc" ->
+// ".bashrc.jpg"); the previous stem-based scheme collapsed every dotfile to
+// a bare ".jpg".
 //
-// When srcPath lies in a subdirectory of parent, that subdirectory is
-// mirrored below .thumbnails ("set/a/clip.mp4" with parent "set" ->
-// "set/.thumbnails/a/clip.mp4.jpg"), so same-named files in different
-// folders of one set do not collide either. A srcPath outside parent falls
-// back to the bare name directly inside parent/.thumbnails/.
-func ThumbnailPathFor(srcPath, parent string) string {
-	rel, err := filepath.Rel(parent, srcPath)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		rel = filepath.Base(srcPath)
+// A source name too long to take the extra ".jpg" (252 bytes and up) is cut
+// at a rune boundary and suffixed with a hash of the full name, so it stays
+// within maxNameLen and still differs from its equally long neighbours.
+func ThumbnailNameFor(srcPath string) string {
+	base := filepath.Base(srcPath)
+	if len(base)+len(thumbExt) <= maxNameLen {
+		return base + thumbExt
 	}
-	return filepath.Join(ThumbnailDir(parent), filepath.Dir(rel), ThumbnailNameFor(rel))
+	sum := sha256.Sum256([]byte(base))
+	suffix := "~" + hex.EncodeToString(sum[:])[:nameHashLen] + thumbExt
+	cut := maxNameLen - len(suffix)
+	for cut > 0 && !utf8.RuneStart(base[cut]) {
+		cut--
+	}
+	return base[:cut] + suffix
 }
 
-// ParentOf returns the directory owning the .thumbnails tree that thumbPath
-// lives in, i.e. the parent to pass to ThumbnailPathFor to rebuild a path in
-// the same tree. ok is false when thumbPath is not inside a .thumbnails
-// directory, which means it is not a generated thumbnail (for example an
-// audio cover image, or an image that serves as its own thumbnail).
-func ParentOf(thumbPath string) (parent string, ok bool) {
-	dir := filepath.Dir(thumbPath)
-	for {
-		if filepath.Base(dir) == DirName {
-			return filepath.Dir(dir), true
-		}
-		next := filepath.Dir(dir)
-		if next == dir {
-			return "", false
-		}
-		dir = next
+// ThumbnailPathFor returns the full path to the generated thumbnail of
+// srcPath: ThumbnailNameFor(srcPath) inside the .thumbnails directory next
+// to the source. Scanner, upload/import and thumbnail regeneration all use
+// this one layout, and because the thumbnail sits in the source's own
+// directory, two media files can only share a thumbnail path if they share
+// a directory and a basename, i.e. if they are the same file.
+func ThumbnailPathFor(srcPath string) string {
+	return filepath.Join(ThumbnailDir(filepath.Dir(srcPath)), ThumbnailNameFor(srcPath))
+}
+
+// IsGenerated reports whether path lies directly inside a .thumbnails
+// directory, i.e. is a thumbnail this package generated. It is false for
+// thumbnails that are ordinary files: an audio cover image, or an image
+// serving as its own thumbnail.
+func IsGenerated(path string) bool {
+	return filepath.Base(filepath.Dir(path)) == DirName
+}
+
+// LegacyPathsFor returns the thumbnail paths releases up to v0.2.2 may have
+// written for srcPath, a media file inside the set directory setPath. Those
+// releases named a thumbnail after the source's stem only ("holiday.jpg").
+// Uploads put it in .thumbnails next to the source, the scanner in the
+// set's own .thumbnails whatever the source's subfolder, so several sources
+// could map to one file. The paths are distinct; for a source directly in
+// setPath both layouts coincide and one path is returned.
+func LegacyPathsFor(srcPath, setPath string) []string {
+	base := filepath.Base(srcPath)
+	name := strings.TrimSuffix(base, filepath.Ext(base)) + thumbExt
+	beside := filepath.Join(ThumbnailDir(filepath.Dir(srcPath)), name)
+	inSet := filepath.Join(ThumbnailDir(setPath), name)
+	if beside == inSet {
+		return []string{beside}
 	}
+	return []string{beside, inSet}
 }

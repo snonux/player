@@ -124,18 +124,11 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 		return fmt.Errorf("probe media: %w", err)
 	}
 
-	// Re-generate inside the .thumbnails tree the media's thumbnail already
-	// lives in, so a scanner-made thumbnail (kept under the set directory) is
-	// overwritten in place instead of leaving a stale JPEG behind next to a
-	// second copy. Media without a generated thumbnail gets one beside the
-	// source file, like an upload. A row still pointing at a pre-extension
-	// name ("clip.jpg") moves to the current name here; its old file may be
-	// shared with another row, so it is left for the rescan migration.
-	parent, ok := thumb.ParentOf(media.ThumbnailPath)
-	if !ok {
-		parent = filepath.Dir(media.AbsPath)
-	}
-	thumbnailPath := thumb.ThumbnailPathFor(media.AbsPath, parent)
+	// The destination comes from internal/thumb, the one layout scanner and
+	// import use as well. A row still pointing at a thumbnail written under
+	// an older naming scheme therefore moves to its own, current path here.
+	previous := media.ThumbnailPath
+	thumbnailPath := thumb.ThumbnailPathFor(media.AbsPath)
 	if err := os.MkdirAll(filepath.Dir(thumbnailPath), 0o755); err != nil {
 		return fmt.Errorf("mkdir thumbnails: %w", err)
 	}
@@ -148,7 +141,39 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 	if err := s.store.UpdateMedia(ctx, media); err != nil {
 		return fmt.Errorf("update media: %w", err)
 	}
+	s.removeReplacedThumbnail(ctx, media, previous)
 	return nil
+}
+
+// removeReplacedThumbnail deletes the generated thumbnail file media pointed
+// at before RegenerateThumbnail moved it to a different path, unless another
+// media row of the set still points at that file (under the old stem-based
+// naming several rows could share one). Without this the old file would be
+// orphaned: the rescan migration only looks at paths rows still store.
+//
+// Only a file in a .thumbnails directory of the source's own directory or
+// one of its ancestors is removed, which are the places older releases put
+// thumbnails; a stale path pointing anywhere else is left alone. Failing to
+// clean up is logged, not returned: the regeneration itself succeeded.
+func (s *writeService) removeReplacedThumbnail(ctx context.Context, media *model.Media, previous string) {
+	if previous == media.ThumbnailPath || !thumb.IsGenerated(previous) {
+		return
+	}
+	owner := filepath.Dir(filepath.Dir(previous))
+	if !strings.HasPrefix(media.AbsPath, owner+string(filepath.Separator)) {
+		return
+	}
+	siblings, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &media.SetID, IncludeDeleted: true})
+	if err != nil {
+		slog.Default().Warn("replaced thumbnail kept, cannot list media", "path", previous, "err", err)
+		return
+	}
+	for i := range siblings {
+		if siblings[i].ThumbnailPath == previous {
+			return
+		}
+	}
+	removeAndLog(previous)
 }
 
 func (s *writeService) RegenerateSetCover(ctx context.Context, setID int64, folder string, userID int64) error {

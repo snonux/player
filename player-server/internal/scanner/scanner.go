@@ -29,8 +29,9 @@ type Scanner interface {
 // to a thumb.Maker. This keeps SRP intact — FSScanner orchestrates the
 // scan, thumb.Maker decides how thumbnails get produced on disk.
 //
-// Scan itself is orchestrated by delegating to three focused collaborators:
+// Scan itself is orchestrated by delegating to four focused collaborators:
 //   - fileDiscoverer: walks the filesystem to find media files and cover images
+//   - thumbMigrator:  moves thumbnails of indexed media off older naming schemes
 //   - probeWorker:    runs ffprobe in parallel workers to build media records
 //   - scanWriter:     persists probed results to the database
 type FSScanner struct {
@@ -40,8 +41,13 @@ type FSScanner struct {
 	clock     clock.Clock
 	mediaRoot string
 	fs        FS
-	logger    *slog.Logger
-	workers   int
+	// migFS is the filesystem the thumbnail migration works on; nil means
+	// the real one. Only tests set it, to inject failures.
+	migFS   migrationFS
+	logger  *slog.Logger
+	workers int
+	// scanMu serialises Scan calls, see Scan.
+	scanMu sync.Mutex
 }
 
 // NewFSScanner creates a filesystem scanner with injected dependencies.
@@ -91,7 +97,20 @@ func (s *FSScanner) log() *slog.Logger {
 
 // Scan walks immediate subdirectories of root, treating each as a set.
 // It orchestrates fileDiscoverer, probeWorker, and scanWriter collaborators.
+//
+// Scans on one FSScanner run one at a time. A rescan triggered while another
+// is running cancels that one but does not wait for it, so without the lock
+// the two would briefly overlap, each working from its own snapshot of the
+// rows: both could insert the same new file or move the same thumbnail. The
+// cancelled scan stops quickly, then the new one starts from a fresh snapshot.
 func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanProgress) error {
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		// Superseded or shut down while waiting for the previous scan.
+		return err
+	}
+
 	entries, err := s.fs.ReadDir(root)
 	if err != nil {
 		return fmt.Errorf("read media root %q: %w", root, err)
@@ -223,19 +242,27 @@ func (s *FSScanner) updateAudioThumbnails(ctx context.Context, mediaList []model
 	}
 }
 
-// scanSet scans a single set using fileDiscoverer, probeWorker, and scanWriter.
-// fileDiscoverer collects the file list; probeWorker probes files in parallel;
-// scanWriter persists results to SQLite via a single writer goroutine.
+// setScan carries the state of one set's scan between its phases.
+type setScan struct {
+	id   int64
+	name string
+	path string
+	// existing holds the set's rows as of the start of the scan, keyed by
+	// relPath; soft-deleted rows are included.
+	existing    map[string]model.Media
+	coverImages map[string]string
+	files       []string
+}
+
+// scanSet scans a single set in three phases: discoverSet finds the files
+// and brings the already indexed rows up to date, probeAndStore probes and
+// persists the new files, and finally audio tracks pick up cover images
+// that appeared since they were indexed.
 func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress *model.ScanProgress) error {
-	workers := s.workers
-	if workers <= 0 {
-		workers = 1
-	}
 	setID, setName, err := s.ensureSet(ctx, root, setPath)
 	if err != nil {
 		return err
 	}
-
 	s.log().Info("scanner set started", "name", setName, "path", setPath)
 	if progress != nil {
 		progress.SetCurrentSet(setName)
@@ -245,33 +272,68 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 	if err != nil {
 		return err
 	}
-
-	// Use fileDiscoverer to collect files and cover images.
-	disc := newFileDiscoverer(s.fs)
-	coverImages := disc.gatherCoverImages(setPath)
-	files, err := disc.Discover(setPath)
+	sc := &setScan{id: setID, name: setName, path: setPath, existing: existing}
+	if err := s.discoverSet(ctx, sc, progress); err != nil {
+		return fmt.Errorf("scan set %q: %w", setName, err)
+	}
+	newFiles, err := s.probeAndStore(ctx, sc, progress)
 	if err != nil {
 		return fmt.Errorf("scan set %q: %w", setName, err)
 	}
+
+	mediaList, _ := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
+	s.updateAudioThumbnails(ctx, mediaList, sc.coverImages, setPath)
+
+	s.log().Info("scanner set completed", "name", setName, "existing_media", len(existing), "new_media", newFiles)
+	return nil
+}
+
+// discoverSet uses fileDiscoverer to collect the set's media files and
+// cover images into sc, then reconciles the already indexed rows with what
+// is on disk: rows whose file disappeared are soft-deleted and thumbnails
+// stored under an older naming scheme are migrated.
+func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *model.ScanProgress) error {
+	disc := newFileDiscoverer(s.fs)
+	sc.coverImages = disc.gatherCoverImages(sc.path)
+	files, err := disc.Discover(sc.path)
+	if err != nil {
+		return err
+	}
+	sc.files = files
 
 	// Build the set of relPaths we just saw on disk so reconcileOrphans
 	// can soft-delete media rows whose files disappeared between scans.
 	seenRel := make(map[string]struct{}, len(files))
 	for _, p := range files {
-		if rel, relErr := filepath.Rel(setPath, p); relErr == nil {
+		if rel, relErr := filepath.Rel(sc.path, p); relErr == nil {
 			seenRel[filepath.ToSlash(rel)] = struct{}{}
 		}
 	}
-	s.reconcileOrphans(ctx, existing, seenRel, setName)
-	// Must run before the probe workers: a new file's thumbnail may land on
-	// a path that a not-yet-migrated row still uses under the old naming.
-	s.migrateThumbnails(ctx, existing, seenRel, setPath, setName)
+	s.reconcileOrphans(ctx, sc.existing, seenRel, sc.name)
+
+	// The migration must finish before the probe workers start: a new
+	// file's thumbnail can land on the path a row still uses under the old
+	// naming (new "holiday.mp4" -> "holiday.mp4.jpg", the old thumbnail of
+	// "holiday.mp4.png"), and that row has to move away first.
+	migFS := s.migFS
+	if migFS == nil {
+		migFS = osFS{}
+	}
+	newThumbMigrator(s.store, s.thumbMkr, migFS, s.log()).run(ctx, sc.existing, seenRel, sc.path, sc.name, progress)
 
 	if progress != nil {
 		progress.AddFilesTotal(len(files))
 	}
+	return nil
+}
 
-	pathChan := make(chan string, len(files))
+// probeAndStore runs sc.files through the probe/persist pipeline and
+// returns the number of media rows created. probeWorkers probe files in
+// parallel; a single scanWriter goroutine persists the results, because
+// SQLite does not take concurrent writes. The first error cancels the rest.
+func (s *FSScanner) probeAndStore(ctx context.Context, sc *setScan, progress *model.ScanProgress) (int32, error) {
+	workers := max(s.workers, 1)
+	pathChan := make(chan string, len(sc.files))
 	resultChan := make(chan fileResult, workers)
 
 	scanCtx, cancel := context.WithCancel(ctx)
@@ -283,16 +345,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		errOnce.Do(func() { errChan <- err; cancel() })
 	}
 
-	// probeWorker probes files concurrently and sends results to resultChan.
-	pw := newProbeWorker(s.prober, s.thumbMkr, s.fs, s.clock, s.log())
-	var workerWg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		workerWg.Add(1)
-		go func() {
-			defer workerWg.Done()
-			pw.run(ctx, scanCtx, pathChan, resultChan, setPath, setID, setName, existing, coverImages, progress, sendErr)
-		}()
-	}
+	workerWg := s.startProbeWorkers(ctx, scanCtx, sc, workers, pathChan, resultChan, progress, sendErr)
 
 	// scanWriter persists results sequentially to avoid SQLite write conflicts.
 	sw := newScanWriter(s.store, s.log())
@@ -301,44 +354,60 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 	writerWg.Add(1)
 	go func() {
 		defer writerWg.Done()
-		sw.run(ctx, scanCtx, resultChan, setName, setPath, &newFiles, sendErr)
+		sw.run(ctx, scanCtx, resultChan, sc.name, sc.path, &newFiles, sendErr)
 	}()
 
-	// Feed the worker pool.
+	feedPaths(scanCtx, sc.files, pathChan)
+
+	// Wait for workers to finish, then close the result channel so the
+	// writer exits, and wait for it to drain all results.
+	workerWg.Wait()
+	close(resultChan)
+	writerWg.Wait()
+
+	select {
+	case err := <-errChan:
+		return newFiles, err
+	default:
+		return newFiles, nil
+	}
+}
+
+// startProbeWorkers launches n probeWorker goroutines that probe the paths
+// arriving on pathChan concurrently and send their results to resultChan.
+// The returned WaitGroup is done once pathChan is closed and drained.
+func (s *FSScanner) startProbeWorkers(
+	ctx, scanCtx context.Context,
+	sc *setScan,
+	n int,
+	pathChan <-chan string,
+	resultChan chan<- fileResult,
+	progress *model.ScanProgress,
+	sendErr func(error),
+) *sync.WaitGroup {
+	pw := newProbeWorker(s.prober, s.thumbMkr, s.fs, s.clock, s.log())
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pw.run(ctx, scanCtx, pathChan, resultChan, sc.path, sc.id, sc.name, sc.existing, sc.coverImages, progress, sendErr)
+		}()
+	}
+	return &wg
+}
+
+// feedPaths sends files to the worker pool and closes pathChan, which lets
+// the workers return. It stops early once scanCtx is cancelled.
+func feedPaths(scanCtx context.Context, files []string, pathChan chan<- string) {
+	defer close(pathChan)
 	for _, path := range files {
-		if scanCtx.Err() != nil {
-			break
-		}
 		select {
 		case pathChan <- path:
 		case <-scanCtx.Done():
-			break
+			return
 		}
 	}
-	close(pathChan)
-
-	// Wait for workers to finish, then close the result channel so the writer exits.
-	workerWg.Wait()
-	close(resultChan)
-
-	// Wait for the writer to drain all results.
-	writerWg.Wait()
-
-	var firstErr error
-	select {
-	case firstErr = <-errChan:
-	default:
-	}
-
-	if firstErr != nil {
-		return fmt.Errorf("scan set %q: %w", setName, firstErr)
-	}
-
-	mediaList, _ := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
-	s.updateAudioThumbnails(ctx, mediaList, coverImages, setPath)
-
-	s.log().Info("scanner set completed", "name", setName, "existing_media", len(existing), "new_media", newFiles)
-	return nil
 }
 
 // collectFiles walks the set and returns the absolute paths of all supported media files.

@@ -161,7 +161,7 @@ func (pw *probeWorker) probeFile(
 func (pw *probeWorker) buildThumbnailPath(ctx context.Context, path, setPath string, mediaType model.MediaType, coverImages map[string]string, meta *model.Metadata) (string, error) {
 	switch mediaType {
 	case model.MediaTypeVideo:
-		return pw.thumbMkr.MakeVideo(ctx, path, setPath, meta.Duration)
+		return pw.thumbMkr.MakeVideo(ctx, path, meta.Duration)
 	case model.MediaTypeAudio:
 		return findCoverImage(path, coverImages, setPath), nil
 	case model.MediaTypeImage:
@@ -170,7 +170,7 @@ func (pw *probeWorker) buildThumbnailPath(ctx context.Context, path, setPath str
 			// SVG is a vector format; serve the original file directly.
 			return path, nil
 		}
-		thumbPath, err := pw.thumbMkr.MakeImage(ctx, path, setPath)
+		thumbPath, err := pw.thumbMkr.MakeImage(ctx, path)
 		if err != nil {
 			return "", err
 		}

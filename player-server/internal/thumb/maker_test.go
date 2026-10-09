@@ -34,7 +34,7 @@ func TestFSMaker_MakeVideo_DelegatesToGenerator(t *testing.T) {
 	fs := &recordingFS{}
 	m := NewFSMaker(gen, fs, nil)
 
-	got, err := m.MakeVideo(context.Background(), "/set/movie.mp4", "/set", 12.5)
+	got, err := m.MakeVideo(context.Background(), "/set/movie.mp4", 12.5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestFSMaker_MakeImage_PassesZeroDuration(t *testing.T) {
 	}
 	m := NewFSMaker(gen, &recordingFS{}, nil)
 
-	if _, err := m.MakeImage(context.Background(), "/p/img.png", "/p"); err != nil {
+	if _, err := m.MakeImage(context.Background(), "/p/img.png"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if gotDuration != 0 {
@@ -82,7 +82,7 @@ func TestFSMaker_GeneratorError_SwallowedAsEmptyPath(t *testing.T) {
 	}
 	m := NewFSMaker(gen, &recordingFS{}, nil)
 
-	got, err := m.MakeVideo(context.Background(), "/s/v.mp4", "/s", 1)
+	got, err := m.MakeVideo(context.Background(), "/s/v.mp4", 1)
 	if err != nil {
 		t.Fatalf("expected generator error to be swallowed, got %v", err)
 	}
@@ -95,25 +95,25 @@ func TestFSMaker_MkdirErrorPropagates(t *testing.T) {
 	fs := &recordingFS{mkdirErr: errors.New("readonly fs")}
 	m := NewFSMaker(&MockGenerator{}, fs, nil)
 
-	_, err := m.MakeImage(context.Background(), "/s/x.jpg", "/s")
+	_, err := m.MakeImage(context.Background(), "/s/x.jpg")
 	if err == nil {
 		t.Fatal("expected mkdir error to propagate")
 	}
 }
 
-// TestFSMaker_NestedSourceGetsOwnThumbnail covers the scanner layout: the
-// set directory owns the thumbnails, so same-named files in two subfolders
-// must not overwrite each other and the mirrored subfolder must be created.
+// TestFSMaker_NestedSourceGetsOwnThumbnail: same-named files in two folders
+// of a set must not overwrite each other; each thumbnail goes into the
+// .thumbnails directory of its own folder, which the maker creates.
 func TestFSMaker_NestedSourceGetsOwnThumbnail(t *testing.T) {
 	fs := &recordingFS{}
 	m := NewFSMaker(&MockGenerator{}, fs, nil)
 
-	a, errA := m.MakeVideo(context.Background(), "/set/a/clip.mp4", "/set", 1)
-	b, errB := m.MakeVideo(context.Background(), "/set/b/clip.mp4", "/set", 1)
+	a, errA := m.MakeVideo(context.Background(), "/set/a/clip.mp4", 1)
+	b, errB := m.MakeVideo(context.Background(), "/set/b/clip.mp4", 1)
 	if errA != nil || errB != nil {
 		t.Fatalf("unexpected errors: %v, %v", errA, errB)
 	}
-	if want := filepath.Join("/set", DirName, "a", "clip.mp4.jpg"); a != want {
+	if want := filepath.Join("/set", "a", DirName, "clip.mp4.jpg"); a != want {
 		t.Fatalf("path = %q, want %q", a, want)
 	}
 	if a == b {

@@ -1,6 +1,11 @@
 package thumb
 
-import "testing"
+import (
+	"slices"
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestThumbnailDir(t *testing.T) {
 	tests := []struct {
@@ -68,47 +73,78 @@ func TestThumbnailNameFor_UniquePerSource(t *testing.T) {
 	}
 }
 
+// TestThumbnailNameFor_LongNames: a source name may be as long as the
+// filesystem allows (255 bytes), so the thumbnail name must be shortened
+// instead of exceeding the limit, and stay unique and deterministic.
+func TestThumbnailNameFor_LongNames(t *testing.T) {
+	long := func(n int, fill, ext string) string {
+		return strings.Repeat(fill, (n-len(ext))/len(fill)) + ext
+	}
+	t.Run("longest name that still fits is kept verbatim", func(t *testing.T) {
+		src := long(251, "a", ".mp4")
+		if got := ThumbnailNameFor(src); got != src+".jpg" || len(got) != 255 {
+			t.Errorf("got %d bytes, want the name plus .jpg (255 bytes)", len(got))
+		}
+	})
+	for _, n := range []int{252, 253, 254, 255} {
+		src := long(n, "a", ".mp4")
+		got := ThumbnailNameFor("/media/set1/" + src)
+		if len(got) > 255 || !strings.HasSuffix(got, ".jpg") {
+			t.Errorf("source of %d bytes: thumbnail name has %d bytes, suffix ok=%v", n, len(got), strings.HasSuffix(got, ".jpg"))
+		}
+		if got != ThumbnailNameFor(src) {
+			t.Errorf("source of %d bytes: name is not deterministic", n)
+		}
+	}
+	t.Run("long names differing only at the end stay distinct", func(t *testing.T) {
+		a, b := long(255, "a", ".mp4"), long(255, "a", ".mkv")
+		if ThumbnailNameFor(a) == ThumbnailNameFor(b) {
+			t.Error("two long sources share a thumbnail name")
+		}
+	})
+	t.Run("multi-byte names are cut at a rune boundary", func(t *testing.T) {
+		got := ThumbnailNameFor(long(254, "\u00e4", ".mp4")) // 2-byte runes
+		if len(got) > 255 || !utf8.ValidString(got) {
+			t.Errorf("name has %d bytes, valid UTF-8 = %v", len(got), utf8.ValidString(got))
+		}
+	})
+}
+
 func TestThumbnailPathFor(t *testing.T) {
 	tests := []struct {
 		name    string
 		srcPath string
-		parent  string
 		want    string
 	}{
-		{"video", "/media/set1/clip.mp4", "/media/set1", "/media/set1/.thumbnails/clip.mp4.jpg"},
-		{"image trailing slash parent", "/media/set1/photo.jpg", "/media/set1/", "/media/set1/.thumbnails/photo.jpg.jpg"},
-		{"no extension", "/media/set1/RAW", "/media/set1", "/media/set1/.thumbnails/RAW.jpg"},
-		{"nested source mirrors its folder", "/media/set1/a/clip.mp4", "/media/set1", "/media/set1/.thumbnails/a/clip.mp4.jpg"},
-		{"deeply nested source", "/media/set1/a/b/clip.mp4", "/media/set1", "/media/set1/.thumbnails/a/b/clip.mp4.jpg"},
-		{"relative nested", "set1/a/clip.mp4", "set1", "set1/.thumbnails/a/clip.mp4.jpg"},
-		{"folder name starting with dots is not an escape", "/media/set1/..a/clip.mp4", "/media/set1", "/media/set1/.thumbnails/..a/clip.mp4.jpg"},
-		// Negative cases: a source that is not below parent must not escape
-		// parent/.thumbnails via "..", it falls back to the bare name.
-		{"src elsewhere", "/uploads/raw/photo.png", "/media/set1", "/media/set1/.thumbnails/photo.png.jpg"},
-		{"src in sibling of parent", "/media/set2/clip.mp4", "/media/set1", "/media/set1/.thumbnails/clip.mp4.jpg"},
-		{"src one level above parent", "/media/clip.mp4", "/media/set1", "/media/set1/.thumbnails/clip.mp4.jpg"},
-		{"relative src, unrelated relative parent", "clip.mp4", "set1", "set1/.thumbnails/clip.mp4.jpg"},
-		{"absolute src, relative parent", "/media/set1/clip.mp4", "set1", "set1/.thumbnails/clip.mp4.jpg"},
+		{"video", "/media/set1/clip.mp4", "/media/set1/.thumbnails/clip.mp4.jpg"},
+		{"jpeg source", "/media/set1/photo.jpg", "/media/set1/.thumbnails/photo.jpg.jpg"},
+		{"no extension", "/media/set1/RAW", "/media/set1/.thumbnails/RAW.jpg"},
+		{"nested source stays in its own folder", "/media/set1/a/clip.mp4", "/media/set1/a/.thumbnails/clip.mp4.jpg"},
+		{"deeply nested source", "/media/set1/a/b/clip.mp4", "/media/set1/a/b/.thumbnails/clip.mp4.jpg"},
+		{"relative", "set1/clip.mp4", "set1/.thumbnails/clip.mp4.jpg"},
+		{"bare name", "clip.mp4", ".thumbnails/clip.mp4.jpg"},
+		{"unclean path is cleaned", "/media/set1/a/../clip.mp4", "/media/set1/.thumbnails/clip.mp4.jpg"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ThumbnailPathFor(tt.srcPath, tt.parent); got != tt.want {
-				t.Errorf("ThumbnailPathFor(%q, %q) = %q, want %q", tt.srcPath, tt.parent, got, tt.want)
+			if got := ThumbnailPathFor(tt.srcPath); got != tt.want {
+				t.Errorf("ThumbnailPathFor(%q) = %q, want %q", tt.srcPath, got, tt.want)
 			}
 		})
 	}
 }
 
-// TestThumbnailPathFor_NoCollisionAcrossFolders covers the scanner layout,
-// where one set directory owns the thumbnails of all its subfolders.
-func TestThumbnailPathFor_NoCollisionAcrossFolders(t *testing.T) {
+// TestThumbnailPathFor_UniquePerSource: neither a shared stem nor a shared
+// name in two folders of one set may lead to a shared thumbnail path.
+func TestThumbnailPathFor_UniquePerSource(t *testing.T) {
 	sources := []string{
-		"/media/set1/clip.mp4", "/media/set1/clip.png",
+		"/media/set1/clip.mp4", "/media/set1/clip.png", "/media/set1/clip.mkv",
 		"/media/set1/a/clip.mp4", "/media/set1/b/clip.mp4", "/media/set1/a/b/clip.mp4",
+		"/media/set2/clip.mp4",
 	}
 	seen := make(map[string]string, len(sources))
 	for _, src := range sources {
-		p := ThumbnailPathFor(src, "/media/set1")
+		p := ThumbnailPathFor(src)
 		if other, dup := seen[p]; dup {
 			t.Errorf("%q and %q share thumbnail path %q", other, src, p)
 		}
@@ -116,44 +152,59 @@ func TestThumbnailPathFor_NoCollisionAcrossFolders(t *testing.T) {
 	}
 }
 
-func TestParentOf(t *testing.T) {
+func TestIsGenerated(t *testing.T) {
 	tests := []struct {
-		name      string
-		thumbPath string
-		want      string
-		wantOK    bool
+		name string
+		path string
+		want bool
 	}{
-		{"flat thumbnail", "/media/set1/.thumbnails/clip.mp4.jpg", "/media/set1", true},
-		{"old stem-named thumbnail", "/media/set1/.thumbnails/clip.jpg", "/media/set1", true},
-		{"mirrored subfolder", "/media/set1/.thumbnails/a/b/clip.mp4.jpg", "/media/set1", true},
-		{"relative", "set1/.thumbnails/clip.jpg", "set1", true},
-		{"innermost tree wins", "/m/.thumbnails/x/.thumbnails/c.jpg", "/m/.thumbnails/x", true},
-		{"image used as its own thumbnail", "/media/set1/photo.jpg", "", false},
-		{"audio cover", "/media/set1/album/cover.jpg", "", false},
-		{"file merely named like the directory", "/media/set1/.thumbnails", "", false},
-		{"similar directory name", "/media/set1/.thumbnails2/clip.jpg", "", false},
-		{"empty", "", "", false},
+		{"current name", "/media/set1/.thumbnails/clip.mp4.jpg", true},
+		{"old stem name", "/media/set1/.thumbnails/clip.jpg", true},
+		{"relative", ".thumbnails/clip.jpg", true},
+		{"own output", ThumbnailPathFor("/media/set1/a/clip.mp4"), true},
+		{"image used as its own thumbnail", "/media/set1/photo.jpg", false},
+		{"audio cover", "/media/set1/album/cover.jpg", false},
+		{"the directory itself", "/media/set1/.thumbnails", false},
+		{"subfolder of the directory", "/media/set1/.thumbnails/a/clip.jpg", false},
+		{"similar directory name", "/media/set1/.thumbnails2/clip.jpg", false},
+		{"empty", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := ParentOf(tt.thumbPath)
-			if got != tt.want || ok != tt.wantOK {
-				t.Errorf("ParentOf(%q) = %q, %v, want %q, %v", tt.thumbPath, got, ok, tt.want, tt.wantOK)
+			if got := IsGenerated(tt.path); got != tt.want {
+				t.Errorf("IsGenerated(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
 	}
 }
 
-// TestParentOf_RoundTrip checks that a path built by ThumbnailPathFor is
-// recognised as already canonical, which is what stops the scanner from
-// migrating the same thumbnail again on every rescan.
-func TestParentOf_RoundTrip(t *testing.T) {
-	for _, src := range []string{"/media/set1/clip.mp4", "/media/set1/a/b/clip.mp4"} {
-		p := ThumbnailPathFor(src, "/media/set1")
-		parent, ok := ParentOf(p)
-		if !ok || ThumbnailPathFor(src, parent) != p {
-			t.Errorf("round trip of %q via %q failed: parent=%q ok=%v", src, p, parent, ok)
-		}
+func TestLegacyPathsFor(t *testing.T) {
+	tests := []struct {
+		name    string
+		srcPath string
+		want    []string
+	}{
+		{"file at the set root: both layouts coincide", "/media/set1/holiday.mp4",
+			[]string{"/media/set1/.thumbnails/holiday.jpg"}},
+		{"nested file: upload and scanner layout", "/media/set1/a/clip.mp4",
+			[]string{"/media/set1/a/.thumbnails/clip.jpg", "/media/set1/.thumbnails/clip.jpg"}},
+		{"multi-dot name loses only the last extension", "/media/set1/holiday.mp4.png",
+			[]string{"/media/set1/.thumbnails/holiday.mp4.jpg"}},
+		{"dotfile collapsed to a bare extension", "/media/set1/.mp4",
+			[]string{"/media/set1/.thumbnails/.jpg"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := LegacyPathsFor(tt.srcPath, "/media/set1"); !slices.Equal(got, tt.want) {
+				t.Errorf("LegacyPathsFor(%q) = %v, want %v", tt.srcPath, got, tt.want)
+			}
+		})
+	}
+	// The reported bug, seen from the old naming: two sources, one path.
+	a := LegacyPathsFor("/media/set1/holiday.mp4", "/media/set1")
+	b := LegacyPathsFor("/media/set1/holiday.png", "/media/set1")
+	if !slices.Equal(a, b) {
+		t.Errorf("same-stem sources should map to one legacy path: %v vs %v", a, b)
 	}
 }
 

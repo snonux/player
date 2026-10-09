@@ -10,6 +10,7 @@ import (
 
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/thumb"
 )
 
 // Feed-owned artwork file names: cover.jpg is downloaded on subscribe and
@@ -134,8 +135,9 @@ func (s *podcastSubscriptionService) tidyFolders(ctx context.Context, set *model
 	return errors.Join(errs...)
 }
 
-// tidyFolder deletes a folder's feed artwork (rows and files) and the folder
-// itself, unless it holds other indexed media. The directory is removed
+// tidyFolder deletes a folder's feed artwork (rows, files and their
+// generated thumbnails) and the folder itself, unless it holds other indexed
+// media. The directory is removed
 // non-recursively, so files that were never indexed keep it in place.
 func (s *podcastSubscriptionService) tidyFolder(ctx context.Context, set *model.Set, folder string, all []model.Media) error {
 	var artwork []*model.Media
@@ -159,7 +161,13 @@ func (s *podcastSubscriptionService) tidyFolder(ctx context.Context, set *model.
 		if err := os.Remove(filepath.Join(dir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("remove %s: %w", name, err))
 		}
+		// The artwork's generated thumbnail lives in the folder's own
+		// .thumbnails directory and would keep the folder from being
+		// removed. Best-effort, like the directory removals below.
+		_ = os.Remove(thumb.ThumbnailPathFor(filepath.Join(dir, name)))
 	}
+	// Non-recursive: thumbnails of anything else keep .thumbnails in place.
+	_ = os.Remove(thumb.ThumbnailDir(dir))
 	if err := os.Remove(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
 		// Unindexed files remain; leave the folder rather than delete them.
 		s.podcastService.logger.Info("podcast folder kept after unsubscribe", "folder", folder, "err", err)
