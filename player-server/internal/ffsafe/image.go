@@ -13,11 +13,13 @@ import (
 // transient failure: retrying cannot help.
 var ErrNotAnImage = errors.New("content is not a supported image format")
 
-// sniffLen is how much of a file is read to recognise its format. Every
-// binary signature sits in the first 12 bytes; the rest is for SVG, whose
-// root element follows an XML declaration, a doctype and comments of any
-// length.
-const sniffLen = 4096
+// sniffLen is how much of a file is read, at most, to recognise its format.
+// Every binary signature sits in the first 12 bytes; the rest is for SVG,
+// whose root element follows an XML declaration and possibly a doctype with
+// entity declarations and editor comments (licence texts, metadata). An SVG
+// with more than 64 KiB in front of its <svg> element is not recognised and
+// is refused as ErrNotAnImage.
+const sniffLen = 64 << 10
 
 // imageFormat ties the leading bytes of an image file to the ffmpeg demuxer
 // that reads it.
@@ -95,7 +97,7 @@ func hasAt(head []byte, offset int, signature string) bool {
 // looksLikeSVG reports whether head is the start of an XML document with an
 // <svg> element: markup from the first character on (after an optional
 // byte-order mark and whitespace) and the root element within the sniffed
-// part.
+// part (see sniffLen).
 func looksLikeSVG(head []byte) bool {
 	head = bytes.TrimPrefix(head, []byte("\xef\xbb\xbf"))
 	head = bytes.TrimLeft(head, " \t\r\n")

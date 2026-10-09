@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"codeberg.org/snonux/player/internal/ffsafe"
@@ -22,6 +23,21 @@ const (
 	defaultProbeMaxRetries = 2
 	defaultProbeRetryDelay = 500 * time.Millisecond
 )
+
+// ErrUnreadable reports a file that is not media ffprobe may read: its
+// content was refused by the input hardening (see package ffsafe) or could
+// not be parsed. It is a property of the file — probing it again gives the
+// same answer — unlike a failure to run ffprobe or to reach the file.
+var ErrUnreadable = errors.New("not readable as media")
+
+// refusalMessages are the ffprobe diagnostics of a deterministic refusal:
+// a demuxer that is not on the whitelist, and content no allowed demuxer
+// can make sense of (which includes an empty file and an HLS playlist under
+// a media name).
+var refusalMessages = []string{
+	"not on whitelist",
+	"Invalid data found when processing input",
+}
 
 // Prober extracts metadata from a media file.
 type Prober interface {
@@ -46,7 +62,10 @@ func NewFFProber() *FFProber {
 	}
 }
 
-// Probe runs ffprobe against the given path with retries and parses the resulting JSON.
+// Probe runs ffprobe against the given path and parses the resulting JSON.
+// A failure that may be transient (ffprobe could not run, the file could not
+// be reached) is retried a bounded number of times; a file that is
+// ErrUnreadable is not, and neither is a cancelled context.
 func (f *FFProber) Probe(ctx context.Context, path string) (*model.Metadata, error) {
 	var lastErr error
 	attempts := f.maxRetries + 1
@@ -66,9 +85,9 @@ func (f *FFProber) Probe(ctx context.Context, path string) (*model.Metadata, err
 		lastErr = err
 
 		// Don't retry on context cancellation, nor a file whose content
-		// was refused before ffprobe ran: waiting will not change it.
+		// was refused: waiting will not change it.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
-			errors.Is(err, ffsafe.ErrNotAnImage) {
+			errors.Is(err, ErrUnreadable) {
 			break
 		}
 
@@ -114,6 +133,9 @@ func probeArgs(path string) ([]string, error) {
 // probeOnce performs a single ffprobe invocation.
 func (f *FFProber) probeOnce(ctx context.Context, path string) (*model.Metadata, error) {
 	args, err := probeArgs(path)
+	if errors.Is(err, ffsafe.ErrNotAnImage) {
+		return nil, fmt.Errorf("ffprobe %s: %w: %w", path, ErrUnreadable, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("ffprobe %s: %w", path, err)
 	}
@@ -121,10 +143,7 @@ func (f *FFProber) probeOnce(ctx context.Context, path string) (*model.Metadata,
 	cmd.WaitDelay = f.waitDelay
 	out, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
-			return nil, fmt.Errorf("ffprobe %s: %w: %s", path, err, string(exitErr.Stderr))
-		}
-		return nil, fmt.Errorf("ffprobe %s: %w", path, err)
+		return nil, probeFailure(path, err)
 	}
 	audioFile := mediatype.TypeForExt(path) == model.MediaTypeAudio
 	meta, err := parseFFprobeOutput(out, audioFile)
@@ -136,6 +155,23 @@ func (f *FFProber) probeOnce(ctx context.Context, path string) (*model.Metadata,
 		extractEXIF(path, meta)
 	}
 	return meta, nil
+}
+
+// probeFailure turns a failed ffprobe run into an error carrying ffprobe's
+// diagnostics, marked ErrUnreadable when they say the file itself was
+// refused (see refusalMessages).
+func probeFailure(path string, err error) error {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || len(exitErr.Stderr) == 0 {
+		return fmt.Errorf("ffprobe %s: %w", path, err)
+	}
+	stderr := string(exitErr.Stderr)
+	for _, message := range refusalMessages {
+		if strings.Contains(stderr, message) {
+			return fmt.Errorf("ffprobe %s: %w: %w: %s", path, ErrUnreadable, err, stderr)
+		}
+	}
+	return fmt.Errorf("ffprobe %s: %w: %s", path, err, stderr)
 }
 
 type ffprobeOutput struct {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -51,8 +52,37 @@ func TestFFProber_RefusedImageIsNotRetried(t *testing.T) {
 	p := &FFProber{maxRetries: 5, retryDelay: time.Hour, waitDelay: time.Second}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := p.Probe(ctx, path); !errors.Is(err, ffsafe.ErrNotAnImage) {
-		t.Fatalf("Probe = %v, want ErrNotAnImage without waiting for a retry", err)
+	_, err := p.Probe(ctx, path)
+	if !errors.Is(err, ffsafe.ErrNotAnImage) || !errors.Is(err, ErrUnreadable) {
+		t.Fatalf("Probe = %v, want ErrUnreadable (ErrNotAnImage) without waiting for a retry", err)
+	}
+}
+
+// probeFailure marks ffprobe's deterministic refusals, and only those.
+func TestProbeFailure(t *testing.T) {
+	exit := func(stderr string) error { return &exec.ExitError{Stderr: []byte(stderr)} }
+	tests := []struct {
+		name       string
+		err        error
+		unreadable bool
+	}{
+		{"format not on whitelist", exit("[concat @ 0x1] Format not on whitelist 'avi,mov'\n"), true},
+		{"invalid data", exit("file:/m/a.avi: Invalid data found when processing input\n"), true},
+		{"i/o error", exit("file:/m/a.avi: Input/output error\n"), false},
+		{"missing file", exit("file:/m/a.avi: No such file or directory\n"), false},
+		{"no diagnostics", exit(""), false},
+		{"ffprobe not startable", exec.ErrNotFound, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := probeFailure("/m/a.avi", tt.err)
+			if got := errors.Is(err, ErrUnreadable); got != tt.unreadable {
+				t.Errorf("unreadable = %v, want %v (%v)", got, tt.unreadable, err)
+			}
+			if !errors.Is(err, tt.err) {
+				t.Errorf("%v does not wrap the cause", err)
+			}
+		})
 	}
 }
 
@@ -88,7 +118,8 @@ func realProber() *FFProber {
 }
 
 // A playlist disguised as media must not yield the metadata of the file it
-// points at: the probe fails.
+// points at: the probe fails, as ErrUnreadable, and at the first attempt —
+// the prober here would wait an hour before a second one.
 func TestFFProber_RealRefusesDisguisedPlaylists(t *testing.T) {
 	ffsafetest.RequireFFmpeg(t)
 	dir := t.TempDir()
@@ -98,9 +129,12 @@ func TestFFProber_RealRefusesDisguisedPlaylists(t *testing.T) {
 	}
 	for _, path := range ffsafetest.WriteDisguised(t, dir) {
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			meta, err := realProber().Probe(context.Background(), path)
-			if err == nil {
-				t.Errorf("Probe succeeded with %+v, want a refusal", meta)
+			patient := &FFProber{maxRetries: 5, retryDelay: time.Hour, waitDelay: defaultProbeWaitDelay}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			meta, err := patient.Probe(ctx, path)
+			if !errors.Is(err, ErrUnreadable) {
+				t.Errorf("Probe = %+v, %v; want ErrUnreadable without a retry", meta, err)
 			}
 		})
 	}

@@ -143,22 +143,33 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	media, err := s.media.Write.UploadMedia(r.Context(), setID, userIDFromContext(r), fh.Filename, file, fh.Size)
 	if err != nil {
-		if errors.Is(err, service.ErrNotFound) {
-			notFound(w)
-			return
-		}
-		if errors.Is(err, service.ErrForbidden) {
-			forbidden(w, "forbidden")
-			return
-		}
-		if errors.Is(err, service.ErrUnsupportedExtension) {
-			badRequest(w, err.Error())
-			return
-		}
-		handleError(w, err)
+		s.writeUploadError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, media)
+}
+
+// writeUploadError answers a failed upload. Errors the service classified
+// (not found, forbidden, unsupported extension, unreadable media, ...) carry
+// their own status and a text meant for the client. Everything else is an
+// internal failure whose text can hold absolute server paths (a failed
+// mkdir or file creation) or ffprobe output: it is logged, and the client
+// gets a fixed message.
+func (s *Server) writeUploadError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, service.ErrNotFound):
+		notFound(w)
+	case errors.Is(err, service.ErrForbidden):
+		forbidden(w, "forbidden")
+	case errors.Is(err, service.ErrUnreadableMedia):
+		// Fixed text even if a caller wrapped the sentinel with detail.
+		writeError(w, http.StatusUnsupportedMediaType, service.ErrUnreadableMedia.Error())
+	case errors.As(err, new(HTTPStatuser)):
+		handleError(w, err)
+	default:
+		s.logger.Error("api upload failed", "path", r.URL.Path, "err", err)
+		writeError(w, http.StatusInternalServerError, "upload failed")
+	}
 }
 
 // ------------------------------------------------------------------

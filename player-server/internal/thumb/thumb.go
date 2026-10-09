@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	"codeberg.org/snonux/player/internal/ffsafe"
@@ -19,8 +20,17 @@ type Generator interface {
 
 // FFmpegGenerator uses ffmpeg to extract a random frame.
 type FFmpegGenerator struct {
+	// execer creates the ffmpeg command; nil means exec.CommandContext.
+	// Tests replace it. The default is resolved in run, next to the
+	// arguments, so that the one place a process is created is also the
+	// place its hardened arguments come from (the call-site check in
+	// package ffsafe relies on that).
 	execer func(ctx context.Context, name string, arg ...string) *exec.Cmd
-	rnd    *rand.Rand
+	// rnd picks the frame offsets. A rand.Rand is not safe for concurrent
+	// use and one generator serves all scanner workers, hence rndMu; see
+	// randomOffset.
+	rndMu sync.Mutex
+	rnd   *rand.Rand
 	// stat inspects the generated file; nil means os.Stat. Tests whose
 	// fake execer writes no file replace it.
 	stat func(name string) (os.FileInfo, error)
@@ -31,8 +41,7 @@ var _ Generator = (*FFmpegGenerator)(nil)
 // NewFFmpegGenerator creates a new FFmpegGenerator with a seeded random source.
 func NewFFmpegGenerator() *FFmpegGenerator {
 	return &FFmpegGenerator{
-		execer: exec.CommandContext,
-		rnd:    rand.New(rand.NewSource(time.Now().UnixNano())),
+		rnd: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -57,7 +66,7 @@ const seekMargin = 1.0
 // videos too short to seek in, get the first frame straight away.
 func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath string, duration float64) error {
 	if duration > seekMargin {
-		offset := g.rnd.Float64() * (duration - seekMargin)
+		offset := g.randomOffset(duration)
 		if err := g.run(ctx, inputPath, outputPath, &offset); err == nil && g.wroteFrame(outputPath) {
 			return nil
 		}
@@ -71,13 +80,25 @@ func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath st
 	return nil
 }
 
+// randomOffset returns a random position in [0, duration-seekMargin). It is
+// safe to call from several goroutines.
+func (g *FFmpegGenerator) randomOffset(duration float64) float64 {
+	g.rndMu.Lock()
+	defer g.rndMu.Unlock()
+	return g.rnd.Float64() * (duration - seekMargin)
+}
+
 // run executes ffmpeg once, seeking to *seek first when it is given.
 func (g *FFmpegGenerator) run(ctx context.Context, inputPath, outputPath string, seek *float64) error {
 	args, err := thumbArgs(inputPath, outputPath, seek)
 	if err != nil {
 		return err
 	}
-	cmd := g.execer(ctx, "ffmpeg", args...)
+	execer := g.execer
+	if execer == nil {
+		execer = exec.CommandContext
+	}
+	cmd := execer(ctx, "ffmpeg", args...)
 	cmd.WaitDelay = thumbWaitDelay
 	return cmd.Run()
 }

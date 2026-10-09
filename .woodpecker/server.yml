@@ -42,9 +42,17 @@ steps:
     # The tests that drive real ffmpeg (transcoding, and the input hardening
     # of the prober, thumbnailer, remuxer and scanner) skip themselves when
     # ffmpeg is not installed, which the plain golang image never has. This
-    # step installs it (Alpine's build, the same one the runtime image uses)
-    # and sets PLAYER_REQUIRE_FFMPEG so a missing tool or encoder fails the
-    # step instead of silently skipping the security and codec checks.
+    # step installs it and sets PLAYER_REQUIRE_FFMPEG so a missing tool or
+    # encoder fails the step instead of silently skipping the security and
+    # codec checks.
+    #
+    # The ffmpeg installed here is the one of the golang image's Alpine
+    # release (8.x at the time of writing), which is NOT the runtime image's:
+    # player-server/Dockerfile runs on alpine:3.21 with ffmpeg 6.1. Demuxer
+    # names and detection differ between the two, so the same tests run
+    # against the runtime's ffmpeg in server-ffmpeg-runtime below. The last
+    # command builds the static test binaries that step executes (alpine:3.21
+    # has no Go toolchain); .ffmpeg-tests/ exists in the CI workspace only.
     image: golang:1.25-alpine
     volumes:
       - go-mod-cache:/root/go/pkg/mod
@@ -55,6 +63,25 @@ steps:
     commands:
       - apk add --no-cache ffmpeg
       - go test -race -count=1 ./internal/transcode/... ./internal/ffsafe/... ./internal/probe/... ./internal/thumb/... ./internal/scanner/...
+      - CGO_ENABLED=0 go test -c -o .ffmpeg-tests/ ./internal/transcode ./internal/ffsafe ./internal/probe ./internal/thumb ./internal/scanner
+    when:
+      - event: [push, pull_request]
+
+# ── Stage 1c: the same tests with the runtime image's ffmpeg (every push) ─────
+
+  - name: server-ffmpeg-runtime
+    # Same base image and ffmpeg package as the runtime stage of
+    # player-server/Dockerfile; keep the two in step. Each test binary runs
+    # in its package directory, as "go test" would run it.
+    image: alpine:3.21
+    directory: player-server
+    depends_on:
+      - server-transcode
+    environment:
+      PLAYER_REQUIRE_FFMPEG: "1"
+    commands:
+      - apk add --no-cache ffmpeg
+      - for pkg in transcode ffsafe probe thumb scanner; do (cd "internal/$pkg" && "../../.ffmpeg-tests/$pkg.test" -test.count=1) || exit 1; done
     when:
       - event: [push, pull_request]
 

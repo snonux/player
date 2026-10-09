@@ -93,7 +93,8 @@ interpreted. In particular a playlist saved under a media name (an ffconcat
 or HLS list called `clip.avi`), which ffmpeg would otherwise follow to
 *other* files on the server, is not indexed by a rescan (a warning is
 logged, the rest of the set is scanned normally, and the file is looked at
-again on the next rescan) and is rejected as an upload. File names are taken
+again on the next rescan) and is rejected as an upload with status `415`
+("unsupported or unreadable media file"); the reason is in the server log. File names are taken
 literally: a leading `-`, a `:` or a `%d`-style pattern (`a%03d.png`) is
 just part of the name.
 

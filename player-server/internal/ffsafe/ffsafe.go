@@ -11,6 +11,21 @@
 // here close that hole while still accepting media whose extension does not
 // match its real container.
 //
+// What the whitelists rely on, and what has to be verified again whenever
+// ffmpeg is upgraded (last done with 6.1.2 and 8.1.2):
+//
+//   - every whitelisted demuxer reads only the file it is given. The one
+//     that could do otherwise is mov: QuickTime/MP4 tracks may carry
+//     external data references ("dref" aliases) naming other files. ffmpeg
+//     ignores them by default (the mov demuxer's enable_drefs option is 0,
+//     it logs "Skipped opening external track"); nothing here sets that
+//     option and nothing may.
+//   - the svg_pipe decoder (librsvg) gets the image as a memory buffer
+//     without a base location, so external references, XInclude and
+//     external entities in an SVG are not loaded.
+//   - -format_whitelist is compared with the detected (or forced) demuxer
+//     after detection; it does not steer detection.
+//
 // Use SourceArgs for a file of any supported type (probing, thumbnails),
 // InputArgs where only audio/video makes sense (transcoding, remuxing), and
 // OutputArg for a file ffmpeg writes.

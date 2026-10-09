@@ -118,6 +118,26 @@ func TestImageInputArgs_RefusesOtherContent(t *testing.T) {
 	}
 }
 
+// An SVG is recognised with up to sniffLen bytes of prolog in front of its
+// root element, and refused beyond that.
+func TestImageInputArgs_SVGProlog(t *testing.T) {
+	const prolog, root = "<?xml version=\"1.0\"?>\n<!-- ", " -->\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n"
+	svg := func(total int) []byte {
+		padding := strings.Repeat("x", total-len(prolog)-len(" -->\n<svg"))
+		return []byte(prolog + padding + root)
+	}
+	dir := t.TempDir()
+	// The "<svg" tag ends exactly at the limit, and one byte behind it.
+	fits := writeFile(t, filepath.Join(dir, "fits.svg"), svg(sniffLen))
+	if got, err := ImageInputArgs(fits); err != nil || got[1] != "svg_pipe" {
+		t.Errorf("root element within %d bytes: %q, %v; want svg_pipe", sniffLen, got, err)
+	}
+	tooFar := writeFile(t, filepath.Join(dir, "far.svg"), svg(sniffLen+1))
+	if _, err := ImageInputArgs(tooFar); !errors.Is(err, ErrNotAnImage) {
+		t.Errorf("root element behind %d bytes: %v, want ErrNotAnImage", sniffLen, err)
+	}
+}
+
 func TestImageInputArgs_MissingFile(t *testing.T) {
 	_, err := ImageInputArgs(filepath.Join(t.TempDir(), "gone.png"))
 	if err == nil || errors.Is(err, ErrNotAnImage) {
@@ -177,43 +197,5 @@ func TestWhitelists_HaveNoReferencingDemuxers(t *testing.T) {
 			"lavfi", "tty", "sdp", "rtsp", "imf", "webm_dash_manifest":
 			t.Errorf("whitelist contains %q, which can reference other files", name)
 		}
-	}
-}
-
-// TestEveryFFmpegCallSiteUsesFFsafe reads the server's sources: a file that
-// starts processes must build its arguments with this package. It catches a
-// new ffmpeg/ffprobe call site written without the hardening; the argument
-// list tests of each package (TestProbeArgs, TestRemuxArgs, TestThumbArgs,
-// TestFFmpegArgs) catch an existing one dropping it.
-func TestEveryFFmpegCallSiteUsesFFsafe(t *testing.T) {
-	sites := 0
-	err := filepath.WalkDir(filepath.Join("..", ".."), func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		// ffsafetest creates fixtures from lavfi sources, not user media.
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") ||
-			strings.Contains(path, "ffsafetest") {
-			return nil
-		}
-		src, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if !strings.Contains(string(src), "exec.Command") {
-			return nil
-		}
-		sites++
-		if !strings.Contains(string(src), "ffsafe.") {
-			t.Errorf("%s starts a process without using ffsafe for its arguments", path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// probe.go, remux.go, thumb.go, transcode/ffmpeg.go, transcode/ffprobe.go
-	if sites < 5 {
-		t.Errorf("found %d files starting processes, want at least 5: is the walk root wrong?", sites)
 	}
 }
