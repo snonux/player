@@ -254,9 +254,11 @@ func TestFFmpegRunner_StreamCopyFallback(t *testing.T) {
 	}
 }
 
-// A copied video stream is as big as in the source: a source over the cap is
-// refused before ffmpeg writes anything.
-func TestFFmpegRunner_StreamCopyOverCapIsRefusedUpFront(t *testing.T) {
+// A copied video stream is as big as in the source. When the source is larger
+// than the cap the runner does not copy — and does not give up either: it
+// re-encodes, which may fit. It never decides that the rendition is "too
+// large"; only the cache knows whether the budget or a full disk set the cap.
+func TestFFmpegRunner_StreamCopyOverCapFallsBackToEncode(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
 	src := filepath.Join(dir, "big.flv")
@@ -264,19 +266,23 @@ func TestFFmpegRunner_StreamCopyOverCapIsRefusedUpFront(t *testing.T) {
 		t.Fatal(err)
 	}
 	const good = `{"format":{"duration":"3"},"streams":[{"codec_type":"video","codec_name":"h264"}]}`
-	r := &FFmpegRunner{binary: script(t, "ffmpeg", `echo run >> `+log+"\n"+writeLastArg), probeBinary: copyableProbe(t, good), threads: 1}
-	job := Job{Source: Source{Path: src, Kind: KindVideo}, Output: filepath.Join(dir, "out.tmp"), MaxBytes: 1000}
+	r := &FFmpegRunner{binary: script(t, "ffmpeg", `echo "$*" >> `+log+"\n"+writeLastArg), probeBinary: copyableProbe(t, good), threads: 1}
+	run := func(maxBytes int64) string {
+		t.Helper()
+		_ = os.Remove(log)
+		job := Job{Source: Source{Path: src, Kind: KindVideo}, Output: filepath.Join(dir, "out.tmp"), MaxBytes: maxBytes}
+		if err := r.Transcode(context.Background(), job); err != nil {
+			t.Fatalf("Transcode with cap %d: %v", maxBytes, err)
+		}
+		calls, _ := os.ReadFile(log)
+		return strings.TrimSpace(string(calls))
+	}
 
-	if err := r.Transcode(context.Background(), job); !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("Transcode = %v, want ErrTooLarge", err)
+	if calls := run(1000); strings.Contains(calls, "-c:v copy") || !strings.Contains(calls, "-c:v libx264") || strings.Count(calls, "\n") != 0 {
+		t.Errorf("source over the cap: ffmpeg calls = %q, want exactly one encode", calls)
 	}
-	if _, err := os.Stat(log); err == nil {
-		t.Error("ffmpeg ran although the copy could not fit")
-	}
-	// Under the cap the copy goes ahead.
-	job.MaxBytes = 5000
-	if err := r.Transcode(context.Background(), job); err != nil {
-		t.Fatalf("Transcode under the cap: %v", err)
+	if calls := run(5000); !strings.Contains(calls, "-c:v copy") {
+		t.Errorf("source under the cap: ffmpeg calls = %q, want a stream copy", calls)
 	}
 }
 

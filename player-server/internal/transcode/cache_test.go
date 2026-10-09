@@ -317,6 +317,28 @@ func TestCache_BackoffIsCapped(t *testing.T) {
 	}
 }
 
+// The pause doubles per version of the source; the first failure of a new
+// version starts over, also after a "source still changing" entry.
+func TestCache_FailureCountRestartsForNewSourceVersion(t *testing.T) {
+	c, _, _ := newTestCache(t, &fakeRunner{}, Options{})
+	steps := []struct {
+		f    failure
+		want time.Duration
+	}{
+		{failure{err: ErrFailedRecently, name: "v1"}, failureBackoff},
+		{failure{err: ErrFailedRecently, name: "v1"}, 2 * failureBackoff},
+		{failure{err: ErrFailedRecently, name: "v2"}, failureBackoff},
+		{failure{err: ErrSourceChanged}, failureBackoff},
+		{failure{err: ErrSourceChanged}, 2 * failureBackoff},
+		{failure{err: ErrFailedRecently, name: "v3"}, failureBackoff},
+	}
+	for i, st := range steps {
+		if got := c.recordFailure(1, st.f, 0); got != st.want {
+			t.Errorf("step %d (%q): pause = %s, want %s", i, st.f.name, got, st.want)
+		}
+	}
+}
+
 func TestCache_EmptyOutputIsFailure(t *testing.T) {
 	c, src, _ := newTestCache(t, &fakeRunner{payload: ""}, Options{})
 	if _, err := c.Ensure(context.Background(), src); err == nil {
@@ -857,6 +879,47 @@ func TestCache_FutureMtimeCountsAsSettled(t *testing.T) {
 
 	if _, err := c.Ensure(context.Background(), src); err != nil {
 		t.Fatalf("source dated in the future: %v", err)
+	}
+}
+
+// A timestamp only slightly ahead is ordinary clock skew between this server
+// and the file server: such a file may well be mid-write and still waits.
+func TestCache_SlightlyFutureMtimeStillWaits(t *testing.T) {
+	runner := &fakeRunner{payload: "x"}
+	c, src, clk := newTestCache(t, runner, Options{})
+	age(t, src.Path, -3*time.Second)
+
+	if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrSourceChanged) {
+		t.Fatalf("source stamped 3 s ahead = %v, want ErrSourceChanged", err)
+	}
+	clk.T = clk.T.Add(DefaultSourceSettle + 5*time.Second)
+	if _, err := c.Ensure(context.Background(), src); err != nil {
+		t.Fatalf("after it settled: %v", err)
+	}
+}
+
+// With the volume far below its reserve the shortfall is huge, but one job
+// never evicts more than it is assumed to need: emptying the cache would not
+// be its business (and here would not help either).
+func TestCache_EvictionForOneJobIsBounded(t *testing.T) {
+	runner := &capRunner{payload: "x", gotCap: new(int64)}
+	c, src, _ := newTestCache(t, runner, Options{
+		Dir: t.TempDir(), MaxBytes: 1 << 20, MinFreeBytes: 1000,
+		FreeSpace: func(string) (int64, error) { return 500, nil }, // 500 below the reserve
+	})
+	writeCached(t, c.opts.Dir, "m1-10-1-v1.mp4", 50, time.Now().Add(-3*time.Hour))
+	writeCached(t, c.opts.Dir, "m2-10-1-v1.mp4", 45, time.Now().Add(-2*time.Hour))
+	writeCached(t, c.opts.Dir, "m3-10-1-v1.mp4", 40, time.Now().Add(-1*time.Hour))
+
+	if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrNoSpace) {
+		t.Fatalf("Ensure error = %v, want ErrNoSpace", err)
+	}
+	waitIdle(t, c)
+	// The 6 byte source justifies freeing 6 bytes: the oldest rendition
+	// goes, the other two stay although the volume is still short.
+	wantNames(t, c.opts.Dir, "m2-10-1-v1.mp4", "m3-10-1-v1.mp4")
+	if runner.calls != 0 {
+		t.Error("ffmpeg ran although the volume is below its reserve")
 	}
 }
 

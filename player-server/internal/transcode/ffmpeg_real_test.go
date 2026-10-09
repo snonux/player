@@ -224,6 +224,37 @@ func TestCache_RealFFmpegStreamCopy(t *testing.T) {
 	}
 }
 
+// A copy-eligible file on a volume that is short of space right now must be
+// reported as "no space" — not as "over budget", which would be remembered
+// for a day — and must play as soon as space is back.
+func TestCache_RealFFmpegLowFreeSpaceIsNotRemembered(t *testing.T) {
+	requireFFmpeg(t)
+	src := makeSample(t, "clip.flv", sampleArgs(lavfiVideo, lavfiAudio, h264Small, []string{"-c:a", "aac", "-ar", "44100"})...)
+	const reserve = 1 << 20
+	free := int64(reserve + 2000) // room for 2000 bytes only
+	c := NewCache(context.Background(), NewFFmpegRunner(1), clock.RealClock{}, quietLogger(), Options{
+		Dir: filepath.Join(t.TempDir(), "cache"), MaxBytes: 1 << 30, MinFreeBytes: reserve,
+		FreeSpace: func(string) (int64, error) { return free, nil },
+	})
+	t.Cleanup(func() { stop(c) })
+	source := Source{MediaID: 1, Path: src, Kind: KindVideo}
+
+	if _, err := c.Ensure(context.Background(), source); !errors.Is(err, ErrNoSpace) || errors.Is(err, ErrTooLarge) {
+		t.Fatalf("Ensure on a full volume = %v, want ErrNoSpace", err)
+	}
+	waitIdle(t, c)
+	wantNames(t, c.opts.Dir)
+
+	free = 1 << 40
+	r, err := c.Ensure(context.Background(), source)
+	if err != nil {
+		t.Fatalf("Ensure after space was freed: %v", err)
+	}
+	if got := probeFile(t, r.Path); got.codecs["video"] != "h264" || got.codecs["audio"] != "aac" {
+		t.Errorf("rendition = %+v", got)
+	}
+}
+
 // videoMD5 hashes the compressed video packets of a file.
 func videoMD5(t *testing.T, path string) string {
 	t.Helper()

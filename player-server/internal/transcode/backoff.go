@@ -108,7 +108,9 @@ func (c *Cache) remember(name string, src Source, err error, timedOut bool) erro
 
 // recordFailure stores a negative-cache entry and returns how long new
 // attempts are refused: fixed when given, otherwise a pause that doubles
-// with every consecutive failure of the same media item.
+// with every consecutive failure of the same kind — of the same version of
+// the source, or of a source that keeps changing. The first failure of a
+// new version starts over at the shortest pause.
 func (c *Cache) recordFailure(mediaID int64, f failure, fixed time.Duration) time.Duration {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -120,7 +122,10 @@ func (c *Cache) recordFailure(mediaID int64, f failure, fixed time.Duration) tim
 			delete(c.failures, id)
 		}
 	}
-	f.count = c.failures[mediaID].count + 1
+	f.count = 1
+	if prev, ok := c.failures[mediaID]; ok && prev.name == f.name {
+		f.count = prev.count + 1
+	}
 	backoff := maxFailureBackoff
 	switch {
 	case fixed > 0:

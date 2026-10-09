@@ -53,14 +53,17 @@ const (
 	// so a request that just finished waiting can still open its file.
 	pruneGrace = time.Minute
 	// implausibleShrink is the up-front size check: a source more than this
-	// many times larger than the cache budget is refused without running
-	// ffmpeg. Re-encoding legacy video to H.264 at these settings typically
-	// shrinks it to between a half and a quarter (DVD-era MPEG-2 being the
-	// best case); nothing realistic shrinks eightfold, so such a rendition
-	// could never fit. Sources between one and eight times the budget are
-	// tried once: "-fs" stops them at the budget and the result is
-	// remembered (see ErrTooLarge). Stream copies, whose output is about the
-	// size of the source, are refused by the runner before it starts.
+	// many times larger than the cache budget is refused with ErrTooLarge
+	// without running ffmpeg (above 32 GiB at the 4 GiB default budget).
+	// It is a cost guard, not a proof: common legacy video (MPEG-4 part 2,
+	// WMV, MPEG-2) shrinks to between a half and a quarter when re-encoded,
+	// so such a source would almost always run for hours only to hit the
+	// cap. Lightly compressed formats (DV, MJPEG, uncompressed AVI) can
+	// shrink far more and are refused wrongly by this rule; raising the
+	// budget is the remedy. Like every ErrTooLarge the refusal is
+	// re-evaluated after longBackoff, a restart, or a change of the file.
+	// Sources up to this factor are tried once: "-fs" stops them at the
+	// cap and a hit against the budget is remembered.
 	implausibleShrink = 8
 )
 
@@ -206,8 +209,11 @@ func (c *Cache) Ensure(ctx context.Context, src Source) (Rendition, error) {
 	// a truncated source (and be thrown away); wait until it settled. A
 	// modification time in the future (wrong camera clock, clock skew on a
 	// network mount) says nothing about recent writes and counts as
-	// settled — otherwise such a file would never play.
-	if age := c.clk.Now().Sub(st.modTime); age >= 0 && age < c.opts.SourceSettle {
+	// settled — otherwise such a file would never play. Only "clearly in
+	// the future" qualifies, i.e. further ahead than the settle time: a
+	// file server whose clock runs a second or two ahead stamps fresh
+	// writes slightly in the future, and those must still wait.
+	if age := c.clk.Now().Sub(st.modTime); age > -c.opts.SourceSettle && age < c.opts.SourceSettle {
 		return Rendition{}, ErrSourceChanged
 	}
 
@@ -228,7 +234,7 @@ func (c *Cache) Ensure(ctx context.Context, src Source) (Rendition, error) {
 
 // Prune deletes abandoned temporary files and then the least recently used
 // renditions until the cache fits Options.MaxBytes. It runs after every
-// transcode and periodically from the GC worker.
+// successful transcode and periodically from the GC worker.
 func (c *Cache) Prune(ctx context.Context) error {
 	return c.prune(ctx, 0)
 }
@@ -523,7 +529,9 @@ func (c *Cache) capExceeded(maxBytes int64) error {
 // Nothing is evicted for a job up front unless the volume really lacks the
 // space. A job that then fails has cost other renditions nothing; a job that
 // succeeds triggers the regular prune afterwards (cleanupAfter), which
-// brings the cache back under its budget.
+// brings the cache back under its budget. Until then the cache may hold its
+// budget plus, per running job, an output of up to min(available, budget)
+// bytes.
 func (c *Cache) makeRoom(ctx context.Context, src Source) (int64, error) {
 	st, err := statSource(src)
 	if err != nil {
@@ -532,15 +540,18 @@ func (c *Cache) makeRoom(ctx context.Context, src Source) (int64, error) {
 	if st.size/implausibleShrink > c.opts.MaxBytes {
 		return 0, fmt.Errorf("%w of %d bytes: source has %d bytes", ErrTooLarge, c.opts.MaxBytes, st.size)
 	}
-	// The source size, limited to the budget, is the most a job is assumed
-	// to need — never evict more than it could ever use.
+	// The source size, limited to the budget, is what a job is assumed to
+	// need, and also the most that is ever evicted for one job. (When the
+	// volume is far below its reserve the shortfall is larger than that,
+	// but emptying the cache to restore the reserve is not this job's
+	// business; it then fails with ErrNoSpace below.)
 	want := min(st.size, c.opts.MaxBytes)
 	avail, err := c.available()
 	if err != nil {
 		return 0, err
 	}
 	if avail < want {
-		if err := c.prune(ctx, want-avail); err != nil {
+		if err := c.prune(ctx, min(want-avail, want)); err != nil {
 			c.logger.Warn("transcode cache prune", "err", err)
 		}
 		if avail, err = c.available(); err != nil {

@@ -108,13 +108,18 @@ func (f *FFmpegRunner) Transcode(ctx context.Context, job Job) error {
 	}
 
 	src := f.probe(ctx, job.Source.Path)
-	if p := planFor(job.Source.Kind, src); p.copyVideo || p.copyAudio {
-		// A copied video stream is as large as it is in the source, so a
-		// source over the cap cannot produce a rendition under it. Refuse
-		// before writing gigabytes only to hit "-fs".
-		if p.copyVideo && job.MaxBytes > 0 && fileSize(job.Source.Path) > job.MaxBytes {
-			return fmt.Errorf("%w: stream copy of a %d byte source", ErrTooLarge, fileSize(job.Source.Path))
-		}
+	p := planFor(job.Source.Kind, src)
+	// A copied video stream is as large as it is in the source, so when the
+	// source is larger than the cap a copy would only write up to the cap
+	// and be thrown away. Re-encode the video instead: that may well fit.
+	// (The whole file's size overstates the video stream when the source
+	// carries extra tracks, which errs towards encoding.) The runner does
+	// not judge whether an output over the cap means "too large" or "disk
+	// full" — it cannot know what set the cap; the cache decides that.
+	if p.copyVideo && job.MaxBytes > 0 && fileSize(job.Source.Path) > job.MaxBytes {
+		p.copyVideo = false
+	}
+	if p.copyVideo || p.copyAudio {
 		err := f.run(ctx, f.args(p, input, out, job.MaxBytes))
 		if err == nil && f.copyLooksRight(ctx, job.Source.Kind, src, out) {
 			return nil
