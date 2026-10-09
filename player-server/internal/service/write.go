@@ -131,7 +131,7 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 
 	meta, err := s.prober.Probe(ctx, media.AbsPath)
 	if err != nil {
-		return fmt.Errorf("probe media: %w", err)
+		return probeError(media.AbsPath, err)
 	}
 
 	// The thumbnail is made by the ThumbnailMaker, at the one path scanner

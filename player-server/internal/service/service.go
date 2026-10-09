@@ -49,6 +49,12 @@ var (
 	ErrInvalidFeed          = &apiError{msg: "invalid feed", status: http.StatusBadRequest}
 	ErrCannotDeleteSelf     = &apiError{msg: "cannot delete self", status: http.StatusBadRequest}
 	ErrWeakPassword         = &apiError{msg: "password must be at least 8 characters", status: http.StatusBadRequest}
+	// ErrUnreadableMedia means a file is not media of the type its name
+	// claims (see probe.ErrUnreadable): an upload, download or thumbnail
+	// request for it is refused (415). It is returned bare, never wrapped
+	// with detail, because its text goes to the client and the detail
+	// (absolute paths, ffprobe diagnostics) must not; see probeError.
+	ErrUnreadableMedia = &apiError{msg: "unsupported or unreadable media file", status: http.StatusUnsupportedMediaType}
 	// ErrTranscodePending means the compatibility rendition is still being
 	// produced in the background; the client should retry shortly (503).
 	ErrTranscodePending = &apiError{msg: "transcode in progress", status: http.StatusServiceUnavailable}

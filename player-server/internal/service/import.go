@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -30,7 +32,7 @@ func ImportMediaFile(
 ) error {
 	meta, err := probeMedia(ctx, prober, media.AbsPath)
 	if err != nil {
-		return fmt.Errorf("probe media: %w", err)
+		return probeError(media.AbsPath, err)
 	}
 	applyMetadata(media, meta)
 
@@ -46,6 +48,20 @@ func ImportMediaFile(
 		return fmt.Errorf("update media metadata: %w", err)
 	}
 	return nil
+}
+
+// probeError turns a failed probe of the file at path into the error the
+// service returns. A file refused as unreadable (a playlist disguised as
+// media, garbage under a media name) becomes the bare ErrUnreadableMedia:
+// the API answers 415 with that fixed text, while the detail — which holds
+// the server's absolute path and ffprobe's diagnostics — is logged here and
+// goes no further. Any other failure keeps its cause for the caller.
+func probeError(path string, err error) error {
+	if errors.Is(err, probe.ErrUnreadable) {
+		slog.Default().Warn("media file refused as unreadable", "path", path, "err", err)
+		return ErrUnreadableMedia
+	}
+	return fmt.Errorf("probe media: %w", err)
 }
 
 // applyMetadata copies the probed metadata into the media row.

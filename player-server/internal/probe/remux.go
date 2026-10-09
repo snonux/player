@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"time"
+
+	"codeberg.org/snonux/player/internal/ffsafe"
 )
 
 // Remuxer remuxes media on-the-fly to a browser-friendly container.
@@ -28,15 +30,18 @@ func NewFFRemuxer() *FFRemuxer {
 
 const remuxWaitDelay = 10 * time.Second
 
-// Remux runs ffmpeg to copy video/audio streams into a fragmented MP4
-// suitable for streaming to a browser.
-func (f *FFRemuxer) Remux(ctx context.Context, inputPath string, w io.Writer) error {
-	cmd := exec.CommandContext(
-		ctx,
-		"ffmpeg",
-		"-hide_banner",
-		"-loglevel", "error",
-		"-i", inputPath,
+// remuxArgs builds the ffmpeg argument list that remuxes inputPath to
+// standard output. The input goes through ffsafe.InputArgs like every
+// ffmpeg input: without it a playlist disguised as media would be followed
+// and other files streamed to the client. The output is ffmpeg's own stdout
+// ("pipe:1"), not a file, so there is no output path to harden.
+func remuxArgs(inputPath string) ([]string, error) {
+	input, err := ffsafe.InputArgs(inputPath)
+	if err != nil {
+		return nil, err
+	}
+	args := append([]string{"-hide_banner", "-loglevel", "error", "-nostdin"}, input...)
+	return append(args,
 		"-map", "0:v:0?",
 		"-map", "0:a:0?",
 		"-dn",
@@ -46,7 +51,17 @@ func (f *FFRemuxer) Remux(ctx context.Context, inputPath string, w io.Writer) er
 		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
 		"-f", "mp4",
 		"pipe:1",
-	)
+	), nil
+}
+
+// Remux runs ffmpeg to copy video/audio streams into a fragmented MP4
+// suitable for streaming to a browser.
+func (f *FFRemuxer) Remux(ctx context.Context, inputPath string, w io.Writer) error {
+	args, err := remuxArgs(inputPath)
+	if err != nil {
+		return fmt.Errorf("remux arguments: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	cmd.Stderr = os.Stderr
 	cmd.WaitDelay = remuxWaitDelay
 	stdout, err := cmd.StdoutPipe()

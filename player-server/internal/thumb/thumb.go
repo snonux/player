@@ -7,7 +7,10 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
+
+	"codeberg.org/snonux/player/internal/ffsafe"
 )
 
 // Generator creates a thumbnail for a given media file.
@@ -17,8 +20,17 @@ type Generator interface {
 
 // FFmpegGenerator uses ffmpeg to extract a random frame.
 type FFmpegGenerator struct {
+	// execer creates the ffmpeg command; nil means exec.CommandContext.
+	// Tests replace it. The default is resolved in run, next to the
+	// arguments, so that the one place a process is created is also the
+	// place its hardened arguments come from (the call-site check in
+	// package ffsafe relies on that).
 	execer func(ctx context.Context, name string, arg ...string) *exec.Cmd
-	rnd    *rand.Rand
+	// rnd picks the frame offsets. A rand.Rand is not safe for concurrent
+	// use and one generator serves all scanner workers, hence rndMu; see
+	// randomOffset.
+	rndMu sync.Mutex
+	rnd   *rand.Rand
 	// stat inspects the generated file; nil means os.Stat. Tests whose
 	// fake execer writes no file replace it.
 	stat func(name string) (os.FileInfo, error)
@@ -29,8 +41,7 @@ var _ Generator = (*FFmpegGenerator)(nil)
 // NewFFmpegGenerator creates a new FFmpegGenerator with a seeded random source.
 func NewFFmpegGenerator() *FFmpegGenerator {
 	return &FFmpegGenerator{
-		execer: exec.CommandContext,
-		rnd:    rand.New(rand.NewSource(time.Now().UnixNano())),
+		rnd: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -55,7 +66,7 @@ const seekMargin = 1.0
 // videos too short to seek in, get the first frame straight away.
 func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath string, duration float64) error {
 	if duration > seekMargin {
-		offset := g.rnd.Float64() * (duration - seekMargin)
+		offset := g.randomOffset(duration)
 		if err := g.run(ctx, inputPath, outputPath, &offset); err == nil && g.wroteFrame(outputPath) {
 			return nil
 		}
@@ -69,40 +80,68 @@ func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath st
 	return nil
 }
 
+// randomOffset returns a random position in [0, duration-seekMargin). It is
+// safe to call from several goroutines.
+func (g *FFmpegGenerator) randomOffset(duration float64) float64 {
+	g.rndMu.Lock()
+	defer g.rndMu.Unlock()
+	return g.rnd.Float64() * (duration - seekMargin)
+}
+
 // run executes ffmpeg once, seeking to *seek first when it is given.
 func (g *FFmpegGenerator) run(ctx context.Context, inputPath, outputPath string, seek *float64) error {
-	var args []string
+	args, err := thumbArgs(inputPath, outputPath, seek)
+	if err != nil {
+		return err
+	}
+	execer := g.execer
+	if execer == nil {
+		execer = exec.CommandContext
+	}
+	cmd := execer(ctx, "ffmpeg", args...)
+	cmd.WaitDelay = thumbWaitDelay
+	return cmd.Run()
+}
+
+// thumbArgs builds the ffmpeg argument list for one thumbnail.
+//
+// Input: opened through ffsafe.SourceArgs, never by its bare name. ffmpeg
+// would otherwise follow a playlist disguised as media and put a frame of
+// another file into the thumbnail, and read an image named "a%03d.png" as a
+// sequence of its sibling files. With the hardening such a name is read
+// literally and a disguised playlist fails.
+//
+// Output: ffsafe.OutputArg keeps a name starting with "-" or containing ":"
+// from being read as an option or protocol, and -update 1 makes the image
+// muxer take the name literally. Without it a "%03d" anywhere in the output
+// path (file or directory name, both come from user-chosen media names) is
+// expanded as an image sequence pattern: ffmpeg then writes a differently
+// named file, or none, and may still exit successfully.
+func thumbArgs(inputPath, outputPath string, seek *float64) ([]string, error) {
+	input, err := ffsafe.SourceArgs(inputPath)
+	if err != nil {
+		return nil, err
+	}
+	output, err := ffsafe.OutputArg(outputPath)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"-nostdin"}
 	if seek != nil {
 		// -ss before -i is a fast seek. It is only used for videos: for a
 		// static image it produces no output frame on some ffmpeg versions
 		// (it skips past the single frame).
 		args = append(args, "-ss", fmt.Sprintf("%.3f", *seek))
 	}
-	// -update 1 makes the image muxer take outputPath literally. Without
-	// it a "%03d" anywhere in the output path (file or directory name, both
-	// come from user-chosen media names) is expanded as an image sequence
-	// pattern: ffmpeg then writes a differently named file, or none, and
-	// may still exit successfully.
-	//
-	// The input side is not covered: ffmpeg builds that read still images
-	// with the image2 demuxer (6.1 does) expand "%d" patterns in the INPUT
-	// name too, so a source image called "a%03d.png" cannot be read there.
-	// The demuxer option that would switch this off (-pattern_type none) is
-	// rejected outright by builds that read images with other demuxers
-	// (8.1 does), so it is not passed. Such an image simply gets no
-	// generated thumbnail and serves as its own.
-	args = append(args,
-		"-i", inputPath,
+	args = append(args, input...)
+	return append(args,
 		"-vf", "scale=320:-1",
 		"-frames:v", "1",
 		"-q:v", "2",
 		"-update", "1",
 		"-y",
-		outputPath,
-	)
-	cmd := g.execer(ctx, "ffmpeg", args...)
-	cmd.WaitDelay = thumbWaitDelay
-	return cmd.Run()
+		output,
+	), nil
 }
 
 // wroteFrame reports whether a non-empty file is at outputPath.
