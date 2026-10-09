@@ -31,6 +31,8 @@ import 'package:player_android/providers/public_api_client_provider.dart';
 import 'package:player_android/router.dart';
 import 'package:player_android/screens/share_viewer_screen.dart';
 import 'package:player_android/screens/image_viewer_screen.dart';
+import 'package:player_android/screens/video_player_screen.dart';
+import 'package:player_android/services/playback_preparer.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/utils/error_mappers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -69,10 +71,25 @@ class _FakePublicApiClient extends PlayerApiClient {
   // Count of calls to [getSharedMediaPage] so retry tests can assert call count.
   int callCount = 0;
 
-  /// Returns the test base URL without a trailing slash, matching the
-  /// production [PlayerApiClient.baseUrl] contract used in [ShareViewerScreen].
+  /// The test base URL without a trailing slash, matching the production
+  /// [PlayerApiClient.baseUrl] contract used in [ShareViewerScreen].
+  String base = 'http://test.local';
+
   @override
-  String get baseUrl => 'http://test.local';
+  String get baseUrl => base;
+
+  /// Status answered to the player's compatibility-stream readiness probe.
+  int probeStatus = 410;
+  final probedUrls = <Uri>[];
+
+  @override
+  Future<PlaybackProbe> probePlayback(
+    Uri url, {
+    CancelToken? cancelToken,
+  }) async {
+    probedUrls.add(url);
+    return PlaybackProbe(statusCode: probeStatus);
+  }
 
   @override
   Future<String> getSharedMediaPage(String token) async {
@@ -123,6 +140,57 @@ const _kVideoShareJson = '''
   "thumb_url": "/s/abc123/thumbnail"
 }
 ''';
+
+/// Share-page JSON for a video the server transcodes: `playback_url` is the
+/// compatibility stream while `stream_url` stays the original file.
+const _kTranscodedShareJson = '''
+{
+  "media": {
+    "id": 42,
+    "file_name": "holiday.wmv",
+    "type": "video",
+    "duration": 60.0,
+    "transcoded": true
+  },
+  "has_thumb": false,
+  "transcoded": true,
+  "stream_url": "/s/abc123/stream",
+  "playback_url": "/s/abc123/compat",
+  "download_url": "/s/abc123/download",
+  "thumb_url": ""
+}
+''';
+
+/// Opens the share viewer for [token] through the app's real router and taps
+/// Play; returns the video player screen the router built.
+Future<VideoPlayerScreen> _playShareThroughRouter(
+  WidgetTester tester,
+  _FakePublicApiClient client, {
+  String token = 'abc123',
+}) async {
+  SharedPreferences.setMockInitialValues({});
+  final base = Uri.parse(client.base);
+  final container = ProviderContainer(overrides: [
+    authStateProvider.overrideWith(_Unauthenticated.new),
+    firstRunProvider.overrideWith((ref) async => false),
+    publicApiClientProvider.overrideWithValue(client),
+    publicShareBaseUrlProvider.overrideWithValue(base),
+    apiClientProvider.overrideWith((ref) => throw StateError('No account API')),
+  ]);
+  addTearDown(container.dispose);
+  final router = container.read(routerProvider);
+  addTearDown(router.dispose);
+  await tester.pumpWidget(UncontrolledProviderScope(
+    container: container,
+    child: MaterialApp.router(routerConfig: router),
+  ));
+  router.go(AppRoutes.shareViewerPath(token));
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(find.byKey(const Key('share_viewer_play_button')));
+  await tester.tap(find.byKey(const Key('share_viewer_play_button')));
+  await tester.pumpAndSettle();
+  return tester.widget<VideoPlayerScreen>(find.byType(VideoPlayerScreen));
+}
 
 /// Valid share-page JSON for an audio file without a thumbnail.
 const _kAudioShareJson = '''
@@ -336,6 +404,129 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('playing tok7'), findsOneWidget);
   });
+  group('playback URL', () {
+    test('playback_url is parsed; without it the original stream is used', () {
+      final transcoded = SharePageMetadata.fromJson(_kTranscodedShareJson);
+      expect(transcoded.playbackUrl, '/s/abc123/compat');
+      expect(transcoded.streamUrl, '/s/abc123/stream');
+
+      // A server that predates the compatibility stream.
+      final original = SharePageMetadata.fromJson(_kVideoShareJson);
+      expect(original.playbackUrl, '/s/abc123/stream');
+    });
+
+    testWidgets('a transcoded share plays the compatibility stream',
+        (tester) async {
+      final client = _FakePublicApiClient()..pageJson = _kTranscodedShareJson;
+      final player = await _playShareThroughRouter(tester, client);
+
+      expect(player.mediaUrl, 'http://test.local/s/abc123/compat');
+      expect(player.isPublicShare, isTrue);
+      expect(player.mediaTitle, 'holiday.wmv');
+      // The readiness probe went to the anonymous client (the account
+      // client throws when read). Its 410 means the link expired meanwhile.
+      expect(
+          client.probedUrls, [Uri.parse('http://test.local/s/abc123/compat')]);
+      expect(
+        find.text('Cannot play “holiday.wmv”. This share link is no longer '
+            'valid or access was refused.'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('video_player_retry')), findsOneWidget);
+    });
+
+    testWidgets('a server under a path prefix keeps the prefix',
+        (tester) async {
+      final client = _FakePublicApiClient()
+        ..base = 'http://test.local/player'
+        ..pageJson = _kTranscodedShareJson;
+      final player = await _playShareThroughRouter(tester, client);
+
+      expect(player.mediaUrl, 'http://test.local/player/s/abc123/compat');
+      expect(client.probedUrls,
+          [Uri.parse('http://test.local/player/s/abc123/compat')]);
+    });
+
+    testWidgets('an ordinary share plays the original stream', (tester) async {
+      final client = _FakePublicApiClient()..pageJson = _kVideoShareJson;
+      final player = await _playShareThroughRouter(tester, client);
+
+      expect(player.mediaUrl, 'http://test.local/s/abc123/stream');
+    });
+
+    testWidgets('a playback_url for another share token is not played',
+        (tester) async {
+      final client = _FakePublicApiClient()
+        ..pageJson = _kTranscodedShareJson.replaceAll(
+            '/s/abc123/compat', '/s/other/compat');
+      final player = await _playShareThroughRouter(tester, client);
+
+      expect(player.mediaUrl, 'http://test.local/s/abc123/stream');
+    });
+  });
+
+  group('sharePlaybackUrl', () {
+    final root = Uri.parse('https://share.example');
+    final prefixed = Uri.parse('https://share.example/player/');
+
+    String pick(String? candidate, {Uri? base}) => sharePlaybackUrl(
+          base: base ?? root,
+          token: 'tok7',
+          candidate: candidate,
+        );
+
+    test('accepts exactly this share\'s compat and stream endpoints', () {
+      expect(pick('https://share.example/s/tok7/compat'),
+          'https://share.example/s/tok7/compat');
+      expect(pick('https://share.example/s/tok7/stream'),
+          'https://share.example/s/tok7/stream');
+      expect(pick(null), 'https://share.example/s/tok7/stream');
+    });
+
+    test('includes the path prefix of the configured base URL', () {
+      expect(
+        pick('https://share.example/player/s/tok7/compat', base: prefixed),
+        'https://share.example/player/s/tok7/compat',
+      );
+      expect(pick(null, base: prefixed),
+          'https://share.example/player/s/tok7/stream');
+      // The same path without the prefix is a different endpoint.
+      expect(pick('https://share.example/s/tok7/compat', base: prefixed),
+          'https://share.example/player/s/tok7/stream');
+    });
+
+    test('rejects everything else in favour of the original stream', () {
+      const fallback = 'https://share.example/s/tok7/stream';
+      for (final candidate in [
+        // Dot segments that normalise to another same-origin path.
+        'https://share.example/s/tok7/../../api/v1/media/1/stream',
+        'https://share.example/s/tok7/compat/../../other/compat',
+        'https://share.example/s/tok7/%2e%2e/other/compat',
+        // Another share, another endpoint, extra parts.
+        'https://share.example/s/other/compat',
+        'https://share.example/s/tok7/download',
+        'https://share.example/s/tok7/compat/extra',
+        'https://share.example/s/tok7/compat?next=/x',
+        'https://share.example/s/tok7/compat#x',
+        // Another origin or scheme.
+        'https://evil.example/s/tok7/compat',
+        'http://share.example/s/tok7/compat',
+        'https://share.example:8443/s/tok7/compat',
+        'https://user@share.example/s/tok7/compat',
+        '/s/tok7/compat',
+        'not a url',
+        '',
+      ]) {
+        expect(pick(candidate), fallback, reason: candidate);
+      }
+    });
+
+    test('dot segments that stay on the endpoint are normalised away', () {
+      expect(pick('https://share.example/s/./tok7/x/../compat'),
+          'https://share.example/s/tok7/compat');
+    });
+  });
+
   // --------------------------------------------------------------------------
   // Loading state
   // --------------------------------------------------------------------------

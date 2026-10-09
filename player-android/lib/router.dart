@@ -214,8 +214,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => AudioPlayerScreen(
           mediaId: '0',
           mediaTitle: _parsePlayerExtra(state.extra).$3,
-          mediaUrl:
-              '${ProviderScope.containerOf(context, listen: false).read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
+          mediaUrl: _sharedPlaybackUrl(context, state),
           isPublicShare: true,
         ),
       ),
@@ -224,8 +223,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => VideoPlayerScreen(
           mediaId: '0',
           mediaTitle: _parsePlayerExtra(state.extra).$3,
-          mediaUrl:
-              '${ProviderScope.containerOf(context, listen: false).read(publicShareBaseUrlProvider).origin}/s/${state.pathParameters['token']}/stream',
+          mediaUrl: _sharedPlaybackUrl(context, state),
           isPublicShare: true,
         ),
       ),
@@ -400,6 +398,59 @@ final routerProvider = Provider<GoRouter>((ref) {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Returns the URL a public share's audio or video player opens.
+///
+/// The share viewer passes the server's `playback_url` (the compatibility
+/// stream for formats the device cannot decode) as the `mediaUrl` extra.
+/// Without a usable one (a route restored without its extra) the original
+/// stream is played.
+String _sharedPlaybackUrl(BuildContext context, GoRouterState state) {
+  final base = ProviderScope.containerOf(context, listen: false)
+      .read(publicShareBaseUrlProvider);
+  final token = state.pathParameters['token'] ?? '';
+  final fromViewer = _parsePlayerExtra(state.extra).$1;
+  return sharePlaybackUrl(base: base, token: token, candidate: fromViewer);
+}
+
+/// Picks the media URL for share [token] on the server at [base].
+///
+/// [candidate] is only accepted when its scheme, authority and
+/// dot-segment-normalised path string equal this share's `compat` or
+/// `stream` endpoint under [base] — including a path prefix the server may
+/// be mounted under — and it has no query or fragment. Comparing the whole
+/// normalised path (not a string prefix) keeps `..` segments, another token,
+/// or a foreign origin from steering the player elsewhere. Anything else
+/// yields this share's original stream.
+///
+/// Edge case: a [token] of `.` or `..` is not a share. No candidate can
+/// match it (normalisation removes such segments), and the fallback URL
+/// built from it resolves to a non-share path on the same server, which
+/// simply fails to play.
+@visibleForTesting
+String sharePlaybackUrl({
+  required Uri base,
+  required String token,
+  String? candidate,
+}) {
+  final prefix = base.pathSegments.where((segment) => segment.isNotEmpty);
+  Uri endpoint(String name) =>
+      base.replace(pathSegments: [...prefix, 's', token, name]);
+
+  final uri = candidate == null ? null : Uri.tryParse(candidate);
+  if (uri != null && !uri.hasQuery && !uri.hasFragment) {
+    final normalised = uri.normalizePath();
+    for (final name in const ['compat', 'stream']) {
+      final allowed = endpoint(name);
+      if (normalised.scheme == allowed.scheme &&
+          normalised.authority == allowed.authority &&
+          normalised.path == allowed.path) {
+        return allowed.toString();
+      }
+    }
+  }
+  return endpoint('stream').toString();
+}
 
 /// Parses the route [extra] passed to video, audio, and image viewer routes.
 ///

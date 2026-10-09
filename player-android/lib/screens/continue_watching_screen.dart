@@ -152,7 +152,8 @@ class _ContinueWatchingScreenState
   Future<void> _onCardTap(Media item) async {
     final client = ref.read(apiClientProvider);
     final mediaId = item.id;
-    final mediaUrl = client.streamUrl(mediaId);
+    // The compatibility stream for items the server marks as transcoded.
+    final mediaUrl = client.playbackUrl(item);
 
     // Fetch saved position best-effort; null means "start from beginning".
     double? position = item.positionSeconds;
@@ -166,7 +167,7 @@ class _ContinueWatchingScreenState
 
     if (!mounted) return;
 
-    // Pass both the stream URL and the saved position so the player can seek
+    // Pass both the playback URL and the saved position so the player can seek
     // immediately without a second round-trip to the server.
     final extra = <String, dynamic>{
       'mediaUrl': mediaUrl,

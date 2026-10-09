@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cookie_jar/cookie_jar.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
@@ -13,6 +14,10 @@ import '../providers/playback_session_provider.dart';
 import '../services/playback_session_coordinator.dart';
 import '../services/audio_handler.dart';
 import '../services/playback_request.dart';
+import '../services/playback_source_resolver.dart';
+import '../utils/playback_errors.dart';
+import '../widgets/playback_loading_view.dart';
+import 'playback_preparation_mixin.dart';
 
 // Available playback speed options for the speed selector.
 const _kSpeedOptions = [0.5, 1.0, 1.25, 1.5, 2.0];
@@ -24,7 +29,8 @@ const _kSkipDuration = Duration(seconds: 15);
 // AudioPlayerScreen
 // ---------------------------------------------------------------------------
 
-/// Full-screen audio player that streams from `/api/v1/media/{id}/stream`.
+/// Full-screen audio player that streams from `/api/v1/media/{id}/stream`,
+/// or from `/compat` when the server marks the item as transcoded.
 ///
 /// Design decisions mirror VideoPlayerScreen exactly so both player types
 /// share the same progress-sync contract:
@@ -38,6 +44,11 @@ const _kSkipDuration = Duration(seconds: 15);
 ///     session, enabling lock-screen controls and background playback.
 ///   - The handler owns progress reporting so route disposal does not stop
 ///     updates while audio continues in the background.
+///   - A compatibility stream is probed first ([PlaybackPreparationMixin]):
+///     while the server is still transcoding it answers 503, which the native
+///     player could only report as a broken source.
+///   - Failures are shown as a readable sentence ([playbackErrorMessage]),
+///     never as the raw exception text.
 ///   - All async continuations guard on [mounted] before calling [setState].
 class AudioPlayerScreen extends ConsumerStatefulWidget {
   const AudioPlayerScreen({
@@ -55,8 +66,9 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
   final String mediaId;
 
   /// The resolved stream URL, optionally provided as route extra.
-  /// When null, [PlayerApiClient.streamUrl] is called to derive the URL so the
-  /// base URL stays in a single place (Dependency Inversion Principle).
+  /// When null, the screen starts from [PlayerApiClient.streamUrl] and looks
+  /// the item up to learn whether the server wants its compatibility stream
+  /// played instead, so the URL rules stay in the API client.
   final String? mediaUrl;
 
   /// Readable file name or episode title for the app bar and the system
@@ -80,10 +92,12 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
 // State
 // ---------------------------------------------------------------------------
 
-class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
+class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
+    with PlaybackPreparationMixin {
   // Invalidates older async setup attempts when Retry starts a new one.
   int _initGeneration = 0;
-  // Non-null when initialisation failed; shown in the error view.
+  // Shown in the error view (with Retry) when non-null: why starting or
+  // continuing playback failed, or that another item took over the player.
   String? _error;
   PlaybackRequest? _activeRequest;
   int? _activeSourceGeneration;
@@ -94,6 +108,14 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   // Current playback speed; updated by the speed selector.
   double _playbackSpeed = 1.0;
   PlaybackSessionLease? _sessionLease;
+
+  // Native failures after the source was loaded (see [_watchPlayback]).
+  StreamSubscription<Object>? _playbackErrorSubscription;
+  StreamSubscription<Duration>? _positionSubscription;
+
+  // Where this item last was while it played on this screen; Retry resumes
+  // here. Null before playback progressed and once the item completed.
+  Duration? _lastKnownPosition;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -120,7 +142,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
         oldWidget.mediaUrl != widget.mediaUrl ||
         oldWidget.isPublicShare != widget.isPublicShare) {
       _initGeneration++;
+      // A changed widget may be a different item: its position is unknown.
+      _lastKnownPosition = null;
       setState(() {
+        cancelPlaybackPreparation();
         _error = null;
         _isLoading = true;
       });
@@ -131,6 +156,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   @override
   void dispose() {
     _initGeneration++;
+    _stopWatchingPlayback();
     // Completed setup belongs to the background handler. An abandoned setup
     // must release its source, even when credentials or resume reads are pending.
     final lease = _sessionLease;
@@ -146,114 +172,181 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
 
   /// Loads the selected source, applies its resume position, and transfers
   /// progress ownership to the background handler. Ownership is checked after
-  /// async setup so an older screen cannot restart a replacement source.
+  /// async setup so an older screen cannot restart a replacement source. A
+  /// server compatibility stream is awaited before the source is loaded.
   Future<void> _initPlayer() async {
     if (!mounted) return;
 
-    final initGeneration = _initGeneration;
+    final generation = _initGeneration;
+    _stopWatchingPlayback();
+    final request = await _resolveRequest();
+    if (!mounted || generation != _initGeneration) return;
     final handler = ref.read(audioHandlerProvider);
-    final request = _effectiveRequest();
     _activeRequest = request;
-    final coordinator = ref.read(playbackSessionCoordinatorProvider);
+    final lease = await _claimSession(request, handler, generation);
+    if (lease == null) return;
+    _sessionLease = lease;
+    final attempt = _PlaybackAttempt(
+      request: request,
+      lease: lease,
+      generation: generation,
+      handler: handler,
+      sourceGeneration:
+          handler.beginSourceSession(ownsSource: () => lease.isCurrent),
+      stopGeneration: handler.stopGeneration,
+    );
+    _activeSourceGeneration = attempt.sourceGeneration;
+
+    final headers = await _readHeaders(attempt);
+    if (headers == null || !_isCurrent(attempt)) return;
+    if (!await _streamIsPlayable(attempt)) return;
+    if (!await _loadAndResume(attempt, headers)) return;
+    _startLoadedSource(attempt);
+  }
+
+  /// True while [attempt] is the one this screen is showing, still owns the
+  /// shared player, and playback was not stopped (notification, logout).
+  bool _isCurrent(_PlaybackAttempt attempt) =>
+      mounted &&
+      _initGeneration == attempt.generation &&
+      attempt.handler.stopGeneration == attempt.stopGeneration &&
+      attempt.lease.isCurrent;
+
+  /// Takes over the player from whatever was playing. Returns null when the
+  /// claim failed (error shown) or this attempt was superseded meanwhile.
+  Future<PlaybackSessionLease?> _claimSession(
+    PlaybackRequest request,
+    PlayerAudioHandler handler,
+    int generation,
+  ) async {
+    // The stop callback outlives this screen during background playback, so
+    // it holds the wait handle, not the state. Ending the wait there lets
+    // the screen leave "preparing" at once when another item takes over.
+    final wait = playbackWait;
     final PlaybackSessionLease? lease;
     try {
-      lease = await coordinator.claim(
-        kind: request.kind,
-        identity: request.identity,
-        stop: handler.stop,
-        sourceUri: request.sourceUri.toString(),
+      lease = await ref.read(playbackSessionCoordinatorProvider).claim(
+            kind: request.kind,
+            identity: request.identity,
+            stop: () {
+              wait.cancel();
+              return handler.stop();
+            },
+            sourceUri: request.sourceUri.toString(),
+          );
+    } catch (error) {
+      _showError(error, request, generation);
+      return null;
+    }
+    if (lease == null) return null;
+    if (!mounted || generation != _initGeneration) {
+      await lease.release();
+      return null;
+    }
+    return lease;
+  }
+
+  /// Reads the request headers for the native player. Local and public-share
+  /// requests carry no account credentials. Returns null when reading them
+  /// failed (error shown).
+  Future<Map<String, String>?> _readHeaders(_PlaybackAttempt attempt) async {
+    final request = attempt.request;
+    if (request is! ServerPlaybackRequest) return <String, String>{};
+    try {
+      return await _buildAuthHeaders(
+        ref.read(tokenStorageProvider),
+        ref.read(cookieJarProvider),
+        ref.read(credentialMutationQueueProvider),
+        Uri.parse(request.serverOrigin),
+        request.sourceUri,
       );
     } catch (error) {
-      if (mounted && _initGeneration == initGeneration) {
-        setState(() {
-          _error = _initErrorMessage(error);
-          _isLoading = false;
-        });
+      if (_isCurrent(attempt)) {
+        await attempt.lease.release();
+        _showError(error, request, attempt.generation);
       }
-      return;
+      return null;
     }
-    if (lease == null) return;
-    if (!mounted || initGeneration != _initGeneration) {
-      await lease.release();
-      return;
-    }
-    _sessionLease = lease;
-    final sourceGeneration =
-        handler.beginSourceSession(ownsSource: () => lease!.isCurrent);
-    _activeSourceGeneration = sourceGeneration;
-    final stopGeneration = handler.stopGeneration;
-    bool current() =>
-        mounted &&
-        _initGeneration == initGeneration &&
-        handler.stopGeneration == stopGeneration &&
-        lease?.isCurrent == true;
+  }
 
-    // Local and public-share requests carry no account credentials.
-    Map<String, String> headers;
+  /// Waits for a server compatibility stream to be ready. Returns false when
+  /// playback must not start: this attempt was superseded, preparing failed
+  /// (error shown), or another item took the player meanwhile (the "stopped"
+  /// state with Retry is shown instead of a spinner that would never end).
+  Future<bool> _streamIsPlayable(_PlaybackAttempt attempt) async {
     try {
-      headers = request is ServerPlaybackRequest
-          ? await _buildAuthHeaders(
-              ref.read(tokenStorageProvider),
-              ref.read(cookieJarProvider),
-              ref.read(credentialMutationQueueProvider),
-              Uri.parse(request.serverOrigin),
-              request.sourceUri,
-            )
-          : <String, String>{};
+      final ready = await waitUntilPlayable(
+        attempt.request,
+        current: () => _isCurrent(attempt),
+      );
+      if (ready && _isCurrent(attempt)) return true;
+      _showMessage(kPlaybackStoppedMessage, attempt.generation);
+      return false;
     } catch (error) {
-      if (current()) {
-        await lease.release();
-        if (!mounted || _initGeneration != initGeneration) return;
-        setState(() {
-          _error = _initErrorMessage(error);
-          _isLoading = false;
-        });
-      }
-      return;
+      if (!_isCurrent(attempt)) return false;
+      await attempt.lease.release();
+      _showError(error, attempt.request, attempt.generation);
+      return false;
     }
-    if (!current()) return;
+  }
 
+  /// Replaces the handler's source with this item and seeks to its resume
+  /// point. Returns false when loading failed (error shown) or the attempt
+  /// was superseded.
+  Future<bool> _loadAndResume(
+    _PlaybackAttempt attempt,
+    Map<String, String> headers,
+  ) async {
     // Flush the previous item before replacing its source, then load.
-    await handler.endProgress();
-    if (!current()) return;
-    final loaded = await _loadSource(
-      handler,
-      sourceGeneration,
-      request.sourceUri.toString(),
-      headers,
-      current,
-    );
-    if (!loaded || !current()) {
-      if (lease.isCurrent) await lease.release();
-      return;
+    await attempt.handler.endProgress();
+    if (!_isCurrent(attempt)) return false;
+    final loaded = await _loadSource(attempt, headers);
+    if (!loaded || !_isCurrent(attempt)) {
+      if (attempt.lease.isCurrent) await attempt.lease.release();
+      return false;
     }
+    _watchPlayback(attempt);
 
-    // Resolve and apply the source-specific resume point.
-    double? resumePosition = request.startPosition;
-    if (resumePosition == null && request.readPosition != null) {
-      try {
-        resumePosition = await request.readPosition!();
-      } catch (_) {
-        // Progress lookup is optional; a provider error starts at zero.
-      }
-    }
-    if (!current()) return;
+    final resumePosition = await _readResumePosition(attempt.request);
+    if (!_isCurrent(attempt)) return false;
     if (resumePosition != null && resumePosition > 0) {
       try {
-        await handler.seekForSession(
+        await attempt.handler.seekForSession(
           Duration(milliseconds: (resumePosition * 1000).round()),
-          sourceGeneration,
+          attempt.sourceGeneration,
         );
       } catch (_) {
         // A bad or stale resume position must not prevent playback.
       }
     }
-    if (!current()) return;
+    return _isCurrent(attempt);
+  }
 
-    handler.setMediaItem(
-      id: request.identity,
-      title: request.title,
-    );
+  /// The position to resume at. After a Retry that is where this screen
+  /// last saw the item play: the caller's start position and the saved one
+  /// are both older by then, and starting from them would also write that
+  /// older position over the newer progress. Otherwise it is the position
+  /// the caller passed, else the saved one; that lookup is optional and a
+  /// provider error starts at zero.
+  Future<double?> _readResumePosition(PlaybackRequest request) async {
+    final lastKnown = _lastKnownPosition;
+    if (lastKnown != null) return lastKnown.inMilliseconds / 1000.0;
+    final readPosition = request.readPosition;
+    if (request.startPosition != null || readPosition == null) {
+      return request.startPosition;
+    }
+    try {
+      return await readPosition();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Shows the controls, hands progress reporting to the handler and plays.
+  void _startLoadedSource(_PlaybackAttempt attempt) {
+    final request = attempt.request;
+    final handler = attempt.handler;
+    handler.setMediaItem(id: request.identity, title: request.title);
 
     setState(() => _isLoading = false);
 
@@ -265,9 +358,81 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
         markFinished: request.markFinished!,
       );
     }
-    if (current() && handler.activateSourceSession(sourceGeneration)) {
+    if (_isCurrent(attempt) &&
+        handler.activateSourceSession(attempt.sourceGeneration)) {
       unawaited(handler.play());
     }
+  }
+
+  /// Follows the loaded source while this route shows it: remembers where
+  /// playback is, for Retry, and shows the error view when the native player
+  /// fails, e.g. a codec it cannot decode or a connection lost for good.
+  /// Whatever the type of that failure, it is a source failure by then.
+  /// While this route is gone (background playback) nothing listens; the
+  /// handler still marks the media session as failed.
+  void _watchPlayback(_PlaybackAttempt attempt) {
+    final request = attempt.request;
+    final player = attempt.handler.player;
+    _playbackErrorSubscription = attempt.handler.playbackErrors.listen((error) {
+      if (!_isCurrent(attempt)) return;
+      _logFailure(error, request);
+      _showMessage(
+        sourceErrorMessage(request.title, request.kind),
+        attempt.generation,
+      );
+    });
+    _positionSubscription = player.positionStream.listen((position) {
+      if (_isCurrent(attempt)) _rememberPosition(position, attempt);
+    });
+  }
+
+  void _stopWatchingPlayback() {
+    unawaited(_playbackErrorSubscription?.cancel());
+    unawaited(_positionSubscription?.cancel());
+    _playbackErrorSubscription = null;
+    _positionSubscription = null;
+  }
+
+  /// Keeps [_lastKnownPosition] current. A failed player reports no useful
+  /// position, so it has to be noted while playback still works: positions
+  /// reported while the player is idle or loading are not playback.
+  ///
+  /// Zero counts once playback has progressed (the user sought back to the
+  /// start); before that it only means "not started". Near the end the
+  /// position is kept, because the handler records "finished" only on its
+  /// next tick and a failure in between must not restart from the stale
+  /// route position. It is forgotten when the player reports completion —
+  /// the handler records "finished" then — or, for sources without progress
+  /// (public shares), past the finished threshold; replaying then starts by
+  /// the usual rules rather than at the end.
+  void _rememberPosition(Duration position, _PlaybackAttempt attempt) {
+    final player = attempt.handler.player;
+    final state = player.processingState;
+    if (state == ProcessingState.idle || state == ProcessingState.loading) {
+      return;
+    }
+    final duration = player.duration;
+    final pastEnd = duration != null &&
+        duration > Duration.zero &&
+        position.inMilliseconds / duration.inMilliseconds >= 0.95;
+    final finished = state == ProcessingState.completed ||
+        (pastEnd && attempt.request.markFinished == null);
+    if (finished) {
+      _lastKnownPosition = null;
+    } else if (position > Duration.zero || _lastKnownPosition != null) {
+      _lastKnownPosition = position;
+    }
+  }
+
+  /// Builds the request, looking up the playback URL when the route supplied
+  /// only a media ID (no typed request and no URL in the route extra), as the
+  /// podcast episode list does.
+  Future<PlaybackRequest> _resolveRequest() {
+    final request = _effectiveRequest();
+    if (widget.request != null || widget.mediaUrl != null) {
+      return Future.value(request);
+    }
+    return resolveServerPlaybackSource(request, ref.read(apiClientProvider));
   }
 
   PlaybackRequest _effectiveRequest() {
@@ -278,11 +443,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     if (widget.isPublicShare) {
       final url = widget.mediaUrl;
       if (url == null) throw StateError('Public audio share has no stream URL');
-      final segments = Uri.parse(url).pathSegments;
       return PublicSharePlaybackRequest(
-        shareToken: segments.length > 1 && segments.first == 's'
-            ? segments[1]
-            : 'unknown',
+        shareToken: shareTokenFromUrl(Uri.parse(url)),
         sourceUri: Uri.parse(url),
         title: title,
       );
@@ -330,32 +492,28 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     );
   }
 
-  /// Loads [url] into [player] with [headers]; returns `true` on success.
+  /// Loads the attempt's source into the player with [headers]; returns
+  /// `true` on success.
   ///
-  /// On failure, sets the error UI state and returns `false` so [_initPlayer]
+  /// On failure, sets the error UI state and returns `false` so the caller
   /// can short-circuit without nesting the remaining steps inside a try/catch.
   Future<bool> _loadSource(
-    PlayerAudioHandler handler,
-    int sourceGeneration,
-    String url,
+    _PlaybackAttempt attempt,
     Map<String, String> headers,
-    bool Function() current,
   ) async {
     try {
-      await handler.loadSourceForSession(
+      await attempt.handler.loadSourceForSession(
         // A nonnull map, even empty, enables just_audio's HTTP proxy. Content
         // URIs must reach Android's document provider directly.
-        AudioSource.uri(Uri.parse(url),
+        AudioSource.uri(attempt.request.sourceUri,
             headers: headers.isEmpty ? null : headers),
-        sourceGeneration,
+        attempt.sourceGeneration,
       );
       return true;
-    } catch (e) {
-      if (!current()) return false;
-      setState(() {
-        _error = _initErrorMessage(e);
-        _isLoading = false;
-      });
+    } catch (error) {
+      if (_isCurrent(attempt)) {
+        _showError(error, attempt.request, attempt.generation);
+      }
       return false;
     }
   }
@@ -364,16 +522,36 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   // Error mapping
   // ---------------------------------------------------------------------------
 
-  /// Converts a player initialisation exception to a readable UI string.
+  /// Shows the error view for [error], unless the attempt of [generation]
+  /// was superseded or the screen is gone.
   ///
-  /// Kept in the state class because it is tightly coupled to this screen's
-  /// error UI — no general-purpose helper needed (YAGNI).
-  String _initErrorMessage(Object e) {
-    final detail = e.toString();
-    if (detail.isNotEmpty && detail != 'null') {
-      return 'Playback failed: $detail';
-    }
-    return 'Could not start audio playback. Please try again.';
+  /// The user gets the item's title and a plain reason from
+  /// [playbackErrorMessage]. The debug log gets only the source kind and the
+  /// error's type: the request identity carries share tokens and account
+  /// IDs, and exception texts can carry URLs, none of which belong in logcat.
+  void _showError(Object error, PlaybackRequest request, int generation) {
+    _logFailure(error, request);
+    _showMessage(
+      playbackErrorMessage(error, title: request.title, source: request.kind),
+      generation,
+    );
+  }
+
+  /// Debug-only, kind and type only: see [_showError].
+  void _logFailure(Object error, PlaybackRequest request) {
+    if (!kDebugMode) return;
+    debugPrint(
+      'Audio playback (${request.kind.name}) failed: ${error.runtimeType}',
+    );
+  }
+
+  /// Ends the loading state with [message] and the Retry button.
+  void _showMessage(String message, int generation) {
+    if (!mounted || _initGeneration != generation) return;
+    setState(() {
+      _error = message;
+      _isLoading = false;
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -386,6 +564,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
   void _onRetry() {
     _initGeneration++;
     setState(() {
+      cancelPlaybackPreparation();
       _error = null;
       _isLoading = true;
       _playbackSpeed = 1.0;
@@ -456,18 +635,20 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     return _buildPlayerView();
   }
 
-  /// Full-screen loading spinner shown while the player initialises.
+  /// Full-screen loading spinner shown while the player initialises, with a
+  /// "preparing" label while the server is still producing the stream.
   Widget _buildLoadingView() {
-    return const Center(
-      key: Key('audio_player_loading'),
-      child: CircularProgressIndicator(),
+    return PlaybackLoadingView(
+      key: const Key('audio_player_loading'),
+      preparing: isPreparingPlayback,
     );
   }
 
-  /// Error view shown when initialisation fails.
+  /// Error view shown when initialisation or playback fails, and when
+  /// another item took over the player.
   ///
   /// Provides a human-readable message and a retry button so the user can
-  /// attempt re-initialisation without navigating away.
+  /// play the item again without navigating away.
   Widget _buildErrorView(String message) {
     return Center(
       key: const Key('audio_player_error'),
@@ -724,4 +905,26 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return h > 0 ? '$h:$m:$s' : '$m:$s';
   }
+}
+
+/// One run of [_AudioPlayerScreenState._initPlayer]: what is being played,
+/// the ownership of the shared player it claimed, and the generations that
+/// tell whether it was superseded (Retry or another item on this screen, a
+/// newer source or a stop on the handler).
+class _PlaybackAttempt {
+  const _PlaybackAttempt({
+    required this.request,
+    required this.lease,
+    required this.generation,
+    required this.handler,
+    required this.sourceGeneration,
+    required this.stopGeneration,
+  });
+
+  final PlaybackRequest request;
+  final PlaybackSessionLease lease;
+  final int generation;
+  final PlayerAudioHandler handler;
+  final int sourceGeneration;
+  final int stopGeneration;
 }

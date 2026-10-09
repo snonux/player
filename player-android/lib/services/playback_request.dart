@@ -51,6 +51,20 @@ final class ServerPlaybackRequest extends PlaybackRequest {
   final String serverOrigin;
   final int userId;
 
+  /// The same item and progress callbacks, played from [sourceUri]. Used to
+  /// switch between the original stream and the compatibility stream.
+  ServerPlaybackRequest withSourceUri(Uri sourceUri) => ServerPlaybackRequest(
+        mediaId: mediaId,
+        serverOrigin: serverOrigin,
+        userId: userId,
+        sourceUri: sourceUri,
+        title: title,
+        startPosition: startPosition,
+        readPosition: readPosition,
+        savePosition: savePosition,
+        markFinished: markFinished,
+      );
+
   @override
   PlaybackSourceKind get kind => PlaybackSourceKind.server;
 }
@@ -71,6 +85,17 @@ final class LocalPlaybackRequest extends PlaybackRequest {
 
   @override
   PlaybackSourceKind get kind => PlaybackSourceKind.local;
+}
+
+/// Extracts the share token from a public share media URL
+/// (`.../s/{token}/stream` or `.../s/{token}/compat`), also when the server
+/// is mounted under a path prefix. Returns 'unknown' for any other URL.
+String shareTokenFromUrl(Uri url) {
+  final segments = url.pathSegments;
+  final marker = segments.length - 3;
+  return marker >= 0 && segments[marker] == 's'
+      ? segments[marker + 1]
+      : 'unknown';
 }
 
 @immutable

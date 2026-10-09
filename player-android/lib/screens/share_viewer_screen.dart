@@ -26,6 +26,7 @@ class SharePageMetadata {
     required this.duration,
     required this.hasThumb,
     required this.streamUrl,
+    required this.playbackUrl,
     required this.thumbUrl,
     required this.downloadUrl,
   });
@@ -38,8 +39,15 @@ class SharePageMetadata {
 
   final bool hasThumb;
 
-  /// Relative path for the stream endpoint (e.g. "/s/abc123/stream").
+  /// Relative path for the stream endpoint (e.g. "/s/abc123/stream"); always
+  /// the original file.
   final String streamUrl;
+
+  /// Relative path a player should open: "/s/abc123/compat" when the server
+  /// transcodes this item, otherwise the same as [streamUrl]. Servers that
+  /// predate the compatibility stream do not send it, so it falls back to
+  /// [streamUrl].
+  final String playbackUrl;
 
   /// Relative path for the thumbnail (e.g. "/s/abc123/thumbnail").
   final String thumbUrl;
@@ -55,13 +63,17 @@ class SharePageMetadata {
   factory SharePageMetadata.fromJson(String jsonBody) {
     final map = jsonDecode(jsonBody) as Map<String, dynamic>;
     final media = map['media'] as Map<String, dynamic>? ?? {};
+    final streamUrl = (map['stream_url'] as String?) ?? '';
+    final playbackUrl = map['playback_url'] as String?;
 
     return SharePageMetadata(
       fileName: (media['file_name'] as String?) ?? 'Unknown file',
       type: (media['type'] as String?) ?? 'video',
       duration: (media['duration'] as num?)?.toDouble(),
       hasThumb: (map['has_thumb'] as bool?) ?? false,
-      streamUrl: (map['stream_url'] as String?) ?? '',
+      streamUrl: streamUrl,
+      playbackUrl:
+          playbackUrl == null || playbackUrl.isEmpty ? streamUrl : playbackUrl,
       thumbUrl: (map['thumb_url'] as String?) ?? '',
       downloadUrl: (map['download_url'] as String?) ?? '',
     );
@@ -155,11 +167,21 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
   // ---------------------------------------------------------------------------
 
   /// Opens the public audio or video player for this share token.
+  ///
+  /// Audio and video are played from the server's `playback_url`, which is
+  /// the compatibility stream for formats the device cannot decode. Images
+  /// keep the route's default (the original file).
   void _play() {
-    if (_page == null) return;
+    final page = _page;
+    if (page == null) return;
 
-    context.push(AppRoutes.sharedPlayerPath(widget.token, _page!.type),
-        extra: {'title': _page!.fileName});
+    final playable = page.type != 'image' && page.playbackUrl.isNotEmpty;
+    context.push(AppRoutes.sharedPlayerPath(widget.token, page.type), extra: {
+      'title': page.fileName,
+      if (playable)
+        'mediaUrl':
+            '${ref.read(publicApiClientProvider).baseUrl}${page.playbackUrl}',
+    });
   }
 
   // ---------------------------------------------------------------------------

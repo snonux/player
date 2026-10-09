@@ -21,6 +21,10 @@ import 'audio_progress_session.dart';
 /// The active progress session belongs to this handler so reporting continues
 /// when the player screen is disposed during background playback.
 ///
+/// Native playback failures are caught here and republished on
+/// [playbackErrors]; nothing the player reports may escape as an unhandled
+/// asynchronous error, because the handler outlives every screen.
+///
 /// The handler is registered once via [AudioService.init] in [main].
 /// Consumers retrieve the singleton through [audioHandlerProvider].
 class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
@@ -31,7 +35,14 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   PlayerAudioHandler(AudioPlayer player) : _player = player {
     // Propagate just_audio's playback state into the audio_service stream so
     // the notification, lock screen, and Wear OS clients see live updates.
-    _player.playbackEventStream.listen(_onPlaybackEvent);
+    // just_audio adds a failure (for example `PlatformException(0, Source
+    // error, {index: 0})` for a file ExoPlayer cannot decode) to this stream
+    // as an error, in addition to throwing it from setAudioSource. Without
+    // an error handler that second report is an unhandled exception.
+    _player.playbackEventStream.listen(
+      _onPlaybackEvent,
+      onError: (Object error, StackTrace _) => _onPlaybackError(error),
+    );
 
     // Propagate playing/paused transitions, which are not always carried in
     // playback events (just_audio emits them separately).
@@ -60,6 +71,13 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _controlsEnabled = false;
   bool Function()? _ownsSource;
   Future<void>? _sourceOperationTail;
+  final _playbackErrors = StreamController<Object>.broadcast();
+
+  /// Failures reported by the native player: undecodable sources, lost
+  /// connections, and errors from starting playback. The player screen
+  /// listens once its source is loaded to replace the controls with a
+  /// readable message; load failures are thrown to the loader as well.
+  Stream<Object> get playbackErrors => _playbackErrors.stream;
 
   /// Changes immediately when playback is stopped (including logout).
   /// Pending screen setup must not restart playback from an older generation.
@@ -149,9 +167,17 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   // BaseAudioHandler — playback controls
   // ---------------------------------------------------------------------------
 
+  /// Starts playback. A failure is reported on [playbackErrors] instead of
+  /// being thrown: callers (the screen, the notification, a headset button)
+  /// do not await the outcome, so a thrown error would go unhandled.
   @override
   Future<void> play() async {
-    if (_canControlSource) await _player.play();
+    if (!_canControlSource) return;
+    try {
+      await _player.play();
+    } catch (error) {
+      _onPlaybackError(error);
+    }
   }
 
   @override
@@ -268,6 +294,18 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Called on every playback event so the notification and lock-screen
   /// controls always reflect the true player state.
   void _onPlaybackEvent(PlaybackEvent event) => _broadcastState();
+
+  /// Marks the media session as failed, so the notification stops showing a
+  /// playing item, and tells the screen (if one is listening).
+  void _onPlaybackError(Object error) {
+    playbackState.add(
+      playbackState.value.copyWith(
+        processingState: AudioProcessingState.error,
+        playing: false,
+      ),
+    );
+    _playbackErrors.add(error);
+  }
 
   /// Emits the current [PlaybackState] derived from the underlying player.
   ///

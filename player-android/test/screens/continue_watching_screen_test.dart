@@ -358,6 +358,38 @@ void main() {
       expect((_lastPlayerExtra as Map)['position'], 42);
       expect(fakeClient.progressCallCount, 0);
     });
+
+    testWidgets('a transcoded item resumes through the compatibility stream',
+        (tester) async {
+      final transcoded = Media.fromJson({
+        ..._kVideo.toJson(),
+        'transcoded': true,
+        'position_seconds': 42,
+      });
+      final fakeClient = _FakeApiClient()..inProgressResult = [transcoded];
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('resume_card_title_1')));
+      await tester.pumpAndSettle();
+
+      final extra = _lastPlayerExtra as Map;
+      expect(extra['mediaUrl'], endsWith('/api/v1/media/1/compat'));
+      // The saved position still travels with it.
+      expect(extra['position'], 42);
+    });
+
+    testWidgets('an ordinary item resumes from the original stream',
+        (tester) async {
+      final fakeClient = _FakeApiClient()..inProgressResult = [_kVideo];
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('resume_card_title_1')));
+      await tester.pumpAndSettle();
+
+      expect((_lastPlayerExtra as Map)['mediaUrl'], fakeClient.streamUrl(1));
+    });
   });
 
   // --------------------------------------------------------------------------

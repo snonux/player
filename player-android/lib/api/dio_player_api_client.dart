@@ -3,10 +3,16 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../models/models.dart';
+import '../services/playback_preparer.dart' show PlaybackProbe;
 import 'player_api_client.dart';
 
 // Base path prefix used by all versioned API endpoints.
 const _kApiV1 = '/api/v1';
+
+// Per-request limit for a readiness probe. The server may hold a compat
+// request for up to 20 s while a transcode runs before it answers 503;
+// anything much longer means the connection is dead.
+const _kProbeTimeout = Duration(seconds: 60);
 
 /// Concrete [PlayerApiClient] implementation that delegates every call to the
 /// [Dio] instance supplied at construction time.
@@ -205,9 +211,10 @@ class DioPlayerApiClient extends PlayerApiClient {
   /// The server envelope wraps the media object; this method unwraps it so
   /// callers receive a plain [Media].
   @override
-  Future<Media> getMedia(int mediaId) async {
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async {
     final response = await rawDio.get<Map<String, dynamic>>(
       '$_kApiV1/media/$mediaId',
+      cancelToken: cancelToken,
     );
 
     // Guard against a null or structurally unexpected response body.  In
@@ -253,6 +260,46 @@ class DioPlayerApiClient extends PlayerApiClient {
       '$_kApiV1/media/$mediaId/stream',
       extraHeaders: extraHeaders,
     );
+  }
+
+  /// Probes a playback URL with a HEAD request.
+  ///
+  /// HEAD /api/v1/media/{id}/compat or /s/{token}/compat — starts or observes
+  /// the transcode exactly like GET: 200 when the rendition exists, 503 +
+  /// Retry-After while it is transcoding or the transcoder is busy, and
+  /// 400/403/404/410/415/500/507 when it will not become available.
+  ///
+  /// HEAD rather than a ranged GET because every served GET of a public
+  /// share consumes one of its uses; a probe must not spend a `max_uses`
+  /// budget before playback starts. A HEAD answer has no body, so only the
+  /// status and the Retry-After header are read.
+  ///
+  /// Every status except 401 is returned rather than thrown so the caller can
+  /// tell "retry" from "failed"; 401 keeps the normal sign-out handling.
+  @override
+  Future<PlaybackProbe> probePlayback(
+    Uri url, {
+    CancelToken? cancelToken,
+  }) async {
+    final response = await rawDio.headUri<void>(
+      url,
+      cancelToken: cancelToken,
+      options: Options(
+        receiveTimeout: _kProbeTimeout,
+        validateStatus: (status) => status != 401,
+      ),
+    );
+    return PlaybackProbe(
+      statusCode: response.statusCode ?? 0,
+      retryAfter: _retryAfter(response.headers),
+    );
+  }
+
+  /// Parses a `Retry-After` given in whole seconds; null when absent or not
+  /// a positive number (the HTTP-date form is not used by this server).
+  static Duration? _retryAfter(Headers headers) {
+    final seconds = int.tryParse(headers.value('retry-after') ?? '');
+    return seconds != null && seconds > 0 ? Duration(seconds: seconds) : null;
   }
 
   /// Downloads the original media file with Content-Disposition: attachment.

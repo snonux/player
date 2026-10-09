@@ -124,8 +124,19 @@ void main() {
       expect(media.playCount, 0);
       expect(media.tags, isEmpty);
       expect(media.favorite, isFalse);
+      expect(media.transcoded, isFalse);
       expect(media.deletedAt, isNull);
       expect(media.createdAt, isNull);
+    });
+
+    // The server sets "transcoded" for media that must be played through the
+    // compatibility stream; servers that predate the field omit it.
+    test('transcoded round-trips and defaults to false', () {
+      final transcoded = Media.fromJson({...fullJson, 'transcoded': true});
+      expect(transcoded.transcoded, isTrue);
+      expect(transcoded.toJson()['transcoded'], isTrue);
+      expect(Media.fromJson(fullJson).transcoded, isFalse);
+      expect(Media.fromJson({'transcoded': null}).transcoded, isFalse);
     });
 
     // Regression test for e9: non-string and null elements in the tags list

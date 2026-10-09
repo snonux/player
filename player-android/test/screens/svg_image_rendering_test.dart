@@ -116,7 +116,8 @@ class _Client extends PlayerApiClient {
       ];
 
   @override
-  Future<Media> getMedia(int mediaId) async => media;
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async =>
+      media;
 
   @override
   Future<List<Tag>> listTags() async => [];

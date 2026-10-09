@@ -88,7 +88,7 @@ class _FakeApiClient extends PlayerApiClient {
   Media? mediaResult;
 
   @override
-  Future<Media> getMedia(int mediaId) async => mediaResult!;
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async => mediaResult!;
 
   @override
   Future<bool> toggleFavorite(int mediaId) async => false;
