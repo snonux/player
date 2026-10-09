@@ -216,27 +216,7 @@ label {
   color: var(--text-primary);
 }
 
-/* Toast */
-.toast {
-  position: fixed;
-  bottom: 1rem;
-  right: 1rem;
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  padding: 0.65rem 0.9rem;
-  z-index: 110;
-  font-size: 0.85rem;
-  transform: translateY(120%);
-  opacity: 0;
-  transition: transform var(--transition-base), opacity var(--transition-base);
-}
-.toast.show { transform: translateY(0); opacity: 1; }
-.toast.info { border-left: 4px solid var(--accent); }
-.toast.success { border-left: 4px solid var(--success); }
-.toast.error { border-left: 4px solid var(--danger); }
+/* Toast styles live in toast.css (shared with the standalone share page). */
 
 /* Share rows */
 .share-row { cursor: pointer; outline: none; }

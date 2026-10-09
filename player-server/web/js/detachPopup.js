@@ -1,4 +1,4 @@
-import { initPlayer, loadMediaDirect } from './player.js';
+import { initPlayer, loadMediaDirect, requestPlay, togglePlay } from './player.js';
 
 const openerOrigin = window.location.origin;
 let currentMedia = null;
@@ -141,7 +141,9 @@ function loadDetachedMedia(payload) {
   el.muted = !!payload.muted;
 
   seekWhenReady(el, resumeFrom);
-  if (payload.play) playWhenReady(el);
+  // requestPlay (playback.js) also covers a compat stream that is still being
+  // prepared: playback then starts as soon as the element gets its source.
+  if (payload.play) requestPlay();
   else showPlayPrompt();
   sendState();
 }
@@ -155,9 +157,7 @@ function handleCommand(payload) {
     if (!el) return;
     el.pause();
   } else if (action === 'play') {
-    const el = mediaElement();
-    if (!el) return;
-    el.play().catch(() => {});
+    requestPlay();
   } else if (action === 'seek-relative') {
     seekRelative(Number(payload.seconds || 0));
   } else if (action === 'seek-percent') {
@@ -165,11 +165,10 @@ function handleCommand(payload) {
   }
 }
 
+// togglePlayback defers to the shared player, which knows whether the element
+// has a source yet (a compat stream may still be preparing or have failed).
 function togglePlayback() {
-  const el = mediaElement();
-  if (!el) return;
-  if (el.paused) el.play().catch(showPlayPrompt);
-  else el.pause();
+  togglePlay();
 }
 
 function seekRelative(seconds) {
@@ -243,12 +242,6 @@ function seekWhenReady(el, seconds) {
   };
   if (el.readyState >= HTMLMediaElement.HAVE_METADATA) seek();
   else el.addEventListener('loadedmetadata', seek, { once: true });
-}
-
-function playWhenReady(el) {
-  const play = () => el.play().catch(showPlayPrompt);
-  if (el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) play();
-  else el.addEventListener('canplay', play, { once: true });
 }
 
 function showPlayPrompt() {

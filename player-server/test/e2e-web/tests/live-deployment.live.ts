@@ -27,11 +27,21 @@ const FORMATS = {
   'test-images': ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'svg'],
 } as const;
 
-// Containers/codecs no mainstream browser decodes. The server streams files
-// as-is (no transcoding), so these are expected not to play in the web UI.
-const BROWSER_UNSUPPORTED = new Set(['avi', 'wmv', 'flv', 'wma']);
+// Formats expected not to play in the web UI. Empty since the server offers a
+// compatibility stream (transcoded MP4/M4A) for what browsers cannot decode
+// (AVI, WMV, FLV, WMA, ...): all 16 audio/video formats must play.
+const BROWSER_UNSUPPORTED = new Set<string>();
 
-type Media = { id: number; set_id: number; file_name: string; type: string; file_size_bytes: number; thumbnail_path: string };
+// A first play of a transcoded format waits for the server-side transcode
+// (the web UI shows "Preparing ..." and retries); plain streams start at once.
+const PLAIN_START_MS = 10_000;
+const TRANSCODE_START_MS = 90_000;
+
+type Media = {
+  id: number; set_id: number; file_name: string; type: string; file_size_bytes: number; thumbnail_path: string;
+  // Server hint: play /compat instead of /stream.
+  transcoded?: boolean;
+};
 
 async function login(page: Page, who: { user: string; pass: string }) {
   await page.goto('/login.html');
@@ -71,11 +81,13 @@ async function mediaByName(page: Page, fileName: string): Promise<Media> {
 }
 
 // playbackState polls the <video>/<audio> element until it really advances
-// or reports a decode error, and returns what the browser saw.
-async function playbackState(page: Page, kind: 'video' | 'audio') {
-  return page.evaluate(async elementId => {
+// or reports a decode error, and returns what the browser saw. While a compat
+// stream is being prepared the element has no source and no error, so the
+// poll simply keeps waiting up to timeoutMs.
+async function playbackState(page: Page, kind: 'video' | 'audio', timeoutMs = PLAIN_START_MS) {
+  return page.evaluate(async ({ elementId, timeoutMs }) => {
     const el = document.getElementById(elementId) as HTMLMediaElement;
-    const deadline = Date.now() + 10_000;
+    const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       if (el.error) return { ok: false, reason: `MediaError ${el.error.code} ${el.error.message}` };
       if (el.readyState >= 2 && el.currentTime > 0.4) {
@@ -84,7 +96,21 @@ async function playbackState(page: Page, kind: 'video' | 'audio') {
       await new Promise(resolve => setTimeout(resolve, 200));
     }
     return { ok: false, reason: `timeout readyState=${el.readyState} networkState=${el.networkState} paused=${el.paused} t=${el.currentTime}` };
-  }, kind === 'video' ? 'media-video' : 'media-audio');
+  }, { elementId: kind === 'video' ? 'media-video' : 'media-audio', timeoutMs });
+}
+
+// playAndObserve starts an item from the grid and reports whether it plays.
+// The URL the element ends up with must follow the server's "transcoded" hint.
+async function playAndObserve(page: Page, set: string, kind: 'video' | 'audio', ext: string) {
+  await openSet(page, set);
+  const item = await mediaByName(page, `sample-${ext}.${ext}`);
+  await card(page, item.file_name).locator('[data-action="play"]').click({ force: true });
+  await expect(page.locator('#player')).toHaveClass(/open/);
+  const state = await playbackState(page, kind, item.transcoded ? TRANSCODE_START_MS : PLAIN_START_MS);
+  const src = await page.locator(`#media-${kind}`).evaluate((el: HTMLMediaElement) => el.getAttribute('src') || '');
+  test.info().annotations.push({ type: 'playback', description: `${ext}: ${state.ok ? 'plays' : state.reason}; src=${src}; toast="${await page.locator('#toast').textContent()}"` });
+  if (state.ok) expect(src).toBe(`/api/media/${item.id}/${item.transcoded ? 'compat' : 'stream'}`);
+  return state;
 }
 
 test.beforeAll(() => {
@@ -147,11 +173,7 @@ test.describe('library as admin', () => {
 
   for (const ext of FORMATS['test-videos']) {
     test(`video .${ext} ${BROWSER_UNSUPPORTED.has(ext) ? 'is not browser-playable' : 'plays'}`, async ({ page }) => {
-      await openSet(page, 'test-videos');
-      await card(page, `sample-${ext}.${ext}`).locator('[data-action="play"]').click({ force: true });
-      await expect(page.locator('#player')).toHaveClass(/open/);
-      const state = await playbackState(page, 'video');
-      test.info().annotations.push({ type: 'playback', description: `${ext}: ${state.ok ? 'plays' : state.reason}; toast="${await page.locator('#toast').textContent()}"` });
+      const state = await playAndObserve(page, 'test-videos', 'video', ext);
       if (BROWSER_UNSUPPORTED.has(ext)) {
         expect(state.ok, 'format unexpectedly plays in the browser').toBe(false);
       } else {
@@ -163,11 +185,7 @@ test.describe('library as admin', () => {
 
   for (const ext of FORMATS['test-audio']) {
     test(`audio .${ext} ${BROWSER_UNSUPPORTED.has(ext) ? 'is not browser-playable' : 'plays'}`, async ({ page }) => {
-      await openSet(page, 'test-audio');
-      await card(page, `sample-${ext}.${ext}`).locator('[data-action="play"]').click({ force: true });
-      await expect(page.locator('#player')).toHaveClass(/open/);
-      const state = await playbackState(page, 'audio');
-      test.info().annotations.push({ type: 'playback', description: `${ext}: ${state.ok ? 'plays' : state.reason}; toast="${await page.locator('#toast').textContent()}"` });
+      const state = await playAndObserve(page, 'test-audio', 'audio', ext);
       expect(state.ok, state.reason).toBe(!BROWSER_UNSUPPORTED.has(ext));
     });
   }
@@ -183,6 +201,61 @@ test.describe('library as admin', () => {
       await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
     });
   }
+
+  test('an undecodable source shows an error toast and resets the play button', async ({ page }) => {
+    const item = await mediaByName(page, 'sample-mp4.mp4');
+    // Serve garbage instead of the file: the element fails to decode it.
+    await page.route(`**/api/media/${item.id}/stream`, route => route.fulfill({
+      status: 200,
+      contentType: 'video/mp4',
+      body: Buffer.alloc(64 * 1024, 0x5a),
+    }));
+    await openSet(page, 'test-videos');
+    await card(page, item.file_name).locator('[data-action="play"]').click({ force: true });
+    await expect(page.locator('#toast')).toContainText(`Cannot play ${item.file_name}:`, { timeout: 15_000 });
+    await expect(page.locator('#toast')).toHaveClass(/error/);
+    await expect(page.locator('#btn-play')).toHaveText('▶');
+    await expect(page.locator('#big-play')).not.toHaveClass(/hidden/);
+    expect(await page.locator('#media-video').evaluate((el: HTMLMediaElement) => el.error?.code ?? 0)).toBeGreaterThan(0);
+  });
+
+  test('a failed compatibility stream shows an error toast instead of loading', async ({ page }) => {
+    const item = await mediaByName(page, 'sample-avi.avi');
+    expect(item.transcoded, 'the server must flag AVI as transcoded').toBe(true);
+    await page.route(`**/api/media/${item.id}/compat`, route => route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'transcode failed' }),
+    }));
+    await openSet(page, 'test-videos');
+    await card(page, item.file_name).locator('[data-action="play"]').click({ force: true });
+    await expect(page.locator('#toast')).toContainText(`Cannot play ${item.file_name}: the server could not convert this file`);
+    await expect(page.locator('#btn-play')).toHaveText('▶');
+    expect(await page.locator('#media-video').getAttribute('src')).toBeNull();
+  });
+
+  test('a transcoded share plays through its playback_url without a session', async ({ page, browser }) => {
+    const item = await mediaByName(page, 'sample-wmv.wmv');
+    const created = await page.request.post(`/api/v1/media/${item.id}/shares`);
+    expect(created.ok()).toBeTruthy();
+    const shares = (await (await page.request.get(`/api/v1/media/${item.id}/shares`)).json()) as Array<{ token: string }>;
+    const token = shares[shares.length - 1].token;
+
+    const anonymous = await browser.newContext();
+    const guest = await anonymous.newPage();
+    const meta = (await (await guest.request.get(`/s/${token}`, { headers: { Accept: 'application/json' } })).json()) as { playback_url: string; transcoded: boolean };
+    expect(meta.transcoded).toBe(true);
+    expect(meta.playback_url).toBe(`/s/${token}/compat`);
+    await guest.goto(`/s/${token}`);
+    // The share page does not autoplay; the click is honoured once the stream is ready.
+    await guest.locator('#btn-play').click();
+    const state = await playbackState(guest, 'video', TRANSCODE_START_MS);
+    expect(state.ok, state.reason).toBe(true);
+    expect(await guest.locator('#media-video').getAttribute('src')).toBe(meta.playback_url);
+
+    for (const share of shares) expect((await page.request.delete(`/api/v1/shares/${share.token}`)).ok()).toBeTruthy();
+    await anonymous.close();
+  });
 
   test('seeking uses HTTP range requests', async ({ page }) => {
     const item = await mediaByName(page, 'sample-mp4.mp4');
