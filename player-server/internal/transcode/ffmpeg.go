@@ -120,7 +120,7 @@ func (f *FFmpegRunner) Transcode(ctx context.Context, job Job) error {
 		p.copyVideo = false
 	}
 	if p.copyVideo || p.copyAudio {
-		err := f.run(ctx, f.args(p, input, out, job.MaxBytes))
+		err := f.runFFmpeg(ctx, f.args(p, input, out, job.MaxBytes))
 		if err == nil && f.copyLooksRight(ctx, job.Source.Kind, src, out) {
 			return nil
 		}
@@ -129,7 +129,7 @@ func (f *FFmpegRunner) Transcode(ctx context.Context, job Job) error {
 			return err
 		}
 	}
-	return f.run(ctx, f.args(plan{kind: job.Source.Kind}, input, out, job.MaxBytes))
+	return f.runFFmpeg(ctx, f.args(plan{kind: job.Source.Kind}, input, out, job.MaxBytes))
 }
 
 // fileSize returns the size of a file, or 0 when it cannot be read.
@@ -141,8 +141,10 @@ func fileSize(path string) int64 {
 	return info.Size()
 }
 
-// run executes one ffmpeg invocation.
-func (f *FFmpegRunner) run(ctx context.Context, args []string) error {
+// runFFmpeg executes one ffmpeg invocation with the arguments Transcode
+// built (see args). The name is unique in the package on purpose: the
+// call-site check in package ffsafe matches functions by name.
+func (f *FFmpegRunner) runFFmpeg(ctx context.Context, args []string) error {
 	name := f.binary
 	if f.nice != "" {
 		name, args = f.nice, append([]string{"-n", niceness, f.binary}, args...)

@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -53,8 +54,13 @@ func TestFFmpegGenerator_Generate_Image(t *testing.T) {
 		}
 		return exec.Command("true")
 	}
+	// The image must exist: its format is read from its first bytes.
+	photo := filepath.Join(t.TempDir(), "photo.jpg")
+	if err := os.WriteFile(photo, []byte("\xff\xd8\xff\xe0"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	g := &FFmpegGenerator{execer: fakeExecer, rnd: rand.New(rand.NewSource(1))}
-	if err := g.Generate(context.Background(), "photo.jpg", "thumb.jpg", 0); err != nil {
+	if err := g.Generate(context.Background(), photo, "thumb.jpg", 0); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !called {
