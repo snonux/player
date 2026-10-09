@@ -305,11 +305,14 @@ content). See [Range Header Support](#range-header-support) below.
 Public equivalent of
 [`GET /api/media/{id}/compat`](#get-apimediaidcompat--get-apiv1mediaidcompat):
 the transcoded compatibility rendition of the shared media, with `Range`
-support. Responses carry `Cache-Control: no-store`. A share use is counted
-only when the rendition is actually served, not for `503` "still transcoding"
-answers.
+support. Responses carry `Cache-Control: no-store`.
 
-**Status codes:** `200`, `206`, `404`, `410`, `415`, `500`, `503`
+Share uses are counted as on `/s/{token}/stream`: every request that is
+served counts, including each `Range` request. Answers without content
+(`503` while transcoding or busy, errors) do not count.
+
+**Status codes:** `200`, `206`, `304`, `400`, `404`, `410`, `415`, `500`,
+`503`, `507` — see the authenticated endpoint for their meaning.
 
 ---
 
@@ -622,8 +625,9 @@ All endpoints that return a media item use this shape:
 `type` is one of `"video"`, `"audio"`, or `"image"`.
 
 `transcoded` is present on every media object returned by the API. When it is
-`true` no client can decode the original file (AVI, WMV, FLV, WMA containers
-or Windows Media / Flash era codecs) and the item must be played from
+`true` at least one of the clients cannot decode the original file (AVI, WMV,
+FLV, WMA containers, or legacy codecs in any container) and the item must be
+played from
 `/api/v1/media/{id}/compat` instead of `/api/v1/media/{id}/stream`. The
 [playback hint](#get-apimediaidplayback--get-apiv1mediaidplayback) returns the
 ready-made URL.
@@ -738,19 +742,22 @@ curl -s -r 10485760- https://player.example.com/api/v1/media/42/stream \
 ### `GET /api/media/{id}/compat` · `GET /api/v1/media/{id}/compat`
 
 Stream the **compatibility rendition** of a media item: the server transcodes
-the original with ffmpeg and caches the result, so formats no client can
+the original with ffmpeg and caches the result, so formats a client cannot
 decode become playable.
 
-| Media type | Rendition | `Content-Type` |
-|------------|-----------|----------------|
-| video | H.264 video + AAC stereo audio in MP4 | `video/mp4` |
-| audio | AAC stereo audio in MP4 (M4A) | `audio/mp4` |
+| Media | Rendition | `Content-Type` |
+|-------|-----------|----------------|
+| video with `"transcoded": true` | H.264 video + AAC audio in MP4 | `video/mp4` |
+| audio with `"transcoded": true` | AAC audio in MP4 (M4A) | `audio/mp4` |
+| audio/video with `"transcoded": false` | not offered — play `/stream` | — (`400`) |
 | image | not available | — (`415`) |
 
 Access rules are identical to `/stream`. The rendition is a complete file, so
 `Range` requests (seeking) work exactly as on `/stream`. The response has an
-`ETag` that stays stable until the source file changes, and no
-`Last-Modified`.
+`ETag` and no `Last-Modified`. The `ETag` identifies one particular encode: it
+changes when the source file changes and also when the rendition had to be
+produced again after cache eviction, so an `If-Range` resume never mixes two
+encodes.
 
 **First request.** The first request for an item starts the transcode and
 waits for it for up to 20 seconds. If it finishes in time the rendition is
@@ -767,11 +774,28 @@ Content-Type: application/json
 The transcode continues in the background (also if the client disconnects).
 Repeat the request until it returns `200`/`206`; concurrent and repeated
 requests share the one running transcode. Later requests are served from the
-cache immediately. The cache is invalidated when the source file's size or
-modification time changes and is bounded by `TRANSCODE_CACHE_MAX_MB`.
+cache immediately. Sources that already contain H.264 video or AAC audio are
+copied rather than re-encoded, which usually finishes within the first
+request.
 
-**Status codes:** `200`, `206`, `304`, `400`, `401`, `403`, `404`, `415`
-(image), `500` (transcode failed), `503` (still transcoding, retry)
+The same `503` shape with `"status":"busy"` and
+`"error":"transcoder busy"` means the transcode could not be queued yet (too
+many jobs overall, or two jobs of the same user or share link already
+pending); retry the same way.
+
+**Status codes**
+
+| Code | Meaning |
+|------|---------|
+| `200`, `206`, `304` | Rendition served / range / not modified |
+| `400` | Invalid id, or the item is not flagged `transcoded` (`{"error":"media does not need transcoding; play the stream endpoint instead"}`) |
+| `401`, `403`, `404` | As on `/stream` (`404` also when the source file is missing on disk) |
+| `415` | Images have no rendition |
+| `500` | `{"error":"transcode failed"}` — ffmpeg could not convert the file. Not retried by the server for 1 minute (doubling up to 30 minutes); details are in the server log only |
+| `503` | Retry after `Retry-After` seconds: `status` is `transcoding` or `busy` |
+| `507` | The transcode cache volume is full |
+
+Error bodies contain only the fixed messages above, never file paths.
 
 ```bash
 curl -s -r 0-1048575 https://player.example.com/api/v1/media/42/compat \
@@ -886,11 +910,19 @@ file.
 Clients play `playback_url`. `stream_url` always addresses the original
 bytes. `transcoded: true` means `playback_url` is the
 [compatibility rendition](#get-apimediaidcompat--get-apiv1mediaidcompat)
-because the original cannot be decoded by any client. The decision uses the
-container and the probed codec: containers `avi`, `wmv`, `wma`, `asf`, `flv`,
-or codecs `wmv1`/`wmv2`/`wmv3`/`vc1`, `msmpeg4v1`–`v3`, `flv1`, `vp6*`,
-`wmav1`/`wmav2`/`wmapro`/`wmalossless`/`wmavoice` in any container. Example
-for an AVI file:
+because at least one client (web or Android) cannot decode the original. The
+decision uses the container and the probed codecs:
+
+- containers `avi`, `wmv`, `wma`, `asf`, `flv`;
+- video codecs `wmv1`/`wmv2`/`wmv3`/`vc1`, `msmpeg4v1`–`v3`, `flv1`, `vp6*`,
+  `mpeg4` (Xvid/DivX), `mpeg1video`, `mpeg2video`, `h263`, `rv10`–`rv40`,
+  `svq1`/`svq3`, `theora` in any container;
+- audio codecs `wmav1`/`wmav2`/`wmapro`/`wmalossless`/`wmavoice`, `ac3`,
+  `eac3`, `dts`, `truehd`, `cook` in any container.
+
+`codec` is `"video/audio"` for video files (e.g. `"h264/ac3"`). Items scanned
+by older server versions carry the video codec only; their audio codec is
+unknown to the rule until the file is probed again. Example for an AVI file:
 
 ```json
 {

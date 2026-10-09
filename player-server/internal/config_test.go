@@ -3,6 +3,7 @@ package internal
 import (
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -247,6 +248,40 @@ func TestLoadConfig_TranscodeCache(t *testing.T) {
 			}
 			if cfg.TranscodeCacheMaxMB != tt.wantMaxMB {
 				t.Errorf("TranscodeCacheMaxMB = %d, want %d", cfg.TranscodeCacheMaxMB, tt.wantMaxMB)
+			}
+		})
+	}
+}
+
+// The cache must not live inside the media root: the scanner would import
+// renditions as media and eviction would run next to real media files.
+func TestLoadConfig_TranscodeCacheInsideMediaRoot(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     []envPair
+		wantErr bool
+	}{
+		{"explicit dir inside media root", []envPair{{"MEDIA_ROOT", "/media"}, {"TRANSCODE_CACHE_DIR", "/media/.cache"}}, true},
+		{"explicit dir is the media root", []envPair{{"MEDIA_ROOT", "/media"}, {"TRANSCODE_CACHE_DIR", "/media/"}}, true},
+		{"dot-dot back into media root", []envPair{{"MEDIA_ROOT", "/media"}, {"TRANSCODE_CACHE_DIR", "/data/../media/c"}}, true},
+		// The derived default counts too: a database inside the media
+		// root needs an explicit TRANSCODE_CACHE_DIR.
+		{"default derived from DB_PATH in media root", []envPair{{"MEDIA_ROOT", "/media"}, {"DB_PATH", "/media/media.db"}}, true},
+		{"relative paths", []envPair{{"MEDIA_ROOT", "media"}, {"TRANSCODE_CACHE_DIR", "media/cache"}}, true},
+		{"sibling with common prefix", []envPair{{"MEDIA_ROOT", "/media"}, {"TRANSCODE_CACHE_DIR", "/media-cache"}}, false},
+		{"media root inside cache parent", []envPair{{"MEDIA_ROOT", "/data/media"}, {"DB_PATH", "/data/media.db"}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearEnv()
+			t.Cleanup(clearEnv)
+			setEnvPairs(t, tt.env)
+			_, err := LoadConfig()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("LoadConfig error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil && !strings.Contains(err.Error(), "TRANSCODE_CACHE_DIR") {
+				t.Errorf("error should name the setting: %v", err)
 			}
 		})
 	}

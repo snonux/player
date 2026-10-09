@@ -20,7 +20,7 @@ type PlaybackHint struct {
 	// PlaybackURL is the URL clients should play.
 	PlaybackURL string `json:"playback_url"`
 	// Transcoded is true when PlaybackURL is the compatibility rendition
-	// because no client can decode the original (model.Media.NeedsCompatStream).
+	// because a client cannot decode the original (model.Media.NeedsCompatStream).
 	Transcoded      bool    `json:"transcoded"`
 	Container       string  `json:"container"`
 	VideoCodec      string  `json:"video_codec"`
@@ -69,7 +69,7 @@ func (s *playbackHintsService) GetPlaybackHint(ctx context.Context, mediaID, use
 // buildPlaybackHint assembles a PlaybackHint from Media fields without any I/O.
 // It splits the stored codec string into separate video/audio components and
 // picks the playback URL: the compatibility rendition when the shared
-// model rule says no client can decode the original, the plain stream
+// model rule says a client cannot decode the original, the plain stream
 // otherwise.
 func buildPlaybackHint(media *model.Media) *PlaybackHint {
 	streamURL := fmt.Sprintf("/api/v1/media/%d/stream", media.ID)

@@ -22,7 +22,10 @@ import (
 	"codeberg.org/snonux/player/internal/transcode"
 )
 
-const compatBody = "0123456789abcdefghij"
+const (
+	compatBody = "0123456789abcdefghij"
+	compatETag = `"m5-6-1-v1.mp4-abc"`
+)
 
 // compatTestEnv is a Server wired with a fake CompatStreamService plus a
 // session cookie for user 1.
@@ -59,6 +62,16 @@ func newCompatTestEnv(t *testing.T, compat service.CompatStreamService) compatTe
 	return compatTestEnv{srv: srv, cookie: addSessionCookie(t, repository.Store(store), sm, 1)}
 }
 
+// compatEnvReturning is an env whose service answers every request with the
+// given rendition and error.
+func compatEnvReturning(t *testing.T, r *transcode.Rendition, err error) compatTestEnv {
+	t.Helper()
+	return newCompatTestEnv(t, &service.MockCompatStreamService{
+		CompatStreamFunc:       func(context.Context, int64, int64) (*transcode.Rendition, error) { return r, err },
+		SharedCompatStreamFunc: func(context.Context, string) (*transcode.Rendition, error) { return r, err },
+	})
+}
+
 // do performs a GET; authenticated requests carry the session cookie.
 func (e compatTestEnv) do(ctx context.Context, path string, authenticated bool, header http.Header) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil).WithContext(ctx)
@@ -73,6 +86,11 @@ func (e compatTestEnv) do(ctx context.Context, path string, authenticated bool, 
 	return rr
 }
 
+// get is an authenticated GET without extra headers.
+func (e compatTestEnv) get(path string) *httptest.ResponseRecorder {
+	return e.do(context.Background(), path, true, nil)
+}
+
 // writeRendition creates a finished rendition file as the cache would.
 func writeRendition(t *testing.T) *transcode.Rendition {
 	t.Helper()
@@ -80,10 +98,21 @@ func writeRendition(t *testing.T) *transcode.Rendition {
 	if err := os.WriteFile(path, []byte(compatBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return &transcode.Rendition{Path: path, ContentType: "video/mp4", ETag: "m5-6-1-v1.mp4"}
+	return &transcode.Rendition{Path: path, ContentType: "video/mp4", ETag: strings.Trim(compatETag, `"`)}
 }
 
-func TestHandleCompatStream_ServesRenditionWithRange(t *testing.T) {
+// errorBody decodes the JSON error body and fails when it is anything but
+// the single "error" field (plus the retry fields of a 503).
+func errorBody(t *testing.T, rr *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("error body is not JSON: %q", rr.Body.String())
+	}
+	return body
+}
+
+func TestHandleCompatStream_ServesRendition(t *testing.T) {
 	rendition := writeRendition(t)
 	var gotMedia, gotUser int64
 	env := newCompatTestEnv(t, &service.MockCompatStreamService{
@@ -95,107 +124,159 @@ func TestHandleCompatStream_ServesRenditionWithRange(t *testing.T) {
 
 	// handleBoth must register the legacy and the v1 prefix.
 	for _, prefix := range []string{"/api", "/api/v1"} {
-		rr := env.do(context.Background(), prefix+"/media/5/compat", true, nil)
+		rr := env.get(prefix + "/media/5/compat")
 		if rr.Code != http.StatusOK || rr.Body.String() != compatBody {
 			t.Fatalf("%s: status %d body %q", prefix, rr.Code, rr.Body.String())
 		}
 		if gotMedia != 5 || gotUser != 1 {
 			t.Errorf("%s: service called with media=%d user=%d", prefix, gotMedia, gotUser)
 		}
-		if ct := rr.Header().Get("Content-Type"); ct != "video/mp4" {
-			t.Errorf("%s: Content-Type = %q", prefix, ct)
+		h := rr.Header()
+		if h.Get("Content-Type") != "video/mp4" || h.Get("Accept-Ranges") != "bytes" || h.Get("ETag") != compatETag {
+			t.Errorf("%s: headers = %v", prefix, h)
 		}
-		if rr.Header().Get("Accept-Ranges") != "bytes" || rr.Header().Get("ETag") != `"m5-6-1-v1.mp4"` {
-			t.Errorf("%s: headers = %v", prefix, rr.Header())
-		}
-		// The cache bumps the mtime on every hit, so it must not be a validator.
-		if lm := rr.Header().Get("Last-Modified"); lm != "" {
+		// The ETag is the only validator.
+		if lm := h.Get("Last-Modified"); lm != "" {
 			t.Errorf("%s: unexpected Last-Modified %q", prefix, lm)
 		}
 	}
-
-	// Seeking: a Range request yields 206 with exactly the requested bytes.
-	rr := env.do(context.Background(), "/api/v1/media/5/compat", true, http.Header{"Range": {"bytes=10-14"}})
-	if rr.Code != http.StatusPartialContent || rr.Body.String() != "abcde" {
-		t.Fatalf("range: status %d body %q", rr.Code, rr.Body.String())
-	}
-	if cr := rr.Header().Get("Content-Range"); cr != "bytes 10-14/20" {
-		t.Errorf("Content-Range = %q", cr)
-	}
-
-	// If-Range with the stable ETag keeps the request partial.
-	rr = env.do(context.Background(), "/api/v1/media/5/compat", true, http.Header{"Range": {"bytes=0-3"}, "If-Range": {`"m5-6-1-v1.mp4"`}})
-	if rr.Code != http.StatusPartialContent || rr.Body.String() != "0123" {
-		t.Errorf("if-range: status %d body %q", rr.Code, rr.Body.String())
-	}
-
-	// Revalidation of an unchanged rendition.
-	rr = env.do(context.Background(), "/api/v1/media/5/compat", true, http.Header{"If-None-Match": {`"m5-6-1-v1.mp4"`}})
-	if rr.Code != http.StatusNotModified {
-		t.Errorf("if-none-match: status %d", rr.Code)
-	}
 }
 
-func TestHandleCompatStream_Errors(t *testing.T) {
-	ffmpegErr := errors.New("ffmpeg transcode /media/secret/path.avi: exit status 1: Invalid data")
+func TestHandleCompatStream_RangeAndValidators(t *testing.T) {
+	env := compatEnvReturning(t, writeRendition(t), nil)
 	tests := []struct {
 		name       string
-		path       string
-		err        error
+		header     http.Header
 		wantStatus int
-		wantBody   string // substring
+		wantBody   string
 	}{
-		{"unknown id", "/api/v1/media/5/compat", service.ErrNotFound, http.StatusNotFound, "not found"},
-		{"no access", "/api/v1/media/5/compat", service.ErrForbidden, http.StatusForbidden, "forbidden"},
-		{"image media", "/api/v1/media/5/compat", service.ErrNotTranscodable, http.StatusUnsupportedMediaType, "cannot be transcoded"},
-		{"ffmpeg failure", "/api/v1/media/5/compat", fmt.Errorf("transcode media 5: %w", ffmpegErr), http.StatusInternalServerError, "transcode failed"},
-		{"cancelled request", "/api/v1/media/5/compat", fmt.Errorf("transcode media 5: %w", context.Canceled), statusClientClosedRequest, "cancelled"},
-		{"malformed id", "/api/v1/media/abc/compat", nil, http.StatusBadRequest, "invalid media id"},
-		{"zero id", "/api/v1/media/0/compat", nil, http.StatusBadRequest, "invalid media id"},
+		{"seek", http.Header{"Range": {"bytes=10-14"}}, http.StatusPartialContent, "abcde"},
+		{"resume with matching If-Range", http.Header{"Range": {"bytes=0-3"}, "If-Range": {compatETag}}, http.StatusPartialContent, "0123"},
+		// A rebuilt rendition has another ETag: the client gets the whole
+		// new file instead of a splice of two encodes.
+		{"resume with stale If-Range", http.Header{"Range": {"bytes=0-3"}, "If-Range": {`"older-encode"`}}, http.StatusOK, compatBody},
+		{"revalidate", http.Header{"If-None-Match": {compatETag}}, http.StatusNotModified, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			env := newCompatTestEnv(t, &service.MockCompatStreamService{
-				CompatStreamFunc: func(context.Context, int64, int64) (*transcode.Rendition, error) { return nil, tt.err },
-			})
-			rr := env.do(context.Background(), tt.path, true, nil)
-			if rr.Code != tt.wantStatus {
-				t.Fatalf("status = %d, want %d (%s)", rr.Code, tt.wantStatus, rr.Body.String())
-			}
-			if !strings.Contains(rr.Body.String(), tt.wantBody) {
-				t.Errorf("body = %q, want substring %q", rr.Body.String(), tt.wantBody)
-			}
-			// ffmpeg diagnostics contain server paths and must not leak.
-			if strings.Contains(rr.Body.String(), "/media/secret") {
-				t.Errorf("response leaks internal path: %s", rr.Body.String())
+			rr := env.do(context.Background(), "/api/v1/media/5/compat", true, tt.header)
+			if rr.Code != tt.wantStatus || rr.Body.String() != tt.wantBody {
+				t.Errorf("status %d body %q, want %d %q", rr.Code, rr.Body.String(), tt.wantStatus, tt.wantBody)
 			}
 		})
 	}
 }
 
-func TestHandleCompatStream_PendingTellsClientToRetry(t *testing.T) {
-	env := newCompatTestEnv(t, &service.MockCompatStreamService{
-		CompatStreamFunc: func(context.Context, int64, int64) (*transcode.Rendition, error) {
-			return nil, service.ErrTranscodePending
-		},
-	})
-	rr := env.do(context.Background(), "/api/v1/media/5/compat", true, nil)
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", rr.Code)
+// compatErrorCase maps a service error to the expected response.
+type compatErrorCase struct {
+	name       string
+	err        error
+	wantStatus int
+	wantError  string // exact value of the JSON "error" field
+}
+
+func compatErrorCases() []compatErrorCase {
+	const secret = "/media/secret/path.avi"
+	ffmpegErr := errors.New("ffmpeg transcode: exit status 1: " + secret + ": Invalid data")
+	wrap := func(err error) error { return fmt.Errorf("transcode media 5: %w", err) }
+	return []compatErrorCase{
+		{"unknown id", service.ErrNotFound, http.StatusNotFound, "not found"},
+		// Even if a lower layer wraps a sentinel with a path, only the
+		// sentinel's own text reaches the client.
+		{"not found with path detail", fmt.Errorf("%w: stat %s: no such file or directory", service.ErrNotFound, secret), http.StatusNotFound, "not found"},
+		{"no access", fmt.Errorf("%w: path escapes media root", service.ErrForbidden), http.StatusForbidden, "forbidden"},
+		{"image media", service.ErrNotTranscodable, http.StatusUnsupportedMediaType, "media type cannot be transcoded"},
+		{"native media", service.ErrCompatNotNeeded, http.StatusBadRequest, "media does not need transcoding; play the stream endpoint instead"},
+		{"disk full", service.ErrTranscodeNoSpace, http.StatusInsufficientStorage, "insufficient storage for transcode"},
+		{"ffmpeg failure", wrap(ffmpegErr), http.StatusInternalServerError, "transcode failed"},
+		{"failed recently", wrap(transcode.ErrFailedRecently), http.StatusInternalServerError, "transcode failed"},
+		// A job stopped by shutdown or timeout is a server-side failure,
+		// not "client closed request" — the client is still there.
+		{"job aborted", wrap(transcode.ErrAborted), http.StatusInternalServerError, "transcode failed"},
+		{"job context error", wrap(context.Canceled), http.StatusInternalServerError, "transcode failed"},
 	}
-	if ra := rr.Header().Get("Retry-After"); ra != "5" {
-		t.Errorf("Retry-After = %q, want 5", ra)
+}
+
+func TestCompatStream_ErrorResponses(t *testing.T) {
+	for _, path := range []string{"/api/v1/media/5/compat", "/s/tok/compat"} {
+		for _, tt := range compatErrorCases() {
+			t.Run(path+" "+tt.name, func(t *testing.T) {
+				rr := compatEnvReturning(t, nil, tt.err).do(context.Background(), path, true, nil)
+				if rr.Code != tt.wantStatus {
+					t.Fatalf("status = %d, want %d (%s)", rr.Code, tt.wantStatus, rr.Body.String())
+				}
+				body := errorBody(t, rr)
+				if len(body) != 1 || body["error"] != tt.wantError {
+					t.Errorf("body = %v, want only error=%q", body, tt.wantError)
+				}
+				// Belt and braces: no server path anywhere in the response.
+				if strings.Contains(rr.Body.String(), "/media/") {
+					t.Errorf("response leaks a server path: %s", rr.Body.String())
+				}
+			})
+		}
 	}
-	var body struct {
-		Error             string `json:"error"`
-		Status            string `json:"status"`
-		RetryAfterSeconds int    `json:"retry_after_seconds"`
+}
+
+func TestHandleCompatStream_InvalidID(t *testing.T) {
+	env := compatEnvReturning(t, writeRendition(t), nil)
+	for _, path := range []string{"/api/v1/media/abc/compat", "/api/v1/media/0/compat"} {
+		if rr := env.get(path); rr.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", path, rr.Code)
+		}
 	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode body: %v", err)
+}
+
+func TestCompatStream_RetryResponses(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus string
+		wantError  string
+	}{
+		{"still transcoding", service.ErrTranscodePending, "transcoding", "transcode in progress"},
+		{"transcoder busy", service.ErrTranscodeBusy, "busy", "transcoder busy"},
 	}
-	if body.Status != "transcoding" || body.RetryAfterSeconds != 5 || body.Error == "" {
-		t.Errorf("unexpected body %+v", body)
+	for _, path := range []string{"/api/v1/media/5/compat", "/s/tok/compat"} {
+		for _, tt := range tests {
+			t.Run(path+" "+tt.name, func(t *testing.T) {
+				rr := compatEnvReturning(t, nil, tt.err).get(path)
+				if rr.Code != http.StatusServiceUnavailable || rr.Header().Get("Retry-After") != "5" {
+					t.Fatalf("status %d Retry-After %q, want 503 and 5", rr.Code, rr.Header().Get("Retry-After"))
+				}
+				body := errorBody(t, rr)
+				if body["status"] != tt.wantStatus || body["error"] != tt.wantError || body["retry_after_seconds"] != float64(5) {
+					t.Errorf("unexpected body %v", body)
+				}
+			})
+		}
+	}
+}
+
+// A rendition evicted between the service call and the open is not "gone":
+// the next request rebuilds it, so the client is told to retry.
+func TestHandleCompatStream_EvictedRenditionAsksForRetry(t *testing.T) {
+	gone := &transcode.Rendition{Path: filepath.Join(t.TempDir(), "gone.mp4")}
+	rr := compatEnvReturning(t, gone, nil).get("/api/v1/media/5/compat")
+	if rr.Code != http.StatusServiceUnavailable || rr.Header().Get("Retry-After") != "5" {
+		t.Fatalf("status %d Retry-After %q, want 503 and 5", rr.Code, rr.Header().Get("Retry-After"))
+	}
+	if body := errorBody(t, rr); body["status"] != "transcoding" {
+		t.Errorf("unexpected body %v", body)
+	}
+	if strings.Contains(rr.Body.String(), gone.Path) {
+		t.Errorf("response leaks the cache path: %s", rr.Body.String())
+	}
+}
+
+func TestHandleCompatStream_ClientCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, path := range []string{"/api/v1/media/5/compat", "/s/tok/compat"} {
+		rr := compatEnvReturning(t, nil, context.Canceled).do(ctx, path, true, nil)
+		if rr.Code != statusClientClosedRequest {
+			t.Errorf("%s: status = %d, want %d", path, rr.Code, statusClientClosedRequest)
+		}
 	}
 }
 
@@ -216,26 +297,16 @@ func TestHandleCompatStream_RequiresSession(t *testing.T) {
 	}
 }
 
-func TestHandleCompatStream_MissingRenditionAndService(t *testing.T) {
-	// Rendition evicted between the service call and the open.
-	env := newCompatTestEnv(t, &service.MockCompatStreamService{
-		CompatStreamFunc: func(context.Context, int64, int64) (*transcode.Rendition, error) {
-			return &transcode.Rendition{Path: filepath.Join(t.TempDir(), "gone.mp4")}, nil
-		},
-	})
-	if rr := env.do(context.Background(), "/api/v1/media/5/compat", true, nil); rr.Code != http.StatusNotFound {
-		t.Errorf("evicted rendition: status = %d, want 404", rr.Code)
-	}
-
+func TestHandleCompatStream_NilRenditionAndMissingService(t *testing.T) {
 	// The mock's nil-func default returns a nil rendition.
-	env = newCompatTestEnv(t, &service.MockCompatStreamService{})
-	if rr := env.do(context.Background(), "/api/v1/media/5/compat", true, nil); rr.Code != http.StatusNotFound {
+	env := newCompatTestEnv(t, &service.MockCompatStreamService{})
+	if rr := env.get("/api/v1/media/5/compat"); rr.Code != http.StatusNotFound {
 		t.Errorf("nil rendition: status = %d, want 404", rr.Code)
 	}
 
 	// No compat service wired at all.
 	env = newCompatTestEnv(t, nil)
-	if rr := env.do(context.Background(), "/api/v1/media/5/compat", true, nil); rr.Code != http.StatusNotImplemented {
+	if rr := env.get("/api/v1/media/5/compat"); rr.Code != http.StatusNotImplemented {
 		t.Errorf("no service: status = %d, want 501", rr.Code)
 	}
 	if rr := env.do(context.Background(), "/s/tok/compat", false, nil); rr.Code != http.StatusNotImplemented {
@@ -249,14 +320,10 @@ func TestHandleShareCompatStream(t *testing.T) {
 		err        error
 		wantStatus int
 	}{
-		{"ok", nil, http.StatusOK},
+		{"ok", nil, http.StatusPartialContent},
 		{"unknown token", service.ErrShareNotFound, http.StatusNotFound},
 		{"media gone", service.ErrMediaNotFound, http.StatusNotFound},
 		{"expired", service.ErrShareExpired, http.StatusGone},
-		{"image media", service.ErrNotTranscodable, http.StatusUnsupportedMediaType},
-		{"still transcoding", service.ErrTranscodePending, http.StatusServiceUnavailable},
-		{"ffmpeg failure", errors.New("boom"), http.StatusInternalServerError},
-		{"cancelled request", context.Canceled, statusClientClosedRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -265,23 +332,13 @@ func TestHandleShareCompatStream(t *testing.T) {
 			env := newCompatTestEnv(t, &service.MockCompatStreamService{
 				SharedCompatStreamFunc: func(_ context.Context, token string) (*transcode.Rendition, error) {
 					gotToken = token
-					if tt.err != nil {
-						return nil, tt.err
-					}
-					return rendition, nil
+					return rendition, tt.err
 				},
 			})
 			// Public route: no session cookie.
 			rr := env.do(context.Background(), "/s/tok123/compat", false, http.Header{"Range": {"bytes=0-4"}})
-			want := tt.wantStatus
-			if want == http.StatusOK {
-				want = http.StatusPartialContent
-			}
-			if rr.Code != want {
-				t.Fatalf("status = %d, want %d (%s)", rr.Code, want, rr.Body.String())
-			}
-			if gotToken != "tok123" {
-				t.Errorf("token = %q", gotToken)
+			if rr.Code != tt.wantStatus || gotToken != "tok123" {
+				t.Fatalf("status = %d token = %q, want %d (%s)", rr.Code, gotToken, tt.wantStatus, rr.Body.String())
 			}
 			if cc := rr.Header().Get("Cache-Control"); cc != "no-store" {
 				t.Errorf("Cache-Control = %q, want no-store", cc)
@@ -293,74 +350,32 @@ func TestHandleShareCompatStream(t *testing.T) {
 	}
 }
 
-// TestCompatStream_EndToEndCancelledRequest drives the real service and cache
-// through the HTTP layer: the client gives up while ffmpeg (a blocking fake)
-// is still running, gets no success response, and a later request is served
-// from the rendition the surviving job produced.
-func TestCompatStream_EndToEndCancelledRequest(t *testing.T) {
-	mediaRoot := t.TempDir()
-	src := filepath.Join(mediaRoot, "clip.avi")
-	if err := os.WriteFile(src, []byte("legacy"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	store := &repository.MockStore{
-		MediaRepo: repository.MockMediaRepo{GetMediaByIDFunc: func(context.Context, int64) (*model.Media, error) {
-			return &model.Media{ID: 5, SetID: 1, Type: model.MediaTypeVideo, FileName: "clip.avi", AbsPath: src}, nil
-		}},
-		UserRepo: repository.MockUserRepo{GetUserByIDFunc: func(_ context.Context, id int64) (*model.User, error) {
-			return &model.User{ID: id, IsAdmin: true}, nil
-		}},
-	}
-	runner := &blockingRunner{started: make(chan struct{}, 1), release: make(chan struct{})}
-	cache := transcode.NewCache(context.Background(), runner, clock.RealClock{}, nil, transcode.Options{
-		Dir: filepath.Join(t.TempDir(), "cache"), MaxBytes: 1 << 20,
-	})
-	env := newCompatTestEnv(t, service.NewCompatStreamService(service.NewAccessHelper(store), nil, cache, mediaRoot))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan *httptest.ResponseRecorder, 1)
-	go func() { done <- env.do(ctx, "/api/v1/media/5/compat", true, nil) }()
-	<-runner.started
-	cancel()
-	if rr := <-done; rr.Code != statusClientClosedRequest {
-		t.Fatalf("cancelled request: status = %d, want %d", rr.Code, statusClientClosedRequest)
-	}
-
-	close(runner.release)
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		rr := env.do(context.Background(), "/api/v1/media/5/compat", true, nil)
-		if rr.Code == http.StatusOK {
-			if rr.Body.String() != "transcoded" {
-				t.Errorf("body = %q", rr.Body.String())
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("rendition never became available, last status %d", rr.Code)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if runner.calls != 1 {
-		t.Errorf("runner calls = %d, want 1 (cancelled request must not restart the transcode)", runner.calls)
-	}
+// deadlineRecorder is a ResponseWriter that records SetWriteDeadline calls
+// the way a real connection accepts them.
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	deadline time.Time
 }
 
-// blockingRunner is a transcode.Runner that waits for release before writing
-// its output. calls is only read after the job has finished.
-type blockingRunner struct {
-	calls   int
-	started chan struct{}
-	release chan struct{}
+func (d *deadlineRecorder) SetWriteDeadline(t time.Time) error {
+	d.deadline = t
+	return nil
 }
 
-func (b *blockingRunner) Transcode(ctx context.Context, _ transcode.Kind, _, outputPath string) error {
-	b.calls++
-	b.started <- struct{}{}
-	select {
-	case <-b.release:
-	case <-ctx.Done():
-		return ctx.Err()
+// The handler may have waited up to 20 s of the 30 s write timeout for the
+// transcode; the body must get a fresh, full write window.
+func TestHandleCompatStream_RestartsWriteDeadline(t *testing.T) {
+	env := compatEnvReturning(t, writeRendition(t), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/media/5/compat", nil)
+	req.AddCookie(env.cookie)
+	rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	before := time.Now()
+	env.srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
 	}
-	return os.WriteFile(outputPath, []byte("transcoded"), 0o644)
+	if got := rec.deadline.Sub(before); got < httpWriteTimeout-time.Second || got > httpWriteTimeout+5*time.Second {
+		t.Errorf("write deadline set %s ahead, want about %s", got, httpWriteTimeout)
+	}
 }

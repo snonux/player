@@ -420,7 +420,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 
 // handlePlaybackHints returns the URL a client should play (the original
 // stream, or the compatibility rendition served by handleCompatStream for
-// formats no client decodes) plus codec/container metadata of the original.
+// formats a client cannot decode) plus codec/container metadata of the original.
 // It performs no transcoding itself — only a DB lookup.
 func (s *Server) handlePlaybackHints(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.media.PlaybackHints) {

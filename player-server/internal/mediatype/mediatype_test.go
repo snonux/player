@@ -17,6 +17,7 @@ func TestTypeForExt(t *testing.T) {
 		{"a.avi", model.MediaTypeVideo},
 		{"a.mov", model.MediaTypeVideo},
 		{"a.wmv", model.MediaTypeVideo},
+		{"a.asf", model.MediaTypeVideo},
 		{"a.flv", model.MediaTypeVideo},
 		{"a.webm", model.MediaTypeVideo},
 		// audio

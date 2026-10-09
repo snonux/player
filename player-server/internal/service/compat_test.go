@@ -3,7 +3,11 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,100 +58,189 @@ func statusOf(err error) int {
 	return 0
 }
 
-func TestCompatStream(t *testing.T) {
-	deleted := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	video := &model.Media{ID: 5, SetID: 1, Type: model.MediaTypeVideo, FileName: "a.avi", AbsPath: "/media/set/a.avi"}
-	audio := &model.Media{ID: 5, SetID: 1, Type: model.MediaTypeAudio, FileName: "a.wma", AbsPath: "/media/set/a.wma"}
-	image := &model.Media{ID: 5, SetID: 1, Type: model.MediaTypeImage, FileName: "a.jpg", AbsPath: "/media/set/a.jpg"}
-	trashed := &model.Media{ID: 5, SetID: 1, Type: model.MediaTypeVideo, AbsPath: "/media/set/a.avi", DeletedAt: &deleted}
-	outside := &model.Media{ID: 5, SetID: 1, Type: model.MediaTypeVideo, AbsPath: "/etc/passwd"}
-	ffmpegErr := errors.New("ffmpeg transcode /media/set/a.avi: exit status 1")
+// mediaTree creates a media root with real files, because the service
+// resolves symlinks before it hands a path to the transcoder. It returns the
+// (symlink-free) root.
+func mediaTree(t *testing.T, files ...string) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		path := filepath.Join(root, f)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("media"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
 
+func TestCompatStream_Success(t *testing.T) {
+	root := mediaTree(t, "set/a.avi", "set/a.wma")
 	tests := []struct {
-		name       string
-		media      *model.Media
-		mediaID    int64
-		userID     int64
-		ensureErr  error
-		wantErr    error // matched with errors.Is; nil means success
-		wantStatus int   // expected HTTPStatus of the error, 0 = none (-> 500)
-		wantKind   transcode.Kind
-		wantEnsure bool
+		name     string
+		media    *model.Media
+		wantKind transcode.Kind
 	}{
-		{name: "video ok", media: video, mediaID: 5, userID: 1, wantKind: transcode.KindVideo, wantEnsure: true},
-		{name: "audio ok", media: audio, mediaID: 5, userID: 1, wantKind: transcode.KindAudio, wantEnsure: true},
-		{name: "no access", media: video, mediaID: 5, userID: 2, wantErr: ErrForbidden, wantStatus: http.StatusForbidden},
-		{name: "unknown id", media: video, mediaID: 99, userID: 1, wantErr: ErrNotFound, wantStatus: http.StatusNotFound},
-		{name: "soft deleted", media: trashed, mediaID: 5, userID: 1, wantErr: ErrNotFound, wantStatus: http.StatusNotFound},
-		{name: "image media", media: image, mediaID: 5, userID: 1, wantErr: ErrNotTranscodable, wantStatus: http.StatusUnsupportedMediaType},
-		{name: "path outside media root", media: outside, mediaID: 5, userID: 1, wantErr: ErrForbidden, wantStatus: http.StatusForbidden},
-		{name: "ffmpeg failure", media: video, mediaID: 5, userID: 1, ensureErr: ffmpegErr, wantErr: ffmpegErr, wantEnsure: true},
-		{name: "still transcoding", media: video, mediaID: 5, userID: 1, ensureErr: transcode.ErrPending, wantErr: ErrTranscodePending, wantStatus: http.StatusServiceUnavailable, wantEnsure: true},
-		{name: "cancelled request", media: video, mediaID: 5, userID: 1, ensureErr: context.Canceled, wantErr: context.Canceled, wantEnsure: true},
-		{name: "source file missing", media: video, mediaID: 5, userID: 1, ensureErr: transcode.ErrSourceMissing, wantErr: ErrNotFound, wantStatus: http.StatusNotFound, wantEnsure: true},
+		{"video", &model.Media{ID: 5, Type: model.MediaTypeVideo, FileName: "a.avi", AbsPath: filepath.Join(root, "set/a.avi")}, transcode.KindVideo},
+		{"audio", &model.Media{ID: 5, Type: model.MediaTypeAudio, FileName: "a.wma", AbsPath: filepath.Join(root, "set/a.wma")}, transcode.KindAudio},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := compatStore(tt.media)
-			renditions := &fakeRenditions{err: tt.ensureErr}
-			svc := NewCompatStreamService(NewAccessHelper(store), nil, renditions, "/media")
-
-			got, err := svc.CompatStream(context.Background(), tt.mediaID, tt.userID)
-
-			if (len(renditions.calls) > 0) != tt.wantEnsure {
-				t.Errorf("Ensure called = %v, want %v", len(renditions.calls) > 0, tt.wantEnsure)
+			renditions := &fakeRenditions{}
+			svc := NewCompatStreamService(NewAccessHelper(compatStore(tt.media)), nil, renditions, root)
+			got, err := svc.CompatStream(context.Background(), 5, 1)
+			if err != nil || got == nil || got.Path != "/cache/r.mp4" {
+				t.Fatalf("CompatStream = %+v, %v", got, err)
 			}
-			if tt.wantErr != nil {
-				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("error = %v, want %v", err, tt.wantErr)
-				}
-				if statusOf(err) != tt.wantStatus {
-					t.Errorf("HTTP status = %d, want %d", statusOf(err), tt.wantStatus)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got == nil || got.Path != "/cache/r.mp4" {
-				t.Errorf("unexpected rendition %+v", got)
-			}
-			src := renditions.calls[0]
-			if src.MediaID != 5 || src.Path != tt.media.AbsPath || src.Kind != tt.wantKind {
-				t.Errorf("unexpected source %+v", src)
+			want := transcode.Source{MediaID: 5, Path: tt.media.AbsPath, Kind: tt.wantKind, Requester: "user:1"}
+			if len(renditions.calls) != 1 || renditions.calls[0] != want {
+				t.Errorf("source = %+v, want %+v", renditions.calls, want)
 			}
 		})
 	}
 }
 
-func TestSharedCompatStream(t *testing.T) {
+// rejection is a request the service must refuse before any transcode starts.
+type rejection struct {
+	name       string
+	media      *model.Media
+	mediaID    int64
+	userID     int64
+	wantErr    error
+	wantStatus int
+}
+
+func compatRejections(t *testing.T, root string) []rejection {
+	t.Helper()
+	deleted := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	avi := filepath.Join(root, "set/a.avi")
+	// A link inside the media root that points at a file outside of it.
+	secret := filepath.Join(t.TempDir(), "secret.avi")
+	if err := os.WriteFile(secret, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "set/link.avi")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Fatal(err)
+	}
+	video := func(m model.Media) *model.Media {
+		m.ID, m.SetID, m.Type = 5, 1, model.MediaTypeVideo
+		return &m
+	}
+	return []rejection{
+		{"no access", video(model.Media{FileName: "a.avi", AbsPath: avi}), 5, 2, ErrForbidden, http.StatusForbidden},
+		{"unknown id", video(model.Media{FileName: "a.avi", AbsPath: avi}), 99, 1, ErrNotFound, http.StatusNotFound},
+		{"soft deleted", video(model.Media{FileName: "a.avi", AbsPath: avi, DeletedAt: &deleted}), 5, 1, ErrNotFound, http.StatusNotFound},
+		{"image media", &model.Media{ID: 5, Type: model.MediaTypeImage, FileName: "a.jpg", AbsPath: filepath.Join(root, "set/a.jpg")}, 5, 1, ErrNotTranscodable, http.StatusUnsupportedMediaType},
+		// Media that plays natively is not transcoded on request.
+		{"native mp4", video(model.Media{FileName: "a.mp4", Codec: "h264/aac", AbsPath: filepath.Join(root, "set/a.mp4")}), 5, 1, ErrCompatNotNeeded, http.StatusBadRequest},
+		{"path outside media root", video(model.Media{FileName: "secret.avi", AbsPath: secret}), 5, 1, ErrForbidden, http.StatusForbidden},
+		{"symlink leaving media root", video(model.Media{FileName: "link.avi", AbsPath: link}), 5, 1, ErrForbidden, http.StatusForbidden},
+		{"file missing on disk", video(model.Media{FileName: "gone.avi", AbsPath: filepath.Join(root, "set/gone.avi")}), 5, 1, ErrNotFound, http.StatusNotFound},
+	}
+}
+
+func TestCompatStream_Rejections(t *testing.T) {
+	root := mediaTree(t, "set/a.avi", "set/a.jpg", "set/a.mp4")
+	for _, tt := range compatRejections(t, root) {
+		t.Run(tt.name, func(t *testing.T) {
+			renditions := &fakeRenditions{}
+			svc := NewCompatStreamService(NewAccessHelper(compatStore(tt.media)), nil, renditions, root)
+			_, err := svc.CompatStream(context.Background(), tt.mediaID, tt.userID)
+			if !errors.Is(err, tt.wantErr) || statusOf(err) != tt.wantStatus {
+				t.Fatalf("error = %v (status %d), want %v (status %d)", err, statusOf(err), tt.wantErr, tt.wantStatus)
+			}
+			if len(renditions.calls) != 0 {
+				t.Error("the transcoder must not be reached")
+			}
+			// These errors are shown to clients: no server paths in them.
+			if strings.Contains(err.Error(), root) {
+				t.Errorf("error leaks a server path: %v", err)
+			}
+		})
+	}
+}
+
+func TestCompatStream_ProviderErrors(t *testing.T) {
+	root := mediaTree(t, "set/a.avi")
+	media := &model.Media{ID: 5, Type: model.MediaTypeVideo, FileName: "a.avi", AbsPath: filepath.Join(root, "set/a.avi")}
+	withPath := func(sentinel error) error { return fmt.Errorf("%w: stat %s: no such file", sentinel, media.AbsPath) }
+	ffmpegErr := errors.New("ffmpeg transcode: exit status 1")
+
+	tests := []struct {
+		name       string
+		ensureErr  error
+		wantErr    error
+		wantStatus int    // 0: not a client-facing sentinel, the API answers 500
+		wantText   string // exact client-facing text for sentinels
+	}{
+		{"still transcoding", transcode.ErrPending, ErrTranscodePending, http.StatusServiceUnavailable, "transcode in progress"},
+		{"source changed mid-run", withPath(transcode.ErrSourceChanged), ErrTranscodePending, http.StatusServiceUnavailable, "transcode in progress"},
+		{"transcoder busy", transcode.ErrBusy, ErrTranscodeBusy, http.StatusServiceUnavailable, "transcoder busy"},
+		{"disk full", withPath(transcode.ErrNoSpace), ErrTranscodeNoSpace, http.StatusInsufficientStorage, "insufficient storage for transcode"},
+		{"source file missing", withPath(transcode.ErrSourceMissing), ErrNotFound, http.StatusNotFound, "not found"},
+		{"ffmpeg failure", ffmpegErr, ffmpegErr, 0, ""},
+		{"failed recently", transcode.ErrFailedRecently, transcode.ErrFailedRecently, 0, ""},
+		{"aborted by shutdown", transcode.ErrAborted, transcode.ErrAborted, 0, ""},
+		{"cancelled request", context.Canceled, context.Canceled, 0, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewCompatStreamService(NewAccessHelper(compatStore(media)), nil, &fakeRenditions{err: tt.ensureErr}, root)
+			_, err := svc.CompatStream(context.Background(), 5, 1)
+			if !errors.Is(err, tt.wantErr) || statusOf(err) != tt.wantStatus {
+				t.Fatalf("error = %v (status %d), want %v (status %d)", err, statusOf(err), tt.wantErr, tt.wantStatus)
+			}
+			if tt.wantStatus != 0 && err.Error() != tt.wantText {
+				t.Errorf("client-facing text = %q, want exactly %q", err.Error(), tt.wantText)
+			}
+		})
+	}
+}
+
+// sharedCase is one SharedCompatStream scenario.
+type sharedCase struct {
+	name      string
+	share     *model.Share
+	media     *model.Media
+	ensureErr error
+	wantErr   error // nil: success
+	wantUses  int
+}
+
+func sharedCases(root string) []sharedCase {
 	now := newMockClock().T
-	video := &model.Media{ID: 5, Type: model.MediaTypeVideo, FileName: "a.flv", AbsPath: "/media/set/a.flv"}
-	image := &model.Media{ID: 5, Type: model.MediaTypeImage, FileName: "a.png", AbsPath: "/media/set/a.png"}
+	video := &model.Media{ID: 5, Type: model.MediaTypeVideo, FileName: "a.flv", AbsPath: filepath.Join(root, "set/a.flv")}
+	image := &model.Media{ID: 5, Type: model.MediaTypeImage, FileName: "a.png", AbsPath: filepath.Join(root, "set/a.png")}
+	native := &model.Media{ID: 5, Type: model.MediaTypeVideo, FileName: "a.mp4", AbsPath: filepath.Join(root, "set/a.mp4")}
 	one := 1
 	valid := &model.Share{Token: "tok", MediaID: 5, ExpiresAt: now.Add(time.Hour)}
 	expired := &model.Share{Token: "tok", MediaID: 5, ExpiresAt: now.Add(-time.Hour)}
 	usedUp := &model.Share{Token: "tok", MediaID: 5, ExpiresAt: now.Add(time.Hour), MaxUses: &one, UsedCount: 1}
-
-	tests := []struct {
-		name      string
-		share     *model.Share
-		media     *model.Media
-		ensureErr error
-		wantErr   error
-		wantUses  int
-	}{
+	boom := errors.New("ffmpeg transcode: exit status 1")
+	return []sharedCase{
 		{name: "ok counts one use", share: valid, media: video, wantUses: 1},
-		{name: "unknown token", share: nil, media: video, wantErr: ErrShareNotFound},
+		{name: "unknown token", media: video, wantErr: ErrShareNotFound},
 		{name: "expired", share: expired, media: video, wantErr: ErrShareExpired},
 		{name: "max uses reached", share: usedUp, media: video, wantErr: ErrShareExpired},
-		{name: "media gone", share: valid, media: nil, wantErr: ErrMediaNotFound},
+		{name: "media gone", share: valid, wantErr: ErrMediaNotFound},
 		{name: "image media", share: valid, media: image, wantErr: ErrNotTranscodable},
-		// A waiting client polls; those polls must not consume share uses.
+		{name: "native media", share: valid, media: native, wantErr: ErrCompatNotNeeded},
+		// Answers without content must not consume share uses.
 		{name: "pending does not count a use", share: valid, media: video, ensureErr: transcode.ErrPending, wantErr: ErrTranscodePending},
-		{name: "ffmpeg failure does not count a use", share: valid, media: video, ensureErr: errors.New("boom"), wantErr: nil},
+		{name: "busy does not count a use", share: valid, media: video, ensureErr: transcode.ErrBusy, wantErr: ErrTranscodeBusy},
+		{name: "ffmpeg failure does not count a use", share: valid, media: video, ensureErr: boom, wantErr: boom},
 	}
-	for _, tt := range tests {
+}
+
+func TestSharedCompatStream(t *testing.T) {
+	root := mediaTree(t, "set/a.flv", "set/a.png", "set/a.mp4")
+	for _, tt := range sharedCases(root) {
 		t.Run(tt.name, func(t *testing.T) {
 			uses := 0
 			store := compatStore(tt.media)
@@ -159,26 +252,18 @@ func TestSharedCompatStream(t *testing.T) {
 				},
 			}
 			helper := NewAccessHelper(store)
-			shares := NewShareService(store, newMockClock(), helper)
 			renditions := &fakeRenditions{err: tt.ensureErr}
-			svc := NewCompatStreamService(helper, shares, renditions, "/media")
+			svc := NewCompatStreamService(helper, NewShareService(store, newMockClock(), helper), renditions, root)
 
 			got, err := svc.SharedCompatStream(context.Background(), "tok")
-
 			if uses != tt.wantUses {
 				t.Errorf("share uses = %d, want %d", uses, tt.wantUses)
 			}
-			if tt.wantErr == nil && tt.ensureErr == nil {
-				if err != nil || got == nil {
-					t.Fatalf("unexpected result %+v, %v", got, err)
-				}
-				return
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tt.wantErr)
 			}
-			if err == nil {
-				t.Fatal("expected error")
-			}
-			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
-				t.Errorf("error = %v, want %v", err, tt.wantErr)
+			if tt.wantErr == nil && (got == nil || renditions.calls[0].Requester != "share:tok") {
+				t.Errorf("rendition %+v, source %+v", got, renditions.calls)
 			}
 		})
 	}
@@ -187,8 +272,9 @@ func TestSharedCompatStream(t *testing.T) {
 func TestSharedCompatStream_ShareUsedUpWhileTranscoding(t *testing.T) {
 	// The share's last use is taken by another request while the rendition
 	// is being produced: the atomic UseShare then refuses.
+	root := mediaTree(t, "a.avi")
 	now := newMockClock().T
-	store := compatStore(&model.Media{ID: 5, Type: model.MediaTypeVideo, AbsPath: "/media/a.avi"})
+	store := compatStore(&model.Media{ID: 5, Type: model.MediaTypeVideo, FileName: "a.avi", AbsPath: filepath.Join(root, "a.avi")})
 	store.ShareRepo = repository.MockShareRepo{
 		GetShareByTokenFunc: func(context.Context, string) (*model.Share, error) {
 			return &model.Share{Token: "tok", MediaID: 5, ExpiresAt: now.Add(time.Hour)}, nil
@@ -196,9 +282,52 @@ func TestSharedCompatStream_ShareUsedUpWhileTranscoding(t *testing.T) {
 		UseShareFunc: func(context.Context, string, time.Time) (bool, error) { return false, nil },
 	}
 	helper := NewAccessHelper(store)
-	svc := NewCompatStreamService(helper, NewShareService(store, newMockClock(), helper), &fakeRenditions{}, "/media")
+	svc := NewCompatStreamService(helper, NewShareService(store, newMockClock(), helper), &fakeRenditions{}, root)
 	if _, err := svc.SharedCompatStream(context.Background(), "tok"); !errors.Is(err, ErrShareExpired) {
 		t.Fatalf("error = %v, want ErrShareExpired", err)
+	}
+}
+
+func TestConsumeShareUse_StoreError(t *testing.T) {
+	store := &repository.MockStore{ShareRepo: repository.MockShareRepo{
+		UseShareFunc: func(context.Context, string, time.Time) (bool, error) { return false, errors.New("db down") },
+	}}
+	err := NewShareService(store, newMockClock(), NewAccessHelper(store)).ConsumeShareUse(context.Background(), "tok")
+	if err == nil || errors.Is(err, ErrShareExpired) {
+		t.Fatalf("error = %v, want the store error", err)
+	}
+}
+
+func TestResolveSourcePath(t *testing.T) {
+	root := mediaTree(t, "set/a.avi", "other/b.avi")
+	// A symlinked directory inside the root that stays inside is fine.
+	if err := os.Symlink(filepath.Join(root, "other"), filepath.Join(root, "set/alias")); err != nil {
+		t.Fatal(err)
+	}
+	// The media root itself may be a symlink (e.g. to a mounted volume).
+	rootLink := filepath.Join(t.TempDir(), "media")
+	if err := os.Symlink(root, rootLink); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name, root, path, want string
+		wantErr                error
+	}{
+		{"plain file", root, filepath.Join(root, "set/a.avi"), filepath.Join(root, "set/a.avi"), nil},
+		{"link staying inside", root, filepath.Join(root, "set/alias/b.avi"), filepath.Join(root, "other/b.avi"), nil},
+		{"symlinked root", rootLink, filepath.Join(rootLink, "set/a.avi"), filepath.Join(root, "set/a.avi"), nil},
+		{"dot-dot escape", root, filepath.Join(root, "set/../../etc/passwd"), "", ErrNotFound},
+		{"missing file", root, filepath.Join(root, "set/none.avi"), "", ErrNotFound},
+		{"missing root", filepath.Join(root, "absent"), filepath.Join(root, "set/a.avi"), "", ErrNotFound},
+		{"no root configured", "", "/anything/at/all", "/anything/at/all", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveSourcePath(tt.root, tt.path)
+			if got != tt.want || !errors.Is(err, tt.wantErr) {
+				t.Errorf("resolveSourcePath = %q, %v; want %q, %v", got, err, tt.want, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -229,11 +358,12 @@ func TestBuildPlaybackHint_PlaybackURL(t *testing.T) {
 		wantURL    string
 		transcoded bool
 	}{
-		{"native mp4", model.Media{ID: 42, Type: model.MediaTypeVideo, FileName: "a.mp4", Codec: "h264"}, "/api/v1/media/42/stream", false},
+		{"native mp4", model.Media{ID: 42, Type: model.MediaTypeVideo, FileName: "a.mp4", Codec: "h264/aac"}, "/api/v1/media/42/stream", false},
 		// mkv sets the broad needs_transcode heuristic but plays natively.
 		{"mkv stays on stream", model.Media{ID: 42, Type: model.MediaTypeVideo, FileName: "a.mkv", Codec: "h264"}, "/api/v1/media/42/stream", false},
 		{"avi", model.Media{ID: 42, Type: model.MediaTypeVideo, FileName: "a.avi", Codec: "mpeg4"}, "/api/v1/media/42/compat", true},
 		{"wma", model.Media{ID: 42, Type: model.MediaTypeAudio, FileName: "a.wma", Codec: "wmav2"}, "/api/v1/media/42/compat", true},
+		{"mkv with ac3 audio", model.Media{ID: 42, Type: model.MediaTypeVideo, FileName: "a.mkv", Codec: "h264/ac3"}, "/api/v1/media/42/compat", true},
 		{"image", model.Media{ID: 42, Type: model.MediaTypeImage, FileName: "a.jpg"}, "/api/v1/media/42/stream", false},
 	}
 	for _, tt := range tests {
@@ -293,6 +423,10 @@ func TestGCWorker_MaintainsRenditionCache(t *testing.T) {
 	now := newMockClock().T
 	old := now.Add(-8 * 24 * time.Hour)
 	recent := now.Add(-time.Hour)
+	trash := []model.Media{
+		{ID: 1, AbsPath: "/nonexistent/old.avi", DeletedAt: &old},
+		{ID: 2, AbsPath: "/nonexistent/new.avi", DeletedAt: &recent},
+	}
 
 	tests := []struct {
 		name        string
@@ -309,13 +443,8 @@ func TestGCWorker_MaintainsRenditionCache(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &repository.MockStore{MediaRepo: repository.MockMediaRepo{
-				ListDeletedMediaFunc: func(context.Context) ([]model.Media, error) {
-					return []model.Media{
-						{ID: 1, AbsPath: "/nonexistent/old.avi", DeletedAt: &old},
-						{ID: 2, AbsPath: "/nonexistent/new.avi", DeletedAt: &recent},
-					}, tt.listErr
-				},
-				HardDeleteMediaFunc: func(context.Context, int64) error { return nil },
+				ListDeletedMediaFunc: func(context.Context) ([]model.Media, error) { return trash, tt.listErr },
+				HardDeleteMediaFunc:  func(context.Context, int64) error { return nil },
 			}}
 			cache := &fakeRenditionGC{err: tt.cacheErr}
 			w := NewGCWorker(store, newMockClock(), "/media", time.Minute, nil).WithRenditionCache(cache)
@@ -325,7 +454,7 @@ func TestGCWorker_MaintainsRenditionCache(t *testing.T) {
 			if cache.pruned != 1 {
 				t.Errorf("Prune calls = %d, want 1", cache.pruned)
 			}
-			if len(cache.removed) != len(tt.wantRemoved) || (len(tt.wantRemoved) == 1 && cache.removed[0] != tt.wantRemoved[0]) {
+			if fmt.Sprint(cache.removed) != fmt.Sprint(tt.wantRemoved) {
 				t.Errorf("removed = %v, want %v", cache.removed, tt.wantRemoved)
 			}
 		})

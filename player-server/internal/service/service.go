@@ -52,6 +52,14 @@ var (
 	// ErrTranscodePending means the compatibility rendition is still being
 	// produced in the background; the client should retry shortly (503).
 	ErrTranscodePending = &apiError{msg: "transcode in progress", status: http.StatusServiceUnavailable}
+	// ErrTranscodeBusy means no transcode can be started right now (queue
+	// full or the requester's job limit reached); retry shortly (503).
+	ErrTranscodeBusy = &apiError{msg: "transcoder busy", status: http.StatusServiceUnavailable}
+	// ErrTranscodeNoSpace means the transcode cache volume is full (507).
+	ErrTranscodeNoSpace = &apiError{msg: "insufficient storage for transcode", status: http.StatusInsufficientStorage}
+	// ErrCompatNotNeeded means the item plays natively: the compatibility
+	// stream is only offered for media flagged "transcoded".
+	ErrCompatNotNeeded = &apiError{msg: "media does not need transcoding; play the stream endpoint instead", status: http.StatusBadRequest}
 	// ErrNotTranscodable means the media type (e.g. an image) has no
 	// audio/video compatibility rendition.
 	ErrNotTranscodable = &apiError{msg: "media type cannot be transcoded", status: http.StatusUnsupportedMediaType}

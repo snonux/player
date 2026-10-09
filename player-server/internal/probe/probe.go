@@ -150,26 +150,44 @@ func parseFFprobeOutput(data []byte) (*model.Metadata, error) {
 		}
 	}
 
+	var videoCodec, audioCodec string
 	for _, s := range out.Streams {
-		if s.CodecType == "video" {
-			if meta.Codec == "" {
-				meta.Codec = s.CodecName
-			}
+		switch {
+		case s.CodecType == "video" && videoCodec == "":
+			videoCodec = s.CodecName
 			if s.Width > 0 && s.Height > 0 {
 				meta.Resolution = fmt.Sprintf("%dx%d", s.Width, s.Height)
 				meta.Width = s.Width
 				meta.Height = s.Height
 			}
-			break
+		case s.CodecType == "audio" && audioCodec == "":
+			audioCodec = s.CodecName
 		}
 	}
+	meta.Codec = codecString(videoCodec, audioCodec)
 
-	// Fallback to first stream codec if no video stream found.
+	// Fallback to first stream codec if neither a video nor an audio stream
+	// was identified.
 	if meta.Codec == "" && len(out.Streams) > 0 {
 		meta.Codec = out.Streams[0].CodecName
 	}
 
 	return meta, nil
+}
+
+// codecString builds the stored codec value from the first video and first
+// audio stream: "video/audio" when both exist, otherwise the one present.
+//
+// The audio codec is recorded for video files because playback decisions
+// need it: H.264 video with WMA or AC-3 audio plays silently (or not at all)
+// in clients, which only the audio codec reveals. Rows probed before this
+// was recorded hold the video codec alone; consumers treat a missing audio
+// part as unknown.
+func codecString(video, audio string) string {
+	if video != "" && audio != "" {
+		return video + "/" + audio
+	}
+	return video + audio
 }
 
 func extractEXIF(path string, meta *model.Metadata) {

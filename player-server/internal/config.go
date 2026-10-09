@@ -214,5 +214,29 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	if err := validateTranscodeCacheDir(cfg); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+// validateTranscodeCacheDir rejects a transcode cache inside (or equal to)
+// the media root. There the library scanner would import the renditions as
+// media, and cache eviction would run in a directory holding real media.
+// This also applies to the derived default, i.e. when DB_PATH itself lies
+// in the media root: set TRANSCODE_CACHE_DIR explicitly in that case.
+func validateTranscodeCacheDir(cfg *Config) error {
+	cache, err := filepath.Abs(cfg.TranscodeCacheDir)
+	if err != nil {
+		return fmt.Errorf("invalid TRANSCODE_CACHE_DIR: %w", err)
+	}
+	root, err := filepath.Abs(cfg.MediaRoot)
+	if err != nil {
+		return fmt.Errorf("invalid MEDIA_ROOT: %w", err)
+	}
+	if cache == root || strings.HasPrefix(cache, root+string(filepath.Separator)) {
+		return fmt.Errorf("invalid TRANSCODE_CACHE_DIR: %q must not be inside MEDIA_ROOT %q", cfg.TranscodeCacheDir, cfg.MediaRoot)
+	}
+	return nil
 }

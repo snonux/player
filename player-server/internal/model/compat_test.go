@@ -18,12 +18,23 @@ func TestMedia_NeedsCompatStream(t *testing.T) {
 		{"flv", Media{Type: MediaTypeVideo, FileName: "a.flv", Codec: "flv1"}, true},
 		{"wma", Media{Type: MediaTypeAudio, FileName: "a.wma", Codec: "wmav2"}, true},
 		{"wma unprobed", Media{Type: MediaTypeAudio, FileName: "a.wma"}, true},
-		// Legacy codec inside a container clients can demux.
+		{"asf", Media{Type: MediaTypeVideo, FileName: "a.asf", Codec: "wmv2/wmav2"}, true},
+		// Legacy codec inside a container clients can demux. The codec
+		// strings are the ones probe.codecString writes: "video/audio" for
+		// video files, or the video codec alone for rows probed before the
+		// audio codec was recorded.
 		{"mkv with wmv3", Media{Type: MediaTypeVideo, FileName: "a.mkv", Codec: "WMV3"}, true},
-		{"mp4 with legacy audio", Media{Type: MediaTypeVideo, FileName: "a.mp4", Codec: "h264 / wmav2"}, true},
+		{"mp4 with wma audio", Media{Type: MediaTypeVideo, FileName: "a.mp4", Codec: "h264/wmav2"}, true},
+		{"mkv with ac3 audio", Media{Type: MediaTypeVideo, FileName: "a.mkv", Codec: "h264/ac3"}, true},
+		{"mkv with dts audio", Media{Type: MediaTypeVideo, FileName: "a.mkv", Codec: "hevc/dts"}, true},
+		{"xvid in mkv", Media{Type: MediaTypeVideo, FileName: "a.mkv", Codec: "mpeg4/mp3"}, true},
+		{"mpeg2 in mp4", Media{Type: MediaTypeVideo, FileName: "a.mp4", Codec: "mpeg2video"}, true},
+		{"audio row with cover art", Media{Type: MediaTypeAudio, FileName: "a.m4a", Codec: "mjpeg/wmav2"}, true},
 		// Formats the clients play as-is.
 		{"mp4 h264", Media{Type: MediaTypeVideo, FileName: "a.mp4", Codec: "h264"}, false},
+		{"mp4 h264 aac", Media{Type: MediaTypeVideo, FileName: "a.mp4", Codec: "h264/aac"}, false},
 		{"mkv h264", Media{Type: MediaTypeVideo, FileName: "a.mkv", Codec: "h264"}, false},
+		{"mp3 with cover art", Media{Type: MediaTypeAudio, FileName: "a.mp3", Codec: "mjpeg/mp3"}, false},
 		{"webm", Media{Type: MediaTypeVideo, FileName: "a.webm", Codec: "vp9"}, false},
 		{"mp3", Media{Type: MediaTypeAudio, FileName: "a.mp3", Codec: "mp3"}, false},
 		{"flac", Media{Type: MediaTypeAudio, FileName: "a.flac", Codec: "flac"}, false},

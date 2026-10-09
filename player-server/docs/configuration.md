@@ -21,4 +21,9 @@ All settings are environment variables. Unset variables use defaults.
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 
-**Transcode cache:** the container root filesystem is read-only and the process runs as UID 65534, so the cache must live on a writable volume. With `DB_PATH=/data/media.db` it defaults to `/data/transcode-cache`. Size the volume for `TRANSCODE_CACHE_MAX_MB` plus the largest single rendition (the newest rendition is never evicted), or point `TRANSCODE_CACHE_DIR` at a larger volume.
+**Transcode cache:** the container root filesystem is read-only and the process runs as UID 65534, so the cache must live on a writable volume. With `DB_PATH=/data/media.db` it defaults to `/data/transcode-cache`.
+
+- Disk usage can reach `TRANSCODE_CACHE_MAX_MB` **plus** the most recently used rendition (never evicted, even when it alone exceeds the limit) **plus** the renditions being written (up to three jobs; each roughly the size of its source). Size the volume for that.
+- A transcode only starts while the volume keeps 512 MiB free on top of the source's size; otherwise the request fails with `507` instead of filling the disk. This matters because the default location shares its volume with the SQLite database. For anything beyond a small library, point `TRANSCODE_CACHE_DIR` at a volume of its own.
+- `TRANSCODE_CACHE_DIR` must not be inside `MEDIA_ROOT` (the scanner would import renditions as media); the server refuses to start otherwise. That includes the default when `DB_PATH` itself lies inside `MEDIA_ROOT` — set `TRANSCODE_CACHE_DIR` explicitly then.
+- At startup the server logs a warning when `ffmpeg` is missing or the cache directory is not writable.

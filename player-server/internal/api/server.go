@@ -390,6 +390,12 @@ func (s *Server) pingStore(ctx context.Context) error {
 	return nil
 }
 
+// httpWriteTimeout is the time a handler has to write its response. Large
+// media responses that take longer are cut and resumed by the client with a
+// Range request. serveRendition restarts this budget after waiting for a
+// transcode, so both streaming endpoints get the same window for the body.
+const httpWriteTimeout = 30 * time.Second
+
 // GracefulServer wraps an http.Server with graceful shutdown support.
 type GracefulServer struct {
 	Server *http.Server
@@ -402,7 +408,7 @@ func NewGracefulServer(handler http.Handler, cfg *internal.Config) *GracefulServ
 			Addr:         addrFromPort(cfg.Port),
 			Handler:      handler,
 			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
+			WriteTimeout: httpWriteTimeout,
 			IdleTimeout:  120 * time.Second,
 		},
 	}

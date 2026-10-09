@@ -212,7 +212,12 @@ This triggers `FSScanner.Scan()`, which:
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 
-**Transcode cache:** the container root filesystem is read-only and the process runs as UID 65534, so the cache must live on a writable volume. With `DB_PATH=/data/media.db` it defaults to `/data/transcode-cache`. Size the volume for `TRANSCODE_CACHE_MAX_MB` plus the largest single rendition (the newest rendition is never evicted), or point `TRANSCODE_CACHE_DIR` at a larger volume.
+**Transcode cache:** the container root filesystem is read-only and the process runs as UID 65534, so the cache must live on a writable volume. With `DB_PATH=/data/media.db` it defaults to `/data/transcode-cache`.
+
+- Disk usage can reach `TRANSCODE_CACHE_MAX_MB` **plus** the most recently used rendition (never evicted, even when it alone exceeds the limit) **plus** the renditions being written (up to three jobs; each roughly the size of its source). Size the volume for that.
+- A transcode only starts while the volume keeps 512 MiB free on top of the source's size; otherwise the request fails with `507` instead of filling the disk. This matters because the default location shares its volume with the SQLite database. For anything beyond a small library, point `TRANSCODE_CACHE_DIR` at a volume of its own.
+- `TRANSCODE_CACHE_DIR` must not be inside `MEDIA_ROOT` (the scanner would import renditions as media); the server refuses to start otherwise. That includes the default when `DB_PATH` itself lies inside `MEDIA_ROOT` — set `TRANSCODE_CACHE_DIR` explicitly then.
+- At startup the server logs a warning when `ffmpeg` is missing or the cache directory is not writable.
 
 ---
 
@@ -263,18 +268,23 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 
 ## Compatibility Stream (server-side transcoding)
 
-Browsers cannot decode AVI/WMV/FLV/WMA and Android ExoPlayer cannot decode WMV/FLV/WMA, so the server offers an ffmpeg-produced rendition: H.264 + AAC in MP4 for video, AAC in MP4 (M4A) for audio.
+Browsers cannot decode AVI/WMV/FLV/WMA (nor MPEG-4 part 2, MPEG-2, AC-3/DTS audio, ...) and Android ExoPlayer cannot decode WMV/FLV/WMA, so the server offers an ffmpeg-produced rendition: H.264 + AAC in MP4 for video, AAC in MP4 (M4A) for audio.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/api/media/{id}/compat` · `/api/v1/media/{id}/compat` | session | Rendition of a media item (registered via `handleBoth`, same access check as `/stream`) |
 | `GET` | `/s/{token}/compat` | none (share token) | Rendition of shared media |
 
-- **One rule for all clients:** `model.Media.NeedsCompatStream()` (container *or* codec is legacy). It surfaces as `"transcoded": true` in every media JSON object, and as `playback_url` + `transcoded` in `GET /api/media/{id}/playback` and the `GET /s/{token}` JSON. Clients play `playback_url`; they must not re-derive the rule from the file extension. `needs_transcode` in the playback hint is an older, broader heuristic and is not the switch.
-- **Layers:** `internal/transcode` (`Runner` interface + `FFmpegRunner`, `Cache`) → `service.CompatStreamService` (access checks, error mapping; depends on the `RenditionProvider` interface) → `api/handlers_compat.go`. Unit tests inject a fake `Runner`; `TestCache_RealFFmpeg` runs real ffmpeg when it is installed.
-- **Cache:** renditions are complete files in `TRANSCODE_CACHE_DIR`, served with `http.ServeContent` (Range/seek works). The file name encodes media id, source size, source mtime and a profile version, so a changed source or changed ffmpeg arguments (`profileVersion` in `internal/transcode/transcode.go`) invalidate the rendition. Concurrent requests for the same source share one ffmpeg run; at most two run in parallel.
-- **Bounding:** after each transcode and on every GC tick (`GC_INTERVAL_MINUTES`) the cache is pruned to `TRANSCODE_CACHE_MAX_MB`, least recently used first; abandoned `.tmp` files are removed; the GC also deletes the renditions of hard-deleted media.
-- **Waiting:** a request waits up to 20 s (below the server's 30 s `WriteTimeout`). If the transcode is not finished it answers `503` with `Retry-After: 5` and `{"status":"transcoding"}`; the transcode keeps running in the background (also when the client disconnects) and stops only on shutdown or after 2 h.
+- **One rule for all clients:** `model.Media.NeedsCompatStream()` — true when at least one client cannot decode the original (legacy container *or* legacy codec; some flagged formats, e.g. AVI, do play on Android). It surfaces as `"transcoded": true` in every media JSON object, and as `playback_url` + `transcoded` in `GET /api/media/{id}/playback` and the `GET /s/{token}` JSON. Clients play `playback_url`; they must not re-derive the rule from the file extension. `needs_transcode` in the playback hint is an older, broader heuristic and is not the switch. The endpoint only serves flagged media: other audio/video gets `400` ("play the stream endpoint instead"), images `415`.
+- **Codec metadata:** the prober stores `"video/audio"` for video files (`probe.codecString`), which is what lets the rule see e.g. AC-3 next to H.264. Rows probed before that hold the video codec only and are judged by container and video codec until re-probed.
+- **Layers:** `internal/transcode` (`Runner` interface + `FFmpegRunner`, `Cache`) → `service.CompatStreamService` (access checks, error mapping; depends on the `RenditionProvider` and `SharedMediaAccess` interfaces) → `api/handlers_compat.go`. Unit tests inject a fake `Runner`; `internal/app/app_test.go` drives the production wiring with a real SQLite store.
+- **ffmpeg input hardening (do not relax):** the demuxer is pinned from the file extension (`demuxerFor`), `-protocol_whitelist file` is set and the input is passed as `file:<absolute path>`. Without the pinned demuxer a file named `x.avi` that contains an ffconcat/HLS playlist makes ffmpeg read *other* files into the rendition. The service additionally resolves symlinks and requires the real path to be inside `MEDIA_ROOT`.
+- **Stream copy:** the runner asks `ffprobe` what the file really contains; 8-bit 4:2:0 H.264 video (except in AVI, which has no timestamps) and AAC audio are copied instead of re-encoded, with an automatic fall back to encoding when the copy fails. Encodes are capped at 1920x1080, deinterlaced when flagged interlaced, and run under `nice` with half the CPUs per job.
+- **Cache:** renditions are complete files in `TRANSCODE_CACHE_DIR`, served with `http.ServeContent` (Range/seek works). The file name encodes media id, source size, source mtime and a profile version, so a changed source or changed ffmpeg arguments (`profileVersion` in `internal/transcode/transcode.go` — bump it when you change the arguments) invalidate the rendition. Output is written to a uniquely named `.tmp` file and renamed, so several instances can share the directory. The ETag also contains the rendition's creation time: a rebuilt rendition never shares an ETag with its predecessor.
+- **Limits:** concurrent requests for one source share one job; at most 3 ffmpeg processes run, at most 8 jobs are running or queued, at most 2 per user or share token (`503` "busy" beyond that). A source that failed is not retried for 1 min, doubling up to 30 min. A job may work for 2 h (queue time not counted).
+- **Bounding:** before each transcode and on every GC tick (`GC_INTERVAL_MINUTES`) the cache is pruned to `TRANSCODE_CACHE_MAX_MB`, least recently used first (the most recently used rendition and anything served in the last minute are spared); `.tmp` files untouched for an hour are removed; the GC also deletes the renditions of hard-deleted media and stops their running jobs. Only files matching the exact rendition name pattern are ever deleted.
+- **Waiting:** a request waits up to 20 s. If the transcode is not finished it answers `503` with `Retry-After: 5` and `{"status":"transcoding"}`; the transcode keeps running in the background (also when the client disconnects). On shutdown running ffmpeg processes are killed and waited for.
+- **Tests with real ffmpeg:** `internal/transcode/ffmpeg_real_test.go` skips when ffmpeg/ffprobe/libx264 are missing. Set `PLAYER_REQUIRE_FFMPEG=1` to turn that skip into a failure (the `server-transcode` CI step does); the argument list itself is pinned by `TestFFmpegArgs` without ffmpeg.
 
 ---
 

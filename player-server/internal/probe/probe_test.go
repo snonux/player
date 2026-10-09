@@ -26,7 +26,7 @@ func TestParseFFprobeOutput(t *testing.T) {
 			}`,
 			want: &model.Metadata{
 				Duration:   123.45,
-				Codec:      "h264",
+				Codec:      "h264/aac",
 				Resolution: "1920x1080",
 				Bitrate:    500000,
 			},
@@ -44,6 +44,40 @@ func TestParseFFprobeOutput(t *testing.T) {
 				Codec:    "mp3",
 				Bitrate:  128000,
 			},
+		},
+		{
+			// The audio codec is recorded so playback decisions can see
+			// e.g. AC-3 or WMA next to H.264 video.
+			name: "audio stream listed before video",
+			input: `{
+				"format": {},
+				"streams": [
+					{"codec_name": "ac3", "codec_type": "audio"},
+					{"codec_name": "h264", "width": 1280, "height": 720, "codec_type": "video"},
+					{"codec_name": "aac", "codec_type": "audio"},
+					{"codec_name": "mjpeg", "width": 600, "height": 600, "codec_type": "video"}
+				]
+			}`,
+			want: &model.Metadata{Codec: "h264/ac3", Resolution: "1280x720"},
+		},
+		{
+			name: "silent video",
+			input: `{
+				"format": {},
+				"streams": [{"codec_name": "mpeg4", "width": 640, "height": 480, "codec_type": "video"}]
+			}`,
+			want: &model.Metadata{Codec: "mpeg4", Resolution: "640x480"},
+		},
+		{
+			name: "audio with cover art",
+			input: `{
+				"format": {},
+				"streams": [
+					{"codec_name": "wmav2", "codec_type": "audio"},
+					{"codec_name": "mjpeg", "width": 500, "height": 500, "codec_type": "video"}
+				]
+			}`,
+			want: &model.Metadata{Codec: "mjpeg/wmav2", Resolution: "500x500"},
 		},
 		{
 			name:    "invalid json",

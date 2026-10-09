@@ -1,6 +1,6 @@
-// Package transcode produces and caches browser/ExoPlayer-compatible
-// renditions of media whose original container or codec cannot be decoded by
-// the clients (AVI, WMV, FLV, WMA, ...).
+// Package transcode produces and caches client-compatible renditions of media
+// whose original container or codec the web or Android player cannot decode
+// (AVI, WMV, FLV, WMA, ...).
 //
 // A rendition is a complete file on disk rather than a live pipe so the API
 // layer can serve it with http.ServeContent and clients can seek with HTTP
@@ -25,21 +25,47 @@ const (
 // profileVersion is part of every rendition file name. Bump it whenever the
 // ffmpeg arguments change so renditions made with the old profile stop being
 // served and are eventually pruned.
-const profileVersion = "v1"
+const profileVersion = "v2"
 
+// Errors returned by Cache.Ensure. None of them wraps a context error unless
+// the caller's own context ended, so "the client went away" can never be
+// confused with "the job was stopped".
 var (
 	// ErrPending reports that the rendition is still being produced. The
 	// transcode keeps running in the background; callers should retry.
 	ErrPending = errors.New("transcode in progress")
+	// ErrBusy reports that no new transcode can be started right now (queue
+	// full, or the requester already has its share of jobs). Retry later.
+	ErrBusy = errors.New("transcoder busy")
 	// ErrSourceMissing reports that the source media file cannot be read.
 	ErrSourceMissing = errors.New("transcode source missing")
+	// ErrSourceChanged reports that the source file changed while it was
+	// being transcoded (e.g. an upload still in progress); the result was
+	// discarded and a retry transcodes the new version.
+	ErrSourceChanged = errors.New("transcode source changed")
+	// ErrNoSpace reports that the cache volume lacks room for a rendition.
+	ErrNoSpace = errors.New("transcode cache volume is full")
+	// ErrFailedRecently reports that this source failed to transcode a short
+	// while ago and is not retried yet (negative cache with backoff).
+	ErrFailedRecently = errors.New("transcode failed recently")
+	// ErrAborted reports that the job was stopped by shutdown or because its
+	// media item was removed.
+	ErrAborted = errors.New("transcode aborted")
+	// ErrUnsupportedInput reports a source whose container the runner does
+	// not know how to open safely.
+	ErrUnsupportedInput = errors.New("unsupported transcode input")
 )
 
 // Source identifies the original media file a rendition is derived from.
 type Source struct {
 	MediaID int64
-	Path    string
-	Kind    Kind
+	// Path is the source file; callers must have resolved symlinks and
+	// verified it lies inside the media root.
+	Path string
+	Kind Kind
+	// Requester identifies who asked (e.g. "user:5", "share:<token>") for
+	// the per-requester job limit. Empty disables that limit.
+	Requester string
 }
 
 // Rendition describes a finished, cached compatibility file.
@@ -48,16 +74,17 @@ type Rendition struct {
 	Path string
 	// ContentType is the HTTP Content-Type of the rendition.
 	ContentType string
-	// ETag is stable for a given source version and profile, so clients can
-	// keep using If-Range across requests even though the cache updates the
-	// file's mtime on every access for LRU bookkeeping.
+	// ETag identifies these exact bytes: it combines the rendition name
+	// (source version + profile) with the file's creation time, so a
+	// rendition that was evicted and transcoded again gets a new ETag and a
+	// client can never splice two different encodes with If-Range.
 	ETag string
 }
 
 // Runner converts one source file into a rendition file. Implementations must
 // write the complete result to outputPath and honour ctx cancellation.
 type Runner interface {
-	Transcode(ctx context.Context, kind Kind, inputPath, outputPath string) error
+	Transcode(ctx context.Context, src Source, outputPath string) error
 }
 
 // ext returns the rendition file extension for the kind.

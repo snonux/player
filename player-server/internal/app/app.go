@@ -44,10 +44,14 @@ type Deps struct {
 	PodcastSvc      service.PodcastEpisodeService
 	PlaybackHintSvc service.PlaybackHintsService
 	CompatSvc       service.CompatStreamService
-	Scanner         scanner.Scanner
-	GCWorker        *service.GCWorker
-	Logger          *slog.Logger
-	AppCtx          context.Context
+	// Transcodes is the rendition cache behind CompatSvc. RunWithSignal
+	// uses it for the startup check and to wait for running ffmpeg jobs on
+	// shutdown.
+	Transcodes *transcode.Cache
+	Scanner    scanner.Scanner
+	GCWorker   *service.GCWorker
+	Logger     *slog.Logger
+	AppCtx     context.Context
 	// WorkersStarted is an optional channel that receives a signal once all
 	// background workers have been started. Tests use this to synchronise
 	// without polling or sleeping.
@@ -79,6 +83,13 @@ func BuildLogger(logLevel string) *slog.Logger {
 // responsibility of StartBackgroundWorkers. Separating construction from
 // activation makes the wiring easy to test in isolation.
 func Wire(cfg *internal.Config, store repository.Store, logger *slog.Logger, appCtx context.Context) *Deps {
+	return WireWithRunner(cfg, store, logger, appCtx, transcode.NewFFmpegRunner())
+}
+
+// WireWithRunner is Wire with an injectable transcode runner, so tests can
+// exercise the complete production wiring (real store, services, routes)
+// without running ffmpeg.
+func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.Logger, appCtx context.Context, runner transcode.Runner) *Deps {
 	clk := clock.RealClock{}
 	hasher := auth.NewBCryptHasher(12)
 	sm := auth.NewSessionManager(store, clk, time.Duration(cfg.SessionTimeoutHours)*time.Hour)
@@ -108,21 +119,7 @@ func Wire(cfg *internal.Config, store repository.Store, logger *slog.Logger, app
 
 	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger)
 
-	// Compatibility renditions for formats no client decodes (AVI/WMV/FLV/
-	// WMA). Transcodes are bound to appCtx, not to the triggering request,
-	// so they finish in the background and stop on shutdown.
-	renditions := transcode.NewCache(appCtx, transcode.NewFFmpegRunner(), clk, logger, transcode.Options{
-		Dir:      cfg.TranscodeCacheDir,
-		MaxBytes: int64(cfg.TranscodeCacheMaxMB) * 1024 * 1024,
-	})
-	compatSvc := service.NewCompatStreamService(helper, mediaSvc, renditions, cfg.MediaRoot)
-
-	// The GC tick also bounds the transcode cache and drops renditions of
-	// hard-deleted media.
-	gcWorker := service.NewGCWorker(store, clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, logger).
-		WithRenditionCache(renditions)
-
-	return &Deps{
+	deps := &Deps{
 		Store:           store,
 		Hasher:          hasher,
 		SM:              sm,
@@ -134,11 +131,51 @@ func Wire(cfg *internal.Config, store repository.Store, logger *slog.Logger, app
 		AuthSvc:         authSvc,
 		PodcastSvc:      podcastSvc,
 		PlaybackHintSvc: playbackHintSvc,
-		CompatSvc:       compatSvc,
 		Scanner:         fsScanner,
-		GCWorker:        gcWorker,
 		Logger:          logger,
 		AppCtx:          appCtx,
+	}
+	wireTranscoding(deps, runner)
+	return deps
+}
+
+// wireTranscoding adds the compatibility stream to deps: the rendition
+// cache, the service in front of it, and a GC worker that maintains the
+// cache. It is split from WireWithRunner to keep both readable.
+func wireTranscoding(deps *Deps, runner transcode.Runner) {
+	cfg := deps.Cfg
+	// The access helper is stateless, so a second instance applies exactly
+	// the same permission rules as the one the other services share.
+	helper := service.NewAccessHelper(deps.Store)
+	// Renditions for formats the clients cannot decode (AVI/WMV/FLV/WMA).
+	// Transcodes are bound to AppCtx, not to the triggering request, so
+	// they finish in the background and stop on shutdown.
+	deps.Transcodes = transcode.NewCache(deps.AppCtx, runner, deps.Clk, deps.Logger, transcode.Options{
+		Dir:      cfg.TranscodeCacheDir,
+		MaxBytes: int64(cfg.TranscodeCacheMaxMB) * 1024 * 1024,
+	})
+	// A dedicated share service instance provides the narrow
+	// SharedMediaAccess interface; it is stateless, so it behaves exactly
+	// like the one inside MediaSvc.
+	shares := service.NewShareService(deps.Store, deps.Clk, helper)
+	deps.CompatSvc = service.NewCompatStreamService(helper, shares, deps.Transcodes, cfg.MediaRoot)
+
+	// The GC tick also bounds the transcode cache and drops renditions of
+	// hard-deleted media.
+	deps.GCWorker = service.NewGCWorker(deps.Store, deps.Clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, deps.Logger).
+		WithRenditionCache(deps.Transcodes)
+}
+
+// checkTranscoding reports transcoding misconfiguration at startup. Problems
+// are logged, not fatal: everything except the compatibility stream works
+// without ffmpeg or a writable cache, and the log line saves the operator
+// from finding out through a failed playback.
+func checkTranscoding(deps *Deps, runner *transcode.FFmpegRunner) {
+	if err := runner.Available(); err != nil {
+		deps.Logger.Warn("compatibility stream unavailable", "err", err)
+	}
+	if err := deps.Transcodes.Preflight(); err != nil {
+		deps.Logger.Warn("compatibility stream unavailable", "dir", deps.Cfg.TranscodeCacheDir, "err", err)
 	}
 }
 
@@ -295,8 +332,17 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
-	deps := Wire(cfg, store, logger, appCtx)
+	runner := transcode.NewFFmpegRunner()
+	deps := WireWithRunner(cfg, store, logger, appCtx, runner)
 	defer deps.GCWorker.Stop()
+	// Runs before the deferred store.Close and after the server has stopped:
+	// cancel the application context (which kills running ffmpeg jobs) and
+	// wait for them, so no ffmpeg process or temporary file outlives us.
+	defer func() {
+		appCancel()
+		deps.Transcodes.Wait()
+	}()
+	checkTranscoding(deps, runner)
 	StartBackgroundWorkers(deps)
 
 	server, err := NewAPIServer(deps, http.Dir("web"), logger)
