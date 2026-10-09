@@ -10,6 +10,19 @@ import '../services/playback_request.dart';
 /// Shared by the audio and video player screens: waits for a server
 /// compatibility stream to be ready before a native player opens it, and
 /// stops waiting when the screen goes away or starts another item.
+///
+/// Behaviour worth knowing:
+///   - The "preparing" label is shown for every compatibility stream, also
+///     when the first probe already answers "ready": until that answer
+///     arrives the app cannot tell a finished rendition from a transcode
+///     that just started, and the server may hold the request for a while.
+///   - Preparation starts after the screen claimed the shared player, so
+///     whatever was playing before (for example the previous audio item)
+///     stops when preparation starts, not when the new item is ready.
+///   - Leaving the screen cancels the wait, for audio too: background audio
+///     only begins once a source is loaded, so there is nothing to carry on
+///     while the server is still transcoding. The transcode itself continues
+///     on the server; opening the item again picks it up.
 mixin PlaybackPreparationMixin<T extends ConsumerStatefulWidget>
     on ConsumerState<T> {
   PlaybackPreparation? _preparation;

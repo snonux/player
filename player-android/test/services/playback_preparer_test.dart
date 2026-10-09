@@ -130,18 +130,55 @@ void main() {
     });
   }
 
-  test('a failed request (timeout, no connection) is terminal', () async {
-    final probe = _Probe([
-      DioException(
+  DioException transportFailure() => DioException(
         requestOptions: RequestOptions(),
         type: DioExceptionType.receiveTimeout,
+      );
+
+  test('repeated failed requests end the wait after two retries', () async {
+    final probe = _Probe([transportFailure()]);
+    final preparation = const PlaybackPreparer(defaultRetryInterval: _short)
+        .prepare(_uri, probe: probe.call);
+    await expectLater(
+      preparation.ready,
+      _fails(PlaybackPreparationFailure.unreachable),
+    );
+    // The first failure plus the two tolerated retries.
+    expect(probe.calls, 3);
+  });
+
+  test('a single lost request during a long wait is survived', () async {
+    final probe = _Probe([
+      _busy,
+      transportFailure(),
+      transportFailure(),
+      _busy,
+      // The count starts again after an answer: two more are tolerated.
+      transportFailure(),
+      transportFailure(),
+      _ready,
+    ]);
+    final preparation = const PlaybackPreparer(defaultRetryInterval: _short)
+        .prepare(_uri, probe: probe.call);
+    expect(await preparation.ready, isTrue);
+    expect(probe.calls, 7);
+  });
+
+  test('an HTTP error thrown by the client keeps its status', () async {
+    // The API client throws 401 so its sign-out interceptor runs.
+    final options = RequestOptions();
+    final probe = _Probe([
+      DioException(
+        requestOptions: options,
+        type: DioExceptionType.badResponse,
+        response: Response<void>(requestOptions: options, statusCode: 401),
       ),
     ]);
     final preparation =
         const PlaybackPreparer().prepare(_uri, probe: probe.call);
     await expectLater(
       preparation.ready,
-      _fails(PlaybackPreparationFailure.unreachable),
+      _fails(PlaybackPreparationFailure.rejected, statusCode: 401),
     );
     expect(probe.calls, 1);
   });

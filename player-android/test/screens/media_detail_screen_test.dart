@@ -249,11 +249,20 @@ const _kImage = Media(
 /// Key used by the navigation-destination stub route.
 const _kDestinationKey = Key('nav_destination');
 
+/// Route extra of the most recent navigation, recorded by [_buildRouter] so
+/// tests can check which media URL the detail screen hands to a player.
+Object? _lastRouteExtra;
+
 /// Builds a [GoRouter] with [MediaDetailScreen] at `/media/:id` and stub
 /// routes at `/video/:mediaId` and `/audio/:mediaId` for navigation tests.
 GoRouter _buildRouter(PlayerApiClient fakeClient, String mediaId) {
+  _lastRouteExtra = null;
   return GoRouter(
     initialLocation: '/media/$mediaId',
+    redirect: (context, state) {
+      if (state.extra != null) _lastRouteExtra = state.extra;
+      return null;
+    },
     routes: [
       GoRoute(
         path: '/media/:id',
@@ -483,6 +492,53 @@ void main() {
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
       expect(find.byType(MediaDetailScreen), findsOneWidget);
+    });
+
+    // The detail screen is where most playback starts: the URL it passes
+    // decides between the original file and the server's converted copy.
+    Future<String> playAndCaptureUrl(WidgetTester tester, Media media) async {
+      final fakeClient = _FakeApiClient()..mediaResult = media;
+      await _pumpScreen(tester, fakeClient, mediaId: '${media.id}');
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('media_detail_play')));
+      await tester.tap(find.byKey(const Key('media_detail_play')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_kDestinationKey), findsOneWidget);
+      return (_lastRouteExtra as Map)['mediaUrl'] as String;
+    }
+
+    Media transcoded(Media media) =>
+        Media.fromJson(media.toJson()..['transcoded'] = true);
+
+    testWidgets('a transcoded video is played from the compat stream',
+        (tester) async {
+      final url = await playAndCaptureUrl(tester, transcoded(_kVideo));
+      expect(url, endsWith('/api/v1/media/42/compat'));
+    });
+
+    testWidgets('an ordinary video is played from the original stream',
+        (tester) async {
+      final url = await playAndCaptureUrl(tester, _kVideo);
+      expect(url, endsWith('/api/v1/media/42/stream'));
+    });
+
+    testWidgets('a transcoded audio item is played from the compat stream',
+        (tester) async {
+      final url = await playAndCaptureUrl(tester, transcoded(_kAudio));
+      expect(url, endsWith('/api/v1/media/7/compat'));
+    });
+
+    testWidgets('an ordinary audio item is played from the original stream',
+        (tester) async {
+      final url = await playAndCaptureUrl(tester, _kAudio);
+      expect(url, endsWith('/api/v1/media/7/stream'));
+    });
+
+    testWidgets('an image is always shown from the original file',
+        (tester) async {
+      // Even if a server flagged it: images have no compat stream (415).
+      final url = await playAndCaptureUrl(tester, transcoded(_kImage));
+      expect(url, endsWith('/api/v1/media/9/stream'));
     });
 
     testWidgets('image action opens image route', (tester) async {

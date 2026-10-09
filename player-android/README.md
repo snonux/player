@@ -50,6 +50,16 @@ audio player within the same library keeps audio playing. Local settings remain
 available without a connection. Server logout or expired credentials preserve
 local files and history; a delayed server error cannot stop a local session.
 
+Some formats (for example WMV, FLV, WMA, or AC-3 audio) cannot be decoded by
+Android. The server converts those, and the app plays the converted copy. While
+it checks for that copy, the player shows **Preparing playback…**; the first
+play of a long file can take minutes, later plays start right away. Whatever was
+playing before stops as soon as preparation starts. Leaving the player while it
+is still preparing cancels the wait (the server keeps converting, so opening the
+item again continues where it left off). If the file cannot be played, the
+player names it and the reason, with a **Retry** button. Files in **On this
+device** are always played directly; no server is involved.
+
 ## Quickstart
 
 When Flutter is installed, finish or refresh the generated Android project files:

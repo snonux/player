@@ -1161,6 +1161,81 @@ void main() {
       expect(coordinator.activeKind, isNull);
     });
 
+    testWidgets('another item taking the player ends the preparing state',
+        (tester) async {
+      final (player, handler) = _usePlayableHandler();
+      final coordinator = PlaybackSessionCoordinator();
+      final client = _FakeApiClient()..probeAnswers.add(_kTranscoding);
+      await _pumpScreen(tester, client,
+          handlerOverride: handler,
+          mediaUrl: _kCompatUrl,
+          coordinator: coordinator);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(_kPreparingLabel), findsOneWidget);
+
+      // E.g. a video opened on top of this still-mounted audio screen.
+      await tester.runAsync(() => coordinator.claim(
+            kind: PlaybackSourceKind.publicShare,
+            identity: 'public-share:next',
+            stop: () async {},
+          ));
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump();
+
+      expect(find.byKey(_kPreparingLabel), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(
+        _errorText(tester),
+        'Playback stopped. Tap Retry to play this item again.',
+      );
+      expect(find.byKey(const Key('audio_player_retry')), findsOneWidget);
+      await tester.pump(const Duration(minutes: 1));
+      expect(client.probedUrls, hasLength(1));
+      expect(player.sourceRequests, 0);
+    });
+
+    testWidgets('a dead share link is named as such, and its token not logged',
+        (tester) async {
+      final (player, handler) = _usePlayableHandler();
+      final publicClient = _FakeApiClient()
+        ..probeAnswers.add(const PlaybackProbe(statusCode: 410));
+      final logs = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) => logs.add('$message');
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          apiClientProvider.overrideWithValue(_FakeApiClient()),
+          publicApiClientProvider.overrideWithValue(publicClient),
+          audioHandlerProvider.overrideWithValue(handler),
+          progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
+        ],
+        child: const MaterialApp(
+          home: AudioPlayerScreen(
+            mediaId: '0',
+            mediaUrl: 'http://test.local/s/secrettoken7/compat',
+            mediaTitle: 'Shared song.wma',
+            isPublicShare: true,
+          ),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump();
+      debugPrint = originalDebugPrint;
+
+      expect(
+        _errorText(tester),
+        'Cannot play “Shared song.wma”. This share link is no longer valid '
+        'or access was refused.',
+      );
+      expect(find.byKey(const Key('audio_player_retry')), findsOneWidget);
+      expect(player.sourceRequests, 0);
+      // The failure is logged by kind and error type only.
+      expect(logs.join('\n'), contains('publicShare'));
+      expect(logs.join('\n'), isNot(contains('secrettoken7')));
+      expect(logs.join('\n'), isNot(contains('http')));
+    });
+
     testWidgets('a public share is probed with the anonymous client',
         (tester) async {
       final (player, handler) = _usePlayableHandler();
@@ -1211,7 +1286,8 @@ void main() {
 
       expect(
         _errorText(tester),
-        'Cannot play “song.wma”. This format cannot be played on this device.',
+        'Cannot play “song.wma”. The connection may have been '
+        'interrupted, or this format is not supported.',
       );
       expect(find.textContaining('Source error'), findsNothing);
       expect(find.textContaining('Playback failed'), findsNothing);
@@ -1269,7 +1345,8 @@ void main() {
 
       expect(
         _errorText(tester),
-        'Cannot play “song.ac3”. This format cannot be played on this device.',
+        'Cannot play “song.ac3”. The connection may have been '
+        'interrupted, or this format is not supported.',
       );
       expect(find.byKey(const Key('audio_player_view')), findsNothing);
       expect(find.byKey(const Key('audio_player_retry')), findsOneWidget);

@@ -2,11 +2,18 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:just_audio/just_audio.dart' show PlayerException;
 
 import '../services/playback_preparer.dart';
+import '../services/playback_request.dart';
 
-/// Shown next to the spinner while the server prepares a compatibility
-/// stream. The live end-to-end script waits for this exact text to go away,
-/// so it must not contain any word that script treats as a failure.
+/// Shown next to the spinner while a compatibility stream is checked and,
+/// if needed, produced by the server. The live end-to-end script waits for
+/// this exact text to go away, so it must not contain any word that script
+/// treats as a failure.
 const kPreparingPlaybackLabel = 'Preparing playback…';
+
+/// Shown when another item took over the player, including while this one
+/// was still being prepared. Not a failure: Retry plays the item again.
+const kPlaybackStoppedMessage =
+    'Playback stopped. Tap Retry to play this item again.';
 
 /// Turns a playback failure into a sentence for the player's error view.
 ///
@@ -14,30 +21,38 @@ const kPreparingPlaybackLabel = 'Preparing playback…';
 /// `PlatformException(VideoError, Video player had error V.l: Source error,
 /// null, null)` or `(0) Source error`. Those never reach the user: the
 /// message names the item ([title], normally the file name) and says what
-/// went wrong in plain words.
-String playbackErrorMessage(Object error, {required String title}) {
+/// went wrong in plain words. [source] decides how definite the cause can be.
+String playbackErrorMessage(
+  Object error, {
+  required String title,
+  required PlaybackSourceKind source,
+}) {
   if (error is PlaybackPreparationException) {
-    return _preparationErrorMessage(error, title);
+    return _preparationErrorMessage(error, title, source);
   }
-  // ExoPlayer reports an undecodable container or codec as a generic source
-  // error through these two types (video_player and just_audio). The server
-  // already converts what it knows to be unplayable, so what is left here is
-  // a format this particular device cannot decode — also the usual cause for
-  // files in the local library, where no server can convert them.
   if (error is PlatformException || error is PlayerException) {
-    return unsupportedFormatMessage(title);
+    return sourceErrorMessage(title, source);
   }
   return 'Could not start playback of “$title”. Please try again.';
 }
 
-/// The sentence for a source the device's decoders reject. Also used where a
-/// player reports such a failure without an exception object.
-String unsupportedFormatMessage(String title) =>
-    'Cannot play “$title”. This format cannot be played on this device.';
+/// The sentence for a source the native player gave up on.
+///
+/// ExoPlayer reports an undecodable file and a failed download alike as a
+/// generic "Source error". For a file on the device only the format can be
+/// at fault. For a stream it may as well be the network, the server, or an
+/// expired session, so that message names both causes instead of blaming
+/// the format.
+String sourceErrorMessage(String title, PlaybackSourceKind source) =>
+    source == PlaybackSourceKind.local
+        ? 'Cannot play “$title”. This format cannot be played on this device.'
+        : 'Cannot play “$title”. The connection may have been interrupted, '
+            'or this format is not supported.';
 
 String _preparationErrorMessage(
   PlaybackPreparationException error,
   String title,
+  PlaybackSourceKind source,
 ) =>
     switch (error.failure) {
       PlaybackPreparationFailure.conversionFailed =>
@@ -51,6 +66,22 @@ String _preparationErrorMessage(
         'Could not reach the server to play “$title”. '
             'Check your connection and try again.',
       PlaybackPreparationFailure.rejected =>
-        'Cannot play “$title”. The server refused to prepare this file'
-            '${error.statusCode == null ? '' : ' (HTTP ${error.statusCode})'}.',
+        _rejectedMessage(error.statusCode, title, source),
     };
+
+// A share link answers these once it expired, was revoked, or is refused.
+const _kDeadShareStatuses = {401, 403, 404, 410};
+
+String _rejectedMessage(
+  int? statusCode,
+  String title,
+  PlaybackSourceKind source,
+) {
+  if (source == PlaybackSourceKind.publicShare &&
+      _kDeadShareStatuses.contains(statusCode)) {
+    return 'Cannot play “$title”. This share link is no longer valid '
+        'or access was refused.';
+  }
+  return 'Cannot play “$title”. The server refused to prepare this file'
+      '${statusCode == null ? '' : ' (HTTP $statusCode)'}.';
+}

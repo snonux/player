@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:chewie/chewie.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
@@ -181,76 +182,116 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   /// Initializes the typed source with a content-URI or network controller,
   /// applies its resume position, and starts controls and progress reporting.
-  /// Only server requests read account credentials. Ownership is checked after
-  /// each async step before the controller can start playback. A server
-  /// compatibility stream is awaited before the native player is created.
+  /// Ownership is checked after each async step before the controller can
+  /// start playback. A server compatibility stream is awaited before the
+  /// native player is created.
   Future<void> _initPlayer() async {
     if (!mounted) return;
-    final initGeneration = _initGeneration;
+    final generation = _initGeneration;
     final request = await _resolveRequest();
-    if (!mounted || initGeneration != _initGeneration) return;
-    final coordinator = ref.read(playbackSessionCoordinatorProvider);
-    final PlaybackSessionLease? lease;
-    try {
-      lease = await coordinator.claim(
-        kind: request.kind,
-        identity: request.identity,
-        stop: _stopOwnedSession,
-        sourceUri: request.sourceUri.toString(),
-      );
-    } catch (error) {
-      if (mounted && _initGeneration == initGeneration) {
-        setState(() {
-          _error = _errorMessage(error, request);
-          _isLoading = false;
-        });
-      }
-      return;
-    }
+    if (!mounted || generation != _initGeneration) return;
+    final lease = await _claimSession(request, generation);
     if (lease == null) return;
-    if (!mounted || initGeneration != _initGeneration) {
-      await lease.release();
-      return;
-    }
+    final attempt = _PlaybackAttempt(request, lease, generation);
     _sessionLease = lease;
     _activeRequest = request;
     setState(() {
       _isLoading = true;
       _error = null;
     });
-    bool current() =>
-        mounted &&
-        initGeneration == _initGeneration &&
-        lease?.isCurrent == true;
+    final headers = await _readHeaders(attempt);
+    if (headers == null || !_isCurrent(attempt)) return;
+    if (!await _streamIsPlayable(attempt)) return;
+    await _startPlayback(attempt, headers);
+  }
 
-    Map<String, String> headers;
+  /// True while [attempt] is the one this screen is showing and still owns
+  /// the shared player.
+  bool _isCurrent(_PlaybackAttempt attempt) =>
+      mounted &&
+      attempt.generation == _initGeneration &&
+      attempt.lease.isCurrent;
+
+  /// Takes over the player from whatever was playing. Returns null when the
+  /// claim failed (error shown) or this attempt was superseded meanwhile.
+  Future<PlaybackSessionLease?> _claimSession(
+    PlaybackRequest request,
+    int generation,
+  ) async {
+    final PlaybackSessionLease? lease;
     try {
-      headers = request is ServerPlaybackRequest
-          ? await accountRequestHeaders(
-              uri: request.sourceUri,
-              baseUrl: Uri.parse(request.serverOrigin),
-              storage: ref.read(tokenStorageProvider),
-              cookieJar: ref.read(cookieJarProvider),
-              mutations: ref.read(credentialMutationQueueProvider),
-            )
-          : <String, String>{};
+      lease = await ref.read(playbackSessionCoordinatorProvider).claim(
+            kind: request.kind,
+            identity: request.identity,
+            stop: _stopOwnedSession,
+            sourceUri: request.sourceUri.toString(),
+          );
     } catch (error) {
-      if (current()) {
-        await lease.release();
-        if (!mounted || _initGeneration != initGeneration) return;
-        setState(() {
-          _error = _errorMessage(error, request);
-          _isLoading = false;
-        });
-      }
-      return;
+      _showError(error, request, generation);
+      return null;
     }
-    if (!current()) return;
-    if (!await _streamIsPlayable(request, lease, current)) return;
+    if (lease == null) return null;
+    if (!mounted || generation != _initGeneration) {
+      await lease.release();
+      return null;
+    }
+    return lease;
+  }
 
-    VideoPlayerController? videoController;
+  /// Reads the request headers for the native player. Only server requests
+  /// read account credentials. Returns null when that failed (error shown).
+  Future<Map<String, String>?> _readHeaders(_PlaybackAttempt attempt) async {
+    final request = attempt.request;
+    if (request is! ServerPlaybackRequest) return <String, String>{};
     try {
-      videoController = request is LocalPlaybackRequest
+      return await accountRequestHeaders(
+        uri: request.sourceUri,
+        baseUrl: Uri.parse(request.serverOrigin),
+        storage: ref.read(tokenStorageProvider),
+        cookieJar: ref.read(cookieJarProvider),
+        mutations: ref.read(credentialMutationQueueProvider),
+      );
+    } catch (error) {
+      if (_isCurrent(attempt)) {
+        await attempt.lease.release();
+        _showError(error, request, attempt.generation);
+      }
+      return null;
+    }
+  }
+
+  /// Waits for a server compatibility stream to be ready. Returns false when
+  /// playback must not start: this attempt was superseded, preparing failed
+  /// (error shown), or another item took the player meanwhile (the "stopped"
+  /// state with Retry is shown instead of a spinner that would never end).
+  Future<bool> _streamIsPlayable(_PlaybackAttempt attempt) async {
+    try {
+      final ready = await waitUntilPlayable(
+        attempt.request,
+        current: () => _isCurrent(attempt),
+      );
+      if (ready && _isCurrent(attempt)) return true;
+      _showMessage(kPlaybackStoppedMessage, attempt.generation);
+      return false;
+    } catch (error) {
+      if (!_isCurrent(attempt)) return false;
+      await attempt.lease.release();
+      _showError(error, attempt.request, attempt.generation);
+      return false;
+    }
+  }
+
+  /// Creates and initializes the native player, restores the saved position,
+  /// shows the controls and starts playing. Any failure tears the player
+  /// down again and ends in the error view.
+  Future<void> _startPlayback(
+    _PlaybackAttempt attempt,
+    Map<String, String> headers,
+  ) async {
+    final request = attempt.request;
+    VideoPlayerController? controller;
+    try {
+      controller = request is LocalPlaybackRequest
           ? VideoPlayerController.contentUri(request.sourceUri)
           : VideoPlayerController.networkUrl(
               request.sourceUri,
@@ -258,147 +299,187 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             );
       // Track the controller while initialization is pending so a library
       // mutation or ownership transfer can dispose its URI before releasing it.
-      _videoController = videoController;
+      _videoController = controller;
       SharedVideoEvents.install();
-      await videoController.initialize();
-      if (!current()) {
-        await _disposeController(videoController);
-        return;
-      }
+      await controller.initialize();
+      if (!await _stillOwns(attempt, controller)) return;
 
       // ignore: invalid_use_of_visible_for_testing_member
-      final nativePlayerId = videoController.playerId;
+      final nativePlayerId = controller.playerId;
       _nativePlayerId = nativePlayerId;
+      final resumePosition = await _readResumePosition(request);
+      if (!await _stillOwns(attempt, controller)) return;
+      await _applyResumePosition(controller, nativePlayerId, resumePosition);
+      if (!await _stillOwns(attempt, controller)) return;
 
-      double? resumePosition = request.startPosition;
-      if (resumePosition == null && request.readPosition != null) {
-        try {
-          resumePosition = await request.readPosition!();
-        } catch (_) {
-          // Resume lookup is optional; start at zero on provider errors.
-        }
-      }
-      if (!current()) {
-        await _disposeController(videoController);
-        return;
-      }
-      if (resumePosition != null && resumePosition > 0) {
-        try {
-          final position =
-              Duration(milliseconds: (resumePosition * 1000).round());
-          if (videoController.value.duration <= Duration.zero) {
-            await platform.VideoPlayerPlatform.instance
-                .seekTo(nativePlayerId, position);
-            videoController.value = videoController.value
-                .copyWith(position: position, isCompleted: false);
-          } else {
-            await videoController.seekTo(position);
-          }
-        } catch (_) {
-          // A stale saved position must not prevent playback.
-        }
-      }
-      if (!current()) {
-        await _disposeController(videoController);
-        return;
-      }
-
-      // Observe the shared native event stream
-      // rather than isCompleted, which also becomes true on zero-duration polls.
-      final events =
-          platform.VideoPlayerPlatform.instance.videoEventsFor(nativePlayerId);
-      _nativeCompleted = false;
-      if (events.isBroadcast) {
-        _completionSubscription = events.listen((event) {
-          if (event.eventType == platform.VideoEventType.completed &&
-              current()) {
-            _nativeCompleted = true;
-            unawaited(_recordProgress(request, lease: lease, force: true));
-          }
-        }, onError: (Object _) {
-          // The controller's existing subscription handles native errors.
-        });
-      }
-
-      final chewieController = ChewieController(
-        videoPlayerController: videoController,
-        autoPlay: false,
-        looping: false,
-        allowFullScreen: true,
-        allowMuting: true,
-        showOptions: false,
-        // Chewie shows this when the native player fails after it started
-        // (for example a codec it cannot decode further into the file).
-        errorBuilder: (context, _) => _buildMidPlaybackError(request),
-        customControls: videoController.value.duration <= Duration.zero
-            ? _UnknownDurationControls(
-                controller: videoController,
-                onPlay: () =>
-                    _playController(videoController!, lease!, nativePlayerId),
-              )
-            : null,
-      );
-      setState(() {
-        _videoController = videoController;
-        _chewieController = chewieController;
-        _isLoading = false;
-        _error = null;
-      });
-      if (request.savePosition != null && request.markFinished != null) {
-        _startProgressTicker(request, lease);
-      }
-      await _playController(videoController, lease, nativePlayerId);
+      _watchCompletion(attempt, nativePlayerId);
+      _showPlayer(attempt, controller, nativePlayerId);
+      await _playController(controller, attempt.lease, nativePlayerId);
     } catch (error) {
-      // The plugin exposes no production creation-status API. Its player ID
-      // distinguishes failed creation from errors after a native player exists.
-      // ignore: invalid_use_of_visible_for_testing_member
-      final creationFailed = videoController?.playerId == -1;
-      if (creationFailed && videoController != null) {
-        // Failed creation leaves the plugin's creation completer unresolved.
-        // No native resource exists, so dispose must not block source cleanup.
-        if (identical(_videoController, videoController)) {
-          _videoController = null;
-        }
-        unawaited(_disposeController(videoController).catchError((_) {}));
-      }
-      try {
-        if (lease.isCurrent) {
-          await lease.stop();
-        } else if (videoController != null && !creationFailed) {
-          await _disposeController(videoController);
-        }
-      } catch (_) {
-        // Surface the original initialization failure after cleanup is attempted.
-      }
-      if (mounted && _initGeneration == initGeneration) {
-        setState(() {
-          _error = _errorMessage(error, request);
-          _isLoading = false;
-        });
-      }
+      await _cleanUpFailedStart(attempt, controller);
+      _showError(error, request, attempt.generation);
     }
   }
 
-  /// Waits for a server compatibility stream to be ready. Returns false when
-  /// playback must not start: this attempt was superseded, or preparing
-  /// failed and the error view is now showing.
-  Future<bool> _streamIsPlayable(
-    PlaybackRequest request,
-    PlaybackSessionLease lease,
-    bool Function() current,
+  /// Disposes [controller] and returns false when [attempt] was superseded
+  /// while an async setup step was pending.
+  Future<bool> _stillOwns(
+    _PlaybackAttempt attempt,
+    VideoPlayerController controller,
   ) async {
-    final initGeneration = _initGeneration;
+    if (_isCurrent(attempt)) return true;
+    await _disposeController(controller);
+    return false;
+  }
+
+  /// The position to resume at: the one the caller passed, else the saved
+  /// one. The lookup is optional; a provider error starts at zero.
+  Future<double?> _readResumePosition(PlaybackRequest request) async {
+    final readPosition = request.readPosition;
+    if (request.startPosition != null || readPosition == null) {
+      return request.startPosition;
+    }
     try {
-      return await waitUntilPlayable(request, current: current) && current();
-    } catch (error) {
-      if (!current()) return false;
-      await lease.release();
-      if (!mounted || _initGeneration != initGeneration) return false;
-      setState(() {
-        _error = _errorMessage(error, request);
-        _isLoading = false;
-      });
-      return false;
+      return await readPosition();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _applyResumePosition(
+    VideoPlayerController controller,
+    int nativePlayerId,
+    double? resumePosition,
+  ) async {
+    if (resumePosition == null || resumePosition <= 0) return;
+    try {
+      final position = Duration(milliseconds: (resumePosition * 1000).round());
+      if (controller.value.duration <= Duration.zero) {
+        // The plugin clamps seeks to its (unknown, zero) duration, so seek
+        // the native player directly and mirror the position.
+        await platform.VideoPlayerPlatform.instance
+            .seekTo(nativePlayerId, position);
+        controller.value =
+            controller.value.copyWith(position: position, isCompleted: false);
+      } else {
+        await controller.seekTo(position);
+      }
+    } catch (_) {
+      // A stale saved position must not prevent playback.
+    }
+  }
+
+  /// Observes the shared native event stream for completion rather than
+  /// isCompleted, which also becomes true on zero-duration polls.
+  void _watchCompletion(_PlaybackAttempt attempt, int nativePlayerId) {
+    final events =
+        platform.VideoPlayerPlatform.instance.videoEventsFor(nativePlayerId);
+    _nativeCompleted = false;
+    if (!events.isBroadcast) return;
+    _completionSubscription = events.listen((event) {
+      if (event.eventType == platform.VideoEventType.completed &&
+          _isCurrent(attempt)) {
+        _nativeCompleted = true;
+        unawaited(_recordProgress(
+          attempt.request,
+          lease: attempt.lease,
+          force: true,
+        ));
+      }
+    }, onError: (Object _) {
+      // The controller's existing subscription handles native errors.
+    });
+  }
+
+  /// Swaps the spinner for the Chewie player and starts progress reporting
+  /// and the watch for failures after this point.
+  void _showPlayer(
+    _PlaybackAttempt attempt,
+    VideoPlayerController controller,
+    int nativePlayerId,
+  ) {
+    final chewieController = ChewieController(
+      videoPlayerController: controller,
+      autoPlay: false,
+      looping: false,
+      allowFullScreen: true,
+      allowMuting: true,
+      showOptions: false,
+      customControls: controller.value.duration <= Duration.zero
+          ? _UnknownDurationControls(
+              controller: controller,
+              onPlay: () =>
+                  _playController(controller, attempt.lease, nativePlayerId),
+            )
+          : null,
+    );
+    setState(() {
+      _videoController = controller;
+      _chewieController = chewieController;
+      _isLoading = false;
+      _error = null;
+    });
+    final request = attempt.request;
+    if (request.savePosition != null && request.markFinished != null) {
+      _startProgressTicker(request, attempt.lease);
+    }
+    _watchPlaybackErrors(attempt, controller);
+  }
+
+  /// Replaces the player with the error view (and its Retry button) when the
+  /// native player fails after it started: a connection lost for good, a
+  /// rendition that vanished, or a codec it cannot decode further in.
+  void _watchPlaybackErrors(
+    _PlaybackAttempt attempt,
+    VideoPlayerController controller,
+  ) {
+    void listener() {
+      if (!controller.value.hasError) return;
+      controller.removeListener(listener);
+      if (_isCurrent(attempt)) unawaited(_failPlayback(attempt));
+    }
+
+    controller.addListener(listener);
+  }
+
+  /// Saves progress and releases the failed player, then shows why.
+  Future<void> _failPlayback(_PlaybackAttempt attempt) async {
+    final request = attempt.request;
+    try {
+      await attempt.lease.stop();
+    } catch (_) {
+      // The failure message matters more than a failed cleanup.
+    }
+    _showMessage(
+      sourceErrorMessage(request.title, request.kind),
+      attempt.generation,
+    );
+  }
+
+  /// Releases whatever a failed [_startPlayback] left behind, so the error
+  /// can be shown afterwards.
+  Future<void> _cleanUpFailedStart(
+    _PlaybackAttempt attempt,
+    VideoPlayerController? controller,
+  ) async {
+    // The plugin exposes no production creation-status API. Its player ID
+    // distinguishes failed creation from errors after a native player exists.
+    // ignore: invalid_use_of_visible_for_testing_member
+    final creationFailed = controller?.playerId == -1;
+    if (creationFailed && controller != null) {
+      // Failed creation leaves the plugin's creation completer unresolved.
+      // No native resource exists, so dispose must not block source cleanup.
+      if (identical(_videoController, controller)) _videoController = null;
+      unawaited(_disposeController(controller).catchError((_) {}));
+    }
+    try {
+      if (attempt.lease.isCurrent) {
+        await attempt.lease.stop();
+      } else if (controller != null && !creationFailed) {
+        await _disposeController(controller);
+      }
+    } catch (_) {
+      // Surface the original initialization failure after cleanup is attempted.
     }
   }
 
@@ -439,11 +520,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     if (widget.isPublicShare) {
       final url = widget.mediaUrl;
       if (url == null) throw StateError('Public video share has no stream URL');
-      final segments = Uri.parse(url).pathSegments;
       return PublicSharePlaybackRequest(
-        shareToken: segments.length > 1 && segments.first == 's'
-            ? segments[1]
-            : 'unknown',
+        shareToken: shareTokenFromUrl(Uri.parse(url)),
         sourceUri: Uri.parse(url),
         title: title,
       );
@@ -573,7 +651,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     if (mounted && !_disposing) {
       setState(() {
         _isLoading = false;
-        _error = 'Playback stopped. Tap Retry to play this item again.';
+        _error = kPlaybackStoppedMessage;
       });
     }
     await _completionSubscription?.cancel();
@@ -609,13 +687,32 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   // Error mapping
   // ---------------------------------------------------------------------------
 
-  /// Converts a playback failure to the sentence shown in the error view.
+  /// Shows the error view for [error], unless the attempt of [generation]
+  /// was superseded or the screen is gone.
   ///
-  /// The raw exception only goes to the debug log; the user gets the item's
-  /// title and a plain reason from [playbackErrorMessage].
-  String _errorMessage(Object error, PlaybackRequest request) {
-    debugPrint('Video playback of ${request.identity} failed: $error');
-    return playbackErrorMessage(error, title: request.title);
+  /// The user gets the item's title and a plain reason from
+  /// [playbackErrorMessage]. The debug log gets only the source kind and the
+  /// error's type: the request identity carries share tokens and account
+  /// IDs, and exception texts can carry URLs, none of which belong in logcat.
+  void _showError(Object error, PlaybackRequest request, int generation) {
+    if (kDebugMode) {
+      debugPrint(
+        'Video playback (${request.kind.name}) failed: ${error.runtimeType}',
+      );
+    }
+    _showMessage(
+      playbackErrorMessage(error, title: request.title, source: request.kind),
+      generation,
+    );
+  }
+
+  /// Ends the loading state with [message] and the Retry button.
+  void _showMessage(String message, int generation) {
+    if (!mounted || _initGeneration != generation) return;
+    setState(() {
+      _error = message;
+      _isLoading = false;
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -658,23 +755,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     );
   }
 
-  /// Replaces Chewie's bare error icon with the same readable sentence the
-  /// error view uses. Chewie passes the native error text, which is ignored.
-  Widget _buildMidPlaybackError(PlaybackRequest request) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          unsupportedFormatMessage(request.title),
-          key: const Key('video_player_playback_error_message'),
-          style: const TextStyle(color: Colors.white70),
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
-  }
-
-  /// Error view shown when initialisation fails.
+  /// Error view shown when initialisation or playback fails, and when
+  /// another item took over the player.
   ///
   /// Provides a human-readable message and a retry button so the user can
   /// attempt re-initialisation without navigating away.
@@ -743,6 +825,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     if (!mounted) return;
     _initPlayer();
   }
+}
+
+/// One run of [_VideoPlayerScreenState._initPlayer]: what is being played,
+/// the ownership of the shared player it claimed, and the screen generation
+/// that started it. A newer generation (Retry, another item) supersedes it.
+class _PlaybackAttempt {
+  const _PlaybackAttempt(this.request, this.lease, this.generation);
+
+  final PlaybackRequest request;
+  final PlaybackSessionLease lease;
+  final int generation;
 }
 
 /// Unknown-duration media cannot provide a seek fraction. Keep playback,

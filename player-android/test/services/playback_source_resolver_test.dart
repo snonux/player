@@ -1,6 +1,8 @@
 // Unit tests for resolveServerPlaybackSource: a player opened with only a
 // media ID asks the server whether to play the compatibility stream.
 
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/api/player_api_client.dart';
@@ -14,9 +16,13 @@ class _Client extends PlayerApiClient {
   Media? media;
   int lookups = 0;
 
+  /// When set, [getMedia] never answers (a hung connection).
+  bool hang = false;
+
   @override
   Future<Media> getMedia(int mediaId) async {
     lookups++;
+    if (hang) return Completer<Media>().future;
     final found = media;
     if (found == null) throw StateError('lookup failed');
     return found;
@@ -61,6 +67,19 @@ void main() {
     final client = _Client();
     final resolved = await resolveServerPlaybackSource(_request(), client);
     expect(client.lookups, 1);
+    expect(
+      resolved.sourceUri.toString(),
+      'https://player.test/api/v1/media/7/stream',
+    );
+  });
+
+  test('a lookup that never answers is given up after the timeout', () async {
+    final client = _Client()..hang = true;
+    final resolved = await resolveServerPlaybackSource(
+      _request(),
+      client,
+      timeout: const Duration(milliseconds: 20),
+    );
     expect(
       resolved.sourceUri.toString(),
       'https://player.test/api/v1/media/7/stream',

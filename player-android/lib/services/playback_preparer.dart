@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:dio/dio.dart' show CancelToken;
+import 'package:dio/dio.dart' show CancelToken, DioException;
 import 'package:flutter/foundation.dart';
 
 /// Answer of one readiness probe against a playback URL.
@@ -41,11 +41,12 @@ enum PlaybackPreparationFailure {
   /// The server kept answering 503 for longer than the preparer waits.
   timedOut,
 
-  /// No usable answer: connection failure, request timeout, or a 401 that
-  /// the API client's interceptor turned into an exception (and a sign-out).
+  /// No answer at all, several times in a row: connection failure or a
+  /// request timeout.
   unreachable,
 
-  /// Any other status (400, 403, 404, 410, 415, ...).
+  /// Any other status (400, 401, 403, 404, 410, 415, ...). The message
+  /// depends on [PlaybackPreparationException.statusCode] and the source.
   rejected,
 }
 
@@ -69,6 +70,7 @@ class PlaybackPreparer {
     this.maxWait = const Duration(minutes: 10),
     this.defaultRetryInterval = const Duration(seconds: 5),
     this.maxRetryInterval = const Duration(seconds: 30),
+    this.toleratedTransportFailures = 2,
     this.now = DateTime.now,
   });
 
@@ -81,6 +83,12 @@ class PlaybackPreparer {
 
   /// Upper bound for a single pause, whatever the server asks for.
   final Duration maxRetryInterval;
+
+  /// How many probes in a row may fail without any HTTP answer before the
+  /// wait gives up. A transcode takes minutes; one request lost to a Wi-Fi
+  /// to mobile handover must not end it. Each is retried after
+  /// [defaultRetryInterval].
+  final int toleratedTransportFailures;
 
   final DateTime Function() now;
 
@@ -118,7 +126,8 @@ class PlaybackPreparation {
   Completer<void>? _pause;
 
   /// Completes with true when the stream can be played and false when the
-  /// wait was cancelled or is no longer wanted; fails with [PlaybackPreparationException] otherwise.
+  /// wait was cancelled or is no longer wanted; fails with
+  /// [PlaybackPreparationException] otherwise.
   late final Future<bool> ready;
 
   bool get isCancelled => _cancelToken.isCancelled;
@@ -134,11 +143,20 @@ class PlaybackPreparation {
 
   Future<bool> _run() async {
     final deadline = _policy.now().add(_policy.maxWait);
+    var transportFailures = 0;
     while (!isCancelled && _stillWanted?.call() != false) {
       final probe = await _probeOnce();
-      if (probe == null) return false;
-      if (probe.isReady) return true;
-      if (!probe.isPreparing) throw _terminalFailure(probe.statusCode);
+      if (isCancelled) return false;
+      if (probe != null && probe.isReady) return true;
+      if (probe != null && !probe.isPreparing) {
+        throw _terminalFailure(probe.statusCode);
+      }
+      transportFailures = probe == null ? transportFailures + 1 : 0;
+      if (transportFailures > _policy.toleratedTransportFailures) {
+        throw const PlaybackPreparationException(
+          PlaybackPreparationFailure.unreachable,
+        );
+      }
       final pause = _pauseFor(probe);
       if (_policy.now().add(pause).isAfter(deadline)) {
         throw const PlaybackPreparationException(
@@ -150,23 +168,26 @@ class PlaybackPreparation {
     return false;
   }
 
-  /// Returns null when the wait was cancelled while the request was pending.
+  /// Returns the server's answer, or null when there was none (connection
+  /// failure, timeout, or a request cancelled by [cancel]).
+  ///
+  /// An HTTP error the client threw instead of returning (it does that for
+  /// 401, so its sign-out handling runs) still counts as an answer.
   Future<PlaybackProbe?> _probeOnce() async {
     try {
-      final probe = await _probe(_uri, cancelToken: _cancelToken);
-      return isCancelled ? null : probe;
+      return await _probe(_uri, cancelToken: _cancelToken);
+    } on DioException catch (error) {
+      final statusCode = error.response?.statusCode;
+      return statusCode == null ? null : PlaybackProbe(statusCode: statusCode);
     } catch (_) {
-      if (isCancelled) return null;
-      // The detail (socket error, timeout) does not change what the user can
-      // do about it, so it is reduced to one failure kind.
-      throw const PlaybackPreparationException(
-        PlaybackPreparationFailure.unreachable,
-      );
+      return null;
     }
   }
 
-  Duration _pauseFor(PlaybackProbe probe) {
-    final asked = probe.retryAfter ?? _policy.defaultRetryInterval;
+  /// The server's Retry-After, bounded; the default after a 503 without one
+  /// and after a probe that got no answer.
+  Duration _pauseFor(PlaybackProbe? probe) {
+    final asked = probe?.retryAfter ?? _policy.defaultRetryInterval;
     return asked > _policy.maxRetryInterval ? _policy.maxRetryInterval : asked;
   }
 

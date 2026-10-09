@@ -925,6 +925,77 @@ void main() {
       expect(coordinator.activeKind, isNull);
     });
 
+    testWidgets('another item taking the player ends the preparing state',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      final coordinator = PlaybackSessionCoordinator();
+      final client = _FakeApiClient()..probeAnswers.add(_kTranscoding);
+      await _pumpScreen(tester, client,
+          mediaUrl: _kCompatUrl, coordinator: coordinator);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(_kPreparingLabel), findsOneWidget);
+
+      // E.g. a share link opened on top of this still-mounted screen.
+      await coordinator.claim(
+        kind: PlaybackSourceKind.publicShare,
+        identity: 'public-share:next',
+        stop: () async {},
+      );
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump();
+
+      expect(find.byKey(_kPreparingLabel), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(
+        _errorText(tester),
+        'Playback stopped. Tap Retry to play this item again.',
+      );
+      expect(find.byKey(const Key('video_player_retry')), findsOneWidget);
+      await tester.pump(const Duration(minutes: 1));
+      expect(client.probedUrls, hasLength(1));
+      expect(platform.lastSource, isNull);
+    });
+
+    testWidgets('a failure during playback shows the error view with Retry',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      final queue = _FakeProgressQueue();
+      await _pumpScreen(tester, _FakeApiClient(),
+          mediaTitle: 'movie.mp4', progressQueue: queue);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);
+      platform.position = const Duration(seconds: 12);
+
+      // What the plugin reports when the connection is lost for good or the
+      // stream turns out to be undecodable further in.
+      platform.events.addError(
+        PlatformException(code: 'VideoError', message: 'Source error'),
+      );
+      for (var attempt = 0;
+          attempt < 100 &&
+              find.textContaining('Cannot play').evaluate().isEmpty;
+          attempt++) {
+        await tester.pump(const Duration(milliseconds: 10));
+        await tester.runAsync(
+            () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+      }
+
+      expect(
+        _errorText(tester),
+        'Cannot play “movie.mp4”. The connection may have been '
+        'interrupted, or this format is not supported.',
+      );
+      expect(find.byKey(const Key('video_player_chewie')), findsNothing);
+      expect(find.byKey(const Key('video_player_retry')), findsOneWidget);
+      // The failed player was released. The plugin's error state carries no
+      // position, so nothing is written over the progress saved while playing.
+      expect(platform.disposeCalls, 1);
+      expect(queue.positions, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
     testWidgets('a source the device cannot decode shows a readable error',
         (tester) async {
       final platform = _usePlayablePlatform()..failInitialize = true;
@@ -944,7 +1015,8 @@ void main() {
       expect(platform.lastSource, isNotNull);
       expect(
         _errorText(tester),
-        'Cannot play “clip.wmv”. This format cannot be played on this device.',
+        'Cannot play “clip.wmv”. The connection may have been '
+        'interrupted, or this format is not supported.',
       );
       expect(find.textContaining('PlatformException'), findsNothing);
       expect(find.textContaining('Playback failed'), findsNothing);
