@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"time"
+
+	"codeberg.org/snonux/player/internal/ffsafe"
 )
 
 // Generator creates a thumbnail for a given media file.
@@ -71,38 +73,54 @@ func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath st
 
 // run executes ffmpeg once, seeking to *seek first when it is given.
 func (g *FFmpegGenerator) run(ctx context.Context, inputPath, outputPath string, seek *float64) error {
-	var args []string
+	args, err := thumbArgs(inputPath, outputPath, seek)
+	if err != nil {
+		return err
+	}
+	cmd := g.execer(ctx, "ffmpeg", args...)
+	cmd.WaitDelay = thumbWaitDelay
+	return cmd.Run()
+}
+
+// thumbArgs builds the ffmpeg argument list for one thumbnail.
+//
+// Input: opened through ffsafe.SourceArgs, never by its bare name. ffmpeg
+// would otherwise follow a playlist disguised as media and put a frame of
+// another file into the thumbnail, and read an image named "a%03d.png" as a
+// sequence of its sibling files. With the hardening such a name is read
+// literally and a disguised playlist fails.
+//
+// Output: ffsafe.OutputArg keeps a name starting with "-" or containing ":"
+// from being read as an option or protocol, and -update 1 makes the image
+// muxer take the name literally. Without it a "%03d" anywhere in the output
+// path (file or directory name, both come from user-chosen media names) is
+// expanded as an image sequence pattern: ffmpeg then writes a differently
+// named file, or none, and may still exit successfully.
+func thumbArgs(inputPath, outputPath string, seek *float64) ([]string, error) {
+	input, err := ffsafe.SourceArgs(inputPath)
+	if err != nil {
+		return nil, err
+	}
+	output, err := ffsafe.OutputArg(outputPath)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"-nostdin"}
 	if seek != nil {
 		// -ss before -i is a fast seek. It is only used for videos: for a
 		// static image it produces no output frame on some ffmpeg versions
 		// (it skips past the single frame).
 		args = append(args, "-ss", fmt.Sprintf("%.3f", *seek))
 	}
-	// -update 1 makes the image muxer take outputPath literally. Without
-	// it a "%03d" anywhere in the output path (file or directory name, both
-	// come from user-chosen media names) is expanded as an image sequence
-	// pattern: ffmpeg then writes a differently named file, or none, and
-	// may still exit successfully.
-	//
-	// The input side is not covered: ffmpeg builds that read still images
-	// with the image2 demuxer (6.1 does) expand "%d" patterns in the INPUT
-	// name too, so a source image called "a%03d.png" cannot be read there.
-	// The demuxer option that would switch this off (-pattern_type none) is
-	// rejected outright by builds that read images with other demuxers
-	// (8.1 does), so it is not passed. Such an image simply gets no
-	// generated thumbnail and serves as its own.
-	args = append(args,
-		"-i", inputPath,
+	args = append(args, input...)
+	return append(args,
 		"-vf", "scale=320:-1",
 		"-frames:v", "1",
 		"-q:v", "2",
 		"-update", "1",
 		"-y",
-		outputPath,
-	)
-	cmd := g.execer(ctx, "ffmpeg", args...)
-	cmd.WaitDelay = thumbWaitDelay
-	return cmd.Run()
+		output,
+	), nil
 }
 
 // wroteFrame reports whether a non-empty file is at outputPath.

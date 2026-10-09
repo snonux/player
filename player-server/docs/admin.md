@@ -82,9 +82,20 @@ A thumbnail that cannot be generated never blocks anything. Whether the file
 comes from a rescan, an upload or a podcast download, it is stored and
 indexed all the same: a video without a thumbnail, an image with the image
 itself standing in, and the reason logged as a warning. That is also what
-happens in a folder the server cannot write to, and to an image whose name
-contains a `%d`-style pattern (`a%03d.png`) on ffmpeg builds that read such
-a name as an image sequence.
+happens in a folder the server cannot write to.
+
+A file must be what its extension says, broadly: audio and video files must
+hold a real media container (AVI, ASF/WMV, FLV, Matroska/WebM, MP4/MOV, MP3,
+Ogg, FLAC, WAV, AAC, MPEG-TS — a mislabeled one, such as an MP4 named
+`.flv`, is fine), image files a JPEG, PNG, GIF, WebP, BMP, AVIF or SVG
+image. Anything else is refused by the server's ffmpeg calls rather than
+interpreted. In particular a playlist saved under a media name (an ffconcat
+or HLS list called `clip.avi`), which ffmpeg would otherwise follow to
+*other* files on the server, is not indexed by a rescan (a warning is
+logged, the rest of the set is scanned normally, and the file is looked at
+again on the next rescan) and is rejected as an upload. File names are taken
+literally: a leading `-`, a `:` or a `%d`-style pattern (`a%03d.png`) is
+just part of the name.
 
 Every rescan then tries again, once, for each indexed video and image that
 has no generated thumbnail, and regenerates any thumbnail whose file has

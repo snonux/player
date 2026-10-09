@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"codeberg.org/snonux/player/internal/ffsafe"
 	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/model"
 	"github.com/rwcarlsen/goexif/exif"
@@ -64,8 +65,10 @@ func (f *FFProber) Probe(ctx context.Context, path string) (*model.Metadata, err
 		}
 		lastErr = err
 
-		// Don't retry on context cancellation.
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		// Don't retry on context cancellation, nor a file whose content
+		// was refused before ffprobe ran: waiting will not change it.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, ffsafe.ErrNotAnImage) {
 			break
 		}
 
@@ -91,15 +94,30 @@ func (f *FFProber) Probe(ctx context.Context, path string) (*model.Metadata, err
 	return nil, lastErr
 }
 
-// probeOnce performs a single ffprobe invocation.
-func (f *FFProber) probeOnce(ctx context.Context, path string) (*model.Metadata, error) {
-	cmd := exec.CommandContext(ctx, "ffprobe",
+// probeArgs builds the ffprobe argument list for path. The file is opened
+// through ffsafe.SourceArgs, never by its bare name: ffprobe would otherwise
+// follow a playlist disguised as media (or an image sequence pattern in the
+// name) and report the metadata of other files.
+func probeArgs(path string) ([]string, error) {
+	input, err := ffsafe.SourceArgs(path)
+	if err != nil {
+		return nil, err
+	}
+	return append([]string{
 		"-v", "error",
 		"-show_format",
 		"-show_streams",
 		"-of", "json",
-		path,
-	)
+	}, input...), nil
+}
+
+// probeOnce performs a single ffprobe invocation.
+func (f *FFProber) probeOnce(ctx context.Context, path string) (*model.Metadata, error) {
+	args, err := probeArgs(path)
+	if err != nil {
+		return nil, fmt.Errorf("ffprobe %s: %w", path, err)
+	}
+	cmd := exec.CommandContext(ctx, "ffprobe", args...)
 	cmd.WaitDelay = f.waitDelay
 	out, err := cmd.Output()
 	if err != nil {

@@ -519,9 +519,8 @@ func TestFFmpeg_ShortAndAudioTailedClips(t *testing.T) {
 // image sequence pattern: it then writes a differently named file, or none,
 // and can still exit successfully. Skipped where ffmpeg is not installed.
 //
-// Only the output side is covered, with a video as input. A "%d" in the
-// name of a source IMAGE is a different matter that depends on the ffmpeg
-// build; see FFmpegGenerator.run.
+// Only the output side is covered here, with a video as input. A "%d" in
+// the name of a source IMAGE is covered by TestFFmpeg_RealHostileNames.
 func TestFFmpeg_PercentInNames(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "d%03d")
 	src := filepath.Join(dir, "a%03d.mp4")

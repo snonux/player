@@ -39,11 +39,12 @@ steps:
 # ── Stage 1b: transcode tests with real ffmpeg (every push) ───────────────────
 
   - name: server-transcode
-    # The transcode tests that drive real ffmpeg skip themselves when ffmpeg
-    # is not installed, which the plain golang image never has. This step
-    # installs it (Alpine's build, the same one the runtime image uses) and
-    # sets PLAYER_REQUIRE_FFMPEG so a missing tool or encoder fails the step
-    # instead of silently skipping the security and codec checks.
+    # The tests that drive real ffmpeg (transcoding, and the input hardening
+    # of the prober, thumbnailer, remuxer and scanner) skip themselves when
+    # ffmpeg is not installed, which the plain golang image never has. This
+    # step installs it (Alpine's build, the same one the runtime image uses)
+    # and sets PLAYER_REQUIRE_FFMPEG so a missing tool or encoder fails the
+    # step instead of silently skipping the security and codec checks.
     image: golang:1.25-alpine
     volumes:
       - go-mod-cache:/root/go/pkg/mod
@@ -53,7 +54,7 @@ steps:
       PLAYER_REQUIRE_FFMPEG: "1"
     commands:
       - apk add --no-cache ffmpeg
-      - go test -race -count=1 ./internal/transcode/...
+      - go test -race -count=1 ./internal/transcode/... ./internal/ffsafe/... ./internal/probe/... ./internal/thumb/... ./internal/scanner/...
     when:
       - event: [push, pull_request]
 
