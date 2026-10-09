@@ -1385,6 +1385,54 @@ void main() {
       await tester.runAsync(handler.endProgress);
     });
 
+    // Plays from saved progress at 10 s, moves to [seconds] (in order),
+    // lets playback fail and taps Retry; returns the position resumed at.
+    Future<Duration> failAndRetryAt(
+      WidgetTester tester,
+      List<int> seconds,
+    ) async {
+      final (player, handler) = _usePlayableHandler();
+      final client = _FakeApiClient()..progressResult = 10;
+      await _pumpScreen(tester, client,
+          handlerOverride: handler, mediaTitle: 'song.mp3');
+      await tester.pump();
+      await tester.pump();
+      for (final second in seconds) {
+        player.elapsed = Duration(seconds: second);
+        player.playbackEvents.add(PlaybackEvent(
+          updatePosition: Duration(seconds: second),
+        ));
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      player.playbackEvents.addError(PlayerException(0, 'Source error'));
+      await tester.pump();
+      await tester.pump();
+      await tester.runAsync(handler.endProgress);
+      await tester.tap(find.byKey(const Key('audio_player_retry')));
+      for (var round = 0; round < 10; round++) {
+        await tester.pump();
+        await tester.runAsync(
+            () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+      }
+      expect(find.byKey(const Key('audio_player_view')), findsOneWidget);
+      expect(client.getMediaProgressCallCount, 1);
+      await tester.runAsync(handler.endProgress);
+      return player.elapsed;
+    }
+
+    testWidgets('a failure just past the finished threshold resumes there',
+        (tester) async {
+      // 97 of 100 s is past 95 %, but the handler records "finished" only on
+      // its next tick, which the failure comes before.
+      expect(await failAndRetryAt(tester, [97]), const Duration(seconds: 97));
+    });
+
+    testWidgets('a failure after seeking back to the start resumes at zero',
+        (tester) async {
+      // Neither the earlier 60 s nor the stale 10 s.
+      expect(await failAndRetryAt(tester, [60, 0]), Duration.zero);
+    });
+
     testWidgets('any failure after loading is reported as a source failure',
         (tester) async {
       final (player, handler) = _usePlayableHandler();

@@ -36,6 +36,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
+import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/playback_preparer_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
@@ -80,6 +81,17 @@ class _FakeApiClient extends PlayerApiClient {
 
   /// When non-null, [getMediaProgress] returns this value.
   double? progressResult;
+
+  /// When set, [getMedia] (the lookup of ID-only routes) waits for it.
+  /// Otherwise the lookup fails and the screen keeps the original stream.
+  Completer<Media>? pendingMedia;
+  int getMediaCalls = 0;
+
+  @override
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) {
+    getMediaCalls++;
+    return pendingMedia?.future ?? Future.error(StateError('no lookup'));
+  }
 
   /// Records how many times [updateProgress] was called.
   int updateProgressCallCount = 0;
@@ -353,6 +365,67 @@ Future<void> _leavePlayingScreen(WidgetTester tester) async {
 String _errorText(WidgetTester tester) => tester
     .widget<Text>(find.byKey(const Key('video_player_error_message')))
     .data!;
+
+/// Records the orientations the app asks the system for, so tests can see
+/// Chewie restore them when its fullscreen route closes.
+List<List<Object?>> _recordOrientations(WidgetTester tester) {
+  final orientations = <List<Object?>>[];
+  tester.binding.defaultBinaryMessenger
+      .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+    if (call.method == 'SystemChrome.setPreferredOrientations') {
+      orientations.add(call.arguments as List<Object?>);
+    }
+    return null;
+  });
+  addTearDown(() => tester.binding.defaultBinaryMessenger
+      .setMockMethodCallHandler(SystemChannels.platform, null));
+  return orientations;
+}
+
+/// Puts the playing video into Chewie's fullscreen route.
+Future<ChewieController> _enterFullScreen(WidgetTester tester) async {
+  final chewie = tester.widget<Chewie>(find.byType(Chewie)).controller;
+  chewie.enterFullScreen();
+  await tester.pumpAndSettle();
+  expect(chewie.isFullScreen, isTrue);
+  return chewie;
+}
+
+/// Pumps through work the video plugin completes outside the fake clock.
+Future<void> _pumpPluginWork(WidgetTester tester, {int rounds = 20}) async {
+  for (var round = 0; round < rounds; round++) {
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.runAsync(
+        () async => Future<void>.delayed(const Duration(milliseconds: 1)));
+  }
+}
+
+/// Plays a 3000 s video from saved progress at 100 s, moves it to [seconds]
+/// (in order), lets it fail and taps Retry. Returns the client so tests can
+/// check that no stale progress was read.
+Future<_FakeApiClient> _failAndRetryAt(
+  WidgetTester tester,
+  _PlayableVideoPlatform platform,
+  List<int> seconds,
+) async {
+  platform.duration = const Duration(seconds: 3000);
+  final client = _FakeApiClient()..progressResult = 100;
+  await _pumpScreen(tester, client, mediaTitle: 'movie.mp4');
+  await tester.pumpAndSettle();
+  for (final second in seconds) {
+    platform.position = Duration(seconds: second);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+  }
+  await _failPlayingVideo(tester, platform);
+  // A resume position of zero means "do not seek": a marker shows that.
+  platform.position = const Duration(seconds: 777);
+  await tester.tap(find.byKey(const Key('video_player_retry')));
+  await _pumpPluginWork(tester);
+  expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);
+  expect(client.getMediaProgressCallCount, 1);
+  return client;
+}
 
 const _kStreamFailure = 'The connection may have been '
     'interrupted, or this format is not supported.';
@@ -1045,26 +1118,139 @@ void main() {
       await _leavePlayingScreen(tester);
     }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
+    testWidgets('a failure just past the finished threshold resumes there',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      // 2900 of 3000 s is past 95 %, but "finished" is only recorded on the
+      // next progress tick, which the failure comes before.
+      await _failAndRetryAt(tester, platform, [2900]);
+      expect(platform.position, const Duration(seconds: 2900));
+      await _leavePlayingScreen(tester);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+    testWidgets('a failure after seeking back to the start resumes at zero',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      await _failAndRetryAt(tester, platform, [2000, 0]);
+      // No seek happened: neither to 2000 s nor to the stale 100 s.
+      expect(platform.position, const Duration(seconds: 777));
+      await _leavePlayingScreen(tester);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+    testWidgets('Retry on an ID-only route shows the spinner during lookup',
+        (tester) async {
+      // No playable platform: the first attempt ends in the error view.
+      final client = _FakeApiClient();
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('video_player_retry')), findsOneWidget);
+      final lookupsBefore = client.getMediaCalls;
+
+      // The lookup hangs (it may take up to its 10 s timeout).
+      client.pendingMedia = Completer<Media>();
+      final retry = find.byKey(const Key('video_player_retry'));
+      await tester.tap(retry);
+      await tester.tap(retry);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.byKey(const Key('video_player_loading')), findsOneWidget);
+      expect(find.byKey(const Key('video_player_error')), findsNothing);
+      expect(find.textContaining('Playback stopped'), findsNothing);
+      // Two taps, one retry, one lookup.
+      expect(client.getMediaCalls, lookupsBefore + 1);
+
+      client.pendingMedia!.completeError(StateError('lookup failed'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('video_player_error')), findsOneWidget);
+      // The finished retry does not block the next one.
+      await tester.tap(find.byKey(const Key('video_player_retry')));
+      await tester.pump();
+      expect(client.getMediaCalls, lookupsBefore + 2);
+      client.pendingMedia = null;
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('Back in fullscreen returns to the playing player',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      final orientations = _recordOrientations(tester);
+      await _pumpScreen(tester, _FakeApiClient(), mediaTitle: 'movie.mp4');
+      await tester.pumpAndSettle();
+      final chewie = await _enterFullScreen(tester);
+      final callsInFullScreen = orientations.length;
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(chewie.isFullScreen, isFalse);
+      expect(find.byKey(const Key('video_player_chewie')).hitTestable(),
+          findsOneWidget);
+      expect(find.byKey(const Key('video_player_error')), findsNothing);
+      expect(platform.disposeCalls, 0);
+      expect(orientations.length, greaterThan(callsInFullScreen));
+      expect(tester.takeException(), isNull);
+      await _leavePlayingScreen(tester);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+    testWidgets('a take-over while in fullscreen keeps the new screen on top',
+        (tester) async {
+      _usePlayablePlatform();
+      final orientations = _recordOrientations(tester);
+      final coordinator = PlaybackSessionCoordinator();
+      await _pumpScreen(tester, _FakeApiClient(),
+          mediaTitle: 'movie.mp4', coordinator: coordinator);
+      await tester.pumpAndSettle();
+      await _enterFullScreen(tester);
+      final callsInFullScreen = orientations.length;
+
+      // Another player (a share link, a local file) opens on top of the
+      // fullscreen route and takes the shared player.
+      final navigator =
+          tester.state<NavigatorState>(find.byType(Navigator).first);
+      unawaited(navigator.push(MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('next player')),
+      )));
+      await tester.pumpAndSettle();
+      var claimed = false;
+      unawaited(coordinator
+          .claim(
+            kind: PlaybackSourceKind.publicShare,
+            identity: 'public-share:next',
+            stop: () async {},
+          )
+          .then((_) => claimed = true));
+      await _pumpPluginWork(tester);
+      await tester.pumpAndSettle();
+
+      expect(claimed, isTrue);
+      // The new screen is still there and usable ...
+      expect(find.text('next player').hitTestable(), findsOneWidget);
+      // ... and the fullscreen route went away with the player it showed.
+      expect(find.byType(Chewie, skipOffstage: false), findsNothing);
+      expect(orientations.length, greaterThan(callsInFullScreen));
+      expect(tester.takeException(), isNull);
+
+      // Underneath, the old player screen offers to play again.
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(
+        _errorText(tester),
+        'Playback stopped. Tap Retry to play this item again.',
+      );
+      expect(find.byKey(const Key('video_player_retry')).hitTestable(),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
     testWidgets('a failure in fullscreen leaves fullscreen and shows Retry',
         (tester) async {
       final platform = _usePlayablePlatform();
-      final orientations = <List<Object?>>[];
-      tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
-        if (call.method == 'SystemChrome.setPreferredOrientations') {
-          orientations.add(call.arguments as List<Object?>);
-        }
-        return null;
-      });
-      addTearDown(() => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null));
+      final orientations = _recordOrientations(tester);
       await _pumpScreen(tester, _FakeApiClient(), mediaTitle: 'movie.mp4');
       await tester.pumpAndSettle();
 
-      final chewie = tester.widget<Chewie>(find.byType(Chewie)).controller;
-      chewie.enterFullScreen();
-      await tester.pumpAndSettle();
-      expect(chewie.isFullScreen, isTrue);
+      final chewie = await _enterFullScreen(tester);
       // The screen with the error view is covered by the fullscreen route.
       expect(find.byKey(const Key('video_player_chewie')), findsNothing);
       final callsInFullScreen = orientations.length;
@@ -1080,7 +1266,8 @@ void main() {
       expect(find.byKey(const Key('video_player_retry')).hitTestable(),
           findsOneWidget);
       expect(find.byIcon(Icons.error), findsNothing);
-      expect(find.byType(Chewie), findsNothing);
+      expect(find.byType(Chewie, skipOffstage: false), findsNothing);
+      expect(chewie.isFullScreen, isFalse);
       // Chewie restored all orientations when its route closed.
       expect(orientations.length, greaterThan(callsInFullScreen));
       expect(orientations.last, hasLength(DeviceOrientation.values.length));

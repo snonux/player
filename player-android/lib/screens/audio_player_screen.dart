@@ -114,7 +114,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   StreamSubscription<Duration>? _positionSubscription;
 
   // Where this item last was while it played on this screen; Retry resumes
-  // here. Null before playback progressed and once the item is finished.
+  // here. Null before playback progressed and once the item completed.
   Duration? _lastKnownPosition;
 
   // ---------------------------------------------------------------------------
@@ -382,7 +382,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       );
     });
     _positionSubscription = player.positionStream.listen((position) {
-      if (_isCurrent(attempt)) _rememberPosition(position, player.duration);
+      if (_isCurrent(attempt)) _rememberPosition(position, attempt);
     });
   }
 
@@ -394,15 +394,32 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   }
 
   /// Keeps [_lastKnownPosition] current. A failed player reports no useful
-  /// position, so it has to be noted while playback still works. A finished
-  /// item forgets it: replaying starts by the usual rules, not at the end.
-  void _rememberPosition(Duration position, Duration? duration) {
-    final finished = duration != null &&
+  /// position, so it has to be noted while playback still works: positions
+  /// reported while the player is idle or loading are not playback.
+  ///
+  /// Zero counts once playback has progressed (the user sought back to the
+  /// start); before that it only means "not started". Near the end the
+  /// position is kept, because the handler records "finished" only on its
+  /// next tick and a failure in between must not restart from the stale
+  /// route position. It is forgotten when the player reports completion —
+  /// the handler records "finished" then — or, for sources without progress
+  /// (public shares), past the finished threshold; replaying then starts by
+  /// the usual rules rather than at the end.
+  void _rememberPosition(Duration position, _PlaybackAttempt attempt) {
+    final player = attempt.handler.player;
+    final state = player.processingState;
+    if (state == ProcessingState.idle || state == ProcessingState.loading) {
+      return;
+    }
+    final duration = player.duration;
+    final pastEnd = duration != null &&
         duration > Duration.zero &&
         position.inMilliseconds / duration.inMilliseconds >= 0.95;
+    final finished = state == ProcessingState.completed ||
+        (pastEnd && attempt.request.markFinished == null);
     if (finished) {
       _lastKnownPosition = null;
-    } else if (position > Duration.zero) {
+    } else if (position > Duration.zero || _lastKnownPosition != null) {
       _lastKnownPosition = position;
     }
   }

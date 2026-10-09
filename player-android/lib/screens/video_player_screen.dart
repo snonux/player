@@ -105,8 +105,22 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   String? _failureMessage;
 
   // Where this item last was while it played on this screen; Retry resumes
-  // here. Null before playback progressed and once the item is finished.
+  // here. Null before playback progressed and once "finished" was recorded.
   Duration? _lastKnownPosition;
+
+  // Position at which the native player reported the end. While set, the
+  // position is not remembered: the player rests at the end until a replay.
+  Duration? _completedAt;
+
+  // Chewie's fullscreen route while it is open (see [_leaveFullScreen]).
+  ModalRoute<Object?>? _fullScreenRoute;
+
+  // True from a Retry tap until that attempt showed the player or an error.
+  bool _retrying = false;
+
+  // True while Retry stops the previous session: that stop is part of
+  // starting over, so it must not replace the spinner with "stopped".
+  bool _restarting = false;
 
   // True while the controllers are being set up; shows a full-screen spinner.
   bool _isLoading = true;
@@ -393,12 +407,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final events =
         platform.VideoPlayerPlatform.instance.videoEventsFor(nativePlayerId);
     _nativeCompleted = false;
+    _completedAt = null;
     if (!events.isBroadcast) return;
     _completionSubscription = events.listen((event) {
       if (event.eventType == platform.VideoEventType.completed &&
           _isCurrent(attempt)) {
         _nativeCompleted = true;
         _lastKnownPosition = null;
+        _completedAt = _videoController == null
+            ? Duration.zero
+            : _playbackPosition(_videoController!);
         unawaited(_recordProgress(
           attempt.request,
           lease: attempt.lease,
@@ -417,25 +435,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     VideoPlayerController controller,
     int nativePlayerId,
   ) {
-    final chewieController = ChewieController(
-      videoPlayerController: controller,
-      autoPlay: false,
-      looping: false,
-      allowFullScreen: true,
-      allowMuting: true,
-      showOptions: false,
-      // Safety net: [_watchPlayback] replaces the whole player with the
-      // error view, but should Chewie still get to draw a failed player
-      // (its fullscreen route, a missed event), it shows words, not an icon.
-      errorBuilder: (context, _) => _buildPlayerErrorNotice(attempt.request),
-      customControls: controller.value.duration <= Duration.zero
-          ? _UnknownDurationControls(
-              controller: controller,
-              onPlay: () =>
-                  _playController(controller, attempt.lease, nativePlayerId),
-            )
-          : null,
-    );
+    final chewieController =
+        _createChewieController(attempt, controller, nativePlayerId);
     setState(() {
       _videoController = controller;
       _chewieController = chewieController;
@@ -447,6 +448,57 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _startProgressTicker(request, attempt.lease);
     }
     _watchPlayback(attempt, controller);
+  }
+
+  ChewieController _createChewieController(
+    _PlaybackAttempt attempt,
+    VideoPlayerController controller,
+    int nativePlayerId,
+  ) {
+    // Safety net: [_watchPlayback] replaces the whole player with the error
+    // view, but should a failed player still be drawn (a missed event), it
+    // shows words, not a bare icon. Chewie uses [errorBuilder] in its own
+    // controls; the unknown-duration controls replace those and get the
+    // same notice.
+    Widget errorNotice() => _buildPlayerErrorNotice(attempt.request);
+    return ChewieController(
+      videoPlayerController: controller,
+      autoPlay: false,
+      looping: false,
+      allowFullScreen: true,
+      allowMuting: true,
+      showOptions: false,
+      errorBuilder: (context, _) => errorNotice(),
+      routePageBuilder: _buildFullScreenPage,
+      customControls: controller.value.duration <= Duration.zero
+          ? _UnknownDurationControls(
+              controller: controller,
+              errorNotice: errorNotice,
+              onPlay: () =>
+                  _playController(controller, attempt.lease, nativePlayerId),
+            )
+          : null,
+    );
+  }
+
+  /// The page of Chewie's fullscreen route: its default layout, built here
+  /// only to learn which route it is. Chewie does not expose that route, and
+  /// closing fullscreen through Chewie pops whatever route is on top.
+  Widget _buildFullScreenPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    ChewieControllerProvider controllerProvider,
+  ) {
+    _fullScreenRoute = ModalRoute.of(context);
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      body: Container(
+        alignment: Alignment.center,
+        color: Colors.black,
+        child: controllerProvider,
+      ),
+    );
   }
 
   /// Follows the playing controller: remembers where playback is, for
@@ -463,7 +515,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         controller.removeListener(listener);
         if (_isCurrent(attempt)) unawaited(_failPlayback(attempt));
       } else if (_isCurrent(attempt)) {
-        _rememberPosition(controller);
+        _rememberPosition(controller, attempt.request);
       }
     }
 
@@ -471,19 +523,35 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   /// Keeps [_lastKnownPosition] current. The plugin's error state carries no
-  /// position, so it has to be noted while playback still works. A finished
-  /// item forgets it: replaying starts by the usual rules, not at the end.
-  void _rememberPosition(VideoPlayerController controller) {
+  /// position, so it has to be noted while playback still works.
+  ///
+  /// Zero counts once playback has progressed (the user sought back to the
+  /// start); before that it only means "not started". Past the finished
+  /// threshold the position is kept until "finished" was actually recorded:
+  /// forgetting it earlier would let a failure in between restart from the
+  /// stale route position. After that it is forgotten, so replaying starts
+  /// by the usual rules rather than at the end.
+  void _rememberPosition(
+    VideoPlayerController controller,
+    PlaybackRequest request,
+  ) {
     final value = controller.value;
-    if (!value.isInitialized || _nativeCompleted) return;
+    if (!value.isInitialized) return;
     final position = _playbackPosition(controller);
+    final completedAt = _completedAt;
+    if (completedAt != null) {
+      // Resting at the end. A replay shows as playing from further back.
+      if (!value.isPlaying || position >= completedAt) return;
+      _completedAt = null;
+    }
     final duration = value.duration;
-    final finished = duration > Duration.zero &&
+    final pastEnd = duration > Duration.zero &&
         position.inMilliseconds / duration.inMilliseconds >=
             _kFinishedThreshold;
-    if (finished) {
+    final finishedRecorded = _finishedEmitted || request.markFinished == null;
+    if (pastEnd && finishedRecorded) {
       _lastKnownPosition = null;
-    } else if (position > Duration.zero) {
+    } else if (position > Duration.zero || _lastKnownPosition != null) {
       _lastKnownPosition = position;
     }
   }
@@ -523,16 +591,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   /// Closes Chewie's fullscreen route, if open, while its controller is
-  /// still alive.
+  /// still alive, so the route never outlives the controller it draws.
   ///
-  /// The error view and Retry live on this screen, underneath that route.
+  /// Exactly that route is removed, wherever it is in the stack: when
+  /// another player screen opened on top of it and took over, that screen
+  /// must stay. (Chewie's own exit pops the top route, whichever it is.)
+  /// The error or "stopped" view and Retry live on this screen, underneath.
   /// Chewie restores orientation and system bars in a continuation that
-  /// runs once the route has popped and still uses the controller, so that
+  /// runs once the route is gone and still uses the controller, so that
   /// continuation gets a turn before the caller disposes the controller.
   Future<void> _leaveFullScreen() async {
-    final chewie = _chewieController;
-    if (chewie == null || !chewie.isFullScreen) return;
-    chewie.exitFullScreen();
+    final route = _fullScreenRoute;
+    _fullScreenRoute = null;
+    if (route == null || !route.isActive) return;
+    route.navigator?.removeRoute(route);
     await Future<void>.delayed(Duration.zero);
   }
 
@@ -695,6 +767,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         await markFinished();
         if (lease?.isCurrent == true || allowStaleLease) {
           _finishedEmitted = true;
+          // Recorded: a later Retry replays by the usual rules.
+          _lastKnownPosition = null;
         }
       } catch (_) {
         // The next tick or final save retries failed local/database writes.
@@ -727,10 +801,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     // Another item may have taken the player while this one was preparing.
     playbackWait.cancel();
     if (mounted && !_disposing) {
-      setState(() {
-        _isLoading = false;
-        _error = _failureMessage ?? kPlaybackStoppedMessage;
-      });
+      if (!_restarting) {
+        setState(() {
+          _isLoading = false;
+          _error = _failureMessage ?? kPlaybackStoppedMessage;
+        });
+      }
       await _leaveFullScreen();
     }
     await _completionSubscription?.cancel();
@@ -912,20 +988,34 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     unawaited(_retry());
   }
 
+  /// Starts over. The spinner shows from the tap until the player or an
+  /// error appears — also while the media lookup of an ID-only route runs —
+  /// and further taps before that are ignored, so one retry is one lookup.
   Future<void> _retry() async {
-    _initGeneration++;
-    setState(() {
-      cancelPlaybackPreparation();
-      _error = null;
-      _isLoading = true;
-      _finishedEmitted = false;
-      _finishedPending = false;
-    });
-    await _stopOwnedSession();
-    await _sessionLease?.release();
-    _sessionLease = null;
-    if (!mounted) return;
-    _initPlayer();
+    if (_retrying) return;
+    _retrying = true;
+    try {
+      _initGeneration++;
+      setState(() {
+        cancelPlaybackPreparation();
+        _error = null;
+        _isLoading = true;
+        _finishedEmitted = false;
+        _finishedPending = false;
+      });
+      _restarting = true;
+      try {
+        await _stopOwnedSession();
+      } finally {
+        _restarting = false;
+      }
+      await _sessionLease?.release();
+      _sessionLease = null;
+      if (!mounted) return;
+      await _initPlayer();
+    } finally {
+      _retrying = false;
+    }
   }
 }
 
@@ -943,51 +1033,60 @@ class _PlaybackAttempt {
 /// Unknown-duration media cannot provide a seek fraction. Keep playback,
 /// muting and fullscreen available without dividing by a zero duration.
 class _UnknownDurationControls extends StatelessWidget {
-  const _UnknownDurationControls(
-      {required this.controller, required this.onPlay});
+  const _UnknownDurationControls({
+    required this.controller,
+    required this.onPlay,
+    required this.errorNotice,
+  });
 
   final VideoPlayerController controller;
   final Future<void> Function() onPlay;
 
+  /// Shown instead of the controls once the player failed. These controls
+  /// replace Chewie's, which would otherwise show its error builder.
+  final Widget Function() errorNotice;
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
         animation: controller,
-        builder: (context, _) => Align(
-          alignment: Alignment.bottomCenter,
-          child: ColoredBox(
-            color: Colors.black54,
-            child: Row(
-              key: const Key('video_unknown_duration_controls'),
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                IconButton(
-                  tooltip: controller.value.isPlaying ? 'Pause' : 'Play',
-                  color: Colors.white,
-                  icon: Icon(controller.value.isPlaying
-                      ? Icons.pause
-                      : Icons.play_arrow),
-                  onPressed: () => controller.value.isPlaying
-                      ? controller.pause()
-                      : onPlay(),
-                ),
-                IconButton(
-                  tooltip: controller.value.volume == 0 ? 'Unmute' : 'Mute',
-                  color: Colors.white,
-                  icon: Icon(controller.value.volume == 0
-                      ? Icons.volume_off
-                      : Icons.volume_up),
-                  onPressed: () => controller
-                      .setVolume(controller.value.volume == 0 ? 1 : 0),
-                ),
-                IconButton(
-                  tooltip: 'Toggle fullscreen',
-                  color: Colors.white,
-                  icon: const Icon(Icons.fullscreen),
-                  onPressed: () =>
-                      ChewieController.of(context).toggleFullScreen(),
-                ),
-              ],
-            ),
+        builder: (context, _) =>
+            controller.value.hasError ? errorNotice() : _buildBar(context),
+      );
+
+  Widget _buildBar(BuildContext context) => Align(
+        alignment: Alignment.bottomCenter,
+        child: ColoredBox(
+          color: Colors.black54,
+          child: Row(
+            key: const Key('video_unknown_duration_controls'),
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              IconButton(
+                tooltip: controller.value.isPlaying ? 'Pause' : 'Play',
+                color: Colors.white,
+                icon: Icon(controller.value.isPlaying
+                    ? Icons.pause
+                    : Icons.play_arrow),
+                onPressed: () =>
+                    controller.value.isPlaying ? controller.pause() : onPlay(),
+              ),
+              IconButton(
+                tooltip: controller.value.volume == 0 ? 'Unmute' : 'Mute',
+                color: Colors.white,
+                icon: Icon(controller.value.volume == 0
+                    ? Icons.volume_off
+                    : Icons.volume_up),
+                onPressed: () =>
+                    controller.setVolume(controller.value.volume == 0 ? 1 : 0),
+              ),
+              IconButton(
+                tooltip: 'Toggle fullscreen',
+                color: Colors.white,
+                icon: const Icon(Icons.fullscreen),
+                onPressed: () =>
+                    ChewieController.of(context).toggleFullScreen(),
+              ),
+            ],
           ),
         ),
       );
