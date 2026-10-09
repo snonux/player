@@ -22,6 +22,9 @@ go.work
 /player-server/c.out
 /player-server/cmd.out
 /player-server/testmedia/
+# Transcode cache: created next to the database as <DB_PATH>.transcode-cache
+# (see TRANSCODE_CACHE_DIR), e.g. data.db.transcode-cache in a dev checkout.
+*.transcode-cache/
 
 # Server-generated artifacts inside the committed test fixture set.
 # The scanner regenerates .thumbnails/ and .cover.jpg on first scan,

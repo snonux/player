@@ -35,7 +35,8 @@ type fakeRunner struct {
 	release chan struct{}
 }
 
-func (f *fakeRunner) Transcode(ctx context.Context, _ transcode.Source, outputPath string) error {
+func (f *fakeRunner) Transcode(ctx context.Context, job transcode.Job) error {
+	outputPath := job.Output
 	f.calls.Add(1)
 	if f.release != nil {
 		f.started <- struct{}{}
@@ -50,7 +51,7 @@ func (f *fakeRunner) Transcode(ctx context.Context, _ transcode.Source, outputPa
 
 // e2e is a fully wired server with a small library:
 //
-//	set 1 (alice may view): clip.avi (legacy), movie.mp4 (native), pic.png
+//	set 1 (alice may view): clip.avi, third.flv (legacy), movie.mp4 (native), pic.png
 //	set 2 (bob may view):   other.wmv (legacy)
 //
 // admin is an administrator and sees everything.
@@ -85,7 +86,7 @@ func newE2E(t *testing.T, runner transcode.Runner) *e2e {
 	deps := WireWithRunner(cfg, store, logger, ctx, runner)
 	t.Cleanup(func() {
 		cancel()
-		deps.Transcodes.Wait()
+		stopTranscoding(deps)
 		_ = store.Close()
 	})
 	server, err := NewAPIServer(deps, http.Dir(t.TempDir()), logger)
@@ -110,7 +111,7 @@ func (e *e2e) seed(mediaRoot string) {
 		set, viewer string
 		files       map[string]model.MediaType
 	}{
-		{"set1", "alice", map[string]model.MediaType{"clip.avi": model.MediaTypeVideo, "movie.mp4": model.MediaTypeVideo, "pic.png": model.MediaTypeImage}},
+		{"set1", "alice", map[string]model.MediaType{"clip.avi": model.MediaTypeVideo, "third.flv": model.MediaTypeVideo, "movie.mp4": model.MediaTypeVideo, "pic.png": model.MediaTypeImage}},
 		{"set2", "bob", map[string]model.MediaType{"other.wmv": model.MediaTypeVideo}},
 	}
 	for _, l := range library {
@@ -121,6 +122,9 @@ func (e *e2e) seed(mediaRoot string) {
 		for file, typ := range l.files {
 			abs := filepath.Join(mediaRoot, l.set, file)
 			e.must(os.WriteFile(abs, []byte("original "+file), 0o644))
+			// Not "still being uploaded": the cache waits for fresh files.
+			settled := now.Add(-time.Hour)
+			e.must(os.Chtimes(abs, settled, settled))
 			id, err := e.store.CreateMedia(ctx, &model.Media{SetID: setID, RelPath: l.set + "/" + file, FileName: file, AbsPath: abs, Type: typ, CreatedAt: now})
 			e.must(err)
 			e.media[file] = id
@@ -311,6 +315,122 @@ func TestCompatStream_CancelledRequest(t *testing.T) {
 	}
 }
 
+// Soft-deleted media is gone for users; a share link to it behaves exactly
+// like the plain share stream does (the two routes must not diverge).
+func TestCompatStream_SoftDeletedMedia(t *testing.T) {
+	e := newE2E(t, &fakeRunner{})
+	path := e.compatPath("clip.avi")
+	token := e.share("clip.avi", "alice", "")
+	if rr := e.get(path, "alice"); rr.Code != http.StatusOK {
+		t.Fatalf("before delete = %d", rr.Code)
+	}
+
+	del := "/api/v1/media/" + strconv.FormatInt(e.media["clip.avi"], 10)
+	if rr := e.request(context.Background(), http.MethodDelete, del, "admin", ""); rr.Code != http.StatusOK {
+		t.Fatalf("soft delete = %d (%s)", rr.Code, rr.Body.String())
+	}
+	for _, user := range []string{"alice", "admin"} {
+		if rr := e.get(path, user); rr.Code != http.StatusNotFound {
+			t.Errorf("compat of soft-deleted media as %s = %d, want 404", user, rr.Code)
+		}
+	}
+	stream, compat := e.get("/s/"+token+"/stream", ""), e.get("/s/"+token+"/compat", "")
+	if stream.Code != compat.Code {
+		t.Errorf("share of soft-deleted media: stream = %d, compat = %d; the routes must agree", stream.Code, compat.Code)
+	}
+}
+
+// HEAD is the clients' readiness probe. It must never consume a share use:
+// with max_uses=1 any number of probes still leaves the one GET.
+func TestCompatStream_HeadProbesDoNotConsumeShareUses(t *testing.T) {
+	e := newE2E(t, &fakeRunner{})
+	token := e.share("clip.avi", "alice", `{"max_uses":1}`)
+	path := "/s/" + token + "/compat"
+
+	for i := range 4 {
+		rr := e.request(context.Background(), http.MethodHead, path, "", "")
+		if rr.Code != http.StatusOK || rr.Body.Len() != 0 || rr.Header().Get("Content-Type") != "video/mp4" || rr.Header().Get("ETag") == "" {
+			t.Fatalf("HEAD probe %d = %d, body %q, headers %v", i+1, rr.Code, rr.Body.String(), rr.Header())
+		}
+	}
+	if rr := e.get(path, ""); rr.Code != http.StatusOK || rr.Body.String() != "transcoded" {
+		t.Fatalf("GET after probes = %d %q, want the rendition", rr.Code, rr.Body.String())
+	}
+	// The single use is spent now, for GET and HEAD alike.
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		if rr := e.request(context.Background(), method, path, "", ""); rr.Code != http.StatusGone {
+			t.Errorf("%s after the last use = %d, want 410", method, rr.Code)
+		}
+	}
+	// Authenticated HEAD works the same way.
+	if rr := e.request(context.Background(), http.MethodHead, e.compatPath("clip.avi"), "alice", ""); rr.Code != http.StatusOK || rr.Body.Len() != 0 {
+		t.Errorf("authenticated HEAD = %d, body %q", rr.Code, rr.Body.String())
+	}
+}
+
+// abandoned sends a request and gives up after a moment, leaving its
+// transcode job in flight. It returns the status the handler recorded.
+func (e *e2e) abandoned(path, user string) int {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	return e.request(ctx, http.MethodGet, path, user, "").Code
+}
+
+// All anonymous share requests share one job budget (two jobs), so share
+// links cannot fill the transcode queue and lock out signed-in users.
+func TestCompatStream_SharesHaveOneCommonJobBudget(t *testing.T) {
+	runner := &fakeRunner{started: make(chan struct{}, 8), release: make(chan struct{})}
+	e := newE2E(t, runner)
+	defer close(runner.release)
+	first := e.share("clip.avi", "alice", "")
+	second := e.share("other.wmv", "bob", "")
+	third := e.share("third.flv", "alice", "")
+
+	for i, token := range []string{first, second} {
+		if code := e.abandoned("/s/"+token+"/compat", ""); code != 499 {
+			t.Fatalf("share request %d = %d, want it accepted (499 after giving up)", i+1, code)
+		}
+	}
+	rr := e.get("/s/"+third+"/compat", "")
+	if rr.Code != http.StatusServiceUnavailable || rr.Header().Get("X-Transcode-Status") != "busy" || rr.Header().Get("Retry-After") != "5" {
+		t.Fatalf("third share = %d %v, want 503 busy", rr.Code, rr.Header())
+	}
+	// A signed-in user asking for the very same file is still served.
+	if code := e.abandoned(e.compatPath("third.flv"), "alice"); code != 499 {
+		t.Errorf("signed-in user = %d, want the job accepted while shares are at their limit", code)
+	}
+}
+
+// After shutdown began no job is started; clients are told to retry. Over a
+// real connection, to also check that a HEAD 503 carries its status in the
+// header and has no body.
+func TestCompatStream_AfterShutdownAnswersBusy(t *testing.T) {
+	runner := &fakeRunner{}
+	e := newE2E(t, runner)
+	token := e.share("clip.avi", "alice", "")
+	srv := httptest.NewServer(e.server)
+	defer srv.Close()
+
+	e.deps.Transcodes.Close()
+	for _, method := range []string{http.MethodHead, http.MethodGet} {
+		req, err := http.NewRequest(method, srv.URL+"/s/"+token+"/compat", nil)
+		e.must(err)
+		resp, err := srv.Client().Do(req)
+		e.must(err)
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusServiceUnavailable || resp.Header.Get("X-Transcode-Status") != "busy" || resp.Header.Get("Retry-After") != "5" {
+			t.Errorf("%s after shutdown = %d %v, want 503 busy", method, resp.StatusCode, resp.Header)
+		}
+		if method == http.MethodHead && len(body) != 0 {
+			t.Errorf("HEAD response has a body: %q", body)
+		}
+	}
+	if runner.calls.Load() != 0 {
+		t.Error("a transcode was started after shutdown began")
+	}
+}
+
 func TestWire_UsesFFmpegRunnerAndChecksSetup(t *testing.T) {
 	dir := t.TempDir()
 	store, err := repository.Open(filepath.Join(dir, "media.db"))
@@ -327,7 +447,7 @@ func TestWire_UsesFFmpegRunnerAndChecksSetup(t *testing.T) {
 	}
 	// The startup check only logs; it must cope with a missing ffmpeg and
 	// must create the cache directory when it can.
-	checkTranscoding(deps, transcode.NewFFmpegRunner())
+	checkTranscoding(deps, transcode.NewFFmpegRunner(cfg.TranscodeMaxJobs))
 	if _, err := os.Stat(cfg.TranscodeCacheDir); err != nil {
 		t.Errorf("startup check did not create the cache dir: %v", err)
 	}

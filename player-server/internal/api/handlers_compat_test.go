@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -68,13 +69,22 @@ func compatEnvReturning(t *testing.T, r *transcode.Rendition, err error) compatT
 	t.Helper()
 	return newCompatTestEnv(t, &service.MockCompatStreamService{
 		CompatStreamFunc:       func(context.Context, int64, int64) (*transcode.Rendition, error) { return r, err },
-		SharedCompatStreamFunc: func(context.Context, string) (*transcode.Rendition, error) { return r, err },
+		SharedCompatStreamFunc: func(context.Context, string, bool) (*transcode.Rendition, error) { return r, err },
 	})
 }
 
 // do performs a GET; authenticated requests carry the session cookie.
 func (e compatTestEnv) do(ctx context.Context, path string, authenticated bool, header http.Header) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodGet, path, nil).WithContext(ctx)
+	return e.send(ctx, http.MethodGet, path, authenticated, header)
+}
+
+// head performs an authenticated HEAD, the clients' readiness probe.
+func (e compatTestEnv) head(path string) *httptest.ResponseRecorder {
+	return e.send(context.Background(), http.MethodHead, path, true, nil)
+}
+
+func (e compatTestEnv) send(ctx context.Context, method, path string, authenticated bool, header http.Header) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, nil).WithContext(ctx)
 	for k, v := range header {
 		req.Header[k] = v
 	}
@@ -248,8 +258,107 @@ func TestCompatStream_RetryResponses(t *testing.T) {
 				if body["status"] != tt.wantStatus || body["error"] != tt.wantError || body["retry_after_seconds"] != float64(5) {
 					t.Errorf("unexpected body %v", body)
 				}
+				// The same status as a header, for clients probing with HEAD.
+				if got := rr.Header().Get("X-Transcode-Status"); got != tt.wantStatus {
+					t.Errorf("X-Transcode-Status = %q, want %q", got, tt.wantStatus)
+				}
+				head := compatEnvReturning(t, nil, tt.err).head(path)
+				// (The recorder keeps the body; a real connection drops it
+				// for HEAD, which the end-to-end tests in internal/app check.)
+				if head.Code != http.StatusServiceUnavailable || head.Header().Get("X-Transcode-Status") != tt.wantStatus ||
+					head.Header().Get("Retry-After") != "5" {
+					t.Errorf("HEAD: status %d headers %v", head.Code, head.Header())
+				}
 			})
 		}
+	}
+}
+
+// HEAD is the readiness probe: same checks and headers as GET, no body, and
+// X-Transcode-Status only on 503.
+func TestCompatStream_HeadWhenReady(t *testing.T) {
+	env := compatEnvReturning(t, writeRendition(t), nil)
+	for _, path := range []string{"/api/media/5/compat", "/api/v1/media/5/compat", "/s/tok/compat"} {
+		rr := env.head(path)
+		h := rr.Header()
+		if rr.Code != http.StatusOK || rr.Body.Len() != 0 {
+			t.Fatalf("HEAD %s: status %d body %q", path, rr.Code, rr.Body.String())
+		}
+		if h.Get("Content-Type") != "video/mp4" || h.Get("ETag") != compatETag || h.Get("Accept-Ranges") != "bytes" ||
+			h.Get("Content-Length") != "20" || h.Get("X-Transcode-Status") != "" {
+			t.Errorf("HEAD %s: headers = %v", path, h)
+		}
+	}
+}
+
+func TestCompatStream_HeadTerminalStatuses(t *testing.T) {
+	tests := []struct {
+		err  error
+		want int
+	}{
+		{service.ErrNotFound, http.StatusNotFound},
+		{service.ErrForbidden, http.StatusForbidden},
+		{service.ErrCompatNotNeeded, http.StatusBadRequest},
+		{service.ErrNotTranscodable, http.StatusUnsupportedMediaType},
+		{service.ErrShareExpired, http.StatusGone},
+		{service.ErrTranscodeNoSpace, http.StatusInsufficientStorage},
+		{errors.New("ffmpeg failed"), http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		for _, path := range []string{"/api/v1/media/5/compat", "/s/tok/compat"} {
+			if rr := compatEnvReturning(t, nil, tt.err).head(path); rr.Code != tt.want {
+				t.Errorf("HEAD %s with %v = %d, want %d (same as GET)", path, tt.err, rr.Code, tt.want)
+			}
+		}
+	}
+	// HEAD needs a session exactly like GET.
+	env := compatEnvReturning(t, writeRendition(t), nil)
+	if rr := env.send(context.Background(), http.MethodHead, "/api/v1/media/5/compat", false, nil); rr.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated HEAD = %d, want 401", rr.Code)
+	}
+}
+
+// Only a GET may consume a share use; a HEAD probe tells the service not to.
+func TestHandleShareCompatStream_HeadDoesNotCountUse(t *testing.T) {
+	rendition := writeRendition(t)
+	var counted []bool
+	env := newCompatTestEnv(t, &service.MockCompatStreamService{
+		SharedCompatStreamFunc: func(_ context.Context, _ string, countUse bool) (*transcode.Rendition, error) {
+			counted = append(counted, countUse)
+			return rendition, nil
+		},
+	})
+	env.send(context.Background(), http.MethodHead, "/s/tok/compat", false, nil)
+	env.send(context.Background(), http.MethodGet, "/s/tok/compat", false, nil)
+	if len(counted) != 2 || counted[0] || !counted[1] {
+		t.Errorf("countUse per request = %v, want [false true] for HEAD then GET", counted)
+	}
+}
+
+// Answers from the negative cache do no work and can be requested
+// anonymously in a loop, so they must not produce an Error line each.
+func TestCompatStream_BackoffHitsAreNotLoggedAsErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantError bool
+	}{
+		{"failed recently", fmt.Errorf("transcode media 5: %w", transcode.ErrFailedRecently), false},
+		{"aborted", fmt.Errorf("transcode media 5: %w", transcode.ErrAborted), false},
+		{"real failure", errors.New("ffmpeg transcode: exit status 1"), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logged strings.Builder
+			env := compatEnvReturning(t, nil, tt.err)
+			env.srv.logger = slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelInfo}))
+			if rr := env.get("/s/tok/compat"); rr.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500", rr.Code)
+			}
+			if got := strings.Contains(logged.String(), "level=ERROR"); got != tt.wantError {
+				t.Errorf("error logged = %v, want %v: %q", got, tt.wantError, logged.String())
+			}
+		})
 	}
 }
 
@@ -330,7 +439,7 @@ func TestHandleShareCompatStream(t *testing.T) {
 			rendition := writeRendition(t)
 			var gotToken string
 			env := newCompatTestEnv(t, &service.MockCompatStreamService{
-				SharedCompatStreamFunc: func(_ context.Context, token string) (*transcode.Rendition, error) {
+				SharedCompatStreamFunc: func(_ context.Context, token string, _ bool) (*transcode.Rendition, error) {
 					gotToken = token
 					return rendition, tt.err
 				},

@@ -182,6 +182,7 @@ func TestCompatStream_ProviderErrors(t *testing.T) {
 		{"still transcoding", transcode.ErrPending, ErrTranscodePending, http.StatusServiceUnavailable, "transcode in progress"},
 		{"source changed mid-run", withPath(transcode.ErrSourceChanged), ErrTranscodePending, http.StatusServiceUnavailable, "transcode in progress"},
 		{"transcoder busy", transcode.ErrBusy, ErrTranscodeBusy, http.StatusServiceUnavailable, "transcoder busy"},
+		{"shutting down", transcode.ErrClosed, ErrTranscodeBusy, http.StatusServiceUnavailable, "transcoder busy"},
 		{"disk full", withPath(transcode.ErrNoSpace), ErrTranscodeNoSpace, http.StatusInsufficientStorage, "insufficient storage for transcode"},
 		{"source file missing", withPath(transcode.ErrSourceMissing), ErrNotFound, http.StatusNotFound, "not found"},
 		{"ffmpeg failure", ffmpegErr, ffmpegErr, 0, ""},
@@ -255,15 +256,24 @@ func TestSharedCompatStream(t *testing.T) {
 			renditions := &fakeRenditions{err: tt.ensureErr}
 			svc := NewCompatStreamService(helper, NewShareService(store, newMockClock(), helper), renditions, root)
 
-			got, err := svc.SharedCompatStream(context.Background(), "tok")
+			got, err := svc.SharedCompatStream(context.Background(), "tok", true)
 			if uses != tt.wantUses {
 				t.Errorf("share uses = %d, want %d", uses, tt.wantUses)
 			}
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("error = %v, want %v", err, tt.wantErr)
 			}
-			if tt.wantErr == nil && (got == nil || renditions.calls[0].Requester != "share:tok") {
+			// Every share request uses the one common requester budget.
+			if tt.wantErr == nil && (got == nil || renditions.calls[0].Requester != shareRequester) {
 				t.Errorf("rendition %+v, source %+v", got, renditions.calls)
+			}
+
+			// A HEAD probe (countUse=false) gives the same answer and never
+			// consumes a use.
+			before := uses
+			_, probeErr := svc.SharedCompatStream(context.Background(), "tok", false)
+			if !errors.Is(probeErr, tt.wantErr) || uses != before {
+				t.Errorf("probe: error = %v (want %v), uses %d -> %d", probeErr, tt.wantErr, before, uses)
 			}
 		})
 	}
@@ -283,7 +293,7 @@ func TestSharedCompatStream_ShareUsedUpWhileTranscoding(t *testing.T) {
 	}
 	helper := NewAccessHelper(store)
 	svc := NewCompatStreamService(helper, NewShareService(store, newMockClock(), helper), &fakeRenditions{}, root)
-	if _, err := svc.SharedCompatStream(context.Background(), "tok"); !errors.Is(err, ErrShareExpired) {
+	if _, err := svc.SharedCompatStream(context.Background(), "tok", true); !errors.Is(err, ErrShareExpired) {
 		t.Fatalf("error = %v, want ErrShareExpired", err)
 	}
 }
@@ -365,6 +375,9 @@ func TestBuildPlaybackHint_PlaybackURL(t *testing.T) {
 		{"wma", model.Media{ID: 42, Type: model.MediaTypeAudio, FileName: "a.wma", Codec: "wmav2"}, "/api/v1/media/42/compat", true},
 		{"mkv with ac3 audio", model.Media{ID: 42, Type: model.MediaTypeVideo, FileName: "a.mkv", Codec: "h264/ac3"}, "/api/v1/media/42/compat", true},
 		{"image", model.Media{ID: 42, Type: model.MediaTypeImage, FileName: "a.jpg"}, "/api/v1/media/42/stream", false},
+		// Audio media is judged by its audio codec only.
+		{"ogg audio with theora track", model.Media{ID: 42, Type: model.MediaTypeAudio, FileName: "a.ogg", Codec: "theora/vorbis"}, "/api/v1/media/42/stream", false},
+		{"mp3 with cover art (old row)", model.Media{ID: 42, Type: model.MediaTypeAudio, FileName: "a.mp3", Codec: "mjpeg/mp3"}, "/api/v1/media/42/stream", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -374,6 +387,39 @@ func TestBuildPlaybackHint_PlaybackURL(t *testing.T) {
 			}
 			if hint.StreamURL != "/api/v1/media/42/stream" {
 				t.Errorf("stream_url must always be the original, got %q", hint.StreamURL)
+			}
+		})
+	}
+}
+
+// needs_transcode (the broad heuristic) may be true where transcoded is not,
+// but it must never claim "plays natively" for something flagged transcoded,
+// and an audio item's codec is reported as its audio codec.
+func TestBuildPlaybackHint_Consistency(t *testing.T) {
+	tests := []struct {
+		name                   string
+		media                  model.Media
+		wantVideo, wantAudio   string
+		transcoded, needsTrans bool
+	}{
+		{"theora video in ogg", model.Media{Type: model.MediaTypeVideo, FileName: "a.ogg", Codec: "theora/vorbis"}, "theora", "vorbis", true, true},
+		{"theora in webm", model.Media{Type: model.MediaTypeVideo, FileName: "a.webm", Codec: "theora"}, "theora", "", true, true},
+		{"mp3 audio", model.Media{Type: model.MediaTypeAudio, FileName: "a.mp3", Codec: "mp3"}, "", "mp3", false, false},
+		{"wma audio", model.Media{Type: model.MediaTypeAudio, FileName: "a.wma", Codec: "wmav2"}, "", "wmav2", true, true},
+		{"mp4 with ac3", model.Media{Type: model.MediaTypeVideo, FileName: "a.mp4", Codec: "h264/ac3"}, "h264", "ac3", true, true},
+		{"mp4 h264 aac", model.Media{Type: model.MediaTypeVideo, FileName: "a.mp4", Codec: "h264/aac"}, "h264", "aac", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := buildPlaybackHint(&tt.media)
+			if h.VideoCodec != tt.wantVideo || h.AudioCodec != tt.wantAudio {
+				t.Errorf("codecs = %q/%q, want %q/%q", h.VideoCodec, h.AudioCodec, tt.wantVideo, tt.wantAudio)
+			}
+			if h.Transcoded != tt.transcoded || h.NeedsTranscode != tt.needsTrans {
+				t.Errorf("transcoded=%v needs_transcode=%v, want %v %v", h.Transcoded, h.NeedsTranscode, tt.transcoded, tt.needsTrans)
+			}
+			if h.Transcoded && !h.NeedsTranscode {
+				t.Error("transcoded media reported as playing natively")
 			}
 		})
 	}

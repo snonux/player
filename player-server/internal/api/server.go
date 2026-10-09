@@ -241,6 +241,8 @@ func (s *Server) routesPublic() {
 func (s *Server) routesSharePublic() {
 	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
 	s.mux.HandleFunc("GET /s/{token}/stream", s.handleShareStream)
+	// GET patterns also serve HEAD; clients use HEAD on the compat route as
+	// a readiness probe (it never consumes a share use).
 	s.mux.HandleFunc("GET /s/{token}/compat", s.handleShareCompatStream)
 	s.mux.HandleFunc("GET /s/{token}/thumbnail", s.handleShareThumbnail)
 	s.mux.HandleFunc("GET /s/{token}/download", s.handleShareDownload)

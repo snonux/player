@@ -83,7 +83,7 @@ func BuildLogger(logLevel string) *slog.Logger {
 // responsibility of StartBackgroundWorkers. Separating construction from
 // activation makes the wiring easy to test in isolation.
 func Wire(cfg *internal.Config, store repository.Store, logger *slog.Logger, appCtx context.Context) *Deps {
-	return WireWithRunner(cfg, store, logger, appCtx, transcode.NewFFmpegRunner())
+	return WireWithRunner(cfg, store, logger, appCtx, transcode.NewFFmpegRunner(cfg.TranscodeMaxJobs))
 }
 
 // WireWithRunner is Wire with an injectable transcode runner, so tests can
@@ -151,8 +151,9 @@ func wireTranscoding(deps *Deps, runner transcode.Runner) {
 	// Transcodes are bound to AppCtx, not to the triggering request, so
 	// they finish in the background and stop on shutdown.
 	deps.Transcodes = transcode.NewCache(deps.AppCtx, runner, deps.Clk, deps.Logger, transcode.Options{
-		Dir:      cfg.TranscodeCacheDir,
-		MaxBytes: int64(cfg.TranscodeCacheMaxMB) * 1024 * 1024,
+		Dir:           cfg.TranscodeCacheDir,
+		MaxBytes:      int64(cfg.TranscodeCacheMaxMB) * 1024 * 1024,
+		MaxConcurrent: cfg.TranscodeMaxJobs,
 	})
 	// A dedicated share service instance provides the narrow
 	// SharedMediaAccess interface; it is stateless, so it behaves exactly
@@ -250,6 +251,14 @@ func shutdownGracefully(gs *api.GracefulServer, logger *slog.Logger) error {
 // received or the server returns an error. It is the last step in the
 // application lifecycle and returns only after a graceful shutdown attempt.
 func RunServer(handler http.Handler, cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Signal) error {
+	return runServer(handler, cfg, logger, sigCh, nil)
+}
+
+// runServer is RunServer with a hook that runs when shutdown begins, before
+// the HTTP server is asked to drain. Requests that block on something other
+// than I/O (a compat request waits up to 20 s for a transcode) must be
+// released there, otherwise they outlast the 5 s drain window.
+func runServer(handler http.Handler, cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Signal, beforeShutdown func()) error {
 	gs := api.NewGracefulServer(handler, cfg)
 
 	logger.Info("player starting", "version", internal.Version, "addr", gs.Server.Addr)
@@ -271,6 +280,9 @@ func RunServer(handler http.Handler, cfg *internal.Config, logger *slog.Logger, 
 		}
 	}
 
+	if beforeShutdown != nil {
+		beforeShutdown()
+	}
 	return shutdownGracefully(gs, logger)
 }
 
@@ -332,16 +344,10 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
-	runner := transcode.NewFFmpegRunner()
+	runner := transcode.NewFFmpegRunner(cfg.TranscodeMaxJobs)
 	deps := WireWithRunner(cfg, store, logger, appCtx, runner)
 	defer deps.GCWorker.Stop()
-	// Runs before the deferred store.Close and after the server has stopped:
-	// cancel the application context (which kills running ffmpeg jobs) and
-	// wait for them, so no ffmpeg process or temporary file outlives us.
-	defer func() {
-		appCancel()
-		deps.Transcodes.Wait()
-	}()
+	defer stopTranscoding(deps)
 	checkTranscoding(deps, runner)
 	StartBackgroundWorkers(deps)
 
@@ -350,5 +356,25 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 		return fmt.Errorf("failed to create API server: %w", err)
 	}
 
-	return RunServer(server, cfg, logger, sigCh)
+	// Shutdown order: first close the transcode cache, which releases
+	// waiting compat requests (they answer 503) and kills ffmpeg; then
+	// drain the HTTP server; then stopTranscoding waits a bounded time for
+	// the job goroutines; finally the deferred store.Close runs in any case.
+	return runServer(server, cfg, logger, sigCh, deps.Transcodes.Close)
+}
+
+// transcodeStopTimeout bounds how long shutdown waits for transcode jobs
+// after their ffmpeg processes were killed. A job stuck in filesystem I/O
+// (a hung network mount) must not keep the process — and the database —
+// open until the supervisor resorts to SIGKILL.
+const transcodeStopTimeout = 10 * time.Second
+
+// stopTranscoding closes the transcode cache and waits, bounded, for its
+// jobs, so that normally no ffmpeg process or temporary file outlives the
+// server. It is safe to call when the cache was closed already.
+func stopTranscoding(deps *Deps) {
+	deps.Transcodes.Close()
+	if !deps.Transcodes.WaitTimeout(transcodeStopTimeout) {
+		deps.Logger.Warn("transcode jobs still running at shutdown; continuing", "waited", transcodeStopTimeout)
+	}
 }

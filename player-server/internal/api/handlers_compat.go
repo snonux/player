@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,11 +23,14 @@ const (
 	// logs and tests from recording a misleading 200 or 500.
 	statusClientClosedRequest = 499
 
-	// compatStatusTranscoding and compatStatusBusy are the "status" values
-	// of a 503 body: the rendition is being produced, or the transcoder
-	// cannot take the job yet. Clients retry in both cases.
+	// compatStatusTranscoding and compatStatusBusy say why a 503 was sent:
+	// the rendition is being produced, or the transcoder cannot take the
+	// job yet. Clients retry in both cases.
 	compatStatusTranscoding = "transcoding"
 	compatStatusBusy        = "busy"
+	// compatStatusHeader carries that status as a response header, because
+	// clients probe readiness with HEAD and a HEAD response has no body.
+	compatStatusHeader = "X-Transcode-Status"
 )
 
 // ------------------------------------------------------------------
@@ -35,6 +39,10 @@ const (
 
 // handleCompatStream serves the H.264/AAC (video) or AAC (audio) rendition of
 // a media item to an authenticated user. Access rules equal handleStream.
+//
+// It answers GET and HEAD (the mux routes HEAD to GET patterns). HEAD is the
+// clients' readiness probe: it runs the same checks and starts or joins the
+// transcode exactly like GET, and http.ServeContent leaves out the body.
 func (s *Server) handleCompatStream(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.media.Compat) {
 		return
@@ -54,13 +62,15 @@ func (s *Server) handleCompatStream(w http.ResponseWriter, r *http.Request) {
 
 // handleShareCompatStream is the public share equivalent of
 // handleCompatStream. Like the other share routes it is never cached by
-// intermediaries, because the token is the only credential.
+// intermediaries, because the token is the only credential. A HEAD probe
+// never consumes a share use; only a GET that delivers content does.
 func (s *Server) handleShareCompatStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if !requireService(w, s.media.Compat) {
 		return
 	}
-	rendition, err := s.media.Compat.SharedCompatStream(r.Context(), r.PathValue("token"))
+	countUse := r.Method != http.MethodHead
+	rendition, err := s.media.Compat.SharedCompatStream(r.Context(), r.PathValue("token"), countUse)
 	if err != nil {
 		s.writeCompatError(w, r, err)
 		return
@@ -94,14 +104,31 @@ func (s *Server) writeCompatError(w http.ResponseWriter, r *http.Request, err er
 	case errors.As(err, &sentinel):
 		writeError(w, sentinel.HTTPStatus(), sentinel.Error())
 	default:
-		s.logger.Error("compat stream", "path", r.URL.Path, "err", err)
+		s.logCompatFailure(r, err)
 		writeError(w, http.StatusInternalServerError, "transcode failed")
 	}
 }
 
+// logCompatFailure logs an unexpected compat-stream error.
+//
+// Answers that come straight from the transcoder's negative cache or from a
+// stopped job are logged at debug level only: no work was done for them, the
+// transcoder logged the underlying failure once when it happened, and this
+// endpoint can be polled anonymously through a share link — an Error line
+// per request would let anyone flood the log.
+func (s *Server) logCompatFailure(r *http.Request, err error) {
+	level := slog.LevelError
+	if errors.Is(err, transcode.ErrFailedRecently) || errors.Is(err, transcode.ErrAborted) {
+		level = slog.LevelDebug
+	}
+	s.logger.Log(r.Context(), level, "compat stream", "path", r.URL.Path, "err", err)
+}
+
 // writeCompatRetry answers 503 with Retry-After, so players and API clients
-// know to come back instead of treating the item as broken.
+// know to come back instead of treating the item as broken. The reason is
+// sent both as a header (for HEAD probes) and in the JSON body.
 func writeCompatRetry(w http.ResponseWriter, status, message string) {
+	w.Header().Set(compatStatusHeader, status)
 	w.Header().Set("Retry-After", strconv.Itoa(compatRetryAfterSeconds))
 	writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 		"error":               message,

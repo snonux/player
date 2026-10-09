@@ -24,14 +24,21 @@ const (
 	DefaultMediaPageSize          = 100
 	DefaultLogLevel               = "info"
 	DefaultSecureCookies          = true
-	// DefaultTranscodeCacheDirName is the directory created next to the
-	// database file when TRANSCODE_CACHE_DIR is unset. The database already
-	// lives on a writable volume (/data in the container, whose root
-	// filesystem is read-only), so its directory is the one place known to
-	// be writable.
-	DefaultTranscodeCacheDirName = "transcode-cache"
+	// DefaultTranscodeCacheDirSuffix is appended to the database path to
+	// form the cache directory when TRANSCODE_CACHE_DIR is unset
+	// ("/data/media.db" -> "/data/media.db.transcode-cache"). The database
+	// already lives on a writable volume (the container root filesystem is
+	// read-only), and tying the name to the database file gives every
+	// instance its own cache: renditions are named by media id, so two
+	// databases sharing one directory (several dev or test instances with
+	// DB_PATH=/tmp/*.db) would delete each other's files.
+	DefaultTranscodeCacheDirSuffix = ".transcode-cache"
 	// DefaultTranscodeCacheMaxMB bounds the transcode cache at 4 GiB.
 	DefaultTranscodeCacheMaxMB = 4096
+	// DefaultTranscodeMaxJobs is the number of parallel ffmpeg transcodes.
+	// One job needs roughly 400 MB of memory at 1080p, so more jobs need a
+	// larger container memory limit.
+	DefaultTranscodeMaxJobs = 1
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -49,10 +56,12 @@ type Config struct {
 	SecureCookies          bool
 	CORSAllowedOrigins     []string
 	// TranscodeCacheDir holds the compatibility renditions of legacy media
-	// (AVI/WMV/FLV/WMA). Defaults to "transcode-cache" next to DBPath.
+	// (AVI/WMV/FLV/WMA). Defaults to DBPath + ".transcode-cache".
 	TranscodeCacheDir string
 	// TranscodeCacheMaxMB is the size the cache is pruned back to.
 	TranscodeCacheMaxMB int
+	// TranscodeMaxJobs is the number of ffmpeg transcodes run in parallel.
+	TranscodeMaxJobs int
 }
 
 // envInt reads an integer environment variable, validates it with the given check,
@@ -103,6 +112,7 @@ func defaultConfig() *Config {
 		LogLevel:               DefaultLogLevel,
 		SecureCookies:          DefaultSecureCookies,
 		TranscodeCacheMaxMB:    DefaultTranscodeCacheMaxMB,
+		TranscodeMaxJobs:       DefaultTranscodeMaxJobs,
 	}
 }
 
@@ -139,6 +149,7 @@ func loadNumericSettings(cfg *Config) error {
 		{"PODCAST_CHECK_INTERVAL_MINUTES", func(n int) { cfg.PodcastCheckMinutes = n }},
 		{"MEDIA_PAGE_SIZE", func(n int) { cfg.MediaPageSize = n }},
 		{"TRANSCODE_CACHE_MAX_MB", func(n int) { cfg.TranscodeCacheMaxMB = n }},
+		{"TRANSCODE_MAX_JOBS", func(n int) { cfg.TranscodeMaxJobs = n }},
 	}
 	for _, p := range positive {
 		if err := envInt(p.name, atLeastOne, p.set); err != nil {
@@ -154,7 +165,7 @@ func loadNumericSettings(cfg *Config) error {
 func loadStringSettings(cfg *Config) {
 	envString("MEDIA_ROOT", func(s string) { cfg.MediaRoot = s })
 	envString("DB_PATH", func(s string) { cfg.DBPath = s })
-	cfg.TranscodeCacheDir = filepath.Join(filepath.Dir(cfg.DBPath), DefaultTranscodeCacheDirName)
+	cfg.TranscodeCacheDir = cfg.DBPath + DefaultTranscodeCacheDirSuffix
 	envString("TRANSCODE_CACHE_DIR", func(s string) { cfg.TranscodeCacheDir = s })
 }
 

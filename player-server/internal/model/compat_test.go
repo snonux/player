@@ -5,12 +5,15 @@ import (
 	"testing"
 )
 
-func TestMedia_NeedsCompatStream(t *testing.T) {
-	tests := []struct {
-		name  string
-		media Media
-		want  bool
-	}{
+// compatCase is one media row and whether it needs the compat stream.
+type compatCase struct {
+	name  string
+	media Media
+	want  bool
+}
+
+func compatCases() []compatCase {
+	return []compatCase{
 		// Legacy containers, whatever the probed codec says.
 		{"avi mpeg4", Media{Type: MediaTypeVideo, FileName: "a.avi", Codec: "mpeg4"}, true},
 		{"avi h264", Media{Type: MediaTypeVideo, FileName: "a.AVI", Codec: "h264"}, true},
@@ -30,6 +33,11 @@ func TestMedia_NeedsCompatStream(t *testing.T) {
 		{"xvid in mkv", Media{Type: MediaTypeVideo, FileName: "a.mkv", Codec: "mpeg4/mp3"}, true},
 		{"mpeg2 in mp4", Media{Type: MediaTypeVideo, FileName: "a.mp4", Codec: "mpeg2video"}, true},
 		{"audio row with cover art", Media{Type: MediaTypeAudio, FileName: "a.m4a", Codec: "mjpeg/wmav2"}, true},
+		{"theora video", Media{Type: MediaTypeVideo, FileName: "a.ogg", Codec: "theora/vorbis"}, true},
+		// Audio media is judged by audio codecs only: a video codec in its
+		// string is cover art or a track the audio player ignores.
+		{"ogg audio with theora track", Media{Type: MediaTypeAudio, FileName: "a.ogg", Codec: "theora/vorbis"}, false},
+		{"audio row holding only a video codec", Media{Type: MediaTypeAudio, FileName: "a.ogg", Codec: "theora"}, false},
 		// Formats the clients play as-is.
 		{"mp4 h264", Media{Type: MediaTypeVideo, FileName: "a.mp4", Codec: "h264"}, false},
 		{"mp4 h264 aac", Media{Type: MediaTypeVideo, FileName: "a.mp4", Codec: "h264/aac"}, false},
@@ -43,7 +51,10 @@ func TestMedia_NeedsCompatStream(t *testing.T) {
 		{"image named avi", Media{Type: MediaTypeImage, FileName: "a.avi"}, false},
 		{"no type", Media{FileName: "a.avi"}, false},
 	}
-	for _, tt := range tests {
+}
+
+func TestMedia_NeedsCompatStream(t *testing.T) {
+	for _, tt := range compatCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.media.NeedsCompatStream(); got != tt.want {
 				t.Errorf("NeedsCompatStream() = %v, want %v", got, tt.want)

@@ -80,6 +80,10 @@ func buildPlaybackHint(media *model.Media) *PlaybackHint {
 	}
 	container := containerFromPath(media.FileName)
 	videoCodec, audioCodec := splitCodecs(media.Codec)
+	// An audio item's single codec is its audio codec, not a video codec.
+	if media.Type == model.MediaTypeAudio && audioCodec == "" {
+		videoCodec, audioCodec = "", videoCodec
+	}
 
 	return &PlaybackHint{
 		StreamURL:       streamURL,
@@ -130,15 +134,14 @@ var nativeContainers = map[string]bool{
 // nativeVideoCodecs lists video codecs that can be played natively by most clients.
 // Codecs absent from this map (e.g. wmv, mpeg2, xvid) trigger needsTranscode=true.
 var nativeVideoCodecs = map[string]bool{
-	"h264":   true,
-	"avc":    true, // synonym used by some probers
-	"avc1":   true,
-	"vp8":    true,
-	"vp9":    true,
-	"av1":    true,
-	"hevc":   true, // supported natively on Apple platforms
-	"h265":   true, // synonym for hevc
-	"theora": true,
+	"h264": true,
+	"avc":  true, // synonym used by some probers
+	"avc1": true,
+	"vp8":  true,
+	"vp9":  true,
+	"av1":  true,
+	"hevc": true, // supported natively on Apple platforms
+	"h265": true, // synonym for hevc
 }
 
 // nativeAudioCodecs lists audio codecs that can be played natively by most clients.
@@ -171,5 +174,7 @@ func needsTranscode(container, videoCodec, audioCodec string) bool {
 		return true
 	}
 
-	return false
+	// Never contradict the rule behind "transcoded": a codec that rule
+	// calls legacy cannot be reported as playing natively here.
+	return model.IsLegacyVideoCodec(videoCodec) || model.IsLegacyAudioCodec(audioCodec)
 }

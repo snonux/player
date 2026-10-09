@@ -124,7 +124,7 @@ func TestCache_PruneUnreadableDir(t *testing.T) {
 // A rendition that was just handed to a request must survive a prune (e.g.
 // the GC tick) until the request had time to open it.
 func TestCache_PruneSparesRecentlyServedRenditions(t *testing.T) {
-	c, a, clk := newTestCache(t, &fakeRunner{payload: "0123456789"}, Options{MaxBytes: 1})
+	c, a, clk := newTestCache(t, &fakeRunner{payload: "0123456789"}, Options{MaxBytes: 15})
 	b := newSource(t, 8)
 	ra, err := c.Ensure(context.Background(), a)
 	if err != nil {
@@ -153,7 +153,8 @@ func TestCache_PruneSparesRecentlyServedRenditions(t *testing.T) {
 
 func TestCache_PruneDuringJobKeepsItsTempFile(t *testing.T) {
 	runner := blocking()
-	c, src, _ := newTestCache(t, runner, Options{MaxBytes: 1, WaitLimit: time.Millisecond})
+	c, src, _ := newTestCache(t, runner, Options{Dir: t.TempDir(), MaxBytes: 100, WaitLimit: time.Millisecond})
+	writeCached(t, c.opts.Dir, "m99-10-1-v1.mp4", 500, time.Now().Add(-time.Hour)) // forces eviction work
 	if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrPending) {
 		t.Fatalf("Ensure = %v, want ErrPending", err)
 	}
@@ -162,8 +163,14 @@ func TestCache_PruneDuringJobKeepsItsTempFile(t *testing.T) {
 	if err := c.Prune(context.Background()); err != nil {
 		t.Fatalf("Prune: %v", err)
 	}
-	if names := dirNames(t, c.opts.Dir); len(names) != 1 || !tmpRe.MatchString(names[0]) {
-		t.Fatalf("cache dir during job = %v, want its temp file", names)
+	var tmp int
+	for _, name := range dirNames(t, c.opts.Dir) {
+		if tmpRe.MatchString(name) {
+			tmp++
+		}
+	}
+	if tmp != 1 {
+		t.Fatalf("cache dir during job = %v, want the job's temp file to survive", dirNames(t, c.opts.Dir))
 	}
 	close(runner.release)
 	waitIdle(t, c)

@@ -23,10 +23,18 @@ import (
 // recorded (see probe.codecString) are judged by container and video codec
 // only until they are probed again.
 func (m Media) NeedsCompatStream() bool {
-	if m.Type != MediaTypeVideo && m.Type != MediaTypeAudio {
+	switch m.Type {
+	case MediaTypeVideo:
+		return isLegacyContainer(m.FileName) || hasLegacyCodec(m.Codec, true)
+	case MediaTypeAudio:
+		// Only audio codecs count for audio media. A video codec in the
+		// string of an audio row is embedded cover art or, for old rows,
+		// a video track the audio player ignores anyway (an .ogg holding
+		// Theora + Vorbis plays fine as audio) — no reason to transcode.
+		return isLegacyContainer(m.FileName) || hasLegacyCodec(m.Codec, false)
+	default:
 		return false
 	}
-	return isLegacyContainer(m.FileName) || hasLegacyCodec(m.Codec)
 }
 
 // MarshalJSON adds the derived "transcoded" flag to the stored fields, so
@@ -54,25 +62,44 @@ func isLegacyContainer(fileName string) bool {
 
 // hasLegacyCodec reports whether any codec in the stored codec string
 // ("video/audio", "video" or "audio", as written by probe.codecString) lacks
-// a decoder in browsers.
-func hasLegacyCodec(codec string) bool {
-	for _, name := range strings.Split(codec, "/") {
-		switch strings.ToLower(strings.TrimSpace(name)) {
-		// Windows Media and Flash era video.
-		case "wmv1", "wmv2", "wmv3", "vc1", "msmpeg4v1", "msmpeg4v2", "msmpeg4v3",
-			"flv1", "vp6", "vp6f", "vp6a":
-			return true
-		// Pre-H.264 video no browser ships a decoder for (Xvid/DivX,
-		// MPEG-1/2, H.263, RealVideo, Sorenson, Theora).
-		case "mpeg4", "mpeg1video", "mpeg2video", "h263",
-			"rv10", "rv20", "rv30", "rv40", "svq1", "svq3", "theora":
-			return true
-		// Audio browsers cannot decode: Windows Media, and the cinema
-		// codecs (Dolby/DTS) that otherwise leave the video silent.
-		case "wmav1", "wmav2", "wmapro", "wmalossless", "wmavoice",
-			"ac3", "eac3", "dts", "truehd", "cook":
+// a decoder in browsers. Video codecs are only considered when withVideo is
+// set.
+func hasLegacyCodec(codec string, withVideo bool) bool {
+	for _, part := range strings.Split(codec, "/") {
+		name := strings.ToLower(strings.TrimSpace(part))
+		if IsLegacyAudioCodec(name) || (withVideo && IsLegacyVideoCodec(name)) {
 			return true
 		}
+	}
+	return false
+}
+
+// IsLegacyVideoCodec reports whether a (lowercase ffprobe) video codec name
+// has no decoder in browsers. It is exported so the playback hint's
+// needs_transcode heuristic cannot disagree with this rule about a codec.
+func IsLegacyVideoCodec(name string) bool {
+	switch name {
+	// Windows Media and Flash era video.
+	case "wmv1", "wmv2", "wmv3", "vc1", "msmpeg4v1", "msmpeg4v2", "msmpeg4v3",
+		"flv1", "vp6", "vp6f", "vp6a":
+		return true
+	// Pre-H.264 video no browser ships a decoder for (Xvid/DivX, MPEG-1/2,
+	// H.263, RealVideo, Sorenson, Theora).
+	case "mpeg4", "mpeg1video", "mpeg2video", "h263",
+		"rv10", "rv20", "rv30", "rv40", "svq1", "svq3", "theora":
+		return true
+	}
+	return false
+}
+
+// IsLegacyAudioCodec reports whether a (lowercase ffprobe) audio codec name
+// has no decoder in browsers: Windows Media, and the cinema codecs
+// (Dolby/DTS) that otherwise leave a video silent.
+func IsLegacyAudioCodec(name string) bool {
+	switch name {
+	case "wmav1", "wmav2", "wmapro", "wmalossless", "wmavoice",
+		"ac3", "eac3", "dts", "truehd", "cook":
+		return true
 	}
 	return false
 }

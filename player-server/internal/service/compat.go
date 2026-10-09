@@ -20,9 +20,17 @@ type CompatStreamService interface {
 	// being produced.
 	CompatStream(ctx context.Context, mediaID, userID int64) (*transcode.Rendition, error)
 	// SharedCompatStream returns the rendition of the media item behind a
-	// public share token.
-	SharedCompatStream(ctx context.Context, token string) (*transcode.Rendition, error)
+	// public share token. countUse says whether delivering it consumes one
+	// use of the share: true for a GET that returns content, false for a
+	// HEAD readiness probe.
+	SharedCompatStream(ctx context.Context, token string, countUse bool) (*transcode.Rendition, error)
 }
+
+// shareRequester is the requester identity of every anonymous share request.
+// All share links together get one job budget: tokens are free to create and
+// to hand out, so a budget per token would let anonymous requests fill the
+// transcode queue and lock out signed-in users.
+const shareRequester = "shares"
 
 // RenditionProvider produces (or fetches from cache) the rendition of a
 // source file. It is implemented by transcode.Cache; the interface keeps the
@@ -72,26 +80,26 @@ func (s *compatStreamService) CompatStream(ctx context.Context, mediaID, userID 
 }
 
 // SharedCompatStream validates the share token, obtains the rendition, and
-// only then records a share use.
+// only then records a share use (when countUse is set).
 //
-// Use counting matches /s/{token}/stream: every request that is served
-// counts, including each Range request of one playback. The difference is
-// what does not count — answers without content ("still transcoding",
-// "busy", failures) — so a client polling for a rendition does not burn
-// through max_uses before a single byte was delivered.
-func (s *compatStreamService) SharedCompatStream(ctx context.Context, token string) (*transcode.Rendition, error) {
+// Use counting matches /s/{token}/stream: every GET that is served counts,
+// including each Range request of one playback. What does not count are
+// answers without content — "still transcoding", "busy", failures, and HEAD
+// probes — so a client polling for a rendition does not burn through
+// max_uses before a single byte was delivered.
+func (s *compatStreamService) SharedCompatStream(ctx context.Context, token string, countUse bool) (*transcode.Rendition, error) {
 	media, err := s.shares.ResolveSharedMedia(ctx, token)
 	if err != nil {
 		return nil, err
 	}
-	// The token, not a user, is the requester: an anonymous holder of one
-	// share link gets the same job limit as one user.
-	rendition, err := s.rendition(ctx, media, "share:"+token)
+	rendition, err := s.rendition(ctx, media, shareRequester)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.shares.ConsumeShareUse(ctx, token); err != nil {
-		return nil, err
+	if countUse {
+		if err := s.shares.ConsumeShareUse(ctx, token); err != nil {
+			return nil, err
+		}
 	}
 	return rendition, nil
 }
@@ -130,10 +138,12 @@ func (s *compatStreamService) rendition(ctx context.Context, media *model.Media,
 func mapRenditionError(mediaID int64, err error) error {
 	switch {
 	case errors.Is(err, transcode.ErrPending), errors.Is(err, transcode.ErrSourceChanged):
-		// A changed source is retried like a pending job: the next
-		// request transcodes the new version.
+		// A source that is still being written is retried like a pending
+		// job: a later request transcodes the settled file.
 		return ErrTranscodePending
-	case errors.Is(err, transcode.ErrBusy):
+	case errors.Is(err, transcode.ErrBusy), errors.Is(err, transcode.ErrClosed):
+		// During shutdown the client is told to retry; the next instance
+		// will take the job.
 		return ErrTranscodeBusy
 	case errors.Is(err, transcode.ErrNoSpace):
 		return ErrTranscodeNoSpace
@@ -163,6 +173,9 @@ func renditionKind(t model.MediaType) (transcode.Kind, error) {
 // Symlinks are resolved first, on both sides: a lexical check alone would
 // accept a link inside the media root that points at any file on the server,
 // and unlike the plain stream the transcode result is persisted in the cache.
+// This is deliberately stricter than /stream, which checks the path
+// lexically: a set whose directory is a symlink to a location outside the
+// media root plays there but gets 403 here.
 // An empty root disables the check (tests, setups without a media root).
 // Errors carry no path because they reach the client.
 func resolveSourcePath(root, path string) (string, error) {

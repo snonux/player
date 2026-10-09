@@ -300,16 +300,19 @@ content). See [Range Header Support](#range-header-support) below.
 
 ---
 
-### `GET /s/{token}/compat`
+### `GET /s/{token}/compat` · `HEAD /s/{token}/compat`
 
 Public equivalent of
 [`GET /api/media/{id}/compat`](#get-apimediaidcompat--get-apiv1mediaidcompat):
 the transcoded compatibility rendition of the shared media, with `Range`
-support. Responses carry `Cache-Control: no-store`.
+support and the same `HEAD` readiness probe. Responses carry
+`Cache-Control: no-store`.
 
-Share uses are counted as on `/s/{token}/stream`: every request that is
-served counts, including each `Range` request. Answers without content
-(`503` while transcoding or busy, errors) do not count.
+Share uses are counted as on `/s/{token}/stream`: every `GET` that is served
+counts, including each `Range` request. `HEAD` requests never count, and
+neither do answers without content (`503` while transcoding or busy, errors).
+All share links together may have two transcodes pending; beyond that the
+answer is `503` with status `busy`.
 
 **Status codes:** `200`, `206`, `304`, `400`, `404`, `410`, `415`, `500`,
 `503`, `507` — see the authenticated endpoint for their meaning.
@@ -741,6 +744,8 @@ curl -s -r 10485760- https://player.example.com/api/v1/media/42/stream \
 
 ### `GET /api/media/{id}/compat` · `GET /api/v1/media/{id}/compat`
 
+Also answers `HEAD` on both paths (see *Readiness probe* below).
+
 Stream the **compatibility rendition** of a media item: the server transcodes
 the original with ffmpeg and caches the result, so formats a client cannot
 decode become playable.
@@ -752,12 +757,14 @@ decode become playable.
 | audio/video with `"transcoded": false` | not offered — play `/stream` | — (`400`) |
 | image | not available | — (`415`) |
 
-Access rules are identical to `/stream`. The rendition is a complete file, so
-`Range` requests (seeking) work exactly as on `/stream`. The response has an
-`ETag` and no `Last-Modified`. The `ETag` identifies one particular encode: it
-changes when the source file changes and also when the rendition had to be
-produced again after cache eviction, so an `If-Range` resume never mixes two
-encodes.
+Access rules are identical to `/stream`, with one addition: the file must
+really be located inside the media root after resolving symbolic links
+(`403` otherwise), whereas `/stream` checks the path as written. The
+rendition is a complete file, so `Range` requests (seeking) work exactly as
+on `/stream`. The response has an `ETag` and no `Last-Modified`. The `ETag`
+identifies one particular encode: it changes when the source file changes and
+also when the rendition had to be produced again after cache eviction, so an
+`If-Range` resume never mixes two encodes.
 
 **First request.** The first request for an item starts the transcode and
 waits for it for up to 20 seconds. If it finishes in time the rendition is
@@ -766,6 +773,7 @@ served directly. Otherwise the server answers:
 ```
 HTTP/1.1 503 Service Unavailable
 Retry-After: 5
+X-Transcode-Status: transcoding
 Content-Type: application/json
 
 {"error":"transcode in progress","retry_after_seconds":5,"status":"transcoding"}
@@ -774,14 +782,29 @@ Content-Type: application/json
 The transcode continues in the background (also if the client disconnects).
 Repeat the request until it returns `200`/`206`; concurrent and repeated
 requests share the one running transcode. Later requests are served from the
-cache immediately. Sources that already contain H.264 video or AAC audio are
-copied rather than re-encoded, which usually finishes within the first
-request.
+cache immediately. Streams that already are client-compatible (H.264 up to
+1080p, stereo AAC-LC) are copied rather than re-encoded, which usually
+finishes within the first request.
 
-The same `503` shape with `"status":"busy"` and
-`"error":"transcoder busy"` means the transcode could not be queued yet (too
-many jobs overall, or two jobs of the same user or share link already
-pending); retry the same way.
+`X-Transcode-Status: busy` (body `"status":"busy"`,
+`"error":"transcoder busy"`) means the transcode could not be queued yet: too
+many jobs overall, two jobs of the same user already pending, or the server
+is shutting down. Retry the same way. A file that was modified within the
+last few seconds (an upload still in progress) also answers `transcoding`
+until it has settled.
+
+**Readiness probe.** `HEAD` on the same URL behaves exactly like `GET` —
+same access checks, and it starts or joins the transcode — but never returns
+a body:
+
+| `HEAD` answer | Meaning |
+|---------------|---------|
+| `200` with `Content-Type`, `Content-Length`, `ETag`, `Accept-Ranges` | Ready: `GET` the URL now |
+| `503` with `Retry-After` and `X-Transcode-Status: transcoding` or `busy` | Not ready: probe again after `Retry-After` seconds |
+| any other status | Same terminal status `GET` would return |
+
+Every `503` of this endpoint, for `GET` and `HEAD`, carries
+`X-Transcode-Status`. A `HEAD` never consumes a share use.
 
 **Status codes**
 
@@ -789,15 +812,18 @@ pending); retry the same way.
 |------|---------|
 | `200`, `206`, `304` | Rendition served / range / not modified |
 | `400` | Invalid id, or the item is not flagged `transcoded` (`{"error":"media does not need transcoding; play the stream endpoint instead"}`) |
-| `401`, `403`, `404` | As on `/stream` (`404` also when the source file is missing on disk) |
+| `401`, `403`, `404` | As on `/stream` (`404` also when the source file is missing on disk, `403` also for a symlink leaving the media root) |
 | `415` | Images have no rendition |
-| `500` | `{"error":"transcode failed"}` — ffmpeg could not convert the file. Not retried by the server for 1 minute (doubling up to 30 minutes); details are in the server log only |
-| `503` | Retry after `Retry-After` seconds: `status` is `transcoding` or `busy` |
-| `507` | The transcode cache volume is full |
+| `500` | `{"error":"transcode failed"}` — ffmpeg could not convert the file. Not retried by the server for 1 minute (doubling up to 30 minutes; 24 hours after a job timed out); details are in the server log only |
+| `503` | Retry after `Retry-After` seconds; `X-Transcode-Status` is `transcoding` or `busy` |
+| `507` | The transcode cache has no room for this rendition |
 
 Error bodies contain only the fixed messages above, never file paths.
 
 ```bash
+# Probe until ready, then fetch the first megabyte
+curl -s -I https://player.example.com/api/v1/media/42/compat \
+  -H "Authorization: Bearer pt_xxxxxxxxxxxxxxxxxxxx"
 curl -s -r 0-1048575 https://player.example.com/api/v1/media/42/compat \
   -H "Authorization: Bearer pt_xxxxxxxxxxxxxxxxxxxx" \
   -o head.mp4
@@ -920,9 +946,12 @@ decision uses the container and the probed codecs:
 - audio codecs `wmav1`/`wmav2`/`wmapro`/`wmalossless`/`wmavoice`, `ac3`,
   `eac3`, `dts`, `truehd`, `cook` in any container.
 
-`codec` is `"video/audio"` for video files (e.g. `"h264/ac3"`). Items scanned
-by older server versions carry the video codec only; their audio codec is
-unknown to the rule until the file is probed again. Example for an AVI file:
+`codec` is `"video/audio"` for video files (e.g. `"h264/ac3"`) and the audio
+codec alone for audio files (embedded cover art is ignored); in the hint an
+audio file's codec is reported as `audio_codec`. Audio files are judged by
+audio codecs only. Items scanned by older server versions carry the video
+codec only; their audio codec is unknown to the rule until the file is probed
+again. Example for an AVI file:
 
 ```json
 {
@@ -943,9 +972,9 @@ unknown to the rule until the file is probed again. Example for an AVI file:
 
 `needs_transcode` is an older, broader heuristic ("may not play on every
 client", also true for e.g. `mkv` and `flac`) and does **not** select the URL;
-use `transcoded`. Its native containers include `mp4`, `webm`, `ogg`, `mp3`, `m4a`, `wav`,
+use `transcoded`. It is always `true` when `transcoded` is `true`. Its native containers include `mp4`, `webm`, `ogg`, `mp3`, `m4a`, `wav`,
 `aac`, and `opus`. Native video codecs include `h264`, `vp8`, `vp9`, `av1`,
-`hevc`, and `theora`. Native audio codecs include `aac`, `mp3`, `opus`, and
+and `hevc`. Native audio codecs include `aac`, `mp3`, `opus`, and
 `vorbis`.
 
 **Status codes:** `200`, `400`, `401`, `404`, `500`
@@ -1621,7 +1650,7 @@ Toggle the per-user completion state of a podcast episode.
 | `GET` | `—` `/readyz` | none | Readiness probe |
 | `GET` | `—` `/s/{token}` | none | Share viewer page |
 | `GET` | `—` `/s/{token}/stream` | none | Stream shared media |
-| `GET` | `—` `/s/{token}/compat` | none | Stream transcoded rendition of shared media (range) |
+| `GET`, `HEAD` | `—` `/s/{token}/compat` | none | Stream transcoded rendition of shared media (range); `HEAD` = readiness probe |
 | `GET` | `—` `/s/{token}/thumbnail` | none | Shared media thumbnail |
 | `GET` | `—` `/s/{token}/download` | none | Download shared media |
 | `POST` | `logout` | session | Logout |
@@ -1638,7 +1667,7 @@ Toggle the per-user completion state of a podcast episode.
 | `GET` | `media` | session | List/search media |
 | `GET` | `media/{id}` | session | Get media detail |
 | `GET` | `media/{id}/stream` | session | Stream media (range) |
-| `GET` | `media/{id}/compat` | session | Stream transcoded compatibility rendition (range) |
+| `GET`, `HEAD` | `media/{id}/compat` | session | Stream transcoded compatibility rendition (range); `HEAD` = readiness probe |
 | `GET` | `media/{id}/download` | session | Download media file |
 | `GET` | `media/{id}/thumbnail` | session | Get thumbnail |
 | `POST` | `media/{id}/thumbnail` | session | Regenerate thumbnail |

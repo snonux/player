@@ -25,7 +25,7 @@ const (
 // profileVersion is part of every rendition file name. Bump it whenever the
 // ffmpeg arguments change so renditions made with the old profile stop being
 // served and are eventually pruned.
-const profileVersion = "v2"
+const profileVersion = "v3"
 
 // Errors returned by Cache.Ensure. None of them wraps a context error unless
 // the caller's own context ended, so "the client went away" can never be
@@ -37,23 +37,23 @@ var (
 	// ErrBusy reports that no new transcode can be started right now (queue
 	// full, or the requester already has its share of jobs). Retry later.
 	ErrBusy = errors.New("transcoder busy")
+	// ErrClosed reports that the cache is shutting down.
+	ErrClosed = errors.New("transcoder shutting down")
 	// ErrSourceMissing reports that the source media file cannot be read.
 	ErrSourceMissing = errors.New("transcode source missing")
-	// ErrSourceChanged reports that the source file changed while it was
-	// being transcoded (e.g. an upload still in progress); the result was
-	// discarded and a retry transcodes the new version.
-	ErrSourceChanged = errors.New("transcode source changed")
-	// ErrNoSpace reports that the cache volume lacks room for a rendition.
+	// ErrSourceChanged reports that the source file is still being written
+	// (it was modified moments ago, or changed while it was transcoded, as
+	// during an upload or copy). Nothing was published; retry later.
+	ErrSourceChanged = errors.New("transcode source is still changing")
+	// ErrNoSpace reports that the cache volume or the cache budget has no
+	// room for the rendition.
 	ErrNoSpace = errors.New("transcode cache volume is full")
-	// ErrFailedRecently reports that this source failed to transcode a short
+	// ErrFailedRecently reports that this media item failed to transcode a
 	// while ago and is not retried yet (negative cache with backoff).
 	ErrFailedRecently = errors.New("transcode failed recently")
 	// ErrAborted reports that the job was stopped by shutdown or because its
 	// media item was removed.
 	ErrAborted = errors.New("transcode aborted")
-	// ErrUnsupportedInput reports a source whose container the runner does
-	// not know how to open safely.
-	ErrUnsupportedInput = errors.New("unsupported transcode input")
 )
 
 // Source identifies the original media file a rendition is derived from.
@@ -63,9 +63,19 @@ type Source struct {
 	// verified it lies inside the media root.
 	Path string
 	Kind Kind
-	// Requester identifies who asked (e.g. "user:5", "share:<token>") for
-	// the per-requester job limit. Empty disables that limit.
+	// Requester identifies who asked (e.g. "user:5") for the per-requester
+	// job limit. Empty disables that limit.
 	Requester string
+}
+
+// Job is one transcode handed to a Runner.
+type Job struct {
+	Source Source
+	// Output is the file to write; it has no meaningful extension.
+	Output string
+	// MaxBytes caps the output size. A Runner must not write (much) more;
+	// the cache treats an output that reaches the cap as "no space".
+	MaxBytes int64
 }
 
 // Rendition describes a finished, cached compatibility file.
@@ -82,9 +92,9 @@ type Rendition struct {
 }
 
 // Runner converts one source file into a rendition file. Implementations must
-// write the complete result to outputPath and honour ctx cancellation.
+// write the complete result to job.Output and honour ctx cancellation.
 type Runner interface {
-	Transcode(ctx context.Context, src Source, outputPath string) error
+	Transcode(ctx context.Context, job Job) error
 }
 
 // ext returns the rendition file extension for the kind.

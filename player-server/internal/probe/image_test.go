@@ -222,7 +222,7 @@ func TestFFProber_ProbeEmptyFile(t *testing.T) {
 
 func TestParseFFprobeOutput_BitrateParsing(t *testing.T) {
 	input := `{"format":{"duration":"60","bit_rate":"0"},"streams":[{"codec_name":"h264","width":640,"height":480,"codec_type":"video"}]}`
-	meta, err := parseFFprobeOutput([]byte(input))
+	meta, err := parseFFprobeOutput([]byte(input), false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

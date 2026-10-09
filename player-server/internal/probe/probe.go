@@ -108,7 +108,8 @@ func (f *FFProber) probeOnce(ctx context.Context, path string) (*model.Metadata,
 		}
 		return nil, fmt.Errorf("ffprobe %s: %w", path, err)
 	}
-	meta, err := parseFFprobeOutput(out)
+	audioFile := mediatype.TypeForExt(path) == model.MediaTypeAudio
+	meta, err := parseFFprobeOutput(out, audioFile)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +133,10 @@ type ffprobeOutput struct {
 	} `json:"streams"`
 }
 
-func parseFFprobeOutput(data []byte) (*model.Metadata, error) {
+// parseFFprobeOutput turns ffprobe's JSON into metadata. audioFile says the
+// file is audio by its extension, which decides how the codec is recorded
+// (see codecString).
+func parseFFprobeOutput(data []byte, audioFile bool) (*model.Metadata, error) {
 	var out ffprobeOutput
 	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, fmt.Errorf("unmarshal ffprobe output: %w", err)
@@ -164,7 +168,7 @@ func parseFFprobeOutput(data []byte) (*model.Metadata, error) {
 			audioCodec = s.CodecName
 		}
 	}
-	meta.Codec = codecString(videoCodec, audioCodec)
+	meta.Codec = codecString(videoCodec, audioCodec, audioFile)
 
 	// Fallback to first stream codec if neither a video nor an audio stream
 	// was identified.
@@ -176,14 +180,22 @@ func parseFFprobeOutput(data []byte) (*model.Metadata, error) {
 }
 
 // codecString builds the stored codec value from the first video and first
-// audio stream: "video/audio" when both exist, otherwise the one present.
+// audio stream.
 //
-// The audio codec is recorded for video files because playback decisions
-// need it: H.264 video with WMA or AC-3 audio plays silently (or not at all)
-// in clients, which only the audio codec reveals. Rows probed before this
-// was recorded hold the video codec alone; consumers treat a missing audio
-// part as unknown.
-func codecString(video, audio string) string {
+// Video files get "video/audio" when both exist, otherwise the one present.
+// The audio codec is recorded because playback decisions need it: H.264
+// video with WMA or AC-3 audio plays silently (or not at all) in clients,
+// which only the audio codec reveals. Rows probed before this was recorded
+// hold the video codec alone; consumers treat a missing audio part as
+// unknown.
+//
+// Audio files get the audio codec only. Their "video" stream is embedded
+// cover art (mjpeg, png), which is not what the file is encoded in and must
+// not show up as its codec in the UI or in playback decisions.
+func codecString(video, audio string, audioFile bool) string {
+	if audioFile && audio != "" {
+		return audio
+	}
 	if video != "" && audio != "" {
 		return video + "/" + audio
 	}

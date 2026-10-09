@@ -29,13 +29,14 @@ type fakeRunner struct {
 	err     error
 	started chan struct{}
 	release chan struct{}
-	hook    func(src Source)
+	hook    func(ctx context.Context, src Source)
 
 	mu      sync.Mutex
 	outputs []string
 }
 
-func (f *fakeRunner) Transcode(ctx context.Context, src Source, outputPath string) error {
+func (f *fakeRunner) Transcode(ctx context.Context, job Job) error {
+	src, outputPath := job.Source, job.Output
 	f.calls.Add(1)
 	f.mu.Lock()
 	f.outputs = append(f.outputs, outputPath)
@@ -51,7 +52,7 @@ func (f *fakeRunner) Transcode(ctx context.Context, src Source, outputPath strin
 		}
 	}
 	if f.hook != nil {
-		f.hook(src)
+		f.hook(ctx, src)
 	}
 	if f.err != nil {
 		// Leave a partial file behind, like a crashed ffmpeg would.
@@ -74,14 +75,34 @@ func quietLogger() *slog.Logger {
 // actual free disk space.
 func plentyOfSpace(string) (int64, error) { return math.MaxInt64 / 2, nil }
 
-// newSource creates a small source file for media id.
+// settleTimeout is how long tests wait for background jobs.
+const settleTimeout = 10 * time.Second
+
+// newSource creates a small source file for media id. Its mtime lies an hour
+// back, so the cache does not treat it as "still being written".
 func newSource(t *testing.T, id int64) Source {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "clip.avi")
 	if err := os.WriteFile(path, []byte("source"), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
+	age(t, path, time.Hour)
 	return Source{MediaID: id, Path: path, Kind: KindVideo}
+}
+
+// age sets a file's mtime to d ago.
+func age(t *testing.T, path string, d time.Duration) {
+	t.Helper()
+	at := time.Now().Add(-d)
+	if err := os.Chtimes(path, at, at); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// stop closes a cache and waits for its jobs.
+func stop(c *Cache) {
+	c.Close()
+	c.WaitTimeout(settleTimeout)
 }
 
 // newTestCache builds a cache in a temp dir, a mock clock set to now, and a
@@ -100,7 +121,7 @@ func newTestCache(t *testing.T, runner Runner, opts Options) (*Cache, Source, *c
 	}
 	clk := &clock.MockClock{T: time.Now()}
 	c := NewCache(context.Background(), runner, clk, quietLogger(), opts)
-	t.Cleanup(c.Wait)
+	t.Cleanup(func() { stop(c) })
 	return c, newSource(t, 7), clk
 }
 
@@ -289,7 +310,7 @@ func TestCache_BackoffIsCapped(t *testing.T) {
 	c, _, _ := newTestCache(t, &fakeRunner{}, Options{})
 	var last time.Duration
 	for range 12 {
-		last = c.recordFailure("m1-1-1-v1.mp4")
+		last = c.recordFailure(1, failure{err: ErrFailedRecently})
 	}
 	if last != maxFailureBackoff {
 		t.Errorf("backoff after many failures = %s, want cap %s", last, maxFailureBackoff)
@@ -306,7 +327,7 @@ func TestCache_EmptyOutputIsFailure(t *testing.T) {
 }
 
 func TestCache_PanickingRunnerIsReported(t *testing.T) {
-	runner := &fakeRunner{payload: "x", hook: func(Source) { panic("runner bug") }}
+	runner := &fakeRunner{payload: "x", hook: func(context.Context, Source) { panic("runner bug") }}
 	c, src, _ := newTestCache(t, runner, Options{})
 	_, err := c.Ensure(context.Background(), src)
 	if err == nil || !strings.Contains(err.Error(), "panic") {
@@ -386,7 +407,9 @@ func TestCache_ShutdownAbortsJobs(t *testing.T) {
 	}()
 	<-runner.started
 	shutdown()
-	c.Wait() // returns only when the job goroutine is gone
+	if !c.WaitTimeout(settleTimeout) { // true only when the job goroutine is gone
+		t.Fatal("job did not stop on shutdown")
+	}
 
 	err := <-errCh
 	if !errors.Is(err, ErrAborted) || isContextError(err) {
@@ -402,42 +425,82 @@ func TestCache_ShutdownAbortsJobs(t *testing.T) {
 
 func TestCache_JobTimeout(t *testing.T) {
 	runner := blocking() // never released: only the timeout ends it
-	c, src, _ := newTestCache(t, runner, Options{JobTimeout: 20 * time.Millisecond})
+	c, src, clk := newTestCache(t, runner, Options{JobTimeout: 20 * time.Millisecond})
+	ensure := func() error {
+		_, err := c.Ensure(context.Background(), src)
+		waitIdle(t, c)
+		return err
+	}
 
-	_, err := c.Ensure(context.Background(), src)
-	if err == nil || !strings.Contains(err.Error(), "timed out") || isContextError(err) {
+	if err := ensure(); err == nil || !strings.Contains(err.Error(), "timed out") || isContextError(err) {
 		t.Fatalf("Ensure error = %v, want a timeout that is not a context error", err)
 	}
-	waitIdle(t, c)
-	// A timeout is a real failure and is backed off like one.
-	if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrFailedRecently) {
-		t.Fatalf("after timeout = %v, want ErrFailedRecently", err)
-	}
 	wantNames(t, c.opts.Dir)
+
+	// A timed-out job burned its whole budget and would do so again, so it
+	// is not retried after the ordinary 30 minute cap but a day later.
+	clk.T = clk.T.Add(2 * maxFailureBackoff)
+	if err := ensure(); !errors.Is(err, ErrFailedRecently) {
+		t.Fatalf("an hour after a timeout = %v, want ErrFailedRecently", err)
+	}
+	if runner.calls.Load() != 1 {
+		t.Fatalf("runner calls = %d, want 1", runner.calls.Load())
+	}
+
+	// ... unless the source was replaced: the new file gets its chance.
+	rewrite(t, src.Path)
+	if err := ensure(); errors.Is(err, ErrFailedRecently) {
+		t.Fatalf("replaced source is still refused: %v", err)
+	}
+	if runner.calls.Load() != 2 {
+		t.Errorf("runner calls = %d, want 2", runner.calls.Load())
+	}
 }
 
-// The job timeout must cover working time only. Four jobs of ~60 ms share one
-// slot, so the last one queues for ~180 ms — longer than the 150 ms timeout —
-// and must still succeed.
-func TestCache_QueueTimeDoesNotCountAgainstTimeout(t *testing.T) {
-	runner := &fakeRunner{payload: "x", hook: func(Source) { time.Sleep(60 * time.Millisecond) }}
-	c, _, _ := newTestCache(t, runner, Options{MaxConcurrent: 1, JobTimeout: 150 * time.Millisecond})
-
-	var wg sync.WaitGroup
-	errs := make([]error, 4)
-	for i := range errs {
-		src := newSource(t, int64(i+1))
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, errs[i] = c.Ensure(context.Background(), src)
-		}()
+func TestCache_TimeoutRetriedAfterADay(t *testing.T) {
+	runner := blocking()
+	c, src, clk := newTestCache(t, runner, Options{JobTimeout: 20 * time.Millisecond})
+	_, _ = c.Ensure(context.Background(), src)
+	waitIdle(t, c)
+	clk.T = clk.T.Add(timeoutBackoff + time.Minute)
+	_, _ = c.Ensure(context.Background(), src)
+	waitIdle(t, c)
+	if runner.calls.Load() != 2 {
+		t.Errorf("runner calls = %d, want a second attempt after %s", runner.calls.Load(), timeoutBackoff)
 	}
-	wg.Wait()
-	for i, err := range errs {
-		if err != nil {
-			t.Errorf("job %d: %v", i, err)
+}
+
+// The job timeout must cover working time only. The first job holds the only
+// slot for three times the timeout (it ignores its context, so it really
+// stays that long); the second job queues behind it for longer than the
+// timeout. When it finally runs, its context must still be alive. If the
+// timeout were started before the slot is acquired, the second job would be
+// handed an already expired context and fail.
+func TestCache_QueueTimeDoesNotCountAgainstTimeout(t *testing.T) {
+	const timeout = 50 * time.Millisecond
+	var first atomic.Bool
+	var queuedCtxErr error
+	runner := &fakeRunner{payload: "x", started: make(chan struct{}, 2)}
+	runner.hook = func(ctx context.Context, _ Source) {
+		if first.CompareAndSwap(false, true) {
+			time.Sleep(3 * timeout)
+			return
 		}
+		queuedCtxErr = ctx.Err()
+	}
+	c, src, _ := newTestCache(t, runner, Options{MaxConcurrent: 1, JobTimeout: timeout, WaitLimit: time.Millisecond})
+
+	_, _ = c.Ensure(context.Background(), src)
+	<-runner.started // the first job owns the slot
+	queued := newSource(t, 8)
+	_, _ = c.Ensure(context.Background(), queued) // queues behind it
+	waitIdle(t, c)
+
+	if queuedCtxErr != nil {
+		t.Fatalf("queued job started with an expired context: %v", queuedCtxErr)
+	}
+	if _, err := c.Ensure(context.Background(), queued); err != nil {
+		t.Errorf("queued job must succeed after waiting longer than the timeout: %v", err)
 	}
 }
 
@@ -567,10 +630,8 @@ func rewrite(t *testing.T, path string) {
 	if err := os.WriteFile(path, []byte("a different source"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	later := time.Now().Add(time.Hour)
-	if err := os.Chtimes(path, later, later); err != nil {
-		t.Fatal(err)
-	}
+	// Old enough to count as settled, different from newSource's mtime.
+	age(t, path, 30*time.Minute)
 }
 
 func TestCache_InvalidatesWhenSourceChanges(t *testing.T) {
@@ -600,22 +661,175 @@ func TestCache_InvalidatesWhenSourceChanges(t *testing.T) {
 }
 
 // A source that is still being written (upload, copy) while ffmpeg reads it
-// must not end up as a rendition of the truncated file.
+// must not end up as a rendition of the truncated file, and polling clients
+// must not start one ffmpeg run per request while the copy goes on.
 func TestCache_SourceChangedDuringTranscode(t *testing.T) {
 	runner := &fakeRunner{payload: "x"}
-	c, src, _ := newTestCache(t, runner, Options{})
-	runner.hook = func(s Source) { rewrite(t, s.Path) }
+	c, src, clk := newTestCache(t, runner, Options{})
+	runner.hook = func(_ context.Context, s Source) { rewrite(t, s.Path) }
+	ensure := func() error {
+		_, err := c.Ensure(context.Background(), src)
+		waitIdle(t, c)
+		return err
+	}
 
-	if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrSourceChanged) {
+	if err := ensure(); !errors.Is(err, ErrSourceChanged) {
 		t.Fatalf("Ensure error = %v, want ErrSourceChanged", err)
 	}
-	waitIdle(t, c)
 	wantNames(t, c.opts.Dir)
 
-	// Not a failure to back off from: the retry transcodes the new version.
+	// The file has a new name now; the backoff is per media item and holds.
 	runner.hook = nil
+	for range 3 {
+		if err := ensure(); !errors.Is(err, ErrSourceChanged) {
+			t.Fatalf("poll during backoff = %v, want ErrSourceChanged", err)
+		}
+	}
+	if runner.calls.Load() != 1 {
+		t.Fatalf("runner calls = %d, want 1 during the backoff", runner.calls.Load())
+	}
+	clk.T = clk.T.Add(failureBackoff + time.Second)
+	if err := ensure(); err != nil {
+		t.Fatalf("retry after backoff: %v", err)
+	}
+}
+
+// A file modified seconds ago is probably still being uploaded: no ffmpeg
+// run is started for it until it has settled.
+func TestCache_WaitsForSourceToSettle(t *testing.T) {
+	runner := &fakeRunner{payload: "x"}
+	c, src, clk := newTestCache(t, runner, Options{})
+	age(t, src.Path, 0)
+
+	if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrSourceChanged) {
+		t.Fatalf("fresh source = %v, want ErrSourceChanged", err)
+	}
+	if runner.calls.Load() != 0 {
+		t.Fatal("ffmpeg started on a file that was just modified")
+	}
+	clk.T = clk.T.Add(DefaultSourceSettle + time.Second)
 	if _, err := c.Ensure(context.Background(), src); err != nil {
-		t.Fatalf("retry: %v", err)
+		t.Fatalf("settled source: %v", err)
+	}
+	// Once a rendition exists it is served even right after a new stat.
+	if _, err := c.Ensure(context.Background(), src); err != nil {
+		t.Fatalf("cached rendition: %v", err)
+	}
+}
+
+// ffmpeg's "-fs" stops the output at the allowed size and exits successfully;
+// such a truncated file must never be published.
+func TestCache_OutputReachingSizeCapIsNoSpace(t *testing.T) {
+	var gotCap int64
+	runner := &capRunner{payload: "0123456789", gotCap: &gotCap}
+	c, src, _ := newTestCache(t, runner, Options{MaxBytes: 10})
+
+	for range 2 { // not backed off: space may be freed any time
+		if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrNoSpace) {
+			t.Fatalf("Ensure error = %v, want ErrNoSpace", err)
+		}
+		waitIdle(t, c)
+	}
+	if gotCap != 10 {
+		t.Errorf("runner was given cap %d, want the cache budget 10", gotCap)
+	}
+	wantNames(t, c.opts.Dir)
+}
+
+// The cap handed to the runner is what the volume can spare, never more
+// than the cache budget.
+func TestCache_OutputCapFollowsFreeSpace(t *testing.T) {
+	var gotCap int64
+	runner := &capRunner{payload: "x", gotCap: &gotCap}
+	c, src, _ := newTestCache(t, runner, Options{
+		MaxBytes: 1 << 20, MinFreeBytes: 1000,
+		FreeSpace: func(string) (int64, error) { return 1500, nil },
+	})
+	if _, err := c.Ensure(context.Background(), src); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if gotCap != 500 {
+		t.Errorf("cap = %d, want free space minus reserve = 500", gotCap)
+	}
+}
+
+// A runner reporting ENOSPC is "no space", not a broken file to back off.
+func TestCache_RunnerNoSpaceIsNotBackedOff(t *testing.T) {
+	runner := &fakeRunner{err: fmt.Errorf("%w: ffmpeg: No space left on device", ErrNoSpace)}
+	c, src, _ := newTestCache(t, runner, Options{})
+	for range 2 {
+		if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrNoSpace) {
+			t.Fatalf("Ensure error = %v, want ErrNoSpace", err)
+		}
+		waitIdle(t, c)
+	}
+	if runner.calls.Load() != 2 {
+		t.Errorf("runner calls = %d, want 2 (no backoff)", runner.calls.Load())
+	}
+	wantNames(t, c.opts.Dir)
+}
+
+// capRunner records the size cap it was given and writes a fixed payload.
+type capRunner struct {
+	payload string
+	gotCap  *int64
+}
+
+func (r *capRunner) Transcode(_ context.Context, job Job) error {
+	*r.gotCap = job.MaxBytes
+	return os.WriteFile(job.Output, []byte(r.payload), 0o644)
+}
+
+func TestCache_CloseReleasesWaitersAndRefusesNewJobs(t *testing.T) {
+	runner := blocking()
+	c, src, _ := newTestCache(t, runner, Options{})
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.Ensure(context.Background(), src)
+		errCh <- err
+	}()
+	<-runner.started
+
+	c.Close()
+	c.Close() // idempotent
+	// The waiting request returns at once, not after the 20 s wait limit.
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, ErrClosed) {
+			t.Fatalf("waiter got %v, want ErrClosed", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("waiting request was not released by Close")
+	}
+	if !c.WaitTimeout(settleTimeout) {
+		t.Fatal("job did not stop after Close")
+	}
+	// No job may be started once shutdown began.
+	if _, err := c.Ensure(context.Background(), newSource(t, 9)); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Ensure after Close = %v, want ErrClosed", err)
+	}
+	if runner.calls.Load() != 1 {
+		t.Errorf("runner calls = %d, want 1", runner.calls.Load())
+	}
+	wantNames(t, c.opts.Dir)
+}
+
+// Shutdown must not hang on a job that does not react (stuck in I/O).
+func TestCache_WaitTimeoutGivesUp(t *testing.T) {
+	stuck := make(chan struct{})
+	runner := &fakeRunner{payload: "x", started: make(chan struct{}, 1)}
+	runner.hook = func(context.Context, Source) { <-stuck } // ignores cancellation
+	c, src, _ := newTestCache(t, runner, Options{WaitLimit: time.Millisecond})
+	_, _ = c.Ensure(context.Background(), src)
+	<-runner.started
+
+	c.Close()
+	if c.WaitTimeout(20 * time.Millisecond) {
+		t.Fatal("WaitTimeout reported completion while a job is stuck")
+	}
+	close(stuck)
+	if !c.WaitTimeout(settleTimeout) {
+		t.Fatal("job did not finish after it was unstuck")
 	}
 }
 
@@ -664,7 +878,7 @@ func TestCache_InstancesUseDistinctTempFiles(t *testing.T) {
 			if _, err := c.Ensure(context.Background(), src); err != nil {
 				t.Errorf("instance %d: %v", i, err)
 			}
-			c.Wait()
+			c.WaitTimeout(settleTimeout)
 		}()
 	}
 	for _, r := range runners {
@@ -712,12 +926,14 @@ func ExampleCache_Ensure() {
 	defer os.RemoveAll(dir)
 	src := filepath.Join(dir, "clip.avi")
 	_ = os.WriteFile(src, []byte("source"), 0o644)
+	settled := time.Now().Add(-time.Hour) // not "still being written"
+	_ = os.Chtimes(src, settled, settled)
 
 	c := NewCache(context.Background(), &fakeRunner{payload: "x"}, clock.RealClock{}, quietLogger(), Options{
 		Dir: filepath.Join(dir, "cache"), MaxBytes: 1 << 20, FreeSpace: plentyOfSpace,
 	})
 	r, err := c.Ensure(context.Background(), Source{MediaID: 1, Path: src, Kind: KindVideo})
-	c.Wait()
+	stop(c)
 	fmt.Println(r.ContentType, err)
 	// Output: video/mp4 <nil>
 }
