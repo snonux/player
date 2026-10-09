@@ -22,6 +22,16 @@ ENV_FILE = os.environ.get("PLAYER_E2E_ENV", os.path.expanduser("~/.config/player
 ENV = dict(line.strip().split("=", 1) for line in open(ENV_FILE) if "=" in line and not line.startswith("#"))
 OUT = os.environ.get("PLAYER_E2E_OUT", os.getcwd())
 SHOTS = os.path.join(OUT, f"shots-{HOST}")
+
+def _pubspec_version():
+    """The app version this checkout would release (pubspec `version:` without the build number)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "pubspec.yaml")
+    match = re.search(r"^version:\s*([0-9.]+)", open(path).read(), re.M)
+    return match.group(1) if match else ""
+
+# The version the installed APK must show in Settings; override when testing
+# an APK that was not built from this checkout.
+APP_VERSION = os.environ.get("PLAYER_E2E_APP_VERSION") or _pubspec_version()
 os.makedirs(SHOTS, exist_ok=True)
 
 # One sample-<ext>.<ext> per extension in player-server/internal/mediatype.
@@ -191,11 +201,31 @@ def test_library_listing():
         shot(f"grid-{set_name}")
         record(f"{set_name} lists all {len(exts)} files", not missing, "missing: " + ", ".join(missing) if missing else "")
 
+# File names the server flags as "transcoded": the app plays a converted
+# copy and shows "Preparing playback…" until the server has it ready.
+TRANSCODED = set()
+
+def start_playback(button, name, settle):
+    """Tap the play button and return once playback should be running.
+
+    A plain file gets a fixed settle time. A transcoded one may first wait
+    for the server, so the "Preparing playback…" label is polled away (each
+    poll is a slow UI dump, which is why plain files skip it: their short
+    samples would be over before the screenshots are taken).
+    """
+    adrv.tap(button)
+    if name not in TRANSCODED:
+        time.sleep(settle); return
+    time.sleep(1.5)
+    deadline = time.time() + 180
+    while time.time() < deadline and any("Preparing playback" in l for l in labels()):
+        time.sleep(1)
+
 def test_video(ext):
     name = f"sample-{ext}.{ext}"
     if not open_detail("test-videos", name): return record(f"video .{ext} plays", False, "could not open detail screen")
     adrv.adb("logcat", "-c")
-    adrv.tap("^Play Video$"); time.sleep(4)
+    start_playback("^Play Video$", name, settle=4)
     box = (0, 230, 1080, 2100)
     a = shot(f"video-{ext}-a"); time.sleep(1.0); b = shot(f"video-{ext}-b")
     filled, moving = region_stats(a, box), frames_differ(a, b, box)
@@ -210,7 +240,7 @@ def test_audio(ext):
     name = f"sample-{ext}.{ext}"
     if not open_detail("test-audio", name): return record(f"audio .{ext} plays", False, "could not open detail screen")
     adrv.adb("logcat", "-c")
-    adrv.tap("^Play Audio$"); time.sleep(5)
+    start_playback("^Play Audio$", name, settle=5)
     bar = (100, 1230, 980, 1420)
     a = shot(f"audio-{ext}-a"); time.sleep(2.5); b = shot(f"audio-{ext}-b")
     advancing = frames_differ(a, b, bar)
@@ -371,7 +401,8 @@ def test_settings_admin_logout(expect_admin):
     swipe(); bottom = labels()
     both = top + middle + bottom
     record("Settings shows the signed-in account", any(l == (ENV["E2E_ADMIN_USER"] if expect_admin else ENV["E2E_USER"]) for l in both))
-    record("Settings shows app version 0.2.2", any("Version 0.2.2" in l for l in both), next((l for l in both if "Version" in l), ""))
+    record(f"Settings shows app version {APP_VERSION}", any(f"Version {APP_VERSION}" in l for l in both),
+           next((l for l in both if "Version" in l), ""))
     has_admin = any(l.startswith("Manage Users") for l in both)
     record("administration section is %s" % ("shown to the admin" if expect_admin else "hidden from a regular user"), has_admin == expect_admin)
     if expect_admin:
@@ -404,6 +435,7 @@ def test_regular_user(api):
 def main():
     api = API(ENV["E2E_ADMIN_USER"], ENV["E2E_ADMIN_PASS"])
     media = {m["file_name"]: m for m in api.call("GET", "/api/v1/media?limit=500")}
+    TRANSCODED.update(name for name, m in media.items() if m.get("transcoded"))
     record("admin can sign in", connect_and_login(ENV["E2E_ADMIN_USER"], ENV["E2E_ADMIN_PASS"], check_wrong_password=True))
     test_library_listing()
     for ext in FORMATS["test-videos"]: test_video(ext)

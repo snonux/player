@@ -1,7 +1,7 @@
 name: player_android
 description: Player Android client
 publish_to: "none"
-version: 0.2.2+4
+version: 0.3.0+5
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

@@ -1,1 +1,4 @@
-Player is now released under the MIT license. No functional changes.
+WMV, FLV, WMA, AVI and other legacy formats now play: the server converts them and the player shows "Preparing playback" while it does.
+SVG images are displayed.
+Playback problems are explained in plain words, with a Retry button that resumes where you were.
+Use-limited share links count one use per viewing, so they no longer stop mid-playback.

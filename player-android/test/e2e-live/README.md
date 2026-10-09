@@ -66,6 +66,10 @@ Each check prints `PASS` or `FAIL` with a short detail; the last line is the
 total. `results-<host>.json` and `shots-<host>/` are written below
 `PLAYER_E2E_OUT` (default: the current directory).
 
+The run expects the installed app to report the version in
+`player-android/pubspec.yaml`; set `PLAYER_E2E_APP_VERSION` when testing an
+APK built from another version.
+
 The run clears the app's data (`pm clear`) twice, so do not point it at an
 emulator whose Player data matters. On the server it removes the favourites,
 tags, notes, shares, progress and permissions it creates.
