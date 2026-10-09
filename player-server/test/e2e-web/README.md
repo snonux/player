@@ -40,7 +40,7 @@ Key environment variables for the test server:
 
 | Variable        | Value          | Reason                                              |
 |-----------------|----------------|-----------------------------------------------------|
-| `MEDIA_ROOT`    | `./testdata/media`  | Provides pre-existing sets so the grid test passes. |
+| `MEDIA_ROOT`    | `./testdata/media`  | Provides pre-existing sets so the grid test passes. The library must hold only these sets: extra ones (e.g. a `test-images` set of the live suite) make several selectors match more than one element. |
 | `SECURE_COOKIES`| `false`        | Allows the session cookie over plain HTTP.          |
 | `DB_PATH`       | `/tmp/player-e2e.db` | Isolates the test database from production.  |
 
@@ -126,8 +126,10 @@ Differences from the smoke suite:
   `test-images`, each holding one `sample-<ext>.<ext>` file per extension in
   `internal/mediatype`. Stems must be unique per directory because thumbnails
   are named after the stem.
-- AVI, WMV, FLV and WMA are asserted as *not* playable: the server streams
-  files as they are and no browser decodes these.
+- All 16 audio/video formats are asserted as playable. AVI, WMV, FLV and WMA
+  (media the server flags as `"transcoded"`) play through the compatibility
+  stream; their first play waits for the server-side transcode, so those tests
+  poll for up to 90 seconds.
 
 ```sh
 PLAYER_URL=https://player.example.org \

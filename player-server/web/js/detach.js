@@ -1,3 +1,5 @@
+import { mediaPlaybackUrl } from './streamSource.js';
+
 let deps = {};
 let detachWindow = null;
 let detachReady = false;
@@ -52,6 +54,9 @@ export function toggleDetach() {
   if (media) {
     pendingDetachMessage = detachedLoadMessage(media, snapshot.currentTime, snapshot.playing);
   }
+  // The popup loads (and, for a compat stream, prepares) the item itself; a
+  // probe still pending here must not start playback in the hidden player.
+  deps.cancelPendingSource?.();
   deps.currentMediaElement?.()?.pause();
   e.player.classList.add('hidden');
   showDetachedPlaceholder(true);
@@ -104,8 +109,9 @@ function reattachDetached({ closePopup = true } = {}) {
     if (m) {
       if (typeof state.volume === 'number') m.volume = state.volume;
       m.muted = !!state.muted;
-      if (state.playing) m.play().catch(() => {});
     }
+    // requestPlay also covers a compat stream that is not ready yet.
+    if (state.playing) deps.requestPlay?.();
   }
 }
 
@@ -136,7 +142,8 @@ function detachedLoadMessage(media, resumeFrom = 0, play = true) {
     type: 'detach-load',
     media,
     index: deps.getCurrentMediaIndex?.() ?? -1,
-    streamUrl: `/api/media/${media.id}/stream`,
+    // The compat stream for media the server flags as "transcoded".
+    streamUrl: mediaPlaybackUrl(media),
     thumbnailUrl: media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '',
     resumeFrom,
     play,

@@ -311,6 +311,38 @@
   display: none;
 }
 
+/* playback.js toggles this class on the player's elements. layout.css has
+   the same rule for the app; it is repeated here because the standalone
+   share page loads player.css but not layout.css. */
+.hidden { display: none !important; }
+
+/* Stage status: "preparing" text while the server transcodes a compat
+   stream. Created by playback.js; an empty element is hidden. It is a strip
+   along the bottom edge that lets clicks through, so the big play prompt
+   above it stays visible and usable (a click queues playback). The delayed
+   fade-in keeps it from flashing when the rendition is already cached. */
+.player-status {
+  position: absolute;
+  inset: auto 0 0 0;
+  pointer-events: none;
+  padding: 0.5rem 0.75rem;
+  box-sizing: border-box;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  text-align: center;
+  overflow-wrap: anywhere;
+  z-index: 6;
+  animation: player-status-in var(--transition-base) 400ms both;
+}
+.player-status:empty {
+  display: none;
+}
+@keyframes player-status-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* Big play button */
 .big-play {
   position: absolute;

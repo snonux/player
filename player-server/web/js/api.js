@@ -2,6 +2,16 @@ const API_BASE = '';
 
 export const NO_NOTE = Symbol('no note');
 
+// redirectToLogin sends the browser to the login page after a 401 (expired
+// session), unless it already is on the login or bootstrap page. Shared with
+// playback.js, whose compat-stream probe does not go through api().
+export function redirectToLogin() {
+  const p = location.pathname;
+  if (!p.includes('login') && !p.includes('bootstrap')) {
+    location.href = '/login.html';
+  }
+}
+
 async function api(path, options = {}) {
   const url = `${API_BASE}${path}`;
   const isForm = options.body instanceof FormData;
@@ -24,10 +34,7 @@ async function api(path, options = {}) {
       const j = await res.json();
       if (j.error) msg = j.error;
     } catch {}
-    const p = location.pathname;
-    if (!p.includes('login') && !p.includes('bootstrap')) {
-      location.href = '/login.html';
-    }
+    redirectToLogin();
     throw new Error(msg);
   }
   if (!res.ok) {

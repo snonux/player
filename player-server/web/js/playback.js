@@ -1,4 +1,4 @@
-import { API } from './api.js';
+import { API, redirectToLogin } from './api.js';
 import { state } from './state.js';
 import {
   clearCropMode,
@@ -24,6 +24,8 @@ import {
   sendDetachedLoad,
   toggleDetach,
 } from './detach.js';
+import { mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from './streamSource.js';
+import { toast } from './utils.js';
 
 export {
   cycleCropPosition,
@@ -45,6 +47,15 @@ let currentMediaIndex = -1;
 let reportProgress = true;
 let nextHandler = null;
 let previousHandler = null;
+// Set while the current item's compat stream is being probed and its media
+// element therefore has no source yet: { controller, autoplay, announced }.
+// autoplay records a play request made in the meantime.
+let pendingSource = null;
+// Where the current audio/video item is loaded from: { url, resumeFrom,
+// library }. Kept so a failed load can be retried; null for images.
+let currentSource = null;
+// Optional initPlayer({ onPlaybackFailed }) callback, see failPlayback.
+let failureHandler = null;
 
 function currentMediaElement() {
   const e = els();
@@ -96,9 +107,39 @@ const els = () => ({
 export function initPlayer(options = {}) {
   nextHandler = typeof options.onNext === 'function' ? options.onNext : null;
   previousHandler = typeof options.onPrevious === 'function' ? options.onPrevious : null;
+  failureHandler = typeof options.onPlaybackFailed === 'function' ? options.onPlaybackFailed : null;
   const e = els();
   if (!e.video && !e.audio) return;
 
+  bindControlButtons(e);
+  initImageViewer({ els, isImageMode, playNext: () => navigateImage(1) });
+  initDetach({
+    els,
+    currentMediaElement,
+    getCurrentMedia: () => currentMedia,
+    getCurrentMediaIndex: () => currentMediaIndex,
+    setCurrentMediaState,
+    loadMedia,
+    localPlaybackState,
+    cancelPendingSource,
+    requestPlay,
+    triggerPrevious,
+    triggerNext,
+    triggerNavigate,
+  });
+  bindVolume(e);
+  [e.video, e.audio].forEach((m) => {
+    bindMediaEvents(e, m);
+    setupMediaDebug(m);
+  });
+  e.video.addEventListener('loadedmetadata', updateFloatingSize);
+  document.addEventListener('fullscreenchange', () => {
+    if (e.player && !document.fullscreenElement) clearCropMode();
+  });
+  bindSeekTrack(e);
+}
+
+function bindControlButtons(e) {
   e.btnPlay?.addEventListener('click', togglePlay);
   e.btnPrev?.addEventListener('click', () => isImageMode() ? navigateImage(-1, { manual: true }) : triggerPrevious({ forcePlay: true }));
   e.btnNext?.addEventListener('click', () => isImageMode() ? navigateImage(1, { manual: true }) : triggerNext({ forcePlay: true }));
@@ -117,21 +158,9 @@ export function initPlayer(options = {}) {
       togglePlay();
     }
   });
+}
 
-  initImageViewer({ els, isImageMode, playNext: () => navigateImage(1) });
-  initDetach({
-    els,
-    currentMediaElement,
-    getCurrentMedia: () => currentMedia,
-    getCurrentMediaIndex: () => currentMediaIndex,
-    setCurrentMediaState,
-    loadMedia,
-    localPlaybackState,
-    triggerPrevious,
-    triggerNext,
-    triggerNavigate,
-  });
-
+function bindVolume(e) {
   e.volume?.addEventListener('input', () => {
     const v = parseFloat(e.volume.value);
     e.video.volume = v;
@@ -140,62 +169,54 @@ export function initPlayer(options = {}) {
     e.audio.muted = v === 0;
     updateMuteIcon();
   });
+}
 
-  [e.video, e.audio].forEach((m) => {
-    m.addEventListener('timeupdate', () => {
-      const dur = effectiveDuration();
-      if (!dur) return;
-      const pct = (m.currentTime / dur) * 100;
-      e.fill.style.width = pct.toFixed(2) + '%';
-      e.thumb.style.left = pct.toFixed(2) + '%';
-      e.timeElapsed.textContent = fmt(m.currentTime);
-      updateBufferedRanges(m);
-    });
-    m.addEventListener('loadedmetadata', () => {
-      const dur = effectiveDuration();
-      e.timeTotal.textContent = fmt(dur);
-      updateBufferedRanges(m);
-    });
-    ['progress', 'durationchange', 'loadeddata', 'canplay', 'seeked'].forEach((event) => {
-      m.addEventListener(event, () => updateBufferedRanges(m));
-    });
-    m.addEventListener('ended', () => {
-      updateUI(false);
-      isPlaying = false;
-      stopProgressTimer();
-      triggerNext({ forcePlay: true });
-    });
-    m.addEventListener('play', () => { updateUI(true); isPlaying = true; startProgressTimer(); });
-    m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
+// bindMediaEvents wires one <video>/<audio> element to the transport UI.
+function bindMediaEvents(e, m) {
+  m.addEventListener('timeupdate', () => {
+    const dur = effectiveDuration();
+    if (!dur) return;
+    const pct = (m.currentTime / dur) * 100;
+    e.fill.style.width = pct.toFixed(2) + '%';
+    e.thumb.style.left = pct.toFixed(2) + '%';
+    e.timeElapsed.textContent = fmt(m.currentTime);
+    updateBufferedRanges(m);
   });
-
-  e.video.addEventListener('loadedmetadata', updateFloatingSize);
-
-  document.addEventListener('fullscreenchange', () => {
-    const p = e.player;
-    if (!p) return;
-    if (!document.fullscreenElement) {
-      clearCropMode();
-    }
+  m.addEventListener('loadedmetadata', () => {
+    const dur = effectiveDuration();
+    e.timeTotal.textContent = fmt(dur);
+    updateBufferedRanges(m);
   });
+  ['progress', 'durationchange', 'loadeddata', 'canplay', 'seeked'].forEach((event) => {
+    m.addEventListener(event, () => updateBufferedRanges(m));
+  });
+  m.addEventListener('ended', () => {
+    updateUI(false);
+    isPlaying = false;
+    stopProgressTimer();
+    triggerNext({ forcePlay: true });
+  });
+  m.addEventListener('play', () => { updateUI(true); isPlaying = true; startProgressTimer(); });
+  m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
+  m.addEventListener('error', () => handleElementError(m));
+}
 
-  function setupVideoDebug(m) {
-    const events = ['loadstart','loadeddata','loadedmetadata','canplay','canplaythrough','playing','waiting','stalled','suspend','error','abort','emptied','ended'];
-    events.forEach(event => {
-      m.addEventListener(event, () => {
-        console.log('[video-debug]', event,
-          'readyState=', m.readyState,
-          'networkState=', m.networkState,
-          'paused=', m.paused,
-          'src=', m.src?.slice(-40),
-          'error=', m.error?.code || 'none',
-          'errorMsg=', m.error?.message || '');
-      });
+function setupMediaDebug(m) {
+  const events = ['loadstart','loadeddata','loadedmetadata','canplay','canplaythrough','playing','waiting','stalled','suspend','error','abort','emptied','ended'];
+  events.forEach(event => {
+    m.addEventListener(event, () => {
+      console.log('[video-debug]', event,
+        'readyState=', m.readyState,
+        'networkState=', m.networkState,
+        'paused=', m.paused,
+        'src=', m.src?.slice(-40),
+        'error=', m.error?.code || 'none',
+        'errorMsg=', m.error?.message || '');
     });
-  }
-  setupVideoDebug(e.video);
-  setupVideoDebug(e.audio);
+  });
+}
 
+function bindSeekTrack(e) {
   let seeking = false;
   const seekToFraction = (frac) => {
     const m = currentMediaElement();
@@ -284,9 +305,22 @@ export function togglePlay() {
     postToDetach({ type: 'detach-command', action: 'toggle-play' });
     return;
   }
+  if (pendingSource) {
+    // Nothing can play yet: toggle whether playback starts once it can.
+    setPendingPlay(!pendingSource.autoplay);
+    return;
+  }
   const m = currentMediaElement();
   if (!m) return;
-  if (m.paused) { m.play().catch(() => {}); } else { m.pause(); }
+  // No source (its compat stream failed) or an element error: play() could
+  // not recover and, on an empty element, would fire `play` and report
+  // position 0 as progress. Load the item again instead.
+  if (!m.getAttribute('src') || m.error) {
+    retrySource(m);
+    return;
+  }
+  if (m.paused) playElement(m);
+  else m.pause();
 }
 
 export function hasLoadedMedia() {
@@ -324,6 +358,7 @@ export function seekRelative(seconds) {
 }
 
 export function stopAndClose() {
+  cancelPendingSource();
   const m = currentMediaElement();
   if (m) m.pause();
   if (currentMedia?.type === 'image') {
@@ -346,6 +381,7 @@ export function stopAndClose() {
   e.btnZoomOut?.classList.add('hidden');
   e.btnSlideshow?.classList.add('hidden');
   currentMedia = null;
+  currentSource = null;
   currentMediaIndex = -1;
   isPlaying = false;
   stopProgressTimer();
@@ -374,129 +410,95 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
     highlightPlayingCard();
     return;
   }
+  // isPlaying states the intent; a failed load resets it (failPlayback).
   isPlaying = true;
-  const m = currentMediaElement();
-  if (m) {
-    console.log('selectAndPlay: type=', media.type, 'src=', m.src, 'readyState=', m.readyState);
-    m.play().catch((err) => { console.error('play() failed:', err); });
-  } else {
-    console.error('selectAndPlay: no media element found for type', media.type);
-  }
+  requestPlay();
   highlightPlayingCard();
 }
 
+// loadMediaDirect shows media from explicit URLs. It is used by the detached
+// popup and the public share page, which do not report playback progress.
+// streamUrl must be the server's playback URL (the compat stream when
+// media.transcoded is true).
 export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) {
   currentMedia = media;
   currentMediaIndex = -1;
   reportProgress = false;
+  showMedia(media, { url: streamUrl, resumeFrom, library: false }, thumbnailUrl);
+  // A direct load does not play by itself: show the play prompt until the
+  // caller (popup) or the user (share page) asks for playback.
+  if (media.type !== 'image') updateUI(false);
+}
+
+// loadMedia shows a library item in the main window; the caller has already
+// set currentMedia.
+function loadMedia(media, resumeFrom = 0) {
+  reportProgress = true;
+  const thumbnailUrl = media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
+  showMedia(media, { url: mediaPlaybackUrl(media), resumeFrom, library: true }, thumbnailUrl);
+}
+
+// showMedia displays media from source = { url, resumeFrom, library }.
+// library marks session-authenticated library playback in the main window
+// (as opposed to share and popup URLs); see finishPendingSource.
+function showMedia(media, source, thumbnailUrl) {
+  // Whatever was still being prepared belongs to the previous item.
+  cancelPendingSource();
   const e = els();
   if (media.type === 'image') {
-    resetImageZoom();
-    e.video.pause(); e.video.src = '';
-    e.audio.pause(); e.audio.src = '';
-    e.video.classList.add('hidden');
-    e.audio.classList.add('hidden');
-    e.coverArt?.classList.add('hidden');
-    e.bigPlay?.classList.add('hidden');
-    e.track?.classList.add('hidden');
-    e.timeElapsed?.classList.add('hidden');
-    e.timeTotal?.classList.add('hidden');
-    e.btnPlay?.classList.add('hidden');
-    e.btnZoomIn?.classList.remove('hidden');
-    e.btnZoomOut?.classList.remove('hidden');
-    e.btnSlideshow?.classList.remove('hidden');
-    e.image.classList.remove('hidden');
-    e.image.src = streamUrl;
-    e.player?.classList.add('open', 'has-image');
-    updateMinimizedTitle();
-    return;
-  }
-  const isVideo = media.type === 'video';
-  stopSlideshow();
-  const src = streamUrl;
-  e.video.classList.remove('hidden');
-  e.audio.classList.remove('hidden');
-  e.track?.classList.remove('hidden');
-  e.timeElapsed?.classList.remove('hidden');
-  e.timeTotal?.classList.remove('hidden');
-  e.btnPlay?.classList.remove('hidden');
-  e.image?.classList.add('hidden');
-  e.btnZoomIn?.classList.add('hidden');
-  e.btnZoomOut?.classList.add('hidden');
-  e.btnSlideshow?.classList.add('hidden');
-  e.player?.classList.remove('has-image');
-  e.player?.classList.add('open');
-  e.btnPlay.textContent = '⏸';
-  e.bigPlay?.classList.add('hidden');
-  if (isVideo) {
-    e.video.pause();
-    e.audio.pause(); e.audio.src = '';
-    e.video.classList.remove('hidden');
-    e.audio.classList.add('hidden');
-    e.coverArt?.classList.add('hidden');
-    e.image?.classList.add('hidden');
-    e.video.src = src;
-    e.video.load();
-    seekWhenMetadataReady(e.video, resumeFrom);
+    currentSource = null;
+    showImage(e, source.url);
   } else {
-    e.audio.pause();
-    e.video.pause(); e.video.src = '';
-    e.video.classList.add('hidden');
-    e.audio.classList.remove('hidden');
-    e.image?.classList.add('hidden');
-    e.audio.src = src;
-    seekWhenMetadataReady(e.audio, resumeFrom);
-    if (e.coverArt) {
-      if (thumbnailUrl) {
-        e.coverArt.src = thumbnailUrl;
-        e.coverArt.classList.remove('hidden');
-      } else {
-        e.coverArt.classList.add('hidden');
-        e.coverArt.src = '';
-      }
-    }
+    // Remembered so a failed load can be retried (retrySource).
+    currentSource = source;
+    showAudioVideo(e, media, source.url, thumbnailUrl, source.resumeFrom);
   }
-  e.player?.classList.add('open');
-  e.player?.classList.remove('has-image');
-  e.btnPlay.textContent = '⏸';
+  updateMinimizedTitle();
+}
+
+function showImage(e, url) {
+  resetImageZoom();
+  e.video.pause(); e.video.src = '';
+  e.audio.pause(); e.audio.src = '';
+  e.video.classList.add('hidden');
+  e.audio.classList.add('hidden');
+  e.coverArt?.classList.add('hidden');
   e.bigPlay?.classList.add('hidden');
+  e.track?.classList.add('hidden');
+  e.timeElapsed?.classList.add('hidden');
+  e.timeTotal?.classList.add('hidden');
+  e.btnPlay?.classList.add('hidden');
+  e.btnZoomIn?.classList.remove('hidden');
+  e.btnZoomOut?.classList.remove('hidden');
+  e.btnSlideshow?.classList.remove('hidden');
+  e.image.classList.remove('hidden');
+  e.image.src = url;
+  e.player?.classList.add('open', 'has-image');
+}
+
+function showAudioVideo(e, media, url, thumbnailUrl, resumeFrom) {
+  stopSlideshow();
+  showTransportControls(e);
+  const isVideo = media.type === 'video';
+  const active = isVideo ? e.video : e.audio;
+  const idle = isVideo ? e.audio : e.video;
+  active.pause();
+  idle.pause(); idle.src = '';
+  // Only the hidden class toggles visibility (no inline styles). Its rule
+  // lives in player.css, the one stylesheet every player page loads, so an
+  // audio item also hides the empty video box on the share page.
+  active.classList.remove('hidden');
+  idle.classList.add('hidden');
+  showCoverArt(e, isVideo ? '' : thumbnailUrl);
   e.timeTotal.textContent = fmt(media.duration ?? 0);
   e.buffered && (e.buffered.style.background = 'transparent');
   e.fill.style.width = '0%';
   e.thumb.style.left = '0%';
-  updateMinimizedTitle();
+  startSource(active, media, url, resumeFrom);
   updateFloatingSize();
 }
 
-function loadMedia(media, resumeFrom = 0) {
-  reportProgress = true;
-  const e = els();
-  if (media.type === 'image') {
-    resetImageZoom();
-    e.video.pause(); e.video.src = '';
-    e.audio.pause(); e.audio.src = '';
-    e.video.classList.add('hidden');
-    e.audio.classList.add('hidden');
-    e.coverArt?.classList.add('hidden');
-    e.bigPlay?.classList.add('hidden');
-    e.track?.classList.add('hidden');
-    e.timeElapsed?.classList.add('hidden');
-    e.timeTotal?.classList.add('hidden');
-    e.btnPlay?.classList.add('hidden');
-    e.btnZoomIn?.classList.remove('hidden');
-    e.btnZoomOut?.classList.remove('hidden');
-    e.btnSlideshow?.classList.remove('hidden');
-    e.image.classList.remove('hidden');
-    e.image.src = `/api/media/${media.id}/stream`;
-    e.player?.classList.add('open', 'has-image');
-    updateMinimizedTitle();
-    return;
-  }
-  const isVideo = media.type === 'video';
-  stopSlideshow();
-  const src = `/api/media/${media.id}/stream`;
-  e.video.classList.remove('hidden');
-  e.audio.classList.remove('hidden');
+function showTransportControls(e) {
   e.track?.classList.remove('hidden');
   e.timeElapsed?.classList.remove('hidden');
   e.timeTotal?.classList.remove('hidden');
@@ -509,38 +511,170 @@ function loadMedia(media, resumeFrom = 0) {
   e.player?.classList.add('open');
   e.btnPlay.textContent = '⏸';
   e.bigPlay?.classList.add('hidden');
-  if (isVideo) {
-    e.video.pause();
-    e.audio.pause(); e.audio.src = '';
-    e.video.style.display = '';
-    e.audio.style.display = 'none';
-    e.coverArt?.classList.add('hidden');
-    e.video.src = src;
-    e.video.load();
-    seekWhenMetadataReady(e.video, resumeFrom);
-  } else {
-    e.audio.pause();
-    e.video.pause(); e.video.src = '';
-    e.video.style.display = 'none';
-    e.audio.style.display = 'none';
-    e.audio.src = src;
-    seekWhenMetadataReady(e.audio, resumeFrom);
-    if (e.coverArt) {
-      if (media.thumbnail_path) {
-        e.coverArt.src = `/api/media/${media.id}/thumbnail`;
-        e.coverArt.classList.remove('hidden');
-      } else {
-        e.coverArt.classList.add('hidden');
-        e.coverArt.src = '';
-      }
-    }
+}
+
+function showCoverArt(e, thumbnailUrl) {
+  if (!e.coverArt) return;
+  e.coverArt.classList.toggle('hidden', !thumbnailUrl);
+  e.coverArt.src = thumbnailUrl || '';
+}
+
+// startSource gives the element its source. Plain streams are assigned right
+// away. A transcoded item is first probed (see streamSource.js): the element
+// stays empty and the "preparing" status is shown until the server has the
+// rendition, so a 503 never reaches the element as a bogus decode error.
+function startSource(m, media, url, resumeFrom) {
+  if (!media.transcoded) {
+    attachSource(m, url, resumeFrom);
+    return;
   }
-  e.timeTotal.textContent = fmt(media.duration ?? 0);
-  e.buffered && (e.buffered.style.background = 'transparent');
-  e.fill.style.width = '0%';
-  e.thumb.style.left = '0%';
-  updateMinimizedTitle();
-  updateFloatingSize();
+  // Drop the previous item's source so readyState/currentTime are reset and
+  // resume/play listeners wait for the new stream's metadata.
+  m.removeAttribute('src');
+  m.load();
+  const pending = { controller: new AbortController(), autoplay: false, announced: false };
+  pendingSource = pending;
+  setPlayerStatus(preparingText(media, ''));
+  waitForCompatStream(url, {
+    signal: pending.controller.signal,
+    onPreparing: (status) => announcePreparing(pending, media, status),
+  }).then((result) => finishPendingSource(pending, m, media, url, resumeFrom, result));
+}
+
+function attachSource(m, url, resumeFrom) {
+  m.src = url;
+  m.load();
+  seekWhenMetadataReady(m, resumeFrom);
+}
+
+// finishPendingSource runs when the probe settles. A probe that was cancelled
+// or superseded by another item must not touch the element any more.
+function finishPendingSource(pending, m, media, url, resumeFrom, result) {
+  if (pendingSource !== pending) return;
+  pendingSource = null;
+  setPlayerStatus('');
+  if (result.state !== 'ready') {
+    failPlayback(media, result.reason);
+    // An expired session ends library playback like every other API call
+    // (api.js): at the login page. Share and popup URLs never redirect: a
+    // share viewer has no account, and the popup must not navigate away.
+    if (result.status === 401 && currentSource?.library) redirectToLogin();
+    return;
+  }
+  attachSource(m, url, resumeFrom);
+  if (pending.autoplay) playElement(m);
+}
+
+// retrySource loads the current item again after its compat stream failed or
+// the element reported an error, and plays it: the play button, the big play
+// prompt and Space/p all end here through togglePlay, so a failure never
+// needs a page reload.
+function retrySource(m) {
+  if (!currentSource || !currentMedia) return;
+  // Read before startSource resets the element: keep the reached position.
+  const resumeFrom = m.currentTime > 0 ? m.currentTime : currentSource.resumeFrom;
+  startSource(m, currentMedia, currentSource.url, resumeFrom);
+  updateUI(true);
+  requestPlay();
+}
+
+// cancelPendingSource stops waiting for a compat stream (item switched,
+// player closed or detached), including its retry timer and open request.
+function cancelPendingSource() {
+  if (!pendingSource) return;
+  pendingSource.controller.abort();
+  pendingSource = null;
+  setPlayerStatus('');
+}
+
+function preparingText(media, status) {
+  const name = media?.file_name || 'this file';
+  if (status === 'busy') return `Server is busy, ${name} is waiting to be prepared…`;
+  return `Preparing ${name} for playback…`;
+}
+
+// announcePreparing is called before each retry wait. The stage status keeps
+// showing the current state; the toast is raised only once, and exists
+// because the stage is not visible while the player is minimized.
+function announcePreparing(pending, media, status) {
+  if (pendingSource !== pending) return;
+  const text = preparingText(media, status);
+  setPlayerStatus(text);
+  if (!pending.announced) toast(text, 'info');
+  pending.announced = true;
+}
+
+// setPlayerStatus shows text over the stage; an empty text hides it (the
+// element is styled away via :empty). The element is created on demand so
+// index.html, detach.html and share.html need no extra markup.
+function setPlayerStatus(text) {
+  let status = document.getElementById('player-status');
+  if (!status) {
+    const stage = els().player?.querySelector('.stage');
+    if (!stage || !text) return;
+    status = document.createElement('div');
+    status.id = 'player-status';
+    status.className = 'player-status';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    stage.appendChild(status);
+  }
+  status.textContent = text;
+}
+
+// handleElementError reacts to a media element's `error` event. Errors of the
+// idle element are ignored: clearing its source (src = '') makes browsers
+// report an "empty src" error that is not a playback failure.
+function handleElementError(m) {
+  if (m !== currentMediaElement() || !m.getAttribute('src')) return;
+  failPlayback(currentMedia, mediaErrorReason(m.error));
+}
+
+// failPlayback tells the user why nothing plays and puts the transport back
+// into the "not playing" state. pause() only fires a `pause` event when the
+// element was playing, and after a failed probe it never was; the
+// onPlaybackFailed callback therefore lets the detached popup report the lost
+// play intent to the main window in every case.
+function failPlayback(media, reason) {
+  currentMediaElement()?.pause();
+  isPlaying = false;
+  stopProgressTimer();
+  updateUI(false);
+  toast(`Cannot play ${media?.file_name || 'this file'}: ${reason}`, 'error');
+  failureHandler?.();
+}
+
+// requestPlay starts playback of the current item, or remembers the wish
+// while its compat stream is still being prepared.
+export function requestPlay() {
+  if (pendingSource) {
+    setPendingPlay(true);
+    return;
+  }
+  const m = currentMediaElement();
+  if (m) playElement(m);
+}
+
+// setPendingPlay records whether playback starts once the stream being
+// prepared is ready, and shows that wish on the play button / big play.
+function setPendingPlay(wanted) {
+  pendingSource.autoplay = wanted;
+  updateUI(wanted);
+}
+
+// hasPendingPlay tells whether a play request waits for a compat stream. The
+// detached popup reports it as "playing" so the wish survives a reattach.
+export function hasPendingPlay() {
+  return !!pendingSource?.autoplay;
+}
+
+function playElement(m) {
+  m.play().catch((err) => {
+    console.error('play() failed:', err);
+    // Autoplay can be refused when the stream became ready long after the
+    // click; show the play prompt instead of a pause button that lies.
+    if (err?.name === 'NotAllowedError') updateUI(false);
+  });
 }
 
 function seekWhenMetadataReady(m, seconds) {
@@ -734,7 +868,9 @@ function localPlaybackState() {
     index: currentMediaIndex,
     currentTime: m?.currentTime || 0,
     duration: m?.duration || currentMedia?.duration || 0,
-    playing: !!m && !m.paused,
+    // A play request waiting for a compat stream counts as playing, so
+    // detaching while preparing keeps the wish to play.
+    playing: (!!m && !m.paused) || !!pendingSource?.autoplay,
     volume: m?.volume ?? 1,
     muted: !!m?.muted,
   };
