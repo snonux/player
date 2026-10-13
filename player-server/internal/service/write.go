@@ -38,13 +38,12 @@ type writeService struct {
 	// thumbGen renders set and folder covers straight to their file.
 	thumbGen thumb.Generator
 	// thumbs makes and removes media thumbnails; nil without a generator.
+	// It keeps them beside the source unless WithThumbnailLayout says
+	// otherwise.
 	thumbs ThumbnailMaker
-	// thumbLayout is the layout thumbs creates thumbnails in (see
-	// WithThumbnailLayout); the zero value keeps them beside the source.
-	thumbLayout thumb.Layout
-	prober      probe.Prober
-	helper      *accessHelper
-	logger      *slog.Logger
+	prober probe.Prober
+	helper *accessHelper
+	logger *slog.Logger
 }
 
 // NewWriteService creates a WriteService. Media thumbnails are produced by
@@ -69,7 +68,6 @@ func NewWriteService(store repository.WriteServiceStore, clk clock.Clock, mediaR
 // layout says, i.e. in the thumbnail cache when one is configured. It must
 // be called before the service is used.
 func (s *writeService) WithThumbnailLayout(layout thumb.Layout) *writeService {
-	s.thumbLayout = layout
 	s.thumbs = newThumbnailMakerIn(s.thumbGen, s.logger, layout)
 	return s
 }
@@ -175,10 +173,12 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 // the old file would be orphaned: the rescan migration only looks at paths
 // rows still store.
 //
-// The row's own thumbnail in the thumbnail cache is deleted right away: no
-// other row can point at it, and it is not inside any set.
+// With a thumbnail cache the previous file is either the row's own cache
+// path, which is the new path too (nothing to do), or a file in an
+// abandoned cache directory, which is outside every set and stays where it
+// is like the rest of that directory.
 //
-// A thumbnail in the media tree is kept unless all of this holds:
+// The file is kept unless all of this holds:
 //   - it is a generated thumbnail inside the directory of the row's own
 //     set, the same confinement the scanner applies. A stale stored path
 //     (media root moved, database copied) may point anywhere, also into a
@@ -191,10 +191,6 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 // Failing to clean up is logged, not returned: the regeneration succeeded.
 func (s *writeService) removeReplacedThumbnail(ctx context.Context, media *model.Media, previous string) {
 	if previous == media.ThumbnailPath || !thumb.IsGenerated(previous) {
-		return
-	}
-	if s.thumbLayout.IsCachedFor(previous, media.AbsPath) {
-		s.thumbs.Remove(previous)
 		return
 	}
 	setDir, ok := setDirOf(s.mediaRoot, media)

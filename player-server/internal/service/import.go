@@ -97,18 +97,20 @@ func probeMedia(ctx context.Context, prober probe.Prober, path string) (*model.M
 // reports whether it generated a thumbnail file for that (made). An SVG is
 // its own thumbnail. Everything else goes through the ThumbnailMaker, the
 // one implementation shared with the scanner and RegenerateThumbnail: the
-// thumbnail lands in .thumbnails beside the source, named after its full
-// basename ("clip.mp4.jpg"), so a same-stem sibling ("clip.png") gets its
-// own file instead of overwriting this one; and it is generated into a
-// temporary file and verified before it is put in place.
+// thumbnail lands in .thumbnails beside the source (or at the same
+// relative path in the thumbnail cache, when one is configured), named
+// after its full basename ("clip.mp4.jpg"), so a same-stem sibling
+// ("clip.png") gets its own file instead of overwriting this one; and it
+// is generated into a temporary file and verified before it is put in
+// place.
 //
 // A thumbnail that cannot be made is no reason to reject the upload or the
 // download: the maker logs why, and the media is stored like the scanner
 // would index it, a video without thumbnail, an image standing in as its
 // own. A later rescan tries again.
 //
-// Without a maker (a service built without a generator) the path is
-// recorded but no file is written.
+// Without a maker (a service built without a generator, i.e. a test) the
+// path beside the source is recorded but no file is written.
 //
 // Accepted limitation, between upgrading from a release up to v0.2.2 and
 // the first rescan: the path written here can still be the thumbnail of

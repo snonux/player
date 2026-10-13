@@ -48,6 +48,9 @@ type Deps struct {
 	// uses it for the startup check and to wait for running ffmpeg jobs on
 	// shutdown.
 	Transcodes *transcode.Cache
+	// Thumbnails is the one layout every component creating, locating or
+	// deleting thumbnails uses: beside the media, or THUMBNAIL_CACHE_DIR.
+	Thumbnails thumb.Layout
 	Scanner    scanner.Scanner
 	GCWorker   *service.GCWorker
 	Logger     *slog.Logger
@@ -107,14 +110,10 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	browser := service.NewPodcastBrowseService(store, cfg.MediaRoot)
 	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, browser, thumbResolver).
 		WithThumbnailLayout(thumbLayout)
-	playbackHintSvc := service.NewPlaybackHintsService(helper)
 
 	fsScanner := scanner.NewFSScannerWithMaker(store, prober, thumbMaker, clk, cfg.MediaRoot, logger).
 		WithThumbnailLayout(thumbLayout)
 	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
-
-	progressSvc := service.NewProgressService(store, clk)
-	authSvc := service.NewAuthService(store, clk, hasher, sm, tm)
 
 	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger).
 		WithThumbnailLayout(thumbLayout)
@@ -127,13 +126,14 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		Clk:             clk,
 		MediaSvc:        mediaSvc,
 		AdminSvc:        adminSvc,
-		ProgressSvc:     progressSvc,
-		AuthSvc:         authSvc,
+		ProgressSvc:     service.NewProgressService(store, clk),
+		AuthSvc:         service.NewAuthService(store, clk, hasher, sm, tm),
 		PodcastSvc:      podcastSvc,
-		PlaybackHintSvc: playbackHintSvc,
+		PlaybackHintSvc: service.NewPlaybackHintsService(helper),
 		Scanner:         fsScanner,
 		Logger:          logger,
 		AppCtx:          appCtx,
+		Thumbnails:      thumbLayout,
 	}
 	wireTranscoding(deps, runner)
 	return deps
@@ -178,13 +178,29 @@ func wireTranscoding(deps *Deps, runner transcode.Runner) {
 	// hard-deleted media.
 	deps.GCWorker = service.NewGCWorker(deps.Store, deps.Clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, deps.Logger).
 		WithRenditionCache(deps.Transcodes).
-		WithThumbnailLayout(thumb.NewLayout(cfg.MediaRoot, cfg.ThumbnailCacheDir))
+		WithThumbnailLayout(deps.Thumbnails)
 }
 
 // checkTranscoding reports transcoding misconfiguration at startup. Problems
 // are logged, not fatal: everything except the compatibility stream works
 // without ffmpeg or a writable cache, and the log line saves the operator
 // from finding out through a failed playback.
+// checkThumbnailCache warns at startup when THUMBNAIL_CACHE_DIR is set but
+// cannot be written. Like a transcoding problem this is not fatal: media is
+// indexed and played without thumbnails, but otherwise the only sign would
+// be one warning per file on every rescan.
+func checkThumbnailCache(deps *Deps) {
+	dir := deps.Cfg.ThumbnailCacheDir
+	if dir == "" {
+		return
+	}
+	if err := thumb.CheckCacheDir(dir); err != nil {
+		deps.Logger.Warn("thumbnail cache unusable, no thumbnails will be generated", "dir", dir, "err", err)
+		return
+	}
+	deps.Logger.Info("thumbnails are stored in the thumbnail cache", "dir", dir)
+}
+
 func checkTranscoding(deps *Deps, runner *transcode.FFmpegRunner) {
 	if err := runner.Available(); err != nil {
 		deps.Logger.Warn("compatibility stream unavailable", "err", err)
@@ -365,6 +381,7 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 	defer deps.GCWorker.Stop()
 	defer stopTranscoding(deps)
 	checkTranscoding(deps, runner)
+	checkThumbnailCache(deps)
 	StartBackgroundWorkers(deps)
 
 	server, err := NewAPIServer(deps, http.Dir("web"), logger)

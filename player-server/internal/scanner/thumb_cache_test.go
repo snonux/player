@@ -175,14 +175,57 @@ func TestScanWithCache_SweepsStaleTemporaries(t *testing.T) {
 	}
 }
 
-// TestStaleKindOf_Cache: which stored thumbnail paths a scan with a cache
-// replaces, and which it must leave alone.
+// TestScanWithCache_CacheDirectoryChanged: after THUMBNAIL_CACHE_DIR was
+// pointed elsewhere the old thumbnails are not served any more, so a rescan
+// makes new ones in the new cache. The abandoned directory is left alone.
+func TestScanWithCache_CacheDirectoryChanged(t *testing.T) {
+	f := newMigrationFixture(t, nil)
+	f.cache = t.TempDir()
+	f.write(f.abs("clip.mp4"), "source")
+	f.scan()
+	abandoned := f.cached("clip.mp4")
+
+	f.cache = t.TempDir()
+	f.scan()
+
+	f.assertCached("clip.mp4")
+	if f.cached("clip.mp4") == abandoned {
+		t.Fatal("fixture error: the cache path did not change")
+	}
+	if _, err := os.Stat(abandoned); err != nil {
+		t.Errorf("the abandoned cache was touched: %v", err)
+	}
+}
+
+// TestScanWithCache_SwitchedOff: with the setting removed again, a rescan
+// puts the thumbnails back beside the media and leaves the old cache alone.
+func TestScanWithCache_SwitchedOff(t *testing.T) {
+	f := newMigrationFixture(t, nil)
+	f.cache = t.TempDir()
+	f.write(f.abs("clip.mp4"), "source")
+	f.scan()
+	abandoned := f.cached("clip.mp4")
+
+	f.cache = ""
+	f.rooted = true
+	f.scan()
+
+	f.assertFresh("clip.mp4")
+	if _, err := os.Stat(abandoned); err != nil {
+		t.Errorf("the abandoned cache was touched: %v", err)
+	}
+}
+
+// TestStaleKindOf_Cache: which stored thumbnail paths a scan replaces when
+// thumbnails can live in a cache, and which it must leave alone.
 func TestStaleKindOf_Cache(t *testing.T) {
 	const root, cache, set = "/media", "/thumbs", "/media/set"
 	src := set + "/a/clip.mp4"
 	layout := thumb.NewLayout(root, cache)
+	noCache := thumb.NewLayout(root, "")
 	cached, _ := layout.Cached(src)
-	present := map[string]bool{cached: true, "/elsewhere/.thumbnails/clip.mp4.jpg": true}
+	const elsewhere, otherSet = "/elsewhere/.thumbnails/clip.mp4.jpg", "/media/other/.thumbnails/clip.mp4.jpg"
+	present := map[string]bool{cached: true, elsewhere: true, otherSet: true}
 	exists := func(path string) bool { return present[path] }
 	tests := []struct {
 		name   string
@@ -194,12 +237,22 @@ func TestStaleKindOf_Cache(t *testing.T) {
 		{"beside the source, cache now configured", layout, thumb.ThumbnailPathFor(src), staleOldName},
 		{"never made", layout, "", staleNone},
 		{"another file's cache path that is gone", layout, "/thumbs/set/a/.thumbnails/other.mp4.jpg", staleNone},
-		{"abandoned cache, file still there", layout, "/elsewhere/.thumbnails/clip.mp4.jpg", 0},
+		// Outside the media root nothing but the current cache is served:
+		// such a thumbnail is lost whether or not its file still exists.
+		{"abandoned cache, file still there", layout, elsewhere, staleNone},
 		{"abandoned cache, file gone", layout, "/old-cache/set/a/.thumbnails/clip.mp4.jpg", staleNone},
-		{"ordinary file outside the set that is gone", layout, "/elsewhere/cover.jpg", 0},
-		// Without a cache a path in the former cache is just a path
-		// outside the set: kept while it exists.
-		{"cache switched off, file still there", thumb.Layout{}, cached, 0},
+		{"cache switched off, file still there", noCache, cached, staleNone},
+		{"cache switched off, file gone", noCache, "/thumbs/set/a/.thumbnails/gone.jpg", staleNone},
+		// Inside the media root a thumbnail of another set keeps working.
+		{"thumbnail in another set, present", layout, otherSet, 0},
+		{"thumbnail in another set, gone", noCache, "/media/other/.thumbnails/gone.jpg", staleNone},
+		// Never a generated thumbnail: an ordinary file is left alone.
+		{"ordinary file outside the root that is gone", layout, "/elsewhere/cover.jpg", 0},
+		{"ordinary file outside the root", noCache, "/elsewhere/cover.jpg", 0},
+		// A scanner that was not told its media root (tests, mostly) keeps
+		// the old rule: an existing file elsewhere is left alone.
+		{"media root unknown, file still there", thumb.Layout{}, elsewhere, 0},
+		{"media root unknown, file gone", thumb.Layout{}, "/gone/.thumbnails/clip.mp4.jpg", staleNone},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

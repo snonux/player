@@ -2,6 +2,8 @@ package thumb
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,26 +15,31 @@ func TestLayout_PathFor(t *testing.T) {
 		name   string
 		layout Layout
 		src    string
-		want   string
+		want   string // "" = the layout has no place for it
 	}{
-		{"no cache: beside the source", Layout{}, "/media/set/a/clip.mp4", "/media/set/a/.thumbnails/clip.mp4.jpg"},
-		{"empty cache dir means no cache", NewLayout("/media", ""), "/media/set/clip.mp4", "/media/set/.thumbnails/clip.mp4.jpg"},
+		{"zero layout: beside the source", Layout{}, "/media/set/a/clip.mp4", "/media/set/a/.thumbnails/clip.mp4.jpg"},
+		{"no cache: beside the source", NewLayout("/media", ""), "/media/set/clip.mp4", "/media/set/.thumbnails/clip.mp4.jpg"},
+		{"no cache: beside a source outside the root too", NewLayout("/media", ""), "/elsewhere/clip.mp4", "/elsewhere/.thumbnails/clip.mp4.jpg"},
 		{"cache mirrors the media tree", cache, "/media/set/a/clip.mp4", "/thumbs/set/a/.thumbnails/clip.mp4.jpg"},
 		{"file directly in a set", cache, "/media/set/clip.mp4", "/thumbs/set/.thumbnails/clip.mp4.jpg"},
 		{"set name with a space", cache, "/media/Music Videos/x.mkv", "/thumbs/Music Videos/.thumbnails/x.mkv.jpg"},
 		{"unclean source path", cache, "/media/set/../set/./clip.mp4", "/thumbs/set/.thumbnails/clip.mp4.jpg"},
 		{"unclean roots", NewLayout("/media/", "/thumbs/x/.."), "/media/set/clip.mp4", "/thumbs/set/.thumbnails/clip.mp4.jpg"},
-		// Never mapped into (or out of) the cache: these stay beside the source.
-		{"source outside the media root", cache, "/elsewhere/clip.mp4", "/elsewhere/.thumbnails/clip.mp4.jpg"},
-		{"source above the media root", cache, "/clip.mp4", "/.thumbnails/clip.mp4.jpg"},
-		{"sibling sharing the root's prefix", cache, "/media-old/set/clip.mp4", "/media-old/set/.thumbnails/clip.mp4.jpg"},
-		{"dot-dot out of the media root", cache, "/media/../etc/clip.mp4", "/etc/.thumbnails/clip.mp4.jpg"},
+		// With a cache, a source outside the media root gets no thumbnail
+		// at all: neither mapped into the cache nor written beside it.
+		{"source outside the media root", cache, "/elsewhere/clip.mp4", ""},
+		{"source above the media root", cache, "/clip.mp4", ""},
+		{"sibling sharing the root's prefix", cache, "/media-old/set/clip.mp4", ""},
+		{"dot-dot out of the media root", cache, "/media/../etc/clip.mp4", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.layout.PathFor(tt.src)
-			if got != tt.want {
-				t.Errorf("PathFor(%q) = %q, want %q", tt.src, got, tt.want)
+			got, ok := tt.layout.PathFor(tt.src)
+			if ok != (tt.want != "") || got != tt.want {
+				t.Fatalf("PathFor(%q) = %q, %v; want %q", tt.src, got, ok, tt.want)
+			}
+			if !ok {
+				return
 			}
 			if !IsGenerated(got) {
 				t.Errorf("%q is not recognised as a generated thumbnail", got)
@@ -41,6 +48,50 @@ func TestLayout_PathFor(t *testing.T) {
 				t.Errorf("layout does not hold its own path %q", got)
 			}
 		})
+	}
+}
+
+// TestNewLayout_OverlappingCacheIsIgnored: a cache that is, contains or lies
+// inside the media root would turn media folders into cache folders (or the
+// cache into a set). Configuration loading rejects it; the Layout itself
+// never uses it.
+func TestNewLayout_OverlappingCacheIsIgnored(t *testing.T) {
+	const src = "/data/media/set/clip.mp4"
+	for _, cache := range []string{"/data", "/", "/data/media", "/data/media/", "/data/media/.cache", "/data/x/../media/c"} {
+		l := NewLayout("/data/media", cache)
+		if got, ok := l.Cached(src); ok {
+			t.Errorf("cache %q: Cached = %q, want no cache", cache, got)
+		}
+		if got, ok := l.PathFor(src); !ok || got != ThumbnailPathFor(src) {
+			t.Errorf("cache %q: PathFor = %q, %v; want the path beside the source", cache, got, ok)
+		}
+		for _, dir := range []string{"/data/media/set", "/data/media", "/data/other"} {
+			if l.inCache(dir) {
+				t.Errorf("cache %q: %q counts as a cache folder", cache, dir)
+			}
+		}
+	}
+	// A sibling that only shares the root's prefix is a proper cache.
+	if _, ok := NewLayout("/data/media", "/data/media-thumbs").Cached(src); !ok {
+		t.Error("a disjoint sibling directory was not accepted as cache")
+	}
+}
+
+func TestLayout_InMediaRoot(t *testing.T) {
+	l := NewLayout("/media", "/thumbs")
+	for path, want := range map[string]bool{
+		"/media/set/.thumbnails/x.jpg":  true,
+		"/media":                        false,
+		"/thumbs/set/.thumbnails/x.jpg": false,
+		"/media-old/set/x.jpg":          false,
+		"/media/../etc/x.jpg":           false,
+	} {
+		if got := l.InMediaRoot(path); got != want {
+			t.Errorf("InMediaRoot(%q) = %v, want %v", path, got, want)
+		}
+	}
+	if !(Layout{}).InMediaRoot("/anywhere/x.jpg") {
+		t.Error("a layout without a media root must not rule paths out")
 	}
 }
 
@@ -227,5 +278,157 @@ func TestFSMaker_Remove_NeverPrunesOutsideTheCache(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Dir(path)); err == nil {
 		t.Error("the emptied .thumbnails directory was left behind")
+	}
+}
+
+// TestFSMaker_Cache_SourceOutsideMediaRoot: with a cache configured a file
+// outside the media root (a stale row of a copied database, say) gets no
+// thumbnail; in particular none is written next to it.
+func TestFSMaker_Cache_SourceOutsideMediaRoot(t *testing.T) {
+	root, cache, elsewhere := t.TempDir(), t.TempDir(), t.TempDir()
+	src := filepath.Join(elsewhere, "clip.mp4")
+	if err := os.WriteFile(src, []byte("source"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := NewFSMaker(textGen(), nil, nil).WithLayout(NewLayout(root, cache))
+	if got, err := m.Make(context.Background(), src, 1); !errors.Is(err, ErrOutsideMediaRoot) {
+		t.Fatalf("Make = %q, %v; want ErrOutsideMediaRoot", got, err)
+	}
+	if got := m.MakeImage(context.Background(), src); got != "" {
+		t.Errorf("MakeImage = %q, want no thumbnail", got)
+	}
+	if entries, _ := os.ReadDir(elsewhere); len(entries) != 1 {
+		t.Errorf("the foreign directory was written to: %v", entries)
+	}
+	if entries, _ := os.ReadDir(cache); len(entries) != 0 {
+		t.Errorf("the cache was written to: %v", entries)
+	}
+}
+
+// missingParentFS fails MkdirAll with "no such file or directory" a number
+// of times: what a concurrent Remove pruning the folders above causes.
+type missingParentFS struct {
+	*fakeFS
+	failures int
+}
+
+func (f *missingParentFS) MkdirAll(path string, perm os.FileMode) error {
+	if f.failures > 0 {
+		f.failures--
+		return &os.PathError{Op: "mkdir", Path: path, Err: fs.ErrNotExist}
+	}
+	return f.fakeFS.MkdirAll(path, perm)
+}
+
+// TestFSMaker_ReserveSurvivesParentRemoval: pruning emptied cache folders
+// can remove a parent while MkdirAll is walking down it. That is retried,
+// and only given up on when it keeps happening.
+func TestFSMaker_ReserveSurvivesParentRemoval(t *testing.T) {
+	fsys := &missingParentFS{fakeFS: newFakeFS(), failures: reserveAttempts - 1}
+	if got, err := NewFSMaker(writing(fsys.fakeFS, 5), fsys, nil).Make(context.Background(), "/s/v.mp4", 1); err != nil || got == "" {
+		t.Fatalf("Make = %q, %v; want it to retry and succeed", got, err)
+	}
+	fsys = &missingParentFS{fakeFS: newFakeFS(), failures: reserveAttempts}
+	if _, err := NewFSMaker(writing(fsys.fakeFS, 5), fsys, nil).Make(context.Background(), "/s/v.mp4", 1); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Make error = %v, want it to give up with the not-exist error", err)
+	}
+}
+
+// TestFSMaker_Cache_ConcurrentMakeAndRemove runs the race for real: one
+// goroutine keeps creating and removing a thumbnail (which prunes the
+// folders above it) while another creates thumbnails in a neighbouring
+// folder of the same cache subtree. No Make may fail.
+func TestFSMaker_Cache_ConcurrentMakeAndRemove(t *testing.T) {
+	root, cache := t.TempDir(), t.TempDir()
+	m := NewFSMaker(textGen(), nil, nil).WithLayout(NewLayout(root, cache))
+	a := filepath.Join(root, "set", "x", "a", "clip.mp4")
+	b := filepath.Join(root, "set", "x", "b", "clip.mp4")
+	const rounds = 2000
+	errs := make(chan error, 2)
+	loop := func(src string, remove bool) {
+		for i := 0; i < rounds; i++ {
+			dst, err := m.Make(context.Background(), src, 1)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if remove {
+				m.Remove(dst)
+			}
+		}
+		errs <- nil
+	}
+	go loop(a, true)
+	go loop(b, true)
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("Make failed while a neighbour was being removed: %v", err)
+		}
+	}
+}
+
+// TestFSMaker_Remove_KeepsSymlinkedCacheFolder: a cache folder that is a
+// symbolic link (part of the cache kept on another volume) is not unlinked
+// when the folder below it becomes empty.
+func TestFSMaker_Remove_KeepsSymlinkedCacheFolder(t *testing.T) {
+	root, cache, target := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.Symlink(target, filepath.Join(cache, "set")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	thumbnail := filepath.Join(cache, "set", "a", DirName, "clip.mp4.jpg")
+	if err := os.MkdirAll(filepath.Dir(thumbnail), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(thumbnail, []byte("jpg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	NewFSMaker(nil, nil, nil).WithLayout(NewLayout(root, cache)).Remove(thumbnail)
+	if _, err := os.Lstat(filepath.Join(cache, "set")); err != nil {
+		t.Errorf("the symlinked cache folder was removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "a")); err == nil {
+		t.Error("the emptied folder below the link was left behind")
+	}
+}
+
+// TestFSMaker_Remove_OverlappingCacheNeverPrunesMedia: even if a cache
+// directory containing the media root reached the maker, removing a
+// thumbnail must not take the emptied media folders with it.
+func TestFSMaker_Remove_OverlappingCacheNeverPrunesMedia(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "media")
+	thumbnail := filepath.Join(root, "set", "album", DirName, "clip.mp4.jpg")
+	if err := os.MkdirAll(filepath.Dir(thumbnail), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(thumbnail, []byte("jpg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	NewFSMaker(nil, nil, nil).WithLayout(NewLayout(root, base)).Remove(thumbnail)
+	if _, err := os.Stat(filepath.Join(root, "set", "album")); err != nil {
+		t.Errorf("an emptied media folder was removed: %v", err)
+	}
+}
+
+func TestCheckCacheDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "new", "cache")
+	if err := CheckCacheDir(dir); err != nil {
+		t.Fatalf("CheckCacheDir on a creatable directory: %v", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("the check left files behind: %v", entries)
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if err := CheckCacheDir(dir); err == nil {
+		t.Error("an unwritable cache directory passed the check")
+	}
+	if err := CheckCacheDir(filepath.Join(dir, "below")); err == nil {
+		t.Error("a cache directory that cannot be created passed the check")
 	}
 }

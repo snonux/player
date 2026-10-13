@@ -306,6 +306,11 @@ func TestLoadConfig_ThumbnailCache(t *testing.T) {
 		{"is the media root", []envPair{{"MEDIA_ROOT", "/media"}, {"THUMBNAIL_CACHE_DIR", "/media/"}}, "", true},
 		{"dot-dot back into media root", []envPair{{"MEDIA_ROOT", "/media"}, {"THUMBNAIL_CACHE_DIR", "/data/../media/t"}}, "", true},
 		{"relative, inside media root", []envPair{{"MEDIA_ROOT", "media"}, {"THUMBNAIL_CACHE_DIR", "media/thumbs"}}, "", true},
+		// A cache above the media root would make every media folder a
+		// cache folder, whose emptied directories get removed.
+		{"contains the media root", []envPair{{"MEDIA_ROOT", "/data/media"}, {"THUMBNAIL_CACHE_DIR", "/data"}}, "", true},
+		{"is the file system root", []envPair{{"MEDIA_ROOT", "/data/media"}, {"THUMBNAIL_CACHE_DIR", "/"}}, "", true},
+		{"relative, contains the media root", []envPair{{"MEDIA_ROOT", "data/media"}, {"THUMBNAIL_CACHE_DIR", "data/"}}, "", true},
 		{"same directory as the transcode cache", []envPair{{"TRANSCODE_CACHE_DIR", "/cache"}, {"THUMBNAIL_CACHE_DIR", "/cache/"}}, "", true},
 		{"same as the default transcode cache", []envPair{{"DB_PATH", "/data/media.db"}, {"THUMBNAIL_CACHE_DIR", "/data/media.db.transcode-cache"}}, "", true},
 	}

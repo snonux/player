@@ -68,6 +68,9 @@ type migrationFixture struct {
 	// cache, when set, is the thumbnail cache directory the scanner is
 	// configured with (THUMBNAIL_CACHE_DIR).
 	cache string
+	// rooted makes the scanner know its media root without a cache, like
+	// the production wiring does; plain fixtures use the zero Layout.
+	rooted bool
 
 	mu sync.Mutex
 	// generated records the sources the generator was asked to render.
@@ -163,7 +166,7 @@ func (f *migrationFixture) scanner() *FSScanner {
 	prober := &probe.MockProber{ProbeFunc: func(context.Context, string) (*model.Metadata, error) {
 		return &model.Metadata{}, nil
 	}}
-	if f.cache == "" {
+	if f.cache == "" && !f.rooted {
 		return NewFSScanner(f.store, prober, gen, clock.RealClock{}, f.root)
 	}
 	layout := thumb.NewLayout(f.root, f.cache)

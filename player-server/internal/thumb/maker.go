@@ -86,6 +86,10 @@ func (osMakerFS) CreateTemp(dir string) (string, error) {
 	return name, nil
 }
 
+// ErrOutsideMediaRoot is returned by Make for a source file that is not
+// below the media root while a thumbnail cache is configured.
+var ErrOutsideMediaRoot = errors.New("source is outside the media root")
+
 // FSMaker is the production Maker implementation. It wraps a Generator
 // (which performs the actual frame extraction) together with a small
 // filesystem dependency, and a logger for the "skipped thumbnail" warning.
@@ -155,7 +159,9 @@ func (m *FSMaker) makeOrSkip(ctx context.Context, srcPath string, duration float
 // returned path always names a complete, non-empty file.
 //
 // Where the thumbnail goes is the Layout's decision (Layout.PathFor):
-// beside the source, or into the configured thumbnail cache.
+// beside the source, or into the configured thumbnail cache. A source the
+// Layout has no place for (outside the media root while a cache is
+// configured) gets no thumbnail.
 //
 // The thumbnail is generated into a temporary file in the destination
 // directory and renamed into place only once it is complete. A thumbnail
@@ -166,7 +172,10 @@ func (m *FSMaker) makeOrSkip(ctx context.Context, srcPath string, duration float
 // a folder costs no ffmpeg run however often it is rescanned. The
 // temporary file's name is chosen here, not derived from the media name.
 func (m *FSMaker) Make(ctx context.Context, srcPath string, duration float64) (string, error) {
-	dst := m.layout.PathFor(srcPath)
+	dst, ok := m.layout.PathFor(srcPath)
+	if !ok {
+		return "", fmt.Errorf("no thumbnail for %q: %w", srcPath, ErrOutsideMediaRoot)
+	}
 	tmp, err := m.reserve(filepath.Dir(dst))
 	if err != nil {
 		return "", err
@@ -183,17 +192,26 @@ func (m *FSMaker) Make(ctx context.Context, srcPath string, duration float64) (s
 	return dst, nil
 }
 
+// reserveAttempts is how often reserve tries before giving up on a
+// directory that keeps disappearing.
+const reserveAttempts = 5
+
 // reserve creates the thumbnail directory if needed and an empty temporary
 // file in it for the generator to write to.
 //
-// Remove deletes a .thumbnails directory once it is empty, possibly right
-// between the two steps here when another item of the same folder is being
-// purged. The directory is then simply created again; once the temporary
-// file exists the directory is no longer empty and cannot be removed.
+// Remove deletes a .thumbnails directory once it is empty, and in the
+// thumbnail cache the emptied folders above it, possibly right between or
+// during the two steps here when another item nearby is being purged. Both
+// steps then fail with "no such file or directory" and are simply repeated;
+// once the temporary file exists the directory is no longer empty and
+// cannot be removed. Any other failure is final.
 func (m *FSMaker) reserve(dir string) (string, error) {
 	var err error
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := 0; attempt < reserveAttempts; attempt++ {
 		if err = m.fs.MkdirAll(dir, 0o755); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
 			return "", fmt.Errorf("mkdir thumbnails %q: %w", dir, err)
 		}
 		var tmp string
@@ -212,9 +230,9 @@ func (m *FSMaker) reserve(dir string) (string, error) {
 // behind that would keep an otherwise empty folder in place. In the
 // thumbnail cache the folders above it are removed as well once empty:
 // nothing else lives there, and they would otherwise pile up as the media
-// tree changes. A thumbnail
-// that is already gone is fine; any other failure is logged, since the
-// callers are cleaning up and have nothing better to do about it.
+// tree changes. A thumbnail that is already gone is fine; any other
+// failure is logged, since the callers are cleaning up and have nothing
+// better to do about it.
 //
 // Deciding that the thumbnail is no longer needed is the caller's job. As a
 // last line of defence Remove refuses any path that is not directly inside
@@ -227,19 +245,24 @@ func (m *FSMaker) Remove(thumbPath string) {
 		m.logger.Warn("thumbnail removal failed", "path", thumbPath, "err", err)
 		return
 	}
-	// Only a real directory is removed: a .thumbnails that is a symbolic
-	// link (thumbnails kept on another volume) would be unlinked by the
-	// same call, emptied target or not. The removal is non-recursive and
-	// fails, harmlessly, while other thumbnails remain.
 	dir := filepath.Dir(thumbPath)
-	if info, err := m.fs.Lstat(dir); err != nil || !info.IsDir() || m.fs.Remove(dir) != nil {
+	if !m.removeEmptyDir(dir) {
 		return
 	}
 	for dir = filepath.Dir(dir); m.layout.inCache(dir); dir = filepath.Dir(dir) {
-		if m.fs.Remove(dir) != nil {
+		if !m.removeEmptyDir(dir) {
 			return // not empty: other thumbnails remain below it
 		}
 	}
+}
+
+// removeEmptyDir removes dir if it is an empty, real directory and reports
+// whether it did. A symbolic link is left alone (thumbnails kept on another
+// volume): the same call would unlink it, emptied target or not. The
+// removal is non-recursive and fails, harmlessly, while anything remains.
+func (m *FSMaker) removeEmptyDir(dir string) bool {
+	info, err := m.fs.Lstat(dir)
+	return err == nil && info.IsDir() && m.fs.Remove(dir) == nil
 }
 
 // render runs the generator and checks that it really produced something.

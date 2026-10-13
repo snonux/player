@@ -597,6 +597,55 @@ func TestRemoveOwnThumbnail(t *testing.T) {
 	}
 }
 
+// TestGCWorker_RemovesPurgedMediasCachedThumbnail: with a thumbnail cache
+// the worker finds a purged item's thumbnail there, removes it and the
+// cache folders it leaves empty, and keeps the thumbnails of other items.
+func TestGCWorker_RemovesPurgedMediasCachedThumbnail(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	base := t.TempDir()
+	root, cache := filepath.Join(base, "media"), filepath.Join(base, "cache")
+	layout := thumb.NewLayout(root, cache)
+	video, kept := filepath.Join(root, "set", "a", "clip.mp4"), filepath.Join(root, "set", "b", "clip.mp4")
+	cachedOf := func(src string) string {
+		t.Helper()
+		path, ok := layout.Cached(src)
+		if !ok {
+			t.Fatalf("no cache path for %q", src)
+		}
+		writeThumbFile(t, path)
+		return path
+	}
+	writeThumbFile(t, video)
+	videoThumb, keptThumb := cachedOf(video), cachedOf(kept)
+	deletedAt := now.Add(-8 * 24 * time.Hour)
+	store := &repository.MockStore{MediaRepo: repository.MockMediaRepo{
+		ListDeletedMediaFunc: func(context.Context) ([]model.Media, error) {
+			return []model.Media{{ID: 1, RelPath: "a/clip.mp4", AbsPath: video, ThumbnailPath: videoThumb, DeletedAt: &deletedAt}}, nil
+		},
+	}}
+
+	// Without the layout the worker does not recognise the cache path as
+	// the item's own and must leave it alone.
+	plain := NewGCWorker(store, &clock.MockClock{T: now}, root, time.Minute, nil).WithAge(7 * 24 * time.Hour)
+	if err := plain.RunOnce(); err != nil {
+		t.Fatal(err)
+	}
+	if !fileExists(videoThumb) {
+		t.Fatal("a worker without thumbnail layout deleted a file outside the media root")
+	}
+
+	w := NewGCWorker(store, &clock.MockClock{T: now}, root, time.Minute, nil).WithAge(7 * 24 * time.Hour).WithThumbnailLayout(layout)
+	if err := w.RunOnce(); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(videoThumb) || fileExists(filepath.Join(cache, "set", "a")) {
+		t.Error("cached thumbnail of the purged video, or its emptied folder, was left behind")
+	}
+	if !fileExists(keptThumb) {
+		t.Error("the cached thumbnail of another item was deleted")
+	}
+}
+
 // TestRemoveOwnThumbnail_Cache: with a thumbnail cache a purged item's
 // thumbnail is found and removed there, together with the folders it leaves
 // empty, and still nothing that belongs to another item.

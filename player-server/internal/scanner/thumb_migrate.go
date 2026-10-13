@@ -50,10 +50,10 @@ import (
 // steps: a thumbnail beside its source is then "not at its current path",
 // so the first rescan generates every thumbnail anew in the cache and
 // deletes the one in the set. A cache directory that was abandoned (the
-// setting changed or removed) is unknown to the new Layout: its thumbnails
-// keep being served from the stored paths, are never deleted by a scan,
-// and are replaced by a fresh one at the current path only once the file
-// is gone (see staleKindOf).
+// setting changed or removed) is unknown to the new Layout and its files
+// are not served any more; the next rescan gives those rows a fresh
+// thumbnail at the current path and leaves the abandoned directory alone
+// (see lostElsewhere).
 
 // thumbnailUpdater is the one store operation the thumbnail migration needs.
 type thumbnailUpdater interface {
@@ -129,34 +129,59 @@ func staleThumbnails(existing map[string]model.Media, seenRel map[string]struct{
 // seeked run, then the first-frame fallback in thumb.FFmpegGenerator).
 //
 // The row's own path in the thumbnail cache is a generated thumbnail too,
-// although it is outside the set: it is checked first, and judged like one
-// in the set (missing, or no longer where thumbnails are created because
-// the cache was switched off).
+// although it is outside the set. It is checked first and can only be
+// missing: a Layout with a cache creates thumbnails nowhere else.
 //
 // A generated thumbnail outside both (a .thumbnails directory elsewhere:
-// an abandoned cache directory, a media root that moved) is replaced only
-// when its file is gone, and then like a thumbnail that was never made:
-// a new one is generated at the current path and nothing is deleted.
+// an abandoned or renamed cache directory, a media root that moved) is
+// replaced when the server cannot show it, see lostElsewhere.
 //
 // Anything else is an ordinary file that was chosen as the thumbnail, or a
-// path outside the set that still exists, and is left alone: a stale absolute path (media
-// root moved, database copied from another host) must never lead to files
-// elsewhere being replaced or deleted.
+// path in another set that still exists, and is left alone: a stale
+// absolute path (media root moved, database copied from another host) must
+// never lead to files elsewhere being replaced or deleted.
 func staleKindOf(stored, src, setPath string, existing map[string]model.Media, exists func(path string) bool, layout thumb.Layout) staleKind {
 	switch {
 	case stored == "" || stored == src:
 		return staleNone
-	case !layout.IsCachedFor(stored, src) && !isGeneratedIn(setPath, stored, existing):
-		if thumb.IsGenerated(stored) && !exists(stored) {
+	case layout.IsCachedFor(stored, src):
+		if !exists(stored) {
+			return staleMissing
+		}
+		return 0
+	case !isGeneratedIn(setPath, stored, existing):
+		if lostElsewhere(stored, setPath, exists, layout) {
 			return staleNone
 		}
 		return 0
-	case stored != layout.PathFor(src):
+	}
+	current, ok := layout.PathFor(src)
+	switch {
+	case !ok:
+		return 0 // the layout has no place for src; nothing to move to
+	case stored != current:
 		return staleOldName
 	case !exists(stored):
 		return staleMissing
 	}
 	return 0
+}
+
+// lostElsewhere reports whether stored is a generated thumbnail outside the
+// set that the server cannot show: its file is gone, or it lies outside
+// the media root, from where nothing but the current thumbnail cache is
+// ever served. That is what the thumbnails of a cache directory look like
+// after THUMBNAIL_CACHE_DIR was changed or removed.
+//
+// Such a row is treated like one whose thumbnail was never made
+// (staleNone): a new thumbnail is generated at the current path and the
+// row pointed at it, while the file at the stored path, if any, is neither
+// replaced nor deleted.
+func lostElsewhere(stored, setPath string, exists func(path string) bool, layout thumb.Layout) bool {
+	if !thumb.IsGenerated(stored) || within(setPath, stored) {
+		return false
+	}
+	return !exists(stored) || !layout.InMediaRoot(stored)
 }
 
 // isGeneratedIn reports whether path is a generated thumbnail inside the set
@@ -165,15 +190,21 @@ func staleKindOf(stored, src, setPath string, existing map[string]model.Media, e
 // files in a directory called .thumbnails can exist from uploads and older
 // releases, and such a file may be stored as a thumbnail.
 func isGeneratedIn(setPath, path string, existing map[string]model.Media) bool {
-	if !thumb.IsGenerated(path) {
+	if !thumb.IsGenerated(path) || !within(setPath, path) {
 		return false
 	}
 	rel, err := filepath.Rel(setPath, path)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil {
 		return false
 	}
 	_, isMedia := existing[filepath.ToSlash(rel)]
 	return !isMedia
+}
+
+// within reports whether path lies inside dir, lexically.
+func within(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // staleTemporaryAge is how old a maker's temporary file must be before a
@@ -191,8 +222,7 @@ func (s *FSScanner) sweepStaleTemporaries(files []string) {
 	cutoff := s.clock.Now().Add(-staleTemporaryAge)
 	swept := make(map[string]struct{})
 	for _, f := range files {
-		for _, thumbPath := range []string{s.layout.Beside(f), s.layout.PathFor(f)} {
-			dir := filepath.Dir(thumbPath)
+		for _, dir := range s.thumbnailDirs(f) {
 			if _, done := swept[dir]; done {
 				continue
 			}
@@ -200,6 +230,17 @@ func (s *FSScanner) sweepStaleTemporaries(files []string) {
 			s.sweepTemporariesIn(dir, cutoff)
 		}
 	}
+}
+
+// thumbnailDirs returns the directories that can hold thumbnails of the
+// media file f: the .thumbnails directory next to it and, with a thumbnail
+// cache, the one in the cache.
+func (s *FSScanner) thumbnailDirs(f string) []string {
+	dirs := []string{filepath.Dir(s.layout.Beside(f))}
+	if cached, ok := s.layout.Cached(f); ok {
+		dirs = append(dirs, filepath.Dir(cached))
+	}
+	return dirs
 }
 
 // sweepTemporariesIn deletes the maker's temporary files in dir that were
@@ -266,7 +307,9 @@ func newThumbSwitcher(store thumbnailUpdater, remover fileRemover, logger *slog.
 		}
 	}
 	for _, f := range files {
-		ts.reserved[layout.PathFor(f)] = struct{}{}
+		if current, ok := layout.PathFor(f); ok {
+			ts.reserved[current] = struct{}{}
+		}
 	}
 	return ts
 }

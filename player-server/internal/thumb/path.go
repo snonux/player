@@ -59,11 +59,13 @@ func ThumbnailNameFor(srcPath string) string {
 }
 
 // ThumbnailPathFor returns the full path to the generated thumbnail of
-// srcPath: ThumbnailNameFor(srcPath) inside the .thumbnails directory next
-// to the source. Scanner, upload/import and thumbnail regeneration all use
-// this one layout. The thumbnail sits in the source's own directory and
-// carries the source's full name, so two different media files get two
-// different thumbnail paths. The one exception is theoretical: names
+// srcPath beside its source: ThumbnailNameFor(srcPath) inside the
+// .thumbnails directory next to it. This is where thumbnails live unless a
+// thumbnail cache is configured; code that creates or locates a thumbnail
+// asks a Layout (Layout.PathFor) instead, which knows about the cache.
+// The thumbnail sits in the source's own directory and carries the
+// source's full name, so two different media files get two different
+// thumbnail paths. The one exception is theoretical: names
 // shortened by ThumbnailNameFor are told apart by a hash only.
 func ThumbnailPathFor(srcPath string) string {
 	return filepath.Join(ThumbnailDir(filepath.Dir(srcPath)), ThumbnailNameFor(srcPath))

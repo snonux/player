@@ -244,13 +244,18 @@ func LoadConfig() (*Config, error) {
 }
 
 // validateCacheDirs rejects a transcode or thumbnail cache inside (or equal
-// to) the media root, and the two caches sharing one directory.
+// to) the media root, a thumbnail cache that contains the media root, and
+// the two caches sharing one directory.
 //
 // In the media root the library scanner would import renditions as media
 // (and a thumbnail cache directory as a set), and cache eviction would run
 // in a directory holding real media. For the transcode cache this also
 // applies to the derived default, i.e. when DB_PATH itself lies in the
 // media root: set TRANSCODE_CACHE_DIR explicitly in that case.
+//
+// The thumbnail cache mirrors the media tree and has its emptied folders
+// removed, so it must not contain the media root either: every media
+// folder would then count as a cache folder.
 func validateCacheDirs(cfg *Config) error {
 	if err := outsideMediaRoot("TRANSCODE_CACHE_DIR", cfg.TranscodeCacheDir, cfg.MediaRoot); err != nil {
 		return err
@@ -261,8 +266,13 @@ func validateCacheDirs(cfg *Config) error {
 	if err := outsideMediaRoot("THUMBNAIL_CACHE_DIR", cfg.ThumbnailCacheDir, cfg.MediaRoot); err != nil {
 		return err
 	}
+	// outsideMediaRoot has already made all three absolute once.
 	thumbs, _ := filepath.Abs(cfg.ThumbnailCacheDir)
+	root, _ := filepath.Abs(cfg.MediaRoot)
 	renditions, _ := filepath.Abs(cfg.TranscodeCacheDir)
+	if isOrContains(thumbs, root) {
+		return fmt.Errorf("invalid THUMBNAIL_CACHE_DIR: %q must not contain MEDIA_ROOT %q", cfg.ThumbnailCacheDir, cfg.MediaRoot)
+	}
 	if thumbs == renditions {
 		return fmt.Errorf("invalid THUMBNAIL_CACHE_DIR: %q is the transcode cache directory", cfg.ThumbnailCacheDir)
 	}
@@ -280,8 +290,18 @@ func outsideMediaRoot(setting, dir, mediaRoot string) error {
 	if err != nil {
 		return fmt.Errorf("invalid MEDIA_ROOT: %w", err)
 	}
-	if cache == root || strings.HasPrefix(cache, root+string(filepath.Separator)) {
+	if isOrContains(root, cache) {
 		return fmt.Errorf("invalid %s: %q must not be inside MEDIA_ROOT %q", setting, dir, mediaRoot)
 	}
 	return nil
+}
+
+// isOrContains reports whether the absolute path is dir itself or lies
+// below it. The file system root contains everything.
+func isOrContains(dir, path string) bool {
+	if dir == path {
+		return true
+	}
+	prefix := strings.TrimSuffix(dir, string(filepath.Separator)) + string(filepath.Separator)
+	return strings.HasPrefix(path, prefix)
 }

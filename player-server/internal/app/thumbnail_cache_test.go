@@ -6,11 +6,13 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"codeberg.org/snonux/player/internal"
@@ -134,4 +136,83 @@ func (e *e2e) mediaByPath(abs string) repositoryMedia {
 type repositoryMedia struct {
 	ID            int64
 	ThumbnailPath string
+}
+
+// TestThumbnailCache_DirectoryChanged: when the cache directory is changed,
+// thumbnails stored in the old one are refused (they are outside the media
+// root and not in the current cache) until a rescan has made new ones.
+func TestThumbnailCache_DirectoryChanged(t *testing.T) {
+	for _, bin := range []string{"ffmpeg", "ffprobe"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skipf("%s not installed", bin)
+		}
+	}
+	oldCache, newCache := filepath.Join(t.TempDir(), "old"), filepath.Join(t.TempDir(), "new")
+	e := newE2EWith(t, &fakeRunner{}, func(cfg *internal.Config) { cfg.ThumbnailCacheDir = newCache })
+	root := e.deps.Cfg.MediaRoot
+	src := filepath.Join(root, "library", "photo.png")
+	writePNG(t, src)
+	e.must(e.deps.Scanner.Scan(context.Background(), root, nil))
+	photo := e.mediaByPath(src)
+
+	// The row as an instance with the old cache directory left it.
+	stale := filepath.Join(oldCache, "library", thumb.DirName, "photo.png.jpg")
+	e.must(os.MkdirAll(filepath.Dir(stale), 0o755))
+	e.must(os.WriteFile(stale, []byte("old thumbnail"), 0o644))
+	e.must(e.store.UpdateMediaThumbnail(context.Background(), photo.ID, stale))
+	path := "/api/v1/media/" + strconv.FormatInt(photo.ID, 10) + "/thumbnail"
+	if rr := e.get(path, "admin"); rr.Code == http.StatusOK {
+		t.Fatalf("a thumbnail outside media root and cache was served: %d", rr.Code)
+	}
+
+	e.must(e.deps.Scanner.Scan(context.Background(), root, nil))
+
+	want := filepath.Join(newCache, "library", thumb.DirName, "photo.png.jpg")
+	if got := e.mediaByPath(src).ThumbnailPath; got != want {
+		t.Fatalf("stored thumbnail after the rescan = %q, want %q", got, want)
+	}
+	if rr := e.get(path, "admin"); rr.Code != http.StatusOK {
+		t.Errorf("GET thumbnail after the rescan = %d, want 200", rr.Code)
+	}
+	if content, err := os.ReadFile(stale); err != nil || string(content) != "old thumbnail" {
+		t.Errorf("the abandoned cache was touched: %q, %v", content, err)
+	}
+}
+
+// TestCheckThumbnailCache: startup says where thumbnails go, and warns when
+// the configured directory cannot be used.
+func TestCheckThumbnailCache(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	parent := t.TempDir()
+	tests := []struct {
+		name, dir, want string
+		setup           func()
+	}{
+		{"unset", "", "", nil},
+		{"usable", filepath.Join(parent, "ok"), "level=INFO msg=\"thumbnails are stored in the thumbnail cache\"", nil},
+		{"unusable", filepath.Join(parent, "locked", "cache"), "level=WARN msg=\"thumbnail cache unusable", func() {
+			e := os.Mkdir(filepath.Join(parent, "locked"), 0o555)
+			if e != nil {
+				t.Fatal(e)
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setup != nil {
+				tt.setup()
+			}
+			var out bytes.Buffer
+			deps := &Deps{Cfg: &internal.Config{ThumbnailCacheDir: tt.dir}, Logger: slog.New(slog.NewTextHandler(&out, nil))}
+			checkThumbnailCache(deps)
+			if tt.want == "" && out.Len() != 0 {
+				t.Errorf("logged %q, want nothing", out.String())
+			}
+			if !strings.Contains(out.String(), tt.want) {
+				t.Errorf("log = %q, want it to contain %q", out.String(), tt.want)
+			}
+		})
+	}
 }

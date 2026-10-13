@@ -259,10 +259,11 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 
 **Thumbnail cache:** by default a generated thumbnail lives in a `.thumbnails` directory next to its media file, so the server needs write access to every set. Set `THUMBNAIL_CACHE_DIR` to keep all generated thumbnails in a directory of their own instead, laid out like the media tree (`<cache>/<set>/<folder>/.thumbnails/<file name>.jpg`). Nothing is then written into `MEDIA_ROOT` for thumbnails, which is what makes it possible to mount a set read-only (for example another application's library) and to give thumbnails their own volume.
 
-- The directory must not be inside `MEDIA_ROOT` and must not be the transcode cache directory; the server refuses to start otherwise. It is created on first use.
+- The directory must be separate from `MEDIA_ROOT` (neither inside it nor containing it) and must not be the transcode cache directory; the server refuses to start otherwise. It is created on first use, and at startup the server logs where thumbnails go, or a warning when the directory cannot be written.
 - There is no fallback in either direction: with the setting, a thumbnail that cannot be written to the cache is not written next to the media; the item is indexed without one and retried on the next rescan.
-- After switching the setting on, run one admin **Rescan**: thumbnails beside the media are generated anew in the cache and the old files deleted where the set is writable (an emptied `.thumbnails` directory may stay behind). A deleted or emptied cache directory heals the same way.
-- After changing the directory or switching the setting off, thumbnails already stored keep being served from where they are as long as the server can still read them; they are not moved back.
+- After switching the setting on, run one admin **Rescan**: thumbnails beside the media are generated anew in the cache and the old files deleted where the set is writable (an emptied `.thumbnails` directory may stay behind; in a read-only set the old file stays and one warning per item is logged). A deleted or emptied cache directory heals the same way.
+- After changing the directory or switching the setting off, run a **Rescan** as well. Thumbnails in the former directory are not shown any more (only `MEDIA_ROOT` and the current cache are ever served); the rescan generates new ones at the current place. The former directory is never touched by the server: delete it yourself.
+- Use an absolute path. Stored thumbnail paths are absolute, so a relative setting only keeps working while the server is started from the same directory.
 - Set and folder covers ("regenerate cover") are still written into the set as `.cover.jpg` and therefore do not work on a read-only set.
 
 ---

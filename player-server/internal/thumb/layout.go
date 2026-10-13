@@ -1,6 +1,9 @@
 package thumb
 
 import (
+	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -22,12 +25,17 @@ import (
 // holds for both places, and it keeps the media-relative directory, so two
 // files of the same name in different folders never share a thumbnail.
 //
-// Both places stay known whichever is in use, so a thumbnail written under
-// the other setting is still recognised as belonging to its media file
-// (Holds) and is moved over by the next rescan.
+// A Layout with a cache still knows the place beside the source, so a
+// thumbnail written there before the cache was configured is recognised as
+// belonging to its media file (Holds) and moved over by the next rescan.
+// The reverse does not hold: without a cache, or with another cache
+// directory, a path in a former cache is just a path outside the media
+// root.
 type Layout struct {
+	// mediaRoot is absolute, or empty when unknown (the zero Layout).
 	mediaRoot string
-	cacheDir  string
+	// cacheDir is absolute, or empty without a cache.
+	cacheDir string
 }
 
 // NewLayout returns the Layout of the media tree at mediaRoot with the
@@ -35,11 +43,23 @@ type Layout struct {
 // go beside their source. Both are made absolute, so the paths a Layout
 // hands out compare equal to the ones stored for media scanned below the
 // same media root.
+//
+// The cache must be disjoint from the media root. Configuration loading
+// rejects anything else; should such a pair get here all the same, the
+// cache is ignored: a cache inside the root would be scanned as media, and
+// a cache above it would make every media folder look like a cache folder
+// to the code that removes emptied ones.
 func NewLayout(mediaRoot, cacheDir string) Layout {
+	l := Layout{mediaRoot: absOrClean(mediaRoot)}
 	if cacheDir == "" {
-		return Layout{}
+		return l
 	}
-	return Layout{mediaRoot: absOrClean(mediaRoot), cacheDir: absOrClean(cacheDir)}
+	cache := absOrClean(cacheDir)
+	if cache == l.mediaRoot || below(l.mediaRoot, cache) || below(cache, l.mediaRoot) {
+		return l
+	}
+	l.cacheDir = cache
+	return l
 }
 
 // absOrClean makes path absolute. filepath.Abs only fails when the working
@@ -52,14 +72,25 @@ func absOrClean(path string) string {
 }
 
 // PathFor returns the path at which the thumbnail of srcPath is created:
-// in the cache when there is one, beside the source otherwise. A source
-// outside the media root has no place in the cache and keeps its thumbnail
-// beside it; the server itself only ever indexes files below the root.
-func (l Layout) PathFor(srcPath string) string {
-	if cached, ok := l.Cached(srcPath); ok {
-		return cached
+// in the cache when there is one, beside the source otherwise.
+//
+// ok is false when there is a cache but srcPath is not below the media
+// root. Such a file has no place in the cache, and its thumbnail is not
+// put beside it either: with a cache configured nothing is written next to
+// media, least of all next to a file a stale database row points at
+// somewhere else on the host. The server itself only indexes files below
+// the root.
+func (l Layout) PathFor(srcPath string) (path string, ok bool) {
+	if l.cacheDir == "" {
+		return l.Beside(srcPath), true
 	}
-	return l.Beside(srcPath)
+	return l.Cached(srcPath)
+}
+
+// InMediaRoot reports whether path lies below the media root. A Layout
+// that does not know its media root (the zero Layout) says yes.
+func (l Layout) InMediaRoot(path string) bool {
+	return l.mediaRoot == "" || below(l.mediaRoot, absOrClean(path))
 }
 
 // Beside returns the thumbnail path of srcPath next to the source.
@@ -91,23 +122,38 @@ func (l Layout) IsCachedFor(thumbPath, srcPath string) bool {
 	return ok && thumbPath == cached
 }
 
-// Holds reports whether thumbPath is one of the two places the thumbnail of
-// srcPath can live, beside the source or in the cache, whichever of them
-// PathFor currently picks.
+// Holds reports whether thumbPath is one of the places this Layout knows
+// for the thumbnail of srcPath: beside the source, or in its cache.
 func (l Layout) Holds(thumbPath, srcPath string) bool {
 	return thumbPath != "" && (thumbPath == l.Beside(srcPath) || l.IsCachedFor(thumbPath, srcPath))
 }
 
 // inCache reports whether dir lies strictly below the cache directory.
 func (l Layout) inCache(dir string) bool {
-	if l.cacheDir == "" {
-		return false
-	}
-	rel, err := filepath.Rel(l.cacheDir, dir)
+	return l.cacheDir != "" && below(l.cacheDir, dir)
+}
+
+// below reports whether path lies strictly below base; both are absolute.
+func below(base, path string) bool {
+	rel, err := filepath.Rel(base, path)
 	return err == nil && rel != "." && !escapes(rel)
 }
 
 // escapes reports whether the relative path rel leads out of its base.
 func escapes(rel string) bool {
 	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel)
+}
+
+// CheckCacheDir reports whether dir can be used as the thumbnail cache: it
+// is created if missing, and a file is created in it and removed again. It
+// is meant for a startup check; the maker itself creates what it needs.
+func CheckCacheDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create thumbnail cache directory: %w", err)
+	}
+	f, err := os.CreateTemp(dir, ".preflight-*")
+	if err != nil {
+		return fmt.Errorf("thumbnail cache directory not writable: %w", err)
+	}
+	return errors.Join(f.Close(), os.Remove(f.Name()))
 }
