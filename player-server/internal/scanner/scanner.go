@@ -50,6 +50,10 @@ type FSScanner struct {
 	remover fileRemover
 	logger  *slog.Logger
 	workers int
+	// layout says where thumbnails are created (see WithThumbnailLayout).
+	// It must be the layout of thumbMkr: the scanner does not create
+	// thumbnails, but it decides which stored ones are out of place.
+	layout thumb.Layout
 	// scanMu serialises Scan calls, see Scan.
 	scanMu sync.Mutex
 }
@@ -91,6 +95,16 @@ func NewFSScannerWithMaker(store repository.ScannerStore, prober probe.Prober, m
 		logger:    logger,
 		workers:   runtime.NumCPU(),
 	}
+}
+
+// WithThumbnailLayout tells the scanner where thumbnails are created, which
+// it needs to recognise stored thumbnails that are out of place or missing.
+// Pass the layout the scanner's thumb.Maker was given; without this call
+// thumbnails are expected beside their source. It returns the scanner for
+// chaining and must be called before the first Scan.
+func (s *FSScanner) WithThumbnailLayout(layout thumb.Layout) *FSScanner {
+	s.layout = layout
+	return s
 }
 
 func (s *FSScanner) log() *slog.Logger {
@@ -342,7 +356,7 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 	s.reconcileOrphans(ctx, sc.existing, seenRel, sc.name)
 
 	s.sweepStaleTemporaries(files)
-	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path, s.fileExists)
+	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path, s.fileExists, s.layout)
 	if len(sc.stale) > 0 {
 		// old_names is the migration backlog; it reaches zero. The other
 		// two can recur: files no thumbnail can be made for are retried
@@ -383,7 +397,7 @@ func (s *FSScanner) probeAndStore(ctx context.Context, sc *setScan, progress *mo
 	workerWg := s.startProbeWorkers(ctx, scanCtx, sc, workers, pathChan, resultChan, progress, sendErr)
 
 	// scanWriter persists results sequentially to avoid SQLite write conflicts.
-	thumbs := newThumbSwitcher(s.store, s.remover, s.log(), sc.existing, sc.files)
+	thumbs := newThumbSwitcher(s.store, s.remover, s.log(), sc.existing, sc.files, s.layout)
 	sw := newScanWriter(s.store, thumbs, s.log())
 	var newFiles int32
 	var writerWg sync.WaitGroup

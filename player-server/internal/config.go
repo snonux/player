@@ -33,6 +33,10 @@ const (
 	// databases sharing one directory (several dev or test instances with
 	// DB_PATH=/tmp/*.db) would delete each other's files.
 	DefaultTranscodeCacheDirSuffix = ".transcode-cache"
+	// There is deliberately no default thumbnail cache directory: with
+	// THUMBNAIL_CACHE_DIR unset, thumbnails stay in the .thumbnails
+	// directory beside each media file, as they always did.
+
 	// DefaultTranscodeCacheMaxMB bounds the transcode cache at 4 GiB.
 	DefaultTranscodeCacheMaxMB = 4096
 	// DefaultTranscodeMaxJobs is the number of parallel ffmpeg transcodes.
@@ -58,6 +62,11 @@ type Config struct {
 	// TranscodeCacheDir holds the compatibility renditions of legacy media
 	// (AVI/WMV/FLV/WMA). Defaults to DBPath + ".transcode-cache".
 	TranscodeCacheDir string
+	// ThumbnailCacheDir, when set, takes all generated thumbnails instead
+	// of the .thumbnails directory beside each media file, mirroring the
+	// media tree. Empty (the default) keeps them beside the media. It lets
+	// sets be read-only and thumbnails live on a volume of their own.
+	ThumbnailCacheDir string
 	// TranscodeCacheMaxMB is the size the cache is pruned back to.
 	TranscodeCacheMaxMB int
 	// TranscodeMaxJobs is the number of ffmpeg transcodes run in parallel.
@@ -159,14 +168,16 @@ func loadNumericSettings(cfg *Config) error {
 	return nil
 }
 
-// loadStringSettings reads MEDIA_ROOT, DB_PATH and TRANSCODE_CACHE_DIR from
-// the environment. The transcode cache default is derived from the final
-// DB_PATH, so it must be resolved after DB_PATH has been read.
+// loadStringSettings reads MEDIA_ROOT, DB_PATH, TRANSCODE_CACHE_DIR and
+// THUMBNAIL_CACHE_DIR from the environment. The transcode cache default is
+// derived from the final DB_PATH, so it must be resolved after DB_PATH has
+// been read. The thumbnail cache has no default (see Config).
 func loadStringSettings(cfg *Config) {
 	envString("MEDIA_ROOT", func(s string) { cfg.MediaRoot = s })
 	envString("DB_PATH", func(s string) { cfg.DBPath = s })
 	cfg.TranscodeCacheDir = cfg.DBPath + DefaultTranscodeCacheDirSuffix
 	envString("TRANSCODE_CACHE_DIR", func(s string) { cfg.TranscodeCacheDir = s })
+	envString("THUMBNAIL_CACHE_DIR", func(s string) { cfg.ThumbnailCacheDir = s })
 }
 
 // loadLogLevel reads LOG_LEVEL from the environment and validates it.
@@ -225,29 +236,52 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	if err := validateTranscodeCacheDir(cfg); err != nil {
+	if err := validateCacheDirs(cfg); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
 }
 
-// validateTranscodeCacheDir rejects a transcode cache inside (or equal to)
-// the media root. There the library scanner would import the renditions as
-// media, and cache eviction would run in a directory holding real media.
-// This also applies to the derived default, i.e. when DB_PATH itself lies
-// in the media root: set TRANSCODE_CACHE_DIR explicitly in that case.
-func validateTranscodeCacheDir(cfg *Config) error {
-	cache, err := filepath.Abs(cfg.TranscodeCacheDir)
-	if err != nil {
-		return fmt.Errorf("invalid TRANSCODE_CACHE_DIR: %w", err)
+// validateCacheDirs rejects a transcode or thumbnail cache inside (or equal
+// to) the media root, and the two caches sharing one directory.
+//
+// In the media root the library scanner would import renditions as media
+// (and a thumbnail cache directory as a set), and cache eviction would run
+// in a directory holding real media. For the transcode cache this also
+// applies to the derived default, i.e. when DB_PATH itself lies in the
+// media root: set TRANSCODE_CACHE_DIR explicitly in that case.
+func validateCacheDirs(cfg *Config) error {
+	if err := outsideMediaRoot("TRANSCODE_CACHE_DIR", cfg.TranscodeCacheDir, cfg.MediaRoot); err != nil {
+		return err
 	}
-	root, err := filepath.Abs(cfg.MediaRoot)
+	if cfg.ThumbnailCacheDir == "" {
+		return nil
+	}
+	if err := outsideMediaRoot("THUMBNAIL_CACHE_DIR", cfg.ThumbnailCacheDir, cfg.MediaRoot); err != nil {
+		return err
+	}
+	thumbs, _ := filepath.Abs(cfg.ThumbnailCacheDir)
+	renditions, _ := filepath.Abs(cfg.TranscodeCacheDir)
+	if thumbs == renditions {
+		return fmt.Errorf("invalid THUMBNAIL_CACHE_DIR: %q is the transcode cache directory", cfg.ThumbnailCacheDir)
+	}
+	return nil
+}
+
+// outsideMediaRoot returns an error naming the setting when dir is the
+// media root or lies inside it.
+func outsideMediaRoot(setting, dir, mediaRoot string) error {
+	cache, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("invalid %s: %w", setting, err)
+	}
+	root, err := filepath.Abs(mediaRoot)
 	if err != nil {
 		return fmt.Errorf("invalid MEDIA_ROOT: %w", err)
 	}
 	if cache == root || strings.HasPrefix(cache, root+string(filepath.Separator)) {
-		return fmt.Errorf("invalid TRANSCODE_CACHE_DIR: %q must not be inside MEDIA_ROOT %q", cfg.TranscodeCacheDir, cfg.MediaRoot)
+		return fmt.Errorf("invalid %s: %q must not be inside MEDIA_ROOT %q", setting, dir, mediaRoot)
 	}
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
+	"codeberg.org/snonux/player/internal/thumb"
 )
 
 // RenditionGC is the part of the transcode cache the GC worker maintains.
@@ -40,8 +41,10 @@ type GCWorker struct {
 	stopOnce  sync.Once
 	wg        sync.WaitGroup
 	mediaRoot string
-	// thumbRm deletes the generated thumbnail of a purged media item.
-	thumbRm thumbnailRemover
+	// thumbRm deletes the generated thumbnail of a purged media item,
+	// which thumbLayout locates (see WithThumbnailLayout).
+	thumbRm     thumbnailRemover
+	thumbLayout thumb.Layout
 	// renditions is optional; nil disables transcode cache maintenance.
 	renditions RenditionGC
 	ctx        context.Context
@@ -58,8 +61,17 @@ func NewGCWorker(store repository.GCStore, clk clock.Clock, mediaRoot string, in
 		logger:    logger,
 		stopCh:    make(chan struct{}),
 		mediaRoot: mediaRoot,
-		thumbRm:   newThumbnailRemover(logger),
+		thumbRm:   newThumbnailRemover(logger, thumb.Layout{}),
 	}
+}
+
+// WithThumbnailLayout tells the worker where generated thumbnails live, so
+// a purged item's thumbnail is also found in the thumbnail cache. Without
+// it thumbnails are expected beside their source.
+func (w *GCWorker) WithThumbnailLayout(layout thumb.Layout) *GCWorker {
+	w.thumbLayout = layout
+	w.thumbRm = newThumbnailRemover(w.logger, layout)
+	return w
 }
 
 // WithAge overrides the default 7-day deletion age.
@@ -191,7 +203,7 @@ func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
 		}
 		return
 	}
-	removeOwnThumbnail(w.thumbRm, item)
+	removeOwnThumbnail(w.thumbRm, w.thumbLayout, item)
 	w.removeRenditions(item.ID)
 
 	if w.logger != nil {

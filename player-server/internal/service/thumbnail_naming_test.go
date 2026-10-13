@@ -580,13 +580,13 @@ func TestRemoveOwnThumbnail(t *testing.T) {
 		{"audio cover image", "a/song.mp3", "a/cover.jpg", false},
 		{"image serving as its own thumbnail", "a/pic.png", "a/pic.png", false},
 	}
-	rm := newThumbnailRemover(nil)
+	rm := newThumbnailRemover(nil, thumb.Layout{})
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			stored := filepath.Join(dir, filepath.FromSlash(tt.stored))
 			writeThumbFile(t, stored)
-			removeOwnThumbnail(rm, &model.Media{AbsPath: filepath.Join(dir, filepath.FromSlash(tt.source)), ThumbnailPath: stored})
+			removeOwnThumbnail(rm, thumb.Layout{}, &model.Media{AbsPath: filepath.Join(dir, filepath.FromSlash(tt.source)), ThumbnailPath: stored})
 			if gone := !fileExists(stored); gone != tt.wantGone {
 				t.Errorf("thumbnail gone = %v, want %v", gone, tt.wantGone)
 			}
@@ -597,18 +597,60 @@ func TestRemoveOwnThumbnail(t *testing.T) {
 	}
 }
 
+// TestRemoveOwnThumbnail_Cache: with a thumbnail cache a purged item's
+// thumbnail is found and removed there, together with the folders it leaves
+// empty, and still nothing that belongs to another item.
+func TestRemoveOwnThumbnail_Cache(t *testing.T) {
+	tests := []struct {
+		name     string
+		stored   string // relative to the temp dir
+		wantGone bool
+	}{
+		{"own thumbnail in the cache", "cache/set/a/.thumbnails/clip.mp4.jpg", true},
+		{"own thumbnail still beside the source", "media/set/a/.thumbnails/clip.mp4.jpg", true},
+		{"another item's thumbnail in the cache", "cache/set/a/.thumbnails/other.mp4.jpg", false},
+		{"same name in another folder of the cache", "cache/set/b/.thumbnails/clip.mp4.jpg", false},
+		{"thumbnail in an abandoned cache", "old-cache/set/a/.thumbnails/clip.mp4.jpg", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			layout := thumb.NewLayout(filepath.Join(dir, "media"), filepath.Join(dir, "cache"))
+			stored := filepath.Join(dir, filepath.FromSlash(tt.stored))
+			writeThumbFile(t, stored)
+			m := &model.Media{AbsPath: filepath.Join(dir, "media", "set", "a", "clip.mp4"), ThumbnailPath: stored}
+			removeOwnThumbnail(newThumbnailRemover(nil, layout), layout, m)
+			if gone := !fileExists(stored); gone != tt.wantGone {
+				t.Errorf("thumbnail gone = %v, want %v", gone, tt.wantGone)
+			}
+		})
+	}
+
+	t.Run("emptied cache folders go, the cache stays", func(t *testing.T) {
+		dir := t.TempDir()
+		layout := thumb.NewLayout(filepath.Join(dir, "media"), filepath.Join(dir, "cache"))
+		stored := filepath.Join(dir, "cache", "set", "a", thumb.DirName, "clip.mp4.jpg")
+		writeThumbFile(t, stored)
+		m := &model.Media{AbsPath: filepath.Join(dir, "media", "set", "a", "clip.mp4"), ThumbnailPath: stored}
+		removeOwnThumbnail(newThumbnailRemover(nil, layout), layout, m)
+		if fileExists(filepath.Join(dir, "cache", "set")) || !fileExists(filepath.Join(dir, "cache")) {
+			t.Error("want the emptied set folder removed and the cache directory kept")
+		}
+	})
+}
+
 // TestRemoveOwnThumbnail_EdgeCases: a row without paths is ignored, and a
 // .thumbnails directory still holding other thumbnails stays.
 func TestRemoveOwnThumbnail_EdgeCases(t *testing.T) {
-	rm := newThumbnailRemover(nil)
-	removeOwnThumbnail(rm, &model.Media{}) // must not panic or delete anything
+	rm := newThumbnailRemover(nil, thumb.Layout{})
+	removeOwnThumbnail(rm, thumb.Layout{}, &model.Media{}) // must not panic or delete anything
 
 	dir := t.TempDir()
 	src := filepath.Join(dir, "clip.mp4")
 	own, other := thumb.ThumbnailPathFor(src), filepath.Join(dir, thumb.DirName, "other.mp4.jpg")
 	writeThumbFile(t, own)
 	writeThumbFile(t, other)
-	removeOwnThumbnail(rm, &model.Media{AbsPath: src, ThumbnailPath: own})
+	removeOwnThumbnail(rm, thumb.Layout{}, &model.Media{AbsPath: src, ThumbnailPath: own})
 	if fileExists(own) || !fileExists(other) {
 		t.Errorf("own gone = %v, other kept = %v; want both true", !fileExists(own), fileExists(other))
 	}

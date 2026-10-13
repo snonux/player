@@ -194,6 +194,7 @@ func clearEnv() {
 		"LOG_LEVEL", "SECURE_COOKIES",
 		"PLAYER_CORS_ORIGINS",
 		"TRANSCODE_CACHE_DIR", "TRANSCODE_CACHE_MAX_MB", "TRANSCODE_MAX_JOBS",
+		"THUMBNAIL_CACHE_DIR",
 	} {
 		os.Unsetenv(k)
 	}
@@ -284,6 +285,47 @@ func TestLoadConfig_TranscodeCacheInsideMediaRoot(t *testing.T) {
 			}
 			if err != nil && !strings.Contains(err.Error(), "TRANSCODE_CACHE_DIR") {
 				t.Errorf("error should name the setting: %v", err)
+			}
+		})
+	}
+}
+
+// The thumbnail cache is opt-in: unset, thumbnails stay beside the media.
+func TestLoadConfig_ThumbnailCache(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     []envPair
+		wantDir string
+		wantErr bool
+	}{
+		{"unset: no cache", nil, "", false},
+		{"unset even with DB_PATH", []envPair{{"DB_PATH", "/data/media.db"}}, "", false},
+		{"explicit dir", []envPair{{"THUMBNAIL_CACHE_DIR", " /thumbnails "}}, "/thumbnails", false},
+		{"sibling with common prefix", []envPair{{"MEDIA_ROOT", "/media"}, {"THUMBNAIL_CACHE_DIR", "/media-thumbs"}}, "/media-thumbs", false},
+		{"inside media root", []envPair{{"MEDIA_ROOT", "/media"}, {"THUMBNAIL_CACHE_DIR", "/media/.cache"}}, "", true},
+		{"is the media root", []envPair{{"MEDIA_ROOT", "/media"}, {"THUMBNAIL_CACHE_DIR", "/media/"}}, "", true},
+		{"dot-dot back into media root", []envPair{{"MEDIA_ROOT", "/media"}, {"THUMBNAIL_CACHE_DIR", "/data/../media/t"}}, "", true},
+		{"relative, inside media root", []envPair{{"MEDIA_ROOT", "media"}, {"THUMBNAIL_CACHE_DIR", "media/thumbs"}}, "", true},
+		{"same directory as the transcode cache", []envPair{{"TRANSCODE_CACHE_DIR", "/cache"}, {"THUMBNAIL_CACHE_DIR", "/cache/"}}, "", true},
+		{"same as the default transcode cache", []envPair{{"DB_PATH", "/data/media.db"}, {"THUMBNAIL_CACHE_DIR", "/data/media.db.transcode-cache"}}, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearEnv()
+			t.Cleanup(clearEnv)
+			setEnvPairs(t, tt.env)
+			cfg, err := LoadConfig()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("LoadConfig error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil {
+				if !strings.Contains(err.Error(), "THUMBNAIL_CACHE_DIR") {
+					t.Errorf("error should name the setting: %v", err)
+				}
+				return
+			}
+			if cfg.ThumbnailCacheDir != tt.wantDir {
+				t.Errorf("ThumbnailCacheDir = %q, want %q", cfg.ThumbnailCacheDir, tt.wantDir)
 			}
 		})
 	}

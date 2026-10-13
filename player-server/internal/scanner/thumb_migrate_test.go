@@ -65,6 +65,9 @@ type migrationFixture struct {
 	setID   int64
 	// gen replaces the default generator, which writes "thumb of <source>".
 	gen func(in, out string) error
+	// cache, when set, is the thumbnail cache directory the scanner is
+	// configured with (THUMBNAIL_CACHE_DIR).
+	cache string
 
 	mu sync.Mutex
 	// generated records the sources the generator was asked to render.
@@ -160,7 +163,12 @@ func (f *migrationFixture) scanner() *FSScanner {
 	prober := &probe.MockProber{ProbeFunc: func(context.Context, string) (*model.Metadata, error) {
 		return &model.Metadata{}, nil
 	}}
-	return NewFSScanner(f.store, prober, gen, clock.RealClock{}, f.root)
+	if f.cache == "" {
+		return NewFSScanner(f.store, prober, gen, clock.RealClock{}, f.root)
+	}
+	layout := thumb.NewLayout(f.root, f.cache)
+	maker := thumb.NewFSMaker(gen, nil, nil).WithLayout(layout)
+	return NewFSScannerWithMaker(f.store, prober, maker, clock.RealClock{}, f.root, nil).WithThumbnailLayout(layout)
 }
 
 // scan runs a full rescan that must succeed.
@@ -894,7 +902,7 @@ func TestStaleThumbnails(t *testing.T) {
 	}
 	exists := func(path string) bool { return path != "/m/set/.thumbnails/lost.mp4.jpg" }
 
-	got := staleThumbnails(existing, seen, set, exists)
+	got := staleThumbnails(existing, seen, set, exists, thumb.Layout{})
 	want := map[string]staleKind{
 		"old.mp4": staleOldName, "a/old.png": staleOldName, "lost.mp4": staleMissing,
 		"none.mp4": staleNone, "own.png": staleNone,

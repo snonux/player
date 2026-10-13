@@ -67,6 +67,13 @@ type e2e struct {
 
 func newE2E(t *testing.T, runner transcode.Runner) *e2e {
 	t.Helper()
+	return newE2EWith(t, runner, nil)
+}
+
+// newE2EWith is newE2E with a hook to change the configuration before the
+// server is wired, for settings that are off by default.
+func newE2EWith(t *testing.T, runner transcode.Runner, configure func(cfg *internal.Config)) *e2e {
+	t.Helper()
 	dir := t.TempDir()
 	store, err := repository.Open(filepath.Join(dir, "media.db"))
 	if err != nil {
@@ -80,6 +87,9 @@ func newE2E(t *testing.T, runner transcode.Runner) *e2e {
 		ShareDefaultExpiryDays: 7,
 		TranscodeCacheDir:      filepath.Join(dir, "transcode-cache"),
 		TranscodeCacheMaxMB:    1,
+	}
+	if configure != nil {
+		configure(cfg)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx, cancel := context.WithCancel(context.Background())

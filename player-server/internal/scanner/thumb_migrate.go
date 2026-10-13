@@ -23,7 +23,7 @@ import (
 // the first rescan. A rescan then treats every such row the same way:
 //
 //  1. staleThumbnails picks the rows whose generated thumbnail is not at
-//     the path the current scheme (thumb.ThumbnailPathFor) gives it. It
+//     the path the current scheme (thumb.Layout.PathFor) gives it. It
 //     also picks rows whose thumbnail is missing or was never made, which
 //     the same steps repair;
 //  2. a probeWorker generates a fresh thumbnail from the row's own source
@@ -43,7 +43,17 @@ import (
 // after its new thumbnail is complete (thumb.Maker replaces the destination
 // atomically), a row that cannot be migrated keeps its old, still working
 // path and is retried on the next rescan, and only files inside the set
-// directory are ever deleted.
+// directory, or the row's own thumbnail in the thumbnail cache, are ever
+// deleted.
+//
+// Switching the thumbnail cache on (THUMBNAIL_CACHE_DIR) uses the very same
+// steps: a thumbnail beside its source is then "not at its current path",
+// so the first rescan generates every thumbnail anew in the cache and
+// deletes the one in the set. A cache directory that was abandoned (the
+// setting changed or removed) is unknown to the new Layout: its thumbnails
+// keep being served from the stored paths, are never deleted by a scan,
+// and are replaced by a fresh one at the current path only once the file
+// is gone (see staleKindOf).
 
 // thumbnailUpdater is the one store operation the thumbnail migration needs.
 type thumbnailUpdater interface {
@@ -62,7 +72,8 @@ type staleKind int
 
 const (
 	// staleOldName: the generated thumbnail is stored under an older
-	// naming scheme. This is the migration.
+	// naming scheme, or beside the source although a thumbnail cache is
+	// now configured. This is the migration.
 	staleOldName staleKind = iota + 1
 	// staleMissing: the generated thumbnail is at its current path but the
 	// file is gone.
@@ -76,11 +87,12 @@ const (
 // generated in this scan, and why. existing holds all rows of the set at
 // setPath keyed by relPath (soft-deleted ones included, since trashed media
 // can be restored), seenRel the relPaths of the media files found on disk,
-// and exists reports whether a file is there.
+// exists reports whether a file is there, and layout says where thumbnails
+// are created now.
 //
 // Only videos and images whose source file is on disk qualify, SVG images
 // excepted (an SVG always is its own thumbnail).
-func staleThumbnails(existing map[string]model.Media, seenRel map[string]struct{}, setPath string, exists func(path string) bool) map[string]staleKind {
+func staleThumbnails(existing map[string]model.Media, seenRel map[string]struct{}, setPath string, exists func(path string) bool, layout thumb.Layout) map[string]staleKind {
 	stale := make(map[string]staleKind)
 	for relPath, m := range existing {
 		if m.Type != model.MediaTypeVideo && m.Type != model.MediaTypeImage {
@@ -91,7 +103,7 @@ func staleThumbnails(existing map[string]model.Media, seenRel map[string]struct{
 		}
 		// Derive the source from relPath: AbsPath may be stale on old rows.
 		src := filepath.Join(setPath, filepath.FromSlash(relPath))
-		if kind := staleKindOf(m.ThumbnailPath, src, setPath, existing, exists); kind != 0 {
+		if kind := staleKindOf(m.ThumbnailPath, src, setPath, existing, exists, layout); kind != 0 {
 			stale[relPath] = kind
 		}
 	}
@@ -116,17 +128,30 @@ func staleThumbnails(existing map[string]model.Media, seenRel map[string]struct{
 // an image or a video of up to a second, two for a longer video (the
 // seeked run, then the first-frame fallback in thumb.FFmpegGenerator).
 //
+// The row's own path in the thumbnail cache is a generated thumbnail too,
+// although it is outside the set: it is checked first, and judged like one
+// in the set (missing, or no longer where thumbnails are created because
+// the cache was switched off).
+//
+// A generated thumbnail outside both (a .thumbnails directory elsewhere:
+// an abandoned cache directory, a media root that moved) is replaced only
+// when its file is gone, and then like a thumbnail that was never made:
+// a new one is generated at the current path and nothing is deleted.
+//
 // Anything else is an ordinary file that was chosen as the thumbnail, or a
-// path outside the set, and is left alone: a stale absolute path (media
+// path outside the set that still exists, and is left alone: a stale absolute path (media
 // root moved, database copied from another host) must never lead to files
 // elsewhere being replaced or deleted.
-func staleKindOf(stored, src, setPath string, existing map[string]model.Media, exists func(path string) bool) staleKind {
+func staleKindOf(stored, src, setPath string, existing map[string]model.Media, exists func(path string) bool, layout thumb.Layout) staleKind {
 	switch {
 	case stored == "" || stored == src:
 		return staleNone
-	case !isGeneratedIn(setPath, stored, existing):
+	case !layout.IsCachedFor(stored, src) && !isGeneratedIn(setPath, stored, existing):
+		if thumb.IsGenerated(stored) && !exists(stored) {
+			return staleNone
+		}
 		return 0
-	case stored != thumb.ThumbnailPathFor(src):
+	case stored != layout.PathFor(src):
 		return staleOldName
 	case !exists(stored):
 		return staleMissing
@@ -158,31 +183,40 @@ func isGeneratedIn(setPath, path string, existing map[string]model.Media) bool {
 const staleTemporaryAge = time.Hour
 
 // sweepStaleTemporaries deletes temporary files a thumb.FSMaker left in the
-// .thumbnails directories next to files. The maker removes its temporary
+// .thumbnails directories of files: the one next to each file and, with a
+// thumbnail cache, the one in the cache. The maker removes its temporary
 // file itself, so one only stays behind when the server is killed in the
 // middle of a generation; nothing else would ever remove it.
 func (s *FSScanner) sweepStaleTemporaries(files []string) {
 	cutoff := s.clock.Now().Add(-staleTemporaryAge)
 	swept := make(map[string]struct{})
 	for _, f := range files {
-		dir := thumb.ThumbnailDir(filepath.Dir(f))
-		if _, done := swept[dir]; done {
-			continue
-		}
-		swept[dir] = struct{}{}
-		entries, err := s.fs.ReadDir(dir)
-		if err != nil {
-			continue // usually: no .thumbnails directory here
-		}
-		for _, entry := range entries {
-			info, err := entry.Info()
-			if err != nil || entry.IsDir() || !thumb.IsTemporary(entry.Name()) || !info.ModTime().Before(cutoff) {
+		for _, thumbPath := range []string{s.layout.Beside(f), s.layout.PathFor(f)} {
+			dir := filepath.Dir(thumbPath)
+			if _, done := swept[dir]; done {
 				continue
 			}
-			path := filepath.Join(dir, entry.Name())
-			if err := s.remover.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				s.log().Warn("scanner stale temporary thumbnail removal failed", "path", path, "err", err)
-			}
+			swept[dir] = struct{}{}
+			s.sweepTemporariesIn(dir, cutoff)
+		}
+	}
+}
+
+// sweepTemporariesIn deletes the maker's temporary files in dir that were
+// last modified before cutoff.
+func (s *FSScanner) sweepTemporariesIn(dir string, cutoff time.Time) {
+	entries, err := s.fs.ReadDir(dir)
+	if err != nil {
+		return // usually: no .thumbnails directory here
+	}
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil || entry.IsDir() || !thumb.IsTemporary(entry.Name()) || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		if err := s.remover.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			s.log().Warn("scanner stale temporary thumbnail removal failed", "path", path, "err", err)
 		}
 	}
 }
@@ -216,8 +250,9 @@ type thumbSwitcher struct {
 }
 
 // newThumbSwitcher creates the switcher for one set scan. existing are the
-// set's rows at the start of the scan, files the media files found on disk.
-func newThumbSwitcher(store thumbnailUpdater, remover fileRemover, logger *slog.Logger, existing map[string]model.Media, files []string) *thumbSwitcher {
+// set's rows at the start of the scan, files the media files found on disk,
+// and layout says where their thumbnails are created.
+func newThumbSwitcher(store thumbnailUpdater, remover fileRemover, logger *slog.Logger, existing map[string]model.Media, files []string, layout thumb.Layout) *thumbSwitcher {
 	ts := &thumbSwitcher{
 		store:    store,
 		remover:  remover,
@@ -231,7 +266,7 @@ func newThumbSwitcher(store thumbnailUpdater, remover fileRemover, logger *slog.
 		}
 	}
 	for _, f := range files {
-		ts.reserved[thumb.ThumbnailPathFor(f)] = struct{}{}
+		ts.reserved[layout.PathFor(f)] = struct{}{}
 	}
 	return ts
 }

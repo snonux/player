@@ -101,23 +101,23 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	// free of direct os.Stat calls and makes the dependency easy to swap
 	// out in tests or alternate deployments (e.g. object storage).
 	thumbResolver := thumb.NewFSResolver()
-	// thumb.FSMaker encapsulates the "create .thumbnails dir + invoke
-	// generator + warn-on-failure" policy so the scanner only
-	// orchestrates the scan and does not own thumbnail layout policy.
-	thumbMaker := thumb.NewFSMaker(thumbGen, nil, logger)
+	thumbLayout, thumbMaker := wireThumbnails(cfg, thumbGen, logger)
 
 	helper := service.NewAccessHelper(store)
 	browser := service.NewPodcastBrowseService(store, cfg.MediaRoot)
-	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, browser, thumbResolver)
+	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, browser, thumbResolver).
+		WithThumbnailLayout(thumbLayout)
 	playbackHintSvc := service.NewPlaybackHintsService(helper)
 
-	fsScanner := scanner.NewFSScannerWithMaker(store, prober, thumbMaker, clk, cfg.MediaRoot, logger)
+	fsScanner := scanner.NewFSScannerWithMaker(store, prober, thumbMaker, clk, cfg.MediaRoot, logger).
+		WithThumbnailLayout(thumbLayout)
 	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
 
 	progressSvc := service.NewProgressService(store, clk)
 	authSvc := service.NewAuthService(store, clk, hasher, sm, tm)
 
-	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger)
+	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger).
+		WithThumbnailLayout(thumbLayout)
 
 	deps := &Deps{
 		Store:           store,
@@ -137,6 +137,19 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	}
 	wireTranscoding(deps, runner)
 	return deps
+}
+
+// wireThumbnails returns the thumbnail layout and the maker creating
+// thumbnails in it. There is one layout for every component that creates,
+// locates or deletes thumbnails: beside the media by default, or in
+// THUMBNAIL_CACHE_DIR.
+//
+// thumb.FSMaker encapsulates the "create .thumbnails dir + invoke generator
+// + warn-on-failure" policy so the scanner only orchestrates the scan and
+// does not own thumbnail layout policy.
+func wireThumbnails(cfg *internal.Config, gen thumb.Generator, logger *slog.Logger) (thumb.Layout, *thumb.FSMaker) {
+	layout := thumb.NewLayout(cfg.MediaRoot, cfg.ThumbnailCacheDir)
+	return layout, thumb.NewFSMaker(gen, nil, logger).WithLayout(layout)
 }
 
 // wireTranscoding adds the compatibility stream to deps: the rendition
@@ -164,7 +177,8 @@ func wireTranscoding(deps *Deps, runner transcode.Runner) {
 	// The GC tick also bounds the transcode cache and drops renditions of
 	// hard-deleted media.
 	deps.GCWorker = service.NewGCWorker(deps.Store, deps.Clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, deps.Logger).
-		WithRenditionCache(deps.Transcodes)
+		WithRenditionCache(deps.Transcodes).
+		WithThumbnailLayout(thumb.NewLayout(cfg.MediaRoot, cfg.ThumbnailCacheDir))
 }
 
 // checkTranscoding reports transcoding misconfiguration at startup. Problems
@@ -292,7 +306,9 @@ func runServer(handler http.Handler, cfg *internal.Config, logger *slog.Logger, 
 // can be exercised by a test without starting a listener.
 func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*api.Server, error) {
 	cfg := deps.Cfg
-	streamer := service.NewMediaStreamer(probe.NewFFRemuxer(), cfg.MediaRoot)
+	// Thumbnails in THUMBNAIL_CACHE_DIR lie outside the media root and are
+	// served through the same streamer as media.
+	streamer := service.NewMediaStreamer(probe.NewFFRemuxer(), cfg.MediaRoot).WithThumbnailCache(cfg.ThumbnailCacheDir)
 	return api.NewServerWithLogger(api.ServerDeps{
 		Store:          deps.Store,
 		Hasher:         deps.Hasher,

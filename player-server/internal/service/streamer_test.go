@@ -151,3 +151,53 @@ func TestMediaStreamerOpenRejectsPathOutsideRoot(t *testing.T) {
 		t.Fatalf("expected ErrForbidden, got %v", err)
 	}
 }
+
+// TestMediaStreamerOpenThumbnailCache: with a thumbnail cache configured its
+// generated thumbnails are served although they lie outside the media root,
+// and nothing else outside the root is.
+func TestMediaStreamerOpenThumbnailCache(t *testing.T) {
+	mediaRoot, cache, elsewhere := t.TempDir(), t.TempDir(), t.TempDir()
+	write := func(path string) string {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("jpg"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	cached := write(filepath.Join(cache, "set", ".thumbnails", "clip.mp4.jpg"))
+	tests := []struct {
+		name    string
+		path    string
+		wantErr error
+	}{
+		{"generated thumbnail in the cache", cached, nil},
+		{"file in the cache that is no thumbnail", write(filepath.Join(cache, "set", "notes.txt")), ErrForbidden},
+		{"file directly in the cache directory", write(filepath.Join(cache, "loose.jpg")), ErrForbidden},
+		{"thumbnail-like file elsewhere", write(filepath.Join(elsewhere, ".thumbnails", "clip.mp4.jpg")), ErrForbidden},
+		{"dot-dot out of the cache", filepath.Join(cache, "set", ".thumbnails", "..", "..", "..", filepath.Base(elsewhere), ".thumbnails", "clip.mp4.jpg"), ErrForbidden},
+		{"sibling sharing the cache's prefix", write(filepath.Join(cache+"-old", ".thumbnails", "clip.mp4.jpg")), ErrForbidden},
+	}
+	streamer := NewMediaStreamer(nil, mediaRoot).WithThumbnailCache(cache)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stream, err := streamer.Open(context.Background(), &FileResult{Path: tt.path, FileName: "clip.mp4.jpg"}, false)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Open error = %v, want %v", err, tt.wantErr)
+			}
+			if stream != nil {
+				_ = stream.File.Close()
+			}
+		})
+	}
+
+	t.Run("without a cache the same thumbnail is refused", func(t *testing.T) {
+		for _, s := range []*mediaStreamer{NewMediaStreamer(nil, mediaRoot), NewMediaStreamer(nil, mediaRoot).WithThumbnailCache("")} {
+			if _, err := s.Open(context.Background(), &FileResult{Path: cached, FileName: "clip.mp4.jpg"}, false); !errors.Is(err, ErrForbidden) {
+				t.Errorf("Open error = %v, want ErrForbidden", err)
+			}
+		}
+	})
+}

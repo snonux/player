@@ -31,20 +31,28 @@ type thumbnailRemover interface {
 	Remove(thumbPath string)
 }
 
-// newThumbnailMaker wraps gen in the shared thumb.FSMaker. It returns nil
-// for a nil generator, which services built without one (tests, mostly)
-// treat as "thumbnails cannot be generated".
+// newThumbnailMaker wraps gen in the shared thumb.FSMaker, which keeps
+// thumbnails beside their source. It returns nil for a nil generator, which
+// services built without one (tests, mostly) treat as "thumbnails cannot be
+// generated".
 func newThumbnailMaker(gen thumb.Generator, logger *slog.Logger) ThumbnailMaker {
+	return newThumbnailMakerIn(gen, logger, thumb.Layout{})
+}
+
+// newThumbnailMakerIn is newThumbnailMaker for a given thumbnail layout,
+// i.e. with the thumbnail cache when one is configured.
+func newThumbnailMakerIn(gen thumb.Generator, logger *slog.Logger, layout thumb.Layout) ThumbnailMaker {
 	if gen == nil {
 		return nil
 	}
-	return thumb.NewFSMaker(gen, nil, logger)
+	return thumb.NewFSMaker(gen, nil, logger).WithLayout(layout)
 }
 
 // newThumbnailRemover returns a remover for services that delete thumbnails
-// but may have no generator, such as the garbage collector.
-func newThumbnailRemover(logger *slog.Logger) thumbnailRemover {
-	return thumb.NewFSMaker(nil, nil, logger)
+// but may have no generator, such as the garbage collector. layout tells it
+// where the thumbnail cache is, whose emptied folders it removes as well.
+func newThumbnailRemover(logger *slog.Logger, layout thumb.Layout) thumbnailRemover {
+	return thumb.NewFSMaker(nil, nil, logger).WithLayout(layout)
 }
 
 // removeOwnThumbnail deletes the generated thumbnail of a media item whose
@@ -53,16 +61,17 @@ func newThumbnailRemover(logger *slog.Logger) thumbnailRemover {
 // leave an orphaned JPEG behind, and an otherwise empty folder could not be
 // removed.
 //
-// Only a thumbnail at the item's own current path (thumb.ThumbnailPathFor)
-// is deleted, because only that path is known to belong to this item alone.
+// Only a thumbnail at one of the item's own paths (thumb.Layout.Holds:
+// beside the source, or in the thumbnail cache) is deleted, because only
+// those paths are known to belong to this item alone.
 // Anything else is left in place: a cover image or an image serving as its
 // own thumbnail is an ordinary file, and a thumbnail still stored under the
 // stem-based naming of releases up to v0.2.2 may be shared with another
 // item, which cannot be checked from here. Such a thumbnail stays behind
 // as an orphan when its item is purged before a rescan has migrated it;
 // see docs/admin.md.
-func removeOwnThumbnail(rm thumbnailRemover, media *model.Media) {
-	if media.AbsPath == "" || media.ThumbnailPath != thumb.ThumbnailPathFor(media.AbsPath) {
+func removeOwnThumbnail(rm thumbnailRemover, layout thumb.Layout, media *model.Media) {
+	if media.AbsPath == "" || !layout.Holds(media.ThumbnailPath, media.AbsPath) {
 		return
 	}
 	rm.Remove(media.ThumbnailPath)

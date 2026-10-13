@@ -58,6 +58,14 @@ file has exactly one thumbnail of its own:
 with a hash.) A directory named `.thumbnails` directly in `MEDIA_ROOT` is
 never scanned as a set.
 
+With `THUMBNAIL_CACHE_DIR` set, the same names are used below that directory
+instead of below `MEDIA_ROOT` (`set/a/clip.mp4` ->
+`<cache>/set/a/.thumbnails/clip.mp4.jpg`) and nothing is written into the
+sets for thumbnails, so a set can be a read-only mount. Run one rescan after
+switching it on; see "Thumbnail cache" in
+[configuration.md](configuration.md) for the details. Everything below
+applies to both places.
+
 Every thumbnail is generated into a temporary file (`.tmp-*.jpg` in the same
 `.thumbnails` directory) and renamed into place once complete, by rescan,
 upload, podcast download and "regenerate thumbnail" alike. A thumbnail in
@@ -82,7 +90,8 @@ A thumbnail that cannot be generated never blocks anything. Whether the file
 comes from a rescan, an upload or a podcast download, it is stored and
 indexed all the same: a video without a thumbnail, an image with the image
 itself standing in, and the reason logged as a warning. That is also what
-happens in a folder the server cannot write to.
+happens in a folder the server cannot write to, unless `THUMBNAIL_CACHE_DIR`
+moves the thumbnails out of the media folders.
 
 A file must be what its extension says, broadly: audio and video files must
 hold a real media container (AVI, ASF/WMV, FLV, Matroska/WebM, MP4/MOV, MP3,

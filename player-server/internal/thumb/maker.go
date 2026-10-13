@@ -93,6 +93,9 @@ type FSMaker struct {
 	gen    Generator
 	fs     MakerFS
 	logger *slog.Logger
+	// layout says where thumbnails are created. The zero value puts them
+	// beside their source; see WithLayout.
+	layout Layout
 }
 
 var _ Maker = (*FSMaker)(nil)
@@ -111,9 +114,18 @@ func NewFSMaker(gen Generator, fs MakerFS, logger *slog.Logger) *FSMaker {
 	return &FSMaker{gen: gen, fs: fs, logger: logger}
 }
 
-// MakeVideo creates a thumbnail for a video file in the .thumbnails
-// directory next to it. The path comes from ThumbnailPathFor so importers,
-// the scanner, and the resolver all agree on where thumbnails live.
+// WithLayout makes the maker create thumbnails where layout says, i.e. in
+// the thumbnail cache when one is configured. It returns the maker for
+// chaining and must be called before the maker is used.
+func (m *FSMaker) WithLayout(layout Layout) *FSMaker {
+	m.layout = layout
+	return m
+}
+
+// MakeVideo creates a thumbnail for a video file: in the .thumbnails
+// directory next to it, or in the thumbnail cache when one is configured.
+// The path comes from the maker's Layout so importers, the scanner, and
+// the resolver all agree on where thumbnails live.
 func (m *FSMaker) MakeVideo(ctx context.Context, srcPath string, duration float64) string {
 	return m.makeOrSkip(ctx, srcPath, duration)
 }
@@ -142,6 +154,9 @@ func (m *FSMaker) makeOrSkip(ctx context.Context, srcPath string, duration float
 // thumbnail": there the thumbnail is the whole point of the request. A
 // returned path always names a complete, non-empty file.
 //
+// Where the thumbnail goes is the Layout's decision (Layout.PathFor):
+// beside the source, or into the configured thumbnail cache.
+//
 // The thumbnail is generated into a temporary file in the destination
 // directory and renamed into place only once it is complete. A thumbnail
 // already at the destination is therefore either left untouched (on any
@@ -151,7 +166,7 @@ func (m *FSMaker) makeOrSkip(ctx context.Context, srcPath string, duration float
 // a folder costs no ffmpeg run however often it is rescanned. The
 // temporary file's name is chosen here, not derived from the media name.
 func (m *FSMaker) Make(ctx context.Context, srcPath string, duration float64) (string, error) {
-	dst := ThumbnailPathFor(srcPath)
+	dst := m.layout.PathFor(srcPath)
 	tmp, err := m.reserve(filepath.Dir(dst))
 	if err != nil {
 		return "", err
@@ -194,7 +209,10 @@ func (m *FSMaker) reserve(dir string) (string, error) {
 
 // Remove deletes the generated thumbnail at thumbPath, and its .thumbnails
 // directory once that leaves it empty, so purged media leaves nothing
-// behind that would keep an otherwise empty folder in place. A thumbnail
+// behind that would keep an otherwise empty folder in place. In the
+// thumbnail cache the folders above it are removed as well once empty:
+// nothing else lives there, and they would otherwise pile up as the media
+// tree changes. A thumbnail
 // that is already gone is fine; any other failure is logged, since the
 // callers are cleaning up and have nothing better to do about it.
 //
@@ -214,8 +232,13 @@ func (m *FSMaker) Remove(thumbPath string) {
 	// same call, emptied target or not. The removal is non-recursive and
 	// fails, harmlessly, while other thumbnails remain.
 	dir := filepath.Dir(thumbPath)
-	if info, err := m.fs.Lstat(dir); err == nil && info.IsDir() {
-		_ = m.fs.Remove(dir)
+	if info, err := m.fs.Lstat(dir); err != nil || !info.IsDir() || m.fs.Remove(dir) != nil {
+		return
+	}
+	for dir = filepath.Dir(dir); m.layout.inCache(dir); dir = filepath.Dir(dir) {
+		if m.fs.Remove(dir) != nil {
+			return // not empty: other thumbnails remain below it
+		}
 	}
 }
 

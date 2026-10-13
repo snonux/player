@@ -19,6 +19,7 @@ All settings are environment variables. Unset variables use defaults.
 | `TRANSCODE_CACHE_DIR` | `<DB_PATH>.transcode-cache` | writable directory outside `MEDIA_ROOT` | Cache for compatibility renditions (H.264/AAC) of legacy media; created on first use |
 | `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first); also the largest single rendition |
 | `TRANSCODE_MAX_JOBS` | `1` | ≥ 1 | Parallel ffmpeg transcodes; each needs about 400 MB of memory at 1080p |
+| `THUMBNAIL_CACHE_DIR` | unset | writable directory outside `MEDIA_ROOT` | When set, all generated thumbnails are stored there (mirroring the media tree) instead of in `.thumbnails` beside each media file; unset keeps them beside the media |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 
@@ -32,3 +33,11 @@ All settings are environment variables. Unset variables use defaults.
 - `TRANSCODE_CACHE_DIR` must not be inside `MEDIA_ROOT` (the scanner would import renditions as media); the server refuses to start otherwise. That includes the default when `DB_PATH` itself lies inside `MEDIA_ROOT` — set `TRANSCODE_CACHE_DIR` explicitly then.
 - The cache's eviction order and failure backoff are kept in memory per process, which fits the single-replica deployment. During a rolling update two instances may briefly share the directory: that is safe (unique temporary files), each instance just evicts by its own view.
 - At startup the server logs a warning when `ffmpeg` is missing or the cache directory is not writable.
+
+**Thumbnail cache:** by default a generated thumbnail lives in a `.thumbnails` directory next to its media file, so the server needs write access to every set. Set `THUMBNAIL_CACHE_DIR` to keep all generated thumbnails in a directory of their own instead, laid out like the media tree (`<cache>/<set>/<folder>/.thumbnails/<file name>.jpg`). Nothing is then written into `MEDIA_ROOT` for thumbnails, which is what makes it possible to mount a set read-only (for example another application's library) and to give thumbnails their own volume.
+
+- The directory must not be inside `MEDIA_ROOT` and must not be the transcode cache directory; the server refuses to start otherwise. It is created on first use.
+- There is no fallback in either direction: with the setting, a thumbnail that cannot be written to the cache is not written next to the media; the item is indexed without one and retried on the next rescan.
+- After switching the setting on, run one admin **Rescan**: thumbnails beside the media are generated anew in the cache and the old files deleted where the set is writable (an emptied `.thumbnails` directory may stay behind). A deleted or emptied cache directory heals the same way.
+- After changing the directory or switching the setting off, thumbnails already stored keep being served from where they are as long as the server can still read them; they are not moved back.
+- Set and folder covers ("regenerate cover") are still written into the set as `.cover.jpg` and therefore do not work on a read-only set.

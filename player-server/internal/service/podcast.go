@@ -72,8 +72,11 @@ type podcastService struct {
 	// thumbs makes the thumbnails of downloaded video episodes; nil
 	// without a generator. thumbRm deletes thumbnails of purged media and
 	// is always set.
-	thumbs          ThumbnailMaker
-	thumbRm         thumbnailRemover
+	thumbs  ThumbnailMaker
+	thumbRm thumbnailRemover
+	// thumbLayout is where both of them expect thumbnails (see
+	// WithThumbnailLayout); the zero value means beside the source.
+	thumbLayout     thumb.Layout
 	httpClient      *http.Client
 	checkInterval   int // minutes
 	logger          *slog.Logger
@@ -170,6 +173,16 @@ func NewPodcastService(store PodcastServiceStore, clk clock.Clock, mediaRoot str
 	return NewPodcastServiceWithLogger(store, clk, mediaRoot, helper, prober, thumbGen, httpClient, checkInterval, slog.Default())
 }
 
+// WithThumbnailLayout makes the service create and delete episode
+// thumbnails where layout says, i.e. in the thumbnail cache when one is
+// configured. It must be called before the service is used.
+func (s *podcastService) WithThumbnailLayout(layout thumb.Layout) *podcastService {
+	s.thumbLayout = layout
+	s.thumbs = newThumbnailMakerIn(s.thumbGen, s.logger, layout)
+	s.thumbRm = newThumbnailRemover(s.logger, layout)
+	return s
+}
+
 // NewPodcastServiceWithLogger creates a PodcastService with an injected logger.
 // httpClient is required and must not be nil — passing nil will panic on first
 // use. This is intentional: the service depends on an injected client per DIP
@@ -192,7 +205,7 @@ func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, med
 		prober:        prober,
 		thumbGen:      thumbGen,
 		thumbs:        newThumbnailMaker(thumbGen, logger),
-		thumbRm:       newThumbnailRemover(logger),
+		thumbRm:       newThumbnailRemover(logger, thumb.Layout{}),
 		httpClient:    httpClient,
 		checkInterval: checkInterval,
 		logger:        logger,

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/probe"
+	"codeberg.org/snonux/player/internal/thumb"
 )
 
 // Compile-time check that *mediaStreamer satisfies MediaStreamer.
@@ -17,6 +19,9 @@ var _ MediaStreamer = (*mediaStreamer)(nil)
 type mediaStreamer struct {
 	remuxer   probe.Remuxer
 	mediaRoot string // root directory that all streamed paths must stay under
+	// thumbCache is the one directory outside mediaRoot files are served
+	// from: the thumbnail cache (see WithThumbnailCache). Empty: none.
+	thumbCache string
 }
 
 // NewMediaStreamer creates the default service for preparing media files for
@@ -25,6 +30,33 @@ type mediaStreamer struct {
 // rejected to prevent filepath-traversal via a compromised AbsPath in the DB.
 func NewMediaStreamer(remuxer probe.Remuxer, mediaRoot string) *mediaStreamer {
 	return &mediaStreamer{remuxer: remuxer, mediaRoot: mediaRoot}
+}
+
+// WithThumbnailCache also allows generated thumbnails below dir, the
+// configured thumbnail cache (THUMBNAIL_CACHE_DIR), to be opened. Without
+// it they would be refused for lying outside the media root. Only files
+// directly inside a .thumbnails directory qualify, which is all the cache
+// ever holds. An empty dir changes nothing.
+func (s *mediaStreamer) WithThumbnailCache(dir string) *mediaStreamer {
+	if dir == "" {
+		return s
+	}
+	// Stored cache paths are absolute (thumb.NewLayout), so compare against
+	// the absolute directory even when the setting is relative.
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	s.thumbCache = dir
+	return s
+}
+
+// servable reports whether path may be opened: it lies below the media
+// root, or it is a generated thumbnail in the thumbnail cache.
+func (s *mediaStreamer) servable(path string) bool {
+	if pathWithinRoot(s.mediaRoot, path) {
+		return true
+	}
+	return s.thumbCache != "" && thumb.IsGenerated(filepath.Clean(path)) && pathWithinRoot(s.thumbCache, path)
 }
 
 func (s *mediaStreamer) Open(ctx context.Context, file *FileResult, attachment bool) (*StreamResult, error) {
@@ -36,8 +68,9 @@ func (s *mediaStreamer) Open(ctx context.Context, file *FileResult, attachment b
 	// any path that resolves outside it. This ensures that a compromised
 	// AbsPath stored in the database cannot be used to serve arbitrary files.
 	// The check itself lives in pathWithinRoot so the compatibility stream
-	// applies the identical rule.
-	if !pathWithinRoot(s.mediaRoot, file.Path) {
+	// applies the identical rule. The thumbnail cache is the one exception
+	// (see servable).
+	if !s.servable(file.Path) {
 		return nil, fmt.Errorf("%w: path escapes media root", ErrForbidden)
 	}
 
