@@ -42,8 +42,9 @@ import (
 // The steps are safe to interrupt and to repeat. A row is switched only
 // after its new thumbnail is complete (thumb.Maker replaces the destination
 // atomically), a row that cannot be migrated keeps its old, still working
-// path and is retried on the next rescan, and only files inside the set
-// directory are ever deleted.
+// path and is retried on the next rescan, and the only files ever deleted
+// are generated thumbnails inside the set directory and the maker's stale
+// temporary files (see sweepStaleTemporaries).
 //
 // Switching the thumbnail cache on (THUMBNAIL_CACHE_DIR) uses the very same
 // steps: a thumbnail beside its source is then "not at its current path",
@@ -179,9 +180,9 @@ func staleKindOf(stored, src, setPath string, existing map[string]model.Media, e
 
 // lostElsewhere reports whether stored is a generated thumbnail outside the
 // set that the server cannot show: its file is gone, or it lies outside
-// the media root, from where nothing but the current thumbnail cache is
-// ever served. That is what the thumbnails of a cache directory look like
-// after THUMBNAIL_CACHE_DIR was changed or removed.
+// both the media root and the current thumbnail cache, from where nothing
+// is ever served. That is what the thumbnails of a cache directory look
+// like after THUMBNAIL_CACHE_DIR was changed or removed.
 //
 // Such a row (staleLost) is treated like one whose thumbnail was never
 // made: a new thumbnail is generated at the current path and the row
@@ -191,7 +192,7 @@ func lostElsewhere(stored, setPath string, exists func(path string) bool, layout
 	if !thumb.IsGenerated(stored) || within(setPath, stored) {
 		return false
 	}
-	return !exists(stored) || !layout.InMediaRoot(stored)
+	return !exists(stored) || !layout.Serves(stored)
 }
 
 // isGeneratedIn reports whether path is a generated thumbnail inside the set
@@ -224,14 +225,22 @@ func within(dir, path string) bool {
 const staleTemporaryAge = time.Hour
 
 // sweepStaleTemporaries deletes temporary files a thumb.FSMaker left in the
-// .thumbnails directories it generates into: the one next to each file, or
-// with a thumbnail cache the one in the cache. With a cache the directory
-// next to the file is not looked at, let alone cleaned: nothing in the
-// media tree is the server's to delete then. The maker removes its temporary
-// file itself, so one only stays behind when the server is killed in the
-// middle of a generation; nothing else would ever remove it.
-func (s *FSScanner) sweepStaleTemporaries(files []string) {
+// .thumbnails directories it generates into. The maker removes its
+// temporary file itself, so one only stays behind when the server is killed
+// in the middle of a generation; nothing else would ever remove it.
+//
+// Without a thumbnail cache those are the directories next to the media
+// files. With one, it is the part of the cache mirroring the set at
+// setPath, walked as a whole: a folder whose media is gone can still hold
+// a temporary, which would keep the folder from ever being removed. The
+// directories next to the media are not looked at then, let alone cleaned:
+// nothing in the media tree is the server's to delete with a cache.
+func (s *FSScanner) sweepStaleTemporaries(setPath string, files []string) {
 	cutoff := s.clock.Now().Add(-staleTemporaryAge)
+	if cacheDir, ok := s.layout.CachedDir(setPath); ok {
+		s.sweepCacheTree(cacheDir, cutoff)
+		return
+	}
 	swept := make(map[string]struct{})
 	for _, f := range files {
 		current, ok := s.layout.PathFor(f)
@@ -244,6 +253,24 @@ func (s *FSScanner) sweepStaleTemporaries(files []string) {
 		}
 		swept[dir] = struct{}{}
 		s.sweepTemporariesIn(dir, cutoff)
+	}
+}
+
+// sweepCacheTree sweeps the .thumbnails directories of the thumbnail cache
+// folder dir and of every folder below it. Symbolic links are not followed.
+func (s *FSScanner) sweepCacheTree(dir string, cutoff time.Time) {
+	entries, err := s.fs.ReadDir(dir)
+	if err != nil {
+		return // usually: nothing cached for this set yet
+	}
+	for _, entry := range entries {
+		switch {
+		case !entry.IsDir():
+		case entry.Name() == thumb.DirName:
+			s.sweepTemporariesIn(filepath.Join(dir, entry.Name()), cutoff)
+		default:
+			s.sweepCacheTree(filepath.Join(dir, entry.Name()), cutoff)
+		}
 	}
 }
 

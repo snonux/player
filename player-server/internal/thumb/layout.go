@@ -120,11 +120,11 @@ func (l Layout) Cached(srcPath string) (path string, ok bool) {
 	if l.cacheDir == "" {
 		return "", false
 	}
-	rel, err := filepath.Rel(l.mediaRoot, filepath.Dir(absOrClean(srcPath)))
-	if err != nil || escapes(rel) {
+	dir, ok := l.CachedDir(filepath.Dir(absOrClean(srcPath)))
+	if !ok {
 		return "", false
 	}
-	return filepath.Join(ThumbnailDir(filepath.Join(l.cacheDir, rel)), ThumbnailNameFor(srcPath)), true
+	return filepath.Join(ThumbnailDir(dir), ThumbnailNameFor(srcPath)), true
 }
 
 // IsCachedFor reports whether thumbPath is the cache path of srcPath's
@@ -140,6 +140,27 @@ func (l Layout) IsCachedFor(thumbPath, srcPath string) bool {
 // for the thumbnail of srcPath: beside the source, or in its cache.
 func (l Layout) Holds(thumbPath, srcPath string) bool {
 	return thumbPath != "" && (thumbPath == l.Beside(srcPath) || l.IsCachedFor(thumbPath, srcPath))
+}
+
+// Serves reports whether a file at path can be shown by the server at all:
+// it lies below the media root or below the thumbnail cache. A Layout that
+// does not know its media root says yes.
+func (l Layout) Serves(path string) bool {
+	return l.InMediaRoot(path) || l.inCache(absOrClean(path))
+}
+
+// CachedDir returns the folder of the thumbnail cache that mirrors the
+// media folder mediaDir ("<cache>/<set>/<folder>"); thumbnails of the files
+// in mediaDir are in its .thumbnails directory. ok is as for Cached.
+func (l Layout) CachedDir(mediaDir string) (dir string, ok bool) {
+	if l.cacheDir == "" {
+		return "", false
+	}
+	rel, err := filepath.Rel(l.mediaRoot, absOrClean(mediaDir))
+	if err != nil || escapes(rel) {
+		return "", false
+	}
+	return filepath.Join(l.cacheDir, rel), true
 }
 
 // inCache reports whether dir lies strictly below the cache directory.

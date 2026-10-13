@@ -206,16 +206,21 @@ const reserveAttempts = 5
 // once the temporary file exists the directory is no longer empty and
 // cannot be removed. os.MkdirAll can also report "file exists" in that
 // race: it finds a folder present, which is removed before MkdirAll looks
-// at it again. Any other failure is final.
+// at it again. (It reports the same for a dangling symbolic link in the
+// way, which no retry cures; the attempts are few and cost nothing.) Any
+// other failure is final. The error names the step that failed last.
 func (m *FSMaker) reserve(dir string) (string, error) {
 	var err error
+	step := "mkdir thumbnails"
 	for attempt := 0; attempt < reserveAttempts; attempt++ {
+		step = "mkdir thumbnails"
 		if err = m.fs.MkdirAll(dir, 0o755); err != nil {
 			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrExist) {
 				continue
 			}
-			return "", fmt.Errorf("mkdir thumbnails %q: %w", dir, err)
+			break
 		}
+		step = "reserve thumbnail file in"
 		var tmp string
 		if tmp, err = m.fs.CreateTemp(dir); err == nil {
 			return tmp, nil
@@ -224,7 +229,7 @@ func (m *FSMaker) reserve(dir string) (string, error) {
 			break
 		}
 	}
-	return "", fmt.Errorf("reserve thumbnail file in %q: %w", dir, err)
+	return "", fmt.Errorf("%s %q: %w", step, dir, err)
 }
 
 // Remove deletes the generated thumbnail at thumbPath, and its .thumbnails

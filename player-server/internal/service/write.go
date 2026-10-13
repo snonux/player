@@ -173,10 +173,12 @@ func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID 
 // the old file would be orphaned: the rescan migration only looks at paths
 // rows still store.
 //
-// With a thumbnail cache the previous file is either the row's own cache
-// path, which is the new path too (nothing to do), or a file in an
-// abandoned cache directory, which is outside every set and stays where it
-// is like the rest of that directory.
+// With a thumbnail cache the previous file is one of three things: the
+// row's own cache path, which is the new path too (nothing to do); a file
+// in an abandoned cache directory, which is outside every set and stays
+// where it is like the rest of that directory; or a thumbnail still beside
+// the source because no rescan has moved it yet, which is deleted under the
+// rules below, together with its .thumbnails directory once that is empty.
 //
 // The file is kept unless all of this holds:
 //   - it is a generated thumbnail inside the directory of the row's own

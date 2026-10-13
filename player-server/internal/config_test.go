@@ -2,6 +2,7 @@ package internal
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -331,6 +332,55 @@ func TestLoadConfig_ThumbnailCache(t *testing.T) {
 			}
 			if cfg.ThumbnailCacheDir != tt.wantDir {
 				t.Errorf("ThumbnailCacheDir = %q, want %q", cfg.ThumbnailCacheDir, tt.wantDir)
+			}
+		})
+	}
+}
+
+// A cache directory that only looks separate from the media root, because
+// one of the two is reached through a symbolic link, is rejected as well.
+func TestLoadConfig_CacheDirsThroughSymlinks(t *testing.T) {
+	base := t.TempDir()
+	media, elsewhere := filepath.Join(base, "media"), filepath.Join(base, "elsewhere")
+	for _, dir := range []string{filepath.Join(media, "set"), elsewhere} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := func(target, name string) string {
+		t.Helper()
+		path := filepath.Join(base, name)
+		if err := os.Symlink(target, path); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		return path
+	}
+	intoMedia := link(filepath.Join(media, "set"), "link-into-media")
+	mediaLink := link(media, "media-link")
+	toElsewhere := link(elsewhere, "link-elsewhere")
+	tests := []struct {
+		name    string
+		env     []envPair
+		wantErr string
+	}{
+		{"thumbnail cache links into the media root", []envPair{{"MEDIA_ROOT", media}, {"THUMBNAIL_CACHE_DIR", intoMedia}}, "THUMBNAIL_CACHE_DIR"},
+		{"not yet existing folder below such a link", []envPair{{"MEDIA_ROOT", media}, {"THUMBNAIL_CACHE_DIR", filepath.Join(intoMedia, "new", "cache")}}, "THUMBNAIL_CACHE_DIR"},
+		{"media root is a link, cache inside its target", []envPair{{"MEDIA_ROOT", mediaLink}, {"THUMBNAIL_CACHE_DIR", filepath.Join(media, "cache")}}, "THUMBNAIL_CACHE_DIR"},
+		{"transcode cache links into the media root", []envPair{{"MEDIA_ROOT", media}, {"TRANSCODE_CACHE_DIR", intoMedia}}, "TRANSCODE_CACHE_DIR"},
+		{"link to a separate directory is fine", []envPair{{"MEDIA_ROOT", media}, {"THUMBNAIL_CACHE_DIR", toElsewhere}, {"TRANSCODE_CACHE_DIR", filepath.Join(base, "renditions")}}, ""},
+		{"both caches are the same directory through a link", []envPair{{"MEDIA_ROOT", media}, {"THUMBNAIL_CACHE_DIR", toElsewhere}, {"TRANSCODE_CACHE_DIR", elsewhere}}, "THUMBNAIL_CACHE_DIR"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearEnv()
+			t.Cleanup(clearEnv)
+			setEnvPairs(t, tt.env)
+			_, err := LoadConfig()
+			if (err != nil) != (tt.wantErr != "") {
+				t.Fatalf("LoadConfig error = %v, want error: %v", err, tt.wantErr != "")
+			}
+			if err != nil && !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error should name %s: %v", tt.wantErr, err)
 			}
 		})
 	}

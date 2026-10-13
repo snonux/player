@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -89,6 +91,38 @@ func TestNewLayout_EmptyMediaRoot(t *testing.T) {
 	}
 	if got := NewLayout("/media", "/media/x").CacheDir(); got != "" {
 		t.Errorf("CacheDir of an ignored cache = %q, want none", got)
+	}
+}
+
+func TestLayout_ServesAndCachedDir(t *testing.T) {
+	l := NewLayout("/media", "/thumbs")
+	for path, want := range map[string]bool{
+		"/media/set/.thumbnails/x.jpg":  true,
+		"/thumbs/set/.thumbnails/x.jpg": true,
+		"/thumbs":                       false,
+		"/thumbs-old/set/.thumbnails/x": false,
+		"/thumbs/../etc/.thumbnails/x":  false,
+		"/elsewhere/.thumbnails/x.jpg":  false,
+		"/media/../elsewhere/x.jpg":     false,
+	} {
+		if got := l.Serves(path); got != want {
+			t.Errorf("Serves(%q) = %v, want %v", path, got, want)
+		}
+	}
+	if NewLayout("/media", "").Serves("/thumbs/set/.thumbnails/x.jpg") {
+		t.Error("without a cache a former cache path counts as served")
+	}
+
+	if got, ok := l.CachedDir("/media/set/a"); !ok || got != "/thumbs/set/a" {
+		t.Errorf("CachedDir = %q, %v; want /thumbs/set/a", got, ok)
+	}
+	for _, dir := range []string{"/elsewhere", "/", "/media/../etc", "/media-old/set"} {
+		if got, ok := l.CachedDir(dir); ok {
+			t.Errorf("CachedDir(%q) = %q, want none", dir, got)
+		}
+	}
+	if _, ok := NewLayout("/media", "").CachedDir("/media/set"); ok {
+		t.Error("CachedDir without a cache")
 	}
 }
 
@@ -320,17 +354,23 @@ func TestFSMaker_Cache_SourceOutsideMediaRoot(t *testing.T) {
 	}
 }
 
-// missingParentFS fails MkdirAll with "no such file or directory" a number
-// of times: what a concurrent Remove pruning the folders above causes.
+// missingParentFS fails MkdirAll a number of times with err ("no such file
+// or directory" unless set): what a concurrent Remove pruning the folders
+// above causes.
 type missingParentFS struct {
 	*fakeFS
 	failures int
+	err      error
 }
 
 func (f *missingParentFS) MkdirAll(path string, perm os.FileMode) error {
 	if f.failures > 0 {
 		f.failures--
-		return &os.PathError{Op: "mkdir", Path: path, Err: fs.ErrNotExist}
+		cause := f.err
+		if cause == nil {
+			cause = fs.ErrNotExist
+		}
+		return &os.PathError{Op: "mkdir", Path: path, Err: cause}
 	}
 	return f.fakeFS.MkdirAll(path, perm)
 }
@@ -346,6 +386,32 @@ func TestFSMaker_ReserveSurvivesParentRemoval(t *testing.T) {
 	fsys = &missingParentFS{fakeFS: newFakeFS(), failures: reserveAttempts}
 	if _, err := NewFSMaker(writing(fsys.fakeFS, 5), fsys, nil).Make(context.Background(), "/s/v.mp4", 1); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("Make error = %v, want it to give up with the not-exist error", err)
+	}
+}
+
+// TestFSMaker_ReserveRetriesFileExists: os.MkdirAll reports "file exists"
+// when a folder it found present is pruned before it looks again. That is
+// the same race and retried the same way. A cause that stays (a dangling
+// symbolic link in the way) ends as a mkdir error, and an error of another
+// kind is not retried at all.
+func TestFSMaker_ReserveRetriesFileExists(t *testing.T) {
+	fsys := &missingParentFS{fakeFS: newFakeFS(), failures: reserveAttempts - 1, err: fs.ErrExist}
+	if got, err := NewFSMaker(writing(fsys.fakeFS, 5), fsys, nil).Make(context.Background(), "/s/v.mp4", 1); err != nil || got == "" {
+		t.Fatalf("Make = %q, %v; want it to retry and succeed", got, err)
+	}
+
+	fsys = &missingParentFS{fakeFS: newFakeFS(), failures: reserveAttempts, err: fs.ErrExist}
+	_, err := NewFSMaker(writing(fsys.fakeFS, 5), fsys, nil).Make(context.Background(), "/s/v.mp4", 1)
+	if !errors.Is(err, fs.ErrExist) || !strings.HasPrefix(err.Error(), "mkdir thumbnails") {
+		t.Fatalf("Make error = %v, want a mkdir error wrapping file-exists", err)
+	}
+
+	fsys = &missingParentFS{fakeFS: newFakeFS(), failures: reserveAttempts, err: syscall.ENOTDIR}
+	if _, err := NewFSMaker(writing(fsys.fakeFS, 5), fsys, nil).Make(context.Background(), "/s/v.mp4", 1); !errors.Is(err, syscall.ENOTDIR) {
+		t.Fatalf("Make error = %v, want ENOTDIR", err)
+	}
+	if fsys.failures != reserveAttempts-1 {
+		t.Errorf("a regular file in the way was retried %d times, want no retry", reserveAttempts-1-fsys.failures)
 	}
 }
 
@@ -375,10 +441,11 @@ func TestFSMaker_Cache_ConcurrentMakeAndRemove(t *testing.T) {
 	}
 	go loop(a, true)
 	go loop(b, true)
-	for i := 0; i < 2; i++ {
-		if err := <-errs; err != nil {
-			t.Fatalf("Make failed while a neighbour was being removed: %v", err)
-		}
+	// Wait for both before failing: a goroutine still writing would break
+	// the removal of the test's temporary directories.
+	first, second := <-errs, <-errs
+	if err := errors.Join(first, second); err != nil {
+		t.Fatalf("Make failed while a neighbour was being removed: %v", err)
 	}
 }
 

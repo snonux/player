@@ -266,10 +266,10 @@ func validateCacheDirs(cfg *Config) error {
 	if err := outsideMediaRoot("THUMBNAIL_CACHE_DIR", cfg.ThumbnailCacheDir, cfg.MediaRoot); err != nil {
 		return err
 	}
-	// outsideMediaRoot has already made all three absolute once.
-	thumbs, _ := filepath.Abs(cfg.ThumbnailCacheDir)
-	root, _ := filepath.Abs(cfg.MediaRoot)
-	renditions, _ := filepath.Abs(cfg.TranscodeCacheDir)
+	// outsideMediaRoot has already resolved all three once without error.
+	thumbs, _ := realPath(cfg.ThumbnailCacheDir)
+	root, _ := realPath(cfg.MediaRoot)
+	renditions, _ := realPath(cfg.TranscodeCacheDir)
 	if isOrContains(thumbs, root) {
 		return fmt.Errorf("invalid THUMBNAIL_CACHE_DIR: %q must not contain MEDIA_ROOT %q", cfg.ThumbnailCacheDir, cfg.MediaRoot)
 	}
@@ -282,11 +282,11 @@ func validateCacheDirs(cfg *Config) error {
 // outsideMediaRoot returns an error naming the setting when dir is the
 // media root or lies inside it.
 func outsideMediaRoot(setting, dir, mediaRoot string) error {
-	cache, err := filepath.Abs(dir)
+	cache, err := realPath(dir)
 	if err != nil {
 		return fmt.Errorf("invalid %s: %w", setting, err)
 	}
-	root, err := filepath.Abs(mediaRoot)
+	root, err := realPath(mediaRoot)
 	if err != nil {
 		return fmt.Errorf("invalid MEDIA_ROOT: %w", err)
 	}
@@ -294,6 +294,28 @@ func outsideMediaRoot(setting, dir, mediaRoot string) error {
 		return fmt.Errorf("invalid %s: %q must not be inside MEDIA_ROOT %q", setting, dir, mediaRoot)
 	}
 	return nil
+}
+
+// realPath makes path absolute and resolves the symbolic links in it, so
+// that a cache directory which merely looks separate from the media root
+// (a link into it, or a linked media root) is recognised. The part of the
+// path that does not exist yet (a cache created on first use) is kept as it
+// is, below the resolved existing part.
+func realPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	rest := ""
+	for dir := abs; ; dir = filepath.Dir(dir) {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(resolved, rest), nil
+		}
+		if dir == filepath.Dir(dir) {
+			return abs, nil // nothing of it resolves; compare lexically
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+	}
 }
 
 // isOrContains reports whether the absolute path is dir itself or lies

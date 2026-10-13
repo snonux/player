@@ -215,6 +215,39 @@ func TestScanWithCache_SwitchedOff(t *testing.T) {
 	}
 }
 
+// TestScanWithCache_SweepsTemporariesOfVanishedMedia: a temporary file in a
+// cache folder whose media is gone from the set would never be reached
+// through the files on disk, and would keep that folder alive for good.
+func TestScanWithCache_SweepsTemporariesOfVanishedMedia(t *testing.T) {
+	f := newMigrationFixture(t, nil)
+	f.cache = t.TempDir()
+	f.write(f.abs("kept/clip.mp4"), "source")
+	gone := filepath.Join(f.cache, "set", "gone", "deeper", thumb.DirName)
+	stale, recent := filepath.Join(gone, ".tmp-1.jpg"), filepath.Join(gone, ".tmp-2.jpg")
+	bystander := filepath.Join(gone, "clip.mp4.jpg")
+	otherSet := filepath.Join(f.cache, "other-set", thumb.DirName, ".tmp-3.jpg")
+	for _, path := range []string{stale, recent, bystander, otherSet} {
+		f.write(path, "x")
+	}
+	long := time.Now().Add(-2 * staleTemporaryAge)
+	for _, path := range []string{stale, bystander, otherSet} {
+		if err := os.Chtimes(path, long, long); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f.scan()
+
+	if _, err := os.Stat(stale); err == nil {
+		t.Error("stale temporary of vanished media was not swept")
+	}
+	for name, path := range map[string]string{"recent temporary": recent, "thumbnail": bystander, "temporary of a set that was not scanned": otherSet} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("%s was removed: %v", name, err)
+		}
+	}
+}
+
 // TestScanWithCache_LeavesTemporariesInTheSetAlone: with a cache the
 // scanner cleans up in the cache only. A file in a set's .thumbnails
 // directory that merely looks like one of its temporaries is not the
@@ -253,7 +286,8 @@ func TestStaleKindOf_Cache(t *testing.T) {
 	noCache := thumb.NewLayout(root, "")
 	cached, _ := layout.Cached(src)
 	const elsewhere, otherSet = "/elsewhere/.thumbnails/clip.mp4.jpg", "/media/other/.thumbnails/clip.mp4.jpg"
-	present := map[string]bool{cached: true, elsewhere: true, otherSet: true}
+	const otherCached = "/thumbs/set/b/.thumbnails/clip.mp4.jpg"
+	present := map[string]bool{cached: true, elsewhere: true, otherSet: true, otherCached: true}
 	exists := func(path string) bool { return present[path] }
 	tests := []struct {
 		name   string
@@ -265,6 +299,9 @@ func TestStaleKindOf_Cache(t *testing.T) {
 		{"beside the source, cache now configured", layout, thumb.ThumbnailPathFor(src), staleOldName},
 		{"never made", layout, "", staleNone},
 		{"another file's cache path that is gone", layout, "/thumbs/set/a/.thumbnails/other.mp4.jpg", staleLost},
+		// Not this file's cache path, but in the cache and present: the
+		// server shows it, so it is left alone like a chosen file.
+		{"another file's cache path, present", layout, otherCached, 0},
 		// Outside the media root nothing but the current cache is served:
 		// such a thumbnail is lost whether or not its file still exists.
 		{"abandoned cache, file still there", layout, elsewhere, staleLost},

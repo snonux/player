@@ -193,7 +193,7 @@ func checkThumbnailCache(deps *Deps) {
 	case configured == "":
 		return
 	case dir == "":
-		deps.Logger.Warn("thumbnail cache ignored, it overlaps the media root; thumbnails stay beside the media", "dir", configured)
+		deps.Logger.Warn("thumbnail cache ignored, it is not separate from a known media root; thumbnails stay beside the media", "dir", configured, "media_root", deps.Cfg.MediaRoot)
 	default:
 		if err := thumb.CheckCacheDir(dir); err != nil {
 			deps.Logger.Warn("thumbnail cache unusable, no thumbnails will be generated", "dir", dir, "err", err)
