@@ -358,6 +358,10 @@ func TestLoadConfig_CacheDirsThroughSymlinks(t *testing.T) {
 	intoMedia := link(filepath.Join(media, "set"), "link-into-media")
 	mediaLink := link(media, "media-link")
 	toElsewhere := link(elsewhere, "link-elsewhere")
+	// Its target does not exist yet, so where it leads cannot be checked;
+	// it would lead into the media root as soon as someone creates it.
+	dangling := link(filepath.Join(media, "set", "later"), "dangling")
+	looping := link(filepath.Join(base, "looping"), "looping")
 	tests := []struct {
 		name    string
 		env     []envPair
@@ -367,6 +371,10 @@ func TestLoadConfig_CacheDirsThroughSymlinks(t *testing.T) {
 		{"not yet existing folder below such a link", []envPair{{"MEDIA_ROOT", media}, {"THUMBNAIL_CACHE_DIR", filepath.Join(intoMedia, "new", "cache")}}, "THUMBNAIL_CACHE_DIR"},
 		{"media root is a link, cache inside its target", []envPair{{"MEDIA_ROOT", mediaLink}, {"THUMBNAIL_CACHE_DIR", filepath.Join(media, "cache")}}, "THUMBNAIL_CACHE_DIR"},
 		{"transcode cache links into the media root", []envPair{{"MEDIA_ROOT", media}, {"TRANSCODE_CACHE_DIR", intoMedia}}, "TRANSCODE_CACHE_DIR"},
+		{"dangling link as thumbnail cache", []envPair{{"MEDIA_ROOT", media}, {"THUMBNAIL_CACHE_DIR", dangling}}, "THUMBNAIL_CACHE_DIR"},
+		{"folder below a dangling link", []envPair{{"MEDIA_ROOT", media}, {"THUMBNAIL_CACHE_DIR", filepath.Join(dangling, "cache")}}, "THUMBNAIL_CACHE_DIR"},
+		{"looping link as thumbnail cache", []envPair{{"MEDIA_ROOT", media}, {"THUMBNAIL_CACHE_DIR", looping}}, "THUMBNAIL_CACHE_DIR"},
+		{"dangling link as media root", []envPair{{"MEDIA_ROOT", dangling}, {"THUMBNAIL_CACHE_DIR", elsewhere}}, "MEDIA_ROOT"},
 		{"link to a separate directory is fine", []envPair{{"MEDIA_ROOT", media}, {"THUMBNAIL_CACHE_DIR", toElsewhere}, {"TRANSCODE_CACHE_DIR", filepath.Join(base, "renditions")}}, ""},
 		{"both caches are the same directory through a link", []envPair{{"MEDIA_ROOT", media}, {"THUMBNAIL_CACHE_DIR", toElsewhere}, {"TRANSCODE_CACHE_DIR", elsewhere}}, "THUMBNAIL_CACHE_DIR"},
 	}

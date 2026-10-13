@@ -271,7 +271,7 @@ func validateCacheDirs(cfg *Config) error {
 	root, _ := realPath(cfg.MediaRoot)
 	renditions, _ := realPath(cfg.TranscodeCacheDir)
 	if isOrContains(thumbs, root) {
-		return fmt.Errorf("invalid THUMBNAIL_CACHE_DIR: %q must not contain MEDIA_ROOT %q", cfg.ThumbnailCacheDir, cfg.MediaRoot)
+		return fmt.Errorf("invalid THUMBNAIL_CACHE_DIR: %s must not contain MEDIA_ROOT %s", resolvedAs(cfg.ThumbnailCacheDir, thumbs), resolvedAs(cfg.MediaRoot, root))
 	}
 	if thumbs == renditions {
 		return fmt.Errorf("invalid THUMBNAIL_CACHE_DIR: %q is the transcode cache directory", cfg.ThumbnailCacheDir)
@@ -291,9 +291,19 @@ func outsideMediaRoot(setting, dir, mediaRoot string) error {
 		return fmt.Errorf("invalid MEDIA_ROOT: %w", err)
 	}
 	if isOrContains(root, cache) {
-		return fmt.Errorf("invalid %s: %q must not be inside MEDIA_ROOT %q", setting, dir, mediaRoot)
+		return fmt.Errorf("invalid %s: %s must not be inside MEDIA_ROOT %s", setting, resolvedAs(dir, cache), resolvedAs(mediaRoot, root))
 	}
 	return nil
+}
+
+// resolvedAs quotes a configured path for an error message, adding what it
+// resolved to when that is not obvious from the value (a relative path, a
+// symbolic link): the reason for a rejection is often only visible there.
+func resolvedAs(configured, resolved string) string {
+	if filepath.Clean(configured) == resolved {
+		return fmt.Sprintf("%q", configured)
+	}
+	return fmt.Sprintf("%q (%s)", configured, resolved)
 }
 
 // realPath makes path absolute and resolves the symbolic links in it, so
@@ -301,6 +311,10 @@ func outsideMediaRoot(setting, dir, mediaRoot string) error {
 // (a link into it, or a linked media root) is recognised. The part of the
 // path that does not exist yet (a cache created on first use) is kept as it
 // is, below the resolved existing part.
+//
+// A symbolic link that cannot be resolved (dangling, or a loop) is an
+// error: where it will lead once its target exists cannot be checked now,
+// and it could be into the media root.
 func realPath(path string) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -308,8 +322,12 @@ func realPath(path string) (string, error) {
 	}
 	rest := ""
 	for dir := abs; ; dir = filepath.Dir(dir) {
-		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err == nil {
 			return filepath.Join(resolved, rest), nil
+		}
+		if info, statErr := os.Lstat(dir); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("%q is a symbolic link that cannot be resolved: %w", dir, err)
 		}
 		if dir == filepath.Dir(dir) {
 			return abs, nil // nothing of it resolves; compare lexically

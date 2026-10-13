@@ -211,7 +211,7 @@ const reserveAttempts = 5
 // other failure is final. The error names the step that failed last.
 func (m *FSMaker) reserve(dir string) (string, error) {
 	var err error
-	step := "mkdir thumbnails"
+	var step string
 	for attempt := 0; attempt < reserveAttempts; attempt++ {
 		step = "mkdir thumbnails"
 		if err = m.fs.MkdirAll(dir, 0o755); err != nil {

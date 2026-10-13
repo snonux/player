@@ -257,7 +257,10 @@ func (s *FSScanner) sweepStaleTemporaries(setPath string, files []string) {
 }
 
 // sweepCacheTree sweeps the .thumbnails directories of the thumbnail cache
-// folder dir and of every folder below it. Symbolic links are not followed.
+// folder dir and of every folder below it. Symbolic links below dir are not
+// descended into (a directory entry that is a link is not a directory).
+// Only the set being scanned is covered: what is cached for a set whose
+// directory is gone from the media root stays until it is removed by hand.
 func (s *FSScanner) sweepCacheTree(dir string, cutoff time.Time) {
 	entries, err := s.fs.ReadDir(dir)
 	if err != nil {
