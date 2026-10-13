@@ -138,6 +138,22 @@ E2E_USER=... E2E_USER_PASS=... \
 npx playwright test -c playwright.live.config.ts
 ```
 
+`live-foostore.sh` sets that environment from the
+[foostore](https://github.com/snonux/foostore) password manager, so the
+passwords are neither typed nor exported into the shell. It expects one entry
+per account, named `pass/<host>-<username>.txt`, with the password in its
+Password field:
+
+```sh
+./live-foostore.sh player.example.org ADMIN_USER USER            # whole suite
+./live-foostore.sh player.example.org ADMIN_USER USER --grep auth
+```
+
+Arguments after the two user names go to Playwright. `FOOSTORE_ENTRY_DIR`
+changes the `pass` group and `FOOSTORE_PASS_FILE` the passphrase file
+(default `~/.master.pass`). The instance needs both an admin and a non-admin
+account; the suite refuses to start without either.
+
 The suite removes the favorites, notes, tags, progress, shares and
 permissions it creates. Its upload test leaves one soft-deleted
 `e2e-upload-*.png` in the admin trash (and on disk in `test-images/`).
