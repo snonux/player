@@ -68,9 +68,6 @@ type migrationFixture struct {
 	// cache, when set, is the thumbnail cache directory the scanner is
 	// configured with (THUMBNAIL_CACHE_DIR).
 	cache string
-	// rooted makes the scanner know its media root without a cache, like
-	// the production wiring does; plain fixtures use the zero Layout.
-	rooted bool
 
 	mu sync.Mutex
 	// generated records the sources the generator was asked to render.
@@ -150,8 +147,9 @@ func (f *migrationFixture) write(path, content string) {
 	}
 }
 
-// scanner builds a production scanner (real filesystem, real thumb.FSMaker)
-// around the fixture's store and a generator that writes text files.
+// scanner builds a production scanner (real filesystem, real thumb.FSMaker,
+// and the thumbnail layout of the fixture's media root like app.Wire gives
+// it) around the fixture's store and a generator that writes text files.
 func (f *migrationFixture) scanner() *FSScanner {
 	gen := &thumb.MockGenerator{GenerateFunc: func(_ context.Context, in, out string, _ float64) error {
 		f.mu.Lock()
@@ -166,9 +164,6 @@ func (f *migrationFixture) scanner() *FSScanner {
 	prober := &probe.MockProber{ProbeFunc: func(context.Context, string) (*model.Metadata, error) {
 		return &model.Metadata{}, nil
 	}}
-	if f.cache == "" && !f.rooted {
-		return NewFSScanner(f.store, prober, gen, clock.RealClock{}, f.root)
-	}
 	layout := thumb.NewLayout(f.root, f.cache)
 	maker := thumb.NewFSMaker(gen, nil, nil).WithLayout(layout)
 	return NewFSScannerWithMaker(f.store, prober, maker, clock.RealClock{}, f.root, nil).WithThumbnailLayout(layout)
@@ -549,8 +544,10 @@ func TestMigrateThumbnails_IsRepeatable(t *testing.T) {
 }
 
 // TestMigrateThumbnails_StoredPathOutsideSet: a stale absolute path (media
-// root moved, database copied from another host) may point anywhere. The
-// scanner must not generate for, or delete, files outside the set.
+// root moved, database copied from another host, thumbnail cache abandoned)
+// may point anywhere. A generated thumbnail outside the media root is never
+// served, so the rows get a thumbnail of their own at the current path; the
+// file outside the set must be neither replaced nor deleted.
 func TestMigrateThumbnails_StoredPathOutsideSet(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "elsewhere", thumb.DirName, "clip.jpg")
 	f := newMigrationFixture(t, []seededMedia{
@@ -558,13 +555,33 @@ func TestMigrateThumbnails_StoredPathOutsideSet(t *testing.T) {
 		{rel: "other.mp4", absThumb: outside},
 	})
 	f.scan()
-	for _, rel := range []string{"clip.mp4", "other.mp4"} {
-		if got := f.row(rel).ThumbnailPath; got != outside {
-			t.Errorf("thumbnail of %s = %q, want it untouched at %q", rel, got, outside)
-		}
-	}
+	f.assertFresh("clip.mp4")
+	f.assertFresh("other.mp4")
 	if content, err := os.ReadFile(outside); err != nil || string(content) != old(outside) {
 		t.Errorf("file outside the set was touched: %q, %v", content, err)
+	}
+
+	// The rows are settled: another scan generates nothing.
+	f.mu.Lock()
+	f.generated = nil
+	f.mu.Unlock()
+	f.scan()
+	f.assertNothingGenerated()
+}
+
+// TestMigrateThumbnails_StoredPathInAnotherSet: a generated thumbnail in
+// another set of the same media root is served, and therefore left alone
+// as long as its file exists.
+func TestMigrateThumbnails_StoredPathInAnotherSet(t *testing.T) {
+	f := newMigrationFixture(t, nil)
+	other := filepath.Join(f.root, "other-set", thumb.DirName, "clip.jpg")
+	f.seed(seededMedia{rel: "clip.mp4", absThumb: other})
+	f.scan()
+	if got := f.row("clip.mp4").ThumbnailPath; got != other {
+		t.Errorf("thumbnail = %q, want it untouched at %q", got, other)
+	}
+	if content, err := os.ReadFile(other); err != nil || string(content) != old(other) {
+		t.Errorf("file in the other set was touched: %q, %v", content, err)
 	}
 	f.assertNothingGenerated()
 }

@@ -49,7 +49,13 @@ type Layout struct {
 // cache is ignored: a cache inside the root would be scanned as media, and
 // a cache above it would make every media folder look like a cache folder
 // to the code that removes emptied ones.
+//
+// An empty mediaRoot is not the working directory but "unknown": the result
+// is the zero Layout, whatever cacheDir says.
 func NewLayout(mediaRoot, cacheDir string) Layout {
+	if mediaRoot == "" {
+		return Layout{}
+	}
 	l := Layout{mediaRoot: absOrClean(mediaRoot)}
 	if cacheDir == "" {
 		return l
@@ -91,6 +97,14 @@ func (l Layout) PathFor(srcPath string) (path string, ok bool) {
 // that does not know its media root (the zero Layout) says yes.
 func (l Layout) InMediaRoot(path string) bool {
 	return l.mediaRoot == "" || below(l.mediaRoot, absOrClean(path))
+}
+
+// CacheDir returns the absolute thumbnail cache directory in use, or "" when
+// thumbnails live beside their source. It is what everything else that
+// needs the directory (the file streamer, the startup check) must go by,
+// not the raw setting, which the Layout may have had to ignore.
+func (l Layout) CacheDir() string {
+	return l.cacheDir
 }
 
 // Beside returns the thumbnail path of srcPath next to the source.

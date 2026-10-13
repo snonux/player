@@ -204,12 +204,14 @@ const reserveAttempts = 5
 // during the two steps here when another item nearby is being purged. Both
 // steps then fail with "no such file or directory" and are simply repeated;
 // once the temporary file exists the directory is no longer empty and
-// cannot be removed. Any other failure is final.
+// cannot be removed. os.MkdirAll can also report "file exists" in that
+// race: it finds a folder present, which is removed before MkdirAll looks
+// at it again. Any other failure is final.
 func (m *FSMaker) reserve(dir string) (string, error) {
 	var err error
 	for attempt := 0; attempt < reserveAttempts; attempt++ {
 		if err = m.fs.MkdirAll(dir, 0o755); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrExist) {
 				continue
 			}
 			return "", fmt.Errorf("mkdir thumbnails %q: %w", dir, err)

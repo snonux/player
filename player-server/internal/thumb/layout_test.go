@@ -77,6 +77,21 @@ func TestNewLayout_OverlappingCacheIsIgnored(t *testing.T) {
 	}
 }
 
+// TestNewLayout_EmptyMediaRoot: an unset media root is "unknown", not the
+// working directory, and such a layout has no cache.
+func TestNewLayout_EmptyMediaRoot(t *testing.T) {
+	l := NewLayout("", "/thumbs")
+	if l != (Layout{}) || l.CacheDir() != "" {
+		t.Errorf("NewLayout(\"\", cache) = %+v, want the zero Layout", l)
+	}
+	if got := NewLayout("/media", "/thumbs/").CacheDir(); got != "/thumbs" {
+		t.Errorf("CacheDir = %q, want /thumbs", got)
+	}
+	if got := NewLayout("/media", "/media/x").CacheDir(); got != "" {
+		t.Errorf("CacheDir of an ignored cache = %q, want none", got)
+	}
+}
+
 func TestLayout_InMediaRoot(t *testing.T) {
 	l := NewLayout("/media", "/thumbs")
 	for path, want := range map[string]bool{

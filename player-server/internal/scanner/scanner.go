@@ -358,15 +358,17 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 	s.sweepStaleTemporaries(files)
 	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path, s.fileExists, s.layout)
 	if len(sc.stale) > 0 {
-		// old_names is the migration backlog; it reaches zero. The other
-		// two can recur: files no thumbnail can be made for are retried
-		// on every rescan.
-		var counts [staleNone + 1]int
+		// old_names is the migration backlog and unreachable the rows of
+		// an abandoned thumbnail cache; both reach zero. The other two
+		// can recur: files no thumbnail can be made for are retried on
+		// every rescan.
+		var counts [staleLost + 1]int
 		for _, kind := range sc.stale {
 			counts[kind]++
 		}
 		s.log().Info("scanner regenerating thumbnails", "set", sc.name,
-			"old_names", counts[staleOldName], "missing", counts[staleMissing], "without", counts[staleNone])
+			"old_names", counts[staleOldName], "missing", counts[staleMissing],
+			"without", counts[staleNone], "unreachable", counts[staleLost])
 	}
 
 	if progress != nil {

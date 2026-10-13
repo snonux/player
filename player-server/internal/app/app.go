@@ -181,26 +181,32 @@ func wireTranscoding(deps *Deps, runner transcode.Runner) {
 		WithThumbnailLayout(deps.Thumbnails)
 }
 
+// checkThumbnailCache says at startup where thumbnails go when
+// THUMBNAIL_CACHE_DIR is set, and warns when that directory cannot be
+// written (it is created here if missing) or was ignored. Like a
+// transcoding problem this is not fatal: media is indexed and played
+// without thumbnails, but otherwise the only sign would be one warning per
+// file on every rescan.
+func checkThumbnailCache(deps *Deps) {
+	configured, dir := deps.Cfg.ThumbnailCacheDir, deps.Thumbnails.CacheDir()
+	switch {
+	case configured == "":
+		return
+	case dir == "":
+		deps.Logger.Warn("thumbnail cache ignored, it overlaps the media root; thumbnails stay beside the media", "dir", configured)
+	default:
+		if err := thumb.CheckCacheDir(dir); err != nil {
+			deps.Logger.Warn("thumbnail cache unusable, no thumbnails will be generated", "dir", dir, "err", err)
+			return
+		}
+		deps.Logger.Info("thumbnails are stored in the thumbnail cache", "dir", dir)
+	}
+}
+
 // checkTranscoding reports transcoding misconfiguration at startup. Problems
 // are logged, not fatal: everything except the compatibility stream works
 // without ffmpeg or a writable cache, and the log line saves the operator
 // from finding out through a failed playback.
-// checkThumbnailCache warns at startup when THUMBNAIL_CACHE_DIR is set but
-// cannot be written. Like a transcoding problem this is not fatal: media is
-// indexed and played without thumbnails, but otherwise the only sign would
-// be one warning per file on every rescan.
-func checkThumbnailCache(deps *Deps) {
-	dir := deps.Cfg.ThumbnailCacheDir
-	if dir == "" {
-		return
-	}
-	if err := thumb.CheckCacheDir(dir); err != nil {
-		deps.Logger.Warn("thumbnail cache unusable, no thumbnails will be generated", "dir", dir, "err", err)
-		return
-	}
-	deps.Logger.Info("thumbnails are stored in the thumbnail cache", "dir", dir)
-}
-
 func checkTranscoding(deps *Deps, runner *transcode.FFmpegRunner) {
 	if err := runner.Available(); err != nil {
 		deps.Logger.Warn("compatibility stream unavailable", "err", err)
@@ -324,7 +330,7 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 	cfg := deps.Cfg
 	// Thumbnails in THUMBNAIL_CACHE_DIR lie outside the media root and are
 	// served through the same streamer as media.
-	streamer := service.NewMediaStreamer(probe.NewFFRemuxer(), cfg.MediaRoot).WithThumbnailCache(cfg.ThumbnailCacheDir)
+	streamer := service.NewMediaStreamer(probe.NewFFRemuxer(), cfg.MediaRoot).WithThumbnailCache(deps.Thumbnails.CacheDir())
 	return api.NewServerWithLogger(api.ServerDeps{
 		Store:          deps.Store,
 		Hasher:         deps.Hasher,

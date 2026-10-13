@@ -43,8 +43,7 @@ import (
 // after its new thumbnail is complete (thumb.Maker replaces the destination
 // atomically), a row that cannot be migrated keeps its old, still working
 // path and is retried on the next rescan, and only files inside the set
-// directory, or the row's own thumbnail in the thumbnail cache, are ever
-// deleted.
+// directory are ever deleted.
 //
 // Switching the thumbnail cache on (THUMBNAIL_CACHE_DIR) uses the very same
 // steps: a thumbnail beside its source is then "not at its current path",
@@ -81,7 +80,18 @@ const (
 	// staleNone: there is no generated thumbnail: a video without one, or
 	// an image standing in as its own. An earlier attempt failed.
 	staleNone
+	// staleLost: the stored generated thumbnail is somewhere the server
+	// cannot show it from (see lostElsewhere), typically a thumbnail cache
+	// directory that is no longer configured. Like staleNone the row gets
+	// a new thumbnail and nothing is deleted.
+	staleLost
 )
+
+// keepsOldFile reports whether a row of this kind has no old generated
+// thumbnail that may be deleted once the row points at its new one.
+func (k staleKind) keepsOldFile() bool {
+	return k == staleNone || k == staleLost
+}
 
 // staleThumbnails returns, by relPath, the rows that get a thumbnail
 // generated in this scan, and why. existing holds all rows of the set at
@@ -151,7 +161,7 @@ func staleKindOf(stored, src, setPath string, existing map[string]model.Media, e
 		return 0
 	case !isGeneratedIn(setPath, stored, existing):
 		if lostElsewhere(stored, setPath, exists, layout) {
-			return staleNone
+			return staleLost
 		}
 		return 0
 	}
@@ -173,9 +183,9 @@ func staleKindOf(stored, src, setPath string, existing map[string]model.Media, e
 // ever served. That is what the thumbnails of a cache directory look like
 // after THUMBNAIL_CACHE_DIR was changed or removed.
 //
-// Such a row is treated like one whose thumbnail was never made
-// (staleNone): a new thumbnail is generated at the current path and the
-// row pointed at it, while the file at the stored path, if any, is neither
+// Such a row (staleLost) is treated like one whose thumbnail was never
+// made: a new thumbnail is generated at the current path and the row
+// pointed at it, while the file at the stored path, if any, is neither
 // replaced nor deleted.
 func lostElsewhere(stored, setPath string, exists func(path string) bool, layout thumb.Layout) bool {
 	if !thumb.IsGenerated(stored) || within(setPath, stored) {
@@ -214,33 +224,27 @@ func within(dir, path string) bool {
 const staleTemporaryAge = time.Hour
 
 // sweepStaleTemporaries deletes temporary files a thumb.FSMaker left in the
-// .thumbnails directories of files: the one next to each file and, with a
-// thumbnail cache, the one in the cache. The maker removes its temporary
+// .thumbnails directories it generates into: the one next to each file, or
+// with a thumbnail cache the one in the cache. With a cache the directory
+// next to the file is not looked at, let alone cleaned: nothing in the
+// media tree is the server's to delete then. The maker removes its temporary
 // file itself, so one only stays behind when the server is killed in the
 // middle of a generation; nothing else would ever remove it.
 func (s *FSScanner) sweepStaleTemporaries(files []string) {
 	cutoff := s.clock.Now().Add(-staleTemporaryAge)
 	swept := make(map[string]struct{})
 	for _, f := range files {
-		for _, dir := range s.thumbnailDirs(f) {
-			if _, done := swept[dir]; done {
-				continue
-			}
-			swept[dir] = struct{}{}
-			s.sweepTemporariesIn(dir, cutoff)
+		current, ok := s.layout.PathFor(f)
+		if !ok {
+			continue
 		}
+		dir := filepath.Dir(current)
+		if _, done := swept[dir]; done {
+			continue
+		}
+		swept[dir] = struct{}{}
+		s.sweepTemporariesIn(dir, cutoff)
 	}
-}
-
-// thumbnailDirs returns the directories that can hold thumbnails of the
-// media file f: the .thumbnails directory next to it and, with a thumbnail
-// cache, the one in the cache.
-func (s *FSScanner) thumbnailDirs(f string) []string {
-	dirs := []string{filepath.Dir(s.layout.Beside(f))}
-	if cached, ok := s.layout.Cached(f); ok {
-		dirs = append(dirs, filepath.Dir(cached))
-	}
-	return dirs
 }
 
 // sweepTemporariesIn deletes the maker's temporary files in dir that were

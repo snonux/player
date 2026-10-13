@@ -218,7 +218,7 @@ func (pw *probeWorker) refreshThumbnail(ctx context.Context, path string, row mo
 		return nil
 	}
 	result := &fileResult{media: &row, path: path, refresh: true}
-	if kind != staleNone {
+	if !kind.keepsOldFile() {
 		// Only a generated thumbnail is ever deleted. A row without one
 		// stores nothing, or the image itself.
 		result.replaced = row.ThumbnailPath

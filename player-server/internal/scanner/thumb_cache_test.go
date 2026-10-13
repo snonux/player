@@ -207,12 +207,40 @@ func TestScanWithCache_SwitchedOff(t *testing.T) {
 	abandoned := f.cached("clip.mp4")
 
 	f.cache = ""
-	f.rooted = true
 	f.scan()
 
 	f.assertFresh("clip.mp4")
 	if _, err := os.Stat(abandoned); err != nil {
 		t.Errorf("the abandoned cache was touched: %v", err)
+	}
+}
+
+// TestScanWithCache_LeavesTemporariesInTheSetAlone: with a cache the
+// scanner cleans up in the cache only. A file in a set's .thumbnails
+// directory that merely looks like one of its temporaries is not the
+// server's to delete: the set may be somebody else's library.
+func TestScanWithCache_LeavesTemporariesInTheSetAlone(t *testing.T) {
+	f := newMigrationFixture(t, nil)
+	f.cache = t.TempDir()
+	f.write(f.abs("clip.mp4"), "source")
+	foreign := f.abs(".thumbnails/.tmp-foreign.jpg")
+	f.write(foreign, "theirs")
+	long := time.Now().Add(-2 * staleTemporaryAge)
+	if err := os.Chtimes(foreign, long, long); err != nil {
+		t.Fatal(err)
+	}
+
+	f.scan()
+
+	if _, err := os.Stat(foreign); err != nil {
+		t.Errorf("a file in the set's .thumbnails directory was deleted: %v", err)
+	}
+
+	// Without a cache that directory is the scanner's own and is swept.
+	f.cache = ""
+	f.scan()
+	if _, err := os.Stat(foreign); err == nil {
+		t.Error("without a cache the stale temporary beside the media was not swept")
 	}
 }
 
@@ -236,23 +264,23 @@ func TestStaleKindOf_Cache(t *testing.T) {
 		{"cached and present", layout, cached, 0},
 		{"beside the source, cache now configured", layout, thumb.ThumbnailPathFor(src), staleOldName},
 		{"never made", layout, "", staleNone},
-		{"another file's cache path that is gone", layout, "/thumbs/set/a/.thumbnails/other.mp4.jpg", staleNone},
+		{"another file's cache path that is gone", layout, "/thumbs/set/a/.thumbnails/other.mp4.jpg", staleLost},
 		// Outside the media root nothing but the current cache is served:
 		// such a thumbnail is lost whether or not its file still exists.
-		{"abandoned cache, file still there", layout, elsewhere, staleNone},
-		{"abandoned cache, file gone", layout, "/old-cache/set/a/.thumbnails/clip.mp4.jpg", staleNone},
-		{"cache switched off, file still there", noCache, cached, staleNone},
-		{"cache switched off, file gone", noCache, "/thumbs/set/a/.thumbnails/gone.jpg", staleNone},
+		{"abandoned cache, file still there", layout, elsewhere, staleLost},
+		{"abandoned cache, file gone", layout, "/old-cache/set/a/.thumbnails/clip.mp4.jpg", staleLost},
+		{"cache switched off, file still there", noCache, cached, staleLost},
+		{"cache switched off, file gone", noCache, "/thumbs/set/a/.thumbnails/gone.jpg", staleLost},
 		// Inside the media root a thumbnail of another set keeps working.
 		{"thumbnail in another set, present", layout, otherSet, 0},
-		{"thumbnail in another set, gone", noCache, "/media/other/.thumbnails/gone.jpg", staleNone},
+		{"thumbnail in another set, gone", noCache, "/media/other/.thumbnails/gone.jpg", staleLost},
 		// Never a generated thumbnail: an ordinary file is left alone.
 		{"ordinary file outside the root that is gone", layout, "/elsewhere/cover.jpg", 0},
 		{"ordinary file outside the root", noCache, "/elsewhere/cover.jpg", 0},
 		// A scanner that was not told its media root (tests, mostly) keeps
 		// the old rule: an existing file elsewhere is left alone.
 		{"media root unknown, file still there", thumb.Layout{}, elsewhere, 0},
-		{"media root unknown, file gone", thumb.Layout{}, "/gone/.thumbnails/clip.mp4.jpg", staleNone},
+		{"media root unknown, file gone", thumb.Layout{}, "/gone/.thumbnails/clip.mp4.jpg", staleLost},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -8,14 +8,17 @@ import (
 	"image/png"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"codeberg.org/snonux/player/internal"
+	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/thumb"
 )
@@ -180,32 +183,33 @@ func TestThumbnailCache_DirectoryChanged(t *testing.T) {
 }
 
 // TestCheckThumbnailCache: startup says where thumbnails go, and warns when
-// the configured directory cannot be used.
+// the configured directory cannot be used or was ignored.
 func TestCheckThumbnailCache(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}
 	parent := t.TempDir()
-	tests := []struct {
-		name, dir, want string
-		setup           func()
-	}{
-		{"unset", "", "", nil},
-		{"usable", filepath.Join(parent, "ok"), "level=INFO msg=\"thumbnails are stored in the thumbnail cache\"", nil},
-		{"unusable", filepath.Join(parent, "locked", "cache"), "level=WARN msg=\"thumbnail cache unusable", func() {
-			e := os.Mkdir(filepath.Join(parent, "locked"), 0o555)
-			if e != nil {
-				t.Fatal(e)
-			}
-		}},
+	root := filepath.Join(parent, "media")
+	e := os.Mkdir(filepath.Join(parent, "locked"), 0o555)
+	if e != nil {
+		t.Fatal(e)
+	}
+	tests := []struct{ name, dir, want string }{
+		{"unset", "", ""},
+		{"usable", filepath.Join(parent, "ok"), "level=INFO msg=\"thumbnails are stored in the thumbnail cache\""},
+		{"unusable", filepath.Join(parent, "locked", "cache"), "level=WARN msg=\"thumbnail cache unusable"},
+		// Cannot come out of LoadConfig, which rejects it; the layout
+		// ignores such a cache and startup must not claim otherwise.
+		{"overlapping the media root", parent, "level=WARN msg=\"thumbnail cache ignored"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.setup != nil {
-				tt.setup()
-			}
 			var out bytes.Buffer
-			deps := &Deps{Cfg: &internal.Config{ThumbnailCacheDir: tt.dir}, Logger: slog.New(slog.NewTextHandler(&out, nil))}
+			deps := &Deps{
+				Cfg:        &internal.Config{MediaRoot: root, ThumbnailCacheDir: tt.dir},
+				Logger:     slog.New(slog.NewTextHandler(&out, nil)),
+				Thumbnails: thumb.NewLayout(root, tt.dir),
+			}
 			checkThumbnailCache(deps)
 			if tt.want == "" && out.Len() != 0 {
 				t.Errorf("logged %q, want nothing", out.String())
@@ -214,5 +218,57 @@ func TestCheckThumbnailCache(t *testing.T) {
 				t.Errorf("log = %q, want it to contain %q", out.String(), tt.want)
 			}
 		})
+	}
+}
+
+// TestThumbnailCache_PodcastDownloadAndGC covers the two remaining users of
+// the thumbnail layout in the production wiring: a downloaded video episode
+// gets its thumbnail in the cache, not in the podcast folder, and the
+// garbage collector finds and removes it there when the episode is purged.
+func TestThumbnailCache_PodcastDownloadAndGC(t *testing.T) {
+	for _, bin := range []string{"ffmpeg", "ffprobe"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skipf("%s not installed", bin)
+		}
+	}
+	video := filepath.Join(t.TempDir(), "episode.mp4")
+	if out, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=64x48:d=1", "-pix_fmt", "yuv420p", video).CombinedOutput(); err != nil {
+		t.Skipf("cannot generate a test video: %v: %s", err, out)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, video) }))
+	defer server.Close()
+
+	cache := filepath.Join(t.TempDir(), "thumbnails")
+	e := newE2EWith(t, &fakeRunner{}, func(cfg *internal.Config) { cfg.ThumbnailCacheDir = cache })
+	ctx, now := context.Background(), time.Now()
+	setID, err := e.store.CreateSet(ctx, &model.Set{Name: "podcast", RootPath: "podcast", IsPodcast: true, CreatedAt: now})
+	e.must(err)
+	feedID, err := e.store.CreateFeed(ctx, &model.PodcastFeed{SetID: setID, FeedURL: server.URL + "/feed", Title: "Show", CheckIntervalMinutes: 60, CreatedAt: now})
+	e.must(err)
+	episodeID, err := e.store.CreateEpisode(ctx, &model.PodcastEpisode{FeedID: feedID, GUID: "1", Title: "one", EpisodeURL: server.URL + "/episode.mp4", CreatedAt: now})
+	e.must(err)
+
+	media, err := e.deps.PodcastSvc.DownloadEpisode(ctx, episodeID, e.users["admin"])
+	if err != nil {
+		t.Fatalf("DownloadEpisode: %v", err)
+	}
+	want, ok := e.deps.Thumbnails.Cached(media.AbsPath)
+	if !ok || media.ThumbnailPath != want {
+		t.Fatalf("episode thumbnail = %q, want it in the cache at %q", media.ThumbnailPath, want)
+	}
+	if _, err := os.Stat(want); err != nil {
+		t.Fatalf("cached episode thumbnail missing: %v", err)
+	}
+	if _, err := os.Stat(thumb.ThumbnailDir(filepath.Dir(media.AbsPath))); err == nil {
+		t.Error("a .thumbnails directory was created in the podcast folder")
+	}
+
+	e.must(e.store.SoftDeleteMedia(ctx, media.ID))
+	e.must(e.deps.GCWorker.WithAge(-time.Hour).RunOnce())
+	if _, err := os.Stat(media.AbsPath); err == nil {
+		t.Fatal("the purged episode file remains; the GC run did not purge it")
+	}
+	if _, err := os.Stat(want); err == nil {
+		t.Error("the GC worker left the purged episode's cached thumbnail behind")
 	}
 }
