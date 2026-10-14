@@ -380,3 +380,27 @@
   place-items: center;
   font-size: 1.25rem;
 }
+
+/* Hover frames sit inside the player, so fullscreen and popup players keep
+   them visible without escaping the player's clipped boundary. */
+.seek-preview {
+  position: absolute;
+  left: var(--preview-left, 8px);
+  bottom: var(--preview-bottom, 40px);
+  width: 160px;
+  max-width: calc(100% - 16px);
+  z-index: 7;
+  pointer-events: none;
+  background: var(--player-stage-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  text-align: center;
+  font-size: 0.75rem;
+}
+.seek-preview[hidden], .seek-preview canvas[hidden] { display: none; }
+.seek-preview canvas { display: block; width: 100%; aspect-ratio: 16 / 9; }
+.seek-preview-time { padding: 0.2rem 0.4rem; font-family: var(--font-mono); }
+.seek-preview-status { padding: 0 0.4rem 0.3rem; color: var(--text-secondary); }
+.seek-preview-status:empty { display: none; }

@@ -27,6 +27,7 @@ import {
 } from './detach.js';
 import { mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from './streamSource.js';
 import { toast } from './utils.js';
+import { initSeekPreview } from './seekPreview.js';
 
 export {
   cycleCropPosition,
@@ -58,6 +59,7 @@ let pendingSource = null;
 let currentSource = null;
 // Optional initPlayer({ onPlaybackFailed }) callback, see failPlayback.
 let failureHandler = null;
+let resetSeekPreview = () => {};
 
 function currentMediaElement() {
   const e = els();
@@ -142,6 +144,11 @@ export function initPlayer(options = {}) {
     }
   });
   bindSeekTrack(e);
+  resetSeekPreview = initSeekPreview({
+    track: e.track, player: e.player, video: e.video,
+    getVideo: () => isDetached() ? null : currentMediaElement(),
+    formatTime: fmt,
+  });
 }
 
 function bindControlButtons(e) {
@@ -363,6 +370,7 @@ export function seekRelative(seconds) {
 }
 
 export function stopAndClose() {
+  resetSeekPreview();
   cancelPendingSource();
   const m = currentMediaElement();
   if (m) m.pause();
@@ -447,6 +455,7 @@ function loadMedia(media, resumeFrom = 0) {
 // library marks session-authenticated library playback in the main window
 // (as opposed to share and popup URLs); see finishPendingSource.
 function showMedia(media, source, thumbnailUrl) {
+  resetSeekPreview();
   // Whatever was still being prepared belongs to the previous item.
   cancelPendingSource();
   const e = els();
@@ -729,6 +738,7 @@ export function toggleFullscreen() {
 }
 
 export function toggleMinimize() {
+  resetSeekPreview();
   const e = els();
   if (!e.player || !e.player.classList.contains('open')) return;
   const willMinimize = !e.player.classList.contains('minimized');
@@ -738,6 +748,7 @@ export function toggleMinimize() {
 }
 
 function minimizePlayer() {
+  resetSeekPreview();
   const e = els();
   if (!e.player || !e.player.classList.contains('open')) return;
   e.player.classList.add('minimized');
