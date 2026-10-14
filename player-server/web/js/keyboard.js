@@ -31,43 +31,6 @@ export function initKeyboard(handlers) {
     // the dialog guard or the global Escape handler below still runs.
     if (buttonLike && e.key === 'Escape') e.target.blur?.();
 
-    // Lightbox keyboard navigation (overrides global keys while open)
-    if (handlers.isLightboxOpen?.()) {
-      if (e.shiftKey && e.code === 'KeyS') {
-        e.preventDefault();
-        handlers.toggleSlideshow?.(e);
-        return;
-      }
-      switch (e.key) {
-        case 'ArrowLeft':
-        case 'h':
-          e.preventDefault();
-          handlers.lightboxPrev?.(e);
-          return;
-        case 'ArrowRight':
-        case 'l':
-          e.preventDefault();
-          handlers.lightboxNext?.(e);
-          return;
-        case 'Escape':
-        case 'Backspace':
-          e.preventDefault();
-          handlers.closeLightbox?.(e);
-          return;
-        case '+':
-        case '=':
-          e.preventDefault();
-          handlers.zoomIn?.(e);
-          return;
-        case '-':
-          e.preventDefault();
-          handlers.zoomOut?.(e);
-          return;
-      }
-      // Allow only Escape/Backspace/Arrows/h/l/+/−/Shift+S inside the lightbox; ignore everything else
-      return;
-    }
-
     // Shares modal keyboard navigation (overrides global keys while open)
     if (handlers.isSharesOpen?.()) {
       switch (e.key) {
@@ -130,6 +93,82 @@ export function initKeyboard(handlers) {
         e.preventDefault();
         handlers.help?.(e);
       }
+      return;
+    }
+
+    // Expanded images own navigation after dialogs and native controls.
+    if (handlers.isLightboxOpen?.()) {
+      if (e.shiftKey && e.code === 'KeyS') {
+        e.preventDefault();
+        handlers.toggleSlideshow?.(e);
+        return;
+      }
+      if (e.shiftKey && e.key.startsWith('Arrow')) {
+        const dx = e.key === 'ArrowLeft' ? -10 : e.key === 'ArrowRight' ? 10 : 0;
+        const dy = e.key === 'ArrowUp' ? -10 : e.key === 'ArrowDown' ? 10 : 0;
+        e.preventDefault();
+        if (!handlers.shiftCropPosition?.(dx, dy)) handlers.panImage?.(dx * 4, dy * 4);
+        return;
+      }
+      switch (e.key) {
+        case 'f':
+          e.preventDefault();
+          handlers.fullscreen?.(e);
+          return;
+        case 'i':
+          e.preventDefault();
+          handlers.mediaInfo?.(e);
+          return;
+        case 'c':
+          e.preventDefault();
+          handlers.toggleCrop?.(e);
+          return;
+        case 'x':
+          e.preventDefault();
+          handlers.cycleCropPosition?.(e);
+          return;
+        case '0':
+          e.preventDefault();
+          handlers.resetZoom?.(e);
+          return;
+        case 'ArrowUp':
+        case 'k':
+        case 'ArrowDown':
+        case 'j':
+        case 'H':
+        case 'L': {
+          const dx = e.key === 'H' ? -10 : e.key === 'L' ? 10 : 0;
+          const dy = e.key === 'k' || e.key === 'ArrowUp' ? -10 : e.key === 'j' || e.key === 'ArrowDown' ? 10 : 0;
+          e.preventDefault();
+          if (!handlers.shiftCropPosition?.(dx, dy)) handlers.panImage?.(dx * 4, dy * 4);
+          return;
+        }
+        case 'ArrowLeft':
+        case 'h':
+          e.preventDefault();
+          handlers.lightboxPrev?.(e);
+          return;
+        case 'ArrowRight':
+        case 'l':
+          e.preventDefault();
+          handlers.lightboxNext?.(e);
+          return;
+        case 'Escape':
+        case 'Backspace':
+          e.preventDefault();
+          handlers.closeLightbox?.(e);
+          return;
+        case '+':
+        case '=':
+          e.preventDefault();
+          handlers.zoomIn?.(e);
+          return;
+        case '-':
+          e.preventDefault();
+          handlers.zoomOut?.(e);
+          return;
+      }
+      // Keep unhandled image keys away from the hidden grid and audio seek.
       return;
     }
 

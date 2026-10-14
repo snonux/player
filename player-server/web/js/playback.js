@@ -13,6 +13,7 @@ import {
   zoomIn,
   zoomOut,
   resetZoom,
+  panImage,
   toggleSlideshow,
   isSlideshowActive,
 } from './imageViewer.js';
@@ -32,6 +33,7 @@ export {
   isDetached,
   isSlideshowActive,
   resetZoom,
+  panImage,
   shiftCropPosition,
   toggleCrop,
   toggleDetach,

@@ -108,3 +108,14 @@ For ggaze, use real shortcut dispatch in `tests/test_shortcut.c` and
 grid/folder journeys in `tests/test_grid_cancel.c`; run applicable unit and
 integration checks in minimal and GEGL configurations. Use isolated Xvfb
 exactly as ggaze `AGENTS.md` specifies, one integration lane per display.
+
+## Implemented image controls (`xc3`)
+
+Expanded and fullscreen images now accept `f`, `i`, `c`, `x`, and
+Shift+arrows. `j/k` and Up/Down pan vertically, `H/L` pan horizontally, and
+`0` resets zoom/pan to fitted view. Pan requires zoom above fit; active display
+crop receives position keys first. `h/l`, Left/Right, and `Shift+S` preserve
+previous/next and slideshow. Dialog/native/typing ownership and fullscreen
+Escape steps remain unchanged. Display fill-crop only changes presentation,
+not the file, and differs from ggaze's editing tool. Image `?` and searchable
+help remain owned by `pc3`.

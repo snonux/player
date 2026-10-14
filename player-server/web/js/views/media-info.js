@@ -9,6 +9,23 @@ export function initMediaInfo(options = {}) {
   callbacks = options;
   const modal = document.getElementById('media-info-modal');
   const closeBtn = document.getElementById('media-info-close');
+  if (modal) {
+    const home = modal.parentNode;
+    const nextSibling = modal.nextSibling;
+    // Fullscreen paints only the fullscreen element's descendants. Keep the
+    // existing dialog inside that element while open, then restore its place.
+    const syncMount = () => {
+      const host = modal.classList.contains('open') && document.fullscreenElement;
+      const parent = host || home;
+      if (!parent || modal.parentNode === parent) return;
+      const active = modal.contains(document.activeElement) ? document.activeElement : null;
+      if (parent === home && nextSibling?.parentNode === home) home.insertBefore(modal, nextSibling);
+      else parent.appendChild(modal);
+      if (active && modal.classList.contains('open')) active.focus({ preventScroll: true });
+    };
+    document.addEventListener('fullscreenchange', syncMount);
+    new MutationObserver(syncMount).observe(modal, { attributes: true, attributeFilter: ['class'] });
+  }
   closeBtn?.addEventListener('click', closeMediaInfo);
   modal?.addEventListener('click', (e) => {
     if (e.target === modal) closeMediaInfo();
@@ -65,6 +82,9 @@ async function openMediaInfo(id) {
   if (!modal || !body) return;
   body.innerHTML = '<p class="text-muted text-sm">Loading...</p>';
   modal.classList.add('open');
+  if (document.fullscreenElement && modal.parentNode !== document.fullscreenElement) {
+    document.fullscreenElement.appendChild(modal);
+  }
   (document.getElementById('media-info-panel')
     || document.querySelector('#media-info-modal .modal'))?.focus({ preventScroll: true });
   try {

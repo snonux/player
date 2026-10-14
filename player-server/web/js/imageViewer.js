@@ -90,6 +90,17 @@ export function zoomOut() {
 
 export function resetZoom() {
   resetImageZoom();
+  pauseSlideshow();
+}
+
+// Positive directions move the viewport right/down through the zoomed image.
+export function panImage(dx, dy) {
+  if (!isImageMode() || zoomScale <= 1 || cropMode) return false;
+  panX -= dx;
+  panY -= dy;
+  applyImageTransform();
+  pauseSlideshow();
+  return true;
 }
 
 export function toggleSlideshow() {

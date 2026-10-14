@@ -20,6 +20,8 @@ import {
   isImageMode as playerIsImageMode,
   navigateImage,
   toggleSlideshow,
+  panImage,
+  resetZoom,
 } from './player.js';
 import { initSearch, parseQuery, showSearchHelp } from './search.js';
 import { initShuffle, enable as enableShuffle, isOn as isShuffle, revision as shuffleRevision } from './shuffle.js';
@@ -305,6 +307,13 @@ function keyboardHandlers() {
     shiftCropPosition: (dx, dy) => shiftCropPosition(dx, dy),
     cycleCropPosition: () => cycleCropPosition(),
     escape: (e) => {
+      // Media info returns to its actual opener through modal-focus. Do not
+      // move focus to a grid card hidden behind the fullscreen image.
+      if (isMediaInfoOpen()) {
+        e?.preventDefault();
+        closeMediaInfo();
+        return;
+      }
       // With a dialog open, Escape only closes it and keeps the selection.
       // Focus left on a hidden dialog control (or body) moves back to the
       // selected card so j/k and Enter continue from there. A dialog that
@@ -379,6 +388,8 @@ function keyboardHandlers() {
       navigatePlayable(delta, { forcePlay: true });
       return true;
     },
+    panImage: (dx, dy) => panImage(dx, dy),
+    resetZoom: () => resetZoom(),
     zoomIn: () => {
       if (playerIsImageMode()) playerZoomIn();
     },

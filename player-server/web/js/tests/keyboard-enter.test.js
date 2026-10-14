@@ -253,7 +253,53 @@ function testEditableEscapeBlursAndCloses() {
   assert(closed === 4 && blurred === 4, 'Editable Escape must blur and reach the shared escape handler in every mode');
 }
 
+function testImageControlsAndCropOwnership() {
+  const calls = [];
+  let crop = false;
+  initKeyboard({
+    isLightboxOpen: () => true,
+    fullscreen: () => calls.push('fullscreen'),
+    mediaInfo: () => calls.push('info'),
+    toggleCrop: () => calls.push('crop'),
+    cycleCropPosition: () => calls.push('anchor'),
+    resetZoom: () => calls.push('reset'),
+    toggleSlideshow: () => calls.push('slideshow'),
+    lightboxPrev: () => calls.push('prev'),
+    lightboxNext: () => calls.push('next'),
+    panImage: (x, y) => calls.push(`pan:${x},${y}`),
+    shiftCropPosition: (x, y) => { if (crop) calls.push(`crop:${x},${y}`); return crop; },
+    navDown: () => calls.push('hidden-grid'),
+    seekForward: () => calls.push('audio-seek'),
+    sharesToggle: () => calls.push('shares'),
+  });
+  for (const key of ['f', 'i', 'c', 'x', '0', 'S', 'h', 'l', 'j', 'k', 'H', 'L']) {
+    assert(pressKey(key, undefined, { shiftKey: /[SHL]/.test(key) }), `${key} should be owned by expanded images`);
+  }
+  assert(calls.join('|') === 'fullscreen|info|crop|anchor|reset|slideshow|prev|next|pan:0,40|pan:0,-40|pan:-40,0|pan:40,0', `Unexpected image dispatch: ${calls.join('|')}`);
+  calls.length = 0;
+  crop = true;
+  for (const key of ['j', 'k', 'H', 'L']) pressKey(key);
+  pressKey('ArrowRight', undefined, { shiftKey: true });
+  assert(calls.join('|') === 'crop:0,10|crop:0,-10|crop:-10,0|crop:10,0|crop:10,0', `Crop position must win over pan/navigation: ${calls.join('|')}`);
+  calls.length = 0;
+  initKeyboard({ isLightboxOpen: () => true, isModalOpen: () => true,
+    panImage: () => calls.push('pan'), fullscreen: () => calls.push('fullscreen'),
+    escape: () => calls.push('escape'), closeLightbox: () => calls.push('close-image') });
+  for (const key of ['f', 'j', 'L', '0', 'c']) pressKey(key);
+  pressKey('Escape');
+  assert(calls.join('|') === 'escape', 'An open dialog must own keys even when the image predicate is true');
+}
+
+function testAudioSeekUnchanged() {
+  const calls = [];
+  initKeyboard({ seekBackward: () => { calls.push('back'); return true; }, seekForward: () => { calls.push('forward'); return true; }, navLeft: () => calls.push('grid'), navRight: () => calls.push('grid') });
+  for (const key of ['h', 'l', 'ArrowLeft', 'ArrowRight']) assert(pressKey(key), `${key} seeking must prevent default`);
+  assert(calls.join(',') === 'back,forward,back,forward', 'Global audio/video seek dispatch must remain unchanged');
+}
+
 console.log('Running keyboard Enter tests...');
+testAudioSeekUnchanged();
+testImageControlsAndCropOwnership();
 testModeGuardsBeforeRouting();
 testNativeControlsBeforeSpecialModes();
 testEditableEscapeBlursAndCloses();
