@@ -1,6 +1,6 @@
-# Publish the Android client from a vX.Y.Z tag. The F-Droid repo imports the
-# signed split APKs and store listing from this exact tag.
-name: Android release
+# Publish both components from one vX.Y.Z tag. F-Droid imports the signed
+# split APKs and store listing from this same tag.
+name: Player release
 
 on:
   push:
@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: android-release-${{ inputs.tag || github.ref_name }}
+  group: player-release-${{ inputs.tag || github.ref_name }}
 
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
@@ -47,6 +47,11 @@ jobs:
           if [ "v$version" != "$TAG" ]; then
             echo "::error::Tag $TAG does not match version $version in player-android/pubspec.yaml"; exit 1
           fi
+          server_version=$(gh api "repos/$GITHUB_REPOSITORY/contents/player-server/internal/version.go?ref=$GITHUB_SHA" -H "Accept: application/vnd.github.raw" | sed -n 's/^const Version = "\([^"]*\)"$/\1/p')
+          if [ "$server_version" != "$version" ]; then
+            echo "::error::Server and Android versions must match before tagging"
+            exit 1
+          fi
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$GITHUB_SHA" >/dev/null
           echo "Created $TAG at $GITHUB_SHA"
 
@@ -60,12 +65,28 @@ jobs:
       - name: Check release version
         id: version
         run: |
+          python3 ../player-server/scripts/release-version.py --check
           version=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)
           if [ "v$version" != "$TAG" ]; then
             echo "::error::Tag $TAG does not match player-android/pubspec.yaml ($version)"
             exit 1
           fi
           echo "flutter=$(tr -d '[:space:]' < .flutter-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: player-server/go.mod
+          cache-dependency-path: player-server/go.sum
+
+      - name: Build server bundle
+        working-directory: player-server
+        run: |
+          bundle="$RUNNER_TEMP/player-server-$TAG"
+          mkdir -p "$bundle"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o "$bundle/player" ./cmd/player
+          test "$("$bundle/player" --version)" = "${TAG#v}"
+          cp -R web docs README.md "$bundle/"
+          tar -C "$bundle" -czf "$RUNNER_TEMP/player-server-$TAG-linux-amd64.tar.gz" player web docs README.md
 
       - uses: subosito/flutter-action@v2
         with:
@@ -125,7 +146,7 @@ jobs:
             fi
           done
 
-      - name: Attach APKs to the GitHub release
+      - name: Publish server and Android artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -135,6 +156,7 @@ jobs:
             cp "build/app/outputs/flutter-apk/app-$abi-release.apk" "$apk"
             apks+=("$apk")
           done
+          apks+=("$RUNNER_TEMP/player-server-$TAG-linux-amd64.tar.gz")
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
           fi

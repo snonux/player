@@ -143,6 +143,8 @@ armeabi-v7a, arm64-v8a, and x86_64, so each device downloads only its ABI.
 Releases are built from `vX.Y.Z` tags by
 [`release.yml`](../.github/workflows/release.yml). The tag must match the
 version name in `pubspec.yaml`; increment its build number for every release.
+The server uses the same version and tag, even when only one component changed.
+Use the [shared release command](../README.md#releases) to bump both together.
 The APKs use the release keystore supplied through GitHub Actions secrets.
 See [the release setup guide](docs/fdroid-release.md) for the one-time setup.
 

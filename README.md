@@ -45,6 +45,25 @@ Root files provide monorepo orientation only. Component-specific commands, gener
 
 Keep local media and generated build artifacts out of git.
 
+## Releases
+
+Server and Android releases share one version and one vX.Y.Z tag. From the
+root, run the shared bump command to update both version files and increment
+Android's build number:
+
+    python3 player-server/scripts/release-version.py X.Y.Z
+
+Update its F-Droid changelog, verify the components, then commit and push to main.
+
+    gh workflow run release.yml --ref main -f tag=vX.Y.Z
+
+The workflow checks that both versions match, creates the shared tag, and
+publishes signed Android APKs plus a Linux amd64 server bundle containing the
+binary and web UI. The server bundle requires ffmpeg and ffprobe on the host;
+run its binary from the extracted directory so it finds web/. Production
+container images are built from the same commit and deployed through the
+configuration repo.
+
 ## License
 
 MIT; see [LICENSE](LICENSE).
