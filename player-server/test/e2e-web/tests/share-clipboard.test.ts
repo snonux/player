@@ -68,6 +68,9 @@ async function expectManualLink(page: Page) {
 test('s shortcut exposes a selectable link when clipboard API is absent', async ({ page }) => {
   const card = await openApp(page, 'absent');
   await card.click();
+  // The card center can hit a nested action; this journey starts on the card.
+  await card.focus();
+  await expect(card).toBeFocused();
   await page.keyboard.press('s');
   await expectManualLink(page);
   await page.locator('#share-link-fallback-close').click();

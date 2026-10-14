@@ -13,9 +13,26 @@ export function initKeyboard(handlers) {
     // whichever card button happens to hold focus.
     const gridNavigation = e.target.matches?.('.set-open, .folder-open');
 
+    // Browser chords and editable/native controls own keys before any mode.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    if (textControl) {
+      if (e.key === 'Escape') {
+        e.target.blur();
+        handlers.escape?.(e);
+      }
+      return;
+    }
+
+    // Let Enter and Space activate a focused button or link. Letter shortcuts
+    // remain available after clicking toolbar and card controls.
+    if (nativeActivation && (!gridNavigation || inDialog)) return;
+    // Escape releases focus from a button so the next shortcut starts clean;
+    // the dialog guard or the global Escape handler below still runs.
+    if (buttonLike && e.key === 'Escape') e.target.blur?.();
+
     // Lightbox keyboard navigation (overrides global keys while open)
     if (handlers.isLightboxOpen?.()) {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.shiftKey && e.code === 'KeyS') {
         e.preventDefault();
         handlers.toggleSlideshow?.(e);
@@ -34,7 +51,6 @@ export function initKeyboard(handlers) {
           return;
         case 'Escape':
         case 'Backspace':
-          if (e.key === 'Backspace' && textControl) return;
           e.preventDefault();
           handlers.closeLightbox?.(e);
           return;
@@ -54,9 +70,6 @@ export function initKeyboard(handlers) {
 
     // Shares modal keyboard navigation (overrides global keys while open)
     if (handlers.isSharesOpen?.()) {
-      // Enter on a focused Copy, Revoke, or Close button must activate that
-      // button. The row shortcut applies only when focus is on a share row.
-      if ((textControl || nativeActivation) && e.key === 'Enter') return;
       switch (e.key) {
         case 'ArrowUp':
         case 'k':
@@ -106,21 +119,6 @@ export function initKeyboard(handlers) {
       return;
     }
 
-    if (textControl) {
-      if (e.key === 'Escape') {
-        e.target.blur();
-        handlers.escape?.(e);
-      }
-      return;
-    }
-
-    // Let Enter and Space activate a focused button or link. Letter shortcuts
-    // remain available after clicking toolbar and card controls.
-    if (nativeActivation && !gridNavigation) return;
-    // Escape releases focus from a button so the next shortcut starts clean;
-    // the dialog guard or the global Escape handler below still runs.
-    if (buttonLike && e.key === 'Escape') e.target.blur?.();
-
     // Any other open dialog (help, notes, tags, upload, admin, podcasts) owns
     // the keyboard. Focused dialog buttons no longer swallow letter keys, so
     // grid, playback, and rescan shortcuts must not act behind the dialog.
@@ -160,8 +158,6 @@ export function initKeyboard(handlers) {
       handlers.playPause?.(e);
       return;
     }
-
-    if (e.ctrlKey || e.metaKey || e.altKey) return; // don't intercept browser shortcuts
 
     const imageDelta = fullscreenImageDelta(e);
     if (imageDelta && handlers.imageFullscreenNavigate?.(imageDelta)) {

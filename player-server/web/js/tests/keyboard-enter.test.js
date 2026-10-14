@@ -13,12 +13,13 @@ function assert(cond, msg) {
   if (!cond) failures.push(msg || 'assertion failed');
 }
 
-function pressKey(key, target = { tagName: 'BODY', isContentEditable: false }) {
+function pressKey(key, target = { tagName: 'BODY', isContentEditable: false }, modifiers = {}) {
   let prevented = false;
   keydownHandler?.({
     key,
     code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
     target,
+    ...modifiers,
     preventDefault() { prevented = true; },
   });
   return prevented;
@@ -191,7 +192,71 @@ function testBackspaceRespectsViewsAndTyping() {
   assert(backed === 1, 'Backspace outside dialogs and text fields should reach navigation');
 }
 
+function testModeGuardsBeforeRouting() {
+  const modes = [
+    { isSharesOpen: () => true, sharesNavUp: record, sharesNavDown: record, sharesCopy: record, sharesDelete: record },
+    { isMediaInfoOpen: () => true, mediaInfoScroll: record },
+    { isLightboxOpen: () => true, lightboxPrev: record, lightboxNext: record, zoomIn: record, closeLightbox: record },
+    { playPause: record, toggleSetSelect: record, isSidebarFocused: () => true },
+    { playPause: record },
+  ];
+  let calls = 0;
+  function record() { calls += 1; }
+  for (const mode of modes) {
+    initKeyboard(mode);
+    for (const modifier of ['ctrlKey', 'metaKey', 'altKey']) {
+      for (const key of ['j', 'k', 'h', 'l', 'ArrowDown', 'Enter', 'Delete', ' ', '+', 'Escape', 'Tab']) {
+        assert(!pressKey(key, undefined, { [modifier]: true }), `${modifier}+${key} must keep browser default`);
+      }
+    }
+    for (const target of [{ tagName: 'INPUT' }, { tagName: 'TEXTAREA' }, { tagName: 'SELECT' }, { tagName: 'SPAN', isContentEditable: true }]) {
+      for (const key of ['j', 'k', 'h', 'l', 'ArrowDown', 'Enter', 'Delete', ' ', '+', 'Backspace']) {
+        assert(!pressKey(key, target), `${key} on ${target.tagName} must keep native editing`);
+      }
+    }
+    assert(calls === 0, 'Guarded keys must not call specialized modal, image, or playback handlers');
+  }
+  initKeyboard(modes[0]);
+  pressKey('j'); pressKey('k'); pressKey('Enter'); pressKey('Delete');
+  initKeyboard(modes[1]);
+  pressKey('j'); pressKey('k');
+  assert(calls === 6, 'Unmodified shares navigation/copy/delete and media-info scrolling must still act');
+  initKeyboard(modes[3]);
+  assert(pressKey(' '), 'Unmodified sidebar Space must prevent default');
+  assert(calls === 7, 'Unmodified sidebar Space must still toggle selection');
+}
+
+function testNativeControlsBeforeSpecialModes() {
+  let calls = 0;
+  for (const mode of [
+    { isSharesOpen: () => true, sharesCopy: () => { calls += 1; } },
+    { isMediaInfoOpen: () => true },
+    { isLightboxOpen: () => true },
+  ]) {
+    initKeyboard(mode);
+    for (const tagName of ['BUTTON', 'A']) {
+      const target = { tagName, closest: () => ({}) };
+      assert(!pressKey('Enter', target), 'Special modes must preserve native Enter');
+      assert(!pressKey(' ', target), 'Special modes must preserve native dialog Space');
+    }
+  }
+  assert(calls === 0, 'Native controls must not invoke selected-share copy');
+}
+
+function testEditableEscapeBlursAndCloses() {
+  let closed = 0;
+  let blurred = 0;
+  for (const mode of [{ isSharesOpen: () => true }, { isMediaInfoOpen: () => true }, { isLightboxOpen: () => true }, { isModalOpen: () => true }]) {
+    initKeyboard({ ...mode, escape: () => { closed += 1; } });
+    pressKey('Escape', { tagName: 'INPUT', blur: () => { blurred += 1; } });
+  }
+  assert(closed === 4 && blurred === 4, 'Editable Escape must blur and reach the shared escape handler in every mode');
+}
+
 console.log('Running keyboard Enter tests...');
+testModeGuardsBeforeRouting();
+testNativeControlsBeforeSpecialModes();
+testEditableEscapeBlursAndCloses();
 testEnterActivatesGridHandler();
 testEnterLeavesFocusedButtonNative();
 testEscapeStillWorksOnNativeControl();
