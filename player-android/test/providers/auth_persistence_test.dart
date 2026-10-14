@@ -1,3 +1,6 @@
+import '../support/saved_server_auth.dart';
+import 'package:player_android/services/saved_server_credentials.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -317,13 +320,17 @@ class _PausingCookieJar implements CookieJar {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+  });
 
-  test('cold start reuses a minted token for a protected request', () async {
+  test('cold start requires unlock before reusing a minted token', () async {
     final baseUrl = Uri.parse('https://player.example');
     final requests = <String>[];
     final storage = _MemoryTokenStorage();
     ProviderContainer container() => ProviderContainer(overrides: [
+          serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
           tokenStorageProvider.overrideWithValue(storage),
           playerBaseUrlProvider.overrideWithValue(baseUrl),
           apiClientProvider.overrideWith((ref) {
@@ -347,7 +354,12 @@ void main() {
 
     final restarted = container();
     addTearDown(restarted.dispose);
-    final auth = await restarted.read(authStateProvider.future);
+    expect((await restarted.read(authStateProvider.future)).isUnauthenticated,
+        isTrue);
+    expect(restarted.read(credentialMutationQueueProvider).credentialsEnabled,
+        isFalse);
+    await unlockSelectedServer(restarted);
+    final auth = restarted.read(authStateProvider).requireValue;
     expect(auth.isAuthenticated, isTrue);
     expect(auth.user?.username, 'alice');
     expect(await restarted.read(apiClientProvider).listSets(), isEmpty);
@@ -355,6 +367,7 @@ void main() {
         ['/api/v1/auth/login', '/api/v1/auth/tokens', '/api/v1/sets']);
 
     final wrongServer = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://other.example')),
@@ -371,6 +384,7 @@ void main() {
     final adapter = _AuthAdapter(requests);
     late DioClient testClient;
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -429,6 +443,7 @@ void main() {
     final storage = _MemoryTokenStorage()..token = 'pt-persisted';
     final adapter = _AuthAdapter([]);
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -444,8 +459,10 @@ void main() {
       }),
     ]);
     addTearDown(container.dispose);
-    expect((await container.read(authStateProvider.future)).isAuthenticated,
-        isTrue);
+    await container.read(authStateProvider.future);
+    await unlockSelectedServer(container);
+    expect(
+        container.read(authStateProvider).requireValue.isAuthenticated, isTrue);
     expect(await container.read(apiClientProvider).listSets(), isEmpty);
 
     expect(await container.read(authStateProvider.notifier).logout(), isTrue);
@@ -462,6 +479,7 @@ void main() {
     final adapter = _AuthAdapter([])..failRevocation = true;
     late DioClient testClient;
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -506,6 +524,7 @@ void main() {
     final adapter = _BlockingRevocationAdapter();
     late DioClient testClient;
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -554,6 +573,7 @@ void main() {
     final adapter = _AuthAdapter([]);
     late DioClient testClient;
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -590,6 +610,7 @@ void main() {
     final queue = CredentialMutationQueue();
     late DioClient testClient;
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       credentialMutationQueueProvider.overrideWithValue(queue),
       playerBaseUrlProvider
@@ -631,6 +652,7 @@ void main() {
     final api = _DelayedMintApiClient();
     api.release.complete({'id': 7, 'token': 'pt-orphan'});
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       apiClientProvider.overrideWithValue(api),
     ]);
@@ -652,6 +674,7 @@ void main() {
     final storage = _MemoryTokenStorage();
     final api = _DelayedMintApiClient();
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       apiClientProvider.overrideWithValue(api),
     ]);
@@ -675,6 +698,7 @@ void main() {
     final api = _DelayedMintApiClient();
     api.release.complete({'id': 8, 'token': 'pt-new-login'});
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       apiClientProvider.overrideWithValue(api),
     ]);
@@ -696,6 +720,7 @@ void main() {
     final api = _DelayedMintApiClient();
     api.release.complete({'id': 7, 'token': 'pt-reconnected'});
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(_MemoryTokenStorage()),
       apiClientProvider.overrideWithValue(api),
       progressQueueProvider.overrideWithValue(queue),
@@ -721,6 +746,7 @@ void main() {
     final api = _DelayedMintApiClient();
     api.release.complete({'id': 7, 'token': 'pt-login'});
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       apiClientProvider.overrideWithValue(api),
       progressQueueProvider.overrideWithValue(queue),
@@ -749,6 +775,7 @@ void main() {
     });
     final queue = _PausingResumeQueue();
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(_MemoryTokenStorage()),
       progressQueueProvider.overrideWithValue(queue),
       cookieJarProvider.overrideWithValue(CookieJar()),
@@ -791,6 +818,7 @@ void main() {
     final queue = CredentialMutationQueue();
     final api = _DelayedMintApiClient();
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       credentialMutationQueueProvider.overrideWithValue(queue),
       apiClientProvider.overrideWithValue(api),
@@ -819,6 +847,7 @@ void main() {
     });
     final storage = _MemoryTokenStorage()..token = 'pt-expired';
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -844,6 +873,7 @@ void main() {
       ..failDelete = true;
     final queue = CredentialMutationQueue();
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       credentialMutationQueueProvider.overrideWithValue(queue),
       playerBaseUrlProvider
@@ -869,6 +899,7 @@ void main() {
     final adapter = _DelayedUnauthorizedAdapter();
     late DioClient dio;
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       credentialMutationQueueProvider.overrideWithValue(queue),
       progressQueueProvider.overrideWithValue(progress),
@@ -892,8 +923,10 @@ void main() {
       }),
     ]);
     addTearDown(container.dispose);
-    expect((await container.read(authStateProvider.future)).isAuthenticated,
-        isTrue);
+    await container.read(authStateProvider.future);
+    await unlockSelectedServer(container);
+    expect(
+        container.read(authStateProvider).requireValue.isAuthenticated, isTrue);
     container.read(apiClientProvider);
     await container.read(cookieJarProvider).saveFromResponse(
         Uri.parse('https://player.example/api/v1/sets'),
@@ -1050,6 +1083,7 @@ void main() {
       queue = CredentialMutationQueue();
       adapter = _DelayedUnauthorizedAdapter();
       container = ProviderContainer(overrides: [
+        serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
         tokenStorageProvider.overrideWithValue(storage),
         credentialMutationQueueProvider.overrideWithValue(queue),
         playerBaseUrlProvider
@@ -1073,7 +1107,9 @@ void main() {
         }),
       ]);
       addTearDown(container.dispose);
-      expect((await container.read(authStateProvider.future)).isAuthenticated,
+      await container.read(authStateProvider.future);
+      await unlockSelectedServer(container);
+      expect(container.read(authStateProvider).requireValue.isAuthenticated,
           isTrue);
       container.read(apiClientProvider);
       await dio.cookieJar.saveFromResponse(

@@ -46,17 +46,23 @@ class CredentialMutationQueue {
   Future<void> _tail = Future<void>.value();
   int _generation = 0;
   bool _credentialsEnabled;
+  String? _credentialOrigin;
 
   int get generation => _generation;
   bool get credentialsEnabled => _credentialsEnabled;
+  String? get credentialOrigin => _credentialOrigin;
 
-  int beginAuthChange() {
+  int beginAuthChange({String? origin}) {
     _credentialsEnabled = false;
+    if (origin != null) _credentialOrigin = origin;
     return ++_generation;
   }
 
-  void enable(int generation) {
-    if (_generation == generation) _credentialsEnabled = true;
+  void enable(int generation, {String? origin}) {
+    if (_generation == generation) {
+      _credentialOrigin = origin;
+      _credentialsEnabled = true;
+    }
   }
 
   Future<T> run<T>(Future<T> Function() action) async {
@@ -83,7 +89,12 @@ Future<Map<String, String>> accountRequestHeaders({
   required CredentialMutationQueue mutations,
 }) async {
   final generation = mutations.generation;
-  if (!mutations.credentialsEnabled || uri.origin != baseUrl.origin) return {};
+  if (!mutations.credentialsEnabled ||
+      uri.origin != baseUrl.origin ||
+      (mutations.credentialOrigin != null &&
+          mutations.credentialOrigin != uri.origin)) {
+    return {};
+  }
   final token = await storage.readToken();
   final cookies = await cookieJar.loadForRequest(uri);
   if (!mutations.credentialsEnabled || generation != mutations.generation) {
@@ -148,26 +159,83 @@ class _AuthGenerationInterceptor extends Interceptor {
 /// Snapshot logout requests must not overwrite a newer login's cookie when
 /// their responses arrive later.
 class _SnapshotAwareCookieManager extends CookieManager {
-  _SnapshotAwareCookieManager(super.cookieJar);
+  _SnapshotAwareCookieManager(super.cookieJar, this._mutations, this._origin);
+
+  final CredentialMutationQueue _mutations;
+  final String _origin;
+
+  bool _isCurrent(RequestOptions options) =>
+      options.extra['authGeneration'] == _mutations.generation &&
+      options.uri.origin == _origin &&
+      (_mutations.credentialOrigin == null ||
+          _mutations.credentialOrigin == _origin);
 
   bool _isSnapshot(RequestOptions options) =>
       options.extra.containsKey('logoutBearer') ||
       options.extra.containsKey('logoutCookie');
 
+  // Cookie loads/writes use a separate queue. Account changes can await
+  // progress requests, so taking their credential queue here would deadlock.
+  final _cookieOperations = CredentialMutationQueue();
+
+  bool _isIdentityResponse(RequestOptions options) =>
+      options.uri.path.endsWith('/auth/login') ||
+      options.uri.path.endsWith('/auth/bootstrap');
+
+  @override
+  Future<void> onRequest(
+          RequestOptions options, RequestInterceptorHandler handler) =>
+      _cookieOperations.run(() => super.onRequest(options, handler));
+
+  @override
+  Future<void> saveCookies(Response response) async {
+    if (response.headers['set-cookie']?.isNotEmpty != true) return;
+    await _cookieOperations.run(() async {
+      final options = response.requestOptions;
+      if (_isSnapshot(options) || !_isCurrent(options)) return;
+      await super.saveCookies(response);
+      if (!_isCurrent(options)) {
+        // The generation may change during an asynchronous jar write. No new
+        // response can write, or mint request read, until this cleanup finishes.
+        await cookieJar.deleteAll();
+      }
+    });
+  }
+
   @override
   Future<void> onResponse(
       Response response, ResponseInterceptorHandler handler) async {
-    if (_isSnapshot(response.requestOptions)) {
+    final options = response.requestOptions;
+    if (_isSnapshot(options)) {
       handler.next(response);
-    } else {
-      await super.onResponse(response, handler);
+      return;
+    }
+    try {
+      if (_isCurrent(options)) await saveCookies(response);
+      // Mint responses still reach the notifier so a superseded token can be
+      // revoked. Password identities must never be paired with a newer cookie.
+      if (!_isCurrent(options) && _isIdentityResponse(options)) {
+        handler.reject(DioException(
+            requestOptions: options, type: DioExceptionType.cancel));
+      } else {
+        handler.next(response);
+      }
+    } catch (error, stack) {
+      handler.reject(DioException(
+          requestOptions: options,
+          response: response,
+          error: error,
+          stackTrace: stack,
+          type: DioExceptionType.unknown));
     }
   }
 
   @override
   Future<void> onError(
-      DioException err, ErrorInterceptorHandler handler) async {
-    if (_isSnapshot(err.requestOptions)) {
+    DioException err,
+    ErrorInterceptorHandler handler,
+  ) async {
+    if (_isSnapshot(err.requestOptions) || !_isCurrent(err.requestOptions)) {
       handler.next(err);
     } else {
       await super.onError(err, handler);
@@ -217,7 +285,15 @@ class _AuthInterceptor extends Interceptor {
             requestGeneration != _mutationQueue.generation) ||
         sentGeneration != _mutationQueue.generation) {
       handler.reject(
-          DioException(requestOptions: options, type: DioExceptionType.cancel));
+        DioException(requestOptions: options, type: DioExceptionType.cancel),
+      );
+      return;
+    }
+    if (_mutationQueue.credentialOrigin != null &&
+        _mutationQueue.credentialOrigin != _origin) {
+      options.headers.remove('Authorization');
+      options.headers.remove('cookie');
+      handler.next(options);
       return;
     }
     if (!_mutationQueue.credentialsEnabled) {
@@ -236,7 +312,8 @@ class _AuthInterceptor extends Interceptor {
         sentGeneration != _mutationQueue.generation ||
         !_mutationQueue.credentialsEnabled) {
       handler.reject(
-          DioException(requestOptions: options, type: DioExceptionType.cancel));
+        DioException(requestOptions: options, type: DioExceptionType.cancel),
+      );
       return;
     }
     if (token != null && token.isNotEmpty) {
@@ -289,7 +366,9 @@ class _UnauthorizedInterceptor extends Interceptor {
     ErrorInterceptorHandler handler,
   ) async {
     if (err.response?.statusCode == 401 &&
-        err.requestOptions.uri.origin == _origin) {
+        err.requestOptions.uri.origin == _origin &&
+        (_mutationQueue.credentialOrigin == null ||
+            _mutationQueue.credentialOrigin == _origin)) {
       if (err.requestOptions.path.endsWith('/auth/login') ||
           err.requestOptions.path.endsWith('/auth/bootstrap') ||
           err.requestOptions.extra.containsKey('logoutBearer') ||
@@ -426,7 +505,7 @@ class DioClient {
         _AuthGenerationInterceptor(mutationQueue),
         // Cookie loading follows the generation snapshot, then runs before
         // _AuthInterceptor decides whether to add a Bearer fallback.
-        _SnapshotAwareCookieManager(cookieJar),
+        _SnapshotAwareCookieManager(cookieJar, mutationQueue, baseUrl.origin),
         _AuthInterceptor(storage, baseUrl.origin, mutationQueue),
         _UnauthorizedInterceptor(
           storage: storage,

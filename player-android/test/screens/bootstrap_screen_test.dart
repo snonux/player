@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 // Widget tests for BootstrapScreen.
 //
 // Tests cover:
@@ -134,7 +135,10 @@ Future<_FakeTokenStorage> _pumpBootstrapScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+  });
   // --------------------------------------------------------------------------
   // Form validation
   // --------------------------------------------------------------------------

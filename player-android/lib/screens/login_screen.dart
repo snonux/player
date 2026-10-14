@@ -8,6 +8,8 @@ import '../app_routes.dart';
 import '../library_navigation.dart';
 import 'package:go_router/go_router.dart';
 import '../utils/error_mappers.dart';
+import '../services/saved_server_credentials.dart';
+import '../providers/settings_provider.dart';
 
 /// Sign-in screen shown to returning users who already have an account.
 ///
@@ -127,12 +129,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
+  Future<void> _unlockSavedServer() async {
+    setState(() => _isLoading = true);
+    try {
+      final unlocked =
+          await ref.read(authStateProvider.notifier).unlockSavedServer();
+      if (!mounted) return;
+      if (unlocked) {
+        final user = ref.read(authStateProvider).requireValue.user!;
+        await initializeServerProgressQueue(ref, user);
+      } else {
+        _showError(
+            'Login remains locked. Retry fingerprint or use your server password.');
+      }
+    } catch (_) {
+      if (mounted) {
+        _showError(
+            'Fingerprint unavailable. Use your server password to sign in.');
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
+    final saved = ref.watch(selectedServerCredentialProvider).valueOrNull;
+    if (saved != null && _usernameController.text.isEmpty) {
+      _usernameController.text = saved.user.username;
+    }
+    final server = ref.watch(settingsProvider).valueOrNull?.serverBaseUrl;
     return Scaffold(
       appBar: AppBar(title: const Text('Sign In')),
       body: SafeArea(
@@ -150,9 +180,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Enter your credentials to continue.',
+                  server == null
+                      ? 'Enter your credentials to continue.'
+                      : 'Sign in to $server',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
+                if (saved != null) ...[
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    key: const Key('login_fingerprint'),
+                    onPressed: _isLoading ? null : _unlockSavedServer,
+                    icon: const Icon(Icons.fingerprint),
+                    label: const Text('Unlock saved login with fingerprint'),
+                  ),
+                  const Text('Or enter your server password below.'),
+                ],
                 const SizedBox(height: 32),
 
                 // Username field.
@@ -195,12 +237,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                 TextButton(
                   key: const Key('login_server_setup'),
-                  onPressed: () => context.go(AppRoutes.server),
+                  onPressed:
+                      _isLoading ? null : () => context.go(AppRoutes.server),
                   child: const Text('Change server'),
                 ),
                 TextButton(
                   key: const Key('login_local_library'),
-                  onPressed: () => switchToLocalLibrary(ref, context),
+                  onPressed: _isLoading
+                      ? null
+                      : () => switchToLocalLibrary(ref, context),
                   child: const Text('Use files on this device'),
                 ),
               ],

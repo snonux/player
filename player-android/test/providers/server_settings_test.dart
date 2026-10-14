@@ -1,3 +1,6 @@
+import '../support/saved_server_auth.dart';
+import 'package:player_android/services/saved_server_credentials.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -58,6 +61,7 @@ class _CountingUnauthenticated extends AuthStateNotifier {
 }
 
 void main() {
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('server switch moves authenticated client and drops old credentials',
@@ -73,12 +77,16 @@ void main() {
     });
     final storage = _TokenStore();
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
     ]);
     addTearDown(container.dispose);
 
     final auth = await container.read(authStateProvider.future);
-    expect(auth.isAuthenticated, isTrue);
+    expect(auth.isUnauthenticated, isTrue);
+    await unlockSelectedServer(container);
+    expect(
+        container.read(authStateProvider).requireValue.isAuthenticated, isTrue);
     final oldClient = container.read(apiClientProvider);
     final oldRequests = _Requests();
     oldClient.rawDio.httpClientAdapter = oldRequests;
@@ -95,8 +103,7 @@ void main() {
         .read(authStateProvider.notifier)
         .switchServer(' https://new.example:8443/ ');
     expect(storage.token, isNull);
-    expect(oldRequests.seen.singleWhere((r) => r.method == 'DELETE').uri.origin,
-        'https://old.example');
+    expect(oldRequests.seen.where((r) => r.method == 'DELETE'), isEmpty);
     expect(container.read(settingsProvider).requireValue.serverBaseUrl,
         'https://new.example:8443');
     expect(container.read(playerBaseUrlProvider).origin,
@@ -190,6 +197,7 @@ void main() {
     var authBuilds = 0;
     var firstRunBuilds = 0;
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       localMediaListProvider.overrideWith((ref) async => []),
       authStateProvider
           .overrideWith(() => _CountingUnauthenticated(() => authBuilds++)),
@@ -215,6 +223,56 @@ void main() {
     expect(container.exists(apiClientProvider), isFalse);
     expect(container.exists(progressQueueProvider), isFalse);
   });
+
+  testWidgets(
+    'saved servers open startup chooser even after choosing local, without network checks',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'server_base_url': 'https://a.example',
+        'saved_servers': ['https://a.example', 'https://b.example'],
+        'library_destination': 'local',
+      });
+      var authBuilds = 0;
+      var firstRunBuilds = 0;
+      final container = ProviderContainer(
+        overrides: [
+          serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+          localMediaListProvider.overrideWith((ref) async => []),
+          authStateProvider.overrideWith(
+            () => _CountingUnauthenticated(() => authBuilds++),
+          ),
+          firstRunProvider.overrideWith((ref) async {
+            firstRunBuilds++;
+            return false;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(settingsProvider.future);
+      final router = container.read(routerProvider);
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Choose a server'), findsOneWidget);
+      expect(
+          find.widgetWithText(ListTile, 'https://a.example'), findsOneWidget);
+      expect(find.text('https://b.example'), findsOneWidget);
+      await tester.tap(find.text('Use files on this device'));
+      await tester.pumpAndSettle();
+      expect(find.text('Your device library is empty'), findsOneWidget);
+      expect(authBuilds, 0);
+      expect(firstRunBuilds, 0);
+      expect(container.exists(apiClientProvider), isFalse);
+      expect(container.exists(progressQueueProvider), isFalse);
+    },
+  );
 
   test('share URLs omit explicit default HTTP and HTTPS ports', () {
     for (final (input, expected) in [
@@ -258,6 +316,7 @@ void main() {
       'server_base_url': 'https://player.example',
     });
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       authStateProvider.overrideWith(_Unauthenticated.new),
       firstRunProvider.overrideWith((ref) async => false),
     ]);
@@ -266,6 +325,13 @@ void main() {
       container: container,
       child: MaterialApp.router(routerConfig: container.read(routerProvider)),
     ));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose a server'), findsOneWidget);
+    await container
+        .read(settingsProvider.notifier)
+        .selectDestination(LibraryDestination.server);
+    await tester.pumpAndSettle();
+    container.read(routerProvider).go(AppRoutes.login);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('login_server_setup')), findsOneWidget);
     await tester.tap(find.byKey(const Key('login_server_setup')));
@@ -280,6 +346,7 @@ void main() {
       'server_base_url': 'https://other.example',
     });
     final container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       authStateProvider.overrideWith(_Unauthenticated.new),
       firstRunProvider.overrideWith((ref) async => false),
     ]);

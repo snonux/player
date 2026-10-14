@@ -84,6 +84,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       final container = ProviderScope.containerOf(context, listen: false);
       final settings = container.read(settingsProvider).valueOrNull;
       if (settings == null) return null;
+      if (settings.selectionRequired) return AppRoutes.server;
       if (settings.destination == LibraryDestination.local) {
         return isLocalRoute ? null : AppRoutes.localLibrary;
       }
@@ -567,7 +568,8 @@ class _RouterRefreshNotifier extends ChangeNotifier {
   ProviderSubscription<AsyncValue<bool>>? _firstRunSubscription;
 
   void _syncServerSubscriptions(AppSettings? settings) {
-    if (settings?.destination == LibraryDestination.server) {
+    if (settings?.destination == LibraryDestination.server &&
+        settings?.selectionRequired == false) {
       _authSubscription ??= _container.listen<AsyncValue<AuthState>>(
         authStateProvider,
         (_, __) => notifyListeners(),

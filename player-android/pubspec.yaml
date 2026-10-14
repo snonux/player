@@ -1,7 +1,7 @@
 name: player_android
 description: Player Android client
 publish_to: "none"
-version: 0.3.0+5
+version: 0.3.1+6
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -23,6 +23,7 @@ dependencies:
   # cached_network_image: downloads and caches remote images (e.g. set covers)
   # so repeated visits do not re-fetch from the server.
   cached_network_image: ^3.4.1
+  local_auth: ^2.3.0
   crypto: ^3.0.7
   package_info_plus: ^9.0.1
   # video_player: low-level Flutter plugin for video playback via platform codecs.

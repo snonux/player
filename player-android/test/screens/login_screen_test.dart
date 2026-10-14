@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 // Widget tests for LoginScreen.
 //
 // Tests cover:
@@ -25,6 +26,9 @@ import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/login_screen.dart';
+import 'package:player_android/providers/auth_state_provider.dart';
+import 'package:player_android/providers/settings_provider.dart';
+import 'package:player_android/services/saved_server_credentials.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ---------------------------------------------------------------------------
@@ -44,6 +48,17 @@ class _FakeTokenStorage implements TokenStorage {
 
   @override
   Future<void> deleteToken() async => _token = null;
+}
+
+class _BiometricChoice implements ServerBiometricUnlock {
+  _BiometricChoice(this.accepted);
+  final bool accepted;
+  int calls = 0;
+  @override
+  Future<bool> authenticate(String origin) async {
+    calls++;
+    return accepted;
+  }
 }
 
 /// [PlayerApiClient] stub whose [login] behaviour is controlled by the test
@@ -146,7 +161,10 @@ Future<_FakeTokenStorage> _pumpLoginScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+  });
   // --------------------------------------------------------------------------
   // Form validation
   // --------------------------------------------------------------------------
@@ -184,6 +202,77 @@ void main() {
   // --------------------------------------------------------------------------
   // Successful login
   // --------------------------------------------------------------------------
+
+  for (final accepted in [false, true]) {
+    testWidgets(
+        'saved fingerprint button requires device approval and retains password fallback ($accepted)',
+        (tester) async {
+      final storage = _FakeTokenStorage();
+      final biometric = _BiometricChoice(accepted);
+      const user = User(id: 1, username: 'alice', isAdmin: false);
+      final api = _FakeApiClient()..loginResult = user;
+      late ProviderContainer container;
+      await tester.runAsync(() async {
+        SharedPreferences.setMockInitialValues(
+            {'server_base_url': 'https://a.example'});
+        container = ProviderContainer(overrides: [
+          tokenStorageProvider.overrideWithValue(storage),
+          apiClientProvider.overrideWithValue(api),
+          serverBiometricUnlockProvider.overrideWithValue(biometric),
+        ]);
+        await container.read(settingsProvider.future);
+        await container
+            .read(settingsProvider.notifier)
+            .selectDestination(LibraryDestination.server);
+        await container.read(authStateProvider.future);
+        await container.read(savedServerCredentialsProvider).write(
+            SavedServerCredential(
+                origin: 'https://a.example',
+                token: 'saved-token',
+                tokenId: 8,
+                user: user,
+                expiresAt: DateTime.now()
+                    .add(const Duration(days: 1))
+                    .millisecondsSinceEpoch));
+      });
+      addTearDown(container.dispose);
+      await tester.pumpWidget(UncontrolledProviderScope(
+          container: container, child: const MaterialApp(home: LoginScreen())));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('login_fingerprint')), findsOneWidget);
+      expect(storage._token, isNull);
+      expect(api.capturedUsername, isNull);
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('login_fingerprint')));
+        await Future<void>.delayed(Duration.zero);
+      });
+      await tester.pumpAndSettle();
+      expect(biometric.calls, 1);
+      if (accepted) {
+        expect(storage._token, 'saved-token');
+        expect(container.read(authStateProvider).requireValue.isAuthenticated,
+            isTrue);
+        expect(api.capturedUsername, isNull);
+      } else {
+        expect(storage._token, isNull);
+        expect(container.read(authStateProvider).requireValue.isUnauthenticated,
+            isTrue);
+        expect(find.textContaining('Login remains locked'), findsOneWidget);
+        await tester.enterText(
+            find.byKey(const Key('login_password')), 'server-password');
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const Key('login_submit')));
+          await Future<void>.delayed(Duration.zero);
+        });
+        await tester.pumpAndSettle();
+        expect(api.capturedUsername, 'alice');
+        expect(api.capturedPassword, 'server-password');
+        expect(storage._token, 'pt-test-token');
+        expect(container.read(authStateProvider).requireValue.isAuthenticated,
+            isTrue);
+      }
+    });
+  }
 
   group('successful login', () {
     testWidgets('calls login with correct credentials', (tester) async {

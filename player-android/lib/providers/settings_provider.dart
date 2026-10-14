@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+const _kSavedServersKey = 'saved_servers';
 const _kBaseUrlKey = 'server_base_url';
 const _kLibraryDestinationKey = 'library_destination';
 const _kLegacyAuthOriginKey = 'auth_origin';
@@ -17,7 +18,9 @@ Uri parseServerBaseUrl(String value) {
       uri.userInfo.isNotEmpty ||
       (uri.path.isNotEmpty && uri.path != '/') ||
       uri.hasQuery ||
-      uri.hasFragment) {
+      uri.hasFragment ||
+      uri.port < 1 ||
+      uri.port > 65535) {
     throw const FormatException(
         'Enter an HTTP or HTTPS server address without a path.');
   }
@@ -31,9 +34,13 @@ class AppSettings {
     required this.serverBaseUrl,
     this.destination = LibraryDestination.server,
     this.configurationError,
+    this.savedServers = const [],
+    this.selectionRequired = false,
   });
 
   final String? serverBaseUrl;
+  final List<String> savedServers;
+  final bool selectionRequired;
   final LibraryDestination destination;
   final String? configurationError;
 
@@ -43,12 +50,14 @@ class AppSettings {
       other is AppSettings &&
           runtimeType == other.runtimeType &&
           serverBaseUrl == other.serverBaseUrl &&
+          selectionRequired == other.selectionRequired &&
+          savedServers.join("\n") == other.savedServers.join("\n") &&
           destination == other.destination &&
           configurationError == other.configurationError;
 
   @override
-  int get hashCode =>
-      Object.hash(serverBaseUrl, destination, configurationError);
+  int get hashCode => Object.hash(serverBaseUrl, destination,
+      configurationError, selectionRequired, Object.hashAll(savedServers));
 
   @override
   String toString() =>
@@ -87,6 +96,18 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       }
     }
 
+    final servers = <String>{};
+    for (final savedServer
+        in prefs.getStringList(_kSavedServersKey) ?? <String>[]) {
+      try {
+        servers.add(parseServerBaseUrl(savedServer).toString());
+      } on FormatException {
+        error ??= 'A saved server address is invalid.';
+      }
+    }
+    if (origin != null) servers.add(origin);
+    await prefs.setStringList(_kSavedServersKey, servers.toList());
+
     final destination = switch (selected) {
       'local' => LibraryDestination.local,
       'server' => LibraryDestination.server,
@@ -101,18 +122,24 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       serverBaseUrl: origin,
       destination: error == null ? destination : LibraryDestination.local,
       configurationError: error,
+      savedServers: List.unmodifiable(servers),
+      selectionRequired: servers.isNotEmpty,
     );
   }
 
   Future<void> setServerBaseUrl(String url) async {
     final normalized = parseServerBaseUrl(url).toString();
     final prefs = await SharedPreferences.getInstance();
-    if (!await prefs.setString(_kBaseUrlKey, normalized) ||
+    final current = await future;
+    final servers = {...current.savedServers, normalized}.toList();
+    if (!await prefs.setStringList(_kSavedServersKey, servers) ||
+        !await prefs.setString(_kBaseUrlKey, normalized) ||
         !await prefs.setString(_kLibraryDestinationKey, 'server')) {
       throw StateError('Could not save server address');
     }
     state = AsyncData(AppSettings(
       serverBaseUrl: normalized,
+      savedServers: List.unmodifiable(servers),
       destination: LibraryDestination.server,
     ));
   }
@@ -128,6 +155,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       serverBaseUrl: current.serverBaseUrl,
       destination: destination,
       configurationError: current.configurationError,
+      savedServers: current.savedServers,
     ));
   }
 }

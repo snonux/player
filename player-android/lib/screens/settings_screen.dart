@@ -74,8 +74,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final url = _urlController.text.trim();
     try {
       parseServerBaseUrl(url);
-      final wasLocal = ref.read(settingsProvider).valueOrNull?.destination ==
-          LibraryDestination.local;
       setState(() {
         _isSavingUrl = true;
         _urlError = null;
@@ -86,7 +84,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (!mounted) return;
       ref.invalidate(firstRunProvider);
       FocusScope.of(context).unfocus();
-      if (widget.serverOnly || wasLocal) context.go(AppRoutes.home);
+      context.go(AppRoutes.login);
     } on FormatException catch (e) {
       if (mounted) setState(() => _urlError = e.message);
     } catch (_) {
@@ -161,10 +159,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Connect to Player',
+                Text('Choose a server',
                     style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 24),
+                _savedServers(),
+                const SizedBox(height: 16),
                 _serverSection(context),
+                TextButton(
+                  onPressed: _isSavingUrl ? null : _openLocalLibrary,
+                  child: const Text('Use files on this device'),
+                ),
               ],
             ),
           ),
@@ -366,10 +370,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await switchToLocalLibrary(ref, context);
   }
 
+  Widget _savedServers() {
+    final servers = ref.watch(settingsProvider).valueOrNull?.savedServers ?? [];
+    return Column(children: [
+      for (final server in servers)
+        ListTile(
+          leading: const Icon(Icons.dns_outlined),
+          title: Text(server),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _isSavingUrl
+              ? null
+              : () {
+                  _urlController.text = server;
+                  _saveBaseUrl();
+                },
+        ),
+    ]);
+  }
+
   Widget _serverSection(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Server', style: Theme.of(context).textTheme.titleMedium),
+          Text('Servers', style: Theme.of(context).textTheme.titleMedium),
+          if (!widget.serverOnly) _savedServers(),
           const SizedBox(height: 12),
           TextField(
             key: const Key('settings_base_url'),

@@ -4,16 +4,13 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
-import com.ryanheise.audioservice.AudioServiceActivity
+import com.ryanheise.audioservice.AudioServiceFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-// AudioServiceActivity (not FlutterActivity) is required by the audio_service
-// plugin so background audio sessions, lockscreen controls, and media buttons
-// re-attach correctly to this single-Activity Flutter app.  Using the default
-// FlutterActivity causes AudioService.init() to throw at startup with
-// "The Activity class declared in your AndroidManifest.xml is wrong".
-class MainActivity : AudioServiceActivity() {
+// The audio_service fragment activity supports both background audio controls
+// and local_auth's biometric dialog, which requires a FragmentActivity.
+class MainActivity : AudioServiceFragmentActivity() {
     private lateinit var documentChannel: MethodChannel
     private var pendingPicker: MethodChannel.Result? = null
 

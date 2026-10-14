@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user.dart';
+import '../services/saved_server_credentials.dart';
 import 'api_client_provider.dart';
 import 'audio_handler_provider.dart';
 import 'playback_session_provider.dart';
@@ -103,13 +104,24 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
           expiresAt != null &&
           DateTime.now().millisecondsSinceEpoch < expiresAt &&
           userJson != null) {
-        final user =
-            User.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
+        final user = User.fromJson(
+          jsonDecode(userJson) as Map<String, dynamic>,
+        );
         if (user.id > 0 && user.username.isNotEmpty) {
-          if (generation == queue.generation) {
-            queue.enable(generation);
-            return AuthState.authenticated(user: user);
-          }
+          await queue.run(() async {
+            if (generation != queue.generation) return;
+            // Migrate without enabling requests before server selection/unlock.
+            await ref.read(savedServerCredentialsProvider).write(
+                  SavedServerCredential(
+                    origin: origin,
+                    token: token,
+                    tokenId: prefs.getInt(_kAuthTokenIdKey),
+                    user: user,
+                    expiresAt: expiresAt,
+                  ),
+                );
+            await _clearCredentials(prefs);
+          });
           return const AuthState.unauthenticated();
         }
       }
@@ -124,47 +136,91 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
     return const AuthState.unauthenticated();
   }
 
-  /// End the old server session before replacing the origin. The credential
-  /// gate closes at the start of logout, so no request to the new server can
-  /// carry the previous server's bearer token or cookie.
+  /// Lock the old server session before replacing the origin. The credential
+  /// gate closes immediately; saved credentials remain isolated by origin.
   Future<void> switchServer(String url) async {
     final next = parseServerBaseUrl(url);
-    final settings = await ref.read(settingsProvider.future);
-    final configured = settings.serverBaseUrl;
-    if (configured == next.toString()) {
-      if (settings.destination == LibraryDestination.local) {
-        await ref.read(playbackSessionCoordinatorProvider).stopCurrent();
-      }
-      final auth = await future;
-      if (auth.isAuthenticated &&
-          ref.read(serverProgressQueueLifecycleProvider)) {
-        await ref.read(progressQueueProvider).init(
-              scope: ProgressScope(
-                origin: next.origin,
-                userId: auth.user!.id,
-              ),
-            );
-      }
-      await ref.read(settingsProvider.notifier).selectDestination(
-            LibraryDestination.server,
-          );
-      return;
-    }
+    // Switching is a local lock: keep saved tokens behind the unlock prompt.
+    final queue = ref.read(credentialMutationQueueProvider);
+    final generation = queue.beginAuthChange(origin: next.origin);
+    await future;
     await ref.read(playbackSessionCoordinatorProvider).stopCurrent();
-    final auth = await future;
-    if (auth.isAuthenticated) {
-      await logout();
-    } else {
-      ref.read(credentialMutationQueueProvider).beginAuthChange();
-      await clearAfterUnauthorized(advanceGeneration: false);
+    await queue.run(() async {
+      if (queue.generation != generation) {
+        throw StateError('Server selection superseded by a newer auth action');
+      }
+      if (ref.exists(progressQueueProvider)) {
+        await ref.read(progressQueueProvider).suspend();
+      }
+      await _clearCredentials();
+      await ref.read(cookieJarProvider).deleteAll();
+      state = const AsyncData(AuthState.unauthenticated());
+      await ref
+          .read(settingsProvider.notifier)
+          .setServerBaseUrl(next.toString());
+      ref.invalidate(selectedServerCredentialProvider);
+    });
+  }
+
+  /// Activate a saved token only after a successful biometric prompt.
+  /// Password fallback performs a fresh server login.
+  Future<bool> unlockSavedServer() async {
+    await future;
+    final settings = await ref.read(settingsProvider.future);
+    if (settings.selectionRequired ||
+        settings.destination != LibraryDestination.server) {
+      return false;
     }
-    await ref.read(settingsProvider.notifier).setServerBaseUrl(next.toString());
+    final origin = ref.read(playerBaseUrlProvider).origin;
+    final queue = ref.read(credentialMutationQueueProvider);
+    final generation = queue.beginAuthChange(origin: origin);
+    final credential =
+        await ref.read(savedServerCredentialsProvider).read(origin);
+    if (credential == null || !credential.isValid) return false;
+    if (!await ref.read(serverBiometricUnlockProvider).authenticate(origin)) {
+      return false;
+    }
+    if (!credential.isValid ||
+        queue.generation != generation ||
+        ref.read(playerBaseUrlProvider).origin != origin ||
+        ref.read(settingsProvider).valueOrNull?.destination !=
+            LibraryDestination.server) {
+      return false;
+    }
+    return queue.run(() async {
+      if (queue.generation != generation) return false;
+      final prefs = await SharedPreferences.getInstance();
+      try {
+        await ref.read(tokenStorageProvider).writeToken(credential.token);
+        if (credential.tokenId != null) {
+          await prefs.setInt(_kAuthTokenIdKey, credential.tokenId!);
+        } else {
+          await prefs.remove(_kAuthTokenIdKey);
+        }
+        await prefs.setString(
+          _kAuthUserKey,
+          jsonEncode(credential.user.toJson()),
+        );
+        await prefs.setString(_kAuthOriginKey, origin);
+        await prefs.setInt(_kAuthExpiresKey, credential.expiresAt);
+        await prefs.setBool(_kAuthSessionPresentKey, true);
+        if (queue.generation != generation) return false;
+        queue.enable(generation, origin: origin);
+        state = AsyncData(AuthState.authenticated(user: credential.user));
+        return true;
+      } catch (_) {
+        await _clearCredentials(prefs);
+        rethrow;
+      }
+    });
   }
 
   /// Retains the server's authenticated user separately from credentials.
   Future<void> login(User user) async {
     final queue = ref.read(credentialMutationQueueProvider);
-    final generation = queue.beginAuthChange();
+    final origin = ref.read(playerBaseUrlProvider).origin;
+    final generation = queue.beginAuthChange(origin: origin);
+    final api = ref.read(apiClientProvider);
     await future;
     final prefs = await SharedPreferences.getInstance();
     String? mintedToken;
@@ -187,10 +243,8 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
       }
       // The login/bootstrap response sets a session cookie. Mint a dedicated
       // mobile token while that cookie is available in the shared Dio client.
-      final result = await ref.read(apiClientProvider).createAPIToken(
-            name: 'android-client',
-            expiresInDays: 365,
-          );
+      final result =
+          await api.createAPIToken(name: 'android-client', expiresInDays: 365);
       final token = result['token'];
       final tokenId = result['id'];
       if (token is! String ||
@@ -209,25 +263,44 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
         await prefs.setInt(_kAuthTokenIdKey, tokenId);
         await prefs.setString(_kAuthUserKey, jsonEncode(user.toJson()));
         await prefs.setString(
-            _kAuthOriginKey, ref.read(playerBaseUrlProvider).origin);
+          _kAuthOriginKey,
+          ref.read(playerBaseUrlProvider).origin,
+        );
         // The server starts the 365-day clock before sending its response.
         // Expire locally one day early to avoid presenting an expired token.
         await prefs.setInt(
-            _kAuthExpiresKey,
-            DateTime.now()
-                .add(const Duration(days: 364))
-                .millisecondsSinceEpoch);
+          _kAuthExpiresKey,
+          DateTime.now().add(const Duration(days: 364)).millisecondsSinceEpoch,
+        );
         await prefs.setBool(_kAuthSessionPresentKey, true);
         if (ref.exists(progressQueueProvider)) {
-          await ref.read(progressQueueProvider).resume(ProgressScope(
-                origin: ref.read(playerBaseUrlProvider).origin,
-                userId: user.id,
-              ));
+          await ref.read(progressQueueProvider).resume(
+                ProgressScope(
+                  origin: ref.read(playerBaseUrlProvider).origin,
+                  userId: user.id,
+                ),
+              );
         }
         if (generation != queue.generation) {
           throw StateError('Login superseded by a newer auth action');
         }
-        queue.enable(generation);
+        await ref.read(savedServerCredentialsProvider).write(
+              SavedServerCredential(
+                origin: origin,
+                token: token,
+                tokenId: tokenId,
+                user: user,
+                expiresAt: prefs.getInt(_kAuthExpiresKey)!,
+              ),
+            );
+        ref.invalidate(selectedServerCredentialProvider);
+        if (generation != queue.generation) {
+          throw StateError('Login superseded by a newer auth action');
+        }
+        queue.enable(
+          generation,
+          origin: ref.read(playerBaseUrlProvider).origin,
+        );
         state = AsyncData(AuthState.authenticated(user: user));
       });
     } catch (_) {
@@ -245,8 +318,7 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
       }
       if (mintedToken != null && mintedTokenId != null) {
         try {
-          await ref
-              .read(apiClientProvider)
+          await api
               .revokeAPIToken(mintedTokenId, bearerToken: mintedToken)
               .timeout(_kLogoutRequestTimeout);
         } catch (_) {}
@@ -258,6 +330,7 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
   /// Revokes the mobile token and session when reachable, then always removes
   /// local credentials. Returns false if either server request failed.
   Future<bool> logout() async {
+    final api = ref.read(apiClientProvider);
     ref.read(credentialMutationQueueProvider).beginAuthChange();
     final snapshot =
         await ref.read(credentialMutationQueueProvider).run(() async {
@@ -301,8 +374,7 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
         snapshot.token == null;
     if (snapshot.token != null && snapshot.tokenId != null) {
       try {
-        await ref
-            .read(apiClientProvider)
+        await api
             .revokeAPIToken(snapshot.tokenId!, bearerToken: snapshot.token)
             .timeout(_kLogoutRequestTimeout);
         revoked = snapshot.localCleared;
@@ -311,8 +383,7 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
       }
     } else if (snapshot.token != null) {
       try {
-        await ref
-            .read(apiClientProvider)
+        await api
             .revokeCurrentAPIToken(bearerToken: snapshot.token!)
             .timeout(_kLogoutRequestTimeout);
         revoked = snapshot.localCleared;
@@ -322,8 +393,7 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
     }
     if (snapshot.sessionCookie != null) {
       try {
-        await ref
-            .read(apiClientProvider)
+        await api
             .logout(sessionCookie: snapshot.sessionCookie)
             .timeout(_kLogoutRequestTimeout);
       } catch (_) {
@@ -342,6 +412,14 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
       ref.read(credentialMutationQueueProvider).beginAuthChange();
     }
     var cleared = true;
+    try {
+      await ref
+          .read(savedServerCredentialsProvider)
+          .delete(ref.read(playerBaseUrlProvider).origin);
+      ref.invalidate(selectedServerCredentialProvider);
+    } catch (_) {
+      cleared = false;
+    }
     final serverSelected =
         ref.read(settingsProvider).valueOrNull?.destination ==
             LibraryDestination.server;

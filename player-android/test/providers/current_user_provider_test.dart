@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dio/dio.dart';
@@ -36,7 +37,10 @@ class _FakeApiClient extends PlayerApiClient {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+  });
 
   for (final user in [
     const User(id: 1, username: 'admin', isAdmin: true),

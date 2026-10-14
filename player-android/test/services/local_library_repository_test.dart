@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -27,6 +28,7 @@ class _NoTokenStorage implements TokenStorage {
 }
 
 void main() {
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;

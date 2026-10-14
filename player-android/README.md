@@ -40,9 +40,28 @@ history across devices are outside this feature.
 
 ## Connect to a server
 
-Tap **Connect to server**, enter the server origin, and save it. Create the first
-admin account if the server is new, or sign in to an existing account. The server
-library retains streaming, server progress, and public shares. Open **On this
+Tap **Connect to server**, select a saved server or enter another server origin
+and save it. The app keeps a separate saved login for each HTTP/HTTPS origin
+(including its port). Once a server is saved, every app start asks you to select
+a server or **Use files on this device**. A fresh install still opens the local
+library directly.
+
+Create the first admin account if the server is new, or sign in to an existing
+account. To reuse a saved login, tap **Unlock saved login with fingerprint** and
+complete the device's biometric prompt, or enter your server account password
+for a fresh sign-in. Device PIN/password fallback is disabled: the password
+option is your server password. Cancelling or failing biometrics leaves the
+login locked; password sign-in also works without biometric hardware. The local
+library remains available without a network connection. Saved bearer tokens live
+in Android's secure storage; account passwords are never saved. Switching servers locks the current
+login and preserves each server's saved credential. Logout removes the selected
+server's credential. Expired/revoked tokens require password sign-in.
+
+Credential gating and background audio integration are covered by automated
+client checks. Biometric hardware behavior has not been verified on a physical
+device. Other enrolled biometrics may be offered alongside fingerprint.
+
+The server library retains streaming, server progress, and public shares. Open **On this
 device** from the server navigation menu to return to local files.
 
 Switching libraries stops the current playback session. Browsing away from the

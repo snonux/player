@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 // Widget tests for SettingsScreen.
 //
 // Tests cover:
@@ -198,7 +199,10 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
 // ---------------------------------------------------------------------------
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+  });
   testWidgets('admin drilldown returns to Settings with Up', (tester) async {
     await _pumpSettingsScreen(tester,
         currentUser: const User(id: 1, username: 'admin', isAdmin: true));
@@ -352,6 +356,7 @@ void main() {
         result.settings.savedUrl,
         equals('https://new-server.example.com'),
       );
+      expect(find.text('Login'), findsOneWidget);
     });
 
     testWidgets('saves URL when keyboard Done action is triggered',

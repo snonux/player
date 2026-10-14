@@ -1,4 +1,3 @@
-WMV, FLV, WMA, AVI and other legacy formats now play: the server converts them and the player shows "Preparing playback" while it does.
-SVG images are displayed.
-Playback problems are explained in plain words, with a Retry button that resumes where you were.
-Use-limited share links count one use per viewing, so they no longer stop mid-playback.
+Save multiple Player servers and choose a server or local files when the app starts.
+Unlock a saved server login with fingerprint/biometrics, or sign in with your server password.
+Saved logins stay separate for each server; switching servers preserves them and logout removes the selected login.
