@@ -153,12 +153,15 @@
       <button id="help-close" class="icon-btn" aria-label="Close">✕</button>
     </div>
     <div class="help-content">
-      <div class="help-shortcuts">
+      <label for="help-search">Filter keyboard shortcuts</label>
+      <input id="help-search" class="help-filter" type="search" placeholder="Key or action (press / to focus)" aria-controls="help-shortcuts" autocomplete="off">
+      <p id="help-no-results" role="status" hidden>No shortcuts match. Clear the search to show all shortcuts.</p>
+      <div id="help-shortcuts" class="help-shortcuts">
         <div class="help-row"><span><kbd>↑</kbd> <kbd>↓</kbd></span><span>Navigate media list</span></div>
         <div class="help-row"><span><kbd>k</kbd> <kbd>j</kbd></span><span>Navigate media list</span></div>
         <div class="help-row"><span><kbd>←</kbd> <kbd>→</kbd></span><span>Move left / right (seek in fullscreen)</span></div>
         <div class="help-row"><span><kbd>h</kbd> <kbd>l</kbd></span><span>Move left / right (seek in fullscreen)</span></div>
-        <div class="help-row"><span><kbd>/</kbd></span><span>Search</span></div>
+        <div class="help-row"><span><kbd>/</kbd></span><span>Search library; filter shortcuts in help</span></div>
         <div class="help-row"><span><kbd>1</kbd>–<kbd>9</kbd></span><span>Open set by position</span></div>
         <div class="help-row"><span><kbd>Tab</kbd> <kbd>Shift+Tab</kbd></span><span>Next / previous set (sidebar open)</span></div>
         <div class="help-row"><span><kbd>Enter</kbd></span><span>Open selected item</span></div>
@@ -190,7 +193,7 @@
         <div class="help-row"><span><kbd>h</kbd> <kbd>l</kbd> <kbd>+</kbd> <kbd>−</kbd> <kbd>Shift+S</kbd></span><span>Image viewer: previous / next, zoom, slideshow</span></div>
         <div class="help-row"><span><kbd>j</kbd> <kbd>k</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>H</kbd> <kbd>L</kbd></span><span>Expanded image: pan when zoomed; position active display crop</span></div>
         <div class="help-row"><span><kbd>0</kbd></span><span>Expanded image: reset zoom and pan to fitted view</span></div>
-        <div class="help-row"><span><kbd>?</kbd></span><span>Show / hide help</span></div>
+        <div class="help-row"><span><kbd>?</kbd></span><span>Show / hide help (including image viewer)</span></div>
       </div>
       <div class="help-search text-muted text-xs mt-2">
         Search: plain text searches file name. Syntax: <code>set:yoga</code> <code>min:30</code> <code>max:55</code> <code>tag:a,b</code> <code>like:1</code> <code>type:video</code> <code>sort:random</code> <code>minsize:10</code> <code>maxsize:500</code>

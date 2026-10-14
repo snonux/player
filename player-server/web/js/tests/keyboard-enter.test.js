@@ -297,6 +297,36 @@ function testAudioSeekUnchanged() {
   assert(calls.join(',') === 'back,forward,back,forward', 'Global audio/video seek dispatch must remain unchanged');
 }
 
+function testHelpSearchOwnership() {
+  const calls = [];
+  let helpOnly = true;
+  initKeyboard({
+    isModalOpen: () => true,
+    isOnlyHelpOpen: () => helpOnly,
+    helpSearch: () => calls.push('helpSearch'),
+    search: () => calls.push('librarySearch'),
+    help: () => calls.push('help'),
+  });
+  const button = { tagName: 'BUTTON', closest: () => ({}) };
+  assert(pressKey('/', button), 'Help-local slash should prevent native default');
+  assert(calls.join() === 'helpSearch', 'Slash in help should focus only its filter');
+  for (const modifier of ['ctrlKey', 'metaKey', 'altKey']) {
+    assert(!pressKey('/', button, { [modifier]: true }), 'Modified slash must stay native');
+  }
+  for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT']) {
+    assert(!pressKey('/', { tagName }), 'Slash in editable help controls must stay native');
+    pressKey('?', { tagName });
+  }
+  assert(calls.length === 1, 'Typing and chords must not refocus or close help');
+  helpOnly = false;
+  pressKey('/', button);
+  assert(calls.length === 1, 'Other dialogs must block both search destinations');
+  initKeyboard({ isLightboxOpen: () => true, help: () => calls.push('imageHelp') });
+  assert(pressKey('?'), 'Image help shortcut should prevent native default');
+  assert(calls.at(-1) === 'imageHelp', 'Expanded/fullscreen image mode must expose help');
+}
+
+testHelpSearchOwnership();
 console.log('Running keyboard Enter tests...');
 testAudioSeekUnchanged();
 testImageControlsAndCropOwnership();

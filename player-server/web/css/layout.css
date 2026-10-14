@@ -481,6 +481,13 @@ body {
 .help-content {
   overflow: auto;
 }
+.help-filter {
+  width: 100%;
+  margin: 0.4rem 0 0.75rem;
+}
+.help-row[hidden], #help-no-results[hidden] {
+  display: none;
+}
 .help-shortcuts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));

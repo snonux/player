@@ -37,7 +37,7 @@ import { closeAllModals } from './dom.js';
 import { toast } from './utils.js';
 import { initShareLinkFallback } from './share-link.js';
 import { showAdmin, triggerRescan } from './views/admin-status.js';
-import { initHelp, showSearch, toggleHelp, toggleSidebar } from './views/help.js';
+import { focusHelpSearch, initHelp, showSearch, toggleHelp, toggleSidebar } from './views/help.js';
 import {
   initMediaGrid,
   loadMedia,
@@ -314,6 +314,12 @@ function keyboardHandlers() {
         closeMediaInfo();
         return;
       }
+      // Let modal-focus restore the help opener, including image controls.
+      const openDialogs = document.querySelectorAll('.modal-overlay.open');
+      if (openDialogs.length === 1 && openDialogs[0].id === 'help-modal') {
+        openDialogs[0].classList.remove('open');
+        return;
+      }
       // With a dialog open, Escape only closes it and keeps the selection.
       // Focus left on a hidden dialog control (or body) moves back to the
       // selected card so j/k and Enter continue from there. A dialog that
@@ -340,6 +346,7 @@ function keyboardHandlers() {
     },
     share: () => shareSelected(),
     search: () => showSearch(),
+    helpSearch: focusHelpSearch,
     notes: openNotesForSelected,
     tags: openTagsForSelected,
     favorite: () => {

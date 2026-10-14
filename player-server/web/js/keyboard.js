@@ -85,13 +85,18 @@ export function initKeyboard(handlers) {
     // Any other open dialog (help, notes, tags, upload, admin, podcasts) owns
     // the keyboard. Focused dialog buttons no longer swallow letter keys, so
     // grid, playback, and rescan shortcuts must not act behind the dialog.
-    // Only Escape and ? (closing help itself) pass through.
+    // Escape and help-local ? / pass through.
     if (handlers.isModalOpen?.()) {
       if (e.key === 'Escape') {
         handlers.escape?.(e);
-      } else if (e.key === '?' && handlers.isOnlyHelpOpen?.()) {
-        e.preventDefault();
-        handlers.help?.(e);
+      } else if (handlers.isOnlyHelpOpen?.()) {
+        if (e.key === '?') {
+          e.preventDefault();
+          handlers.help?.(e);
+        } else if (e.key === '/') {
+          e.preventDefault();
+          handlers.helpSearch?.(e);
+        }
       }
       return;
     }
@@ -111,6 +116,10 @@ export function initKeyboard(handlers) {
         return;
       }
       switch (e.key) {
+        case '?':
+          e.preventDefault();
+          handlers.help?.(e);
+          return;
         case 'f':
           e.preventDefault();
           handlers.fullscreen?.(e);

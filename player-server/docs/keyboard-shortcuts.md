@@ -22,7 +22,7 @@ fields and dialogs, then resumes folder/set navigation once the grid is shown.
 | `Esc` | Close dialog, exit fullscreen, then minimize audio/video or close image view to return to thumbnails |
 | `r` | Enable shuffle, or reshuffle the current filtered result set |
 | `s` | Generate a share link for the selected media |
-| `/` | Focus the quick search bar (debounced) |
+| `/` | Focus library quick search, or filter shortcuts while help is open |
 | `n` | Open notes modal for the selected media |
 | `i` | Show / hide media info |
 | `C` | Minimize player |
@@ -32,7 +32,7 @@ fields and dialogs, then resumes folder/set navigation once the grid is shown.
 | `Shift+S` | Toggle slideshow (images) |
 | `L` | My Shares (outside expanded images) |
 | `Backspace` | Exit fullscreen or media view; otherwise go up one folder (or back to sets) |
-| `?` | Show / hide help |
+| `?` | Show / hide help, including expanded and fullscreen images |
 
 Search syntax: plain text searches file name. Modifiers: `min:30`, `max:55`, `tag:a,b`, `like:1`, `type:video`, `sort:random`, `minsize:10`, `maxsize:500`.
 
@@ -53,3 +53,6 @@ not edit the image file or provide ggaze's crop editing tool.
 Typing, browser modifier chords, native Enter on buttons/links, and dialog
 controls retain ownership. Image keys never move the hidden grid or seek
 background audio. Fullscreen audio/video retains `h/l` and Left/Right seek.
+Help filters shortcut rows by key or action, ignoring case. An empty filter shows
+all shortcuts. Press `/` from a help button to focus and select the filter; while
+typing, `/` and `?` stay text. Escape closes help and returns focus to its opener.
