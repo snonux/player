@@ -93,6 +93,22 @@ func (l Layout) PathFor(srcPath string) (path string, ok bool) {
 	return l.Cached(srcPath)
 }
 
+// CoverPathFor returns the generated set/folder cover path, mirroring the
+// media directory in the cache when configured. Outside directories are refused.
+func (l Layout) CoverPathFor(mediaDir string) (string, bool) {
+	if !l.InMediaRoot(filepath.Join(mediaDir, ".cover.jpg")) {
+		return "", false
+	}
+	if l.cacheDir != "" {
+		dir, ok := l.CachedDir(mediaDir)
+		if !ok {
+			return "", false
+		}
+		return filepath.Join(dir, ".cover.jpg"), true
+	}
+	return filepath.Join(mediaDir, ".cover.jpg"), true
+}
+
 // InMediaRoot reports whether path lies below the media root. A Layout
 // that does not know its media root (the zero Layout) says yes.
 func (l Layout) InMediaRoot(path string) bool {

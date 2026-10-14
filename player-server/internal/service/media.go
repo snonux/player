@@ -30,12 +30,15 @@ type mediaService struct {
 
 // WithThumbnailLayout makes the write side (upload, regenerate thumbnail)
 // create media thumbnails where layout says, i.e. in the thumbnail cache
-// when one is configured. Serving needs no such setting: it follows the
-// path stored with each item. It must be called before the service is used
+// when one is configured. Generated covers are discovered there as well.
+// It must be called before the service is used
 // and does nothing for a write service that is not the built-in one.
 func (s *mediaService) WithThumbnailLayout(layout thumb.Layout) *mediaService {
 	if ws, ok := s.MediaWriteService.(*writeService); ok {
 		ws.WithThumbnailLayout(layout)
+	}
+	if bs, ok := s.MediaBrowseService.(*browseService); ok {
+		bs.WithThumbnailLayout(layout)
 	}
 	return s
 }

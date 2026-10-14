@@ -38,6 +38,7 @@ func (e *apiError) HTTPStatus() int { return e.status }
 // sentinel text now matches that message so the dispatcher can use the
 // error chain's own text uniformly.
 var (
+	ErrReadOnlySet          = &apiError{msg: "set is read-only", status: http.StatusForbidden}
 	ErrNotFound             = &apiError{msg: "not found", status: http.StatusNotFound}
 	ErrForbidden            = &apiError{msg: "forbidden", status: http.StatusForbidden}
 	ErrShareNotFound        = &apiError{msg: "share not found", status: http.StatusNotFound}

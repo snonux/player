@@ -174,7 +174,9 @@ func (w *GCWorker) purgeExpired(ctx context.Context) {
 // files derived from it — the generated thumbnail and the cached transcode
 // renditions. The file goes before the row so a failure never leaves a file
 // on disk that no row accounts for; if the file cannot be removed the item
-// is kept and retried on the next run. The derived files go last, once
+// is kept and retried on the next run, except permission/read-only errors:
+// these purge only the row, since retrying cannot remove a read-only source.
+// A subsequent rescan can rediscover that unchanged file. The derived files go last, once
 // nothing refers to them any more; a thumbnail left in place would be an
 // orphan forever, and a rendition would keep deleted content playable from
 // the cache until it happened to be evicted.
@@ -184,16 +186,38 @@ func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
 		absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
 	}
 
+	if !confinedPath(w.mediaRoot, absPath) {
+		// An inaccessible ancestor is different from an escaping symlink.
+		// Neither may be unlinked safely, but legacy inaccessible trash can
+		// still lose its row once without touching any filesystem paths.
+		if _, err := os.Lstat(absPath); lexicalPathWithin(w.mediaRoot, absPath) && readonlyError(err) {
+			w.purgeInaccessible(ctx, item)
+			return
+		}
+		if w.logger != nil {
+			w.logger.Warn("gc refusing source outside media root", "id", item.ID, "path", absPath)
+		}
+		return
+	}
+
 	// .cover.jpg is generated artwork shared by the set/folder, not media
 	// owned by this legacy row. Keep it when collecting a row imported by
 	// an older scanner (including rows already soft-deleted before the fix).
 	if absPath != "" && filepath.Base(filepath.FromSlash(item.RelPath)) != ".cover.jpg" {
 		// A file that is already gone is fine; proceed with the row.
 		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
-			if w.logger != nil {
-				w.logger.Warn("gc remove file", "path", absPath, "err", err)
+			if readonlyError(err) {
+				// Legacy trash in a read-only set cannot be removed. Purge its
+				// row once; a later rescan may import the unchanged file again.
+				if w.logger != nil {
+					w.logger.Warn("gc keeping read-only source, purging row", "id", item.ID, "path", absPath)
+				}
+			} else {
+				if w.logger != nil {
+					w.logger.Warn("gc remove file", "path", absPath, "err", err)
+				}
+				return
 			}
-			return
 		}
 	}
 
@@ -203,11 +227,29 @@ func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
 		}
 		return
 	}
-	removeOwnThumbnail(w.thumbRm, w.thumbLayout, item)
+	if confinedPath(w.mediaRoot, item.ThumbnailPath) || (w.thumbLayout.CacheDir() != "" && confinedPath(w.thumbLayout.CacheDir(), item.ThumbnailPath)) {
+		removeOwnThumbnail(w.thumbRm, w.thumbLayout, item)
+	}
 	w.removeRenditions(item.ID)
 
 	if w.logger != nil {
 		w.logger.Info("gc deleted media", "id", item.ID, "path", absPath)
+	}
+}
+
+// purgeInaccessible removes only database/cache state when source confinement
+// cannot be resolved because a directory refuses access. Thumbnail paths may
+// use the same inaccessible ancestors and are deliberately left untouched.
+func (w *GCWorker) purgeInaccessible(ctx context.Context, item *model.Media) {
+	if err := w.store.HardDeleteMedia(ctx, item.ID); err != nil {
+		if w.logger != nil {
+			w.logger.Error("gc hard delete", "id", item.ID, "err", err)
+		}
+		return
+	}
+	w.removeRenditions(item.ID)
+	if w.logger != nil {
+		w.logger.Warn("gc keeping inaccessible source, purging row", "id", item.ID)
 	}
 }
 

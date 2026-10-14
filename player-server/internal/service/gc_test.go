@@ -154,15 +154,13 @@ func TestGCWorker_SkipsDBHardDeleteWhenFileRemoveFails(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	file := filepath.Join(tmpDir, "old.mp4")
-	if err := os.WriteFile(file, []byte("old"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
+	// A non-empty directory produces ENOTEMPTY, not a read-only error.
+	if err := os.Mkdir(file, 0o755); err != nil {
+		t.Fatal(err)
 	}
-
-	// Make directory unwritable so os.Remove fails.
-	if err := os.Chmod(tmpDir, 0o555); err != nil {
-		t.Fatalf("chmod: %v", err)
+	if err := os.WriteFile(filepath.Join(file, "child"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	defer os.Chmod(tmpDir, 0o755)
 
 	deletedAt := now.Add(-8 * 24 * time.Hour)
 	var hardDeleteCalled bool
@@ -183,11 +181,6 @@ func TestGCWorker_SkipsDBHardDeleteWhenFileRemoveFails(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	w := NewGCWorker(store, &clock.MockClock{T: now}, tmpDir, time.Minute, logger).WithAge(7 * 24 * time.Hour)
 	w.RunOnce()
-
-	// Restore permissions so we can verify the file still exists.
-	if err := os.Chmod(tmpDir, 0o755); err != nil {
-		t.Fatalf("restore chmod: %v", err)
-	}
 
 	if hardDeleteCalled {
 		t.Fatal("expected HardDeleteMedia to not be called when file removal fails")

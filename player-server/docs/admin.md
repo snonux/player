@@ -172,3 +172,13 @@ notices the missing thumbnail and regenerates it.
 - `POST /api/media/{id}/restore` — restore a soft-deleted item
 
 Soft-deleted media remains on disk until garbage collection removes it (see `GC_INTERVAL_MINUTES`).
+
+### Read-only Libraries
+
+With `THUMBNAIL_CACHE_DIR` configured, generated thumbnails and set/folder
+covers live in the cache, so cover regeneration works for read-only libraries.
+Uploads and soft-deletion return `403` when the source directory cannot be
+written. Restoring trash and editing metadata remain available. If a set becomes
+read-only with old trash already queued, GC removes the database row once and
+keeps its source file; rescanning can discover that file again. Other filesystem
+errors retain the trash entry for retry.

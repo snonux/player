@@ -28,6 +28,7 @@ type browseService struct {
 	helper         *accessHelper
 	podcastBrowser PodcastBrowser
 	thumbResolver  thumb.Resolver
+	thumbLayout    thumb.Layout
 }
 
 // PodcastBrowser augments a BrowseResult with podcast-specific folders and episodes.
@@ -37,8 +38,9 @@ type PodcastBrowser interface {
 
 // podcastBrowseService handles podcast-specific grid augmentation.
 type podcastBrowseService struct {
-	store     repository.PodcastRepo
-	mediaRoot string
+	store       repository.PodcastRepo
+	mediaRoot   string
+	thumbLayout thumb.Layout
 }
 
 // NewPodcastBrowseService creates a PodcastBrowser backed by a PodcastRepo.
@@ -65,7 +67,7 @@ func (p *podcastBrowseService) AugmentBrowseSet(ctx context.Context, result *Bro
 			if _, ok := knownFolders[name]; ok {
 				continue
 			}
-			result.Folders = append(result.Folders, BrowseFolder{Name: name, HasCover: folderHasCover(p.mediaRoot, set.RootPath, "", name, media)})
+			result.Folders = append(result.Folders, BrowseFolder{Name: name, HasCover: folderHasCoverIn(p.thumbLayout, p.mediaRoot, set.RootPath, "", name, media)})
 		}
 		sort.Slice(result.Folders, func(i, j int) bool { return result.Folders[i].Name < result.Folders[j].Name })
 	} else {
@@ -104,6 +106,15 @@ func NewBrowseServiceWithResolver(store repository.BrowseServiceStore, clk clock
 		podcastBrowser: browser,
 		thumbResolver:  resolver,
 	}
+}
+
+// WithThumbnailLayout enables generated cover discovery in the configured cache.
+func (s *browseService) WithThumbnailLayout(layout thumb.Layout) *browseService {
+	s.thumbLayout = layout
+	if p, ok := s.podcastBrowser.(*podcastBrowseService); ok {
+		p.thumbLayout = layout
+	}
+	return s
 }
 
 func (s *browseService) ListSets(ctx context.Context, userID int64) ([]model.Set, error) {
@@ -350,18 +361,18 @@ func buildFolderMap(media []model.Media, parent string) (map[string]*folderConte
 	return folderMap, items
 }
 
-// folderHasCover determines whether a folder has a cover image on disk or among thumbnails.
-func folderHasCover(mediaRoot, setRootPath, parent, name string, media []model.Media) bool {
+// folderHasCoverIn discovers generated and source artwork for a folder.
+func folderHasCoverIn(layout thumb.Layout, mediaRoot, setRootPath, parent, name string, media []model.Media) bool {
 	subPath := filepath.Join(parent, name)
 	folderDir := filepath.Clean(filepath.Join(mediaRoot, setRootPath, filepath.FromSlash(subPath)))
-	coverPath := filepath.Join(folderDir, ".cover.jpg")
+	coverPath, _ := layout.CoverPathFor(folderDir)
 	_, err := os.Stat(coverPath)
 	_, hasDirectCover := folderCoverFile(folderDir)
 	return err == nil || hasDirectCover || randomFolderThumbnail(media, filepath.ToSlash(subPath)) != ""
 }
 
-// buildFolders converts the folder map into sorted BrowseFolder results, flattening single-file folders.
-func buildFolders(folderMap map[string]*folderContent, media []model.Media, items []model.Media, mediaRoot, setRootPath, parent string) ([]BrowseFolder, []model.Media) {
+// buildFoldersIn flattens single-file folders and discovers folder covers.
+func buildFoldersIn(layout thumb.Layout, folderMap map[string]*folderContent, media []model.Media, items []model.Media, mediaRoot, setRootPath, parent string) ([]BrowseFolder, []model.Media) {
 	var folders []BrowseFolder
 	for name, fc := range folderMap {
 		files := folderContentFiles(fc.files)
@@ -372,7 +383,7 @@ func buildFolders(folderMap map[string]*folderContent, media []model.Media, item
 		if total == 1 && len(files) == 1 {
 			items = append(items, files[0])
 		} else {
-			hasCover := folderHasCover(mediaRoot, setRootPath, parent, name, media)
+			hasCover := folderHasCoverIn(layout, mediaRoot, setRootPath, parent, name, media)
 			folders = append(folders, BrowseFolder{Name: name, HasCover: hasCover})
 		}
 	}
@@ -400,7 +411,7 @@ func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, pare
 	}
 
 	folderMap, items := buildFolderMap(media, parent)
-	folders, items := buildFolders(folderMap, media, items, s.mediaRoot, set.RootPath, parent)
+	folders, items := buildFoldersIn(s.thumbLayout, folderMap, media, items, s.mediaRoot, set.RootPath, parent)
 
 	result := &BrowseResult{
 		CurrentPath: parent,
@@ -441,11 +452,10 @@ func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder str
 	}
 
 	prefix := filepath.ToSlash(strings.Trim(folder, "/"))
-	baseDir := filepath.Join(s.mediaRoot, filepath.FromSlash(set.RootPath))
-	if prefix != "" {
-		baseDir = filepath.Join(baseDir, filepath.FromSlash(prefix))
+	baseDir, coverPath, err := coverDestination(s.mediaRoot, s.thumbLayout, set.RootPath, folder)
+	if err != nil {
+		return nil, err
 	}
-	coverPath := filepath.Join(filepath.Clean(baseDir), ".cover.jpg")
 
 	info, err := os.Stat(coverPath)
 	if err == nil {
@@ -456,6 +466,9 @@ func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder str
 		}, nil
 	}
 	if fr, ok := folderCoverFile(baseDir); ok {
+		if !confinedPath(s.mediaRoot, fr.Path) {
+			return nil, ErrForbidden
+		}
 		return fr, nil
 	}
 
@@ -466,6 +479,9 @@ func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder str
 	candidate := randomFolderThumbnail(media, prefix)
 	if candidate == "" {
 		return nil, ErrNotFound
+	}
+	if !confinedPath(s.mediaRoot, candidate) && !(s.thumbLayout.CacheDir() != "" && confinedPath(s.thumbLayout.CacheDir(), candidate)) {
+		return nil, ErrForbidden
 	}
 	info, err = os.Stat(candidate)
 	if err != nil {

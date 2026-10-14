@@ -35,8 +35,9 @@ type writeService struct {
 	store     repository.WriteServiceStore
 	clock     clock.Clock
 	mediaRoot string
-	// thumbGen renders set and folder covers straight to their file.
-	thumbGen thumb.Generator
+	// thumbGen renders covers into a temporary file before atomic replacement.
+	thumbGen    thumb.Generator
+	thumbLayout thumb.Layout
 	// thumbs makes and removes media thumbnails; nil without a generator.
 	// It keeps them beside the source unless WithThumbnailLayout says
 	// otherwise.
@@ -68,13 +69,31 @@ func NewWriteService(store repository.WriteServiceStore, clk clock.Clock, mediaR
 // layout says, i.e. in the thumbnail cache when one is configured. It must
 // be called before the service is used.
 func (s *writeService) WithThumbnailLayout(layout thumb.Layout) *writeService {
+	s.thumbLayout = layout
 	s.thumbs = newThumbnailMakerIn(s.thumbGen, s.logger, layout)
 	return s
 }
 
 func (s *writeService) SoftDeleteMedia(ctx context.Context, mediaID, userID int64) error {
-	_, err := s.helper.verifyModifyAccess(ctx, mediaID, userID)
+	media, err := s.helper.verifyModifyAccess(ctx, mediaID, userID)
 	if err != nil {
+		return err
+	}
+	path := media.AbsPath
+	if path == "" {
+		set, err := s.store.GetSetByID(ctx, media.SetID)
+		if err != nil {
+			return fmt.Errorf("get set: %w", err)
+		}
+		if set == nil {
+			return ErrNotFound
+		}
+		path = filepath.Join(s.mediaRoot, set.RootPath, media.RelPath)
+	}
+	if !confinedPath(s.mediaRoot, path) {
+		return ErrForbidden
+	}
+	if err := writableMediaDir(s.mediaRoot, filepath.Dir(path)); err != nil {
 		return err
 	}
 	return s.store.SoftDeleteMedia(ctx, mediaID)
@@ -106,10 +125,16 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 	}
 
 	dir := filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath))
+	if !confinedPath(s.mediaRoot, dir) {
+		return nil, ErrForbidden
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("mkdir: %w", err)
+		return nil, mutationError(err)
 	}
 
+	if err := writableMediaDir(s.mediaRoot, dir); err != nil {
+		return nil, err
+	}
 	path := uniqueFilename(dir, filename)
 	if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(dir)+string(filepath.Separator)) {
 		return nil, errors.New("invalid filename")
@@ -123,7 +148,9 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 
 	if err := ImportMediaFile(ctx, s.store, media, s.prober, s.thumbs); err != nil {
 		removeAndLog(path)
-		s.store.HardDeleteMedia(ctx, media.ID)
+		if cleanupErr := s.store.HardDeleteMedia(ctx, media.ID); cleanupErr != nil {
+			s.logger.Warn("upload row cleanup failed", "id", media.ID, "err", cleanupErr)
+		}
 		return nil, err
 	}
 
@@ -225,12 +252,30 @@ func (s *writeService) RegenerateSetCover(ctx context.Context, setID int64, fold
 		return ErrNotFound
 	}
 
+	_, coverPath, err := coverDestination(s.mediaRoot, s.thumbLayout, set.RootPath, folder)
+	if err != nil {
+		return err
+	}
+	layout := s.thumbLayout
 	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
 	if err != nil {
 		return fmt.Errorf("list media: %w", err)
 	}
+	candidate, copyThumbnail, err := coverCandidate(media, filepath.ToSlash(strings.Trim(folder, "/")))
+	if err != nil {
+		return err
+	}
+	source := candidate.AbsPath
+	if copyThumbnail {
+		source = candidate.ThumbnailPath
+	}
+	if !confinedPath(s.mediaRoot, source) && !(copyThumbnail && layout.CacheDir() != "" && confinedPath(layout.CacheDir(), source)) {
+		return ErrForbidden
+	}
+	return s.renderCover(ctx, candidate, copyThumbnail, coverPath)
+}
 
-	prefix := filepath.ToSlash(strings.Trim(folder, "/"))
+func coverCandidate(media []model.Media, prefix string) (model.Media, bool, error) {
 	var artworkCandidates []model.Media
 	var videoCandidates []model.Media
 	var imageCandidates []model.Media
@@ -261,45 +306,60 @@ func (s *writeService) RegenerateSetCover(ctx context.Context, setID int64, fold
 		}
 	}
 
-	baseDir := filepath.Join(s.mediaRoot, filepath.FromSlash(set.RootPath))
-	if prefix != "" {
-		baseDir = filepath.Join(baseDir, filepath.FromSlash(prefix))
-	}
-	coverPath := filepath.Join(filepath.Clean(baseDir), ".cover.jpg")
-
 	switch {
 	case len(artworkCandidates) > 0:
-		candidate := randomMedia(artworkCandidates)
-		if err := s.thumbGen.Generate(ctx, candidate.AbsPath, coverPath, 0); err != nil {
-			return fmt.Errorf("generate cover: %w", err)
-		}
+		return randomMedia(artworkCandidates), false, nil
 	case len(videoCandidates) > 0:
-		candidate := randomMedia(videoCandidates)
-		meta, err := s.prober.Probe(ctx, candidate.AbsPath)
-		if err != nil {
-			return fmt.Errorf("probe cover candidate: %w", err)
-		}
-		if err := s.thumbGen.Generate(ctx, candidate.AbsPath, coverPath, meta.Duration); err != nil {
-			return fmt.Errorf("generate cover: %w", err)
-		}
+		return randomMedia(videoCandidates), false, nil
 	case len(imageCandidates) > 0:
-		candidate := randomMedia(imageCandidates)
-		if err := s.thumbGen.Generate(ctx, candidate.AbsPath, coverPath, 0); err != nil {
-			return fmt.Errorf("generate cover: %w", err)
-		}
+		return randomMedia(imageCandidates), false, nil
 	case len(thumbnailCandidates) > 0:
-		candidate := randomMedia(thumbnailCandidates)
-		if err := copyFile(candidate.ThumbnailPath, coverPath); err != nil {
-			return fmt.Errorf("copy thumbnail cover: %w", err)
-		}
+		return randomMedia(thumbnailCandidates), true, nil
 	default:
-		// Use the sentinel so handleError maps this to HTTP 400 (bad request)
-		// instead of falling through to the default 500 branch — the request
-		// is well-formed, the set just has nothing usable as a cover.
-		return ErrEmptySetForCover
+		return model.Media{}, false, ErrEmptySetForCover
 	}
+}
 
-	return nil
+func (s *writeService) renderCover(ctx context.Context, candidate model.Media, copyThumbnail bool, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return mutationError(err)
+	}
+	f, err := os.CreateTemp(filepath.Dir(dst), ".tmp-cover-*.jpg")
+	if err != nil {
+		return mutationError(err)
+	}
+	tmp := f.Name()
+	defer removeAndLog(tmp)
+	if err := errors.Join(f.Chmod(0o644), f.Close()); err != nil {
+		return err
+	}
+	if copyThumbnail {
+		err = copyFile(candidate.ThumbnailPath, tmp)
+	} else {
+		if s.thumbGen == nil {
+			return errors.New("cover generation is not configured")
+		}
+		var duration float64
+		if candidate.Type == model.MediaTypeVideo {
+			meta, probeErr := s.prober.Probe(ctx, candidate.AbsPath)
+			if probeErr != nil {
+				return fmt.Errorf("probe cover candidate: %w", probeErr)
+			}
+			duration = meta.Duration
+		}
+		err = s.thumbGen.Generate(ctx, candidate.AbsPath, tmp, duration)
+	}
+	if err != nil {
+		return fmt.Errorf("generate cover: %w", err)
+	}
+	info, err := os.Stat(tmp)
+	if err != nil {
+		return err
+	}
+	if info.Size() == 0 {
+		return errors.New("generator wrote an empty cover")
+	}
+	return os.Rename(tmp, dst)
 }
 
 func randomMedia(media []model.Media) model.Media {
@@ -314,7 +374,7 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	// Do NOT defer out.Close(): for the destination file we must observe the
 	// Close error explicitly. When the OS flushes buffered writes during Close
@@ -340,9 +400,9 @@ func copyFile(src, dst string) error {
 func (s *writeService) saveUploadedMedia(ctx context.Context, setID int64, path string, data io.Reader, size int64) (*model.Media, error) {
 	f, err := os.Create(path)
 	if err != nil {
-		return nil, fmt.Errorf("create file: %w", err)
+		return nil, mutationError(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	n, err := io.Copy(f, data)
 	if err != nil {

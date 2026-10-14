@@ -530,12 +530,13 @@ func (f *fakeRenditionGC) Prune(context.Context) error { f.pruned++; return f.er
 func (f *fakeRenditionGC) Remove(id int64) error       { f.removed = append(f.removed, id); return f.err }
 
 func TestGCWorker_MaintainsRenditionCache(t *testing.T) {
+	root := t.TempDir()
 	now := newMockClock().T
 	old := now.Add(-8 * 24 * time.Hour)
 	recent := now.Add(-time.Hour)
 	trash := []model.Media{
-		{ID: 1, AbsPath: "/nonexistent/old.avi", DeletedAt: &old},
-		{ID: 2, AbsPath: "/nonexistent/new.avi", DeletedAt: &recent},
+		{ID: 1, AbsPath: filepath.Join(root, "nonexistent", "old.avi"), DeletedAt: &old},
+		{ID: 2, AbsPath: filepath.Join(root, "nonexistent", "new.avi"), DeletedAt: &recent},
 	}
 
 	tests := []struct {
@@ -557,7 +558,7 @@ func TestGCWorker_MaintainsRenditionCache(t *testing.T) {
 				HardDeleteMediaFunc:  func(context.Context, int64) error { return nil },
 			}}
 			cache := &fakeRenditionGC{err: tt.cacheErr}
-			w := NewGCWorker(store, newMockClock(), "/media", time.Minute, nil).WithRenditionCache(cache)
+			w := NewGCWorker(store, newMockClock(), root, time.Minute, nil).WithRenditionCache(cache)
 			if err := w.RunOnce(); err != nil {
 				t.Fatalf("RunOnce: %v", err)
 			}

@@ -693,10 +693,15 @@ func TestMediaService_RemoveTag(t *testing.T) {
 
 func TestMediaService_SoftDeleteMedia(t *testing.T) {
 	ctx := context.Background()
+	root := t.TempDir()
+	setDir := filepath.Join(root, "music")
+	if err := os.MkdirAll(setDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	store := &repository.MockStore{
 		MediaRepo: repository.MockMediaRepo{
 			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
-				return &model.Media{ID: 1, SetID: 1}, nil
+				return &model.Media{ID: 1, SetID: 1, AbsPath: filepath.Join(setDir, "song.mp3")}, nil
 			},
 			SoftDeleteMediaFunc: func(ctx context.Context, id int64) error {
 				return nil
@@ -713,7 +718,7 @@ func TestMediaService_SoftDeleteMedia(t *testing.T) {
 			},
 		},
 	}
-	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+	svc := NewMediaService(store, newMockClock(), root, nil, nil)
 	if err := svc.SoftDeleteMedia(ctx, 1, 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1540,10 +1545,15 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 	})
 
 	t.Run("owner can soft delete", func(t *testing.T) {
+		root := t.TempDir()
+		setDir := filepath.Join(root, "music")
+		if err := os.MkdirAll(setDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
 		store := &repository.MockStore{
 			MediaRepo: repository.MockMediaRepo{
 				GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
-					return &model.Media{ID: 1, SetID: 1}, nil
+					return &model.Media{ID: 1, SetID: 1, AbsPath: filepath.Join(setDir, "song.mp3")}, nil
 				},
 				SoftDeleteMediaFunc: func(ctx context.Context, id int64) error { return nil },
 			},
@@ -1558,7 +1568,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+		svc := NewMediaService(store, newMockClock(), root, nil, nil)
 		err := svc.SoftDeleteMedia(ctx, 1, 2)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1969,8 +1979,8 @@ func TestMediaService_RegenerateSetCover(t *testing.T) {
 			t.Fatalf("expected input %q, got %q", coverPath, gotInput)
 		}
 		wantOutput := filepath.Join(tmpDir, "audiobooks", ".cover.jpg")
-		if gotOutput != wantOutput {
-			t.Fatalf("expected output %q, got %q", wantOutput, gotOutput)
+		if filepath.Dir(gotOutput) != filepath.Dir(wantOutput) || !strings.HasPrefix(filepath.Base(gotOutput), ".tmp-cover-") {
+			t.Fatalf("expected temporary output beside %q, got %q", wantOutput, gotOutput)
 		}
 		if _, err := os.Stat(wantOutput); err != nil {
 			t.Fatalf("expected generated cover: %v", err)
