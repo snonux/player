@@ -247,11 +247,15 @@ func (s *FSScanner) loadExistingMedia(ctx context.Context, setID int64, setName 
 // reconcileOrphans soft-deletes media rows whose underlying file is no
 // longer present on disk. seenRel is the set of relPaths produced by the
 // current scan; any active media row in existing whose key is NOT in
-// seenRel had its file deleted between scans. Soft-deleted rows are left
-// alone so the soft-delete state survives the rescan.
-func (s *FSScanner) reconcileOrphans(ctx context.Context, existing map[string]model.Media, seenRel map[string]struct{}, setName string) {
+// seenRel had its file deleted between scans, unless its directory was skipped.
+// Soft-deleted rows are left alone so the soft-delete state survives the rescan.
+func (s *FSScanner) reconcileOrphans(ctx context.Context, existing map[string]model.Media, seenRel map[string]struct{}, skipped map[string]error, setPath, setName string) {
 	for relPath, media := range existing {
 		if _, ok := seenRel[relPath]; ok {
+			continue
+		}
+		if belowSkippedDirectory(filepath.Join(setPath, filepath.FromSlash(relPath)), skipped) {
+			// Discovery could not establish whether this file still exists.
 			continue
 		}
 		if media.DeletedAt != nil {
@@ -264,6 +268,18 @@ func (s *FSScanner) reconcileOrphans(ctx context.Context, existing map[string]mo
 		}
 		s.log().Info("scanner soft-deleted orphan", "set", setName, "rel_path", relPath, "id", media.ID)
 	}
+}
+
+// belowSkippedDirectory matches complete path components, so skipping "private"
+// does not preserve missing files in a sibling named "private-old".
+func belowSkippedDirectory(path string, skipped map[string]error) bool {
+	for dir := range skipped {
+		rel, err := filepath.Rel(dir, path)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // updateAudioThumbnails patches existing audio tracks when a new cover image appears.
@@ -339,9 +355,12 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *model.ScanProgress) error {
 	disc := newFileDiscoverer(s.fs)
 	sc.coverImages = disc.gatherCoverImages(sc.path)
-	files, err := disc.Discover(sc.path)
+	files, skipped, err := disc.Discover(sc.path)
 	if err != nil {
 		return err
+	}
+	for path, err := range skipped {
+		s.log().Warn("scanner skipped unreadable directory", "set", sc.name, "path", path, "err", err)
 	}
 	sc.files = files
 
@@ -353,7 +372,7 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 			seenRel[filepath.ToSlash(rel)] = struct{}{}
 		}
 	}
-	s.reconcileOrphans(ctx, sc.existing, seenRel, sc.name)
+	s.reconcileOrphans(ctx, sc.existing, seenRel, skipped, sc.path, sc.name)
 
 	s.sweepStaleTemporaries(sc.path, files)
 	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path, s.fileExists, s.layout)
@@ -465,7 +484,8 @@ func feedPaths(scanCtx context.Context, files []string, pathChan chan<- string) 
 // collectFiles walks the set and returns the absolute paths of all supported media files.
 // Kept for backward compatibility with existing tests that call it directly.
 func (s *FSScanner) collectFiles(setPath string) ([]string, error) {
-	return newFileDiscoverer(s.fs).Discover(setPath)
+	files, _, err := newFileDiscoverer(s.fs).Discover(setPath)
+	return files, err
 }
 
 func findCoverImage(filePath string, coverImages map[string]string, setPath string) string {

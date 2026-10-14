@@ -2,6 +2,8 @@
 package scanner
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -39,11 +41,23 @@ func newFileDiscoverer(fs FS) *fileDiscoverer {
 
 // Discover walks setPath and returns the absolute paths of all supported media
 // files, skipping hidden directories, macOS AppleDouble sidecars, and the
-// application-generated .cover.jpg artwork file.
-func (d *fileDiscoverer) Discover(setPath string) ([]string, error) {
+// application-generated .cover.jpg artwork file. Unreadable directories are
+// returned separately so callers can preserve their indexed descendants.
+func (d *fileDiscoverer) Discover(setPath string) ([]string, map[string]error, error) {
 	var files []string
+	skipped := make(map[string]error)
 	walkErr := d.fs.WalkDir(setPath, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			// WalkDir calls back a second time with the directory entry when
+			// reading its children fails. A permission failure at the set
+			// root can also arrive before its entry is available.
+			if (entry != nil && entry.IsDir()) || (path == setPath && errors.Is(err, fs.ErrPermission)) {
+				skipped[filepath.Clean(path)] = err
+				return filepath.SkipDir
+			}
 			return fmt.Errorf("walk %q: %w", path, err)
 		}
 		// Skip hidden directories (e.g. .git, .thumbnails) to avoid
@@ -67,9 +81,9 @@ func (d *fileDiscoverer) Discover(setPath string) ([]string, error) {
 		return nil
 	})
 	if walkErr != nil {
-		return nil, walkErr
+		return nil, nil, walkErr
 	}
-	return files, nil
+	return files, skipped, nil
 }
 
 // gatherCoverImages walks the set directory and records the first cover image
