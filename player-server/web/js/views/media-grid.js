@@ -3,6 +3,7 @@ import { state, setMedia } from '../state.js';
 import { clearSelection, selectByElement } from '../selection.js';
 import { fmtSize } from '../dom.js';
 import { escapeHtml, fmtDur, toast } from '../utils.js';
+import { initPictureLayout, pictureRatio } from './picture-layout.js';
 
 let callbacks = {};
 let mediaPageSize = 100;
@@ -36,6 +37,8 @@ export function paginateItems(items, page, pageSize = mediaPageSize) {
 export function initMediaGrid(options = {}) {
   callbacks = options;
   const grid = document.getElementById('media-grid');
+
+  initPictureLayout(grid);
 
   grid?.addEventListener('dblclick', (e) => {
     const el = e.target.closest('.media-card, .media-row');
@@ -527,7 +530,7 @@ function renderItem(m, index) {
     const resText = escapeHtml(m.resolution || '');
     const safeSizeText = escapeHtml(sizeText || '');
     return `
-      <div class="media-card image-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
+      <div class="media-card image-card" data-picture-ratio="${pictureRatio(m.width, m.height)}" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${resText}${safeSizeText ? ' • ' + safeSizeText : ''}</span>

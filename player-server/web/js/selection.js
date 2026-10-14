@@ -44,17 +44,18 @@ function syncedIndex(cards) {
 
 // Compute grid geometry from the rendered cards.
 function gridGeometry(cards) {
-  if (!cards.length) return { cols: 0, rowMap: [] };
-  const first = cards[0].getBoundingClientRect();
-  let colCount = 0;
-  for (let i = 0; i < cards.length; i++) {
-    const r = cards[i].getBoundingClientRect();
-    if (Math.round(r.top) !== Math.round(first.top)) break;
-    colCount++;
-  }
-  // rowMap[i] = row index of cards[i]
-  const rowMap = cards.map((_, i) => Math.floor(i / colCount));
-  return { cols: colCount || 1, rowMap };
+  const rows = [];
+  const rects = cards.map(card => card.getBoundingClientRect());
+  const rowMap = rects.map((rect, index) => {
+    let row = rows.length - 1;
+    if (row < 0 || Math.abs(rect.top - rects[rows[row][0]].top) > 1) {
+      rows.push([]);
+      row++;
+    }
+    rows[row].push(index);
+    return row;
+  });
+  return { rows, rowMap, rects };
 }
 
 export function select(index) {
@@ -97,16 +98,7 @@ export function navLeft() {
     select(cards.length - 1);
     return;
   }
-  const { cols } = gridGeometry(cards);
-  if (cols === 0) return;
-  const row = Math.floor(idx / cols);
-  const col = idx % cols;
-  if (col > 0) {
-    select(idx - 1);
-  } else if (row > 0) {
-    // wrap to end of previous row
-    select(row * cols - 1);
-  }
+  if (idx > 0) select(idx - 1);
 }
 
 export function navRight() {
@@ -117,17 +109,18 @@ export function navRight() {
     select(0);
     return;
   }
-  const { cols } = gridGeometry(cards);
-  if (cols === 0) return;
-  const row = Math.floor(idx / cols);
-  const col = idx % cols;
-  const lastInRow = Math.min((row + 1) * cols, cards.length) - 1;
-  if (col < (lastInRow - row * cols)) {
-    select(idx + 1);
-  } else if (idx < cards.length - 1) {
-    // wrap to start of next row
-    select(Math.min((row + 1) * cols, cards.length - 1));
-  }
+  if (idx < cards.length - 1) select(idx + 1);
+}
+
+function verticalTarget(cards, idx, delta) {
+  const { rows, rowMap, rects } = gridGeometry(cards);
+  const row = rows[rowMap[idx] + delta];
+  if (!row) return idx;
+  const center = rects[idx].left + rects[idx].width / 2;
+  return row.reduce((nearest, candidate) => {
+    const distance = i => Math.abs(rects[i].left + rects[i].width / 2 - center);
+    return distance(candidate) < distance(nearest) ? candidate : nearest;
+  }, row[0]);
 }
 
 export function navUp() {
@@ -138,12 +131,7 @@ export function navUp() {
     select(cards.length - 1);
     return;
   }
-  const { cols } = gridGeometry(cards);
-  if (cols === 0) return;
-  const idxAbove = idx - cols;
-  if (idxAbove >= 0) {
-    select(idxAbove);
-  }
+  select(verticalTarget(cards, idx, -1));
 }
 
 export function navDown() {
@@ -154,12 +142,7 @@ export function navDown() {
     select(0);
     return;
   }
-  const { cols } = gridGeometry(cards);
-  if (cols === 0) return;
-  const idxBelow = idx + cols;
-  if (idxBelow < cards.length) {
-    select(idxBelow);
-  }
+  select(verticalTarget(cards, idx, 1));
 }
 
 export function currentIndex() { return syncedIndex(refreshCards()); }

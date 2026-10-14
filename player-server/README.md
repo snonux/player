@@ -12,6 +12,7 @@ Features
 
 - **Videos** — streaming with seek (range requests), optional remuxing, thumbnail previews
 - **Images** — lightbox viewer with zoom, slideshow mode, and pan support
+- **Picture layout** — optional justified thumbnail rows fit image aspect ratios without cropping. Toggle above the grid; the preference is saved. Unknown dimensions use square tiles and extreme aspect ratios use bounded tiles with the full image visible. Sets without images keep the regular grid.
 - **Audio / Audiobooks** — cover art display, progress tracking (resumes where you left off)
 - **Podcasts** — subscribe to RSS/Atom feeds, download episodes to the server, mark listened/unlistened
 
