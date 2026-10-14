@@ -726,11 +726,16 @@ func TestMediaService_SoftDeleteMedia(t *testing.T) {
 
 func TestMediaService_RestoreMedia(t *testing.T) {
 	ctx := context.Background()
+	root := t.TempDir()
+	path := filepath.Join(root, "source.mp4")
+	if err := os.WriteFile(path, []byte("source"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	var called bool
 	store := &repository.MockStore{
 		MediaRepo: repository.MockMediaRepo{
 			GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
-				return &model.Media{ID: 1, SetID: 1}, nil
+				return &model.Media{ID: 1, SetID: 1, AbsPath: path}, nil
 			},
 			RestoreMediaFunc: func(ctx context.Context, id int64) error {
 				called = true
@@ -748,7 +753,7 @@ func TestMediaService_RestoreMedia(t *testing.T) {
 			},
 		},
 	}
-	svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+	svc := NewMediaService(store, newMockClock(), root, nil, nil)
 	if err := svc.RestoreMedia(ctx, 1, 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1576,10 +1581,16 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 	})
 
 	t.Run("owner can restore", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, "source.mp4")
+		if err := os.WriteFile(path, []byte("source"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
 		store := &repository.MockStore{
 			MediaRepo: repository.MockMediaRepo{
 				GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
-					return &model.Media{ID: 1, SetID: 1}, nil
+					return &model.Media{ID: 1, SetID: 1, AbsPath: path}, nil
 				},
 				RestoreMediaFunc: func(ctx context.Context, id int64) error { return nil },
 			},
@@ -1594,7 +1605,7 @@ func TestMediaService_UnauthorizedAccessDenied(t *testing.T) {
 				},
 			},
 		}
-		svc := NewMediaService(store, newMockClock(), "/tmp/media", nil, nil)
+		svc := NewMediaService(store, newMockClock(), root, nil, nil)
 		err := svc.RestoreMedia(ctx, 1, 2)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

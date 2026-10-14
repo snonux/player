@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/mediatype"
@@ -32,6 +33,7 @@ func removeAndLog(path string) {
 
 // writeService handles mutations such as upload, soft-delete and restore.
 type writeService struct {
+	trashLock *sync.Mutex
 	store     repository.WriteServiceStore
 	clock     clock.Clock
 	mediaRoot string
@@ -55,6 +57,7 @@ func NewWriteService(store repository.WriteServiceStore, clk clock.Clock, mediaR
 	logger := slog.Default()
 	return &writeService{
 		store:     store,
+		trashLock: new(sync.Mutex),
 		clock:     clk,
 		mediaRoot: mediaRoot,
 		thumbGen:  thumbGen,
@@ -75,6 +78,8 @@ func (s *writeService) WithThumbnailLayout(layout thumb.Layout) *writeService {
 }
 
 func (s *writeService) SoftDeleteMedia(ctx context.Context, mediaID, userID int64) error {
+	s.trashLock.Lock()
+	defer s.trashLock.Unlock()
 	media, err := s.helper.verifyModifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return err
@@ -100,11 +105,64 @@ func (s *writeService) SoftDeleteMedia(ctx context.Context, mediaID, userID int6
 }
 
 func (s *writeService) RestoreMedia(ctx context.Context, mediaID, userID int64) error {
-	_, err := s.helper.verifyRestoreAccess(ctx, mediaID, userID)
+	s.trashLock.Lock()
+	defer s.trashLock.Unlock()
+	media, err := s.helper.verifyRestoreAccess(ctx, mediaID, userID)
 	if err != nil {
 		return err
 	}
+	if err := s.checkRestoreSource(ctx, media); err != nil {
+		return err
+	}
 	return s.store.RestoreMedia(ctx, mediaID)
+}
+
+// checkRestoreSource refuses to activate a row that could not be played.
+// It only reads the source, so recovery still works in a read-only set.
+func (s *writeService) checkRestoreSource(ctx context.Context, media *model.Media) error {
+	path := media.AbsPath
+	if path == "" {
+		if media.RelPath == "" {
+			return ErrNotFound
+		}
+		set, err := s.store.GetSetByID(ctx, media.SetID)
+		if err != nil {
+			return fmt.Errorf("get restore set: %w", err)
+		}
+		if set == nil {
+			return ErrNotFound
+		}
+		path = filepath.Join(s.mediaRoot, set.RootPath, filepath.FromSlash(media.RelPath))
+	}
+	if !confinedPath(s.mediaRoot, path) {
+		return ErrForbidden
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return s.restoreSourceError(media.ID, err)
+	}
+	if !info.Mode().IsRegular() {
+		return ErrNotFound
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return s.restoreSourceError(media.ID, err)
+	}
+	if err := file.Close(); err != nil {
+		return s.restoreSourceError(media.ID, err)
+	}
+	return nil
+}
+
+func (s *writeService) restoreSourceError(id int64, err error) error {
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrNotFound
+	}
+	if errors.Is(err, os.ErrPermission) {
+		return ErrForbidden
+	}
+	s.logger.Warn("restore source unavailable", "id", id, "err", err)
+	return errors.New("restore source unavailable")
 }
 
 func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, filename string, data io.Reader, size int64) (*model.Media, error) {

@@ -53,6 +53,17 @@ func TestWriteService_RestoreMedia(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "source.mp4")
+			if err := os.WriteFile(path, []byte("source"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if tt.media != nil {
+				tt.media.AbsPath = path
+			}
+			for i := range tt.deletedMedia {
+				tt.deletedMedia[i].AbsPath = path
+			}
 			store := &repository.MockStore{
 				MediaRepo: repository.MockMediaRepo{
 					GetMediaByIDFunc: func(ctx context.Context, id int64) (*model.Media, error) {
@@ -81,7 +92,7 @@ func TestWriteService_RestoreMedia(t *testing.T) {
 					},
 				},
 			}
-			svc := NewWriteService(store, clock.RealClock{}, "/tmp/media", nil, nil, &accessHelper{store: store})
+			svc := NewWriteService(store, clock.RealClock{}, root, nil, nil, &accessHelper{store: store})
 			err := svc.RestoreMedia(ctx, 1, 1)
 			if tt.wantErr {
 				if err == nil {

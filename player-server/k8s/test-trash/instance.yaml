@@ -1,0 +1,108 @@
+# Isolated test instance: never mount the production Player PVCs or host paths.
+# Build/push a distinct test image, then replace the image with kubectl set image.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: player-trash-test
+  labels:
+    purpose: player-trash-e2e
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: database
+  namespace: player-trash-test
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media
+  namespace: player-trash-test
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: player
+  namespace: player-trash-test
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: player-trash-test
+  template:
+    metadata:
+      labels:
+        app: player-trash-test
+    spec:
+      securityContext:
+        fsGroup: 65534
+      initContainers:
+        - name: prepare-test-volumes
+          image: busybox:1.36.1
+          command: [sh, -c, 'mkdir -p /media/trash-tests /media/other-tests; chown -R 65534:65534 /data /media']
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - {name: database, mountPath: /data}
+            - {name: media, mountPath: /media}
+      containers:
+        - name: app
+          image: registry.lan.buetow.org:30001/player:trash-test
+          imagePullPolicy: Always
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - {name: DB_PATH, value: /data/media.db}
+            - {name: MEDIA_ROOT, value: /media}
+            - {name: THUMBNAIL_CACHE_DIR, value: /data/thumbnails}
+            - {name: SECURE_COOKIES, value: 'true'}
+            - {name: GC_INTERVAL_MINUTES, value: '1'}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 1Gi}
+          volumeMounts:
+            - {name: database, mountPath: /data}
+            - {name: media, mountPath: /media}
+            - {name: temporary, mountPath: /tmp}
+      volumes:
+        - name: database
+          persistentVolumeClaim: {claimName: database}
+        - name: media
+          persistentVolumeClaim: {claimName: media}
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: player
+  namespace: player-trash-test
+spec:
+  selector:
+    app: player-trash-test
+  ports:
+    - {port: 8080, targetPort: http}

@@ -1020,7 +1020,10 @@ Toggle the authenticated user's favourite status for a media item.
 
 ### `DELETE /api/media/{id}` · `DELETE /api/v1/media/{id}`
 
-Soft-delete a media item. The item is moved to trash and is no longer returned
+Soft-delete a media item. The item gains a UTC `deleted_at` timestamp and stays
+recoverable for seven days. The source file is kept in place until expiry; the
+server sweeps expired trash at startup and every `GC_INTERVAL_MINUTES`.
+The item is moved to trash and is no longer returned
 by `GET /api/media`. Requires `owner` permission or admin.
 
 **Response `200`:**
@@ -1036,7 +1039,10 @@ by `GET /api/media`. Requires `owner` permission or admin.
 ### `POST /api/media/{id}/restore` · `POST /api/v1/media/{id}/restore`
 
 Restore a soft-deleted media item from trash. Requires `owner` permission or
-admin.
+admin, and an existing readable regular source confined to `MEDIA_ROOT`. Missing
+or non-regular files answer `404`; unsafe or unreadable sources answer `403`.
+A rejected restore preserves the trash entry and its timestamp. A read-only set
+can be restored when its source is still readable.
 
 **Response `200`:**
 
@@ -1631,6 +1637,17 @@ Return the current or most recent scan state.
 
 ---
 
+### `GET /api/trash` · `GET /api/v1/trash`
+
+Requires a session. Returns the soft-deleted media array, newest deletion first,
+restricted to sets where the requesting user has `owner` permission. Admins see
+all sets. A viewer or user with no owned trash receives `[]`. Each item includes
+`deleted_at`; expiry is seven days after that UTC timestamp. Restore an item with
+`POST /api/media/{id}/restore` (or its `/api/v1/` alias); the same owner/admin
+permission is checked again at restore time. Missing/non-regular source files
+answer `404`; unsafe or unreadable source paths answer `403`. These failures
+preserve the deletion timestamp and trash entry.
+
 ### `GET /api/admin/trash` · `GET /api/v1/admin/trash`
 
 List all soft-deleted media items.
@@ -1850,4 +1867,5 @@ Toggle the per-user completion state of a podcast episode.
 | `DELETE` | `admin/permissions` | admin | Revoke permission |
 | `POST` | `admin/rescan` | admin | Trigger rescan |
 | `GET` | `admin/scan-progress` | admin | Get scan progress |
-| `GET` | `admin/trash` | admin | List soft-deleted media |
+| `GET` | `trash` | session | List trash the user may restore |
+| `GET` | `admin/trash` | admin | List all soft-deleted media |

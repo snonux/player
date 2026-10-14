@@ -151,7 +151,7 @@ func (s *SQLite) UpdateMediaThumbnail(ctx context.Context, id int64, thumbnailPa
 
 // SoftDeleteMedia sets deleted_at to NOW().
 func (s *SQLite) SoftDeleteMedia(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE media SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE media SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`, id)
 	if err != nil {
 		return fmt.Errorf("soft delete media: %w", err)
 	}

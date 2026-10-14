@@ -76,6 +76,8 @@ type ProgressServiceStore interface {
 // GCStore is the subset of Store required by service.GCWorker.
 type GCStore interface {
 	MediaRepo
+	// GetSetByID resolves set-relative paths of legacy rows without AbsPath.
+	GetSetByID(ctx context.Context, id int64) (*model.Set, error)
 }
 
 // AuthServiceStore is the subset of Store required by service.AuthService.

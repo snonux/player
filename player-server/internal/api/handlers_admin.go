@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/service"
 )
 
 // ------------------------------------------------------------------
@@ -151,4 +152,17 @@ func (s *Server) handleRevokePermission(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleUserTrash lists only items the signed-in user may restore.
+func (s *Server) handleUserTrash(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.store) {
+		return
+	}
+	items, err := service.NewUserTrashService(s.store).ListTrash(r.Context(), userIDFromContext(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, jsonArray(items))
 }

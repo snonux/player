@@ -28,19 +28,21 @@ type RenditionGC interface {
 // than a threshold and, when a rendition cache is attached, keeps that cache
 // bounded on the same tick.
 type GCWorker struct {
-	store     repository.GCStore
-	clock     clock.Clock
-	interval  time.Duration
-	age       time.Duration
-	logger    *slog.Logger
-	ticker    *time.Ticker
-	tickCh    <-chan time.Time
-	runDoneCh chan struct{}
-	stopCh    chan struct{}
-	startOnce sync.Once
-	stopOnce  sync.Once
-	wg        sync.WaitGroup
-	mediaRoot string
+	trashLock   *sync.Mutex
+	lifecycleMu sync.Mutex
+	store       repository.GCStore
+	clock       clock.Clock
+	interval    time.Duration
+	age         time.Duration
+	logger      *slog.Logger
+	ticker      *time.Ticker
+	tickCh      <-chan time.Time
+	runDoneCh   chan struct{}
+	stopCh      chan struct{}
+	startOnce   sync.Once
+	stopOnce    sync.Once
+	wg          sync.WaitGroup
+	mediaRoot   string
 	// thumbRm deletes the generated thumbnail of a purged media item,
 	// which thumbLayout locates (see WithThumbnailLayout).
 	thumbRm     thumbnailRemover
@@ -55,6 +57,7 @@ type GCWorker struct {
 func NewGCWorker(store repository.GCStore, clk clock.Clock, mediaRoot string, interval time.Duration, logger *slog.Logger) *GCWorker {
 	return &GCWorker{
 		store:     store,
+		trashLock: new(sync.Mutex),
 		clock:     clk,
 		interval:  interval,
 		age:       7 * 24 * time.Hour,
@@ -63,6 +66,15 @@ func NewGCWorker(store repository.GCStore, clk clock.Clock, mediaRoot string, in
 		mediaRoot: mediaRoot,
 		thumbRm:   newThumbnailRemover(logger, thumb.Layout{}),
 	}
+}
+
+// WithTrashLock coordinates expiry with soft-delete/restore in this process.
+// Set it before Start; production wiring shares one lock with the write service.
+func (w *GCWorker) WithTrashLock(lock *sync.Mutex) *GCWorker {
+	if lock != nil {
+		w.trashLock = lock
+	}
+	return w
 }
 
 // WithThumbnailLayout tells the worker where generated thumbnails live, so
@@ -100,24 +112,31 @@ func (w *GCWorker) WithRenditionCache(renditions RenditionGC) *GCWorker {
 // from accidental double-Start.
 func (w *GCWorker) Start() {
 	w.startOnce.Do(func() {
+		w.lifecycleMu.Lock()
+		select {
+		case <-w.stopCh:
+			w.lifecycleMu.Unlock()
+			return
+		default:
+		}
 		w.ctx, w.cancel = context.WithCancel(context.Background())
 		tickCh := w.tickCh
 		if tickCh == nil {
 			w.ticker = time.NewTicker(w.interval)
 			tickCh = w.ticker.C
 		}
+		// Count startup work before Stop can begin waiting. The goroutine owns
+		// this count once startup completes, even if shutdown already began.
 		w.wg.Add(1)
+		w.lifecycleMu.Unlock()
+		// Finish the startup expiry pass before the server accepts requests.
+		w.runSafely(w.ctx)
 		go func() {
 			defer w.wg.Done()
 			for {
 				select {
 				case <-tickCh:
-					func() {
-						defer func() {
-							RecoverWorker(w.logger, "gc", recover())
-						}()
-						w.run(w.ctx)
-					}()
+					w.runSafely(w.ctx)
 					w.notifyRunDone()
 				case <-w.stopCh:
 					return
@@ -131,6 +150,8 @@ func (w *GCWorker) Start() {
 // Safe to call multiple times or before Start() (idempotent, no-op).
 func (w *GCWorker) Stop() {
 	w.stopOnce.Do(func() {
+		w.lifecycleMu.Lock()
+		defer w.lifecycleMu.Unlock()
 		if w.ticker != nil {
 			w.ticker.Stop()
 		}
@@ -140,6 +161,11 @@ func (w *GCWorker) Stop() {
 		close(w.stopCh)
 	})
 	w.wg.Wait()
+}
+
+func (w *GCWorker) runSafely(ctx context.Context) {
+	defer func() { RecoverWorker(w.logger, "gc", recover()) }()
+	w.run(ctx)
 }
 
 // run performs one GC pass: purge expired trash, then prune the transcode
@@ -153,6 +179,14 @@ func (w *GCWorker) run(ctx context.Context) {
 // purgeExpired purges every soft-deleted media item older than the
 // configured age.
 func (w *GCWorker) purgeExpired(ctx context.Context) {
+	// Read the current deletion state under the same lock as restore. Holding
+	// it through this batch prevents a stale snapshot from deleting a restored
+	// source, and keeps the lookup linear in the size of the trash.
+	w.trashLock.Lock()
+	defer w.trashLock.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
 	items, err := w.store.ListDeletedMedia(ctx)
 	if err != nil {
 		if w.logger != nil {
@@ -163,7 +197,10 @@ func (w *GCWorker) purgeExpired(ctx context.Context) {
 
 	cutoff := w.clock.Now().Add(-w.age)
 	for i := range items {
-		if items[i].DeletedAt == nil || !items[i].DeletedAt.Before(cutoff) {
+		if ctx.Err() != nil {
+			return
+		}
+		if items[i].DeletedAt == nil || items[i].DeletedAt.After(cutoff) {
 			continue
 		}
 		w.purge(ctx, &items[i])
@@ -183,7 +220,20 @@ func (w *GCWorker) purgeExpired(ctx context.Context) {
 func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
 	absPath := item.AbsPath
 	if absPath == "" {
-		absPath = filepath.Clean(filepath.Join(w.mediaRoot, item.RelPath))
+		if item.RelPath == "" {
+			if w.logger != nil {
+				w.logger.Warn("gc source path missing", "id", item.ID)
+			}
+			return
+		}
+		set, err := w.store.GetSetByID(ctx, item.SetID)
+		if err != nil || set == nil || set.RootPath == "" {
+			if w.logger != nil {
+				w.logger.Warn("gc cannot resolve source set", "id", item.ID, "set_id", item.SetID, "err", err)
+			}
+			return
+		}
+		absPath = filepath.Clean(filepath.Join(w.mediaRoot, set.RootPath, filepath.FromSlash(item.RelPath)))
 	}
 
 	if !confinedPath(w.mediaRoot, absPath) {
@@ -199,6 +249,11 @@ func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
 		}
 		return
 	}
+
+	// Thumbnail ownership needs the resolved source even for legacy rows.
+	resolvedItem := *item
+	resolvedItem.AbsPath = absPath
+	item = &resolvedItem
 
 	// .cover.jpg is generated artwork shared by the set/folder, not media
 	// owned by this legacy row. Keep it when collecting a row imported by
@@ -289,7 +344,9 @@ func (w *GCWorker) RunOnce() error {
 	if w.interval == 0 {
 		return errors.New("worker not started")
 	}
+	w.lifecycleMu.Lock()
 	ctx := w.ctx
+	w.lifecycleMu.Unlock()
 	if ctx == nil {
 		ctx = context.Background()
 	}

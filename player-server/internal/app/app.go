@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 // wiring stage and the server-start stage so that the two concerns remain
 // clearly separated.
 type Deps struct {
+	trashLock       *sync.Mutex
 	Store           repository.Store
 	Hasher          auth.Hasher
 	SM              auth.SessionManager
@@ -106,10 +108,11 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	thumbResolver := thumb.NewFSResolver()
 	thumbLayout, thumbMaker := wireThumbnails(cfg, thumbGen, logger)
 
+	trashLock := new(sync.Mutex)
 	helper := service.NewAccessHelper(store)
 	browser := service.NewPodcastBrowseService(store, cfg.MediaRoot)
 	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, browser, thumbResolver).
-		WithThumbnailLayout(thumbLayout)
+		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock)
 
 	fsScanner := scanner.NewFSScannerWithMaker(store, prober, thumbMaker, clk, cfg.MediaRoot, logger).
 		WithThumbnailLayout(thumbLayout)
@@ -119,6 +122,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		WithThumbnailLayout(thumbLayout)
 
 	deps := &Deps{
+		trashLock:       trashLock,
 		Store:           store,
 		Hasher:          hasher,
 		SM:              sm,
@@ -176,7 +180,7 @@ func wireTranscoding(deps *Deps, runner transcode.Runner) {
 
 	// The GC tick also bounds the transcode cache and drops renditions of
 	// hard-deleted media.
-	deps.GCWorker = service.NewGCWorker(deps.Store, deps.Clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, deps.Logger).
+	deps.GCWorker = service.NewGCWorker(deps.Store, deps.Clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, deps.Logger).WithTrashLock(deps.trashLock).
 		WithRenditionCache(deps.Transcodes).
 		WithThumbnailLayout(deps.Thumbnails)
 }

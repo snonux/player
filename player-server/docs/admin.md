@@ -171,7 +171,30 @@ notices the missing thumbnail and regenerates it.
 - `DELETE /api/media/{id}` — soft-delete a media item
 - `POST /api/media/{id}/restore` — restore a soft-deleted item
 
-Soft-deleted media remains on disk until garbage collection removes it (see `GC_INTERVAL_MINUTES`).
+Deleting media moves it into logical trash: its row gains a UTC `deleted_at`
+timestamp, it disappears from browsing/playback/shares, and the original file,
+notes, tags, favorites, progress, thumbnails and cached renditions stay in place.
+The header's **Trash** icon lists items in sets you own (admins see all items),
+with deletion/expiry dates and a **Restore** button. Use `j`/`k` or arrow keys
+between Restore buttons, `Enter` to restore, `Tab` between controls, and `Escape`
+to return to the library. The grid also provides a **Move to trash** action.
+
+Items expire after **seven days**. The server checks their timestamps before
+accepting requests on startup and then every `GC_INTERVAL_MINUTES` (30 minutes
+by default). At or after expiry, GC removes the source, row, generated thumbnail
+and transcode renditions; dependent database rows are removed by foreign keys.
+Repeated delete attempts do not reset the original timestamp. Restoring clears
+it and keeps the original media ID; deleting a restored item starts a new window.
+A rescan preserves trash rather than re-importing its source. Restore requires
+a readable regular source inside the media root: missing files answer `404`;
+escaping paths or unreadable sources answer `403`, and the item stays in trash.
+Restore still works when the set is read-only and the source exists.
+
+The single-process deployment shares a lock between deletion, restoration and
+the expiry batch. Owner mutations wait while that batch runs: a restore that
+finishes first is excluded from the cleanup snapshot, and an item purged first
+answers `404` on restore. Multiple server processes must not mutate the same
+library/database concurrently; the shipped deployment uses one replica.
 
 ### Read-only Libraries
 

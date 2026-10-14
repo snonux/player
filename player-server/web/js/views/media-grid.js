@@ -441,6 +441,11 @@ function bindMediaItems(grid) {
     const tagBtn = el.querySelector('[data-action="tags"]');
     const thumbBtn = el.querySelector('[data-action="regen-thumb"]');
     const finishedBtn = el.querySelector('[data-action="mark-finished"]');
+    const trashBtn = el.querySelector('[data-action="trash"]');
+    trashBtn?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await callbacks.moveToTrash?.(el.dataset.id, trashBtn);
+    });
     const notStartedBtn = el.querySelector('[data-action="mark-not-started"]');
     playBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -486,6 +491,7 @@ function bindMediaItems(grid) {
 
 function renderProgressActions() {
   return `
+    <button class="icon-btn btn-sm" data-action="trash" title="Move to trash" aria-label="Move to trash">🗑</button>
     <button class="icon-btn btn-sm" data-action="mark-finished" title="Mark as finished">✓</button>
     <button class="icon-btn btn-sm" data-action="mark-not-started" title="Mark as not started">↺</button>
   `;

@@ -270,7 +270,7 @@ func TestGCWorker_RecoversPanicAndContinues(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for gc run after panic")
 	}
-	if calls != 2 {
+	if calls != 3 {
 		t.Fatalf("expected gc worker to continue after panic, got %d calls", calls)
 	}
 }
@@ -353,8 +353,8 @@ func TestGCWorker_DoubleStartIdempotent(t *testing.T) {
 
 	w.Stop()
 
-	if got := atomic.LoadInt32(&runCount); got != 1 {
-		t.Fatalf("expected exactly 1 run, got %d", got)
+	if got := atomic.LoadInt32(&runCount); got != 2 {
+		t.Fatalf("expected startup and one tick (2 runs), got %d", got)
 	}
 }
 
@@ -362,19 +362,21 @@ func TestGCWorker_RelPathFallback(t *testing.T) {
 	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	tmpDir := t.TempDir()
 
-	rel := "music/song.mp3"
-	dir := filepath.Join(tmpDir, filepath.Dir(rel))
+	rel := "song.mp3"
+	sourceRel := "music/song.mp3"
+	dir := filepath.Join(tmpDir, filepath.Dir(sourceRel))
 	os.MkdirAll(dir, 0o755)
-	fpath := filepath.Join(tmpDir, rel)
+	fpath := filepath.Join(tmpDir, sourceRel)
 	os.WriteFile(fpath, []byte("data"), 0o644)
 
 	deletedAt := now.Add(-8 * 24 * time.Hour)
 	var hardDeleted int64
 	store := &repository.MockStore{
+		SetRepo: repository.MockSetRepo{GetSetByIDFunc: func(context.Context, int64) (*model.Set, error) { return &model.Set{ID: 1, RootPath: "music"}, nil }},
 		MediaRepo: repository.MockMediaRepo{
 			ListDeletedMediaFunc: func(ctx context.Context) ([]model.Media, error) {
 				return []model.Media{
-					{ID: 5, RelPath: rel, AbsPath: "", DeletedAt: &deletedAt},
+					{ID: 5, SetID: 1, RelPath: rel, AbsPath: "", DeletedAt: &deletedAt},
 				}, nil
 			},
 			HardDeleteMediaFunc: func(ctx context.Context, id int64) error {

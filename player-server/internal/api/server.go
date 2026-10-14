@@ -378,6 +378,7 @@ func (s *Server) routesShares() {
 
 // routesAdmin wires the admin-only API routes.
 func (s *Server) routesAdmin() {
+	s.handleBoth(http.MethodGet, "/api/trash", s.requireSession(s.handleUserTrash))
 	s.handleBoth(http.MethodGet, "/api/admin/trash", s.requireAdmin(s.handleListTrash))
 	s.handleBoth(http.MethodPost, "/api/admin/rescan", s.requireAdmin(s.handleRescan))
 	s.handleBoth(http.MethodGet, "/api/admin/scan-progress", s.requireAdmin(s.handleScanProgress))

@@ -26,6 +26,7 @@ import { initShuffle, enable as enableShuffle, isOn as isShuffle, revision as sh
 import { initThemes } from './themes.js';
 import { initNotes } from './notes.js';
 import { initAdmin } from './admin.js';
+import { initTrash, moveToTrash } from './trash.js';
 import { initModalFocus } from './modal-focus.js';
 import { initPodcasts } from './podcasts.js';
 import { state } from './state.js';
@@ -194,11 +195,13 @@ async function initApp() {
     markAsFinished: markAsFinishedAndRefresh,
     markAsNotStarted: markAsNotStartedAndRefresh,
     toggleFavorite,
+    moveToTrash,
     onVirtualSetCleared: syncChromeVirtualSets,
   });
   initKeyboard(keyboardHandlers());
   initNotes(() => toast('Note saved'));
   initAdmin();
+  initTrash();
   initModalFocus();
   // Admin actions such as restoring from trash change what the grid shows.
   document.addEventListener('library:changed', () => loadMedia());

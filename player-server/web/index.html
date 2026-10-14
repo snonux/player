@@ -21,6 +21,7 @@
     <button id="shuffle-toggle" class="icon-btn" title="Shuffle (r)" aria-label="Toggle shuffle">🔀</button>
     <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
     <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
+    <button id="trash-toggle" class="icon-btn" title="Trash" aria-label="Open trash">🗑</button>
     <button id="admin-toggle" class="icon-btn hidden" title="Admin panel" aria-label="Admin settings">⚙</button>
     <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
   </div>
@@ -76,6 +77,18 @@
 
     <!-- Media grid: hidden until a set is loaded or search is active -->
     <div id="media-grid" class="media-grid hidden" tabindex="0" aria-label="Media grid"></div>
+  </div>
+</div>
+
+<div id="trash-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="trash-title">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="trash-title">Trash</h3>
+      <div class="spacer"></div>
+      <button id="trash-close" class="icon-btn" aria-label="Close trash">✕</button>
+    </div>
+    <p class="text-muted text-sm">Items remain recoverable for 7 days after deletion. Use j/k or the arrow keys to choose an item, then Enter to restore.</p>
+    <div id="trash-list" aria-live="polite"></div>
   </div>
 </div>
 

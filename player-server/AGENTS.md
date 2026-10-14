@@ -397,3 +397,24 @@ silently drift — the web SPA or mobile client will break without any compile-
 time or test-time signal. Public endpoints that already have explicit v1 aliases
 (e.g. `/api/login` / `/api/v1/auth/login`) are exempt because they use custom
 path naming that does not follow the `/api/` → `/api/v1/` mechanical transform.
+
+
+## Trash lifecycle
+
+Trash keeps source files in place for seven days, with UTC `media.deleted_at`.
+GC completes an expiry sweep in `Start()` before HTTP serving, then sweeps on
+its configured ticker. Expiry includes the exact seven-day boundary. Keep the
+startup work accounted in the wait group before releasing the lifecycle lock;
+Stop cancels and waits for startup, and a stopped worker cannot run startup.
+Production wiring injects one process-local mutex into media writes and GC:
+GC obtains its single deletion snapshot while holding it through the batch,
+so it cannot remove a concurrently restored source. No package globals and no
+parallel processes sharing one library/database. Soft-delete retries preserve
+the timestamp (`WHERE deleted_at IS NULL`); scanner rescan preserves trash.
+`GET /api/trash` and `/api/v1/trash` list only owner/admin-restorable items;
+`/api/admin/trash` remains the admin view. Restore validates a confined,
+readable regular source before clearing the timestamp, but never requires source
+write permission; a missing or unsafe source stays in trash. The Trash dialog uses the existing
+modal focus/Escape behavior and local j/k/arrow navigation with native Enter.
+The isolated deployment and browser suite are documented in
+`k8s/test-trash/README.md`; never point those mutation tests at production.

@@ -5,6 +5,7 @@ import (
 	"codeberg.org/snonux/player/internal/probe"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/thumb"
+	"sync"
 )
 
 var (
@@ -26,6 +27,15 @@ type mediaService struct {
 	MediaTagService
 	MediaFavoriteService
 	MediaNoteService
+}
+
+// WithTrashLock coordinates mutations with the garbage collector. Configure
+// before serving requests; the lock belongs to this application's lifetime.
+func (s *mediaService) WithTrashLock(lock *sync.Mutex) *mediaService {
+	if ws, ok := s.MediaWriteService.(*writeService); ok && lock != nil {
+		ws.trashLock = lock
+	}
+	return s
 }
 
 // WithThumbnailLayout makes the write side (upload, regenerate thumbnail)
