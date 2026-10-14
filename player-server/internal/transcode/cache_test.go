@@ -558,9 +558,29 @@ func TestCache_LimitsInFlightJobs(t *testing.T) {
 	}
 
 	close(runner.release)
-	waitIdle(t, c)
-	if err := ensure(5, "user:carol"); err != nil {
-		t.Errorf("after the queue drained: %v", err)
+	if !c.WaitTimeout(settleTimeout) {
+		t.Fatal("initial jobs did not finish")
+	}
+	// Admission succeeds once the queue drains, but the new job may still
+	// outlive the request's 1ms wait. Reuse its source to check the cache
+	// only after the background job has actually finished.
+	src := newSource(t, 5)
+	src.Requester = "user:carol"
+	if _, err := c.Ensure(context.Background(), src); err != nil && !errors.Is(err, ErrPending) {
+		t.Fatalf("after the queue drained: %v", err)
+	}
+	if !c.WaitTimeout(settleTimeout) {
+		t.Fatal("admitted job did not finish")
+	}
+	r, err := c.Ensure(context.Background(), src)
+	if err != nil {
+		t.Fatalf("completed job is not cached: %v", err)
+	}
+	if got, err := os.ReadFile(r.Path); err != nil || string(got) != runner.payload {
+		t.Errorf("cached output = %q, err = %v; want %q", got, err, runner.payload)
+	}
+	if got := runner.calls.Load(); got != 4 {
+		t.Errorf("runner calls = %d, want 4 (three initial jobs and one after drain)", got)
 	}
 }
 
