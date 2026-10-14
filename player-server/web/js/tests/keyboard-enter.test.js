@@ -172,6 +172,25 @@ function testItemShortcutsDispatch() {
   assert(calls.join(',') === 'tags,favorite,admin,fullscreen', `t/F/A/f should dispatch distinct handlers, got ${calls.join(',')}`);
 }
 
+function testBackspaceRespectsViewsAndTyping() {
+  let closed = 0;
+  let backed = 0;
+  initKeyboard({ isLightboxOpen: () => true, closeLightbox: () => { closed += 1; } });
+  assert(pressKey('Backspace'), 'Backspace in an image view should prevent browser navigation');
+  assert(closed === 1, 'Backspace in an image view should leave the view');
+  assert(!pressKey('Backspace', { tagName: 'INPUT' }), 'Backspace in an image-view text field must remain text editing');
+  assert(closed === 1, 'Editing text must not close an image view');
+
+  initKeyboard({ isModalOpen: () => true, backspace: () => { backed += 1; } });
+  pressKey('Backspace');
+  assert(backed === 0, 'Backspace must not navigate behind an open dialog');
+  initKeyboard({ backspace: () => { backed += 1; } });
+  pressKey('Backspace', { tagName: 'TEXTAREA' });
+  assert(backed === 0, 'Backspace in a text field must remain text editing');
+  pressKey('Backspace');
+  assert(backed === 1, 'Backspace outside dialogs and text fields should reach navigation');
+}
+
 console.log('Running keyboard Enter tests...');
 testEnterActivatesGridHandler();
 testEnterLeavesFocusedButtonNative();
@@ -184,6 +203,7 @@ testOpenDialogBlocksGlobalShortcuts();
 testSpaceOnButtonsOutsideDialogsPlays();
 testSpaceOnSidebarButtonPlays();
 testItemShortcutsDispatch();
+testBackspaceRespectsViewsAndTyping();
 
 if (failures.length) {
   console.error('FAILURES:');

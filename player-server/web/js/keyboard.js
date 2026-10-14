@@ -33,6 +33,8 @@ export function initKeyboard(handlers) {
           handlers.lightboxNext?.(e);
           return;
         case 'Escape':
+        case 'Backspace':
+          if (e.key === 'Backspace' && textControl) return;
           e.preventDefault();
           handlers.closeLightbox?.(e);
           return;
@@ -46,7 +48,7 @@ export function initKeyboard(handlers) {
           handlers.zoomOut?.(e);
           return;
       }
-      // Allow only Escape/Arrows/h/l/+/−/Shift+S inside the lightbox; ignore everything else
+      // Allow only Escape/Backspace/Arrows/h/l/+/−/Shift+S inside the lightbox; ignore everything else
       return;
     }
 

@@ -134,7 +134,10 @@ export function initPlayer(options = {}) {
   });
   e.video.addEventListener('loadedmetadata', updateFloatingSize);
   document.addEventListener('fullscreenchange', () => {
-    if (e.player && !document.fullscreenElement) clearCropMode();
+    if (e.player && !document.fullscreenElement) {
+      e.player.classList.remove('is-fullscreen');
+      clearCropMode();
+    }
   });
   bindSeekTrack(e);
 }
@@ -738,6 +741,19 @@ function minimizePlayer() {
   e.player.classList.add('minimized');
   exitFullscreenIfNeeded();
   updateMinimizedTitle();
+}
+
+// Unwind one visible player layer without restoring an already minimized one.
+export function escapePlayerView() {
+  if (document.fullscreenElement) {
+    exitFullscreenIfNeeded();
+    return true;
+  }
+  const player = els().player;
+  if (!player?.classList.contains('open') || player.classList.contains('minimized') || player.classList.contains('hidden')) return false;
+  if (isImageMode()) stopAndClose();
+  else minimizePlayer();
+  return true;
 }
 
 function updateMinimizedTitle() {

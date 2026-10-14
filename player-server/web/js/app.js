@@ -7,7 +7,7 @@ import {
   toggleFullscreen,
   toggleMinimize,
   toggleDetach,
-  exitFullscreenIfNeeded,
+  escapePlayerView,
   toggleCrop,
   shiftCropPosition,
   cycleCropPosition,
@@ -320,10 +320,7 @@ function keyboardHandlers() {
         return;
       }
       cancelTagsLoad();
-      exitFullscreenIfNeeded();
-      const el = currentElement();
-      if (el) el.classList.remove('selected');
-      closeAllModals();
+      escapeMediaView();
     },
     shuffle: () => {
       enableShuffle();
@@ -346,7 +343,10 @@ function keyboardHandlers() {
     stopAndClose: () => stopAndClose(),
     download: downloadSelected,
     help: toggleHelp,
-    backspace: () => { navigateBack(); },
+    backspace: (e) => {
+      e.preventDefault();
+      if (!escapeMediaView()) navigateBack();
+    },
     isMediaInfoOpen,
     isModalOpen: isDialogOpen,
     closeMediaInfo,
@@ -366,10 +366,10 @@ function keyboardHandlers() {
     sharesCopy: copySelectedShare,
     sharesDelete: deleteSelectedShare,
     isImageMode: () => currentMediaInfo()?.type === 'image',
-    isLightboxOpen: () => playerIsImageMode() && document.getElementById('player')?.classList.contains('open') && !document.querySelector('.modal-overlay.open'),
+    isLightboxOpen: () => playerIsImageMode() && document.getElementById('player')?.classList.contains('open') && !document.getElementById('player')?.classList.contains('minimized') && !document.querySelector('.modal-overlay.open'),
     lightboxPrev: () => navigateImage(-1, { manual: true }),
     lightboxNext: () => navigateImage(1, { manual: true }),
-    closeLightbox: () => stopAndClose(),
+    closeLightbox: () => escapeMediaView(),
     toggleSlideshow: () => toggleSlideshow(),
     imageFullscreenNavigate: (delta) => {
       if (!document.fullscreenElement || !playerIsImageMode()) return false;
@@ -383,6 +383,13 @@ function keyboardHandlers() {
       if (playerIsImageMode()) playerZoomOut();
     },
   };
+}
+
+function escapeMediaView() {
+  const wasFullscreen = Boolean(document.fullscreenElement);
+  const escaped = escapePlayerView();
+  if (escaped && !wasFullscreen) focusSelectedCard();
+  return escaped;
 }
 
 function focusedGridElement() {
