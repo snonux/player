@@ -13,22 +13,8 @@ import '../utils/error_mappers.dart';
 
 /// Full-screen text editor for a user's personal note attached to a media item.
 ///
-/// Design notes:
-///   - [ConsumerStatefulWidget] is used so we can manage local state for the
-///     text controller, debounce timer, and loading/saving/error flags, and
-///     guard async continuations with [mounted].
-///   - The note is loaded via [getNote] on first mount (deferred to
-///     post-frame so [ref] is fully bound in tests).
-///   - Auto-save fires 800 ms after the last keystroke via a [Timer] that is
-///     cancelled and restarted on every text change (debounce pattern).  The
-///     timer is also cancelled in [dispose] to prevent callbacks from running
-///     on a disposed widget.
-///   - Manual save and clear/delete buttons live in the AppBar overflow menu,
-///     using the same [Map]-dispatch / [_MenuAction] enum pattern as
-///     [MediaDetailScreen] (Open-Closed Principle — adding a new action only
-///     requires a new enum value and one map entry, not an if/else chain).
-///   - No `dio` import — error mapping is delegated to [notesErrorMessage] in
-///     error_mappers.dart (Dependency Inversion Principle).
+/// Changes are debounced while editing and flushed before Back navigation.
+/// Saves run in order, including edits made while an earlier request is pending.
 class NotesEditorScreen extends ConsumerStatefulWidget {
   /// The string form of the media ID extracted from the '/notes/:mediaId' route.
   final String mediaId;
@@ -40,91 +26,82 @@ class NotesEditorScreen extends ConsumerStatefulWidget {
 }
 
 class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
-  // Controller for the multi-line text field; initialised empty and populated
-  // once [getNote] resolves.
   late final TextEditingController _controller;
-
-  // Nullable: null means "not yet loaded" (spinner shown in place of editor).
   Note? _note;
-
-  // Non-null when the last load or save attempt failed.
   String? _error;
-
-  // True while the initial [getNote] call is in flight.
   bool _isLoading = false;
-
-  // True while a [upsertNote] or [deleteNote] call is in flight.
-  // Disables the AppBar action buttons to prevent concurrent calls.
+  bool _loaded = false;
   bool _isSaving = false;
-
-  // Debounce timer: restarted on every text change; fires auto-save after
-  // 800 ms of inactivity.  Cancelled in [dispose] to prevent callbacks from
-  // running on a disposed widget.
+  bool _isClearing = false;
+  bool _isLeaving = false;
+  bool _didPop = false;
+  bool _allowPop = false;
   Timer? _debounce;
-
-  // Tracks the last content successfully saved to the server so we can skip
-  // unnecessary upsert calls when the user pauses without actually changing
-  // the text.
+  Future<bool>? _saveFuture;
   String _savedContent = '';
 
-  // Auto-save debounce delay in milliseconds.
-  static const _kDebounceMs = 800;
+  // Async work belongs to the media item that started it. A route update must
+  // not apply an old response or send its follow-up draft to the new item.
+  int _generation = 0;
+  bool get _dirty => _loaded && _controller.text != _savedContent;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController();
-    // Defer the first load until after the first frame so [ref] is fully bound
-    // and any provider overrides in the test environment are applied.
+    _controller = TextEditingController()..addListener(_onTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   @override
+  void didUpdateWidget(covariant NotesEditorScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mediaId == widget.mediaId) return;
+    _generation++;
+    _debounce?.cancel();
+    _loaded = false;
+    _note = null;
+    _controller.clear();
+    _savedContent = '';
+    _saveFuture = null;
+    _isSaving = false;
+    _isClearing = false;
+    _isLeaving = false;
+    _didPop = false;
+    _allowPop = false;
+    _load();
+  }
+
+  @override
   void dispose() {
-    // Cancel any pending debounce timer before the widget is unmounted so the
-    // auto-save callback never fires on a disposed widget (mounted guard would
-    // also catch it, but explicit cancellation is clearer and avoids the call).
     _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
-  // Data loading
-  // ---------------------------------------------------------------------------
+  bool _isCurrent(int generation) =>
+      mounted && !_didPop && generation == _generation;
 
-  /// Fetches the existing note for this media item and populates the editor.
-  ///
-  /// Called on first mount.  A null response (204 No Content) means no note
-  /// exists yet — the editor starts empty and the first save creates one.
-  /// Errors are mapped by the top-level [notesErrorMessage] helper so no
-  /// `dio` import is needed.
   Future<void> _load() async {
     if (!mounted) return;
+    final generation = _generation;
     setState(() {
       _isLoading = true;
       _error = null;
     });
-
     try {
       final id = int.tryParse(widget.mediaId) ?? 0;
-      final client = ref.read(apiClientProvider);
-      final note = await client.getNote(id);
-      if (!mounted) return;
+      final note = await ref.read(apiClientProvider).getNote(id);
+      if (!_isCurrent(generation)) return;
       final content = note?.content ?? '';
       _controller.text = content;
-      // Initialise _savedContent so the first auto-save does not trigger an
-      // unnecessary upsert when the user taps into the editor without typing.
       setState(() {
         _note = note;
         _savedContent = content;
+        _loaded = true;
         _isLoading = false;
       });
-      // Listen for text changes *after* the initial content is set so the
-      // listener does not fire a spurious auto-save on the seed value.
-      _controller.addListener(_onTextChanged);
     } catch (e) {
-      if (!mounted) return;
+      if (!_isCurrent(generation)) return;
       setState(() {
         _error = notesErrorMessage(e);
         _isLoading = false;
@@ -132,63 +109,79 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Auto-save (debounce)
-  // ---------------------------------------------------------------------------
-
-  /// Called on every text-field change; restarts the 800 ms debounce timer.
-  ///
-  /// Cancelling the previous timer before starting a new one ensures only one
-  /// save fires per burst of keystrokes, not one per keystroke.
   void _onTextChanged() {
+    if (!_loaded || _isClearing) return;
     _debounce?.cancel();
-    _debounce = Timer(
-      const Duration(milliseconds: _kDebounceMs),
-      _autoSave,
-    );
+    _debounce = Timer(const Duration(milliseconds: 800), _saveLatest);
   }
 
-  /// Fires after the debounce delay; saves only when content has actually changed.
-  ///
-  /// Skips the call if the text matches what was last saved to avoid hammering
-  /// the server when the user pauses without typing (idempotent guard).
-  Future<void> _autoSave() async {
-    final content = _controller.text;
-    // Skip save if nothing has changed since the last successful save.
-    if (content == _savedContent) return;
-    await _save(content);
+  /// All callers await the same operation. Each successful request is followed
+  /// by a fresh read of the editor, so an in-flight edit cannot be dropped.
+  Future<bool> _saveLatest() {
+    _debounce?.cancel();
+    if (_saveFuture != null) return _saveFuture!;
+    if (!mounted || _isClearing) return Future.value(false);
+    if (!_dirty) return Future.value(true);
+    late final Future<bool> operation;
+    operation = _drainSaves(_generation).whenComplete(() {
+      if (identical(_saveFuture, operation)) _saveFuture = null;
+    });
+    _saveFuture = operation;
+    return operation;
   }
 
-  // ---------------------------------------------------------------------------
-  // Save / clear
-  // ---------------------------------------------------------------------------
-
-  /// Persists [content] via [upsertNote] and updates local state on success.
-  ///
-  /// [_isSaving] is set for the duration so the AppBar buttons are disabled.
-  /// Errors are shown as a [SnackBar] rather than replacing the editor (the user
-  /// should be able to keep editing even when a save temporarily fails).
-  Future<void> _save(String content) async {
-    if (_isSaving || !mounted) return;
+  Future<bool> _drainSaves(int generation) async {
+    final id = int.tryParse(widget.mediaId) ?? 0;
+    final client = ref.read(apiClientProvider);
     setState(() => _isSaving = true);
-
     try {
-      final id = int.tryParse(widget.mediaId) ?? 0;
-      final client = ref.read(apiClientProvider);
-      final saved = await client.upsertNote(id, content);
-      if (!mounted) return;
-      setState(() {
-        _note = saved;
-        _savedContent = saved.content;
-        _isSaving = false;
-      });
+      while (_isCurrent(generation) && _dirty && !_isClearing) {
+        final content = _controller.text;
+        final saved = await client.upsertNote(id, content);
+        if (!_isCurrent(generation)) return false;
+        setState(() {
+          _note = saved;
+          _savedContent = content;
+        });
+      }
+      return _isCurrent(generation) && !_dirty;
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _isSaving = false);
+      if (!mounted || !_isCurrent(generation)) return false;
+      // Keep the latest draft. A failed request stops the drain; retry is an
+      // explicit action instead of an unbounded background retry loop.
+      _debounce?.cancel();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(notesErrorMessage(e))),
+        SnackBar(
+          content: Text(notesErrorMessage(e)),
+          action: SnackBarAction(label: 'Retry', onPressed: _manualSave),
+        ),
       );
+      return false;
+    } finally {
+      if (_isCurrent(generation)) setState(() => _isSaving = false);
     }
+  }
+
+  Future<void> _leave() async {
+    if (_isLeaving || _isClearing) return;
+    final generation = _generation;
+    setState(() => _isLeaving = true);
+    do {
+      final saved = await _saveLatest();
+      if (!_isCurrent(generation)) return;
+      if (!saved) {
+        setState(() => _isLeaving = false);
+        return;
+      }
+      // Make the editor read-only before allowing navigation. Include input
+      // delivered before that frame in the flush as well.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || !_isCurrent(generation)) return;
+    } while (_dirty);
+    setState(() => _allowPop = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || !_isCurrent(generation)) return;
+    Navigator.of(context).pop();
   }
 
   /// Asks for confirmation before deleting the note.
@@ -202,6 +195,7 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
     if (_controller.text.isEmpty && _note == null) return;
     if (!mounted) return;
 
+    final generation = _generation;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -225,28 +219,29 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
       ),
     );
 
-    if (confirmed != true || !mounted) return;
-
-    // Cancel any pending debounce so the auto-save doesn't fire after delete.
+    if (confirmed != true || !_isCurrent(generation)) return;
     _debounce?.cancel();
-
-    setState(() => _isSaving = true);
+    setState(() => _isClearing = true);
 
     try {
       final id = int.tryParse(widget.mediaId) ?? 0;
       final client = ref.read(apiClientProvider);
+      // A save may have started while the confirmation dialog was open.
+      // Finish it first so its response cannot recreate the cleared note.
+      await _saveFuture;
+      if (!_isCurrent(generation)) return;
       await client.deleteNote(id);
-      if (!mounted) return;
+      if (!_isCurrent(generation)) return;
       // Reset all local state: the note is gone.
       _controller.text = '';
       setState(() {
         _note = null;
         _savedContent = '';
-        _isSaving = false;
+        _isClearing = false;
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _isSaving = false);
+      if (!mounted || !_isCurrent(generation)) return;
+      setState(() => _isClearing = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(notesErrorMessage(e))),
       );
@@ -259,8 +254,7 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
   /// save without waiting for the debounce delay.  The debounce timer is
   /// cancelled first to avoid a double-save.
   Future<void> _manualSave() async {
-    _debounce?.cancel();
-    await _save(_controller.text);
+    await _saveLatest();
   }
 
   // ---------------------------------------------------------------------------
@@ -269,9 +263,22 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: _buildAppBar(),
-      body: _buildBody(context),
+    return PopScope(
+      // Always intercept Back until _leave has locked editing and flushed it.
+      // A rendered dirty flag can lag behind a keystroke until the next frame.
+      canPop: _allowPop,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          _didPop = true;
+          _debounce?.cancel();
+        } else {
+          _leave();
+        }
+      },
+      child: Scaffold(
+        appBar: _buildAppBar(),
+        body: _buildBody(context),
+      ),
     );
   }
 
@@ -287,7 +294,7 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
     return AppBar(
       title: Text('Notes – ${widget.mediaId}'),
       actions: [
-        if (_isSaving)
+        if (_isSaving || _isClearing)
           // Unobtrusive progress indicator while a save is in flight.
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 12),
@@ -301,7 +308,7 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
         PopupMenuButton<_MenuAction>(
           key: const Key('notes_overflow_menu'),
           // Disable the menu entirely while saving to prevent concurrent calls.
-          enabled: !_isSaving && !_isLoading,
+          enabled: !_isSaving && !_isClearing && !_isLeaving && _loaded,
           onSelected: (action) {
             // Map-dispatch: extend by adding enum values + entries here only.
             final handlers = <_MenuAction, VoidCallback>{
@@ -354,7 +361,10 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
 
     // The editor is shown even when no note exists yet (empty state): the user
     // can type immediately and the first auto-save will create the note.
-    return _NoteEditor(controller: _controller);
+    return _NoteEditor(
+      controller: _controller,
+      readOnly: _isLeaving || _isClearing,
+    );
   }
 }
 
@@ -378,7 +388,9 @@ enum _MenuAction { save, clear }
 /// and this widget is independently testable.  The [TextEditingController] is
 /// injected so the parent retains ownership and control of the text value.
 class _NoteEditor extends StatelessWidget {
-  const _NoteEditor({required this.controller});
+  const _NoteEditor({required this.controller, required this.readOnly});
+
+  final bool readOnly;
 
   /// Injected controller so the parent [_NotesEditorScreenState] can read the
   /// current text and receive change notifications.
@@ -391,6 +403,7 @@ class _NoteEditor extends StatelessWidget {
       child: TextField(
         key: const Key('notes_text_field'),
         controller: controller,
+        readOnly: readOnly,
         // Expand the text field to fill the available vertical space, making
         // the full screen feel like a proper editor rather than a small input.
         expands: true,

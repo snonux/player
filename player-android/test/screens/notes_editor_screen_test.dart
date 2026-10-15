@@ -80,6 +80,8 @@ class _FakeApiClient extends PlayerApiClient {
 
   /// When non-null, [upsertNote] throws this instead of returning.
   Object? upsertError;
+  Future<Note> Function(int, String)? onUpsert;
+  final writes = <(int, String)>[];
 
   /// When non-null, [deleteNote] throws this instead of returning.
   Object? deleteError;
@@ -95,6 +97,8 @@ class _FakeApiClient extends PlayerApiClient {
   Future<Note> upsertNote(int mediaId, String content) async {
     upsertCallCount++;
     upsertedContent = content;
+    writes.add((mediaId, content));
+    if (onUpsert != null) return onUpsert!(mediaId, content);
     if (upsertError != null) throw upsertError!;
     return Note(
       id: 1,
@@ -169,10 +173,16 @@ Future<void> _pumpScreen(
     initialLocation: '/notes/$mediaId',
     routes: [
       GoRoute(
-        path: '/notes/:mediaId',
-        builder: (_, state) => NotesEditorScreen(
-          mediaId: state.pathParameters['mediaId']!,
-        ),
+        path: '/',
+        builder: (_, state) => const Scaffold(body: Text('Library')),
+        routes: [
+          GoRoute(
+            path: 'notes/:mediaId',
+            builder: (_, state) => NotesEditorScreen(
+              mediaId: state.pathParameters['mediaId']!,
+            ),
+          ),
+        ],
       ),
     ],
   );
@@ -348,6 +358,266 @@ void main() {
     });
   });
 
+  group('draft persistence', () {
+    const editor = Key('notes_text_field');
+    Note saved(String content, {int mediaId = 7}) =>
+        Note(id: 1, mediaId: mediaId, userId: 1, content: content);
+
+    testWidgets('app bar Back saves an edit delivered before the next frame',
+        (tester) async {
+      final pending = Completer<Note>();
+      final client = _FakeApiClient()..onUpsert = (_, __) => pending.future;
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'Quick draft');
+      // No frame between the edit and Back: PopScope still has its old value.
+      await tester.tap(find.byType(BackButton));
+      await tester.pump();
+      expect(client.writes, [(7, 'Quick draft')]);
+      expect(find.byKey(editor), findsOneWidget);
+      expect(tester.widget<TextField>(find.byKey(editor)).readOnly, isTrue);
+
+      pending.complete(saved('Quick draft'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(editor), findsNothing);
+      expect(find.text('Library'), findsOneWidget);
+    });
+
+    testWidgets('system Back saves an edit delivered before the next frame',
+        (tester) async {
+      final client = _FakeApiClient();
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'Sub-frame draft');
+      // Do not pump: Back must not depend on the dirty-state rebuild.
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(client.writes, [(7, 'Sub-frame draft')]);
+      expect(find.byKey(editor), findsNothing);
+    });
+
+    testWidgets('Back leaves an unchanged editor without a write',
+        (tester) async {
+      final client = _FakeApiClient()..noteResult = _kNote;
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(client.writes, isEmpty);
+      expect(find.byKey(editor), findsNothing);
+      expect(find.text('Library'), findsOneWidget);
+    });
+
+    testWidgets('edits during a slow save are serialized and saved next',
+        (tester) async {
+      final first = Completer<Note>();
+      final second = Completer<Note>();
+      final client = _FakeApiClient();
+      client.onUpsert =
+          (_, __) => client.upsertCallCount == 1 ? first.future : second.future;
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'First');
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.enterText(find.byKey(editor), 'Latest');
+      await tester.pump(const Duration(milliseconds: 900));
+      expect(client.writes, [(7, 'First')]);
+
+      first.complete(saved('First'));
+      await tester.pump();
+      expect(client.writes, [(7, 'First'), (7, 'Latest')]);
+      expect(find.text('Latest'), findsOneWidget);
+      second.complete(saved('Latest'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      expect(client.upsertCallCount, 2);
+    });
+
+    testWidgets('Back waits for the follow-up save without duplicate requests',
+        (tester) async {
+      final first = Completer<Note>();
+      final second = Completer<Note>();
+      final client = _FakeApiClient();
+      client.onUpsert =
+          (_, __) => client.upsertCallCount == 1 ? first.future : second.future;
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'First');
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.enterText(find.byKey(editor), 'Latest');
+      await tester.pump();
+      await tester.binding.handlePopRoute();
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      first.complete(saved('First'));
+      await tester.pump();
+      expect(find.byKey(editor), findsOneWidget);
+      expect(client.writes, [(7, 'First'), (7, 'Latest')]);
+      second.complete(saved('Latest'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(editor), findsNothing);
+      expect(client.upsertCallCount, 2);
+    });
+
+    testWidgets('a completed pop cannot make the pending Back pop again',
+        (tester) async {
+      final pending = Completer<Note>();
+      final client = _FakeApiClient()..onUpsert = (_, __) => pending.future;
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'Draft');
+      await tester.pump();
+      await tester.binding.handlePopRoute();
+      final editorContext = tester.element(find.byKey(editor));
+      // A separate navigation can complete while Back awaits the save. The
+      // outgoing screen remains mounted throughout the route animation.
+      unawaited(pending.future.then((_) => Navigator.of(editorContext).pop()));
+      pending.complete(saved('Draft'));
+      await tester.pumpAndSettle();
+      expect(find.text('Library'), findsOneWidget);
+      expect(find.byKey(editor), findsNothing);
+      expect(tester.takeException(), isNull);
+      expect(client.upsertCallCount, 1);
+    });
+
+    testWidgets('reverting during an in-flight save restores original content',
+        (tester) async {
+      final first = Completer<Note>();
+      final client = _FakeApiClient()..noteResult = _kNote;
+      client.onUpsert = (_, content) => client.upsertCallCount == 1
+          ? first.future
+          : Future.value(saved(content));
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'Temporary');
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.enterText(find.byKey(editor), _kNote.content);
+      first.complete(saved('Temporary'));
+      await tester.pumpAndSettle();
+      expect(client.writes, [(7, 'Temporary'), (7, _kNote.content)]);
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('failed Back keeps the latest draft and Retry saves it',
+        (tester) async {
+      final first = Completer<Note>();
+      final client = _FakeApiClient();
+      client.onUpsert = (_, content) => client.upsertCallCount == 1
+          ? first.future
+          : Future.value(saved(content));
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'First');
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.enterText(find.byKey(editor), 'Latest');
+      await tester.pump();
+      await tester.binding.handlePopRoute();
+      first.completeError(_connectionError());
+      await tester.pumpAndSettle();
+      expect(find.text('Latest'), findsOneWidget);
+      expect(tester.widget<TextField>(find.byKey(editor)).readOnly, isFalse);
+      expect(find.textContaining('Could not reach the server'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 1));
+      expect(client.upsertCallCount, 1);
+
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(client.writes, [(7, 'First'), (7, 'Latest')]);
+      expect(find.byKey(editor), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byKey(editor), findsNothing);
+      expect(client.upsertCallCount, 2);
+    });
+
+    testWidgets('failed follow-up stays open and Back retries the latest draft',
+        (tester) async {
+      final first = Completer<Note>();
+      final second = Completer<Note>();
+      final client = _FakeApiClient();
+      client.onUpsert = (_, content) => switch (client.upsertCallCount) {
+            1 => first.future,
+            2 => second.future,
+            _ => Future.value(saved(content)),
+          };
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'First');
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.enterText(find.byKey(editor), 'Latest');
+      await tester.pump();
+      await tester.binding.handlePopRoute();
+      first.complete(saved('First'));
+      await tester.pump();
+      second.completeError(_connectionError());
+      await tester.pumpAndSettle();
+      expect(find.text('Latest'), findsOneWidget);
+      expect(client.upsertCallCount, 2);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(client.writes, [(7, 'First'), (7, 'Latest'), (7, 'Latest')]);
+      expect(find.byKey(editor), findsNothing);
+    });
+
+    testWidgets('disposal cancels debounce without starting requests',
+        (tester) async {
+      final client = _FakeApiClient();
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'Draft');
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+      expect(client.writes, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('late completion after disposal does not start a follow-up',
+        (tester) async {
+      final pending = Completer<Note>();
+      final client = _FakeApiClient()..onUpsert = (_, __) => pending.future;
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'First');
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.enterText(find.byKey(editor), 'Latest');
+      await tester.pumpWidget(const SizedBox());
+      pending.complete(saved('First'));
+      await tester.pump(const Duration(seconds: 1));
+      expect(client.writes, [(7, 'First')]);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('media change ignores old save and never sends its follow-up',
+        (tester) async {
+      final pending = Completer<Note>();
+      final client = _FakeApiClient()..onUpsert = (_, __) => pending.future;
+      final media = ValueNotifier('7');
+      addTearDown(media.dispose);
+      await tester.pumpWidget(ProviderScope(
+        overrides: [apiClientProvider.overrideWithValue(client)],
+        child: MaterialApp(
+          home: ValueListenableBuilder(
+            valueListenable: media,
+            builder: (_, value, __) => NotesEditorScreen(mediaId: value),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(editor), 'First');
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.enterText(find.byKey(editor), 'Old latest');
+      client.noteResult = saved('Other media', mediaId: 8);
+      media.value = '8';
+      await tester.pumpAndSettle();
+      pending.complete(saved('First'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Other media'), findsOneWidget);
+      expect(client.writes, [(7, 'First')]);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   // --------------------------------------------------------------------------
   // Manual Save
   // --------------------------------------------------------------------------
@@ -434,6 +704,44 @@ void main() {
         find.byKey(const Key('notes_text_field')),
       );
       expect(textField.controller?.text, equals(''));
+    });
+
+    testWidgets('clear waits for an autosave started during confirmation',
+        (tester) async {
+      final pending = Completer<Note>();
+      final client = _FakeApiClient()
+        ..noteResult = _kNote
+        ..onUpsert = (_, __) => pending.future;
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('notes_text_field')),
+        'Unsaved draft',
+      );
+      await tester.tap(find.byKey(const Key('notes_overflow_menu')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.byKey(const Key('notes_clear_menu_item')));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(client.upsertCallCount, 1);
+      await tester.tap(find.byKey(const Key('notes_clear_confirm')));
+      await tester.pump();
+      expect(client.deleteCallCount, 0);
+      pending.complete(const Note(
+        id: 1,
+        mediaId: 7,
+        userId: 1,
+        content: 'Unsaved draft',
+      ));
+      await tester.pumpAndSettle();
+      expect(client.deleteCallCount, 1);
+      final field = tester.widget<TextField>(
+        find.byKey(const Key('notes_text_field')),
+      );
+      expect(field.controller!.text, isEmpty);
+      await tester.pump(const Duration(seconds: 1));
+      expect(client.upsertCallCount, 1);
     });
 
     testWidgets('cancelling clear dialog leaves the editor unchanged',
