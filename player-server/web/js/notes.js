@@ -85,6 +85,9 @@ export function open(mediaId, existingContent) {
   currentMediaId = mediaId;
   savedContent = existingContent || '';
   if (area) area.value = savedContent;
+  // Keep the shared editor reachable from both grid cards and fullscreen
+  // playback. A modal inside a hidden floating player cannot open from a card.
+  if (modal) (document.fullscreenElement || document.body).appendChild(modal);
   modal?.classList.add('open');
   document.getElementById('notes-textarea')?.focus();
 }

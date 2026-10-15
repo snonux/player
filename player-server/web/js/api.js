@@ -77,6 +77,11 @@ export const API = {
   notes: (id) => api(`/api/media/${id}/notes`, { noContentValue: NO_NOTE }),
   saveNote: (id, content) => api(`/api/media/${id}/notes`, { method: 'POST', body: { content } }),
   deleteNote: (id) => api(`/api/media/${id}/notes`, { method: 'DELETE' }),
+  bookmarks: (id) => api(`/api/media/${id}/bookmarks`),
+  saveBookmark: (id, positionSeconds, label = '') => api(`/api/media/${id}/bookmarks`, {
+    method: 'POST', body: { position_seconds: positionSeconds, label },
+  }),
+  deleteBookmark: (id, bookmarkId) => api(`/api/media/${id}/bookmarks/${bookmarkId}`, { method: 'DELETE' }),
   share: (id) => api(`/api/media/${id}/shares`, { method: 'POST' }),
   myShares: () => api('/api/shares'),
   revokeShare: (token) => api(`/api/shares/${token}`, { method: 'DELETE' }),

@@ -30,6 +30,7 @@ import { toast } from './utils.js';
 import { initSeekPreview } from './seekPreview.js';
 import { initAudioVisuals } from './audioVisuals.js';
 import { initLyrics } from './lyrics.js';
+import { initPlaybackPersonal } from './playback-personal.js';
 
 export {
   cycleCropPosition,
@@ -64,6 +65,7 @@ let failureHandler = null;
 let resetSeekPreview = () => {};
 let audioVisuals = null;
 let lyrics = null;
+let personal = null;
 
 function currentMediaElement() {
   const e = els();
@@ -74,6 +76,7 @@ function currentMediaElement() {
 
 function setCurrentMediaState(media, index) {
   currentMedia = media;
+  personal?.setMedia(media);
   if (Number.isInteger(index)) currentMediaIndex = index;
 }
 
@@ -118,6 +121,10 @@ export function initPlayer(options = {}) {
   failureHandler = typeof options.onPlaybackFailed === 'function' ? options.onPlaybackFailed : null;
   const e = els();
   if (!e.video && !e.audio) return;
+
+  if (options.personalActions) personal = initPlaybackPersonal({
+    getMedia: () => currentMedia, getElement: currentMediaElement, available: () => !isDetached(),
+  });
 
   audioVisuals = initAudioVisuals(e);
   lyrics = initLyrics(e);
@@ -402,6 +409,7 @@ export function stopAndClose() {
   e.btnZoomOut?.classList.add('hidden');
   e.btnSlideshow?.classList.add('hidden');
   currentMedia = null;
+  personal?.setMedia(null);
   currentSource = null;
   currentMediaIndex = -1;
   isPlaying = false;
@@ -417,6 +425,7 @@ export function stopAndClose() {
 
 export function selectAndPlay(media, index, resumeFrom = 0) {
   currentMedia = media;
+  personal?.setMedia(media);
   currentMediaIndex = index ?? -1;
   if (isDetached()) {
     isPlaying = true;
@@ -463,6 +472,7 @@ function loadMedia(media, resumeFrom = 0) {
 // library marks session-authenticated library playback in the main window
 // (as opposed to share and popup URLs); see finishPendingSource.
 function showMedia(media, source, thumbnailUrl) {
+  personal?.setMedia(media);
   resetSeekPreview();
   // Whatever was still being prepared belongs to the previous item.
   cancelPendingSource();

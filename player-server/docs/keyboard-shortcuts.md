@@ -3,6 +3,15 @@ Keyboard Shortcuts
 
 Global shortcuts are registered in `web/js/keyboard.js`; the shared audio player handles `v` on library, share and detached pages. They are **disabled** while the user is focused on an `INPUT`, `TEXTAREA`, `SELECT`, or `contentEditable` element (except `Escape` to blur).
 
+Audio/video players in the library and detached window have Save position and
+Bookmarks buttons. Tab to these controls and press Enter to open the dialog.
+Save an optional label for the captured time, or choose Use current position to
+update that time. Tab through saved positions to jump or delete; Escape closes
+the dialog and returns focus to its opener. Playback and library navigation
+shortcuts stay inactive while the dialog is open. Notes and Favorite are also
+available in the authenticated player, including images; public shares keep
+personal actions private.
+
 Escape closes an open dialog first. Otherwise it exits fullscreen; another
 press returns to the thumbnail grid, keeping the selected card focused.
 Audio/video keeps playing in the minimized player; closing an image view

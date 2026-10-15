@@ -155,6 +155,7 @@ function initBootstrap() {
 
 async function initApp() {
   initPlayer({
+    personalActions: true,
     onNext: (options) => navigatePlayable(options?.delta ?? 1, options),
     onPrevious: (options) => navigatePlayable(options?.delta ?? -1, options),
   });
@@ -205,7 +206,7 @@ async function initApp() {
     ...keyboardHandlers(),
     togglePictureLayout: initPictureLayout(document.getElementById('media-grid')),
   });
-  initNotes(() => toast('Note saved'));
+  initNotes((status, message) => toast(status === 'error' ? message || 'Could not update note.' : status === 'deleted' ? 'Note deleted' : 'Note saved', status === 'error' ? 'error' : 'info'));
   initAdmin();
   initTrash();
   initModalFocus();

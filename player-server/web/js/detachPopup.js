@@ -1,4 +1,8 @@
 import { hasPendingPlay, initPlayer, loadMediaDirect, requestPlay, togglePlay } from './player.js';
+import { initModalFocus } from './modal-focus.js';
+import { initNotes } from './notes.js';
+import { closeAllModals } from './dom.js';
+import { toast } from './utils.js';
 
 const openerOrigin = window.location.origin;
 let currentMedia = null;
@@ -9,7 +13,9 @@ let lastKnownPosition = 0;
 
 // A failed load fires no pause event when nothing was playing yet (compat
 // stream still preparing), so the main window is told explicitly.
-initPlayer({ onPlaybackFailed: sendState });
+initPlayer({ onPlaybackFailed: sendState, personalActions: true });
+initNotes((status, message) => toast(status === 'error' ? message || 'Could not update note.' : status === 'deleted' ? 'Note deleted' : 'Note saved', status === 'error' ? 'error' : 'info'));
+initModalFocus();
 
 const video = document.getElementById('media-video');
 const audio = document.getElementById('media-audio');
@@ -47,8 +53,12 @@ window.__playerDetachCurrentState = currentState;
 });
 
 document.addEventListener('keydown', (ev) => {
+  if (document.querySelector('.modal-overlay.open')) {
+    if (ev.key === 'Escape') { ev.preventDefault(); closeAllModals(); }
+    return;
+  }
   const tag = ev.target?.tagName;
-  const editing = tag === 'INPUT' || tag === 'TEXTAREA' || ev.target?.isContentEditable;
+  const editing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ev.target?.isContentEditable;
   if (editing || ev.ctrlKey || ev.metaKey || ev.altKey) return;
 
   const imageDelta = fullscreenImageDelta(ev);

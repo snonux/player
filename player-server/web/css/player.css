@@ -188,6 +188,11 @@
   width: 100%;
 }
 .player .transport-controls { flex-wrap: wrap; }
+.bookmarks-list { padding: 0; list-style: none; }
+.bookmark-row { display: flex; align-items: center; gap: 0.5rem; border-top: 1px solid var(--border); padding: 0.5rem 0; }
+.bookmark-jump { flex: 1; min-width: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+#bookmark-label { width: 100%; }
+#bookmarks-retry[hidden] { display: none; }
 .player .transport-controls .icon-btn {
   flex: 0 0 2rem;
   width: 2rem;

@@ -276,7 +276,7 @@ for (const operation of ['save', 'delete'] as const) {
     await area.fill('Second draft');
 
     releaseResponse();
-    await expect.poll(() => page.locator('#toast').textContent()).toContain('Note saved');
+    await expect.poll(() => page.locator('#toast').textContent()).toContain(operation === 'delete' ? 'Note deleted' : 'Note saved');
     await expect(modal).toHaveClass(/open/);
     await expect(area).toHaveValue('Second draft');
   });
