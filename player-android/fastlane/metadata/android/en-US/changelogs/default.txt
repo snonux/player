@@ -1,4 +1,4 @@
-Save and revisit audio/video positions with bookmarks.
-Keep server media on Android for playback and viewing offline.
-Save notes and favorites across server, device, and offline media; note edits survive leaving the editor.
-Resize library thumbnails with web buttons and keyboard shortcuts, or Android buttons and two-finger pinch.
+Show cover artwork in the audio player.
+Sync progress and bookmarks across streaming and downloaded server files.
+Keep offline edits and bookmark deletions across restarts, then sync them to the matching server account.
+Resolve sync conflicts using the newest edit timestamp.
