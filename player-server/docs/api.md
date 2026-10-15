@@ -1872,3 +1872,31 @@ Toggle the per-user completion state of a podcast episode.
 | `GET` | `admin/scan-progress` | admin | Get scan progress |
 | `GET` | `trash` | session | List trash the user may restore |
 | `GET` | `admin/trash` | admin | List all soft-deleted media |
+
+### Local audio lyrics
+
+`GET /api/media/{id}/lyrics` (also `/api/v1/media/{id}/lyrics`) uses the
+same session/Bearer authentication and set permissions as media playback.
+`GET /s/{token}/lyrics` is public and follows thumbnail access: it never
+opens a viewing, sets a viewing cookie or spends a share use. A valid viewing
+cookie or `?view=` credential keeps it accessible after `max_uses` is reached;
+expiry, revocation and deleted media still take effect immediately.
+
+```json
+{"source":"sidecar","synced":true,"lines":[{"text":"First line","start":0},{"text":"Next line","start":12.5}]}
+```
+
+`source` is `sidecar` or `embedded`. `start` is seconds from the start of the
+track, and is omitted for plain text. Synced lines are sorted by time; repeated
+LRC timestamps expand to separate lines. LRC `[offset:N]` applies milliseconds
+(positive means earlier), clamped at zero. Metadata headers are omitted. When
+no usable lyrics exist, including for non-audio media, the result is HTTP 200:
+`{"source":"","synced":false,"lines":[]}`.
+
+Only local sources are read, in order: matching filename stem `.lrc`, `.txt`,
+then embedded format/stream lyrics tags through hardened ffprobe. No database
+rescan or external lyrics service is needed. The source and sidecars must be
+regular files confined to `MEDIA_ROOT`, including resolved symlinks. Sidecars
+and expanded lyrics are limited to 1 MiB; ffprobe output to 2 MiB and runtime
+to three seconds. Unreadable, unsafe, oversized and unavailable lyrics return
+the same empty result. Text is returned as data; clients must render it as text.

@@ -71,10 +71,12 @@ func NewMediaServiceWithPodcastBrowser(store repository.MediaServiceStore, clk c
 // falls back to the default filesystem implementation.
 func NewMediaServiceWithDeps(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober, browser PodcastBrowser, thumbResolver thumb.Resolver) *mediaService {
 	helper := &accessHelper{store: store}
+	shares := NewShareService(store, clk, helper)
+	shares.lyricsRoot = mediaRoot
 	return &mediaService{
 		MediaBrowseService:   NewBrowseServiceWithResolver(store, clk, mediaRoot, helper, browser, thumbResolver),
 		MediaWriteService:    NewWriteService(store, clk, mediaRoot, thumbGen, prober, helper),
-		MediaShareService:    NewShareService(store, clk, helper),
+		MediaShareService:    shares,
 		MediaTagService:      NewTagService(store, helper),
 		MediaFavoriteService: NewFavService(store, helper),
 		MediaNoteService:     NewNoteService(store, clk, helper),

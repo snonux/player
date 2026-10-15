@@ -17,9 +17,10 @@ import (
 // shareService handles creation, validation and revocation of share links,
 // and the viewings that count their uses (see share_viewing.go).
 type shareService struct {
-	store  repository.ShareServiceStore
-	clock  clock.Clock
-	helper *accessHelper
+	lyricsRoot string
+	store      repository.ShareServiceStore
+	clock      clock.Clock
+	helper     *accessHelper
 
 	// keyMu guards key, the viewing-credential signing key cached from the
 	// store. The key never changes, so instances that load it separately

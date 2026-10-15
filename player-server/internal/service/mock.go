@@ -26,6 +26,8 @@ var (
 
 // MockMediaService is a fake MediaService for testing.
 type MockMediaService struct {
+	GetLyricsFunc           func(context.Context, int64, int64) (*Lyrics, error)
+	GetSharedLyricsFunc     func(context.Context, string, ...string) (*Lyrics, error)
 	ListSetsFunc            func(ctx context.Context, userID int64) ([]model.Set, error)
 	GetMediaDetailFunc      func(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
 	ListMediaFunc           func(ctx context.Context, userID int64, filter MediaQueryFilter) ([]model.Media, error)
@@ -532,4 +534,17 @@ func (m *MockProgressService) ListInProgress(ctx context.Context, userID int64) 
 		return m.ListInProgressFunc(ctx, userID)
 	}
 	return nil, nil
+}
+
+func (m *MockMediaService) GetLyrics(ctx context.Context, mediaID, userID int64) (*Lyrics, error) {
+	if m.GetLyricsFunc != nil {
+		return m.GetLyricsFunc(ctx, mediaID, userID)
+	}
+	return nil, errors.New("not implemented")
+}
+func (m *MockMediaService) GetSharedLyrics(ctx context.Context, token string, credentials ...string) (*Lyrics, error) {
+	if m.GetSharedLyricsFunc != nil {
+		return m.GetSharedLyricsFunc(ctx, token, credentials...)
+	}
+	return nil, errors.New("not implemented")
 }
