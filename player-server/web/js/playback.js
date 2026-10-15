@@ -29,6 +29,7 @@ import { mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from './strea
 import { toast } from './utils.js';
 import { initSeekPreview } from './seekPreview.js';
 import { initAudioVisuals } from './audioVisuals.js';
+import { initLyrics } from './lyrics.js';
 
 export {
   cycleCropPosition,
@@ -62,6 +63,7 @@ let currentSource = null;
 let failureHandler = null;
 let resetSeekPreview = () => {};
 let audioVisuals = null;
+let lyrics = null;
 
 function currentMediaElement() {
   const e = els();
@@ -118,6 +120,7 @@ export function initPlayer(options = {}) {
   if (!e.video && !e.audio) return;
 
   audioVisuals = initAudioVisuals(e);
+  lyrics = initLyrics(e);
   bindControlButtons(e);
   initImageViewer({ els, isImageMode, playNext: () => navigateImage(1) });
   initDetach({
@@ -374,6 +377,7 @@ export function seekRelative(seconds) {
 
 export function stopAndClose() {
   audioVisuals?.setMedia(null);
+  lyrics?.setMedia(null);
   resetSeekPreview();
   cancelPendingSource();
   const m = currentMediaElement();
@@ -472,6 +476,7 @@ function showMedia(media, source, thumbnailUrl) {
     showAudioVideo(e, media, source.url, thumbnailUrl, source.resumeFrom);
   }
   audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
+  lyrics?.setMedia(media, source.url);
   updateMinimizedTitle();
 }
 
