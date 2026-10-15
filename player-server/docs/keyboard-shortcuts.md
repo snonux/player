@@ -1,7 +1,7 @@
 Keyboard Shortcuts
 ==================
 
-Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** while the user is focused on an `INPUT`, `TEXTAREA`, `SELECT`, or `contentEditable` element (except `Escape` to blur).
+Global shortcuts are registered in `web/js/keyboard.js`; the shared audio player handles `v` on library, share and detached pages. They are **disabled** while the user is focused on an `INPUT`, `TEXTAREA`, `SELECT`, or `contentEditable` element (except `Escape` to blur).
 
 Escape closes an open dialog first. Otherwise it exits fullscreen; another
 press returns to the thumbnail grid, keeping the selected card focused.
@@ -19,6 +19,7 @@ fields and dialogs, then resumes folder/set navigation once the grid is shown.
 | `Space` / `p` | Play / pause / switch to selected item |
 | `N` / `P` | Next / previous track |
 | `f` | Toggle fullscreen on the player wrapper |
+| `v` | Cycle five audio visualizations and Off (also available in the player’s Visuals selector) |
 | `Esc` | Close dialog, exit fullscreen, then minimize audio/video or close image view to return to thumbnails |
 | `r` | Enable shuffle, or reshuffle the current filtered result set |
 | `s` | Generate a share link for the selected media |

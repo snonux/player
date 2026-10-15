@@ -12,6 +12,7 @@ Features
 
 - **Videos** — streaming with seek (range requests), optional remuxing, thumbnail previews
 - **Images** — lightbox viewer with zoom, slideshow mode, and pan support
+- **Audio visuals** — five sound-reactive views (Spectrum, Waveform, Radial, Mirror, Orbit) in library, share and detached playback. Use the player’s Visuals selector or `v` to cycle through them and Off; the preference is saved. Off shows cover artwork when available. Reduced-motion users start with Off. Browsers that block Web Audio keep native audio and artwork; press `v` or choose a mode during playback to start visuals after autoplay. `.m4b` files and file/folder/set names containing “audiobook” or “audio book” suppress visuals. This is a naming heuristic: ordinary MP3 audiobook chapters need an audiobook folder or set name, and share/detached pages can only inspect the media metadata they receive.
 - **Picture layout** — optional justified thumbnail rows fit image aspect ratios without cropping. Press `g` to toggle, or use Picture layout in help (`?`); the preference is saved. Unknown dimensions use square tiles and extreme aspect ratios use bounded tiles with the full image visible. Sets without images keep the regular grid.
 - **Audio / Audiobooks** — cover art display, progress tracking (resumes where you left off)
 - **Podcasts** — subscribe to RSS/Atom feeds, download episodes to the server, mark listened/unlistened

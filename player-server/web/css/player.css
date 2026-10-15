@@ -404,3 +404,31 @@
 .seek-preview-time { padding: 0.2rem 0.4rem; font-family: var(--font-mono); }
 .seek-preview-status { padding: 0 0.4rem 0.3rem; color: var(--text-secondary); }
 .seek-preview-status:empty { display: none; }
+
+/* Canvas overlays the art area without affecting the player dimensions. */
+.player .audio-visual {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.audio-visual-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.audio-visual-control select {
+  flex: 1;
+  min-width: 0;
+  background: var(--player-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+.audio-visual-control select:focus-visible {
+  outline: 2px solid var(--accent);
+}

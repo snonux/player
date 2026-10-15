@@ -28,6 +28,7 @@ import {
 import { mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from './streamSource.js';
 import { toast } from './utils.js';
 import { initSeekPreview } from './seekPreview.js';
+import { initAudioVisuals } from './audioVisuals.js';
 
 export {
   cycleCropPosition,
@@ -60,6 +61,7 @@ let currentSource = null;
 // Optional initPlayer({ onPlaybackFailed }) callback, see failPlayback.
 let failureHandler = null;
 let resetSeekPreview = () => {};
+let audioVisuals = null;
 
 function currentMediaElement() {
   const e = els();
@@ -115,6 +117,7 @@ export function initPlayer(options = {}) {
   const e = els();
   if (!e.video && !e.audio) return;
 
+  audioVisuals = initAudioVisuals(e);
   bindControlButtons(e);
   initImageViewer({ els, isImageMode, playNext: () => navigateImage(1) });
   initDetach({
@@ -370,6 +373,7 @@ export function seekRelative(seconds) {
 }
 
 export function stopAndClose() {
+  audioVisuals?.setMedia(null);
   resetSeekPreview();
   cancelPendingSource();
   const m = currentMediaElement();
@@ -467,6 +471,7 @@ function showMedia(media, source, thumbnailUrl) {
     currentSource = source;
     showAudioVideo(e, media, source.url, thumbnailUrl, source.resumeFrom);
   }
+  audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
   updateMinimizedTitle();
 }
 
@@ -501,7 +506,7 @@ function showAudioVideo(e, media, url, thumbnailUrl, resumeFrom) {
   // Only the hidden class toggles visibility (no inline styles). Its rule
   // lives in player.css, the one stylesheet every player page loads, so an
   // audio item also hides the empty video box on the share page.
-  active.classList.remove('hidden');
+  active.classList.toggle('hidden', !isVideo);
   idle.classList.add('hidden');
   showCoverArt(e, isVideo ? '' : thumbnailUrl);
   e.timeTotal.textContent = fmt(media.duration ?? 0);
@@ -661,6 +666,7 @@ function failPlayback(media, reason) {
 // requestPlay starts playback of the current item, or remembers the wish
 // while its compat stream is still being prepared.
 export function requestPlay() {
+  audioVisuals?.prepare();
   if (pendingSource) {
     setPendingPlay(true);
     return;
@@ -683,6 +689,7 @@ export function hasPendingPlay() {
 }
 
 function playElement(m) {
+  audioVisuals?.prepare();
   m.play().catch((err) => {
     console.error('play() failed:', err);
     // Autoplay can be refused when the stream became ready long after the
