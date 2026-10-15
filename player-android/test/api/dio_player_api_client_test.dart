@@ -71,6 +71,53 @@ Map<String, dynamic> _mediaDetailEnvelope({
 // ---------------------------------------------------------------------------
 
 void main() {
+  group('lyrics', () {
+    test('server endpoint parses timestamps and keeps configured auth',
+        () async {
+      final (:dio, :adapter) = _buildTestDio();
+      dio.options.headers['Authorization'] = 'Bearer test-token';
+      adapter.onGet(
+          '/api/v1/media/42/lyrics',
+          (server) => server.reply(200, {
+                'source': 'sidecar',
+                'synced': true,
+                'lines': [
+                  {'text': 'hello', 'start': 1.5}
+                ],
+              }),
+          headers: {'Authorization': 'Bearer test-token'});
+      final lyrics = await DioPlayerApiClient(dio: dio).getMediaLyrics(42);
+      expect(lyrics.source, 'sidecar');
+      expect(lyrics.lines.single.start, const Duration(milliseconds: 1500));
+    });
+
+    test('public lyrics preserve viewing credential without opening metadata',
+        () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onGet('/s/token/lyrics?view=credential',
+          (server) => server.reply(200, {'lines': []}));
+      final lyrics = await DioPlayerApiClient(dio: dio)
+          .getSharedLyrics('token', view: 'credential');
+      expect(lyrics.lines, isEmpty);
+    });
+
+    test(
+        'unavailable and invalid payloads are empty; access failures propagate',
+        () async {
+      final (:dio, :adapter) = _buildTestDio();
+      final client = DioPlayerApiClient(dio: dio);
+      adapter.onGet('/api/v1/media/1/lyrics',
+          (server) => server.reply(200, {'lines': []}));
+      adapter.onGet(
+          '/api/v1/media/2/lyrics', (server) => server.reply(200, 'invalid'));
+      adapter.onGet(
+          '/api/v1/media/3/lyrics', (server) => server.reply(403, {}));
+      expect((await client.getMediaLyrics(1)).lines, isEmpty);
+      expect((await client.getMediaLyrics(2)).lines, isEmpty);
+      await expectLater(client.getMediaLyrics(3), throwsA(isA<DioException>()));
+    });
+  });
+
   group('login', () {
     test('success — returns User from response JSON', () async {
       final (:dio, :adapter) = _buildTestDio();
@@ -869,7 +916,8 @@ void main() {
       final asked = <String>[];
       dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
         asked.add('${options.method} ${options.uri}');
-        handler.resolve(Response<void>(requestOptions: options, statusCode: 200));
+        handler
+            .resolve(Response<void>(requestOptions: options, statusCode: 200));
       }));
 
       final probe = await DioPlayerApiClient(dio: dio).probePlayback(Uri.parse(

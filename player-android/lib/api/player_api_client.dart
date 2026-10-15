@@ -80,6 +80,9 @@ class PlayerApiClient implements ProgressSyncClient {
   // and returns its credential (`view`); the media calls below take it as
   // [view] so that they belong to that viewing instead of opening their own.
 
+  Future<Lyrics> getSharedLyrics(String token, {String? view}) =>
+      throw UnimplementedError();
+
   Future<String> getSharedMediaPage(String token) => throw UnimplementedError();
 
   Future<Uint8List> streamSharedMedia(
@@ -145,6 +148,9 @@ class PlayerApiClient implements ProgressSyncClient {
     String? parent,
   }) =>
       throw UnimplementedError();
+
+  /// Available server sidecar or embedded lyrics; empty when unavailable.
+  Future<Lyrics> getMediaLyrics(int mediaId) => throw UnimplementedError();
 
   /// [cancelToken] lets a caller that stops waiting also abort the request.
   Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) =>

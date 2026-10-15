@@ -43,6 +43,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/app_routes.dart';
+import 'package:player_android/models/lyrics.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/playback_preparer_provider.dart';
@@ -89,6 +90,21 @@ class _FakeApiClient extends PlayerApiClient {
 
   /// When non-null, [getMediaProgress] returns this value.
   double? progressResult;
+  final lyricsIds = <int>[];
+  final shareLyricsRequests = <(String, String?)>[];
+  Future<Lyrics> Function()? lyricsResult;
+
+  @override
+  Future<Lyrics> getMediaLyrics(int mediaId) {
+    lyricsIds.add(mediaId);
+    return lyricsResult?.call() ?? Future.value(const Lyrics());
+  }
+
+  @override
+  Future<Lyrics> getSharedLyrics(String token, {String? view}) {
+    shareLyricsRequests.add((token, view));
+    return lyricsResult?.call() ?? Future.value(const Lyrics());
+  }
 
   /// Answers for [probePlayback], consumed in order; the last one repeats.
   /// Empty means the test does not expect a compatibility-stream probe.
@@ -424,6 +440,69 @@ String _errorText(WidgetTester tester) => tester
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets(
+      'server lyrics use the current media and line taps seek its session',
+      (tester) async {
+    final (player, handler) = _usePlayableHandler();
+    final client = _FakeApiClient()
+      ..lyricsResult = () async => Lyrics.fromJson({
+            'synced': true,
+            'lines': [
+              {'text': 'Seek here', 'start': 12.5}
+            ],
+          });
+    await _pumpScreen(tester, client,
+        handlerOverride: handler,
+        mediaUrl: 'http://localhost:8080/api/v1/media/42/stream');
+    await tester.pump();
+    await tester.pump();
+    expect(player.isPlaying, isTrue);
+    await tester.ensureVisible(find.byKey(const Key('audio_player_lyrics')));
+    await tester.tap(find.byKey(const Key('audio_player_lyrics')));
+    await tester.pump();
+    await tester.pump();
+    expect(client.lyricsIds, [42]);
+    await tester.ensureVisible(find.text('Seek here'));
+    await tester.tap(find.text('Seek here'));
+    await tester.pump();
+    expect(player.elapsed, const Duration(milliseconds: 12500));
+    expect(player.isPlaying, isTrue);
+    await tester.runAsync(handler.stop);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      'public lyrics use the public client and original viewing credential',
+      (tester) async {
+    final (player, handler) = _usePlayableHandler();
+    final client = _FakeApiClient();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        publicApiClientProvider.overrideWithValue(client),
+        apiClientProvider
+            .overrideWith((_) => throw StateError('Account API accessed')),
+        audioHandlerProvider.overrideWithValue(handler),
+      ],
+      child: const MaterialApp(
+          home: AudioPlayerScreen(
+        mediaId: '0',
+        isPublicShare: true,
+        mediaUrl: 'http://localhost/s/abc/stream?view=original',
+      )),
+    ));
+    await tester.pump();
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('audio_player_lyrics')));
+    await tester.tap(find.byKey(const Key('audio_player_lyrics')));
+    await tester.pump();
+    await tester.pump();
+    expect(client.shareLyricsRequests, [('abc', 'original')]);
+    expect(find.text('No lyrics available.'), findsOneWidget);
+    expect(player.isPlaying, isTrue);
+    await tester.runAsync(handler.stop);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('same local ID with a new URI replaces the loaded audio source',
       (tester) async {
     final player = _PlayableAudioPlayer();

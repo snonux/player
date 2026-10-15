@@ -10,12 +10,14 @@ import '../api/dio_client.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/audio_handler_provider.dart';
 import '../providers/progress_queue_provider.dart';
+import '../providers/public_api_client_provider.dart';
 import '../providers/playback_session_provider.dart';
 import '../services/playback_session_coordinator.dart';
 import '../services/audio_handler.dart';
 import '../services/playback_request.dart';
 import '../services/playback_source_resolver.dart';
 import '../utils/playback_errors.dart';
+import '../widgets/lyrics_panel.dart';
 import '../widgets/playback_loading_view.dart';
 import 'playback_preparation_mixin.dart';
 
@@ -697,11 +699,32 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                 _buildControls(handler),
                 const SizedBox(height: 16),
                 _buildSpeedSelector(),
+                if (_activeRequest is! LocalPlaybackRequest)
+                  _buildLyrics(handler),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLyrics(PlayerAudioHandler handler) {
+    final request = _activeRequest!;
+    return LyricsPanel(
+      key: ValueKey('lyrics:$_initGeneration:${request.identity}'),
+      positionStream: handler.player.positionStream,
+      position: () => handler.player.position,
+      onSeek: _seek,
+      load: request is ServerPlaybackRequest
+          ? () => ref.read(apiClientProvider).getMediaLyrics(request.mediaId)
+          : () {
+              final share = request as PublicSharePlaybackRequest;
+              return ref.read(publicApiClientProvider).getSharedLyrics(
+                    share.shareToken,
+                    view: share.sourceUri.queryParameters['view'],
+                  );
+            },
     );
   }
 

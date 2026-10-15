@@ -8,3 +8,4 @@ export 'podcast_feed.dart';
 export 'share.dart';
 export 'tag.dart';
 export 'user.dart';
+export 'lyrics.dart';

@@ -204,6 +204,13 @@ class DioPlayerApiClient extends PlayerApiClient {
         .toList();
   }
 
+  @override
+  Future<Lyrics> getMediaLyrics(int mediaId) async {
+    final response =
+        await rawDio.get<dynamic>('$_kApiV1/media/$mediaId/lyrics');
+    return Lyrics.fromJson(response.data);
+  }
+
   /// Returns a single media item including tags, favorite state, note, and
   /// saved playback progress.
   ///
@@ -615,6 +622,13 @@ class DioPlayerApiClient extends PlayerApiClient {
   // ---------------------------------------------------------------------------
   // Shared / public endpoints (no auth required)
   // ---------------------------------------------------------------------------
+
+  @override
+  Future<Lyrics> getSharedLyrics(String token, {String? view}) async {
+    final response =
+        await rawDio.get<dynamic>(_sharePath(token, 'lyrics', view));
+    return Lyrics.fromJson(response.data);
+  }
 
   /// Returns the share viewer page JSON for the given share [token].
   ///

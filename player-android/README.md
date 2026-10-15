@@ -79,6 +79,18 @@ item again continues where it left off). If the file cannot be played, the
 player names it and the reason, with a **Retry** button. Files in **On this
 device** are always played directly; no server is involved.
 
+## Lyrics
+
+In the server audio player, tap **Lyrics** to show available plain or timed
+lyrics. Timed lyrics keep the current line visible as playback moves or seeks;
+tap a line in the scrollable list to seek to it. Lyrics are also available for public audio shares.
+Missing lyrics or a failed lookup leave playback available; **Retry lyrics**
+tries the lookup again. Changing tracks clears the previous lyrics.
+
+Lyrics come from the server's sidecar files or embedded audio metadata.
+**On this device** does not read lyrics or adjacent sidecar files: selecting
+an audio document only grants access to that document.
+
 ## SVG images
 
 SVG files from the server are shown in the image viewer and as thumbnails.
