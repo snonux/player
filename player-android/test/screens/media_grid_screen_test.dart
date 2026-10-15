@@ -30,6 +30,9 @@ import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/media_grid_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../helpers/thumbnail_gestures.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -413,6 +416,39 @@ Future<void> _pumpScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets(
+      'pinching the media library changes actual card size and preserves scrolling',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    addTearDown(() => SharedPreferences.setMockInitialValues({}));
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final client = _FakeApiClient()
+      ..mediaResult = List.generate(
+          20, (index) => Media.fromJson(_kVideo.toJson()..['id'] = index + 1));
+    await _pumpScreen(tester, client);
+    await tester.pumpAndSettle();
+    final initial = tester.getSize(find.byKey(const Key('media_card_1'))).width;
+    await pinchPreviews(tester, 2);
+    expect(find.text('165%'), findsOneWidget);
+    expect(tester.getSize(find.byKey(const Key('media_card_1'))).width,
+        greaterThan(initial));
+    await pinchPreviews(tester, 0.2);
+    expect(find.text('65%'), findsOneWidget);
+    expect(tester.getSize(find.byKey(const Key('media_card_1'))).width,
+        lessThan(initial));
+    final scroll = tester.state<ScrollableState>(find.descendant(
+        of: find.byKey(const Key('media_grid')),
+        matching: find.byType(Scrollable)));
+    await tester.drag(
+        find.byKey(const Key('media_grid')), const Offset(0, -220));
+    await tester.pumpAndSettle();
+    expect(scroll.position.pixels, greaterThan(0));
+    expect(find.text('65%'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
   // --------------------------------------------------------------------------
   // Loading state
   // --------------------------------------------------------------------------

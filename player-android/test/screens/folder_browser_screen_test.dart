@@ -29,6 +29,9 @@ import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/folder_browser_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../helpers/thumbnail_gestures.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -271,6 +274,36 @@ Future<void> _pumpScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets(
+      'folder and media previews resize without clipping and keep row taps',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    addTearDown(() => SharedPreferences.setMockInitialValues({}));
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final client = _FakeApiClient()
+      ..browseResult = Map<String, dynamic>.from(_kRootBrowseResult);
+    await _pumpScreen(tester, client);
+    await tester.pumpAndSettle();
+    final cover = find.byKey(const Key('folder_cover_FolderA'));
+    final thumb = find.byKey(const Key('media_thumb_1'));
+    expect(tester.getSize(cover).width, 48);
+    await pinchPreviews(tester, 2);
+    expect(tester.getSize(cover).width, closeTo(79.2, 0.01));
+    expect(tester.getSize(cover).height, closeTo(79.2, 0.01));
+    expect(tester.getSize(thumb).width, closeTo(79.2, 0.01));
+    expect(tester.getSize(thumb).height, closeTo(79.2, 0.01));
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('165%'));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(cover).width, 48);
+    client.browseResult = Map<String, dynamic>.from(_kFolderABrowseResult);
+    await tester.tap(find.byKey(const Key('folder_tile_FolderA')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('breadcrumb_current_FolderA')), findsOneWidget);
+  });
   // --------------------------------------------------------------------------
   // Loading state
   // --------------------------------------------------------------------------

@@ -140,6 +140,15 @@ Lyrics come from the server's sidecar files or embedded audio metadata.
 **On this device** does not read lyrics or adjacent sidecar files: selecting
 an audio document only grants access to that document.
 
+## Library preview size
+
+Use **Previews − / +** above the server library, media grid or folder list to
+resize thumbnails. Tap the percentage to reset to 100%, or pinch with two
+fingers over the library to make previews larger or smaller. Five bounded sizes
+are saved on this device and shared across these screens. One-finger scrolling,
+card taps and image-viewer zoom keep their usual behavior. Device-file and
+Downloads lists use icons and retain their normal row layout.
+
 ## SVG images
 
 SVG files from the server are shown in the image viewer and as thumbnails.

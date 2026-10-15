@@ -10,6 +10,7 @@ import '../providers/api_client_provider.dart';
 import '../library_navigation.dart';
 import '../widgets/authenticated_network_image.dart';
 import '../widgets/network_svg_image.dart';
+import '../widgets/thumbnail_zoom.dart';
 import '../utils/error_mappers.dart';
 
 /// HTTP header map type used to authenticate cover-image requests against the
@@ -253,28 +254,30 @@ class _SetsGrid extends ConsumerWidget {
     final client = ref.watch(apiClientProvider);
     String coverUrlFor(int setId) => client.setFolderCoverUrl(setId);
 
-    return GridView.builder(
-      key: const Key('sets_grid'),
-      padding: const EdgeInsets.all(12),
-      // Two columns on phones; the cross-axis count could be made adaptive
-      // for larger screens in a future iteration.
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        // Slightly taller than square to accommodate the title row below.
-        childAspectRatio: 0.85,
-      ),
-      itemCount: sets.length,
-      itemBuilder: (context, index) {
-        final mediaSet = sets[index];
-        return _SetCard(
-          mediaSet: mediaSet,
-          coverUrl: coverUrlFor(mediaSet.id),
-          coverHeaders: coverHeaders,
-        );
-      },
-    );
+    return ThumbnailZoom(
+        builder: (context, scale) => LayoutBuilder(
+            builder: (context, constraints) => GridView.builder(
+                  key: const Key('sets_grid'),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(12),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount:
+                        thumbnailColumns(constraints.maxWidth, scale),
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    // Slightly taller than square to accommodate the title row below.
+                    childAspectRatio: 0.85,
+                  ),
+                  itemCount: sets.length,
+                  itemBuilder: (context, index) {
+                    final mediaSet = sets[index];
+                    return _SetCard(
+                      mediaSet: mediaSet,
+                      coverUrl: coverUrlFor(mediaSet.id),
+                      coverHeaders: coverHeaders,
+                    );
+                  },
+                )));
   }
 }
 

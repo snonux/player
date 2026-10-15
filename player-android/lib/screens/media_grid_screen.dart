@@ -9,6 +9,7 @@ import '../widgets/authenticated_network_image.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/search_filter_bar.dart';
+import '../widgets/thumbnail_zoom.dart';
 
 // ---------------------------------------------------------------------------
 // _buildMediaWithFavorite  (file-private helper)
@@ -473,23 +474,27 @@ class _MediaGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      key: const Key('media_grid'),
-      controller: scrollController,
-      slivers: [
-        _buildGridSliver(),
-        _buildFooterSliver(context),
-      ],
-    );
+    return ThumbnailZoom(
+        builder: (context, scale) => LayoutBuilder(
+            builder: (context, constraints) => CustomScrollView(
+                  key: const Key('media_grid'),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  controller: scrollController,
+                  slivers: [
+                    _buildGridSliver(
+                        thumbnailColumns(constraints.maxWidth, scale)),
+                    _buildFooterSliver(context),
+                  ],
+                )));
   }
 
   /// Builds the main grid sliver containing all loaded media cards.
-  SliverPadding _buildGridSliver() {
+  SliverPadding _buildGridSliver(int columns) {
     return SliverPadding(
       padding: const EdgeInsets.all(12),
       sliver: SliverGrid(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
           // Slightly taller than square to accommodate the info overlay.

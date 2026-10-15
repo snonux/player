@@ -29,6 +29,9 @@ import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/home_screen.dart';
 import 'package:player_android/utils/error_mappers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../helpers/thumbnail_gestures.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -168,6 +171,30 @@ Future<void> _pumpSetsListScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets('pinch resizes actual set covers and reset restores their size',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    addTearDown(() => SharedPreferences.setMockInitialValues({}));
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final client = _FakeApiClient()..setsResult = [_kMovies, _kPodcasts];
+    await _pumpSetsListScreen(tester, client);
+    await tester.pumpAndSettle();
+    final card = find.byKey(const Key('set_card_1'));
+    final initial = tester.getSize(card).width;
+    await pinchPreviews(tester, 2);
+    expect(find.text('165%'), findsOneWidget);
+    expect(tester.getSize(card).width, greaterThan(initial));
+    await tester.tap(find.text('165%'));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(card).width, initial);
+    await tester.drag(find.byKey(const Key('sets_grid')), const Offset(0, 300));
+    await tester.pumpAndSettle();
+    expect(client.listSetsCallCount, 2);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('Library menu reaches each feature and Back returns to Library',
       (tester) async {
     final client = _FakeApiClient()..setsResult = [];

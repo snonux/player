@@ -6,6 +6,7 @@ import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../widgets/authenticated_network_image.dart';
+import '../widgets/thumbnail_zoom.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 
@@ -282,14 +283,15 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       return _ErrorView(message: _error!, onRetry: _load);
     }
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: _buildContent(),
-    );
+    return ThumbnailZoom(
+        builder: (context, scale) => RefreshIndicator(
+              onRefresh: _load,
+              child: _buildContent(scale),
+            ));
   }
 
   /// Builds the scrollable content: breadcrumb bar + folder list + media list.
-  Widget _buildContent() {
+  Widget _buildContent(double scale) {
     final result = _result;
     final path = widget.path ?? '';
     final crumbs = _buildBreadcrumbs(path);
@@ -332,6 +334,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                   key: Key('folder_tile_${folder.name}'),
                   folder: folder,
                   coverUrl: folder.hasCover ? _coverUrl(folderPath) : '',
+                  thumbnailSize: 48 * scale,
                   onTap: () => _openFolder(folder.name),
                 );
               },
@@ -354,6 +357,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                   key: Key('media_tile_${item.id}'),
                   item: item,
                   thumbnailUrl: _thumbnailUrl(item.id),
+                  thumbnailSize: 48 * scale,
                   onTap: () => _openMedia(item.id),
                 );
               },
@@ -483,6 +487,7 @@ class _FolderTile extends StatelessWidget {
     required this.folder,
     required this.coverUrl,
     required this.onTap,
+    required this.thumbnailSize,
   });
 
   final _BrowseFolder folder;
@@ -492,20 +497,26 @@ class _FolderTile extends StatelessWidget {
 
   /// Called when the tile is tapped.
   final VoidCallback onTap;
+  final double thumbnailSize;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: _FolderCoverImage(
-        key: Key('folder_cover_${folder.name}'),
-        coverUrl: coverUrl,
-      ),
-      title: Text(
-        folder.name,
-        key: Key('folder_name_${folder.name}'),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: Row(children: [
+        _FolderCoverImage(
+          key: Key('folder_cover_${folder.name}'),
+          coverUrl: coverUrl,
+          size: thumbnailSize,
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+            child: Text(
+          folder.name,
+          key: Key('folder_name_${folder.name}'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        )),
+      ]),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
     );
@@ -518,14 +529,14 @@ class _FolderTile extends StatelessWidget {
 /// when the network request fails. Consistent with the [_ThumbnailImage]
 /// pattern in [MediaGridScreen].
 class _FolderCoverImage extends StatelessWidget {
-  const _FolderCoverImage({super.key, required this.coverUrl});
+  const _FolderCoverImage(
+      {super.key, required this.coverUrl, required this.size});
 
   final String coverUrl;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
-    const size = 48.0;
-
     if (coverUrl.isEmpty) return _placeholder(context, size);
 
     return SizedBox(
@@ -565,6 +576,7 @@ class _MediaTile extends StatelessWidget {
     required this.item,
     required this.thumbnailUrl,
     required this.onTap,
+    required this.thumbnailSize,
   });
 
   final Media item;
@@ -574,34 +586,46 @@ class _MediaTile extends StatelessWidget {
 
   /// Called when the tile is tapped.
   final VoidCallback onTap;
+  final double thumbnailSize;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: _MediaThumbnail(
-        key: Key('media_thumb_${item.id}'),
-        thumbnailUrl: thumbnailUrl,
-        fileName: item.fileName,
-        type: item.type,
-      ),
-      title: Text(
-        item.fileName,
-        key: Key('media_tile_name_${item.id}'),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Row(
-        children: [
-          Icon(_typeIcon(item.type), size: 12),
-          const SizedBox(width: 4),
-          if (mediaDurationLabel(item.type, item.duration) case final label?)
+      title: Row(children: [
+        _MediaThumbnail(
+          key: Key('media_thumb_${item.id}'),
+          thumbnailUrl: thumbnailUrl,
+          fileName: item.fileName,
+          type: item.type,
+          size: thumbnailSize,
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+            child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              label,
-              key: Key('media_tile_duration_${item.id}'),
-              style: Theme.of(context).textTheme.bodySmall,
+              item.fileName,
+              key: Key('media_tile_name_${item.id}'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-        ],
-      ),
+            Row(
+              children: [
+                Icon(_typeIcon(item.type), size: 12),
+                const SizedBox(width: 4),
+                if (mediaDurationLabel(item.type, item.duration)
+                    case final label?)
+                  Text(
+                    label,
+                    key: Key('media_tile_duration_${item.id}'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+              ],
+            ),
+          ],
+        )),
+      ]),
       onTap: onTap,
     );
   }
@@ -631,6 +655,7 @@ class _MediaThumbnail extends StatelessWidget {
     required this.thumbnailUrl,
     required this.fileName,
     required this.type,
+    required this.size,
   });
 
   final String thumbnailUrl;
@@ -640,11 +665,10 @@ class _MediaThumbnail extends StatelessWidget {
 
   /// Media type string used to pick the placeholder icon.
   final String type;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
-    const size = 48.0;
-
     if (thumbnailUrl.isEmpty) return _placeholder(context, size);
 
     return SizedBox(
