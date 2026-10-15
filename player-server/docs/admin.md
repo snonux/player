@@ -41,6 +41,32 @@ This triggers `FSScanner.Scan()`, which:
 4. Generates thumbnails for video files
 5. Inserts new records into the `media` table
 
+### Beets album artwork
+
+Player reads the existing album images in a shared music library, including
+the `cover.jpg` files produced by Beets' `fetchart` plugin for Navidrome.
+No Beets database, network service, or extra volume is needed: the images
+must be visible beside the music under `MEDIA_ROOT/Music`. The library can
+be mounted read-only when `THUMBNAIL_CACHE_DIR` is set.
+
+For each audio track, Player searches its directory and then its parents up
+to the set root. Within the nearest directory containing artwork it prefers
+`cover.jpg`, then other `cover` images, `front`, `folder`, `album`, the
+generated `.cover` image, and finally other images. Names are matched without
+case sensitivity; supported cover extensions are JPG, JPEG, PNG and GIF.
+This lets tracks in disc subfolders share the album's cover.
+
+**Run Rescan after upgrading and after a Beets artwork sweep.** Rescanning
+updates existing tracks as well as new ones, replacing a previous selection
+such as `back.jpg` with Beets' `cover.jpg`, and repairing references to removed
+images. Artwork overwritten at the same path is served from that file directly.
+Shared cover files are never rewritten or deleted as part of choosing audio
+artwork. The normal track thumbnail endpoint and its set permissions apply.
+
+Player uses the sidecar images; it does not extract embedded audio artwork.
+Keep Beets' `embedart.remove_art_file: no` (as in the shared f3s Beets setup)
+so `cover.jpg` remains available to both Player and Navidrome.
+
 ### Thumbnail Naming and Upgrades
 
 A generated thumbnail lives in a hidden `.thumbnails` directory next to its

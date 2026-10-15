@@ -981,8 +981,11 @@ Download the original file with `Content-Disposition: attachment`. Supports
 
 ### `GET /api/media/{id}/thumbnail` · `GET /api/v1/media/{id}/thumbnail`
 
-Return the thumbnail image for a media item (JPEG). Sets `Cache-Control:
-no-cache`.
+Return the thumbnail image for a media item. Generated thumbnails are JPEG;
+audio may use an existing album image (including Beets' `cover.jpg`) in its
+original format. Uses the track's set permissions. Sets `Cache-Control:
+no-cache`. An admin rescan updates existing audio tracks when preferred
+album artwork appears or the selected image is removed.
 
 **Status codes:** `200`, `400`, `401`, `403`, `404`, `500`
 

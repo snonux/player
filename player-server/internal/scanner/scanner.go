@@ -3,7 +3,9 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -282,14 +284,28 @@ func belowSkippedDirectory(path string, skipped map[string]error) bool {
 	return false
 }
 
-// updateAudioThumbnails patches existing audio tracks when a new cover image appears.
-func (s *FSScanner) updateAudioThumbnails(ctx context.Context, mediaList []model.Media, coverImages map[string]string, setPath string) {
+// updateAudioThumbnails picks up Beets artwork added after a track was indexed,
+// including a preferred cover replacing an older selection. Shared album art is
+// read directly and never replaced or deleted by the scanner.
+func (s *FSScanner) updateAudioThumbnails(ctx context.Context, mediaList []model.Media, coverImages map[string]string, setPath string, skipped map[string]error) {
 	for _, m := range mediaList {
-		if m.Type != model.MediaTypeAudio || m.ThumbnailPath != "" {
+		if m.Type != model.MediaTypeAudio {
 			continue
 		}
-		candidate := findCoverImage(m.AbsPath, coverImages, setPath)
-		if candidate != "" && candidate != m.ThumbnailPath {
+		source := filepath.Join(setPath, filepath.FromSlash(m.RelPath))
+		if belowSkippedDirectory(source, skipped) {
+			continue // the album's artwork could not be discovered reliably
+		}
+		candidate := findCoverImage(source, coverImages, setPath)
+		if candidate == "" && m.ThumbnailPath != "" {
+			// Preserve custom/generated artwork and paths whose accessibility
+			// is unknown (for example an unreadable directory). Only a file
+			// known to have disappeared should lose its reference.
+			if _, err := s.fs.Stat(m.ThumbnailPath); !errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+		}
+		if candidate != m.ThumbnailPath {
 			if err := s.store.UpdateMediaThumbnail(ctx, m.ID, candidate); err != nil {
 				s.log().Warn("scanner failed to update thumbnail", "file", m.FileName, "err", err)
 			}
@@ -307,6 +323,7 @@ type setScan struct {
 	existing    map[string]model.Media
 	coverImages map[string]string
 	files       []string
+	skipped     map[string]error
 	// stale holds the relPaths of the rows that get a thumbnail generated
 	// in this scan, and why (see staleThumbnails).
 	stale map[string]staleKind
@@ -340,7 +357,7 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 	}
 
 	mediaList, _ := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
-	s.updateAudioThumbnails(ctx, mediaList, sc.coverImages, setPath)
+	s.updateAudioThumbnails(ctx, mediaList, sc.coverImages, setPath, sc.skipped)
 
 	s.log().Info("scanner set completed", "name", setName, "existing_media", len(existing), "new_media", newFiles)
 	return nil
@@ -363,6 +380,7 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 		s.log().Warn("scanner skipped unreadable directory", "set", sc.name, "path", path, "err", err)
 	}
 	sc.files = files
+	sc.skipped = skipped
 
 	// Build the set of relPaths we just saw on disk so reconcileOrphans
 	// can soft-delete media rows whose files disappeared between scans.

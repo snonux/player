@@ -86,7 +86,7 @@ func (d *fileDiscoverer) Discover(setPath string) ([]string, map[string]error, e
 	return files, skipped, nil
 }
 
-// gatherCoverImages walks the set directory and records the first cover image
+// gatherCoverImages walks the set directory and records the preferred cover image
 // per directory. The returned map is keyed by absolute directory path; values
 // are the image path relative to setPath so callers can join them as needed.
 func (d *fileDiscoverer) gatherCoverImages(setPath string) map[string]string {
@@ -107,10 +107,44 @@ func (d *fileDiscoverer) gatherCoverImages(setPath string) map[string]string {
 		}
 		relPath, _ := filepath.Rel(setPath, path)
 		dir := filepath.Dir(path)
-		if _, ok := coverImages[dir]; !ok {
+		if previous, ok := coverImages[dir]; !ok || preferredCover(path, previous) {
 			coverImages[dir] = relPath
 		}
 		return nil
 	})
 	return coverImages
+}
+
+// preferredCover gives Beets' cover.jpg priority over unrelated album images
+// (such as back.jpg or a booklet). Matching is case insensitive; ties use the
+// file name so discovery order never decides the selected artwork. Keep the
+// generated folder cover ahead of other unnamed images for existing libraries.
+func preferredCover(candidate, previous string) bool {
+	a, b := coverRank(candidate), coverRank(previous)
+	if a != b {
+		return a < b
+	}
+	return filepath.Base(candidate) < filepath.Base(previous)
+}
+
+func coverRank(path string) int {
+	name := strings.ToLower(filepath.Base(path))
+	if name == "cover.jpg" {
+		return 0
+	}
+	stem := strings.TrimSuffix(name, filepath.Ext(name))
+	switch stem {
+	case "cover":
+		return 1
+	case "front":
+		return 2
+	case "folder":
+		return 3
+	case "album":
+		return 4
+	case ".cover":
+		return 5
+	default:
+		return 6
+	}
 }
