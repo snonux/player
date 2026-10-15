@@ -798,6 +798,27 @@ void main() {
       expect(client.playbackUrl(original), client.streamUrl(9));
     });
 
+    test(
+        'offline native media downloads original bytes instead of a remuxed stream',
+        () {
+      final client = DioPlayerApiClient(dio: _buildTestDio().dio);
+      final original =
+          Media.fromJson(_mediaJson(id: 9, fileName: 'mpeg-ts.mp4'));
+      expect(client.offlineDownloadUrl(original),
+          'https://player.test/api/v1/media/9/download');
+      expect(client.offlineDownloadUrl(original), isNot(client.streamUrl(9)));
+    });
+
+    test(
+        'offline unsupported media downloads the prepared compatibility rendition',
+        () {
+      final client = DioPlayerApiClient(dio: _buildTestDio().dio);
+      final converted =
+          Media.fromJson({..._mediaJson(id: 9), 'transcoded': true});
+      expect(client.offlineDownloadUrl(converted),
+          'https://player.test/api/v1/media/9/compat');
+    });
+
     test('isCompatStreamUrl recognises library and share compat paths', () {
       bool compat(String url) => isCompatStreamUrl(Uri.parse(url));
 

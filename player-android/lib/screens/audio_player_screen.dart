@@ -699,7 +699,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                 _buildControls(handler),
                 const SizedBox(height: 16),
                 _buildSpeedSelector(),
-                if (_activeRequest is! LocalPlaybackRequest)
+                if (_activeRequest?.kind != PlaybackSourceKind.local)
                   _buildLyrics(handler),
               ],
             ),

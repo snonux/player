@@ -35,8 +35,35 @@ Physical devices, other document providers, and removable storage have not
 been verified. See the [verification results](docs/standalone-playback-verification.md)
 for the exact platform checks and automated coverage.
 
-Folder scanning, playlists, server downloads, local tags/notes, and syncing local
+Folder scanning, playlists, local tags/notes, and syncing local
 history across devices are outside this feature.
+
+## Keep server files offline
+
+Open a server file's details and tap **Keep offline**. Audio, video and images
+are saved in Player's private storage. For formats Android cannot play directly,
+Player downloads the server's converted playback copy. Keep the app open while
+downloading; the action shows the byte count and lets you cancel. A failed or
+cancelled download is never listed as ready. Downloading uses available device
+storage without imposing a fixed movie-size limit.
+
+Open **Downloads** from the server navigation menu or the download icon in
+**On this device**. Downloads work after an app restart, without a server
+connection or login. Saved copies are identified by server origin, account and
+media ID, so matching IDs on another server or account stay separate. All copies
+kept on this device remain accessible in Downloads, including after logout.
+Resume positions for these copies stay on the device and do not sync to the
+server. Offline images include SVGs supported by the same safety limits as
+server images. Public share links cannot be kept offline from the app.
+
+Use **Delete offline copy** in Downloads to stop that file's playback and remove
+its downloaded bytes and local progress. The remote media and files you added
+through Android's document picker stay available. Uninstalling Player or clearing
+its app storage removes downloads. An interrupted download is discarded when
+Downloads next opens; it can be downloaded again from the server file's details.
+
+See [offline verification](docs/offline-downloads-verification.md) for automated
+coverage and the repeatable Android device test.
 
 ## Connect to a server
 

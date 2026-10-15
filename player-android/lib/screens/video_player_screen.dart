@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:chewie/chewie.dart';
 import 'package:flutter/foundation.dart';
@@ -313,12 +314,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final request = attempt.request;
     VideoPlayerController? controller;
     try {
-      controller = request is LocalPlaybackRequest
-          ? VideoPlayerController.contentUri(request.sourceUri)
-          : VideoPlayerController.networkUrl(
-              request.sourceUri,
-              httpHeaders: headers,
-            );
+      controller = request is OfflinePlaybackRequest
+          ? VideoPlayerController.file(File.fromUri(request.sourceUri))
+          : request is LocalPlaybackRequest
+              ? VideoPlayerController.contentUri(request.sourceUri)
+              : VideoPlayerController.networkUrl(
+                  request.sourceUri,
+                  httpHeaders: headers,
+                );
       // Track the controller while initialization is pending so a library
       // mutation or ownership transfer can dispose its URI before releasing it.
       _videoController = controller;

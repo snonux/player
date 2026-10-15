@@ -148,6 +148,11 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
               ),
               for (final destination in [
                 (
+                  Icons.download_outlined,
+                  'Downloads',
+                  AppRoutes.offlineDownloads
+                ),
+                (
                   Icons.history,
                   'Continue Watching',
                   AppRoutes.continueWatching

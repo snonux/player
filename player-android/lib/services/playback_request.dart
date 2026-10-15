@@ -87,6 +87,25 @@ final class LocalPlaybackRequest extends PlaybackRequest {
   PlaybackSourceKind get kind => PlaybackSourceKind.local;
 }
 
+/// An owned app-private file, with progress kept on the device. Its identity
+/// cannot collide with a document-library ID or another server/account.
+@immutable
+final class OfflinePlaybackRequest extends PlaybackRequest {
+  const OfflinePlaybackRequest({
+    required this.downloadKey,
+    required super.sourceUri,
+    required super.title,
+    super.readPosition,
+    super.savePosition,
+    super.markFinished,
+  }) : super(identity: 'offline:$downloadKey');
+
+  final String downloadKey;
+
+  @override
+  PlaybackSourceKind get kind => PlaybackSourceKind.local;
+}
+
 /// Extracts the share token from a public share media URL
 /// (`.../s/{token}/stream` or `.../s/{token}/compat`), also when the server
 /// is mounted under a path prefix. Returns 'unknown' for any other URL.

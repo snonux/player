@@ -10,6 +10,7 @@ import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/authenticated_network_image.dart';
 import '../widgets/tag_picker.dart';
+import '../widgets/keep_offline_button.dart';
 import 'create_share_dialog.dart';
 
 // ---------------------------------------------------------------------------
@@ -404,6 +405,11 @@ class _MediaDetailContent extends StatelessWidget {
           ),
 
           _details(),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: KeepOfflineButton(media: media),
+          ),
 
           if (const {'video', 'audio', 'image'}.contains(media.type))
             Padding(

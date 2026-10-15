@@ -8,6 +8,9 @@ abstract final class AppRoutes {
   static const home = '/home';
   static const localLibrary = '/local';
   static const localPlayer = '/local/player/:localMediaId';
+  static const offlineDownloads = '/local/downloads';
+  static const offlinePlayer = '/local/downloads/:downloadKey';
+  static String offlinePlayerPath(String key) => '/local/downloads/$key';
   static const mediaDetail = '/media/:id';
   static const share = '/share';
 

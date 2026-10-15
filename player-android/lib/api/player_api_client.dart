@@ -183,6 +183,15 @@ class PlayerApiClient implements ProgressSyncClient {
   String streamUrl(int mediaId) =>
       '${rawDio.options.baseUrl}/api/v1/media/$mediaId/stream';
 
+  /// Original bytes, unlike /stream which may remux MPEG-TS while serving it.
+  /// This URL supports bounded disk streaming without buffering downloadMedia.
+  String downloadUrl(int mediaId) =>
+      '${rawDio.options.baseUrl}/api/v1/media/$mediaId/download';
+
+  /// Persist originals for native formats, or the playable compatibility copy.
+  String offlineDownloadUrl(Media media) =>
+      media.transcoded ? compatUrl(media.id) : downloadUrl(media.id);
+
   /// Returns the URL of the server-transcoded rendition (H.264/AAC or AAC)
   /// of a media item whose original this device cannot be expected to decode.
   ///

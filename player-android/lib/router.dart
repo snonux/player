@@ -37,6 +37,8 @@ import 'screens/folder_browser_screen.dart';
 import 'screens/video_player_screen.dart';
 import 'screens/local_library_screen.dart';
 import 'screens/local_playback_route.dart';
+import 'screens/offline_downloads_screen.dart';
+import 'screens/offline_playback_route.dart';
 
 // Re-export AppRoutes so existing callers that import router.dart for routes
 // do not need to change their import path.
@@ -78,7 +80,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isPublicSetupRoute =
           location == AppRoutes.server || location == AppRoutes.settings;
       final isLocalRoute = location == AppRoutes.localLibrary ||
-          state.fullPath == AppRoutes.localPlayer;
+          state.fullPath == AppRoutes.localPlayer ||
+          location == AppRoutes.offlineDownloads ||
+          state.fullPath == AppRoutes.offlinePlayer;
       if (isShareViewerRoute || isPublicSetupRoute || isLocalRoute) return null;
 
       final container = ProviderScope.containerOf(context, listen: false);
@@ -144,6 +148,16 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
 
     routes: [
+      GoRoute(
+        path: AppRoutes.offlineDownloads,
+        builder: (context, state) => const OfflineDownloadsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.offlinePlayer,
+        builder: (context, state) => OfflinePlaybackRoute(
+          downloadKey: state.pathParameters['downloadKey']!,
+        ),
+      ),
       GoRoute(
         path: AppRoutes.bootstrap,
         builder: (context, state) => const BootstrapScreen(),

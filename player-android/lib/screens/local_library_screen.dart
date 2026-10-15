@@ -29,6 +29,11 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
         title: const Text('On this device'),
         actions: [
           IconButton(
+            tooltip: 'Downloads',
+            onPressed: () => context.push(AppRoutes.offlineDownloads),
+            icon: const Icon(Icons.download_outlined),
+          ),
+          IconButton(
             key: const Key('local_add_files'),
             tooltip: 'Add files',
             onPressed: _busy ? null : _addFiles,
