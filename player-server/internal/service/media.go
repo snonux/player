@@ -15,6 +15,7 @@ var (
 	_ MediaTagService      = (*mediaService)(nil)
 	_ MediaFavoriteService = (*mediaService)(nil)
 	_ MediaNoteService     = (*mediaService)(nil)
+	_ MediaBookmarkService = (*mediaService)(nil)
 	_ MediaService         = (*mediaService)(nil)
 )
 
@@ -27,6 +28,7 @@ type mediaService struct {
 	MediaTagService
 	MediaFavoriteService
 	MediaNoteService
+	MediaBookmarkService
 }
 
 // WithTrashLock coordinates mutations with the garbage collector. Configure
@@ -80,5 +82,6 @@ func NewMediaServiceWithDeps(store repository.MediaServiceStore, clk clock.Clock
 		MediaTagService:      NewTagService(store, helper),
 		MediaFavoriteService: NewFavService(store, helper),
 		MediaNoteService:     NewNoteService(store, clk, helper),
+		MediaBookmarkService: NewBookmarkService(store, clk, helper),
 	}
 }

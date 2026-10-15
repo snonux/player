@@ -25,6 +25,7 @@ Features
 - **Tags** — add and remove tags on any media item; filter by tag
 - **Favorites** — mark items as favorites; filter to favorites-only view
 - **Notes** — attach personal notes to any media item
+- **Position bookmarks API** — save personal named positions in audio and video, independently of resume progress
 - **Search** — full-text search with query syntax: `min:30`, `tag:a,b`, `like:1`, `type:video`, `sort:random`, `minsize:10`, etc.
 - **Shuffle** — randomize playback of the current filtered result set
 

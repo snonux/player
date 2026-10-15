@@ -52,6 +52,7 @@ var timeColumns = map[string][]string{
 	"playback_accumulator": {"updated_at"},
 	"shares":               {"created_at", "expires_at"},
 	"media_notes":          {"created_at", "updated_at"},
+	"media_bookmarks":      {"created_at"},
 	"podcast_feeds":        {"last_checked_at", "next_check_at", "created_at"},
 	"podcast_episodes":     {"published_at", "created_at"},
 	"podcast_status":       {"updated_at"},

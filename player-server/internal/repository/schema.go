@@ -89,6 +89,17 @@ CREATE TABLE IF NOT EXISTS favorites (
     PRIMARY KEY (user_id, media_id)
 );
 
+CREATE TABLE IF NOT EXISTS media_bookmarks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    position_seconds REAL NOT NULL CHECK(position_seconds >= 0),
+    label TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_media_bookmarks_user_media_position
+    ON media_bookmarks(user_id, media_id, position_seconds, id);
+
 CREATE TABLE IF NOT EXISTS playback_progress (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,

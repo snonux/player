@@ -24,6 +24,7 @@ type Store interface {
 	SessionRepo
 	ShareRepo
 	NoteRepo
+	BookmarkRepo
 	PodcastRepo
 }
 
@@ -41,6 +42,7 @@ type CoreStore interface {
 
 // MediaServiceStore is the subset of Store required by service.MediaService.
 type MediaServiceStore interface {
+	BookmarkRepo
 	CoreStore
 	TagRepo
 	FavoriteRepo
@@ -366,4 +368,11 @@ type NoteRepo interface {
 	GetNote(ctx context.Context, mediaID, userID int64) (*model.Note, error)
 	// DeleteNote removes a user's note for a media item.
 	DeleteNote(ctx context.Context, mediaID, userID int64) error
+}
+
+// BookmarkRepo manages named playback positions owned by one user.
+type BookmarkRepo interface {
+	CreateBookmark(ctx context.Context, bookmark *model.Bookmark) (int64, error)
+	ListBookmarks(ctx context.Context, mediaID, userID int64) ([]model.Bookmark, error)
+	DeleteBookmark(ctx context.Context, id, mediaID, userID int64) (bool, error)
 }

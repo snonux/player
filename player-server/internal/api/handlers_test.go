@@ -1936,6 +1936,18 @@ type mockPingStore struct {
 	err   error
 }
 
+func (m *mockPingStore) CreateBookmark(ctx context.Context, bookmark *model.Bookmark) (int64, error) {
+	return m.store.CreateBookmark(ctx, bookmark)
+}
+
+func (m *mockPingStore) ListBookmarks(ctx context.Context, mediaID, userID int64) ([]model.Bookmark, error) {
+	return m.store.ListBookmarks(ctx, mediaID, userID)
+}
+
+func (m *mockPingStore) DeleteBookmark(ctx context.Context, id, mediaID, userID int64) (bool, error) {
+	return m.store.DeleteBookmark(ctx, id, mediaID, userID)
+}
+
 func (m *mockPingStore) CreateUser(ctx context.Context, user *model.User) (int64, error) {
 	return m.store.CreateUser(ctx, user)
 }

@@ -26,6 +26,7 @@ var userOwned = []ownedRows{
 	{"favorites", "user_id"},
 	{"playback_progress", "user_id"},
 	{"media_notes", "user_id"},
+	{"media_bookmarks", "user_id"},
 	{"shares", "created_by"},
 	{"podcast_status", "user_id"},
 }
@@ -35,6 +36,7 @@ var mediaOwned = []ownedRows{
 	{"favorites", "media_id"},
 	{"playback_progress", "media_id"},
 	{"media_notes", "media_id"},
+	{"media_bookmarks", "media_id"},
 	{"shares", "media_id"},
 	{"media_tags", "media_id"},
 	{"playback_accumulator", "media_id"},

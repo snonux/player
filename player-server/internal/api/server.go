@@ -28,6 +28,7 @@ type MediaServices struct {
 	Tag           service.MediaTagService
 	Favorite      service.MediaFavoriteService
 	Note          service.MediaNoteService
+	Bookmarks     service.MediaBookmarkService
 	Progress      service.ProgressService
 	PlaybackHints service.PlaybackHintsService
 	// Compat serves transcoded compatibility renditions of legacy formats.
@@ -355,6 +356,9 @@ func (s *Server) routesMedia() {
 	s.handleBoth(http.MethodPost, "/api/media/{id}/shares", s.requireSession(s.handleCreateShare))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/shares", s.requireSession(s.handleListShares))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/playback", s.requireSession(s.handlePlaybackHints))
+	s.handleBoth(http.MethodGet, "/api/media/{id}/bookmarks", s.requireSession(s.handleListBookmarks))
+	s.handleBoth(http.MethodPost, "/api/media/{id}/bookmarks", s.requireSession(s.handleCreateBookmark))
+	s.handleBoth(http.MethodDelete, "/api/media/{id}/bookmarks/{bookmarkId}", s.requireSession(s.handleDeleteBookmark))
 }
 
 // routesNotes wires the notes API routes.

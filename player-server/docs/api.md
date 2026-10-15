@@ -21,11 +21,12 @@ document alone, mint a Bearer token, and begin implementing
 8. [Sets](#sets)
 9. [Media](#media)
 10. [Notes](#notes)
-11. [Progress](#progress)
-12. [Shares](#shares)
-13. [Tags](#tags)
-14. [Admin](#admin)
-15. [Podcasts](#podcasts)
+11. [Bookmarks](#bookmarks)
+12. [Progress](#progress)
+13. [Shares](#shares)
+14. [Tags](#tags)
+15. [Admin](#admin)
+16. [Podcasts](#podcasts)
 
 ---
 
@@ -1252,6 +1253,74 @@ Delete the authenticated user's note for a media item.
 
 ---
 
+## Bookmarks
+
+Bookmarks save additional named playback positions for audio and video. Each
+user has their own bookmarks, including administrators; current set access is
+required for every operation. Images use the existing favorites API instead.
+Bookmarks do not change notes, resume progress, listened status or play counts.
+
+### `GET /api/media/{id}/bookmarks` · `GET /api/v1/media/{id}/bookmarks`
+
+Return the authenticated user's bookmarks for this media, ordered by
+`position_seconds` ascending, then `id` ascending for equal positions.
+
+**Response `200`:** An array (empty as `[]`), with this object schema:
+
+```json
+[
+  {
+    "id": 7,
+    "media_id": 42,
+    "position_seconds": 123.5,
+    "label": "Chapter two",
+    "created_at": "2026-10-15T09:00:00Z"
+  }
+]
+```
+
+**Status codes:** `200`, `400`, `401`, `403`, `404`, `500`.
+
+### `POST /api/media/{id}/bookmarks` · `POST /api/v1/media/{id}/bookmarks`
+
+Create a bookmark belonging to the authenticated user. Multiple bookmarks may
+have the same position or label; every POST creates a separate record.
+
+**Request body:**
+
+```json
+{ "position_seconds": 123.5, "label": "Chapter two" }
+```
+
+`position_seconds` is required, must be a finite number >= 0, and must not
+exceed a known positive media duration. Unknown duration (zero) does not impose
+an upper bound. `label` is optional (defaults to `""`), is trimmed, and must be
+at most 200 Unicode characters after trimming. Unknown fields, malformed JSON,
+trailing JSON values and bodies over 4096 bytes are rejected with `400`.
+
+**Response `201`:** The created object, using the schema above. The server
+assigns its ID, owner and UTC creation time. No user ID is accepted or returned.
+
+**Status codes:** `201`, `400`, `401`, `403`, `404`, `500`.
+
+### `DELETE /api/media/{id}/bookmarks/{bookmarkId}` · `DELETE /api/v1/media/{id}/bookmarks/{bookmarkId}`
+
+Delete a bookmark only when it belongs to both the authenticated user and the
+specified media. A missing bookmark, another user's bookmark, or a bookmark on
+another media item returns `404`.
+
+**Response `204`:** No body.
+
+**Status codes:** `204`, `400`, `401`, `403`, `404`, `500`.
+
+All three endpoints reject images with `400`, require authentication (`401`),
+and refuse inaccessible sets (`403`) and missing or trashed media (`404`). Path
+IDs must be positive integers (`400` otherwise). Soft deletion hides bookmarks
+until the media is restored; permanent deletion of the user or media removes
+them.
+
+---
+
 ## Progress
 
 Playback progress tracks the last known position for each media item per user.
@@ -1730,8 +1799,8 @@ another remaining feed uses by title, a folder that still holds other
 indexed media (uploads, another feed's episodes), and files that were never
 indexed.
 
-Deleting media also deletes every user's notes, progress, favorites and
-shares for it. After the feed is deleted, the remaining steps are
+Deleting media also deletes every user's notes, bookmarks, progress, favorites
+and shares for it. After the feed is deleted, the remaining steps are
 best-effort: a failure to remove a file is reported as `500`, but the feed is
 already gone (a retry returns `404`) and the other items were still
 processed.
@@ -1848,6 +1917,9 @@ Toggle the per-user completion state of a podcast episode.
 | `GET` | `media/{id}/notes` | session | Get note |
 | `POST` | `media/{id}/notes` | session | Upsert note |
 | `DELETE` | `media/{id}/notes` | session | Delete note |
+| `GET` | `media/{id}/bookmarks` | session | List my saved audio/video positions |
+| `POST` | `media/{id}/bookmarks` | session | Create a saved position |
+| `DELETE` | `media/{id}/bookmarks/{bookmarkId}` | session | Delete my saved position |
 | `GET` | `tags` | session | List tags |
 | `POST` | `media/{id}/tags` | session | Add tag |
 | `DELETE` | `media/{id}/tags/{tag}` | session | Remove tag |

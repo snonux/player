@@ -24,6 +24,7 @@ var (
 	_ TagServiceStore             = (*MockStore)(nil)
 	_ FavoriteServiceStore        = (*MockStore)(nil)
 	_ NoteServiceStore            = (*MockStore)(nil)
+	_ BookmarkRepo                = (*MockStore)(nil)
 	_ TrashServiceStore           = (*MockStore)(nil)
 	_ UserAdminServiceStore       = (*MockStore)(nil)
 	_ PermissionAdminServiceStore = (*MockStore)(nil)
@@ -54,6 +55,7 @@ type MockStore struct {
 	SessionRepo             MockSessionRepo
 	ShareRepo               MockShareRepo
 	NoteRepo                MockNoteRepo
+	BookmarkRepo            MockBookmarkRepo
 	PodcastRepo             MockPodcastRepo
 }
 

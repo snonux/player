@@ -17,6 +17,7 @@ var (
 	_ MediaTagService      = (*MockMediaService)(nil)
 	_ MediaFavoriteService = (*MockMediaService)(nil)
 	_ MediaNoteService     = (*MockMediaService)(nil)
+	_ MediaBookmarkService = (*MockMediaService)(nil)
 	_ MediaService         = (*MockMediaService)(nil)
 	_ AuthService          = (*MockAuthService)(nil)
 	_ ProgressService      = (*MockProgressService)(nil)
@@ -26,6 +27,9 @@ var (
 
 // MockMediaService is a fake MediaService for testing.
 type MockMediaService struct {
+	ListBookmarksFunc       func(context.Context, int64, int64) ([]model.Bookmark, error)
+	CreateBookmarkFunc      func(context.Context, int64, int64, float64, string) (*model.Bookmark, error)
+	DeleteBookmarkFunc      func(context.Context, int64, int64, int64) error
 	GetLyricsFunc           func(context.Context, int64, int64) (*Lyrics, error)
 	GetSharedLyricsFunc     func(context.Context, string, ...string) (*Lyrics, error)
 	ListSetsFunc            func(ctx context.Context, userID int64) ([]model.Set, error)

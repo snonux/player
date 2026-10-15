@@ -265,6 +265,13 @@ type MediaNoteService interface {
 	DeleteNote(ctx context.Context, mediaID, userID int64) error
 }
 
+// MediaBookmarkService handles user-owned audio/video playback bookmarks.
+type MediaBookmarkService interface {
+	ListBookmarks(ctx context.Context, mediaID, userID int64) ([]model.Bookmark, error)
+	CreateBookmark(ctx context.Context, mediaID, userID int64, position float64, label string) (*model.Bookmark, error)
+	DeleteBookmark(ctx context.Context, id, mediaID, userID int64) error
+}
+
 // MediaService is the composite interface combining all media-related roles.
 type MediaService interface {
 	MediaBrowseService
@@ -273,6 +280,7 @@ type MediaService interface {
 	MediaTagService
 	MediaFavoriteService
 	MediaNoteService
+	MediaBookmarkService
 }
 
 // AdminService handles admin-only operations.

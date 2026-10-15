@@ -350,6 +350,7 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 				Tag:           deps.MediaSvc,
 				Favorite:      deps.MediaSvc,
 				Note:          deps.MediaSvc,
+				Bookmarks:     deps.MediaSvc,
 				Progress:      deps.ProgressSvc,
 				PlaybackHints: deps.PlaybackHintSvc,
 				Compat:        deps.CompatSvc,
