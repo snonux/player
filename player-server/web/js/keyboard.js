@@ -369,6 +369,10 @@ export function initKeyboard(handlers) {
       case 'u': handlers.upload?.(e); break;
       case 'L': handlers.sharesToggle?.(e); break;
       case 'T': handlers.regenThumbnail?.(e); break;
+      case 'g':
+        e.preventDefault();
+        handlers.togglePictureLayout?.(e);
+        break;
       case 'q':
         e.preventDefault();
         handlers.stopAndClose?.(e);

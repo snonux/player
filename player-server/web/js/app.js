@@ -1,5 +1,6 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
+import { initPictureLayout } from './views/picture-layout.js';
 import { initSelection, selectByElement, currentElement, focusSelectedCard, navUp, navDown, navLeft, navRight } from './selection.js';
 import {
   initPlayer,
@@ -200,7 +201,10 @@ async function initApp() {
     moveToTrash,
     onVirtualSetCleared: syncChromeVirtualSets,
   });
-  initKeyboard(keyboardHandlers());
+  initKeyboard({
+    ...keyboardHandlers(),
+    togglePictureLayout: initPictureLayout(document.getElementById('media-grid')),
+  });
   initNotes(() => toast('Note saved'));
   initAdmin();
   initTrash();

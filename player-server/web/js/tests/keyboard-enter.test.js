@@ -326,6 +326,25 @@ function testHelpSearchOwnership() {
   assert(calls.at(-1) === 'imageHelp', 'Expanded/fullscreen image mode must expose help');
 }
 
+function testPictureLayoutOwnership() {
+  let toggles = 0;
+  const togglePictureLayout = () => { toggles++; };
+  initKeyboard({ togglePictureLayout });
+  assert(pressKey('g'), 'g should prevent default when toggling picture layout');
+  assert(toggles === 1, 'g should toggle picture layout once');
+  for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT']) pressKey('g', { tagName });
+  pressKey('g', { tagName: 'DIV', isContentEditable: true });
+  for (const modifier of ['ctrlKey', 'metaKey', 'altKey']) pressKey('g', undefined, { [modifier]: true });
+  pressKey('G', undefined, { shiftKey: true });
+  assert(toggles === 1, 'Typing, uppercase G and browser chords must not toggle layout');
+  for (const mode of ['isModalOpen', 'isSharesOpen', 'isMediaInfoOpen', 'isLightboxOpen']) {
+    initKeyboard({ togglePictureLayout, [mode]: () => true });
+    pressKey('g');
+  }
+  assert(toggles === 1, 'Dialogs and expanded images must block picture layout changes');
+}
+
+testPictureLayoutOwnership();
 testHelpSearchOwnership();
 console.log('Running keyboard Enter tests...');
 testAudioSeekUnchanged();

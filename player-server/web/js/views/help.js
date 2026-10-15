@@ -26,6 +26,7 @@ export function initHelp() {
   }
 
   toggleBtn?.addEventListener('click', toggleHelp);
+  document.getElementById('help-hint')?.addEventListener('click', toggleHelp);
   closeBtn?.addEventListener('click', () => modal?.classList.remove('open'));
   modal?.addEventListener('click', (e) => {
     if (e.target === modal) modal.classList.remove('open');

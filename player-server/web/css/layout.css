@@ -211,6 +211,10 @@ body {
   gap: var(--gap);
   margin-bottom: var(--gap);
 }
+#help-hint {
+  flex-shrink: 0;
+  margin-left: auto;
+}
 #picture-layout-toggle[aria-pressed="true"] {
   background: var(--selected-bg);
   border-color: var(--selected-border);

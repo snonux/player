@@ -44,15 +44,14 @@ async function boxes(page: Page) {
   }));
 }
 
-test('picture rows fit metadata, preserve order/selection and native toggle, and paginate mixed media', async ({ page }, testInfo) => {
+test('picture rows fit metadata, preserve order/selection and shortcut, and paginate mixed media', async ({ page }, testInfo) => {
   const cards = page.locator('#media-grid > .media-card');
   const before = await boxes(page);
   await cards.nth(2).focus();
   const selectedId = await page.locator('.media-card.selected').getAttribute('data-id');
-  const toggle = page.getByRole('button', { name: 'Picture layout', exact: true });
-  await toggle.focus();
-  await page.keyboard.press('Enter');
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('g');
+  await expect(page.locator('#picture-layout-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(cards.nth(2)).toBeFocused();
   await expect(page.locator('#media-grid')).toHaveClass(/picture-grid/);
   expect(await page.locator('.media-card.selected').getAttribute('data-id')).toBe(selectedId);
   const after = await boxes(page);
@@ -84,14 +83,14 @@ test('picture rows fit metadata, preserve order/selection and native toggle, and
   await expect(page.locator('#media-grid')).not.toHaveClass(/picture-grid/);
   await page.getByRole('button', { name: 'Prev', exact: true }).click();
   await expect(page.locator('#media-grid')).toHaveClass(/picture-grid/);
-  await toggle.click();
+  await page.keyboard.press('g');
   await expect(page.locator('#media-grid')).not.toHaveClass(/picture-grid/);
 });
 
 test('picture preference survives reload and narrow reflow has no overflow or lost keyboard cards', async ({ page }, testInfo) => {
-  await page.getByRole('button', { name: 'Picture layout', exact: true }).click();
+  await page.keyboard.press('g');
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Picture layout', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#picture-layout-toggle')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#media-grid')).not.toHaveClass(/picture-grid/); // Sets remain regular cards.
   await page.getByRole('button', { name: 'Set pictures', exact: true }).click();
   await page.setViewportSize({ width: 320, height: 640 });
@@ -106,4 +105,47 @@ test('picture preference survives reload and narrow reflow has no overflow or lo
   await page.keyboard.press('ArrowRight');
   await expect(cards.last()).toHaveClass(/selected/);
   await page.screenshot({ path: testInfo.outputPath('picture-layout-mobile.png'), fullPage: true });
+});
+
+
+test('help hint stays visible, documents g and offers a native picture toggle', async ({ page }) => {
+  const hint = page.getByRole('button', { name: 'Press ? for help', exact: true });
+  await page.mouse.move(600, 400); // Header stays retracted on desktop.
+  await expect(hint).toBeInViewport();
+  await expect(page.locator('.browse-toolbar #picture-layout-toggle')).toHaveCount(0);
+  await hint.click();
+  const help = page.locator('#help-modal');
+  await expect(help).toHaveClass(/open/);
+  await expect(help.locator('.help-row').filter({ hasText: 'Picture layout' })).toContainText('g');
+  const toggle = help.getByRole('button', { name: 'Picture layout', exact: true });
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#media-grid')).toHaveClass(/picture-grid/);
+  await page.keyboard.press('g'); // Dialog owns letter keys.
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(hint).toBeFocused();
+  await page.keyboard.press('?');
+  await expect(help).toHaveClass(/open/);
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 320, height: 640 });
+  await expect(hint).toBeInViewport();
+});
+
+test('picture shortcut respects typing, browser chords', async ({ page }) => {
+  const grid = page.locator('#media-grid');
+  await page.keyboard.press('/');
+  const search = page.locator('#search-input');
+  await expect(search).toBeFocused();
+  await page.keyboard.press('g');
+  await expect(search).toHaveValue('g');
+  await expect(grid).not.toHaveClass(/picture-grid/);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+g');
+  await page.keyboard.press('Alt+g');
+  await page.keyboard.press('Meta+g');
+  await expect(page.locator('#picture-layout-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('g');
+  await expect(page.locator('#picture-layout-toggle')).toHaveAttribute('aria-pressed', 'true');
 });

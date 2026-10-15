@@ -37,7 +37,7 @@ export function pictureRows(ratios, width, gap = 12, targetHeight = 180) {
 
 export function initPictureLayout(grid) {
   const button = document.getElementById('picture-layout-toggle');
-  if (!grid || !button) return;
+  if (!grid) return;
   let enabled = false;
   try { enabled = localStorage.getItem(STORAGE_KEY) === 'pictures'; } catch { /* Storage can be disabled. */ }
   const sheet = document.createElement('style');
@@ -48,7 +48,7 @@ export function initPictureLayout(grid) {
     const cards = Array.from(grid.children).filter(el => el.classList.contains('media-card'));
     const active = enabled && cards.some(el => el.classList.contains('image-card'));
     grid.classList.toggle('picture-grid', active);
-    button.setAttribute('aria-pressed', String(enabled));
+    button?.setAttribute('aria-pressed', String(enabled));
     if (!active) { sheet.textContent = ''; return; }
     const width = grid.getBoundingClientRect().width;
     const gap = Number.parseFloat(getComputedStyle(grid).columnGap) || 0;
@@ -67,11 +67,12 @@ export function initPictureLayout(grid) {
     sheet.textContent = rules.join('\n');
   }
 
-  button.addEventListener('click', () => {
+  function toggle() {
     enabled = !enabled;
     try { localStorage.setItem(STORAGE_KEY, enabled ? 'pictures' : 'grid'); } catch { /* Keep the session preference. */ }
     layout(); // Retain cards, selection, pagination and keyboard focus.
-  });
+  }
+  button?.addEventListener('click', toggle);
   let previousWidth = -1;
   new ResizeObserver(() => {
     const width = grid.getBoundingClientRect().width;
@@ -79,4 +80,5 @@ export function initPictureLayout(grid) {
   }).observe(grid);
   new MutationObserver(layout).observe(grid, { childList: true });
   layout();
+  return toggle;
 }

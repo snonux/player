@@ -143,6 +143,7 @@ Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** w
 | `r` | Enable shuffle, or reshuffle if shuffle is already active |
 | `s` | Generate a share link for the selected media |
 | `/` | Focus the quick search bar (debounced) |
+| `g` | Toggle picture layout (also available in help) |
 | `n` | Open notes modal for the selected media |
 | `t` | Open tags for the selected media |
 | `F` | Toggle favorite for the selected media |

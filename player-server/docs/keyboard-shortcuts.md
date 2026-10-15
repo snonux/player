@@ -23,6 +23,7 @@ fields and dialogs, then resumes folder/set navigation once the grid is shown.
 | `r` | Enable shuffle, or reshuffle the current filtered result set |
 | `s` | Generate a share link for the selected media |
 | `/` | Focus library quick search, or filter shortcuts while help is open |
+| `g` | Toggle picture layout (also available in help) |
 | `n` | Open notes modal for the selected media |
 | `i` | Show / hide media info |
 | `C` | Minimize player |

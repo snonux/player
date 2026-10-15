@@ -3,7 +3,7 @@ import { state, setMedia } from '../state.js';
 import { clearSelection, selectByElement } from '../selection.js';
 import { fmtSize } from '../dom.js';
 import { escapeHtml, fmtDur, toast } from '../utils.js';
-import { initPictureLayout, pictureRatio } from './picture-layout.js';
+import { pictureRatio } from './picture-layout.js';
 
 let callbacks = {};
 let mediaPageSize = 100;
@@ -37,8 +37,6 @@ export function paginateItems(items, page, pageSize = mediaPageSize) {
 export function initMediaGrid(options = {}) {
   callbacks = options;
   const grid = document.getElementById('media-grid');
-
-  initPictureLayout(grid);
 
   grid?.addEventListener('dblclick', (e) => {
     const el = e.target.closest('.media-card, .media-row');
