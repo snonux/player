@@ -1,4 +1,4 @@
 package internal
 
 // Version is the current version of the application.
-const Version = "0.3.3"
+const Version = "0.4.0"

@@ -1,3 +1,3 @@
-Save multiple Player servers and choose a server or local files at startup.
-Unlock saved logins with fingerprint or biometrics, or use your server password.
-Saved logins stay separate for each server; switching preserves them and logout removes the selected login.
+Show plain and synchronized lyrics during music playback, with timed highlighting and seeking.
+The web player adds five switchable audio visualizations and clearer keyboard help.
+Album artwork now follows Beets cover preferences and refreshes on rescan.
