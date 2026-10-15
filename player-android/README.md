@@ -35,7 +35,7 @@ Physical devices, other document providers, and removable storage have not
 been verified. See the [verification results](docs/standalone-playback-verification.md)
 for the exact platform checks and automated coverage.
 
-Folder scanning, playlists, local tags/notes, and syncing local
+Folder scanning, playlists, local tags, and syncing local
 history across devices are outside this feature.
 
 ## Keep server files offline
@@ -57,13 +57,35 @@ server. Offline images include SVGs supported by the same safety limits as
 server images. Public share links cannot be kept offline from the app.
 
 Use **Delete offline copy** in Downloads to stop that file's playback and remove
-its downloaded bytes and local progress. The remote media and files you added
+its downloaded bytes, local progress, notes, bookmarks and favorites. The remote media and files you added
 through Android's document picker stay available. Uninstalling Player or clearing
 its app storage removes downloads. An interrupted download is discarded when
 Downloads next opens; it can be downloaded again from the server file's details.
 
 See [offline verification](docs/offline-downloads-verification.md) for automated
 coverage and the repeatable Android device test.
+
+## Bookmarks, notes and favorites
+
+In audio or video playback, tap **Bookmarks**, optionally enter a label, then
+**Save current position**. The list shows each timestamp and label. Tap a saved
+position to jump there, or its **Delete bookmark** button to remove it. Saved
+positions are separate from automatic resume progress.
+
+Tap **Notes** in playback to edit your personal note. Notes also appear in a
+device file's menu and beside each download. Edits save automatically; Back
+waits for the latest edit to save. A failed save keeps the draft open for retry.
+Images use **Add to favorites** to save the whole item and also have notes.
+Public shares do not expose account notes, bookmarks or favorites.
+
+Server notes, bookmarks and favorites belong to the signed-in account and
+are stored on that server. Position bookmarks require a server version that
+provides the bookmarks API. Device files and offline copies store their notes,
+bookmarks and favorites on this device, available without a login or network.
+Offline copies from different servers or accounts stay separate; their personal
+data does not sync to the server. Choosing a device file again preserves its
+notes and bookmarks, even when starting its resume progress over. Removing a
+device entry or deleting an offline copy also removes its personal data.
 
 ## Connect to a server
 

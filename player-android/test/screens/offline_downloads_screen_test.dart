@@ -1,8 +1,12 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:player_android/app_routes.dart';
+import 'package:player_android/screens/offline_playback_route.dart';
 import 'package:player_android/models/offline_media.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/offline_downloads_provider.dart';
@@ -117,6 +121,88 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     subscription!.close();
+    container.dispose();
+    await tester.runAsync(repository.close);
+    directory.deleteSync(recursive: true);
+  });
+  testWidgets('retained Downloads reloads an image favorite after viewer Back',
+      (tester) async {
+    final directory =
+        Directory.systemTemp.createTempSync('personal-favorite-return-');
+    final repository = (await tester.runAsync(
+        () async => OfflineDownloadRepository(directory: directory)))!;
+    final downloads = OfflineDownloads(repository, _StopControl());
+    final key = offlineMediaKey('https://saved.test', 1, 10);
+    final bytes = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0e0AAAAASUVORK5CYII=');
+    await tester.runAsync(() async {
+      await repository.database;
+      await repository.file(key).writeAsBytes(bytes);
+      await repository.add(OfflineMedia(
+          key: key,
+          origin: 'https://saved.test',
+          userId: 1,
+          mediaId: 10,
+          title: 'Saved image.png',
+          type: 'image',
+          sizeBytes: bytes.length,
+          addedAt: DateTime.now()));
+    });
+    final container = ProviderContainer(overrides: [
+      offlineDownloadRepositoryProvider.overrideWithValue(repository),
+      offlineDownloadsProvider.overrideWith((ref) => downloads),
+      apiClientProvider
+          .overrideWith((ref) => throw StateError('Offline favorite read API')),
+    ]);
+    final router =
+        GoRouter(initialLocation: AppRoutes.offlineDownloads, routes: [
+      GoRoute(
+          path: AppRoutes.offlineDownloads,
+          builder: (_, __) => const OfflineDownloadsScreen()),
+      GoRoute(
+          path: AppRoutes.offlinePlayer,
+          builder: (_, state) => OfflinePlaybackRoute(
+              downloadKey: state.pathParameters['downloadKey']!)),
+    ]);
+    Future<void> waitFor(bool Function() ready) async {
+      for (var i = 0; i < 150 && !ready(); i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)));
+      }
+      expect(ready(), isTrue);
+    }
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+        container: container, child: MaterialApp.router(routerConfig: router)));
+    await waitFor(
+        () => find.byTooltip('Add to favorites').evaluate().isNotEmpty);
+    await tester.tap(find.text('Saved image.png'));
+    await waitFor(() => find
+        .descendant(
+            of: find.byType(OfflinePlaybackRoute),
+            matching: find.byTooltip('Add to favorites'))
+        .evaluate()
+        .isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.byTooltip('Add to favorites'));
+    await waitFor(
+        () => find.byTooltip('Remove from favorites').evaluate().isNotEmpty);
+    await tester.binding.handlePopRoute();
+    await waitFor(() =>
+        find.byType(OfflinePlaybackRoute).evaluate().isEmpty &&
+        find.byTooltip('Remove from favorites').evaluate().isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.byTooltip('Remove from favorites'));
+    await waitFor(
+        () => find.byTooltip('Add to favorites').evaluate().isNotEmpty);
+    expect(
+        await tester
+            .runAsync(() => repository.personalStore(key).getFavorite()),
+        isFalse);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    router.dispose();
     container.dispose();
     await tester.runAsync(repository.close);
     directory.deleteSync(recursive: true);

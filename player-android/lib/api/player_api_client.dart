@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../models/models.dart';
+import '../models/media_bookmark.dart';
 import '../services/playback_preparer.dart' show PlaybackProbe;
 import '../services/progress_queue.dart' show ProgressSyncClient;
 
@@ -280,6 +281,14 @@ class PlayerApiClient implements ProgressSyncClient {
   // ---------------------------------------------------------------------------
   // Notes
   // ---------------------------------------------------------------------------
+
+  Future<List<MediaBookmark>> listBookmarks(int mediaId) =>
+      throw UnimplementedError();
+  Future<MediaBookmark> addBookmark(
+          int mediaId, double seconds, String label) =>
+      throw UnimplementedError();
+  Future<void> deleteBookmark(int mediaId, int bookmarkId) =>
+      throw UnimplementedError();
 
   Future<Note?> getNote(int mediaId) => throw UnimplementedError();
 

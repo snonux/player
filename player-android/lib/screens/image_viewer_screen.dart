@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
+import '../providers/personal_media_provider.dart';
+import '../services/personal_media_store.dart';
+import '../widgets/personal_media_actions.dart';
 import '../widgets/authenticated_network_image.dart';
 import '../widgets/public_network_image.dart';
 
@@ -43,14 +46,31 @@ class ImageViewerScreen extends ConsumerStatefulWidget {
 
 class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
   Future<Media>? _media;
+  PersonalMediaStore? _personalStore;
 
   @override
   void initState() {
     super.initState();
+    _resolveMedia();
+  }
+
+  @override
+  void didUpdateWidget(covariant ImageViewerScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mediaId != widget.mediaId ||
+        oldWidget.isPublicShare != widget.isPublicShare) {
+      _resolveMedia();
+    }
+  }
+
+  void _resolveMedia() {
+    _media = null;
+    _personalStore = null;
     if (widget.isPublicShare) return;
     final id = int.tryParse(widget.mediaId);
     if (id != null) {
       _media = ref.read(apiClientProvider).getMedia(id);
+      _personalStore = serverPersonalStore(ref, id);
     }
   }
 
@@ -58,7 +78,12 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
   Widget build(BuildContext context) {
     final fallbackTitle = widget.isPublicShare ? 'Shared Image' : 'Image';
     return Scaffold(
-      appBar: AppBar(title: Text(widget.mediaTitle ?? fallbackTitle)),
+      appBar: AppBar(title: Text(widget.mediaTitle ?? fallbackTitle), actions: [
+        if (_personalStore != null)
+          PersonalMediaActions(
+              store: _personalStore!,
+              title: widget.mediaTitle ?? fallbackTitle),
+      ]),
       backgroundColor: Colors.black,
       body: widget.isPublicShare ? _publicImage() : _libraryImage(),
     );

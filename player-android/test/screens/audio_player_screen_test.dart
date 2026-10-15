@@ -32,6 +32,7 @@
 // Run with: flutter test test/screens/audio_player_screen_test.dart
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -40,17 +41,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/app_routes.dart';
 import 'package:player_android/models/lyrics.dart';
+import 'package:player_android/models/media_bookmark.dart';
 import 'package:player_android/providers/api_client_provider.dart';
+import 'package:player_android/providers/local_library_provider.dart';
 import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/playback_preparer_provider.dart';
 import 'package:player_android/providers/public_api_client_provider.dart';
 import 'package:player_android/providers/playback_session_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/screens/audio_player_screen.dart';
+import 'package:player_android/screens/local_library_screen.dart';
+import 'package:player_android/screens/notes_editor_screen.dart';
+import 'package:player_android/services/local_library_repository.dart';
 import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/progress_queue.dart';
 import 'package:player_android/services/playback_preparer.dart';
@@ -85,6 +93,24 @@ class _FakeApiClient extends PlayerApiClient {
   _FakeApiClient() : super(dio: Dio());
 
   /// Records how many times [getMediaProgress] was called.
+  final bookmarks = <MediaBookmark>[];
+  @override
+  Future<List<MediaBookmark>> listBookmarks(int mediaId) async =>
+      List.of(bookmarks);
+  @override
+  Future<MediaBookmark> addBookmark(
+      int mediaId, double seconds, String label) async {
+    final bookmark = MediaBookmark(
+        id: bookmarks.length + 1, positionSeconds: seconds, label: label);
+    bookmarks.add(bookmark);
+    return bookmark;
+  }
+
+  @override
+  Future<void> deleteBookmark(int mediaId, int id) async {
+    bookmarks.removeWhere((item) => item.id == id);
+  }
+
   int getMediaProgressCallCount = 0;
   int updateStatusCallCount = 0;
 
@@ -350,6 +376,7 @@ Future<void> _pumpScreen(
   bool forbidServerDependencies = false,
   double textScale = 1.0,
   PlaybackPreparer? preparer,
+  LocalLibraryDatabase? localDatabase,
 }) async {
   final handler = handlerOverride ?? fakeHandler ?? _FakePlayerAudioHandler();
 
@@ -371,6 +398,8 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (localDatabase != null)
+          localLibraryDatabaseProvider.overrideWithValue(localDatabase),
         if (serverBaseUrl != null) ...[
           playerBaseUrlProvider.overrideWithValue(serverBaseUrl),
           credentialMutationQueueProvider.overrideWithValue(
@@ -744,6 +773,189 @@ void main() {
     expect(player.isPlaying, isFalse);
     expect(player.selectedSpeed, 1);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('open bookmark sheet stays bound to its original audio session',
+      (tester) async {
+    _setupAudioSessionMock();
+    addTearDown(_teardownAudioSessionMock);
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    final client = _FakeApiClient();
+    final coordinator = PlaybackSessionCoordinator();
+    addTearDown(() async {
+      await tester.runAsync(handler.stop);
+      await player.playingChanges.close();
+    });
+    await _pumpScreen(tester, client,
+        handlerOverride: handler,
+        coordinator: coordinator,
+        mediaUrl: 'https://player.example/api/v1/media/42/stream');
+    await tester.pump();
+    await tester.pump();
+    player.elapsed = const Duration(seconds: 25);
+    await tester.tap(find.byTooltip('Bookmarks'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('bookmark_label')), 'Original');
+    await tester.tap(find.text('Save current position'));
+    await tester.pumpAndSettle();
+    expect(client.bookmarks.single.positionSeconds, 25);
+    await tester.runAsync(() => coordinator.claim(
+        kind: PlaybackSourceKind.publicShare,
+        identity: 'new-player',
+        stop: () async {}));
+    player.elapsed = const Duration(seconds: 73);
+    await tester.pump();
+    await tester.tap(find.text('Save current position'));
+    await tester.pumpAndSettle();
+    expect(
+        find.text(
+            'Playback changed. Reopen bookmarks from the current player.'),
+        findsOneWidget);
+    expect(client.bookmarks.length, 1);
+    await tester.tap(find.text('Original'));
+    await tester.pumpAndSettle();
+    expect(player.elapsed, const Duration(seconds: 73));
+    expect(find.text('Could not jump to this bookmark. Please try again.'),
+        findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      'SAF identity playback actions use real SQLite and library Notes preserve the same draft',
+      (tester) async {
+    _setupAudioSessionMock();
+    addTearDown(_teardownAudioSessionMock);
+    SharedPreferences.setMockInitialValues({});
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfiNoIsolate;
+    final directory = await tester
+        .runAsync(() => Directory.systemTemp.createTemp('personal-saf-ui-'));
+    final path = '${directory!.path}/local.db';
+    final database = LocalLibraryDatabase(databasePath: path);
+    final item = await tester.runAsync(() =>
+        SqliteLocalMediaRepository(database).importDocument(
+            uri: 'content://documents/audio/saf-track',
+            title: 'SAF track',
+            mimeType: 'audio/mpeg',
+            durationMs: 100000));
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    Future<void> waitFor(bool Function() ready) async {
+      for (var attempt = 0; attempt < 150 && !ready(); attempt++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)));
+      }
+      expect(ready(), isTrue);
+    }
+
+    Future<T> complete<T>(Future<T> Function() action) async {
+      late T value;
+      Object? error;
+      var done = false;
+      unawaited(action().then((result) {
+        value = result;
+        done = true;
+      }, onError: (Object failure, StackTrace stack) {
+        error = failure;
+        done = true;
+      }));
+      await waitFor(() => done);
+      if (error != null) throw error!;
+      return value;
+    }
+
+    Future<void> tap(Finder finder) async {
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.ensureVisible(finder);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(finder);
+    }
+
+    addTearDown(() async {
+      await complete(handler.stop);
+      await complete(database.close);
+      await tester.runAsync(() => directory.delete(recursive: true));
+      await player.playingChanges.close();
+    });
+    await _pumpScreen(tester, _FakeApiClient(),
+        handlerOverride: handler,
+        localDatabase: database,
+        forbidServerDependencies: true,
+        request: LocalPlaybackRequest(
+            localMediaId: item!.id,
+            sourceUri: Uri.parse(item.uri),
+            title: item.title));
+    await waitFor(() => find.byTooltip('Bookmarks').evaluate().isNotEmpty);
+    player.elapsed = const Duration(milliseconds: 32500);
+    await tap(find.byTooltip('Bookmarks'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await waitFor(
+        () => find.text('No saved positions yet.').evaluate().isNotEmpty);
+    await tester.enterText(
+        find.byKey(const Key('bookmark_label')), 'SAF chapter');
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.ensureVisible(find.text('Save current position'));
+    await tap(find.text('Save current position'));
+    await waitFor(() =>
+        find.widgetWithText(ListTile, 'SAF chapter').evaluate().isNotEmpty);
+    expect(
+        (await complete(() => database.personalStore(item.id).listBookmarks()))
+            .single
+            .positionSeconds,
+        32.5);
+    player.elapsed = Duration.zero;
+    await tap(find.text('SAF chapter'));
+    await waitFor(() => player.elapsed == const Duration(milliseconds: 32500));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tap(find.byTooltip('Notes'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await waitFor(
+        () => find.byKey(const Key('notes_text_field')).evaluate().isNotEmpty);
+    await tester.enterText(
+        find.byKey(const Key('notes_text_field')), 'SAF note');
+    await tester.binding.handlePopRoute();
+    await waitFor(() => find.byType(NotesEditorScreen).evaluate().isEmpty);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tap(find.byTooltip('Bookmarks'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await waitFor(
+        () => find.byTooltip('Delete bookmark').evaluate().isNotEmpty);
+    await tap(find.byTooltip('Delete bookmark'));
+    await waitFor(
+        () => find.text('No saved positions yet.').evaluate().isNotEmpty);
+    expect(
+        await complete(() => database.personalStore(item.id).listBookmarks()),
+        isEmpty);
+    await complete(handler.stop);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(ProviderScope(
+        overrides: [localLibraryDatabaseProvider.overrideWithValue(database)],
+        child: const MaterialApp(home: LocalLibraryScreen())));
+    await waitFor(() => find.text('SAF track').evaluate().isNotEmpty);
+    await tap(find.byTooltip('Manage SAF track'));
+    await tester.pumpAndSettle();
+    await tap(find.text('Notes'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await waitFor(
+        () => find.byKey(const Key('notes_text_field')).evaluate().isNotEmpty);
+    expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('notes_text_field')))
+            .controller!
+            .text,
+        'SAF note');
+    await tester.binding.handlePopRoute();
+    await waitFor(() => find.byType(NotesEditorScreen).evaluate().isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await complete(database.close);
+    final reopened = LocalLibraryDatabase(databasePath: path);
+    expect(
+        (await complete(() => reopened.personalStore(item.id).getNote()))
+            ?.content,
+        'SAF note');
+    await complete(reopened.close);
   });
 
   testWidgets('local audio uses a content URI and local progress callbacks',

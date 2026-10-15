@@ -5,10 +5,12 @@ import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
 import '../models/local_media.dart';
 import '../providers/local_library_provider.dart';
+import '../providers/personal_media_provider.dart';
+import '../widgets/personal_media_actions.dart';
 import '../providers/settings_provider.dart';
 import '../services/local_document_picker.dart';
 
-enum _LocalMediaAction { relink, remove }
+enum _LocalMediaAction { notes, relink, remove }
 
 class LocalLibraryScreen extends ConsumerStatefulWidget {
   const LocalLibraryScreen({super.key});
@@ -120,10 +122,14 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
               trailing: PopupMenuButton<_LocalMediaAction>(
                 tooltip: 'Manage ${media.title}',
                 onSelected: (action) => switch (action) {
+                  _LocalMediaAction.notes => openPersonalNotes(
+                      context, localPersonalStore(ref, media.id), media.title),
                   _LocalMediaAction.relink => _relink(media),
                   _LocalMediaAction.remove => _remove(media),
                 },
                 itemBuilder: (context) => const [
+                  PopupMenuItem(
+                      value: _LocalMediaAction.notes, child: Text('Notes')),
                   PopupMenuItem(
                     value: _LocalMediaAction.relink,
                     child: Text('Choose file again'),

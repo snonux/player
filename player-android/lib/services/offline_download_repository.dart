@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/offline_media.dart';
 import 'playback_request.dart';
+import 'personal_media_store.dart';
 
 /// App-private downloads, independent of document permissions and server state.
 /// Only generated hashes are used as filenames; remote paths never reach disk.
@@ -25,16 +26,28 @@ class OfflineDownloadRepository {
   Future<Database> _open() async {
     _directory ??= Directory('${await getDatabasesPath()}/offline-downloads');
     await directory.create(recursive: true);
-    final db = await openDatabase('${directory.path}/index.db', version: 1,
+    final db = await openDatabase('${directory.path}/index.db',
+        version: 2,
+        onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
+        onUpgrade: (db, oldVersion, _) async {
+          if (oldVersion < 2) {
+            await db.execute(
+                "ALTER TABLE downloads ADD COLUMN instance_id TEXT NOT NULL DEFAULT ''");
+            await db.execute(
+                'UPDATE downloads SET instance_id = lower(hex(randomblob(16)))');
+            await _createPersonalSchema(db);
+          }
+        },
         onCreate: (db, _) async {
-      await db.execute('''CREATE TABLE downloads (
-        key TEXT PRIMARY KEY, origin TEXT NOT NULL, user_id INTEGER NOT NULL,
+          await db.execute('''CREATE TABLE downloads (
+        key TEXT PRIMARY KEY, instance_id TEXT NOT NULL, origin TEXT NOT NULL, user_id INTEGER NOT NULL,
         media_id INTEGER NOT NULL, title TEXT NOT NULL, type TEXT NOT NULL,
         size_bytes INTEGER NOT NULL, added_at INTEGER NOT NULL,
         position_seconds REAL NOT NULL DEFAULT 0,
         finished INTEGER NOT NULL DEFAULT 0
       )''');
-    });
+          await _createPersonalSchema(db);
+        });
     try {
       // A killed process may leave a partial download or a completed file whose
       // metadata was never committed. Neither is presented as ready.
@@ -56,6 +69,23 @@ class OfflineDownloadRepository {
       rethrow;
     }
   }
+
+  static Future<void> _createPersonalSchema(DatabaseExecutor db) =>
+      createPersonalMediaSchema(db,
+          ownerTable: 'downloads', ownerColumn: 'key', keyType: 'TEXT');
+
+  PersonalMediaStore personalStore(String key) => SqlitePersonalMediaStore(
+      database: () => database,
+      write: <T>(action) => _write((db) => db.transaction(action)),
+      ownerTable: 'downloads',
+      ownerColumn: 'key',
+      ownerId: key,
+      identity: 'offline:$key',
+      ownerRevision: _write((db) async {
+        final rows = await db.query('downloads',
+            columns: ['instance_id'], where: 'key = ?', whereArgs: [key]);
+        return rows.isEmpty ? null : rows.single['instance_id'];
+      }));
 
   File file(String key, {bool partial = false}) {
     if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(key)) {
@@ -96,6 +126,9 @@ class OfflineDownloadRepository {
         }
         await db.insert('downloads', {
           'key': item.key,
+          'instance_id':
+              (await db.rawQuery('SELECT lower(hex(randomblob(16))) AS id'))
+                  .single['id'],
           'origin': item.origin,
           'user_id': item.userId,
           'media_id': item.mediaId,

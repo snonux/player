@@ -76,22 +76,32 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   /// top-level [mediaDetailErrorMessage] helper so no `dio` import is needed.
   Future<void> _load() async {
     if (!mounted) return;
+    final mediaId = widget.mediaId;
+    final epoch = ref.read(credentialMutationQueueProvider).generation;
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      final id = int.tryParse(widget.mediaId) ?? 0;
+      final id = int.tryParse(mediaId) ?? 0;
       final client = ref.read(apiClientProvider);
       final media = await client.getMedia(id);
-      if (!mounted) return;
+      if (!mounted ||
+          widget.mediaId != mediaId ||
+          ref.read(credentialMutationQueueProvider).generation != epoch) {
+        return;
+      }
       setState(() {
         _media = media;
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted ||
+          widget.mediaId != mediaId ||
+          ref.read(credentialMutationQueueProvider).generation != epoch) {
+        return;
+      }
       setState(() {
         _error = mediaDetailErrorMessage(e);
         _isLoading = false;
@@ -213,7 +223,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   /// Audio and video use [PlayerApiClient.playbackUrl], which is the server's
   /// compatibility stream for items it marks as transcoded. Images are always
   /// shown from the original.
-  void _play() {
+  Future<void> _play() async {
     final media = _media;
     if (media == null) return;
 
@@ -224,10 +234,16 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final playbackUrl = client.playbackUrl(media);
 
     if (media.type == 'image') {
-      context.push(
+      final epoch = ref.read(credentialMutationQueueProvider).generation;
+      await context.push(
         AppRoutes.imageViewerPath(media.id.toString()),
         extra: {'mediaUrl': streamUrl, 'title': media.fileName},
       );
+      if (mounted &&
+          widget.mediaId == media.id.toString() &&
+          ref.read(credentialMutationQueueProvider).generation == epoch) {
+        await _load();
+      }
     } else if (media.type == 'video') {
       context.push(
         AppRoutes.videoPlayerPath(media.id.toString()),

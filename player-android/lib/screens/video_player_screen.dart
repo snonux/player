@@ -20,6 +20,7 @@ import '../services/shared_video_events.dart';
 import '../services/playback_session_coordinator.dart';
 import '../utils/playback_errors.dart';
 import '../widgets/playback_loading_view.dart';
+import '../widgets/personal_media_actions.dart';
 import 'playback_preparation_mixin.dart';
 
 // How often progress updates are emitted to the server while playing.
@@ -888,6 +889,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
+        actions: [
+          if (_activeRequest != null &&
+              !_isLoading &&
+              _error == null &&
+              !widget.isPublicShare)
+            _buildPersonalActions(),
+        ],
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: Text(_activeRequest?.title ??
@@ -898,6 +906,39 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       ),
       body: _buildBody(),
     );
+  }
+
+  Widget _buildPersonalActions() {
+    final request = _activeRequest!;
+    final lease = _sessionLease;
+    final controller = _videoController;
+    void check() {
+      if (!mounted ||
+          lease == null ||
+          !lease.isCurrent ||
+          _sessionLease != lease ||
+          _activeRequest?.identity != request.identity ||
+          controller == null ||
+          _videoController != controller ||
+          _error != null) {
+        throw StateError('Playback is no longer active.');
+      }
+    }
+
+    return PlaybackPersonalActions(
+        request: request,
+        position: () {
+          check();
+          return controller!.value.position;
+        },
+        duration: () {
+          check();
+          return controller!.value.duration;
+        },
+        onSeek: (position) async {
+          check();
+          await controller!.seekTo(position);
+        });
   }
 
   /// Selects the appropriate body widget based on current state.

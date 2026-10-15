@@ -3,9 +3,10 @@ import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/local_media.dart';
+import 'personal_media_store.dart';
 
 const _databaseName = 'local_library.db';
-const _databaseVersion = 4;
+const _databaseVersion = 5;
 const _mediaTable = 'local_media';
 const _progressTable = 'local_progress';
 const _grantCleanupTable = 'local_grant_cleanup';
@@ -84,6 +85,7 @@ class LocalLibraryDatabase {
       )
     ''');
     await _createGrantCleanupSchema(db);
+    await _createPersonalSchema(db);
   }
 
   static Future<void> _createVersionOneSchema(DatabaseExecutor db) async {
@@ -129,7 +131,21 @@ class LocalLibraryDatabase {
     if (oldVersion < 4 && newVersion >= 4) {
       await _createGrantCleanupSchema(db);
     }
+    if (oldVersion < 5 && newVersion >= 5) await _createPersonalSchema(db);
   }
+
+  PersonalMediaStore personalStore(int id) => SqlitePersonalMediaStore(
+      database: () => database,
+      write: write,
+      ownerTable: _mediaTable,
+      ownerColumn: 'id',
+      ownerId: id,
+      identity: 'local:$id',
+      durationColumn: 'duration_ms');
+
+  static Future<void> _createPersonalSchema(DatabaseExecutor db) =>
+      createPersonalMediaSchema(db,
+          ownerTable: _mediaTable, ownerColumn: 'id', keyType: 'INTEGER');
 
   static Future<void> _createGrantCleanupSchema(DatabaseExecutor db) =>
       db.execute('''

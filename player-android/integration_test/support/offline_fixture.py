@@ -28,6 +28,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("server_binary", type=Path)
     parser.add_argument("--port", type=int, default=18765)
+    parser.add_argument("--personal-media", action="store_true", help="Also add two 60-second files for personal_media_test.dart")
     args = parser.parse_args()
     binary = args.server_binary.resolve(strict=True)
     # Refuse an occupied port instead of accidentally bootstrapping some other
@@ -61,6 +62,14 @@ def main():
         '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96">'
         '<rect width="96" height="96" fill="green"/></svg>')
     (media / "offline-audio.lrc").write_text("[00:00.00]Offline audio\n[00:02.00]Second line\n")
+    if args.personal_media:
+        ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:duration=60",
+               "-c:a", "libmp3lame", str(media / "personal-audio.mp3"))
+        ffmpeg("-f", "lavfi", "-i", "color=blue:size=160x120:duration=60",
+               "-f", "lavfi", "-i", "sine=frequency=660:duration=60",
+               "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+               "-c:a", "aac", "-shortest", "-movflags", "+faststart",
+               str(media / "personal-video.mp4"))
     hashes = {path.name: digest(path) for path in sorted(media.iterdir())}
     (directory / "remote-hashes.json").write_text(json.dumps(hashes, indent=2))
     credentials = {"username": "offline-e2e", "password": secrets.token_urlsafe(24)}
@@ -109,7 +118,7 @@ def main():
         while True:
             result = request("/api/v1/media")
             items = result if isinstance(result, list) else result.get("items", result.get("media", []))
-            if len(items) == 5:
+            if len(items) == (7 if args.personal_media else 5):
                 break
             if time.monotonic() > deadline + 30:
                 raise RuntimeError("Fixture media scan did not finish")

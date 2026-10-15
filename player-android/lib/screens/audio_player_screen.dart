@@ -19,6 +19,7 @@ import '../services/playback_source_resolver.dart';
 import '../utils/playback_errors.dart';
 import '../widgets/lyrics_panel.dart';
 import '../widgets/playback_loading_view.dart';
+import '../widgets/personal_media_actions.dart';
 import 'playback_preparation_mixin.dart';
 
 // Available playback speed options for the speed selector.
@@ -618,6 +619,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
+        actions: [
+          if (_activeRequest != null &&
+              !_isLoading &&
+              _error == null &&
+              !widget.isPublicShare)
+            _buildPersonalActions(),
+        ],
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: Text(_activeRequest?.title ??
@@ -628,6 +636,40 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       ),
       body: _buildBody(),
     );
+  }
+
+  Widget _buildPersonalActions() {
+    final request = _activeRequest!;
+    final lease = _sessionLease;
+    final generation = _activeSourceGeneration;
+    final handler = ref.read(audioHandlerProvider);
+    void check() {
+      if (!mounted ||
+          lease == null ||
+          !lease.isCurrent ||
+          _sessionLease != lease ||
+          _activeRequest?.identity != request.identity ||
+          generation == null ||
+          !handler.isSourceSessionCurrent(generation) ||
+          _error != null) {
+        throw StateError('Playback is no longer active.');
+      }
+    }
+
+    return PlaybackPersonalActions(
+        request: request,
+        position: () {
+          check();
+          return handler.player.position;
+        },
+        duration: () {
+          check();
+          return handler.player.duration;
+        },
+        onSeek: (position) async {
+          check();
+          await handler.seekForSession(position, generation!);
+        });
   }
 
   /// Selects the appropriate body widget based on current state.

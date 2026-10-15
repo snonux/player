@@ -48,6 +48,7 @@ class _Client extends PlayerApiClient {
 
   Media media;
   int streamUrlCalls = 0;
+  final mediaIds = <int>[];
 
   @override
   Future<List<Media>> listMedia({
@@ -70,7 +71,16 @@ class _Client extends PlayerApiClient {
       [_image];
 
   @override
-  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async => media;
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async {
+    mediaIds.add(mediaId);
+    return media;
+  }
+
+  @override
+  Future<bool> toggleFavorite(int mediaId) async {
+    media = Media.fromJson(media.toJson()..['favorite'] = !media.favorite);
+    return media.favorite;
+  }
 
   @override
   Future<List<Tag>> listTags() async => [];
@@ -163,6 +173,15 @@ void main() {
     );
     expect(image.imageUrl, client.streamUrl(9));
     expect(image.httpHeaders?['Authorization'], 'Bearer pt-image-test');
+    for (var i = 0; i < 8; i++) {
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.ensureVisible(find.byTooltip('Add to favorites'));
+    await tester.tap(find.byTooltip('Add to favorites'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(client.media.favorite, isTrue);
 
     await tester.tap(find.descendant(
       of: find.byType(ImageViewerScreen),
@@ -171,6 +190,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MediaDetailScreen), findsOneWidget);
     expect(find.byType(ImageViewerScreen), findsNothing);
+    expect(find.byTooltip('Remove from favourites'), findsOneWidget);
   });
 
   testWidgets('direct image route rejects an audio item before requesting it',
@@ -190,5 +210,29 @@ void main() {
     expect(find.byType(AuthenticatedNetworkImage), findsNothing);
     expect(find.byType(AudioPlayerScreen), findsNothing);
     expect(client.streamUrlCalls, 0);
+  });
+  testWidgets(
+      'reused image route changes personal owner and clears account actions for public shares',
+      (tester) async {
+    final client =
+        _Client(media: Media.fromJson(_image.toJson()..['type'] = 'audio'));
+    Future<void> show(String id, {bool public = false}) =>
+        tester.pumpWidget(ProviderScope(
+            overrides: [apiClientProvider.overrideWithValue(client)],
+            child: MaterialApp(
+                home: ImageViewerScreen(mediaId: id, isPublicShare: public))));
+    await show('9');
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Notes'), findsOneWidget);
+    await show('10');
+    await tester.pumpAndSettle();
+    expect(client.mediaIds.where((id) => id == 10), isNotEmpty);
+    await show('shared', public: true);
+    await tester.pumpAndSettle();
+    final calls = client.mediaIds.length;
+    expect(find.byTooltip('Notes'), findsNothing);
+    expect(find.byTooltip('Add to favorites'), findsNothing);
+    await tester.pump();
+    expect(client.mediaIds.length, calls);
   });
 }

@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
 import '../models/offline_media.dart';
 import '../providers/offline_downloads_provider.dart';
+import '../providers/personal_media_provider.dart';
+import '../widgets/personal_media_actions.dart';
 import '../widgets/keep_offline_button.dart';
 
 class OfflineDownloadsScreen extends ConsumerStatefulWidget {
@@ -18,6 +20,7 @@ class OfflineDownloadsScreen extends ConsumerStatefulWidget {
 class _OfflineDownloadsScreenState
     extends ConsumerState<OfflineDownloadsScreen> {
   final Set<String> _removing = {};
+  int _personalRevision = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -90,19 +93,38 @@ class _OfflineDownloadsScreenState
                       isThreeLine: true,
                       onTap: _removing.contains(item.key)
                           ? null
-                          : () => context
-                              .push(AppRoutes.offlinePlayerPath(item.key)),
-                      trailing: IconButton(
-                          tooltip: 'Delete offline copy',
-                          onPressed: _removing.contains(item.key)
-                              ? null
-                              : () => _remove(item),
-                          icon: const Icon(Icons.delete_outline)),
+                          : () => _open(item),
+                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                        IconButton(
+                            tooltip: 'Notes',
+                            icon: const Icon(Icons.notes_outlined),
+                            onPressed: _removing.contains(item.key)
+                                ? null
+                                : () => openPersonalNotes(
+                                    context,
+                                    offlinePersonalStore(ref, item.key),
+                                    item.title)),
+                        if (item.type == 'image')
+                          FavoriteButton(
+                              store: offlinePersonalStore(ref, item.key),
+                              revision: _personalRevision),
+                        IconButton(
+                            tooltip: 'Delete offline copy',
+                            onPressed: _removing.contains(item.key)
+                                ? null
+                                : () => _remove(item),
+                            icon: const Icon(Icons.delete_outline)),
+                      ]),
                     ),
                 ]),
         )),
       ]),
     );
+  }
+
+  Future<void> _open(OfflineMedia item) async {
+    await context.push(AppRoutes.offlinePlayerPath(item.key));
+    if (mounted) setState(() => _personalRevision++);
   }
 
   Future<void> _remove(OfflineMedia item) async {

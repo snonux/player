@@ -342,7 +342,10 @@ void main() {
       expect(migratedProgress!.positionSeconds, 4.5);
       final version =
           await (await current.database).rawQuery('PRAGMA user_version');
-      expect(version.single['user_version'], 4);
+      expect(version.single['user_version'], 5);
+      expect(await (await current.database).query('personal_media'), isEmpty);
+      expect(
+          await (await current.database).query('personal_bookmarks'), isEmpty);
       expect(await SqliteLocalGrantCleanupRepository(current).pendingUris(),
           isEmpty);
       await current.close();

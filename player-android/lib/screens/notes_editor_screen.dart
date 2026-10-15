@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
-import '../providers/api_client_provider.dart';
+import '../providers/personal_media_provider.dart';
+import '../services/personal_media_store.dart';
 import '../utils/error_mappers.dart';
 
 // ---------------------------------------------------------------------------
@@ -19,7 +20,10 @@ class NotesEditorScreen extends ConsumerStatefulWidget {
   /// The string form of the media ID extracted from the '/notes/:mediaId' route.
   final String mediaId;
 
-  const NotesEditorScreen({super.key, required this.mediaId});
+  final PersonalMediaStore? store;
+  final String? mediaTitle;
+  const NotesEditorScreen(
+      {super.key, required this.mediaId, this.store, this.mediaTitle});
 
   @override
   ConsumerState<NotesEditorScreen> createState() => _NotesEditorScreenState();
@@ -27,6 +31,7 @@ class NotesEditorScreen extends ConsumerStatefulWidget {
 
 class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
   late final TextEditingController _controller;
+  late PersonalMediaStore _store;
   Note? _note;
   String? _error;
   bool _isLoading = false;
@@ -48,6 +53,8 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
   @override
   void initState() {
     super.initState();
+    _store = widget.store ??
+        serverPersonalStore(ref, int.tryParse(widget.mediaId) ?? 0);
     _controller = TextEditingController()..addListener(_onTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
@@ -55,7 +62,12 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
   @override
   void didUpdateWidget(covariant NotesEditorScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.mediaId == widget.mediaId) return;
+    if (oldWidget.mediaId == widget.mediaId &&
+        oldWidget.store?.identity == widget.store?.identity) {
+      return;
+    }
+    _store = widget.store ??
+        serverPersonalStore(ref, int.tryParse(widget.mediaId) ?? 0);
     _generation++;
     _debounce?.cancel();
     _loaded = false;
@@ -89,8 +101,7 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
       _error = null;
     });
     try {
-      final id = int.tryParse(widget.mediaId) ?? 0;
-      final note = await ref.read(apiClientProvider).getNote(id);
+      final note = await _store.getNote();
       if (!_isCurrent(generation)) return;
       final content = note?.content ?? '';
       _controller.text = content;
@@ -131,13 +142,12 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
   }
 
   Future<bool> _drainSaves(int generation) async {
-    final id = int.tryParse(widget.mediaId) ?? 0;
-    final client = ref.read(apiClientProvider);
+    final store = _store;
     setState(() => _isSaving = true);
     try {
       while (_isCurrent(generation) && _dirty && !_isClearing) {
         final content = _controller.text;
-        final saved = await client.upsertNote(id, content);
+        final saved = await store.saveNote(content);
         if (!_isCurrent(generation)) return false;
         setState(() {
           _note = saved;
@@ -224,13 +234,12 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
     setState(() => _isClearing = true);
 
     try {
-      final id = int.tryParse(widget.mediaId) ?? 0;
-      final client = ref.read(apiClientProvider);
+      final store = _store;
       // A save may have started while the confirmation dialog was open.
       // Finish it first so its response cannot recreate the cleared note.
       await _saveFuture;
       if (!_isCurrent(generation)) return;
-      await client.deleteNote(id);
+      await store.deleteNote();
       if (!_isCurrent(generation)) return;
       // Reset all local state: the note is gone.
       _controller.text = '';
@@ -292,7 +301,7 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
   /// prevent concurrent API calls.
   AppBar _buildAppBar() {
     return AppBar(
-      title: Text('Notes – ${widget.mediaId}'),
+      title: Text('Notes – ${widget.mediaTitle ?? widget.mediaId}'),
       actions: [
         if (_isSaving || _isClearing)
           // Unobtrusive progress indicator while a save is in flight.

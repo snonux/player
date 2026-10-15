@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../models/models.dart';
+import '../models/media_bookmark.dart';
 import '../services/playback_preparer.dart' show PlaybackProbe;
 import 'player_api_client.dart';
 
@@ -34,6 +35,10 @@ class DioPlayerApiClient extends PlayerApiClient {
       : _credentialEpoch = credentialEpoch;
 
   final int Function()? _credentialEpoch;
+
+  Options get _personalOptions => Options(extra: {
+        if (_credentialEpoch != null) 'credentialEpoch': _credentialEpoch(),
+      });
 
   // ---------------------------------------------------------------------------
   // Auth
@@ -221,6 +226,7 @@ class DioPlayerApiClient extends PlayerApiClient {
   Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async {
     final response = await rawDio.get<Map<String, dynamic>>(
       '$_kApiV1/media/$mediaId',
+      options: _personalOptions,
       cancelToken: cancelToken,
     );
 
@@ -464,6 +470,7 @@ class DioPlayerApiClient extends PlayerApiClient {
   Future<bool> toggleFavorite(int mediaId) async {
     final response = await rawDio.post<Map<String, dynamic>>(
       '$_kApiV1/media/$mediaId/favorite',
+      options: _personalOptions,
     );
     // The envelope always contains a boolean "favorite" field per the API spec.
     final data = response.data ?? {};
@@ -536,8 +543,34 @@ class DioPlayerApiClient extends PlayerApiClient {
   }
 
   // ---------------------------------------------------------------------------
-  // Notes
+  // Notes and saved positions
   // ---------------------------------------------------------------------------
+
+  @override
+  Future<List<MediaBookmark>> listBookmarks(int mediaId) async {
+    final response = await rawDio.get<List<dynamic>>(
+        '$_kApiV1/media/$mediaId/bookmarks',
+        options: _personalOptions);
+    return (response.data ?? [])
+        .map((json) => MediaBookmark.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<MediaBookmark> addBookmark(
+      int mediaId, double seconds, String label) async {
+    final response = await rawDio.post<Map<String, dynamic>>(
+        '$_kApiV1/media/$mediaId/bookmarks',
+        data: {'position_seconds': seconds, 'label': label.trim()},
+        options: _personalOptions);
+    return MediaBookmark.fromJson(response.data!);
+  }
+
+  @override
+  Future<void> deleteBookmark(int mediaId, int bookmarkId) async {
+    await rawDio.delete<void>('$_kApiV1/media/$mediaId/bookmarks/$bookmarkId',
+        options: _personalOptions);
+  }
 
   /// Returns the authenticated user's note for [mediaId], or `null` if none.
   ///
@@ -549,6 +582,7 @@ class DioPlayerApiClient extends PlayerApiClient {
   Future<Note?> getNote(int mediaId) async {
     final response = await rawDio.get<dynamic>(
       '$_kApiV1/media/$mediaId/notes',
+      options: _personalOptions,
     );
     // 204 No Content — the server signals "no note exists" with an empty body.
     if (response.statusCode == 204 || response.data == null) return null;
@@ -565,6 +599,7 @@ class DioPlayerApiClient extends PlayerApiClient {
   Future<Note> upsertNote(int mediaId, String content) async {
     final response = await rawDio.post<Map<String, dynamic>>(
       '$_kApiV1/media/$mediaId/notes',
+      options: _personalOptions,
       data: {'content': content},
     );
     return Note.fromJson(response.data!);
@@ -575,7 +610,8 @@ class DioPlayerApiClient extends PlayerApiClient {
   /// DELETE /api/v1/media/{id}/notes — returns 200 {"status": "ok"}.
   @override
   Future<void> deleteNote(int mediaId) async {
-    await rawDio.delete<void>('$_kApiV1/media/$mediaId/notes');
+    await rawDio.delete<void>('$_kApiV1/media/$mediaId/notes',
+        options: _personalOptions);
   }
 
   // ---------------------------------------------------------------------------

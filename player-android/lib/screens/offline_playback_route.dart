@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/offline_downloads_provider.dart';
+import '../providers/personal_media_provider.dart';
+import '../widgets/personal_media_actions.dart';
 import '../services/playback_request.dart';
 import '../widgets/offline_image.dart';
 import 'audio_player_screen.dart';
@@ -54,7 +56,11 @@ class OfflinePlaybackRoute extends ConsumerWidget {
           mediaId: media.key, mediaTitle: media.title, request: source),
       _ => Scaffold(
           backgroundColor: Colors.black,
-          appBar: AppBar(title: Text(media.title)),
+          appBar: AppBar(title: Text(media.title), actions: [
+            PersonalMediaActions(
+                store: offlinePersonalStore(ref, downloadKey),
+                title: media.title),
+          ]),
           body: OfflineImage(uri: source.sourceUri, title: media.title)),
     };
   }
