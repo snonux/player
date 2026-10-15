@@ -34,6 +34,8 @@ fields and dialogs, then resumes folder/set navigation once the grid is shown.
 | `s` | Generate a share link for the selected media |
 | `/` | Focus library quick search, or filter shortcuts while help is open |
 | `g` | Toggle picture layout (also available in help) |
+| `+` / `=` / `-` | Larger / smaller library previews (saved); zoom the image when image view is open |
+| `0` | Reset library preview size; reset image zoom when image view is open |
 | `n` | Open notes modal for the selected media |
 | `i` | Show / hide media info |
 | `C` | Minimize player |

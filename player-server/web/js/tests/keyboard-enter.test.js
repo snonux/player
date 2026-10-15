@@ -344,6 +344,31 @@ function testPictureLayoutOwnership() {
   assert(toggles === 1, 'Dialogs and expanded images must block picture layout changes');
 }
 
+function testThumbnailSizeOwnership() {
+  const calls = [];
+  const handlers = {
+    thumbnailLarger: () => calls.push('larger'),
+    thumbnailSmaller: () => calls.push('smaller'),
+    thumbnailReset: () => calls.push('reset'),
+  };
+  initKeyboard(handlers);
+  for (const key of ['+', '=', '-', '0']) assert(pressKey(key), `${key} should resize library previews`);
+  assert(calls.join() === 'larger,larger,smaller,reset', 'Preview keys should dispatch size changes');
+  calls.length = 0;
+  for (const key of ['+', '=', '-', '0']) {
+    for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT']) pressKey(key, { tagName });
+    pressKey(key, { tagName: 'DIV', isContentEditable: true });
+    for (const modifier of ['ctrlKey', 'metaKey', 'altKey']) pressKey(key, undefined, { [modifier]: true });
+    for (const mode of ['isModalOpen', 'isSharesOpen', 'isMediaInfoOpen', 'isLightboxOpen']) {
+      initKeyboard({ ...handlers, [mode]: () => true });
+      pressKey(key);
+    }
+    initKeyboard(handlers);
+  }
+  assert(calls.length === 0, 'Editors, browser chords, dialogs and image view must own preview size keys');
+}
+
+testThumbnailSizeOwnership();
 testPictureLayoutOwnership();
 testHelpSearchOwnership();
 console.log('Running keyboard Enter tests...');

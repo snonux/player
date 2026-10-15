@@ -1,6 +1,7 @@
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initPictureLayout } from './views/picture-layout.js';
+import { initThumbnailSize } from './views/thumbnail-size.js';
 import { initSelection, selectByElement, currentElement, focusSelectedCard, navUp, navDown, navLeft, navRight } from './selection.js';
 import {
   initPlayer,
@@ -205,6 +206,7 @@ async function initApp() {
   initKeyboard({
     ...keyboardHandlers(),
     togglePictureLayout: initPictureLayout(document.getElementById('media-grid')),
+    ...initThumbnailSize(document.getElementById('media-grid')),
   });
   initNotes((status, message) => toast(status === 'error' ? message || 'Could not update note.' : status === 'deleted' ? 'Note deleted' : 'Note saved', status === 'error' ? 'error' : 'info'));
   initAdmin();

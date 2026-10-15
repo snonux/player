@@ -44,6 +44,158 @@ async function boxes(page: Page) {
   }));
 }
 
+test('preview keys clamp, preserve selection and persist; controls keep native Enter', async ({ page }) => {
+  const grid = page.locator('#media-grid');
+  const card = grid.locator('.image-card').first();
+  await card.focus();
+  const selected = await grid.locator('.selected').getAttribute('data-id');
+  const original = (await card.boundingBox())!.width;
+  await page.keyboard.press('+');
+  await page.keyboard.press('=');
+  await expect(grid).toHaveAttribute('data-thumbnail-size', '4');
+  expect((await card.boundingBox())!.width).toBeGreaterThan(original);
+  await expect(card).toBeFocused();
+  await expect(grid.locator('.selected')).toHaveAttribute('data-id', selected!);
+  await expect(page.getByRole('button', { name: 'Larger previews', exact: true })).toBeDisabled();
+  await page.keyboard.press('+');
+  await expect(grid).toHaveAttribute('data-thumbnail-size', '4');
+  for (let i = 0; i < 8; i++) await page.keyboard.press('-');
+  await expect(grid).toHaveAttribute('data-thumbnail-size', '0');
+  expect((await card.boundingBox())!.width).toBeLessThan(original);
+  await expect(page.getByRole('button', { name: 'Smaller previews', exact: true })).toBeDisabled();
+  await page.reload();
+  await expect(grid).toHaveAttribute('data-thumbnail-size', '0');
+  await page.getByRole('button', { name: 'Set pictures', exact: true }).click();
+  await page.getByRole('button', { name: 'Larger previews', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(grid).toHaveAttribute('data-thumbnail-size', '1');
+  await page.keyboard.press('0');
+  await expect(grid).toHaveAttribute('data-thumbnail-size', '2');
+  await page.getByRole('button', { name: 'Larger previews', exact: true }).click();
+  await page.getByRole('button', { name: 'Larger previews', exact: true }).click();
+  await expect(page.locator('#thumbnail-reset')).toBeFocused();
+  for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Smaller previews', exact: true }).click();
+  await expect(page.locator('#thumbnail-reset')).toBeFocused();
+});
+
+test('preview keys respect typing, dialogs, browser chords and image zoom', async ({ page }) => {
+  const reset = page.locator('#thumbnail-reset');
+  await page.keyboard.press('/');
+  await page.keyboard.type('+-0');
+  await expect(page.locator('#search-input')).toHaveValue('+-0');
+  await expect(reset).toHaveText('100%');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('?');
+  await page.locator('#help-close').focus();
+  for (const key of ['+', '-', '0']) await page.keyboard.press(key);
+  await expect(reset).toHaveText('100%');
+  await page.keyboard.press('Escape');
+  for (const modifier of ['Control', 'Meta', 'Alt']) {
+    for (const key of ['=', '-', '0']) await page.keyboard.press(`${modifier}+${key}`);
+  }
+  await expect(reset).toHaveText('100%');
+  await page.evaluate(async () => {
+    const path = '/js/playback.js';
+    (await import(path)).loadMediaDirect({ id: 1, type: 'image', file_name: 'zoom.svg' },
+      'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="teal"/></svg>'), '');
+  });
+  await expect.poll(() => page.locator('#media-image').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1200);
+  await page.keyboard.press('+');
+  await expect(page.locator('#media-image')).toHaveCSS('transform', /1.25/);
+  await expect(reset).toHaveText('100%');
+  await page.keyboard.press('0');
+  await expect(page.locator('#media-image')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+});
+
+test('preview buttons resize picture rows and fit narrow screens at every size', async ({ page }, testInfo) => {
+  await page.keyboard.press('g');
+  const before = await boxes(page);
+  await page.getByRole('button', { name: 'Larger previews', exact: true }).click();
+  await expect.poll(async () => (await boxes(page))[1].height).toBeGreaterThan(before[1].height);
+  await page.reload();
+  await page.getByRole('button', { name: 'Set pictures', exact: true }).click();
+  await expect(page.locator('#thumbnail-reset')).toHaveText('130%');
+  await expect(page.locator('#media-grid')).toHaveClass(/picture-grid/);
+  await page.setViewportSize({ width: 320, height: 640 });
+  for (const picture of [true, false]) {
+    if (!picture) { await page.locator('#thumbnail-reset').focus(); await page.keyboard.press('g'); }
+    for (let size = 0; size <= 4; size++) {
+      await page.evaluate((index) => localStorage.setItem('kiss-thumbnail-size', String(index)), size);
+      await page.reload();
+      await page.getByRole('button', { name: 'Set pictures', exact: true }).click();
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+      await expect.poll(async () => (await boxes(page)).every(box => box.left + box.width <= 320)).toBe(true);
+    }
+  }
+  await page.locator('#thumbnail-reset').click();
+  await expect(page.locator('#thumbnail-reset')).toHaveText('100%');
+  await page.screenshot({ path: testInfo.outputPath('preview-size-mobile.png'), fullPage: true });
+});
+
+test('invalid or unavailable preview storage leaves controls usable', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('kiss-thumbnail-size', '99'));
+  await page.reload();
+  await expect(page.locator('#thumbnail-reset')).toHaveText('100%');
+  await page.addInitScript(() => {
+    Storage.prototype.getItem = () => { throw new DOMException('Storage blocked', 'SecurityError'); };
+    Storage.prototype.setItem = () => { throw new DOMException('Storage blocked', 'SecurityError'); };
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Larger previews', exact: true }).click();
+  await expect(page.locator('#thumbnail-reset')).toHaveText('130%');
+  await page.keyboard.press('0');
+  await expect(page.locator('#thumbnail-reset')).toHaveText('100%');
+});
+
+test('every action stays inside and clickable on small regular and picture previews', async ({ page }) => {
+  await page.route('**/api/media/2', route => route.fulfill({ json: { media: media[1] } }));
+  await page.route('**/api/media/2/notes', route => route.fulfill({ json: { content: '' } }));
+  page.on('dialog', dialog => dialog.dismiss()); // Exercise the trash action without deleting the fixture.
+  page.on('popup', popup => popup.close());
+  await page.evaluate(() => {
+    (window as any).clickedActions = [];
+    document.addEventListener('click', event => {
+      const action = (event.target as Element).closest<HTMLElement>('[data-action]')?.dataset.action;
+      if (action) (window as any).clickedActions.push(action);
+    }, true);
+  });
+  const actions = ['play', 'favorite', 'notes', 'trash', 'mark-finished', 'mark-not-started', 'download', 'tags', 'regen-thumb'];
+  for (const width of [1280, 320]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const picture of [false, true]) {
+      await page.locator('#thumbnail-reset').focus();
+      if ((await page.locator('#media-grid').getAttribute('class'))!.includes('picture-grid') !== picture) await page.keyboard.press('g');
+      for (let i = 0; i < 4; i++) await page.keyboard.press('-');
+      const card = page.locator('#media-grid .image-card[data-id="2"]');
+      for (const action of actions) {
+        const button = card.locator(`[data-action="${action}"]`);
+        await button.scrollIntoViewIfNeeded();
+        const bounds = await card.boundingBox();
+        const target = (await button.boundingBox())!;
+        expect(target.x).toBeGreaterThanOrEqual(bounds!.x);
+        expect(target.x + target.width).toBeLessThanOrEqual(bounds!.x + bounds!.width + 1);
+        expect(target.y).toBeGreaterThanOrEqual(bounds!.y);
+        expect(target.y + target.height).toBeLessThanOrEqual(bounds!.y + bounds!.height + 1);
+        await expect.poll(() => button.evaluate(el => {
+          const r = el.getBoundingClientRect();
+          return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+        }), `${width}px ${picture ? 'picture' : 'regular'} ${action} hit target`).toBe(true);
+        await button.click();
+        await expect.poll(() => page.evaluate(() => (window as any).clickedActions.at(-1))).toBe(action);
+        if (action === 'notes' || action === 'tags') {
+          await expect(page.locator(`#${action}-modal`)).toHaveClass(/open/);
+          await page.keyboard.press('Escape');
+          await expect(page.locator(`#${action}-modal`)).toBeHidden();
+        }
+        if (action === 'play') {
+          await expect(page.locator('#player')).toHaveClass(/open/);
+          await page.keyboard.press('Escape');
+        }
+      }
+    }
+  }
+});
+
 test('picture rows fit metadata, preserve order/selection and shortcut, and paginate mixed media', async ({ page }, testInfo) => {
   const cards = page.locator('#media-grid > .media-card');
   const before = await boxes(page);

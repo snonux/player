@@ -507,15 +507,15 @@ function renderItem(m, index) {
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
-          <div class="card-actions">
-            <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
-            <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
-            <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
-            ${renderProgressActions()}
-            <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
-            <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
-            <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
-          </div>
+        </div>
+        <div class="card-actions">
+          <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
+          <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
+          <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+          ${renderProgressActions()}
+          <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
+          <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
+          <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
         </div>
         <div class="meta">
           <div class="title">${escapeHtml(m.file_name)}</div>
@@ -532,15 +532,15 @@ function renderItem(m, index) {
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${resText}${safeSizeText ? ' • ' + safeSizeText : ''}</span>
-          <div class="card-actions">
-            <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
-            <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
-            <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
-            ${renderProgressActions()}
-            <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
-            <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
-            <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
-          </div>
+        </div>
+        <div class="card-actions">
+          <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
+          <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
+          <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+          ${renderProgressActions()}
+          <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
+          <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
+          <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
         </div>
         <div class="meta">
           <div class="title">${escapeHtml(m.file_name)}</div>
@@ -554,14 +554,14 @@ function renderItem(m, index) {
       <div class="thumb-wrap">
         ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No cover</span>`}
         <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
-        <div class="card-actions">
-          <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
-          <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
-          <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
-          ${renderProgressActions()}
-          <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
-          <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
-        </div>
+      </div>
+      <div class="card-actions">
+        <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
+        <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
+        <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
+        ${renderProgressActions()}
+        <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
+        <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
       </div>
       <div class="meta">
         <div class="title">${escapeHtml(m.file_name)}</div>

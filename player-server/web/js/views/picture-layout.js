@@ -53,7 +53,7 @@ export function initPictureLayout(grid) {
     const width = grid.getBoundingClientRect().width;
     const gap = Number.parseFloat(getComputedStyle(grid).columnGap) || 0;
     const ratios = cards.map(el => Number(el.dataset.pictureRatio) || 16 / 9);
-    const rows = pictureRows(ratios, width, gap);
+    const rows = pictureRows(ratios, width, gap, 180 * (Number(grid.dataset.thumbnailScale) || 1));
     const rules = [];
     for (const row of rows) {
       for (let index = row.start; index < row.end; index++) {
@@ -73,6 +73,7 @@ export function initPictureLayout(grid) {
     layout(); // Retain cards, selection, pagination and keyboard focus.
   }
   button?.addEventListener('click', toggle);
+  grid.addEventListener('thumbnail-size:changed', layout);
   let previousWidth = -1;
   new ResizeObserver(() => {
     const width = grid.getBoundingClientRect().width;

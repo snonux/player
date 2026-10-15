@@ -66,6 +66,12 @@
   <div class="main-content">
     <div class="browse-toolbar">
       <div id="result-count" class="text-muted text-xs mt-1"></div>
+      <div class="thumbnail-size-controls" role="group" aria-label="Preview size">
+        <span class="text-xs text-muted">Previews</span>
+        <button id="thumbnail-smaller" class="btn btn-ghost btn-sm" type="button" aria-label="Smaller previews" title="Smaller previews (-)">−</button>
+        <button id="thumbnail-reset" class="btn btn-ghost btn-sm" type="button" title="Reset preview size (0)" aria-live="polite">100%</button>
+        <button id="thumbnail-larger" class="btn btn-ghost btn-sm" type="button" aria-label="Larger previews" title="Larger previews (+)">+</button>
+      </div>
       <button id="help-hint" class="btn btn-ghost btn-sm text-muted" type="button" aria-controls="help-modal">Press <kbd>?</kbd> for help</button>
     </div>
 
@@ -221,6 +227,7 @@
         <div class="help-row"><span><kbd>j</kbd> <kbd>k</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>H</kbd> <kbd>L</kbd></span><span>Expanded image: pan when zoomed; position active display crop</span></div>
         <div class="help-row"><span><kbd>0</kbd></span><span>Expanded image: reset zoom and pan to fitted view</span></div>
         <div class="help-row"><span><kbd>g</kbd></span><span><button id="picture-layout-toggle" class="btn btn-ghost btn-sm" type="button" aria-pressed="false">Picture layout</button> — fit image thumbnails to their aspect ratios</span></div>
+        <div class="help-row"><span><kbd>+</kbd> / <kbd>-</kbd> / <kbd>0</kbd></span><span>Larger / smaller / reset library previews (image view keeps its own zoom)</span></div>
         <div class="help-row"><span><kbd>?</kbd></span><span>Show / hide help (including image viewer)</span></div>
       </div>
       <div class="help-search text-muted text-xs mt-2">

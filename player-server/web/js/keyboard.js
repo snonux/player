@@ -253,6 +253,19 @@ export function initKeyboard(handlers) {
     }
 
     switch (e.key) {
+      case '+':
+      case '=':
+        e.preventDefault();
+        handlers.thumbnailLarger?.(e);
+        break;
+      case '-':
+        e.preventDefault();
+        handlers.thumbnailSmaller?.(e);
+        break;
+      case '0':
+        e.preventDefault();
+        handlers.thumbnailReset?.(e);
+        break;
       // Navigation
       case 'ArrowUp':
         e.preventDefault();

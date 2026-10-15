@@ -206,11 +206,21 @@ body {
 /* Media grid */
 .browse-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--gap);
   margin-bottom: var(--gap);
 }
+.thumbnail-size-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: auto;
+}
+.thumbnail-size-controls .btn { min-width: 2.75rem; min-height: 2.75rem; }
+.thumbnail-size-controls .btn:disabled { opacity: 0.45; cursor: default; }
+#thumbnail-reset { min-width: 4rem; }
 #help-hint {
   flex-shrink: 0;
   margin-left: auto;
@@ -220,10 +230,16 @@ body {
   border-color: var(--selected-border);
 }
 .media-grid {
+  --thumbnail-base: 15rem;
+  --thumbnail-scale: 1;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(var(--thumbnail-base) * var(--thumbnail-scale))), 1fr));
   gap: var(--gap);
 }
+.media-grid[data-thumbnail-size="0"] { --thumbnail-scale: 0.65; }
+.media-grid[data-thumbnail-size="1"] { --thumbnail-scale: 0.8; }
+.media-grid[data-thumbnail-size="3"] { --thumbnail-scale: 1.3; }
+.media-grid[data-thumbnail-size="4"] { --thumbnail-scale: 1.65; }
 .media-grid.picture-grid {
   display: flex;
   flex-wrap: wrap;
@@ -338,6 +354,28 @@ body {
   opacity: 0;
   transition: opacity var(--transition-fast);
   z-index: 2;
+}
+.media-card:not(.set-card):not(.folder-card) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  container-type: inline-size;
+}
+.media-card > .thumb-wrap { grid-area: 1 / 1; }
+.media-card > .meta { grid-area: 2 / 1; }
+.media-card:not(.set-card):not(.folder-card) > .card-actions {
+  grid-area: 1 / 1;
+  align-self: end;
+  position: relative;
+}
+/* Small previews need room for every action independently of image height. */
+@container (max-width: 24rem) {
+  .media-card:not(.set-card):not(.folder-card) > .card-actions {
+    grid-area: 3 / 1;
+    position: static;
+    flex-wrap: wrap;
+    padding: 0.35rem;
+    opacity: 1;
+  }
 }
 .set-card .set-open,
 .folder-card .folder-open {
@@ -623,7 +661,7 @@ body {
     padding: 0.3rem 0.5rem;
     font-size: 0.75rem;
   }
-  .media-grid { grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); }
+  .media-grid { --thumbnail-base: 10rem; }
 }
 
 @media (max-width: 520px) {
@@ -632,7 +670,7 @@ body {
     flex-wrap: wrap;
     align-content: center;
   }
-  .media-grid { grid-template-columns: repeat(2, 1fr); }
+  .media-grid { --thumbnail-base: calc((100% - var(--gap)) / 2); }
   .toolbar .input-sm {
     min-width: 3.5rem;
   }
