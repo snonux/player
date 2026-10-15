@@ -1,3 +1,4 @@
-Show plain and synchronized lyrics during music playback, with timed highlighting and seeking.
-The web player adds five switchable audio visualizations and clearer keyboard help.
-Album artwork now follows Beets cover preferences and refreshes on rescan.
+Save and revisit audio/video positions with bookmarks.
+Keep server media on Android for playback and viewing offline.
+Save notes and favorites across server, device, and offline media; note edits survive leaving the editor.
+Resize library thumbnails with web buttons and keyboard shortcuts, or Android buttons and two-finger pinch.
