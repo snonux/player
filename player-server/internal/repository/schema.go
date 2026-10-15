@@ -259,6 +259,9 @@ func initializeSchema(db *sql.DB) error {
 	if err := normalizeStoredTimes(db); err != nil {
 		return fmt.Errorf("normalize stored times: %w", err)
 	}
+	if err := backfillBookmarkSyncTimes(db); err != nil {
+		return err
+	}
 	if err := removeOrphanRows(db); err != nil {
 		return fmt.Errorf("remove orphan rows: %w", err)
 	}
@@ -272,6 +275,15 @@ type migration struct {
 }
 
 var migrations = []migration{
+	{name: "bookmark_sync_key", sql: `ALTER TABLE media_bookmarks ADD COLUMN sync_key TEXT NOT NULL DEFAULT '';`},
+	{name: "bookmark_sync_time", sql: `ALTER TABLE media_bookmarks ADD COLUMN updated_ms INTEGER NOT NULL DEFAULT 0;`},
+	{name: "bookmark_sync_deleted", sql: `ALTER TABLE media_bookmarks ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;`},
+	{name: "bookmark_sync_legacy_keys", sql: `UPDATE media_bookmarks SET sync_key='server:' || id WHERE sync_key='';`},
+	{name: "bookmark_sync_index", sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_bookmark_sync_key ON media_bookmarks(user_id,media_id,sync_key);`},
+	{name: "playback_reset_clock", sql: `CREATE TABLE IF NOT EXISTS playback_resets (
+ user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+ observed_ms INTEGER NOT NULL, PRIMARY KEY(user_id, media_id));`},
 	{
 		name: "create_api_tokens",
 		sql: `

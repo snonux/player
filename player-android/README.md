@@ -52,13 +52,23 @@ Open **Downloads** from the server navigation menu or the download icon in
 connection or login. Saved copies are identified by server origin, account and
 media ID, so matching IDs on another server or account stay separate. All copies
 kept on this device remain accessible in Downloads, including after logout.
-Resume positions for these copies stay on the device and do not sync to the
-server. Offline images include SVGs supported by the same safety limits as
-server images. Public share links cannot be kept offline from the app.
+Resume positions and position bookmarks sync with the same account on that
+server, including streaming playback and other Android devices. Offline edits
+are saved durably and retried after you sign in to their original server and
+account. The newest edit timestamp wins; reconnect time does not change it.
+Bookmark deletions also sync. Keep device clocks accurate for consistent ordering.
+Sync pauses while the account is locked or signed out. Older download resume
+positions without edit timestamps stay local until the next playback save,
+unless server state is already available; existing bookmarks retain their
+original creation timestamps during migration. Offline images include SVGs
+supported by the same safety limits as server images. Public share links cannot
+be kept offline from the app.
 
 Use **Delete offline copy** in Downloads to stop that file's playback and remove
-its downloaded bytes, local progress, notes, bookmarks and favorites. The remote media and files you added
-through Android's document picker stay available. Uninstalling Player or clearing
+its downloaded bytes, local notes and favorites. Synced progress, bookmarks
+and pending edits remain associated with their original server and account.
+The remote media and files you added through Android's document picker stay
+available. Uninstalling Player or clearing
 its app storage removes downloads. An interrupted download is discarded when
 Downloads next opens; it can be downloaded again from the server file's details.
 
@@ -80,12 +90,15 @@ Public shares do not expose account notes, bookmarks or favorites.
 
 Server notes, bookmarks and favorites belong to the signed-in account and
 are stored on that server. Position bookmarks require a server version that
-provides the bookmarks API. Device files and offline copies store their notes,
-bookmarks and favorites on this device, available without a login or network.
-Offline copies from different servers or accounts stay separate; their personal
-data does not sync to the server. Choosing a device file again preserves its
-notes and bookmarks, even when starting its resume progress over. Removing a
-device entry or deleting an offline copy also removes its personal data.
+provides the bookmarks API. Downloaded progress and bookmarks require the
+playback-sync API; an older server leaves edits queued locally until upgraded.
+Device files keep all personal data on this device. Downloads keep notes and
+favorites local, while their progress and bookmarks sync when the matching
+account is signed in. Everything remains available offline. Copies from
+different servers or accounts stay separate. Choosing a device file again
+preserves its notes and bookmarks, even when starting its resume progress over.
+Removing a device entry removes its personal data. Deleting an offline copy preserves its
+server progress and bookmarks.
 
 ## Connect to a server
 

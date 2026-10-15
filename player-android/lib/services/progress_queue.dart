@@ -31,6 +31,13 @@ const _kDbName = 'progress_queue.db';
 /// [batchUpdateProgress] and [updateProgressStatus], not on the full client.
 /// Production code passes a [PlayerApiClient] (which implements this);
 /// tests can provide a lightweight stub without subclassing the entire client.
+abstract interface class TimestampedProgressSyncClient {
+  Future<void> updateProgressStatusAt(
+      {required int mediaId,
+      required String status,
+      required String observedAt});
+}
+
 abstract class ProgressSyncClient {
   /// Submits a batch of progress updates to the server.
   ///
@@ -193,12 +200,14 @@ class ProgressQueue implements ProgressQueueBase {
     Database? db,
     Connectivity? connectivity,
     Duration retryDelay = const Duration(seconds: 5),
+    DateTime Function()? now,
   })  : _apiClient = apiClient,
         _databaseFactory = databaseFactory,
         _databasePath = databasePath,
         _db = db,
         _connectivity = connectivity ?? Connectivity(),
-        _retryDelay = retryDelay;
+        _retryDelay = retryDelay,
+        _now = now ?? DateTime.now;
 
   final ProgressSyncClient _apiClient;
 
@@ -208,6 +217,8 @@ class ProgressQueue implements ProgressQueueBase {
   final String? _databasePath;
   final Connectivity _connectivity;
   final Duration _retryDelay;
+  final DateTime Function() _now;
+  final _observedClocks = <(String, int, int), int>{};
 
   // Non-null after [init] has been called.
   Database? _db;
@@ -267,11 +278,28 @@ class ProgressQueue implements ProgressQueueBase {
     }
     _scope = scope;
     _suspended = scope == null;
-    _db ??= await (_databaseFactory?.call() ?? _openDatabase());
+    if (_db == null) {
+      _db = await (_databaseFactory?.call() ?? _openDatabase());
+      for (final row in await _db!.query(_kTable)) {
+        final key = (
+          row[_kColOrigin] as String,
+          row[_kColUserId] as int,
+          row[_kColMediaId] as int
+        );
+        final ms =
+            DateTime.parse(row[_kColQueuedAt] as String).millisecondsSinceEpoch;
+        if (ms > (_observedClocks[key] ?? 0)) {
+          _observedClocks[key] = ms;
+        }
+      }
+    }
     if (_suspended) {
       await _connectivitySub?.cancel();
       _connectivitySub = null;
-      await _runDbMutation(() => _db!.delete(_kTable));
+      await _runDbMutation(() async {
+        await _db!.delete(_kTable);
+        _observedClocks.clear();
+      });
     } else {
       _subscribeToConnectivity();
       unawaited(_flushIfOnline());
@@ -305,6 +333,7 @@ class ProgressQueue implements ProgressQueueBase {
     _connectivitySub = null;
     await _runDbMutation(() async {
       await _db?.delete(_kTable);
+      _observedClocks.clear();
     });
   }
 
@@ -356,7 +385,7 @@ class ProgressQueue implements ProgressQueueBase {
       return;
     }
 
-    final now = DateTime.now().toUtc().toIso8601String();
+    final observed = _now().toUtc().millisecondsSinceEpoch;
     final epoch = _accountEpoch;
     final scope = _scope;
     if (scope == null) {
@@ -366,6 +395,11 @@ class ProgressQueue implements ProgressQueueBase {
     var stored = false;
     await _runDbMutation(() async {
       if (_suspended || epoch != _accountEpoch || scope != _scope) return;
+      final key = (scope.origin, scope.userId, mediaId);
+      final prior = _observedClocks[key] ?? 0;
+      final ms = observed > prior ? observed : prior + 1;
+      final now = DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true)
+          .toIso8601String();
       await db.insert(_kTable, {
         _kColMediaId: mediaId,
         _kColPositionSeconds: positionSeconds,
@@ -374,6 +408,7 @@ class ProgressQueue implements ProgressQueueBase {
         _kColOrigin: scope.origin,
         _kColUserId: scope.userId,
       });
+      _observedClocks[key] = ms;
       stored = true;
     });
     if (!stored || _suspended || epoch != _accountEpoch || scope != _scope) {
@@ -483,8 +518,16 @@ class ProgressQueue implements ProgressQueueBase {
       if (pending.first.finished) {
         final command = pending.first;
         try {
-          await _apiClient.updateProgressStatus(
-              mediaId: command.mediaId, status: 'finished');
+          if (_apiClient is TimestampedProgressSyncClient) {
+            await (_apiClient as TimestampedProgressSyncClient)
+                .updateProgressStatusAt(
+                    mediaId: command.mediaId,
+                    status: 'finished',
+                    observedAt: command.queuedAt);
+          } else {
+            await _apiClient.updateProgressStatus(
+                mediaId: command.mediaId, status: 'finished');
+          }
         } catch (error) {
           if (!current()) return;
           if (!_permanentlyRejectedStatus(error)) {

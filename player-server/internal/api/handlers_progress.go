@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -88,8 +89,9 @@ func (s *Server) handleProgressStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		MediaID int64  `json:"media_id"`
-		Status  string `json:"status"`
+		MediaID    int64     `json:"media_id"`
+		Status     string    `json:"status"`
+		ObservedAt time.Time `json:"observed_at"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		badRequest(w, "invalid body")
@@ -101,14 +103,29 @@ func (s *Server) handleProgressStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var err error
-	switch req.Status {
-	case "finished":
-		err = s.media.Progress.MarkFinished(r.Context(), userIDFromContext(r), req.MediaID)
-	case "not_started":
-		err = s.media.Progress.MarkNotStarted(r.Context(), userIDFromContext(r), req.MediaID)
-	default:
+	if req.Status != "finished" && req.Status != "not_started" {
 		badRequest(w, "invalid status")
 		return
+	}
+	if !req.ObservedAt.IsZero() {
+		timed, ok := s.media.Progress.(interface {
+			SetProgressStatusAt(context.Context, int64, int64, string, time.Time) error
+		})
+		if !ok {
+			handleError(w, service.ErrNotFound)
+			return
+		}
+		err = timed.SetProgressStatusAt(r.Context(), userIDFromContext(r), req.MediaID, req.Status, req.ObservedAt)
+	} else {
+		switch req.Status {
+		case "finished":
+			err = s.media.Progress.MarkFinished(r.Context(), userIDFromContext(r), req.MediaID)
+		case "not_started":
+			err = s.media.Progress.MarkNotStarted(r.Context(), userIDFromContext(r), req.MediaID)
+		default:
+			badRequest(w, "invalid status")
+			return
+		}
 	}
 	if err != nil {
 		handleError(w, err)

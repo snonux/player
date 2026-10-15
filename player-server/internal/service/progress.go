@@ -45,7 +45,7 @@ func (s *progressService) UpdateProgress(ctx context.Context, sessionID string, 
 	}
 
 	apply := func(store repository.ProgressUpdateStore) error {
-		return s.applyProgress(ctx, store, sessionID, userID, mediaID, position, s.clock.Now())
+		return s.applyProgress(ctx, store, sessionID, userID, mediaID, position, s.clock.Now().Truncate(time.Millisecond))
 	}
 	if txStore, ok := s.store.(repository.ProgressTransactionStore); ok {
 		return txStore.WithProgressTransaction(ctx, apply)
@@ -74,6 +74,7 @@ func (s *progressService) BatchUpdateProgress(ctx context.Context, sessionID str
 		if update.ObservedAt.IsZero() {
 			update.ObservedAt = now
 		}
+		update.ObservedAt = update.ObservedAt.Truncate(time.Millisecond)
 		normalized[i] = update
 	}
 	sort.SliceStable(normalized, func(i, j int) bool {
@@ -113,6 +114,17 @@ func (s *progressService) applyProgress(
 	existing, err := store.GetProgress(ctx, userID, mediaID)
 	if err != nil {
 		return fmt.Errorf("get progress: %w", err)
+	}
+	if barrier, ok := store.(interface {
+		ProgressEditTime(context.Context, int64, int64) (time.Time, error)
+	}); ok {
+		latest, err := barrier.ProgressEditTime(ctx, userID, mediaID)
+		if err != nil {
+			return err
+		}
+		if !observedAt.After(latest) {
+			return nil
+		}
 	}
 	if existing != nil && existing.UpdatedAt.After(observedAt) {
 		return nil
@@ -176,7 +188,45 @@ func (s *progressService) applyProgress(
 	return nil
 }
 
+// Immediate server actions in the same clock millisecond are distinct edits.
+// Advance only ties; a future client edit still wins over an earlier clock.
+func (s *progressService) serverProgressTime(ctx context.Context, userID, mediaID int64) (time.Time, error) {
+	observed := s.clock.Now().Truncate(time.Millisecond)
+	if store, ok := s.store.(interface {
+		ProgressEditTime(context.Context, int64, int64) (time.Time, error)
+	}); ok {
+		latest, err := store.ProgressEditTime(ctx, userID, mediaID)
+		if err != nil {
+			return observed, err
+		}
+		if observed.Equal(latest) {
+			observed = observed.Add(time.Millisecond)
+		}
+	}
+	return observed, nil
+}
+
 func (s *progressService) MarkFinished(ctx context.Context, userID, mediaID int64) error {
+	observed, err := s.serverProgressTime(ctx, userID, mediaID)
+	if err != nil {
+		return err
+	}
+	return s.SetProgressStatusAt(ctx, userID, mediaID, "finished", observed)
+}
+
+func (s *progressService) SetProgressStatusAt(ctx context.Context, userID, mediaID int64, status string, observed time.Time) error {
+	observed = observed.Truncate(time.Millisecond)
+	if status == "not_started" {
+		if _, err := s.helper.verifyAccess(ctx, mediaID, userID); err != nil {
+			return err
+		}
+		if timed, ok := s.store.(interface {
+			ResetProgressAt(context.Context, int64, int64, time.Time) error
+		}); ok {
+			return timed.ResetProgressAt(ctx, userID, mediaID, observed)
+		}
+		return s.store.ResetProgress(ctx, userID, mediaID)
+	}
 	if mediaID == 0 {
 		return errors.New("media_id required")
 	}
@@ -191,7 +241,7 @@ func (s *progressService) MarkFinished(ctx context.Context, userID, mediaID int6
 		MediaID:         mediaID,
 		PositionSeconds: media.Duration,
 		Finished:        true,
-		UpdatedAt:       s.clock.Now(),
+		UpdatedAt:       observed,
 	}); err != nil {
 		return fmt.Errorf("mark finished: %w", err)
 	}
@@ -208,7 +258,11 @@ func (s *progressService) MarkNotStarted(ctx context.Context, userID, mediaID in
 		return err
 	}
 
-	if err := s.store.ResetProgress(ctx, userID, mediaID); err != nil {
+	observed, err := s.serverProgressTime(ctx, userID, mediaID)
+	if err != nil {
+		return err
+	}
+	if err := s.SetProgressStatusAt(ctx, userID, mediaID, "not_started", observed); err != nil {
 		return fmt.Errorf("reset progress: %w", err)
 	}
 

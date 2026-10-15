@@ -46,8 +46,10 @@ func TestProgressService_ContinueWatchingSurvivesSessionChanges(t *testing.T) {
 			if err := store.CreateSession(ctx, &model.Session{ID: "first", UserID: userID, ExpiresAt: now.Add(time.Hour), CreatedAt: now}); err != nil {
 				t.Fatal(err)
 			}
-			svc := NewProgressService(store, &clock.MockClock{T: now})
+			clk := &clock.MockClock{T: now}
+			svc := NewProgressService(store, clk)
 			for _, position := range []float64{0, 10, 20, 30, 40, 50, 60} {
+				clk.T = clk.T.Add(time.Second)
 				if err := svc.UpdateProgress(ctx, "first", userID, mediaID, position); err != nil {
 					t.Fatal(err)
 				}
@@ -90,7 +92,8 @@ func TestProgressService_ContinueWatchingCombinesShortSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := NewProgressService(store, &clock.MockClock{T: now})
+	clk := &clock.MockClock{T: now}
+	svc := NewProgressService(store, clk)
 	for _, session := range []struct {
 		id        string
 		positions []float64
@@ -102,6 +105,7 @@ func TestProgressService_ContinueWatchingCombinesShortSessions(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, position := range session.positions {
+			clk.T = clk.T.Add(time.Second)
 			if err := svc.UpdateProgress(ctx, session.id, userID, mediaID, position); err != nil {
 				t.Fatal(err)
 			}
@@ -148,7 +152,8 @@ func TestProgressService_ContinueWatchingSurvivesTokenRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := NewProgressService(store, &clock.MockClock{T: now})
+	clk := &clock.MockClock{T: now}
+	svc := NewProgressService(store, clk)
 	for i, positions := range [][]float64{{0, 10, 20, 30}, {30, 40, 50, 60}} {
 		tokenID, err := store.Create(ctx, &model.APIToken{UserID: userID, TokenHash: fmt.Sprintf("token-%d", i), Name: "mobile", CreatedAt: now})
 		if err != nil {
@@ -156,6 +161,7 @@ func TestProgressService_ContinueWatchingSurvivesTokenRotation(t *testing.T) {
 		}
 		sessionID := fmt.Sprintf("api-token:%d", tokenID)
 		for _, position := range positions {
+			clk.T = clk.T.Add(time.Second)
 			if err := svc.UpdateProgress(ctx, sessionID, userID, mediaID, position); err != nil {
 				t.Fatalf("bearer progress update: %v", err)
 			}
@@ -172,6 +178,7 @@ func TestProgressService_ContinueWatchingSurvivesTokenRotation(t *testing.T) {
 	if err != nil || len(list) != 1 || list[0].ID != mediaID {
 		t.Fatalf("expected continue watching after token rotation: media=%+v err=%v", list, err)
 	}
+	clk.T = clk.T.Add(time.Second)
 	if err := svc.MarkFinished(ctx, userID, mediaID); err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +188,7 @@ func TestProgressService_ContinueWatchingSurvivesTokenRotation(t *testing.T) {
 	}
 	replaySession := fmt.Sprintf("api-token:%d", replayTokenID)
 	for _, position := range []float64{10, 20, 30, 40, 50} {
+		clk.T = clk.T.Add(time.Second)
 		if err := svc.UpdateProgress(ctx, replaySession, userID, mediaID, position); err != nil {
 			t.Fatal(err)
 		}
@@ -189,6 +197,7 @@ func TestProgressService_ContinueWatchingSurvivesTokenRotation(t *testing.T) {
 	if err != nil || len(list) != 0 {
 		t.Fatalf("replay below 60 seconds should remain ineligible: media=%+v err=%v", list, err)
 	}
+	clk.T = clk.T.Add(time.Second)
 	if err := svc.UpdateProgress(ctx, replaySession, userID, mediaID, 60); err != nil {
 		t.Fatal(err)
 	}
@@ -196,10 +205,12 @@ func TestProgressService_ContinueWatchingSurvivesTokenRotation(t *testing.T) {
 	if err != nil || len(list) != 1 {
 		t.Fatalf("replay at 60 seconds should qualify: media=%+v err=%v", list, err)
 	}
+	clk.T = clk.T.Add(time.Second)
 	if err := svc.MarkFinished(ctx, userID, mediaID); err != nil {
 		t.Fatal(err)
 	}
 	for _, position := range []float64{10, 20, 30, 40, 50, 60} {
+		clk.T = clk.T.Add(time.Second)
 		if err := svc.UpdateProgress(ctx, replaySession, userID, mediaID, position); err != nil {
 			t.Fatal(err)
 		}
@@ -212,6 +223,7 @@ func TestProgressService_ContinueWatchingSurvivesTokenRotation(t *testing.T) {
 	if err != nil || media.PlayCount != 2 {
 		t.Fatalf("same-token replay should count twice: media=%+v err=%v", media, err)
 	}
+	clk.T = clk.T.Add(time.Second)
 	if err := svc.MarkNotStarted(ctx, userID, mediaID); err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +253,8 @@ func TestProgressService_ResetDoesNotClearAnotherUsersCounter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := NewProgressService(store, &clock.MockClock{T: now})
+	clk := &clock.MockClock{T: now}
+	svc := NewProgressService(store, clk)
 	var userIDs []int64
 	for _, username := range []string{"reset", "other"} {
 		userID, err := store.CreateUser(ctx, &model.User{Username: username, PasswordHash: "hash", IsAdmin: true, CreatedAt: now})
@@ -253,11 +266,13 @@ func TestProgressService_ResetDoesNotClearAnotherUsersCounter(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, position := range []float64{0, 10, 20, 30, 40, 50} {
+			clk.T = clk.T.Add(time.Second)
 			if err := svc.UpdateProgress(ctx, username, userID, mediaID, position); err != nil {
 				t.Fatal(err)
 			}
 		}
 	}
+	clk.T = clk.T.Add(time.Second)
 	if err := svc.MarkFinished(ctx, userIDs[0], mediaID); err != nil {
 		t.Fatal(err)
 	}
@@ -265,6 +280,7 @@ func TestProgressService_ResetDoesNotClearAnotherUsersCounter(t *testing.T) {
 	if err != nil || otherAcc == nil || otherAcc.AccumulatedSeconds != 50 {
 		t.Fatalf("other user's accumulator changed on finish: acc=%+v err=%v", otherAcc, err)
 	}
+	clk.T = clk.T.Add(time.Second)
 	if err := svc.MarkNotStarted(ctx, userIDs[0], mediaID); err != nil {
 		t.Fatal(err)
 	}
@@ -272,6 +288,7 @@ func TestProgressService_ResetDoesNotClearAnotherUsersCounter(t *testing.T) {
 	if err != nil || otherAcc == nil || otherAcc.AccumulatedSeconds != 50 {
 		t.Fatalf("other user's accumulator changed: acc=%+v err=%v", otherAcc, err)
 	}
+	clk.T = clk.T.Add(time.Second)
 	if err := svc.UpdateProgress(ctx, "other", userIDs[1], mediaID, 60); err != nil {
 		t.Fatal(err)
 	}
@@ -286,5 +303,60 @@ func TestProgressService_ResetDoesNotClearAnotherUsersCounter(t *testing.T) {
 	resetAcc, err := store.GetAccumulator(ctx, "reset", mediaID)
 	if err != nil || resetAcc != nil {
 		t.Fatalf("reset user's accumulator should be gone: acc=%+v err=%v", resetAcc, err)
+	}
+}
+
+func TestProgressService_ImmediateStatusesAfterSameMillisecondProgress(t *testing.T) {
+	for _, status := range []string{"finished", "not_started"} {
+		t.Run(status, func(t *testing.T) {
+			ctx := context.Background()
+			now := time.Date(2026, 10, 15, 12, 0, 0, 123000000, time.UTC)
+			store, err := repository.Open(":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			userID, err := store.CreateUser(ctx, &model.User{Username: "viewer", PasswordHash: "hash", IsAdmin: true, CreatedAt: now})
+			if err != nil {
+				t.Fatal(err)
+			}
+			setID, err := store.CreateSet(ctx, &model.Set{Name: "set", RootPath: "/set", CreatedAt: now})
+			if err != nil {
+				t.Fatal(err)
+			}
+			mediaID, err := store.CreateMedia(ctx, &model.Media{SetID: setID, RelPath: "audio.mp3", FileName: "audio.mp3", Type: model.MediaTypeAudio, Duration: 120, CreatedAt: now})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.UpsertProgress(ctx, &model.PlaybackProgress{UserID: userID, MediaID: mediaID, PositionSeconds: 42, UpdatedAt: now}); err != nil {
+				t.Fatal(err)
+			}
+			svc := NewProgressService(store, &clock.MockClock{T: now})
+			if status == "finished" {
+				err = svc.MarkFinished(ctx, userID, mediaID)
+			} else {
+				err = svc.MarkNotStarted(ctx, userID, mediaID)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err := store.GetProgress(ctx, userID, mediaID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status == "finished" && (p == nil || !p.Finished) {
+				t.Fatalf("immediate completion ignored: %+v", p)
+			}
+			if status == "not_started" && p != nil {
+				t.Fatalf("immediate reset ignored: %+v", p)
+			}
+			snapshot, err := store.SyncPlayback(ctx, userID, mediaID, model.PlaybackSync{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if snapshot.Progress == nil || snapshot.Progress.ObservedMS != now.UnixMilli()+1 {
+				t.Fatalf("status clock did not advance tie: %+v", snapshot)
+			}
+		})
 	}
 }

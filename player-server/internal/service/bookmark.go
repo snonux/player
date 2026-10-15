@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"codeberg.org/snonux/player/internal/clock"
@@ -70,7 +71,15 @@ func (s *bookmarkService) DeleteBookmark(ctx context.Context, id, mediaID, userI
 	if _, err := s.media(ctx, mediaID, userID); err != nil {
 		return err
 	}
-	deleted, err := s.store.DeleteBookmark(ctx, id, mediaID, userID)
+	var deleted bool
+	var err error
+	if timed, ok := s.store.(interface {
+		DeleteBookmarkAt(context.Context, int64, int64, int64, time.Time) (bool, error)
+	}); ok {
+		deleted, err = timed.DeleteBookmarkAt(ctx, id, mediaID, userID, s.clock.Now())
+	} else {
+		deleted, err = s.store.DeleteBookmark(ctx, id, mediaID, userID)
+	}
 	if err != nil {
 		return err
 	}

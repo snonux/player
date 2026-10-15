@@ -1972,3 +1972,50 @@ regular files confined to `MEDIA_ROOT`, including resolved symlinks. Sidecars
 and expanded lyrics are limited to 1 MiB; ffprobe output to 2 MiB and runtime
 to three seconds. Unreadable, unsafe, oversized and unavailable lyrics return
 the same empty result. Text is returned as data; clients must render it as text.
+
+### Downloaded playback synchronization
+
+`POST /api/v1/media/{id}/playback-sync` (also `/api/media/{id}/playback-sync`)
+requires the usual cookie or Bearer authentication and access to the media.
+An empty object pulls the current user's state; an optional progress edit and
+bookmark edits are merged atomically before the full snapshot is returned:
+
+```json
+{
+  "progress": {"position_seconds": 42, "finished": false, "observed_ms": 1792065600000},
+  "bookmarks": [{"sync_key": "random-device-key", "position_seconds": 12,
+    "label": "Chapter", "observed_ms": 1792065600000, "deleted": false}]
+}
+```
+
+`observed_ms` is a positive UTC Unix millisecond timestamp captured when edited,
+never when retried or reconnected. Progress and each bookmark key independently
+keep the edit with the newest timestamp at millisecond resolution. Equal
+timestamps keep the server value. A server bookmark deletion in the same
+millisecond as creation advances its clock by one millisecond; a deletion
+whose server clock precedes a future client edit leaves that newer edit intact.
+Keys are stable strings of 1–100 bytes scoped to the authenticated user and media;
+clients generate random keys for offline additions and reuse them for retries.
+Bookmarks support audio/video; labels allow at most 200 characters. At most
+1000 bookmark edits may be submitted in a request, with a 2 MiB JSON body limit.
+Positions must be finite and nonnegative; live bookmarks cannot exceed a known
+media duration.
+
+The response has the same shape, with every bookmark including deletion
+markers. Clients hide deleted bookmarks and retain the markers so a stale
+device cannot resurrect them. Existing bookmark create/delete routes participate
+in this state. Resetting progress also retains an edit-time barrier while the
+existing media-detail API continues to represent reset progress as absent.
+The progress status route accepts optional `observed_at` (RFC3339), allowing
+queued `finished` and `not_started` commands to preserve their original edit time.
+Without it, status actions use server time as before.
+
+Downloaded synchronization preserves resume/completion state without counting
+replayed HTTP requests as additional listening time or play counts. It preserves
+existing accumulated listening time until completion or reset. Device-picked
+files have no server identity and do not use this endpoint. Android retains
+pending edits per origin and account through restarts, copy removal, logout and
+server changes, and synchronizes only under that matching unlocked account.
+Older download resume positions without edit timestamps remain local until
+the next playback save or a server snapshot is available; migrated bookmarks
+keep their original creation timestamps.

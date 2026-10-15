@@ -4,13 +4,18 @@ import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/offline_media.dart';
+import '../models/media_bookmark.dart';
+import '../models/note.dart';
 import 'playback_request.dart';
 import 'personal_media_store.dart';
 
 /// App-private downloads, independent of document permissions and server state.
 /// Only generated hashes are used as filenames; remote paths never reach disk.
 class OfflineDownloadRepository {
-  OfflineDownloadRepository({Directory? directory}) : _directory = directory;
+  OfflineDownloadRepository({Directory? directory, DateTime Function()? now})
+      : _directory = directory,
+        _now = now ?? DateTime.now;
+  final DateTime Function() _now;
 
   Directory? _directory;
   Directory get directory => _directory!;
@@ -27,7 +32,7 @@ class OfflineDownloadRepository {
     _directory ??= Directory('${await getDatabasesPath()}/offline-downloads');
     await directory.create(recursive: true);
     final db = await openDatabase('${directory.path}/index.db',
-        version: 2,
+        version: 3,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
         onUpgrade: (db, oldVersion, _) async {
           if (oldVersion < 2) {
@@ -36,6 +41,10 @@ class OfflineDownloadRepository {
             await db.execute(
                 'UPDATE downloads SET instance_id = lower(hex(randomblob(16)))');
             await _createPersonalSchema(db);
+          }
+          if (oldVersion < 3) {
+            await _createSyncSchema(db);
+            await _migrateSync(db);
           }
         },
         onCreate: (db, _) async {
@@ -47,6 +56,7 @@ class OfflineDownloadRepository {
         finished INTEGER NOT NULL DEFAULT 0
       )''');
           await _createPersonalSchema(db);
+          await _createSyncSchema(db);
         });
     try {
       // A killed process may leave a partial download or a completed file whose
@@ -74,18 +84,34 @@ class OfflineDownloadRepository {
       createPersonalMediaSchema(db,
           ownerTable: 'downloads', ownerColumn: 'key', keyType: 'TEXT');
 
-  PersonalMediaStore personalStore(String key) => SqlitePersonalMediaStore(
-      database: () => database,
-      write: <T>(action) => _write((db) => db.transaction(action)),
-      ownerTable: 'downloads',
-      ownerColumn: 'key',
-      ownerId: key,
-      identity: 'offline:$key',
-      ownerRevision: _write((db) async {
-        final rows = await db.query('downloads',
-            columns: ['instance_id'], where: 'key = ?', whereArgs: [key]);
-        return rows.isEmpty ? null : rows.single['instance_id'];
-      }));
+  PersonalMediaStore personalStore(String key) {
+    final revision = _write((db) async {
+      final rows = await db.query('downloads',
+          columns: ['instance_id'], where: 'key=?', whereArgs: [key]);
+      return rows.isEmpty ? null : rows.single['instance_id'];
+    });
+    return DownloadPersonalMediaStore(
+        this,
+        key,
+        revision,
+        SqlitePersonalMediaStore(
+            database: () => database,
+            write: <T>(action) => _write((db) => db.transaction(action)),
+            ownerTable: 'downloads',
+            ownerColumn: 'key',
+            ownerId: key,
+            identity: 'offline:$key',
+            ownerRevision: revision));
+  }
+
+  Future<Map<String, Object?>> _syncOwner(
+      DatabaseExecutor db, String key, Future<Object?> revision) async {
+    final rows = await db.query('downloads', where: 'key=?', whereArgs: [key]);
+    if (rows.isEmpty || rows.single['instance_id'] != await revision) {
+      throw StateError('This offline copy has been removed or replaced.');
+    }
+    return rows.single;
+  }
 
   File file(String key, {bool partial = false}) {
     if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(key)) {
@@ -117,52 +143,84 @@ class OfflineDownloadRepository {
     return rows.isEmpty ? null : _fromRow(rows.single);
   }
 
-  Future<void> add(OfflineMedia item) => _write((db) async {
-        if (item.key !=
-                offlineMediaKey(item.origin, item.userId, item.mediaId) ||
-            !{'audio', 'video', 'image'}.contains(item.type) ||
-            item.sizeBytes <= 0) {
-          throw ArgumentError('Invalid download metadata');
-        }
-        await db.insert('downloads', {
-          'key': item.key,
-          'instance_id':
-              (await db.rawQuery('SELECT lower(hex(randomblob(16))) AS id'))
-                  .single['id'],
-          'origin': item.origin,
-          'user_id': item.userId,
-          'media_id': item.mediaId,
-          'title': item.title,
-          'type': item.type,
-          'size_bytes': item.sizeBytes,
-          'added_at': item.addedAt.toUtc().millisecondsSinceEpoch,
-        });
-      });
+  Future<void> add(OfflineMedia item) =>
+      _write((db) => db.transaction((db) async {
+            if (item.key !=
+                    offlineMediaKey(item.origin, item.userId, item.mediaId) ||
+                !{'audio', 'video', 'image'}.contains(item.type) ||
+                item.sizeBytes <= 0) {
+              throw ArgumentError('Invalid download metadata');
+            }
+            await db.insert('downloads', {
+              'key': item.key,
+              'instance_id':
+                  (await db.rawQuery('SELECT lower(hex(randomblob(16))) AS id'))
+                      .single['id'],
+              'origin': item.origin,
+              'user_id': item.userId,
+              'media_id': item.mediaId,
+              'title': item.title,
+              'type': item.type,
+              'size_bytes': item.sizeBytes,
+              'added_at': item.addedAt.toUtc().millisecondsSinceEpoch,
+            });
+            await db.insert(
+                'sync_items',
+                {
+                  'key': item.key,
+                  'origin': item.origin,
+                  'user_id': item.userId,
+                  'media_id': item.mediaId
+                },
+                conflictAlgorithm: ConflictAlgorithm.ignore);
+            final state = (await db
+                    .query('sync_items', where: 'key=?', whereArgs: [item.key]))
+                .single;
+            await db.update(
+                'downloads',
+                {
+                  'position_seconds': state['position_seconds'],
+                  'finished': state['finished']
+                },
+                where: 'key=?',
+                whereArgs: [item.key]);
+            onSyncNeeded?.call();
+          }));
 
   Future<void> remove(String key) => _write((db) async {
         final source = file(key);
         if (await source.exists()) await source.delete();
         await db.delete('downloads', where: 'key = ?', whereArgs: [key]);
+        await _pruneSynced(db, key);
       });
+
+  static Future<void> _pruneSynced(DatabaseExecutor db, String key) async {
+    await db.rawDelete('''DELETE FROM sync_items WHERE key=? AND pending=0
+      AND NOT EXISTS(SELECT 1 FROM downloads WHERE downloads.key=sync_items.key)
+      AND NOT EXISTS(SELECT 1 FROM sync_bookmarks WHERE owner_id=sync_items.key AND pending=1)''',
+        [key]);
+  }
 
   Future<void> saveProgress(String key, double seconds,
-          {bool finished = false}) =>
-      _write((db) async {
-        if (!seconds.isFinite || seconds < 0) {
-          throw ArgumentError('Invalid position');
-        }
-        // UPDATE deliberately cannot recreate a deleted download.
-        await db.update(
-            'downloads',
-            {
-              'position_seconds': seconds,
-              'finished': finished ? 1 : 0,
-            },
-            where: 'key = ?',
-            whereArgs: [key]);
-      });
+      {bool finished = false}) {
+    if (!validBookmarkPosition(seconds)) {
+      return Future.error(ArgumentError('Invalid position'));
+    }
+    final observed = _now().toUtc().millisecondsSinceEpoch;
+    return _write((db) => db.transaction((tx) async {
+          final changed = await tx.update('downloads',
+              {'position_seconds': seconds, 'finished': finished ? 1 : 0},
+              where: 'key=?', whereArgs: [key]);
+          if (changed == 0) return;
+          await tx.rawUpdate(
+              'UPDATE sync_items SET position_seconds=?,finished=?,observed_ms=MAX(observed_ms+1,?),pending=1 WHERE key=?',
+              [seconds, finished ? 1 : 0, observed, key]);
+          onSyncNeeded?.call();
+        }));
+  }
 
   Future<OfflinePlaybackRequest> playbackRequest(String key) async {
+    await beforePlayback?.call(key);
     final item = await get(key);
     if (item == null ||
         !await file(key).exists() ||
@@ -188,6 +246,195 @@ class OfflineDownloadRepository {
     );
   }
 
+  void Function()? onSyncNeeded;
+  Future<void> Function(String key)? beforePlayback;
+
+  static Future<void> _createSyncSchema(DatabaseExecutor db) async {
+    // Sync state deliberately outlives removal of downloaded bytes. Removing a
+    // copy must neither erase queued edits nor delete server bookmarks.
+    await db.execute('''CREATE TABLE sync_items (
+      key TEXT PRIMARY KEY, origin TEXT NOT NULL, user_id INTEGER NOT NULL,
+      media_id INTEGER NOT NULL, position_seconds REAL NOT NULL DEFAULT 0,
+      finished INTEGER NOT NULL DEFAULT 0, observed_ms INTEGER NOT NULL DEFAULT 0,
+      pending INTEGER NOT NULL DEFAULT 0)''');
+    await db.execute('''CREATE TABLE sync_bookmarks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL,
+      sync_key TEXT NOT NULL, position_seconds REAL NOT NULL, label TEXT NOT NULL,
+      observed_ms INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0,
+      pending INTEGER NOT NULL DEFAULT 0, UNIQUE(owner_id,sync_key),
+      FOREIGN KEY(owner_id) REFERENCES sync_items(key) ON DELETE CASCADE)''');
+  }
+
+  static Future<void> _migrateSync(DatabaseExecutor db) async {
+    // Historical positions have no edit time; keep them locally until a server
+    // state is available, without presenting migration time as a playback edit.
+    await db.execute(
+        '''INSERT INTO sync_items(key,origin,user_id,media_id,position_seconds,finished)
+      SELECT key,origin,user_id,media_id,position_seconds,finished FROM downloads''');
+    await db.execute(
+        '''INSERT INTO sync_bookmarks(owner_id,sync_key,position_seconds,label,observed_ms,pending)
+      SELECT owner_id,lower(hex(randomblob(16))),position_seconds,label,created_at,1 FROM personal_bookmarks''');
+    await db.delete('personal_bookmarks');
+  }
+
+  Future<List<Map<String, Object?>>> syncItems(
+          String origin, int userId) async =>
+      (await database).query('sync_items',
+          where: 'origin=? AND user_id=?', whereArgs: [origin, userId]);
+
+  Future<Map<String, dynamic>> syncPayload(String key) async {
+    final db = await database;
+    final rows = await db.query('sync_items', where: 'key=?', whereArgs: [key]);
+    if (rows.isEmpty) {
+      return {'bookmarks': <Object>[]};
+    }
+    final item = rows.single;
+    return {
+      if (item['pending'] == 1)
+        'progress': {
+          'position_seconds': item['position_seconds'],
+          'finished': item['finished'] == 1,
+          'observed_ms': item['observed_ms']
+        },
+      'bookmarks': (await db.query('sync_bookmarks',
+              where: 'owner_id=? AND pending=1', whereArgs: [key], limit: 1000))
+          .map((b) => {
+                'sync_key': b['sync_key'],
+                'position_seconds': b['position_seconds'],
+                'label': b['label'],
+                'observed_ms': b['observed_ms'],
+                'deleted': b['deleted'] == 1
+              })
+          .toList(),
+    };
+  }
+
+  Future<void> mergeSync(
+          String key, Map<String, dynamic> result, bool Function() current) =>
+      _write((db) => db.transaction((tx) async {
+            if (!current()) return;
+            final rows =
+                await tx.query('sync_items', where: 'key=?', whereArgs: [key]);
+            if (rows.isEmpty) return;
+            final p = result['progress'];
+            if (p is Map &&
+                (p['observed_ms'] as int) >=
+                    (rows.single['observed_ms'] as int)) {
+              await tx.update(
+                  'sync_items',
+                  {
+                    'position_seconds': p['position_seconds'],
+                    'finished': p['finished'] == true ? 1 : 0,
+                    'observed_ms': p['observed_ms'],
+                    'pending': 0
+                  },
+                  where: 'key=?',
+                  whereArgs: [key]);
+              await tx.update(
+                  'downloads',
+                  {
+                    'position_seconds': p['position_seconds'],
+                    'finished': p['finished'] == true ? 1 : 0
+                  },
+                  where: 'key=?',
+                  whereArgs: [key]);
+            }
+            for (final value in (result['bookmarks'] as List? ?? [])) {
+              final b = value as Map;
+              final old = await tx.query('sync_bookmarks',
+                  where: 'owner_id=? AND sync_key=?',
+                  whereArgs: [key, b['sync_key']]);
+              if (old.isNotEmpty &&
+                  (old.single['observed_ms'] as int) >
+                      (b['observed_ms'] as int)) {
+                continue;
+              }
+              final data = <String, Object?>{
+                'owner_id': key,
+                'sync_key': b['sync_key'],
+                'position_seconds': b['position_seconds'],
+                'label': b['label'],
+                'observed_ms': b['observed_ms'],
+                'deleted': b['deleted'] == true ? 1 : 0,
+                'pending': 0
+              };
+              if (old.isEmpty) {
+                await tx.insert('sync_bookmarks', data);
+              } else {
+                await tx.update('sync_bookmarks', data,
+                    where: 'id=?', whereArgs: [old.single['id']]);
+              }
+            }
+            if (!current()) {
+              throw StateError('Account changed during sync.');
+            }
+            await _pruneSynced(tx, key);
+          }));
+
+  Future<List<MediaBookmark>> syncedBookmarks(
+          String key, Future<Object?> revision) =>
+      _write((db) => db.transaction((tx) async {
+            await _syncOwner(tx, key, revision);
+            return (await tx.query('sync_bookmarks',
+                    where: 'owner_id=? AND deleted=0',
+                    whereArgs: [key],
+                    orderBy: 'position_seconds,id'))
+                .map((b) => MediaBookmark(
+                    id: b['id'] as int,
+                    positionSeconds: (b['position_seconds'] as num).toDouble(),
+                    label: b['label'] as String,
+                    createdAt: DateTime.fromMillisecondsSinceEpoch(
+                        b['observed_ms'] as int,
+                        isUtc: true)))
+                .toList();
+          }));
+
+  Future<MediaBookmark> addSyncedBookmark(
+      String key, double seconds, String label, Future<Object?> revision) {
+    final observed = _now().toUtc().millisecondsSinceEpoch;
+    return _write((db) => db.transaction((tx) async {
+          final item = await _syncOwner(tx, key, revision);
+          if (item['type'] == 'image') {
+            throw StateError(
+                'Images use favorites instead of position bookmarks.');
+          }
+          if (!validBookmarkPosition(seconds) ||
+              label.trim().runes.length > 200) {
+            throw ArgumentError('Invalid bookmark.');
+          }
+          final ms = observed;
+          final syncKey =
+              (await tx.rawQuery('SELECT lower(hex(randomblob(16))) AS id'))
+                  .single['id'];
+          final id = await tx.insert('sync_bookmarks', {
+            'owner_id': key,
+            'sync_key': syncKey,
+            'position_seconds': seconds,
+            'label': label.trim(),
+            'observed_ms': ms,
+            'pending': 1
+          });
+          onSyncNeeded?.call();
+          return MediaBookmark(
+              id: id,
+              positionSeconds: seconds,
+              label: label.trim(),
+              createdAt: DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true));
+        }));
+  }
+
+  Future<void> deleteSyncedBookmark(
+      String key, int id, Future<Object?> revision) {
+    final observed = _now().toUtc().millisecondsSinceEpoch;
+    return _write((db) => db.transaction((db) async {
+          await _syncOwner(db, key, revision);
+          await db.rawUpdate(
+              'UPDATE sync_bookmarks SET deleted=1,observed_ms=MAX(observed_ms+1,?),pending=1 WHERE owner_id=? AND id=? AND deleted=0',
+              [observed, key, id]);
+          onSyncNeeded?.call();
+        }));
+  }
+
   Future<void> close() async {
     await _tail;
     if (_database != null) await (await _database!).close();
@@ -207,4 +454,40 @@ class OfflineDownloadRepository {
         positionSeconds: (row['position_seconds'] as num).toDouble(),
         finished: row['finished'] == 1,
       );
+}
+
+/// Notes and favorites remain device-local; bookmarks use durable server IDs.
+class DownloadPersonalMediaStore implements PersonalMediaStore {
+  DownloadPersonalMediaStore(
+      this.repository, this.key, this.revision, this.local);
+  final Future<Object?> revision;
+  final OfflineDownloadRepository repository;
+  final String key;
+  final PersonalMediaStore local;
+  @override
+  String get identity => local.identity;
+  @override
+  Future<Note?> getNote() => local.getNote();
+  @override
+  Future<Note> saveNote(String content) => local.saveNote(content);
+  @override
+  Future<void> deleteNote() => local.deleteNote();
+  @override
+  Future<bool> getFavorite() => local.getFavorite();
+  @override
+  Future<bool> toggleFavorite() => local.toggleFavorite();
+  @override
+  Future<List<MediaBookmark>> listBookmarks() async {
+    return repository.syncedBookmarks(key, revision);
+  }
+
+  @override
+  Future<MediaBookmark> addBookmark(double seconds, String label) async {
+    return repository.addSyncedBookmark(key, seconds, label, revision);
+  }
+
+  @override
+  Future<void> deleteBookmark(int id) async {
+    await repository.deleteSyncedBookmark(key, id, revision);
+  }
 }

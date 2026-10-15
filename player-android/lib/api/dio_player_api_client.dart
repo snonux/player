@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import '../models/models.dart';
 import '../models/media_bookmark.dart';
 import '../services/playback_preparer.dart' show PlaybackProbe;
+import '../services/progress_queue.dart';
 import 'player_api_client.dart';
 
 // Base path prefix used by all versioned API endpoints.
@@ -25,7 +26,31 @@ const _kProbeTimeout = Duration(seconds: 60);
 /// The class is intentionally thin: it does no caching, no retry logic, and no
 /// business rules. Higher-level constructs (Riverpod notifiers, use-cases) are
 /// responsible for those concerns (Separation of Concerns / ISP).
-class DioPlayerApiClient extends PlayerApiClient {
+class DioPlayerApiClient extends PlayerApiClient
+    implements TimestampedProgressSyncClient {
+  Future<Map<String, dynamic>> syncPlayback(
+      int mediaId, Map<String, dynamic> state) async {
+    final response = await rawDio.post<Map<String, dynamic>>(
+        '/api/v1/media/$mediaId/playback-sync',
+        data: state,
+        options: _personalOptions);
+    return response.data!;
+  }
+
+  @override
+  Future<void> updateProgressStatusAt(
+      {required int mediaId,
+      required String status,
+      required String observedAt}) async {
+    await rawDio.post<void>('/api/v1/progress/status',
+        data: {
+          'media_id': mediaId,
+          'status': status,
+          'observed_at': observedAt
+        },
+        options: _personalOptions);
+  }
+
   /// Constructs the client.
   ///
   /// In production [dio] should come from [DioClient] which adds bearer-token

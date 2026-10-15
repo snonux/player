@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'providers/audio_handler_provider.dart';
 import 'providers/auth_state_provider.dart';
 import 'providers/progress_queue_provider.dart';
+import 'providers/offline_playback_sync_provider.dart';
 import 'providers/api_client_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/svg_image_provider.dart';
@@ -87,6 +88,8 @@ void main() async {
           );
     }
   }
+
+  container.read(offlinePlaybackSyncProvider);
 
   runApp(
     UncontrolledProviderScope(

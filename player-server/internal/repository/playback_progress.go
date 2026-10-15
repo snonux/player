@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"codeberg.org/snonux/player/internal/model"
 )
@@ -61,9 +62,25 @@ func (s *SQLite) DeleteProgress(ctx context.Context, userID, mediaID int64) erro
 
 // ResetProgress removes one user's progress and transient playback counters.
 func (s *SQLite) ResetProgress(ctx context.Context, userID, mediaID int64) error {
+	return s.ResetProgressAt(ctx, userID, mediaID, time.Now().UTC())
+}
+
+func (s *SQLite) ResetProgressAt(ctx context.Context, userID, mediaID int64, observed time.Time) error {
+	observed = observed.Truncate(time.Millisecond)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin reset progress: %w", err)
+	}
+	defer tx.Rollback()
+	latest, err := latestProgressTime(ctx, tx, userID, mediaID)
+	if err != nil {
+		return err
+	}
+	if !observed.After(latest) {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO playback_resets(user_id,media_id,observed_ms) VALUES (?,?,?) ON CONFLICT(user_id,media_id) DO UPDATE SET observed_ms=excluded.observed_ms`, userID, mediaID, observed.UnixMilli()); err != nil {
+		return err
 	}
 	if err := deleteUserAccumulators(ctx, tx, userID, mediaID); err != nil {
 		_ = tx.Rollback()
@@ -84,6 +101,14 @@ func (s *SQLite) FinishProgress(ctx context.Context, progress *model.PlaybackPro
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin finish progress: %w", err)
+	}
+	defer tx.Rollback()
+	latest, err := latestProgressTime(ctx, tx, progress.UserID, progress.MediaID)
+	if err != nil {
+		return err
+	}
+	if !progress.UpdatedAt.Truncate(time.Millisecond).After(latest) {
+		return nil
 	}
 	if err := deleteUserAccumulators(ctx, tx, progress.UserID, progress.MediaID); err != nil {
 		_ = tx.Rollback()
