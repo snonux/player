@@ -18,6 +18,7 @@ import '../services/playback_request.dart';
 import '../services/playback_source_resolver.dart';
 import '../utils/playback_errors.dart';
 import '../widgets/lyrics_panel.dart';
+import '../widgets/audio_cover_art.dart';
 import '../widgets/playback_loading_view.dart';
 import '../widgets/personal_media_actions.dart';
 import 'playback_preparation_mixin.dart';
@@ -721,7 +722,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     );
   }
 
-  /// The main playback UI: cover art placeholder, seek bar, and controls.
+  /// The main playback UI: cover art, seek bar, and controls.
   Widget _buildPlayerView() {
     final handler = ref.read(audioHandlerProvider);
     return LayoutBuilder(
@@ -734,7 +735,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildCoverArt(),
+                AudioCoverArt(request: _activeRequest!),
                 const SizedBox(height: 32),
                 _buildSeekBar(handler),
                 const SizedBox(height: 16),
@@ -767,26 +768,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                     view: share.sourceUri.queryParameters['view'],
                   );
             },
-    );
-  }
-
-  /// Cover art thumbnail — falls back to a headphones icon when no artwork is
-  /// available.  Real cover-art loading can be wired later via CachedNetworkImage
-  /// pointing at [PlayerApiClient.thumbnailUrl] (Open-Closed: no change here).
-  Widget _buildCoverArt() {
-    return Container(
-      key: const Key('audio_player_cover_art'),
-      width: 200,
-      height: 200,
-      decoration: BoxDecoration(
-        color: Colors.grey[850],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: const Icon(
-        Icons.headphones,
-        size: 80,
-        color: Colors.white54,
-      ),
     );
   }
 
