@@ -10,6 +10,7 @@ import '../providers/api_client_provider.dart';
 import '../library_navigation.dart';
 import '../widgets/authenticated_network_image.dart';
 import '../widgets/network_svg_image.dart';
+import '../widgets/server_switch_button.dart';
 import '../widgets/thumbnail_zoom.dart';
 import '../utils/error_mappers.dart';
 
@@ -178,11 +179,12 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
     );
   }
 
-  /// Builds the app bar with a Settings navigation icon.
+  /// Builds the app bar with the server switch and Settings actions.
   AppBar _buildAppBar(BuildContext context) {
     return AppBar(
       title: const Text('Library'),
       actions: [
+        const ServerSwitchButton(),
         IconButton(
           key: const Key('home_settings_button'),
           icon: const Icon(Icons.settings_outlined),

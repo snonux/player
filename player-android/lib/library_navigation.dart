@@ -36,15 +36,24 @@ Future<void> switchToLocalLibrary(WidgetRef ref, BuildContext context) async {
   }
 }
 
-Future<void> initializeServerProgressQueue(WidgetRef ref, User user) async {
-  if (!ref.read(serverProgressQueueLifecycleProvider)) return;
+/// Reads a provider from either a [WidgetRef] or a [ProviderContainer].
+typedef ProviderReader = T Function<T>(ProviderListenable<T> provider);
+
+Future<void> initializeServerProgressQueue(WidgetRef ref, User user) =>
+    initializeServerProgressQueueWith(ref.read, user);
+
+/// Variant for callers that may outlive their widget, such as the quick
+/// server switch, which keeps working after the router replaces its screen.
+Future<void> initializeServerProgressQueueWith(
+    ProviderReader read, User user) async {
+  if (!read(serverProgressQueueLifecycleProvider)) return;
   try {
-    await ref.read(progressQueueProvider).init(
-          scope: ProgressScope(
-            origin: ref.read(playerBaseUrlProvider).origin,
-            userId: user.id,
-          ),
-        );
+    await read(progressQueueProvider).init(
+      scope: ProgressScope(
+        origin: read(playerBaseUrlProvider).origin,
+        userId: user.id,
+      ),
+    );
   } catch (_) {
     // Authentication has already succeeded. A local DB failure must not
     // strand the user on the login page; future enqueue attempts are retried.
