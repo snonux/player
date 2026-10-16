@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import com.ryanheise.audioservice.AudioServiceFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 // The audio_service fragment activity supports both background audio controls
@@ -16,6 +17,8 @@ class MainActivity : AudioServiceFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, CastDiscovery.CHANNEL)
+            .setStreamHandler(CastDiscovery(applicationContext))
         documentChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "zone.foo.player_android/document_compatibility"

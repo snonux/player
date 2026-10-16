@@ -54,6 +54,7 @@ import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/playback_preparer_provider.dart';
 import 'package:player_android/providers/public_api_client_provider.dart';
 import 'package:player_android/providers/playback_session_provider.dart';
+import 'package:player_android/providers/cast_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/screens/audio_player_screen.dart';
 import 'package:player_android/screens/local_library_screen.dart';
@@ -64,6 +65,11 @@ import 'package:player_android/services/progress_queue.dart';
 import 'package:player_android/services/playback_preparer.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
+import 'package:player_android/services/cast/cast_controller.dart';
+import 'package:player_android/services/cast/cast_device.dart';
+import 'package:player_android/services/cast/cast_session.dart';
+
+import '../services/cast/fake_cast_receiver.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -377,6 +383,8 @@ Future<void> _pumpScreen(
   double textScale = 1.0,
   PlaybackPreparer? preparer,
   LocalLibraryDatabase? localDatabase,
+  CastController? castController,
+  CastDiscovery? castDiscovery,
 }) async {
   final handler = handlerOverride ?? fakeHandler ?? _FakePlayerAudioHandler();
 
@@ -408,6 +416,10 @@ Future<void> _pumpScreen(
         ],
         if (coordinator != null)
           playbackSessionCoordinatorProvider.overrideWithValue(coordinator),
+        if (castController != null)
+          castControllerProvider.overrideWith((ref) => castController),
+        if (castDiscovery != null)
+          castDiscoveryProvider.overrideWithValue(castDiscovery),
         if (preparer != null)
           playbackPreparerProvider.overrideWithValue(preparer),
         tokenStorageProvider.overrideWith((ref) {
@@ -1924,4 +1936,107 @@ void main() {
       expect(textWidget.data, isNotEmpty);
     });
   });
+
+  group('casting', () {
+    testWidgets('casts the item, shows remote controls, and hands back paused',
+        (tester) async {
+      // Stopping the phone's player completes outside the fake clock.
+      Future<void> settle() async {
+        for (var round = 0; round < 2; round++) {
+          for (var i = 0; i < 5; i++) {
+            await tester.pump(const Duration(milliseconds: 200));
+          }
+          await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 50)));
+        }
+        await tester.pump();
+      }
+
+      final (player, handler) = _usePlayableHandler();
+      final coordinator = PlaybackSessionCoordinator();
+      final queue = _FakeProgressQueue();
+      FakeCastReceiver? receiver;
+      final controller = CastController(
+        coordinator: coordinator,
+        resolveMedia: (request, {required isVideo}) async => CastMedia(
+          url: Uri.parse('http://localhost:8080/cast/T/stream'),
+          contentType: 'audio/mpeg',
+          title: request.title,
+        ),
+        startSession: (device) => CastSession.start(device,
+            connect: (_) async => receiver = FakeCastReceiver()),
+      );
+      await _pumpScreen(
+        tester,
+        _FakeApiClient(),
+        handlerOverride: handler,
+        coordinator: coordinator,
+        progressQueue: queue,
+        mediaTitle: 'Song.mp3',
+        castController: controller,
+        castDiscovery: _FakeCastDiscovery([kTestCastDevice]),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(player.isPlaying, isTrue);
+      player.elapsed = const Duration(seconds: 12);
+
+      await tester.tap(find.byKey(const Key('cast_button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.text('Living Room TV'));
+      await settle();
+
+      expect(find.byKey(const Key('cast_playback_view')), findsOneWidget);
+      expect(find.text('Playing on Living Room TV'), findsOneWidget);
+      expect(receiver!.payloads.last['currentTime'], 12.0);
+      // The cast took the shared player: the phone stopped.
+      expect(player.isPlaying, isFalse);
+      expect(controller.isCasting(coordinator.activeIdentity!), isTrue);
+
+      receiver!.pushMediaStatus('PLAYING', time: 40);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('cast_stop')));
+      await settle();
+
+      expect(find.byKey(const Key('cast_playback_view')), findsNothing);
+      expect(receiver!.types, contains('STOP'));
+      expect(queue.updates.last.$1, 42);
+      expect(queue.updates.last.$2, greaterThanOrEqualTo(40));
+      // Back on the phone where the TV was, without playing.
+      expect(player.elapsed.inSeconds, greaterThanOrEqualTo(40));
+      expect(player.isPlaying, isFalse);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await handler.endProgress();
+    });
+
+    testWidgets('no cast button for a file stored on the phone',
+        (tester) async {
+      final (_, handler) = _usePlayableHandler();
+      await _pumpScreen(
+        tester,
+        _FakeApiClient(),
+        handlerOverride: handler,
+        request: LocalPlaybackRequest(
+          localMediaId: 3,
+          sourceUri: Uri.parse('content://media/3'),
+          title: 'Phone song',
+        ),
+        forbidServerDependencies: true,
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('audio_player_view')), findsOneWidget);
+      expect(find.byKey(const Key('cast_button')), findsNothing);
+    });
+  });
+}
+
+class _FakeCastDiscovery implements CastDiscovery {
+  _FakeCastDiscovery(this.found);
+
+  final List<CastDevice> found;
+
+  @override
+  Stream<List<CastDevice>> devices() => Stream.value(found);
 }

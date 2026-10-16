@@ -157,6 +157,7 @@ function initBootstrap() {
 async function initApp() {
   initPlayer({
     personalActions: true,
+    cast: true,
     onNext: (options) => navigatePlayable(options?.delta ?? 1, options),
     onPrevious: (options) => navigatePlayable(options?.delta ?? -1, options),
   });

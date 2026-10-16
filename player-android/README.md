@@ -141,6 +141,18 @@ item again continues where it left off). If the file cannot be played, the
 player names it and the reason, with a **Retry** button. Files in **On this
 device** are always played directly; no server is involved.
 
+## Cast to a TV or speaker
+
+In the server audio or video player, tap the cast button in the app bar to
+play the current item on a Chromecast or another Google Cast device on the same
+Wi-Fi. The phone then shows remote controls (seek, skip, play/pause, volume and
+**Stop casting**); stopping continues on the phone, paused where the cast device
+stopped. Progress is saved while casting. Public share links can be cast too.
+
+Casting does not need Google Play Services. The cast device fetches the media
+itself through a short-lived link from the server, so it must be able to reach
+the server address set in the app. Files in **On this device** cannot be cast.
+
 ## Lyrics
 
 In the server audio player, tap **Lyrics** to show available plain or timed

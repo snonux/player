@@ -261,6 +261,26 @@ class PlayerApiClient implements ProgressSyncClient {
   Future<void> removeTag(int mediaId, String tag) => throw UnimplementedError();
 
   // ---------------------------------------------------------------------------
+  // Casting
+  // ---------------------------------------------------------------------------
+
+  /// Asks the server for a ticket that lets a cast device stream [mediaId]
+  /// without the app's credentials.
+  ///
+  /// POST /api/v1/media/{id}/cast
+  Future<CastTicket> createCastTicket(int mediaId) =>
+      throw UnimplementedError();
+
+  /// The URL a cast device plays [ticket] from: the compatibility rendition
+  /// when [compat] is true, the original stream otherwise.
+  String castStreamUrl(CastTicket ticket, {required bool compat}) =>
+      '${rawDio.options.baseUrl}/cast/${ticket.ticket}/${compat ? 'compat' : 'stream'}';
+
+  /// The cover image a cast device shows for [ticket].
+  String castThumbnailUrl(CastTicket ticket) =>
+      '${rawDio.options.baseUrl}/cast/${ticket.ticket}/thumbnail';
+
+  // ---------------------------------------------------------------------------
   // Shares
   // ---------------------------------------------------------------------------
 

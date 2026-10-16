@@ -12,6 +12,7 @@ import 'package:video_player_platform_interface/video_player_platform_interface.
 import '../api/player_api_client.dart';
 import '../api/dio_client.dart';
 import '../providers/api_client_provider.dart';
+import '../providers/cast_provider.dart';
 import '../providers/playback_session_provider.dart';
 import '../providers/progress_queue_provider.dart';
 import '../services/playback_request.dart';
@@ -19,8 +20,10 @@ import '../services/playback_source_resolver.dart';
 import '../services/shared_video_events.dart';
 import '../services/playback_session_coordinator.dart';
 import '../utils/playback_errors.dart';
+import '../widgets/cast_controls.dart';
 import '../widgets/playback_loading_view.dart';
 import '../widgets/personal_media_actions.dart';
+import 'cast_screen_mixin.dart';
 import 'playback_preparation_mixin.dart';
 
 // How often progress updates are emitted to the server while playing.
@@ -93,7 +96,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
 // ---------------------------------------------------------------------------
 
 class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
-    with WidgetsBindingObserver, PlaybackPreparationMixin {
+    with WidgetsBindingObserver, PlaybackPreparationMixin, CastScreenMixin {
   // Nullable until initialisation completes (or fails).
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
@@ -109,6 +112,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   // Where this item last was while it played on this screen; Retry resumes
   // here. Null before playback progressed and once "finished" was recorded.
   Duration? _lastKnownPosition;
+
+  // Set when casting ended: load the item where the TV left it, but do not
+  // start playing on the phone by surprise.
+  bool _startPaused = false;
 
   // Position at which the native player reported the end. While set, the
   // position is not remembered: the player rests at the end until a replay.
@@ -214,6 +221,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final generation = _initGeneration;
     final request = await _resolveRequest();
     if (!mounted || generation != _initGeneration) return;
+    if (ref.read(castControllerProvider).isCasting(request.identity)) {
+      // Reopened while it plays on a cast device: show the remote controls.
+      setState(() {
+        _activeRequest = request;
+        _isLoading = false;
+        _error = null;
+      });
+      return;
+    }
     final lease = await _claimSession(request, generation);
     if (lease == null) return;
     final attempt = _PlaybackAttempt(request, lease, generation);
@@ -665,7 +681,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       controller.value =
           controller.value.copyWith(position: position, isCompleted: false);
     }
-    await controller.play();
+    final startPaused = _startPaused;
+    _startPaused = false;
+    if (!startPaused) await controller.play();
   }
 
   PlaybackRequest _effectiveRequest() {
@@ -842,6 +860,34 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   // ---------------------------------------------------------------------------
+  // Casting
+  // ---------------------------------------------------------------------------
+
+  @override
+  PlaybackRequest? get castableRequest => _activeRequest;
+
+  @override
+  bool get castIsVideo => true;
+
+  @override
+  Duration currentLocalPosition() =>
+      _videoController?.value.position ?? _lastKnownPosition ?? Duration.zero;
+
+  @override
+  Future<void> pauseLocalPlayback() async {
+    await _leaveFullScreen();
+    await _videoController?.pause();
+  }
+
+  @override
+  void onCastEnded(Duration? position) {
+    // Finished on the TV: start over here rather than at the very end.
+    _lastKnownPosition = position ?? Duration.zero;
+    _startPaused = true;
+    _onRetry();
+  }
+
+  // ---------------------------------------------------------------------------
   // Error mapping
   // ---------------------------------------------------------------------------
 
@@ -886,13 +932,18 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    final casting = isCastingRequest;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         actions: [
+          buildCastButton(
+            ready: !_isLoading && _error == null && _videoController != null,
+          ),
           if (_activeRequest != null &&
               !_isLoading &&
               _error == null &&
+              !casting &&
               !widget.isPublicShare)
             _buildPersonalActions(),
         ],
@@ -904,7 +955,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 ? 'Shared Video'
                 : 'Video – ${widget.mediaId}')),
       ),
-      body: _buildBody(),
+      body: casting ? CastPlaybackView(onStop: stopCasting) : _buildBody(),
     );
   }
 

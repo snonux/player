@@ -31,6 +31,7 @@ import { initSeekPreview } from './seekPreview.js';
 import { initAudioVisuals } from './audioVisuals.js';
 import { initLyrics } from './lyrics.js';
 import { initPlaybackPersonal } from './playback-personal.js';
+import { castItem, castPosition, castDuration, castSeek, castTogglePlay, initCast, isCasting } from './cast.js';
 
 export {
   cycleCropPosition,
@@ -100,6 +101,7 @@ const els = () => ({
   btnSlideshow: document.getElementById('btn-slideshow'),
   btnMute: document.getElementById('btn-mute'),
   btnFs: document.getElementById('btn-fullscreen'),
+  btnCast: document.getElementById('btn-cast'),
   btnMinimize: document.getElementById('btn-minimize'),
   btnRestore: document.getElementById('btn-restore-player'),
   restoreTitle: document.getElementById('player-restore-title'),
@@ -157,11 +159,51 @@ export function initPlayer(options = {}) {
     }
   });
   bindSeekTrack(e);
+  if (options.cast) bindCast(e);
   resetSeekPreview = initSeekPreview({
     track: e.track, player: e.player, video: e.video,
     getVideo: () => isDetached() ? null : currentMediaElement(),
     formatTime: fmt,
   });
+}
+
+// bindCast wires the cast button (cast.js). While casting, the local element
+// stays paused and the transport controls show and steer the cast device.
+function bindCast(e) {
+  initCast({
+    button: e.btnCast,
+    getCurrentMedia: () => (isDetached() ? null : currentMedia),
+    localPosition: () => currentMediaElement()?.currentTime || 0,
+    pauseLocal: () => {
+      cancelPendingSource();
+      currentMediaElement()?.pause();
+      stopProgressTimer();
+    },
+    onRemoteTime: (seconds, duration) => showPosition(e, seconds, duration || effectiveDuration()),
+    onRemotePlaying: (playing) => updateUI(playing),
+    onRemoteEnded: () => triggerNext({ forcePlay: true }),
+    onCastStarted: (device) => {
+      updateUI(true);
+      setPlayerStatus(`Playing on ${device}`);
+    },
+    onCastEnded: (mediaId, seconds) => {
+      setPlayerStatus('');
+      updateUI(false);
+      const m = currentMediaElement();
+      if (m && currentMedia?.id === mediaId) seekWhenMetadataReady(m, seconds);
+    },
+    onError: (message) => toast(message, 'error'),
+  });
+}
+
+// showPosition draws seconds of duration on the seek bar and time labels.
+function showPosition(e, seconds, duration) {
+  if (!duration) return;
+  const pct = Math.max(0, Math.min(100, (seconds / duration) * 100));
+  e.fill.style.width = pct.toFixed(2) + '%';
+  e.thumb.style.left = pct.toFixed(2) + '%';
+  e.timeElapsed.textContent = fmt(seconds);
+  e.timeTotal.textContent = fmt(duration);
 }
 
 function bindControlButtons(e) {
@@ -244,6 +286,10 @@ function setupMediaDebug(m) {
 function bindSeekTrack(e) {
   let seeking = false;
   const seekToFraction = (frac) => {
+    if (isCasting()) {
+      castSeek(Math.max(0, Math.min(1, frac)) * (castDuration() || effectiveDuration()));
+      return;
+    }
     const m = currentMediaElement();
     const dur = effectiveDuration();
     if (!m || !dur) return;
@@ -267,6 +313,12 @@ function bindSeekTrack(e) {
   }, { passive: false });
   e.track?.addEventListener('touchend', () => { seeking = false; });
   e.track?.addEventListener('keydown', (ev) => {
+    if (isCasting() && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      castSeek(castPosition() + (ev.key === 'ArrowLeft' ? -5 : 5));
+      return;
+    }
     const m = currentMediaElement();
     const dur = effectiveDuration();
     if (!m || !dur) return;
@@ -326,6 +378,10 @@ function updateBufferedRanges(m) {
 }
 
 export function togglePlay() {
+  if (isCasting()) {
+    castTogglePlay();
+    return;
+  }
   if (isDetached()) {
     postToDetach({ type: 'detach-command', action: 'toggle-play' });
     return;
@@ -355,6 +411,10 @@ export function hasLoadedMedia() {
 export function seekPercent(deltaPercent) {
   const dp = Number(deltaPercent);
   if (!currentMedia || !isFinite(dp)) return false;
+  if (isCasting()) {
+    castSeek(castPosition() + (castDuration() || effectiveDuration()) * dp);
+    return true;
+  }
   if (isDetached()) {
     postToDetach({ type: 'detach-command', action: 'seek-percent', percent: dp });
     return true;
@@ -371,6 +431,10 @@ export function seekPercent(deltaPercent) {
 export function seekRelative(seconds) {
   const amount = Number(seconds);
   if (!currentMedia || !isFinite(amount)) return false;
+  if (isCasting()) {
+    castSeek(castPosition() + amount);
+    return true;
+  }
   if (isDetached()) {
     postToDetach({ type: 'detach-command', action: 'seek-relative', seconds: amount });
     return true;
@@ -438,6 +502,16 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
   if (media.type === 'image') {
     isPlaying = false;
     highlightPlayingCard();
+    return;
+  }
+  if (isCasting()) {
+    // The item shows here but plays on the cast device. A compat stream
+    // still being prepared is not cast until it is ready.
+    cancelPendingSource();
+    isPlaying = true;
+    updateUI(true);
+    highlightPlayingCard();
+    castWhenPlayable(media, resumeFrom);
     return;
   }
   // isPlaying states the intent; a failed load resets it (failPlayback).
@@ -903,7 +977,24 @@ export function currentMediaId() { return currentMedia?.id; }
 
 export function currentMediaInfo() { return currentMedia; }
 
+// castWhenPlayable casts media once the server can stream it: at once for
+// an original stream, after the compat probe for a transcoded item.
+async function castWhenPlayable(media, resumeFrom) {
+  if (media.transcoded) {
+    setPlayerStatus(preparingText(media, ''));
+    const result = await waitForCompatStream(mediaPlaybackUrl(media));
+    setPlayerStatus('');
+    if (currentMedia?.id !== media.id) return;
+    if (result.state !== 'ready') {
+      failPlayback(media, result.reason);
+      return;
+    }
+  }
+  if (currentMedia?.id === media.id && isCasting()) await castItem(media, resumeFrom);
+}
+
 export function isPlaybackActive() {
+  if (isCasting()) return isPlaying;
   if (isDetached()) return detachedIsPlaying() || currentMedia?.type === 'image';
   return isPlaying || currentMedia?.type === 'image';
 }

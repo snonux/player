@@ -1,1 +1,1 @@
-Switch between saved servers from the library toolbar when more than one server is configured.
+Cast audio and video to a Chromecast or another Google Cast device on your Wi-Fi from the server player, without Google Play Services. The phone shows remote controls and continues where the cast device stopped.

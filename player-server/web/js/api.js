@@ -64,6 +64,7 @@ export const API = {
     return api(`/api/media${s ? '?' + s : ''}`);
   },
   mediaDetail: (id) => api(`/api/media/${id}`),
+  castTicket: (id) => api(`/api/media/${id}/cast`, { method: 'POST' }),
   progress: (mediaId, positionSeconds) => api('/api/progress', { method: 'POST', body: { media_id: mediaId, position_seconds: positionSeconds } }),
   progressStatus: (mediaId, status) => {
     const id = typeof mediaId === 'string' && /^\d+$/.test(mediaId) ? Number(mediaId) : mediaId;
