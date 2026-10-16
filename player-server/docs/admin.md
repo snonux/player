@@ -56,6 +56,14 @@ generated `.cover` image, and finally other images. Names are matched without
 case sensitivity; supported cover extensions are JPG, JPEG, PNG and GIF.
 This lets tracks in disc subfolders share the album's cover.
 
+Set and folder previews also recognize `cover`, `front`, `folder` and `album`
+artwork. A collection chooses among its books' preferred covers before using
+audio artwork or unrelated photo/video thumbnails, so a mixed Audiobooks set
+does not use a Headspace text card while book covers are available. Explicitly
+generated `.cover.jpg` previews retain priority. Cover responses revalidate by
+ETag, allowing an old cached card to be replaced even if the book cover's file
+date is older.
+
 **Run Rescan after upgrading and after a Beets artwork sweep.** Rescanning
 updates existing tracks as well as new ones, replacing a previous selection
 such as `back.jpg` with Beets' `cover.jpg`, and repairing references to removed

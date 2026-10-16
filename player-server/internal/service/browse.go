@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"codeberg.org/snonux/player/internal/clock"
+	"codeberg.org/snonux/player/internal/mediatype"
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/thumb"
@@ -305,15 +306,7 @@ type folderContent struct {
 }
 
 func isFolderArtworkMedia(media model.Media) bool {
-	if media.Type != model.MediaTypeImage {
-		return false
-	}
-	switch strings.ToLower(filepath.Base(media.RelPath)) {
-	case "cover.jpg", "cover.jpeg", "cover.png", "cover.gif", "folder.jpg", "folder.jpeg", "folder.png", "folder.gif":
-		return true
-	default:
-		return false
-	}
+	return media.Type == model.MediaTypeImage && mediatype.IsNamedCoverImage(media.RelPath)
 }
 
 func folderContentFiles(files []model.Media) []model.Media {
@@ -366,9 +359,8 @@ func folderHasCoverIn(layout thumb.Layout, mediaRoot, setRootPath, parent, name 
 	subPath := filepath.Join(parent, name)
 	folderDir := filepath.Clean(filepath.Join(mediaRoot, setRootPath, filepath.FromSlash(subPath)))
 	coverPath, _ := layout.CoverPathFor(folderDir)
-	_, err := os.Stat(coverPath)
 	_, hasDirectCover := folderCoverFile(folderDir)
-	return err == nil || hasDirectCover || randomFolderThumbnail(media, filepath.ToSlash(subPath)) != ""
+	return usableCoverFile(coverPath) || hasDirectCover || randomFolderThumbnail(media, filepath.ToSlash(subPath)) != ""
 }
 
 // buildFoldersIn flattens single-file folders and discovers folder covers.
@@ -458,7 +450,7 @@ func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder str
 	}
 
 	info, err := os.Stat(coverPath)
-	if err == nil {
+	if err == nil && info.Mode().IsRegular() && info.Size() > 0 {
 		return &FileResult{
 			Path:     coverPath,
 			FileName: filepath.Base(coverPath),
@@ -497,26 +489,70 @@ func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder str
 	}, nil
 }
 
+// randomFolderThumbnail prefers book artwork before unrelated descendant
+// images/videos. Files are checked lazily so a mixed set on NFS does not stat
+// every thumbnail merely to display its front cover.
 func randomFolderThumbnail(media []model.Media, folder string) string {
 	prefix := filepath.ToSlash(strings.Trim(folder, "/"))
 	if prefix != "" {
 		prefix += "/"
 	}
-	var candidates []string
+	artwork := make(map[string][]model.Media)
+	var audio, candidates []string
 	for _, m := range media {
-		if m.DeletedAt != nil || m.ThumbnailPath == "" {
+		if m.DeletedAt != nil {
 			continue
 		}
 		rel := filepath.ToSlash(m.RelPath)
 		if prefix != "" && !strings.HasPrefix(rel, prefix) {
 			continue
 		}
-		candidates = append(candidates, m.ThumbnailPath)
+		if isFolderArtworkMedia(m) {
+			dir := filepath.Dir(rel)
+			artwork[dir] = append(artwork[dir], m)
+		} else if m.ThumbnailPath != "" {
+			if m.Type == model.MediaTypeAudio {
+				audio = append(audio, m.ThumbnailPath)
+			} else {
+				candidates = append(candidates, m.ThumbnailPath)
+			}
+		}
 	}
-	if len(candidates) == 0 {
-		return ""
+	checked := make(map[string]bool)
+	usable := func(path string) bool {
+		if path == "" || checked[path] {
+			return false
+		}
+		checked[path] = true
+		return usableCoverFile(path)
 	}
-	return candidates[mrand.Intn(len(candidates))]
+	folders := make([]string, 0, len(artwork))
+	for dir := range artwork {
+		folders = append(folders, dir)
+	}
+	mrand.Shuffle(len(folders), func(i, j int) { folders[i], folders[j] = folders[j], folders[i] })
+	for _, dir := range folders {
+		images := artwork[dir]
+		sort.Slice(images, func(i, j int) bool { return preferredArtworkName(images[i].RelPath, images[j].RelPath) })
+		for _, m := range images {
+			if usable(m.ThumbnailPath) {
+				return m.ThumbnailPath
+			}
+			// A missing cached image can fall back to source artwork.
+			if usable(m.AbsPath) {
+				return m.AbsPath
+			}
+		}
+	}
+	for _, paths := range [][]string{audio, candidates} {
+		mrand.Shuffle(len(paths), func(i, j int) { paths[i], paths[j] = paths[j], paths[i] })
+		for _, path := range paths {
+			if usable(path) {
+				return path
+			}
+		}
+	}
+	return ""
 }
 
 func folderCoverFile(dir string) (*FileResult, bool) {
@@ -524,19 +560,50 @@ func folderCoverFile(dir string) (*FileResult, bool) {
 	if err != nil {
 		return nil, false
 	}
+	var selected *FileResult
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() || !mediatype.IsNamedCoverImage(entry.Name()) {
 			continue
 		}
-		switch strings.ToLower(entry.Name()) {
-		case "cover.jpg", "cover.jpeg", "cover.png", "cover.gif", "folder.jpg", "folder.jpeg", "folder.png", "folder.gif":
-			info, err := entry.Info()
-			if err != nil {
-				return nil, false
-			}
-			path := filepath.Join(dir, entry.Name())
-			return &FileResult{Path: path, FileName: entry.Name(), FileSize: info.Size()}, true
+		path := filepath.Join(dir, entry.Name())
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+			continue
+		}
+		if selected == nil || mediatype.CoverImageRank(path) < mediatype.CoverImageRank(selected.Path) {
+			selected = &FileResult{Path: path, FileName: entry.Name(), FileSize: info.Size()}
 		}
 	}
-	return nil, false
+	return selected, selected != nil
+}
+
+func usableCoverFile(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular() && info.Size() > 0
+}
+
+// preferredFolderArtwork keeps each book's best source artwork while allowing
+// a set or collection to choose among the front covers of different books.
+func preferredFolderArtwork(media []model.Media) []model.Media {
+	byFolder := make(map[string]model.Media)
+	for _, m := range media {
+		dir := filepath.Dir(m.RelPath)
+		previous, ok := byFolder[dir]
+		if !ok || preferredArtworkName(m.RelPath, previous.RelPath) {
+			byFolder[dir] = m
+		}
+	}
+	selected := make([]model.Media, 0, len(byFolder))
+	for _, m := range byFolder {
+		selected = append(selected, m)
+	}
+	return selected
+}
+
+func preferredArtworkName(candidate, previous string) bool {
+	a, b := mediatype.CoverImageRank(candidate), mediatype.CoverImageRank(previous)
+	return a < b || (a == b && filepath.Base(candidate) < filepath.Base(previous))
 }

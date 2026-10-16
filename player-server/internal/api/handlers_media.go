@@ -1,9 +1,12 @@
 package api
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -57,7 +60,24 @@ func (s *Server) handleGetSetCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-cache")
-	http.ServeFile(w, r, fr.Path)
+	f, err := os.Open(fr.Path)
+	if err != nil {
+		notFound(w)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		notFound(w)
+		return
+	}
+	// One cover URL may select different files. Modification times alone
+	// cannot revalidate it: an older front cover must replace a cached,
+	// newer unrelated image. Include the selected file's identity in the
+	// ETag and disable Last-Modified validation, including legacy IMS-only
+	// requests left over from versions that served arbitrary thumbnails.
+	w.Header().Set("ETag", fmt.Sprintf(`"%x-%s"`, sha256.Sum256([]byte(fr.Path)), fileETag(info.Size(), info.ModTime())))
+	http.ServeContent(w, r, fr.FileName, time.Time{}, f)
 }
 
 func (s *Server) handlePostSetCover(w http.ResponseWriter, r *http.Request) {

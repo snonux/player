@@ -120,31 +120,9 @@ func (d *fileDiscoverer) gatherCoverImages(setPath string) map[string]string {
 // file name so discovery order never decides the selected artwork. Keep the
 // generated folder cover ahead of other unnamed images for existing libraries.
 func preferredCover(candidate, previous string) bool {
-	a, b := coverRank(candidate), coverRank(previous)
+	a, b := mediatype.CoverImageRank(candidate), mediatype.CoverImageRank(previous)
 	if a != b {
 		return a < b
 	}
 	return filepath.Base(candidate) < filepath.Base(previous)
-}
-
-func coverRank(path string) int {
-	name := strings.ToLower(filepath.Base(path))
-	if name == "cover.jpg" {
-		return 0
-	}
-	stem := strings.TrimSuffix(name, filepath.Ext(name))
-	switch stem {
-	case "cover":
-		return 1
-	case "front":
-		return 2
-	case "folder":
-		return 3
-	case "album":
-		return 4
-	case ".cover":
-		return 5
-	default:
-		return 6
-	}
 }

@@ -363,25 +363,29 @@ func coverCandidate(media []model.Media, prefix string) (model.Media, bool, erro
 		}
 		switch {
 		case isFolderArtworkMedia(m):
-			artworkCandidates = append(artworkCandidates, m)
+			if usableCoverFile(m.AbsPath) {
+				artworkCandidates = append(artworkCandidates, m)
+			}
 		case m.Type == model.MediaTypeVideo:
 			videoCandidates = append(videoCandidates, m)
 		case m.Type == model.MediaTypeImage:
 			imageCandidates = append(imageCandidates, m)
 		case m.ThumbnailPath != "":
-			thumbnailCandidates = append(thumbnailCandidates, m)
+			if usableCoverFile(m.ThumbnailPath) {
+				thumbnailCandidates = append(thumbnailCandidates, m)
+			}
 		}
 	}
 
 	switch {
 	case len(artworkCandidates) > 0:
-		return randomMedia(artworkCandidates), false, nil
+		return randomMedia(preferredFolderArtwork(artworkCandidates)), false, nil
+	case len(thumbnailCandidates) > 0:
+		return randomMedia(thumbnailCandidates), true, nil
 	case len(videoCandidates) > 0:
 		return randomMedia(videoCandidates), false, nil
 	case len(imageCandidates) > 0:
 		return randomMedia(imageCandidates), false, nil
-	case len(thumbnailCandidates) > 0:
-		return randomMedia(thumbnailCandidates), true, nil
 	default:
 		return model.Media{}, false, ErrEmptySetForCover
 	}

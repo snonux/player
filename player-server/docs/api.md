@@ -677,6 +677,18 @@ a subdirectory.
 
 Return the cover image for a set or folder. Returns the image bytes directly.
 
+An explicitly generated `.cover.jpg` takes priority. Otherwise, direct source
+artwork is preferred in this order: `cover.jpg`, other `cover` images, `front`,
+`folder`, then `album` (case insensitive; JPEG, PNG or GIF). Collection covers
+choose among the preferred artwork of their descendant books before using
+audio artwork or arbitrary image/video thumbnails. Missing, empty and
+non-file fallback candidates are skipped. Photo/video-only sets still use
+their media thumbnails.
+
+Responses use `Cache-Control: no-cache` and an ETag identifying the selected
+file. Clients should revalidate with `If-None-Match`; modification times alone
+cannot validate a URL that may choose a different book's cover.
+
 **Query parameters:**
 
 | Parameter | Description |
