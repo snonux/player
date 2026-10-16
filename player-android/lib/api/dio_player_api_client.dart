@@ -506,6 +506,14 @@ class DioPlayerApiClient extends PlayerApiClient
   // Shares
   // ---------------------------------------------------------------------------
 
+  @override
+  Future<CastTicket> createCastTicket(int mediaId) async {
+    final response = await rawDio.post<Map<String, dynamic>>(
+      '$_kApiV1/media/$mediaId/cast',
+    );
+    return CastTicket.fromJson(response.data!);
+  }
+
   /// Creates a share link for [mediaId].
   ///
   /// POST /api/v1/media/{id}/shares

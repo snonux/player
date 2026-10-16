@@ -17,6 +17,7 @@ Features
 - **Picture layout** — optional justified thumbnail rows fit image aspect ratios without cropping. Press `g` to toggle, or use Picture layout in help (`?`); the preference is saved. Unknown dimensions use square tiles and extreme aspect ratios use bounded tiles with the full image visible. Sets without images keep the regular grid.
 - **Preview size** — use the visible Previews controls or `+` / `-` to resize library thumbnails; `0` resets the size. Five sizes are saved on this browser and apply to both regular and picture layouts. In image view these keys retain their image zoom actions.
 - **Audio / Audiobooks** — cover art display, progress tracking (resumes where you left off)
+- **Casting** — in Chrome (HTTPS or localhost), the player's cast button plays the current audio or video item on a Chromecast or other Google Cast device; play/pause, seeking and track changes then control the cast device, and stopping continues locally where it left off. The cast device fetches the media through a short-lived signed link, so it must reach the server at the page's address. Details: [docs/api.md](docs/api.md)
 - **Podcasts** — subscribe to RSS/Atom feeds, download episodes to the server, mark listened/unlistened
 
 ### Organization

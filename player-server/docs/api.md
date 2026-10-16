@@ -980,6 +980,45 @@ Download the original file with `Content-Disposition: attachment`. Supports
 
 ---
 
+### `POST /api/media/{id}/cast` · `POST /api/v1/media/{id}/cast`
+
+Issue a **cast ticket** so a Chromecast (or another Google Cast receiver) can
+stream a media item. A cast device fetches media by URL and cannot send the
+sender's session cookie or bearer token, so the ticket is the credential it
+carries in the URL instead. The caller must be allowed to stream the item.
+
+**Response:**
+
+```json
+{
+  "ticket": "AAAAAAAAAAEAAAAAAAAABQAAAABo...",
+  "expires_at": "2026-10-16T23:51:47Z",
+  "stream_content_type": "audio/mpeg",
+  "compat_content_type": "audio/mp4"
+}
+```
+
+The receiver is given absolute URLs built from the server's own base URL:
+
+| URL | Serves |
+|-----|--------|
+| `{base}/cast/{ticket}/stream` | like `/api/media/{id}/stream` (`stream_content_type`) |
+| `{base}/cast/{ticket}/compat` | like `/api/media/{id}/compat` (`compat_content_type`); probe it until ready before casting |
+| `{base}/cast/{ticket}/thumbnail` | like `/api/media/{id}/thumbnail` |
+
+These routes need no session, support `Range` and `HEAD`, answer CORS
+preflights for any origin, and send `Cache-Control: no-store`. A ticket is
+HMAC-signed, valid for 12 hours, bound to one user and one media item, and
+checked against that user's current permissions on every request. Invalid,
+expired, or no longer permitted tickets answer `404`. The signing key lives
+in memory only: after a server restart old tickets stop working and the
+sender requests a new one. The cast device must be able to reach the server
+at the base URL the sender uses (for example the same LAN address).
+
+**Status codes:** `200`, `400`, `401`, `404`, `500`
+
+---
+
 ### `GET /api/media/{id}/thumbnail` · `GET /api/v1/media/{id}/thumbnail`
 
 Return the thumbnail image for a media item. Generated thumbnails are JPEG;

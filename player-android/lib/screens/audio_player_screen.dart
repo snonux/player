@@ -9,6 +9,7 @@ import 'package:just_audio/just_audio.dart';
 import '../api/dio_client.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/audio_handler_provider.dart';
+import '../providers/cast_provider.dart';
 import '../providers/progress_queue_provider.dart';
 import '../providers/public_api_client_provider.dart';
 import '../providers/playback_session_provider.dart';
@@ -19,8 +20,10 @@ import '../services/playback_source_resolver.dart';
 import '../utils/playback_errors.dart';
 import '../widgets/lyrics_panel.dart';
 import '../widgets/audio_cover_art.dart';
+import '../widgets/cast_controls.dart';
 import '../widgets/playback_loading_view.dart';
 import '../widgets/personal_media_actions.dart';
+import 'cast_screen_mixin.dart';
 import 'playback_preparation_mixin.dart';
 
 // Available playback speed options for the speed selector.
@@ -97,7 +100,7 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
 // ---------------------------------------------------------------------------
 
 class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
-    with PlaybackPreparationMixin {
+    with PlaybackPreparationMixin, CastScreenMixin {
   // Invalidates older async setup attempts when Retry starts a new one.
   int _initGeneration = 0;
   // Shown in the error view (with Retry) when non-null: why starting or
@@ -120,6 +123,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   // Where this item last was while it played on this screen; Retry resumes
   // here. Null before playback progressed and once the item completed.
   Duration? _lastKnownPosition;
+
+  // Set when casting ended: load the item where the TV left it, but do not
+  // start playing on the phone by surprise.
+  bool _startPaused = false;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -187,6 +194,11 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     if (!mounted || generation != _initGeneration) return;
     final handler = ref.read(audioHandlerProvider);
     _activeRequest = request;
+    if (ref.read(castControllerProvider).isCasting(request.identity)) {
+      // Reopened while it plays on a cast device: show the remote controls.
+      setState(() => _isLoading = false);
+      return;
+    }
     final lease = await _claimSession(request, handler, generation);
     if (lease == null) return;
     _sessionLease = lease;
@@ -362,8 +374,11 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         markFinished: request.markFinished!,
       );
     }
+    final startPaused = _startPaused;
+    _startPaused = false;
     if (_isCurrent(attempt) &&
-        handler.activateSourceSession(attempt.sourceGeneration)) {
+        handler.activateSourceSession(attempt.sourceGeneration) &&
+        !startPaused) {
       unawaited(handler.play());
     }
   }
@@ -559,6 +574,37 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   }
 
   // ---------------------------------------------------------------------------
+  // Casting
+  // ---------------------------------------------------------------------------
+
+  @override
+  PlaybackRequest? get castableRequest => _activeRequest;
+
+  @override
+  bool get castIsVideo => false;
+
+  @override
+  Duration currentLocalPosition() =>
+      ref.read(audioHandlerProvider).player.position;
+
+  @override
+  Future<void> pauseLocalPlayback() async {
+    final generation = _activeSourceGeneration;
+    final handler = ref.read(audioHandlerProvider);
+    if (generation != null && handler.isSourceSessionCurrent(generation)) {
+      await handler.pause();
+    }
+  }
+
+  @override
+  void onCastEnded(Duration? position) {
+    // Finished on the TV: start over here rather than at the very end.
+    _lastKnownPosition = position ?? Duration.zero;
+    _startPaused = true;
+    _onRetry();
+  }
+
+  // ---------------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------------
 
@@ -617,13 +663,16 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    final casting = isCastingRequest;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         actions: [
+          buildCastButton(ready: !_isLoading && _error == null),
           if (_activeRequest != null &&
               !_isLoading &&
               _error == null &&
+              !casting &&
               !widget.isPublicShare)
             _buildPersonalActions(),
         ],
@@ -635,7 +684,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                 ? 'Shared Audio'
                 : 'Audio – ${widget.mediaId}')),
       ),
-      body: _buildBody(),
+      body: casting ? CastPlaybackView(onStop: stopCasting) : _buildBody(),
     );
   }
 

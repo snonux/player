@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -59,8 +60,10 @@ type Server struct {
 	streamer      service.MediaStreamer
 	staticFS      http.FileSystem
 	shareRenderer *web.SharePageRenderer
-	logger        *slog.Logger
-	mw            *Middleware
+	// castTickets signs the URLs a cast device streams from.
+	castTickets *auth.CastTicketSigner
+	logger      *slog.Logger
+	mw          *Middleware
 }
 
 // ServerServices groups the optional service dependencies used by route handlers.
@@ -89,6 +92,9 @@ type ServerDeps struct {
 	// to clock.RealClock{} so existing production callers and tests that
 	// don't care about deterministic time keep working unchanged.
 	Clock clock.Clock
+	// CastTickets signs cast URLs. If nil a signer with a random key is
+	// created, so cast URLs stop working when the server restarts.
+	CastTickets *auth.CastTicketSigner
 }
 
 // NewServer creates a Server with routes.
@@ -128,6 +134,13 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 	if deps.Clock == nil {
 		deps.Clock = clock.RealClock{}
 	}
+	if deps.CastTickets == nil {
+		signer, err := auth.NewCastTicketSigner(deps.Clock)
+		if err != nil {
+			return nil, fmt.Errorf("api.NewServerWithLogger: %w", err)
+		}
+		deps.CastTickets = signer
+	}
 	// Populate the media vertical-slice sub-struct directly from the nested
 	// ServerServices.Media group so the Server never sees the flat list.
 	s := &Server{
@@ -144,6 +157,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		streamer:      deps.MediaStreamer,
 		staticFS:      deps.StaticFS,
 		shareRenderer: web.NewSharePageRenderer(deps.StaticFS),
+		castTickets:   deps.CastTickets,
 		logger:        logger,
 		mw:            NewMiddleware(deps.Services.Auth, deps.SessionManager),
 	}
@@ -400,6 +414,7 @@ func (s *Server) routesAdmin() {
 func (s *Server) routes() {
 	s.routesPublic()
 	s.routesSharePublic()
+	s.routesCast()
 	s.routesStatic()
 	s.routesHTML()
 	s.routesAuth()
