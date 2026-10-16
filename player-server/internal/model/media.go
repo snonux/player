@@ -155,18 +155,20 @@ type MediaTag struct {
 
 // Metadata holds extracted file properties from ffprobe and os.Stat.
 type Metadata struct {
-	Duration        float64 `json:"duration"`
-	Codec           string  `json:"codec"`
-	Resolution      string  `json:"resolution"`
-	Bitrate         int     `json:"bitrate"`
-	FileSizeBytes   int64   `json:"file_size_bytes"`
-	Width           int     `json:"width"`
-	Height          int     `json:"height"`
-	EXIFCamera      string  `json:"exif_camera"`
-	EXIFLens        string  `json:"exif_lens"`
-	EXIFDate        string  `json:"exif_date"`
-	EXIFISO         string  `json:"exif_iso"`
-	EXIFFNumber     string  `json:"exif_f_number"`
-	EXIFExposure    string  `json:"exif_exposure"`
-	EXIFFocalLength string  `json:"exif_focal_length"`
+	// EmbeddedArtIndex identifies the preferred attached picture stream, if any.
+	EmbeddedArtIndex *int    `json:"-"`
+	Duration         float64 `json:"duration"`
+	Codec            string  `json:"codec"`
+	Resolution       string  `json:"resolution"`
+	Bitrate          int     `json:"bitrate"`
+	FileSizeBytes    int64   `json:"file_size_bytes"`
+	Width            int     `json:"width"`
+	Height           int     `json:"height"`
+	EXIFCamera       string  `json:"exif_camera"`
+	EXIFLens         string  `json:"exif_lens"`
+	EXIFDate         string  `json:"exif_date"`
+	EXIFISO          string  `json:"exif_iso"`
+	EXIFFNumber      string  `json:"exif_f_number"`
+	EXIFExposure     string  `json:"exif_exposure"`
+	EXIFFocalLength  string  `json:"exif_focal_length"`
 }

@@ -900,8 +900,8 @@ func TestStaleThumbnails(t *testing.T) {
 		row("own.png", "/m/set/own.png"),                            // image as its own thumbnail
 		row("logo.svg", "/m/set/logo.svg"),                          // an SVG always is
 		row("logo2.SVG", ""),                                        // ... whatever is stored
-		row("song.mp3", "/m/set/.thumbnails/song.jpg"),              // audio is never touched
-		row("silent.mp3", ""),                                       //
+		row("song.mp3", "/m/set/.thumbnails/song.jpg"),              // old generated audio artwork
+		row("silent.mp3", ""),                                       // probe for embedded artwork
 		row("gone.mp4", "/m/set/.thumbnails/gone.jpg"),              // source not on disk
 		row("gone2.mp4", ""),                                        //
 		row("outside.mp4", "/elsewhere/.thumbnails/outside.jpg"),    // not inside the set
@@ -926,6 +926,7 @@ func TestStaleThumbnails(t *testing.T) {
 	want := map[string]staleKind{
 		"old.mp4": staleOldName, "a/old.png": staleOldName, "lost.mp4": staleMissing,
 		"none.mp4": staleNone, "own.png": staleNone,
+		"song.mp3": staleOldName, "silent.mp3": staleNone,
 	}
 	for _, m := range rows {
 		if got[m.RelPath] != want[m.RelPath] {

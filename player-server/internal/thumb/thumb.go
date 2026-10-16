@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/ffsafe"
+	"codeberg.org/snonux/player/internal/mediatype"
+	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/probe"
 )
 
 // Generator creates a thumbnail for a given media file.
@@ -65,6 +68,16 @@ const seekMargin = 1.0
 // frame is taken instead, which every decodable video has. Images, and
 // videos too short to seek in, get the first frame straight away.
 func (g *FFmpegGenerator) Generate(ctx context.Context, inputPath, outputPath string, duration float64) error {
+	if mediatype.TypeForExt(inputPath) == model.MediaTypeAudio {
+		meta, err := probe.NewFFProber().Probe(ctx, inputPath)
+		if err != nil {
+			return err
+		}
+		if meta.EmbeddedArtIndex == nil {
+			return fmt.Errorf("audio has no embedded artwork")
+		}
+		return g.run(ctx, inputPath, outputPath, nil, *meta.EmbeddedArtIndex)
+	}
 	if duration > seekMargin {
 		offset := g.randomOffset(duration)
 		if err := g.run(ctx, inputPath, outputPath, &offset); err == nil && g.wroteFrame(outputPath) {
@@ -89,8 +102,8 @@ func (g *FFmpegGenerator) randomOffset(duration float64) float64 {
 }
 
 // run executes ffmpeg once, seeking to *seek first when it is given.
-func (g *FFmpegGenerator) run(ctx context.Context, inputPath, outputPath string, seek *float64) error {
-	args, err := thumbArgs(inputPath, outputPath, seek)
+func (g *FFmpegGenerator) run(ctx context.Context, inputPath, outputPath string, seek *float64, stream ...int) error {
+	args, err := thumbArgs(inputPath, outputPath, seek, stream...)
 	if err != nil {
 		return err
 	}
@@ -117,7 +130,7 @@ func (g *FFmpegGenerator) run(ctx context.Context, inputPath, outputPath string,
 // path (file or directory name, both come from user-chosen media names) is
 // expanded as an image sequence pattern: ffmpeg then writes a differently
 // named file, or none, and may still exit successfully.
-func thumbArgs(inputPath, outputPath string, seek *float64) ([]string, error) {
+func thumbArgs(inputPath, outputPath string, seek *float64, stream ...int) ([]string, error) {
 	input, err := ffsafe.SourceArgs(inputPath)
 	if err != nil {
 		return nil, err
@@ -134,6 +147,9 @@ func thumbArgs(inputPath, outputPath string, seek *float64) ([]string, error) {
 		args = append(args, "-ss", fmt.Sprintf("%.3f", *seek))
 	}
 	args = append(args, input...)
+	if len(stream) > 0 {
+		args = append(args, "-map", fmt.Sprintf("0:%d", stream[0]))
+	}
 	return append(args,
 		"-vf", "scale=320:-1",
 		"-frames:v", "1",

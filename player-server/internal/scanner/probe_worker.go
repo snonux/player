@@ -3,7 +3,9 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -125,6 +127,16 @@ func (pw *probeWorker) probeFile(
 	pw.logger.Debug("scanner file checked", "set", setName, "path", relPath, "existing", alreadyExists)
 	if alreadyExists {
 		if kind, isStale := pw.stale[relPath]; isStale {
+			if row.Type == model.MediaTypeAudio {
+				if row.ThumbnailPath != "" {
+					if _, err := pw.fs.Stat(row.ThumbnailPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+						return nil, nil // preserve artwork whose accessibility is unknown
+					}
+				}
+				if findCoverImage(path, coverImages, setPath) != "" {
+					return nil, nil
+				}
+			}
 			return pw.refreshThumbnail(ctx, path, row, kind), nil
 		}
 		return nil, nil
@@ -177,17 +189,23 @@ func (pw *probeWorker) newMedia(setID int64, relPath, path string, mediaType mod
 }
 
 // buildThumbnailPath resolves the thumbnail path for a new media file.
-// Video and image thumbnails are produced via thumb.Maker; audio uses a
-// nearby cover image; SVG images are served as-is (no raster thumbnail
-// needed). When no thumbnail can be made (generator failure, unwritable
-// folder) the file is indexed all the same: a video without thumbnail, an
+// Video and image thumbnails are produced via thumb.Maker; audio prefers a
+// nearby cover image and otherwise extracts its embedded picture. SVG images
+// are served as-is (no raster thumbnail needed). When no thumbnail can be made
+// (generator failure, unwritable folder) the file is indexed all the same: a video without thumbnail, an
 // image with the image itself standing in.
 func (pw *probeWorker) buildThumbnailPath(ctx context.Context, path, setPath string, mediaType model.MediaType, coverImages map[string]string, meta *model.Metadata) string {
 	switch mediaType {
 	case model.MediaTypeVideo:
 		return pw.thumbMkr.MakeVideo(ctx, path, meta.Duration)
 	case model.MediaTypeAudio:
-		return findCoverImage(path, coverImages, setPath)
+		if cover := findCoverImage(path, coverImages, setPath); cover != "" {
+			return cover
+		}
+		if meta.EmbeddedArtIndex != nil {
+			return pw.thumbMkr.MakeVideo(ctx, path, 0)
+		}
+		return ""
 	case model.MediaTypeImage:
 		if strings.ToLower(filepath.Ext(path)) == ".svg" {
 			// SVG is a vector format; serve the original file directly.
@@ -206,10 +224,17 @@ func (pw *probeWorker) buildThumbnailPath(ctx context.Context, path, setPath str
 // apply, or nil when no thumbnail could be made. In that case the row keeps
 // what it has, and the next rescan tries again.
 //
-// The row's stored duration is used, so the file is not probed anew.
+// Video uses the row's stored duration. Audio is probed for an attached
+// picture before invoking ffmpeg, so ordinary audio never runs a failed extraction.
 func (pw *probeWorker) refreshThumbnail(ctx context.Context, path string, row model.Media, kind staleKind) *fileResult {
 	var thumbPath string
-	if row.Type == model.MediaTypeVideo {
+	if row.Type == model.MediaTypeAudio {
+		meta, err := pw.prober.Probe(ctx, path)
+		if err != nil || meta.EmbeddedArtIndex == nil {
+			return nil
+		}
+		thumbPath = pw.thumbMkr.MakeVideo(ctx, path, 0)
+	} else if row.Type == model.MediaTypeVideo {
 		thumbPath = pw.thumbMkr.MakeVideo(ctx, path, row.Duration)
 	} else {
 		thumbPath = pw.thumbMkr.MakeImage(ctx, path)

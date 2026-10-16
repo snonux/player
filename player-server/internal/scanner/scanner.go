@@ -58,6 +58,8 @@ type FSScanner struct {
 	layout thumb.Layout
 	// scanMu serialises Scan calls, see Scan.
 	scanMu sync.Mutex
+	// trashLock coordinates artwork switches with regeneration and GC.
+	trashLock *sync.Mutex
 }
 
 // NewFSScanner creates a filesystem scanner with injected dependencies.
@@ -96,6 +98,7 @@ func NewFSScannerWithMaker(store repository.ScannerStore, prober probe.Prober, m
 		remover:   osFS{},
 		logger:    logger,
 		workers:   runtime.NumCPU(),
+		trashLock: new(sync.Mutex),
 	}
 }
 
@@ -106,6 +109,15 @@ func NewFSScannerWithMaker(store repository.ScannerStore, prober probe.Prober, m
 // chaining and must be called before the first Scan.
 func (s *FSScanner) WithThumbnailLayout(layout thumb.Layout) *FSScanner {
 	s.layout = layout
+	return s
+}
+
+// WithTrashLock coordinates artwork switches with media mutations and GC.
+// Configure it before the first scan, using the application's shared lock.
+func (s *FSScanner) WithTrashLock(lock *sync.Mutex) *FSScanner {
+	if lock != nil {
+		s.trashLock = lock
+	}
 	return s
 }
 
@@ -288,8 +300,17 @@ func belowSkippedDirectory(path string, skipped map[string]error) bool {
 // including a preferred cover replacing an older selection. Shared album art is
 // read directly and never replaced or deleted by the scanner.
 func (s *FSScanner) updateAudioThumbnails(ctx context.Context, mediaList []model.Media, coverImages map[string]string, setPath string, skipped map[string]error) {
+	// Load references only when generated artwork might be removed. Most
+	// rescans do not replace it, so they need no library-wide query.
+	var referencesLoaded bool
+	var refErr error
+	references := make(map[string]int)
+	sources := make(map[string]bool)
 	for _, m := range mediaList {
-		if m.Type != model.MediaTypeAudio {
+		sources[filepath.Join(setPath, filepath.FromSlash(m.RelPath))] = true
+	}
+	for _, m := range mediaList {
+		if m.Type != model.MediaTypeAudio || m.DeletedAt != nil {
 			continue
 		}
 		source := filepath.Join(setPath, filepath.FromSlash(m.RelPath))
@@ -306,8 +327,31 @@ func (s *FSScanner) updateAudioThumbnails(ctx context.Context, mediaList []model
 			}
 		}
 		if candidate != m.ThumbnailPath {
+			if !referencesLoaded && s.layout.Holds(m.ThumbnailPath, source) {
+				// Include every set and trashed row: even a legacy cross-set
+				// reference must keep its file. A failed lookup disables cleanup.
+				var allMedia []model.Media
+				allMedia, refErr = s.store.ListMedia(ctx, repository.MediaFilter{IncludeDeleted: true})
+				referencesLoaded = true
+				for _, row := range allMedia {
+					references[row.ThumbnailPath]++
+					sources[row.AbsPath] = true
+				}
+			}
 			if err := s.store.UpdateMediaThumbnail(ctx, m.ID, candidate); err != nil {
 				s.log().Warn("scanner failed to update thumbnail", "file", m.FileName, "err", err)
+				continue
+			}
+			if referencesLoaded {
+				references[m.ThumbnailPath]--
+				references[candidate]++
+			}
+			// Only this track's generated thumbnail may be removed, once no
+			// active or trashed row references it. Source artwork is never deleted.
+			if refErr == nil && references[m.ThumbnailPath] == 0 && !sources[m.ThumbnailPath] && s.layout.Holds(m.ThumbnailPath, source) {
+				if err := s.remover.Remove(m.ThumbnailPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					s.log().Warn("scanner replaced audio thumbnail removal failed", "path", m.ThumbnailPath, "err", err)
+				}
 			}
 		}
 	}
@@ -356,11 +400,28 @@ func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress 
 		return fmt.Errorf("scan set %q: %w", setName, err)
 	}
 
-	mediaList, _ := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
-	s.updateAudioThumbnails(ctx, mediaList, sc.coverImages, setPath, sc.skipped)
+	s.refreshAudioThumbnails(ctx, setID, sc.coverImages, setPath, sc.skipped)
 
 	s.log().Info("scanner set completed", "name", setName, "existing_media", len(existing), "new_media", newFiles)
 	return nil
+}
+
+// refreshAudioThumbnails keeps the row snapshot, reference checks and deletion
+// under the same lock as regeneration, so it cannot delete a newly selected image.
+func (s *FSScanner) refreshAudioThumbnails(ctx context.Context, setID int64, covers map[string]string, setPath string, skipped map[string]error) {
+	if s.trashLock != nil {
+		s.trashLock.Lock()
+		defer s.trashLock.Unlock()
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	mediaList, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID, IncludeDeleted: true})
+	if err != nil {
+		s.log().Warn("scanner failed to load audio artwork", "set_id", setID, "err", err)
+		return
+	}
+	s.updateAudioThumbnails(ctx, mediaList, covers, setPath, skipped)
 }
 
 // discoverSet uses fileDiscoverer to collect the set's media files and

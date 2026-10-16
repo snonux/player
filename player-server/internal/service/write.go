@@ -216,17 +216,26 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 }
 
 func (s *writeService) RegenerateThumbnail(ctx context.Context, mediaID, userID int64) error {
+	s.trashLock.Lock()
+	defer s.trashLock.Unlock()
 	media, err := s.helper.verifyModifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return err
 	}
-	if media.Type != model.MediaTypeVideo && media.Type != model.MediaTypeImage {
-		return errors.New("thumbnails can only be generated for video and image files")
+	if media.Type != model.MediaTypeVideo && media.Type != model.MediaTypeImage && media.Type != model.MediaTypeAudio {
+		return errors.New("thumbnails can only be generated for video, audio and image files")
 	}
 
-	meta, err := s.prober.Probe(ctx, media.AbsPath)
+	meta, err := probeMedia(ctx, s.prober, media.AbsPath)
 	if err != nil {
 		return probeError(media.AbsPath, err)
+	}
+
+	if media.Type == model.MediaTypeAudio {
+		if meta.EmbeddedArtIndex == nil {
+			return errors.New("audio has no embedded artwork")
+		}
+		meta.Duration = 0
 	}
 
 	// The thumbnail is made by the ThumbnailMaker, at the one path scanner

@@ -37,8 +37,12 @@ func ImportMediaFile(
 	applyMetadata(media, meta)
 
 	made := false
-	if media.Type == model.MediaTypeVideo || media.Type == model.MediaTypeImage {
-		made = generateThumbnail(ctx, thumbs, media, meta.Duration)
+	if media.Type == model.MediaTypeVideo || media.Type == model.MediaTypeImage || (media.Type == model.MediaTypeAudio && media.ThumbnailPath == "" && meta.EmbeddedArtIndex != nil) {
+		duration := meta.Duration
+		if media.Type == model.MediaTypeAudio {
+			duration = 0
+		}
+		made = generateThumbnail(ctx, thumbs, media, duration)
 	}
 
 	if err := store.UpdateMedia(ctx, media); err != nil {
@@ -93,7 +97,7 @@ func probeMedia(ctx context.Context, prober probe.Prober, path string) (*model.M
 	return meta, nil
 }
 
-// generateThumbnail sets media.ThumbnailPath for video and image media and
+// generateThumbnail sets media.ThumbnailPath for video, audio and image media and
 // reports whether it generated a thumbnail file for that (made). An SVG is
 // its own thumbnail. Everything else goes through the ThumbnailMaker, the
 // one implementation shared with the scanner and RegenerateThumbnail: the

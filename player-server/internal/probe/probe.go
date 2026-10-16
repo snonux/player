@@ -180,6 +180,13 @@ type ffprobeOutput struct {
 		BitRate  string `json:"bit_rate"`
 	} `json:"format"`
 	Streams []struct {
+		Index       int `json:"index"`
+		Disposition struct {
+			AttachedPic int `json:"attached_pic"`
+		} `json:"disposition"`
+		Tags struct {
+			Comment string `json:"comment"`
+		} `json:"tags"`
 		CodecName string `json:"codec_name"`
 		Width     int    `json:"width"`
 		Height    int    `json:"height"`
@@ -209,7 +216,16 @@ func parseFFprobeOutput(data []byte, audioFile bool) (*model.Metadata, error) {
 	}
 
 	var videoCodec, audioCodec string
+	frontArt := false
 	for _, s := range out.Streams {
+		if s.CodecType == "video" && s.Disposition.AttachedPic == 1 {
+			front := strings.Contains(strings.ToLower(s.Tags.Comment), "front")
+			if meta.EmbeddedArtIndex == nil || (front && !frontArt) {
+				index := s.Index
+				meta.EmbeddedArtIndex = &index
+				frontArt = front
+			}
+		}
 		switch {
 		case s.CodecType == "video" && videoCodec == "":
 			videoCodec = s.CodecName

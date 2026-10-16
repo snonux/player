@@ -231,3 +231,19 @@ written. Restoring trash and editing metadata remain available. If a set becomes
 read-only with old trash already queued, GC removes the database row once and
 keeps its source file; rescanning can discover that file again. Other filesystem
 errors retain the trash entry for retry.
+
+### Embedded audio artwork
+
+Music and audiobooks without a nearby album image use their embedded attached
+picture. A picture labelled as the front cover takes priority over other embedded
+pictures. External album images still take priority on library scans. Run one
+admin rescan after upgrading to populate existing tracks; no media files are
+modified. Extracted images use the configured thumbnail cache, including when the
+media library is read-only. Uploads and thumbnail regeneration also support
+embedded audio artwork.
+
+A rescan probes audio tracks that still lack artwork to check for embedded
+pictures. Tracks with no picture do not run ffmpeg or log extraction failures;
+they do incur an ffprobe call per rescan. Tracks with a valid generated image do
+not need to be probed again. A removed album image falls back to embedded artwork
+on the next rescan.

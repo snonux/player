@@ -115,7 +115,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock)
 
 	fsScanner := scanner.NewFSScannerWithMaker(store, prober, thumbMaker, clk, cfg.MediaRoot, logger).
-		WithThumbnailLayout(thumbLayout)
+		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock)
 	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
 
 	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger).

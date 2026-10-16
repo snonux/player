@@ -1023,7 +1023,9 @@ at the base URL the sender uses (for example the same LAN address).
 
 Return the thumbnail image for a media item. Generated thumbnails are JPEG;
 audio may use an existing album image (including Beets' `cover.jpg`) in its
-original format. Uses the track's set permissions. Sets `Cache-Control:
+original format. When no nearby image exists, audio uses its embedded attached
+picture, preferring a picture labelled as the front cover. Existing audio picks
+this up on an admin rescan. Uses the track's set permissions. Sets `Cache-Control:
 no-cache`. An admin rescan updates existing audio tracks when preferred
 album artwork appears or the selected image is removed.
 
@@ -1033,7 +1035,8 @@ album artwork appears or the selected image is removed.
 
 ### `POST /api/media/{id}/thumbnail` · `POST /api/v1/media/{id}/thumbnail`
 
-Regenerate a media item's thumbnail using ffmpeg. Requires `owner` permission.
+Regenerate a media item's thumbnail using ffmpeg. Audio requires an embedded
+attached picture and extracts it without seeking. Requires `owner` permission.
 
 **Response `200`:**
 

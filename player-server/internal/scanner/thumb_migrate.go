@@ -101,12 +101,12 @@ func (k staleKind) keepsOldFile() bool {
 // exists reports whether a file is there, and layout says where thumbnails
 // are created now.
 //
-// Only videos and images whose source file is on disk qualify, SVG images
+// Videos, audio and images whose source file is on disk qualify, SVG images
 // excepted (an SVG always is its own thumbnail).
 func staleThumbnails(existing map[string]model.Media, seenRel map[string]struct{}, setPath string, exists func(path string) bool, layout thumb.Layout) map[string]staleKind {
 	stale := make(map[string]staleKind)
 	for relPath, m := range existing {
-		if m.Type != model.MediaTypeVideo && m.Type != model.MediaTypeImage {
+		if m.Type != model.MediaTypeVideo && m.Type != model.MediaTypeImage && m.Type != model.MediaTypeAudio {
 			continue
 		}
 		if _, onDisk := seenRel[relPath]; !onDisk || strings.EqualFold(filepath.Ext(relPath), ".svg") {
@@ -114,6 +114,10 @@ func staleThumbnails(existing map[string]model.Media, seenRel map[string]struct{
 		}
 		// Derive the source from relPath: AbsPath may be stale on old rows.
 		src := filepath.Join(setPath, filepath.FromSlash(relPath))
+		if m.Type == model.MediaTypeAudio && (m.ThumbnailPath == "" || !exists(m.ThumbnailPath)) {
+			stale[relPath] = staleNone
+			continue
+		}
 		if kind := staleKindOf(m.ThumbnailPath, src, setPath, existing, exists, layout); kind != 0 {
 			stale[relPath] = kind
 		}
