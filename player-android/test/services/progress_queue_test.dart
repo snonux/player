@@ -363,6 +363,16 @@ Future<void> _pump() async {
   }
 }
 
+Future<void> _pumpUntil(bool Function() done,
+    {Duration timeout = const Duration(seconds: 5)}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!done() && DateTime.now().isBefore(deadline)) {
+    await _pump();
+  }
+  // Let anything queued behind the last observed call settle.
+  await _pump();
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1176,7 +1186,9 @@ void main() {
           connectivity: conn,
         );
         await reopened.init(scope: _scopeA);
-        await _pump();
+        // The reopened file database flushes on real I/O, which can take
+        // longer than a fixed pump on slow CI runners.
+        await _pumpUntil(() => client.operationOrder.length >= 2);
         expect(client.operationOrder, ['batch', 'status']);
         expect(client.statusCalls, [(42, 'finished')]);
         await reopened.dispose();
