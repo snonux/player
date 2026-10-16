@@ -1,4 +1,1 @@
-Show cover artwork in the audio player.
-Sync progress and bookmarks across streaming and downloaded server files.
-Keep offline edits and bookmark deletions across restarts, then sync them to the matching server account.
-Resolve sync conflicts using the newest edit timestamp.
+Switch between saved servers from the library toolbar when more than one server is configured.
