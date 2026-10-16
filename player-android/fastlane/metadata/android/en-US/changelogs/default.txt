@@ -1,1 +1,3 @@
-Cast audio and video to a Chromecast or another Google Cast device on your Wi-Fi from the server player, without Google Play Services. The phone shows remote controls and continues where the cast device stopped.
+Show embedded music cover artwork when no separate album image exists.
+Prefer book front covers in library previews and refresh previously cached artwork correctly.
+Rescan the server library after upgrading to populate missing artwork.
