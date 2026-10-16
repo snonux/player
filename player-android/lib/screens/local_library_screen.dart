@@ -7,6 +7,7 @@ import '../models/local_media.dart';
 import '../providers/local_library_provider.dart';
 import '../providers/personal_media_provider.dart';
 import '../widgets/personal_media_actions.dart';
+import '../widgets/server_switch_button.dart';
 import '../providers/settings_provider.dart';
 import '../services/local_document_picker.dart';
 
@@ -41,6 +42,7 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
             onPressed: _busy ? null : _addFiles,
             icon: const Icon(Icons.add),
           ),
+          const ServerSwitchButton(),
           IconButton(
             tooltip: 'Connect to server',
             onPressed: () => context.push(AppRoutes.server),
