@@ -89,31 +89,44 @@ export function initAudioVisuals({ audio, player, coverArt }) {
           return;
         }
         context = new AudioContext();
-        if (context.state !== 'running') {
-          context.close().catch(() => {});
-          context = null;
-          unavailable = true;
+        context.addEventListener('statechange', () => {
+          connectGraph();
           sync();
-          return;
-        }
-        const source = context.createMediaElementSource(audio);
-        source.connect(context.destination);
-        analyser = context.createAnalyser();
-        analyser.fftSize = 1024;
-        source.connect(analyser);
-        frequency = new Uint8Array(analyser.frequencyBinCount);
-        waveform = new Uint8Array(analyser.fftSize);
-        context.addEventListener('statechange', sync);
+        });
       } catch {
         unavailable = true;
         sync();
       }
     }
-    // Once routed, off/audiobooks still need a running context for sound.
-    if (context?.state === 'suspended') context.resume().then(sync).catch(() => {
-      unavailable = true;
+    connectGraph();
+    // Firefox starts suspended even inside a click handler. Resume before
+    // capturing the element so a blocked context cannot silence native audio.
+    // A blocked resume is recoverable on the next gesture, not unsupported.
+    if (context?.state === 'suspended') context.resume().then(() => {
+      connectGraph();
       sync();
-    });
+    }).catch(sync);
+  }
+  function connectGraph() {
+    if (!wanted() || analyser || context?.state !== 'running') return;
+    try {
+      // The source may change while resume is pending (including next track).
+      if (new URL(audio.currentSrc || audio.src, location.href).origin !== location.origin) {
+        unavailable = true;
+      } else {
+        const nextAnalyser = context.createAnalyser();
+        nextAnalyser.fftSize = 1024;
+        const source = context.createMediaElementSource(audio);
+        source.connect(context.destination);
+        analyser = nextAnalyser;
+        source.connect(analyser);
+        frequency = new Uint8Array(analyser.frequencyBinCount);
+        waveform = new Uint8Array(analyser.fftSize);
+      }
+    } catch {
+      unavailable = true;
+    }
+    sync();
   }
   function change() {
     mode = select.value;
@@ -138,6 +151,7 @@ export function initAudioVisuals({ audio, player, coverArt }) {
 
   function draw() {
     frame = 0;
+    if (audio.paused || audio.ended || document.hidden) return;
     const rect = stage.getBoundingClientRect();
     const scale = Math.min(globalThis.devicePixelRatio || 1, 2);
     const w = Math.max(1, Math.round(rect.width * scale));

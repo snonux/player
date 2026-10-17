@@ -20,6 +20,7 @@ import '../services/playback_source_resolver.dart';
 import '../utils/playback_errors.dart';
 import '../widgets/lyrics_panel.dart';
 import '../widgets/audio_cover_art.dart';
+import '../widgets/audio_visuals.dart';
 import '../widgets/cast_controls.dart';
 import '../widgets/playback_loading_view.dart';
 import '../widgets/personal_media_actions.dart';
@@ -784,7 +785,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                AudioCoverArt(request: _activeRequest!),
+                AudioVisuals(
+                  key: ValueKey('visuals:${_activeRequest!.identity}'),
+                  player: handler.player,
+                  title:
+                      '${_activeRequest!.title} ${_activeRequest!.sourceUri.path}',
+                  artwork: AudioCoverArt(request: _activeRequest!),
+                ),
                 const SizedBox(height: 32),
                 _buildSeekBar(handler),
                 const SizedBox(height: 16),

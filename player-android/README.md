@@ -4,6 +4,29 @@ Android audio/video player for device files and the Player server.
 
 The installed app version and build number appear at the bottom of **Settings**.
 
+## Music visualizations
+
+The audio player offers **Music visuals**: Spectrum, Waveform, Radial, Mirror,
+Orbit, and Off. They react to the playing track for server streams, public
+shares, device files and offline downloads. The selected mode is saved. Off
+shows cover artwork; new installs start Off, and reduced-motion users start
+Off when opening a player. Audiobook names and `.m4b` files suppress visuals.
+
+Selecting a visualization requests Android's audio permission. Android requires
+this permission to read the player's waveform and spectrum; Player never opens
+the microphone or captures other apps' audio. Declining permission or an
+unsupported device leaves playback and cover art available. Sampling stops
+when playback pauses, the player is covered, or the app goes into the background.
+
+Verify the feature with `flutter test test/widgets/audio_visuals_test.dart` and
+the native emulator test. Run
+`flutter test integration_test/audio_visuals_test.dart -d emulator-5554`.
+When it reports that it is waiting for permission, run
+`adb shell pm grant zone.foo.player_android android.permission.RECORD_AUDIO`
+in another terminal (the test runner can clear grants when reinstalling).
+The native test generates its own music and checks nonzero waveform/spectrum
+data for all five modes, Off, pause/resume and replacing the track.
+
 ## Screenshots
 
 | On this device | Empty library | Audio player |

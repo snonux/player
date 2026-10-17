@@ -173,11 +173,12 @@ test('reduced motion starts Off; v respects typing and modal guards; minimized d
   await expect.poll(() => pixels(page)).toBeGreaterThan(5);
 });
 
-test('a suspended context never captures and silences native audio', async ({ page }) => {
+test('a blocked context preserves native audio and lets the user retry', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, 'AudioContext', { value: class {
       state = 'suspended';
-      close() { return Promise.resolve(); }
+      addEventListener() {}
+      resume() { return Promise.reject(new Error('Audio blocked')); }
       createMediaElementSource() { throw new Error('Suspended context must never capture audio'); }
     } });
   });
@@ -188,8 +189,39 @@ test('a suspended context never captures and silences native audio', async ({ pa
     playback.loadMediaDirect({ type: 'audio', file_name: 'song.wav' }, '/visual-test.wav', '/logo.svg');
   });
   await page.locator('#btn-play').click();
-  await expect(page.getByRole('combobox')).toBeDisabled();
+  await expect(page.getByRole('combobox')).toBeEnabled();
   await expect(page.locator('#cover-art')).toBeVisible();
+  await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
+  await page.keyboard.press('v');
+  await expect(page.getByRole('combobox')).toBeEnabled();
+  await expect(page.locator('.audio-visual')).toBeHidden();
+});
+
+test('delayed resume after selecting Off never captures native audio', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'AudioContext', { value: class {
+      state = 'suspended';
+      addEventListener() {}
+      resume() {
+        return new Promise<void>(resolve => {
+          (window as any).finishResume = () => { this.state = 'running'; resolve(); };
+        });
+      }
+      createMediaElementSource() { throw new Error('Off must never capture audio'); }
+    } });
+  });
+  await page.reload();
+  await page.evaluate(async () => {
+    // @ts-expect-error Browser native module URL.
+    const playback = await import('/js/playback.js');
+    playback.loadMediaDirect({ type: 'audio', file_name: 'song.wav' }, '/visual-test.wav', '/logo.svg');
+  });
+  await page.locator('#btn-play').click();
+  await page.getByRole('combobox').selectOption('off');
+  await page.evaluate(() => (window as any).finishResume());
+  await expect(page.getByRole('combobox')).toBeEnabled();
+  await expect(page.getByRole('combobox')).toHaveValue('off');
+  await expect(page.locator('.audio-visual')).toBeHidden();
   await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
 });
 

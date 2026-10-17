@@ -14,9 +14,11 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : AudioServiceFragmentActivity() {
     private lateinit var documentChannel: MethodChannel
     private var pendingPicker: MethodChannel.Result? = null
+    private var audioVisuals: AudioVisuals? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        audioVisuals = AudioVisuals(this, flutterEngine.dartExecutor.binaryMessenger)
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, CastDiscovery.CHANNEL)
             .setStreamHandler(CastDiscovery(applicationContext))
         documentChannel = MethodChannel(
@@ -76,6 +78,22 @@ class MainActivity : AudioServiceFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        audioVisuals?.onPermissionResult(requestCode)
+    }
+
+    override fun onStop() {
+        audioVisuals?.stop()
+        super.onStop()
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        audioVisuals?.close()
+        audioVisuals = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

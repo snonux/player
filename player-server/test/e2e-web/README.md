@@ -46,6 +46,14 @@ Key environment variables for the test server:
 
 ## Running the tests
 
+The audio visualization suite runs in installed Google Chrome and Playwright
+Firefox without a backend (it serves local web assets and generated audio):
+
+```sh
+npx playwright install firefox
+npx playwright test -c playwright.visuals.config.ts
+```
+
 ```sh
 # Headless (default — suitable for CI):
 npm test

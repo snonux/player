@@ -1,2 +1,3 @@
-Fix music-video playback for MPEG-TS files named MP4.
-Preserve seeking and single-use public video shares while streaming original video files.
+Add five sound-reactive music visualizations to the Android audio player, with a saved mode and cover artwork when Off.
+Keep music playing when audio permission is declined or visuals are unsupported.
+Fix visualizations being marked unavailable in Firefox.

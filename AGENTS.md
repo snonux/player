@@ -12,6 +12,16 @@ Do not commit local media, generated Android files, local databases, coverage fi
 
 Prefer component-local commands from the relevant README before adding root-level tooling.
 
+## Feature parity and verification
+
+All features must work in the web UI in Google Chrome, the web UI in Mozilla
+Firefox, and the native Android client app. Every new feature must be
+implemented and verified on all three before it is considered complete.
+Use controls appropriate to each platform, and include browser and Android
+device or emulator checks that exercise the actual feature. Report any
+verification gap explicitly; passing checks on one platform does not verify
+the others.
+
 ## Shared release version
 
 The server and Android client must always have the same X.Y.Z version.
