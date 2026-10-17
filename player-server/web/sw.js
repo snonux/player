@@ -18,6 +18,7 @@ const ASSETS = [
   '/js/selection.js',
   '/js/player.js',
   '/js/playback.js',
+  '/js/compactControls.js',
   '/js/streamSource.js',
   '/js/cast.js',
   '/js/imageViewer.js',

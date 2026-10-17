@@ -42,6 +42,14 @@ async function open(page: Page, type = 'audio') {
   return item;
 }
 
+async function control(page: Page, id: string) {
+  const button = page.locator(`#${id}`);
+  if (!await button.isVisible()) {
+    await page.getByRole('button', { name: 'More player controls', exact: true }).click();
+  }
+  return button;
+}
+
 for (const type of ['audio', 'video']) {
   test(`${type}: save, reload, jump and delete a personal position without changing notes or resume`, async ({ page }) => {
     const item = await open(page, type);
@@ -49,7 +57,7 @@ for (const type of ['audio', 'video']) {
     await page.request.post('/api/progress', { data: { media_id: item.id, position_seconds: 2 } });
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.locator('#btn-save-position').focus();
+    await (await control(page, 'btn-save-position')).focus();
     await page.keyboard.press('Enter');
     await expect(page.locator('#bookmarks-status')).toHaveText('No saved positions yet.');
     await expect(page.locator('#bookmark-label')).toBeFocused();
@@ -59,17 +67,17 @@ for (const type of ['audio', 'video']) {
     await expect(page.locator('.bookmark-jump')).toContainText('0:03 — <img');
     await expect(page.locator('#bookmarks-list img')).toHaveCount(0);
     await page.locator('#bookmarks-close').click();
-    await expect(page.locator('#btn-save-position')).toBeFocused();
+    await expect(page.getByRole('button', { name: 'More player controls', exact: true })).toBeFocused();
     await page.reload();
     await expect(page.locator('#set-list .set-row').first()).toBeAttached();
     await load(page, item);
-    await page.locator('#btn-bookmarks').click();
+    await (await control(page, 'btn-bookmarks')).click();
     await expect(page.locator('.bookmark-jump')).toContainText('chapter');
     await page.locator('.bookmark-jump').focus();
     await page.keyboard.press('Enter');
     await expect(page.locator('#bookmarks-modal')).toBeHidden();
     await expect.poll(() => page.locator(`#media-${type}`).evaluate((el: HTMLMediaElement) => el.currentTime)).toBeCloseTo(3, 0);
-    await page.locator('#btn-bookmarks').click();
+    await (await control(page, 'btn-bookmarks')).click();
     await page.locator('#bookmarks-list button', { hasText: 'Delete' }).click();
     await expect(page.locator('#bookmarks-status')).toHaveText('No saved positions yet.');
     await expect(page.locator('#bookmarks-list li')).toHaveCount(0);
@@ -83,7 +91,7 @@ for (const type of ['audio', 'video']) {
 
 test('typing and dialog buttons keep playback still; Tab cycles and Escape restores opener', async ({ page }) => {
   await open(page);
-  await page.locator('#btn-save-position').click();
+  await (await control(page, 'btn-save-position')).click();
   await expect(page.locator('#bookmark-save')).toBeEnabled();
   await page.locator('#bookmark-label').pressSequentially('jklNPhl / space');
   await page.locator('#bookmark-label').press('ArrowLeft');
@@ -98,7 +106,7 @@ test('typing and dialog buttons keep playback still; Tab cycles and Escape resto
   await page.locator('#bookmark-label').focus();
   await page.keyboard.press('Escape');
   await expect(page.locator('#bookmarks-modal')).toBeHidden();
-  await expect(page.locator('#btn-save-position')).toBeFocused();
+  await expect(page.getByRole('button', { name: 'More player controls', exact: true })).toBeFocused();
 });
 
 test('load/save/delete failures are visible and retry preserves the label and rows', async ({ page }) => {
@@ -110,7 +118,7 @@ test('load/save/delete failures are visible and retry preserves the label and ro
       await route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"test failure"}' });
     } else await route.continue();
   });
-  await page.locator('#btn-save-position').click();
+  await (await control(page, 'btn-save-position')).click();
   await expect(page.locator('#bookmarks-status')).toHaveText('Could not load bookmarks. Try again.');
   await expect(page.locator('#bookmark-save')).toBeDisabled();
   failing = 'POST';
@@ -145,7 +153,7 @@ for (const method of ['GET', 'POST', 'DELETE']) {
       if (route.request().method() === method) { started(); await gate; }
       await route.continue();
     });
-    await page.locator('#btn-save-position').click();
+    await (await control(page, 'btn-save-position')).click();
     if (method === 'POST') {
       await expect(page.locator('#bookmark-save')).toBeEnabled();
       await page.locator('#bookmark-label').fill('Old track');
@@ -156,7 +164,7 @@ for (const method of ['GET', 'POST', 'DELETE']) {
     await requestStarted;
     await load(page, second, 4);
     await expect(page.locator('#bookmarks-modal')).toBeHidden();
-    await page.locator('#btn-save-position').click();
+    await (await control(page, 'btn-save-position')).click();
     await expect(page.locator('#bookmark-save')).toBeEnabled();
     await page.locator('#bookmark-label').fill('New track draft');
     release();
@@ -172,19 +180,23 @@ test('fullscreen bookmarks and notes stay usable; images keep favorites and note
   await open(page);
   await page.locator('#btn-fullscreen').click();
   await expect.poll(() => page.evaluate(() => document.fullscreenElement?.id)).toBe('player');
-  await page.locator('#btn-save-position').click();
+  await (await control(page, 'btn-save-position')).click();
   await expect(page.locator('#bookmark-label')).toBeFocused();
-  await page.keyboard.press('Escape');
-  await page.locator('#btn-player-notes').click();
+  await page.locator('#bookmarks-close').click();
+  await expect(page.locator('#bookmarks-modal')).toBeHidden();
+  await (await control(page, 'btn-player-notes')).click();
   await expect(page.locator('#notes-textarea')).toBeFocused();
-  await page.keyboard.press('Escape');
+  await page.locator('#notes-close').click();
+  await expect(page.locator('#notes-modal')).toBeHidden();
+  await expect(page.locator('#player')).toHaveClass(/is-fullscreen/);
   await page.locator('#btn-fullscreen').click();
+  await expect(page.locator('#player')).not.toHaveClass(/is-fullscreen/);
   await load(page, media.find(item => item.type === 'image')!);
   await expect(page.locator('#btn-save-position')).toBeHidden();
   await expect(page.locator('#btn-bookmarks')).toBeHidden();
-  await page.locator('#btn-player-favorite').click();
+  await (await control(page, 'btn-player-favorite')).click();
   await expect(page.locator('#btn-player-favorite')).toHaveAttribute('aria-pressed', /true|false/);
-  await page.locator('#btn-player-notes').click();
+  await (await control(page, 'btn-player-notes')).click();
   await expect(page.locator('#notes-textarea')).toBeFocused();
 });
 

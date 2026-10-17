@@ -29,6 +29,7 @@ import { mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from './strea
 import { toast } from './utils.js';
 import { initSeekPreview } from './seekPreview.js';
 import { initAudioVisuals } from './audioVisuals.js';
+import { initCompactControls } from './compactControls.js';
 import { initLyrics } from './lyrics.js';
 import { initPlaybackPersonal } from './playback-personal.js';
 import { castItem, castPosition, castDuration, castSeek, castTogglePlay, initCast, isCasting } from './cast.js';
@@ -130,6 +131,7 @@ export function initPlayer(options = {}) {
 
   audioVisuals = initAudioVisuals(e);
   lyrics = initLyrics(e);
+  initCompactControls(e.player);
   bindControlButtons(e);
   initImageViewer({ els, isImageMode, playNext: () => navigateImage(1) });
   initDetach({

@@ -345,11 +345,12 @@ test('library async playback preserves visuals, help modal guard and naming-base
   await page.locator('#btn-play').focus();
   await page.keyboard.press('v');
   await expect.poll(() => pixels(page)).toBeGreaterThan(5);
-  const value = await page.getByRole('combobox', { name: 'Audio visualization' }).inputValue();
+  const select = page.locator('select[aria-label="Audio visualization"]');
+  const value = await select.inputValue();
   await page.keyboard.press('?');
   await expect(page.locator('#help-modal')).toHaveClass(/open/);
   await page.keyboard.press('v');
-  expect(await page.getByRole('combobox', { name: 'Audio visualization' }).inputValue()).toBe(value);
+  expect(await select.inputValue()).toBe(value);
   await page.keyboard.press('Escape');
   await page.evaluate(async (item) => {
     // @ts-expect-error Browser native module URL.
@@ -359,6 +360,88 @@ test('library async playback preserves visuals, help modal guard and naming-base
     const playback = await import('/js/playback.js');
     playback.selectAndPlay(item, 0);
   }, media);
-  await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toBeDisabled();
+  await page.getByRole('button', { name: 'More player controls', exact: true }).click();
+  await expect(select).toBeDisabled();
   await expect(page.locator('.audio-visual')).toBeHidden();
 });
+
+for (const width of [320, 1280]) {
+  test(`floating player preserves its stage and keyboard-accessible controls at ${width}px`, async ({ page, browserName }) => {
+    await page.setViewportSize({ width, height: 720 });
+    const media = { id: 1, set_id: 1, type: 'audio', file_name: 'song.wav', rel_path: 'song.wav', duration: 30 };
+    await page.route('**/api/**', async route => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/stream')) return route.fulfill({ contentType: 'audio/wav', body: tone() });
+      let body: unknown = [];
+      if (path === '/api/config') body = { media_page_size: 100 };
+      if (path === '/api/sets') body = [{ id: 1, name: 'Music' }];
+      if (path.endsWith('/browse')) body = { current_path: '', folders: [], media: [media] };
+      if (path === '/api/media/1') body = { media, progress: null };
+      if (path.endsWith('/notes')) body = { content: '' };
+      if (path.endsWith('/lyrics')) body = { synced: false, lines: [{ text: 'Test lyrics' }] };
+      return route.fulfill({ json: body });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Set Music', exact: true }).click();
+    await page.locator('.media-card').getByRole('button', { name: '▶', exact: true }).click();
+    await expect.poll(() => pixels(page)).toBeGreaterThan(5);
+    const player = page.locator('#player');
+    const stage = await player.locator('.stage').boundingBox();
+    const controls = await player.locator('.controls').boundingBox();
+    expect(stage!.height).toBeGreaterThanOrEqual(160);
+    expect(controls!.height).toBeLessThan(80);
+    expect((await player.boundingBox())!.width).toBeLessThanOrEqual(width - 32);
+    await page.screenshot({ path: `/tmp/player-v072-floating-${browserName}-${width}.png` });
+    const more = page.getByRole('button', { name: 'More player controls', exact: true });
+    const panel = page.getByRole('group', { name: 'More player controls', exact: true });
+    await more.focus();
+    await page.keyboard.press('Enter');
+    await expect(panel).toBeVisible();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+    for (const id of ['btn-player-notes', 'btn-player-favorite', 'btn-bookmarks', 'btn-save-position']) {
+      await expect(panel.locator(`#${id}`)).toBeVisible();
+    }
+    await page.getByRole('combobox', { name: 'Audio visualization' }).selectOption('wave');
+    await expect(panel).toBeHidden();
+    await expect(more).toBeFocused();
+    await expect.poll(() => pixels(page)).toBeGreaterThan(5);
+    await more.click();
+    const volume = page.getByRole('slider', { name: 'Volume', exact: true });
+    await volume.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.volume)).toBeLessThan(1);
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(player).not.toHaveClass(/minimized/);
+    await expect(more).toBeFocused();
+    await more.click();
+    await panel.getByRole('button', { name: 'Notes', exact: true }).click();
+    await expect(page.locator('#notes-modal')).toHaveClass(/open/);
+    await expect(panel).toBeHidden();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.media-card.selected')).toBeFocused();
+    await more.click();
+    await panel.getByRole('button', { name: 'Lyrics', exact: true }).click();
+    await expect(panel).toBeHidden();
+    await expect(page.getByRole('region', { name: 'Lyrics' })).toBeHidden();
+    await page.keyboard.press('v');
+    await expect(page.locator('select[aria-label="Audio visualization"]')).toHaveValue('radial');
+    await page.locator('#btn-fullscreen').click();
+    await expect(player).toHaveClass(/is-fullscreen/);
+    await more.click();
+    await expect(panel).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(player).not.toHaveClass(/minimized/);
+    if (await player.evaluate(element => element.classList.contains('is-fullscreen'))) {
+      await page.keyboard.press('Escape');
+    }
+    await expect(player).not.toHaveClass(/is-fullscreen/);
+    await page.locator('#btn-minimize').click();
+    await expect(player).toHaveClass(/minimized/);
+    expect((await player.boundingBox())!.height).toBeLessThan(64);
+    await page.getByRole('button', { name: 'Restore player', exact: true }).click();
+    await expect(player).not.toHaveClass(/minimized/);
+    expect((await player.locator('.stage').boundingBox())!.height).toBeGreaterThanOrEqual(160);
+  });
+}
