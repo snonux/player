@@ -120,13 +120,16 @@ export function initKeyboardAccess() {
         if (node.parentElement.closest('svg, kbd, [aria-hidden="true"]')) continue;
         const index = node.textContent.toLowerCase().indexOf(key);
         if (index < 0) continue;
-        const span = document.createElement('span');
-        span.className = 'shortcut-letter';
-        const after = node.splitText(index);
-        after.splitText(1);
-        after.replaceWith(span);
-        span.textContent = after.textContent;
-        decorations.set(element, span);
+        // Keep the whole label in one flex item: splitting a button's text
+        // into siblings lets its icon/text gap split the word itself.
+        const label = document.createElement('span');
+        label.className = 'shortcut-label';
+        const letter = document.createElement('span');
+        letter.className = 'shortcut-letter';
+        letter.textContent = node.textContent[index];
+        label.append(node.textContent.slice(0, index), letter, node.textContent.slice(index + 1));
+        node.replaceWith(label);
+        decorations.set(element, label);
         return;
       }
     }

@@ -110,6 +110,7 @@ test('thumbnail controls appear only on hover in one row; keyboard actions remai
   await page.keyboard.press('a');
   const menu = page.getByRole('group', { name: 'Media actions', exact: true });
   await expect(menu).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Notes', exact: true }).locator('.shortcut-label')).toHaveText('Notes');
   expect(await menu.getByRole('button').count()).toBe(await actions.locator('button').count());
   await keyFor(page, menu.getByRole('button', { name: 'Notes', exact: true }));
   await expect(page.locator('#notes-modal')).toHaveClass(/open/);

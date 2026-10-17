@@ -1,3 +1,4 @@
 Keyboard shortcuts now reach controls, menus and dialogs with underlined hints (; or F2).
 Web library URLs restore folders and media after refresh or sign-in.
 Roomy web players show all controls below the media; thumbnails show a single button row on hover.
+Menu shortcut hints keep labels correctly spaced.
