@@ -1,0 +1,11 @@
+import { defineConfig, devices } from '@playwright/test';
+import base from './playwright.config';
+
+export default defineConfig(base, {
+  testMatch: /\/(?:keyboard-access|navigation)\.test\.ts$/,
+  reporter: 'list',
+  projects: [
+    { name: 'chrome', use: { ...devices['Desktop Chrome'], channel: 'chrome' } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+  ],
+});

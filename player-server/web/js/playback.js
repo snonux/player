@@ -30,6 +30,7 @@ import { toast } from './utils.js';
 import { initSeekPreview } from './seekPreview.js';
 import { initAudioVisuals } from './audioVisuals.js';
 import { initCompactControls } from './compactControls.js';
+import { initKeyboardAccess } from './keyboard-access.js';
 import { initLyrics } from './lyrics.js';
 import { initPlaybackPersonal } from './playback-personal.js';
 import { castItem, castPosition, castDuration, castSeek, castTogglePlay, initCast, isCasting } from './cast.js';
@@ -132,6 +133,7 @@ export function initPlayer(options = {}) {
   audioVisuals = initAudioVisuals(e);
   lyrics = initLyrics(e);
   initCompactControls(e.player);
+  initKeyboardAccess();
   bindControlButtons(e);
   initImageViewer({ els, isImageMode, playNext: () => navigateImage(1) });
   initDetach({
@@ -448,6 +450,7 @@ export function seekRelative(seconds) {
 }
 
 export function stopAndClose() {
+  if (reportProgress) document.dispatchEvent?.(new Event('player:closed'));
   audioVisuals?.setMedia(null);
   lyrics?.setMedia(null);
   resetSeekPreview();
@@ -489,6 +492,7 @@ export function stopAndClose() {
 }
 
 export function selectAndPlay(media, index, resumeFrom = 0) {
+  document.dispatchEvent?.(new CustomEvent('player:media-opened', { detail: { media } }));
   currentMedia = media;
   personal?.setMedia(media);
   currentMediaIndex = index ?? -1;
@@ -518,6 +522,16 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
   // isPlaying states the intent; a failed load resets it (failPlayback).
   isPlaying = true;
   requestPlay();
+  highlightPlayingCard();
+}
+
+// Deep links restore the same authenticated library item without autoplay.
+export function selectMedia(media, index = -1, resumeFrom = 0) {
+  currentMedia = media;
+  currentMediaIndex = index;
+  loadMedia(media, resumeFrom);
+  isPlaying = false;
+  updateUI(false);
   highlightPlayingCard();
 }
 

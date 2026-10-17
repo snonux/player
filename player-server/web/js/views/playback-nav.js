@@ -16,9 +16,21 @@ import {
 } from './media-grid.js';
 
 let isShuffleCallback = () => false;
+let playRevision = 0;
 
 export function initPlaybackNav({ isShuffle } = {}) {
   isShuffleCallback = isShuffle || (() => false);
+  document.addEventListener('navigation:restore', () => { playRevision++; });
+  document.addEventListener('library:navigating', () => { playRevision++; });
+}
+
+async function playItem(media, index) {
+  const revision = ++playRevision;
+  let position = 0;
+  try { position = (await API.mediaDetail(media.id))?.progress?.position_seconds ?? 0; } catch {}
+  if (revision !== playRevision) return false;
+  selectAndPlay(media, index, position);
+  return true;
 }
 
 export async function playSelected() {
@@ -31,13 +43,7 @@ export async function playSelected() {
   const idx = parseInt(el.dataset.index, 10);
   const media = state.media[idx];
   if (!media) return;
-  try {
-    const detail = await API.mediaDetail(media.id);
-    const resumeFrom = detail?.progress?.position_seconds ?? 0;
-    selectAndPlay(media, idx, resumeFrom);
-  } catch {
-    selectAndPlay(media, idx, 0);
-  }
+  await playItem(media, idx);
 }
 
 // playMediaById plays a media item from the loaded list by ID, selecting its
@@ -48,13 +54,7 @@ export async function playMediaById(id) {
   // Folder cards also use data-index, so select by media ID.
   const card = document.querySelector(`#media-grid .media-card[data-id="${CSS.escape(String(id))}"]`);
   if (card) selectByElement(card);
-  try {
-    const detail = await API.mediaDetail(state.media[idx].id);
-    selectAndPlay(state.media[idx], idx, detail?.progress?.position_seconds ?? 0);
-  } catch {
-    selectAndPlay(state.media[idx], idx, 0);
-  }
-  return true;
+  return playItem(state.media[idx], idx);
 }
 
 export async function playRandom() {
@@ -62,13 +62,7 @@ export async function playRandom() {
   const idx = Math.floor(Math.random() * state.media.length);
   const media = state.media[idx];
   if (!media) return;
-  try {
-    const detail = await API.mediaDetail(media.id);
-    const resumeFrom = detail?.progress?.position_seconds ?? 0;
-    selectAndPlay(media, idx, resumeFrom);
-  } catch {
-    selectAndPlay(media, idx, 0);
-  }
+  await playItem(media, idx);
 }
 
 function visiblePlayableCards() {
@@ -250,13 +244,7 @@ async function openPlayableTarget(target, play) {
   const idx = state.media.findIndex((m) => String(m.id) === String(target.media.id));
   const media = idx >= 0 ? state.media[idx] : { ...target.media, browse_path: target.path || '' };
   if (play) {
-    try {
-      const detail = await API.mediaDetail(media.id);
-      const resumeFrom = detail?.progress?.position_seconds ?? 0;
-      selectAndPlay(media, idx >= 0 ? idx : 0, resumeFrom);
-    } catch {
-      selectAndPlay(media, idx >= 0 ? idx : 0, 0);
-    }
+    await playItem(media, idx >= 0 ? idx : 0);
   }
 }
 

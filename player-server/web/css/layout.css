@@ -236,8 +236,6 @@ body {
 .picture-grid > .media-card { flex: 0 0 auto; min-width: 0; }
 .picture-grid .media-card .thumb-wrap { aspect-ratio: auto; }
 .picture-grid .image-card .thumb-wrap img { object-fit: contain; }
-.picture-grid .card-actions { flex-wrap: wrap; }
-.media-card:focus-within .card-actions { opacity: 1; }
 .media-pager {
   display: flex;
   align-items: center;
@@ -335,10 +333,13 @@ body {
   bottom: 0.35rem;
   left: 0;
   right: 0;
-  display: flex;
+  display: none;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
   gap: 0.25rem;
-  justify-content: center;
-  opacity: 0;
+  justify-content: flex-start;
+  padding: 0.25rem;
   transition: opacity var(--transition-fast);
   z-index: 2;
 }
@@ -352,18 +353,9 @@ body {
 .media-card:not(.set-card):not(.folder-card) > .card-actions {
   grid-area: 1 / 1;
   align-self: end;
-  position: relative;
+  position: absolute;
 }
-/* Small previews need room for every action independently of image height. */
-@container (max-width: 24rem) {
-  .media-card:not(.set-card):not(.folder-card) > .card-actions {
-    grid-area: 3 / 1;
-    position: static;
-    flex-wrap: wrap;
-    padding: 0.35rem;
-    opacity: 1;
-  }
-}
+.media-card .card-actions .icon-btn { flex: 0 0 var(--control-height-sm); }
 .set-card .set-open,
 .folder-card .folder-open {
   display: block;
@@ -387,12 +379,9 @@ body {
   right: 0.35rem;
   bottom: auto;
   left: auto;
-  opacity: 1;
 }
-.media-card:hover .card-actions,
-.media-card.selected .card-actions,
-.media-card.playing .card-actions {
-  opacity: 1;
+.media-card:hover .card-actions {
+  display: flex;
 }
 
 /* Audio row variant */
@@ -455,14 +444,11 @@ body {
 
 /* Hide row action buttons unless hovered/selected/playing */
 .media-row button[data-action] {
-  opacity: 0;
+  display: none;
   transition: opacity var(--transition-fast);
 }
-.media-row:hover button[data-action],
-.media-row:focus-within button[data-action],
-.media-row.selected button[data-action],
-.media-row.playing button[data-action] {
-  opacity: 1;
+.media-row:hover button[data-action] {
+  display: inline-flex;
 }
 
 /* Modal */

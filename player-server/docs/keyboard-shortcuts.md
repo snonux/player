@@ -1,6 +1,18 @@
 Keyboard Shortcuts
 ==================
 
+Press `;` or `F2` to show an underlined shortcut for every visible control,
+then type its letters. `F2` also works from a text field. Escape cancels hints.
+Menus and dialogs show their own shortcuts automatically; text fields retain
+normal typing. Large panels use two-letter shortcuts. Tab and native range
+arrow keys remain available. Browser modifier chords retain their behavior.
+
+Press `a` (or Shift+F10 / the context-menu key) for the selected thumbnail's
+actions. Thumbnail buttons otherwise appear only on hover, in one horizontal
+row; narrow cards scroll that row sideways. Touch opens the action menu.
+Press `o` for player controls. Roomy windows show these controls directly below
+the playback area; small windows keep them in the More controls menu.
+
 Global shortcuts are registered in `web/js/keyboard.js`; the shared audio player handles `v` on library, share and detached pages. They are **disabled** while the user is focused on an `INPUT`, `TEXTAREA`, `SELECT`, or `contentEditable` element (except `Escape` to blur).
 
 Audio/video players in the library and detached window have Save position and

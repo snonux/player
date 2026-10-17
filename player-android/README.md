@@ -310,3 +310,10 @@ opening on Android 12+ requires the HTTPS server to publish a matching
 to enable supported links for the app in Android settings. Without verification,
 ordinary taps may open the browser. The Player server does not currently
 publish this file.
+
+With a hardware keyboard, press `;` or `F2` to show underlined shortcuts for
+visible controls, including menus and dialogs. Type the displayed letters to
+activate a control. F2 also works while typing; Escape closes the hints.
+Select a slider and use Left/Right to adjust it, or select a scroll area and use
+Page Up/Down. Shift plus a shortcut invokes its long-press action when available.
+Hints are also available from Settings → Keyboard shortcuts.

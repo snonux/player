@@ -126,6 +126,7 @@ test('a delayed library response starts sound-reactive visuals from the original
   await observeAudioData(page);
   await page.getByRole('button', { name: 'Set Music', exact: true }).click();
   const detail = page.waitForResponse('**/api/media/1');
+  await page.locator('.media-card').hover();
   await page.locator('.media-card').getByRole('button', { name: '▶', exact: true }).click();
   await detail;
   // Polling through browser evaluations while the fetch is pending can itself
@@ -403,6 +404,7 @@ test('library async playback preserves visuals, help modal guard and naming-base
   await page.goto('/');
   await page.getByRole('button', { name: 'Set Music', exact: true }).click();
   await expect(page.locator('.media-card')).toHaveCount(1);
+  await page.locator('.media-card').hover();
   await page.locator('.media-card').getByRole('button', { name: '▶', exact: true }).click();
   await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
   // A slow detail fetch may outlive transient activation; this starts it then.
@@ -424,7 +426,7 @@ test('library async playback preserves visuals, help modal guard and naming-base
     const playback = await import('/js/playback.js');
     playback.selectAndPlay(item, 0);
   }, media);
-  await page.getByRole('button', { name: 'More player controls', exact: true }).click();
+  if (!await select.isVisible()) await page.getByRole('button', { name: 'More player controls', exact: true }).click();
   await expect(select).toBeDisabled();
   await expect(page.locator('.audio-visual')).toBeHidden();
 });
@@ -447,13 +449,14 @@ for (const width of [320, 1280]) {
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Set Music', exact: true }).click();
-    await page.locator('.media-card').getByRole('button', { name: '▶', exact: true }).click();
+    await page.locator('.media-card').hover();
+  await page.locator('.media-card').getByRole('button', { name: '▶', exact: true }).click();
     await expect.poll(() => pixels(page)).toBeGreaterThan(5);
     const player = page.locator('#player');
     const stage = await player.locator('.stage').boundingBox();
     const controls = await player.locator('.controls').boundingBox();
     expect(stage!.height).toBeGreaterThanOrEqual(160);
-    expect(controls!.height).toBeLessThan(80);
+    expect(controls!.height).toBeLessThan(width < 600 ? 80 : 200);
     expect((await player.boundingBox())!.width).toBeLessThanOrEqual(width - 32);
     if (width >= 460) {
       expect((await player.boundingBox())!.width).toBeGreaterThanOrEqual(450);
@@ -462,6 +465,18 @@ for (const width of [320, 1280]) {
     await page.screenshot({ path: `/tmp/player-v073-floating-${browserName}-${width}.png` });
     const more = page.getByRole('button', { name: 'More player controls', exact: true });
     const panel = page.getByRole('group', { name: 'More player controls', exact: true });
+    if (width >= 600) {
+      await expect(more).toBeHidden();
+      await expect(panel).toBeVisible();
+      for (const id of ['btn-player-notes', 'btn-player-favorite', 'btn-bookmarks', 'btn-save-position', 'volume-slider']) await expect(panel.locator('#' + id)).toBeVisible();
+      await page.getByRole('combobox', { name: 'Audio visualization' }).selectOption('wave');
+      await expect(panel).toBeVisible();
+      await page.locator('#btn-minimize').click();
+      await expect(player).toHaveClass(/minimized/);
+      await page.locator('#btn-restore-player').click();
+      await expect(panel).toBeVisible();
+      return;
+    }
     await more.focus();
     await page.keyboard.press('Enter');
     await expect(panel).toBeVisible();
@@ -496,10 +511,17 @@ for (const width of [320, 1280]) {
     await expect(page.locator('select[aria-label="Audio visualization"]')).toHaveValue('radial');
     await page.locator('#btn-fullscreen').click();
     await expect(player).toHaveClass(/is-fullscreen/);
-    await more.click();
-    await expect(panel).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(panel).toBeHidden();
+    // Firefox uses the physical display size in native fullscreen, which
+    // can turn a narrow viewport into a roomy layout with inline controls.
+    if (await more.isVisible()) {
+      await more.click();
+      await expect(panel).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(panel).toBeHidden();
+    } else {
+      await expect(panel).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
     await expect(player).not.toHaveClass(/minimized/);
     if (await player.evaluate(element => element.classList.contains('is-fullscreen'))) {
       await page.keyboard.press('Escape');

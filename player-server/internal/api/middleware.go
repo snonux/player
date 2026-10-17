@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"codeberg.org/snonux/player/internal/auth"
@@ -106,7 +107,7 @@ func (mw *Middleware) RequireSession(next http.Handler) http.Handler {
 		sess, err := mw.authenticate(r)
 		if err != nil || sess == nil {
 			if wantsHTML(r) {
-				http.Redirect(w, r, "/login.html", http.StatusTemporaryRedirect)
+				http.Redirect(w, r, libraryLoginRedirect("/login.html", r), http.StatusTemporaryRedirect)
 				return
 			}
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -193,9 +194,18 @@ func (mw *Middleware) BootstrapRedirect(next http.Handler) http.Handler {
 			return
 		}
 		if count == 0 {
-			http.Redirect(w, r, "/bootstrap.html", http.StatusTemporaryRedirect)
+			http.Redirect(w, r, libraryLoginRedirect("/bootstrap.html", r), http.StatusTemporaryRedirect)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// Only library pages carry a return destination. Never forward private stream
+// URLs or arbitrary requested paths through the sign-in flow.
+func libraryLoginRedirect(page string, r *http.Request) string {
+	if (r.URL.Path == "/" || r.URL.Path == "/index.html") && r.URL.RawQuery != "" {
+		return page + "?" + url.Values{"return_to": {r.URL.RequestURI()}}.Encode()
+	}
+	return page
 }

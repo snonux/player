@@ -8,6 +8,7 @@ import { pictureRatio } from './picture-layout.js';
 let callbacks = {};
 let mediaPageSize = 100;
 let lastMediaPageKey = '';
+let loadRevision = 0;
 
 export function setMediaPageSize(value) {
   const parsed = Number.parseInt(value, 10);
@@ -69,7 +70,9 @@ export function initMediaGrid(options = {}) {
   });
 }
 
-export async function loadMedia() {
+export async function loadMedia(options = {}) {
+  const revision = ++loadRevision;
+  document.dispatchEvent?.(new CustomEvent('library:navigating', { detail: options }));
   const grid = document.getElementById('media-grid');
   const hint = document.getElementById('empty-hint');
   if (!grid) return;
@@ -86,24 +89,26 @@ export async function loadMedia() {
 
     if (state.virtualSet === 'in-progress') {
       breadcrumb?.classList.add('hidden');
-      syncMediaPage('virtual:in-progress');
+      syncMediaPage('virtual:in-progress', options.page);
       const data = await API.inProgress();
+      if (revision !== loadRevision) return;
       const list = Array.isArray(data) ? data : data?.media || [];
       setMedia(list);
-      const page = renderGrid(list, 'No in-progress media.');
+      const page = renderGrid(list, 'No in-progress media.', options.mediaId);
       resultCount.textContent = resultText(list.length, page);
     } else if (!singleSetId && !setIds && !callbacks.isShuffle?.() && !hasActiveFilters()) {
       breadcrumb?.classList.add('hidden');
       setMedia([]);
-      syncMediaPage('sets');
+      syncMediaPage('sets', options.page);
       const page = renderSetGrid(state.sets || []);
       resultCount.textContent = resultText(state.sets.length, page);
     } else if (singleSetId && !setIds && !callbacks.isShuffle?.() && !hasActiveFilters()) {
-      syncMediaPage(`browse:${singleSetId}:${state.folderPath || ''}`);
+      syncMediaPage(`browse:${singleSetId}:${state.folderPath || ''}`, options.page);
       const data = await API.browse(singleSetId, state.folderPath);
+      if (revision !== loadRevision) return;
       updateBreadcrumb(data.current_path);
       setMedia(mediaWithBrowsePath(data.media || [], data.current_path || ''));
-      const page = renderBrowse(data);
+      const page = renderBrowse(data, options.page === undefined ? options.mediaId : null);
       const total = (data.media?.length || 0) + (data.folders?.length || 0) + (data.episodes?.length || 0);
       resultCount.textContent = resultText(total, page);
     } else {
@@ -125,22 +130,26 @@ export async function loadMedia() {
         shuffle_revision: shuffle ? String(callbacks.shuffleRevision?.() || 0) : '',
         limit: '1000',
       };
-      syncMediaPage(`grid:${JSON.stringify(params)}`);
+      syncMediaPage(`grid:${JSON.stringify(params)}`, options.page);
       const data = await API.media(params);
+      if (revision !== loadRevision) return;
       const list = Array.isArray(data) ? data : data?.media || [];
       setMedia(list);
-      const page = renderGrid(list);
+      const page = renderGrid(list, 'No results.', options.page === undefined ? options.mediaId : null);
       resultCount.textContent = resultText(list.length, page);
     }
+    document.dispatchEvent?.(new Event('library:navigated'));
   } catch (err) {
+    if (revision !== loadRevision) return;
     grid.innerHTML = `<p class="error-message grid-full">${escapeHtml(err.message)}</p>`;
   }
 }
 
-function syncMediaPage(key) {
+function syncMediaPage(key, page) {
+  if (page !== undefined) state.mediaPage = page;
   if (key === lastMediaPageKey) return;
   lastMediaPageKey = key;
-  state.mediaPage = 0;
+  state.mediaPage = page ?? 0;
 }
 
 function resultText(total, page) {
@@ -287,7 +296,7 @@ function bindSetCards(grid) {
   });
 }
 
-function renderBrowse(data) {
+function renderBrowse(data, mediaId) {
   const grid = document.getElementById('media-grid');
   if (!grid) return;
   const folders = data.folders || [];
@@ -305,6 +314,7 @@ function renderBrowse(data) {
     ...media.map((item, index) => ({ type: 'media', item, index })),
     ...episodes.map((item, index) => ({ type: 'episode', item, index })),
   ];
+  revealPage(entries, mediaId);
   const page = paginateItems(entries, state.mediaPage);
   state.mediaPage = page.page;
   const folderHtml = page.items
@@ -381,7 +391,7 @@ function renderFolder(folder, index) {
   `;
 }
 
-function renderGrid(items, emptyMessage = 'No results.') {
+function renderGrid(items, emptyMessage = 'No results.', mediaId) {
   const grid = document.getElementById('media-grid');
   if (!grid) return;
   if (!items.length) {
@@ -392,6 +402,7 @@ function renderGrid(items, emptyMessage = 'No results.') {
     return page;
   }
   const entries = items.map((item, index) => ({ item, index }));
+  revealPage(entries, mediaId);
   const page = paginateItems(entries, state.mediaPage);
   state.mediaPage = page.page;
   grid.innerHTML = renderPager(page, 'top') +
@@ -401,6 +412,12 @@ function renderGrid(items, emptyMessage = 'No results.') {
   bindMediaItems(grid);
   bindPager(grid);
   return page;
+}
+
+function revealPage(entries, mediaId) {
+  if (!mediaId) return;
+  const index = entries.findIndex(entry => String(entry.item?.id) === String(mediaId) && (!entry.type || entry.type === 'media'));
+  if (index >= 0) state.mediaPage = Math.floor(index / mediaPageSize);
 }
 
 function renderPager(page, position) {

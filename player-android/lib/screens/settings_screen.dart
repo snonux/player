@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../widgets/keyboard_access.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../app_routes.dart';
@@ -192,6 +193,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              ListTile(
+                leading: const Icon(Icons.keyboard),
+                title: const Text('Keyboard shortcuts'),
+                subtitle: const Text(
+                    'With a keyboard: ; or F2 shows underlined control shortcuts. Escape cancels.'),
+                onTap: () => KeyboardAccess.showHints(context),
+              ),
               ListTile(
                 key: const Key('settings_local_library'),
                 contentPadding: EdgeInsets.zero,

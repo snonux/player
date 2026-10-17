@@ -67,7 +67,7 @@ for (const type of ['audio', 'video']) {
     await expect(page.locator('.bookmark-jump')).toContainText('0:03 — <img');
     await expect(page.locator('#bookmarks-list img')).toHaveCount(0);
     await page.locator('#bookmarks-close').click();
-    await expect(page.getByRole('button', { name: 'More player controls', exact: true })).toBeFocused();
+    await expect(page.locator('#btn-player-options:visible, #btn-save-position:visible')).toBeFocused();
     await page.reload();
     await expect(page.locator('#set-list .set-row').first()).toBeAttached();
     await load(page, item);
@@ -106,7 +106,7 @@ test('typing and dialog buttons keep playback still; Tab cycles and Escape resto
   await page.locator('#bookmark-label').focus();
   await page.keyboard.press('Escape');
   await expect(page.locator('#bookmarks-modal')).toBeHidden();
-  await expect(page.getByRole('button', { name: 'More player controls', exact: true })).toBeFocused();
+  await expect(page.locator('#btn-player-options:visible, #btn-save-position:visible')).toBeFocused();
 });
 
 test('load/save/delete failures are visible and retry preserves the label and rows', async ({ page }) => {

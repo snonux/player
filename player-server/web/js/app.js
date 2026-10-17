@@ -26,7 +26,10 @@ import {
   resetZoom,
 } from './player.js';
 import { initSearch, parseQuery, showSearchHelp } from './search.js';
-import { initShuffle, enable as enableShuffle, isOn as isShuffle, revision as shuffleRevision } from './shuffle.js';
+import { initShuffle, enable as enableShuffle, isOn as isShuffle, revision as shuffleRevision, setOn as setShuffle } from './shuffle.js';
+import { initNavigation } from './navigation.js';
+import { initKeyboardAccess } from './keyboard-access.js';
+import { safeReturnTo, loginDestination } from './navigation-url.js';
 import { initThemes } from './themes.js';
 import { initNotes } from './notes.js';
 import { initAdmin } from './admin.js';
@@ -96,6 +99,7 @@ const pageMap = { '/index.html': 'spa', '/login.html': 'login', '/bootstrap.html
 main();
 
 function main() {
+  initKeyboardAccess();
   const page = pageMap[location.pathname] || 'spa';
   if (page === 'login') initLogin();
   else if (page === 'bootstrap') initBootstrap();
@@ -119,7 +123,7 @@ function initLogin() {
     }
     try {
       await API.login(username, password);
-      location.href = '/';
+      location.href = safeReturnTo(new URLSearchParams(location.search).get('return_to'));
     } catch (ex) {
       err.textContent = ex.message || 'Login failed';
     }
@@ -147,7 +151,7 @@ function initBootstrap() {
     }
     try {
       await API.bootstrap(username, password);
-      location.href = '/login.html';
+      location.href = loginDestination('/login.html', new URLSearchParams(location.search).get('return_to'));
     } catch (ex) {
       err.textContent = ex.message || 'Bootstrap failed';
     }
@@ -245,7 +249,8 @@ async function initApp() {
       showAdmin();
     }).catch(() => {});
     renderSets();
-    await loadMedia();
+    const navigation = initNavigation({ isShuffle, setShuffle, syncChrome: syncChromeVirtualSets });
+    await navigation.restore();
   } catch (err) {
     toast(err.message || 'Error loading sets', 'error');
   }

@@ -1,4 +1,5 @@
 const API_BASE = '';
+import { loginDestination } from './navigation-url.js';
 
 export const NO_NOTE = Symbol('no note');
 
@@ -8,7 +9,7 @@ export const NO_NOTE = Symbol('no note');
 export function redirectToLogin() {
   const p = location.pathname;
   if (!p.includes('login') && !p.includes('bootstrap')) {
-    location.href = '/login.html';
+    location.href = loginDestination('/login.html', location.pathname + location.search + location.hash);
   }
 }
 

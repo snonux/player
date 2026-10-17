@@ -184,13 +184,14 @@ function renderEpisodeHtml(ep) {
   const duration = ep.duration_seconds ? fmtDur(ep.duration_seconds) : '';
   const downloadButton = ep.is_downloaded
     ? '<span class="text-xs text-muted">Downloaded</span>'
-    : '<button class="btn btn-primary btn-sm btn-download-episode" data-action="download-episode" aria-label="Download episode">Download</button>';
+    : '<button class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download episode" aria-label="Download episode">↓</button>';
   const completeLabel = completed ? 'Mark as unlistened' : 'Mark as listened';
   return `
     <div class="thumb-wrap">
       <span class="placeholder">🎙️</span>
       <span class="badge">${dateStr}${duration ? ' • ' + duration : ''}</span>
       <div class="card-actions">
+        ${ep.is_downloaded ? '' : downloadButton}
         <button class="icon-btn btn-sm" data-action="play" title="Download and play" aria-label="Download and play episode">▶</button>
         <button class="icon-btn btn-sm btn-complete${completed ? ' active' : ''}" title="${completeLabel}" aria-label="${completeLabel}" aria-pressed="${completed}">✓</button>
       </div>
@@ -198,7 +199,7 @@ function renderEpisodeHtml(ep) {
     <div class="meta">
       <div class="title">${escapeHtml(ep.title || 'Untitled')}</div>
       <div class="subtitle">${escapeHtml(ep.description || 'Podcast episode')}</div>
-      ${downloadButton}
+      ${ep.is_downloaded ? downloadButton : ''}
     </div>
   `;
 }

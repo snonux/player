@@ -28,6 +28,11 @@ export function enable() {
 
 export function isOn() { return shuffleOn; }
 
+export function setOn(value) {
+  shuffleOn = Boolean(value);
+  updateUI();
+}
+
 export function revision() { return shuffleRevision; }
 
 function updateUI() {

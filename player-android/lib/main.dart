@@ -16,6 +16,7 @@ import 'router.dart';
 import 'services/audio_handler.dart';
 import 'services/audio_progress_lifecycle.dart';
 import 'services/progress_queue.dart';
+import 'widgets/keyboard_access.dart';
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -144,6 +145,8 @@ class PlayerAndroidApp extends ConsumerWidget {
       theme: _lightTheme,
       darkTheme: _darkTheme,
       themeMode: themeMode,
+      builder: (context, child) =>
+          KeyboardAccess(child: child ?? const SizedBox.shrink()),
     );
   }
 }
