@@ -1,3 +1,3 @@
-Add five sound-reactive music visualizations to the Android audio player, with a saved mode and cover artwork when Off.
-Keep music playing when audio permission is declined or visuals are unsupported.
-Fix visualizations being marked unavailable in Firefox.
+Fix web music visualizations failing to start after a slow server response, including in Firefox.
+Keep native playback available when Web Audio is blocked.
+Android is rebuilt with the matching server version.

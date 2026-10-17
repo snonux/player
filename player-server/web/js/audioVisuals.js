@@ -79,9 +79,10 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     // cross-origin media without CORS makes Web Audio output silence.
     if (media?.type !== 'audio') return;
     if (!context && wanted()) {
-      // Creating a graph during autoplay could route sound into a browser-
-      // suspended context. Keep native playback until an actual gesture.
-      if (navigator.userActivation && !navigator.userActivation.isActive) return;
+      // Track details or conversion can outlast transient click activation.
+      // Web Audio accepts the page's prior gesture (sticky activation); wait
+      // for a running context below before routing native audio through it.
+      if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
       try {
         if (new URL(audio.currentSrc || audio.src, location.href).origin !== location.origin) {
           unavailable = true;

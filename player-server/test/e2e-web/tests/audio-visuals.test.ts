@@ -49,7 +49,25 @@ async function pixels(page: import('@playwright/test').Page) {
   });
 }
 
+async function observeAudioData(page: import('@playwright/test').Page) {
+  await page.evaluate(() => {
+    const samples = { frequency: 0, waveform: 0 };
+    (window as any).audioVisualSamples = samples;
+    const frequency = AnalyserNode.prototype.getByteFrequencyData;
+    const waveform = AnalyserNode.prototype.getByteTimeDomainData;
+    AnalyserNode.prototype.getByteFrequencyData = function (data) {
+      frequency.call(this, data);
+      samples.frequency = Math.max(samples.frequency, ...data);
+    };
+    AnalyserNode.prototype.getByteTimeDomainData = function (data) {
+      waveform.call(this, data);
+      samples.waveform = Math.max(samples.waveform, ...data.map(value => Math.abs(value - 128)));
+    };
+  });
+}
+
 test('all five modes draw real audio; keyboard cycles through Off without interrupting sound', async ({ page }) => {
+  await observeAudioData(page);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const select = page.getByRole('combobox', { name: 'Audio visualization' });
@@ -58,8 +76,13 @@ test('all five modes draw real audio; keyboard cycles through Off without interr
   await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => !a.paused && a.currentTime > 0)).toBe(true);
   const snapshots = new Set<string>();
   for (const mode of ['bars', 'wave', 'radial', 'mirror', 'orbit']) {
+    await page.evaluate(() => { Object.assign((window as any).audioVisualSamples, { frequency: 0, waveform: 0 }); });
     await select.selectOption(mode);
     await expect.poll(() => pixels(page)).toBeGreaterThan(5);
+    // Static bars and circles also paint pixels with zero FFT bins. Each mode
+    // must consume real decoded samples, not just paint a canvas.
+    await expect.poll(() => page.evaluate(() => (window as any).audioVisualSamples.frequency)).toBeGreaterThan(20);
+    await expect.poll(() => page.evaluate(() => (window as any).audioVisualSamples.waveform)).toBeGreaterThan(20);
     snapshots.add(await page.locator('.audio-visual').evaluate((c: HTMLCanvasElement) => c.toDataURL()));
   }
   expect(snapshots.size).toBe(5);
@@ -80,6 +103,64 @@ test('all five modes draw real audio; keyboard cycles through Off without interr
   await page.reload();
   expect(await page.evaluate(() => localStorage.getItem('player-audio-visual'))).toBe('bars');
   expect(errors).toEqual([]);
+});
+
+test('a delayed library response starts sound-reactive visuals from the original play click', async ({ page }) => {
+  const media = { id: 1, set_id: 1, type: 'audio', file_name: 'song.wav', rel_path: 'song.wav', duration: 30 };
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/stream')) return route.fulfill({ contentType: 'audio/wav', body: tone() });
+    let body: unknown = [];
+    if (path === '/api/config') body = { media_page_size: 100 };
+    if (path === '/api/sets') body = [{ id: 1, name: 'Music' }];
+    if (path.endsWith('/browse')) body = { current_path: '', folders: [], media: [media] };
+    if (path === '/api/media/1') {
+      // Both browsers expire transient activation before this request finishes.
+      // The original click still grants sticky activation for Web Audio.
+      await new Promise(resolve => setTimeout(resolve, 6000));
+      body = { media, progress: null };
+    }
+    return route.fulfill({ json: body });
+  });
+  await page.goto('/');
+  await observeAudioData(page);
+  await page.getByRole('button', { name: 'Set Music', exact: true }).click();
+  const detail = page.waitForResponse('**/api/media/1');
+  await page.locator('.media-card').getByRole('button', { name: '▶', exact: true }).click();
+  await detail;
+  // Polling through browser evaluations while the fetch is pending can itself
+  // renew user activation in automation. Let playback start before inspecting it.
+  await page.waitForTimeout(500);
+  await expect(page.locator('.audio-visual')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).audioVisualSamples.frequency)).toBeGreaterThan(20);
+  await expect.poll(() => page.evaluate(() => (window as any).audioVisualSamples.waveform)).toBeGreaterThan(20);
+  await expect.poll(() => page.locator('#media-audio').evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0);
+});
+
+test('autoplay without a prior gesture leaves audio outside Web Audio', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).audioContextsCreated = 0;
+    const NativeAudioContext = window.AudioContext;
+    window.AudioContext = class extends NativeAudioContext {
+      constructor() {
+        super();
+        (window as any).audioContextsCreated++;
+      }
+    };
+  });
+  const html = (await readFile(resolve(webRoot, 'detach.html'), 'utf8')).replace('</body>', `
+    <script type="module">
+      import { loadMediaDirect, requestPlay } from '/js/playback.js';
+      loadMediaDirect({ type: 'audio', file_name: 'song.wav' }, '/visual-test.wav', '/logo.svg');
+      requestPlay();
+    </script>
+    </body>`);
+  await page.route('**/autoplay-visual-test', route => route.fulfill({ contentType: 'text/html', body: html }));
+  await page.goto('/autoplay-visual-test');
+  expect(await page.evaluate(() => (window as any).audioContextsCreated)).toBe(0);
+  await expect(page.locator('.audio-visual')).toBeHidden();
+  await expect(page.locator('#cover-art')).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toBeEnabled();
 });
 
 test('audiobooks and video hide visuals; routing remains playable across tracks and off', async ({ page }) => {
