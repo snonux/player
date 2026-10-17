@@ -42,7 +42,7 @@ export function initLyrics({ audio, player }) {
   if (!audio || !stage || !controls) return null;
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'lyrics-toggle hidden';
+  button.className = 'btn btn-sm lyrics-toggle hidden';
   button.textContent = 'Lyrics';
   button.setAttribute('aria-controls', 'audio-lyrics');
   const panel = document.createElement('div');

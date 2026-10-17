@@ -1,3 +1,3 @@
-Give the floating web player more room for artwork and visuals, with secondary actions under More controls.
-Make the minimized web player collapse to a small bar.
-Android is rebuilt with the matching server version.
+Web: larger floating player, consistent light/dark controls and dialogs, and a header that stays visible.
+Audio visuals now show setup errors and can be retried without reloading or stopping playback.
+Android and server versions remain synchronized.

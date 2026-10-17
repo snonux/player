@@ -12,13 +12,19 @@ export function initCompactControls(player) {
   panel.setAttribute('popover', 'auto');
   panel.setAttribute('role', 'group');
   panel.setAttribute('aria-label', 'More player controls');
+  const header = document.createElement('div');
+  header.className = 'player-options-header';
+  const title = document.createElement('h3');
+  title.textContent = 'Player controls';
   const close = document.createElement('button');
   close.type = 'button';
-  close.className = 'btn btn-sm';
-  close.textContent = 'Close controls';
+  close.className = 'icon-btn';
+  close.textContent = '✕';
+  close.setAttribute('aria-label', 'Close controls');
   close.setAttribute('popovertarget', panel.id);
   close.setAttribute('popovertargetaction', 'hide');
-  panel.appendChild(close);
+  header.append(title, close);
+  panel.appendChild(header);
   for (const control of player.querySelectorAll(
     '#btn-save-position, #btn-bookmarks, #btn-player-notes, #btn-player-favorite, ' +
     '.volume-control, .audio-visual-control, .lyrics-toggle')) {

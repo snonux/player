@@ -204,6 +204,70 @@ test('unsupported Web Audio falls back to artwork and native audio', async ({ pa
   await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
 });
 
+test('Firefox/runtime audio errors can be retried without reloading or stopping native playback', async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeAudioContext = window.AudioContext;
+    (window as any).audioProcessingBlocked = true;
+    window.AudioContext = class extends NativeAudioContext {
+      constructor() {
+        if ((window as any).audioProcessingBlocked) throw new DOMException('Output temporarily unavailable', 'NotSupportedError');
+        super();
+      }
+    };
+  });
+  await page.reload();
+  await page.evaluate(async () => {
+    // @ts-expect-error Browser native module URL.
+    const playback = await import('/js/playback.js');
+    playback.loadMediaDirect({ type: 'audio', file_name: 'song.wav' }, '/visual-test.wav', '/logo.svg');
+  });
+  await observeAudioData(page);
+  await page.locator('#btn-play').click();
+  await expect(page.getByRole('combobox')).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Retry visuals' })).toBeVisible();
+  await expect(page.locator('.audio-visual-status')).toContainText('NotSupportedError');
+  await expect(page.locator('#cover-art')).toBeVisible();
+  await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
+  await page.evaluate(() => { (window as any).audioProcessingBlocked = false; });
+  await page.getByRole('button', { name: 'Retry visuals' }).click();
+  await expect(page.locator('.audio-visual')).toBeVisible();
+  await expect(page.locator('.audio-visual-status')).toBeEmpty();
+  await expect.poll(() => page.evaluate(() => (window as any).audioVisualSamples.frequency)).toBeGreaterThan(20);
+  await expect.poll(() => page.evaluate(() => (window as any).audioVisualSamples.waveform)).toBeGreaterThan(20);
+});
+
+test('retry reuses a captured media source after graph connection fails', async ({ page }) => {
+  await page.addInitScript(() => {
+    const capture = AudioContext.prototype.createMediaElementSource;
+    const connect = AudioNode.prototype.connect;
+    (window as any).captures = 0;
+    (window as any).connectionBlocked = true;
+    AudioContext.prototype.createMediaElementSource = function (audio) {
+      (window as any).captures++;
+      return capture.call(this, audio);
+    };
+    AudioNode.prototype.connect = function (...args: any[]) {
+      if (args[0] instanceof AnalyserNode && (window as any).connectionBlocked) throw new DOMException('Temporary graph failure', 'InvalidStateError');
+      return (connect as any).apply(this, args);
+    } as any;
+  });
+  await page.reload();
+  await page.evaluate(async () => {
+    // @ts-expect-error Browser native module URL.
+    const playback = await import('/js/playback.js');
+    playback.loadMediaDirect({ type: 'audio', file_name: 'song.wav' }, '/visual-test.wav', '/logo.svg');
+  });
+  await observeAudioData(page);
+  await page.locator('#btn-play').click();
+  await expect(page.getByRole('button', { name: 'Retry visuals' })).toBeVisible();
+  await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
+  await page.evaluate(() => { (window as any).connectionBlocked = false; });
+  await page.getByRole('button', { name: 'Retry visuals' }).click();
+  await expect(page.locator('.audio-visual')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).audioVisualSamples.frequency)).toBeGreaterThan(20);
+  expect(await page.evaluate(() => (window as any).captures)).toBe(1);
+});
+
 test('reduced motion starts Off; v respects typing and modal guards; minimized drawing stops', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.reload();
@@ -391,7 +455,11 @@ for (const width of [320, 1280]) {
     expect(stage!.height).toBeGreaterThanOrEqual(160);
     expect(controls!.height).toBeLessThan(80);
     expect((await player.boundingBox())!.width).toBeLessThanOrEqual(width - 32);
-    await page.screenshot({ path: `/tmp/player-v072-floating-${browserName}-${width}.png` });
+    if (width >= 460) {
+      expect((await player.boundingBox())!.width).toBeGreaterThanOrEqual(450);
+      expect(stage!.height).toBeGreaterThanOrEqual(250);
+    }
+    await page.screenshot({ path: `/tmp/player-v073-floating-${browserName}-${width}.png` });
     const more = page.getByRole('button', { name: 'More player controls', exact: true });
     const panel = page.getByRole('group', { name: 'More player controls', exact: true });
     await more.focus();
@@ -443,5 +511,17 @@ for (const width of [320, 1280]) {
     await page.getByRole('button', { name: 'Restore player', exact: true }).click();
     await expect(player).not.toHaveClass(/minimized/);
     expect((await player.locator('.stage').boundingBox())!.height).toBeGreaterThanOrEqual(160);
+    await page.locator('#theme-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await more.click();
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole('combobox')).toBeEnabled();
+    const box = (await panel.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    await page.screenshot({ path: `/tmp/player-v073-light-${browserName}-${width}.png` });
+    await panel.getByRole('button', { name: 'Close controls' }).click();
+    await expect(panel).toBeHidden();
   });
 }

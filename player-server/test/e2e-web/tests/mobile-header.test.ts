@@ -70,10 +70,9 @@ test.describe('touch header', () => {
 test.describe('desktop header', () => {
   test.use({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
 
-  test('hover still reveals header controls', async ({ page }) => {
+  test('header controls remain visible and usable without hovering', async ({ page }) => {
     await openApp(page);
     await page.mouse.move(640, 400);
-    await page.mouse.move(640, 2);
     await expect(page.locator('#theme-toggle')).toBeInViewport();
     await page.locator('#theme-toggle').click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');

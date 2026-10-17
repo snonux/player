@@ -23,23 +23,6 @@ body {
   gap: var(--gap);
   padding: 0 1rem;
   z-index: 50;
-  transform: translateY(calc(-100% + 0.45rem));
-  transition: transform var(--transition-base);
-}
-.site-header::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -0.45rem;
-  height: 0.45rem;
-}
-.site-header:hover,
-.site-header:focus-within {
-  transform: translateY(0);
-}
-@media (hover: none), (pointer: coarse) {
-  .site-header { transform: none; }
 }
 .header-main {
   display: flex;
@@ -184,6 +167,10 @@ body {
   flex-wrap: wrap;
   margin-bottom: 0.75rem;
   font-size: 0.85rem;
+  padding: 0.5rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 .breadcrumb-bar.hidden { display: none !important; }
 .breadcrumb-bar button {
@@ -472,6 +459,7 @@ body {
   transition: opacity var(--transition-fast);
 }
 .media-row:hover button[data-action],
+.media-row:focus-within button[data-action],
 .media-row.selected button[data-action],
 .media-row.playing button[data-action] {
   opacity: 1;
@@ -512,6 +500,8 @@ body {
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
 }
 .modal-header h3 { margin: 0; font-size: 1.1rem; }
 .modal-header .spacer { flex: 1 1 auto; }
@@ -532,7 +522,7 @@ body {
 }
 .help-shortcuts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   gap: 0.35rem 0.75rem;
   font-size: 0.88rem;
 }
@@ -620,8 +610,8 @@ body {
     gap: 0.2rem;
   }
   .header-main .icon-btn {
-    width: 2rem;
-    height: 2rem;
+    width: var(--control-height-sm);
+    height: var(--control-height-sm);
   }
   .search-bar {
     max-width: none;
@@ -641,7 +631,7 @@ body {
   .sidebar.open { display: flex; }
   .page { padding-left: 0; }
   .page.has-sidebar { padding-left: 0; }
-  .player { inset: auto 0 0 0 !important; }
+  .player { inset: auto auto 1rem 1rem; }
   .toolbar {
     flex-wrap: wrap;
     gap: 0.35rem;
@@ -674,6 +664,10 @@ body {
   .toolbar .input-sm {
     min-width: 3.5rem;
   }
+}
+
+@media (max-width: 520px) and (pointer: coarse) {
+  :root { --header-height: 6.5rem; }
 }
 
 /* Utilities */

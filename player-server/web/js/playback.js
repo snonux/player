@@ -338,12 +338,11 @@ function updateFloatingSize() {
   let w, h;
   if (vw > 0 && vh > 0) {
     const aspect = vw / vh;
-    const base = 240; // px reference height for the floating player
-    h = Math.max(180, Math.min(340, base));
-    w = Math.max(240, Math.min(480, Math.round(h * aspect)));
+    h = 340;
+    w = Math.max(360, Math.min(680, Math.round(h * aspect)));
   } else {
-    w = 320;
-    h = 240;
+    w = 460;
+    h = 340;
   }
   e.player.style.setProperty('--floating-w', w + 'px');
   e.player.style.setProperty('--floating-h', h + 'px');

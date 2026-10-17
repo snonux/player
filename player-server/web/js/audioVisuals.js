@@ -19,7 +19,7 @@ export function initAudioVisuals({ audio, player, coverArt }) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   stage.appendChild(canvas);
-  const label = document.createElement('label');
+  const label = document.createElement('div');
   label.className = 'audio-visual-control hidden';
   const caption = document.createElement('span');
   caption.textContent = 'Visuals (v)';
@@ -32,7 +32,15 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     option.textContent = labels[i];
     select.appendChild(option);
   });
-  label.append(caption, select);
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'btn btn-sm';
+  retry.textContent = 'Retry visuals';
+  retry.hidden = true;
+  const status = document.createElement('span');
+  status.className = 'audio-visual-status';
+  status.setAttribute('role', 'status');
+  label.append(caption, select, retry, status);
   controls.appendChild(label);
   let mode = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'off' : 'bars';
   try {
@@ -43,16 +51,18 @@ export function initAudioVisuals({ audio, player, coverArt }) {
   let book = false;
   let art = false;
   let context = null;
+  let source = null;
+  let routed = false;
   let analyser = null;
   let frequency = null;
   let waveform = null;
   let frame = 0;
-  let unavailable = false;
   const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
-  if (!AudioContext) unavailable = true;
+  const unavailable = !AudioContext;
+  let failure = '';
 
   function wanted() {
-    return media?.type === 'audio' && !book && mode !== 'off' && !unavailable;
+    return media?.type === 'audio' && !book && mode !== 'off' && !unavailable && !failure;
   }
   function visible() {
     return wanted() && analyser && context?.state === 'running';
@@ -65,7 +75,12 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     select.value = book || unavailable ? 'off' : mode;
     label.classList.toggle('hidden', media?.type !== 'audio');
     select.disabled = book || unavailable;
-    caption.textContent = book ? 'Audiobook · visuals off' : unavailable ? 'Visuals unavailable' : !analyser && !audio.paused && wanted() ? 'Visuals (v to start)' : 'Visuals (v)';
+    caption.textContent = book ? 'Audiobook · visuals off' : unavailable ? 'Visuals unavailable' : 'Visuals (v)';
+    retry.hidden = book || unavailable || mode === 'off' || (!failure && (audio.paused || visible()));
+    status.textContent = book || mode === 'off' ? '' : unavailable ? 'Web Audio is disabled or unsupported in this browser.' : failure ||
+      (!visible() && !audio.paused ? 'Start visuals to allow audio processing in this browser.' : '');
+    if (!failure && !visible()) retry.textContent = 'Start visuals';
+    else retry.textContent = 'Retry visuals';
     canvas.classList.toggle('hidden', !visible());
     if (media?.type === 'audio') coverArt?.classList.toggle('hidden', visible() || !art);
     stop();
@@ -78,6 +93,7 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     // Only server same-origin streams are supported. Creating a source for
     // cross-origin media without CORS makes Web Audio output silence.
     if (media?.type !== 'audio') return;
+    failure = '';
     if (!context && wanted()) {
       // Track details or conversion can outlast transient click activation.
       // Web Audio accepts the page's prior gesture (sticky activation); wait
@@ -85,7 +101,7 @@ export function initAudioVisuals({ audio, player, coverArt }) {
       if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
       try {
         if (new URL(audio.currentSrc || audio.src, location.href).origin !== location.origin) {
-          unavailable = true;
+          failure = 'Visuals require a stream from this server.';
           sync();
           return;
         }
@@ -94,9 +110,8 @@ export function initAudioVisuals({ audio, player, coverArt }) {
           connectGraph();
           sync();
         });
-      } catch {
-        unavailable = true;
-        sync();
+      } catch (error) {
+        failed(error);
       }
     }
     connectGraph();
@@ -106,26 +121,37 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     if (context?.state === 'suspended') context.resume().then(() => {
       connectGraph();
       sync();
-    }).catch(sync);
+    }).catch(failed);
+  }
+  function failed(error) {
+    // Keep runtime failures recoverable: Firefox can reject audio processing
+    // because of site permissions or a temporarily unavailable output device.
+    // Never discard a captured source: an element can only be captured once.
+    failure = `Audio processing could not start (${error?.name || 'Error'}). Retry, or check this browser's audio settings.`;
+    console.warn('Player audio visualization:', error?.name || 'Error');
+    sync();
   }
   function connectGraph() {
     if (!wanted() || analyser || context?.state !== 'running') return;
     try {
       // The source may change while resume is pending (including next track).
       if (new URL(audio.currentSrc || audio.src, location.href).origin !== location.origin) {
-        unavailable = true;
+        failure = 'Visuals require a stream from this server.';
       } else {
         const nextAnalyser = context.createAnalyser();
         nextAnalyser.fftSize = 1024;
-        const source = context.createMediaElementSource(audio);
-        source.connect(context.destination);
+        source ||= context.createMediaElementSource(audio);
+        if (!routed) {
+          source.connect(context.destination);
+          routed = true;
+        }
+        source.connect(nextAnalyser);
+        frequency = new Uint8Array(nextAnalyser.frequencyBinCount);
+        waveform = new Uint8Array(nextAnalyser.fftSize);
         analyser = nextAnalyser;
-        source.connect(analyser);
-        frequency = new Uint8Array(analyser.frequencyBinCount);
-        waveform = new Uint8Array(analyser.fftSize);
       }
-    } catch {
-      unavailable = true;
+    } catch (error) {
+      failed(error);
     }
     sync();
   }
@@ -136,6 +162,7 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     sync();
   }
   select.addEventListener('change', change);
+  retry.addEventListener('click', () => { prepare(); sync(); });
   document.addEventListener('keydown', (event) => {
     const tag = event.target?.tagName;
     if (event.key !== 'v' || event.repeat || event.ctrlKey || event.metaKey || event.altKey ||
