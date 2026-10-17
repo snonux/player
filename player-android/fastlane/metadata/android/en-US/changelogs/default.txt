@@ -1,3 +1,2 @@
-Show embedded music cover artwork when no separate album image exists.
-Prefer book front covers in library previews and refresh previously cached artwork correctly.
-Rescan the server library after upgrading to populate missing artwork.
+Fix music-video playback for MPEG-TS files named MP4.
+Preserve seeking and single-use public video shares while streaming original video files.

@@ -42,6 +42,83 @@ ServerPlaybackRequest _request() => ServerPlaybackRequest(
     );
 
 void main() {
+  group('native video source', () {
+    test(
+        'uses ranged original bytes and preserves server identity and progress',
+        () async {
+      var saved = 0.0;
+      final source = ServerPlaybackRequest(
+        mediaId: 7,
+        serverOrigin: 'https://player.test',
+        userId: 3,
+        sourceUri: Uri.parse('https://player.test/api/v1/media/7/stream'),
+        title: 'mpeg-ts.mp4',
+        startPosition: 12,
+        readPosition: () async => 12,
+        savePosition: (seconds) async => saved = seconds,
+      );
+      final resolved = resolveNativeVideoSource(source);
+      expect(resolved.sourceUri.toString(),
+          'https://player.test/api/v1/media/7/download');
+      expect(resolved.identity, source.identity);
+      expect(resolved.title, source.title);
+      expect(resolved.startPosition, 12);
+      expect(await resolved.readPosition!(), 12);
+      await resolved.savePosition!(25);
+      expect(saved, 25);
+    });
+
+    test('public original keeps its viewing credential and path prefix', () {
+      final source = PublicSharePlaybackRequest(
+        shareToken: 'tok',
+        sourceUri:
+            Uri.parse('https://player.test/prefix/s/tok/stream?view=abc.def'),
+        title: 'Shared video',
+      );
+      final resolved = resolveNativeVideoSource(source);
+      expect(resolved.sourceUri.toString(),
+          'https://player.test/prefix/s/tok/download?view=abc.def');
+      expect(resolved.identity, source.identity);
+      expect(resolved.title, source.title);
+    });
+
+    test('compatibility streams and unrelated URLs stay unchanged', () {
+      for (final path in [
+        '/api/v1/media/7/compat',
+        '/api/v1/media/7/download',
+        '/s/tok/compat?view=abc.def',
+        '/elsewhere/stream',
+      ]) {
+        final source =
+            _request().withSourceUri(Uri.parse('https://player.test$path'));
+        expect(resolveNativeVideoSource(source), same(source));
+      }
+    });
+
+    test('legacy API endpoint and server path prefix use original bytes', () {
+      final source = _request().withSourceUri(
+          Uri.parse('https://player.test/prefix/api/media/7/stream'));
+      expect(resolveNativeVideoSource(source).sourceUri.toString(),
+          'https://player.test/prefix/api/media/7/download');
+    });
+
+    test('device and offline sources stay unchanged', () {
+      final sources = [
+        LocalPlaybackRequest(
+            localMediaId: 1,
+            sourceUri: Uri.parse('content://provider/video/1'),
+            title: 'video'),
+        OfflinePlaybackRequest(
+            downloadKey: 'copy',
+            sourceUri: Uri.parse('file:///private/video.mp4'),
+            title: 'video'),
+      ];
+      for (final source in sources) {
+        expect(resolveNativeVideoSource(source), same(source));
+      }
+    });
+  });
+
   test('a transcoded item is switched to the compatibility stream', () async {
     final client = _Client()
       ..media = Media.fromJson({'id': 7, 'transcoded': true});

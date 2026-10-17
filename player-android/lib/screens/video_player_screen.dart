@@ -36,7 +36,7 @@ const _kFinishedThreshold = 0.95;
 // VideoPlayerScreen
 // ---------------------------------------------------------------------------
 
-/// Full-screen video player that streams from `/api/v1/media/{id}/stream`,
+/// Full-screen video player that streams original bytes from `/download`,
 /// or from `/compat` when the server marks the item as transcoded.
 ///
 /// Design decisions:
@@ -657,12 +657,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   /// Builds the request, looking up the playback URL when the route supplied
   /// only a media ID (no typed request and no URL in the route extra).
-  Future<PlaybackRequest> _resolveRequest() {
-    final request = _effectiveRequest();
-    if (widget.request != null || widget.mediaUrl != null) {
-      return Future.value(request);
+  Future<PlaybackRequest> _resolveRequest() async {
+    var request = _effectiveRequest();
+    if (widget.request == null && widget.mediaUrl == null) {
+      request = await resolveServerPlaybackSource(
+          request, ref.read(apiClientProvider));
     }
-    return resolveServerPlaybackSource(request, ref.read(apiClientProvider));
+    return resolveNativeVideoSource(request);
   }
 
   Future<void> _playController(

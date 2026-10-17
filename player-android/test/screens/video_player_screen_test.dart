@@ -145,6 +145,10 @@ class _FakeApiClient extends PlayerApiClient {
   @override
   String streamUrl(int mediaId) =>
       'http://localhost:8080/api/v1/media/$mediaId/stream';
+
+  @override
+  String downloadUrl(int mediaId) =>
+      'http://localhost:8080/api/v1/media/$mediaId/download';
 }
 
 // ---------------------------------------------------------------------------
@@ -958,8 +962,31 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(client.probedUrls, isEmpty);
-      expect(platform.lastSource!.uri, client.streamUrl(42));
+      expect(platform.lastSource!.uri, client.downloadUrl(42));
       expect(find.byKey(const Key('video_player_error')), findsNothing);
+      await _leavePlayingScreen(tester);
+    });
+
+    testWidgets(
+        'public originals retain the viewing token without account access',
+        (tester) async {
+      final platform = _usePlayablePlatform();
+      await _pumpScreen(
+        tester,
+        _FakeApiClient(),
+        forbidServerDependencies: true,
+        request: PublicSharePlaybackRequest(
+          shareToken: 'example',
+          sourceUri:
+              Uri.parse('https://player.example/s/example/stream?view=abc.def'),
+          title: 'Shared MPEG-TS video',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(platform.lastSource!.uri,
+          'https://player.example/s/example/download?view=abc.def');
+      expect(platform.lastSource!.httpHeaders, isEmpty);
+      expect(find.byType(Chewie), findsOneWidget);
       await _leavePlayingScreen(tester);
     });
 
@@ -1250,7 +1277,8 @@ void main() {
       url.value = 'http://localhost:8080/api/v1/media/43/stream';
       await _pumpPluginWork(tester);
       expect(platform.createCalls, 3);
-      expect(platform.lastSource!.uri, url.value);
+      expect(platform.lastSource!.uri,
+          url.value.replaceFirst('/stream', '/download'));
       expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);
 
       // A later failure can be retried as usual.

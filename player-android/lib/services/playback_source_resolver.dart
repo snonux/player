@@ -33,3 +33,33 @@ Future<PlaybackRequest> resolveServerPlaybackSource(
     return request;
   }
 }
+
+/// Android can demux MPEG-TS itself, including files named .mp4. The server's
+/// /stream endpoint remuxes those for browsers; older servers produce an MP4
+/// with missing AAC initialization data that ExoPlayer cannot open. /download
+/// serves the original bytes with range support, without downloading the whole
+/// file into Dart. Compatibility renditions must still use /compat.
+PlaybackRequest resolveNativeVideoSource(PlaybackRequest request) {
+  if (request is! ServerPlaybackRequest &&
+      request is! PublicSharePlaybackRequest) {
+    return request;
+  }
+  final uri = request.sourceUri;
+  final path = uri.path;
+  if (!RegExp(r'/(?:api/(?:v1/)?media/[0-9]+|s/[^/]+)/stream$')
+      .hasMatch(path)) {
+    return request;
+  }
+  final original = uri.replace(
+    path: '${path.substring(0, path.length - 'stream'.length)}download',
+  );
+  return switch (request) {
+    ServerPlaybackRequest() => request.withSourceUri(original),
+    PublicSharePlaybackRequest() => PublicSharePlaybackRequest(
+        shareToken: request.shareToken,
+        sourceUri: original,
+        title: request.title,
+      ),
+    _ => request,
+  };
+}

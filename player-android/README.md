@@ -131,6 +131,11 @@ audio player within the same library keeps audio playing. Local settings remain
 available without a connection. Server logout or expired credentials preserve
 local files and history; a delayed server error cannot stop a local session.
 
+Server videos stream their original bytes with range support, so Android can
+play MPEG-TS files even when they are named `.mp4`. Public video shares use
+the same native playback path. See [format verification](docs/media-format-verification.md)
+for the emulator checks and repeatable tests across all supported extensions.
+
 Some formats (for example WMV, FLV, WMA, or AC-3 audio) cannot be decoded by
 Android. The server converts those, and the app plays the converted copy. While
 it checks for that copy, the player shows **Preparing playback…**; the first
