@@ -182,3 +182,27 @@ Example GitHub Actions step (after `npm ci` and `npm run install-browsers`):
   run: npm test
   working-directory: player-server/test/e2e-web
 ```
+
+## Legacy MPEG playback (Chrome and Firefox)
+
+Build the server with `mage build` in `player-server/`, then start the isolated
+fixture from the monorepo root:
+
+```sh
+python3 player-android/integration_test/support/all_formats_fixture.py \
+  player-server/player
+```
+
+From this directory, use its printed `auth_file` and `origin`:
+
+```sh
+PLAYER_URL=http://127.0.0.1:18765 \
+PLAYER_FORMAT_AUTH=/tmp/player-formats-EXAMPLE/auth.json \
+npx playwright test -c playwright.mpeg.config.ts
+```
+
+This runs real MPEG-1 `.mpg` and MPEG-2 `.mpeg` through login, library play,
+seeking, ranged compatibility/original downloads and single-use public share
+playback in installed Google Chrome and Playwright Firefox. No private media
+is used. The native checks use the same fixture; see
+`player-android/docs/media-format-verification.md`.

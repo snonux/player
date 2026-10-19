@@ -20,6 +20,8 @@ func TestTypeForExt(t *testing.T) {
 		{"a.asf", model.MediaTypeVideo},
 		{"a.flv", model.MediaTypeVideo},
 		{"a.webm", model.MediaTypeVideo},
+		{"a.mpg", model.MediaTypeVideo},
+		{"a.MPEG", model.MediaTypeVideo},
 		// audio
 		{"a.mp3", model.MediaTypeAudio},
 		{"a.wav", model.MediaTypeAudio},
@@ -70,6 +72,10 @@ func TestIsSupportedExt(t *testing.T) {
 		want bool
 	}{
 		{"movie.mp4", true},
+		{"movie.mpg", true},
+		{"movie.MPEG", true},
+		{"movie.mpg.txt", false},
+		{"movie.mpeg.bak", false},
 		{"song.MP3", true},
 		{"archive.zip", false},
 		{"photo.jpg", true},
@@ -129,6 +135,8 @@ func TestMIMETypeForExt(t *testing.T) {
 		want string
 	}{
 		{"movie.mp4", "video/mp4"},
+		{"movie.mpg", "video/mpeg"},
+		{"movie.MPEG", "video/mpeg"},
 		{"song.mkv", "video/x-matroska"},
 		{"song.avi", "video/vnd.avi"},
 		{"clip.mov", "video/quicktime"},
@@ -160,5 +168,17 @@ func TestMIMETypeForExt(t *testing.T) {
 				t.Errorf("MIMETypeForExt(%q) = %q, want %q", c.name, got, c.want)
 			}
 		})
+	}
+}
+
+// The fallback also works on minimal runtime images without an OS MIME table.
+func TestFallbackVideoMIME_MPEG(t *testing.T) {
+	for _, ext := range []string{".mpg", ".mpeg"} {
+		if got := fallbackVideoMIME(ext); got != "video/mpeg" {
+			t.Errorf("fallbackVideoMIME(%q) = %q", ext, got)
+		}
+	}
+	if got := fallbackVideoMIME(".mpeg.bak"); got != "" {
+		t.Errorf("unknown extension = %q, want empty", got)
 	}
 }

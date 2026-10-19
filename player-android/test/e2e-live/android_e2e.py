@@ -36,7 +36,7 @@ os.makedirs(SHOTS, exist_ok=True)
 
 # One sample-<ext>.<ext> per extension in player-server/internal/mediatype.
 FORMATS = {
-    "test-videos": ["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm"],
+    "test-videos": ["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "mpg", "mpeg"],
     "test-audio": ["mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "m4b", "opus"],
     "test-images": ["jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "svg"],
 }

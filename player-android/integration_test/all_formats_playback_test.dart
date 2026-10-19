@@ -58,6 +58,8 @@ void main() {
         'asf',
         'flv',
         'webm',
+        'mpg',
+        'mpeg',
         'mp3',
         'wav',
         'flac',
@@ -80,6 +82,9 @@ void main() {
       'sample-transport.mp4',
     };
     expect(media.map((m) => m.fileName).toSet(), expected);
+    for (final name in ['sample-mpg.mpg', 'sample-mpeg.mpeg']) {
+      expect(media.singleWhere((m) => m.fileName == name).transcoded, isTrue);
+    }
     final results = <String, String>{};
     for (final item in media) {
       debugPrint(
@@ -129,6 +134,9 @@ void main() {
           expect(video.value.size.width, greaterThan(0));
           await video.pause();
           await video.seekTo(const Duration(seconds: 3));
+          await _wait(tester,
+              () => (video.value.position.inMilliseconds - 3000).abs() < 400);
+          expect(video.value.isPlaying, isFalse);
           await video.play();
           await _wait(tester, () => video.value.position.inMilliseconds > 3500);
         }
@@ -144,40 +152,51 @@ void main() {
       }
     }
     // A one-use share must survive the player's multiple ranged requests.
-    final transport =
-        media.singleWhere((m) => m.fileName == 'sample-transport.mp4');
-    final share = await api.createShare(transport.id, maxUses: 1);
-    try {
-      router.go(AppRoutes.shareViewerPath(share.token));
-      await _wait(
-          tester,
-          () => find
-              .byKey(const Key('share_viewer_play_button'))
-              .evaluate()
-              .isNotEmpty);
-      await tester.tap(find.byKey(const Key('share_viewer_play_button')));
-      await _wait(tester, () => find.byType(Chewie).evaluate().isNotEmpty);
-      final video = tester
-          .widget<Chewie>(find.byType(Chewie))
-          .controller
-          .videoPlayerController;
-      await _wait(tester, () => video.value.position.inMilliseconds > 1200);
-      expect(Uri.parse(video.dataSource).path, '/s/${share.token}/download');
-      expect(Uri.parse(video.dataSource).queryParameters['view'], isNotEmpty);
-      await video.seekTo(const Duration(seconds: 4));
-      await _wait(tester, () => video.value.position.inMilliseconds > 4500);
-      expect(
-          (await api.listSharesForMedia(transport.id))
-              .singleWhere((s) => s.token == share.token)
-              .usedCount,
-          1);
-      results['single-use video share'] = 'PASS';
-      debugPrint('Formats E2E: PASS single-use video share');
-    } finally {
-      await container.read(playbackSessionCoordinatorProvider).stopCurrent();
-      router.go(AppRoutes.home);
-      await tester.pumpAndSettle();
-      await api.revokeShare(share.token);
+    for (final name in [
+      'sample-transport.mp4',
+      'sample-mpg.mpg',
+      'sample-mpeg.mpeg',
+    ]) {
+      final sharedItem = media.singleWhere((m) => m.fileName == name);
+      final share = await api.createShare(sharedItem.id, maxUses: 1);
+      try {
+        router.go(AppRoutes.shareViewerPath(share.token));
+        await _wait(
+            tester,
+            () => find
+                .byKey(const Key('share_viewer_play_button'))
+                .evaluate()
+                .isNotEmpty);
+        await tester.tap(find.byKey(const Key('share_viewer_play_button')));
+        await _wait(tester, () => find.byType(Chewie).evaluate().isNotEmpty);
+        final video = tester
+            .widget<Chewie>(find.byType(Chewie))
+            .controller
+            .videoPlayerController;
+        await _wait(tester, () => video.value.position.inMilliseconds > 1200);
+        expect(Uri.parse(video.dataSource).path,
+            '/s/${share.token}/${sharedItem.transcoded ? 'compat' : 'download'}');
+        expect(Uri.parse(video.dataSource).queryParameters['view'], isNotEmpty);
+        await video.pause();
+        await video.seekTo(const Duration(seconds: 4));
+        await _wait(tester,
+            () => (video.value.position.inMilliseconds - 4000).abs() < 400);
+        expect(video.value.isPlaying, isFalse);
+        await video.play();
+        await _wait(tester, () => video.value.position.inMilliseconds > 4500);
+        expect(
+            (await api.listSharesForMedia(sharedItem.id))
+                .singleWhere((s) => s.token == share.token)
+                .usedCount,
+            1);
+        results['single-use share $name'] = 'PASS';
+        debugPrint('Formats E2E: PASS single-use share $name');
+      } finally {
+        await container.read(playbackSessionCoordinatorProvider).stopCurrent();
+        router.go(AppRoutes.home);
+        await tester.pumpAndSettle();
+        await api.revokeShare(share.token);
+      }
     }
     binding.reportData = results;
     await container.read(authStateProvider.notifier).logout();

@@ -385,7 +385,7 @@ see [Share viewings](#share-viewings-how-max_uses-is-counted)), sets the
 ```
 
 Play `playback_url` exactly as given. It equals `stream_url` unless
-`transcoded` is `true` (AVI, WMV, FLV, WMA and other legacy codecs), in which
+`transcoded` is `true` (AVI, WMV, FLV, WMA, MPG/MPEG and other legacy codecs), in which
 case it is `/s/{token}/compat?view=…`. `thumb_url` is omitted when the item
 has no thumbnail. Fetch this JSON once per viewing: every fetch without a
 credential is a new viewing. `view_expires_at` is when the credential stops

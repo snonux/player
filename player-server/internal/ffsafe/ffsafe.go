@@ -51,8 +51,11 @@ import (
 // remuxes them on the fly (see probe.LooksLikeMPEGTS), and they must stay
 // probeable.
 //
+// mpeg is the MPEG program-stream demuxer for .mpg/.mpeg files. It reads
+// packetized streams from the input itself, without referencing other files.
+//
 // Still images are not on this list on purpose; see ImageInputArgs.
-const FormatWhitelist = "avi,asf,flv,matroska,mov,mp3,ogg,flac,wav,aac,mpegts"
+const FormatWhitelist = "avi,asf,flv,matroska,mov,mp3,ogg,flac,wav,aac,mpegts,mpeg"
 
 // SourceArgs returns the arguments that open path as input, whatever
 // supported media type it is: ImageInputArgs for a file with an image

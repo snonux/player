@@ -22,14 +22,14 @@ const ADMIN = { user: process.env.E2E_ADMIN_USER || '', pass: process.env.E2E_AD
 const USER = { user: process.env.E2E_USER || '', pass: process.env.E2E_USER_PASS || '' };
 
 const FORMATS = {
-  'test-videos': ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm'],
+  'test-videos': ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mpg', 'mpeg'],
   'test-audio': ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma', 'm4b', 'opus'],
   'test-images': ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'svg'],
 } as const;
 
 // Formats expected not to play in the web UI. Empty since the server offers a
 // compatibility stream (transcoded MP4/M4A) for what browsers cannot decode
-// (AVI, WMV, FLV, WMA, ...): all 16 audio/video formats must play.
+// (AVI, WMV, FLV, WMA, ...): all 18 audio/video formats must play.
 const BROWSER_UNSUPPORTED = new Set<string>();
 
 // A first play of a transcoded format waits for the server-side transcode

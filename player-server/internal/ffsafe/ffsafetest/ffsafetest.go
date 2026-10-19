@@ -122,7 +122,7 @@ func Playlists() map[string]string {
 
 // DisguisedExts are the media extensions the playlists are hidden under.
 func DisguisedExts() []string {
-	return []string{".avi", ".mp4", ".mkv", ".jpg", ".png"}
+	return []string{".avi", ".mp4", ".mkv", ".mpg", ".mpeg", ".jpg", ".png"}
 }
 
 // WriteDisguised writes every playlist under every disguise extension into

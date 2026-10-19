@@ -102,3 +102,20 @@ flutter test integration_test/server_video_playback_test.dart -d emulator-5554 \
 
 Integration test APKs contain their supplied credentials. Replace the test
 APK with a normal app build after testing.
+
+## Legacy MPEG verification (2026-10-19)
+
+The fixture now includes MPEG-1 video/MP2 audio in `.mpg` and MPEG-2 video/MP2
+audio in `.mpeg`. Both are indexed as video and flagged for compatibility
+playback. The native API 34 emulator run passed all 28 files (27 supported
+extensions plus MPEG-TS named MP4), and all three single-use video shares:
+MPEG-TS, MPG and MPEG. MPEG shares use `/compat` with their viewing credential.
+Video seeks are checked while paused at the requested position, before resuming,
+so ordinary playback cannot satisfy the seek check.
+
+The matching web suite passed both generated MPEG formats in installed Google
+Chrome and Playwright Firefox, through library playback and single-use shares,
+including seeking and ranged original/compatibility downloads. The real ffmpeg
+regressions also cover MP4 content named `.mpg`/`.mpeg`, matching the source
+profiles found in the retired Audiobookshelf library. Original source bytes are
+preserved. These checks do not cover every Android device or codec profile.

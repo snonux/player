@@ -1,4 +1,3 @@
-Keyboard shortcuts now reach controls, menus and dialogs with underlined hints (; or F2).
-Web library URLs restore folders and media after refresh or sign-in.
-Roomy web players show all controls below the media; thumbnails show a single button row on hover.
-Menu shortcut hints keep labels correctly spaced.
+Play legacy MPG and MPEG videos from your server, including shared videos.
+The server prepares a compatible playback copy while keeping original files unchanged.
+Rescan your server library after upgrading to discover previously skipped MPEG videos.

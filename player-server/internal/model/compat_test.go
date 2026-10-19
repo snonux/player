@@ -22,6 +22,11 @@ func compatCases() []compatCase {
 		{"wma", Media{Type: MediaTypeAudio, FileName: "a.wma", Codec: "wmav2"}, true},
 		{"wma unprobed", Media{Type: MediaTypeAudio, FileName: "a.wma"}, true},
 		{"asf", Media{Type: MediaTypeVideo, FileName: "a.asf", Codec: "wmv2/wmav2"}, true},
+		{"mpg unprobed", Media{Type: MediaTypeVideo, FileName: "a.mpg"}, true},
+		{"mpeg h264", Media{Type: MediaTypeVideo, FileName: "a.MPEG", Codec: "h264/aac"}, true},
+		{"mpg mpeg1", Media{Type: MediaTypeVideo, FileName: "a.mpg", Codec: "mpeg1video/mp2"}, true},
+		{"mpeg mpeg2", Media{Type: MediaTypeVideo, FileName: "a.mpeg", Codec: "mpeg2video/mp2"}, true},
+		{"image named mpeg", Media{Type: MediaTypeImage, FileName: "a.mpeg"}, false},
 		// Legacy codec inside a container clients can demux. The codec
 		// strings are the ones probe.codecString writes: "video/audio" for
 		// video files, or the video codec alone for rows probed before the

@@ -159,7 +159,7 @@ play MPEG-TS files even when they are named `.mp4`. Public video shares use
 the same native playback path. See [format verification](docs/media-format-verification.md)
 for the emulator checks and repeatable tests across all supported extensions.
 
-Some formats (for example WMV, FLV, WMA, or AC-3 audio) cannot be decoded by
+Some formats (for example MPG/MPEG program streams, WMV, FLV, WMA, or AC-3 audio) cannot be decoded by
 Android. The server converts those, and the app plays the converted copy. While
 it checks for that copy, the player shows **Preparing playback…**; the first
 play of a long file can take minutes, later plays start right away. Whatever was

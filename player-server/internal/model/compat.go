@@ -51,10 +51,10 @@ func (m Media) MarshalJSON() ([]byte, error) {
 }
 
 // isLegacyContainer reports whether the file extension names a container that
-// browsers cannot demux at all (AVI, ASF/WMV/WMA, FLV).
+// browsers cannot demux at all (AVI, ASF/WMV/WMA, FLV, MPEG program streams).
 func isLegacyContainer(fileName string) bool {
 	switch strings.ToLower(filepath.Ext(fileName)) {
-	case ".avi", ".wmv", ".wma", ".asf", ".flv":
+	case ".avi", ".wmv", ".wma", ".asf", ".flv", ".mpg", ".mpeg":
 		return true
 	}
 	return false

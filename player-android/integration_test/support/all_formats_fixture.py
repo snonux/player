@@ -83,7 +83,7 @@ def main():
                 time.sleep(0.2)
         request('/api/bootstrap', credentials)
         request('/api/admin/rescan', {})
-        while len(request('/api/v1/media?limit=100')) != 26:
+        while len(request('/api/v1/media?limit=100')) != 28:
             if time.monotonic() > deadline:
                 raise RuntimeError('Fixture scan did not finish')
             time.sleep(0.2)

@@ -49,6 +49,8 @@ generate_videos() {
     encode_video -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart "$dir/sample-mp4.mp4"
     encode_video -c:v libx264 -pix_fmt yuv420p -c:a aac "$dir/sample-mkv.mkv"
     encode_video -c:v libx264 -pix_fmt yuv420p -c:a aac "$dir/sample-mov.mov"
+    encode_video -c:v mpeg1video -c:a mp2 -f mpeg "$dir/sample-mpg.mpg"
+    encode_video -c:v mpeg2video -c:a mp2 -f mpeg "$dir/sample-mpeg.mpeg"
     encode_video -c:v mpeg4 -c:a libmp3lame "$dir/sample-avi.avi"
     encode_video -c:v wmv2 -c:a wmav2 "$dir/sample-wmv.wmv"
     encode_video -c:v flv -c:a libmp3lame -ar 44100 "$dir/sample-flv.flv"

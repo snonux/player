@@ -14,7 +14,7 @@ import (
 
 var (
 	videoExts = map[string]struct{}{
-		".mp4": {}, ".mkv": {}, ".avi": {}, ".mov": {}, ".wmv": {}, ".asf": {}, ".flv": {}, ".webm": {},
+		".mp4": {}, ".mkv": {}, ".avi": {}, ".mov": {}, ".wmv": {}, ".asf": {}, ".flv": {}, ".webm": {}, ".mpg": {}, ".mpeg": {},
 	}
 
 	audioExts = map[string]struct{}{
@@ -88,6 +88,8 @@ func fallbackVideoMIME(ext string) string {
 	switch ext {
 	case ".mp4", ".m4v":
 		return "video/mp4"
+	case ".mpg", ".mpeg":
+		return "video/mpeg"
 	case ".mkv":
 		return "video/x-matroska"
 	case ".avi":

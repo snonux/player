@@ -78,3 +78,13 @@ Documentation
 | [Theming](docs/theming.md) | Theme system and adding custom themes |
 | [Podcast Support](docs/podcasts.md) | Subscribing, episode management, feed checker |
 | [Admin Guide](docs/admin.md) | Users, permissions, rescans, trash |
+
+Legacy MPEG video
+-----------------
+
+The scanner accepts `.mpg` and `.mpeg` files (case insensitive). These MPEG
+program streams use the same server-generated H.264/AAC playback copy in the
+web and Android players, including public shares. The first play prepares the
+copy; subsequent plays use the cache. Seeking works after preparation.
+Original files and downloads retain their bytes and `video/mpeg` MIME type.
+Run an admin rescan after upgrading to index files previously skipped.

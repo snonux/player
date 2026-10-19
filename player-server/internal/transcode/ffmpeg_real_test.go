@@ -138,6 +138,8 @@ func realCases() []realCase {
 	both := sampleArgs(lavfiVideo, lavfiAudio)
 	av := map[string]string{"video": "h264", "audio": "aac"}
 	return []realCase{
+		{"mpeg1 program stream", "clip.mpg", sampleArgs(both, []string{"-c:v", "mpeg1video", "-r", "25", "-c:a", "mp2", "-f", "mpeg"}), KindVideo, av},
+		{"mpeg2 program stream", "clip.mpeg", sampleArgs(both, []string{"-c:v", "mpeg2video", "-c:a", "mp2", "-f", "mpeg"}), KindVideo, av},
 		{"wmv", "clip.wmv", append(both, "-c:v", "wmv2", "-s", "160x120", "-c:a", "wmav2"), KindVideo, av},
 		{"avi odd width", "clip.avi", append(both, "-c:v", "mpeg4", "-c:a", "mp2"), KindVideo, av},
 		{"flv", "clip.flv", append(both, "-c:v", "flv", "-s", "160x120", "-ar", "44100", "-c:a", "mp3"), KindVideo, av},
@@ -150,6 +152,8 @@ func realCases() []realCase {
 		{"hostile file name", "-weird:name %03d.avi", append(both, "-c:v", "mpeg4", "-c:a", "mp2", "-f", "avi"), KindVideo, av},
 		// Mislabeled but genuine media: the container is detected among
 		// the whitelisted formats, whatever the extension says.
+		{"mp4 named .mpg", "mislabeled.mpg", sampleArgs(both, h264Small, []string{"-c:a", "aac", "-f", "mp4"}), KindVideo, av},
+		{"mpeg4 mp4 named .mpeg", "mislabeled.mpeg", sampleArgs(both, []string{"-c:v", "mpeg4", "-c:a", "aac", "-f", "mp4"}), KindVideo, av},
 		{"mp4 named .flv", "mislabeled.flv", sampleArgs(both, h264Small, []string{"-c:a", "aac", "-f", "mp4"}), KindVideo, av},
 		{"avi named .mkv", "mislabeled.mkv", append(both, "-c:v", "mpeg4", "-c:a", "mp2", "-f", "avi"), KindVideo, av},
 	}
@@ -295,7 +299,7 @@ func TestCache_RealFFmpegRejectsPlaylists(t *testing.T) {
 	requireFFmpeg(t)
 	dir := privateTree(t)
 	const concat = "ffconcat version 1.0\nfile 'private/s.mp4'\n"
-	for i, name := range []string{"evil.avi", "evil.wmv", "evil.mkv", "evil.mp4", "evil.wma"} {
+	for i, name := range []string{"evil.avi", "evil.wmv", "evil.mkv", "evil.mp4", "evil.wma", "evil.mpg", "evil.mpeg"} {
 		t.Run(name, func(t *testing.T) {
 			src := filepath.Join(dir, name)
 			if err := os.WriteFile(src, []byte(concat), 0o644); err != nil {
