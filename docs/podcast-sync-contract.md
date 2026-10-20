@@ -90,15 +90,18 @@ Besides these shapes, the server mints `legacy-feed:<n>` and
 `legacy-episode:<n>` (decimal row ids) during migration for rows whose
 stored URL cannot be canonicalized or whose episode key collides (§9.1).
 Clients never mint them but must store and echo them unchanged; the server
-accepts them only when such a key exists in its catalog. A legacy key is
+accepts them only when such a key exists in its catalog, as a canonical key
+or, once retired, as an alias (then it resolves to its episode or feed like
+any alias). A legacy key is
 retired by a merge (§3.3): `legacy-feed` when the stored URL is replaced by
 a valid one (a corrected URL or a permanent redirect), `legacy-episode` when an
 ingest claims the episode by its stored enclosure. It then remains an alias.
 
 ### 3.2 Episode key
 
-Computed from one feed document, items in document order (reference
-`podcast.EpisodeKeys`):
+Computed from one feed document (reference `podcast.EpisodeKeys`). An item's
+key never depends on the order of the items, so replicas that fetched the
+same items in different orders mint the same keys:
 
 1. The enclosure is the item's first `<enclosure>` (gofeed
    `Enclosures[0]`). Its URL is not resolved against the feed URL: an item
@@ -106,11 +109,14 @@ Computed from one feed document, items in document order (reference
    (same algorithm, prefix `enc:`) is not a podcast episode and is ignored.
 2. The trimmed GUID (`<guid>`, Atom `<id>`; compared byte-for-byte and
    case-sensitively, `isPermaLink` ignored; a GUID that is not valid UTF-8
-   counts as missing) of the first item carrying it gives `guid:<guid>`.
-   GUIDs longer than 1024 bytes become `guid:sha256:<64 lower-case hex>`.
-3. An item without a GUID, or repeating a GUID already used earlier in the
-   document, uses `enc:<canonical enclosure>`; if an earlier item already has
-   that enclosure, the item is a duplicate and ignored.
+   counts as missing) gives `guid:<guid>` when no other item of the
+   document (with a usable enclosure) carries the same GUID. GUIDs longer
+   than 1024 bytes become `guid:sha256:<64 lower-case hex>`.
+3. An item without a GUID, or whose GUID occurs in several items (then none
+   of them gets the `guid:` key), uses `enc:<canonical enclosure>`; if an
+   item with a unique GUID, or an earlier item of this rule, has that
+   enclosure, the item is a duplicate and ignored. (Items sharing such an
+   enclosure share one key, so which of them is skipped does not matter.)
 
 Title and publication date are deliberately not identity: publishers edit
 them. Each catalog episode stores the enclosure key of the latest document
@@ -136,38 +142,52 @@ or redirect another user's feeds.
   document at once, and every known episode is matched by at most one item:
   1. *Key pass*, in document order: an item whose key is a known key or alias
      of the feed claims that episode, unless its enclosure key singles out a
-     different episode whose canonical key is an `enc:` key (that episode
-     exists because the GUID was ambiguous). The `guid:` key of a GUID that
-     repeats in the document is ambiguous and not used in this pass.
+     different episode whose canonical key is an `enc:` key and the matched
+     episode does not carry that enclosure itself (the `enc:` episode exists
+     because the GUID repeated in an earlier document).
   2. *Enclosure pass*: an unmatched item claims the single episode whose
      `enclosure_key` (or `enc:` key or alias) equals its enclosure key, only
-     if that episode is unclaimed and its own key is not the unambiguous key
-     of any item in the document, i.e. its GUID changed, vanished or became
-     ambiguous. If several episodes share the enclosure, this pass does
-     nothing.
+     if that episode is unclaimed and its own key is not the key of any item
+     in the document, i.e. its GUID changed, vanished or started repeating
+     (an episode minted as `guid:dup` from an earlier single-item document
+     is thus kept when `dup` starts repeating). If several episodes share
+     the enclosure, this pass does nothing.
   3. *New pass*: every remaining item becomes a new episode under its key,
      or under its enclosure key when its key already belongs to an episode;
-     if that is taken too, the item duplicates another and is ignored.
+     if that is taken too, the item duplicates another and is ignored. At
+     most 1 000 new episodes are created per ingest of a feed
+     (`MaxNewEpisodesPerIngest`), in document order; the rest wait for the
+     next fetch.
 
-  When an item claims an episode under a different, unambiguous key that
-  belongs to no other episode, that key becomes an alias of the episode
+  When an item claims an episode under a different key that belongs to no
+  other episode, that key becomes an alias of the episode
   (GUID appeared, changed or vanished), up to 16 aliases per episode. Two
   items of one document that resolve to the same episode: the first claims
   it, the second goes on to the next pass. Ingest is an idempotent upsert;
   re-ingesting the same document changes nothing.
-- **Incoming client keys** (§6) are resolved in this order: canonical key;
-  alias; evidence (each of a feed's `urls` as a feed key, then an episode's
-  `enclosure_url` against `enclosure_key`s of the feed, used only when it
-  identifies exactly one episode); otherwise the client's key is kept for
-  that user's state (and, for a subscription, a catalog row is created,
-  §7.3). The server returns every mapping it applied (`resolved`).
+- **Incoming client keys** (§6). A feed key resolves as a canonical key, an
+  alias, or through each of the subscription's `urls` as a feed key. An
+  episode key resolves by the reference `podcast.ResolveClientEpisode`:
+  as a canonical key or alias; an unknown `enc:` key also through the single
+  episode carrying that enclosure (key or evidence); then the key-pass
+  enclosure preference applies (a device that minted `guid:dup` from a
+  different single-item snapshot follows its enclosure to the server's
+  `enc:` episode). Enclosure evidence never resolves an unknown `guid:`
+  key: a GUID change is linked only by server ingest. A key that does not
+  resolve is kept as a state-only key of that user (and, for a
+  subscription, a catalog row is created, §7.3); once an ingest mints the
+  same key the state joins it without a merge. The server returns every
+  mapping it applied (`resolved`).
 - **Client rewrite**: a client applies `resolved` and pulled `aliases` by
   rewriting local keys in one transaction. When the target key already
   exists locally, the two rows are merged register by register (§4): the
   register with the greater clock wins, together with its pending edit; the
   loser's pending edit is dropped (it can only lose on the server too); equal
-  clocks keep the target row. Device catalog rows and downloads are re-keyed
-  the same way.
+  clocks keep the target row. When the winner has no pending edit but the
+  loser had one, the winner gets a new `edit_id` with its own clock and
+  value and is pushed again (as after an epoch change), so the server
+  certainly holds the winning value under the canonical key. Device catalog
+  rows and downloads are re-keyed the same way.
 - **Merges**: when a server observation shows that two canonical keys denote
   one feed or episode (an alias that is already another canonical key), they
   are merged. For feeds the redirect target always wins, so a feed that
@@ -188,11 +208,13 @@ cases the old state stays under the old key.
 
 ### 3.4 Test vectors
 
-`player-server/internal/podcast/testdata/identity-vectors.json` (version 2)
+`player-server/internal/podcast/testdata/identity-vectors.json` (version 3)
 is the shared fixture: feed keys, invalid URLs, episode documents (including
 Unicode whitespace, multibyte and overlong GUIDs, length limits) and ingest
 scenarios (repeated GUIDs reordered, shared enclosures, changed, appearing
-and vanishing GUIDs, rotating enclosures, the alias cap). The Go tests in
+and vanishing GUIDs, rotating enclosures, the alias cap) and client key
+resolution (state-only unknown GUIDs, enclosure keys, legacy keys). The Go
+tests also check that reversing any vector document yields the same keys. The Go tests in
 `internal/podcast/identity_test.go` consume it. The Android implementation
 (`xh3`) **must** add a unit test that reads the same file through
 `../player-server/internal/podcast/testdata/identity-vectors.json`; a client
@@ -399,7 +421,8 @@ Rules:
   required. `seconds` must be finite and `0 ≤ seconds ≤ 9e12` (the bound
   `SyncPlayback` uses). `observed_ms` must be in `1 … 253402300799999`.
 - Keys must have the shapes of §3 (`feed:`, `guid:`, `enc:`, or a
-  server-minted `legacy-feed:` / `legacy-episode:` key that exists) and at
+  server-minted `legacy-feed:` / `legacy-episode:` key that exists as a key
+  or alias) and at
   most 2100 bytes; `urls` at most 10, each canonicalizable; `title` at most
   500 characters.
 - Per-user quotas: 5 000 subscription rows (tombstones included), 200 000
@@ -615,16 +638,19 @@ podcast push/pull until `has_more = false`; all existing `sync_items`
 register edits.
 
 A media `playback-sync` item answered with `403` or `404` (its server copy
-was deleted, or set access was revoked) is a permanent rejection, like a
-podcast `rejected` edit: the item is marked `gone` with the time, recorded,
-excluded from the success criterion and from automatic retries, and retried
-only by an explicit **Sync now** (a restored copy then syncs again). Its
+was deleted, or set access was revoked) is marked `gone` with the time and
+recorded. Unlike a podcast `rejected` edit it does not make the run partial,
+not even the first time: `gone` items are excluded from the success
+criterion, so a run whose only failures are `gone` items is a full success.
+They are excluded from automatic retries and retried only by an explicit
+**Sync now** (a restored copy then syncs again). Its
 local position stays on the device; edits it already delivered are part of
 the episode state and stay synchronized for every other client.
 
 - **Full success**: every step completed, every edit pending at the start of
   the run acked (edits made during the run may stay pending), the pull
-  reached `has_more = false`, and nothing new was rejected. Only then does
+  reached `has_more = false`, and no podcast edit was rejected (`gone` media
+  items do not count). Only then does
   `last_full_success_ms` advance and stale/unavailable feedback clear.
 - **Partial**: anything less (a failed step, a rejected edit, an interrupted
   pull). Acked edits are cleared, others stay pending, the cursor keeps the
@@ -723,8 +749,13 @@ Automated tests are necessary but do not replace the platform checks of `5i3`.
   ingest cases: (a) a repeated GUID whose items are reordered between
   fetches keeps each item's state on its own episode; (b) two distinct GUIDs
   sharing one enclosure stay two episodes and never produce a `resolved`
-  mapping between them; rotating signed enclosures add no aliases; client
-  evidence never creates an alias or merge.
+  mapping between them; (c) the same repeated-GUID items fetched in
+  opposite orders by a device and the server mint the same keys, and a
+  device's `enc:` key resolves to the server's earlier `guid:dup` episode;
+  (d) a device's unknown `guid:b` sharing the enclosure of the server's
+  `guid:a` stays a state-only key and is never mapped to `guid:a`; rotating
+  signed enclosures add no aliases; client evidence never creates an alias
+  or merge; the per-ingest new-episode cap.
 - Registers (`vh3`, `wh3`): ties, retries, delayed offline edits, clamped
   future clocks, tombstones resisting resurrection, independent position and
   completion, uncompletion at an end position, account isolation (another

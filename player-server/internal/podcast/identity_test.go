@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,6 +30,14 @@ type identityVectors struct {
 		Items   []IdentityItem `json:"items"`
 		Results []IngestMatch  `json:"results"`
 	} `json:"ingest_scenarios"`
+	ClientResolution []struct {
+		Name         string         `json:"name"`
+		Known        []KnownEpisode `json:"known"`
+		Key          string         `json:"key"`
+		EnclosureURL string         `json:"enclosure_url"`
+		Resolved     string         `json:"resolved"`
+		OK           bool           `json:"ok"`
+	} `json:"client_resolution"`
 }
 
 func loadIdentityVectors(t *testing.T) identityVectors {
@@ -41,7 +50,7 @@ func loadIdentityVectors(t *testing.T) identityVectors {
 	if err := json.Unmarshal(data, &v); err != nil {
 		t.Fatalf("parse vectors: %v", err)
 	}
-	if v.Version != 2 || len(v.FeedKeys) == 0 || len(v.InvalidFeedURLs) == 0 || len(v.EpisodeDocuments) == 0 || len(v.IngestScenarios) == 0 {
+	if v.Version != 3 || len(v.FeedKeys) == 0 || len(v.InvalidFeedURLs) == 0 || len(v.EpisodeDocuments) == 0 || len(v.IngestScenarios) == 0 || len(v.ClientResolution) == 0 {
 		t.Fatalf("vectors incomplete: %+v", v)
 	}
 	return v
@@ -102,6 +111,78 @@ func TestMatchEpisodesClaimsEachEpisodeOnce(t *testing.T) {
 			}
 			seen[r.Key] = true
 		}
+	}
+}
+
+func TestResolveClientEpisodeVectors(t *testing.T) {
+	for _, tc := range loadIdentityVectors(t).ClientResolution {
+		got, ok := ResolveClientEpisode(tc.Known, tc.Key, tc.EnclosureURL)
+		if got != tc.Resolved || ok != tc.OK {
+			t.Errorf("%s: ResolveClientEpisode = %q, %v; want %q, %v", tc.Name, got, ok, tc.Resolved, tc.OK)
+		}
+	}
+}
+
+// TestEpisodeKeysOrderIndependent checks, for every vector document, that
+// reversing the items yields the same keys: two replicas that saw the same
+// items in different orders must mint the same identities. Fallback items
+// sharing one enclosure share one key, so only which of them keeps it may
+// differ.
+func TestEpisodeKeysOrderIndependent(t *testing.T) {
+	for _, doc := range loadIdentityVectors(t).EpisodeDocuments {
+		n := len(doc.Items)
+		reversed := make([]IdentityItem, n)
+		for i, item := range doc.Items {
+			reversed[n-1-i] = item
+		}
+		forward, backward := EpisodeKeys(doc.Items), EpisodeKeys(reversed)
+		for i := range forward {
+			f, b := forward[i], backward[n-1-i]
+			if f != b && (f != "" && b != "" || strings.HasPrefix(f+b, guidKeyPrefix)) {
+				t.Errorf("%s: item %d keyed %q forward, %q reversed", doc.Name, i, f, b)
+			}
+		}
+		if !sameKeySet(forward, backward) {
+			t.Errorf("%s: key sets differ: %q vs %q", doc.Name, forward, backward)
+		}
+	}
+}
+
+func sameKeySet(a, b []string) bool {
+	set := map[string]int{}
+	for _, k := range a {
+		if k != "" {
+			set[k]++
+		}
+	}
+	for _, k := range b {
+		if k != "" {
+			set[k]--
+		}
+	}
+	for _, n := range set {
+		if n != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func TestMatchEpisodesCapsNewEpisodes(t *testing.T) {
+	items := make([]IdentityItem, MaxNewEpisodesPerIngest+5)
+	for i := range items {
+		items[i] = IdentityItem{GUID: "g" + strconv.Itoa(i), EnclosureURL: "https://cdn.example.com/" + strconv.Itoa(i) + ".mp3"}
+	}
+	created := 0
+	for i, r := range MatchEpisodes(nil, items) {
+		if r.New {
+			created++
+		} else if i < MaxNewEpisodesPerIngest || r.Key != "" {
+			t.Fatalf("item %d: unexpected result %+v", i, r)
+		}
+	}
+	if created != MaxNewEpisodesPerIngest {
+		t.Errorf("created %d episodes, want %d", created, MaxNewEpisodesPerIngest)
 	}
 }
 

@@ -1,6 +1,6 @@
 {
  "contract": "docs/podcast-sync-contract.md#3-stable-identities",
- "version": 2,
+ "version": 3,
  "feed_keys": [
   {
    "input": "https://Example.COM/feed.xml",
@@ -198,7 +198,7 @@
    ]
   },
   {
-   "name": "repeated guid falls back to the enclosure; repeated enclosure is a duplicate",
+   "name": "a guid occurring in several items is used by none of them; a repeated enclosure is a duplicate",
    "items": [
     {
      "guid": "dup",
@@ -222,7 +222,7 @@
     }
    ],
    "keys": [
-    "guid:dup",
+    "",
     "enc:cdn.example.com/b.mp3",
     "",
     "",
@@ -298,6 +298,57 @@
     "guid:€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€a",
     "guid:sha256:81a95f8105f7d96c3b9be06bd28ebcb866d9d2aeadc3c5dc4bd63d53440fae52",
     "guid:sha256:66fe0c847a29ef060ea49fef22140a713e51c0df34229ae3954baa4d9782cb7b"
+   ]
+  },
+  {
+   "name": "repeated guid, server order",
+   "items": [
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/a.mp3"
+    },
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/b.mp3"
+    }
+   ],
+   "keys": [
+    "enc:cdn.example.com/a.mp3",
+    "enc:cdn.example.com/b.mp3"
+   ]
+  },
+  {
+   "name": "repeated guid, device order",
+   "items": [
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/b.mp3"
+    },
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/a.mp3"
+    }
+   ],
+   "keys": [
+    "enc:cdn.example.com/b.mp3",
+    "enc:cdn.example.com/a.mp3"
+   ]
+  },
+  {
+   "name": "a guid-less item before a guid item with the same enclosure is the duplicate",
+   "items": [
+    {
+     "guid": "",
+     "enclosure_url": "https://cdn.example.com/e.mp3"
+    },
+    {
+     "guid": "g",
+     "enclosure_url": "https://cdn.example.com/e.mp3"
+    }
+   ],
+   "keys": [
+    "",
+    "guid:g"
    ]
   }
  ],
@@ -705,10 +756,6 @@
     {
      "guid": "",
      "enclosure_url": "https://cdn.example.com/2.mp3"
-    },
-    {
-     "guid": "g1",
-     "enclosure_url": "https://cdn.example.com/1.mp3"
     }
    ],
    "results": [
@@ -721,6 +768,33 @@
      "key": "enc:cdn.example.com/2.mp3",
      "new": false,
      "alias": ""
+    }
+   ]
+  },
+  {
+   "name": "an item repeated verbatim makes its guid ambiguous; the episode is kept by its enclosure",
+   "known": [
+    {
+     "key": "guid:g1",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/1.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "g1",
+     "enclosure_url": "https://cdn.example.com/1.mp3"
+    },
+    {
+     "guid": "g1",
+     "enclosure_url": "https://cdn.example.com/1.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "guid:g1",
+     "new": false,
+     "alias": "enc:cdn.example.com/1.mp3"
     },
     {
      "key": "",
@@ -728,6 +802,184 @@
      "alias": ""
     }
    ]
+  },
+  {
+   "name": "repeated guids fetched in either order on an empty catalog mint the same keys",
+   "known": [],
+   "items": [
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/b.mp3"
+    },
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/a.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "enc:cdn.example.com/b.mp3",
+     "new": true,
+     "alias": ""
+    },
+    {
+     "key": "enc:cdn.example.com/a.mp3",
+     "new": true,
+     "alias": ""
+    }
+   ]
+  }
+ ],
+ "client_resolution": [
+  {
+   "name": "a known key resolves to itself even with a rotated enclosure",
+   "known": [
+    {
+     "key": "guid:g",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/e1.mp3"
+    }
+   ],
+   "key": "guid:g",
+   "enclosure_url": "https://cdn.example.com/e2.mp3",
+   "resolved": "guid:g",
+   "ok": true
+  },
+  {
+   "name": "an alias resolves to its episode",
+   "known": [
+    {
+     "key": "guid:g1",
+     "aliases": [
+      "guid:g2"
+     ],
+     "enclosure_key": "enc:cdn.example.com/e.mp3"
+    }
+   ],
+   "key": "guid:g2",
+   "enclosure_url": "https://cdn.example.com/e.mp3",
+   "resolved": "guid:g1",
+   "ok": true
+  },
+  {
+   "name": "an unknown guid is never linked to another guid through a shared enclosure",
+   "known": [
+    {
+     "key": "guid:a",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/s.mp3"
+    }
+   ],
+   "key": "guid:b",
+   "enclosure_url": "https://cdn.example.com/s.mp3",
+   "resolved": "",
+   "ok": false
+  },
+  {
+   "name": "a device's enclosure key resolves to the server's single-item guid episode",
+   "known": [
+    {
+     "key": "guid:dup",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/a.mp3"
+    }
+   ],
+   "key": "enc:cdn.example.com/a.mp3",
+   "enclosure_url": "https://cdn.example.com/a.mp3",
+   "resolved": "guid:dup",
+   "ok": true
+  },
+  {
+   "name": "an enclosure key the server has not seen stays state-only",
+   "known": [
+    {
+     "key": "guid:dup",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/a.mp3"
+    }
+   ],
+   "key": "enc:cdn.example.com/b.mp3",
+   "enclosure_url": "https://cdn.example.com/b.mp3",
+   "resolved": "",
+   "ok": false
+  },
+  {
+   "name": "a device's guid minted from another single-item snapshot follows its enclosure",
+   "known": [
+    {
+     "key": "guid:dup",
+     "aliases": [
+      "enc:cdn.example.com/b.mp3"
+     ],
+     "enclosure_key": "enc:cdn.example.com/b.mp3"
+    },
+    {
+     "key": "enc:cdn.example.com/a.mp3",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/a.mp3"
+    }
+   ],
+   "key": "guid:dup",
+   "enclosure_url": "https://cdn.example.com/a.mp3",
+   "resolved": "enc:cdn.example.com/a.mp3",
+   "ok": true
+  },
+  {
+   "name": "an enclosure shared by several episodes resolves nothing",
+   "known": [
+    {
+     "key": "guid:a",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/s.mp3"
+    },
+    {
+     "key": "guid:b",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/s.mp3"
+    }
+   ],
+   "key": "enc:cdn.example.com/s.mp3",
+   "enclosure_url": "https://cdn.example.com/s.mp3",
+   "resolved": "",
+   "ok": false
+  },
+  {
+   "name": "an existing legacy key resolves to itself",
+   "known": [
+    {
+     "key": "legacy-episode:7",
+     "aliases": [],
+     "enclosure_key": ""
+    }
+   ],
+   "key": "legacy-episode:7",
+   "enclosure_url": "",
+   "resolved": "legacy-episode:7",
+   "ok": true
+  },
+  {
+   "name": "a retired legacy key resolves through its alias",
+   "known": [
+    {
+     "key": "guid:g",
+     "aliases": [
+      "legacy-episode:7"
+     ],
+     "enclosure_key": "enc:cdn.example.com/e.mp3"
+    }
+   ],
+   "key": "legacy-episode:7",
+   "enclosure_url": "",
+   "resolved": "guid:g",
+   "ok": true
+  },
+  {
+   "name": "an unknown legacy key is not accepted",
+   "known": [],
+   "key": "legacy-episode:8",
+   "enclosure_url": "",
+   "resolved": "",
+   "ok": false
   }
  ]
 }

@@ -77,30 +77,37 @@ func GUIDKey(guid string) string {
 }
 
 // EpisodeKeys returns one episode key per item of a feed document, in the
-// same order, or "" for an item that is not a playable, distinct episode:
+// same order, or "" for an item that is not a playable, distinct episode.
+// The result for an item does not depend on the order of the items, so two
+// replicas that fetched the same items in different orders agree:
 //   - an item without a valid enclosure URL is skipped;
-//   - the first item carrying a GUID uses it ("guid:...");
-//   - an item without a GUID, or repeating an earlier item's GUID, falls back
-//     to its enclosure ("enc:..."), unless an earlier item already has that
+//   - an item whose GUID occurs in no other item uses it ("guid:...");
+//   - an item without a GUID, or whose GUID occurs in several items (none of
+//     them then gets "guid:..."), falls back to its enclosure ("enc:..."),
+//     unless an item with a unique GUID or an earlier fallback item has that
 //     enclosure, in which case it is a duplicate and skipped.
 func EpisodeKeys(items []IdentityItem) []string {
 	keys := make([]string, len(items))
-	seenGUID := map[string]bool{}
-	seenEnclosure := map[string]bool{}
+	encs := make([]string, len(items))
+	guidCount := map[string]int{}
 	for i, item := range items {
-		enc, err := EnclosureKey(item.EnclosureURL)
-		if err != nil {
-			continue
+		if enc, err := EnclosureKey(item.EnclosureURL); err == nil {
+			encs[i] = enc
+			guidCount[itemGUID(item)]++
 		}
-		guid := itemGUID(item)
-		switch {
-		case guid != "" && !seenGUID[guid]:
+	}
+	taken := map[string]bool{}
+	for i, item := range items {
+		if guid := itemGUID(item); encs[i] != "" && guid != "" && guidCount[guid] == 1 {
 			keys[i] = GUIDKey(guid)
-			seenGUID[guid] = true
-		case !seenEnclosure[enc]:
-			keys[i] = enc
+			taken[encs[i]] = true
 		}
-		seenEnclosure[enc] = true
+	}
+	for i, enc := range encs {
+		if enc != "" && keys[i] == "" && !taken[enc] {
+			keys[i] = enc
+			taken[enc] = true
+		}
 	}
 	return keys
 }
