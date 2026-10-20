@@ -87,11 +87,23 @@ void main() {
     expect(audiobookTitle('', fallback: 'x'), 'x');
   });
 
+  test('podcast file names become episode titles', () {
+    expect(podcastEpisodeTitle('Episode 1 — Introduction'),
+        'Episode 1 — Introduction');
+    expect(podcastEpisodeTitle('2024-01-01 - Episode 1 — Introduction.mp3'),
+        'Episode 1 — Introduction');
+    expect(podcastEpisodeTitle('Go Time 300.M4A'), 'Go Time 300');
+    expect(podcastEpisodeTitle('Version 2.0'), 'Version 2.0');
+  });
+
   test('server media: podcasts, audiobooks, and nothing for music', () async {
     final episode = await noteSubjectFor(
         _server('Go Time 300: Generics'), _Client(_media(2, 'ep300.mp3')));
     expect(episode!.podcast, isTrue);
     expect(episode.title, 'Go Time 300: Generics');
+    final fromLibrary = await noteSubjectFor(
+        _server('2024-01-01 - Episode 1.mp3'), _Client(_media(2, 'ep1.mp3')));
+    expect(fromLibrary!.title, 'Episode 1');
 
     final book = await noteSubjectFor(_server('10-chapter.mp3'),
         _Client(_media(1, 'aesops-fables/10-chapter.mp3')));

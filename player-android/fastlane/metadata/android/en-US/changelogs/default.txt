@@ -1,1 +1,2 @@
+Podcast notes opened from the library now use the episode title instead of the file name.
 Notes in TurboNotes: while an audiobook or podcast episode plays, a notes button opens Book-And-Podcast-Notes/TITLE.md in TurboNotes, which creates the note on first use.

@@ -51,6 +51,20 @@ String audiobookTitle(String relPath, {String fallback = ''}) {
   return isAudiobook(folder) ? stem : folder;
 }
 
+/// The episode title in [title]: the podcast screen passes the episode's
+/// title, other screens the server's file name for it,
+/// `2024-01-01 - Episode 1.mp3`, which loses its date and extension.
+String podcastEpisodeTitle(String title) {
+  final file = RegExp(r'\.(mp3|m4a|m4b|aac|ogg|oga|opus|flac|wav|mp4)$',
+      caseSensitive: false);
+  if (!file.hasMatch(title)) return title;
+  final name = title
+      .replaceFirst(file, '')
+      .replaceFirst(RegExp(r'^\d{4}-\d{2}-\d{2} - '), '')
+      .trim();
+  return name.isEmpty ? title : name;
+}
+
 /// The note subject of what [request] plays, or null for anything that is
 /// neither an audiobook nor a podcast episode (music, public shares).
 ///
@@ -68,7 +82,8 @@ Future<NoteSubject?> noteSubjectFor(
           .where((set) => set.id == media.setId)
           .firstOrNull;
       if (set?.isPodcast ?? false) {
-        return NoteSubject(title: request.title, podcast: true);
+        return NoteSubject(
+            title: podcastEpisodeTitle(request.title), podcast: true);
       }
       final names = '${set?.name ?? ''} ${set?.rootPath ?? ''} '
           '${media.relPath} ${media.fileName}';
