@@ -46,6 +46,8 @@ export const test = base.extend<{ sandbox: Sandbox; bootstrapAdmin: boolean }>({
     const child = spawn(binary, [], { cwd: component, env: {
       ...process.env, PORT: url.port || '18081', MEDIA_ROOT: mediaRoot, DB_PATH: db,
       SECURE_COOKIES: 'false', MAX_UPLOAD_SIZE_MB: '1', LOG_LEVEL: 'error',
+      // The mock RSS server runs on loopback.
+      PODCAST_ALLOW_PRIVATE_NETWORKS: 'true',
     }, stdio: ['ignore', 'pipe', 'pipe'] });
     let logs = '';
     child.stdout!.on('data', data => { logs += data; });

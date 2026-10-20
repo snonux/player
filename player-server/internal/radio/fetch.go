@@ -97,6 +97,13 @@ func refusePrivate(_, address string, _ syscall.RawConn) error {
 	return nil
 }
 
+// RefusePrivate is refusePrivate for other outbound fetchers that must stay
+// off the server's own network (podcast feeds and episodes): a net.Dialer
+// Control function that rejects every address that is not public unicast.
+func RefusePrivate(network, address string, c syscall.RawConn) error {
+	return refusePrivate(network, address, c)
+}
+
 // nonPublic are special-purpose ranges that netip does not classify as
 // private, loopback or link-local but that are no public stations either:
 // "this network", shared (CGNAT) space, IETF protocol assignments,

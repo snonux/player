@@ -22,6 +22,7 @@ All settings are environment variables. Unset variables use defaults.
 | `THUMBNAIL_CACHE_DIR` | unset | writable directory outside `MEDIA_ROOT` | When set, all generated thumbnails are stored there (mirroring the media tree) instead of in `.thumbnails` beside each media file; unset keeps them beside the media |
 | `RADIO_BROWSER_URL` | `https://all.api.radio-browser.info` | http(s) URL | Radio Browser API that web radio searches |
 | `RADIO_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let the radio relay connect to loopback/private addresses (stations on your own network); off by default because station entries come from a public directory |
+| `PODCAST_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let podcast feed, cover and episode downloads connect to loopback/private addresses (feeds on your own network); off by default because feeds are third-party documents whose URLs must not reach services on the server's network |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 
