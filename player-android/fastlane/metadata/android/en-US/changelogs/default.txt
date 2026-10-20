@@ -1,3 +1,1 @@
-Web radio: explore stations by name, genre or country, bookmark favourites and try Auto explore.
-Radio plays in the background with notification and lock-screen controls; bookmarks sync with the web UI.
-The player now shows the audio format and quality (codec, bitrate, sample rate) while music plays.
+Notes in TurboNotes: while an audiobook or podcast episode plays, a notes button opens Book-And-Podcast-Notes/TITLE.md in TurboNotes, which creates the note on first use.
