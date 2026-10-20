@@ -19,6 +19,7 @@ import '../services/playback_request.dart';
 import '../services/playback_source_resolver.dart';
 import '../utils/playback_errors.dart';
 import '../widgets/audio_format_line.dart';
+import '../widgets/turbonotes_button.dart';
 import '../widgets/lyrics_panel.dart';
 import '../widgets/audio_cover_art.dart';
 import '../widgets/audio_visuals.dart';
@@ -677,6 +678,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               !casting &&
               !widget.isPublicShare)
             _buildPersonalActions(),
+          if (_activeRequest != null &&
+              !_isLoading &&
+              _error == null &&
+              !casting &&
+              !widget.isPublicShare)
+            TurboNotesButton(request: _activeRequest!),
         ],
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
