@@ -37,6 +37,7 @@ that note on first use with the title as heading. Playback keeps going in the
 background; switch back to Player from the notification or recent apps.
 
 - Podcast episodes (server media in a podcast set) use the episode title.
+  Opened from the library, the file name `2024-01-01 - Title.mp3` gives `Title`.
 - Audiobooks are recognized like the visuals do: `.m4b` files and set,
   folder or file names containing "audiobook" or "audio book". The title is
   the `.m4b` file's name, or for chapter files the folder holding them
