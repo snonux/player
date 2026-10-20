@@ -22,6 +22,7 @@ Features
 - **Audio / Audiobooks** — cover art display, progress tracking (resumes where you left off)
 - **Casting** — in Chrome (HTTPS or localhost), the player's cast button plays the current audio or video item on a Chromecast or other Google Cast device; play/pause, seeking and track changes then control the cast device, and stopping continues locally where it left off. The cast device fetches the media through a short-lived signed link, so it must reach the server at the page's address. Details: [docs/api.md](docs/api.md)
 - **Podcasts** — subscribe to RSS/Atom feeds, download episodes to the server, mark listened/unlistened
+- **Web radio** — press `w` or the 📻 button to search internet radio stations from the [Radio Browser](https://www.radio-browser.info/) directory by name, genre and country, sorted by popularity, votes, name or at random. Bookmark stations to find them again on every device (the Android app shares them). **Auto explore** plays random stations of the current filters one after another, moving on after 15, 30 or 60 seconds; Keep stays on the current one. The server relays the streams, so HTTP-only stations play on HTTPS pages too. See [docs/api.md](docs/api.md#web-radio)
 
 ### Organization
 
