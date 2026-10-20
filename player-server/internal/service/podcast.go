@@ -52,6 +52,8 @@ type PodcastChecker interface {
 // PodcastServiceStore is the data layer dependency for podcast operations.
 type PodcastServiceStore interface {
 	repository.PodcastRepo
+	repository.PodcastSubscriptionRepo
+	repository.PodcastCatalogRepo
 	repository.SetRepo
 	repository.SetPermissionRepo
 	repository.MediaRepo
@@ -76,13 +78,16 @@ type podcastService struct {
 	thumbRm thumbnailRemover
 	// thumbLayout is where both of them expect thumbnails (see
 	// WithThumbnailLayout); the zero value means beside the source.
-	thumbLayout     thumb.Layout
-	httpClient      *http.Client
-	checkInterval   int // minutes
-	logger          *slog.Logger
-	parseFeed       func(*http.Client, string) (*podcast.ParsedFeed, error)
-	parseFeedReader func(io.Reader) (*podcast.ParsedFeed, error)
-	downloadCover   func(*http.Client, string, string) error
+	thumbLayout thumb.Layout
+	httpClient  *http.Client
+	// restrictedClient fetches catalog feeds created by non-admin
+	// subscriptions: public unicast addresses only (podcast_outbound.go).
+	restrictedClient *http.Client
+	checkInterval    int // minutes
+	logger           *slog.Logger
+	parseFeed        func(*http.Client, string) (*podcast.ParsedFeed, error)
+	parseFeedReader  func(io.Reader) (*podcast.ParsedFeed, error)
+	downloadCover    func(*http.Client, string, string) error
 
 	// fetchPolicy controls HTTP-level retry/backoff for feed fetches.
 	// Exposed as a struct field so tests can shrink delays and shorten the
@@ -183,6 +188,14 @@ func (s *podcastService) WithThumbnailLayout(layout thumb.Layout) *podcastServic
 	return s
 }
 
+// clientTimeout is the timeout of c, or the default when c has none.
+func clientTimeout(c *http.Client) time.Duration {
+	if c.Timeout > 0 {
+		return c.Timeout
+	}
+	return DefaultHTTPClientTimeout
+}
+
 // NewPodcastServiceWithLogger creates a PodcastService with an injected logger.
 // httpClient is required and must not be nil — passing nil will panic on first
 // use. This is intentional: the service depends on an injected client per DIP
@@ -198,19 +211,20 @@ func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, med
 		panic("service.NewPodcastService: httpClient must not be nil")
 	}
 	s := &podcastService{
-		store:         store,
-		clock:         clk,
-		mediaRoot:     mediaRoot,
-		helper:        helper,
-		prober:        prober,
-		thumbGen:      thumbGen,
-		thumbs:        newThumbnailMaker(thumbGen, logger),
-		thumbRm:       newThumbnailRemover(logger, thumb.Layout{}),
-		httpClient:    httpClient,
-		checkInterval: checkInterval,
-		logger:        logger,
-		fetchPolicy:   DefaultFeedFetchPolicy(),
-		hostFailures:  make(map[string]time.Time),
+		store:            store,
+		clock:            clk,
+		mediaRoot:        mediaRoot,
+		helper:           helper,
+		prober:           prober,
+		thumbGen:         thumbGen,
+		thumbs:           newThumbnailMaker(thumbGen, logger),
+		thumbRm:          newThumbnailRemover(logger, thumb.Layout{}),
+		httpClient:       httpClient,
+		restrictedClient: newRestrictedClient(clientTimeout(httpClient), publicUnicast),
+		checkInterval:    checkInterval,
+		logger:           logger,
+		fetchPolicy:      DefaultFeedFetchPolicy(),
+		hostFailures:     make(map[string]time.Time),
 	}
 	// Wire package-level helpers so tests can inject fakes.
 	s.parseFeed = podcast.ParseFeed

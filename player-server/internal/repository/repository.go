@@ -26,6 +26,8 @@ type Store interface {
 	NoteRepo
 	BookmarkRepo
 	PodcastRepo
+	PodcastSubscriptionRepo
+	PodcastCatalogRepo
 }
 
 // CoreStore is the common subset embedded by service-specific store

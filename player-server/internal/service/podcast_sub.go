@@ -35,7 +35,7 @@ func (s *podcastSubscriptionService) SubscribeFeed(ctx context.Context, feedURL,
 		return nil, err
 	}
 
-	feed, err := s.findExistingFeed(ctx, set.ID, parsed.Title, feedURL)
+	feed, err := s.findExistingFeed(ctx, feedURL)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (s *podcastSubscriptionService) SubscribeFeed(ctx context.Context, feedURL,
 	if err := s.podcastService.downloadCover(s.podcastService.httpClient, parsed.ImageURL, folderPath); err != nil {
 		s.podcastService.logger.Warn("download cover failed", "error", err, "feed", feed.FeedURL)
 	}
-	if err := s.insertPodcastEpisodes(ctx, parsed, feed.ID); err != nil {
+	if err := ingestParsedEpisodes(ctx, s.podcastService, feed, parsed); err != nil {
 		s.podcastService.logger.Warn("insert podcast episodes failed", "error", err, "feed", feed.FeedURL)
 	}
 
@@ -68,7 +68,13 @@ func (s *podcastSubscriptionService) SubscribeFeed(ctx context.Context, feedURL,
 	if err := s.podcastService.store.UpdateFeed(ctx, feed); err != nil {
 		return nil, fmt.Errorf("update feed: %w", err)
 	}
-
+	// The subscriber's own register (contract §10): the feed now has an
+	// active subscription, so the checker keeps refreshing it, and the
+	// subscription reaches the admin's other clients through sync.
+	if err := s.podcastService.store.SetPodcastSubscription(ctx, userID, feed, true, now); err != nil {
+		return nil, fmt.Errorf("record subscription: %w", err)
+	}
+	feed.Subscribed = true
 	return feed, nil
 }
 
@@ -118,22 +124,21 @@ func (s *podcastSubscriptionService) findPodcastSet(ctx context.Context) (*model
 	return nil, nil
 }
 
-func (s *podcastSubscriptionService) findExistingFeed(ctx context.Context, setID int64, title, feedURL string) (*model.PodcastFeed, error) {
-	feeds, err := s.podcastService.store.ListFeedsBySetID(ctx, setID)
+// findExistingFeed returns the catalog feed whose key (or one of whose
+// aliases) is the key of feedURL, so http/https and other spellings of one
+// feed reuse its row. A URL without a key (credentials, odd scheme) never
+// matches: it gets a row of its own with a legacy key. Titles are not
+// identity and are no longer used to match.
+func (s *podcastSubscriptionService) findExistingFeed(ctx context.Context, feedURL string) (*model.PodcastFeed, error) {
+	key, err := podcast.FeedKey(feedURL)
 	if err != nil {
-		return nil, fmt.Errorf("list feeds by set: %w", err)
+		return nil, nil
 	}
-	for _, feed := range feeds {
-		if feed.FeedURL == feedURL {
-			return &feed, nil
-		}
+	feed, err := s.podcastService.store.GetFeedByKey(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("find feed by key: %w", err)
 	}
-	for _, feed := range feeds {
-		if strings.EqualFold(feed.Title, title) {
-			return &feed, nil
-		}
-	}
-	return nil, nil
+	return feed, nil
 }
 
 func (s *podcastSubscriptionService) verifyAdmin(ctx context.Context, userID int64) error {
@@ -200,11 +205,18 @@ func (s *podcastSubscriptionService) createPodcastFeed(ctx context.Context, pars
 	return feed, nil
 }
 
-// ListFeeds returns the podcast feeds visible to the user.
+// ListFeeds returns the catalog feeds whose set the user may read, as
+// before account subscriptions existed, including feeds the user has
+// unsubscribed from: it is the catalog view, not the subscription view.
+// Each feed carries the user's subscription register in Subscribed.
 func (s *podcastSubscriptionService) ListFeeds(ctx context.Context, userID int64) ([]model.PodcastFeed, error) {
 	feeds, err := s.podcastService.store.ListFeeds(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list feeds: %w", err)
+	}
+	subscribed, err := s.podcastService.store.PodcastSubscriptionStates(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
 
 	visible := make([]model.PodcastFeed, 0, len(feeds))
@@ -215,29 +227,10 @@ func (s *podcastSubscriptionService) ListFeeds(ctx context.Context, userID int64
 			}
 			return nil, err
 		}
+		feed.Subscribed = subscribed[feed.FeedKey]
 		visible = append(visible, feed)
 	}
 	return visible, nil
-}
-
-func (s *podcastSubscriptionService) insertPodcastEpisodes(ctx context.Context, parsed *podcast.ParsedFeed, feedID int64) error {
-	for _, ep := range parsed.Episodes {
-		episode := &model.PodcastEpisode{
-			FeedID:          feedID,
-			GUID:            ep.GUID,
-			Title:           ep.Title,
-			Description:     ep.Description,
-			PublishedAt:     ep.PublishedAt,
-			EpisodeURL:      ep.EpisodeURL,
-			DurationSeconds: ep.DurationSeconds,
-			FileSize:        ep.FileSize,
-			CreatedAt:       s.podcastService.clock.Now(),
-		}
-		if _, err := s.podcastService.store.CreateEpisode(ctx, episode); err != nil {
-			return fmt.Errorf("create episode %q: %w", episode.GUID, err)
-		}
-	}
-	return nil
 }
 
 // EditFeed updates the feed URL and check interval.

@@ -44,6 +44,7 @@ type Deps struct {
 	ProgressSvc     service.ProgressService
 	AuthSvc         service.AuthService
 	PodcastSvc      service.PodcastEpisodeService
+	PodcastSyncSvc  service.PodcastSyncService
 	PlaybackHintSvc service.PlaybackHintsService
 	CompatSvc       service.CompatStreamService
 	// Transcodes is the rendition cache behind CompatSvc. RunWithSignal
@@ -133,6 +134,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		ProgressSvc:     service.NewProgressService(store, clk),
 		AuthSvc:         service.NewAuthService(store, clk, hasher, sm, tm),
 		PodcastSvc:      podcastSvc,
+		PodcastSyncSvc:  service.NewPodcastSyncService(store, clk, cfg.PodcastCheckMinutes),
 		PlaybackHintSvc: service.NewPlaybackHintsService(helper),
 		Scanner:         fsScanner,
 		Logger:          logger,
@@ -355,9 +357,10 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 				PlaybackHints: deps.PlaybackHintSvc,
 				Compat:        deps.CompatSvc,
 			},
-			Admin:   deps.AdminSvc,
-			Auth:    deps.AuthSvc,
-			Podcast: deps.PodcastSvc,
+			Admin:       deps.AdminSvc,
+			Auth:        deps.AuthSvc,
+			Podcast:     deps.PodcastSvc,
+			PodcastSync: deps.PodcastSyncSvc,
 		},
 		StaticFS:      staticFS,
 		MediaStreamer: streamer,

@@ -2214,3 +2214,28 @@ func (m *mockPingStore) GetEpisodeProgress(ctx context.Context, userID, episodeI
 func (m *mockPingStore) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
 	return m.store.ListEpisodesWithStatus(ctx, userID, feedID, limit, offset)
 }
+
+func (m *mockPingStore) SyncPodcastSubscriptions(ctx context.Context, userID int64, in model.PodcastSubscriptionSync) (*model.PodcastSyncResponse, error) {
+	return m.store.SyncPodcastSubscriptions(ctx, userID, in)
+}
+func (m *mockPingStore) SetPodcastSubscription(ctx context.Context, userID int64, feed *model.PodcastFeed, subscribed bool, now time.Time) error {
+	return m.store.SetPodcastSubscription(ctx, userID, feed, subscribed, now)
+}
+func (m *mockPingStore) PodcastSubscriptionStates(ctx context.Context, userID int64) (map[string]bool, error) {
+	return m.store.PodcastSubscriptionStates(ctx, userID)
+}
+func (m *mockPingStore) HasActivePodcastSubscription(ctx context.Context, feedKey string) (bool, error) {
+	return m.store.HasActivePodcastSubscription(ctx, feedKey)
+}
+func (m *mockPingStore) GetFeedByKey(ctx context.Context, key string) (*model.PodcastFeed, error) {
+	return m.store.GetFeedByKey(ctx, key)
+}
+func (m *mockPingStore) IngestFeedEpisodes(ctx context.Context, feed *model.PodcastFeed, episodes []model.PodcastEpisode, now time.Time) error {
+	return m.store.IngestFeedEpisodes(ctx, feed, episodes, now)
+}
+func (m *mockPingStore) ClearEpisodeDownloads(ctx context.Context, feedID int64) error {
+	return m.store.ClearEpisodeDownloads(ctx, feedID)
+}
+func (m *mockPingStore) MoveFeed(ctx context.Context, feedID int64, target string) (bool, error) {
+	return m.store.MoveFeed(ctx, feedID, target)
+}

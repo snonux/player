@@ -57,6 +57,7 @@ type Server struct {
 	authSvc       service.AuthService
 	adminSvc      service.AdminService
 	podcastSvc    service.PodcastEpisodeService
+	podcastSync   service.PodcastSyncService
 	streamer      service.MediaStreamer
 	staticFS      http.FileSystem
 	shareRenderer *web.SharePageRenderer
@@ -76,6 +77,8 @@ type ServerServices struct {
 	Auth    service.AuthService
 	Admin   service.AdminService
 	Podcast service.PodcastEpisodeService
+	// PodcastSync serves the account podcast synchronization endpoint.
+	PodcastSync service.PodcastSyncService
 }
 
 // ServerDeps contains the dependencies needed to construct a Server.
@@ -154,6 +157,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		authSvc:       deps.Services.Auth,
 		adminSvc:      deps.Services.Admin,
 		podcastSvc:    deps.Services.Podcast,
+		podcastSync:   deps.Services.PodcastSync,
 		streamer:      deps.MediaStreamer,
 		staticFS:      deps.StaticFS,
 		shareRenderer: web.NewSharePageRenderer(deps.StaticFS),
@@ -432,6 +436,10 @@ func (s *Server) routes() {
 func (s *Server) routesPodcast() {
 	s.handleBoth(http.MethodGet, "/api/podcasts", s.requireSession(s.handleListPodcasts))
 	s.handleBoth(http.MethodPost, "/api/podcasts", s.requireAdmin(s.handleSubscribePodcast))
+	// Account sync is open to every user and touches only the caller's
+	// rows. No other POST route matches /api/podcasts/{id}, so "sync" is
+	// never taken for a feed id.
+	s.handleBoth(http.MethodPost, "/api/podcasts/sync", s.requireSession(s.handlePodcastSync))
 	s.handleBoth(http.MethodDelete, "/api/podcasts/{id}", s.requireAdmin(s.handleUnsubscribePodcast))
 	s.handleBoth(http.MethodGet, "/api/podcasts/{id}/episodes", s.requireSession(s.handleListEpisodes))
 	s.handleBoth(http.MethodPost, "/api/podcasts/episodes/{episode_id}/download", s.requireSession(s.handleDownloadEpisode))

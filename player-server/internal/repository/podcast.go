@@ -8,25 +8,74 @@ import (
 	"time"
 
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/podcast"
 )
 
 // ------------------------------------------------------------------
 // Podcast Feeds
 // ------------------------------------------------------------------
 
-// CreateFeed stores a new podcast feed and returns its database ID.
+// feedColumns are the podcast_feeds columns scanFeed reads, in its order.
+const feedColumns = `id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag,
+ check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at,
+ feed_key, merged_into, created_by`
+
+// episodeColumns are the podcast_episodes columns scanEpisode reads.
+const episodeColumns = `id, feed_id, media_id, guid, episode_key, enclosure_key, title, description,
+ published_at, episode_url, duration_seconds, file_size, file_name, is_downloaded, created_at`
+
+// CreateFeed stores a new catalog feed and returns its database ID. A feed
+// without a FeedKey gets the key of its URL, or "legacy-feed:<id>" when the
+// URL has none (credentials, unsupported scheme, ...).
 func (s *SQLite) CreateFeed(ctx context.Context, feed *model.PodcastFeed) (int64, error) {
-	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO podcast_feeds (set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("insert podcast feed: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	id, err := insertFeed(ctx, tx, feed)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("insert podcast feed: %w", err)
+	}
+	return id, nil
+}
+
+// insertFeed inserts a catalog feed inside the caller's transaction and
+// sets feed.FeedKey to the key it was stored under.
+func insertFeed(ctx context.Context, tx *sql.Tx, feed *model.PodcastFeed) (int64, error) {
+	key := feed.FeedKey
+	if key == "" {
+		// Unique among catalog rows until it is replaced below.
+		key = fmt.Sprintf("legacy-feed:pending-%d", feed.CreatedAt.UnixNano())
+		if k, err := podcast.FeedKey(feed.FeedURL); err == nil {
+			key = k
+		}
+	}
+	res, err := tx.ExecContext(ctx,
+		`INSERT INTO podcast_feeds (set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at, feed_key, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		feed.SetID, feed.FeedURL, sqlNullString(feed.Title), sqlNullString(feed.Description), sqlNullString(feed.ImageURL),
 		sqlNullTime(feed.LastCheckedAt), sqlNullString(feed.LastETag), feed.CheckIntervalMinutes, boolToInt(feed.AutoDownload),
-		feed.ConsecutiveFailures, sqlNullTime(feed.NextCheckAt), feed.CreatedAt,
+		feed.ConsecutiveFailures, sqlNullTime(feed.NextCheckAt), feed.CreatedAt, key, feed.CreatedBy,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert podcast feed: %w", err)
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("insert podcast feed: %w", err)
+	}
+	if strings.HasPrefix(key, "legacy-feed:pending-") {
+		key = fmt.Sprintf("legacy-feed:%d", id)
+		if _, err := tx.ExecContext(ctx, `UPDATE podcast_feeds SET feed_key = ? WHERE id = ?`, key, id); err != nil {
+			return 0, fmt.Errorf("set legacy feed key: %w", err)
+		}
+	}
+	feed.FeedKey = key
+	return id, nil
 }
 
 // UpdateFeed replaces mutable fields for a podcast feed.
@@ -57,7 +106,9 @@ func scanFeed(row sqlScanner) (*model.PodcastFeed, error) {
 	var title, description, imageURL, lastETag sql.NullString
 	var lastChecked, nextCheckAt sql.NullTime
 	var autoDownloadInt int
-	err := row.Scan(&f.ID, &f.SetID, &f.FeedURL, &title, &description, &imageURL, &lastChecked, &lastETag, &f.CheckIntervalMinutes, &autoDownloadInt, &f.ConsecutiveFailures, &nextCheckAt, &f.CreatedAt)
+	var mergedInto, createdBy sql.NullInt64
+	err := row.Scan(&f.ID, &f.SetID, &f.FeedURL, &title, &description, &imageURL, &lastChecked, &lastETag, &f.CheckIntervalMinutes, &autoDownloadInt, &f.ConsecutiveFailures, &nextCheckAt, &f.CreatedAt,
+		&f.FeedKey, &mergedInto, &createdBy)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -65,6 +116,12 @@ func scanFeed(row sqlScanner) (*model.PodcastFeed, error) {
 		return nil, err
 	}
 	f.AutoDownload = intToBool(autoDownloadInt)
+	if mergedInto.Valid {
+		f.MergedInto = &mergedInto.Int64
+	}
+	if createdBy.Valid {
+		f.CreatedBy = &createdBy.Int64
+	}
 	f.Title = title.String
 	f.Description = description.String
 	f.ImageURL = imageURL.String
@@ -81,21 +138,21 @@ func scanFeed(row sqlScanner) (*model.PodcastFeed, error) {
 // GetFeedByID returns a podcast feed by database ID.
 func (s *SQLite) GetFeedByID(ctx context.Context, id int64) (*model.PodcastFeed, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at FROM podcast_feeds WHERE id = ?`, id)
+		`SELECT `+feedColumns+` FROM podcast_feeds WHERE id = ?`, id)
 	return scanFeed(row)
 }
 
 // GetFeedBySetID returns a podcast feed linked to a set.
 func (s *SQLite) GetFeedBySetID(ctx context.Context, setID int64) (*model.PodcastFeed, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at FROM podcast_feeds WHERE set_id = ?`, setID)
+		`SELECT `+feedColumns+` FROM podcast_feeds WHERE set_id = ?`, setID)
 	return scanFeed(row)
 }
 
 // ListFeedsBySetID returns all podcast feeds linked to a set.
 func (s *SQLite) ListFeedsBySetID(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at FROM podcast_feeds WHERE set_id = ? ORDER BY title, created_at`, setID)
+		`SELECT `+feedColumns+` FROM podcast_feeds WHERE set_id = ? ORDER BY title, created_at`, setID)
 	if err != nil {
 		return nil, fmt.Errorf("list podcast feeds by set: %w", err)
 	}
@@ -111,10 +168,10 @@ func (s *SQLite) ListFeedsBySetID(ctx context.Context, setID int64) ([]model.Pod
 	return feeds, rows.Err()
 }
 
-// ListFeeds returns all podcast feeds.
+// ListFeeds returns all catalog feeds; rows merged into another are left out.
 func (s *SQLite) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at FROM podcast_feeds ORDER BY created_at DESC`)
+		`SELECT `+feedColumns+` FROM podcast_feeds WHERE merged_into IS NULL ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list podcast feeds: %w", err)
 	}
@@ -131,12 +188,17 @@ func (s *SQLite) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
 }
 
 // ListFeedsNeedingCheck returns feeds eligible for a background check:
-// next_check_at is NULL or in the past, and last_checked_at is older
-// than the given threshold.
+// next_check_at is NULL or in the past, last_checked_at is older than the
+// given threshold, the row is not merged into another, and at least one
+// user has an active subscription to its feed key. A feed nobody listens
+// to any more is not fetched (contract §7.3).
 func (s *SQLite) ListFeedsNeedingCheck(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, set_id, feed_url, title, description, image_url, last_checked_at, last_etag, check_interval_minutes, auto_download, consecutive_failures, next_check_at, created_at FROM podcast_feeds
-		WHERE (next_check_at IS NULL OR next_check_at <= ?) AND (last_checked_at IS NULL OR last_checked_at < ?) ORDER BY last_checked_at ASC`, now, before)
+		`SELECT `+feedColumns+` FROM podcast_feeds
+		WHERE (next_check_at IS NULL OR next_check_at <= ?) AND (last_checked_at IS NULL OR last_checked_at < ?)
+		AND merged_into IS NULL
+		AND EXISTS (SELECT 1 FROM podcast_subscriptions s WHERE s.feed_key = podcast_feeds.feed_key AND s.subscribed = 1)
+		ORDER BY last_checked_at ASC`, now, before)
 	if err != nil {
 		return nil, fmt.Errorf("list feeds needing check: %w", err)
 	}
@@ -156,8 +218,29 @@ func (s *SQLite) ListFeedsNeedingCheck(ctx context.Context, now, before time.Tim
 // Podcast Episodes
 // ------------------------------------------------------------------
 
-// CreateEpisode stores a new podcast episode and returns its database ID.
+// CreateEpisode stores one podcast episode and returns its database ID. An
+// episode without an EpisodeKey is keyed by its GUID, else by its enclosure.
+// Feed ingest uses IngestFeedEpisodes instead, which keys whole documents
+// by the contract rules; this is for single rows (tests, tools).
 func (s *SQLite) CreateEpisode(ctx context.Context, episode *model.PodcastEpisode) (int64, error) {
+	if episode.EpisodeKey == "" {
+		if guid := strings.TrimSpace(episode.GUID); guid != "" {
+			episode.EpisodeKey = podcast.GUIDKey(guid)
+		} else if key, err := podcast.EnclosureKey(episode.EpisodeURL); err == nil {
+			episode.EpisodeKey = key
+		} else {
+			return 0, fmt.Errorf("insert podcast episode: no guid and %w", err)
+		}
+	}
+	if episode.EnclosureKey == "" {
+		episode.EnclosureKey, _ = podcast.EnclosureKey(episode.EpisodeURL)
+	}
+	return insertEpisode(ctx, s.db, episode)
+}
+
+// insertEpisode inserts an episode under its EpisodeKey. An empty GUID is
+// stored as NULL.
+func insertEpisode(ctx context.Context, ex sqlExecer, episode *model.PodcastEpisode) (int64, error) {
 	var mediaID sql.NullInt64
 	if episode.MediaID != nil {
 		mediaID = sql.NullInt64{Int64: *episode.MediaID, Valid: true}
@@ -174,10 +257,10 @@ func (s *SQLite) CreateEpisode(ctx context.Context, episode *model.PodcastEpisod
 	if episode.FileSize != nil {
 		fileSize = sql.NullInt64{Int64: *episode.FileSize, Valid: true}
 	}
-	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO podcast_episodes (feed_id, media_id, guid, title, description, published_at, episode_url, duration_seconds, file_size, file_name, is_downloaded, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		episode.FeedID, mediaID, episode.GUID, sqlNullString(episode.Title), sqlNullString(episode.Description),
+	res, err := ex.ExecContext(ctx,
+		`INSERT INTO podcast_episodes (feed_id, media_id, guid, episode_key, enclosure_key, title, description, published_at, episode_url, duration_seconds, file_size, file_name, is_downloaded, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		episode.FeedID, mediaID, sqlNullString(episode.GUID), episode.EpisodeKey, episode.EnclosureKey, sqlNullString(episode.Title), sqlNullString(episode.Description),
 		published, episode.EpisodeURL, duration, fileSize, sqlNullString(episode.FileName), boolToInt(episode.IsDownloaded), episode.CreatedAt,
 	)
 	if err != nil {
@@ -194,13 +277,15 @@ func scanEpisode(row sqlScanner) (*model.PodcastEpisode, error) {
 	var duration sql.NullFloat64
 	var fileSize sql.NullInt64
 	var isDownloadedInt int
-	err := row.Scan(&e.ID, &e.FeedID, &mediaID, &e.GUID, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt)
+	var guid sql.NullString
+	err := row.Scan(&e.ID, &e.FeedID, &mediaID, &guid, &e.EpisodeKey, &e.EnclosureKey, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	e.GUID = guid.String
 	e.IsDownloaded = intToBool(isDownloadedInt)
 	if mediaID.Valid {
 		e.MediaID = &mediaID.Int64
@@ -223,21 +308,21 @@ func scanEpisode(row sqlScanner) (*model.PodcastEpisode, error) {
 // GetEpisodeByID returns a podcast episode by database ID.
 func (s *SQLite) GetEpisodeByID(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, feed_id, media_id, guid, title, description, published_at, episode_url, duration_seconds, file_size, file_name, is_downloaded, created_at FROM podcast_episodes WHERE id = ?`, id)
+		`SELECT `+episodeColumns+` FROM podcast_episodes WHERE id = ?`, id)
 	return scanEpisode(row)
 }
 
 // GetEpisodeByGUID returns an episode by feed ID and GUID.
 func (s *SQLite) GetEpisodeByGUID(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, feed_id, media_id, guid, title, description, published_at, episode_url, duration_seconds, file_size, file_name, is_downloaded, created_at FROM podcast_episodes WHERE feed_id = ? AND guid = ?`, feedID, guid)
+		`SELECT `+episodeColumns+` FROM podcast_episodes WHERE feed_id = ? AND guid = ?`, feedID, guid)
 	return scanEpisode(row)
 }
 
 // ListEpisodesByFeed returns episodes for a feed with pagination.
 func (s *SQLite) ListEpisodesByFeed(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, feed_id, media_id, guid, title, description, published_at, episode_url, duration_seconds, file_size, file_name, is_downloaded, created_at FROM podcast_episodes WHERE feed_id = ? ORDER BY published_at DESC LIMIT ? OFFSET ?`,
+		`SELECT `+episodeColumns+` FROM podcast_episodes WHERE feed_id = ? ORDER BY published_at DESC LIMIT ? OFFSET ?`,
 		feedID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list podcast episodes: %w", err)
@@ -352,10 +437,12 @@ func scanEpisodeWithStatus(rows *sql.Rows) (model.PodcastEpisodeWithStatus, erro
 	var fileSize sql.NullInt64
 	var isDownloadedInt, isCompletedInt int
 	var positionSeconds sql.NullFloat64
-	err := rows.Scan(&e.ID, &e.FeedID, &mediaID, &e.GUID, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt, &isCompletedInt, &positionSeconds)
+	var guid sql.NullString
+	err := rows.Scan(&e.ID, &e.FeedID, &mediaID, &guid, &e.EpisodeKey, &e.EnclosureKey, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt, &e.FeedKey, &isCompletedInt, &positionSeconds)
 	if err != nil {
 		return e, err
 	}
+	e.GUID = guid.String
 	e.IsDownloaded = intToBool(isDownloadedInt)
 	e.IsCompleted = intToBool(isCompletedInt)
 	if positionSeconds.Valid {
@@ -382,9 +469,10 @@ func scanEpisodeWithStatus(rows *sql.Rows) (model.PodcastEpisodeWithStatus, erro
 // ListEpisodesWithStatus returns episodes with per-user completion and progress.
 func (s *SQLite) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT e.id, e.feed_id, e.media_id, e.guid, e.title, e.description, e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at,
+		`SELECT e.id, e.feed_id, e.media_id, e.guid, e.episode_key, e.enclosure_key, e.title, e.description, e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at, f.feed_key,
 		COALESCE(s.is_completed, 0) AS is_completed, COALESCE(s.position_seconds, 0) AS position_seconds
 		FROM podcast_episodes e
+		JOIN podcast_feeds f ON f.id = e.feed_id
 		LEFT JOIN podcast_status s ON s.episode_id = e.id AND s.user_id = ?
 		WHERE e.feed_id = ?
 		ORDER BY e.published_at DESC
@@ -422,9 +510,10 @@ func (s *SQLite) ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int
 	args = append(args, limit, offset)
 
 	query := fmt.Sprintf(
-		`SELECT e.id, e.feed_id, e.media_id, e.guid, e.title, e.description, e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at,
+		`SELECT e.id, e.feed_id, e.media_id, e.guid, e.episode_key, e.enclosure_key, e.title, e.description, e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at, f.feed_key,
 		COALESCE(s.is_completed, 0) AS is_completed, COALESCE(s.position_seconds, 0) AS position_seconds
 		FROM podcast_episodes e
+		JOIN podcast_feeds f ON f.id = e.feed_id
 		LEFT JOIN podcast_status s ON s.episode_id = e.id AND s.user_id = ?
 		WHERE e.feed_id IN (%s)
 		ORDER BY e.published_at DESC

@@ -64,18 +64,17 @@ func (s *podcastFeedChecker) CheckFeeds(ctx context.Context) error {
 	return nil
 }
 
+// checkFeed fetches one catalog feed (conditional GET, through the client
+// its creator is allowed), stores its metadata and episodes, follows
+// permanent moves, and refreshes its cover. It never downloads audio.
 func (s *podcastFeedChecker) checkFeed(ctx context.Context, feed model.PodcastFeed) error {
-	resp, err := s.fetchFeedWithRetry(ctx, &feed)
+	moves := &redirectLog{}
+	client := moves.wrap(s.feedClient(ctx, &feed))
+	resp, err := s.fetchFeedWithRetry(ctx, &feed, client)
 	if err != nil {
-		// Backoff bookkeeping happens inside fetchFeedWithRetry for the
-		// host tracker; we still bump the per-feed consecutive_failures so
-		// the existing feed-level scheduling honours the failure. Log any
-		// UPDATE failure at warn level: silently swallowing it would leave
-		// the backoff counter stale and the checker would keep retrying the
-		// failing feed at every interval.
-		if berr := s.setFeedBackoff(ctx, &feed); berr != nil {
-			s.logger.Warn("podcast: failed to record feed backoff", "feed_id", feed.ID, "url", feed.FeedURL, "err", berr)
-		}
+		// Host backoff bookkeeping happened inside fetchFeedWithRetry;
+		// the per-feed counter keeps the feed's own schedule honest.
+		s.recordFeedBackoff(ctx, &feed)
 		return err
 	}
 	defer resp.Body.Close()
@@ -88,44 +87,112 @@ func (s *podcastFeedChecker) checkFeed(ctx context.Context, feed model.PodcastFe
 		if err := s.store.UpdateFeed(ctx, &feed); err != nil {
 			return fmt.Errorf("update feed after 304: %w", err)
 		}
+		s.applyFeedMoves(ctx, &feed, moves.permanent, "")
 		return nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		if berr := s.setFeedBackoff(ctx, &feed); berr != nil {
-			s.logger.Warn("podcast: failed to record feed backoff", "feed_id", feed.ID, "url", feed.FeedURL, "err", berr)
-		}
+		s.recordFeedBackoff(ctx, &feed)
 		return fmt.Errorf("feed check status %d", resp.StatusCode)
 	}
-
 	parsed, err := s.parseFeedReader(resp.Body)
+	if err == nil {
+		err = s.updateFeedFromParsed(ctx, &feed, parsed, resp.Header.Get("ETag"))
+	}
 	if err != nil {
-		if berr := s.setFeedBackoff(ctx, &feed); berr != nil {
-			s.logger.Warn("podcast: failed to record feed backoff", "feed_id", feed.ID, "url", feed.FeedURL, "err", berr)
-		}
+		s.recordFeedBackoff(ctx, &feed)
 		return err
 	}
-
-	if err := s.updateFeedFromParsed(ctx, &feed, parsed, resp.Header.Get("ETag")); err != nil {
-		if berr := s.setFeedBackoff(ctx, &feed); berr != nil {
-			s.logger.Warn("podcast: failed to record feed backoff", "feed_id", feed.ID, "url", feed.FeedURL, "err", berr)
-		}
-		return err
-	}
-
+	s.applyFeedMoves(ctx, &feed, moves.permanent, parsed.NewFeedURL)
 	if err := s.upsertFeedEpisodes(ctx, &feed, parsed); err != nil {
 		s.logger.Warn("upsert feed episodes failed", "error", err, "feed", feed.FeedURL)
 	}
+	s.refreshCover(ctx, &feed, parsed, client)
+	return nil
+}
 
-	if parsed.ImageURL != "" {
-		set, err := s.store.GetSetByID(ctx, feed.SetID)
-		if err == nil && set != nil {
-			setPath := filepath.Join(s.mediaRoot, set.RootPath)
-			if err := s.downloadCover(s.httpClient, parsed.ImageURL, setPath); err != nil {
-				s.logger.Warn("download cover failed", "error", err, "feed", feed.FeedURL)
-			}
+// recordFeedBackoff bumps the feed's failure counter and logs when that
+// cannot be stored: a silently stale counter would make the checker retry
+// a failing feed at every interval.
+func (s *podcastFeedChecker) recordFeedBackoff(ctx context.Context, feed *model.PodcastFeed) {
+	if err := s.setFeedBackoff(ctx, feed); err != nil {
+		s.logger.Warn("podcast: failed to record feed backoff", "feed_id", feed.ID, "url", feed.FeedURL, "err", err)
+	}
+}
+
+// applyFeedMoves records a permanent redirect and an <itunes:new-feed-url>
+// (in that order, so the explicit statement decides the final fetch URL).
+// A move into another catalog feed would need a merge and is only logged.
+func (s *podcastFeedChecker) applyFeedMoves(ctx context.Context, feed *model.PodcastFeed, targets ...string) {
+	for _, target := range targets {
+		if target == "" || target == feed.FeedURL {
+			continue
+		}
+		moved, err := s.store.MoveFeed(ctx, feed.ID, target)
+		if err != nil {
+			s.logger.Warn("podcast: feed move not applied", "feed_id", feed.ID, "target", target, "err", err)
+			continue
+		}
+		if moved {
+			s.logger.Info("podcast: feed moved", "feed_id", feed.ID, "from", feed.FeedURL, "to", target)
+			feed.FeedURL = target
 		}
 	}
+}
 
+// refreshCover downloads the feed's cover art (never audio) with the same
+// client the feed was fetched with.
+func (s *podcastFeedChecker) refreshCover(ctx context.Context, feed *model.PodcastFeed, parsed *podcast.ParsedFeed, client *http.Client) {
+	if parsed.ImageURL == "" {
+		return
+	}
+	set, err := s.store.GetSetByID(ctx, feed.SetID)
+	if err != nil || set == nil {
+		return
+	}
+	setPath := filepath.Join(s.mediaRoot, set.RootPath)
+	if err := s.downloadCover(client, parsed.ImageURL, setPath); err != nil {
+		s.logger.Warn("download cover failed", "error", err, "feed", feed.FeedURL)
+	}
+}
+
+// redirectLog records where a fetch was permanently redirected: the target
+// of the leading run of 301/308 hops. A temporary hop (302, 303, 307) ends
+// the run, so whatever follows it changes nothing (contract §3.3).
+type redirectLog struct {
+	base      func(*http.Request, []*http.Request) error
+	permanent string
+	broken    bool
+}
+
+// wrap returns a copy of client whose redirects are recorded, keeping the
+// client's own redirect policy.
+func (l *redirectLog) wrap(client *http.Client) *http.Client {
+	c := *client
+	l.base = client.CheckRedirect
+	c.CheckRedirect = l.check
+	return &c
+}
+
+func (l *redirectLog) check(req *http.Request, via []*http.Request) error {
+	if len(via) == 1 { // first hop of a new attempt
+		l.permanent, l.broken = "", false
+	}
+	if l.base != nil {
+		if err := l.base(req, via); err != nil {
+			return err
+		}
+	} else if len(via) >= maxFeedRedirects {
+		return fmt.Errorf("stopped after %d redirects", maxFeedRedirects)
+	}
+	if l.broken || req.Response == nil {
+		return nil
+	}
+	switch req.Response.StatusCode {
+	case http.StatusMovedPermanently, http.StatusPermanentRedirect:
+		l.permanent = req.URL.String()
+	default:
+		l.broken = true
+	}
 	return nil
 }
 
@@ -157,19 +224,21 @@ func (s *podcastFeedChecker) updateFeedFromParsed(ctx context.Context, feed *mod
 	return s.store.UpdateFeed(ctx, feed)
 }
 
+// upsertFeedEpisodes ingests a fetched feed document: episodes are matched
+// to the catalog by their stable keys (podcast.MatchEpisodes, contract
+// §3.3), new ones are created and the aliases ingest finds are recorded. It
+// stores metadata only; episode audio is never downloaded here.
 func (s *podcastFeedChecker) upsertFeedEpisodes(ctx context.Context, feed *model.PodcastFeed, parsed *podcast.ParsedFeed) error {
-	var failed []string
-	for _, ep := range parsed.Episodes {
-		existing, err := s.store.GetEpisodeByGUID(ctx, feed.ID, ep.GUID)
-		if err != nil {
-			s.logger.Warn("failed to look up episode by GUID", "error", err, "guid", ep.GUID)
-			failed = append(failed, ep.GUID)
-			continue
-		}
-		if existing != nil {
-			continue
-		}
-		episode := &model.PodcastEpisode{
+	return ingestParsedEpisodes(ctx, s.podcastService, feed, parsed)
+}
+
+// ingestParsedEpisodes hands the episodes of a parsed feed to the store's
+// keyed ingest. Subscribing and the background checker share it, so both
+// treat a feed document the same way.
+func ingestParsedEpisodes(ctx context.Context, svc *podcastService, feed *model.PodcastFeed, parsed *podcast.ParsedFeed) error {
+	episodes := make([]model.PodcastEpisode, len(parsed.Episodes))
+	for i, ep := range parsed.Episodes {
+		episodes[i] = model.PodcastEpisode{
 			FeedID:          feed.ID,
 			GUID:            ep.GUID,
 			Title:           ep.Title,
@@ -178,15 +247,10 @@ func (s *podcastFeedChecker) upsertFeedEpisodes(ctx context.Context, feed *model
 			EpisodeURL:      ep.EpisodeURL,
 			DurationSeconds: ep.DurationSeconds,
 			FileSize:        ep.FileSize,
-			CreatedAt:       s.clock.Now(),
-		}
-		if _, err := s.store.CreateEpisode(ctx, episode); err != nil {
-			s.logger.Warn("failed to insert episode", "error", err, "guid", ep.GUID)
-			failed = append(failed, ep.GUID)
 		}
 	}
-	if len(failed) > 0 {
-		return fmt.Errorf("episode upserts failed for %d episode(s): %v", len(failed), failed)
+	if err := svc.store.IngestFeedEpisodes(ctx, feed, episodes, svc.clock.Now()); err != nil {
+		return fmt.Errorf("ingest episodes of feed %d: %w", feed.ID, err)
 	}
 	return nil
 }
@@ -198,13 +262,15 @@ func (s *podcastFeedChecker) upsertFeedEpisodes(ctx context.Context, feed *model
 // calls within the configured HostBackoff window skip the network entirely.
 //
 // Retry rules:
+//   - A connection the outbound policy refused is returned at once and
+//     not recorded as a host failure.
 //   - Network/transport errors and 5xx responses are retryable.
 //   - 4xx responses (including 304 Not Modified and other client outcomes) are
 //     terminal — the response is returned as-is, callers inspect StatusCode.
 //   - Retries respect the policy MaxAttempts; the wait between attempts grows
 //     exponentially from InitialBackoff up to MaxBackoff and is interrupted
 //     by ctx cancellation.
-func (s *podcastFeedChecker) fetchFeedWithRetry(ctx context.Context, feed *model.PodcastFeed) (*http.Response, error) {
+func (s *podcastFeedChecker) fetchFeedWithRetry(ctx context.Context, feed *model.PodcastFeed, client *http.Client) (*http.Response, error) {
 	policy := s.fetchPolicy.normalize()
 	host := hostForURL(feed.FeedURL)
 
@@ -215,7 +281,12 @@ func (s *podcastFeedChecker) fetchFeedWithRetry(ctx context.Context, feed *model
 	var lastErr error
 	backoff := policy.InitialBackoff
 	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
-		resp, err := s.doFeedRequest(ctx, feed)
+		resp, err := s.doFeedRequest(ctx, feed, client)
+		if errors.Is(err, errBlockedAddress) {
+			// A policy refusal, not a host failure: retrying cannot help,
+			// and backing off the host would hold up other feeds on it.
+			return nil, err
+		}
 		if err == nil && !isRetryableStatus(resp.StatusCode) {
 			// Either success (2xx/3xx) or a terminal 4xx — let the caller
 			// decide. Clear any previous host failure record on real success.
@@ -251,8 +322,8 @@ func (s *podcastFeedChecker) fetchFeedWithRetry(ctx context.Context, feed *model
 	return nil, lastErr
 }
 
-// doFeedRequest issues one conditional GET for the feed.
-func (s *podcastFeedChecker) doFeedRequest(ctx context.Context, feed *model.PodcastFeed) (*http.Response, error) {
+// doFeedRequest issues one conditional GET for the feed with client.
+func (s *podcastFeedChecker) doFeedRequest(ctx context.Context, feed *model.PodcastFeed, client *http.Client) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feed.FeedURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request for feed %d: %w", feed.ID, err)
@@ -263,7 +334,7 @@ func (s *podcastFeedChecker) doFeedRequest(ctx context.Context, feed *model.Podc
 	if feed.LastCheckedAt != nil {
 		req.Header.Set("If-Modified-Since", feed.LastCheckedAt.Format(http.TimeFormat))
 	}
-	return s.httpClient.Do(req)
+	return client.Do(req)
 }
 
 // isRetryableStatus returns true for 5xx server errors (retryable). 4xx and

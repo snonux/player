@@ -30,6 +30,8 @@ var (
 	_ PermissionAdminServiceStore = (*MockStore)(nil)
 	_ APITokenRepo                = (*MockStore)(nil)
 	_ PodcastRepo                 = (*MockStore)(nil)
+	_ PodcastSubscriptionRepo     = (*MockStore)(nil)
+	_ PodcastCatalogRepo          = (*MockStore)(nil)
 )
 
 // NewMockStore returns a MockStore with all no-op defaults.
@@ -57,6 +59,7 @@ type MockStore struct {
 	NoteRepo                MockNoteRepo
 	BookmarkRepo            MockBookmarkRepo
 	PodcastRepo             MockPodcastRepo
+	PodcastSyncRepo         MockPodcastSyncRepo
 }
 
 // FinishProgress calls FinishProgressFunc or returns nil.

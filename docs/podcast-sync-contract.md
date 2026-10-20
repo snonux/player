@@ -1,10 +1,18 @@
 # Podcast identity and synchronization contract
 
 Status: **specification**, task `uh3` of the
-[podcast plan](podcast-management-plan.md). Nothing in this document is
-implemented yet except the identity reference functions in
-`player-server/internal/podcast/identity.go` and their shared test vectors in
-`player-server/internal/podcast/testdata/identity-vectors.json`. The current
+[podcast plan](podcast-management-plan.md), partly implemented. The identity
+reference functions are in `player-server/internal/podcast/identity.go` with
+shared test vectors in
+`player-server/internal/podcast/testdata/identity-vectors.json`. Task `vh3`
+implemented on the server: the §9.1 migration, the §5.1 tables, subscription
+registers and the subscription part of §6.2 (episode edits and `scope` are
+refused until `wh3`, and `podcast_sync` is not advertised yet), keyed ingest,
+feed aliases from permanent redirects and `new-feed-url`, §7.3 catalog
+creation, refresh and outbound policy, and the §7.4/§10 legacy route
+changes. Not implemented yet: feed and episode merges (§3.3, including
+retiring legacy keys; a move into another catalog feed is only logged), the
+episode registers and the §7.1 bridge (`wh3`). The current
 API remains documented in [`player-server/docs/api.md`](../player-server/docs/api.md);
 update it as each delivery task (`vh3` … `4i3`) ships its part. Platform
 verification (Chrome, Firefox, two Android clients) belongs to `5i3`.

@@ -53,6 +53,26 @@ func TestPodcastRepo_ListFeedsNeedingCheck_Backoff(t *testing.T) {
 	}
 	id3, _ := s.CreateFeed(ctx, feed3)
 
+	// Due like feed1, but nobody subscribes (feed4) or the only
+	// subscription is a tombstone (feed5): never fetched.
+	feed4 := &model.PodcastFeed{SetID: setID, FeedURL: "https://example.com/4.xml", Title: "Feed 4", CreatedAt: now}
+	id4, _ := s.CreateFeed(ctx, feed4)
+	feed5 := &model.PodcastFeed{SetID: setID, FeedURL: "https://example.com/5.xml", Title: "Feed 5", CreatedAt: now}
+	id5, _ := s.CreateFeed(ctx, feed5)
+
+	userID, err := s.CreateUser(ctx, &model.User{Username: "listener", PasswordHash: "h", CreatedAt: now})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	for _, f := range []*model.PodcastFeed{feed1, feed2, feed3, feed5} {
+		if err := s.SetPodcastSubscription(ctx, userID, f, true, now); err != nil {
+			t.Fatalf("subscribe: %v", err)
+		}
+	}
+	if err := s.SetPodcastSubscription(ctx, userID, feed5, false, now); err != nil {
+		t.Fatalf("unsubscribe: %v", err)
+	}
+
 	before := now.Add(-time.Hour)
 	feeds, err := s.ListFeedsNeedingCheck(ctx, now, before)
 	if err != nil {
@@ -70,6 +90,9 @@ func TestPodcastRepo_ListFeedsNeedingCheck_Backoff(t *testing.T) {
 	}
 	if ids[id3] {
 		t.Error("did not expect feed3 (checked recently)")
+	}
+	if ids[id4] || ids[id5] {
+		t.Error("did not expect feeds without an active subscription")
 	}
 }
 

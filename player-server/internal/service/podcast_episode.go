@@ -188,13 +188,19 @@ func buildEpisodePath(setPath string, episode *model.PodcastEpisode, now time.Ti
 }
 
 // downloadEnclosure performs the HTTP GET, writes the body to path, and
-// returns the number of bytes written.
+// returns the number of bytes written. The enclosure is fetched with the
+// same client as its feed, so the enclosure of a feed a non-admin's
+// subscription created cannot reach internal addresses either.
 func (s *podcastEpisodeService) downloadEnclosure(ctx context.Context, episode *model.PodcastEpisode, path string) (int64, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, episode.EpisodeURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("build download request: %w", err)
 	}
-	resp, err := s.svc.httpClient.Do(req)
+	client := s.svc.restrictedClient // fail closed when the feed is unknown
+	if feed, err := s.svc.store.GetFeedByID(ctx, episode.FeedID); err == nil && feed != nil {
+		client = s.svc.feedClient(ctx, feed)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("download episode: %w", err)
 	}

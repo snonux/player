@@ -43,7 +43,7 @@ func TestPodcastFetch_RetriesTransientServerError(t *testing.T) {
 	svc.httpClient = server.Client()
 	svc.fetchPolicy = shortPolicy(5 * time.Minute)
 
-	resp, err := svc.fetchFeedWithRetry(context.Background(), &model.PodcastFeed{ID: 1, FeedURL: server.URL})
+	resp, err := svc.fetchFeedWithRetry(context.Background(), &model.PodcastFeed{ID: 1, FeedURL: server.URL}, svc.httpClient)
 	if err != nil {
 		t.Fatalf("expected success after retries, got %v", err)
 	}
@@ -70,7 +70,7 @@ func TestPodcastFetch_PermanentServerError(t *testing.T) {
 	svc.httpClient = server.Client()
 	svc.fetchPolicy = shortPolicy(5 * time.Minute)
 
-	resp, err := svc.fetchFeedWithRetry(context.Background(), &model.PodcastFeed{ID: 1, FeedURL: server.URL})
+	resp, err := svc.fetchFeedWithRetry(context.Background(), &model.PodcastFeed{ID: 1, FeedURL: server.URL}, svc.httpClient)
 	if err == nil {
 		if resp != nil {
 			resp.Body.Close()
@@ -97,7 +97,7 @@ func TestPodcastFetch_NoRetryOn4xx(t *testing.T) {
 	svc.httpClient = server.Client()
 	svc.fetchPolicy = shortPolicy(5 * time.Minute)
 
-	resp, err := svc.fetchFeedWithRetry(context.Background(), &model.PodcastFeed{ID: 1, FeedURL: server.URL})
+	resp, err := svc.fetchFeedWithRetry(context.Background(), &model.PodcastFeed{ID: 1, FeedURL: server.URL}, svc.httpClient)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestPodcastFetch_HostBackoffSkipsFetch(t *testing.T) {
 	feed := &model.PodcastFeed{ID: 1, FeedURL: server.URL}
 
 	// First call exhausts retries and records the host failure.
-	if _, err := svc.fetchFeedWithRetry(context.Background(), feed); err == nil {
+	if _, err := svc.fetchFeedWithRetry(context.Background(), feed, svc.httpClient); err == nil {
 		t.Fatal("expected error from initial failing fetch")
 	}
 	first := atomic.LoadInt32(&calls)
@@ -141,7 +141,7 @@ func TestPodcastFetch_HostBackoffSkipsFetch(t *testing.T) {
 
 	// Second call should short-circuit on host backoff without making an
 	// HTTP request — the call counter must not change.
-	_, err := svc.fetchFeedWithRetry(context.Background(), feed)
+	_, err := svc.fetchFeedWithRetry(context.Background(), feed, svc.httpClient)
 	if err == nil {
 		t.Fatal("expected host-backoff error on second call")
 	}
@@ -179,7 +179,7 @@ func TestPodcastFetch_HostBackoffClearedOnSuccess(t *testing.T) {
 	// fetching the live server and then asserting the live server's host is
 	// not in backoff (it never failed). example.com remains in backoff.
 	feed := &model.PodcastFeed{ID: 1, FeedURL: server.URL}
-	resp, err := svc.fetchFeedWithRetry(context.Background(), feed)
+	resp, err := svc.fetchFeedWithRetry(context.Background(), feed, svc.httpClient)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -585,69 +585,41 @@ func TestPodcastService_UpsertFeedEpisodes(t *testing.T) {
 	ctx := context.Background()
 	svc, store := setupPodcastService(t)
 
-	var created []model.PodcastEpisode
-	store.PodcastRepo = repository.MockPodcastRepo{
-		GetEpisodeByGUIDFunc: func(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error) {
-			return nil, nil
-		},
-		CreateEpisodeFunc: func(ctx context.Context, ep *model.PodcastEpisode) (int64, error) {
-			created = append(created, *ep)
-			return int64(len(created)), nil
-		},
+	var got []model.PodcastEpisode
+	var gotFeed *model.PodcastFeed
+	store.PodcastSyncRepo.IngestFeedEpisodesFunc = func(ctx context.Context, feed *model.PodcastFeed, eps []model.PodcastEpisode, now time.Time) error {
+		gotFeed, got = feed, eps
+		return nil
 	}
 
-	feed := &model.PodcastFeed{ID: 7}
+	feed := &model.PodcastFeed{ID: 7, FeedKey: "feed:example.com/rss"}
 	parsed := &podcast.ParsedFeed{
 		Episodes: []podcast.Episode{
-			{GUID: "g1", Title: "One"},
-			{GUID: "g2", Title: "Two"},
+			{GUID: "g1", Title: "One", EpisodeURL: "https://cdn.example.com/1.mp3"},
+			{GUID: "", Title: "Two", EpisodeURL: "https://cdn.example.com/2.mp3"},
 		},
 	}
 
-	err := svc.upsertFeedEpisodes(ctx, feed, parsed)
-	if err != nil {
+	if err := svc.upsertFeedEpisodes(ctx, feed, parsed); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(created) != 2 {
-		t.Fatalf("expected 2 episodes created, got %d", len(created))
+	if gotFeed != feed || len(got) != 2 {
+		t.Fatalf("ingest got feed %v and %d episodes", gotFeed, len(got))
 	}
-	if created[0].FeedID != 7 || created[0].GUID != "g1" {
-		t.Errorf("episode 0 mismatch: %+v", created[0])
-	}
-	if created[1].GUID != "g2" {
-		t.Errorf("episode 1 mismatch: %+v", created[1])
+	if got[0].FeedID != 7 || got[0].GUID != "g1" || got[1].EpisodeURL != "https://cdn.example.com/2.mp3" {
+		t.Errorf("episodes passed to ingest: %+v", got)
 	}
 }
 
-func TestPodcastService_UpsertFeedEpisodes_SkipsExisting(t *testing.T) {
-	ctx := context.Background()
+func TestPodcastService_UpsertFeedEpisodes_StoreError(t *testing.T) {
 	svc, store := setupPodcastService(t)
-
-	created := 0
-	store.PodcastRepo = repository.MockPodcastRepo{
-		GetEpisodeByGUIDFunc: func(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error) {
-			if guid == "g1" {
-				return &model.PodcastEpisode{GUID: "g1"}, nil
-			}
-			return nil, nil
-		},
-		CreateEpisodeFunc: func(ctx context.Context, ep *model.PodcastEpisode) (int64, error) {
-			created++
-			return 1, nil
-		},
+	boom := errors.New("boom")
+	store.PodcastSyncRepo.IngestFeedEpisodesFunc = func(context.Context, *model.PodcastFeed, []model.PodcastEpisode, time.Time) error {
+		return boom
 	}
-
-	feed := &model.PodcastFeed{ID: 7}
-	parsed := &podcast.ParsedFeed{
-		Episodes: []podcast.Episode{
-			{GUID: "g1", Title: "One"},
-			{GUID: "g2", Title: "Two"},
-		},
-	}
-
-	_ = svc.upsertFeedEpisodes(ctx, feed, parsed)
-	if created != 1 {
-		t.Fatalf("expected 1 new episode created, got %d", created)
+	err := svc.upsertFeedEpisodes(context.Background(), &model.PodcastFeed{ID: 3}, &podcast.ParsedFeed{})
+	if !errors.Is(err, boom) {
+		t.Fatalf("error = %v, want wrapped boom", err)
 	}
 }
 
@@ -685,35 +657,6 @@ func TestPodcastService_UpdateFeedFromParsed(t *testing.T) {
 	}
 	if updated.LastCheckedAt == nil {
 		t.Fatal("expected LastCheckedAt")
-	}
-}
-
-func TestPodcastService_InsertPodcastEpisodes(t *testing.T) {
-	ctx := context.Background()
-	svc, store := setupPodcastService(t)
-
-	var created []model.PodcastEpisode
-	store.PodcastRepo = repository.MockPodcastRepo{
-		CreateEpisodeFunc: func(ctx context.Context, ep *model.PodcastEpisode) (int64, error) {
-			created = append(created, *ep)
-			return int64(len(created)), nil
-		},
-	}
-
-	parsed := &podcast.ParsedFeed{
-		Episodes: []podcast.Episode{
-			{GUID: "g1", Title: "One"},
-		},
-	}
-	err := svc.insertPodcastEpisodes(ctx, parsed, 99)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(created) != 1 {
-		t.Fatalf("expected 1 episode, got %d", len(created))
-	}
-	if created[0].FeedID != 99 || created[0].GUID != "g1" {
-		t.Errorf("episode mismatch: %+v", created[0])
 	}
 }
 

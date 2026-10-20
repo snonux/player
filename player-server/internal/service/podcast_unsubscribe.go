@@ -16,13 +16,21 @@ import (
 // .cover.jpg is generated folder artwork. Both belong to the feed's folder.
 var feedArtwork = map[string]bool{"cover.jpg": true, ".cover.jpg": true}
 
-// UnsubscribeFeed removes a podcast feed and what it put on disk.
+// UnsubscribeFeed removes a catalog feed's server copies and, when nobody
+// is subscribed to it any more, the catalog feed itself ("Remove from
+// server", contract §7.4). Account state is never touched: subscriptions
+// and episode state are not foreign keys of the feed, so they survive both
+// cases, and a feed with active subscribers stays in the catalog (without
+// copies) and keeps being refreshed for them.
 //
 // Order matters:
 //  1. Collect the feed's downloaded episode media.
-//  2. Delete the feed (cascading its episodes). A download still running now
-//     fails to link its media (UpdateEpisodeMedia reports sql.ErrNoRows) and
-//     removes its own file and row, so it cannot outlive the feed.
+//  2. Delete the feed (cascading its episodes), or with active subscribers
+//     clear its episodes' download flags instead. After a deletion, a
+//     download still running fails to link its media (UpdateEpisodeMedia
+//     reports sql.ErrNoRows) and removes its own file and row, so it cannot
+//     outlive the feed; when the feed stays, such a download links normally
+//     and its copy remains.
 //  3. Delete the collected media, row then file.
 //  4. Tidy the feed's folders (the current-title folder and any older-title
 //     folders its episodes were stored in). Only feed artwork goes, and the
@@ -31,7 +39,8 @@ var feedArtwork = map[string]bool{"cover.jpg": true, ".cover.jpg": true}
 //     another feed's episodes), is left untouched. Folder names come from
 //     titles, so this never deletes user files that merely share a name.
 //
-// Steps 3 and 4 are best-effort: once the feed is gone a retry would 404, so
+// Steps 3 and 4 are best-effort: once the feed is gone a retry would 404 (and
+// a kept feed has nothing left to collect in step 1), so
 // they run detached from request cancellation, every item is attempted, and
 // all failures are returned joined.
 //
@@ -61,8 +70,8 @@ func (s *podcastSubscriptionService) UnsubscribeFeed(ctx context.Context, feedID
 	if err != nil {
 		return err
 	}
-	if err := store.DeleteFeed(ctx, feedID); err != nil {
-		return fmt.Errorf("delete feed: %w", err)
+	if err := s.removeCatalogFeed(ctx, feed); err != nil {
+		return err
 	}
 	// Past the point of no return: finish the cleanup even if the client
 	// goes away, since a retry would only get 404.
@@ -80,6 +89,24 @@ func (s *podcastSubscriptionService) UnsubscribeFeed(ctx context.Context, feedID
 		errs = append(errs, s.tidyFolders(ctx, set, folders))
 	}
 	return errors.Join(errs...)
+}
+
+// removeCatalogFeed deletes the feed row (cascading its episodes) when no
+// user is subscribed to its key; otherwise it keeps the row and only marks
+// its episodes as no longer downloaded, since their copies go next.
+func (s *podcastSubscriptionService) removeCatalogFeed(ctx context.Context, feed *model.PodcastFeed) error {
+	store := s.podcastService.store
+	active, err := store.HasActivePodcastSubscription(ctx, feed.FeedKey)
+	if err != nil {
+		return err
+	}
+	if active {
+		return store.ClearEpisodeDownloads(ctx, feed.ID)
+	}
+	if err := store.DeleteFeed(ctx, feed.ID); err != nil {
+		return fmt.Errorf("delete feed: %w", err)
+	}
+	return nil
 }
 
 // episodeMedia loads the media rows of feedID's downloaded episodes,

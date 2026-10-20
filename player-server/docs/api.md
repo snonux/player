@@ -1789,11 +1789,127 @@ List all soft-deleted media items.
 Podcasts are stored in a special set with `is_podcast: true`. Each feed gets
 its own subfolder inside the shared podcast set.
 
+The server keeps two separate things (see
+[podcast-sync-contract.md](../../docs/podcast-sync-contract.md)):
+
+- the **catalog**: feeds and episodes the server fetches, shared by all users
+  and governed by the podcast set's permissions;
+- each user's **subscriptions**: per-account registers keyed by stable feed
+  keys (`feed:example.com/rss`), synchronized between clients through
+  `POST /api/v1/podcasts/sync`.
+
+Feeds and episodes carry stable identities: `feed_key` (the canonical feed
+URL without scheme, or `legacy-feed:<n>` for a stored URL that has none) and
+`episode_key` (`guid:<guid>`, `enc:<canonical enclosure URL>`, or
+`legacy-episode:<n>`). Database ids and server media ids are not identities
+and never appear in the sync API.
+
+---
+
+### `POST /api/podcasts/sync` · `POST /api/v1/podcasts/sync`
+
+Synchronize the caller's podcast subscriptions. Any signed-in user may call
+it (cookie or Bearer token); it reads and writes only the caller's rows.
+Body limit 2 MiB (`413` beyond it: halve the page and retry); at most 500
+subscription edits per request.
+
+The server does not advertise the `podcast_sync` capability in
+`GET /api/v1/config` yet: episode position and completion synchronization
+(`episodes`, `scope`) is not implemented, and a request carrying them is
+refused with `400` without applying anything.
+
+**Request body:**
+
+```json
+{
+  "epoch": "4f1c…",
+  "since": 1200,
+  "limit": 500,
+  "subscriptions": [
+    {"edit_id": "q7G9xkP2mW4tR8sZ", "feed_key": "feed:example.com/rss",
+     "urls": ["https://example.com/rss"], "fetch_url": "https://example.com/rss",
+     "title": "Example", "subscribed": true, "observed_ms": 1792065600000}
+  ]
+}
+```
+
+- `epoch` and `since` come from the previous response (`next_since`); omit
+  both, or send `since` 0, for a full pull. A different `epoch` (database
+  replaced) or a `since` beyond the server's newest change makes the server
+  answer from 0.
+- `limit`: rows per page, default 500, at most 1000.
+- `edit_id`: 16–64 bytes of `[A-Za-z0-9_-]`, random per local edit and
+  reused for every retry of that edit.
+- `feed_key`: canonical `feed:` key, or a `legacy-feed:<n>` key the server
+  minted and still knows. `urls`: at most 10, each must have a feed key.
+  `title`: at most 500 characters. `observed_ms`: when the user made the
+  edit, UTC milliseconds, `1 … 253402300799999`.
+- `subscribed: false` is an unsubscribe: a tombstone kept forever, so a
+  stale device cannot resurrect the subscription. It never touches files,
+  media, catalog rows or episode history.
+
+Merge rule: an edit replaces the stored register only when its
+`observed_ms` is strictly greater; equal clocks keep the stored value, so a
+retried edit changes nothing. A clock more than 5 minutes ahead of the
+server is replaced by the server's time and reported in `clamped`.
+
+A subscribe whose key matches no catalog feed creates a catalog row in the
+shared podcast set (no folders, no permissions, no audio). The background
+checker fetches its metadata and episodes later; nothing ever downloads
+episode audio because of a subscription. At most 20 such rows are created
+per user and hour; beyond that the subscription is still stored, and a later
+subscribe edit of the same key creates the row. Rows created by non-admin
+users are fetched only from public unicast addresses (no loopback, private,
+link-local, unique-local, multicast or unspecified ranges, checked on every
+connection and redirect hop), and so are their enclosures when downloaded to
+the server.
+
+**Response `200`:**
+
+```json
+{
+  "epoch": "4f1c…",
+  "acked": ["q7G9xkP2mW4tR8sZ"],
+  "rejected": [{"edit_id": "…", "reason": "invalid_key"}],
+  "clamped": [],
+  "resolved": [{"kind": "feed", "from": "feed:old.example.com/rss", "to": "feed:example.com/rss"}],
+  "subscriptions": [{"feed_key": "feed:example.com/rss", "subscribed": true,
+                     "subscription_ms": 1792065600000, "title": "Example",
+                     "fetch_url": "https://example.com/rss", "urls": ["https://example.com/rss"]}],
+  "episodes": [],
+  "aliases": [{"kind": "feed", "from": "feed:old.example.com/rss", "to": "feed:example.com/rss"}],
+  "next_since": 1290,
+  "has_more": false
+}
+```
+
+- `acked`: every accepted edit, whether it changed the register or was
+  superseded. `subscriptions` holds the current register of every edited key
+  plus the pulled rows; a client replaces its pending register with it.
+- `rejected` reasons: `invalid_key`, `invalid_url`, `invalid_time`,
+  `invalid_edit`, `quota` (more than 5 000 subscription rows, tombstones
+  included). A rejected edit can never succeed; drop it.
+- `resolved`: keys the server mapped to its canonical key (an alias, or one
+  of the sent `urls`). A key that matches nothing is stored as sent.
+- Pull: the caller's rows changed after `since`, in change order, at most
+  `limit`; `episodes` holds the caller's episode registers (written by the
+  migration of earlier listening history for now). `aliases` lists alias
+  rows of the caller's feeds and episodes, and every alias of each returned
+  row. Persist `next_since` after applying a page; repeat while `has_more`.
+
+**Status codes:** `200` (also with item rejections), `400` (malformed body,
+more than 500 edits, invalid `limit` or `since`, episode edits or `scope`),
+`401`, `413`, `500`
+
 ---
 
 ### `GET /api/podcasts` · `GET /api/v1/podcasts`
 
-List all subscribed podcast feeds visible to the authenticated user.
+List the catalog feeds whose set the caller may read, including feeds the
+caller has unsubscribed from (this is the catalog view, not the subscription
+view). `feed_key` is the feed's identity; `subscribed` is the caller's own
+subscription register (`false` for a tombstone or no subscription). Feeds
+merged into another catalog feed are left out.
 
 **Response `200`:**
 
@@ -1802,6 +1918,8 @@ List all subscribed podcast feeds visible to the authenticated user.
   {
     "id": 1,
     "set_id": 4,
+    "feed_key": "feed:example.com/feed.rss",
+    "subscribed": true,
     "feed_url": "https://example.com/feed.rss",
     "title": "My Podcast",
     "description": "A great podcast.",
@@ -1836,7 +1954,13 @@ Subscribe to a new podcast feed. Admin only.
 
 `set_name` is optional. When omitted the server uses the feed title.
 
-**Response `200`:** The created `PodcastFeed` object.
+A feed whose URL has the same feed key as an existing catalog feed (another
+spelling, `http` instead of `https`, an alias) reuses that row. The call
+also writes the admin's own subscription register (`subscribed: true` at
+server time), so the feed has an active subscriber, keeps being refreshed and
+reaches the admin's other clients through sync.
+
+**Response `200`:** The created or reused `PodcastFeed` object.
 
 **Status codes:** `200`, `400`, `401`, `403`, `500`
 
@@ -1844,9 +1968,13 @@ Subscribe to a new podcast feed. Admin only.
 
 ### `DELETE /api/podcasts/{id}` · `DELETE /api/v1/podcasts/{id}`
 
-Unsubscribe from a podcast feed. Admin only. `{id}` is the **feed ID**.
-Deletes the feed, its episodes, and its downloaded episodes (media rows and
-files). Its folders (the current-title folder and any older-title folders
+Remove a feed from the server. Admin only. `{id}` is the **feed ID**.
+Deletes the feed's downloaded episodes (media rows and files). The catalog
+feed and its episodes are deleted only when no user has an active
+subscription to it; otherwise they stay (without copies) and keep being
+refreshed. Subscriptions and episode history of every user are never touched
+(this is not a per-user unsubscribe: use `POST /api/v1/podcasts/sync` with
+`subscribed: false` for that). Its folders (the current-title folder and any older-title folders
 its episodes were stored in) lose the feed artwork (`cover.jpg`,
 `.cover.jpg`) and are removed once empty. Anything else is kept: a folder
 another remaining feed uses by title, a folder that still holds other
@@ -1885,6 +2013,8 @@ List episodes for a podcast feed. `{id}` is the **set ID** (not the feed ID).
     "feed_id": 1,
     "media_id": null,
     "guid": "episode-guid-001",
+    "episode_key": "guid:episode-guid-001",
+    "feed_key": "feed:example.com/feed.rss",
     "title": "Episode 1: Introduction",
     "description": "The first episode.",
     "published_at": "2026-01-05T00:00:00Z",
@@ -1901,7 +2031,7 @@ List episodes for a podcast feed. `{id}` is the **set ID** (not the feed ID).
 ```
 
 `media_id` is `null` until the episode is downloaded. `is_completed` and
-`position_seconds` are per-user.
+`position_seconds` are per-user. `guid` is `""` for an episode without one.
 
 **Status codes:** `200`, `400`, `401`, `403`, `404`, `500`
 
@@ -1985,6 +2115,8 @@ Toggle the per-user completion state of a podcast episode.
 | `DELETE` | `shares/{token}` | session | Revoke share |
 | `GET` | `podcasts` | session | List podcast feeds |
 | `POST` | `podcasts` | admin | Subscribe to feed |
+| `POST` | `podcasts/sync` | session | Synchronize my podcast subscriptions |
+| `DELETE` | `podcasts/{id}` | admin | Remove feed copies (and the feed when unsubscribed by all) |
 | `GET` | `podcasts/{id}/episodes` | session | List episodes |
 | `POST` | `podcasts/episodes/{episode_id}/download` | session | Download episode |
 | `POST` | `podcasts/episodes/{episode_id}/complete` | session | Toggle completion |

@@ -29,7 +29,10 @@ type ParsedFeed struct {
 	Title       string
 	Description string
 	ImageURL    string
-	Episodes    []Episode
+	// NewFeedURL is the feed's <itunes:new-feed-url>: the publisher says
+	// the feed moved there for good, like a permanent redirect.
+	NewFeedURL string
+	Episodes   []Episode
 }
 
 // ParseFeed fetches and parses a podcast RSS/Atom feed URL using an http.Client.
@@ -62,6 +65,9 @@ func parsedFeedFromGoFeed(feed *gofeed.Feed) *ParsedFeed {
 		Title:       feed.Title,
 		Description: feed.Description,
 		ImageURL:    extractImageURL(feed),
+	}
+	if feed.ITunesExt != nil {
+		result.NewFeedURL = strings.TrimSpace(feed.ITunesExt.NewFeedURL)
 	}
 
 	for _, item := range feed.Items {

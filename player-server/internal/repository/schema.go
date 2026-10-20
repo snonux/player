@@ -155,6 +155,9 @@ CREATE TABLE IF NOT EXISTS media_notes (
     UNIQUE(media_id, user_id)
 );
 
+-- podcast_feeds and podcast_episodes are created in their pre-sync shape
+-- and upgraded by migratePodcastSync (podcast_sync_migration.go) on every
+-- database, fresh or old, so the final shape is defined in one place.
 CREATE TABLE IF NOT EXISTS podcast_feeds (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     set_id INTEGER NOT NULL REFERENCES sets(id) ON DELETE CASCADE,
@@ -214,6 +217,8 @@ CREATE INDEX IF NOT EXISTS idx_podcast_episodes_feed ON podcast_episodes(feed_id
 CREATE INDEX IF NOT EXISTS idx_podcast_episodes_media ON podcast_episodes(media_id);
 CREATE INDEX IF NOT EXISTS idx_podcast_status_episode ON podcast_status(episode_id);
 CREATE INDEX IF NOT EXISTS idx_sets_is_podcast ON sets(is_podcast);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_podcast_feeds_key ON podcast_feeds(feed_key) WHERE merged_into IS NULL;
+CREATE INDEX IF NOT EXISTS idx_podcast_feeds_created_by ON podcast_feeds(created_by, created_at);
 `
 
 // execSchema executes a raw SQL schema block against the given database.
@@ -251,6 +256,11 @@ func initializeSchema(db *sql.DB) error {
 	}
 	if err := migratePlaybackAccumulator(db); err != nil {
 		return fmt.Errorf("migrate playback accumulator: %w", err)
+	}
+	// Before the indexes: the episode rebuild drops the old table's
+	// indexes, which indexesSchema recreates on the new one.
+	if err := migratePodcastSync(db); err != nil {
+		return fmt.Errorf("migrate podcast sync: %w", err)
 	}
 	if err := execSchema(db, "indexes", indexesSchema); err != nil {
 		return err

@@ -273,7 +273,15 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 
 ## Podcast Support
 
-Podcasts live under one shared **podcast set** (`sets.is_podcast = 1`, `root_path = "podcast"`). Each subscribed podcast is a `podcast_feeds` row and gets its own folder inside that single set.
+Podcasts live under one shared **podcast set** (`sets.is_podcast = 1`, `root_path = "podcast"`). Each catalog feed is a `podcast_feeds` row and gets its own folder inside that single set.
+
+The contract is `../docs/podcast-sync-contract.md`. Keep its three kinds of state apart:
+
+- **Catalog** (`podcast_feeds`, `podcast_episodes`, shared): identified by `feed_key` / `episode_key` (`internal/podcast/identity*.go`, shared test vectors in `internal/podcast/testdata/identity-vectors.json`); database and media ids are never identities. Episodes are ingested only through `IngestFeedEpisodes` (`podcast.MatchEpisodes` on the whole document), never inserted one by one. Aliases (`podcast_feed_aliases`, `podcast_episode_aliases`) come only from the server's own observations (ingest, 301/308, `new-feed-url`), never from client input.
+- **Per-account state** (`podcast_subscriptions`, `podcast_episode_state`): last-writer-wins registers with edit-time millisecond clocks; equal clocks keep the stored value; unsubscribe is a tombstone kept forever. Every written row takes its own `change_seq` from `podcast_sync_seq` inside the write transaction (`nextChangeSeq`). These tables reference only `users` (listed in `userOwned`), never `media` or `podcast_episodes`.
+- **Availability** (server copies, device downloads): never synchronized.
+
+`migratePodcastSync` (`repository/podcast_sync_migration.go`) upgrades every database, fresh or old: `tablesSchema` still creates the two podcast tables in their pre-sync shape. Do not reuse `UnsubscribeFeed` (`DELETE /api/podcasts/{id}`) for unsubscribing or file cleanup: it removes server copies, and the catalog row only when nobody is subscribed. Catalog rows a non-admin subscription created are fetched (feed, cover, enclosure) only through the restricted client of `service/podcast_outbound.go` (public unicast addresses, checked in the dialer); the checker skips feeds without an active subscription.
 
 ### Subscribing
 
@@ -297,8 +305,9 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/podcasts` | List subscribed podcast feeds |
-| `POST` | `/api/podcasts` | Subscribe to a new feed (admin) |
-| `DELETE` | `/api/podcasts/{id}` | Unsubscribe a feed and delete its downloaded episodes (admin) |
+| `POST` | `/api/podcasts` | Subscribe to a new feed (admin); also writes the admin's subscription register |
+| `POST` | `/api/podcasts/sync` | Synchronize the caller's subscription registers (any user) |
+| `DELETE` | `/api/podcasts/{id}` | Remove a feed's server copies; the feed itself only when nobody is subscribed (admin) |
 | `GET` | `/api/podcasts/{id}/episodes` | List episodes with status |
 | `POST` | `/api/podcasts/episodes/{id}/download` | Server-side download |
 | `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle completion |

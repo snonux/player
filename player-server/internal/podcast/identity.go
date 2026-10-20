@@ -28,6 +28,9 @@ const (
 	// MaxEpisodeAliases caps the aliases ingest records for one episode, so
 	// a publisher that keeps changing GUIDs cannot grow the table unbounded.
 	MaxEpisodeAliases = 16
+	// MaxFeedAliases caps the aliases (permanent redirects, new-feed-url)
+	// the server records for one feed.
+	MaxFeedAliases = 16
 )
 
 // ErrInvalidIdentityURL reports a feed or enclosure URL that cannot be turned
