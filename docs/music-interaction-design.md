@@ -88,7 +88,7 @@ reproducible from the steps above). Seven downscaled screenshots are kept in
 | B2 | Searching `Kei` (artist tag) returns nothing: "Nothing matches these filters" + *Clear filters* (Android) / "No results." (web). Folder names match because the path is searched. | all | M07 search over music fields with grouped results (§5.5). |
 | B3 | Next after the last audio track of an album opens `cover.jpg` in the player: the audio is replaced by an image and `Shift+N`/`Shift+P` are then swallowed by the image view. | Chrome, Firefox | Music queue holds only audio (§8.2); for Sets an audio-only skip is proposed as the one deliberate change (§8.0, owner decision). |
 | B4 | Sequencing reads the visible grid: when the playing track ended while a search showed no matching card, playback stopped (Firefox run); in the Chrome run it advanced because the album grid was visible. | Chrome, Firefox | Music queue is a snapshot independent of browsing (§8.2); Sets keep today's browse sequence (§8.0). |
-| B5 | `Space`/`p` with nothing loaded does nothing (help says "Play / pause"; `docs/keyboard-shortcuts.md` says "switch to selected item"). `Enter` plays. | Chrome, Firefox | Keep `Enter` = play; fix the doc wording in the first queue task (M12). |
+| B5 | `Space`/`p` with nothing loaded does nothing (help says "Play / pause"; `player-server/docs/keyboard-shortcuts.md` says "switch to selected item"). `Enter` plays. | Chrome, Firefox | Keep `Enter` = play; fix the doc wording in the first queue task (M12). |
 | B6 | Android set grid flattens all folders and sorts by file name, so albums interleave (`01 - Afterglow`, `01 - First Light`, `01 - Neon Rain`). | Android | Album views ordered by disc/track (M02, M04). |
 | B7 | Android has no automatic next item; at the end the player shows `00:12 / 00:12` with the Pause icon; media notification metadata is the file name only; no now-playing indicator after leaving the player. | Android | Handler-owned queue, true next/previous, mini player (§7.3, M12, M54). |
 | B8 | Narrow web: the card's hover action row overlays the title (`01 - First Light.mp3` covered by ▶ ♥ 📝 🗑 ✓). Tap on touch opens the action menu instead (by design). | Chrome, Firefox | Song lists use rows with one visible ⋮ button, never overlay text (§5.3). |
@@ -266,7 +266,8 @@ right on wide windows; the library stays usable on the left.
 │ └─────────────────────────────────┘                  │└──────────────────────────────┘
 ```
 
-Queue row action menu (`a`/⋮ on a row, also Shift+F10): Play now, Play next,
+Queue row action menu (⋮ on a row, reached by Tab/Enter, or ContextMenu /
+Shift+F10 on the focused row; `a` is not used here): Play now, Play next,
 Move up, Move down, Move to end, Remove, Go to album, Go to artist, Add to
 playlist, Info. The menu shows its own underlined hint letters like every
 existing menu; the panel keys `K`, `J`, `Delete` are shown next to the
@@ -279,17 +280,24 @@ matching items as "(panel key K)" etc., not as menu letters.
 - **Queue key set (panel and narrow dialog alike):** `j/k` and `↑/↓` move
   the row selection, `Enter` jumps (plays that row now, order kept), `K`/`J`
   move the selected row up/down, `Delete` removes it (Undo toast), `Y`
-  cycles repeat, `Escape` closes. Nothing else is bound: shuffle, clear and
+  cycles repeat, ContextMenu/Shift+F10 open the focused row's menu, `Escape`
+  closes. Nothing else is bound: shuffle, clear and
   save are buttons reached by Tab or by their hint letters. This set is
   chosen so it cannot collide with `keyboard-access.js`: hint letters never
   use `h/j/k/l`, and hint dispatch ignores Shift (`J`, `K`, `Y`) and
-  non-letter keys (`Delete`, arrows, `Enter`).
+  non-letter keys (`Delete`, arrows, `Enter`, ContextMenu, F10). The
+  capture listener in `keyboard-access.js` that maps `a`/ContextMenu/
+  Shift+F10 to `#media-grid .selected` must first check for a focused
+  queue or playlist row and, if there is one, leave ContextMenu/Shift+F10
+  to the queue branch and ignore `a`; otherwise the desktop panel (no local
+  hint scope) would open the library card's menu instead.
 - Routing in `keyboard.js`: a new `isQueueFocused()` branch, placed exactly
   like the existing My Shares branch (`isSharesOpen`, after the
   editable/chord guards and before `isModalOpen`), handles the key set above
   and returns; any other key falls through to the normal rules — on desktop
   (non-modal panel) that means global shortcuts still work, in the narrow
-  dialog it means the generic modal rule (only Escape and `?`) plus the
+  dialog it means the generic modal rule (only Escape; `?` and `/` work only
+  while help itself is the open dialog) plus the
   dialog's automatic hint letters for its buttons.
   Queue rows are focusable list items (`li tabindex="-1"`, roving focus),
   not buttons, because `keyboard.js` lets a focused button keep native
@@ -741,7 +749,8 @@ Backspace:  same player steps; then music view → parent view (§7.1); then fol
 | Shuffle (on a collection) | Replace queue with the collection shuffled; *Now* = first shuffled item. |
 | Shuffle toggle (queue) | Shuffle only upcoming items; turning it off restores the original order of the remaining items. |
 | Shuffle by album | Random album order, track order kept inside each album. |
-| Files from Sets | No queue: the Sets browse sequence runs as today (§8.0). Play next / Add to queue on a Sets audio file starts or extends a queue. Video/image cards: *Play next* and *Add to queue* are disabled in the menu ("Only audio can be queued"); `e`/`E`/`b`/`B` on them show that message as a toast. |
+| Files from Sets | No queue: the Sets browse sequence runs as today (§8.0). Play next / Add to queue on a Sets audio file starts or extends a queue. Video/image cards: *Play next* and *Add to queue* are disabled in the menu ("Only audio can be queued"); `e`/`E` on them show that message as a toast; `b`/`B` show "No album" /
+"No artist" instead. |
 | Multi-selection (M15) | Albums, artists, playlists and search results are the batch unit. Marking several individual songs is decided in M15 (key `m` is reserved for it, §12). |
 
 Duplicates are allowed; each queue entry has its own entry id so remove/move
@@ -959,7 +968,7 @@ are taken by keyboard access, visuals and hints; `1`–`9` open sets.
 | `Delete` | remove queue row / playlist entry | Queue panel/dialog; playlist detail (owner only) | Undo toast; matches My Shares; help row "Queue / playlist: Delete removes (Undo)" |
 | `F` | favorite selected entity (song, album, artist, playlist) | grid/rows | extends existing |
 | `/` | search, grouped music results | global | unchanged key |
-| `?` | help, with a new *Music* section | global | update `index.html` help rows and `docs/keyboard-shortcuts.md` |
+| `?` | help, with a new *Music* section | global | update `index.html` help rows and `player-server/docs/keyboard-shortcuts.md` |
 
 Reserved, not allocated: `m` (future mute / multi-select marks — decide in
 M15), `z`, `U`, `V`, `W`, `X`, `I`, `O`, `G`, `[ ]` for later candidates.
