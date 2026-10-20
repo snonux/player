@@ -1,3 +1,3 @@
-Play legacy MPG and MPEG videos from your server, including shared videos.
-The server prepares a compatible playback copy while keeping original files unchanged.
-Rescan your server library after upgrading to discover previously skipped MPEG videos.
+Web radio: explore stations by name, genre or country, bookmark favourites and try Auto explore.
+Radio plays in the background with notification and lock-screen controls; bookmarks sync with the web UI.
+The player now shows the audio format and quality (codec, bitrate, sample rate) while music plays.
