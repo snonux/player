@@ -149,6 +149,7 @@ Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** w
 | `F` | Toggle favorite for the selected media |
 | `A` | Open the admin panel (admins only) |
 | `u` | Upload to the current set |
+| `w` | Open web radio (explore, auto explore, bookmarks); inside it `j`/`k`/arrows move between stations, `Enter` plays, `Esc` closes while the station keeps playing |
 
 ---
 
@@ -245,6 +246,8 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 | `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first); also the largest single rendition |
 | `TRANSCODE_MAX_JOBS` | `1` | ≥ 1 | Parallel ffmpeg transcodes; each needs about 400 MB of memory at 1080p |
 | `THUMBNAIL_CACHE_DIR` | unset | writable directory outside `MEDIA_ROOT` | When set, all generated thumbnails are stored there (mirroring the media tree) instead of in `.thumbnails` beside each media file; unset keeps them beside the media |
+| `RADIO_BROWSER_URL` | `https://all.api.radio-browser.info` | http(s) URL | Radio Browser API that web radio searches |
+| `RADIO_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let the radio relay connect to loopback/private addresses (stations on your own network); off by default because station entries come from a public directory |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 
@@ -313,6 +316,35 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 - `internal/api/handlers_podcast.go` — REST handlers
 - `internal/service/import.go` — Shared `ImportMediaFile` helper (used by uploads + downloader)
 - `web/js/podcasts.js` — Feed manager modal and episode renderer
+
+---
+
+## Web Radio
+
+Stations come from the Radio Browser directory (`internal/radio.BrowserDirectory`,
+`RADIO_BROWSER_URL`); routes and JSON are in `docs/api.md` ("Web Radio").
+Layers: `internal/radio` (directory client, guarded `Fetcher`) →
+`service.RadioService` (validation, station cache, bookmarks, stream slots) →
+`api/handlers_radio.go`. Bookmarks live in `radio_bookmarks` (per user, with
+a copy of the station data so they play while the directory is down).
+
+- **Never send a station's own URL to a client.** Clients get relay paths
+  (`/api/radio/stations/{uuid}/stream`, `/favicon`); the relay only fetches
+  URLs the directory or a bookmark gave for that UUID. Do not add an
+  endpoint that relays a client-supplied URL.
+- **The relay refuses non-public addresses** in the dialer's `Control`
+  function (`radio.PublicAddr`), so redirects and DNS answers are covered.
+  The transport has no proxy on purpose. `RADIO_ALLOW_PRIVATE_NETWORKS=true`
+  lifts it (home stations, e2e tests).
+- **Streams outlive the 30 s write timeout:** `relayStream` sets a deadline
+  per write and ends the relay after 30 s without station data. HLS stations
+  are dropped at the directory client; playlists answered by a station are
+  `415`. Favicons: raster images only (an SVG on our origin could run
+  script), at most 1 MiB, with `X-Content-Type-Options: nosniff` and
+  `Content-Security-Policy: sandbox` like streams.
+- **Tests:** `internal/app/radio_test.go` drives the production wiring with a
+  fake directory and station; `internal/radio/fetch_test.go` covers the
+  address guard, content types and Shoutcast `ICY 200 OK` answers.
 
 ---
 

@@ -69,6 +69,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   int _stopGeneration = 0;
   int _sourceGeneration = 0;
   bool _controlsEnabled = false;
+  // A live stream (web radio) has no duration: seeking and the ±15 s skip
+  // buttons are hidden and ignored while it plays.
+  bool _live = false;
   bool Function()? _ownsSource;
   Future<void>? _sourceOperationTail;
   final _playbackErrors = StreamController<Object>.broadcast();
@@ -95,6 +98,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Invalidates pending source work from the previous audio session.
   int beginSourceSession({bool Function()? ownsSource}) {
     _controlsEnabled = false;
+    _live = false;
     _ownsSource = ownsSource;
     return ++_sourceGeneration;
   }
@@ -205,7 +209,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// implementations in terms of this method.
   @override
   Future<void> seek(Duration position) async {
-    if (_canControlSource) await seekForSession(position, _sourceGeneration);
+    if (_canControlSource && !_live) {
+      await seekForSession(position, _sourceGeneration);
+    }
   }
 
   Future<T> _serializeSourceOperation<T>(Future<T> Function() operation) {
@@ -235,7 +241,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// podcast and audiobook use-cases rather than a full track change).
   @override
   Future<void> skipToNext() async {
-    if (!_canControlSource) return;
+    if (!_canControlSource || _live) return;
     final current = _player.position;
     final total = _player.duration ?? Duration.zero;
     final next =
@@ -246,7 +252,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Skip back 15 seconds.
   @override
   Future<void> skipToPrevious() async {
-    if (!_canControlSource) return;
+    if (!_canControlSource || _live) return;
     final current = _player.position;
     final total = _player.duration ?? Duration.zero;
     final prev =
@@ -275,6 +281,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   ///
   /// Called once per session after the player finishes loading the source.
   void setMediaItem({required String id, required String title}) {
+    _live = false;
     mediaItem.add(
       MediaItem(
         id: id,
@@ -282,6 +289,20 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         duration: _player.duration,
       ),
     );
+  }
+
+  /// Like [setMediaItem] for a stream without an end (web radio): the
+  /// notification then offers play/pause and stop only, and seek and skip
+  /// requests are ignored until the next source session.
+  void setLiveMediaItem({
+    required String id,
+    required String title,
+    String? artist,
+  }) {
+    _live = true;
+    mediaItem
+        .add(MediaItem(id: id, title: title, artist: artist, isLive: true));
+    _broadcastState();
   }
 
   // ---------------------------------------------------------------------------
@@ -320,17 +341,21 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         // Advertise all supported actions so the notification, lock screen,
         // and Bluetooth headset buttons all get the correct controls.
         controls: [
-          MediaControl.skipToPrevious, // maps to skipToPrevious (–15 s)
+          if (!_live)
+            MediaControl.skipToPrevious, // maps to skipToPrevious (–15 s)
           if (_player.playing) MediaControl.pause else MediaControl.play,
           MediaControl.stop,
-          MediaControl.skipToNext, // maps to skipToNext (+15 s)
+          if (!_live) MediaControl.skipToNext, // maps to skipToNext (+15 s)
         ],
-        systemActions: const {
-          MediaAction.seek,
-          MediaAction.seekForward,
-          MediaAction.seekBackward,
-        },
-        androidCompactActionIndices: const [0, 1, 3], // prev, play/pause, next
+        systemActions: _live
+            ? const {}
+            : const {
+                MediaAction.seek,
+                MediaAction.seekForward,
+                MediaAction.seekBackward,
+              },
+        // prev, play/pause, next — or play/pause, stop for a live stream.
+        androidCompactActionIndices: _live ? const [0, 1] : const [0, 1, 3],
         processingState: processingState,
         playing: _player.playing,
         updatePosition: _player.position,

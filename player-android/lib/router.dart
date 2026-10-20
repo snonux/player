@@ -23,6 +23,7 @@ import 'screens/media_detail_screen.dart';
 import 'screens/media_grid_screen.dart';
 import 'screens/podcast_episodes_screen.dart';
 import 'screens/podcast_list_screen.dart';
+import 'screens/radio_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
 import 'screens/share_viewer_screen.dart';
@@ -260,6 +261,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.server,
         builder: (context, state) => const SettingsScreen(serverOnly: true),
+      ),
+      GoRoute(
+        path: AppRoutes.radio,
+        builder: (context, state) => const RadioScreen(),
       ),
       GoRoute(
         // Podcast list screen — shows all sets with isPodcast == true.

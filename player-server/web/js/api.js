@@ -1,5 +1,6 @@
 const API_BASE = '';
 import { loginDestination } from './navigation-url.js';
+import { radioSearchQuery } from './radio-core.js';
 
 export const NO_NOTE = Symbol('no note');
 
@@ -139,4 +140,10 @@ export const API = {
   unsubscribePodcast: (feedId) => api(`/api/podcasts/${feedId}`, { method: 'DELETE' }),
   downloadEpisode: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/download`, { method: 'POST' }),
   toggleEpisodeComplete: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/complete`, { method: 'POST' }),
+  radioStations: (filters) => api(`/api/radio/stations${radioSearchQuery(filters)}`),
+  radioTags: (limit = 100) => api(`/api/radio/tags?limit=${limit}`),
+  radioCountries: () => api('/api/radio/countries'),
+  radioBookmarks: () => api('/api/radio/bookmarks'),
+  bookmarkStation: (uuid) => api(`/api/radio/bookmarks/${encodeURIComponent(uuid)}`, { method: 'PUT' }),
+  unbookmarkStation: (uuid) => api(`/api/radio/bookmarks/${encodeURIComponent(uuid)}`, { method: 'DELETE' }),
 };

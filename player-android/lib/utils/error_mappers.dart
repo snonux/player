@@ -476,3 +476,18 @@ String episodeDownloadErrorMessage(Object error) {
   // reason (e.g. an exception type that is not a DioException).
   return 'Could not download episode. Please try again.';
 }
+
+/// Maps a failed web radio request (station search, tags, countries,
+/// bookmarks) to a UI string. 502 means the server could not reach the
+/// radio directory, not that the Player server is down.
+String radioErrorMessage(Object error) {
+  if (error is DioException) {
+    final code = error.response?.statusCode;
+    if (code == 502 || code == 504) {
+      return 'The radio directory cannot be reached right now. Try again later.';
+    }
+    if (code == 404) return 'This station no longer exists.';
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}

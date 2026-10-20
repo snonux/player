@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -43,6 +44,9 @@ const (
 	// One job needs roughly 400 MB of memory at 1080p, so more jobs need a
 	// larger container memory limit.
 	DefaultTranscodeMaxJobs = 1
+	// DefaultRadioBrowserURL is the Radio Browser API; the "all" name
+	// resolves to every mirror.
+	DefaultRadioBrowserURL = "https://all.api.radio-browser.info"
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -71,6 +75,13 @@ type Config struct {
 	TranscodeCacheMaxMB int
 	// TranscodeMaxJobs is the number of ffmpeg transcodes run in parallel.
 	TranscodeMaxJobs int
+	// RadioBrowserURL is the base URL of the Radio Browser API that web
+	// radio searches.
+	RadioBrowserURL string
+	// RadioAllowPrivateNetworks lets the radio relay connect to loopback
+	// and private addresses (a station on the home network). Off by
+	// default: station URLs come from a public directory.
+	RadioAllowPrivateNetworks bool
 }
 
 // envInt reads an integer environment variable, validates it with the given check,
@@ -122,6 +133,7 @@ func defaultConfig() *Config {
 		SecureCookies:          DefaultSecureCookies,
 		TranscodeCacheMaxMB:    DefaultTranscodeCacheMaxMB,
 		TranscodeMaxJobs:       DefaultTranscodeMaxJobs,
+		RadioBrowserURL:        DefaultRadioBrowserURL,
 	}
 }
 
@@ -178,6 +190,7 @@ func loadStringSettings(cfg *Config) {
 	cfg.TranscodeCacheDir = cfg.DBPath + DefaultTranscodeCacheDirSuffix
 	envString("TRANSCODE_CACHE_DIR", func(s string) { cfg.TranscodeCacheDir = s })
 	envString("THUMBNAIL_CACHE_DIR", func(s string) { cfg.ThumbnailCacheDir = s })
+	envString("RADIO_BROWSER_URL", func(s string) { cfg.RadioBrowserURL = strings.TrimRight(s, "/") })
 }
 
 // loadLogLevel reads LOG_LEVEL from the environment and validates it.
@@ -194,14 +207,30 @@ func loadLogLevel(cfg *Config) error {
 
 // loadSecureCookies reads SECURE_COOKIES from the environment.
 func loadSecureCookies(cfg *Config) error {
-	if v := os.Getenv("SECURE_COOKIES"); v != "" {
+	return envBool("SECURE_COOKIES", func(b bool) { cfg.SecureCookies = b })
+}
+
+// envBool reads a boolean environment variable and sets the field via the
+// provided setter if the variable is non-empty.
+func envBool(name string, set func(bool)) error {
+	if v := os.Getenv(name); v != "" {
 		b, err := strconv.ParseBool(strings.TrimSpace(v))
 		if err != nil {
-			return fmt.Errorf("invalid SECURE_COOKIES: %w", err)
+			return fmt.Errorf("invalid %s: %w", name, err)
 		}
-		cfg.SecureCookies = b
+		set(b)
 	}
 	return nil
+}
+
+// loadRadioSettings reads RADIO_ALLOW_PRIVATE_NETWORKS and checks
+// RADIO_BROWSER_URL.
+func loadRadioSettings(cfg *Config) error {
+	u, err := url.Parse(cfg.RadioBrowserURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("invalid RADIO_BROWSER_URL: %q is no http(s) URL", cfg.RadioBrowserURL)
+	}
+	return envBool("RADIO_ALLOW_PRIVATE_NETWORKS", func(b bool) { cfg.RadioAllowPrivateNetworks = b })
 }
 
 // loadCORSSettings reads comma-separated CORS origins from the environment.
@@ -233,6 +262,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if err := loadSecureCookies(cfg); err != nil {
+		return nil, err
+	}
+
+	if err := loadRadioSettings(cfg); err != nil {
 		return nil, err
 	}
 

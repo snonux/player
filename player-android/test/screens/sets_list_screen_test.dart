@@ -201,6 +201,7 @@ void main() {
     final destinations = {
       'Continue Watching': AppRoutes.continueWatching,
       'Podcasts': AppRoutes.podcasts,
+      'Web radio': AppRoutes.radio,
       'My Shares': AppRoutes.shares,
       'Settings': AppRoutes.settings,
     };

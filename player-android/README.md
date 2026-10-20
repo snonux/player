@@ -181,6 +181,33 @@ Casting does not need Google Play Services. The cast device fetches the media
 itself through a short-lived link from the server, so it must be able to reach
 the server address set in the app. Files in **On this device** cannot be cast.
 
+## Web radio
+
+Open **Web radio** from the server navigation menu. **Explore** searches the
+free Radio Browser station directory through your Player server: type a name,
+pick a **Genre** or **Country**, and choose the sort order (Popular, Most
+votes, Name, Random). Tap a station to play it. The server relays the stream
+and the station icon, so cleartext (`http://`) stations play too and the
+phone never contacts station hosts directly. Radio plays in the background
+with notification and lock-screen play/pause and stop; there is no seeking in
+a live stream. Starting a station stops library playback, and playing
+library media stops the radio.
+
+Tap the bookmark button of a station (in a list or the now-playing bar) to
+keep it on the **Bookmarks** tab. Bookmarks are stored on the server for your
+account, so the web UI shows the same stations.
+
+**Auto explore** plays random stations from the current filters one after
+the other. The now-playing bar shows a countdown to the next station; choose
+15, 30 or 60 seconds per station. **Keep** stops exploring and stays on the
+current station, **Next** skips at once, **Stop** ends radio. A station that
+does not start within 10 seconds is skipped; after five such stations in a
+row auto explore stops with a message.
+
+Verify with `flutter test test/services/radio_controller_test.dart
+test/services/radio_engine_test.dart test/api/radio_api_test.dart
+test/screens/radio_screen_test.dart`.
+
 ## Lyrics
 
 In the server audio player, tap **Lyrics** to show available plain or timed

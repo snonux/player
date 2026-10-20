@@ -45,3 +45,55 @@ func (m *MockStore) ListBookmarks(ctx context.Context, mediaID, userID int64) ([
 func (m *MockStore) DeleteBookmark(ctx context.Context, id, mediaID, userID int64) (bool, error) {
 	return m.BookmarkRepo.DeleteBookmark(ctx, id, mediaID, userID)
 }
+
+// MockRadioRepo is a hand-written radio bookmark repository fake.
+type MockRadioRepo struct {
+	UpsertRadioBookmarkFunc func(context.Context, *model.RadioBookmark) (*model.RadioBookmark, error)
+	ListRadioBookmarksFunc  func(context.Context, int64) ([]model.RadioBookmark, error)
+	GetRadioBookmarkFunc    func(context.Context, int64, string) (*model.RadioBookmark, error)
+	DeleteRadioBookmarkFunc func(context.Context, int64, string) error
+}
+
+func (m *MockRadioRepo) UpsertRadioBookmark(ctx context.Context, b *model.RadioBookmark) (*model.RadioBookmark, error) {
+	if m.UpsertRadioBookmarkFunc != nil {
+		return m.UpsertRadioBookmarkFunc(ctx, b)
+	}
+	return b, nil
+}
+
+func (m *MockRadioRepo) ListRadioBookmarks(ctx context.Context, userID int64) ([]model.RadioBookmark, error) {
+	if m.ListRadioBookmarksFunc != nil {
+		return m.ListRadioBookmarksFunc(ctx, userID)
+	}
+	return nil, nil
+}
+
+func (m *MockRadioRepo) GetRadioBookmark(ctx context.Context, userID int64, uuid string) (*model.RadioBookmark, error) {
+	if m.GetRadioBookmarkFunc != nil {
+		return m.GetRadioBookmarkFunc(ctx, userID, uuid)
+	}
+	return nil, nil
+}
+
+func (m *MockRadioRepo) DeleteRadioBookmark(ctx context.Context, userID int64, uuid string) error {
+	if m.DeleteRadioBookmarkFunc != nil {
+		return m.DeleteRadioBookmarkFunc(ctx, userID, uuid)
+	}
+	return nil
+}
+
+func (m *MockStore) UpsertRadioBookmark(ctx context.Context, b *model.RadioBookmark) (*model.RadioBookmark, error) {
+	return m.RadioRepo.UpsertRadioBookmark(ctx, b)
+}
+
+func (m *MockStore) ListRadioBookmarks(ctx context.Context, userID int64) ([]model.RadioBookmark, error) {
+	return m.RadioRepo.ListRadioBookmarks(ctx, userID)
+}
+
+func (m *MockStore) GetRadioBookmark(ctx context.Context, userID int64, uuid string) (*model.RadioBookmark, error) {
+	return m.RadioRepo.GetRadioBookmark(ctx, userID, uuid)
+}
+
+func (m *MockStore) DeleteRadioBookmark(ctx context.Context, userID int64, uuid string) error {
+	return m.RadioRepo.DeleteRadioBookmark(ctx, userID, uuid)
+}

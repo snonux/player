@@ -1,0 +1,106 @@
+/* Web radio dialog, station lists and the now-playing bar. */
+.radio-modal { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.radio-now {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+.radio-now-text { min-width: 0; }
+.radio-now-name { font-weight: 600; overflow-wrap: anywhere; }
+.radio-now-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; }
+.radio-status { color: var(--text-secondary); min-height: 1.2em; }
+.radio-explore-controls {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+.radio-countdown { flex: 1 1 8rem; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+.radio-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-hover);
+  overflow: hidden;
+}
+.radio-icon img { width: 100%; height: 100%; object-fit: contain; }
+.radio-icon-placeholder { font-size: 1.25rem; }
+
+.radio-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); }
+.radio-tab { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.radio-tab.active { color: var(--accent); background: var(--accent-soft); }
+
+.radio-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem; }
+.radio-field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 9rem; min-width: 0; }
+.radio-field-wide { flex: 2 1 14rem; }
+.radio-explore-start { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+.radio-dwell { display: inline-flex; align-items: center; gap: 0.35rem; }
+.radio-dwell select { width: auto; }
+
+.radio-list { list-style: none; padding: 0; margin: 0; }
+.radio-row { display: flex; align-items: center; gap: 0.25rem; border-top: 1px solid var(--border); }
+.radio-row.playing { background: var(--playing-bg); box-shadow: inset 3px 0 0 var(--playing-border); }
+.radio-play {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  white-space: normal;
+}
+.radio-play:focus-visible, .radio-bookmark:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.radio-row-text { display: flex; flex-direction: column; min-width: 0; }
+.radio-row-name { color: var(--text-primary); overflow-wrap: anywhere; }
+.radio-row-details { overflow-wrap: anywhere; }
+.radio-bookmark { font-size: 1.1rem; }
+.radio-bookmark.active { color: var(--warn); background: transparent; }
+
+.radio-bar {
+  position: fixed;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 58;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: min(36rem, calc(100vw - 1.5rem));
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+}
+.radio-bar-title { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.radio-bar-status { white-space: nowrap; }
+
+@media (max-width: 40rem) {
+  .radio-now { grid-template-columns: auto 1fr; }
+  .radio-now-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .radio-bar-status { display: none; }
+}
+
+/* keyboard-access.js puts a letter badge before each field; keep it clear
+   of the field labels. */
+.radio-field, .radio-dwell { position: relative; }
+.radio-field .shortcut-field-hint { top: 0; right: 0; }
+.radio-dwell .shortcut-field-hint { top: -0.9rem; right: 0; }
+
+/* The bar stands in for the dialog while it is closed. */
+body:has(#radio-modal.open) #radio-bar { display: none; }

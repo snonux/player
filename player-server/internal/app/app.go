@@ -21,6 +21,7 @@ import (
 	"codeberg.org/snonux/player/internal/auth"
 	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/probe"
+	"codeberg.org/snonux/player/internal/radio"
 	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/scanner"
 	"codeberg.org/snonux/player/internal/service"
@@ -46,6 +47,7 @@ type Deps struct {
 	PodcastSvc      service.PodcastEpisodeService
 	PlaybackHintSvc service.PlaybackHintsService
 	CompatSvc       service.CompatStreamService
+	RadioSvc        service.RadioService
 	// Transcodes is the rendition cache behind CompatSvc. RunWithSignal
 	// uses it for the startup check and to wait for running ffmpeg jobs on
 	// shutdown.
@@ -138,9 +140,19 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		Logger:          logger,
 		AppCtx:          appCtx,
 		Thumbnails:      thumbLayout,
+		RadioSvc:        wireRadio(cfg, store, clk, logger, appCtx),
 	}
 	wireTranscoding(deps, runner)
 	return deps
+}
+
+// wireRadio builds the web radio service: the Radio Browser directory and
+// the guarded fetcher that relays station streams and favicons.
+func wireRadio(cfg *internal.Config, store repository.Store, clk clock.Clock, logger *slog.Logger, appCtx context.Context) service.RadioService {
+	userAgent := "player/" + internal.Version
+	dir := radio.NewBrowserDirectory(cfg.RadioBrowserURL, &http.Client{Timeout: 15 * time.Second}, userAgent)
+	fetcher := radio.NewFetcher(userAgent, cfg.RadioAllowPrivateNetworks)
+	return service.NewRadioService(store, dir, fetcher, clk, logger, appCtx)
 }
 
 // wireThumbnails returns the thumbnail layout and the maker creating
@@ -358,6 +370,7 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 			Admin:   deps.AdminSvc,
 			Auth:    deps.AuthSvc,
 			Podcast: deps.PodcastSvc,
+			Radio:   deps.RadioSvc,
 		},
 		StaticFS:      staticFS,
 		MediaStreamer: streamer,
