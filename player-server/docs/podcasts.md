@@ -1,6 +1,11 @@
 Podcast Support
 ===============
 
+Planned: per-account subscriptions, stable episode identities and
+synchronization are specified in
+[podcast-sync-contract.md](../../docs/podcast-sync-contract.md); this page
+describes the current behavior.
+
 Podcasts are **special sets** (`sets.is_podcast = 1`). They reuse set permissions, browsing, and cover images, while adding feed management and episode tracking.
 
 ### Subscribing

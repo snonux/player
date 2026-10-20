@@ -1,0 +1,92 @@
+{
+  "contract": "docs/podcast-sync-contract.md#stable-identities",
+  "version": 1,
+  "feed_keys": [
+    {"input": "https://Example.COM/feed.xml", "key": "feed:example.com/feed.xml"},
+    {"input": "http://example.com/feed.xml", "key": "feed:example.com/feed.xml"},
+    {"input": "http://example.com:80/feed.xml#latest", "key": "feed:example.com/feed.xml"},
+    {"input": "https://example.com:443/feed.xml", "key": "feed:example.com/feed.xml"},
+    {"input": "https://example.com:0443/feed.xml", "key": "feed:example.com/feed.xml"},
+    {"input": "http://example.com:443/feed.xml", "key": "feed:example.com:443/feed.xml"},
+    {"input": "https://example.com:8443/Feed.XML", "key": "feed:example.com:8443/Feed.XML"},
+    {"input": "  https://example.com./rss  ", "key": "feed:example.com/rss"},
+    {"input": "https://example.com", "key": "feed:example.com/"},
+    {"input": "https://example.com?format=rss", "key": "feed:example.com/?format=rss"},
+    {"input": "https://example.com/feed?", "key": "feed:example.com/feed"},
+    {"input": "https://example.com/feed?b=2&a=1", "key": "feed:example.com/feed?b=2&a=1"},
+    {"input": "https://example.com/a%2fb?q=%7e", "key": "feed:example.com/a%2Fb?q=%7E"},
+    {"input": "https://example.com/caf%C3%A9/feed", "key": "feed:example.com/caf%C3%A9/feed"},
+    {"input": "feed://example.com/rss", "key": "feed:example.com/rss"},
+    {"input": "FEED:https://example.com/rss", "key": "feed:example.com/rss"},
+    {"input": "itpc://example.com/rss?id=7", "key": "feed:example.com/rss?id=7"},
+    {"input": "pcast://example.com/rss", "key": "feed:example.com/rss"},
+    {"input": "podcast://example.com/rss", "key": "feed:example.com/rss"},
+    {"input": "https://[2001:DB8::1]:443/p", "key": "feed:[2001:db8::1]/p"},
+    {"input": "http://[2001:db8::1]:8080/p", "key": "feed:[2001:db8::1]:8080/p"},
+    {"input": "https://example.com:/feed", "key": "feed:example.com/feed"}
+  ],
+  "invalid_feed_urls": [
+    "",
+    "   ",
+    "/relative/feed.xml",
+    "example.com/feed.xml",
+    "ftp://example.com/feed.xml",
+    "mailto:podcast@example.com",
+    "feed:example.com/rss",
+    "feed:feed://example.com/rss",
+    "https://user:secret@example.com/feed",
+    "https://token@example.com/feed",
+    "https:///no-host",
+    "https://./no-host",
+    "https://exa mple.com/feed",
+    "https://example.com/feed\nx",
+    "https://example.com:0/feed",
+    "https://example.com:99999/feed",
+    "https://example.com:8o/feed",
+    "https://example.com:+80/feed",
+    "https://[2001:db8::1/feed",
+    "https://[2001:db8::1]x/feed",
+    "https://example.com:80:80/feed",
+    "1https://example.com/feed"
+  ],
+  "episode_documents": [
+    {
+      "name": "guids are used verbatim and case-sensitively",
+      "items": [
+        {"guid": "Episode-1", "enclosure_url": "https://cdn.example.com/1.mp3"},
+        {"guid": "episode-1", "enclosure_url": "https://cdn.example.com/1b.mp3"},
+        {"guid": "  https://example.com/?p=3  ", "enclosure_url": "https://cdn.example.com/3.mp3"}
+      ],
+      "keys": ["guid:Episode-1", "guid:episode-1", "guid:https://example.com/?p=3"]
+    },
+    {
+      "name": "missing guid falls back to the canonical enclosure",
+      "items": [
+        {"guid": "", "enclosure_url": "HTTP://CDN.example.com/ep%2a.mp3?token=Abc#t=10"},
+        {"guid": " \t ", "enclosure_url": "https://cdn.example.com/2.mp3"}
+      ],
+      "keys": ["enc:cdn.example.com/ep%2A.mp3?token=Abc", "enc:cdn.example.com/2.mp3"]
+    },
+    {
+      "name": "repeated guid falls back to the enclosure; repeated enclosure is a duplicate",
+      "items": [
+        {"guid": "dup", "enclosure_url": "https://cdn.example.com/a.mp3"},
+        {"guid": "dup", "enclosure_url": "https://cdn.example.com/b.mp3"},
+        {"guid": "dup", "enclosure_url": "http://cdn.example.com/a.mp3"},
+        {"guid": "", "enclosure_url": "https://cdn.example.com/b.mp3"},
+        {"guid": "distinct", "enclosure_url": "https://cdn.example.com/a.mp3"}
+      ],
+      "keys": ["guid:dup", "enc:cdn.example.com/b.mp3", "", "", "guid:distinct"]
+    },
+    {
+      "name": "items without a usable enclosure are not episodes",
+      "items": [
+        {"guid": "no-enclosure", "enclosure_url": ""},
+        {"guid": "relative", "enclosure_url": "/audio/1.mp3"},
+        {"guid": "credentials", "enclosure_url": "https://u:p@cdn.example.com/1.mp3"},
+        {"guid": "no-enclosure", "enclosure_url": "https://cdn.example.com/later.mp3"}
+      ],
+      "keys": ["", "", "", "guid:no-enclosure"]
+    }
+  ]
+}
