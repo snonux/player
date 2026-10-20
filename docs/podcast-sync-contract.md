@@ -614,13 +614,15 @@ Automated tests are necessary but do not replace the platform checks of `5i3`.
   seek; end sync not delaying the next episode; partial vs full success and
   the 48-hour clock.
 
-## 12. Open questions
+## 12. Decisions on former open questions
 
-1. Should `POST /podcasts/episodes/{id}/download` stay available to set
-   viewers (`checkSetPermission` with any role, as today) now that it writes
-   shared server files? This contract keeps the current rule.
-2. Should non-admin subscriptions create server catalog rows at all, or only
-   sync state until an admin approves fetching? This contract allows them
-   with the outbound policy of §7.3; an instance setting could disable it.
-3. Tombstones are kept forever (bounded by the quota). A retention period
-   would need clients that were offline longer than it to do a full resync.
+Confirmed by the project owner on 2026-10-20:
+
+1. `POST /podcasts/episodes/{id}/download` stays available to set viewers
+   (`checkSetPermission` with any role, as today), even though it writes
+   shared server files.
+2. Non-admin subscriptions create server catalog rows, with the outbound
+   policy of §7.3 (public addresses only, rate limit per user per hour).
+3. Tombstones are kept forever, bounded only by the per-user quota; there is
+   no retention period, so long-offline clients never need a forced full
+   resync because of tombstone expiry.
