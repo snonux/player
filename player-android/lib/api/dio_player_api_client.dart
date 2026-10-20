@@ -241,6 +241,13 @@ class DioPlayerApiClient extends PlayerApiClient
     return Lyrics.fromJson(response.data);
   }
 
+  @override
+  Future<AudioFormat> getMediaAudioFormat(int mediaId) async {
+    final response =
+        await rawDio.get<dynamic>('$_kApiV1/media/$mediaId/format');
+    return AudioFormat.fromJson(response.data);
+  }
+
   /// Returns a single media item including tags, favorite state, note, and
   /// saved playback progress.
   ///
@@ -697,6 +704,13 @@ class DioPlayerApiClient extends PlayerApiClient
     final response =
         await rawDio.get<dynamic>(_sharePath(token, 'lyrics', view));
     return Lyrics.fromJson(response.data);
+  }
+
+  @override
+  Future<AudioFormat> getSharedAudioFormat(String token, {String? view}) async {
+    final response =
+        await rawDio.get<dynamic>(_sharePath(token, 'format', view));
+    return AudioFormat.fromJson(response.data);
   }
 
   /// Returns the share viewer page JSON for the given share [token].

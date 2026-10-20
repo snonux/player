@@ -9,4 +9,5 @@ export 'share.dart';
 export 'tag.dart';
 export 'user.dart';
 export 'lyrics.dart';
+export 'audio_format.dart';
 export 'cast_ticket.dart';

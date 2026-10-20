@@ -32,6 +32,8 @@ type MockMediaService struct {
 	DeleteBookmarkFunc      func(context.Context, int64, int64, int64) error
 	GetLyricsFunc           func(context.Context, int64, int64) (*Lyrics, error)
 	GetSharedLyricsFunc     func(context.Context, string, ...string) (*Lyrics, error)
+	AudioFormatFunc         func(context.Context, int64, int64) (*AudioFormat, error)
+	SharedAudioFormatFunc   func(context.Context, string, ...string) (*AudioFormat, error)
 	ListSetsFunc            func(ctx context.Context, userID int64) ([]model.Set, error)
 	GetMediaDetailFunc      func(ctx context.Context, mediaID, userID int64) (*MediaDetail, error)
 	ListMediaFunc           func(ctx context.Context, userID int64, filter MediaQueryFilter) ([]model.Media, error)
@@ -543,6 +545,18 @@ func (m *MockProgressService) ListInProgress(ctx context.Context, userID int64) 
 func (m *MockMediaService) GetLyrics(ctx context.Context, mediaID, userID int64) (*Lyrics, error) {
 	if m.GetLyricsFunc != nil {
 		return m.GetLyricsFunc(ctx, mediaID, userID)
+	}
+	return nil, errors.New("not implemented")
+}
+func (m *MockMediaService) GetAudioFormat(ctx context.Context, mediaID, userID int64) (*AudioFormat, error) {
+	if m.AudioFormatFunc != nil {
+		return m.AudioFormatFunc(ctx, mediaID, userID)
+	}
+	return nil, errors.New("not implemented")
+}
+func (m *MockMediaService) GetSharedAudioFormat(ctx context.Context, token string, credentials ...string) (*AudioFormat, error) {
+	if m.SharedAudioFormatFunc != nil {
+		return m.SharedAudioFormatFunc(ctx, token, credentials...)
 	}
 	return nil, errors.New("not implemented")
 }

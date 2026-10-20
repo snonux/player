@@ -269,6 +269,17 @@
   outline-offset: 2px;
 }
 .player .seek-controls { gap: 0.4rem; min-height: 1.25rem; }
+.player .audio-format {
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.player.minimized .audio-format,
+.player.has-image .audio-format { display: none; }
 .player.has-image .seek-controls { display: none; }
 
 .player .time {

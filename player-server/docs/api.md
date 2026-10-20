@@ -2027,6 +2027,26 @@ and expanded lyrics are limited to 1 MiB; ffprobe output to 2 MiB and runtime
 to three seconds. Unreadable, unsafe, oversized and unavailable lyrics return
 the same empty result. Text is returned as data; clients must render it as text.
 
+### Audio format
+
+`GET /api/media/{id}/format` (also `/api/v1/media/{id}/format`) and the public
+`GET /s/{token}/format` report how an audio item is encoded, for display while
+it plays. Authentication, permissions and share accounting are exactly those of
+the lyrics endpoints above: the share form never opens a viewing or spends a use.
+
+```json
+{"codec":"flac","codec_label":"FLAC","bitrate":1411200,"sample_rate":96000,"bit_depth":24,"channels":2,"channel_layout":"stereo","lossless":true,"transcoded":false}
+```
+
+The values describe the first audio stream of the stored file, read with
+hardened ffprobe on request (three seconds at most, no rescan needed).
+`bitrate` is bits per second (the container average when the stream has none),
+`sample_rate` is Hz, and `bit_depth` is only reported for lossless codecs.
+`profile` (for example `HE-AAC`) is included when known. Absent fields are
+unknown. `transcoded` is true when clients play the AAC compatibility rendition
+instead of the original (see `/compat`). Non-audio media and unreadable, unsafe
+or missing files return HTTP 200 with `{"lossless":false,"transcoded":false}`.
+
 ### Downloaded playback synchronization
 
 `POST /api/v1/media/{id}/playback-sync` (also `/api/media/{id}/playback-sync`)
