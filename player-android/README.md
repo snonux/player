@@ -27,6 +27,27 @@ in another terminal (the test runner can clear grants when reinstalling).
 The native test generates its own music and checks nonzero waveform/spectrum
 data for all five modes, Off, pause/resume and replacing the track.
 
+## Notes in TurboNotes
+
+While an audiobook or a podcast episode plays, the player's app bar has a
+notes button (**Book note in TurboNotes** or **Episode note in TurboNotes**).
+It opens [TurboNotes](https://github.com/snonux/turbonotes) on
+`Book-And-Podcast-Notes/TITLE.md` in its notes folder, and TurboNotes creates
+that note on first use with the title as heading. Playback keeps going in the
+background; switch back to Player from the notification or recent apps.
+
+- Podcast episodes (server media in a podcast set) use the episode title.
+- Audiobooks are recognized like the visuals do: `.m4b` files and set,
+  folder or file names containing "audiobook" or "audio book". The title is
+  the `.m4b` file's name, or for chapter files the folder holding them
+  (`Audiobooks/Dune/01.mp3` gives `Dune`). Device files and offline
+  downloads only have their file name to go by.
+- Characters that are not allowed in file names (`/ \ : * ? " < > |`) become
+  `_`, and long titles are cut to 120 characters.
+
+Music, videos and public shares show no notes button. Without TurboNotes
+installed, the button says how to get it.
+
 ## Screenshots
 
 | On this device | Empty library | Audio player |
