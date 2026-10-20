@@ -42,32 +42,42 @@ func (s *shareService) GetSharedLyrics(ctx context.Context, token string, creden
 	return localLyrics(ctx, s.lyricsRoot, media), nil
 }
 
-// Missing, unreadable and unsafe sources all have the same empty response.
-func localLyrics(ctx context.Context, root string, media *model.Media) *Lyrics {
-	empty := &Lyrics{Lines: []LyricsLine{}}
-
+// localAudioSource validates an audio item for local metadata reads. It
+// returns the absolute root, the indexed path and the resolved regular file,
+// or ok=false for missing, unreadable and unsafe sources.
+func localAudioSource(ctx context.Context, root string, media *model.Media) (absRoot, mediaPath, source string, ok bool) {
 	// Normalize both sides before resolving symlinks: a relative MEDIA_ROOT
 	// can point at the same tree as an absolute path already stored in SQLite.
 	if root == "" || media.AbsPath == "" {
-		return empty
+		return "", "", "", false
 	}
-	root, err := filepath.Abs(root)
+	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return empty
+		return "", "", "", false
 	}
-	mediaPath, err := filepath.Abs(media.AbsPath)
+	mediaPath, err = filepath.Abs(media.AbsPath)
 	if err != nil {
-		return empty
+		return "", "", "", false
 	}
-	if media.Type != model.MediaTypeAudio || ctx.Err() != nil || !confinedPath(root, mediaPath) {
-		return empty
+	if media.Type != model.MediaTypeAudio || ctx.Err() != nil || !confinedPath(absRoot, mediaPath) {
+		return "", "", "", false
 	}
-	source, err := resolveSourcePath(root, mediaPath)
+	source, err = resolveSourcePath(absRoot, mediaPath)
 	if err != nil {
-		return empty
+		return "", "", "", false
 	}
 	info, err := os.Stat(source)
 	if err != nil || !info.Mode().IsRegular() {
+		return "", "", "", false
+	}
+	return absRoot, mediaPath, source, true
+}
+
+// Missing, unreadable and unsafe sources all have the same empty response.
+func localLyrics(ctx context.Context, root string, media *model.Media) *Lyrics {
+	empty := &Lyrics{Lines: []LyricsLine{}}
+	root, mediaPath, source, ok := localAudioSource(ctx, root, media)
+	if !ok {
 		return empty
 	}
 	// Match the indexed filename, including when it is a confined symlink.

@@ -98,6 +98,8 @@ type MediaQueryFilter struct {
 // MediaBrowseService handles read-only browsing and media streaming operations.
 type MediaBrowseService interface {
 	GetLyrics(ctx context.Context, mediaID, userID int64) (*Lyrics, error)
+	// GetAudioFormat reports codec and quality of an audio item; empty when unknown.
+	GetAudioFormat(ctx context.Context, mediaID, userID int64) (*AudioFormat, error)
 	// ListSets returns the sets visible to a user.
 	ListSets(ctx context.Context, userID int64) ([]model.Set, error)
 	// GetMediaDetail returns media metadata and user-specific related state.
@@ -214,6 +216,8 @@ type ShareInfo struct {
 // MediaShareService handles creation, validation and revocation of share links.
 type MediaShareService interface {
 	GetSharedLyrics(ctx context.Context, token string, credentials ...string) (*Lyrics, error)
+	// GetSharedAudioFormat reports codec and quality of shared audio; empty when unknown.
+	GetSharedAudioFormat(ctx context.Context, token string, credentials ...string) (*AudioFormat, error)
 	// CreateShare creates a public share link for a media item.
 	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error)
 	// ListShares returns shares for a media item visible to a user.

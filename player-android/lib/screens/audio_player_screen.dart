@@ -18,6 +18,7 @@ import '../services/audio_handler.dart';
 import '../services/playback_request.dart';
 import '../services/playback_source_resolver.dart';
 import '../utils/playback_errors.dart';
+import '../widgets/audio_format_line.dart';
 import '../widgets/lyrics_panel.dart';
 import '../widgets/audio_cover_art.dart';
 import '../widgets/audio_visuals.dart';
@@ -794,6 +795,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                 ),
                 const SizedBox(height: 32),
                 _buildSeekBar(handler),
+                if (_activeRequest?.kind != PlaybackSourceKind.local)
+                  _buildAudioFormat(),
                 const SizedBox(height: 16),
                 _buildControls(handler),
                 const SizedBox(height: 16),
@@ -805,6 +808,23 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAudioFormat() {
+    final request = _activeRequest!;
+    return AudioFormatLine(
+      key: ValueKey('format:$_initGeneration:${request.identity}'),
+      load: request is ServerPlaybackRequest
+          ? () =>
+              ref.read(apiClientProvider).getMediaAudioFormat(request.mediaId)
+          : () {
+              final share = request as PublicSharePlaybackRequest;
+              return ref.read(publicApiClientProvider).getSharedAudioFormat(
+                    share.shareToken,
+                    view: share.sourceUri.queryParameters['view'],
+                  );
+            },
     );
   }
 

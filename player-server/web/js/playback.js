@@ -32,6 +32,7 @@ import { initAudioVisuals } from './audioVisuals.js';
 import { initCompactControls } from './compactControls.js';
 import { initKeyboardAccess } from './keyboard-access.js';
 import { initLyrics } from './lyrics.js';
+import { initAudioFormat } from './audioFormat.js';
 import { initPlaybackPersonal } from './playback-personal.js';
 import { castItem, castPosition, castDuration, castSeek, castTogglePlay, initCast, isCasting } from './cast.js';
 
@@ -68,6 +69,7 @@ let failureHandler = null;
 let resetSeekPreview = () => {};
 let audioVisuals = null;
 let lyrics = null;
+let audioFormat = null;
 let personal = null;
 
 function currentMediaElement() {
@@ -132,6 +134,7 @@ export function initPlayer(options = {}) {
 
   audioVisuals = initAudioVisuals(e);
   lyrics = initLyrics(e);
+  audioFormat = initAudioFormat(e);
   initCompactControls(e.player);
   initKeyboardAccess();
   bindControlButtons(e);
@@ -453,6 +456,7 @@ export function stopAndClose() {
   if (reportProgress) document.dispatchEvent?.(new Event('player:closed'));
   audioVisuals?.setMedia(null);
   lyrics?.setMedia(null);
+  audioFormat?.setMedia(null);
   resetSeekPreview();
   cancelPendingSource();
   const m = currentMediaElement();
@@ -576,6 +580,7 @@ function showMedia(media, source, thumbnailUrl) {
   }
   audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
   lyrics?.setMedia(media, source.url);
+  audioFormat?.setMedia(media, source.url);
   updateMinimizedTitle();
 }
 
