@@ -1,92 +1,733 @@
 {
-  "contract": "docs/podcast-sync-contract.md#stable-identities",
-  "version": 1,
-  "feed_keys": [
-    {"input": "https://Example.COM/feed.xml", "key": "feed:example.com/feed.xml"},
-    {"input": "http://example.com/feed.xml", "key": "feed:example.com/feed.xml"},
-    {"input": "http://example.com:80/feed.xml#latest", "key": "feed:example.com/feed.xml"},
-    {"input": "https://example.com:443/feed.xml", "key": "feed:example.com/feed.xml"},
-    {"input": "https://example.com:0443/feed.xml", "key": "feed:example.com/feed.xml"},
-    {"input": "http://example.com:443/feed.xml", "key": "feed:example.com:443/feed.xml"},
-    {"input": "https://example.com:8443/Feed.XML", "key": "feed:example.com:8443/Feed.XML"},
-    {"input": "  https://example.com./rss  ", "key": "feed:example.com/rss"},
-    {"input": "https://example.com", "key": "feed:example.com/"},
-    {"input": "https://example.com?format=rss", "key": "feed:example.com/?format=rss"},
-    {"input": "https://example.com/feed?", "key": "feed:example.com/feed"},
-    {"input": "https://example.com/feed?b=2&a=1", "key": "feed:example.com/feed?b=2&a=1"},
-    {"input": "https://example.com/a%2fb?q=%7e", "key": "feed:example.com/a%2Fb?q=%7E"},
-    {"input": "https://example.com/caf%C3%A9/feed", "key": "feed:example.com/caf%C3%A9/feed"},
-    {"input": "feed://example.com/rss", "key": "feed:example.com/rss"},
-    {"input": "FEED:https://example.com/rss", "key": "feed:example.com/rss"},
-    {"input": "itpc://example.com/rss?id=7", "key": "feed:example.com/rss?id=7"},
-    {"input": "pcast://example.com/rss", "key": "feed:example.com/rss"},
-    {"input": "podcast://example.com/rss", "key": "feed:example.com/rss"},
-    {"input": "https://[2001:DB8::1]:443/p", "key": "feed:[2001:db8::1]/p"},
-    {"input": "http://[2001:db8::1]:8080/p", "key": "feed:[2001:db8::1]:8080/p"},
-    {"input": "https://example.com:/feed", "key": "feed:example.com/feed"}
-  ],
-  "invalid_feed_urls": [
-    "",
-    "   ",
-    "/relative/feed.xml",
-    "example.com/feed.xml",
-    "ftp://example.com/feed.xml",
-    "mailto:podcast@example.com",
-    "feed:example.com/rss",
-    "feed:feed://example.com/rss",
-    "https://user:secret@example.com/feed",
-    "https://token@example.com/feed",
-    "https:///no-host",
-    "https://./no-host",
-    "https://exa mple.com/feed",
-    "https://example.com/feed\nx",
-    "https://example.com:0/feed",
-    "https://example.com:99999/feed",
-    "https://example.com:8o/feed",
-    "https://example.com:+80/feed",
-    "https://[2001:db8::1/feed",
-    "https://[2001:db8::1]x/feed",
-    "https://example.com:80:80/feed",
-    "1https://example.com/feed"
-  ],
-  "episode_documents": [
+ "contract": "docs/podcast-sync-contract.md#3-stable-identities",
+ "version": 2,
+ "feed_keys": [
+  {
+   "input": "https://Example.COM/feed.xml",
+   "key": "feed:example.com/feed.xml"
+  },
+  {
+   "input": "http://example.com/feed.xml",
+   "key": "feed:example.com/feed.xml"
+  },
+  {
+   "input": "http://example.com:80/feed.xml#latest",
+   "key": "feed:example.com/feed.xml"
+  },
+  {
+   "input": "https://example.com:443/feed.xml",
+   "key": "feed:example.com/feed.xml"
+  },
+  {
+   "input": "https://example.com:0443/feed.xml",
+   "key": "feed:example.com/feed.xml"
+  },
+  {
+   "input": "http://example.com:443/feed.xml",
+   "key": "feed:example.com:443/feed.xml"
+  },
+  {
+   "input": "https://example.com:8443/Feed.XML",
+   "key": "feed:example.com:8443/Feed.XML"
+  },
+  {
+   "input": "  https://example.com./rss  ",
+   "key": "feed:example.com/rss"
+  },
+  {
+   "input": "https://example.com",
+   "key": "feed:example.com/"
+  },
+  {
+   "input": "https://example.com?format=rss",
+   "key": "feed:example.com/?format=rss"
+  },
+  {
+   "input": "https://example.com/feed?",
+   "key": "feed:example.com/feed"
+  },
+  {
+   "input": "https://example.com/feed?b=2&a=1",
+   "key": "feed:example.com/feed?b=2&a=1"
+  },
+  {
+   "input": "https://example.com/a%2fb?q=%7e",
+   "key": "feed:example.com/a%2Fb?q=%7E"
+  },
+  {
+   "input": "https://example.com/caf%C3%A9/feed",
+   "key": "feed:example.com/caf%C3%A9/feed"
+  },
+  {
+   "input": "feed://example.com/rss",
+   "key": "feed:example.com/rss"
+  },
+  {
+   "input": "FEED:https://example.com/rss",
+   "key": "feed:example.com/rss"
+  },
+  {
+   "input": "itpc://example.com/rss?id=7",
+   "key": "feed:example.com/rss?id=7"
+  },
+  {
+   "input": "pcast://example.com/rss",
+   "key": "feed:example.com/rss"
+  },
+  {
+   "input": "podcast://example.com/rss",
+   "key": "feed:example.com/rss"
+  },
+  {
+   "input": "https://[2001:DB8::1]:443/p",
+   "key": "feed:[2001:db8::1]/p"
+  },
+  {
+   "input": "http://[2001:db8::1]:8080/p",
+   "key": "feed:[2001:db8::1]:8080/p"
+  },
+  {
+   "input": "https://example.com:/feed",
+   "key": "feed:example.com/feed"
+  },
+  {
+   "input": "https://e.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "key": "feed:e.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "input": "feed://https://example.com/rss",
+   "key": "feed:example.com/rss"
+  },
+  {
+   "input": "https://example.com/a\\b",
+   "key": "feed:example.com/a\\b"
+  },
+  {
+   "input": "https://bücher.example/rss",
+   "key": "feed:bücher.example/rss"
+  },
+  {
+   "input": "https://BÜCHER.example/rss",
+   "key": "feed:bÜcher.example/rss"
+  },
+  {
+   "input": "https://example.com/rss ",
+   "key": "feed:example.com/rss%C2%A0"
+  },
+  {
+   "input": "https://example.com/café/feed?q=é",
+   "key": "feed:example.com/caf%C3%A9/feed?q=%C3%A9"
+  },
+  {
+   "input": "https://example.com/caf%c3%a9/feed",
+   "key": "feed:example.com/caf%C3%A9/feed"
+  },
+  {
+   "input": "https://example.com/100%",
+   "key": "feed:example.com/100%"
+  }
+ ],
+ "invalid_feed_urls": [
+  "",
+  "   ",
+  "/relative/feed.xml",
+  "example.com/feed.xml",
+  "ftp://example.com/feed.xml",
+  "mailto:podcast@example.com",
+  "feed:example.com/rss",
+  "feed:feed://example.com/rss",
+  "https://user:secret@example.com/feed",
+  "https://token@example.com/feed",
+  "https:///no-host",
+  "https://./no-host",
+  "https://exa mple.com/feed",
+  "https://example.com/feed\nx",
+  "https://example.com:0/feed",
+  "https://example.com:99999/feed",
+  "https://example.com:8o/feed",
+  "https://example.com:+80/feed",
+  "https://[2001:db8::1/feed",
+  "https://[2001:db8::1]x/feed",
+  "https://example.com:80:80/feed",
+  "1https://example.com/feed",
+  "https://e.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  " https://example.com/rss",
+  "﻿https://example.com/rss",
+  "https://example.com\\@evil.example/rss",
+  "https://example.com\\evil/rss",
+  "feed://ftp://example.com/rss"
+ ],
+ "episode_documents": [
+  {
+   "name": "guids are used verbatim and case-sensitively",
+   "items": [
     {
-      "name": "guids are used verbatim and case-sensitively",
-      "items": [
-        {"guid": "Episode-1", "enclosure_url": "https://cdn.example.com/1.mp3"},
-        {"guid": "episode-1", "enclosure_url": "https://cdn.example.com/1b.mp3"},
-        {"guid": "  https://example.com/?p=3  ", "enclosure_url": "https://cdn.example.com/3.mp3"}
-      ],
-      "keys": ["guid:Episode-1", "guid:episode-1", "guid:https://example.com/?p=3"]
+     "guid": "Episode-1",
+     "enclosure_url": "https://cdn.example.com/1.mp3"
     },
     {
-      "name": "missing guid falls back to the canonical enclosure",
-      "items": [
-        {"guid": "", "enclosure_url": "HTTP://CDN.example.com/ep%2a.mp3?token=Abc#t=10"},
-        {"guid": " \t ", "enclosure_url": "https://cdn.example.com/2.mp3"}
-      ],
-      "keys": ["enc:cdn.example.com/ep%2A.mp3?token=Abc", "enc:cdn.example.com/2.mp3"]
+     "guid": "episode-1",
+     "enclosure_url": "https://cdn.example.com/1b.mp3"
     },
     {
-      "name": "repeated guid falls back to the enclosure; repeated enclosure is a duplicate",
-      "items": [
-        {"guid": "dup", "enclosure_url": "https://cdn.example.com/a.mp3"},
-        {"guid": "dup", "enclosure_url": "https://cdn.example.com/b.mp3"},
-        {"guid": "dup", "enclosure_url": "http://cdn.example.com/a.mp3"},
-        {"guid": "", "enclosure_url": "https://cdn.example.com/b.mp3"},
-        {"guid": "distinct", "enclosure_url": "https://cdn.example.com/a.mp3"}
-      ],
-      "keys": ["guid:dup", "enc:cdn.example.com/b.mp3", "", "", "guid:distinct"]
-    },
-    {
-      "name": "items without a usable enclosure are not episodes",
-      "items": [
-        {"guid": "no-enclosure", "enclosure_url": ""},
-        {"guid": "relative", "enclosure_url": "/audio/1.mp3"},
-        {"guid": "credentials", "enclosure_url": "https://u:p@cdn.example.com/1.mp3"},
-        {"guid": "no-enclosure", "enclosure_url": "https://cdn.example.com/later.mp3"}
-      ],
-      "keys": ["", "", "", "guid:no-enclosure"]
+     "guid": "  https://example.com/?p=3  ",
+     "enclosure_url": "https://cdn.example.com/3.mp3"
     }
-  ]
+   ],
+   "keys": [
+    "guid:Episode-1",
+    "guid:episode-1",
+    "guid:https://example.com/?p=3"
+   ]
+  },
+  {
+   "name": "missing guid falls back to the canonical enclosure",
+   "items": [
+    {
+     "guid": "",
+     "enclosure_url": "HTTP://CDN.example.com/ep%2a.mp3?token=Abc#t=10"
+    },
+    {
+     "guid": " \t ",
+     "enclosure_url": "https://cdn.example.com/2.mp3"
+    }
+   ],
+   "keys": [
+    "enc:cdn.example.com/ep%2A.mp3?token=Abc",
+    "enc:cdn.example.com/2.mp3"
+   ]
+  },
+  {
+   "name": "repeated guid falls back to the enclosure; repeated enclosure is a duplicate",
+   "items": [
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/a.mp3"
+    },
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/b.mp3"
+    },
+    {
+     "guid": "dup",
+     "enclosure_url": "http://cdn.example.com/a.mp3"
+    },
+    {
+     "guid": "",
+     "enclosure_url": "https://cdn.example.com/b.mp3"
+    },
+    {
+     "guid": "distinct",
+     "enclosure_url": "https://cdn.example.com/a.mp3"
+    }
+   ],
+   "keys": [
+    "guid:dup",
+    "enc:cdn.example.com/b.mp3",
+    "",
+    "",
+    "guid:distinct"
+   ]
+  },
+  {
+   "name": "items without a usable enclosure are not episodes",
+   "items": [
+    {
+     "guid": "no-enclosure",
+     "enclosure_url": ""
+    },
+    {
+     "guid": "relative",
+     "enclosure_url": "/audio/1.mp3"
+    },
+    {
+     "guid": "credentials",
+     "enclosure_url": "https://u:p@cdn.example.com/1.mp3"
+    },
+    {
+     "guid": "no-enclosure",
+     "enclosure_url": "https://cdn.example.com/later.mp3"
+    }
+   ],
+   "keys": [
+    "",
+    "",
+    "",
+    "guid:no-enclosure"
+   ]
+  },
+  {
+   "name": "unicode whitespace is part of a guid, only ascii whitespace is trimmed",
+   "items": [
+    {
+     "guid": " ep ",
+     "enclosure_url": "https://cdn.example.com/1.mp3"
+    },
+    {
+     "guid": "﻿ep",
+     "enclosure_url": "https://cdn.example.com/2.mp3"
+    },
+    {
+     "guid": "\tépé ",
+     "enclosure_url": "https://cdn.example.com/3.mp3"
+    }
+   ],
+   "keys": [
+    "guid: ep ",
+    "guid:﻿ep",
+    "guid:épé"
+   ]
+  },
+  {
+   "name": "guid length limit counts utf-8 bytes, not characters",
+   "items": [
+    {
+     "guid": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€a",
+     "enclosure_url": "https://cdn.example.com/1.mp3"
+    },
+    {
+     "guid": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€",
+     "enclosure_url": "https://cdn.example.com/2.mp3"
+    },
+    {
+     "guid": "ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+     "enclosure_url": "https://cdn.example.com/3.mp3"
+    }
+   ],
+   "keys": [
+    "guid:€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€a",
+    "guid:sha256:81a95f8105f7d96c3b9be06bd28ebcb866d9d2aeadc3c5dc4bd63d53440fae52",
+    "guid:sha256:66fe0c847a29ef060ea49fef22140a713e51c0df34229ae3954baa4d9782cb7b"
+   ]
+  }
+ ],
+ "ingest_scenarios": [
+  {
+   "name": "first fetch creates every episode",
+   "known": [],
+   "items": [
+    {
+     "guid": "g1",
+     "enclosure_url": "https://cdn.example.com/1.mp3"
+    },
+    {
+     "guid": "",
+     "enclosure_url": "https://cdn.example.com/2.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "guid:g1",
+     "new": true,
+     "alias": ""
+    },
+    {
+     "key": "enc:cdn.example.com/2.mp3",
+     "new": true,
+     "alias": ""
+    }
+   ]
+  },
+  {
+   "name": "a reordered repeated guid keeps the original episode with its enclosure",
+   "known": [
+    {
+     "key": "guid:dup",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/a.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/b.mp3"
+    },
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/a.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "enc:cdn.example.com/b.mp3",
+     "new": true,
+     "alias": ""
+    },
+    {
+     "key": "guid:dup",
+     "new": false,
+     "alias": "enc:cdn.example.com/a.mp3"
+    }
+   ]
+  },
+  {
+   "name": "once the guid is unique again the enclosure-identified episode keeps its item",
+   "known": [
+    {
+     "key": "guid:dup",
+     "aliases": [
+      "enc:cdn.example.com/a.mp3"
+     ],
+     "enclosure_key": "enc:cdn.example.com/a.mp3"
+    },
+    {
+     "key": "enc:cdn.example.com/b.mp3",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/b.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "dup",
+     "enclosure_url": "https://cdn.example.com/b.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "enc:cdn.example.com/b.mp3",
+     "new": false,
+     "alias": ""
+    }
+   ]
+  },
+  {
+   "name": "the enclosure pass skips an episode whose own key is in the document",
+   "known": [
+    {
+     "key": "guid:g",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/e.mp3"
+    },
+    {
+     "key": "enc:cdn.example.com/f.mp3",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/f.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "g",
+     "enclosure_url": "https://cdn.example.com/f.mp3"
+    },
+    {
+     "guid": "",
+     "enclosure_url": "https://cdn.example.com/e.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "enc:cdn.example.com/f.mp3",
+     "new": false,
+     "alias": ""
+    },
+    {
+     "key": "enc:cdn.example.com/e.mp3",
+     "new": true,
+     "alias": ""
+    }
+   ]
+  },
+  {
+   "name": "distinct guids sharing an enclosure stay distinct",
+   "known": [
+    {
+     "key": "guid:a",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/s.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "a",
+     "enclosure_url": "https://cdn.example.com/s.mp3"
+    },
+    {
+     "guid": "b",
+     "enclosure_url": "https://cdn.example.com/s.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "guid:a",
+     "new": false,
+     "alias": ""
+    },
+    {
+     "key": "guid:b",
+     "new": true,
+     "alias": ""
+    }
+   ]
+  },
+  {
+   "name": "known episodes sharing an enclosure are matched by key only",
+   "known": [
+    {
+     "key": "guid:a",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/s.mp3"
+    },
+    {
+     "key": "guid:b",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/s.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "b",
+     "enclosure_url": "https://cdn.example.com/s.mp3"
+    },
+    {
+     "guid": "c",
+     "enclosure_url": "https://cdn.example.com/s.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "guid:b",
+     "new": false,
+     "alias": ""
+    },
+    {
+     "key": "guid:c",
+     "new": true,
+     "alias": ""
+    }
+   ]
+  },
+  {
+   "name": "a changed guid keeps the episode and becomes its alias",
+   "known": [
+    {
+     "key": "guid:g1",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/e.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "g2",
+     "enclosure_url": "https://cdn.example.com/e.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "guid:g1",
+     "new": false,
+     "alias": "guid:g2"
+    }
+   ]
+  },
+  {
+   "name": "two items resolving to one episode: the first claims it",
+   "known": [
+    {
+     "key": "guid:g1",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/e.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "g2",
+     "enclosure_url": "https://cdn.example.com/e.mp3"
+    },
+    {
+     "guid": "g3",
+     "enclosure_url": "https://cdn.example.com/e.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "guid:g1",
+     "new": false,
+     "alias": "guid:g2"
+    },
+    {
+     "key": "guid:g3",
+     "new": true,
+     "alias": ""
+    }
+   ]
+  },
+  {
+   "name": "an appearing guid becomes an alias of the enclosure-keyed episode",
+   "known": [
+    {
+     "key": "enc:cdn.example.com/e.mp3",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/e.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "g",
+     "enclosure_url": "https://cdn.example.com/e.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "enc:cdn.example.com/e.mp3",
+     "new": false,
+     "alias": "guid:g"
+    }
+   ]
+  },
+  {
+   "name": "a vanished guid keeps the episode",
+   "known": [
+    {
+     "key": "guid:g",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/e.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "",
+     "enclosure_url": "https://cdn.example.com/e.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "guid:g",
+     "new": false,
+     "alias": "enc:cdn.example.com/e.mp3"
+    }
+   ]
+  },
+  {
+   "name": "a rotating enclosure with a stable guid records nothing",
+   "known": [
+    {
+     "key": "guid:g",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/e1.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "g",
+     "enclosure_url": "https://cdn.example.com/e.mp3?sig=2"
+    }
+   ],
+   "results": [
+    {
+     "key": "guid:g",
+     "new": false,
+     "alias": ""
+    }
+   ]
+  },
+  {
+   "name": "known limit: a rotating enclosure without guid is a new episode",
+   "known": [
+    {
+     "key": "enc:cdn.example.com/e1.mp3",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/e1.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "",
+     "enclosure_url": "https://cdn.example.com/e2.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "enc:cdn.example.com/e2.mp3",
+     "new": true,
+     "alias": ""
+    }
+   ]
+  },
+  {
+   "name": "no alias beyond the per-episode cap",
+   "known": [
+    {
+     "key": "guid:g0",
+     "aliases": [
+      "guid:old0",
+      "guid:old1",
+      "guid:old2",
+      "guid:old3",
+      "guid:old4",
+      "guid:old5",
+      "guid:old6",
+      "guid:old7",
+      "guid:old8",
+      "guid:old9",
+      "guid:old10",
+      "guid:old11",
+      "guid:old12",
+      "guid:old13",
+      "guid:old14",
+      "guid:old15"
+     ],
+     "enclosure_key": "enc:cdn.example.com/e.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "g17",
+     "enclosure_url": "https://cdn.example.com/e.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "guid:g0",
+     "new": false,
+     "alias": ""
+    }
+   ]
+  },
+  {
+   "name": "a re-fetched document is a no-op",
+   "known": [
+    {
+     "key": "guid:g1",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/1.mp3"
+    },
+    {
+     "key": "enc:cdn.example.com/2.mp3",
+     "aliases": [],
+     "enclosure_key": "enc:cdn.example.com/2.mp3"
+    }
+   ],
+   "items": [
+    {
+     "guid": "g1",
+     "enclosure_url": "https://cdn.example.com/1.mp3"
+    },
+    {
+     "guid": "",
+     "enclosure_url": "https://cdn.example.com/2.mp3"
+    },
+    {
+     "guid": "g1",
+     "enclosure_url": "https://cdn.example.com/1.mp3"
+    }
+   ],
+   "results": [
+    {
+     "key": "guid:g1",
+     "new": false,
+     "alias": ""
+    },
+    {
+     "key": "enc:cdn.example.com/2.mp3",
+     "new": false,
+     "alias": ""
+    },
+    {
+     "key": "",
+     "new": false,
+     "alias": ""
+    }
+   ]
+  }
+ ]
 }

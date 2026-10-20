@@ -23,6 +23,12 @@ type identityVectors struct {
 		Items []IdentityItem `json:"items"`
 		Keys  []string       `json:"keys"`
 	} `json:"episode_documents"`
+	IngestScenarios []struct {
+		Name    string         `json:"name"`
+		Known   []KnownEpisode `json:"known"`
+		Items   []IdentityItem `json:"items"`
+		Results []IngestMatch  `json:"results"`
+	} `json:"ingest_scenarios"`
 }
 
 func loadIdentityVectors(t *testing.T) identityVectors {
@@ -35,7 +41,7 @@ func loadIdentityVectors(t *testing.T) identityVectors {
 	if err := json.Unmarshal(data, &v); err != nil {
 		t.Fatalf("parse vectors: %v", err)
 	}
-	if v.Version != 1 || len(v.FeedKeys) == 0 || len(v.InvalidFeedURLs) == 0 || len(v.EpisodeDocuments) == 0 {
+	if v.Version != 2 || len(v.FeedKeys) == 0 || len(v.InvalidFeedURLs) == 0 || len(v.EpisodeDocuments) == 0 || len(v.IngestScenarios) == 0 {
 		t.Fatalf("vectors incomplete: %+v", v)
 	}
 	return v
@@ -65,6 +71,47 @@ func TestEpisodeKeyVectors(t *testing.T) {
 		if strings.Join(got, "\n") != strings.Join(doc.Keys, "\n") || len(got) != len(doc.Keys) {
 			t.Errorf("%s: EpisodeKeys = %q; want %q", doc.Name, got, doc.Keys)
 		}
+	}
+}
+
+func TestMatchEpisodesVectors(t *testing.T) {
+	for _, sc := range loadIdentityVectors(t).IngestScenarios {
+		got := MatchEpisodes(sc.Known, sc.Items)
+		if len(got) != len(sc.Results) {
+			t.Errorf("%s: %d results, want %d", sc.Name, len(got), len(sc.Results))
+			continue
+		}
+		for i := range got {
+			if got[i] != sc.Results[i] {
+				t.Errorf("%s: item %d = %+v, want %+v", sc.Name, i, got[i], sc.Results[i])
+			}
+		}
+	}
+}
+
+// TestMatchEpisodesClaimsEachEpisodeOnce feeds every scenario's items twice
+// in one document and checks that no known episode is matched twice and no
+// key is created twice.
+func TestMatchEpisodesClaimsEachEpisodeOnce(t *testing.T) {
+	for _, sc := range loadIdentityVectors(t).IngestScenarios {
+		items := append(append([]IdentityItem{}, sc.Items...), sc.Items...)
+		seen := map[string]bool{}
+		for _, r := range MatchEpisodes(sc.Known, items) {
+			if r.Key != "" && seen[r.Key] {
+				t.Errorf("%s: key %q assigned twice", sc.Name, r.Key)
+			}
+			seen[r.Key] = true
+		}
+	}
+}
+
+func TestIdentityRejectsInvalidUTF8(t *testing.T) {
+	if _, err := FeedKey("https://example.com/\xff"); !errors.Is(err, ErrInvalidIdentityURL) {
+		t.Errorf("FeedKey with invalid UTF-8: err = %v", err)
+	}
+	keys := EpisodeKeys([]IdentityItem{{GUID: "\xff", EnclosureURL: "https://cdn.example.com/1.mp3"}})
+	if keys[0] != "enc:cdn.example.com/1.mp3" {
+		t.Errorf("invalid UTF-8 GUID: key = %q, want enclosure fallback", keys[0])
 	}
 }
 

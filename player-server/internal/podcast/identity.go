@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Identity key prefixes and limits from the podcast synchronization contract
-// (docs/podcast-sync-contract.md, "Stable identities"). Every client derives
+// (docs/podcast-sync-contract.md, "3. Stable identities"). Every client derives
 // the same keys from the same feed document, so these values are part of the
 // wire contract: changing one is a breaking change for every client.
 const (
@@ -22,8 +23,11 @@ const (
 	// MaxIdentityURLBytes bounds feed and enclosure URLs accepted as identity.
 	MaxIdentityURLBytes = 2048
 	// maxVerbatimGUIDBytes is the longest GUID kept verbatim in a key; longer
-	// GUIDs are hashed so keys stay bounded.
+	// GUIDs are hashed so keys stay bounded. Bytes of UTF-8, not characters.
 	maxVerbatimGUIDBytes = 1024
+	// MaxEpisodeAliases caps the aliases ingest records for one episode, so
+	// a publisher that keeps changing GUIDs cannot grow the table unbounded.
+	MaxEpisodeAliases = 16
 )
 
 // ErrInvalidIdentityURL reports a feed or enclosure URL that cannot be turned
@@ -88,7 +92,7 @@ func EpisodeKeys(items []IdentityItem) []string {
 		if err != nil {
 			continue
 		}
-		guid := trimASCIISpace(item.GUID)
+		guid := itemGUID(item)
 		switch {
 		case guid != "" && !seenGUID[guid]:
 			keys[i] = GUIDKey(guid)
@@ -101,12 +105,24 @@ func EpisodeKeys(items []IdentityItem) []string {
 	return keys
 }
 
+// itemGUID returns the trimmed GUID of an item; a GUID that is not valid
+// UTF-8 counts as missing.
+func itemGUID(item IdentityItem) string {
+	if !utf8.ValidString(item.GUID) {
+		return ""
+	}
+	return trimASCIISpace(item.GUID)
+}
+
 // canonicalLocation turns an absolute http(s) URL into its scheme-less
 // canonical form "host[:port]/path[?query]".
 func canonicalLocation(raw string) (string, error) {
 	s := trimASCIISpace(raw)
 	if s == "" || len(s) > MaxIdentityURLBytes {
 		return "", fmt.Errorf("%w: empty or longer than %d bytes", ErrInvalidIdentityURL, MaxIdentityURLBytes)
+	}
+	if !utf8.ValidString(s) {
+		return "", fmt.Errorf("%w: not valid UTF-8", ErrInvalidIdentityURL)
 	}
 	for i := 0; i < len(s); i++ {
 		if s[i] <= 0x20 || s[i] == 0x7f {
@@ -134,17 +150,19 @@ func canonicalLocation(raw string) (string, error) {
 
 // splitScheme returns the lower-case http or https scheme of s and the text
 // after the colon. Podcast pseudo schemes map to http; "feed:https://..."
-// style wrappers are unwrapped once.
+// and "feed://https://..." style wrappers are unwrapped once.
 func splitScheme(s string, unwrap bool) (string, string, error) {
 	colon := strings.IndexByte(s, ':')
 	if colon <= 0 || !validScheme(s[:colon]) {
 		return "", "", fmt.Errorf("%w: missing scheme", ErrInvalidIdentityURL)
 	}
 	scheme, rest := strings.ToLower(s[:colon]), s[colon+1:]
+	if pseudoSchemes[scheme] && !unwrap {
+		return "", "", fmt.Errorf("%w: nested podcast scheme", ErrInvalidIdentityURL)
+	}
 	if pseudoSchemes[scheme] {
-		inner := strings.ToLower(rest)
-		if unwrap && (strings.HasPrefix(inner, "http://") || strings.HasPrefix(inner, "https://")) {
-			return splitScheme(rest, false)
+		if inner := strings.TrimPrefix(rest, "//"); unwrap && wrapsURL(inner) {
+			return splitScheme(inner, false)
 		}
 		scheme = "http"
 	}
@@ -152,6 +170,13 @@ func splitScheme(s string, unwrap bool) (string, string, error) {
 		return "", "", fmt.Errorf("%w: unsupported scheme %q", ErrInvalidIdentityURL, scheme)
 	}
 	return scheme, rest, nil
+}
+
+// wrapsURL reports whether s starts with "<scheme>://", i.e. a pseudo
+// scheme wraps a complete URL, whose own scheme then decides validity.
+func wrapsURL(s string) bool {
+	colon := strings.IndexByte(s, ':')
+	return colon > 0 && validScheme(s[:colon]) && strings.HasPrefix(s[colon+1:], "//")
 }
 
 // validScheme reports whether s matches RFC 3986 ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ).
@@ -168,10 +193,15 @@ func validScheme(s string) bool {
 
 // canonicalAuthority lower-cases the host (ASCII only), drops one trailing
 // dot and the scheme's default port, and rejects credentials, which must
-// never become part of a shared identity.
+// never become part of a shared identity, and backslashes, which browsers
+// read as path separators. Non-ASCII (IDN) hosts are kept byte for byte:
+// no Unicode case mapping or punycode conversion takes place.
 func canonicalAuthority(authority, scheme string) (string, error) {
 	if strings.Contains(authority, "@") {
 		return "", fmt.Errorf("%w: credentials in url", ErrInvalidIdentityURL)
+	}
+	if strings.Contains(authority, `\`) {
+		return "", fmt.Errorf("%w: backslash in authority", ErrInvalidIdentityURL)
 	}
 	host, port, err := splitHostPort(authority)
 	if err != nil {
@@ -216,7 +246,8 @@ func splitHostPort(authority string) (string, string, error) {
 }
 
 // canonicalPathQuery drops the fragment and an empty query, defaults an
-// empty path to "/" and upper-cases percent-escape hex digits.
+// empty path to "/", percent-encodes non-ASCII bytes and upper-cases
+// percent-escape hex digits, so "café" and "caf%c3%a9" give one key.
 func canonicalPathQuery(tail string) string {
 	tail, _, _ = strings.Cut(tail, "#")
 	path, query, _ := strings.Cut(tail, "?")
@@ -230,16 +261,28 @@ func canonicalPathQuery(tail string) string {
 	return out
 }
 
-// upperPercentHex upper-cases the two hex digits of every "%xx" escape.
+// upperPercentHex upper-cases the two hex digits of every "%xx" escape and
+// writes every non-ASCII byte as an upper-case "%XX" escape.
 func upperPercentHex(s string) string {
-	b := []byte(s)
-	for i := 0; i+2 < len(b); i++ {
-		if b[i] == '%' && isHex(b[i+1]) && isHex(b[i+2]) {
-			b[i+1], b[i+2] = upperHex(b[i+1]), upperHex(b[i+2])
+	const hexDigits = "0123456789ABCDEF"
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '%' && i+2 < len(s) && isHex(s[i+1]) && isHex(s[i+2]):
+			b.WriteByte('%')
+			b.WriteByte(upperHex(s[i+1]))
+			b.WriteByte(upperHex(s[i+2]))
 			i += 2
+		case c >= 0x80:
+			b.WriteByte('%')
+			b.WriteByte(hexDigits[c>>4])
+			b.WriteByte(hexDigits[c&0x0f])
+		default:
+			b.WriteByte(c)
 		}
 	}
-	return string(b)
+	return b.String()
 }
 
 func isHex(c byte) bool {

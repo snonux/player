@@ -20,7 +20,7 @@ Words in **must** / **must not** are requirements on the implementing tasks.
 | Episode status | `podcast_status(user_id, episode_id, is_completed, position_seconds, updated_at)`. The only writer is `ToggleEpisodeComplete` (`service/podcast_episode.go`), a read-then-flip that is not retry-safe and always writes `position_seconds = 0`. | A retried toggle undoes itself. `position_seconds` never holds a real position. |
 | Media progress | `playback_progress(user_id, media_id, position_seconds, finished, updated_at, accumulated_seconds)` plus `playback_resets` (edit-time barrier) and `media_bookmarks`. `SyncPlayback` (`repository/playback_sync.go`) merges one progress register and bookmark registers by edit-time milliseconds; equal times keep the server value. A finish writes `position = duration` (`progressService.SetProgressStatusAt`); a position save writes `finished = 0`. | Server-downloaded episodes already have a second, media-scoped history, keyed by a server media id Android must not depend on, and deleted with the media row (`ON DELETE CASCADE`). |
 | Android sync | `OfflineDownloadRepository` keeps `sync_items` / `sync_bookmarks` per `(origin, user_id)` with `pending` flags that survive restarts and copy removal; `OfflinePlaybackSync` posts them to `/media/{id}/playback-sync`, guards every step with the account generation (`OfflineSyncAccount.current`) and waits at most 5 s before an offline playback (`syncKey`). `ProgressQueue` batches streamed-media positions with `observed_at`. | The clock, tie, tombstone, account-scoping and durability rules below are taken from this code. |
-| Episode identity | `podcast_episodes` is `UNIQUE(feed_id, guid)`; `ParseFeed` copies `item.GUID` verbatim, empty when missing. `CheckFeeds` → `upsertFeedEpisodes` skips known GUIDs. | Only the first GUID-less item of a feed can be stored; the rest fail to insert. A changing GUID creates a new episode. |
+| Episode identity | `podcast_episodes` is `UNIQUE(feed_id, guid)`; `ParseFeed` copies `item.GUID` verbatim, empty when missing. `CheckFeeds` → `upsertFeedEpisodes` skips known GUIDs, including the empty one. | Only the first GUID-less item of a feed is ever stored: the feed checker skips later ones as already known, and on subscribe their insert fails. A changing GUID creates a new episode. |
 | Feed URL | `doFeedRequest` lets Go's client follow redirects; `feed_url` is never updated. `findExistingFeed` matches by exact URL, then by title. | Moved feeds keep fetching through redirects forever; `http`/`https` variants are different feeds. |
 | Re-subscribe | `insertPodcastEpisodes` stops at the first `CreateEpisode` error, so re-subscribing an existing feed inserts nothing after the first known episode. | Ingest must be an idempotent upsert per episode key. |
 | Download flag | `podcast_episodes.media_id` is `ON DELETE SET NULL`, but `is_downloaded` is not cleared when the media row goes. | Server availability must be derived from a live media row, not from `is_downloaded`. |
@@ -53,84 +53,146 @@ the server to download anything.
 `podcast.FeedKey`. The algorithm works on bytes, not on a URL library, so the
 Go and Dart implementations produce identical keys:
 
-1. Trim ASCII whitespace (space, `\t\r\n\f\v`). Reject an empty value, more
-   than 2048 bytes, or any remaining byte `<= 0x20` or `0x7f`.
+1. Trim ASCII whitespace (space, `\t\r\n\f\v`; Unicode spaces such as
+   U+00A0 or U+FEFF are not whitespace here). Reject input that is not valid
+   UTF-8, is empty or longer than 2048 bytes, or has any remaining byte
+   `<= 0x20` or `0x7f`.
 2. The scheme (`ALPHA *(ALPHA / DIGIT / + / - / .)` before the first `:`) is
    compared case-insensitively. `feed`, `itpc`, `pcast` and `podcast` mean
-   `http`; a wrapper such as `feed:https://…` is unwrapped once. Only `http`
-   and `https` remain valid. The rest must start with `//`.
+   `http`; a wrapper around a complete URL (`feed:https://…`,
+   `feed://https://…`) is unwrapped once, and a nested pseudo scheme is
+   rejected. Only `http` and `https` remain valid. The rest must start with
+   `//`.
 3. The authority ends at the first `/`, `?` or `#`. Reject any `@`
-   (credentials never become identity). Split host and port (`[v6]` literals
-   included). Lower-case ASCII letters of the host only, drop one trailing
-   `.`; reject an empty host. A port must be decimal 1–65535; it is dropped
-   when empty or equal to the default port of the URL's own scheme
-   (`http:80`, `https:443`), else written without leading zeros.
+   (credentials never become identity) and any `\` (browsers read it as a
+   path separator). Split host and port (`[v6]` literals included).
+   Lower-case the ASCII letters `A-Z` of the host only, drop one trailing
+   `.`; reject an empty host. Non-ASCII (IDN) hosts are kept byte for byte:
+   there is no Unicode case mapping and no punycode conversion, so the same
+   feed typed once in Unicode and once in punycode gives two keys (known
+   limit). A port must be decimal 1–65535; it is dropped when empty or equal
+   to the default port of the URL's own scheme (`http:80`, `https:443`),
+   else written without leading zeros.
 4. Drop the fragment. An empty path becomes `/`. Path and query are kept
-   verbatim, except that the hex digits of `%xx` escapes are upper-cased. An
-   empty query (`?` alone) is dropped. Query parameters are not reordered.
+   verbatim, except that every non-ASCII byte is written as `%XX` and the
+   hex digits of existing `%xx` escapes are upper-cased (so `café` and
+   `caf%c3%a9` are one key). An empty query (`?` alone) is dropped. Query
+   parameters are not reordered.
 5. The scheme is **not** part of the key: `http` and `https` variants of a
    URL are one feed.
 
+All lengths are UTF-8 bytes, never characters or UTF-16 units.
+
 The fetch URL is stored separately and may change; the key is minted once
 and never changes for that feed (redirects become aliases, §3.3).
+
+Besides these shapes, the server mints `legacy-feed:<n>` and
+`legacy-episode:<n>` (decimal row ids) during migration for rows whose
+stored URL cannot be canonicalized or whose episode key collides (§9.1).
+Clients never mint them but must store and echo them unchanged; the server
+accepts them only when such a key exists in its catalog. A legacy key is
+retired by a merge (§3.3): `legacy-feed` when the stored URL is replaced by
+a valid one (a corrected URL or a permanent redirect), `legacy-episode` when an
+ingest claims the episode by its stored enclosure. It then remains an alias.
 
 ### 3.2 Episode key
 
 Computed from one feed document, items in document order (reference
 `podcast.EpisodeKeys`):
 
-1. An item without an enclosure URL that canonicalizes (same algorithm,
-   prefix `enc:`) is not a podcast episode and is ignored.
+1. The enclosure is the item's first `<enclosure>` (gofeed
+   `Enclosures[0]`). Its URL is not resolved against the feed URL: an item
+   whose first enclosure is missing, relative or does not canonicalize
+   (same algorithm, prefix `enc:`) is not a podcast episode and is ignored.
 2. The trimmed GUID (`<guid>`, Atom `<id>`; compared byte-for-byte and
-   case-sensitively, `isPermaLink` ignored) of the first item carrying it
-   gives `guid:<guid>`. GUIDs longer than 1024 bytes become
-   `guid:sha256:<64 hex>`.
+   case-sensitively, `isPermaLink` ignored; a GUID that is not valid UTF-8
+   counts as missing) of the first item carrying it gives `guid:<guid>`.
+   GUIDs longer than 1024 bytes become `guid:sha256:<64 lower-case hex>`.
 3. An item without a GUID, or repeating a GUID already used earlier in the
    document, uses `enc:<canonical enclosure>`; if an earlier item already has
    that enclosure, the item is a duplicate and ignored.
 
 Title and publication date are deliberately not identity: publishers edit
-them. Every enclosure key seen for an episode is also recorded as an alias of
-that episode (§3.3), which is what absorbs unstable GUIDs.
+them. Each catalog episode stores the enclosure key of the latest document
+that carried it (`enclosure_key`, overwritten on every ingest, not an alias
+and never synchronized), so signed or rotating enclosure URLs do not
+accumulate anything.
 
 ### 3.3 Aliases and resolution
 
 The server keeps a global alias table for feeds (`alias_key → feed_key`) and
-per feed for episodes (`(feed_key, alias_key) → episode_key`):
+per feed for episodes (`(feed_key, alias_key) → episode_key`). Only the
+server's own observations create aliases or merges: what a client sends is
+used to look keys up, never to link two keys, so one user can never merge
+or redirect another user's feeds.
 
 - **Permanent redirects** (301, 308) seen while fetching, and an
   `<itunes:new-feed-url>` element, add the target's key as a feed alias and
   replace the stored fetch URL. Temporary redirects (302, 303, 307) are
   followed but change nothing. The fetcher must record permanent hops through
-  `http.Client.CheckRedirect`.
-- **Episode ingest**, for each item key `k` with enclosure key `e`: if `k` is a
-  known episode key or alias of the feed, it is that episode; otherwise, if
-  `e` is, it is that episode and `k` is added as an alias (GUID appeared,
-  changed or vanished); otherwise a new episode with key `k` is created and
-  `e` is recorded as its alias. Ingest is an idempotent upsert, never a
-  plain insert.
-- **Incoming client keys** (§6) are resolved in this order: canonical key;
-  alias; evidence (`urls` of a feed, `enclosure_url` of an episode); otherwise
-  the client's key is accepted as a new canonical key. The server returns
-  every mapping it applied (`resolved`), and the client must rewrite its
-  local keys to the canonical ones in one transaction.
-- **Merges**: when the server learns that two canonical keys denote one feed
-  or episode (an alias that is already another canonical key), the older
-  catalog entry (smaller row id; for state-only keys the lexicographically
-  smaller key) wins. State rows of the loser are merged into the winner with
-  the normal register rules (§4) and get new change sequence numbers; the
-  loser key becomes an alias. A losing catalog feed row is marked
-  `merged_into`, stops refreshing, and keeps its episode rows and server
-  copies; availability lookups consult all catalog rows sharing a canonical
-  key. Nothing is deleted.
+  `http.Client.CheckRedirect`. At most 16 aliases per feed are kept.
+- **Episode ingest** (reference `podcast.MatchEpisodes`; the Android device
+  catalog uses the same function on its own fetches) resolves a whole
+  document at once, and every known episode is matched by at most one item:
+  1. *Key pass*, in document order: an item whose key is a known key or alias
+     of the feed claims that episode, unless its enclosure key singles out a
+     different episode whose canonical key is an `enc:` key (that episode
+     exists because the GUID was ambiguous). The `guid:` key of a GUID that
+     repeats in the document is ambiguous and not used in this pass.
+  2. *Enclosure pass*: an unmatched item claims the single episode whose
+     `enclosure_key` (or `enc:` key or alias) equals its enclosure key, only
+     if that episode is unclaimed and its own key is not the unambiguous key
+     of any item in the document, i.e. its GUID changed, vanished or became
+     ambiguous. If several episodes share the enclosure, this pass does
+     nothing.
+  3. *New pass*: every remaining item becomes a new episode under its key,
+     or under its enclosure key when its key already belongs to an episode;
+     if that is taken too, the item duplicates another and is ignored.
 
-Known limit: an episode whose GUID and enclosure URL both change in one
-fetch becomes a new episode; its old state stays under the old key.
+  When an item claims an episode under a different, unambiguous key that
+  belongs to no other episode, that key becomes an alias of the episode
+  (GUID appeared, changed or vanished), up to 16 aliases per episode. Two
+  items of one document that resolve to the same episode: the first claims
+  it, the second goes on to the next pass. Ingest is an idempotent upsert;
+  re-ingesting the same document changes nothing.
+- **Incoming client keys** (§6) are resolved in this order: canonical key;
+  alias; evidence (each of a feed's `urls` as a feed key, then an episode's
+  `enclosure_url` against `enclosure_key`s of the feed, used only when it
+  identifies exactly one episode); otherwise the client's key is kept for
+  that user's state (and, for a subscription, a catalog row is created,
+  §7.3). The server returns every mapping it applied (`resolved`).
+- **Client rewrite**: a client applies `resolved` and pulled `aliases` by
+  rewriting local keys in one transaction. When the target key already
+  exists locally, the two rows are merged register by register (§4): the
+  register with the greater clock wins, together with its pending edit; the
+  loser's pending edit is dropped (it can only lose on the server too); equal
+  clocks keep the target row. Device catalog rows and downloads are re-keyed
+  the same way.
+- **Merges**: when a server observation shows that two canonical keys denote
+  one feed or episode (an alias that is already another canonical key), they
+  are merged. For feeds the redirect target always wins, so a feed that
+  redirects into another can only move its own subscribers and never
+  rewrites the keys of the target's subscribers. For episodes the older
+  catalog entry (smaller row id) wins; for state-only keys the
+  lexicographically smaller key. State rows of the loser are merged into the
+  winner with the normal register rules (§4) and get new change sequence
+  numbers; the loser key becomes an alias. A losing catalog feed row is
+  marked `merged_into`, stops refreshing, and keeps its episode rows and
+  server copies; availability lookups consult all catalog rows sharing a
+  canonical key. Nothing is deleted.
+
+Known limits: an episode whose GUID and enclosure URL both change in one
+fetch becomes a new episode; a GUID-less episode whose enclosure URL changes
+on every fetch (signed URLs) becomes a new episode on every fetch. In both
+cases the old state stays under the old key.
 
 ### 3.4 Test vectors
 
-`player-server/internal/podcast/testdata/identity-vectors.json` is the shared
-fixture (feed keys, invalid URLs, episode documents). The Go tests in
+`player-server/internal/podcast/testdata/identity-vectors.json` (version 2)
+is the shared fixture: feed keys, invalid URLs, episode documents (including
+Unicode whitespace, multibyte and overlong GUIDs, length limits) and ingest
+scenarios (repeated GUIDs reordered, shared enclosures, changed, appearing
+and vanishing GUIDs, rotating enclosures, the alias cap). The Go tests in
 `internal/podcast/identity_test.go` consume it. The Android implementation
 (`xh3`) **must** add a unit test that reads the same file through
 `../player-server/internal/podcast/testdata/identity-vectors.json`; a client
@@ -198,6 +260,9 @@ Rules:
   pause, stop, errors and loading a saved end position never complete. The
   end edit sets completion `(true, auto, t)` and position
   `(duration or last position, t)` with the same clock.
+- **Duration** in these rules is the duration the player reports for the
+  loaded media; the feed's `<itunes:duration>` is only a fallback before the
+  media is loaded, because feed durations are often wrong.
 - **Start position** for every play action except "Play from beginning": the
   reconciled position, unless the duration is known and the position is
   within 5 seconds of the end (`position >= duration - 5`), in which case
@@ -254,8 +319,11 @@ CREATE TABLE podcast_episode_aliases (
   feed_key TEXT NOT NULL, alias_key TEXT NOT NULL, episode_key TEXT NOT NULL,
   change_seq INTEGER NOT NULL, PRIMARY KEY (feed_key, alias_key));
 
--- One row; next change sequence number. Allocated inside the write
--- transaction, so with SQLite's single writer commit order = seq order.
+-- One row; next change sequence number. Every row written (subscription,
+-- episode state, feed alias, episode alias) takes its own number, inside the
+-- write transaction: a transaction writing n rows advances next_seq by n.
+-- Numbers are unique, so paging by "change_seq > since" never splits or
+-- skips a number, and with SQLite's single writer commit order = seq order.
 CREATE TABLE podcast_sync_seq (id INTEGER PRIMARY KEY CHECK (id = 1), next_seq INTEGER NOT NULL);
 ```
 
@@ -263,8 +331,9 @@ Catalog changes: `podcast_feeds` gains `feed_key TEXT` (unique among rows
 with `merged_into IS NULL`), `merged_into INTEGER`, `created_by INTEGER`
 (nullable; the user whose subscription created the row) and keeps
 `feed_url` as the fetch URL. `podcast_episodes` is rebuilt (§9.1) with
-`guid` nullable, `episode_key TEXT NOT NULL`, `UNIQUE(feed_id,
-episode_key)` instead of `UNIQUE(feed_id, guid)`, and the same ids. The sync
+`guid` nullable, `episode_key TEXT NOT NULL`, `enclosure_key TEXT NOT NULL`
+(latest enclosure, §3.2), `UNIQUE(feed_id, episode_key)` instead of
+`UNIQUE(feed_id, guid)`, and the same ids. The sync
 epoch is a random 128-bit value stored in `server_secrets` under
 `podcast_sync_epoch`.
 
@@ -298,7 +367,8 @@ working, and shows no podcast sync error.
 
 Registered through `handleBoth` with `requireSession` (cookie or Bearer).
 Every user may call it; it reads and writes only the caller's rows. Body
-limit 2 MiB; at most 500 edits per request (subscriptions + episodes).
+limit 2 MiB; at most 500 register edits per request, where a subscription
+item is one edit and an episode item one or two (`position`, `completion`).
 
 ```json
 {
@@ -328,8 +398,10 @@ Rules:
 - `position` and `completion` are optional per episode item; at least one is
   required. `seconds` must be finite and `0 ≤ seconds ≤ 9e12` (the bound
   `SyncPlayback` uses). `observed_ms` must be in `1 … 253402300799999`.
-- Keys must have the shapes of §3 and at most 2100 bytes; `urls` at most 10,
-  each canonicalizable; `title` at most 500 characters.
+- Keys must have the shapes of §3 (`feed:`, `guid:`, `enc:`, or a
+  server-minted `legacy-feed:` / `legacy-episode:` key that exists) and at
+  most 2100 bytes; `urls` at most 10, each canonicalizable; `title` at most
+  500 characters.
 - Per-user quotas: 5 000 subscription rows (tombstones included), 200 000
   episode state rows. An edit beyond them is rejected with `quota`.
 - The server applies all valid edits in one transaction (identity
@@ -357,6 +429,8 @@ Response `200`:
 }
 ```
 
+- `resolved` and pulled `aliases` are applied by the client rewrite rule of
+  §3.3 (per-register merge on collision).
 - `acked` lists every accepted edit, whether it changed the register or was
   superseded. `subscriptions` and `episodes` always contain the current rows
   of every key edited in the request, besides the pulled rows. A client
@@ -374,14 +448,24 @@ Response `200`:
   plus alias rows with `change_seq > since` whose target the caller has a
   subscription or state row for (no other user's feeds leak), ordered by
   `change_seq`, at most `limit` (default 500, max 1000) rows in total.
-  Missing registers (clock 0) are omitted. `next_since` is the last returned
-  sequence number; `has_more` says whether more rows exist. The client
+  Missing registers (clock 0) are omitted. Every subscription row returned
+  carries all aliases of its feed, and every episode row all aliases of its
+  episode, whatever their sequence numbers (bounded by the 16-alias caps), so
+  a client that subscribes after the aliases were written still learns them.
+  Each row has its own sequence number (§5.1); `next_since` is the last
+  returned one and `has_more` says whether more rows exist. The client
   persists `next_since` after applying each page, so an interrupted pull
   resumes where it stopped. A pull request may carry no edits.
 - `epoch` mismatch (database restored or replaced) or `since` greater than
   the server's highest sequence: the server ignores `since`, answers from 0
-  and returns its epoch; the client replaces its cursor and keeps its pending
-  edits, which are re-sent and merge by clock.
+  and returns its epoch. The client keeps its pending edits, sets its cursor
+  to 0 and marks every non-pending local register *unconfirmed*. Each pulled
+  register confirms its local counterpart (adopted when the server clock is
+  `>=` the local one). When the pull reaches `has_more = false`, every
+  register still unconfirmed or with a local clock greater than the server's
+  gets a new `edit_id` with its original clock and value and is pushed, so
+  state the restored server lost is restored from the clients instead of
+  diverging. Only then is the new epoch stored.
 - `"scope": {"feed_key": "…", "episode_key": "…"}` instead of `since`
   returns only that episode's current registers (after applying the edits)
   and no cursor fields. It is the pre-playback request (§8.1).
@@ -417,7 +501,7 @@ media endpoints become views onto it:
 | Existing call on episode-linked media | Effect on episode state |
 | --- | --- |
 | `POST /progress`, `/progress/batch` (position p at t) | position `(p, t)`; play-count accumulation unchanged |
-| `POST /progress/status` `finished` (at t or `observed_at`) | completion `(true, auto, t)` and position `(duration, t)`; the position is left alone when the duration is unknown |
+| `POST /progress/status` `finished` (at t or `observed_at`) | completion `(true, manual, t)`; position unchanged (§4 rule 5). The route cannot tell the web's manual **Mark as finished** (`markAsFinished`, `web/js/app.js`) from a cast end (`web/js/cast.js`), so it is treated as manual; the cast's own position saves already hold the end position. |
 | `POST /progress/status` `not_started` | position `(0, t)` and completion `(false, manual, t)` |
 | `POST /media/{id}/playback-sync` progress `{p, finished:false, t}` | position `(p, t)` only |
 | … `{p, finished:true, t}` | completion `(true, auto, t)` and position `(p, t)` |
@@ -426,13 +510,26 @@ media endpoints become views onto it:
 LWW decisions for these calls use the episode registers, not
 `playback_progress`. After every change of an episode's state, the server
 rewrites the `playback_progress` row of each linked media item in the same
-transaction (`position_seconds` = position, `finished` = completed,
-`updated_at` = the later of both clocks, `accumulated_seconds` kept), so
-media detail, `in-progress` and old clients keep working; `playback-sync`
-responses project `{position, finished = completed, observed_ms = max}`. A
-new server download seeds that row from episode state. Deleting the media row
-removes only the mirror. Bookmarks, notes, favorites and shares stay
-media-scoped (podcast bookmarks are not part of this contract).
+transaction, as a projection in the legacy single-register form:
+
+- `position_seconds` = position;
+- `finished` = `completed && completion_ms >= position_ms`, i.e. the legacy
+  rule that the latest edit decides: a completed episode that is being
+  replayed (position saved after the completion) projects as unfinished, so
+  old Android clients resume it at the saved position instead of 0
+  (`readPosition` in `offline_download_repository.dart` returns 0 for
+  finished copies) and the web **In progress** list (`ListInProgressMedia`,
+  `finished = 0`) keeps showing it;
+- `updated_at` = the later of both clocks;
+- `accumulated_seconds` kept: the mirror is written by its own statement,
+  not by `upsertProgress`, `FinishProgress` or `ResetProgressAt`, which would
+  reset accumulation or play-count state.
+
+`playback-sync` responses project the same way: `{position, finished as
+above, observed_ms = max}`. A new server download seeds the mirror from
+episode state. Deleting the media row removes only the mirror. Bookmarks,
+notes, favorites and shares stay media-scoped (podcast bookmarks are not part
+of this contract).
 
 The merge semantics (edit-time clocks, ties keep the server value, durable
 pending edits per account, tombstones, account generation guard) are those of
@@ -447,10 +544,16 @@ keys instead of media ids, separate position/completion registers, explicit
   (`podcast_sync` capability) and scope `local` has subscriptions or state,
   the app asks once: **Sync this device's podcasts with <user>@<server>?**
   with **Sync** and **Keep separate**.
-- **Sync** copies every `local` register into the account scope as a pending
-  edit with its original clock (no re-stamping), in one transaction, and
-  marks `associated_from_local`. The registers then merge with the server by
-  §4. Scope `local` is kept unchanged as the standalone library.
+- **Sync** merges every `local` register into the account scope in one
+  transaction, register by register by clock, and marks
+  `associated_from_local`. When the account register is missing or has a
+  smaller clock, the local value and its original clock (no re-stamping) are
+  written with a new pending `edit_id`, replacing the account register's
+  pending edit, which would lose on the server anyway. When the account
+  register's clock is greater or equal, it stays as it is, including its
+  pending edit. Keys are first resolved through the account scope's known
+  aliases. The result then merges with the server by §4. Scope `local` is
+  kept unchanged as the standalone library.
 - **Keep separate** (or no answer) leaves both scopes apart; the question
   can be repeated from settings.
 - The active library is the signed-in account's scope while an account is
@@ -509,10 +612,19 @@ episode immediately, and start a push without awaiting it.
 **Sync now** and the background coordinator run, per active account: the
 podcast push/pull until `has_more = false`; all existing `sync_items`
 (media `playback-sync`); and a `ProgressQueue` flush. Pushes are paged by 500
-edits.
+register edits.
 
-- **Full success**: every step completed, every pending edit acked, the pull
-  reached `has_more = false`, and nothing was rejected. Only then does
+A media `playback-sync` item answered with `403` or `404` (its server copy
+was deleted, or set access was revoked) is a permanent rejection, like a
+podcast `rejected` edit: the item is marked `gone` with the time, recorded,
+excluded from the success criterion and from automatic retries, and retried
+only by an explicit **Sync now** (a restored copy then syncs again). Its
+local position stays on the device; edits it already delivered are part of
+the episode state and stay synchronized for every other client.
+
+- **Full success**: every step completed, every edit pending at the start of
+  the run acked (edits made during the run may stay pending), the pull
+  reached `has_more = false`, and nothing new was rejected. Only then does
   `last_full_success_ms` advance and stale/unavailable feedback clear.
 - **Partial**: anything less (a failed step, a rejected edit, an interrupted
   pull). Acked edits are cleared, others stay pending, the cursor keeps the
@@ -533,9 +645,11 @@ persist them across reloads (the web UI requires the server).
 ### 9.1 Server
 
 One idempotent migration, run by `initializeSchema` before
-`removeOrphanRows`; each step in its own transaction; the backfills run only
-in the transaction that creates `podcast_subscriptions` (gated on its
-absence, like `migratePlaybackProgress`), so a restart cannot repeat them.
+`removeOrphanRows`. Steps 1 and 2 each run in their own transaction and are
+gated on the absence of the column they add. Steps 3–7 run in one single
+transaction that creates `podcast_subscriptions` (gated on its absence, like
+`migratePlaybackProgress`), so a crash leaves either none or all of the
+backfills and a restart cannot repeat them.
 
 1. Add `feed_key`, `merged_into`, `created_by` to `podcast_feeds`. Backfill
    `feed_key = FeedKey(feed_url)`; an invalid URL gets `legacy-feed:<id>`.
@@ -544,10 +658,11 @@ absence, like `migratePlaybackProgress`), so a restart cannot repeat them.
    dedicated connection with `PRAGMA foreign_keys = OFF` (the DSN normally
    forces it on, see `repository.connectionDSN`), keeping ids so
    `media_id` links and `podcast_status` rows stay valid; finish with
-   `PRAGMA foreign_key_check` and abort on any violation. `episode_key` is
-   computed by §3.2 from the stored `guid` and `episode_url`, per feed in id
-   order; a collision or an unusable URL gets `legacy-episode:<id>`. Empty
-   GUIDs become `NULL`.
+   `PRAGMA foreign_key_check` and abort on any violation. Each feed's stored
+   rows, in id order, are treated as one document (`EpisodeKeys` on `guid`
+   and `episode_url`); a row left without a key (unusable URL, duplicate)
+   gets `legacy-episode:<id>`. `enclosure_key` is the row's enclosure key, or
+   empty. Empty GUIDs become `NULL`. Legacy keys are retired later by §3.1.
 3. Create the tables of §5.1, the sync epoch and the sequence row.
 4. Subscriptions: for every catalog feed not `merged_into`, one row per user
    who can list it today (admins, and users with any `set_permissions` row on
@@ -559,11 +674,15 @@ absence, like `migratePlaybackProgress`), so a restart cannot repeat them.
    `(true, auto, updated_at)`, each merged by §4; then `playback_resets` of
    linked media as position `(0, reset)` and completion `(false, manual,
    reset)` where newer.
-7. Keep `podcast_status` read-only for one release (rollback aid); new code
+7. Rewrite the `playback_progress` mirror (§7.1) of every linked media item
+   from the migrated episode state, so legacy readers see the projection from
+   the first request on.
+8. Keep `podcast_status` read-only for one release (rollback aid); new code
    neither reads nor writes it. List it for removal in the following release.
 
 Guarantees: no file is created, moved or deleted; no media, share, note,
-favorite, bookmark, permission or user row changes; no audio is downloaded;
+favorite, bookmark, permission or user row changes (only the
+`playback_progress` mirrors of linked media are rewritten, step 7); no audio is downloaded;
 set permissions are not granted to anyone. A rollback to the previous release
 keeps working but does not see state written after the upgrade.
 
@@ -579,9 +698,14 @@ episode state; they are not converted into `podcast_downloads`.
 
 ## 10. Compatibility
 
-| Client / server | Behavior |
+| Case | Behavior |
 | --- | --- |
-| Old Android or cached web → new server | Legacy podcast routes keep their shapes. Listings report `is_completed` and `position_seconds` from episode state. The toggle maps to a manual completion edit at server time; it stays non-idempotent, so new clients must not use it. Media progress calls on episode media go through §7.1. `DELETE /podcasts/{id}` behaves as in §7.4. |
+| Old Android or cached web → new server | Legacy podcast routes keep their shapes (rows below). Media progress calls on episode media go through §7.1 and old clients read the projection. |
+| `POST /api/podcasts` (admin, legacy subscribe) | Creates or reuses the catalog row as today (including the existing owner grant of `ensurePodcastSet` to that admin) and also writes the caller's subscription register `subscribed = true` at server time, so the feed has an active subscriber and keeps refreshing (§7.3). |
+| `GET /api/podcasts` | Unchanged meaning: catalog feeds (not `merged_into`) whose set the caller may read, as today, including feeds the caller has unsubscribed from. New fields: `feed_key` and `subscribed` (the caller's register; `false` for a tombstone or no row). It is the catalog/admin view, not the subscription view. |
+| `GET /api/podcasts/{setId}/episodes` | Unchanged meaning: episodes of every catalog feed in the set, as today. `is_completed` and `position_seconds` come from the caller's episode state; new fields `feed_key` and `episode_key`. |
+| `POST /api/podcasts/episodes/{id}/complete` (toggle) | A manual completion edit at server time (§7.1). It stays non-idempotent, so new clients must not use it. |
+| `DELETE /api/podcasts/{id}` | As in §7.4. |
 | New Android → old server | No `podcast_sync` capability: podcasts stay standalone for that account, media sync continues, no podcast error. |
 | New Android ↔ new server | Full contract. Android never calls the episode download route and never needs a server media id. |
 | Two Android clients on one account | Converge through the server by §4; downloads stay per device. |
@@ -592,27 +716,41 @@ episode state; they are not converted into `podcast_downloads`.
 Use fixture feeds served from a local test server and throwaway libraries.
 Automated tests are necessary but do not replace the platform checks of `5i3`.
 
-- Identity (`vh3`, `xh3`): both implementations pass the shared vectors;
-  redirect (301/308 vs 302/307), `new-feed-url`, GUID appearing, changing and
-  disappearing, duplicate GUIDs and GUID-less items, including negative cases.
+- Identity (`vh3`, `xh3`): both implementations pass the shared vectors,
+  including the ingest scenarios; redirect (301/308 vs 302/307),
+  `new-feed-url`, a redirect into another subscribed feed (target wins),
+  GUID appearing, changing and disappearing, and negative cases. Required
+  ingest cases: (a) a repeated GUID whose items are reordered between
+  fetches keeps each item's state on its own episode; (b) two distinct GUIDs
+  sharing one enclosure stay two episodes and never produce a `resolved`
+  mapping between them; rotating signed enclosures add no aliases; client
+  evidence never creates an alias or merge.
 - Registers (`vh3`, `wh3`): ties, retries, delayed offline edits, clamped
   future clocks, tombstones resisting resurrection, independent position and
   completion, uncompletion at an end position, account isolation (another
   user's keys, aliases and quotas are invisible).
-- API (`vh3`): validation and quota rejections per item, `413`, `401`,
-  paging and resume, epoch reset, scoped request, routing precedence of
-  `/podcasts/sync` next to `/podcasts/{id}`.
+- API (`vh3`): validation and quota rejections per item, `legacy-*` keys
+  accepted only when they exist, `413`, `401`, paging and resume with pages
+  cut inside a multi-row transaction (no row skipped), a late subscriber
+  receiving aliases written before its cursor, epoch reset (client registers
+  newer than the restored server are re-pushed), scoped request, routing
+  precedence of `/podcasts/sync` next to `/podcasts/{id}`; legacy subscribe
+  writes a subscription and the feed refreshes.
 - Migration (`vh3`, `wh3`): a database built with the old schema (shared
   feeds, admin and viewer permissions, GUID-less episodes, toggled status,
   media progress, resets, shares, notes, bookmarks) migrates with every
   non-podcast row unchanged, ids kept, no files touched, and runs twice
   without change.
-- Bridge (`wh3`): every row of the §7.1 table, mirror refresh, server copy
-  deletion keeping state.
+- Bridge (`wh3`): every row of the §7.1 table; the projection of a replayed
+  completed episode (`finished = 0`, listed in **In progress**, resumed by an
+  old Android client at its position); `accumulated_seconds` preserved by
+  mirror writes; server copy deletion keeping state.
 - Android (`zh3`, `2i3`): pending edits survive process death; account switch
-  mid-request (generation guard); 3 s pre-play bound; late response without a
-  seek; end sync not delaying the next episode; partial vs full success and
-  the 48-hour clock.
+  mid-request (generation guard); standalone association and key rewrites
+  that collide with newer pending account edits (the newer clock wins);
+  epoch change; 3 s pre-play bound; late response without a seek; end sync
+  not delaying the next episode; partial vs full success, a `playback-sync`
+  `404` not blocking full success, and the 48-hour clock.
 
 ## 12. Decisions on former open questions
 
