@@ -20,7 +20,12 @@ its scope in the candidate map, so implementers do not need the inventory.
 - Everything that already works stays as it is: sets/folders browsing, video,
   images, podcasts, lyrics, file favorites, notes, tags, bookmarks, resume,
   manual downloads, Android speed, local files, multiple servers and the
-  current Chrome/Android casting.
+  current Chrome/Android casting. In particular, playback started from the
+  **Sets** lens keeps today's browse sequence on the web (next/previous
+  across folders, wrap at set level, resume on every explicit play); the new
+  queue, repeat modes and start-at-0 rule apply to the **Music** lens and to
+  explicit queue actions only (§8.0). The single deliberate change to Sets
+  sequencing is listed in §8.0 and is an owner decision (§15).
 - Every feature must work in Google Chrome, Mozilla Firefox and the native
   Android app (root `AGENTS.md`). Inherently Android-only integrations are
   listed in §11 with the shared part that the web must still verify.
@@ -79,10 +84,10 @@ reproducible from the steps above). Seven downscaled screenshots are kept in
 
 | # | Observation | Platforms | Consequence for the design |
 | --- | --- | --- | --- |
-| B1 | Every title is the file name (`01 - First Light.mp3`); media info shows Title = file name; no artist/album anywhere. | all | M01 metadata, title fallback rule (§6.4). |
-| B2 | Searching `Kei` (artist tag) returns nothing: "Nothing matches these filters" (Android) / empty grid (web). Folder names match because the path is searched. | all | M07 search over music fields with grouped results (§5.5). |
-| B3 | Next after the last audio track of an album opens `cover.jpg` in the player: the audio is replaced by an image and `Shift+N`/`Shift+P` are then swallowed by the image view. | Chrome, Firefox | Queue holds only playable audio of the started kind (§8). |
-| B4 | Sequencing reads the visible grid: when the playing track ended while a search showed no matching card, playback stopped (Firefox run); in the Chrome run it advanced because the album grid was visible. | Chrome, Firefox | Queue is a snapshot independent of browsing (§8). |
+| B1 | Every title is the file name (`01 - First Light.mp3`); media info shows Title = file name; no artist/album anywhere. | all | M01 metadata, title fallback rule (§6.5). |
+| B2 | Searching `Kei` (artist tag) returns nothing: "Nothing matches these filters" + *Clear filters* (Android) / "No results." (web). Folder names match because the path is searched. | all | M07 search over music fields with grouped results (§5.5). |
+| B3 | Next after the last audio track of an album opens `cover.jpg` in the player: the audio is replaced by an image and `Shift+N`/`Shift+P` are then swallowed by the image view. | Chrome, Firefox | Music queue holds only audio (§8.2); for Sets an audio-only skip is proposed as the one deliberate change (§8.0, owner decision). |
+| B4 | Sequencing reads the visible grid: when the playing track ended while a search showed no matching card, playback stopped (Firefox run); in the Chrome run it advanced because the album grid was visible. | Chrome, Firefox | Music queue is a snapshot independent of browsing (§8.2); Sets keep today's browse sequence (§8.0). |
 | B5 | `Space`/`p` with nothing loaded does nothing (help says "Play / pause"; `docs/keyboard-shortcuts.md` says "switch to selected item"). `Enter` plays. | Chrome, Firefox | Keep `Enter` = play; fix the doc wording in the first queue task (M12). |
 | B6 | Android set grid flattens all folders and sorts by file name, so albums interleave (`01 - Afterglow`, `01 - First Light`, `01 - Neon Rain`). | Android | Album views ordered by disc/track (M02, M04). |
 | B7 | Android has no automatic next item; at the end the player shows `00:12 / 00:12` with the Pause icon; media notification metadata is the file name only; no now-playing indicator after leaving the player. | Android | Handler-owned queue, true next/previous, mini player (§7.3, M12, M54). |
@@ -106,9 +111,10 @@ mouse pointer), real Android hardware.
    of any music item is *Play* (Enter / tap). Secondary actions live in the
    existing action menu (`a`, ⋮, context menu), never as an always-visible
    button row.
-3. **Selection is not playback.** Moving selection or browsing never changes
-   what plays next. Only explicit actions (Play, Play next, Add to queue,
-   queue edits) change the queue.
+3. **Selection is not playback (Music lens).** In the Music lens, moving
+   selection or browsing never changes what plays next. Only explicit actions
+   (Play, Play next, Add to queue, queue edits) change the queue. The Sets
+   lens keeps its existing browse-order sequence (§8.0).
 4. **Every reorder has a non-drag path.** Move up / Move down / Play next as
    menu items and keys; drag is an optional pointer enhancement.
 5. **Undo instead of confirm for reversible edits** (queue remove/clear,
@@ -147,7 +153,7 @@ lens shows an explanatory empty state and the Sets lens keeps working.
 **Music scope rule (proposal for M01, decided there):** the Music lens
 covers audio files in permitted, non-podcast sets, excluding audiobook files
 (`.m4b`, and sets an admin marks as audiobooks). Files without any music tag
-appear under Songs with the file-name fallback (§6.4) and under an album
+appear under Songs with the file-name fallback (§6.5) and under an album
 named after their folder, marked *From folder*; they are never silently
 dropped.
 
@@ -165,6 +171,35 @@ dropped.
 | Feedback | `toast()` from `utils.js`, extended with an optional action button (*Undo*) | `--success`, `--danger`, `--warn` |
 | Player | floating `#player`, controls, seek bar, Lyrics/Visuals | `--player-*` |
 
+**Audit of the current look (5040cfb) that new screens must match:**
+
+- *Typography.* Web: one family, `--font-sans` (system UI stack), body
+  `line-height: 1.45`; `--font-mono` only for code/time. Size scale in use
+  (rem): 0.75–0.8 (`.text-xs` 0.8, badges, card subtitles 0.78), 0.85
+  (`.text-sm`), 0.9 (card `.title`, weight 600), 1.0 body, 1.1 (dialog
+  `h3`), 3.0 (empty-state glyphs). No heading larger than 1.1rem exists in
+  the library, so an album/artist/playlist header uses **1.1rem / 600** for
+  the name and 0.85rem `--text-secondary` for its secondary line — not a new
+  hero size. Card titles stay one line with ellipsis (`.media-card .title`),
+  full text in `title`/`aria-label`; song rows likewise one line per field.
+  Android: Material 3 default `TextTheme` (no custom font); app bars use
+  `titleLarge`, rows `bodyLarge`/`bodyMedium`, secondary text
+  `onSurfaceVariant` (= `--text-secondary`).
+- *Spacing and shape.* Web: `--gap` 0.75rem between cards/sections; inner
+  gaps 0.15–0.5rem (card body 0.15, rows 0.75, toolbars 0.5);
+  `--radius-sm/md/lg` 0.375/0.625/0.875rem (cards and rows use `md`, dialogs
+  `lg`); controls `--control-height` 2.25rem (2.75rem on coarse pointers =
+  44 px tap target). Android: 16–24 dp screen padding, 8–16 dp gaps, cards
+  with default M3 radius, `IconButton` 48 dp, speed buttons 56×48 dp.
+- *Icons.* Web uses Unicode glyph buttons (`☰ 🔀︎ ◷ ? ☀ 🗑 ⚙ ⌨ ▶ ⏮ ⏭ ⛶ ♥`)
+  plus one inline SVG (Cast); new web controls use the same glyph style
+  (`≡` Queue, `⤮` Shuffle, `🔁` Repeat, `⏲` Sleep, `⋮` More) with text labels
+  where space allows and always an `aria-label`. Android uses Material icons
+  (`Icons.queue_music`, `Icons.shuffle`, `Icons.repeat`/`repeat_one`,
+  `Icons.skip_next/previous`, `Icons.more_vert`, `Icons.bedtime`,
+  `Icons.playlist_add`) with `tooltip`. Glyphs are never the only label of
+  a text action ("Play", "Shuffle", "Save as playlist" stay words).
+
 Artwork overlays (badges, duration, "Playing" marks) use a scrim token
 (`--overlay-dim`) with `--overlay-button-bg`/`--overlay-button-color` or a
 new token pair added to **both** theme blocks, and are checked at 4.5:1 in
@@ -181,7 +216,7 @@ follow-up, not part of this design task).
 │ │ ▸ Albums      ●   │ │ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐        │ │
 │ │ ▸ Artists         │ │ │cover │ │cover │ │cover │ │cover │        │ │
 │ │ ▸ Songs           │ │ │      │ │      │ │      │ │      │        │ │
-│ │ ▸ Playlists       │ │ │Night Transit  │ │Synth Compilation│      │ │ ← C: title 2-line clamp
+│ │ ▸ Playlists       │ │ │Night Transit  │ │Synth Compilation│      │ │ ← C: title 1 line + ellipsis (.title)
 │ │ SETS              │ │ │Aurora Lane·2021│ │Various Artists │      │ │ ← D: artist · year (secondary)
 │ │ ▸ Music           │ │ └──────┘ └──────┘ └──────┘ └──────┘        │ │
 │ └───────────────────┘ └────────────────────────────────────────────┘ │
@@ -195,7 +230,7 @@ Album detail (Enter on a card):
 │ └──────────┘  [▶ Play] [⤮ Shuffle] [♥] [⋮ More]     ← E: Play = primary (accent), More = menu
 │  #  Title                       Artist          Time               │
 │  1  First Light                 Aurora Lane     0:12        ⋮      │ ← .media-row; ⋮ = action menu
-│  2  Long Road Home   ♪lyrics    Aurora Lane feat. Kei 0:12  ⋮      │ ← featured artist kept verbatim
+│  2  Long Road Home   ♪lyrics    Aurora Lane feat. Kei 0:12  ⋮      │ ← artist display string verbatim (§10.1)
 │  3  Harbour                     Aurora Lane     0:12        ⋮      │
 │  Disc 2 — Bonus (only when disc > 1 or subtitle present)  (M04)    │
 │  Folder: Music/Aurora Lane - Night Transit (2021)   [Open folder]  │ ← link back to Sets lens
@@ -232,17 +267,36 @@ right on wide windows; the library stays usable on the left.
 ```
 
 Queue row action menu (`a`/⋮ on a row, also Shift+F10): Play now, Play next,
-Move up (`K`), Move down (`J`), Move to end, Remove (`Delete`), Go to album
-(`b`), Go to artist (`B`), Add to playlist (`w`), Info (`i`).
+Move up, Move down, Move to end, Remove, Go to album, Go to artist, Add to
+playlist, Info. The menu shows its own underlined hint letters like every
+existing menu; the panel keys `K`, `J`, `Delete` are shown next to the
+matching items as "(panel key K)" etc., not as menu letters.
 
 - Opening: `Q` or the *Queue* button. Focus moves to the current row. Escape
   (or `Q` again) closes it and returns focus to the opener (button or the
   previously selected library card), using the `modal-focus.js` rules even
   though the panel is non-modal on desktop.
-- While the panel has focus it owns `j/k`, arrows, `Enter` (jump: play that
-  row now, keeping order), `J/K` (move row), `Delete` (remove), `r`
-  (shuffle upcoming), `Y` (repeat cycle). Outside it these keys keep their
-  library meaning.
+- **Queue key set (panel and narrow dialog alike):** `j/k` and `↑/↓` move
+  the row selection, `Enter` jumps (plays that row now, order kept), `K`/`J`
+  move the selected row up/down, `Delete` removes it (Undo toast), `Y`
+  cycles repeat, `Escape` closes. Nothing else is bound: shuffle, clear and
+  save are buttons reached by Tab or by their hint letters. This set is
+  chosen so it cannot collide with `keyboard-access.js`: hint letters never
+  use `h/j/k/l`, and hint dispatch ignores Shift (`J`, `K`, `Y`) and
+  non-letter keys (`Delete`, arrows, `Enter`).
+- Routing in `keyboard.js`: a new `isQueueFocused()` branch, placed exactly
+  like the existing My Shares branch (`isSharesOpen`, after the
+  editable/chord guards and before `isModalOpen`), handles the key set above
+  and returns; any other key falls through to the normal rules — on desktop
+  (non-modal panel) that means global shortcuts still work, in the narrow
+  dialog it means the generic modal rule (only Escape and `?`) plus the
+  dialog's automatic hint letters for its buttons.
+  Queue rows are focusable list items (`li tabindex="-1"`, roving focus),
+  not buttons, because `keyboard.js` lets a focused button keep native
+  `Enter`; the row's ⋮ button keeps native `Enter`/`Space` as every button
+  does.
+- `r` keeps its existing global meaning (shuffle/reshuffle the library
+  listing) everywhere; queue shuffle is the *⤮ Shuffle* button (M18).
 - After a move the moved row stays selected and visible; after a remove the
   row now at that position is selected (same as `keepFocusInside`).
 - Played items stay above *Now* (collapsed *History (3)* disclosure) so
@@ -272,7 +326,10 @@ Move up (`K`), Move down (`J`), Move to end, Remove (`Delete`), Go to album
 - Sidebar (`☰`) closes automatically after a Music or Set choice on narrow
   screens (fixes B10 for music navigation).
 - The Queue opens as a full-screen dialog (`.modal-overlay`, role dialog),
-  not a side panel; Escape/✕ return focus to the mini player's ≡ button.
+  not a side panel; Escape/✕ return focus to the mini player's ≡ button. It
+  uses the queue key set and routing of §5.3 (dedicated branch before the
+  generic modal rule), so `j/k`, `J/K`, `Y` and `Delete` work although a
+  modal is open.
 - Tap on a row plays from here; ⋮ opens the action menu; touch long-press is
   never the only path. The existing behavior "touch on a card opens its
   action menu" is kept for set/folder cards; music rows use the explicit ⋮.
@@ -286,13 +343,14 @@ modifier:
 ```
 / kei                                   ✕
 Songs (1)    Long Road Home — Aurora Lane feat. Kei · Night Transit   ⋮
-Artists (1)  Aurora Lane feat. Kei  → (credited artist; main artist link)
+Artists (1)  Aurora Lane feat. Kei  → artist entity named verbatim (no split, §10.1)
 Albums (0)
 Files (0)    (path/file-name matches as today)
 ```
 
 `j/k` move through all groups; `Enter` plays a song (queue = search results
-of the Songs group, in displayed order) or opens an album/artist. New
+of the Songs group, in displayed order) or opens an album/artist; a
+Files-group hit opens and plays like a Sets file (browse sequence, §8.0). New
 modifiers: `artist:`, `album:`, `genre:`, `year:` (M07/M08). Escape clears
 and returns to the view and selection that was active before `/` (the
 Firefox run returned to the set root instead of the album folder; the
@@ -301,12 +359,94 @@ restore target is defined here as "previous view").
 ### 5.6 Settings and dialogs (web)
 
 No settings page exists on the web today. Personal music settings (M50–M52,
-M68–M70, scrobbling M44) go into a **Settings** dialog opened from the header
-(`⚙` stays *Admin panel* for admins; the user menu gains *Settings*), using a
+M68–M70, scrobbling M44) go into a **Settings** dialog opened from a new
+header text button **Settings** (`btn btn-ghost btn-sm`, placed left of *Log
+out*, `id="settings-toggle"`; on narrow screens it wraps with the other header
+controls as *Log out* does today). `⚙` stays *Admin panel* for admins, so
+there are never two gear icons. The dialog is a
 `.modal-overlay` with sections: *Playback* (speed default, ReplayGain,
 gapless, sleep timer default), *Music library* (landing view, visible
 sections), *Remote playback*, *Notifications*, *Listening data*. Admin-only
 music settings (rescan, tag mapping, providers) stay in the admin panel.
+
+### 5.7 Further web screens (compact sketches)
+
+Music home (M38/M39) — section rows of existing cards; `j/k` move between
+sections, `h/l` within a row:
+
+```
+Music / Home                                         [Customize]   ← dialog: Move up/Down, Show/Hide (no drag)
+Recently added  ▸ See all                                          ← h2 1.1rem/600, --gap between rows
+ [cover][cover][cover][cover] →                                    ← row scrolls inside itself, never the page
+Recently played ▸ See all
+ [cover][cover][cover]
+Pinned playlists
+ [Road trip][Focus]
+(sections without data are hidden; all empty → empty state §9)
+```
+
+Artists list and Artist detail (M03, M10, M40, M41):
+
+```
+Music / Artists   Role: [Artist ▾]  Sort: [Name ▾]   218 artists
+ Aurora Lane                 2 albums · 14 songs        ⋮          ← .media-row, avatar = first album cover
+ Aurora Lane feat. Kei       1 song (appears on)        ⋮
+Artist detail:
+ Aurora Lane                        [▶ Play] [⤮ Shuffle] [♥] [⋮]
+ About ▸ (M10, collapsed disclosure)
+ Top songs (M40): 1 First Light ⋮ / 2 Harbour ⋮      [Show more]
+ Albums: [Night Transit 2021] …        Appears on: [Synth Compilation]
+ More like this (M41): [card][card]
+```
+
+Playlists, playlist detail and editing (M26–M30) — reorder without drag:
+
+```
+Music / Playlists                  [+ New playlist]
+ [cover] Road trip   12 songs · 48 min · private      ⋮
+Playlist detail:
+ Road trip                [▶ Play] [⤮] [♥] [⋮ Rename · Visibility · Export M3U · Delete…]
+ Filter songs: [__________]                                  ← M27 search within list
+ 1  First Light    Aurora Lane     0:12   ⋮                  ← ⋮: Play next, Move up, Move down,
+ 2  Neon Rain      Mira Vale       0:12   ⋮                     Move to top/bottom, Remove, Go to album
+ keys (owner only): K / J move the selected row, Delete removes (Undo toast)
+```
+
+Add to playlist dialog (`w`, M27/M30) — `.modal-overlay`, focus starts in
+the filter:
+
+```
+Add "Harbour" to playlist                        ✕
+ Find or create: [roa_____]
+ ☑ Road trip            already contains this song → [Add anyway] [Skip]   ← M30 duplicate choice
+ ☐ Focus
+ [+ Create "roa"]                                   [Add]   (Enter = Add)
+```
+
+Share (M62–M66) — the existing share dialog gains a target line and
+options; nothing else moves:
+
+```
+Share album "Night Transit"                       ✕
+ Link expires: [7 days ▾]  Max viewings: [—]
+ Description: [__________]   ☐ Allow download   Quality: [Original ▾]
+ [Create link]   →  link field + [Copy]   (My Shares `L` lists, edits, revokes)
+```
+
+Settings dialog (§5.6):
+
+```
+Settings                                           ✕
+ Playback        Default speed [1× ▾]  ReplayGain [Off ▾]  ☐ Gapless  Sleep timer default [30 min ▾]
+ Music library   Start in [Sets ▾]   Show: ☑ Albums ☑ Artists ☑ Songs ☑ Playlists ☐ Radio
+ Remote playback ☐ Let other devices play on this browser (Player Connect, §10.3)
+ Notifications   [Enable song notifications]  (asks browser permission on click)
+ Listening data  ListenBrainz URL / token [____]  ☐ Send plays from this browser
+ Data saver      ☐ Lower streaming quality on this browser (M52)
+```
+
+Offline collections on the web: see §11 — the web offers *Download* (files)
+for albums and playlists, not offline pins.
 
 ## 6. Android layouts
 
@@ -361,7 +501,7 @@ Share, Keep offline, Info. Long-press may open the same sheet as a shortcut.
 ### 6.3 Now Playing and Queue sheet
 
 ```
-┌ ←  Long Road Home      📺  🔖  ≡ ⋮ ┐  ← Cast, Bookmarks, Queue, overflow (Notes, Sleep timer,
+┌ ←  Long Road Home      ⇪  🔖  ≡ ⋮ ┐  ← Play on… (§10.3, includes Cast), Bookmarks, Queue, overflow (Notes, Sleep timer,
 │                                   │     Equalizer*, Info, Go to album/artist)  *M25
 │           ┌──────────┐            │
 │           │ artwork  │            │  ← AudioVisuals/AudioCoverArt as today
@@ -370,7 +510,7 @@ Share, Keep offline, Info. Long-press may open the same sheet as a shortcut.
 │ Aurora Lane feat. Kei · Night Transit │ ← artist · album, both tappable
 │ 0:07 ━━━━━━━●──────────── 0:12    │
 │   ⤮     ⏮     ⏯     ⏭     🔁      │  ← music items: shuffle, previous, play, next, repeat
-│        ⟲15  1.0×  15⟳            │  ← secondary row: shown for podcasts/audiobooks/long items;
+│        ⟲15  1.0×  15⟳            │  ← secondary row: podcasts, audiobooks, items > 20 min;
 │              [ Lyrics ]           │     music items keep speed in the row, ±15 s in overflow
 └───────────────────────────────────┘
 
@@ -390,39 +530,126 @@ Back closes the sheet, then Now Playing (playback continues, mini player
 appears), then follows the normal route stack. The end-of-track state shows
 Play (not Pause) and, with a queue, the next track (fixes B7).
 
-### 6.4 Readable track metadata (both clients)
+### 6.4 Further Android screens (compact sketches)
+
+Search (M07): every Music screen's AppBar gets a **Search** icon button
+(`Icons.search`, tooltip "Search music"); the drawer gets no extra entry.
+It opens a search route with a text field in the AppBar and filter chips:
+
+```
+┌ ← [Search music…            ✕] ┐
+│ (All) (Songs) (Albums) (Artists) (Playlists)   ← FilterChip row, scrolls horizontally, 48 dp
+│ SONGS                                          │
+│ Long Road Home                         ⋮       │  ← tap = play results as queue
+│ Aurora Lane feat. Kei · Night Transit          │
+│ ARTISTS                                        │
+│ Aurora Lane feat. Kei                    ›     │
+│ (no results: "Nothing matches" + Clear)        │
+└────────────────────────────────────────────────┘
+```
+
+The existing Sets grid keeps its own `SearchFilterBar` (file search) and
+gains F03's filter sheet; it does not show music groups.
+
+Music home, Artist and Playlist screens:
+
+```
+┌ ☰ Music            🔍  ⚙ ┐     ┌ ← Aurora Lane        🔍 ♥ ⋮ ┐     ┌ ← Road trip              ⋮ ┐
+│ Recently added   See all  │     │ [▶ Play] [⤮ Shuffle]        │     │ 12 songs · 48 min · Private │
+│ [cov][cov][cov] →         │     │ Top songs                    │     │ [▶ Play] [⤮] [✎ Edit]       │
+│ Recently played  See all  │     │ 1 First Light        ⋮      │     │ 1 First Light          ⋮   │
+│ [cov][cov] →              │     │ Albums  [cov 2021]  →        │     │ 2 Neon Rain            ⋮   │
+│ [Customize home]          │     │ Appears on [cov] →           │     │ ⋮: Move up · Move down ·   │
+│ ── mini player ──         │     │ ── mini player ──            │     │    Remove · Play next      │
+└───────────────────────────┘     └──────────────────────────────┘     └────────────────────────────┘
+Customize home: list with ↑/↓ IconButtons and Show switches, no drag required.
+```
+
+Add to playlist (bottom sheet): "New playlist" ListTile first, then
+playlists as CheckboxListTiles; duplicates show *Already added* with
+*Add anyway* / *Skip* buttons; primary *Add* FilledButton.
+
+Share: the existing `create_share_dialog.dart` gains the target title
+("Share album Night Transit"), *Allow download* switch, *Quality* dropdown
+and description field.
+
+Settings (existing `settings_screen.dart`) gains sections in this order,
+after *Appearance*: **Playback** (default speed, ReplayGain, gapless, sleep
+timer default, headset behavior M58), **Music library** (start destination,
+visible sections), **Offline & storage** (cache budget M45, offline sync
+M48, network policy M52), **Remote playback** (Player Connect target),
+**Listening data** (M44). Device-only items carry the subtitle "On this
+device".
+
+Offline collections (M47–M49) live in the existing **Downloads** screen as
+a *Music* section above the file list:
+
+```
+┌ ← Downloads                       ┐
+│ MUSIC                             │
+│ [cov] Night Transit   3/3  ✓ Up to date     ⋮  (Update · Remove download)
+│ [cov] Road trip      10/12 ⟳ Downloading… [Cancel]
+│ FILES (existing per-file list)    │
+│ Offline banner when no server: "Offline · showing downloaded music"
+└───────────────────────────────────┘
+```
+
+### 6.5 Readable track metadata (both clients)
 
 - Primary line: tag title; fallback = file name **without** extension; never
   invent a title by stripping track numbers.
-- Secondary line: track artists (joined with `, `, max 2 then `+N`) · album.
+- Secondary line: the track's artist display string (§10.1, verbatim from
+  the tag; when only multi-valued tags exist they are joined with `, `) ·
+  album.
   In album view the album part is omitted; track artist is shown only when it
   differs from the album artist.
 - Numbers: `disc-track` only when there is more than one disc.
 - Durations in `--font-mono` (web) / tabular figures (Android).
 - Technical data (codec, bitrate, sample rate, path) stays in Info (M06),
   never in list rows.
-- Long text: 2-line clamp on cards, 1-line ellipsis on rows; the full text is
+- Long text: 1-line ellipsis on cards and rows (as `.media-card .title`
+  today); the full text is
   in `title`/`aria-label` (web) and semantics label (Android).
 
 ## 7. Navigation and state transitions
 
 ### 7.1 Web view stack and URLs
 
-Music views extend `navigation-url.js` with `music` and `id` parameters;
-existing parameters keep their meaning and can coexist (`media`, filters).
+Music views extend `navigation-url.js` with a `music` view parameter and
+**namespaced** music parameters. The file-filter keys of `navigation-url.js`
+(`type, search, favorites, tags, sort, minDuration, maxDuration,
+minFileSize, maxFileSize`) and `set`/`folder`/`page` keep their exact
+meaning and value sets (`sort` stays `name|date|duration|play_count|random`)
+and are **not read** while `music` is present; entering a music view drops
+them from the URL, leaving the music view restores the Sets URL from
+history. `media=<id>` and `shuffle` keep their meaning in both lenses.
 
-| View | URL | Backspace / ‹ goes to |
+| Music parameter | Meaning | Values |
 | --- | --- | --- |
-| Music home | `/?music=home` | previous non-music view |
-| Albums | `/?music=albums&sort=artist&genre=…` | Music home |
-| Album | `/?music=album&id=al_…` | the list it was opened from (history state), else Albums |
-| Artists / Artist | `/?music=artists`, `/?music=artist&id=ar_…` | Artists |
-| Songs | `/?music=songs&search=…` | Music home |
-| Playlist | `/?music=playlist&id=pl_…` | Playlists |
+| `music` | view | `home, albums, album, artists, artist, songs, playlists, playlist, genres, radio` |
+| `id` | entity key for detail views | `al_…`, `ar_…`, `pl_…` |
+| `mq` | music text query (Songs, search) | free text |
+| `msort` | music sort | `name, artist, year, added, played, plays, rating, random` |
+| `mgenre`, `myear`, `mrole`, `mfav` | facets (M08/M34) | tag values, `1990-1999`, role names, `1` |
+| `mpage` | page of a music list | integer |
 
-Each view change pushes one history entry, so the browser Back button and
-`Backspace` agree. `media=<id>` keeps restoring the current item; the queue
-is restored separately (M16), not from the URL.
+| View | URL | Backspace / ‹ (up) goes to |
+| --- | --- | --- |
+| Music home | `/?music=home` | nothing (top of the Music lens) |
+| Albums | `/?music=albums&msort=artist&mgenre=…` | Music home |
+| Album | `/?music=album&id=al_…` | Albums |
+| Artists / Artist | `/?music=artists`, `/?music=artist&id=ar_…` | Music home / Artists |
+| Songs | `/?music=songs&mq=…` | Music home |
+| Playlists / Playlist | `/?music=playlists`, `/?music=playlist&id=pl_…` | Music home / Playlists |
+
+**Two models, deliberately different and both stated in help:**
+`Backspace` and the breadcrumb ‹ mean **up** — the fixed parent in the table
+above, exactly like Backspace goes up one folder in Sets today. The browser
+Back button means **back** — the previous history entry (each music view
+change pushes one entry). Example: Artist → Album, then Backspace shows
+Albums (up), while browser Back shows the Artist again. `media=<id>` keeps
+restoring the current item; the queue is restored separately (M16), not
+from the URL.
 
 ### 7.2 Web Escape / Backspace hierarchy (extends the current one)
 
@@ -448,24 +675,60 @@ Backspace:  same player steps; then music view → parent view (§7.1); then fol
 
 - Selecting, browsing, searching or opening another album never changes
   `[Playing]`.
-- A non-audio item (video/image) opened while a music queue plays: video
-  pauses the queue and takes the player (as today); the queue is kept and
-  *Resume queue* is offered in the mini player. Images never enter a music
-  queue (fixes B3).
+- A video, image, device file or share opened while a music queue plays
+  takes the player and stops the queue's playback on **both** clients (web:
+  as today the player shows the new item; Android: the
+  `PlaybackSessionCoordinator` claim stops audio as today). The queue
+  **contents** are kept on both (web `QueueController`, Android handler
+  queue state persisted per M16) and the mini player offers *Resume queue*.
+  Images never enter a music queue (fixes B3 for the Music lens).
+- Sets-lens sequencing does not use this machine; see §8.0.
 
 ## 8. Queue ownership and semantics
+
+### 8.0 Two sequencing modes: Music queue and Sets browse sequence
+
+| | **Music queue** (new) | **Sets browse sequence** (existing, kept) |
+| --- | --- | --- |
+| Started by | any play in the Music lens or search Songs group; Play next / Add to queue anywhere (also on a Sets audio file) | Enter/Play/tap on a file in the Sets lens (folders, set grid, in-progress view) |
+| Content | snapshot of audio entries; independent of browsing | the live browse order of `playback-nav.js`: visible cards, then `findAfterFolder`/`findBeforeFolder` into neighbouring folders, wrapping to the first/last playable item of the set |
+| Item types | audio only | every playable type, as today (audio, video, images) |
+| End of list | stop, unless repeat all/one (M20) | wraps at set level, as today |
+| Start position | music items start at 0 (§8.3) | resume on every explicit play and auto-advance, as today (`playItem` loads `progress.position_seconds`) |
+| Shuffle | queue shuffle (M18) | existing `r` random sort of the listing |
+
+- **Web:** `QueueController` has a mode. In Sets mode it delegates
+  next/previous to the existing `navigatePlayable` code unchanged; in queue
+  mode it uses its entries. An explicit queue action (Play next / Add to
+  queue) on a Sets file while in Sets mode starts a queue whose first entry
+  is the current item, then the added items; it says so in the toast
+  ("Queue started: now playing + 1 song").
+- **Video sequencing:** videos are never queue entries. A video played from
+  Sets keeps today's browse sequence and auto-advance on the web. Android
+  keeps today's single-item video playback (no change in this design).
+- **Android Sets:** audio played from the set grid or folder browser keeps
+  today's single-item behavior until M12 decides; M12 may give Android audio
+  the web's browse sequence for parity (owner decision, §15). Music-lens
+  plays on Android use the queue.
+- **Deliberate change proposed for Sets (owner decision, §15):** when the
+  Sets browse sequence started from an **audio** item, skip image items when
+  advancing (B3), leaving videos and image-started sequences untouched. If
+  the owner rejects it, B3 remains a known Sets behavior and only the Music
+  lens is fixed. B4 (dependency on the visible grid) is kept in Sets as
+  today's semantics.
 
 ### 8.1 Ownership
 
 | Concern | Web | Android |
 | --- | --- | --- |
-| Owner | one `QueueController` module (new `web/js/queue.js`), the single source of "what plays next" for the tab; `playback.js` asks it for next/previous; `playback-nav.js` only **builds** a queue from a listing | `PlayerAudioHandler` (audio_service) owns the queue so it survives screen disposal and drives the notification/lock screen; screens observe it |
-| Detached player window | commands posted to the main window (existing `postToDetach` pattern); the main window owns the queue | — |
+| Owner | one `QueueController` module (new `web/js/queue.js`), the single source of "what plays next" for the tab; `playback.js` asks it for next/previous; in Sets mode it delegates to the unchanged `playback-nav.js` browse sequence (§8.0) | `PlayerAudioHandler` (audio_service) owns the queue so it survives screen disposal and drives the notification/lock screen; screens observe it |
+| Detached player window | the popup posts `detach-next` / `detach-prev` (and new `detach-queue-*` commands) to the main window, as `detachPopup.js` does today; the main window owns the queue and answers with the item to load via `postToDetach`. The popup handles `Space/p`, `N/P`, `Y`, `Z`, `<`/`>` and forwards them; `Q` in the popup focuses the main window's Queue (`window.opener.focus()`), since the popup has no queue panel | — |
 | Casting | the sender keeps owning the queue and loads the next item on the receiver (M60) | same, via `CastController` |
 | Public share pages | a share-local queue (collection shares, M62), never the signed-in user's queue | share viewer has its own queue |
 | Scope | per server origin + user id; switching server/account clears the active queue | per saved server + account; switching library stops playback (existing) and keeps that scope's persisted queue |
 | Local device files | — | a queue holds items of one source scope (server account **or** device files); mixing is out of scope for v1 |
-| Session lease | — | one queue = one `PlaybackSessionCoordinator` claim; starting a video, local file or share stops it, as today |
+| Session lease | starting a video/image/share item stops queue playback, contents kept (§7.3) | one queue = one `PlaybackSessionCoordinator` claim; starting a video, local file or share stops its audio as today, contents kept (§7.3) |
+| Podcasts | an episode may be a generic queue entry; podcast next-episode navigation stays with the podcast views (`0i3`/`3i3`) | podcast playback (`2i3`) uses the same `PlayerAudioHandler` and coordinator; the handler exposes one queue, and for podcast items the notification previous/next keep ±15 s (§6.3); whether "next episode" becomes a queue is decided in `2i3`, not here |
 
 ### 8.2 Insertion semantics (M14/M15/M18/M19)
 
@@ -478,7 +741,7 @@ Backspace:  same player steps; then music view → parent view (§7.1); then fol
 | Shuffle (on a collection) | Replace queue with the collection shuffled; *Now* = first shuffled item. |
 | Shuffle toggle (queue) | Shuffle only upcoming items; turning it off restores the original order of the remaining items. |
 | Shuffle by album | Random album order, track order kept inside each album. |
-| Files from Sets | Playing a file from a folder builds the queue from that folder's playable items **of the same type** (audio only for audio), so browsing and images no longer affect playback. |
+| Files from Sets | No queue: the Sets browse sequence runs as today (§8.0). Play next / Add to queue on a Sets audio file starts or extends a queue. Video/image cards: *Play next* and *Add to queue* are disabled in the menu ("Only audio can be queued"); `e`/`E`/`b`/`B` on them show that message as a toast. |
 | Multi-selection (M15) | Albums, artists, playlists and search results are the batch unit. Marking several individual songs is decided in M15 (key `m` is reserved for it, §12). |
 
 Duplicates are allowed; each queue entry has its own entry id so remove/move
@@ -488,11 +751,15 @@ target the right one.
 
 - Progress reporting, play counts, favorites, bookmarks and notes stay keyed
   by **media id** and keep working for every item in a queue.
-- A song started from a queue starts at 0 unless the item is a podcast
-  episode, audiobook or longer than 20 minutes, where the existing resume
-  rule (and for podcasts the `uh3` contract) applies. Explicit *Resume at
-  m:ss* stays available in Info. Rationale: music listeners expect tracks to
-  start from the beginning; long-form audio keeps today's resume.
+- **Start at 0 applies only to Music-scope items (§4) played in queue mode**
+  — Music-lens plays and queue auto-advance — and only when the item is not
+  a podcast episode, an audiobook, or longer than 20 minutes ("long item";
+  the same 20-minute threshold decides the ±15 s row in §6.3). Everything
+  else keeps today's resume: every explicit play from the Sets lens, Sets
+  auto-advance, long items, and podcasts (which follow the `uh3` contract).
+  Explicit *Resume at m:ss* stays available in Info. Rationale: listeners
+  expect songs to start from the beginning; files played as files keep the
+  behavior they have now.
 - The automatic "finished" status of short music tracks must not flood the
   in-progress view; M36/M37 store music plays as listening events instead.
 
@@ -503,11 +770,16 @@ target the right one.
   Android the same in its scoped storage. Restored items are revalidated
   against the server (removed/forbidden items are dropped with a quiet
   notice "2 songs are no longer available").
-- Server (M17): one saved queue per user, `GET/PUT /api/v1/queue` with a
-  revision and an edit clock (last writer wins, same clock rules as
-  `docs/podcast-sync-contract.md` §4). Saving is explicit or at pause/exit;
-  restoring never replaces an actively playing local queue without asking
-  (*Continue from other device?*).
+- Server (M17): one saved queue per user, `GET /api/v1/queue` returns it
+  with a `revision`; `PUT /api/v1/queue` must send `If-Match: <revision>`
+  and is rejected with **409 Conflict** (current queue in the body) when the
+  saved queue changed meanwhile. This is a revision check, not last-writer-
+  wins: a saved queue is an explicit document, and silently overwriting the
+  other device's save would lose it. On 409 the client asks *Queue changed
+  on another device — Replace it / Keep the other one*. Saving is explicit
+  (*Save to account*) or at pause/exit (then a 409 just keeps the other
+  version and shows a quiet notice). Restoring never replaces an actively
+  playing local queue without asking (*Continue from other device?*).
 
 ## 9. Required states per music screen
 
@@ -515,7 +787,7 @@ target the right one.
 | --- | --- | --- |
 | Loading | existing grid placeholder; rows show skeleton text lines; no layout jump | `CircularProgressIndicator` on first load, keep stale content on refresh (pull to refresh) |
 | Empty: no music metadata yet | "No albums yet. Albums appear after the library is scanned for music tags. Your files are still in Sets." + admin: *Rescan library* | same text; admin gets *Rescan library* |
-| Empty: filter/search | "Nothing matches these filters" + *Clear filters* (existing wording) | same (existing) |
+| Empty: filter/search | Music views: "Nothing matches these filters" + *Clear filters* — **new on the web** (Sets keep today's "No results.") | existing Android wording and button |
 | Empty queue | "Queue is empty. Play an album or song, or use Add to queue." | same |
 | Error | toast + inline *Retry*; never raw exception text | `_ErrorView` pattern with *Retry* |
 | Offline | web needs the server: "Can't reach the server" + *Retry* | banner "Offline · showing downloaded music"; non-downloaded rows disabled with reason |
@@ -533,7 +805,7 @@ dependent task's acceptance (`humanUsability`).
 | Thing | Identity | Notes |
 | --- | --- | --- |
 | Song / file | existing `media.id` | playback, progress, favorites, bookmarks, notes, tags, shares, downloads keep using it |
-| Album | `album_key` (string, e.g. `al_<hash>`) from MusicBrainz release id when present, else normalized (album artist, album title, year/disc-folder) | opaque to clients; never a database row id in URLs |
+| Album | `album_key` (string, e.g. `al_<hash>`) from the MusicBrainz release id when present, else normalized (album artist, album title) | opaque to clients; never a database row id in URLs. Year and disc folders are **not** part of the key, so `Disc 1/` and `Disc 2/` of one release form one album (M04); two different releases with identical album artist and title merge until MBIDs or A06b mapping separate them (accepted, shown in Info) |
 | Artist | `artist_key` (`ar_<hash>`) from MBID when present, else normalized name | credits keep roles (artist, album artist, composer, performer …) |
 | Playlist | `playlist_id` (`pl_<random>`), user-owned | entries have their own `entry_id` to allow duplicates |
 | Queue entry | `entry_id` (client-generated UUID) + `media_id` | survives reorder |
@@ -541,6 +813,25 @@ dependent task's acceptance (`humanUsability`).
 
 Key stability across retags and moves is A06a (`tk3`); until then keys may
 change on retag and clients must treat a missing key as "item removed".
+
+**Artist splitting policy (decided here, applied by M01/M03/M07):**
+
+- Artist **entities** come only from structured tags: multi-valued fields
+  (ID3v2.4 null-separated `TPE1`, repeated Vorbis/FLAC/Opus `ARTIST`, the
+  `ARTISTS` tag, MP4 multiple `©ART`) and MusicBrainz artist ids. Each value
+  becomes one artist entity with role *artist*; album artists likewise.
+- The **display string** of a track's artist is the single-valued `ARTIST`
+  tag verbatim (e.g. `Aurora Lane feat. Kei`); if only multi-valued fields
+  exist, the values joined with `, `.
+- **No heuristic splitting** of `feat.`, `ft.`, `&`, `,`, `/`, `;` or `x` in
+  v1: such a string is one artist entity named verbatim. Configurable
+  separators belong to A06b (`yl3`, custom tag mapping).
+- Consequence for the fixture: `Aurora Lane feat. Kei` is one artist entity;
+  the track also belongs to album artist `Aurora Lane`'s album. Search
+  (M07) for `Kei` finds the song (display string and entity name contain it)
+  and the entity `Aurora Lane feat. Kei`; it does not create an entity `Kei`.
+  M03 verifies splitting with an additional fixture track carrying two
+  `ARTIST` values.
 
 ### 10.2 API shape (additive, `handleBoth`, `/api` + `/api/v1`)
 
@@ -600,9 +891,15 @@ Nothing in Firefox imitates Cast.
   position and completion follow the podcast contract (§4.2 and §8 there),
   not music rules. Queue code must call the existing progress endpoints so the
   server mirrors episode state as specified in that contract (§7.1 there).
-- The global **Sync now** coordinator (`zh3`) may later carry the saved
-  queue (M17) and listening events (M37); they use the same edit-clock and
-  pending-edit rules and add no new feedback UI beyond `4i3`'s quiet hint.
+- The global **Sync now** coordinator (`zh3`) may later carry listening
+  events (M37, append-only with client event ids and edit clocks like the
+  podcast contract) and push a saved queue (M17). The saved queue keeps its
+  own revision check (§8.4) — on 409 the coordinator leaves the server copy
+  alone and records a pending conflict for the user instead of retrying.
+  No new feedback UI beyond `4i3`'s quiet hint.
+- Podcast task `2i3` changes `PlayerAudioHandler` and
+  `PlaybackSessionCoordinator` for podcast playback; the music queue (M12,
+  M16) must be built on that result, not in parallel (see §8.1 *Podcasts*).
 
 ## 11. Android-only integrations
 
@@ -616,10 +913,26 @@ Nothing in Firefox imitates Cast.
 | M53 SSID-based endpoint routing | Wi-Fi SSID selection | paired URLs are an Android profile feature; web uses its origin |
 | M52 network-type detection | Wi-Fi vs mobile policies | web offers a manual *Data saver* toggle (Network Information API is Chrome-only) |
 | M68 always-on playback display | keep-screen-on option | — |
+| M45 automatic playback cache | stream cache with budget, eviction, prefetch, storage location | web: none beyond the browser's own HTTP cache; streaming verified unchanged |
+| M47 pin collections offline | album/playlist offline copies in Downloads › Music | web: *Download* of the album/playlist files (M46) and the collection membership API that both use |
+| M48 automatic offline sync | scheduled/Wi-Fi-only refresh of pinned collections | web: edits made on the web (playlist changes, favorites) are what Android picks up; verified by changing them in C and F |
+| M49 offline browsing (device part) | Music lens over downloaded items without a server | web: requires the server; shows "Can't reach the server" + Retry |
 | Notification / lock screen / Bluetooth transport (M54 Android part) | true next/previous, metadata, art | browser Media Session (Chrome and Firefox both support `navigator.mediaSession`) |
 
 The web never shows a disabled control for these; Android settings label
 them as device features.
+
+**Why M45/M47/M48/M49 are Android-scoped:** this matches how Player scopes
+offline today — the web offers per-file *Download* (original file, also for
+shares) and its service worker caches only the app shell (`sw.js` never
+caches `/api` or media), while *Keep offline*, durable offline playback and
+offline progress sync exist only on Android (`offline_downloads.dart`,
+`offline_playback_sync.dart`). A browser music library would need Cache
+Storage/IndexedDB quotas that browsers may evict (and Firefox private
+windows do not persist), so it would be unreliable. The alternative — a PWA
+offline mode with an explicit quota UI — is listed as an owner decision
+(§15); until decided, these rows are accepted with Android checks plus the
+shared web checks above.
 
 ## 12. Shortcut allocation (web)
 
@@ -631,19 +944,19 @@ are taken by keyboard access, visuals and hints; `1`–`9` open sets.
 | --- | --- | --- | --- |
 | `Enter` | open item; on a song row: play from here | grid/rows | unchanged meaning (open/play) |
 | `Space` / `p` | play/pause current playback | global | unchanged (docs fixed, B5) |
-| `N` / `P` | next / previous queue item | global | now queue-based |
-| `Q` | show/hide Queue | global | new |
+| `N` / `P` | next / previous | global | queue item in queue mode; unchanged browse sequence in Sets mode (§8.0) |
+| `Q` | show/hide Queue | global | new; not to be confused with `q` (stop and close player, unchanged) — help lists both rows together |
 | `e` | Play next (selected song/album/playlist) | grid/rows/search | new; also in `a` menu |
 | `E` | Add to queue (append) | grid/rows/search | new |
 | `w` | Add to playlist… (dialog) | grid/rows/queue | new |
 | `b` / `B` | go to album / artist of the selected or current song | global | new |
 | `y` | show/hide lyrics | player | matches the existing hint letter of the Lyrics button |
 | `Y` | cycle repeat off → all → one | global + queue | new |
-| `r` | existing shuffle of the listing; inside the Queue: shuffle upcoming | context | keeps the habit |
+| `r` | existing shuffle of the library listing | global | unchanged; queue shuffle is the *⤮ Shuffle* button (§5.3) |
 | `<` / `>` | slower / faster (M23) | player | new |
 | `Z` | sleep timer menu (M22) | global | new; capital to avoid accidents |
-| `J` / `K` | move queue row down / up | Queue panel | local scope |
-| `Delete` | remove queue row / playlist entry | Queue, playlist | Undo toast; matches My Shares |
+| `J` / `K` | move the selected row down / up | Queue panel/dialog; playlist detail (owner only) | local scope via the `isQueueFocused()` / `isPlaylistEditable()` branches (§5.3); help rows "Queue / playlist: J K move row" |
+| `Delete` | remove queue row / playlist entry | Queue panel/dialog; playlist detail (owner only) | Undo toast; matches My Shares; help row "Queue / playlist: Delete removes (Undo)" |
 | `F` | favorite selected entity (song, album, artist, playlist) | grid/rows | extends existing |
 | `/` | search, grouped music results | global | unchanged key |
 | `?` | help, with a new *Music* section | global | update `index.html` help rows and `docs/keyboard-shortcuts.md` |
@@ -652,7 +965,19 @@ Reserved, not allocated: `m` (future mute / multi-select marks — decide in
 M15), `z`, `U`, `V`, `W`, `X`, `I`, `O`, `G`, `[ ]` for later candidates.
 Every new action is also a visible control or menu item, so the keys are
 accelerators, never the only path. Ratings use the action menu's *Rate…*
-popover where `0`–`5` are local keys; global digits keep opening sets.
+popover where `0`–`5` are local keys handled inside the popover with
+`preventDefault()` + `stopImmediatePropagation()` (as `keyboard-access.js`
+does), so the global `1`–`9` set hotkeys never fire behind it.
+
+Global keys vs hint letters: the player's hint letters (`b` previous, `e`
+next, `i` minimize …, from `keyboard-access.js` `preferred`) are only active
+after `;`/`o` or inside a menu/dialog, while the new global `b`/`e` act only
+outside hint mode, so they cannot collide; help explains the two layers.
+
+Playlist detail routing: like the queue, an `isPlaylistEditable()` branch in
+`keyboard.js` (owner's playlist with a selected row) handles `J`/`K`/
+`Delete` and falls through otherwise. Music home *Customize* uses buttons
+(*Move up*/*Move down*, Tab-reachable, hint letters) rather than keys.
 
 ## 13. Accessibility and focus rules (both clients)
 
@@ -690,3 +1015,23 @@ Each dependent task follows its row in the candidate map and:
 5. States every gap (e.g. audio output not heard, no real Cast receiver,
    no Android Auto head unit) and keeps the feature unaccepted on that
    platform.
+
+## 15. Decisions for the owner
+
+These choices are proposed here and need an explicit owner decision before
+or in the named task; implementers follow the proposal unless told
+otherwise.
+
+1. **Sets audio skips images (B3, §8.0, M12):** the one deliberate change
+   to Sets browse sequencing. Alternative: leave Sets exactly as today.
+2. **Android Sets audio sequencing (§8.0, M12):** give Android audio played
+   from Sets the web's browse sequence (parity) or keep single-item playback.
+3. **Firefox remote playback (F02, §10.3):** Player Connect + server DLNA
+   instead of Cast; needs new session/event endpoints shared with M71.
+4. **Web offline scope (M45, M47, M48, M49, §11):** Android-only storage as
+   today, or a PWA offline mode with explicit quota UI.
+5. **Music scope rule (§4, M01):** which sets/files form the Music lens.
+6. **Start-at-0 for music (§8.3):** only for Music-scope items in queue
+   mode; everything else resumes as today.
+7. **Artist splitting (§10.1):** structured tags only, no `feat.` splitting
+   in v1.
