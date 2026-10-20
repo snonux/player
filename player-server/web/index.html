@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/css/components.css">
 <link rel="stylesheet" href="/css/toast.css">
 <link rel="stylesheet" href="/css/player.css">
+<link rel="stylesheet" href="/css/radio.css">
 <script type="module" src="/js/app.js"></script>
 </head>
 <body>
@@ -19,6 +20,7 @@
     <div class="spacer"></div>
     <button id="sidebar-toggle" class="icon-btn" title="Sets" aria-label="Toggle sets sidebar">☰</button>
     <button id="shuffle-toggle" class="icon-btn" title="Shuffle (r)" aria-label="Toggle shuffle">🔀︎</button>
+    <button id="radio-toggle" class="icon-btn" type="button" title="Web radio (w)" aria-label="Open web radio" aria-controls="radio-modal">📻︎</button>
     <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
     <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
     <button id="trash-toggle" class="icon-btn" title="Trash" aria-label="Open trash">🗑</button>
@@ -179,6 +181,86 @@
 
 <footer class="toast" id="toast" role="status" aria-live="polite"></footer>
 
+<!-- Web radio: the audio element and the bar stay outside the dialog so a
+     station keeps playing after the dialog is closed. -->
+<audio id="radio-audio" class="hidden" preload="none"></audio>
+<div id="radio-bar" class="radio-bar hidden" role="region" aria-label="Web radio">
+  <span class="radio-bar-icon" aria-hidden="true">📻︎</span>
+  <span id="radio-bar-title" class="radio-bar-title"></span>
+  <span id="radio-bar-status" class="radio-bar-status text-muted text-xs"></span>
+  <button id="radio-bar-toggle" class="btn btn-sm" type="button">Stop</button>
+  <button id="radio-bar-open" class="btn btn-ghost btn-sm" type="button" aria-controls="radio-modal">Open radio</button>
+</div>
+
+<div id="radio-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="radio-title">
+  <div class="modal modal-wide radio-modal">
+    <div class="modal-header">
+      <h3 id="radio-title">Web radio</h3>
+      <div class="spacer"></div>
+      <button id="radio-close" class="icon-btn" type="button" aria-label="Close web radio">✕</button>
+    </div>
+    <section id="radio-now" class="radio-now hidden" aria-label="Now playing">
+      <span id="radio-now-icon" class="radio-icon" aria-hidden="true"></span>
+      <div class="radio-now-text">
+        <div id="radio-now-name" class="radio-now-name"></div>
+        <div id="radio-now-details" class="text-muted text-xs"></div>
+        <div id="radio-status" class="radio-status text-xs" role="status" aria-live="polite"></div>
+      </div>
+      <div class="radio-now-actions">
+        <button id="radio-toggle-play" class="btn btn-sm" type="button">Stop</button>
+        <button id="radio-now-bookmark" class="btn btn-sm" type="button" aria-pressed="false">Bookmark</button>
+        <a id="radio-now-homepage" class="btn btn-ghost btn-sm hidden" target="_blank" rel="noopener noreferrer">Homepage</a>
+      </div>
+      <div id="radio-explore-controls" class="radio-explore-controls hidden" role="group" aria-label="Auto explore">
+        <span id="radio-countdown" class="radio-countdown text-xs" aria-live="off"></span>
+        <button id="radio-explore-keep" class="btn btn-primary btn-sm" type="button">Keep this station</button>
+        <button id="radio-explore-next" class="btn btn-sm" type="button">Next station</button>
+        <button id="radio-explore-stop" class="btn btn-ghost btn-sm" type="button">Stop exploring</button>
+      </div>
+    </section>
+    <div class="radio-tabs" role="tablist" aria-label="Web radio views">
+      <button id="radio-tab-explore" class="btn btn-ghost btn-sm radio-tab active" type="button" role="tab" aria-selected="true" aria-controls="radio-panel-explore">Explore</button>
+      <button id="radio-tab-bookmarks" class="btn btn-ghost btn-sm radio-tab" type="button" role="tab" aria-selected="false" aria-controls="radio-panel-bookmarks">Bookmarks</button>
+    </div>
+    <div id="radio-panel-explore" class="radio-panel" role="tabpanel" aria-labelledby="radio-tab-explore">
+      <form id="radio-search-form" class="radio-filters" role="search">
+        <label class="radio-field radio-field-wide"><span class="text-xs text-muted">Station name</span>
+          <input id="radio-q" type="search" placeholder="Search stations…" autocomplete="off"></label>
+        <label class="radio-field"><span class="text-xs text-muted">Genre</span>
+          <select id="radio-tag"><option value="">Any genre</option></select></label>
+        <label class="radio-field"><span class="text-xs text-muted">Country</span>
+          <select id="radio-country"><option value="">Any country</option></select></label>
+        <label class="radio-field"><span class="text-xs text-muted">Order</span>
+          <select id="radio-order">
+            <option value="popular">Most popular</option>
+            <option value="votes">Most votes</option>
+            <option value="name">Name</option>
+            <option value="random">Random</option>
+          </select></label>
+        <button id="radio-search" class="btn btn-primary btn-sm" type="submit">Search</button>
+      </form>
+      <div class="radio-explore-start">
+        <button id="radio-explore" class="btn btn-sm" type="button">Auto explore</button>
+        <label class="radio-dwell text-xs text-muted">Next station after
+          <select id="radio-dwell" aria-label="Auto explore: seconds per station">
+            <option value="15">15 s</option>
+            <option value="30" selected>30 s</option>
+            <option value="60">60 s</option>
+          </select></label>
+        <span class="text-xs text-muted">Plays random stations of the filters above, one after another.</span>
+      </div>
+      <p id="radio-results-status" class="text-muted text-sm" role="status" aria-live="polite"></p>
+      <ul id="radio-results" class="radio-list" aria-label="Stations"></ul>
+      <button id="radio-more" class="btn btn-sm hidden" type="button">Load more stations</button>
+    </div>
+    <div id="radio-panel-bookmarks" class="radio-panel hidden" role="tabpanel" aria-labelledby="radio-tab-bookmarks">
+      <p id="radio-bookmarks-status" class="text-muted text-sm" role="status" aria-live="polite"></p>
+      <ul id="radio-bookmarks" class="radio-list" aria-label="Bookmarked stations"></ul>
+    </div>
+    <p class="text-muted text-xs mt-2">Station directory by <a href="https://www.radio-browser.info/" target="_blank" rel="noopener noreferrer">radio-browser.info</a>. <kbd>j</kbd>/<kbd>k</kbd> move between stations, <kbd>Enter</kbd> plays, <kbd>Esc</kbd> closes (the station keeps playing).</p>
+  </div>
+</div>
+
 <!-- Help Modal -->
 <div id="help-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="help-title">
   <div class="modal help-modal">
@@ -226,6 +308,8 @@
         <div class="help-row"><span><kbd>c</kbd></span><span>Toggle display fill-crop (fullscreen)</span></div>
         <div class="help-row"><span><kbd>Shift+↑</kbd> <kbd>Shift+↓</kbd> <kbd>Shift+←</kbd> <kbd>Shift+→</kbd></span><span>Nudge display crop position (active crop)</span></div>
         <div class="help-row"><span><kbd>x</kbd></span><span>Cycle display crop anchor (active crop)</span></div>
+        <div class="help-row"><span><kbd>w</kbd></span><span>Web radio: explore stations, auto explore, bookmarks</span></div>
+        <div class="help-row"><span><kbd>j</kbd> <kbd>k</kbd> <kbd>↑</kbd> <kbd>↓</kbd></span><span>Web radio: move between stations; Enter plays</span></div>
         <div class="help-row"><span><kbd>L</kbd></span><span>My Shares (outside expanded images)</span></div>
         <div class="help-row"><span><kbd>u</kbd></span><span>Upload to current set</span></div>
         <div class="help-row"><span><kbd>A</kbd></span><span>Admin panel (admins)</span></div>

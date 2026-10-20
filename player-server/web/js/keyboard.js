@@ -380,6 +380,10 @@ export function initKeyboard(handlers) {
       case 'd': handlers.toggleDetach?.(e); break;
       case 'D': handlers.download?.(e); break;
       case 'u': handlers.upload?.(e); break;
+      case 'w':
+        e.preventDefault();
+        handlers.radio?.(e);
+        break;
       case 'L': handlers.sharesToggle?.(e); break;
       case 'T': handlers.regenThumbnail?.(e); break;
       case 'g':

@@ -26,6 +26,7 @@ type Store interface {
 	NoteRepo
 	BookmarkRepo
 	PodcastRepo
+	RadioRepo
 }
 
 // CoreStore is the common subset embedded by service-specific store
@@ -368,6 +369,18 @@ type NoteRepo interface {
 	GetNote(ctx context.Context, mediaID, userID int64) (*model.Note, error)
 	// DeleteNote removes a user's note for a media item.
 	DeleteNote(ctx context.Context, mediaID, userID int64) error
+}
+
+// RadioRepo manages the radio stations users bookmarked.
+type RadioRepo interface {
+	// UpsertRadioBookmark saves a bookmark, refreshing the station data
+	// but keeping the original bookmark time when it exists already.
+	UpsertRadioBookmark(ctx context.Context, b *model.RadioBookmark) (*model.RadioBookmark, error)
+	// ListRadioBookmarks returns a user's bookmarks, newest first.
+	ListRadioBookmarks(ctx context.Context, userID int64) ([]model.RadioBookmark, error)
+	// GetRadioBookmark returns nil, nil when the station is not bookmarked.
+	GetRadioBookmark(ctx context.Context, userID int64, uuid string) (*model.RadioBookmark, error)
+	DeleteRadioBookmark(ctx context.Context, userID int64, uuid string) error
 }
 
 // BookmarkRepo manages named playback positions owned by one user.

@@ -57,6 +57,7 @@ type Server struct {
 	authSvc       service.AuthService
 	adminSvc      service.AdminService
 	podcastSvc    service.PodcastEpisodeService
+	radio         service.RadioService
 	streamer      service.MediaStreamer
 	staticFS      http.FileSystem
 	shareRenderer *web.SharePageRenderer
@@ -76,6 +77,7 @@ type ServerServices struct {
 	Auth    service.AuthService
 	Admin   service.AdminService
 	Podcast service.PodcastEpisodeService
+	Radio   service.RadioService
 }
 
 // ServerDeps contains the dependencies needed to construct a Server.
@@ -154,6 +156,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		authSvc:       deps.Services.Auth,
 		adminSvc:      deps.Services.Admin,
 		podcastSvc:    deps.Services.Podcast,
+		radio:         deps.Services.Radio,
 		streamer:      deps.MediaStreamer,
 		staticFS:      deps.StaticFS,
 		shareRenderer: web.NewSharePageRenderer(deps.StaticFS),
@@ -428,6 +431,7 @@ func (s *Server) routes() {
 	s.routesShares()
 	s.routesAdmin()
 	s.routesPodcast()
+	s.routesRadio()
 }
 
 // routesPodcast wires the podcast API routes.

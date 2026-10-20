@@ -30,6 +30,7 @@ var userOwned = []ownedRows{
 	{"media_bookmarks", "user_id"},
 	{"shares", "created_by"},
 	{"podcast_status", "user_id"},
+	{"radio_bookmarks", "user_id"},
 }
 
 // mediaOwned are the rows that belong to a media item.

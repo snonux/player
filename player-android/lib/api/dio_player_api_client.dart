@@ -967,6 +967,99 @@ class DioPlayerApiClient extends PlayerApiClient
   }
 
   // ---------------------------------------------------------------------------
+  // Web radio
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<List<RadioStation>> searchRadioStations({
+    String? search,
+    String? tag,
+    String? country,
+    RadioOrder order = RadioOrder.popular,
+    int? limit,
+    int? offset,
+  }) async {
+    final response = await rawDio.get<List<dynamic>>(
+      '$_kApiV1/radio/stations',
+      queryParameters: {
+        if (search != null && search.trim().isNotEmpty) 'q': search.trim(),
+        if (tag != null && tag.isNotEmpty) 'tag': tag,
+        if (country != null && country.isNotEmpty) 'country': country,
+        'order': order.apiValue,
+        if (limit != null) 'limit': limit,
+        if (offset != null) 'offset': offset,
+      },
+      options: _personalOptions,
+    );
+    return _stations(response.data);
+  }
+
+  @override
+  Future<List<RadioTag>> listRadioTags({int? limit}) async {
+    final response = await rawDio.get<List<dynamic>>(
+      '$_kApiV1/radio/tags',
+      queryParameters: {if (limit != null) 'limit': limit},
+    );
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(RadioTag.fromJson)
+        .where((tag) => tag.name.isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Future<List<RadioCountry>> listRadioCountries() async {
+    final response =
+        await rawDio.get<List<dynamic>>('$_kApiV1/radio/countries');
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(RadioCountry.fromJson)
+        .where((country) => country.code.isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Future<List<RadioStation>> listRadioBookmarks() async {
+    final response = await rawDio.get<List<dynamic>>(
+      '$_kApiV1/radio/bookmarks',
+      options: _personalOptions,
+    );
+    return _stations(response.data);
+  }
+
+  @override
+  Future<RadioStation> addRadioBookmark(String uuid) async {
+    final response = await rawDio.put<Map<String, dynamic>>(
+      '$_kApiV1/radio/bookmarks/${Uri.encodeComponent(uuid)}',
+      options: _personalOptions,
+    );
+    return RadioStation.fromJson(response.data!);
+  }
+
+  @override
+  Future<void> removeRadioBookmark(String uuid) async {
+    await rawDio.delete<void>(
+      '$_kApiV1/radio/bookmarks/${Uri.encodeComponent(uuid)}',
+      options: _personalOptions,
+    );
+  }
+
+  // Malformed entries are skipped so one bad directory row cannot hide the
+  // rest of the list.
+  List<RadioStation> _stations(List<dynamic>? data) {
+    final stations = <RadioStation>[];
+    for (final item in data ?? const []) {
+      if (item is! Map<String, dynamic>) continue;
+      try {
+        stations.add(RadioStation.fromJson(item));
+      } on FormatException {
+        continue;
+      }
+    }
+    return stations;
+  }
+
+  // ---------------------------------------------------------------------------
   // Admin – Users
   // ---------------------------------------------------------------------------
 

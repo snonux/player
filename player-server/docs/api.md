@@ -27,6 +27,7 @@ document alone, mint a Bearer token, and begin implementing
 14. [Tags](#tags)
 15. [Admin](#admin)
 16. [Podcasts](#podcasts)
+17. [Web Radio](#web-radio)
 
 ---
 
@@ -1928,6 +1929,136 @@ Toggle the per-user completion state of a podcast episode.
 
 ---
 
+## Web Radio
+
+Internet radio stations come from the [Radio Browser](https://www.radio-browser.info/)
+directory, which the server queries (`RADIO_BROWSER_URL`). Clients never
+contact the directory or a station themselves: the server relays each
+station's stream and favicon, so browsers see no mixed content, Android needs
+no cleartext exception, and the normal session check applies. Stations that
+only offer HLS are left out, because they are a playlist of segments rather
+than one stream.
+
+By default the relay only connects to public addresses; a station entry that
+points at loopback, private, link-local or other special-purpose addresses
+answers `502`. Set `RADIO_ALLOW_PRIVATE_NETWORKS=true` to play stations on
+your own network.
+
+### Station Schema
+
+```json
+{
+  "uuid": "96202f73-0601-11e8-ae97-52543be04c81",
+  "name": "Jazz Radio",
+  "homepage": "https://example.org/",
+  "favicon_url": "/api/radio/stations/96202f73-0601-11e8-ae97-52543be04c81/favicon",
+  "stream_url": "/api/radio/stations/96202f73-0601-11e8-ae97-52543be04c81/stream",
+  "country": "Germany",
+  "country_code": "DE",
+  "language": "german",
+  "tags": ["jazz", "smooth jazz"],
+  "codec": "MP3",
+  "bitrate": 128,
+  "votes": 1234,
+  "bookmarked": true,
+  "bookmarked_at": "2026-10-20T18:00:00Z"
+}
+```
+
+`favicon_url` is `""` when the station has none. `stream_url` and
+`favicon_url` are paths on this server (relative to its origin); the station's
+own addresses are never sent. `bitrate` is in kbit/s, `0` when unknown.
+`bookmarked_at` is present only on bookmarked stations.
+
+### `GET /api/radio/stations` · `GET /api/v1/radio/stations`
+
+Searches the directory. All parameters are optional:
+
+| Parameter | Description |
+|-----------|-------------|
+| `q` | Part of the station name (at most 100 characters) |
+| `tag` | Exact tag, e.g. `jazz` (case-insensitive) |
+| `country` | ISO 3166-1 alpha-2 code, e.g. `DE` |
+| `order` | `popular` (default, by plays), `votes`, `name`, `random` |
+| `limit` | 1–100, default 50 |
+| `offset` | 0–10000 |
+
+**Response `200 OK`:** array of stations. Because HLS stations are dropped, a
+page can hold fewer stations than `limit` without being the last one.
+
+**Status codes:** `200`, `400` (invalid parameter), `401`, `502` (directory unreachable)
+
+### `GET /api/radio/tags` · `GET /api/v1/radio/tags`
+
+Tags with the most stations first. `limit`: 1–200, default 60.
+
+**Response `200 OK`:** `[{"name": "jazz", "station_count": 812}]`
+
+**Status codes:** `200`, `400`, `401`, `502`
+
+### `GET /api/radio/countries` · `GET /api/v1/radio/countries`
+
+Countries with stations, most stations first.
+
+**Response `200 OK`:** `[{"code": "DE", "name": "Germany", "station_count": 4321}]`
+
+**Status codes:** `200`, `401`, `502`
+
+Tag and country lists are cached by the server for an hour.
+
+### `GET /api/radio/stations/{uuid}/stream` · `GET /api/v1/radio/stations/{uuid}/stream`
+
+The station's live stream, relayed. `Content-Type` is the station's (e.g.
+`audio/mpeg`, `audio/aac`, `audio/ogg`), or derived from the codec when the
+station sends none. The answer has no length and no ranges
+(`Accept-Ranges: none`, `Cache-Control: no-store`) and runs until the client
+disconnects or the station stops sending for 30 seconds. `HEAD` answers the
+headers from the station data without connecting to the station.
+
+The station is found among the user's bookmarks first (so bookmarked
+stations play even when the directory is down), then among stations seen in
+recent searches, then by asking the directory.
+
+A user can hold 3 relayed streams at a time, the server 64.
+
+**Status codes:** `200`, `401`, `404` (unknown station, or HLS only), `415`
+(the station answered something that is not audio, e.g. a web page or
+playlist), `502` (station or directory unreachable), `503` (too many streams;
+`Retry-After: 5`)
+
+### `GET /api/radio/stations/{uuid}/favicon` · `GET /api/v1/radio/stations/{uuid}/favicon`
+
+The station's logo, relayed (raster images up to 1 MiB; SVG is refused).
+
+**Status codes:** `200`, `401`, `404` (no favicon, or not reachable)
+
+### `GET /api/radio/bookmarks` · `GET /api/v1/radio/bookmarks`
+
+The user's bookmarked stations, newest first. Bookmarks are stored per user
+on the server, so all clients share them.
+
+**Response `200 OK`:** array of stations, all `"bookmarked": true`.
+
+### `PUT /api/radio/bookmarks/{uuid}` · `PUT /api/v1/radio/bookmarks/{uuid}`
+
+Bookmarks a station. No body: the server takes the station data from recent
+searches or the directory and keeps a copy. Idempotent; bookmarking again
+keeps the original `bookmarked_at`.
+
+**Response `200 OK`:** the station.
+
+**Status codes:** `200`, `401`, `404` (unknown station), `502`
+
+### `DELETE /api/radio/bookmarks/{uuid}` · `DELETE /api/v1/radio/bookmarks/{uuid}`
+
+Removes a bookmark. Removing a station that is not bookmarked also succeeds.
+
+**Response `204 No Content`**
+
+**Status codes:** `204`, `401`, `404` (malformed UUID)
+
+---
+
 ## Quick Reference
 
 ### Route Summary
@@ -1988,6 +2119,14 @@ Toggle the per-user completion state of a podcast episode.
 | `GET` | `podcasts/{id}/episodes` | session | List episodes |
 | `POST` | `podcasts/episodes/{episode_id}/download` | session | Download episode |
 | `POST` | `podcasts/episodes/{episode_id}/complete` | session | Toggle completion |
+| `GET` | `radio/stations` | session | Search radio stations |
+| `GET` | `radio/tags` | session | Radio tags by station count |
+| `GET` | `radio/countries` | session | Radio countries by station count |
+| `GET`, `HEAD` | `radio/stations/{uuid}/stream` | session | Relayed live station stream |
+| `GET` | `radio/stations/{uuid}/favicon` | session | Relayed station logo |
+| `GET` | `radio/bookmarks` | session | List bookmarked stations |
+| `PUT` | `radio/bookmarks/{uuid}` | session | Bookmark a station |
+| `DELETE` | `radio/bookmarks/{uuid}` | session | Remove a station bookmark |
 | `GET` | `admin/users` | admin | List users |
 | `POST` | `admin/users` | admin | Create user |
 | `DELETE` | `admin/users/{id}` | admin | Delete user |

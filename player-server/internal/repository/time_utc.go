@@ -56,6 +56,7 @@ var timeColumns = map[string][]string{
 	"podcast_feeds":        {"last_checked_at", "next_check_at", "created_at"},
 	"podcast_episodes":     {"published_at", "created_at"},
 	"podcast_status":       {"updated_at"},
+	"radio_bookmarks":      {"created_at"},
 }
 
 // utcTimesDSN returns dsn with the driver option that makes it write, bind
