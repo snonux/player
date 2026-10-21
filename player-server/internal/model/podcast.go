@@ -59,20 +59,58 @@ type PodcastEpisode struct {
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
-// PodcastStatus tracks per-user completion and progress for an episode.
-type PodcastStatus struct {
-	UserID          int64     `json:"user_id"`
-	EpisodeID       int64     `json:"episode_id"`
-	IsCompleted     bool      `json:"is_completed"`
-	PositionSeconds float64   `json:"position_seconds"`
-	UpdatedAt       time.Time `json:"updated_at"`
-}
-
-// PodcastEpisodeWithStatus is a PodcastEpisode augmented with per-user status.
+// PodcastEpisodeWithStatus is a PodcastEpisode augmented with the caller's
+// episode state (the completion and position registers, contract §10).
 type PodcastEpisodeWithStatus struct {
 	PodcastEpisode
 	// FeedKey is the identity of the episode's feed.
-	FeedKey         string  `json:"feed_key"`
-	IsCompleted     bool    `json:"is_completed"`
+	FeedKey string `json:"feed_key"`
+	// IsCompleted is the caller's completion register, false when unset.
+	IsCompleted bool `json:"is_completed"`
+	// PositionSeconds is the caller's position register, 0 when unset.
 	PositionSeconds float64 `json:"position_seconds"`
+}
+
+// Completion filters of the episode views (contract §6.3).
+const (
+	// PodcastFilterUncompleted lists episodes that are not completed,
+	// started ones included; it is the default.
+	PodcastFilterUncompleted = "uncompleted"
+	// PodcastFilterCompleted lists completed episodes.
+	PodcastFilterCompleted = "completed"
+	// PodcastFilterAll lists every episode.
+	PodcastFilterAll = "all"
+)
+
+// PodcastEpisodeView is one episode of a subscription or all-episodes view
+// (contract §6.3): catalog metadata of an episode of a feed the caller is
+// subscribed to, with the caller's episode state.
+type PodcastEpisodeView struct {
+	// ID is the catalog episode id, for the routes that still take it
+	// (server download); it is never an identity.
+	ID              int64      `json:"id"`
+	FeedKey         string     `json:"feed_key"`
+	EpisodeKey      string     `json:"episode_key"`
+	FeedTitle       string     `json:"feed_title"`
+	Title           string     `json:"title"`
+	Description     string     `json:"description"`
+	PublishedAt     *time.Time `json:"published_at"`
+	DurationSeconds *float64   `json:"duration_seconds"`
+	EpisodeURL      string     `json:"episode_url"`
+	// Completed, CompletionSource and PositionSeconds are the caller's
+	// registers; unset registers read as false, "" and 0.
+	Completed        bool    `json:"completed"`
+	CompletionSource string  `json:"completion_source"`
+	PositionSeconds  float64 `json:"position_seconds"`
+	// ServerCopy is set only when a non-deleted server copy exists and the
+	// caller may read the podcast set.
+	ServerCopy *PodcastServerCopy `json:"server_copy"`
+	// SetID is the catalog feed's set, for the permission check of
+	// ServerCopy.
+	SetID int64 `json:"-"`
+}
+
+// PodcastServerCopy names the media row of an episode's server copy.
+type PodcastServerCopy struct {
+	MediaID int64 `json:"media_id"`
 }

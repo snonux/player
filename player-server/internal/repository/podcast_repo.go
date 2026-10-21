@@ -38,18 +38,16 @@ type PodcastRepo interface {
 	// ListEpisodeMediaIDs returns the media IDs linked to downloaded episodes
 	// of the given feeds, unpaged, so callers never miss rows between pages.
 	ListEpisodeMediaIDs(ctx context.Context, feedIDs []int64) ([]int64, error)
-	// ListEpisodesByFeedIDsWithStatus returns episodes with per-user completion
-	// and progress for a list of feed IDs, applying global limit/offset.
+	// ListEpisodesByFeedIDsWithStatus returns the episodes of several feeds
+	// with the user's completion and position registers, applying a global
+	// limit/offset.
 	ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error)
 	// UpdateEpisodeMedia links an episode to a media row after downloading.
 	UpdateEpisodeMedia(ctx context.Context, episodeID, mediaID int64, fileName string) error
 	// DeleteEpisodesByFeed removes all episodes for a feed.
 	DeleteEpisodesByFeed(ctx context.Context, feedID int64) error
 
-	// UpsertEpisodeProgress saves or updates a user's episode status.
-	UpsertEpisodeProgress(ctx context.Context, status *model.PodcastStatus) error
-	// GetEpisodeProgress returns a user's status for an episode.
-	GetEpisodeProgress(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error)
-	// ListEpisodesWithStatus returns episodes with per-user completion and progress.
+	// ListEpisodesWithStatus returns a feed's episodes with the user's
+	// completion and position registers.
 	ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error)
 }

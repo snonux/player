@@ -25,11 +25,16 @@ const (
 	MaxCatalogFeedsPerUserHour = 20
 )
 
+// PodcastSyncRepo synchronizes a user's per-account podcast state.
+type PodcastSyncRepo interface {
+	// SyncPodcast applies validated subscription and episode edits of one
+	// user and pulls that user's changes (or one scoped episode), all in
+	// one transaction.
+	SyncPodcast(ctx context.Context, userID int64, in model.PodcastSyncBatch) (*model.PodcastSyncResponse, error)
+}
+
 // PodcastSubscriptionRepo stores the per-account subscription registers.
 type PodcastSubscriptionRepo interface {
-	// SyncPodcastSubscriptions applies validated subscription edits of one
-	// user and pulls that user's changes, all in one transaction.
-	SyncPodcastSubscriptions(ctx context.Context, userID int64, in model.PodcastSubscriptionSync) (*model.PodcastSyncResponse, error)
 	// SetPodcastSubscription writes a server-side edit of the user's
 	// register for feed at server time (advanced by 1 ms past the stored
 	// clock when needed, so the edit always wins).
@@ -42,16 +47,9 @@ type PodcastSubscriptionRepo interface {
 	HasActivePodcastSubscription(ctx context.Context, feedKey string) (bool, error)
 }
 
-// PodcastEpisodeStateRepo writes per-account episode registers.
-type PodcastEpisodeStateRepo interface {
-	// SetEpisodeCompletion records a manual completion edit of the user's
-	// register for a catalog episode at server time (the legacy toggle).
-	SetEpisodeCompletion(ctx context.Context, userID, episodeID int64, completed bool, now time.Time) error
-}
-
-var _ PodcastEpisodeStateRepo = (*SQLite)(nil)
-
 var _ PodcastSubscriptionRepo = (*SQLite)(nil)
+
+var _ PodcastSyncRepo = (*SQLite)(nil)
 
 // subscriptionRow is a stored subscription register.
 type subscriptionRow struct {

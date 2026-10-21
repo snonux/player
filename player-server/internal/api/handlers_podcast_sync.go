@@ -11,10 +11,11 @@ import (
 const maxPodcastSyncBody = 2 << 20
 
 // handlePodcastSync serves POST /api/podcasts/sync and /api/v1/podcasts/sync:
-// it applies the caller's subscription edits and returns the caller's
-// changes after the cursor (docs/podcast-sync-contract.md §6.2). Every
-// signed-in user may call it; it reads and writes only the caller's rows.
-// A body over the limit answers 413, so a client halves its page.
+// it applies the caller's subscription and episode edits and returns the
+// caller's changes after the cursor, or the one episode of a scoped request
+// (docs/podcast-sync-contract.md §6.2). Every signed-in user may call it; it
+// reads and writes only the caller's rows. A body over the limit answers
+// 413, so a client halves its page.
 func (s *Server) handlePodcastSync(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.podcastSync) {
 		return

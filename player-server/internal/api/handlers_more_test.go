@@ -107,6 +107,11 @@ func TestServer_Config(t *testing.T) {
 	if body["media_page_size"] != 37 {
 		t.Fatalf("expected media_page_size 37, got %d", body["media_page_size"])
 	}
+	// The podcast sync capability (contract §6.1) tells new clients that
+	// the sync API takes episode edits.
+	if body["podcast_sync"] != 1 {
+		t.Fatalf("expected podcast_sync 1, got %d", body["podcast_sync"])
+	}
 }
 
 func TestPingStore_nonPinger(t *testing.T) {

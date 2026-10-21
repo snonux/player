@@ -121,7 +121,7 @@ func (s *SQLite) GetFeedByKey(ctx context.Context, key string) (*model.PodcastFe
 // feed checker fetches it later. Beyond MaxCatalogFeedsPerUserHour rows per
 // user and hour nothing is created; a later subscribe edit of the same key
 // tries again. Legacy keys always have a catalog row and are skipped.
-func ensureCatalogFeed(ctx context.Context, tx *sql.Tx, userID int64, sub model.PodcastSubscription, in model.PodcastSubscriptionSync) error {
+func ensureCatalogFeed(ctx context.Context, tx *sql.Tx, userID int64, sub model.PodcastSubscription, in model.PodcastSyncBatch) error {
 	if !strings.HasPrefix(sub.FeedKey, "feed:") {
 		return nil
 	}

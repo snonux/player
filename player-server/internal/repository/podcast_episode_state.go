@@ -3,9 +3,10 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"sort"
 	"time"
+
+	"codeberg.org/snonux/player/internal/model"
 )
 
 // Episode state registers (docs/podcast-sync-contract.md, §4 and §7.1).
@@ -15,8 +16,8 @@ import (
 
 // Completion sources of the completion register.
 const (
-	completionManual = "manual"
-	completionAuto   = "auto"
+	completionManual = model.PodcastCompletionManual
+	completionAuto   = model.PodcastCompletionAuto
 )
 
 // episodeStateKey identifies one user's state of one episode.
@@ -253,122 +254,4 @@ ON CONFLICT (user_id, media_id) DO UPDATE SET
  position_seconds = excluded.position_seconds, finished = excluded.finished, updated_at = excluded.updated_at`,
 		userID, mediaID, r.position, boolToInt(r.mirrorFinished()), r.mirrorTime())
 	return err
-}
-
-// Dual-write of legacy edits (until the episode registers become the only
-// history, task wh3). The legacy routes still write podcast_status and
-// playback_progress; each of those writes also records the same edit in
-// the caller's episode registers, in the same transaction, so nothing a
-// user does between this release and the switch of the readers is lost.
-
-// linkedEdit is an edit of one or both episode registers. A nil register
-// is not edited.
-type linkedEdit struct {
-	position   *float64
-	completed  *bool
-	source     string
-	observedMS int64
-}
-
-// positionEdit is a position-only edit at ms.
-func positionEdit(seconds float64, ms int64) linkedEdit {
-	return linkedEdit{position: &seconds, observedMS: ms}
-}
-
-// completionEdit is a completion-only edit at ms.
-func completionEdit(completed bool, source string, ms int64) linkedEdit {
-	return linkedEdit{completed: &completed, source: source, observedMS: ms}
-}
-
-// recordLinkedEpisodeEdit applies e to the user's registers of the podcast
-// episode whose server copy is mediaID; media that is no episode copy is
-// left alone. Registers merge by their own clocks, so a stale edit changes
-// nothing and a changed row takes a new change sequence number.
-func recordLinkedEpisodeEdit(ctx context.Context, q sqlProgressTx, userID, mediaID int64, e linkedEdit) error {
-	var k episodeStateKey
-	err := q.QueryRowContext(ctx, `SELECT f.feed_key, e.episode_key FROM podcast_episodes e
-JOIN podcast_feeds f ON f.id = e.feed_id WHERE e.media_id = ?`, mediaID).Scan(&k.feedKey, &k.episodeKey)
-	if err == sql.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("find linked episode: %w", err)
-	}
-	k.userID = userID
-	return recordEpisodeEdit(ctx, q, k, e)
-}
-
-// recordEpisodeEdit merges e into the registers of k and stores them when
-// they changed.
-func recordEpisodeEdit(ctx context.Context, q sqlProgressTx, k episodeStateKey, e linkedEdit) error {
-	r, err := loadRegisters(ctx, q, k)
-	if err != nil {
-		return err
-	}
-	before := r
-	if e.position != nil {
-		r.setPosition(*e.position, e.observedMS)
-	}
-	if e.completed != nil {
-		r.setCompletion(*e.completed, e.source, e.observedMS)
-	}
-	if r == before {
-		return nil
-	}
-	seq, err := nextChangeSeq(ctx, q)
-	if err != nil {
-		return err
-	}
-	_, err = q.ExecContext(ctx, `INSERT INTO podcast_episode_state
-(user_id, feed_key, episode_key, position_seconds, position_ms, completed, completion_source, completion_ms, change_seq)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (user_id, feed_key, episode_key) DO UPDATE SET position_seconds = excluded.position_seconds,
- position_ms = excluded.position_ms, completed = excluded.completed, completion_source = excluded.completion_source,
- completion_ms = excluded.completion_ms, change_seq = excluded.change_seq`,
-		k.userID, k.feedKey, k.episodeKey, r.position, r.positionMS, boolToInt(r.completed), r.completionSource, r.completionMS, seq)
-	if err != nil {
-		return fmt.Errorf("record episode state: %w", err)
-	}
-	return nil
-}
-
-// loadRegisters returns the stored registers of k, empty when none exist.
-func loadRegisters(ctx context.Context, q sqlQueryRower, k episodeStateKey) (episodeRegisters, error) {
-	var r episodeRegisters
-	err := q.QueryRowContext(ctx, `SELECT position_seconds, position_ms, completed, completion_source, completion_ms
-FROM podcast_episode_state WHERE user_id = ? AND feed_key = ? AND episode_key = ?`, k.userID, k.feedKey, k.episodeKey).Scan(
-		&r.position, &r.positionMS, &r.completed, &r.completionSource, &r.completionMS)
-	if err != nil && err != sql.ErrNoRows {
-		return r, fmt.Errorf("load episode state: %w", err)
-	}
-	return r, nil
-}
-
-// SetEpisodeCompletion implements PodcastEpisodeStateRepo: a manual
-// completion edit at server time, advanced 1 ms past the stored clock so a
-// server action always wins (contract §4 rule 3).
-func (s *SQLite) SetEpisodeCompletion(ctx context.Context, userID, episodeID int64, completed bool, now time.Time) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("set episode completion: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	k := episodeStateKey{userID: userID}
-	err = tx.QueryRowContext(ctx, `SELECT f.feed_key, e.episode_key FROM podcast_episodes e
-JOIN podcast_feeds f ON f.id = e.feed_id WHERE e.id = ?`, episodeID).Scan(&k.feedKey, &k.episodeKey)
-	if err == sql.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("find episode: %w", err)
-	}
-	r, err := loadRegisters(ctx, tx, k)
-	if err != nil {
-		return err
-	}
-	ms := max(now.UnixMilli(), r.completionMS+1)
-	if err := recordEpisodeEdit(ctx, tx, k, completionEdit(completed, completionManual, ms)); err != nil {
-		return err
-	}
-	return tx.Commit()
 }

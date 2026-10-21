@@ -10,16 +10,17 @@ import (
 	"codeberg.org/snonux/player/internal/model"
 )
 
-// UpsertProgress inserts or replaces playback progress and, for the server
-// copy of a podcast episode, records the same edit in the user's episode
-// registers (dual-write, see recordLinkedEpisodeEdit).
+// UpsertProgress inserts or replaces playback progress. For the server copy
+// of a podcast episode the edit goes to the user's episode registers
+// instead, and playback_progress gets their projection (see
+// podcast_episode_bridge.go).
 func (s *SQLite) UpsertProgress(ctx context.Context, progress *model.PlaybackProgress) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("upsert progress: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := upsertProgressAndEpisode(ctx, tx, progress); err != nil {
+	if err := upsertProgressOrEpisode(ctx, tx, progress); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -28,19 +29,19 @@ func (s *SQLite) UpsertProgress(ctx context.Context, progress *model.PlaybackPro
 	return nil
 }
 
-// upsertProgressAndEpisode writes progress and mirrors it into the episode
-// registers: a position save is a position edit, a finished row a manual
-// completion that keeps the position register (contract §7.1).
-func upsertProgressAndEpisode(ctx context.Context, tx sqlProgressTx, progress *model.PlaybackProgress) error {
-	if err := upsertProgress(ctx, tx, progress); err != nil {
+// upsertProgressOrEpisode writes progress of ordinary media, or routes the
+// edit of an episode copy through its registers: a position save is a
+// position edit, a finished row a manual completion that keeps the
+// position register (contract §7.1).
+func upsertProgressOrEpisode(ctx context.Context, tx sqlTx, progress *model.PlaybackProgress) error {
+	k, linked, err := linkedEpisode(ctx, tx, progress.UserID, progress.MediaID)
+	if err != nil {
 		return err
 	}
-	ms := progress.UpdatedAt.UnixMilli()
-	edit := positionEdit(progress.PositionSeconds, ms)
-	if progress.Finished {
-		edit = completionEdit(true, completionManual, ms)
+	if linked {
+		return saveLinkedProgress(ctx, tx, k, progress)
 	}
-	return recordLinkedEpisodeEdit(ctx, tx, progress.UserID, progress.MediaID, edit)
+	return upsertProgress(ctx, tx, progress)
 }
 
 func upsertProgress(ctx context.Context, db sqlExecer, progress *model.PlaybackProgress) error {
@@ -93,36 +94,26 @@ func (s *SQLite) ResetProgress(ctx context.Context, userID, mediaID int64) error
 	return s.ResetProgressAt(ctx, userID, mediaID, time.Now().UTC())
 }
 
+// ResetProgressAt clears one user's progress of a media item as of
+// observed, unless a later edit exists. For an episode copy it is position
+// 0 plus a manual uncompletion of the episode registers.
 func (s *SQLite) ResetProgressAt(ctx context.Context, userID, mediaID int64, observed time.Time) error {
 	observed = observed.Truncate(time.Millisecond)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin reset progress: %w", err)
 	}
-	defer tx.Rollback()
-	latest, err := latestProgressTime(ctx, tx, userID, mediaID)
+	defer func() { _ = tx.Rollback() }()
+	k, linked, err := linkedEpisode(ctx, tx, userID, mediaID)
 	if err != nil {
 		return err
 	}
-	if !observed.After(latest) {
-		return nil
+	if linked {
+		err = resetLinkedProgress(ctx, tx, k, mediaID, observed)
+	} else {
+		err = resetMediaProgress(ctx, tx, userID, mediaID, observed)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO playback_resets(user_id,media_id,observed_ms) VALUES (?,?,?) ON CONFLICT(user_id,media_id) DO UPDATE SET observed_ms=excluded.observed_ms`, userID, mediaID, observed.UnixMilli()); err != nil {
-		return err
-	}
-	if err := deleteUserAccumulators(ctx, tx, userID, mediaID); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_progress WHERE user_id = ? AND media_id = ?`, userID, mediaID); err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("delete user progress: %w", err)
-	}
-	// A reset of an episode copy is position 0 and a manual uncompletion.
-	ms := observed.UnixMilli()
-	reset := positionEdit(0, ms)
-	reset.completed, reset.source = new(bool), completionManual
-	if err := recordLinkedEpisodeEdit(ctx, tx, userID, mediaID, reset); err != nil {
+	if err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -131,30 +122,63 @@ func (s *SQLite) ResetProgressAt(ctx context.Context, userID, mediaID int64, obs
 	return nil
 }
 
-// FinishProgress saves a finished position and starts a fresh playback cycle.
+// resetMediaProgress resets ordinary media: the reset time becomes an edit
+// barrier (playback_resets), and progress and session counters are removed.
+func resetMediaProgress(ctx context.Context, tx *sql.Tx, userID, mediaID int64, observed time.Time) error {
+	latest, err := latestProgressTime(ctx, tx, userID, mediaID)
+	if err != nil || !observed.After(latest) {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO playback_resets(user_id,media_id,observed_ms) VALUES (?,?,?) ON CONFLICT(user_id,media_id) DO UPDATE SET observed_ms=excluded.observed_ms`, userID, mediaID, observed.UnixMilli()); err != nil {
+		return err
+	}
+	if err := deleteUserAccumulators(ctx, tx, userID, mediaID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_progress WHERE user_id = ? AND media_id = ?`, userID, mediaID); err != nil {
+		return fmt.Errorf("delete user progress: %w", err)
+	}
+	return nil
+}
+
+// FinishProgress saves a finished position and starts a fresh playback
+// cycle. For an episode copy it is a manual completion of the episode
+// registers that keeps the position register.
 func (s *SQLite) FinishProgress(ctx context.Context, progress *model.PlaybackProgress) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin finish progress: %w", err)
 	}
-	defer tx.Rollback()
-	latest, err := latestProgressTime(ctx, tx, progress.UserID, progress.MediaID)
+	defer func() { _ = tx.Rollback() }()
+	k, linked, err := linkedEpisode(ctx, tx, progress.UserID, progress.MediaID)
 	if err != nil {
 		return err
 	}
-	if !progress.UpdatedAt.Truncate(time.Millisecond).After(latest) {
-		return nil
+	if linked {
+		err = finishLinkedProgress(ctx, tx, k, progress.MediaID, progress.UpdatedAt.Truncate(time.Millisecond))
+	} else {
+		err = finishMediaProgress(ctx, tx, progress)
 	}
-	if err := deleteUserAccumulators(ctx, tx, progress.UserID, progress.MediaID); err != nil {
-		_ = tx.Rollback()
+	if err != nil {
 		return err
-	}
-	if err := upsertProgressAndEpisode(ctx, tx, progress); err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("finish progress: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit finish progress: %w", err)
+	}
+	return nil
+}
+
+// finishMediaProgress finishes ordinary media unless a later edit exists.
+func finishMediaProgress(ctx context.Context, tx *sql.Tx, progress *model.PlaybackProgress) error {
+	latest, err := latestProgressTime(ctx, tx, progress.UserID, progress.MediaID)
+	if err != nil || !progress.UpdatedAt.Truncate(time.Millisecond).After(latest) {
+		return err
+	}
+	if err := deleteUserAccumulators(ctx, tx, progress.UserID, progress.MediaID); err != nil {
+		return err
+	}
+	if err := upsertProgress(ctx, tx, progress); err != nil {
+		return fmt.Errorf("finish progress: %w", err)
 	}
 	return nil
 }

@@ -283,7 +283,7 @@ The contract is `../docs/podcast-sync-contract.md`. Keep its three kinds of stat
 
 `migratePodcastSync` (`repository/podcast_sync_migration.go`) upgrades every database, fresh or old: `tablesSchema` still creates the two podcast tables in their pre-sync shape. Do not reuse `UnsubscribeFeed` (`DELETE /api/podcasts/{id}`) for unsubscribing or file cleanup: it removes server copies, and the catalog row only when nobody is subscribed. Catalog rows a non-admin subscription created are fetched (feed, cover, enclosure) only through the restricted client of `service/podcast_outbound.go` (public unicast addresses, checked in the dialer); the checker skips feeds without an active subscription.
 
-Until `wh3` switches the readers, the legacy toggle (`podcast_status`) and the media progress writes of downloaded episodes (`UpsertProgress`, `FinishProgress`, `ResetProgressAt`, `SyncPlayback`) also record the same edit in the caller's episode registers (`recordLinkedEpisodeEdit`, `SetEpisodeCompletion`); keep that dual-write on any new write path. In the web UI, **Unsubscribe** (`web/js/podcast-subscriptions.js`) posts a tombstone to `/api/podcasts/sync`; only the admin **Remove from server** button calls the DELETE.
+Episode registers are the only listening history of an episode (contract §7.1). Every write goes through `mergeEpisodeEdit` (`repository/podcast_episode_register.go`), which stores a changed row under a new `change_seq` and rewrites the `playback_progress` mirror of every server copy (`writeEpisodeMirror`: `finished = completed && completion_ms >= position_ms`, `accumulated_seconds` kept) in the same transaction: the sync API, the legacy toggle (`ToggleEpisodeCompletion`) and, for media linked to an episode, the progress routes (`podcast_episode_bridge.go`: `UpsertProgress`, `FinishProgress`, `ResetProgressAt`, `SyncPlayback` decide by the registers' clocks, clamp clocks per §4 rule 4, and never write `playback_resets`). The progress service asks `PositionEditTime` (position register) before a save and `ProgressEditTime` (latest of both) for server-time ties. A new download seeds mirrors (`UpdateEpisodeMedia`). `podcast_status` is read-only for one release: never read or write it. Keep any new write path of episode copies on this bridge. In the web UI, **Unsubscribe** (`web/js/podcast-subscriptions.js`) posts a tombstone to `/api/podcasts/sync`; only the admin **Remove from server** button calls the DELETE.
 
 ### Subscribing
 
@@ -308,15 +308,15 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 |--------|------|-------------|
 | `GET` | `/api/podcasts` | List subscribed podcast feeds |
 | `POST` | `/api/podcasts` | Subscribe to a new feed (admin); also writes the admin's subscription register |
-| `POST` | `/api/podcasts/sync` | Synchronize the caller's subscription registers (any user) |
+| `POST` | `/api/podcasts/sync` | Synchronize the caller's subscription and episode registers (any user); advertised as `podcast_sync` in `/api/config` |
 | `DELETE` | `/api/podcasts/{id}` | Remove a feed's server copies; the feed itself only when nobody is subscribed (admin) |
-| `GET` | `/api/podcasts/{id}/episodes` | List episodes with status |
+| `GET` | `/api/podcasts/{id}/episodes` | List episodes with the caller's episode state |
 | `POST` | `/api/podcasts/episodes/{id}/download` | Server-side download |
-| `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle completion |
+| `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle the caller's completion register (manual edit at server time) |
 
 ### New Files
 
-- `internal/model/podcast.go` — PodcastFeed, PodcastEpisode, PodcastStatus
+- `internal/model/podcast.go` — PodcastFeed, PodcastEpisode, episode views
 - `internal/repository/podcast.go` — CRUD and queries
 - `internal/podcast/feed.go` — RSS/Atom parser using `gofeed`
 - `internal/podcast/cover.go` — Cover image downloader

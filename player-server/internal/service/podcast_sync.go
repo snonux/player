@@ -28,30 +28,21 @@ const (
 	maxSyncURLs = 10
 	// maxObservedMS is the last millisecond of year 9999.
 	maxObservedMS = 253402300799999
-	// syncClockSkew is how far ahead of the server a clock may be before it
-	// is replaced by the receive time (rule 4 of §4): a device with a future
-	// clock would otherwise block every later edit.
-	syncClockSkew = 5 * time.Minute
 )
 
 // ErrInvalidPodcastSync rejects a malformed sync envelope (HTTP 400).
 // Invalid single edits are rejected per item in the response instead.
 var ErrInvalidPodcastSync = &apiError{msg: "invalid podcast sync request", status: http.StatusBadRequest}
 
-// ErrPodcastEpisodeSyncUnsupported refuses episode edits and scoped
-// requests until episode state synchronization exists (task wh3). Nothing
-// is acked, so a client keeps those edits pending. The server does not
-// advertise the podcast_sync capability before then.
-var ErrPodcastEpisodeSyncUnsupported = &apiError{msg: "podcast episode sync is not supported yet", status: http.StatusBadRequest}
-
-// PodcastSyncService synchronizes a user's podcast subscriptions.
+// PodcastSyncService synchronizes a user's podcast subscriptions and
+// episode state.
 type PodcastSyncService interface {
 	Sync(ctx context.Context, userID int64, req model.PodcastSyncRequest) (*model.PodcastSyncResponse, error)
 }
 
 // PodcastSyncStore is the store the sync service needs.
 type PodcastSyncStore interface {
-	repository.PodcastSubscriptionRepo
+	repository.PodcastSyncRepo
 }
 
 type podcastSyncService struct {
@@ -62,6 +53,14 @@ type podcastSyncService struct {
 
 var _ PodcastSyncService = (*podcastSyncService)(nil)
 
+// syncValidation collects the edits a request may apply, the rejections of
+// those it may not, and the edits whose clocks were clamped.
+type syncValidation struct {
+	now      time.Time
+	rejected []model.PodcastSyncRejection
+	clamped  []string
+}
+
 // NewPodcastSyncService creates the sync service. checkInterval is the
 // refresh interval, in minutes, of catalog feeds a subscription creates.
 func NewPodcastSyncService(store PodcastSyncStore, clk clock.Clock, checkInterval int) *podcastSyncService {
@@ -71,46 +70,70 @@ func NewPodcastSyncService(store PodcastSyncStore, clk clock.Clock, checkInterva
 	return &podcastSyncService{store: store, clock: clk, checkInterval: checkInterval}
 }
 
-// Sync validates the request, applies the valid subscription edits and
-// pulls the user's changes. Every call reads and writes only the caller's
-// rows. Item-level problems are reported in Rejected; only a malformed
-// envelope fails the whole request.
+// Sync validates the request, applies the valid subscription and episode
+// edits and pulls the user's changes, or the one episode of a scoped
+// request. Every call reads and writes only the caller's rows. Item-level
+// problems are reported in Rejected; only a malformed envelope fails the
+// whole request.
 func (s *podcastSyncService) Sync(ctx context.Context, userID int64, req model.PodcastSyncRequest) (*model.PodcastSyncResponse, error) {
 	if err := checkSyncEnvelope(req); err != nil {
 		return nil, err
 	}
 	now := s.clock.Now()
-	in := model.PodcastSubscriptionSync{Epoch: req.Epoch, Limit: req.Limit, Now: now, CheckIntervalMinutes: s.checkInterval}
+	in := model.PodcastSyncBatch{Epoch: req.Epoch, Limit: req.Limit, Scope: req.Scope, Now: now,
+		CheckIntervalMinutes: s.checkInterval}
 	if req.Since != nil {
 		in.Since = *req.Since
 	}
-	rejected := []model.PodcastSyncRejection{}
-	var clamped []string
-	for _, e := range req.Subscriptions {
+	v := &syncValidation{now: now, rejected: []model.PodcastSyncRejection{}}
+	in.Subscriptions = v.subscriptions(req.Subscriptions)
+	in.Episodes = v.episodes(req.Episodes)
+	out, err := s.store.SyncPodcast(ctx, userID, in)
+	if err != nil {
+		return nil, err
+	}
+	out.Rejected = append(v.rejected, out.Rejected...)
+	out.Clamped = append(out.Clamped, v.clamped...)
+	return out, nil
+}
+
+// reject records a rejected edit.
+func (v *syncValidation) reject(editID, reason string) {
+	v.rejected = append(v.rejected, model.PodcastSyncRejection{EditID: editID, Reason: reason})
+}
+
+// clamp returns ms, or the server's time when ms is more than
+// model.PodcastClockSkew ahead of it (contract §4 rule 4), recording the
+// edit as clamped.
+func (v *syncValidation) clamp(editID string, ms int64) int64 {
+	if ms > v.now.Add(model.PodcastClockSkew).UnixMilli() {
+		v.clamped = append(v.clamped, editID)
+		return v.now.UnixMilli()
+	}
+	return ms
+}
+
+// subscriptions returns the valid subscription edits, normalized.
+func (v *syncValidation) subscriptions(edits []model.PodcastSubscriptionEdit) []model.PodcastSubscriptionEdit {
+	var valid []model.PodcastSubscriptionEdit
+	for _, e := range edits {
 		if reason := subscriptionEditProblem(e); reason != "" {
-			rejected = append(rejected, model.PodcastSyncRejection{EditID: e.EditID, Reason: reason})
+			v.reject(e.EditID, reason)
 			continue
 		}
 		e.Title = strings.TrimSpace(e.Title)
 		if e.URLs == nil {
 			e.URLs = []string{}
 		}
-		if limit := now.Add(syncClockSkew).UnixMilli(); e.ObservedMS > limit {
-			e.ObservedMS = now.UnixMilli()
-			clamped = append(clamped, e.EditID)
-		}
-		in.Edits = append(in.Edits, e)
+		e.ObservedMS = v.clamp(e.EditID, e.ObservedMS)
+		valid = append(valid, e)
 	}
-	out, err := s.store.SyncPodcastSubscriptions(ctx, userID, in)
-	if err != nil {
-		return nil, err
-	}
-	out.Rejected = append(rejected, out.Rejected...)
-	out.Clamped = append(out.Clamped, clamped...)
-	return out, nil
+	return valid
 }
 
-// checkSyncEnvelope rejects requests the server cannot process at all.
+// checkSyncEnvelope rejects requests the server cannot process at all: bad
+// pull parameters, too many edits, an episode item without any edit, or a
+// malformed scope.
 func checkSyncEnvelope(req model.PodcastSyncRequest) error {
 	if req.Limit < 0 || req.Limit > MaxPodcastSyncLimit {
 		return ErrInvalidPodcastSync
@@ -118,10 +141,27 @@ func checkSyncEnvelope(req model.PodcastSyncRequest) error {
 	if req.Since != nil && *req.Since < 0 {
 		return ErrInvalidPodcastSync
 	}
-	if len(req.Episodes) > 0 || req.Scope != nil {
-		return ErrPodcastEpisodeSyncUnsupported
+	edits := len(req.Subscriptions)
+	for _, e := range req.Episodes {
+		n := len(episodeItemIDs(e))
+		if n == 0 {
+			return ErrInvalidPodcastSync
+		}
+		edits += n
 	}
-	if len(req.Subscriptions) > MaxPodcastSyncEdits {
+	if edits > MaxPodcastSyncEdits {
+		return ErrInvalidPodcastSync
+	}
+	return checkSyncScope(req)
+}
+
+// checkSyncScope accepts a scope only instead of a cursor and only with
+// keys of a valid shape.
+func checkSyncScope(req model.PodcastSyncRequest) error {
+	if req.Scope == nil {
+		return nil
+	}
+	if req.Since != nil || !validFeedKeyShape(req.Scope.FeedKey) || !validEpisodeKeyShape(req.Scope.EpisodeKey) {
 		return ErrInvalidPodcastSync
 	}
 	return nil

@@ -43,7 +43,7 @@ type pulledRow struct {
 // epoch (database restored or replaced) or a cursor beyond the highest
 // sequence number restarts the pull from 0, so a client resynchronizes in
 // full instead of missing rows.
-func pullPodcastChanges(ctx context.Context, tx *sql.Tx, userID int64, in model.PodcastSubscriptionSync, out *model.PodcastSyncResponse, aliases aliasSet) error {
+func pullPodcastChanges(ctx context.Context, tx *sql.Tx, userID int64, in model.PodcastSyncBatch, out *model.PodcastSyncResponse, aliases aliasSet) error {
 	since, err := effectiveSince(ctx, tx, in, out.Epoch)
 	if err != nil {
 		return err
@@ -56,21 +56,22 @@ func pullPodcastChanges(ctx context.Context, tx *sql.Tx, userID int64, in model.
 	if err != nil {
 		return err
 	}
-	out.NextSince, out.HasMore = since, len(rows) > limit
-	if out.HasMore {
+	next, hasMore := since, len(rows) > limit
+	if hasMore {
 		rows = rows[:limit]
 	}
 	for _, r := range rows {
 		if err := addPulledRow(ctx, tx, userID, r, out, aliases); err != nil {
 			return err
 		}
-		out.NextSince = r.seq
+		next = r.seq
 	}
+	out.NextSince, out.HasMore = &next, &hasMore
 	return nil
 }
 
 // effectiveSince returns the cursor the pull starts after.
-func effectiveSince(ctx context.Context, tx *sql.Tx, in model.PodcastSubscriptionSync, epoch string) (int64, error) {
+func effectiveSince(ctx context.Context, tx *sql.Tx, in model.PodcastSyncBatch, epoch string) (int64, error) {
 	if in.Epoch != epoch || in.Since < 0 {
 		return 0, nil
 	}
@@ -188,15 +189,9 @@ func addAliasRows(ctx context.Context, tx *sql.Tx, aliases aliasSet, mapping mod
 // getEpisodeState returns the user's registers of one episode, or nil.
 // A register that was never set (clock 0) is left out.
 func getEpisodeState(ctx context.Context, q sqlQueryRower, userID int64, feedKey, episodeKey string) (*model.PodcastEpisodeState, error) {
-	var r episodeRegisters
-	err := q.QueryRowContext(ctx, `SELECT position_seconds, position_ms, completed, completion_source, completion_ms
-FROM podcast_episode_state WHERE user_id = ? AND feed_key = ? AND episode_key = ?`, userID, feedKey, episodeKey).Scan(
-		&r.position, &r.positionMS, &r.completed, &r.completionSource, &r.completionMS)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get episode state: %w", err)
+	r, exists, err := loadRegisters(ctx, q, episodeStateKey{userID: userID, feedKey: feedKey, episodeKey: episodeKey})
+	if err != nil || !exists {
+		return nil, err
 	}
 	state := &model.PodcastEpisodeState{FeedKey: feedKey, EpisodeKey: episodeKey}
 	if r.positionMS > 0 {

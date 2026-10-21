@@ -369,9 +369,16 @@ func (s *SQLite) ListEpisodeMediaIDs(ctx context.Context, feedIDs []int64) ([]in
 // UpdateEpisodeMedia links an episode to a media row after downloading. It
 // returns an error wrapping sql.ErrNoRows when the episode no longer exists
 // (its feed was unsubscribed during the download), so the caller can undo
-// the download instead of leaving an unlinked media row behind.
+// the download instead of leaving an unlinked media row behind. In the same
+// transaction every user's episode state is projected onto the new copy's
+// playback_progress (contract §7.1), so legacy readers see one history.
 func (s *SQLite) UpdateEpisodeMedia(ctx context.Context, episodeID, mediaID int64, fileName string) error {
-	res, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("update episode media: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx,
 		`UPDATE podcast_episodes SET media_id = ?, file_name = ?, is_downloaded = 1 WHERE id = ?`,
 		mediaID, fileName, episodeID)
 	if err != nil {
@@ -379,6 +386,13 @@ func (s *SQLite) UpdateEpisodeMedia(ctx context.Context, episodeID, mediaID int6
 	}
 	if n, err := res.RowsAffected(); err == nil && n == 0 {
 		return fmt.Errorf("update episode media: episode %d: %w", episodeID, sql.ErrNoRows)
+	}
+	// The new copy starts from the episode state every client shares.
+	if err := seedEpisodeMirrors(ctx, tx, episodeID, mediaID); err != nil {
+		return fmt.Errorf("update episode media: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("update episode media: %w", err)
 	}
 	return nil
 }
@@ -393,42 +407,23 @@ func (s *SQLite) DeleteEpisodesByFeed(ctx context.Context, feedID int64) error {
 }
 
 // ------------------------------------------------------------------
-// Podcast Status
+// Episodes with the caller's episode state
 // ------------------------------------------------------------------
 
-// UpsertEpisodeProgress saves or updates a user's episode status.
-func (s *SQLite) UpsertEpisodeProgress(ctx context.Context, status *model.PodcastStatus) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO podcast_status (user_id, episode_id, is_completed, position_seconds, updated_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (user_id, episode_id) DO UPDATE SET
-		is_completed = excluded.is_completed,
-		position_seconds = excluded.position_seconds,
-		updated_at = excluded.updated_at`,
-		status.UserID, status.EpisodeID, boolToInt(status.IsCompleted), status.PositionSeconds, status.UpdatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("upsert podcast status: %w", err)
-	}
-	return nil
-}
+// The legacy podcast_status table is kept read-only for one release as a
+// rollback aid (contract §9.1 step 8); nothing reads or writes it any more.
+// Listings read the caller's episode registers instead, joined through the
+// feed and episode keys, so state written by any client (sync API, legacy
+// toggle, media progress of a server copy) shows up here.
 
-// GetEpisodeProgress returns a user's status for an episode.
-func (s *SQLite) GetEpisodeProgress(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error) {
-	var st model.PodcastStatus
-	var isCompleted int
-	err := s.db.QueryRowContext(ctx,
-		`SELECT user_id, episode_id, is_completed, position_seconds, updated_at FROM podcast_status WHERE user_id = ? AND episode_id = ?`,
-		userID, episodeID).Scan(&st.UserID, &st.EpisodeID, &isCompleted, &st.PositionSeconds, &st.UpdatedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get podcast status: %w", err)
-	}
-	st.IsCompleted = intToBool(isCompleted)
-	return &st, nil
-}
+// episodeWithStatusSelect lists episodes with the user's registers; the
+// first placeholder is the user id.
+const episodeWithStatusSelect = `SELECT e.id, e.feed_id, e.media_id, e.guid, e.episode_key, e.enclosure_key, e.title, e.description,
+ e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at, f.feed_key,
+ COALESCE(s.completed, 0), COALESCE(s.position_seconds, 0)
+FROM podcast_episodes e
+JOIN podcast_feeds f ON f.id = e.feed_id
+LEFT JOIN podcast_episode_state s ON s.user_id = ? AND s.feed_key = f.feed_key AND s.episode_key = e.episode_key`
 
 func scanEpisodeWithStatus(rows *sql.Rows) (model.PodcastEpisodeWithStatus, error) {
 	var e model.PodcastEpisodeWithStatus
@@ -468,18 +463,13 @@ func scanEpisodeWithStatus(rows *sql.Rows) (model.PodcastEpisodeWithStatus, erro
 	return e, nil
 }
 
-// ListEpisodesWithStatus returns episodes with per-user completion and progress.
+// ListEpisodesWithStatus returns a feed's episodes with the user's
+// completion and position registers.
 func (s *SQLite) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT e.id, e.feed_id, e.media_id, e.guid, e.episode_key, e.enclosure_key, e.title, e.description, e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at, f.feed_key,
-		COALESCE(s.is_completed, 0) AS is_completed, COALESCE(s.position_seconds, 0) AS position_seconds
-		FROM podcast_episodes e
-		JOIN podcast_feeds f ON f.id = e.feed_id
-		LEFT JOIN podcast_status s ON s.episode_id = e.id AND s.user_id = ?
-		WHERE e.feed_id = ?
-		ORDER BY e.published_at DESC
-		LIMIT ? OFFSET ?`,
-		userID, feedID, limit, offset)
+	rows, err := s.db.QueryContext(ctx, episodeWithStatusSelect+`
+WHERE e.feed_id = ?
+ORDER BY e.published_at DESC
+LIMIT ? OFFSET ?`, userID, feedID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list episodes with status: %w", err)
 	}
@@ -495,8 +485,9 @@ func (s *SQLite) ListEpisodesWithStatus(ctx context.Context, userID, feedID int6
 	return episodes, rows.Err()
 }
 
-// ListEpisodesByFeedIDsWithStatus returns episodes with per-user completion
-// and progress for a list of feed IDs, applying global limit/offset.
+// ListEpisodesByFeedIDsWithStatus returns the episodes of several feeds
+// with the user's completion and position registers, applying a global
+// limit/offset.
 func (s *SQLite) ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
 	if len(feedIDs) == 0 {
 		return []model.PodcastEpisodeWithStatus{}, nil
@@ -511,16 +502,10 @@ func (s *SQLite) ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int
 	}
 	args = append(args, limit, offset)
 
-	query := fmt.Sprintf(
-		`SELECT e.id, e.feed_id, e.media_id, e.guid, e.episode_key, e.enclosure_key, e.title, e.description, e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at, f.feed_key,
-		COALESCE(s.is_completed, 0) AS is_completed, COALESCE(s.position_seconds, 0) AS position_seconds
-		FROM podcast_episodes e
-		JOIN podcast_feeds f ON f.id = e.feed_id
-		LEFT JOIN podcast_status s ON s.episode_id = e.id AND s.user_id = ?
-		WHERE e.feed_id IN (%s)
-		ORDER BY e.published_at DESC
-		LIMIT ? OFFSET ?`,
-		strings.Join(placeholders, ", "))
+	query := fmt.Sprintf(episodeWithStatusSelect+`
+WHERE e.feed_id IN (%s)
+ORDER BY e.published_at DESC
+LIMIT ? OFFSET ?`, strings.Join(placeholders, ", "))
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

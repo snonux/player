@@ -2205,18 +2205,12 @@ func (m *mockPingStore) UpdateEpisodeMedia(ctx context.Context, episodeID, media
 func (m *mockPingStore) DeleteEpisodesByFeed(ctx context.Context, feedID int64) error {
 	return m.store.DeleteEpisodesByFeed(ctx, feedID)
 }
-func (m *mockPingStore) UpsertEpisodeProgress(ctx context.Context, status *model.PodcastStatus) error {
-	return m.store.UpsertEpisodeProgress(ctx, status)
-}
-func (m *mockPingStore) GetEpisodeProgress(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error) {
-	return m.store.GetEpisodeProgress(ctx, userID, episodeID)
-}
 func (m *mockPingStore) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
 	return m.store.ListEpisodesWithStatus(ctx, userID, feedID, limit, offset)
 }
 
-func (m *mockPingStore) SyncPodcastSubscriptions(ctx context.Context, userID int64, in model.PodcastSubscriptionSync) (*model.PodcastSyncResponse, error) {
-	return m.store.SyncPodcastSubscriptions(ctx, userID, in)
+func (m *mockPingStore) SyncPodcast(ctx context.Context, userID int64, in model.PodcastSyncBatch) (*model.PodcastSyncResponse, error) {
+	return m.store.SyncPodcast(ctx, userID, in)
 }
 func (m *mockPingStore) SetPodcastSubscription(ctx context.Context, userID int64, feed *model.PodcastFeed, subscribed bool, now time.Time) error {
 	return m.store.SetPodcastSubscription(ctx, userID, feed, subscribed, now)
@@ -2239,6 +2233,9 @@ func (m *mockPingStore) ClearEpisodeDownloads(ctx context.Context, feedID int64)
 func (m *mockPingStore) MoveFeed(ctx context.Context, feedID int64, target string) (bool, error) {
 	return m.store.MoveFeed(ctx, feedID, target)
 }
-func (m *mockPingStore) SetEpisodeCompletion(ctx context.Context, userID, episodeID int64, completed bool, now time.Time) error {
-	return m.store.SetEpisodeCompletion(ctx, userID, episodeID, completed, now)
+func (m *mockPingStore) ListSubscribedEpisodes(ctx context.Context, userID int64, q repository.PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error) {
+	return m.store.ListSubscribedEpisodes(ctx, userID, q)
+}
+func (m *mockPingStore) ToggleEpisodeCompletion(ctx context.Context, userID, episodeID int64, now time.Time) (bool, error) {
+	return m.store.ToggleEpisodeCompletion(ctx, userID, episodeID, now)
 }

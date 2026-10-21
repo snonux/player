@@ -31,6 +31,8 @@ var (
 	_ APITokenRepo                = (*MockStore)(nil)
 	_ PodcastRepo                 = (*MockStore)(nil)
 	_ PodcastSubscriptionRepo     = (*MockStore)(nil)
+	_ PodcastSyncRepo             = (*MockStore)(nil)
+	_ PodcastEpisodeViewRepo      = (*MockStore)(nil)
 	_ PodcastCatalogRepo          = (*MockStore)(nil)
 	_ PodcastEpisodeStateRepo     = (*MockStore)(nil)
 )
@@ -1130,16 +1132,6 @@ func (m *MockStore) DeleteEpisodesByFeed(ctx context.Context, feedID int64) erro
 	return m.PodcastRepo.DeleteEpisodesByFeed(ctx, feedID)
 }
 
-// UpsertEpisodeProgress implements PodcastRepo.
-func (m *MockStore) UpsertEpisodeProgress(ctx context.Context, status *model.PodcastStatus) error {
-	return m.PodcastRepo.UpsertEpisodeProgress(ctx, status)
-}
-
-// GetEpisodeProgress implements PodcastRepo.
-func (m *MockStore) GetEpisodeProgress(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error) {
-	return m.PodcastRepo.GetEpisodeProgress(ctx, userID, episodeID)
-}
-
 // ListEpisodesWithStatus implements PodcastRepo.
 func (m *MockStore) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
 	return m.PodcastRepo.ListEpisodesWithStatus(ctx, userID, feedID, limit, offset)
@@ -1165,8 +1157,6 @@ type MockPodcastRepo struct {
 	UpdateEpisodeMediaFunc              func(ctx context.Context, episodeID, mediaID int64, fileName string) error
 	DeleteEpisodesByFeedFunc            func(ctx context.Context, feedID int64) error
 
-	UpsertEpisodeProgressFunc  func(ctx context.Context, status *model.PodcastStatus) error
-	GetEpisodeProgressFunc     func(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error)
 	ListEpisodesWithStatusFunc func(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error)
 }
 
@@ -1296,22 +1286,6 @@ func (m *MockPodcastRepo) DeleteEpisodesByFeed(ctx context.Context, feedID int64
 		return m.DeleteEpisodesByFeedFunc(ctx, feedID)
 	}
 	return nil
-}
-
-// UpsertEpisodeProgress calls UpsertEpisodeProgressFunc or returns nil.
-func (m *MockPodcastRepo) UpsertEpisodeProgress(ctx context.Context, status *model.PodcastStatus) error {
-	if m.UpsertEpisodeProgressFunc != nil {
-		return m.UpsertEpisodeProgressFunc(ctx, status)
-	}
-	return nil
-}
-
-// GetEpisodeProgress calls GetEpisodeProgressFunc or returns nil.
-func (m *MockPodcastRepo) GetEpisodeProgress(ctx context.Context, userID, episodeID int64) (*model.PodcastStatus, error) {
-	if m.GetEpisodeProgressFunc != nil {
-		return m.GetEpisodeProgressFunc(ctx, userID, episodeID)
-	}
-	return nil, nil
 }
 
 // ListEpisodesWithStatus calls ListEpisodesWithStatusFunc or returns nil.

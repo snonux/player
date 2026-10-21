@@ -27,8 +27,10 @@ type Store interface {
 	BookmarkRepo
 	PodcastRepo
 	PodcastSubscriptionRepo
+	PodcastSyncRepo
 	PodcastCatalogRepo
 	PodcastEpisodeStateRepo
+	PodcastEpisodeViewRepo
 }
 
 // CoreStore is the common subset embedded by service-specific store

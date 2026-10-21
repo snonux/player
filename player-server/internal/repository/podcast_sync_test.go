@@ -49,8 +49,8 @@ func (f *syncFixture) sync(user int64, since int64, limit int, edits ...model.Po
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	out, err := f.s.SyncPodcastSubscriptions(context.Background(), user, model.PodcastSubscriptionSync{
-		Epoch: epoch, Since: since, Limit: limit, Edits: edits, Now: f.now, CheckIntervalMinutes: 60})
+	out, err := f.s.SyncPodcast(context.Background(), user, model.PodcastSyncBatch{
+		Epoch: epoch, Since: since, Limit: limit, Subscriptions: edits, Now: f.now, CheckIntervalMinutes: 60})
 	if err != nil {
 		f.t.Fatalf("sync: %v", err)
 	}
@@ -224,11 +224,11 @@ func TestSyncPullPagesAccountIsolationAndAliases(t *testing.T) {
 	f.sync(f.bob, 0, 0, edit("bob", "feed:bob.example.com/rss", true, 1))
 
 	first := f.sync(f.alice, 0, 2)
-	if len(first.Subscriptions) != 2 || !first.HasMore {
+	if len(first.Subscriptions) != 2 || !*first.HasMore {
 		t.Fatalf("first page: %+v", first)
 	}
-	second := f.sync(f.alice, first.NextSince, 2)
-	if len(second.Subscriptions) != 1 || second.HasMore || second.Subscriptions[0].FeedKey != keys[2] {
+	second := f.sync(f.alice, *first.NextSince, 2)
+	if len(second.Subscriptions) != 1 || *second.HasMore || second.Subscriptions[0].FeedKey != keys[2] {
 		t.Fatalf("second page: %+v", second)
 	}
 	for _, page := range []*model.PodcastSyncResponse{first, second} {
@@ -260,13 +260,13 @@ func TestSyncEpochOrCursorResetPullsFromZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out := f.sync(f.alice, highest, 0); len(out.Subscriptions) != 0 || out.NextSince != highest {
+	if out := f.sync(f.alice, highest, 0); len(out.Subscriptions) != 0 || *out.NextSince != highest {
 		t.Fatalf("caught-up pull: %+v", out)
 	}
 	if out := f.sync(f.alice, highest+50, 0); len(out.Subscriptions) != 1 {
 		t.Fatalf("cursor beyond the server must restart: %+v", out)
 	}
-	out, err := f.s.SyncPodcastSubscriptions(ctx, f.alice, model.PodcastSubscriptionSync{Epoch: "other", Since: highest, Now: f.now})
+	out, err := f.s.SyncPodcast(ctx, f.alice, model.PodcastSyncBatch{Epoch: "other", Since: highest, Now: f.now})
 	if err != nil || len(out.Subscriptions) != 1 || out.Epoch == "other" || len(out.Epoch) != 32 {
 		t.Fatalf("foreign epoch must restart: %+v %v", out, err)
 	}

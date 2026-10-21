@@ -6,21 +6,24 @@ reference functions are in `player-server/internal/podcast/identity.go` with
 shared test vectors in
 `player-server/internal/podcast/testdata/identity-vectors.json`. Task `vh3`
 implemented on the server: the §9.1 migration, the §5.1 tables, subscription
-registers and the subscription part of §6.2 (episode edits and `scope` are
-refused until `wh3`, and `podcast_sync` is not advertised yet), keyed ingest,
+registers and the subscription part of §6.2, keyed ingest,
 feed aliases from permanent redirects and `new-feed-url` (not for legacy
 keys, at most 16 per feed), §7.3 catalog creation, refresh and outbound
 policy, §7.4 (`DELETE /api/podcasts/{id}` keeps a feed with active
 subscribers; the web Unsubscribe writes a tombstone through sync, and a
 separate admin **Remove from server** calls the DELETE), and from §10 the
-legacy `POST` and `GET /api/podcasts` changes. Until `wh3` the legacy
-episode listing and toggle still read and write `podcast_status`, and the
-media progress routes still decide by `playback_progress`; every one of
-those writes is also recorded in the caller's episode registers
-(dual-write), so nothing is lost when `wh3` switches the readers. Not
-implemented yet: feed and episode merges (§3.3, including retiring legacy
-keys; a move into another catalog feed is only logged), the §7.1 bridge and
-projection, and the remaining §10 rows (`wh3`). The current
+legacy `POST` and `GET /api/podcasts` changes. Task `wh3` implemented the
+episode part of §6.1–6.2 (episode edits, `scope`, the `podcast_sync`
+capability), the §7.1 bridge and projection (legacy media progress routes
+of server copies decide by the episode registers, clamp their clocks by §4
+rule 4 and read the mirror; a new download seeds it), the remaining §10
+rows (episode listing and toggle on episode state; `podcast_status` is no
+longer read or written), and the §6.3 query (repository
+`ListSubscribedEpisodes`, service `PodcastEpisodeViewer`; its routes are
+`0i3`'s). Not implemented yet: feed and episode merges (§3.3, including
+retiring legacy keys; a move into another catalog feed is only logged), so
+state kept under a state-only key is not moved when an ingest later links
+that key as an alias. The current
 API remains documented in [`player-server/docs/api.md`](../player-server/docs/api.md);
 update it as each delivery task (`vh3` … `4i3`) ships its part. Platform
 verification (Chrome, Firefox, two Android clients) belongs to `5i3`.

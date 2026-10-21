@@ -7,10 +7,11 @@ import (
 	"codeberg.org/snonux/player/internal/model"
 )
 
-// MockPodcastSyncRepo is a fake PodcastSubscriptionRepo and
-// PodcastCatalogRepo. Unset funcs return zero values and no error.
+// MockPodcastSyncRepo is a fake PodcastSyncRepo, PodcastSubscriptionRepo,
+// PodcastCatalogRepo, PodcastEpisodeStateRepo and PodcastEpisodeViewRepo. Unset funcs return zero
+// values and no error.
 type MockPodcastSyncRepo struct {
-	SyncPodcastSubscriptionsFunc     func(ctx context.Context, userID int64, in model.PodcastSubscriptionSync) (*model.PodcastSyncResponse, error)
+	SyncPodcastFunc                  func(ctx context.Context, userID int64, in model.PodcastSyncBatch) (*model.PodcastSyncResponse, error)
 	SetPodcastSubscriptionFunc       func(ctx context.Context, userID int64, feed *model.PodcastFeed, subscribed bool, now time.Time) error
 	PodcastSubscriptionStatesFunc    func(ctx context.Context, userID int64) (map[string]bool, error)
 	HasActivePodcastSubscriptionFunc func(ctx context.Context, feedKey string) (bool, error)
@@ -18,12 +19,13 @@ type MockPodcastSyncRepo struct {
 	IngestFeedEpisodesFunc           func(ctx context.Context, feed *model.PodcastFeed, episodes []model.PodcastEpisode, now time.Time) error
 	ClearEpisodeDownloadsFunc        func(ctx context.Context, feedID int64) error
 	MoveFeedFunc                     func(ctx context.Context, feedID int64, target string) (bool, error)
-	SetEpisodeCompletionFunc         func(ctx context.Context, userID, episodeID int64, completed bool, now time.Time) error
+	ToggleEpisodeCompletionFunc      func(ctx context.Context, userID, episodeID int64, now time.Time) (bool, error)
+	ListSubscribedEpisodesFunc       func(ctx context.Context, userID int64, q PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error)
 }
 
-// SyncPodcastSubscriptions implements PodcastSubscriptionRepo.
-func (m *MockStore) SyncPodcastSubscriptions(ctx context.Context, userID int64, in model.PodcastSubscriptionSync) (*model.PodcastSyncResponse, error) {
-	if f := m.PodcastSyncRepo.SyncPodcastSubscriptionsFunc; f != nil {
+// SyncPodcast implements PodcastSyncRepo.
+func (m *MockStore) SyncPodcast(ctx context.Context, userID int64, in model.PodcastSyncBatch) (*model.PodcastSyncResponse, error) {
+	if f := m.PodcastSyncRepo.SyncPodcastFunc; f != nil {
 		return f(ctx, userID, in)
 	}
 	return &model.PodcastSyncResponse{}, nil
@@ -85,10 +87,18 @@ func (m *MockStore) MoveFeed(ctx context.Context, feedID int64, target string) (
 	return false, nil
 }
 
-// SetEpisodeCompletion implements PodcastEpisodeStateRepo.
-func (m *MockStore) SetEpisodeCompletion(ctx context.Context, userID, episodeID int64, completed bool, now time.Time) error {
-	if f := m.PodcastSyncRepo.SetEpisodeCompletionFunc; f != nil {
-		return f(ctx, userID, episodeID, completed, now)
+// ToggleEpisodeCompletion implements PodcastEpisodeStateRepo.
+func (m *MockStore) ToggleEpisodeCompletion(ctx context.Context, userID, episodeID int64, now time.Time) (bool, error) {
+	if f := m.PodcastSyncRepo.ToggleEpisodeCompletionFunc; f != nil {
+		return f(ctx, userID, episodeID, now)
 	}
-	return nil
+	return false, nil
+}
+
+// ListSubscribedEpisodes implements PodcastEpisodeViewRepo.
+func (m *MockStore) ListSubscribedEpisodes(ctx context.Context, userID int64, q PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error) {
+	if f := m.PodcastSyncRepo.ListSubscribedEpisodesFunc; f != nil {
+		return f(ctx, userID, q)
+	}
+	return []model.PodcastEpisodeView{}, nil
 }

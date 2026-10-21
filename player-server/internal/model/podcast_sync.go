@@ -17,6 +17,19 @@ const (
 	PodcastRejectQuota           = "quota"
 )
 
+// Completion sources of the completion register: a manual action of the
+// user, or the player's natural end of the media (contract §4.2).
+const (
+	PodcastCompletionManual = "manual"
+	PodcastCompletionAuto   = "auto"
+)
+
+// PodcastClockSkew is how far ahead of the server's own time an edit clock
+// may be before the server replaces it with its receive time (contract §4
+// rule 4): a device with a future clock would otherwise block every later
+// edit of that register.
+const PodcastClockSkew = 5 * time.Minute
+
 // Kinds of a PodcastKeyMapping.
 const (
 	PodcastKeyKindFeed    = "feed"
@@ -53,8 +66,8 @@ type PodcastSubscriptionEdit struct {
 }
 
 // PodcastEpisodeEdit carries edits of an episode's position and completion
-// registers. Applying them is not implemented yet; the type documents the
-// wire shape so a request carrying episodes can be refused explicitly.
+// registers; at least one of them is set. EnclosureURL is evidence for
+// resolving an enc: or unknown key, never an identity of its own.
 type PodcastEpisodeEdit struct {
 	FeedKey      string                 `json:"feed_key"`
 	EpisodeKey   string                 `json:"episode_key"`
@@ -88,8 +101,10 @@ type PodcastSyncResponse struct {
 	Subscriptions []PodcastSubscription  `json:"subscriptions"`
 	Episodes      []PodcastEpisodeState  `json:"episodes"`
 	Aliases       []PodcastKeyMapping    `json:"aliases"`
-	NextSince     int64                  `json:"next_since"`
-	HasMore       bool                   `json:"has_more"`
+	// NextSince and HasMore are the cursor fields of a pull. A scoped
+	// request (one episode, no cursor) leaves both nil, so they are omitted.
+	NextSince *int64 `json:"next_since,omitempty"`
+	HasMore   *bool  `json:"has_more,omitempty"`
 }
 
 // PodcastSyncRejection names a rejected edit and why.
@@ -141,14 +156,20 @@ type PodcastCompletionRegister struct {
 	ObservedMS int64  `json:"observed_ms"`
 }
 
-// PodcastSubscriptionSync is what the service hands the store after
+// PodcastSyncBatch is what the sync service hands the store after
 // validation: edits that passed the shape checks (clocks already clamped)
-// and the pull parameters.
-type PodcastSubscriptionSync struct {
+// and either the pull parameters or a scope.
+type PodcastSyncBatch struct {
 	Epoch string
 	Since int64
 	Limit int
-	Edits []PodcastSubscriptionEdit
+	// Scope, when set, replaces the cursor pull by the current registers
+	// of that one episode (the pre-playback request).
+	Scope         *PodcastSyncScope
+	Subscriptions []PodcastSubscriptionEdit
+	// Episodes holds only the registers that passed validation; a
+	// rejected register is nil.
+	Episodes []PodcastEpisodeEdit
 	// Now is the server time, used for catalog rows a subscription creates
 	// and for their per-user hourly limit.
 	Now time.Time

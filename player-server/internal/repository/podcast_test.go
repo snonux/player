@@ -204,24 +204,11 @@ func TestPodcastRepo_CRUD(t *testing.T) {
 		t.Fatalf("episode not updated: %+v", updatedEp)
 	}
 
-	// Upsert progress.
-	status := &model.PodcastStatus{
-		UserID:      userID,
-		EpisodeID:   epID,
-		IsCompleted: true,
-		UpdatedAt:   now,
-	}
-	if err := s.UpsertEpisodeProgress(ctx, status); err != nil {
-		t.Fatalf("upsert progress: %v", err)
-	}
-
-	// Get progress.
-	gotStatus, err := s.GetEpisodeProgress(ctx, userID, epID)
-	if err != nil {
-		t.Fatalf("get progress: %v", err)
-	}
-	if gotStatus == nil || !gotStatus.IsCompleted {
-		t.Fatalf("unexpected status: %+v", gotStatus)
+	// The legacy toggle writes the caller's completion register, which
+	// the listing reads.
+	completed, err := s.ToggleEpisodeCompletion(ctx, userID, epID, now)
+	if err != nil || !completed {
+		t.Fatalf("toggle episode completion: %v %v", completed, err)
 	}
 
 	// List episodes with status.

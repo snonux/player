@@ -96,7 +96,8 @@ func TestPodcastSyncHTTPRoutesAndAccountIsolation(t *testing.T) {
 		{"anonymous", "", `{}`, http.StatusUnauthorized},
 		{"malformed", "alice", `{"subscriptions": 3}`, http.StatusBadRequest},
 		{"limit", "alice", `{"limit": 5000}`, http.StatusBadRequest},
-		{"episodes not yet", "alice", `{"episodes": [{"feed_key": "feed:a/"}]}`, http.StatusBadRequest},
+		{"episode item without edits", "alice", `{"episodes": [{"feed_key": "feed:a/", "episode_key": "guid:x"}]}`, http.StatusBadRequest},
+		{"scope and cursor", "alice", `{"since": 0, "scope": {"feed_key": "feed:a/", "episode_key": "guid:x"}}`, http.StatusBadRequest},
 		{"too large", "alice", `{"epoch": "` + strings.Repeat("x", 2<<20) + `"}`, http.StatusRequestEntityTooLarge},
 	}
 	for _, tc := range cases {
@@ -225,10 +226,10 @@ func (e *e2e) aliceEpisode(t *testing.T, feedKey string) model.PodcastEpisodeSta
 	return model.PodcastEpisodeState{}
 }
 
-// TestLegacyProgressRoutesDualWriteEpisodeState covers the dual-write: every
-// legacy write of an episode copy's progress or completion also lands in the
-// caller's episode registers, so nothing is lost when wh3 switches readers.
-func TestLegacyProgressRoutesDualWriteEpisodeState(t *testing.T) {
+// TestLegacyProgressRoutesWriteEpisodeState covers the bridge of contract
+// §7.1: every legacy write of an episode copy's progress or completion is an
+// edit of the caller's episode registers, which the sync API returns.
+func TestLegacyProgressRoutesWriteEpisodeState(t *testing.T) {
 	e := newE2E(t, &fakeRunner{})
 	ctx := context.Background()
 	key, epID, mediaID := e.linkedEpisode(t)
@@ -262,15 +263,16 @@ func TestLegacyProgressRoutesDualWriteEpisodeState(t *testing.T) {
 	if !got.Completion.Completed || got.Completion.Source != "auto" || got.Position.Seconds != 598 {
 		t.Fatalf("natural end: %+v %+v", got.Position, got.Completion)
 	}
-	// The legacy toggle (completed -> not completed in podcast_status, which
-	// never saw the earlier edits) writes a manual edit at server time.
+	// The legacy toggle flips the completion register (completed by the
+	// natural end above) by a manual edit at server time.
 	post(fmt.Sprintf("/api/v1/podcasts/episodes/%d/complete", epID), "")
 	got = e.aliceEpisode(t, key)
-	if !got.Completion.Completed || got.Completion.Source != "manual" || got.Completion.ObservedMS < base.Add(time.Hour-time.Minute).UnixMilli() {
-		t.Fatalf("toggle: %+v", got.Completion)
+	if got.Completion.Completed || got.Completion.Source != "manual" || got.Completion.ObservedMS < base.Add(time.Hour-time.Minute).UnixMilli() ||
+		got.Position.Seconds != 598 {
+		t.Fatalf("toggle: %+v %+v", got.Completion, got.Position)
 	}
 	post(fmt.Sprintf("/api/v1/podcasts/episodes/%d/complete", epID), "")
-	if got = e.aliceEpisode(t, key); got.Completion.Completed {
+	if got = e.aliceEpisode(t, key); !got.Completion.Completed {
 		t.Fatalf("second toggle: %+v", got.Completion)
 	}
 	// Progress of ordinary media creates no episode state.

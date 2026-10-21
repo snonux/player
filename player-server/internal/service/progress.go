@@ -103,6 +103,10 @@ func (s *progressService) BatchUpdateProgress(ctx context.Context, sessionID str
 	return apply(s.store)
 }
 
+// applyProgress saves one position of a session unless a newer edit
+// exists, and advances the session's play-count accumulator: at most 12
+// seconds per save count as listening, and 60 counted seconds increment the
+// media's play count once per session.
 func (s *progressService) applyProgress(
 	ctx context.Context,
 	store repository.ProgressUpdateStore,
@@ -115,47 +119,14 @@ func (s *progressService) applyProgress(
 	if err != nil {
 		return fmt.Errorf("get progress: %w", err)
 	}
-	if barrier, ok := store.(interface {
-		ProgressEditTime(context.Context, int64, int64) (time.Time, error)
-	}); ok {
-		latest, err := barrier.ProgressEditTime(ctx, userID, mediaID)
-		if err != nil {
-			return err
-		}
-		if !observedAt.After(latest) {
-			return nil
-		}
+	if newer, err := newerPositionExists(ctx, store, existing, userID, mediaID, observedAt); err != nil || newer {
+		return err
 	}
-	if existing != nil && existing.UpdatedAt.After(observedAt) {
-		return nil
-	}
-
-	acc, err := store.GetAccumulator(ctx, sessionID, mediaID)
+	acc, err := sessionAccumulator(ctx, store, existing, sessionID, mediaID, observedAt)
 	if err != nil {
-		return fmt.Errorf("get accumulator: %w", err)
+		return err
 	}
-	if acc == nil {
-		lastPosition := float64(0)
-		if existing != nil && !existing.Finished {
-			lastPosition = existing.PositionSeconds
-		}
-		acc = &model.PlaybackAccumulator{
-			SessionID:          sessionID,
-			MediaID:            mediaID,
-			LastPosition:       lastPosition,
-			AccumulatedSeconds: 0,
-			Counted:            false,
-			UpdatedAt:          observedAt,
-		}
-	}
-
-	delta := position - acc.LastPosition
-	if delta < 0 {
-		delta = 0
-	}
-	if delta > 12 {
-		delta = 12
-	}
+	delta := min(max(position-acc.LastPosition, 0), 12)
 	acc.AccumulatedSeconds += delta
 	acc.LastPosition = position
 	acc.UpdatedAt = observedAt
@@ -173,19 +144,56 @@ func (s *progressService) applyProgress(
 	}); err != nil {
 		return fmt.Errorf("upsert progress: %w", err)
 	}
+	return countPlay(ctx, store, acc)
+}
 
+// sessionAccumulator returns the session's accumulator of the media, or a
+// new one starting at the saved position (0 after a finish).
+func sessionAccumulator(ctx context.Context, store repository.ProgressUpdateStore, existing *model.PlaybackProgress, sessionID string, mediaID int64, observedAt time.Time) (*model.PlaybackAccumulator, error) {
+	acc, err := store.GetAccumulator(ctx, sessionID, mediaID)
+	if err != nil {
+		return nil, fmt.Errorf("get accumulator: %w", err)
+	}
+	if acc != nil {
+		return acc, nil
+	}
+	lastPosition := float64(0)
+	if existing != nil && !existing.Finished {
+		lastPosition = existing.PositionSeconds
+	}
+	return &model.PlaybackAccumulator{SessionID: sessionID, MediaID: mediaID, LastPosition: lastPosition, UpdatedAt: observedAt}, nil
+}
+
+// countPlay increments the play count once the session accumulated 60
+// seconds, then stores the accumulator.
+func countPlay(ctx context.Context, store repository.ProgressUpdateStore, acc *model.PlaybackAccumulator) error {
 	if acc.AccumulatedSeconds >= 60 && !acc.Counted {
-		if err := store.IncrementPlayCount(ctx, mediaID); err != nil {
+		if err := store.IncrementPlayCount(ctx, acc.MediaID); err != nil {
 			return fmt.Errorf("increment play count: %w", err)
 		}
 		acc.Counted = true
 	}
-
 	if err := store.UpsertAccumulator(ctx, acc); err != nil {
 		return fmt.Errorf("upsert accumulator: %w", err)
 	}
-
 	return nil
+}
+
+// newerPositionExists reports whether a position save at observedAt is
+// stale. A store that knows edit barriers (resets, and for the server copy
+// of a podcast episode the position register's own clock) decides; other
+// stores compare with the stored progress row.
+func newerPositionExists(ctx context.Context, store repository.ProgressUpdateStore, existing *model.PlaybackProgress, userID, mediaID int64, observedAt time.Time) (bool, error) {
+	if barrier, ok := store.(interface {
+		PositionEditTime(context.Context, int64, int64) (time.Time, error)
+	}); ok {
+		latest, err := barrier.PositionEditTime(ctx, userID, mediaID)
+		if err != nil {
+			return false, err
+		}
+		return !observedAt.After(latest), nil
+	}
+	return existing != nil && existing.UpdatedAt.After(observedAt), nil
 }
 
 // Immediate server actions in the same clock millisecond are distinct edits.

@@ -591,13 +591,17 @@ curl -s -X DELETE https://player.example.com/api/v1/auth/tokens/current \
 
 ### `GET /api/config` · `GET /api/v1/config`
 
-Return client configuration. Currently exposes the server-side page size so
-clients can paginate consistently.
+Return client configuration and capabilities: the server-side page size, so
+clients can paginate consistently, and `podcast_sync` (`1`): the server
+implements `POST /api/v1/podcasts/sync` with subscription and episode
+registers. A client that does not find `podcast_sync` (an older server) runs
+podcasts standalone for that account, keeps media sync working and shows no
+podcast sync error.
 
 **Response `200`:**
 
 ```json
-{ "media_page_size": 100 }
+{ "media_page_size": 100, "podcast_sync": 1 }
 ```
 
 **Status codes:** `200`, `401`
@@ -1380,6 +1384,35 @@ them.
 Playback progress tracks the last known position for each media item per user.
 Progress also drives the 60-second accumulator that increments `play_count`.
 
+**Server copies of podcast episodes.** For a media item that is the server
+copy of a podcast episode, these routes and
+[`playback-sync`](#downloaded-playback-synchronization) edit the caller's
+episode state instead (the position and completion registers that
+`POST /api/v1/podcasts/sync` synchronizes), so a downloaded episode has one
+history across the web, old and new Android clients:
+
+| Call on an episode copy | Episode state edit |
+|---|---|
+| `POST /progress`, `/progress/batch` (position p at t) | position `(p, t)`; play-count accumulation as for any media |
+| `POST /progress/status` `finished` (at t) | manual completion at t; the position is kept |
+| `POST /progress/status` `not_started` (at t) | position `(0, t)` and manual uncompletion at t |
+| `playback-sync` progress `{p, finished: false, t}` | position `(p, t)` only |
+| `playback-sync` progress `{p, finished: true, t}` | automatic completion at t and position `(p, t)` |
+
+Each register keeps the edit with the newest clock (equal clocks keep the
+stored value), so a position save is not blocked by a later completion and
+the reverse. A clock more than 5 minutes ahead of the server is stored as
+the server's time. The progress these routes read back (`GET` progress,
+`in-progress`, the `playback-sync` answer) is the projection of that state:
+`position_seconds` is the position, `finished` is true only when the episode
+is completed and the completion is not older than the position (a completed
+episode being replayed reads as unfinished, so it is resumed and listed in
+progress), and the edit time is the later of both clocks. A `finished` or
+`not_started` that changed the state starts a new play-count cycle, as for
+any media. A new server download starts from the episode state every client
+already shares; deleting the copy removes only its progress, never the
+episode state. Bookmarks, notes, favorites and shares stay media-scoped.
+
 ---
 
 ### `POST /api/progress` · `POST /api/v1/progress`
@@ -1794,9 +1827,12 @@ The server keeps two separate things (see
 
 - the **catalog**: feeds and episodes the server fetches, shared by all users
   and governed by the podcast set's permissions;
-- each user's **subscriptions**: per-account registers keyed by stable feed
-  keys (`feed:example.com/rss`), synchronized between clients through
-  `POST /api/v1/podcasts/sync`.
+- each user's **subscriptions** and **episode state** (position and
+  completion of each episode): per-account registers keyed by stable feed
+  and episode keys (`feed:example.com/rss`, `guid:ep-42`), synchronized
+  between clients through `POST /api/v1/podcasts/sync`. Episode state is the
+  only listening history of an episode; the server copy's media progress is
+  a projection of it.
 
 Feeds and episodes carry stable identities: `feed_key` (the canonical feed
 URL without scheme, or `legacy-feed:<n>` for a stored URL that has none) and
@@ -1808,15 +1844,12 @@ and never appear in the sync API.
 
 ### `POST /api/podcasts/sync` · `POST /api/v1/podcasts/sync`
 
-Synchronize the caller's podcast subscriptions. Any signed-in user may call
-it (cookie or Bearer token); it reads and writes only the caller's rows.
-Body limit 2 MiB (`413` beyond it: halve the page and retry); at most 500
-subscription edits per request.
-
-The server does not advertise the `podcast_sync` capability in
-`GET /api/v1/config` yet: episode position and completion synchronization
-(`episodes`, `scope`) is not implemented, and a request carrying them is
-refused with `400` without applying anything.
+Synchronize the caller's podcast subscriptions and episode state (position
+and completion). Any signed-in user may call it (cookie or Bearer token); it
+reads and writes only the caller's rows. Body limit 2 MiB (`413` beyond it:
+halve the page and retry); at most 500 register edits per request, where a
+subscription item is one edit and an episode item one or two. The server
+advertises it as `podcast_sync` in [`GET /api/v1/config`](#configuration).
 
 **Request body:**
 
@@ -1829,6 +1862,13 @@ refused with `400` without applying anything.
     {"edit_id": "q7G9xkP2mW4tR8sZ", "feed_key": "feed:example.com/rss",
      "urls": ["https://example.com/rss"], "fetch_url": "https://example.com/rss",
      "title": "Example", "subscribed": true, "observed_ms": 1792065600000}
+  ],
+  "episodes": [
+    {"feed_key": "feed:example.com/rss", "episode_key": "guid:ep-42",
+     "enclosure_url": "https://cdn.example.com/42.mp3",
+     "position": {"edit_id": "a1b2c3d4e5f6g7h8", "seconds": 812.4, "observed_ms": 1792065601000},
+     "completion": {"edit_id": "b2c3d4e5f6g7h8i9", "completed": true, "source": "auto",
+                    "observed_ms": 1792065601000}}
   ]
 }
 ```
@@ -1839,7 +1879,8 @@ refused with `400` without applying anything.
   answer from 0.
 - `limit`: rows per page, default 500, at most 1000.
 - `edit_id`: 16–64 bytes of `[A-Za-z0-9_-]`, random per local edit and
-  reused for every retry of that edit.
+  reused for every retry of that edit; a new edit of the same register gets
+  a new id.
 - `feed_key`: canonical `feed:` key, or a `legacy-feed:<n>` key the server
   minted and still knows. `urls`: at most 10, each must have a feed key.
   `title`: at most 500 characters. `observed_ms`: when the user made the
@@ -1847,11 +1888,29 @@ refused with `400` without applying anything.
 - `subscribed: false` is an unsubscribe: a tombstone kept forever, so a
   stale device cannot resurrect the subscription. It never touches files,
   media, catalog rows or episode history.
+- `episodes`: `episode_key` is `guid:<guid>` (trimmed, at most 1024 bytes,
+  else its `guid:sha256:` form), a canonical `enc:` key, or a
+  `legacy-episode:<n>` key the server knows. `enclosure_url` is optional
+  evidence for resolving the key and must canonicalize. `position` and
+  `completion` are each optional, at least one is required; `seconds` is
+  `0 … 9e12`, `source` is `manual` or `auto`.
+- `"scope": {"feed_key": "…", "episode_key": "…"}` instead of `since` asks
+  for the current registers of that one episode only (after applying the
+  request's edits), without cursor fields: the request a client sends before
+  playing an episode. Sending both `scope` and `since` is a `400`.
 
-Merge rule: an edit replaces the stored register only when its
-`observed_ms` is strictly greater; equal clocks keep the stored value, so a
-retried edit changes nothing. A clock more than 5 minutes ahead of the
-server is replaced by the server's time and reported in `clamped`.
+Merge rule: every register (subscription, position, completion) keeps the
+edit with the greatest `observed_ms`; equal clocks keep the stored value, so
+a retried edit changes nothing. Position and completion merge independently:
+a completion keeps the saved position, a position save never changes
+completion. A clock more than 5 minutes ahead of the server is replaced by
+the server's time and the edit is reported in `clamped`.
+
+Episode state needs no server copy and no catalog episode: keys the catalog
+does not know are kept as sent (state-only keys) and join the catalog
+episode once the server ingests one with that key. When the episode has a
+server copy, its media progress is rewritten in the same transaction (see
+[Server copies of podcast episodes](#progress)).
 
 A subscribe whose key matches no catalog feed creates a catalog row in the
 shared podcast set (no folders, no permissions, no audio). The background
@@ -1869,14 +1928,18 @@ the server.
 ```json
 {
   "epoch": "4f1c…",
-  "acked": ["q7G9xkP2mW4tR8sZ"],
+  "acked": ["q7G9xkP2mW4tR8sZ", "a1b2c3d4e5f6g7h8", "b2c3d4e5f6g7h8i9"],
   "rejected": [{"edit_id": "…", "reason": "invalid_key"}],
   "clamped": [],
-  "resolved": [{"kind": "feed", "from": "feed:old.example.com/rss", "to": "feed:example.com/rss"}],
+  "resolved": [{"kind": "feed", "from": "feed:old.example.com/rss", "to": "feed:example.com/rss"},
+               {"kind": "episode", "feed_key": "feed:example.com/rss",
+                "from": "enc:cdn.example.com/42.mp3", "to": "guid:ep-42"}],
   "subscriptions": [{"feed_key": "feed:example.com/rss", "subscribed": true,
                      "subscription_ms": 1792065600000, "title": "Example",
                      "fetch_url": "https://example.com/rss", "urls": ["https://example.com/rss"]}],
-  "episodes": [],
+  "episodes": [{"feed_key": "feed:example.com/rss", "episode_key": "guid:ep-42",
+                "position": {"seconds": 812.4, "observed_ms": 1792065601000},
+                "completion": {"completed": true, "source": "auto", "observed_ms": 1792065601000}}],
   "aliases": [{"kind": "feed", "from": "feed:old.example.com/rss", "to": "feed:example.com/rss"}],
   "next_since": 1290,
   "has_more": false
@@ -1884,22 +1947,29 @@ the server.
 ```
 
 - `acked`: every accepted edit, whether it changed the register or was
-  superseded. `subscriptions` holds the current register of every edited key
-  plus the pulled rows; a client replaces its pending register with it.
-- `rejected` reasons: `invalid_key`, `invalid_url`, `invalid_time`,
-  `invalid_edit`, `quota` (more than 5 000 subscription rows, tombstones
-  included). A rejected edit can never succeed; drop it.
-- `resolved`: keys the server mapped to its canonical key (an alias, or one
-  of the sent `urls`). A key that matches nothing is stored as sent.
-- Pull: the caller's rows changed after `since`, in change order, at most
-  `limit`; `episodes` holds the caller's episode registers (written by the
-  migration of earlier listening history for now). `aliases` lists alias
-  rows of the caller's feeds and episodes, and every alias of each returned
-  row. Persist `next_since` after applying a page; repeat while `has_more`.
+  superseded. `subscriptions` and `episodes` hold the current registers of
+  every edited key plus the pulled rows; a client whose pending edit id was
+  acked replaces its register with the returned one (clock included). An
+  episode register that was never set is left out of its row.
+- `rejected` reasons: `invalid_key`, `invalid_url`, `invalid_position`,
+  `invalid_time`, `invalid_edit`, `quota` (more than 5 000 subscription rows,
+  tombstones included, or 200 000 episode state rows). A rejected edit can
+  never succeed; drop it. A problem with an episode item's keys or enclosure
+  rejects both of its edits; a bad position or completion only that edit.
+- `resolved`: keys the server mapped to its canonical key (a feed alias, one
+  of the sent `urls`, an episode alias, or an `enc:` key of an episode the
+  catalog knows under its GUID). A key that matches nothing is stored as sent.
+- Pull: the caller's subscription and episode rows changed after `since`, in
+  change order, at most `limit`. `aliases` lists alias rows of the caller's
+  feeds and episodes, and every alias of each returned row. Persist
+  `next_since` after applying a page; repeat while `has_more`. A scoped
+  request returns only the scoped episode (and edited rows) and has no
+  `next_since` and `has_more`.
 
 **Status codes:** `200` (also with item rejections), `400` (malformed body,
-more than 500 edits, invalid `limit` or `since`, episode edits or `scope`),
-`401`, `413`, `500`
+more than 500 edits, invalid `limit` or `since`, an episode item without
+edits, a malformed `scope` or `scope` together with `since`), `401`, `413`,
+`500`
 
 ---
 
@@ -2031,7 +2101,10 @@ List episodes for a podcast feed. `{id}` is the **set ID** (not the feed ID).
 ```
 
 `media_id` is `null` until the episode is downloaded. `is_completed` and
-`position_seconds` are per-user. `guid` is `""` for an episode without one.
+`position_seconds` are the caller's episode state (the completion and
+position registers of `POST /api/v1/podcasts/sync`; `false` and `0` when
+never set), so they show what any client recorded, also for episodes the
+server never downloaded. `guid` is `""` for an episode without one.
 
 **Status codes:** `200`, `400`, `401`, `403`, `404`, `500`
 
@@ -2050,7 +2123,13 @@ to the podcast set directory and a `Media` row is created.
 
 ### `POST /api/podcasts/episodes/{episode_id}/complete` · `POST /api/v1/podcasts/episodes/{episode_id}/complete`
 
-Toggle the per-user completion state of a podcast episode.
+Toggle the caller's completion register of a podcast episode: a manual
+completion edit with the opposite value, at server time (advanced past the
+stored clock, so it always wins). The position is kept, and the progress of
+the episode's server copy is updated in the same transaction. The caller must
+be able to read the podcast set. A toggle is not retry-safe (a retried
+toggle undoes itself); new clients write completion edits through
+`POST /api/v1/podcasts/sync` instead.
 
 **Response `204 No Content`** (no body).
 
@@ -2115,7 +2194,7 @@ Toggle the per-user completion state of a podcast episode.
 | `DELETE` | `shares/{token}` | session | Revoke share |
 | `GET` | `podcasts` | session | List podcast feeds |
 | `POST` | `podcasts` | admin | Subscribe to feed |
-| `POST` | `podcasts/sync` | session | Synchronize my podcast subscriptions |
+| `POST` | `podcasts/sync` | session | Synchronize my podcast subscriptions and episode state |
 | `DELETE` | `podcasts/{id}` | admin | Remove feed copies (and the feed when unsubscribed by all) |
 | `GET` | `podcasts/{id}/episodes` | session | List episodes |
 | `POST` | `podcasts/episodes/{episode_id}/download` | session | Download episode |
@@ -2195,6 +2274,11 @@ existing media-detail API continues to represent reset progress as absent.
 The progress status route accepts optional `observed_at` (RFC3339), allowing
 queued `finished` and `not_started` commands to preserve their original edit time.
 Without it, status actions use server time as before.
+
+For the server copy of a podcast episode the progress edit goes to the
+caller's episode state and the answer is its projection; see
+[Server copies of podcast episodes](#progress). An episode copy keeps no
+reset barrier of its own: the episode registers decide.
 
 Downloaded synchronization preserves resume/completion state without counting
 replayed HTTP requests as additional listening time or play counts. It preserves

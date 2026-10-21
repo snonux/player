@@ -272,11 +272,12 @@ func (s *podcastEpisodeService) persistDownloadedEpisode(ctx context.Context, ep
 	return media, cleanup, nil
 }
 
-// ToggleEpisodeComplete flips the completion status of an episode for a
-// user. The flip reads podcast_status, which the legacy listing still
-// shows; it is not retry-safe, so new clients must not use it.
+// ToggleEpisodeComplete flips the caller's completion register of an
+// episode by a manual edit at server time (contract §7.1); the store
+// rewrites the progress mirrors of the episode's server copies in the same
+// transaction. A flip is not retry-safe (a retried toggle undoes itself),
+// so new clients write completion edits through the sync API instead.
 func (s *podcastEpisodeService) ToggleEpisodeComplete(ctx context.Context, episodeID, userID int64) error {
-	// Verify user has access to the set containing this episode.
 	episode, err := s.svc.store.GetEpisodeByID(ctx, episodeID)
 	if err != nil {
 		return fmt.Errorf("get episode: %w", err)
@@ -284,7 +285,6 @@ func (s *podcastEpisodeService) ToggleEpisodeComplete(ctx context.Context, episo
 	if episode == nil {
 		return ErrNotFound
 	}
-
 	feed, err := s.svc.store.GetFeedByID(ctx, episode.FeedID)
 	if err != nil {
 		return fmt.Errorf("get feed: %w", err)
@@ -292,37 +292,15 @@ func (s *podcastEpisodeService) ToggleEpisodeComplete(ctx context.Context, episo
 	if feed == nil {
 		return ErrNotFound
 	}
-
+	// Only users who may read the episode's set may toggle it.
 	if err := s.svc.helper.checkSetPermission(ctx, feed.SetID, userID, ""); err != nil {
 		return err
 	}
-
-	// Get current status.
-	status, err := s.svc.store.GetEpisodeProgress(ctx, userID, episodeID)
-	if err != nil {
-		return fmt.Errorf("get episode progress: %w", err)
-	}
-
-	isCompleted := true
-	if status != nil && status.IsCompleted {
-		isCompleted = false
-	}
-
-	now := s.svc.clock.Now()
-	newStatus := &model.PodcastStatus{
-		UserID:      userID,
-		EpisodeID:   episodeID,
-		IsCompleted: isCompleted,
-		UpdatedAt:   now,
-	}
-	if err := s.svc.store.UpsertEpisodeProgress(ctx, newStatus); err != nil {
-		return err
-	}
-	// Dual-write: the same edit in the caller's completion register, a
-	// manual edit at server time, so it survives the switch of readers from
-	// podcast_status to episode state (task wh3).
-	if err := s.svc.store.SetEpisodeCompletion(ctx, userID, episodeID, isCompleted, now); err != nil {
-		return fmt.Errorf("record episode completion: %w", err)
+	if _, err := s.svc.store.ToggleEpisodeCompletion(ctx, userID, episodeID, s.svc.clock.Now()); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("toggle episode completion: %w", err)
 	}
 	return nil
 }

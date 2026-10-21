@@ -27,17 +27,16 @@ func (s *SQLite) WithProgressTransaction(ctx context.Context, fn func(ProgressUp
 	return nil
 }
 
+// progressTxStore runs the progress service's reads and writes on one
+// transaction.
 type progressTxStore struct {
-	tx sqlProgressTx
+	tx sqlTx
 }
 
-type sqlProgressTx interface {
-	sqlExecer
-	sqlQueryRower
-}
-
+// UpsertProgress writes progress, or the episode registers of an episode
+// copy (see upsertProgressOrEpisode).
 func (s *progressTxStore) UpsertProgress(ctx context.Context, progress *model.PlaybackProgress) error {
-	return upsertProgressAndEpisode(ctx, s.tx, progress)
+	return upsertProgressOrEpisode(ctx, s.tx, progress)
 }
 
 func (s *progressTxStore) GetProgress(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error) {
