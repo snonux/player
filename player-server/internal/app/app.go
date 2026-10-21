@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -120,7 +121,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock)
 	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
 
-	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger).
+	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, podcastHTTPClient(cfg.PodcastAllowPrivateNetworks), cfg.PodcastCheckMinutes, logger).
 		WithThumbnailLayout(thumbLayout)
 
 	deps := &Deps{
@@ -144,6 +145,23 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	}
 	wireTranscoding(deps, runner)
 	return deps
+}
+
+// podcastHTTPClient returns the client for podcast feeds, covers and
+// episodes. Feed documents are third-party content, and the episode and
+// image URLs in them are fetched by the server (episode downloads on any
+// signed-in user's request), so unless allowPrivate is set it refuses to
+// connect to loopback, private and other non-public addresses, like the
+// radio relay. The check runs on the dialled address, so it covers
+// redirects and DNS names too, and there is no proxy for the same reason.
+func podcastHTTPClient(allowPrivate bool) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if !allowPrivate {
+		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: radio.RefusePrivate}
+		transport.DialContext = dialer.DialContext
+		transport.Proxy = nil
+	}
+	return &http.Client{Timeout: service.DefaultHTTPClientTimeout, Transport: transport}
 }
 
 // wireRadio builds the web radio service: the Radio Browser directory and

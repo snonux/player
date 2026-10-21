@@ -206,6 +206,7 @@ func clearEnv() {
 		"PLAYER_CORS_ORIGINS",
 		"TRANSCODE_CACHE_DIR", "TRANSCODE_CACHE_MAX_MB", "TRANSCODE_MAX_JOBS",
 		"THUMBNAIL_CACHE_DIR", "RADIO_BROWSER_URL", "RADIO_ALLOW_PRIVATE_NETWORKS",
+		"PODCAST_ALLOW_PRIVATE_NETWORKS",
 	} {
 		os.Unsetenv(k)
 	}
@@ -446,5 +447,24 @@ func TestLoadConfig_Radio(t *testing.T) {
 	}
 	if cfg.RadioBrowserURL != "http://127.0.0.1:9000" || !cfg.RadioAllowPrivateNetworks {
 		t.Fatalf("overrides = %q %v", cfg.RadioBrowserURL, cfg.RadioAllowPrivateNetworks)
+	}
+}
+
+func TestLoadConfig_PodcastPrivateNetworks(t *testing.T) {
+	clearEnv()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PodcastAllowPrivateNetworks {
+		t.Fatal("podcast private networks must be refused by default")
+	}
+	setEnvPairs(t, []envPair{{"PODCAST_ALLOW_PRIVATE_NETWORKS", "true"}})
+	cfg, err = LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.PodcastAllowPrivateNetworks {
+		t.Fatal("PODCAST_ALLOW_PRIVATE_NETWORKS=true was ignored")
 	}
 }
