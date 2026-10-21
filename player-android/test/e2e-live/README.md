@@ -90,10 +90,12 @@ server: sign-in, a touch journey to a track, media session and captured
 audio output, tap target sizes, Back hierarchy, saved progress, light and
 dark screenshots, ReplayGain fixture levels, capture calibration against
 known 5/20/50 ms gaps and the EQ probe, a server restart, a cold relaunch
-(open bug zn3) and the regular account's permissions. It reaches the
-server through `adb reverse` (or `--host-alias` for 10.0.2.2) and writes
-evidence to the fixture's
-evidence directory. Shared steps live in `app_ui.py`. See
+(remembered server, locked saved login, explicit password sign-in) and the
+regular account's permissions. The online baseline checks Android network
+connectivity before setup: streaming through `adb reverse` alone also works
+in airplane mode, where the app deliberately queues progress offline. It
+reaches the server through `adb reverse` (or `--host-alias` for 10.0.2.2)
+and writes evidence to the fixture's evidence directory. Shared steps live in `app_ui.py`. See
 `../../docs/music-e2e-verification.md` for the runbook, including the
 emulator's QEMU wav audio backend used for output capture.
 
@@ -101,6 +103,9 @@ emulator's QEMU wav audio backend used for output capture.
 python3 -u music_e2e.py <fixture-dir> --apk app-x86_64-release.apk \
   --emulator-wav "$TMPDIR/emulator-output.wav"
 ```
+
+Run `python3 -m unittest test_music_e2e` here for the lightweight capture
+timing and saved-login oracle regression checks (no emulator needed).
 
 ## Keeping it in sync
 

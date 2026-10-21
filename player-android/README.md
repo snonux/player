@@ -131,6 +131,10 @@ and save it. The app keeps a separate saved login for each HTTP/HTTPS origin
 a server or **Use files on this device**. A fresh install still opens the local
 library directly.
 
+This also applies after force-stop or a device cold boot: the server and its
+saved login remain remembered, but selecting the server does not unlock it.
+Browser sessions follow the browser's separate cookie policy.
+
 Create the first admin account if the server is new, or sign in to an existing
 account. To reuse a saved login, tap **Unlock saved login with fingerprint** and
 complete the device's biometric prompt, or enter your server account password

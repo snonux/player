@@ -89,9 +89,12 @@ flutter build apk --release --split-per-abi --target-platform android-x64
 git checkout -- android/gradle.properties   # only if the Flutter migrator rewrote it
 QEMU_AUDIO_DRV=wav QEMU_WAV_PATH="$TMPDIR/emulator-output.wav" \
   emulator -avd Player_FDroid_Test_API34 -no-window -no-boot-anim \
-  -no-snapshot-save -read-only -gpu swiftshader_indirect &
+  -no-snapshot-load -no-snapshot-save -read-only -gpu swiftshader_indirect &
 adb wait-for-device
 until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 3; done
+adb shell cmd connectivity airplane-mode disable
+adb shell svc wifi enable
+adb shell cmd wifi status  # wait until connected to AndroidWifi
 for i in $(seq 15); do adb shell input keyevent KEYCODE_VOLUME_UP; done   # media volume to max
 python3 -u test/e2e-live/music_e2e.py "$FIXTURE" \
   --apk build/app/outputs/flutter-apk/app-x86_64-release.apk \
@@ -116,9 +119,14 @@ the end, also when setup fails or it is stopped with SIGTERM; `--host-alias`
 uses `http://10.0.2.2:<port>` instead of `adb reverse`. `restart` restarts
 the server on the same database: the Android runner checks that a session
 opened before survives and that the running app keeps working. Separately it
-force-stops and relaunches the app, which should reopen signed in; on a
-freshly booted emulator it does not (open bug `zn3`), and that check fails
-until the bug is fixed.
+force-stops and relaunches the app: the saved server must appear in *Choose
+a server*, selecting it must show a locked saved login with the remembered
+username, and explicit password sign-in must open the server library. This
+is the intended security contract in the Android README, including after a
+cold device boot; the earlier expectation of automatic sign-in (`zn3`) was
+a runner error. The native run checks the password path, not biometric
+hardware. Provider tests verify that saved credentials remain disabled until
+unlock; this native runner does not intercept network calls.
 
 The browsers keep their default autoplay policies: every play starts from
 real keyboard or pointer input, as for a user.
@@ -126,6 +134,12 @@ real keyboard or pointer input, as for a user.
 Python tests: `cd player-android/integration_test/support && python3 -m
 unittest test_music_support` (add `PLAYER_SERVER_BINARY=$TMPDIR/player` for
 the lifecycle test).
+
+The native baseline requires an Android network reported as connected with
+the `INTERNET` capability; its preflight checks `dumpsys connectivity`.
+An airplane-mode AVD can stream through `adb reverse` while Android reports
+offline, which intentionally keeps progress queued locally. The saved-state
+check waits up to 15 seconds for authoritative server progress after Back.
 
 ## Audio output capture
 
@@ -146,7 +160,10 @@ the lifecycle test).
   mixed output of the device at the current media volume (set it to
   maximum). The file only grows while Android has an output stream open, so
   time in a capture is stream time, not wall time; silence inside an open
-  stream is captured. The runner calibrates it with the *Gap Calibration*
+  stream is captured. The runner allows up to 20 seconds for `PLAYING`, then
+  captures the requested playback duration; buffering does not consume that
+  duration. Its byte mark stays before Play so calibration captures the
+  complete track. The runner calibrates it with the *Gap Calibration*
   tracks and the EQ probe: known gaps are measured to within 0.4 ms, but the
   stream starts and stops with a few ms of silence (2.6–8.6 ms seen; ignored
   within 50 ms of the stream's ends) and the emulator's output carries
@@ -156,7 +173,7 @@ the lifecycle test).
 - Neither path is "heard": no test listens to speakers. Absolute levels
   depend on volume settings; compare levels within one capture setup.
 
-Baseline of the final run (fixture run `20261021T062222Z`, server 0.8.2
+Earlier calibration baseline (fixture run `20261021T062222Z`, server 0.8.2
 built from `6f2a69a` with uncommitted changes in the tree, Chrome
 144.0.7559.132, Firefox 156.0, API 34 emulator with APK 0.8.2/4022):
 
@@ -171,6 +188,37 @@ built from `6f2a69a` with uncommitted changes in the tree, Chrome
 These are today's numbers, not targets; M21 (gapless) must bring the
 track-change gap to zero on every platform.
 
+Native rerun after correcting the relaunch oracle (fixture
+`20261021T073608Z`): emulator 33.1.24, API 34 x86_64, cold-booted with
+`-no-snapshot-load -no-snapshot-save -read-only`. The existing APK was
+0.8.2/4022 (SHA-256 `dfe343059a283f407944545fb5e4c8f4549ef117a5fa67230b9435f8b954d5fc`),
+built during the earlier `6f2a69a`-dirty run; the existing server binary was
+also 0.8.2 built from `6f2a69a`-dirty. Neither was rebuilt from the current
+checkout for these runner-only corrections.
+
+The latest result for each native scenario is **26 pass, 2 gap**. The full
+run passed the chooser → locked saved login → explicit password sign-in
+journey, restart, permissions, tone, gain (17.97 dB) and EQ. Its saved-state
+check failed because the AVD started in airplane mode: streaming through
+`adb reverse` worked while progress correctly stayed queued offline. Two
+calibration captures were also disturbed. A single focused online recovery
+with a connected Android network passed touch → playback → Back and saved
+12 seconds on the server, measured 523.3 Hz for 7.01 seconds, recovered the
+known gaps at 4.74/19.80/50.00 ms, and measured EQ spread 0.82 dB. No
+threshold or edge exclusion changed. The two remaining gaps are emulator
+click detection (21 extra discontinuities) and Android automatic track
+advance; they do not verify future gapless playback.
+
+Artifacts are under the external `oj3/relaunch-fix/` directory:
+`native.log` and `full-evidence/` retain the full run's 23 pass/3 fail/2 gap;
+`online-recovery.log` and `evidence/` retain its focused recovery;
+`consolidated.json` includes every attempt record and the latest scenario
+matrix. Earlier launcher-ANR and buffering failures are retained separately.
+The full run's `cold-relaunch-server-chooser.png`,
+`cold-relaunch-locked-login.png` and `cold-relaunch-signed-in.png` show the
+intended security flow. TalkBack, biometric hardware and native network
+interception remain unverified.
+
 ## Known runner limits
 
 - Playwright cannot emulate touch in system Firefox over WebDriver BiDi;
@@ -184,11 +232,9 @@ track-change gap to zero on every platform.
   `dumpsys media_session` instead of on-screen time labels.
 - TalkBack itself is not driven; Android checks use the semantics labels
   that TalkBack would read.
-- App relaunch after `am force-stop` behaved differently on two boots of
-  the same AVD: one long-running emulator reopened straight into the
-  Library, a freshly booted one showed *Choose a server* and then *Welcome
-  back* (password or fingerprint) even without a server restart. This is
-  bug `zn3`; the runner records the cold-relaunch check as failed and signs
-  in again so the remaining steps run.
+- App relaunch after `am force-stop` requires choosing the remembered server
+  and explicitly unlocking or signing in. Earlier runs incorrectly treated
+  the intended lock screen as bug `zn3`; direct authenticated entry is not
+  the expected behavior. Web browser sessions have a separate cookie policy.
 - `adrv.adb` gives up after 120 s: after a host suspend, `uiautomator dump`
   hung forever on the old emulator; reboot the emulator in that case.

@@ -19,8 +19,8 @@ ReplayGain fixture tracks are captured at their real 18 dB level difference;
 the capture is calibrated against tracks with known 5/20/50 ms gaps and the
 EQ probe's bands; gapless across tracks is recorded as a gap (no automatic
 track change on Android yet); a server restart keeps sessions and the
-running app keeps working; a cold relaunch after force-stop should reopen
-signed in (open bug zn3 is recorded as a failure); the regular
+running app keeps working; a cold relaunch remembers the server but locks
+the saved login until explicit password sign-in; the regular
 account sees only its granted set. At the end the app data is cleared and
 the adb reverse mapping removed.
 
@@ -189,20 +189,24 @@ def play_and_capture(run, client, track, name, seconds=4.0, bands=None, tone=Non
     """Tap Play Audio from 0:00; return (sessions, analysis or None, wav path).
 
     The media session is read (dumpsys, fast) until it reports PLAYING and
-    again at the end of the capture. The elapsed-time label is not used: on the
-    animated player screen a uiautomator dump waits for an idle UI and can
-    take longer than the 12 s fixture track.
+    again after seconds of playback following PLAYING. The elapsed-time label
+    is not used: on the animated player screen a uiautomator dump waits for
+    an idle UI and can take longer than the 12 s fixture track.
     """
     reset_progress(client, track['id'])
     mark = run.audio.mark() if run.audio.available() else None
-    started = time.monotonic()
     adrv.tap('^Play Audio$')
     # Buffering shows as CONNECTING/BUFFERING first; record the first PLAYING.
+    deadline = time.monotonic() + 20
     sessions = [session_state()]
-    while sessions[-1]['state'] != 'PLAYING' and time.monotonic() - started < seconds:
+    while sessions[-1]['state'] != 'PLAYING' and time.monotonic() < deadline:
         time.sleep(0.5)
         sessions.append(session_state())
-    time.sleep(max(0.0, seconds - (time.monotonic() - started)))
+    # Startup on a cold emulator can consume the whole capture window.
+    # Keep the mark before Play (calibration must include the track's gap),
+    # but give actual playback its full requested duration after PLAYING.
+    if sessions[-1]['state'] == 'PLAYING':
+        time.sleep(seconds)
     sessions.append(session_state())
     if mark is None:
         return sessions, None, None
@@ -257,8 +261,8 @@ def step_touch_journey(run):
                artifacts=[run.shot('track-detail')])
     if not opened:
         return False
-    # 7 s: the emulator's output stream needs a few seconds to start, and
-    # the capture must still hold MIN_AUDIBLE_S of the 12 s track.
+    # Seven seconds after PLAYING leaves room for the emulator output stream
+    # to start and still capture MIN_AUDIBLE_S of this 12 s track.
     sessions, analysis, wav = play_and_capture(run, run.admin, track, 'touch-long-road-home', seconds=7)
     # The last reading (end of the capture) must still be this track, playing.
     playing = sessions[-1]['state'] == 'PLAYING' and sessions[-1]['title'] == track['file_name']
@@ -299,8 +303,13 @@ def step_back_and_progress(run):
     run.record('back: player > detail > album > folders > set grid > Library, app stays in the foreground',
                all(t['seen'] and t['foreground'] for t in trail), json.dumps(trail), {'trail': trail},
                [run.shot('back-to-library')])
-    progress = (run.admin.request('GET', f"/api/v1/media/{track['id']}") or {}).get('progress') or {}
-    position = progress.get('position_seconds') or 0
+    deadline = time.monotonic() + 15
+    while True:
+        progress = (run.admin.request('GET', f"/api/v1/media/{track['id']}") or {}).get('progress') or {}
+        position = progress.get('position_seconds') or 0
+        if position > 1 or time.monotonic() >= deadline:
+            break
+        time.sleep(1)
     run.record('saved state: playback position stored on the server after leaving the player', position > 1,
                f'position_seconds={position}', {'progress': progress})
 
@@ -359,21 +368,40 @@ def step_server_restart(run):
 
 
 def step_cold_relaunch(run):
-    """Force-stop and relaunch: the app should reopen signed in (task zn3).
+    """A new app process remembers the server and keeps its credential locked.
 
-    On a freshly booted API 34 emulator the app asks for the server and the
-    password again; that is the open bug zn3 and is recorded as a failure,
-    not hidden. The runner then signs in again so later steps can run.
+    README requires server selection and fingerprint unlock or password
+    sign-in on every app start, including after a cold device boot. This
+    runner exercises the password path, without native network interception.
     """
     adrv.adb('shell', 'am', 'force-stop', PKG)
     app_ui.launch()
-    direct = adrv.wait('^Library$', timeout=40) is not None
-    shots = [run.shot('cold-relaunch')]
-    run.record('cold relaunch: app reopens signed in after force-stop', direct,
-               '' if direct else 'asked for server and password again: known bug zn3',
-               {'signed_in_directly': direct, 'known_bug': 'zn3'}, shots)
-    if not direct:
-        resign_in(run)
+    chooser = adrv.wait('^Choose a server$', timeout=40) is not None
+    saved = adrv.find(re.escape(run.base) + '$') if chooser else None
+    remembered = chooser and saved is not None and not adrv.find('^Library$')
+    run.record('cold relaunch: saved server is remembered and selection is required', remembered,
+               data={'server_origin': run.base}, artifacts=[run.shot('cold-relaunch-server-chooser')])
+    if not remembered:
+        return
+    adrv.tap_node(saved)
+    login = adrv.wait('^Welcome back$', timeout=20) is not None
+    time.sleep(2)  # no approval: the saved credential must remain locked
+    fields = [n for n in adrv.nodes() if n['cls'] == 'EditText']
+    username = run.auth['admin']['username']
+    locked = (login and adrv.find('^Unlock saved login with fingerprint$') is not None
+              and any(username in (n['text'], n['desc']) for n in fields)
+              and not adrv.find('^Library$'))
+    run.record('cold relaunch: saved login remains locked with remembered username', locked,
+               data={'remembered_username': username, 'unlock_path': 'password'},
+               artifacts=[run.shot('cold-relaunch-locked-login')])
+    if not locked:
+        return
+    adrv.tap_node(fields[-1]); time.sleep(1)
+    signed_in = app_ui.sign_in(run.auth['admin']['password'])
+    sets = [label for label in labels() if label in ('Music', 'Restricted')]
+    run.record('cold relaunch: explicit password sign-in opens the server library',
+               signed_in and set(sets) == {'Music', 'Restricted'}, ', '.join(sets),
+               artifacts=[run.shot('cold-relaunch-signed-in')])
 
 
 def step_capture_calibration(run):
@@ -440,16 +468,6 @@ def step_gapless_auto_advance(run):
                result='gap')
 
 
-def resign_in(run):
-    """Pick the saved server if the chooser shows, then sign in with the password."""
-    if adrv.find('^Choose a server$'):
-        adrv.tap(re.escape(run.base) + '$', timeout=5)
-    if adrv.wait('^Welcome back$', timeout=20):
-        fields = [n for n in adrv.nodes() if n['cls'] == 'EditText']
-        adrv.tap_node(fields[-1]); time.sleep(1)
-        app_ui.sign_in(run.auth['admin']['password'])
-
-
 def step_regular_user(run):
     """The viewer account sees only Music; the server refuses Restricted media."""
     user = run.auth['user']
@@ -484,12 +502,24 @@ def teardown(run, port):
 
 def prepare_device(args, port):
     """Optionally install the APK; map the server port unless the host alias is used."""
+    # adb reverse works even in airplane mode, whereas connectivity_plus
+    # correctly keeps progress queued offline. This is an online baseline.
+    connectivity = adrv.adb('shell', 'dumpsys', 'connectivity')
+    if not has_online_network(connectivity):
+        sys.exit('Online emulator required: disable airplane mode, enable Wi-Fi, '
+                 'and wait for a connected NetworkAgentInfo before running the baseline')
     if args.apk:
         output = adrv.adb('install', '-r', str(args.apk))
         if 'Success' not in output:
             sys.exit(f'APK install failed: {output.strip()}')
     if not args.host_alias:
         adrv.adb('reverse', f'tcp:{port}', f'tcp:{port}')
+
+
+def has_online_network(connectivity):
+    """An active Android network, not merely a working adb reverse tunnel."""
+    return re.search(r'^\s*NetworkAgentInfo\{[^\n]*\bCONNECTED\b[^\n]*\bINTERNET\b',
+                     connectivity, re.MULTILINE) is not None
 
 
 def parse_args(argv):
