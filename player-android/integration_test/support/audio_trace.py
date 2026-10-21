@@ -246,15 +246,51 @@ def analyze(path, bands=None, threshold=SILENCE_DB, tone=None):
     return analyze_samples(samples, rate, bands, threshold, tone)
 
 
+def analyze_transition(samples, rate, ended_s, frequency):
+    """Require the expected tone on each side before measuring a transition.
+
+    Analyse each side independently: a whole-capture segment can span the
+    event while its middle contains audio from only one track. Leave 50 ms
+    around the main-thread event timestamp for event delivery and decoding.
+    A missing second track must fail, rather than appear as a zero-ms gap
+    when analyze_samples excludes trailing silence from its audible span.
+    """
+    if not math.isfinite(ended_s) or not 0 < ended_s < len(samples) / rate:
+        raise ValueError('track end must be inside the capture')
+    margin = int(rate * 0.05)
+    boundary = round(ended_s * rate)
+    sides = {'before': samples[:max(0, boundary - margin)],
+             'after': samples[min(len(samples), boundary + margin):]}
+    measured = {}
+    for name, side in sides.items():
+        analysis = analyze_samples(side, rate)
+        segment = max(analysis['segments'], key=lambda s: s['duration_s'], default=None)
+        if segment is None or segment['duration_s'] < 0.25:
+            raise ValueError(f'no sustained audio {name} track end')
+        hz = segment['tone_hz']
+        if hz is None or abs(hz - frequency) > frequency * 0.02:
+            raise ValueError(f'expected {frequency} Hz {name} track end, got {hz}')
+        measured[name] = segment
+    return measured
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('wav')
     parser.add_argument('--bands', default='', help='comma-separated frequencies in Hz')
     parser.add_argument('--threshold', type=float, default=SILENCE_DB)
     parser.add_argument('--tone', type=float, help='pure tone (Hz) to check for discontinuities')
+    parser.add_argument('--transition-at', type=float, help='require --tone on both sides of this capture time (s)')
     args = parser.parse_args(argv)
     bands = [float(b) for b in args.bands.split(',') if b.strip()]
-    json.dump(analyze(args.wav, bands, args.threshold, args.tone), sys.stdout, indent=1)
+    if args.transition_at is not None:
+        if not args.tone or args.tone <= 0:
+            parser.error('--transition-at requires a positive --tone')
+        rate, samples = read_wav(args.wav)
+        result = analyze_transition(samples, rate, args.transition_at, args.tone)
+    else:
+        result = analyze(args.wav, bands, args.threshold, args.tone)
+    json.dump(result, sys.stdout, indent=1)
     print()
 
 

@@ -106,6 +106,41 @@ class AudioTraceTest(unittest.TestCase):
         result = audio_trace.analyze_samples(tone(880, 1, -12, 48000), 48000, tone=880)
         self.assertEqual((result['gaps'], result['discontinuities']), ([], []))
 
+    def test_transition_requires_expected_tone_on_both_sides(self):
+        rate = 48000
+        before = tone(880, 1.5, -12, rate)
+        after = tone(880, 3.5, -12, rate)
+        for gap_ms in (0, 20, 100):
+            samples = before + [0.0] * int(gap_ms * rate / 1000) + after
+            result = audio_trace.analyze_transition(samples, rate, 1.5, 880)
+            self.assertEqual(set(result), {'before', 'after'})
+            for segment in result.values():
+                self.assertAlmostEqual(segment['tone_hz'], 880, delta=1)
+
+    def test_transition_rejects_silent_second_track_despite_no_reported_gap(self):
+        rate = 48000
+        samples = tone(880, 1.5, -12, rate) + [0.0] * int(3.5 * rate)
+        self.assertEqual(audio_trace.analyze_samples(samples, rate)['gaps'], [])
+        with self.assertRaisesRegex(ValueError, 'no sustained audio after'):
+            audio_trace.analyze_transition(samples, rate, 1.5, 880)
+
+    def test_transition_rejects_missing_wrong_or_brief_audio(self):
+        rate = 48000
+        good = tone(880, 1, -12, rate)
+        for before, after, message in (
+                ([0.0] * rate, good, 'before'),
+                (tone(440, 1, -12, rate), good, 'before'),
+                (good, tone(440, 1, -12, rate), 'after'),
+                (good, tone(880, 0.1, -12, rate) + [0.0] * rate, 'after')):
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                audio_trace.analyze_transition(before + after, rate, 1, 880)
+
+    def test_transition_rejects_event_outside_capture(self):
+        samples = tone(880, 1, -12, 48000)
+        for ended in (0, -1, 1, 2, float('nan')):
+            with self.subTest(ended=ended), self.assertRaisesRegex(ValueError, 'inside the capture'):
+                audio_trace.analyze_transition(samples, 48000, ended, 880)
+
     def test_silence_has_no_segments(self):
         path = self.dir / 'silence.wav'
         write_wav(path, [0.0] * 8000)

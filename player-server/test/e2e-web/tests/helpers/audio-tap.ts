@@ -210,3 +210,9 @@ export function analyze(wav: string, bands: number[] = [], tone?: number): Analy
   if (tone) args.push('--tone', String(tone));
   return JSON.parse(execFileSync('python3', args, { encoding: 'utf8' }));
 }
+
+/** Fail unless independently analysed audio on each side has the expected tone. */
+export function analyzeTransition(wav: string, endedAt: number, tone: number): Record<'before' | 'after', Segment> {
+  return JSON.parse(execFileSync('python3', [join(SUPPORT_DIR, 'audio_trace.py'), wav,
+    '--transition-at', String(endedAt), '--tone', String(tone)], { encoding: 'utf8' }));
+}

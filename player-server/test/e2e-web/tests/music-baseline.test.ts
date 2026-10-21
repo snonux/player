@@ -25,7 +25,7 @@
  */
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
-import { installAudioTap } from './helpers/audio-tap';
+import { analyzeTransition, installAudioTap } from './helpers/audio-tap';
 import {
   InvalidCapture, assertValidCapture, audioState, captureOutput, expectPlaying, keyboardLogin, mainSegment, openFolder,
   playCard, resetProgress, selectByKeys, type CaptureResult,
@@ -352,6 +352,9 @@ test('audio output capture: gap at an automatic track change', async ({ page }) 
     expect((data.after_change as { src: string }).src).toMatch(new RegExp(`/media/${second.id}/`));
     const ended = out.events.find((e) => e.type === 'ended' && e.src.includes(`/media/${first.id}/`));
     expect(ended, 'the capture saw Movement I end').toBeTruthy();
+    // A changed src alone does not prove Movement II was audible. Missing
+    // output after the event would otherwise look like a zero-ms gap.
+    data.audio_on_both_sides = analyzeTransition(out.wav, ended!.offset_s, first.tone_hz[0]);
     const near = (time: number) => Math.abs(time - ended!.offset_s) < 0.5;
     const gaps = out.analysis.gaps;
     const clicks = out.analysis.discontinuities ?? [];
