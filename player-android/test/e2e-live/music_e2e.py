@@ -16,8 +16,11 @@ own tone show that playback advances); tap
 target sizes; Back returns through the hierarchy without leaving the app;
 progress is saved on the server; light and dark screenshots; two
 ReplayGain fixture tracks are captured at their real 18 dB level difference;
-a fixture server restart keeps server sessions and the relaunched app
-reaches the restarted server; the regular
+the capture is calibrated against tracks with known 5/20/50 ms gaps and the
+EQ probe's bands; gapless across tracks is recorded as a gap (no automatic
+track change on Android yet); a server restart keeps sessions and the
+running app keeps working; a cold relaunch after force-stop should reopen
+signed in (open bug zn3 is recorded as a failure); the regular
 account sees only its granted set. At the end the app data is cleared and
 the adb reverse mapping removed.
 
@@ -55,6 +58,12 @@ ALBUM = 'Aurora Lane - Night Transit (2021)'
 MIN_TARGET_DP = 48
 TONE_TOLERANCE = 0.02
 LEVEL_TOLERANCE_DB = 1.5
+# The emulator's output passes through Android's mixer and QEMU's 44.1 kHz
+# resampling; a known gap must still be measured within this many ms.
+ANDROID_GAP_TOLERANCE_MS = 3
+# Silences this close to the start or end of the audible stream are the
+# emulator stream starting or stopping, not part of the media.
+EDGE_S = 0.05
 # Audible seconds a capture must contain to show playback advancing.
 MIN_AUDIBLE_S = 2.0
 
@@ -176,7 +185,7 @@ def open_track(set_name, folder, file_name):
     return adrv.wait('^Play Audio$', timeout=10) is not None
 
 
-def play_and_capture(run, client, track, name, seconds=4.0):
+def play_and_capture(run, client, track, name, seconds=4.0, bands=None, tone=None):
     """Tap Play Audio from 0:00; return (sessions, analysis or None, wav path).
 
     The media session is read (dumpsys, fast) until it reports PLAYING and
@@ -198,7 +207,8 @@ def play_and_capture(run, client, track, name, seconds=4.0):
     if mark is None:
         return sessions, None, None
     wav = run.audio.save(mark, run.evidence.path(f'{name}.wav'))
-    return sessions, audio_trace.analyze(wav), wav
+    adrv.tap('^Pause$', timeout=3)  # stop before the next capture starts
+    return sessions, audio_trace.analyze(wav, bands, tone=tone), wav
 
 
 def main_segment(analysis):
@@ -240,7 +250,7 @@ def step_sign_in(run):
 
 
 def step_touch_journey(run):
-    """Open the album by touch, play track 2, prove playback by session, clock and tone."""
+    """Open the album by touch, play track 2, prove playback by media session and captured tone."""
     track = run.track(f'Music/{ALBUM}/02 - Long Road Home.mp3')
     opened = open_track('Music', ALBUM, track['file_name'])
     run.record('touch journey: Music > Browse folders > album > track detail', opened,
@@ -318,7 +328,6 @@ def step_gain_levels(run):
         segment = main_segment(analysis)
         levels[name] = segment and segment['rms_dbfs']
         wavs.append(wav)
-        adrv.tap('^Pause$', timeout=3)
     loud, quiet = run.track('Music/Gain Check/Loud.flac'), run.track('Music/Gain Check/Quiet.flac')
     expected = loud['level_dbfs'] - quiet['level_dbfs']
     measured = (levels['Loud.flac'] or 0) - (levels['Quiet.flac'] or 0)
@@ -328,15 +337,13 @@ def step_gain_levels(run):
 
 
 def step_server_restart(run):
-    """Restart the fixture server on the same database, then relaunch the app.
+    """Restart the fixture server on the same database while the app runs.
 
-    Server persistence is proved by the API: a session opened before the
-    restart still works after it. The app is force-stopped and relaunched
-    against the restarted server; whether it opened directly in the Library
-    or asked to pick the server and sign in again is recorded (both were
-    observed on API 34 emulators, see music-e2e-verification.md), and the
-    check passes once the app shows the Library from the restarted server.
+    Server persistence is proved by the API (a session opened before the
+    restart still works); the running app (not force-stopped) must keep
+    working against the restarted server without a new sign-in.
     """
+    app_ui.go_home()
     script = SUPPORT / 'music_fixture.py'
     result = subprocess.run([sys.executable, str(script), 'restart', str(run.fixture_dir)],
                             capture_output=True, text=True)
@@ -345,17 +352,92 @@ def step_server_restart(run):
     status, _ = run.admin.call('GET', '/api/v1/sets')
     run.record('server restart: a session opened before the restart is still valid', status == 200,
                f'HTTP {status}')
+    adrv.tap('^Music$'); time.sleep(3)
+    grid = adrv.wait('^Browse folders$', timeout=20) is not None
+    run.record('server restart: the running app keeps working without a new sign-in',
+               grid and not adrv.find('^Welcome back$'), artifacts=[run.shot('after-server-restart')])
+
+
+def step_cold_relaunch(run):
+    """Force-stop and relaunch: the app should reopen signed in (task zn3).
+
+    On a freshly booted API 34 emulator the app asks for the server and the
+    password again; that is the open bug zn3 and is recorded as a failure,
+    not hidden. The runner then signs in again so later steps can run.
+    """
     adrv.adb('shell', 'am', 'force-stop', PKG)
     app_ui.launch()
     direct = adrv.wait('^Library$', timeout=40) is not None
-    shots = [run.shot('after-server-restart')]
+    shots = [run.shot('cold-relaunch')]
+    run.record('cold relaunch: app reopens signed in after force-stop', direct,
+               '' if direct else 'asked for server and password again: known bug zn3',
+               {'signed_in_directly': direct, 'known_bug': 'zn3'}, shots)
     if not direct:
         resign_in(run)
-        shots.append(run.shot('after-server-restart-sign-in'))
-    sets = [l for l in labels() if l in ('Music', 'Restricted')]
-    run.record('server restart: relaunched app shows the Library from the restarted server', len(sets) == 2,
-               ', '.join(sets) + ('' if direct else ' (app asked for the server and password again)'),
-               {'signed_in_directly': direct}, shots)
+
+
+def step_capture_calibration(run):
+    """Calibrate the emulator capture: known gaps and the EQ probe's bands."""
+    if not run.audio.available():
+        return run.record('audio output: capture calibration', False,
+                          'emulator started without the QEMU wav backend', result='gap')
+    clicks = 0
+    for track in [t for t in run.manifest['tracks'] if t.get('gap')]:
+        clicks += calibrate_gap(run, run.track(track['path']))
+    # The calibration tracks are one continuous tone apart from their gap;
+    # any further discontinuity comes from the emulator's audio path.
+    run.record('audio output: click detection on the emulator capture', clicks == 0,
+               f'{clicks} tone discontinuities besides the known gaps: the emulator output is not click-free, '
+               'so clicks cannot be judged on Android' if clicks else 'emulator output is click-free',
+               {'discontinuities': clicks}, result=None if clicks == 0 else 'gap')
+    probe = run.track('Music/EQ Probe/Three Tones.flac')
+    # Single-file folders are listed inline in the set's folder view.
+    if not open_track('Music', None, probe['file_name']):
+        return run.record('audio output: EQ probe bands measured', False, 'could not open the EQ probe')
+    _, analysis, wav = play_and_capture(run, run.admin, probe, 'eq-probe', seconds=6, bands=probe['tone_hz'])
+    bands = (main_segment(analysis) or {}).get('bands_dbfs', {})
+    spread = max(bands.values()) - min(bands.values()) if len(bands) == 3 else None
+    run.record('audio output: EQ probe bands 100 Hz / 1 kHz / 8 kHz measured (flat today)',
+               spread is not None and spread < LEVEL_TOLERANCE_DB, f'spread {spread} dB',
+               {'bands_dbfs': bands}, [wav])
+
+
+def calibrate_gap(run, track):
+    """One known gap must appear once, with its length.
+
+    The emulator's output stream starts and stops with a few ms of silence
+    (seen: 3.6-5.8 ms), so silences within EDGE_S of the audible span's ends
+    are reported but not counted. Its output also carries clicks inside a
+    continuous tone, so discontinuities are recorded as data only; click
+    detection is not possible on this capture path (see step_capture_calibration).
+    """
+    gap = track['gap']
+    scenario = f"audio output: known {gap['ms']} ms gap measured"
+    if not open_track('Music', 'Gap Calibration', track['file_name']):
+        run.record(scenario, False, 'could not open the track')
+        return 0
+    _, analysis, wav = play_and_capture(run, run.admin, track, f"gap-calibration-{gap['ms']}ms",
+                                        seconds=track['duration_s'] + 3, tone=track['tone_hz'][0])
+    segments = analysis['segments']
+    span = (segments[0]['start_s'] + EDGE_S, segments[-1]['end_s'] - EDGE_S) if segments else (0, 0)
+    silences = [g for g in analysis['gaps'] if g['kind'] == 'silence']
+    interior = [g for g in silences if span[0] < g['start_s'] < span[1]]
+    measured = interior[0]['duration_ms'] if len(interior) == 1 else None
+    ok = measured is not None and abs(measured - gap['ms']) <= ANDROID_GAP_TOLERANCE_MS
+    # Discontinuities at a silence's edges are the gap itself, not clicks.
+    clicks = [d for d in analysis.get('discontinuities') or [] if not any(
+        g['start_s'] - 0.005 <= d['time_s'] <= g['start_s'] + g['duration_ms'] / 1000 + 0.005 for g in silences)]
+    run.record(scenario, ok, f"expected {gap['ms']} ms, measured {[g['duration_ms'] for g in interior]} ms "
+               f"(stream-edge silences ignored: {[g['duration_ms'] for g in silences if g not in interior]})",
+               {'gaps': analysis['gaps'], 'counted': interior, 'discontinuities': clicks}, [wav])
+    return len(clicks)
+
+
+def step_gapless_auto_advance(run):
+    """Gapless across tracks needs automatic track changes, which Android lacks."""
+    run.record('capture timing: gap at automatic track change (gapless)', False,
+               'Android plays one item and stops; no automatic track change to measure yet (design B7, M12/M21)',
+               result='gap')
 
 
 def resign_in(run):
@@ -384,13 +466,18 @@ def step_regular_user(run):
 
 
 def teardown(run, port):
-    """Leave no session, data or port mapping behind on the emulator."""
+    """Leave no session, data or port mapping behind on the emulator.
+
+    run is None when setup failed before the evidence log existed.
+    """
     adrv.adb('shell', 'am', 'force-stop', PKG)
     adrv.adb('shell', 'pm', 'clear', PKG)
     adrv.adb('shell', 'cmd', 'uimode', 'night', 'no')
     if port:
         adrv.adb('reverse', '--remove', f'tcp:{port}')
     remaining = adrv.adb('reverse', '--list')
+    if run is None:
+        return
     run.record('teardown: app data cleared and adb reverse mapping removed', f'tcp:{port}' not in remaining,
                remaining.strip())
 
@@ -420,12 +507,14 @@ def main(argv=None):
     # Run the teardown also when stopped with SIGTERM (e.g. by `timeout`).
     signal.signal(signal.SIGTERM, lambda *_: sys.exit('music_e2e: terminated'))
     port = json.loads((Path(args.fixture_dir) / 'state.json').read_text())['port']
-    prepare_device(args, port)
-    run = Run(args)
+    run = None
     try:
+        prepare_device(args, port)
+        run = Run(args)
         if step_sign_in(run):
             for step in (step_touch_journey, step_tap_targets, step_back_and_progress, step_themes,
-                         step_gain_levels, step_server_restart, step_regular_user):
+                         step_gain_levels, step_capture_calibration, step_gapless_auto_advance,
+                         step_server_restart, step_cold_relaunch, step_regular_user):
                 try:
                     step(run)
                 except Exception as error:  # keep going: one broken step must not hide the others

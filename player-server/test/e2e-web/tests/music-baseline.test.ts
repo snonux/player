@@ -27,7 +27,8 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import {
-  audioState, captureOutput, expectPlaying, keyboardLogin, mainSegment, openFolder, playCard, resetProgress, selectByKeys,
+  InvalidCapture, assertValidCapture, audioState, captureOutput, expectPlaying, keyboardLogin, mainSegment, openFolder,
+  playCard, resetProgress, selectByKeys, type CaptureResult,
 } from './helpers/music-ui';
 
 const FEATURE = 'V01 baseline';
@@ -37,6 +38,16 @@ const ALBUM = 'Aurora Lane - Night Transit (2021)';
 // sources through an unchanged graph match within a fraction of a dB.
 const TONE_TOLERANCE = 0.02;
 const LEVEL_TOLERANCE_DB = 1.5;
+// Gap calibration: a known gap must be measured within this many ms (the
+// browser's resampler rings into the edges of exact silence by well under
+// a millisecond each side) and found within this many seconds of where the
+// media timeline puts it (main-thread timing of the capture start).
+const GAP_TOLERANCE_MS = 2;
+const POSITION_TOLERANCE_S = 0.15;
+
+// The suite needs the disposable music fixture; without it (e.g. `npm test`
+// with the default config) it is skipped instead of failing.
+test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'PLAYER_MUSIC_FIXTURE is not set (see music-e2e-verification.md)');
 
 let fixture: MusicFixture;
 let evidence: Evidence;
@@ -54,7 +65,11 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(installAudioTap);
 });
 
-/** Run a journey and always leave an evidence record, also on failure. */
+/**
+ * Run a journey and always leave an evidence record, also on failure. An
+ * invalid audio capture is recorded as a gap (not measured), and the test
+ * still fails so it cannot pass unnoticed.
+ */
 async function journey(scenario: string, body: (data: Record<string, unknown>, shots: string[]) => Promise<void>) {
   const data: Record<string, unknown> = {};
   const shots: string[] = [];
@@ -62,9 +77,18 @@ async function journey(scenario: string, body: (data: Record<string, unknown>, s
     await body(data, shots);
     evidence.record({ feature: FEATURE, scenario, result: 'pass', data, artifacts: shots });
   } catch (error) {
-    evidence.record({ feature: FEATURE, scenario, result: 'fail', detail: String(error).slice(0, 400), data, artifacts: shots });
+    const result = error instanceof InvalidCapture ? 'gap' : 'fail';
+    evidence.record({ feature: FEATURE, scenario, result, detail: String(error).slice(0, 400), data, artifacts: shots });
     throw error;
   }
+}
+
+/** Assert a valid capture whose main segment carries the expected tone. */
+function expectTone(out: CaptureResult, hz: number) {
+  assertValidCapture(out);
+  const tone = mainSegment(out.analysis)?.tone_hz ?? 0;
+  expect(tone).toBeGreaterThan(hz * (1 - TONE_TOLERANCE));
+  expect(tone).toBeLessThan(hz * (1 + TONE_TOLERANCE));
 }
 
 async function shot(page: Page, shots: string[], name: string) {
@@ -107,8 +131,7 @@ test('keyboard journey: open album, play, help, search, pause (admin, desktop da
     data.playing = await expectPlaying(page, longRoad.id);
     const out = await captureOutput(page, 2500, evidence.path('keyboard-long-road-home.wav'));
     data.capture = { routed: out.routed, dropouts: out.dropouts, segments: out.analysis.segments };
-    expect(out.routed, 'page audio is routed through Web Audio and captured').toBe(true);
-    expect(mainSegment(out.analysis)?.tone_hz).toBeCloseTo(longRoad.tone_hz[0], -1);
+    expectTone(out, longRoad.tone_hz[0]);
     shots.push(out.wav);
     await shot(page, shots, 'desktop-dark-playing');
 
@@ -124,9 +147,16 @@ test('keyboard journey: open album, play, help, search, pause (admin, desktop da
 
     await page.keyboard.press('/');
     await expect(page.getByRole('searchbox', { name: 'Search media' })).toBeFocused();
-    await page.keyboard.type('Harbour p');
-    await expect(page.getByRole('searchbox', { name: 'Search media' })).toHaveValue('Harbour p');
-    expect((await audioState(page)).paused, 'typing "p" in search does not pause').toBe(false);
+    // r (shuffle), h/l (move), p (pause) and ? (help) are global shortcuts
+    // outside text fields; typed into search they must only become text.
+    const playingSrc = (await audioState(page)).src;
+    await page.keyboard.type('Harbour hl p?');
+    await expect(page.getByRole('searchbox', { name: 'Search media' })).toHaveValue('Harbour hl p?');
+    const typed = await audioState(page);
+    expect(typed.paused, 'typing "p" in search does not pause').toBe(false);
+    expect(typed.src, 'typing does not switch tracks').toBe(playingSrc);
+    expect(page.url(), 'typing "r" does not shuffle').not.toContain('shuffle=1');
+    await expect(page.locator('#help-modal'), 'typing "?" does not open help').not.toHaveClass(/open/);
     await shot(page, shots, 'desktop-dark-search');
     await page.keyboard.press('Escape');
     await expect.poll(async () => (await audioState(page)).active).not.toContain('search-input');
@@ -174,9 +204,8 @@ test('touch/pointer journey: granted set only, card Play (regular user, narrow l
       await playFromCard(page, firstLight.file_name, touch, shots);
       data.playing = await expectPlaying(page, firstLight.id);
       const out = await captureOutput(page, 2500, evidence.path('narrow-first-light.wav'));
-      data.capture = { routed: out.routed, segments: out.analysis.segments };
-      expect(out.routed).toBe(true);
-      expect(mainSegment(out.analysis)?.tone_hz).toBeCloseTo(firstLight.tone_hz[0], -1);
+      data.capture = { routed: out.routed, dropouts: out.dropouts, segments: out.analysis.segments };
+      expectTone(out, firstLight.tone_hz[0]);
       shots.push(out.wav);
       await shot(page, shots, 'narrow-light-playing');
       data.target_sizes = await targetSizes(page);
@@ -247,11 +276,9 @@ test('audio output capture: ReplayGain fixture levels and tones', async ({ page 
     for (const item of [loud, quiet]) {
       await playCard(page, item.file_name, item.id);
       const out = await captureOutput(page, 2000, evidence.path(`gain-${item.file_name}.wav`));
-      const segment = mainSegment(out.analysis);
-      levels[item.file_name] = segment?.rms_dbfs;
-      expect(segment?.tone_hz ?? 0).toBeGreaterThan(item.tone_hz[0] * (1 - TONE_TOLERANCE));
-      expect(segment?.tone_hz ?? 0).toBeLessThan(item.tone_hz[0] * (1 + TONE_TOLERANCE));
       shots.push(out.wav);
+      expectTone(out, item.tone_hz[0]);
+      levels[item.file_name] = mainSegment(out.analysis)?.rms_dbfs;
     }
     data.rms_dbfs = levels;
     const difference = (levels[loud.file_name] ?? 0) - (levels[quiet.file_name] ?? 0);
@@ -268,12 +295,44 @@ test('audio output capture: EQ probe bands', async ({ page }) => {
     await playCard(page, probe.file_name, probe.id);
     const out = await captureOutput(page, 2000, evidence.path('eq-probe.wav'), probe.tone_hz);
     shots.push(out.wav);
+    assertValidCapture(out);
     const bands = mainSegment(out.analysis)?.bands_dbfs ?? {};
     data.bands_dbfs = bands;
     const values = Object.values(bands);
     expect(values).toHaveLength(3);
     expect(Math.max(...values) - Math.min(...values)).toBeLessThan(LEVEL_TOLERANCE_DB);
   });
+});
+
+test('audio output capture: known gaps are measured (calibration)', async ({ page }) => {
+  await keyboardLogin(page, fixture.admin);
+  const calibration = fixture.tracks.filter((t) => t.gap);
+  expect(calibration.length).toBeGreaterThan(0);
+  for (const item of calibration) {
+    const gap = item.gap!;
+    const entry = track(fixture, item.path);
+    await journey(`capture calibration: known ${gap.ms} ms gap measured`, async (data, shots) => {
+      await openFolder(page, fixture.setIds.Music, 'Gap Calibration');
+      await playCard(page, item.file_name, entry.id);
+      const startedAt = (await audioState(page)).time;
+      const out = await captureOutput(page, (gap.at_s - startedAt + 1.2) * 1000,
+        evidence.path(`gap-calibration-${gap.ms}ms.wav`), [], item.tone_hz[0]);
+      shots.push(out.wav);
+      assertValidCapture(out);
+      const expectedAt = gap.at_s - startedAt;
+      data.expected = { duration_ms: gap.ms, at_s: expectedAt };
+      data.gaps = out.analysis.gaps;
+      data.discontinuities = out.analysis.discontinuities;
+      const silences = out.analysis.gaps.filter((g) => g.kind === 'silence');
+      expect(silences, 'exactly the one known gap').toHaveLength(1);
+      expect(Math.abs(silences[0].duration_ms - gap.ms)).toBeLessThanOrEqual(GAP_TOLERANCE_MS);
+      expect(Math.abs(silences[0].start_s - expectedAt)).toBeLessThan(POSITION_TOLERANCE_S);
+      // The tone breaks only at the gap's two edges.
+      const away = (out.analysis.discontinuities ?? []).filter((d) =>
+        d.time_s < silences[0].start_s - 0.005 || d.time_s > silences[0].start_s + gap.ms / 1000 + 0.005);
+      expect(away, 'no clicks away from the gap').toEqual([]);
+    });
+  }
 });
 
 test('audio output capture: gap at an automatic track change', async ({ page }) => {
@@ -286,16 +345,25 @@ test('audio output capture: gap at an automatic track change', async ({ page }) 
     await playCard(page, first.file_name, first.id);
     // Harness step: jump near the end so the automatic change happens soon.
     await page.evaluate((t) => { (document.getElementById('media-audio') as HTMLAudioElement).currentTime = t; }, first.duration_s - 1.5);
-    const out = await captureOutput(page, 5000, evidence.path('gapless-flac-transition.wav'));
+    const out = await captureOutput(page, 5000, evidence.path('gapless-flac-transition.wav'), [], first.tone_hz[0]);
     shots.push(out.wav);
+    assertValidCapture(out);
     data.after_change = await audioState(page);
     expect((data.after_change as { src: string }).src).toMatch(new RegExp(`/media/${second.id}/`));
-    data.segments = out.analysis.segments;
-    data.gaps_ms = out.analysis.gaps_ms;
-    data.dropouts = out.dropouts;
-    // The capture must see audio on both sides of the change; whether there
-    // is a gap is today's behaviour, recorded for M21 to improve on.
-    expect(out.analysis.segments.length).toBeGreaterThanOrEqual(1);
-    expect(out.analysis.audible_s).toBeGreaterThan(2);
+    const ended = out.events.find((e) => e.type === 'ended' && e.src.includes(`/media/${first.id}/`));
+    expect(ended, 'the capture saw Movement I end').toBeTruthy();
+    const near = (time: number) => Math.abs(time - ended!.offset_s) < 0.5;
+    const gaps = out.analysis.gaps;
+    const clicks = out.analysis.discontinuities ?? [];
+    data.track_change_at_s = ended!.offset_s;
+    data.events = out.events;
+    data.gaps = gaps;
+    data.discontinuities = clicks;
+    data.gap_at_change_ms = gaps.filter((g) => near(g.start_s)).reduce((sum, g) => sum + g.duration_ms, 0);
+    data.clicks_at_change = clicks.filter((d) => near(d.time_s)).length;
+    // Whatever happens at the change is today's baseline, recorded for M21.
+    // Anything away from it would be a capture problem, not playback.
+    expect(gaps.filter((g) => !near(g.start_s)), 'no gaps away from the track change').toEqual([]);
+    expect(clicks.filter((d) => !near(d.time_s)), 'no clicks away from the track change').toEqual([]);
   });
 });

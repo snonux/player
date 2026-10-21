@@ -27,6 +27,8 @@ export interface ManifestTrack {
   duration_s: number;
   codec: string;
   gapless: { group: string; index: number; samples: number } | null;
+  /** Known gap of the Gap Calibration tracks. */
+  gap: { at_s: number; ms: number } | null;
 }
 
 export interface MusicFixture {

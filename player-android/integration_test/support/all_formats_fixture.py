@@ -41,9 +41,10 @@ def main():
     parser.add_argument('--port', type=int, default=18765)
     args = parser.parse_args()
     ensure_port_free(args.port)
+    binary = args.server_binary.resolve(strict=True)  # fail before creating anything
     directory = Path(tempfile.mkdtemp(prefix='player-formats-'))
     directory.chmod(0o700)
-    server = PlayerServer(args.server_binary, directory, args.port)
+    server = PlayerServer(binary, directory, args.port)
     generate_media(server.media)
     credentials = {'username': 'formats-e2e', 'password': secrets.token_urlsafe(24)}
     auth = directory / 'auth.json'

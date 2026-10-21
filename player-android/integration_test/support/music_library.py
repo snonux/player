@@ -15,7 +15,8 @@ multiple albums/artists, two discs and a compilation (M02-M04), release
 details such as label and original date (M05), sample rate/bit depth/bitrate
 variety (M06, M50), Unicode and missing tags (M01), timed LRC, plain-text and
 embedded lyrics, ReplayGain tags at different real levels (M24), a
-continuous tone split sample-exactly into tracks (gapless, M21), a three-tone
+continuous tone split sample-exactly into tracks (gapless, M21), single
+files with known 5/20/50 ms gaps to calibrate gap detection, a three-tone
 probe for equalizer band checks (M25), an M3U playlist (M31), cover art, and
 a second set the regular test account cannot see (permissions).
 """
@@ -61,7 +62,9 @@ EMBEDDED_LYRICS = 'Afterglow over the water\nEmbedded lyric line two'
 # One dict per audio file. Keys:
 #   path       relative to MEDIA_ROOT; the first segment is the Player set
 #   codec      ffmpeg encoder arguments key in CODECS
-#   tone_hz    sine frequency(ies); level_dbfs is the peak level of each tone
+#   tone_hz    sine frequency(ies); level_dbfs is the peak level of the
+#              sum: one tone peaks there, the three EQ probe tones each sit
+#              20*log10(3) = 9.5 dB lower so that their sum peaks there
 #   tags       written tags (None = strip every tag); 'artists' (a list)
 #              becomes repeated ARTIST Vorbis comments in a FLAC file
 #   lyrics     None | 'timed-sidecar' | 'plain-sidecar' | 'embedded'
@@ -138,6 +141,15 @@ GAPLESS_TITLES = ['Movement I', 'Movement II', 'Movement III']
 GAPLESS_FOLDERS = {'flac-16-44': 'Music/Gapless Suite (FLAC)',
                    'mp3-320': 'Music/Gapless Suite (MP3)'}
 
+# Gap calibration: single files holding the 880 Hz tone with a stretch of
+# exact digital silence of known length at GAP_AT_S. They calibrate the gap
+# detection of every capture path (browser tap, emulator output) without
+# depending on automatic track changes, which Android cannot do yet.
+GAP_CALIBRATION_MS = [5, 20, 50]
+GAP_AT_S = 3.0
+GAP_TRACK_SECONDS = 6
+GAP_FOLDER = 'Music/Gap Calibration'
+
 COVER = 'Music/Aurora Lane - Night Transit (2021)/cover.jpg'
 PLAYLIST = 'Music/Road Trip.m3u'
 # The second playlist entry deliberately does not exist (unresolved path).
@@ -152,7 +164,10 @@ CODECS = {
     'flac-16-44': ['-c:a', 'flac', '-sample_fmt', 's16'],
     'flac-24-96': ['-c:a', 'flac', '-sample_fmt', 's32', '-bits_per_raw_sample', '24',
                    '-ar', '96000'],
-    'aac-128': ['-c:a', 'aac', '-b:a', '128k', '-movflags', '+use_metadata_tags'],
+    # The default mov muxer writes iTunes atoms (©nam, ©ART, aART, trkn,
+    # disk, cpil). '+use_metadata_tags' would write QuickTime mdta keys
+    # instead, which tag readers expecting iTunes atoms ignore.
+    'aac-128': ['-c:a', 'aac', '-b:a', '128k'],
     'opus-96': ['-c:a', 'libopus', '-b:a', '96k'],
     'vorbis-q4': ['-c:a', 'libvorbis', '-q:a', '4'],
 }
@@ -168,6 +183,7 @@ def generate(media_root):
     media_root = Path(media_root)
     tracks = [_make_track(media_root, spec) for spec in TRACKS]
     tracks += _make_gapless(media_root)
+    tracks += _make_gap_calibration(media_root)
     _make_cover(media_root / COVER)
     _write_playlist(media_root / PLAYLIST)
     manifest = {
@@ -246,8 +262,28 @@ def _manifest_entry(spec, source):
                  title=expected_title(spec), duration_s=seconds,
                  sample_rate=96000 if spec['codec'] == 'flac-24-96' else (
                      48000 if spec['codec'] == 'opus-96' else SAMPLE_RATE),
-                 gapless=spec.get('gapless'))
+                 gapless=spec.get('gapless'), gap=spec.get('gap'))
     return entry
+
+
+def _make_gap_calibration(media_root):
+    """FLAC files with one known gap of exact silence each (lossless keeps it exact)."""
+    entries = []
+    amplitude = 10 ** (-12 / 20)
+    for gap_ms in GAP_CALIBRATION_MS:
+        end = GAP_AT_S + gap_ms / 1000
+        source = (f'aevalsrc=if(between(t\\,{GAP_AT_S}\\,{end:.4f})\\,0\\,'
+                  f'{amplitude:.6f}*sin(2*PI*{GAPLESS_TONE_HZ}*t)):s={SAMPLE_RATE}:d={GAP_TRACK_SECONDS}')
+        spec = dict(path=f'{GAP_FOLDER}/Gap {gap_ms:02d} ms.flac', codec='flac-16-44',
+                    tone_hz=[GAPLESS_TONE_HZ], level_dbfs=-12, seconds=GAP_TRACK_SECONDS,
+                    gap={'at_s': GAP_AT_S, 'ms': gap_ms},
+                    tags={'title': f'Gap {gap_ms} ms', 'artist': 'Level Lab', 'album': 'Gap Calibration',
+                          'track': f'{GAP_CALIBRATION_MS.index(gap_ms) + 1}/{len(GAP_CALIBRATION_MS)}'})
+        target = media_root / spec['path']
+        target.parent.mkdir(parents=True, exist_ok=True)
+        ffmpeg('-f', 'lavfi', '-i', source, *CODECS[spec['codec']], *_tag_args(spec, target), str(target))
+        entries.append(_manifest_entry(spec, None))
+    return entries
 
 
 def _make_gapless(media_root):

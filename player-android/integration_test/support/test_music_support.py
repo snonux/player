@@ -27,6 +27,7 @@ import wave
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import audio_trace  # noqa: E402
 import evidence  # noqa: E402
+import fixture_server  # noqa: E402
 from fixture_server import Client, port_is_free  # noqa: E402
 import music_library  # noqa: E402
 import service_doubles  # noqa: E402
@@ -75,6 +76,36 @@ class AudioTraceTest(unittest.TestCase):
         self.assertAlmostEqual(levels['1000'], -24, delta=0.5)
         self.assertLess(levels['3000'], -60)
 
+    def test_short_gaps_are_measured_to_the_sample(self):
+        rate = 48000
+        for gap_ms in (1.5, 5, 12, 20, 50):
+            samples = tone(880, 0.5, -12, rate) + [0.0] * int(gap_ms * rate / 1000) + tone(880, 0.5, -12, rate)
+            result = audio_trace.analyze_samples(samples, rate, tone=880)
+            self.assertEqual(len(result['gaps']), 1, gap_ms)
+            self.assertAlmostEqual(result['gaps'][0]['duration_ms'], gap_ms, delta=0.1)
+            self.assertAlmostEqual(result['gaps'][0]['start_s'], 0.5, delta=0.001)
+
+    def test_sub_millisecond_silence_and_tone_zero_crossings_are_not_gaps(self):
+        rate = 48000
+        samples = tone(880, 0.5, -12, rate) + [0.0] * 20 + tone(880, 0.5, -12, rate)
+        self.assertEqual(audio_trace.analyze_samples(samples, rate)['gaps'], [])
+        quiet_low = tone(100, 1, -30, rate)
+        self.assertEqual(audio_trace.analyze_samples(quiet_low, rate)['gaps'], [])
+
+    def test_click_without_silence_is_a_discontinuity(self):
+        rate = 48000
+        first = tone(880, 0.5, -12, rate)
+        amplitude = 10 ** (-12 / 20)
+        jumped = [amplitude * math.sin(2 * math.pi * 880 * i / rate + 1.5) for i in range(len(first), 2 * len(first))]
+        result = audio_trace.analyze_samples(first + jumped, rate, tone=880)
+        self.assertEqual(result['gaps'], [])
+        self.assertEqual(len(result['discontinuities']), 1)
+        self.assertAlmostEqual(result['discontinuities'][0]['time_s'], 0.5, delta=0.001)
+
+    def test_continuous_tone_has_no_discontinuities(self):
+        result = audio_trace.analyze_samples(tone(880, 1, -12, 48000), 48000, tone=880)
+        self.assertEqual((result['gaps'], result['discontinuities']), ([], []))
+
     def test_silence_has_no_segments(self):
         path = self.dir / 'silence.wav'
         write_wav(path, [0.0] * 8000)
@@ -103,9 +134,11 @@ class EvidenceTest(unittest.TestCase):
         log.record('V01', 'play', 'fail')
         log.record('V01', 'play', 'pass', artifacts=[self.dir / 'android' / 'a.png'])
         evidence.Evidence(self.dir, 'chrome').record('V01', 'play', 'gap', proof='none')
+        evidence.Evidence(self.dir, 'firefox').record('V01', 'play', 'pass', proof='service-double')
         records = evidence.load(self.dir)
         self.assertEqual(records[1]['artifacts'], ['android/a.png'])
-        self.assertEqual(evidence.summarize(records), {('V01', 'play'): {'android': 'pass', 'chrome': 'gap'}})
+        self.assertEqual(evidence.summarize(records),
+                         {('V01', 'play'): {'android': 'pass', 'chrome': 'gap', 'firefox': 'pass*'}})
         self.assertEqual(json.loads((self.dir / 'android' / 'versions.json').read_text()), {'api': '34'})
 
     def test_rejects_unknown_result_and_proof(self):
@@ -235,11 +268,48 @@ class MusicLibraryTest(unittest.TestCase):
                              capture_output=True, text=True, check=True)
         self.assertEqual(int(out.stdout.strip()), music_library.GAPLESS_SECONDS * music_library.SAMPLE_RATE)
 
+    def test_m4a_has_itunes_atoms(self):
+        data = (self.dir / 'media/Music/Various Artists - Synth Compilation/Disc 1/01 - Neon Rain.m4a').read_bytes()
+        for atom in (b'\xa9nam', b'\xa9ART', b'aART', b'trkn', b'disk', b'cpil'):
+            self.assertIn(atom, data)
+        self.assertNotIn(b'mdta', data)
+
+    def test_gap_calibration_tracks_hold_their_known_gap(self):
+        tracks = [t for t in self.manifest['tracks'] if t['gap']]
+        self.assertEqual([t['gap']['ms'] for t in tracks], music_library.GAP_CALIBRATION_MS)
+        for item in tracks:
+            wav = self.dir / f"{item['gap']['ms']}.wav"
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(self.dir / 'media' / item['path']),
+                            '-c:a', 'pcm_s16le', str(wav)], check=True)
+            result = audio_trace.analyze(wav, tone=880)
+            self.assertEqual(len(result['gaps']), 1)
+            self.assertAlmostEqual(result['gaps'][0]['duration_ms'], item['gap']['ms'], delta=0.1)
+            self.assertAlmostEqual(result['gaps'][0]['start_s'], item['gap']['at_s'], delta=0.001)
+
     def test_flac_artist_rewrite_rejects_non_flac(self):
         path = self.dir / 'not.flac'
         path.write_bytes(b'RIFF0000')
         with self.assertRaises(ValueError):
             music_library.set_flac_artists(path, ['A'])
+
+
+class ProcessOwnershipTest(unittest.TestCase):
+    def test_identifies_own_process_also_after_its_binary_is_deleted(self):
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory)
+        binary = directory / 'sleeper'
+        shutil.copy(shutil.which('sleep'), binary)
+        process = subprocess.Popen([str(binary), '30'])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        start = fixture_server.process_start(process.pid)
+        self.assertTrue(fixture_server.owns_process(process.pid, binary, start=start))
+        self.assertFalse(fixture_server.owns_process(process.pid, binary, start=start + 1))
+        self.assertFalse(fixture_server.owns_process(process.pid, shutil.which('true')))
+        binary.unlink()
+        self.assertTrue(fixture_server.stop_pid(process.pid, binary, start=start))
+        self.assertIsNotNone(process.poll())
+        self.assertFalse(fixture_server.stop_pid(process.pid, binary, start=start))
 
 
 @unittest.skipUnless(os.environ.get('PLAYER_SERVER_BINARY') and HAVE_FFMPEG, 'set PLAYER_SERVER_BINARY')

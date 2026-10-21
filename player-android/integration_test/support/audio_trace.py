@@ -2,25 +2,34 @@
 """Analyse captured audio output for timing, level and spectrum checks.
 
 One analyser serves all three platforms: the web runner writes the samples
-it tapped from the browser's Web Audio output to a WAV file, and the Android
-runner records the emulator's output from a host PulseAudio/PipeWire null
-sink. Both then call analyze() (or this script) and get the same JSON.
+it tapped from the browser's Web Audio output (an AudioWorklet on the audio
+thread) to a WAV file, and the Android runner cuts the emulator's output
+from the file QEMU's wav audio backend writes. Both then call analyze() (or
+this script) and get the same JSON.
 
-What it reports, per non-silent segment of the capture:
+What it reports:
 
-- start/end time, so a gap between two segments (track change) is measured
-  in milliseconds - the basis for gapless checks (M21);
-- RMS and peak level in dBFS, so two captures can be compared for gain
-  (ReplayGain, M24);
-- the tone frequency (zero-crossing estimate, for the single-tone fixture
-  tracks) to identify *which* fixture track was audible;
-- optional Goertzel band levels at given frequencies, for equalizer checks
-  against the fixture's three-tone probe (M25).
+- audible segments (10 ms frames above -50 dBFS) with start/end time, RMS
+  and peak level in dBFS (gain checks, M24), the tone frequency
+  (zero-crossing estimate, to identify *which* fixture track was audible) and
+  optional Goertzel band levels (equalizer checks against the three-tone
+  probe, M25);
+- gaps: every run of near-zero samples of at least MIN_GAP_MS inside the
+  audible span, measured to the sample, plus quiet (but not silent) stretches
+  between segments - the basis for gapless checks (M21). Frames alone would
+  miss gaps shorter than two frames;
+- with --tone, discontinuities of that pure tone (phase jumps, clicks, gap
+  edges), found where the signal stops obeying the sine recurrence
+  x[n+1] = 2 cos(w) x[n] - x[n-1]. A click without silence shows up here
+  and nowhere else.
+
+The analyser is calibrated by the fixture's "Gap Calibration" tracks, which
+contain known 5, 20 and 50 ms gaps (music_library.py).
 
 Only the standard library is used so the analyser runs wherever the runners
 do. Input must be 16-bit PCM WAV; stereo is downmixed to mono.
 
-Usage: audio_trace.py FILE.wav [--bands 100,1000,8000] [--threshold -50]
+Usage: audio_trace.py FILE.wav [--bands 100,1000,8000] [--tone 880] [--threshold -50]
 """
 
 import argparse
@@ -43,6 +52,18 @@ MIN_SEGMENT_MS = 30
 EDGE_MS = 50
 MEASURE_MAX_S = 2.0
 FLOOR_DB = -120.0
+# A sample counts as silent below -66 dBFS (about 16 LSB at 16 bit): exact
+# digital silence and resampler ringing at a gap's edges, but not a fixture
+# tone, whose samples pass zero within a single sample.
+ZERO_EPS = 10 ** (-66 / 20)
+# Shortest run of silent samples reported as a gap.
+MIN_GAP_MS = 1.0
+# A tone sample is discontinuous when the sine recurrence misses it by more
+# than this fraction of the tone's peak amplitude (codec noise stays far
+# below; a phase jump or gap edge reaches tens of percent).
+DISCONTINUITY_RATIO = 0.1
+# Discontinuity samples closer than this are one event.
+EVENT_MERGE_MS = 3.0
 
 
 def read_wav(path):
@@ -137,22 +158,92 @@ def describe_segment(samples, rate, run, bands, frame_ms=FRAME_MS):
     return result
 
 
-def analyze_samples(samples, rate, bands=None, threshold=SILENCE_DB):
+def audible_span(segments, rate):
+    """(first, end) sample index of the audible part, or None when silent."""
+    if not segments:
+        return None
+    return int(segments[0]['start_s'] * rate), int(segments[-1]['end_s'] * rate)
+
+
+def silent_runs(samples, rate, span, eps=ZERO_EPS, min_ms=MIN_GAP_MS):
+    """Runs of near-zero samples inside span, as gap dicts (sample accurate)."""
+    if span is None:
+        return []
+    minimum = max(1, int(rate * min_ms / 1000))
+    runs, start = [], None
+    first, end = span
+    for index in range(first, end + 1):
+        quiet = index < end and abs(samples[index]) < eps
+        if quiet and start is None:
+            start = index
+        elif not quiet and start is not None:
+            if index - start >= minimum:
+                runs.append({'start_s': round(start / rate, 4),
+                             'duration_ms': round((index - start) * 1000 / rate, 2), 'kind': 'silence'})
+            start = None
+    return runs
+
+
+def quiet_gaps(segments, silences):
+    """Gaps between frame segments not already covered by a silent run."""
+    gaps = []
+    for a, b in zip(segments, segments[1:]):
+        if any(a['end_s'] - 0.02 <= g['start_s'] <= b['start_s'] for g in silences):
+            continue
+        gaps.append({'start_s': a['end_s'], 'duration_ms': round((b['start_s'] - a['end_s']) * 1000, 2),
+                     'kind': 'quiet'})
+    return gaps
+
+
+def tone_discontinuities(samples, rate, frequency, span, ratio=DISCONTINUITY_RATIO):
+    """Where a pure tone breaks: events with time and size (fraction of peak).
+
+    Events within EVENT_MERGE_MS of the audible span's ends (the tone
+    starting or stopping) are not reported.
+    """
+    if span is None:
+        return []
+    first, end = span
+    peak = max((abs(x) for x in samples[first:end]), default=0.0)
+    if peak <= 0:
+        return []
+    coefficient = 2 * math.cos(2 * math.pi * frequency / rate)
+    merge = int(rate * EVENT_MERGE_MS / 1000)
+    events = []
+    for n in range(first + 1 + merge, end - 1 - merge):
+        residual = abs(samples[n + 1] - coefficient * samples[n] + samples[n - 1]) / peak
+        if residual <= ratio:
+            continue
+        if events and n - events[-1]['last'] <= merge:
+            events[-1]['last'] = n
+            events[-1]['size'] = max(events[-1]['size'], residual)
+        else:
+            events.append({'first': n, 'last': n, 'size': residual})
+    return [{'time_s': round(e['first'] / rate, 4), 'size': round(e['size'], 3)} for e in events]
+
+
+def analyze_samples(samples, rate, bands=None, threshold=SILENCE_DB, tone=None):
     levels = frame_levels(samples, rate)
     runs = find_segments(levels, threshold=threshold)
     segments = [describe_segment(samples, rate, run, bands) for run in runs]
-    gaps = [round((b['start_s'] - a['end_s']) * 1000) for a, b in zip(segments, segments[1:])]
-    return {
+    span = audible_span(segments, rate)
+    silences = silent_runs(samples, rate, span)
+    gaps = sorted(silences + quiet_gaps(segments, silences), key=lambda g: g['start_s'])
+    result = {
         'sample_rate': rate, 'duration_s': round(len(samples) / rate, 3),
-        'silence_threshold_dbfs': threshold, 'frame_ms': FRAME_MS,
-        'segments': segments, 'gaps_ms': gaps,
+        'silence_threshold_dbfs': threshold, 'frame_ms': FRAME_MS, 'min_gap_ms': MIN_GAP_MS,
+        'segments': segments, 'gaps': gaps, 'gaps_ms': [g['duration_ms'] for g in gaps],
         'audible_s': round(sum(s['duration_s'] for s in segments), 3),
     }
+    if tone:
+        result['tone_hz'] = tone
+        result['discontinuities'] = tone_discontinuities(samples, rate, tone, span)
+    return result
 
 
-def analyze(path, bands=None, threshold=SILENCE_DB):
+def analyze(path, bands=None, threshold=SILENCE_DB, tone=None):
     rate, samples = read_wav(path)
-    return analyze_samples(samples, rate, bands, threshold)
+    return analyze_samples(samples, rate, bands, threshold, tone)
 
 
 def main(argv=None):
@@ -160,9 +251,10 @@ def main(argv=None):
     parser.add_argument('wav')
     parser.add_argument('--bands', default='', help='comma-separated frequencies in Hz')
     parser.add_argument('--threshold', type=float, default=SILENCE_DB)
+    parser.add_argument('--tone', type=float, help='pure tone (Hz) to check for discontinuities')
     args = parser.parse_args(argv)
     bands = [float(b) for b in args.bands.split(',') if b.strip()]
-    json.dump(analyze(args.wav, bands, args.threshold), sys.stdout, indent=1)
+    json.dump(analyze(args.wav, bands, args.threshold, args.tone), sys.stdout, indent=1)
     print()
 
 

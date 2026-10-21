@@ -12,6 +12,11 @@ import { loadFixture } from './tests/helpers/music-fixture';
 // (PLAYER_FIREFOX overrides the binary). Playwright's bundled Firefox build
 // does not count as Firefox verification.
 //
+// Both browsers keep their default autoplay policies: every play starts from
+// trusted keyboard or pointer input, as it does for a user, so Firefox's
+// suspended-AudioContext handling in audioVisuals.js is exercised, not
+// switched off.
+//
 // PLAYER_E2E_PULSE_SINK routes the browsers' sound to a PulseAudio/PipeWire
 // sink (e.g. a null sink) so a run does not play tones through the laptop
 // speakers. The tests measure audio inside the page (helpers/audio-tap.ts),
@@ -37,7 +42,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         channel: 'chrome',
-        launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'], env },
+        launchOptions: { env },
       },
     },
     {
@@ -47,7 +52,6 @@ export default defineConfig({
         channel: 'moz-firefox',
         launchOptions: {
           executablePath: process.env.PLAYER_FIREFOX || '/usr/lib64/firefox/firefox',
-          firefoxUserPrefs: { 'media.autoplay.default': 0, 'media.autoplay.block-webaudio': false },
           env,
         },
       },

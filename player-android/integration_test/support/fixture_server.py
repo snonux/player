@@ -1,9 +1,13 @@
 """Lifecycle of a disposable local Player server for end-to-end fixtures.
 
 Shared by all_formats_fixture.py and music_fixture.py so that both start,
-probe, bootstrap and stop the real server the same way. Everything stays on
-loopback: the server is started with its own MEDIA_ROOT and DB_PATH inside a
-private temporary directory and never touches a user's library or database.
+probe, bootstrap and stop the real server the same way. The server gets its
+own MEDIA_ROOT and DB_PATH inside a private temporary directory and never
+touches a user's library or database. The fixtures talk to it over
+loopback, but Player has no listen-address setting: it binds every
+interface (":PORT"), so while a fixture runs its disposable accounts are
+reachable from the local network. The passwords are random per fixture;
+run fixtures only on trusted networks or behind a host firewall.
 
 Only processes started from here are ever signalled. A process is recognised
 by its PID *and* its executable path, so a recycled PID that now belongs to an
@@ -156,12 +160,39 @@ def port_is_free(port):
         return False
 
 
-def owns_process(pid, binary, argument=None):
-    """True when pid is alive, runs exactly this binary and (for interpreters
-    such as python3) has argument, e.g. the script path, on its command line.
+def process_start(pid):
+    """Start time of pid in clock ticks since boot (/proc/PID/stat field 22),
+    or None when the process is gone. With the PID it identifies a process
+    uniquely: a recycled PID has a different start time.
     """
     try:
-        if Path(f'/proc/{pid}/exe').resolve() != Path(binary).resolve():
+        stat = Path(f'/proc/{pid}/stat').read_text()
+        return int(stat[stat.rindex(')') + 2:].split()[19])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def running(pid, start):
+    """True while pid with this start time exists and is not a zombie."""
+    try:
+        stat = Path(f'/proc/{pid}/stat').read_text()
+        fields = stat[stat.rindex(')') + 2:].split()
+        return fields[0] != 'Z' and int(fields[19]) == start
+    except (OSError, ValueError, IndexError):
+        return False
+
+
+def owns_process(pid, binary, argument=None, start=None):
+    """True when pid is alive, was started from this binary (also after the
+    file was rebuilt or deleted: /proc shows "<path> (deleted)"), has
+    argument (e.g. an interpreter's script path) on its command line and, if
+    given, the recorded start time.
+    """
+    try:
+        exe = os.readlink(f'/proc/{pid}/exe').removesuffix(' (deleted)')
+        if Path(exe) != Path(binary).resolve():
+            return False
+        if start is not None and process_start(pid) != start:
             return False
         if argument is None:
             return True
@@ -178,17 +209,20 @@ def answers(origin, path, timeout=2):
         return None
 
 
-def stop_pid(pid, binary, argument=None, timeout=10):
+def stop_pid(pid, binary, argument=None, timeout=10, start=None):
     """SIGTERM a detached process started by a fixture, then wait for exit.
 
     Returns False without signalling when the PID no longer belongs to the
     recorded program (already gone or recycled by another program).
     """
-    if not owns_process(pid, binary, argument):
+    if not owns_process(pid, binary, argument, start):
         return False
+    start = process_start(pid) if start is None else start
     os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + timeout
-    while owns_process(pid, binary, argument):
+    # Wait for the process itself, not for owns_process(): an exiting process
+    # loses /proc/PID/exe before it closes its sockets.
+    while running(pid, start):
         if time.monotonic() > deadline:
             os.kill(pid, signal.SIGKILL)
             break

@@ -87,12 +87,15 @@ def load(directory):
 def summarize(records):
     """{(feature, scenario): {platform: result}} from the latest record of each.
 
+    A result obtained against a service double is marked with '*'.
+
     A rerun appends new records instead of rewriting old ones, so only the
     most recent result of a scenario on a platform counts.
     """
     matrix = {}
     for record in records:
-        matrix.setdefault((record['feature'], record['scenario']), {})[record['platform']] = record['result']
+        cell = record['result'] + ('*' if record['proof'] == 'service-double' else '')
+        matrix.setdefault((record['feature'], record['scenario']), {})[record['platform']] = cell
     return matrix
 
 
@@ -109,7 +112,7 @@ def main(argv):
         print(label[:71].ljust(72) + ''.join(cells.get(p, '-').ljust(9) for p in platforms))
     doubles = sum(1 for r in records if r['proof'] == 'service-double')
     if doubles:
-        print(f'\n{doubles} record(s) were checked against service doubles, not real services.')
+        print(f'\n* {doubles} record(s) were checked against service doubles, not real services.')
 
 
 if __name__ == '__main__':

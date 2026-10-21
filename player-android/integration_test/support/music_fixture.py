@@ -20,8 +20,12 @@ Local service doubles (service_doubles.py) start next to the server unless
 --no-doubles is given.
 
 Evidence (screenshots, audio captures, results) goes to a separate
-directory - $PLAYER_E2E_EVIDENCE or <tmp>/player-music-evidence/<run-id> -
-which `down` keeps. Nothing is ever written inside the repository.
+directory - $PLAYER_E2E_EVIDENCE or <tmp>/player-music-evidence-<uid>/<run-id>
+(private to the user) - which `down` keeps. Nothing is ever written inside
+the repository.
+
+The fixture is reached over loopback, but the server binds all interfaces
+(Player has no listen-address setting); see fixture_server.py.
 
 The Android emulator reaches the server through `adb reverse tcp:<port>
 tcp:<port>` (app URL http://127.0.0.1:<port>) or the emulator host alias
@@ -41,7 +45,7 @@ import tempfile
 import time
 
 from fixture_server import (FixtureError, PlayerServer, answers, bootstrap_and_scan,
-                            ensure_port_free, owns_process, port_is_free, stop_pid,
+                            ensure_port_free, owns_process, port_is_free, process_start, stop_pid,
                             write_private_json)
 import music_library
 
@@ -56,14 +60,16 @@ def cmd_up(args):
     ensure_port_free(args.port)
     if not args.no_doubles:
         ensure_port_free(args.doubles_port)
+    binary = Path(args.server_binary).resolve(strict=True)
     directory = make_directory(args.dir)
-    server = PlayerServer(args.server_binary, directory, args.port)
-    manifest = music_library.generate(server.media)
-    auth = make_credentials(directory)
-    run_id = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    state = base_state(directory, server, auth, run_id, args)
+    state = {}
     try:
-        state['server']['pid'] = server.start(detached=True)
+        server = PlayerServer(binary, directory, args.port)
+        manifest = music_library.generate(server.media)
+        auth = make_credentials(directory)
+        run_id = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        state = base_state(directory, server, auth, run_id, args)
+        state['server'].update(started_process(server.start(detached=True)))
         save_state(directory, state)
         admin = bootstrap_and_scan(server.origin, auth['admin'], manifest['media_count'])
         state['set_ids'], state['media_ids'] = setup_accounts(admin, auth['user'])
@@ -84,8 +90,8 @@ def cmd_restart(args):
     """
     state = load_state(args.fixture_dir)
     server = PlayerServer(state['server']['binary'], args.fixture_dir, state['port'])
-    stop_pid(state['server']['pid'], state['server']['binary'])
-    state['server']['pid'] = server.start(detached=True)
+    stop_pid(state['server']['pid'], state['server']['binary'], start=state['server'].get('start'))
+    state['server'].update(started_process(server.start(detached=True)))
     state['server']['restarts'] = state['server'].get('restarts', 0) + 1
     save_state(args.fixture_dir, state)
     print(json.dumps({'origin': state['origin'], 'pid': state['server']['pid'],
@@ -96,9 +102,10 @@ def cmd_status(args):
     state = load_state(args.fixture_dir)
     print(json.dumps({
         'origin': state['origin'], 'healthz': answers(state['origin'], '/healthz'),
-        'server_running': owns_process(state['server']['pid'], state['server']['binary']),
+        'server_running': owns_process(state['server']['pid'], state['server']['binary'],
+                                       start=state['server'].get('start')),
         'doubles_running': bool(state.get('doubles')) and owns_process(
-            state['doubles']['pid'], sys.executable, str(DOUBLES_SCRIPT)),
+            state['doubles']['pid'], sys.executable, str(DOUBLES_SCRIPT), state['doubles'].get('start')),
         'evidence_dir': state['evidence_dir']}))
 
 
@@ -113,6 +120,16 @@ def cmd_down(args):
     print(json.dumps(dict(leftovers, evidence_dir=state['evidence_dir'])))
     if leftovers['fixture_dir_exists'] or not leftovers['port_free'] or not leftovers['doubles_port_free']:
         raise FixtureError(f'Teardown incomplete: {leftovers}')
+
+
+def default_evidence_root():
+    """Per-user private parent for evidence: <tmp>/player-music-evidence-<uid> (0700)."""
+    root = Path(tempfile.gettempdir()) / f'player-music-evidence-{os.getuid()}'
+    root.mkdir(mode=0o700, exist_ok=True)
+    if root.stat().st_uid != os.getuid():
+        raise FixtureError(f'{root} belongs to another user; set PLAYER_E2E_EVIDENCE')
+    root.chmod(0o700)
+    return root
 
 
 def make_directory(explicit):
@@ -142,7 +159,7 @@ def make_credentials(directory):
 
 def base_state(directory, server, auth, run_id, args):
     evidence = Path(args.evidence or os.environ.get('PLAYER_E2E_EVIDENCE') or
-                    Path(tempfile.gettempdir()) / 'player-music-evidence' / run_id)
+                    default_evidence_root() / run_id)
     evidence.mkdir(parents=True, exist_ok=True)
     return {
         'schema': 1, 'run_id': run_id, 'fixture_dir': str(directory),
@@ -189,20 +206,41 @@ def start_doubles(directory, port):
         if process.poll() is not None or time.monotonic() > deadline:
             raise FixtureError(f'Service doubles did not start; see {directory / "doubles.log"}')
         time.sleep(0.2)
-    return {'origin': origin, 'port': port, 'pid': process.pid, 'proof': 'service-double'}
+    return dict(started_process(process.pid), origin=origin, port=port, proof='service-double')
 
 
 def teardown(directory, state):
     """Stop our processes, then delete the fixture directory (marker checked)."""
-    if state.get('server', {}).get('pid'):
-        stop_pid(state['server']['pid'], state['server']['binary'])
-    if state.get('doubles'):
-        stop_pid(state['doubles']['pid'], sys.executable, str(DOUBLES_SCRIPT))
+    server, doubles = state.get('server') or {}, state.get('doubles')
+    if server.get('pid'):
+        stop_pid(server['pid'], server['binary'], start=server.get('start'))
+    if doubles:
+        stop_pid(doubles['pid'], sys.executable, str(DOUBLES_SCRIPT), start=doubles.get('start'))
+    # Never delete the database and media under a server that still runs.
+    busy = wait_ports_free([state.get('port'), (doubles or {}).get('port')])
+    if busy:
+        raise FixtureError(f'ports {busy} still in use; not deleting {directory}')
     directory = Path(directory)
     if (directory / MARKER).is_file():
         shutil.rmtree(directory)
     elif directory.exists():
         raise FixtureError(f'{directory} has no {MARKER}; refusing to delete it')
+
+
+def wait_ports_free(ports, timeout=5):
+    """Ports still busy after timeout seconds (a stopped server's sockets close
+    a moment after its process ends)."""
+    deadline = time.monotonic() + timeout
+    while True:
+        busy = [p for p in ports if p and not port_is_free(p)]
+        if not busy or time.monotonic() > deadline:
+            return busy
+        time.sleep(0.1)
+
+
+def started_process(pid):
+    """What identifies a started process later: PID plus start time."""
+    return {'pid': pid, 'start': process_start(pid)}
 
 
 def save_state(directory, state):

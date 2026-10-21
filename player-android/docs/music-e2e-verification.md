@@ -12,17 +12,23 @@ could not exercise.
 Everything generated (media, database, credentials, APK, screenshots, audio
 captures, results) lives in temporary directories outside the repository.
 
+Network exposure: the runners reach the server over loopback, but Player has
+no listen-address setting and binds every interface (`:PORT`). While a
+fixture runs, its disposable accounts are reachable from the local network
+(random passwords, synthetic media only). Run fixtures on trusted networks
+or behind a host firewall.
+
 ## What the fixture provides
 
 `player-android/integration_test/support/`:
 
 | File | Role |
 | --- | --- |
-| `music_fixture.py` | `up` / `restart` / `status` / `down` of a detached server on loopback (default port 18766) with its own media root and SQLite database |
+| `music_fixture.py` | `up` / `restart` / `status` / `down` of a detached server (default port 18766, all interfaces, see above) with its own media root and SQLite database |
 | `music_library.py` | ffmpeg-generated library and `manifest.json` (expected titles, tones, levels, gains) |
 | `service_doubles.py` | local ListenBrainz, Last.fm `artist.getinfo`, ICY radio and UPnP AVTransport doubles (port 18767) |
-| `audio_trace.py` | analysis of captured output: segments, gaps (10 ms frames), RMS/peak dBFS, tone frequency, Goertzel band levels |
-| `evidence.py` | evidence record schema and `summary` (scenario × platform matrix) |
+| `audio_trace.py` | analysis of captured output: segments (10 ms frames), sample-accurate gaps (runs of silence of 1 ms or more), pure-tone discontinuities (clicks), RMS/peak dBFS, tone frequency, Goertzel band levels |
+| `evidence.py` | evidence record schema and `summary` (scenario × platform matrix; `*` marks results against service doubles) |
 | `fixture_server.py` | server lifecycle shared with `all_formats_fixture.py` |
 | `test_music_support.py` | unit tests; with `PLAYER_SERVER_BINARY` also the restart/teardown isolation test |
 
@@ -37,8 +43,11 @@ Library (all tones are sine waves, so the analyser can tell tracks apart):
   untagged `Untagged/track_0042.mp3`; *Gain Check* (FLAC at −3 and −21 dBFS
   with opposite ReplayGain tags, an MP3 without gain tags); *EQ Probe* (100
   Hz + 1 kHz + 8 kHz); *Gapless Suite* in FLAC and MP3 (one 880 Hz tone cut
-  into three 6 s tracks at exact sample boundaries); `Road Trip.m3u` with
-  one unresolved entry.
+  into three 6 s tracks at exact sample boundaries); *Gap Calibration* (the
+  880 Hz tone with exact silences of 5, 20 and 50 ms at 3.0 s, one per FLAC
+  file, to calibrate gap detection on every platform); `Road Trip.m3u` with
+  one unresolved entry. The M4A file carries iTunes atoms (`©nam`, `aART`,
+  `trkn`, `disk`, `cpil`).
 - set `Restricted`: one admin-only track.
 
 Accounts: `music-admin` (admin) and `music-user` (viewer of `Music` only),
@@ -98,12 +107,21 @@ pactl unload-module <module id from step 2>
 ```
 
 `down` stops the server and the doubles (only the processes the fixture
-started, checked by PID and executable), deletes the fixture directory and
-fails if the ports are still in use. The evidence directory is kept.
+started, identified by PID, executable and process start time), refuses to
+delete anything while the ports are still in use, then deletes the fixture
+directory. The evidence directory (default
+`<tmp>/player-music-evidence-<uid>/<run-id>`, mode 700) is kept.
 `music_e2e.py` clears the app data and removes its `adb reverse` mapping at
-the end; `--host-alias` uses `http://10.0.2.2:<port>` instead of
-`adb reverse`. `restart` restarts the server on the same database (the
-Android runner uses it to check that the app keeps its session).
+the end, also when setup fails or it is stopped with SIGTERM; `--host-alias`
+uses `http://10.0.2.2:<port>` instead of `adb reverse`. `restart` restarts
+the server on the same database: the Android runner checks that a session
+opened before survives and that the running app keeps working. Separately it
+force-stops and relaunches the app, which should reopen signed in; on a
+freshly booted emulator it does not (open bug `zn3`), and that check fails
+until the bug is fixed.
+
+The browsers keep their default autoplay policies: every play starts from
+real keyboard or pointer input, as for a user.
 
 Python tests: `cd player-android/integration_test/support && python3 -m
 unittest test_music_support` (add `PLAYER_SERVER_BINARY=$TMPDIR/player` for
@@ -112,27 +130,46 @@ the lifecycle test).
 ## Audio output capture
 
 - **Web:** `tests/helpers/audio-tap.ts` taps every Web Audio connection to
-  the destination, i.e. the signal after any gain or EQ node the page adds.
+  the destination with an AudioWorklet, i.e. the signal after any gain or EQ
+  node the page adds, recorded on the audio thread with the context's frame
+  counter. Any discontinuity in the captured frames makes the capture
+  invalid (recorded as a gap, never measured); an earlier ScriptProcessor
+  tap lost whole blocks under load, which looked exactly like playback
+  gaps. Media element events (`loadstart`, `playing`, `ended`) are stamped
+  on the same clock, so a gap is located relative to the track change.
   Player routes audio through Web Audio while audio visuals are on (the
   default) and the page has user activation; with visuals Off nothing is
-  captured and the helper reports `routed: false` — treat that as a gap.
-  Timing comes from `AudioContext` block times (sample-accurate placement,
-  dropouts counted).
+  captured and the helper reports `routed: false`, also a gap.
 - **Android:** the emulator's PulseAudio backend did not start on the test
   laptop (`Failed to initialize PA context`), so the emulator runs with
   QEMU's wav backend and the runner reads byte ranges of that file: the real
   mixed output of the device at the current media volume (set it to
   maximum). The file only grows while Android has an output stream open, so
-  time in a capture is stream time: suitable for tone identification and
-  level comparisons; gap measurements on Android are approximate and must
-  say so.
+  time in a capture is stream time, not wall time; silence inside an open
+  stream is captured. The runner calibrates it with the *Gap Calibration*
+  tracks and the EQ probe: known gaps are measured to within 0.4 ms, but the
+  stream starts and stops with a few ms of silence (2.6–8.6 ms seen; ignored
+  within 50 ms of the stream's ends) and the emulator's output carries
+  clicks inside a continuous tone, so click detection is recorded as a gap
+  on Android. Android cannot change tracks automatically yet, so gapless
+  across tracks is recorded as a gap there too.
 - Neither path is "heard": no test listens to speakers. Absolute levels
   depend on volume settings; compare levels within one capture setup.
 
-Baseline measured on 2026-10-20 (server 0.8.2, `6f2a69a`): Loud/Quiet
-captured 18.0 dB apart in Chrome 144 and Firefox 156 and 18.1 dB on the API
-34 emulator; EQ probe bands flat; automatic track change in *Gapless Suite
-(FLAC)* left a 20 ms gap in Chrome and 100 ms in Firefox.
+Baseline of the final run (fixture run `20261021T062222Z`, server 0.8.2
+built from `6f2a69a` with uncommitted changes in the tree, Chrome
+144.0.7559.132, Firefox 156.0, API 34 emulator with APK 0.8.2/4022):
+
+| Measurement | Chrome | Firefox | Android |
+| --- | --- | --- | --- |
+| Loud − Quiet (expected 18 dB) | 18.00 dB | 18.00 dB | 17.99 dB |
+| EQ probe band spread (flat) | 0.00 dB | 0.00 dB | 1.09 dB |
+| Known 5 / 20 / 50 ms gaps | 4.60 / 19.56 / 49.81 ms | 4.58 / 19.54 / 49.81 ms | 4.76 / 19.89 / 49.95 ms |
+| Gap at automatic change Movement I → II | 26.5 ms | 58.0 ms | gap: no automatic track change |
+| Capture dropouts | 0 | 0 | n/a (stream file) |
+
+These are today's numbers, not targets; M21 (gapless) must bring the
+track-change gap to zero on every platform.
 
 ## Known runner limits
 
@@ -150,9 +187,8 @@ captured 18.0 dB apart in Chrome 144 and Firefox 156 and 18.1 dB on the API
 - App relaunch after `am force-stop` behaved differently on two boots of
   the same AVD: one long-running emulator reopened straight into the
   Library, a freshly booted one showed *Choose a server* and then *Welcome
-  back* (password or fingerprint) even without a server restart. The
-  runner records which happened (`signed_in_directly`) and signs in again
-  when asked; the cause (likely credential storage after a fresh boot) is
-  not investigated here.
+  back* (password or fingerprint) even without a server restart. This is
+  bug `zn3`; the runner records the cold-relaunch check as failed and signs
+  in again so the remaining steps run.
 - `adrv.adb` gives up after 120 s: after a host suspend, `uiautomator dump`
   hung forever on the old emulator; reboot the emulator in that case.

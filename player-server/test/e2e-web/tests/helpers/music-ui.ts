@@ -8,7 +8,7 @@
  */
 import { expect, type Page } from '@playwright/test';
 import type { Account } from './music-fixture';
-import { analyze, startCapture, takeCapture, writeWav, type Analysis } from './audio-tap';
+import { analyze, startCapture, takeCapture, writeWav, type Analysis, type MediaEvent } from './audio-tap';
 
 export interface AudioState { src: string; time: number; paused: boolean; volume: number; selected: string; active: string }
 
@@ -62,18 +62,42 @@ export async function expectPlaying(page: Page, mediaId: number): Promise<AudioS
   return state;
 }
 
-/** Record the page's audio output for ms milliseconds, save it and analyse it. */
-export async function captureOutput(page: Page, ms: number, wavPath: string, bands: number[] = []):
-  Promise<{ analysis: Analysis; routed: boolean; dropouts: number; wav: string }> {
+/**
+ * A capture that cannot be measured: nothing routed to the tap, or a
+ * discontinuity in the captured frames. Journeys record it as a gap, never as
+ * measured data (a lost block of samples looks exactly like a playback gap).
+ */
+export class InvalidCapture extends Error {}
+
+export interface CaptureResult {
+  analysis: Analysis; routed: boolean; dropouts: number; wav: string; events: MediaEvent[];
+}
+
+/**
+ * Record the page's audio output for ms milliseconds, save and analyse it.
+ * Waits briefly for the page to route audio through Web Audio first (the
+ * app creates its graph once playback has started). tone enables the
+ * analyser's pure-tone discontinuity check.
+ */
+export async function captureOutput(page: Page, ms: number, wavPath: string, bands: number[] = [], tone?: number):
+  Promise<CaptureResult> {
+  await expect.poll(() => page.evaluate(() => (window as any).__playerAudioTap.routed()), { timeout: 5_000 })
+    .toBe(true).catch(() => {});
   await startCapture(page);
   await page.waitForTimeout(ms);
   const capture = await takeCapture(page);
   if (!capture.routed || !capture.samples) {
-    return { analysis: { sample_rate: 0, duration_s: 0, segments: [], gaps_ms: [], audible_s: 0 },
-      routed: capture.routed, dropouts: capture.dropouts, wav: '' };
+    return { analysis: { sample_rate: 0, duration_s: 0, segments: [], gaps: [], gaps_ms: [], audible_s: 0 },
+      routed: capture.routed, dropouts: capture.dropouts, wav: '', events: [] };
   }
   const wav = writeWav(capture, wavPath);
-  return { analysis: analyze(wav, bands), routed: true, dropouts: capture.dropouts, wav };
+  return { analysis: analyze(wav, bands, tone), routed: true, dropouts: capture.dropouts, wav, events: capture.events };
+}
+
+/** Throw InvalidCapture unless the capture is routed and free of dropouts. */
+export function assertValidCapture(out: CaptureResult): void {
+  if (!out.routed) throw new InvalidCapture('page audio was not routed through Web Audio; nothing captured');
+  if (out.dropouts > 0) throw new InvalidCapture(`capture lost frames (${out.dropouts} discontinuities); gaps cannot be measured`);
 }
 
 /** The longest audible segment of a capture, or undefined when silent. */
