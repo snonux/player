@@ -368,6 +368,31 @@ function testThumbnailSizeOwnership() {
   assert(calls.length === 0, 'Editors, browser chords, dialogs and image view must own preview size keys');
 }
 
+function testQueueKeysPrecedeModalAndButtonBlur() {
+  const calls = [];
+  let focused = true;
+  initKeyboard({ isQueueFocused: () => focused, isModalOpen: () => true,
+    queueKey: e => { calls.push(e.key); e.preventDefault(); return true; },
+    escape: () => calls.push('globalEscape'), navDown: () => calls.push('gridDown') });
+  const button = { tagName:'BUTTON', closest:()=>({}), blur() { focused=false; calls.push('blur'); } };
+  assert(pressKey('Escape',button), 'queue Escape is handled');
+  assert(calls.join() === 'Escape', 'queue button Escape closes before generic blur and global routing');
+  calls.length=0;
+  for (const key of ['j','k','J','K','Delete','ContextMenu']) pressKey(key,{tagName:'LI'});
+  assert(calls.join() === 'j,k,J,K,Delete,ContextMenu', 'queue local keys work inside narrow modal before global guards');
+  calls.length=0;
+  for (const key of ['Enter',' ']) assert(!pressKey(key,button), 'queue buttons retain native Enter/Space');
+  pressKey('Q',{tagName:'INPUT'}); pressKey('Delete',{tagName:'SELECT'});
+  assert(calls.length===0,'queue keys preserve typing and native selects');
+  const wideButton = { tagName:'BUTTON', closest:selector=>selector==='#queue-panel' ? {} : null };
+  for (const key of ['Enter',' ']) assert(!pressKey(key,wideButton), 'wide queue buttons retain native Enter/Space');
+  assert(calls.length===0,'wide queue button activation must not route global playback');
+  let opened=0;
+  initKeyboard({toggleQueue:()=>opened++}); pressKey('Q');
+  assert(opened===1,'Q opens queue globally');
+}
+testQueueKeysPrecedeModalAndButtonBlur();
+
 testThumbnailSizeOwnership();
 testPictureLayoutOwnership();
 testHelpSearchOwnership();

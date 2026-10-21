@@ -1,3 +1,5 @@
+import { initQueue } from './queue.js';
+import { initQueuePanel, isQueueFocused, queueKey, toggleQueue } from './queue-panel.js';
 import { initMusicCatalog, renderMusic, backMusic, openAlbum, openSongAlbum } from './views/music-catalog.js';
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
@@ -190,6 +192,8 @@ async function initApp() {
   document.addEventListener('search:navigate-results', () => navDown());
   initShuffle({ onChange: () => loadMedia() });
   initPlaybackNav({ isShuffle });
+  initQueue();
+  initQueuePanel();
   initSets({
     onLoadMedia: () => {
       state.music = null;
@@ -217,6 +221,7 @@ async function initApp() {
   });
   initKeyboard({
     ...keyboardHandlers(),
+    isQueueFocused, queueKey, toggleQueue,
     togglePictureLayout: initPictureLayout(document.getElementById('media-grid')),
     ...initThumbnailSize(document.getElementById('media-grid')),
   });

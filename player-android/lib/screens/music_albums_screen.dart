@@ -1,3 +1,4 @@
+import '../widgets/music_queue_sheet.dart';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -93,6 +94,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+          actions: const [MusicQueueButton()],
           title: Text(widget.albumKey != null
               ? (_album?['title'] as String? ?? 'Album')
               : widget.artistKey != null

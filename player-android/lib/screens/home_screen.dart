@@ -1,3 +1,4 @@
+import '../widgets/music_queue_sheet.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -185,6 +186,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
     return AppBar(
       title: const Text('Library'),
       actions: [
+        const MusicQueueButton(),
         const ServerSwitchButton(),
         IconButton(
           key: const Key('home_settings_button'),

@@ -1,0 +1,112 @@
+import { queueState, jumpQueue, moveQueue, removeQueue, clearQueue, undoQueue } from './queue.js';
+import { mediaTitle, musicSubtitle } from './music.js';
+import { escapeHtml as esc } from './utils.js';
+
+let panel, selected = 0, opener, originalParent;
+const pageSize = 200;
+export function isQueueFocused() { return !!panel?.classList.contains('open') && panel.contains(document.activeElement); }
+export function toggleQueue() {
+  if (panel.classList.contains('open')) { closeQueue(); return; }
+  opener = document.activeElement;
+  if (document.fullscreenElement) document.fullscreenElement.appendChild(panel);
+  selected = Math.max(0, queueState().index);
+  panel.classList.add('open');
+  syncMode(); render(); focusRow();
+}
+function closeQueue() {
+  panel.classList.remove('open'); document.body.classList.remove('queue-open');
+  if (panel.parentElement !== originalParent) originalParent.appendChild(panel);
+  if (opener?.isConnected) opener.focus();
+}
+function syncMode() {
+  if (!panel.classList.contains('open')) return;
+  const narrow = window.matchMedia('(max-width: 699px)').matches;
+  panel.classList.toggle('modal-overlay', narrow);
+  panel.setAttribute('role', narrow ? 'dialog' : 'complementary');
+  if (narrow) panel.setAttribute('aria-modal', 'true'); else panel.removeAttribute('aria-modal');
+  document.body.classList.toggle('queue-open', !narrow);
+}
+export function initQueuePanel() {
+  panel = document.getElementById('queue-panel');
+  originalParent = panel.parentElement;
+  document.addEventListener('fullscreenchange', () => {
+    if (panel.classList.contains('open')) (document.fullscreenElement || originalParent).appendChild(panel);
+  });
+  document.querySelectorAll('[data-queue-toggle]').forEach(button => button.addEventListener('click', toggleQueue));
+  panel.addEventListener('click', async e => {
+    const action = e.target.closest('[data-queue-action]');
+    if (!action) return;
+    const at = Number(action.closest('[data-queue-index]')?.dataset.queueIndex ?? selected);
+    switch (action.dataset.queueAction) {
+      case 'close': closeQueue(); return;
+      case 'menu': selected = at; openRowMenu(); return;
+      case 'play': selected = at; await jumpQueue(at); break;
+      case 'up': moveQueue(at, -1); selected = Math.max(0, at - 1); break;
+      case 'down': moveQueue(at, 1); selected = Math.min(queueState().entries.length - 1, at + 1); break;
+      case 'remove': removeQueue(at); selected = Math.min(at, queueState().entries.length - 1); break;
+      case 'clear': clearQueue(); selected = 0; break;
+      case 'undo': undoQueue(); selected = Math.max(0, queueState().index); break;
+      case 'previous': selected = Math.max(0, selected - pageSize); break;
+      case 'next': selected = Math.min(queueState().entries.length - 1, selected + pageSize); break;
+      case 'now': selected = Math.max(0, queueState().index); break;
+    }
+    render(); focusRow();
+  });
+  panel.addEventListener('focusin', e => {
+    const row = e.target.closest('[data-queue-index]');
+    if (row) selected = Number(row.dataset.queueIndex);
+  });
+  document.addEventListener('queue:changed', () => {
+    if (!panel.classList.contains('open')) return;
+    const focused = isQueueFocused(); render(); if (focused) focusRow();
+  });
+  window.addEventListener('resize', syncMode);
+  document.addEventListener('queue:open', () => { if (!panel.classList.contains('open')) toggleQueue(); else focusRow(); });
+}
+function focusRow() {
+  (panel.querySelector(`[data-queue-index="${selected}"]`) || panel.querySelector('[data-queue-action="undo"]:not(:disabled)') || panel.querySelector('[data-queue-action="close"]'))?.focus();
+  panel.querySelector(`[data-queue-index="${selected}"]`)?.scrollIntoView({ block: 'nearest' });
+}
+function openRowMenu() {
+  const row = panel.querySelector(`[data-queue-index="${selected}"]`);
+  if (!row) return;
+  const menu = document.createElement('div');
+  menu.className = 'shortcut-picker';
+  menu.setAttribute('popover', 'auto');
+  menu.setAttribute('role', 'group');
+  menu.setAttribute('aria-label', 'Queue track actions');
+  menu.dataset.queueIndex = String(selected);
+  for (const original of row.querySelectorAll('[data-queue-action]:not([data-queue-action="menu"])')) {
+    const button = original.cloneNode(true);
+    button.textContent = original.getAttribute('aria-label') || original.textContent;
+    menu.appendChild(button);
+  }
+  menu.addEventListener('toggle', e => { if (e.newState === 'closed') { menu.remove(); focusRow(); } });
+  panel.appendChild(menu); menu.showPopover(); menu.querySelector('button:not(:disabled)')?.focus();
+}
+export function queueKey(e) {
+  if (e.target.closest('[popover]')) return false;
+  const length = queueState().entries.length;
+  switch (e.key) {
+    case 'ContextMenu': openRowMenu(); e.preventDefault(); return true;
+    case 'F10': if (!e.shiftKey) return false; openRowMenu(); e.preventDefault(); return true;
+    case 'Q': case 'Escape': closeQueue(); break;
+    case 'j': case 'ArrowDown': selected = Math.min(length - 1, selected + 1); break;
+    case 'k': case 'ArrowUp': selected = Math.max(0, selected - 1); break;
+    case 'Enter': void jumpQueue(selected); break;
+    case 'J': moveQueue(selected, 1); selected = Math.min(length - 1, selected + 1); break;
+    case 'K': moveQueue(selected, -1); selected = Math.max(0, selected - 1); break;
+    case 'Delete': removeQueue(selected); selected = Math.min(selected, queueState().entries.length - 1); break;
+    default: return false;
+  }
+  e.preventDefault(); render(); if (panel.classList.contains('open')) focusRow(); return true;
+}
+function render() {
+  const q = queueState();
+  selected = Math.max(0, Math.min(selected, q.entries.length - 1));
+  const start = Math.floor(Math.max(0, selected) / pageSize) * pageSize;
+  panel.innerHTML = `<section class="queue-content"><div class="modal-header"><h2 id="queue-title">Now Playing</h2><button class="icon-btn" data-queue-action="close" aria-label="Close queue">✕</button></div><p>${esc(q.label ? `Playing from: ${q.label}` : 'Music queue')}</p><p class="text-sm">j/k select · Enter play · K/J move · Delete remove</p><p role="status">${esc(q.status || (q.active ? 'Current track marked Now' : 'Queue paused. Choose a track to play.'))}</p><ol class="queue-list" role="list" start="${start + 1}">${q.entries.slice(start, start + pageSize).map((entry, offset) => {
+    const i = start + offset, title = esc(mediaTitle(entry.media));
+    return `<li tabindex="-1" data-queue-index="${i}" data-entry-id="${entry.id}" class="queue-row${i === q.index ? ' queue-current' : ''}${i === selected ? ' queue-selected' : ''}" ${i === q.index && q.active ? 'aria-current="true"' : ''}><span>${i + 1}${i === q.index ? q.active ? ' · Now' : ' · Selected' : ''}</span><button class="btn btn-ghost queue-track" data-queue-action="play" ${q.loading ? 'disabled' : ''} aria-label="Play ${title}">${title}<small>${esc(musicSubtitle(entry.media))}</small></button><div class="queue-actions"><button class="btn btn-ghost" data-queue-action="menu" aria-label="Actions for ${title}">⋮</button><button class="btn btn-ghost" data-queue-action="up" aria-label="Move ${title} up" ${q.loading || i === 0 ? 'disabled' : ''}>↑</button><button class="btn btn-ghost" data-queue-action="down" aria-label="Move ${title} down" ${q.loading || i === q.entries.length - 1 ? 'disabled' : ''}>↓</button><button class="btn btn-ghost" data-queue-action="remove" aria-label="Remove ${title}" ${q.loading ? 'disabled' : ''}>Remove</button></div></li>`;
+  }).join('')}</ol>${q.entries.length ? '' : '<p>Queue is empty. Play an album to start a queue.</p>'}<div class="queue-footer">${q.entries.length > pageSize ? `<span>Showing ${start + 1}–${Math.min(start + pageSize, q.entries.length)} of ${q.entries.length}</span><button class="btn" data-queue-action="previous" ${start === 0 ? 'disabled' : ''}>Previous page</button><button class="btn" data-queue-action="next" ${start + pageSize >= q.entries.length ? 'disabled' : ''}>Next page</button><button class="btn" data-queue-action="now">Jump to now</button>` : ''}<button class="btn" data-queue-action="clear" ${!q.entries.length || q.loading ? 'disabled' : ''}>Clear queue</button><button class="btn" data-queue-action="undo" ${!q.canUndo || q.loading ? 'disabled' : ''}>Undo</button></div></section>`;
+}

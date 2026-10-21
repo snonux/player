@@ -262,3 +262,27 @@ different Sets source and proves Next follows that set, while ordinary album
 browsing retains the active collection snapshot. The design journey also
 checks that a pending search cannot override explicit Albums navigation,
 while intentional search still opens Sets results.
+
+### M13 editable Now Playing queue (installed Chrome and Firefox)
+
+After creating an isolated music fixture with `music_fixture.py up`, add its
+1001-entry scale album. The helper requires the disposable marker, generates a
+real tagged 440 Hz FLAC and hard links it at distinct library paths, rescans the
+real server, and waits for 1001 real album media IDs. It uses no API or playback
+double. Keep all fixture media, databases, WAVs and screenshots outside git.
+
+```sh
+python3 ../../../player-android/integration_test/support/music_queue_scale_fixture.py "$PLAYER_MUSIC_FIXTURE"
+PLAYER_QUEUE_SCALE=1 npx playwright test -c playwright.music.config.ts music-queue.test.ts
+```
+
+The five journeys per browser cover focus and keyboard/button/menu alternatives,
+Q/Escape opener return, current removal/Clear and Undo without automatic restart,
+edited Next and three natural distinct tones plus finished media IDs while
+browsing another album, retained inactive queue versus actual Sets Next, real
+ACL denial/retry, offline edits, reload-empty behavior, all 1001 entries and
+narrow light/dark long-title/artist queue captures.
+The first source is paused immediately before slow UI edits. Screenshots cover
+light/dark desktop and narrow modal layouts. A `--list` run only validates test
+discovery; it does not verify the feature. Set `PLAYER_QUEUE_SCALE=1` for actual
+acceptance so the scale scenario cannot be silently skipped.

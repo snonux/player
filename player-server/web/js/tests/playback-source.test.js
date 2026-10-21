@@ -74,14 +74,18 @@ function resetDom() {
   elements.player.querySelector = (selector) => (selector === '.stage' ? stage : null);
 }
 
+globalThis.CSS = { escape: String };
 globalThis.HTMLMediaElement = { HAVE_METADATA: 1 };
+const documentListeners = {};
+globalThis.CustomEvent = class extends Event { constructor(type, options) { super(type); this.detail = options?.detail; } };
 globalThis.document = {
   fullscreenElement: null,
   getElementById: (id) => elements[id] || null,
   createElement: () => fakeElement(),
   querySelector: () => null,
   querySelectorAll: () => [],
-  addEventListener() {},
+  addEventListener(type, fn) { (documentListeners[type] ||= []).push(fn); },
+  dispatchEvent(event) { for (const fn of documentListeners[event.type] || []) fn(event); return true; },
 };
 globalThis.window = { addEventListener() {}, location: { origin: 'http://test' } };
 console.log = () => {}; // the player logs every media event
@@ -114,6 +118,8 @@ function script(...answers) {
 
 const player = await import('../playback.js');
 const { API } = await import('../api.js');
+const queue = await import('../queue.js');
+queue.initQueue();
 
 let failureReports = 0;
 function setup(options = {}) {
@@ -346,17 +352,23 @@ async function testDirectLoadProbesShareCompatUrl() {
 async function testLocalFlushDoesNotOverwriteRemoteOwners() {
   const progress = API.progress, ticket = API.castTicket;
   let writes = 0;
+  const positions = [];
   try {
-    API.progress = async () => { writes++; };
+    API.progress = async (id, position) => { writes++; positions.push([id, position]); };
     setup();
     player.selectAndPlay({ id: 6, type: 'audio', file_name: 'song.mp3' }, 0);
     audio().currentTime = 5;
-    const popup = { closed: false, postMessage() {} };
+    const popup = { closed: false, postMessage() {}, close() { this.closed = true; }, __playerDetachCurrentState: () => ({media:{id:6},currentTime:37}) };
     window.open = () => popup;
     player.toggleDetach();
     player.selectAndPlay(plainVideo, 0);
     await settle();
     assertEqual(writes, 0, 'the detached popup owns progress, not the main stale element');
+    player.stopAndClose(); await settle();
+    assert(popup.closed, 'closing active queue source closes detached output without reattaching');
+    assertEqual(positions.at(-1)?.[0], 6, 'detached stop flush belongs to actual popup media');
+    assertEqual(positions.at(-1)?.[1], 37, 'detached stop uses authoritative popup position');
+    writes = 0;
     popup.closed = true;
     delete window.open;
 
@@ -396,7 +408,9 @@ async function testLocalFlushDoesNotOverwriteRemoteOwners() {
     player.selectAndPlay(plainVideo, 0);
     await settle();
     assertEqual(writes, 0, 'the receiver owns progress, stale local 5s cannot overwrite remote 60s');
-    cast.stopCasting();
+    player.stopAndClose(); await settle();
+    assert(!cast.isCasting(), 'closing active queue source ends cast receiver session');
+    assertEqual(writes, 0, 'cast stop does not write stale local progress');
   } finally {
     API.progress = progress; API.castTicket = ticket;
     delete window.chrome; delete window.cast; delete window.isSecureContext;
@@ -509,8 +523,106 @@ async function testRapidNextDuringLongAlbumResumeKeepsCollection() {
   } finally { API.mediaDetail = originalDetail; }
 }
 
+async function testEditableQueueIdentityOwnershipAndProgress() {
+  setup();
+  const songs = [301, 302, 301].map(id => ({id, type:'audio', file_name:`${id}.mp3`, duration:12}));
+  const oldProgress = API.progress, writes = [];
+  API.progress = async (id, position) => writes.push([id,position]);
+  try {
+    await queue.playAlbumCollection(songs,0,'Editable');
+    const first = queue.queueState().entries[0].id;
+    audio().currentTime = 4;
+    const loads = audio().loads;
+    queue.moveQueue(0,1);
+    assertEqual(queue.queueState().entries[1].id, first, 'move preserves occurrence identity');
+    assertEqual(queue.queueState().index, 1, 'current index follows moved occurrence');
+    assertEqual(audio().loads, loads, 'move does not reload current source');
+    queue.removeQueue(2);
+    assertEqual(audio().loads, loads, 'removing duplicate occurrence does not remove current');
+    queue.undoQueue();
+    assertEqual(queue.queueState().entries.length, 3, 'Undo restores removed occurrence');
+    queue.removeQueue(1);
+    await settle();
+    assertEqual(player.currentMediaId(), undefined, 'removing current stops audio');
+    assert(writes.some(([id,p]) => id === 301 && p === 4), 'current removal flushes old media progress');
+    queue.undoQueue();
+    assertEqual(player.currentMediaId(), undefined, 'Undo never restarts removed source');
+    assertEqual(queue.queueState().entries[1].id, first, 'Undo restores entry ID');
+    await queue.jumpQueue(1);
+    player.selectAndPlay({id:999,type:'audio',file_name:'Sets.mp3',duration:12},0);
+    assertEqual(queue.queueState().entries.length, 3, 'Sets takeover retains queue contents');
+    assertEqual(queue.queueState().active, false, 'Sets takeover deactivates queue');
+    audio().currentTime = 6;
+    const before = writes.length;
+    queue.removeQueue(1); queue.undoQueue(); queue.clearQueue(); queue.undoQueue();
+    await settle();
+    assertEqual(player.currentMediaId(),999,'inactive edits leave unrelated source untouched');
+    assertEqual(audio().currentTime,6,'inactive edits cannot seek unrelated source');
+    assertEqual(writes.length,before,'inactive edits cannot flush unrelated source progress');
+    await queue.jumpQueue(0);
+    assertEqual(player.currentMediaId(),302,'explicit jump resumes retained edited order');
+    queue.clearQueue(); await settle();
+    assertEqual(queue.queueState().entries.length,0,'Clear empties queue');
+    queue.undoQueue();
+    assertEqual(queue.queueState().entries.length,3,'Clear Undo restores contents');
+    assertEqual(player.currentMediaId(),undefined,'Clear Undo stays stopped');
+  } finally { API.progress = oldProgress; }
+}
+async function testInitialLongAlbumPlayAndPendingReplacement() {
+  setup();
+  player.selectAndPlay({id:998,type:'audio',file_name:'Sets.mp3'},0);
+  const original = API.mediaDetail;
+  let resolve;
+  API.mediaDetail = () => new Promise(done => { resolve = done; });
+  try {
+    const pending = queue.playAlbumCollection([{id:401,type:'audio',duration:1300},{id:402,type:'audio',duration:12}],0);
+    await queue.advanceQueue(1);
+    assertEqual(player.currentMediaId(),402,'initial long resume Next belongs to intended queue');
+    resolve({progress:{position_seconds:30}}); await pending;
+    assertEqual(player.currentMediaId(),402,'late initial read cannot replace skipped target');
+    const blocked = queue.jumpQueue(0);
+    player.selectMedia({id:997,type:'video',file_name:'video.mp4'},0);
+    resolve({progress:{position_seconds:50}}); await blocked;
+    assertEqual(player.currentMediaId(),997,'history/source takeover cancels pending queue resume');
+    assertEqual(queue.queueState().entries.length,2,'pending takeover keeps inactive contents');
+  } finally { API.mediaDetail = original; }
+}
+
+async function testLatestQueueIntentCancelsPendingSetsResume() {
+  const nav = await import('../views/playback-nav.js');
+  const { state } = await import('../state.js');
+  const original = API.mediaDetail;
+  for (const retained of [false,true]) {
+    setup();
+    const songs=[702,703].map(id=>({id,type:'audio',file_name:`${id}.mp3`,duration:12}));
+    if (retained) await queue.playAlbumCollection(songs,0,'Retained');
+    state.media=[{id:701,type:'audio',file_name:'Sets.mp3',duration:1300}];
+    let resolve;
+    API.mediaDetail=()=>new Promise(done=>{resolve=done;});
+    const pending=nav.playMediaById(701);
+    if (retained) await queue.jumpQueue(1); else await queue.playAlbumCollection(songs,0,'New album');
+    const expected=retained ? 703 : 702;
+    assertEqual(player.currentMediaId(),expected,'new queue intent owns source before old Sets read');
+    resolve({progress:{position_seconds:27}}); await pending;
+    assertEqual(player.currentMediaId(),expected,`${retained ? 'retained queue jump' : 'new album play'} cancels older Sets resume`);
+  }
+  setup();
+  await queue.playAlbumCollection([{id:704,type:'audio',duration:12}],0,'Retained');
+  state.media=[{id:705,type:'audio',file_name:'pendingSets.mp3',duration:1300}];
+  let finish;
+  API.mediaDetail=()=>new Promise(done=>{finish=done;});
+  const sets=nav.playMediaById(705);
+  queue.clearQueue(); queue.undoQueue();
+  finish({progress:{position_seconds:13}}); await sets;
+  assertEqual(player.currentMediaId(),705,'inactive queue clear/Undo cannot cancel pending unrelated Sets intent');
+  API.mediaDetail=original;
+}
+
 console.info('Running playback source tests...');
 for (const test of [
+  testLatestQueueIntentCancelsPendingSetsResume,
+  testEditableQueueIdentityOwnershipAndProgress,
+  testInitialLongAlbumPlayAndPendingReplacement,
   testRapidNextDuringLongAlbumResumeKeepsCollection,
   testAlbumCollectionSurvivesBrowseButNotRestoredSource,
   testLocalFlushDoesNotOverwriteRemoteOwners,

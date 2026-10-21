@@ -79,7 +79,10 @@ document.addEventListener('keydown', (ev) => {
     return;
   }
 
-  if (ev.key === ' ' || ev.code === 'Space') {
+  if (ev.key === 'Q') {
+    ev.preventDefault();
+    post({ type: 'detach-queue' });
+  } else if (ev.key === ' ' || ev.code === 'Space') {
     ev.preventDefault();
     togglePlayback();
   } else if (ev.key === 'f') {

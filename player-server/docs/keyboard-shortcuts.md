@@ -81,3 +81,12 @@ background audio. Fullscreen audio/video retains `h/l` and Left/Right seek.
 Help filters shortcut rows by key or action, ignoring case. An empty filter shows
 all shortcuts. Press `/` from a help button to focus and select the filter; while
 typing, `/` and `?` stay text. Escape closes help and returns focus to its opener.
+
+## Now Playing queue
+
+`Q` opens or closes the album queue. Within the queue, `j`/`k` or arrows select,
+`Enter` plays, `K`/`J` move up/down, and `Delete` removes the selected entry.
+`ContextMenu` or `Shift+F10` opens its actions. Buttons provide the same actions.
+Clear and Remove offer Undo; restoring contents never starts stopped audio.
+Escape returns focus to the opener. Sets playback keeps its browse sequence;
+playing a retained queue entry explicitly resumes the album queue.

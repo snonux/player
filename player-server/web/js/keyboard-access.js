@@ -239,6 +239,7 @@ export function initKeyboardAccess() {
     const typing = isTextEntry(event.target);
     const local = localScope();
     if (!active && !local && !typing && (event.key === 'a' || event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))) {
+      if (event.target.closest?.('#queue-panel')) return;
       const card = document.querySelector('#media-grid .selected');
       if (card) { event.preventDefault(); event.stopImmediatePropagation(); openMediaActions(card); return; }
     }

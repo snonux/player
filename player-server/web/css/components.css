@@ -318,3 +318,20 @@ label {
   border-radius: var(--radius-sm);
   color: var(--text-primary);
 }
+
+/* Album queue stays independent of the library listing. */
+.queue-panel { display: none; position: fixed; right: 0; top: var(--header-height); bottom: 0; width: min(28rem, 45vw); z-index: 60; background: var(--bg-surface); color: var(--text-primary); border-left: 1px solid var(--border); box-shadow: var(--shadow-md); }
+.queue-panel.open { display: block; }
+.queue-content { display: flex; flex-direction: column; height: 100%; padding: 1rem; gap: .5rem; }
+.queue-content p { margin: 0; }
+.queue-list { overflow-y: auto; flex: 1; min-height: 0; padding: 0; margin: 0; list-style: none; }
+.queue-row { padding: .5rem; border: 2px solid transparent; border-radius: var(--radius-sm); margin-bottom: .4rem; }
+.queue-current { background: var(--playing-bg); border-color: var(--playing-border); }
+.queue-selected { outline: 2px solid var(--selected-border); outline-offset: -2px; }
+.queue-row:focus-visible { outline: 3px solid var(--accent); }
+.queue-track { display: block; text-align: left; width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.queue-track small { display: block; color: var(--text-secondary); }
+.queue-actions, .queue-footer { display: flex; flex-wrap: wrap; gap: .4rem; }
+.queue-actions .btn { min-height: 2.75rem; min-width: 2.75rem; }
+@media (min-width: 700px) { body.queue-open .page { margin-right: min(28rem, 45vw); } }
+@media (max-width: 699px) { .queue-panel { top: 0; width: 100%; z-index: 300; } .queue-panel.open { display: block; } .queue-content { background: var(--bg-surface); padding: 1rem; } }

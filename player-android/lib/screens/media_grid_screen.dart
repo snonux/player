@@ -1,3 +1,4 @@
+import '../widgets/music_queue_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -351,6 +352,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     return AppBar(
       title: Text(widget.setName ?? 'Set ${widget.setId}'),
       actions: [
+        const MusicQueueButton(),
         IconButton(
           key: const Key('media_grid_folders'),
           tooltip: 'Browse folders',

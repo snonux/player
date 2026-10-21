@@ -25,6 +25,7 @@ import {
   postToDetach,
   sendDetachedLoad,
   toggleDetach,
+  stopDetached,
 } from './detach.js';
 import { mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from './streamSource.js';
 import { toast } from './utils.js';
@@ -34,7 +35,7 @@ import { initCompactControls } from './compactControls.js';
 import { initKeyboardAccess } from './keyboard-access.js';
 import { initLyrics } from './lyrics.js';
 import { initPlaybackPersonal } from './playback-personal.js';
-import { castItem, castPosition, castDuration, castSeek, castTogglePlay, initCast, isCasting } from './cast.js';
+import { castItem, castPosition, castDuration, castSeek, castTogglePlay, initCast, isCasting, stopCasting } from './cast.js';
 
 export {
   cycleCropPosition,
@@ -45,6 +46,7 @@ export {
   shiftCropPosition,
   toggleCrop,
   toggleDetach,
+  stopDetached,
   toggleSlideshow,
   zoomIn,
   zoomOut,
@@ -457,6 +459,10 @@ export function seekRelative(seconds) {
 }
 
 export function stopAndClose() {
+  saveCurrentProgress();
+  const detached = stopDetached();
+  if (reportProgress && detached?.media?.id && detached.currentTime > 0) enqueueProgress(detached.media.id, detached.currentTime);
+  if (isCasting()) stopCasting();
   if (reportProgress) document.dispatchEvent?.(new Event('player:closed'));
   audioVisuals?.setMedia(null);
   lyrics?.setMedia(null);
@@ -535,6 +541,7 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
 
 // Deep links restore the same authenticated library item without autoplay.
 export function selectMedia(media, index = -1, resumeFrom = 0) {
+  document.dispatchEvent?.(new CustomEvent('player:media-opened', { detail: { media, restored: true } }));
   currentMedia = media;
   currentMediaIndex = index;
   loadMedia(media, resumeFrom);

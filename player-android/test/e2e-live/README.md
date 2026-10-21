@@ -154,3 +154,44 @@ failure and Retry. It removes/restores the adb reverse route for actual
 offline request recovery; run without `--host-alias` for this check.
 `--scenario catalog|natural|errors` supports focused recovery while preserving
 failed evidence. Never point this runner at a production database.
+
+### M13 editable Now Playing queue
+
+Use a freshly built APK with a separate local music fixture, created with
+`music_fixture.py up --no-doubles`. Run the real scale helper before either
+browser or Android checks. It adds 1001 distinct media paths/IDs under the
+fixture's permitted Music set; the files contain real 440 Hz audio. No media,
+SQLite state, APK, WAV or screenshot belongs in git.
+
+```sh
+python3 ../../integration_test/support/music_queue_scale_fixture.py "$PLAYER_MUSIC_FIXTURE"
+python3 music_queue_e2e.py "$PLAYER_MUSIC_FIXTURE" \
+  --apk /absolute/external/path/app-x86_64-release.apk \
+  --emulator-wav /absolute/external/path/emulator.wav
+```
+
+The emulator must already run with the QEMU WAV backend and actual unmuted
+STREAM_MUSIC output. This runner uses adb reverse; omit `--host-alias` because
+its offline check removes/restores only that disposable reverse mapping.
+`--scenario` can isolate `editing`, `natural`, `retained`, `errors`, `themes` or
+`large`, `close` or `scope` for a rerun; `account` isolates only the
+logout/login portion of `scope`. Default `all` requires the scale album
+and runs all eight; `remaining` runs editing/natural/retained/close/scope as a
+focused rerun after independent error/theme/large proof.
+
+Checks use actual touch/Back, the native media session, source tones in QEMU
+output and saved progress by real media ID. They cover editable-order Next,
+queue jump, current and other removal, Clear/Undo without autoplay, fresh
+ownership after resume, Back to library, natural A→C→B while browsing elsewhere,
+retained inactive queue versus Sets Next, real stream permission loss/retry,
+offline edits, light/dark screenshots and scrolling a lazy 1001-entry queue to
+its last source. Twelve-second sources pause immediately before UIAutomator
+edits. Active-route volume keys set STREAM_MUSIC to 15, followed by strict
+max/unmuted readback and a paused wait for the volume overlay to dismiss before
+row-menu taps. Every audio proof reads the signed-in viewer's progress and
+asserts its user ID and target media ID. The scope journey force-stops/relaunches
+without clearing data, selects the remembered server and explicitly signs in to
+the locked remembered login before checking Queue is empty. It then logs out
+from a nonempty viewer queue and signs in as the admin through actual controls
+without resetting app data. Failed steps retain screenshots, UI XML and tracebacks; a unit or widget
+check does not count as native acceptance.

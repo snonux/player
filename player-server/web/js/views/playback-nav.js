@@ -1,3 +1,6 @@
+import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from '../playback-intent.js';
+import { playAlbumCollection, advanceQueue, deactivateQueue } from '../queue.js';
+export { playAlbumCollection } from '../queue.js';
 import { API } from '../api.js';
 import { state } from '../state.js';
 import { currentElement, selectByElement } from '../selection.js';
@@ -18,26 +21,6 @@ import {
 let isShuffleCallback = () => false;
 let playRevision = 0;
 let skipImages = false;
-let collection = null;
-export async function playAlbumCollection(songs, index = 0, label = '') {
-  collection = { songs: [...songs], index, label, activeID: currentMediaId() };
-  await playCollectionItem();
-}
-async function playCollectionItem() {
-  const source = collection;
-  const media = source?.songs[source.index];
-  if (!media) return;
-  const revision = ++playRevision;
-  let position = 0;
-  // Only long music retains resume; Sets retains its existing rule below.
-  if (media.duration > 1200) {
-    try { const p = (await API.mediaDetail(media.id))?.progress; position = p?.finished ? 0 : p?.position_seconds || 0; } catch {}
-  }
-  if (revision !== playRevision || collection !== source) return;
-  selectAndPlay(media, source.index, position);
-  source.activeID = media.id;
-}
-
 export function initPlaybackNav({ isShuffle } = {}) {
   isShuffleCallback = isShuffle || (() => false);
   document.addEventListener('navigation:restore', () => { playRevision++; });
@@ -45,14 +28,15 @@ export function initPlaybackNav({ isShuffle } = {}) {
 }
 
 async function playItem(media, index) {
-  collection = null;
+  deactivateQueue();
   const revision = ++playRevision;
+  const intent = beginPlaybackIntent();
   let position = 0;
   try {
     const progress = (await API.mediaDetail(media.id))?.progress;
     position = progress?.finished ? 0 : (progress?.position_seconds ?? 0);
   } catch {}
-  if (revision !== playRevision) return false;
+  if (revision !== playRevision || !isPlaybackIntent(intent)) return false;
   selectAndPlay(media, index, position);
   return true;
 }
@@ -106,18 +90,9 @@ function selectedPlayableIndex(cards, preferCurrent) {
 }
 
 export async function navigatePlayable(delta, options = {}) {
-  // History restoration can replace the player without going through a Sets
-  // play action. Keep snapshots for browsing, but never reuse one for a
-  // different source restored or selected elsewhere. The desired index can
-  // be ahead of the active source while a long-track resume read is pending.
-  if (collection && String(currentMediaId()) !== String(collection.activeID)) collection = null;
-  if (collection && currentMediaInfo()?.type === 'audio') {
-    const target = collection.index + delta;
-    if (target < 0 || target >= collection.songs.length) return;
-    collection.index = target;
-    await playCollectionItem();
-    return;
-  }
+  const intent = currentPlaybackIntent();
+  if (await advanceQueue(delta)) return;
+  if (!isPlaybackIntent(intent)) return;
   skipImages = currentMediaInfo()?.type === 'audio';
   const cards = visiblePlayableCards().filter((card) => !skipImages || state.media.find((m) => String(m.id) === card.dataset.id)?.type !== 'image');
   const active = options.forcePlay || isPlaybackActive();

@@ -1,3 +1,4 @@
+import '../widgets/music_queue_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -267,6 +268,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   /// Builds the app bar with the set name (or a default label).
   AppBar _buildAppBar() {
     return AppBar(
+      actions: const [MusicQueueButton()],
       title: Text(widget.setName ?? 'Set ${widget.setId}'),
     );
   }

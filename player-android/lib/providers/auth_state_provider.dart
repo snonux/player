@@ -145,6 +145,9 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
     final generation = queue.beginAuthChange(origin: next.origin);
     await future;
     await ref.read(playbackSessionCoordinatorProvider).stopCurrent();
+    if (ref.exists(audioHandlerProvider)) {
+      ref.read(audioHandlerProvider).clearRetainedQueue();
+    }
     await queue.run(() async {
       if (queue.generation != generation) {
         throw StateError('Server selection superseded by a newer auth action');
@@ -221,7 +224,10 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
     final origin = ref.read(playerBaseUrlProvider).origin;
     final generation = queue.beginAuthChange(origin: origin);
     final api = ref.read(apiClientProvider);
-    await future;
+    final previous = await future;
+    if (previous.user?.id != user.id && ref.exists(audioHandlerProvider)) {
+      ref.read(audioHandlerProvider).clearRetainedQueue();
+    }
     final prefs = await SharedPreferences.getInstance();
     String? mintedToken;
     int? mintedTokenId;
@@ -431,6 +437,9 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
       cleared = false;
     }
     try {
+      if (ref.exists(audioHandlerProvider)) {
+        ref.read(audioHandlerProvider).clearRetainedQueue();
+      }
       final playback = ref.read(playbackSessionCoordinatorProvider);
       final activeKind = playback.activeKind;
       if (activeKind == PlaybackSourceKind.server) {

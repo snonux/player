@@ -4,10 +4,11 @@ export function initKeyboard(handlers) {
     const textControl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable;
     const buttonLike = tag === 'BUTTON' || tag === 'A';
     const inDialog = Boolean(e.target.closest?.('.modal-overlay'));
+    const inQueue = Boolean(e.target.closest?.('#queue-panel'));
     // Enter activates a focused button or link natively. Space does so only
     // inside dialogs; elsewhere it stays play/pause, so a toolbar or card
     // button that kept focus after a mouse click cannot capture it.
-    const nativeActivation = buttonLike && (e.key === 'Enter' || (e.key === ' ' && inDialog));
+    const nativeActivation = buttonLike && (e.key === 'Enter' || (e.key === ' ' && (inDialog || inQueue)));
     // Set/folder open buttons keep DOM focus while j/k/h/l move the
     // selection, so Enter there opens the selected card instead of
     // whichever card button happens to hold focus.
@@ -27,9 +28,12 @@ export function initKeyboard(handlers) {
     // Let Enter and Space activate a focused button or link. Letter shortcuts
     // remain available after clicking toolbar and card controls.
     if (nativeActivation && (!gridNavigation || inDialog)) return;
+    if (handlers.isQueueFocused?.() && handlers.queueKey?.(e)) return;
     // Escape releases focus from a button so the next shortcut starts clean;
     // the dialog guard or the global Escape handler below still runs.
     if (buttonLike && e.key === 'Escape') e.target.blur?.();
+
+    if (e.key === 'Q' && !handlers.isModalOpen?.()) { e.preventDefault(); handlers.toggleQueue?.(); return; }
 
     // Shares modal keyboard navigation (overrides global keys while open)
     if (handlers.isSharesOpen?.()) {

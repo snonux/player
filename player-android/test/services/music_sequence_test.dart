@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/music_sequence.dart';
+import 'package:player_android/services/playback_session_coordinator.dart';
 import 'package:player_android/services/playback_request.dart';
 
 class _Player extends AudioPlayer {
@@ -502,4 +503,213 @@ void main() {
     await player.processing.close();
     await player.events.close();
   });
+  test(
+      'editable queue keeps occurrence IDs, flushes removed current and Undo stays paused',
+      () async {
+    final player = _Player();
+    // Use the exact injected source for source/position assertions.
+    final h = PlayerAudioHandler(player);
+    final coordinator = PlaybackSessionCoordinator();
+    final events = <String>[];
+    PlaybackRequest request(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        sourceUri: Uri.parse('http://local/$id'),
+        title: 'Song $id',
+        startPosition: 0,
+        savePosition: (p) async {
+          events.add('save$id:$p');
+        },
+        markFinished: () async {});
+    final entries = [request(1), request(2), request(1)];
+    Future<PlaybackSessionLease?> claim(PlaybackRequest r) =>
+        coordinator.claim(kind: r.kind, identity: r.identity, stop: h.stop);
+    final lease = (await claim(entries.first))!;
+    h.activateSourceSession(
+        h.beginSourceSession(ownsSource: () => lease.isCurrent));
+    h.startProgress(
+        savePosition: entries.first.savePosition!,
+        markFinished: entries.first.markFinished!);
+    h.startMusicSequence(
+        wrap: false,
+        entries: entries,
+        index: 0,
+        queueLabel: 'Album',
+        claimQueue: claim,
+        expand: () async => entries,
+        changed: lease.updateSource,
+        load: (r, current) async {
+          events.add('load${r.title}');
+          return AudioSource.uri(r.sourceUri);
+        });
+    final first = h.musicQueue.entries.first.id;
+    h.moveQueue(0, 1);
+    expect(h.musicQueue.entries[1].id, first);
+    expect(h.musicQueue.index, 1);
+    expect(player.loads, 0);
+    expect(player.elapsed, const Duration(seconds: 7));
+    await h.removeQueue(2);
+    expect(h.musicQueue.active, isTrue);
+    expect(player.running, isTrue);
+    h.undoQueue();
+    await h.removeQueue(1);
+    expect(player.running, isFalse);
+    expect(events, contains('save1:7.0'));
+    h.undoQueue();
+    expect(h.musicQueue.entries[1].id, first);
+    expect(player.running, isFalse);
+    await h.jumpQueue(1);
+    expect(player.running, isTrue);
+    expect(h.musicState?.request.identity, entries.first.identity);
+    // Same-account Sets takeover retains contents, but edits cannot touch it.
+    final sets = request(99);
+    final setsLease = (await claim(sets))!;
+    h.activateSourceSession(
+        h.beginSourceSession(ownsSource: () => setsLease.isCurrent));
+    h.startProgress(
+        savePosition: sets.savePosition!, markFinished: sets.markFinished!);
+    h.startMusicSequence(
+        entries: [sets],
+        index: 0,
+        expand: () async => [sets],
+        changed: setsLease.updateSource,
+        load: (r, c) async => AudioSource.uri(r.sourceUri));
+    player.running = true;
+    player.elapsed = const Duration(seconds: 5);
+    final count = events.length, loads = player.loads;
+    await h.removeQueue(1);
+    h.undoQueue();
+    await h.clearQueue();
+    h.undoQueue();
+    expect(player.running, isTrue);
+    expect(player.elapsed, const Duration(seconds: 5));
+    expect(player.loads, loads);
+    expect(events.length, count);
+    expect(h.musicState?.request.identity, sets.identity);
+    await h.jumpQueue(0);
+    expect(events, contains('save99:5.0'));
+    expect(h.musicState?.request.identity, entries[1].identity);
+    await h.clearQueue();
+    expect(h.musicQueue.entries, isEmpty);
+    h.undoQueue();
+    expect(h.musicQueue.entries.length, 3);
+    expect(player.running, isFalse);
+    h.clearRetainedQueue();
+    expect(h.musicQueue.entries, isEmpty);
+    expect(h.musicQueue.canUndo, isFalse);
+    await h.stop();
+    await player.processing.close();
+    await player.events.close();
+    await player.positions.close();
+  });
+  test(
+      'large queue edits retain active entry and loading disallows removal; scope clear cancels late source',
+      () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    final entries = List<PlaybackRequest>.generate(
+        1001,
+        (id) => ServerPlaybackRequest(
+            mediaId: id,
+            serverOrigin: 'http://local',
+            userId: 1,
+            title: 'Song $id',
+            sourceUri: Uri.parse('http://local/$id'),
+            startPosition: 0,
+            savePosition: (p) async {},
+            markFinished: () async {}));
+    handler.activateSourceSession(handler.beginSourceSession());
+    final gate = Completer<AudioSource?>();
+    handler.startMusicSequence(
+        wrap: false,
+        entries: entries,
+        index: 1000,
+        expand: () async => entries,
+        changed: (_) {},
+        load: (r, c) => gate.future);
+    final active = handler.musicQueue.entries.last.id;
+    handler.moveQueue(1000, -1);
+    expect(handler.musicQueue.entries[999].id, active);
+    expect(handler.musicQueue.index, 999);
+    final pending = handler.jumpQueue(0);
+    await Future<void>.delayed(Duration.zero);
+    await handler.removeQueue(0);
+    await handler.clearQueue();
+    expect(handler.musicQueue.entries.length, 1001);
+    handler.clearRetainedQueue();
+    gate.complete(AudioSource.uri(entries.first.sourceUri));
+    await pending;
+    expect(handler.musicQueue.entries, isEmpty);
+    expect(player.loads, 0);
+    await handler.stop();
+    await player.processing.close();
+    await player.events.close();
+    await player.positions.close();
+  });
+  for (final remove in [false, true]) {
+    for (final replacement in [false, true]) {
+      test(
+          'pending ${remove ? 'remove current' : 'clear'} cannot reinstate old scope Undo or edit ${replacement ? 'new album' : 'cleared account'}',
+          () async {
+        final player = _Player();
+        final h = PlayerAudioHandler(player);
+        final entered = Completer<void>(), release = Completer<void>();
+        PlaybackRequest request(int id) => ServerPlaybackRequest(
+            mediaId: id,
+            serverOrigin: 'http://local',
+            userId: 1,
+            title: 'Song $id',
+            sourceUri: Uri.parse('http://local/$id'),
+            startPosition: 0,
+            savePosition: (p) async {
+              if (!entered.isCompleted) entered.complete();
+              await release.future;
+            },
+            markFinished: () async {});
+        final old = [request(1), request(2)];
+        h.activateSourceSession(h.beginSourceSession());
+        h.startProgress(
+            savePosition: old.first.savePosition!,
+            markFinished: old.first.markFinished!);
+        h.startMusicSequence(
+            wrap: false,
+            entries: old,
+            index: 0,
+            expand: () async => old,
+            changed: (_) {},
+            load: (r, c) async => AudioSource.uri(r.sourceUri));
+        final pending = remove ? h.removeQueue(0) : h.clearQueue();
+        await entered.future;
+        if (replacement) {
+          final fresh = [request(99)];
+          h.activateSourceSession(h.beginSourceSession());
+          h.startMusicSequence(
+              wrap: false,
+              entries: fresh,
+              index: 0,
+              expand: () async => fresh,
+              changed: (_) {},
+              load: (r, c) async => AudioSource.uri(r.sourceUri));
+          player.running = true;
+        } else {
+          h.clearRetainedQueue();
+        }
+        release.complete();
+        await expectLater(pending, completes);
+        expect(h.musicQueue.canUndo, isFalse);
+        h.undoQueue();
+        expect(h.musicQueue.entries.map((e) => e.request.title).toList(),
+            replacement ? ['Song 99'] : isEmpty);
+        if (replacement) {
+          expect(player.running, isTrue,
+              reason: 'old delayed stop cannot stop replacement source');
+        }
+        await h.stop();
+        await player.processing.close();
+        await player.events.close();
+        await player.positions.close();
+      });
+    }
+  }
 }

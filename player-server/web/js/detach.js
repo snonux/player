@@ -23,6 +23,9 @@ export function initDetach(options = {}) {
       deps.triggerNext?.({ forcePlay: ev.data.play ?? true });
     } else if (ev.data.type === 'detach-nav') {
       deps.triggerNavigate?.(Number(ev.data.delta || 0), { forcePlay: ev.data.play ?? true });
+    } else if (ev.data.type === 'detach-queue') {
+      window.focus();
+      document.dispatchEvent(new Event('queue:open'));
     }
   });
 }
@@ -33,6 +36,19 @@ export function isDetached() {
 
 export function detachedIsPlaying() {
   return !!detachedPlaybackState?.playing;
+}
+
+// Close without handing the old source back to the local player.
+export function stopDetached() {
+  if (!isDetached()) return null;
+  const popup = detachWindow;
+  const state = readDetachedWindowState(popup) || detachedPlaybackState;
+  detachWindow = null; detachReady = false; pendingDetachMessage = null;
+  detachedPlaybackState = null;
+  popup.close();
+  showDetachedPlaceholder(false);
+  deps.els?.().player?.classList.remove('hidden');
+  return state;
 }
 
 export function toggleDetach() {

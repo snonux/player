@@ -19,6 +19,7 @@
     <div class="spacer"></div>
     <button id="sidebar-toggle" class="icon-btn" title="Sets" aria-label="Toggle sets sidebar">☰</button>
     <button id="shuffle-toggle" class="icon-btn" title="Shuffle (r)" aria-label="Toggle shuffle">🔀︎</button>
+    <button class="btn btn-ghost btn-sm" data-queue-toggle title="Now Playing queue (Q)" aria-controls="queue-panel">Queue</button>
     <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
     <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
     <button id="trash-toggle" class="icon-btn" title="Trash" aria-label="Open trash">🗑</button>
@@ -26,6 +27,8 @@
     <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
   </div>
 </header>
+
+<aside id="queue-panel" class="queue-panel" aria-labelledby="queue-title"></aside>
 
 <div id="scan-indicator" class="scan-indicator hidden" role="status" aria-live="polite">
   <span class="scan-dot" aria-hidden="true"></span>
@@ -122,6 +125,7 @@
       <button id="btn-next" class="icon-btn" aria-label="Next">⏭</button>
       <button id="btn-save-position" class="btn btn-sm hidden" type="button" aria-controls="bookmarks-modal">Save position</button>
       <button id="btn-bookmarks" class="btn btn-sm hidden" type="button" aria-controls="bookmarks-modal">Bookmarks</button>
+      <button class="btn btn-sm" data-queue-toggle title="Now Playing queue (Q)">Queue</button>
       <button id="btn-player-notes" class="btn btn-sm" type="button" aria-controls="notes-modal">Notes</button>
       <button id="btn-player-favorite" class="btn btn-sm" type="button" aria-label="Toggle favorite">Favorite</button>
       <button id="btn-zoom-out" class="icon-btn image-only" aria-label="Zoom out">−</button>
@@ -205,6 +209,7 @@
         <div class="help-row"><span><kbd>a</kbd></span><span>Open selected thumbnail actions. Hover reveals the same buttons in one row.</span></div>
         <div class="help-row"><span><kbd>o</kbd></span><span>Access player controls; menus and dialogs accept their underlined letters.</span></div>
         <div class="help-row"><span><kbd>Enter</kbd></span><span>Open selected item</span></div>
+        <div class="help-row"><span><kbd>Q</kbd></span><span>Open / close Now Playing queue. Queue: j/k select, Enter play, K/J move, Delete remove (Undo).</span></div>
         <div class="help-row"><span><kbd>Space</kbd> <kbd>p</kbd></span><span>Play / pause</span></div>
         <div class="help-row"><span><kbd>N</kbd> <kbd>P</kbd></span><span>Next / previous track</span></div>
         <div class="help-row"><span><kbd>R</kbd></span><span>Play random track</span></div>

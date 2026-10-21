@@ -392,6 +392,7 @@ Future<void> _pumpScreen(
   String mediaId = '42',
   List<Media> sequence = const [],
   bool traverseFolders = false,
+  bool albumCollection = false,
   String? mediaUrl,
   String? mediaTitle,
   Uri? serverBaseUrl,
@@ -418,6 +419,7 @@ Future<void> _pumpScreen(
           mediaId: state.pathParameters['mediaId']!,
           sequence: sequence,
           traverseFolders: traverseFolders,
+          albumCollection: albumCollection,
           mediaUrl: mediaUrl,
           mediaTitle: mediaTitle,
           request: request,
@@ -1240,6 +1242,49 @@ void main() {
     expect(handler.lastTitle, 'Song 1');
     expect(client.browseCalls, 0,
         reason: 'filtered result must wrap without escaping into source set');
+    await tester.runAsync(handler.stop);
+  });
+
+  testWidgets(
+      'retained queue resume adopts fresh lease and shows actual current song',
+      (tester) async {
+    final (_, handler) = _usePlayableHandler();
+    addTearDown(handler.stop);
+    final client = _FakeApiClient();
+    final songs = [1, 2]
+        .map((id) => Media.fromJson({
+              'id': id,
+              'set_id': 1,
+              'type': 'audio',
+              'file_name': 'song$id.mp3',
+              'duration': 12,
+              'music': {'title': 'Song $id'}
+            }))
+        .toList();
+    await _pumpScreen(tester, client,
+        mediaId: '1',
+        mediaTitle: 'Song 1',
+        mediaUrl: client.streamUrl(1),
+        sequence: songs,
+        albumCollection: true,
+        handlerOverride: handler,
+        serverBaseUrl: Uri.parse('http://localhost:8080'));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    final original = handler.sequenceLease;
+    expect(original?.isCurrent, isTrue);
+    await tester.runAsync(() => handler.removeQueue(0));
+    expect(handler.musicQueue.active, isFalse);
+    await tester.runAsync(() => handler.jumpQueue(0));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    expect(original?.isCurrent, isFalse);
+    expect(handler.sequenceLease?.isCurrent, isTrue);
+    expect(handler.lastTitle, 'Song 2');
+    expect(find.widgetWithText(AppBar, 'Song 2'), findsOneWidget);
+    expect(find.byKey(const Key('audio_player_error')), findsNothing);
     await tester.runAsync(handler.stop);
   });
 

@@ -28,7 +28,7 @@ const lastIndex = new WeakMap();
 export function initModalFocus() {
   document.addEventListener('focusin', recordFocus, true);
   document.addEventListener('keydown', trapTab, true);
-  document.querySelectorAll('.modal-overlay').forEach((modal) => {
+  document.querySelectorAll('.modal-overlay, #queue-panel').forEach((modal) => {
     modal.dataset.focusOpen = String(modal.classList.contains('open'));
     new MutationObserver((records) => onMutation(modal, records)).observe(modal, {
       attributes: true, attributeFilter: ['class'], childList: true, subtree: true,

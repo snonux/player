@@ -16,6 +16,9 @@ Future<void> switchToLocalLibrary(WidgetRef ref, BuildContext context) async {
     final playback = ref.read(playbackSessionCoordinatorProvider);
     final hadOwner = playback.activeKind != null;
     await playback.stopCurrent();
+    if (ref.exists(audioHandlerProvider)) {
+      ref.read(audioHandlerProvider).clearRetainedQueue();
+    }
     if (!hadOwner && ref.exists(audioHandlerProvider)) {
       // Compatibility for an audio session created before ownership tracking.
       await ref.read(audioHandlerProvider).stop();

@@ -1,3 +1,4 @@
+import '../widgets/music_queue_sheet.dart';
 import 'dart:async';
 
 import 'package:cookie_jar/cookie_jar.dart';
@@ -540,7 +541,15 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     final lease = attempt.lease;
     final baseUrl =
         Uri.parse((attempt.request as ServerPlaybackRequest).serverOrigin);
+    final coordinator = ref.read(playbackSessionCoordinatorProvider);
     handler.startMusicSequence(
+        queueLabel: widget.sequence.firstOrNull?.music?.album ?? 'Album',
+        sequenceLease: lease,
+        claimQueue: (request) => coordinator.claim(
+            kind: request.kind,
+            identity: request.identity,
+            sourceUri: request.sourceUri.toString(),
+            stop: handler.stop),
         wrap: !widget.albumCollection,
         entries: _musicEntries,
         index: _musicEntries
@@ -567,7 +576,9 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               headers: headers.isEmpty ? null : headers);
         });
     _musicSubscription = handler.musicChanges.listen((state) {
-      if (!mounted || !lease.isCurrent) return;
+      final activeLease = handler.sequenceLease ?? lease;
+      if (!mounted || !activeLease.isCurrent) return;
+      _sessionLease = activeLease;
       _stopWatchingPlayback();
       if (_activeRequest?.identity != state.request.identity) {
         _lastKnownPosition = null;
@@ -584,7 +595,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       if (!state.loading && state.error == null) {
         _watchPlayback(_PlaybackAttempt(
             request: state.request,
-            lease: lease,
+            lease: activeLease,
             generation: _initGeneration,
             handler: handler,
             sourceGeneration: state.sourceGeneration,
@@ -814,6 +825,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       backgroundColor: Colors.black,
       appBar: AppBar(
         actions: [
+          if (!widget.isPublicShare) const MusicQueueButton(),
           buildCastButton(ready: !_isLoading && _error == null),
           if (_activeRequest != null &&
               !_isLoading &&
