@@ -852,3 +852,6 @@ body {
 .music-selection { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 .music-detail input[type="checkbox"] { flex: 0 0 auto; width: 1.2rem; height: 1.2rem; accent-color: var(--accent); }
 .music-detail .media-row > [data-song-menu] { min-width: 2.75rem; min-height: 2.75rem; }
+
+.credit-link { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.music-song .credit-link { min-height: 2.75rem; padding: 0; font-size: .85rem; }

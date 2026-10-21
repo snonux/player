@@ -104,7 +104,7 @@ def catalog_design(run):
         time.sleep(2)
         artifacts.append(run.shot('m02-detail-' + theme))
     assert adrv.tap('^Aurora Lane$'), app_ui.labels()
-    assert adrv.wait('^Albums by Aurora Lane$'), app_ui.labels()
+    assert adrv.wait('^Aurora Lane$'), app_ui.labels()
     artifacts.append(run.shot('m02-linked-artist-albums-dark'))
     adrv.adb('shell', 'cmd', 'uimode', 'night', 'no')
     time.sleep(2)

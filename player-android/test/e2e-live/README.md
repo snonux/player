@@ -243,3 +243,24 @@ the build distinction, commands and retained evidence.
 while paused, then verifies batch Append preserves the actively playing A source
 and forward position with 440 Hz output. Batch Play now inserts displayed B,C
 contiguously, retains the remainder, and verifies B523→C659 with viewer media IDs.
+
+
+M03 artist acceptance: on the running API34 emulator with a freshly built APK,
+run `python3 -u music_artists_e2e.py /home/paul/tmp/zj3-fixture --apk
+/path/to/player-x86_64.apk --emulator-wav /home/paul/tmp/zj3-evidence/emulator-output.wav`.
+The real native runner covers common Artists plus track/album/composer/performer
+roles, structured credit links, discography and Back with role retention,
+light/dark, song Composer/Performer details and original source audio. Its errors
+journey stops only the verified owned fixture server to close existing keepalive
+connections, removes reverse, then restarts the same binary/database/media and
+restores reverse before Retry. It then revokes/restores
+actual viewer set permission and retries the same artist. `--scenario journey`, `--scenario position`, `--scenario errors` or
+`--scenario restart` permit focused recovery while preserving failed evidence.
+
+M03 final acceptance passed on installed Chrome144/Firefox156 (six browser cases)
+and native API34/x86_64 APK0.8.2/code4022. Native core/position/cold-restart passed
+in the initial run, and focused errors-only recovery passed after replacing the
+ineffective reverse-only cutoff with the verified owned-server cutoff. Exact
+commands, versions, original failures, original screenshots and source audio
+remain external; the full truthful record is in
+`../../../docs/music-m03-implementation.md`.

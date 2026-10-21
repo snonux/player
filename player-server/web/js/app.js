@@ -453,6 +453,7 @@ function firstGridElement() {
 function activateGridElement(el) {
   if (!el) return;
   selectByElement(el);
+  if (el.dataset.artistCard) { el.click(); return; }
   if (el.dataset.album) { openAlbum(el.dataset.album); return; }
   if (el.classList.contains('set-card')) {
     const id = parseInt(el.dataset.setId, 10);

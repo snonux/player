@@ -25,7 +25,7 @@ func TestScan_MusicRefreshPreservesIdentityAndState(t *testing.T) {
 		t.Helper()
 		args := []string{"-f", "lavfi", "-i", "sine=duration=1", "-c:a", "flac"}
 		if title != "" {
-			args = append(args, "-metadata", "title="+title, "-metadata", "artist=Ünïcødé", "-metadata", "disc=2/3")
+			args = append(args, "-metadata", "title="+title, "-metadata", "artist=Ünïcødé", "-metadata", "disc=2/3", "-metadata", "composer=Composer; 東京 "+title, "-metadata", "performer=Performer / A")
 		}
 		ffsafetest.Generate(t, path, args...)
 	}
@@ -83,6 +83,15 @@ func TestScan_MusicRefreshPreservesIdentityAndState(t *testing.T) {
 		progress, err := store.GetProgress(ctx, uid, id)
 		if err != nil || progress == nil || progress.PositionSeconds != 0.3 {
 			t.Fatalf("progress=%+v %v", progress, err)
+		}
+		if title == "" {
+			if len(row.Music.Composers) != 0 || len(row.Music.Performers) != 0 {
+				t.Fatalf("removed credits retained %+v", row.Music)
+			}
+		} else {
+			if len(row.Music.Composers) != 1 || row.Music.Composers[0] != "Composer; 東京 "+title || len(row.Music.Performers) != 1 || row.Music.Performers[0] != "Performer / A" {
+				t.Fatalf("scan/rescan credits %+v", row.Music)
+			}
 		}
 		if title != "" {
 			matches, err := store.ListMedia(ctx, repository.MediaFilter{Search: title})

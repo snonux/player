@@ -122,3 +122,100 @@ func TestMusicAlbumsRealPermissions(t *testing.T) {
 		t.Fatalf("no permission: %s", empty.Body.String())
 	}
 }
+
+func TestMusicArtistsRealPermissions(t *testing.T) {
+	store, err := repository.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+	now := time.Now().UTC()
+	uid, err := store.CreateUser(ctx, &model.User{Username: "credits-viewer", PasswordHash: "x", CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sets := make([]int64, 2)
+	for i, name := range []string{"Visible", "Hidden"} {
+		sets[i], err = store.CreateSet(ctx, &model.Set{Name: name, RootPath: name, CreatedAt: now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		composer := "Shared Composer"
+		if i == 1 {
+			composer = "Hidden Composer"
+		}
+		_, err = store.CreateMedia(ctx, &model.Media{SetID: sets[i], FileName: "song.flac", RelPath: "song.flac", AbsPath: "/not-read/" + name, Type: model.MediaTypeAudio, CreatedAt: now, Music: &model.MusicMetadata{Album: "Shared", Artist: "Track Artist", AlbumArtist: "Album Artist", Composers: []string{composer}, Performers: []string{"Player"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	grant := func(set int64) {
+		t.Helper()
+		if err := store.GrantPermission(ctx, &model.SetPermission{SetID: set, UserID: uid, Role: model.RoleViewer}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	grant(sets[0])
+	svc := service.NewMediaService(store, &clock.MockClock{T: now}, "", nil, nil)
+	server := &Server{media: MediaServices{Browse: svc}, logger: slog.Default()}
+	request := func(key, query string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", "/api/music/artists"+query, nil)
+		r.SetPathValue("artist_key", key)
+		r = r.WithContext(context.WithValue(r.Context(), sessionCtxKey, &model.Session{UserID: uid}))
+		w := httptest.NewRecorder()
+		server.handleMusicArtists(w, r)
+		return w
+	}
+	read := func(role string) []service.Artist {
+		t.Helper()
+		w := request("", "?role="+role)
+		if w.Code != 200 {
+			t.Fatalf("%d %s", w.Code, w.Body.String())
+		}
+		var people []service.Artist
+		if err := json.Unmarshal(w.Body.Bytes(), &people); err != nil {
+			t.Fatal(err)
+		}
+		return people
+	}
+	if people := read("artists"); len(people) != 2 {
+		t.Fatalf("default leaked composer/performer %+v", people)
+	}
+	composers := read("composer")
+	if len(composers) != 1 || composers[0].Name != "Shared Composer" || composers[0].SongCount != 1 || composers[0].AlbumCount != 1 {
+		t.Fatalf("composer ACL %+v", composers)
+	}
+	if w := request("", "?role=invalid"); w.Code != 400 {
+		t.Fatalf("unknown role %d", w.Code)
+	}
+	grant(sets[1])
+	people := read("composer")
+	var hidden string
+	for _, p := range people {
+		if p.Name == "Hidden Composer" {
+			hidden = p.Key
+		}
+	}
+	if hidden == "" {
+		t.Fatal("hidden credit absent after grant")
+	}
+	var detail service.Artist
+	w := request(hidden, "")
+	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 200 || len(detail.Albums) != 1 {
+		t.Fatalf("detail %s", w.Body.String())
+	}
+	if err := store.RevokePermission(ctx, sets[1], uid); err != nil {
+		t.Fatal(err)
+	}
+	denied, missing := request(hidden, ""), request("ar_missing", "")
+	if denied.Code != 404 || denied.Body.String() != missing.Body.String() {
+		t.Fatal("hidden artist existence leaked")
+	}
+	if len(read("composer")) != 1 {
+		t.Fatal("revoked composer retained")
+	}
+}

@@ -6,6 +6,7 @@
 abstract final class AppRoutes {
   static const login = '/login';
   static const home = '/home';
+  static const musicArtists = '/music/artists';
   static const musicAlbums = '/music/albums';
   static const localLibrary = '/local';
   static const localPlayer = '/local/player/:localMediaId';

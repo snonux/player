@@ -2372,10 +2372,44 @@ when present, otherwise whitespace-normalized lowercase album artist and title
 split a tagged album. Without an album tag, a set/folder identity supplies the
 title and `from_folder: true`. Identical unqualified releases can merge until
 future mapping support; keys may change on retag. Artist links currently
-filter this album catalog; a complete artist discography is a separate feature.
+filter this album catalog. Artist discography and credit roles are available below.
 
 Both routes require cookie/Bearer auth. Empty catalogs return `[]`; missing,
 removed or forbidden detail keys all return `404` with an unavailable message,
 without revealing whether another account has that album. Internal read errors
 return `500`. Album playback remains client-owned, using existing media IDs,
 stream URLs and progress routes; no queue editing or persistence API is added.
+
+
+### Music artists and credit roles
+
+`GET /api/v1/music/artists` (also `/api/music/artists`) returns caller-visible
+artist summaries. `role=artists` (the default) includes track and album artists;
+`track_artist`, `album_artist`, `composer` and `performer` select a secondary
+credit role. Unknown roles return 400. Composer/performer-only names do not
+appear in the default Artists list.
+
+`GET /api/v1/music/artists/{artist_key}` (also `/api/music/artists/{artist_key}`)
+returns a credited person's discography. Summaries contain `artist_key`, `name`,
+`roles`, distinct `album_count` and distinct `song_count`. Detail adds `albums`,
+each with the existing album summary fields and that person's `roles` on the
+release. This is the complete visible discography, with explicit role labels;
+choosing a role in the list does not hide their other release roles in detail.
+Missing and inaccessible artist keys return the same 404 response. Counts,
+release links and artwork are derived only after normal set permissions.
+
+Audio `music` adds optional structured `composers` and `performers` arrays from
+embedded composer/performer tags. Actual repeated FLAC/Vorbis/Opus comments
+remain separate names; punctuation in scalar values is never split. Rescan
+updates or clears credits on the same media row. Offline snapshots retain them.
+Track and album artists use the existing structured arrays, with the existing
+scalar fallback; missing album artists fall back to track artists. Untagged
+music uses Unknown artist for common browsing, without invented composer or
+performer credits. Artist keys are normalized-name `ar_` hashes and may change
+when names are retagged; they do not grant permission.
+
+Album responses add `credits`, the union of tagged people and roles on the
+release. Album detail also adds `song_credits`, keyed by media ID, containing
+`artist_key`, `name`, `roles` for each linked person on that song. Track and album
+artist links use these structured credits individually, independently of the
+verbatim display artist. Existing album grouping and media identities stay intact.

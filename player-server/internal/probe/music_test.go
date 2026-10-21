@@ -66,7 +66,7 @@ func commentBlock(t *testing.T, entries ...string) []byte {
 }
 
 func TestVorbisCommentsBoundariesAndMalformed(t *testing.T) {
-	block := commentBlock(t, "ARTIST=A; B", "ARTIST=C", "GENRE=Jazz", "GENRE=Blues")
+	block := commentBlock(t, "ARTIST=A; B", "ARTIST=C", "GENRE=Jazz", "GENRE=Blues", "COMPOSER=Composer; A", "COMPOSER=東京", "PERFORMER=Player / A", "PERFORMER=Player B")
 	tags, err := vorbisComments(block)
 	if err != nil || tags["artist"] != "A; B\x00C" || tags["genre"] != "Jazz\x00Blues" {
 		t.Fatalf("%v %v", tags, err)
@@ -100,7 +100,7 @@ func TestMusicRealContainers(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				block := commentBlock(t, "TITLE=Separate Artists", "ARTIST=A; B", "ARTIST=C", "ALBUMARTIST=D", "ALBUMARTIST=E", "GENRE=Jazz", "GENRE=Blues")
+				block := commentBlock(t, "TITLE=Separate Artists", "ARTIST=A; B", "ARTIST=C", "ALBUMARTIST=D", "ALBUMARTIST=E", "GENRE=Jazz", "GENRE=Blues", "COMPOSER=Composer; A", "COMPOSER=東京", "PERFORMER=Player / A", "PERFORMER=Player B")
 				// Replace only the real file's Vorbis comment block, keeping valid audio.
 				for offset := 4; offset+4 < len(data); {
 					size := int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
@@ -117,7 +117,7 @@ func TestMusicRealContainers(t *testing.T) {
 					offset += 4 + size
 				}
 				m, err = NewFFProber().Probe(context.Background(), path)
-				if err != nil || !reflect.DeepEqual(m.Music.Artists, []string{"A; B", "C"}) || !reflect.DeepEqual(m.Music.Genres, []string{"Jazz", "Blues"}) || m.Music.AlbumArtist != "D, E" {
+				if err != nil || !reflect.DeepEqual(m.Music.Artists, []string{"A; B", "C"}) || !reflect.DeepEqual(m.Music.Genres, []string{"Jazz", "Blues"}) || m.Music.AlbumArtist != "D, E" || !reflect.DeepEqual(m.Music.Composers, []string{"Composer; A", "東京"}) || !reflect.DeepEqual(m.Music.Performers, []string{"Player / A", "Player B"}) {
 					t.Fatalf("real repeated comments %+v %v", m, err)
 				}
 			}

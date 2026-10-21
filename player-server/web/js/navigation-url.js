@@ -4,7 +4,9 @@ const positiveID = value => /^[1-9]\d*$/.test(String(value)) && Number.isSafeInt
 
 export function readLibraryURL(search) {
   const params = new URLSearchParams(search);
-  const music = ['albums','album'].includes(params.get('music')) ? { album: params.get('music') === 'album' ? params.get('id') || '' : '', artist: params.get('martist') || '', name: params.get('martist_name') || '' } : null;
+  const music = ['albums','album','artists','artist'].includes(params.get('music')) ? { album: params.get('music') === 'album' ? params.get('id') || '' : '', artist: params.get('martist') || '', name: params.get('martist_name') || '' } : null;
+  if (music && ['artists','artist'].includes(params.get('music'))) { music.artists=true; music.artist=params.get('music')==='artist' ? params.get('id') || '' : ''; music.role=params.get('mrole') || 'artists'; }
+  if (music && params.get('mfrom')==='artists') { music.artists=true; music.role=params.get('mrole') || 'artists'; }
   const sets = music ? [] : [...new Set((params.get('set') || '').split(',').map(positiveID).filter(Boolean))];
   const folder = params.get('folder') || '';
   const safeFolder = !folder.split('/').some(part => part === '.' || part === '..') && !folder.startsWith('/') && !folder.includes('\\') && !folder.includes('\0');
@@ -21,7 +23,7 @@ export function readLibraryURL(search) {
 
 export function libraryURL(state, media = null, shuffle = false) {
   const params = new URLSearchParams();
-  if (state.music) { params.set('music',state.music.album ? 'album' : 'albums'); if (state.music.album) params.set('id',state.music.album); if (state.music.artist) params.set('martist',state.music.artist); if (state.music.name) params.set('martist_name',state.music.name); }
+  if (state.music) { params.set('music',state.music.album ? 'album' : state.music.artists ? state.music.artist ? 'artist' : 'artists' : 'albums'); if (state.music.album) params.set('id',state.music.album); else if (state.music.artists && state.music.artist) params.set('id',state.music.artist); if(state.music.artists) { params.set('mrole',state.music.role || 'artists'); if(state.music.album) params.set('mfrom','artists'); } if (state.music.artist) params.set('martist',state.music.artist); if (state.music.name) params.set('martist_name',state.music.name); }
   if (!state.music) {
   if (state.virtualSet) params.set('view', state.virtualSet);
   if (state.selectedSetIds.length) params.set('set', state.selectedSetIds.join(','));

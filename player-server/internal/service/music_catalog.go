@@ -14,16 +14,18 @@ import (
 
 // Album is a caller-visible aggregate over existing media identities.
 type Album struct {
-	Key          string        `json:"album_key"`
-	Title        string        `json:"title"`
-	Artist       string        `json:"artist"`
-	ArtistKey    string        `json:"artist_key"`
-	Year         int           `json:"year,omitempty"`
-	FromFolder   bool          `json:"from_folder"`
-	CoverMediaID int64         `json:"cover_media_id,omitempty"`
-	SongCount    int           `json:"song_count"`
-	Duration     float64       `json:"duration"`
-	Songs        []model.Media `json:"songs,omitempty"`
+	Credits      []ArtistCredit           `json:"credits,omitempty"`
+	SongCredits  map[int64][]ArtistCredit `json:"song_credits,omitempty"`
+	Key          string                   `json:"album_key"`
+	Title        string                   `json:"title"`
+	Artist       string                   `json:"artist"`
+	ArtistKey    string                   `json:"artist_key"`
+	Year         int                      `json:"year,omitempty"`
+	FromFolder   bool                     `json:"from_folder"`
+	CoverMediaID int64                    `json:"cover_media_id,omitempty"`
+	SongCount    int                      `json:"song_count"`
+	Duration     float64                  `json:"duration"`
+	Songs        []model.Media            `json:"songs,omitempty"`
 }
 
 // CatalogSource exposes only permission-aware reads needed by the music lens.
@@ -70,12 +72,33 @@ func MusicAlbums(ctx context.Context, source CatalogSource, userID int64) ([]Alb
 	for _, album := range groups {
 		sort.Slice(album.Songs, func(i, j int) bool { return albumSongLess(album.Songs[i], album.Songs[j]) })
 		album.SongCount = len(album.Songs)
+		album.SongCredits = map[int64][]ArtistCredit{}
+		people := map[string]*ArtistCredit{}
 		for _, song := range album.Songs {
 			album.Duration += song.Duration
+			credits := MusicCredits(song)
+			album.SongCredits[song.ID] = credits
+			for _, credit := range credits {
+				person := people[credit.Key]
+				if person == nil {
+					copy := credit
+					people[credit.Key] = &copy
+					continue
+				}
+				for _, role := range credit.Roles {
+					if !containsRole(person.Roles, role) {
+						person.Roles = append(person.Roles, role)
+					}
+				}
+			}
 			if album.CoverMediaID == 0 && song.ThumbnailPath != "" {
 				album.CoverMediaID = song.ID
 			}
 		}
+		for _, person := range people {
+			album.Credits = append(album.Credits, *person)
+		}
+		sort.Slice(album.Credits, func(i, j int) bool { return normalized(album.Credits[i].Name) < normalized(album.Credits[j].Name) })
 		result = append(result, *album)
 	}
 	sort.Slice(result, func(i, j int) bool {

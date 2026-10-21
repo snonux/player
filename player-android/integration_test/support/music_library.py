@@ -86,11 +86,11 @@ TRACKS = [
                    track='3/3', disc='1/1', genre='Ambient')),
     dict(path='Music/Various Artists - Synth Compilation/Disc 1/01 - Neon Rain.m4a',
          codec='aac-128', tone_hz=[392.0], level_dbfs=-12,
-         tags=dict(COMPILATION, title='Neon Rain', artist='Neon Coast',
+         tags=dict(COMPILATION, title='Neon Rain', artist='Neon Coast', composer='Composer; 東京 / A', performer='Session Ensemble',
                    track='1/2', disc='1/2')),
     dict(path='Music/Various Artists - Synth Compilation/Disc 1/02 - Glass City.opus',
          codec='opus-96', tone_hz=[587.33], level_dbfs=-12,
-         tags=dict(COMPILATION, title='Glass City', artist='Glass Avenue',
+         tags=dict(COMPILATION, title='Glass City', artist='Glass Avenue', composer='Composer; 東京 / A', performer='Glass Avenue',
                    track='2/2', disc='1/2')),
     dict(path='Music/Various Artists - Synth Compilation/Disc 2/01 - Afterglow.ogg',
          codec='vorbis-q4', tone_hz=[698.46], level_dbfs=-12, lyrics='embedded',
@@ -103,7 +103,7 @@ TRACKS = [
     dict(path='Music/Ünïcødé Artïst - 東京 Nights/02 - Партия для двоих.flac',
          codec='flac-16-44', tone_hz=[311.13], level_dbfs=-12,
          tags=dict(UNICODE_ALBUM, title='Партия для двоих',
-                   artists=['Ünïcødé Artïst', 'Mika Sørensen'], genres=['Électronique', 'Ambient'], track='2/2', disc='1/1')),
+                   artists=['Ünïcødé Artïst', 'Mika Sørensen'], genres=['Électronique', 'Ambient'], composers=['Composer; 東京 / A', 'Mika Sørensen'], performers=['Session Ensemble', 'Mika Sørensen'], track='2/2', disc='1/1')),
     dict(path='Music/Partial Tags/Lonely Single.mp3',
          codec='mp3-128', tone_hz=[466.16], level_dbfs=-12,
          tags={'title': 'Lonely Single', 'artist': 'Solo Act'}),
@@ -112,7 +112,7 @@ TRACKS = [
     dict(path='Music/Tag Verification/source_001.flac', codec='flac-16-44',
          tone_hz=[415.30], level_dbfs=-12,
          tags={'title': 'A Different Music Title', 'artist': 'A & B; C/D',
-               'album_artist': 'Album Ensemble', 'album': 'Metadata Album',
+               'album_artist': 'Album Ensemble', 'album': 'Metadata Album', 'composer': 'Metadata Composer', 'performer': 'Metadata Performer',
                'track': '4/9', 'disc': '2/3', 'date': '2024-02-29', 'genre': 'Jazz'}),
     dict(path='Music/Tag Verification/blank_title.mp3', codec='mp3-128',
          tone_hz=[293.66], level_dbfs=-12,
@@ -148,8 +148,19 @@ TRACKS = [
     dict(path='Restricted/Admin Only - Hidden Album/01 - Hidden Track.mp3',
          codec='mp3-128', tone_hz=[220.0], level_dbfs=-12,
          tags={'title': 'Hidden Track', 'artist': 'Secret Artist', 'album': 'Hidden Album',
-               'album_artist': 'Secret Artist', 'track': '1/1'}),
+               'album_artist': 'Secret Artist', 'composer': 'Hidden Composer', 'performer': 'Hidden Performer', 'track': '1/1'}),
 ]
+
+# M03 needs actual scrolled Artists and discography views for Back-position proof.
+# Existing artists have only one or two releases, so use a dedicated synthetic
+# artist without changing the identities/order of any baseline album.
+POSITION_ARTIST = 'Zzz Catalog Artist — ' + 'Long artist name ' * 6
+TRACKS += [dict(path=f'Music/Catalog Position/Release {index:02}/01 - Position.mp3',
+               codec='mp3-128', tone_hz=[610.0 + index], level_dbfs=-12,
+               tags={'title': f'Position {index:02}', 'artist': POSITION_ARTIST,
+                     'album_artist': POSITION_ARTIST,
+                     'album': f'Catalog Release {index:02}', 'track': '1/1'})
+           for index in range(1, 15)]
 
 # Gapless: one continuous 880 Hz tone cut into GAPLESS_TRACKS pieces at exact
 # sample boundaries, in a lossless (FLAC) and a lossy (MP3, LAME gapless
@@ -249,6 +260,9 @@ def _make_track(media_root, spec, source=None):
         set_flac_artists(target, tags['artists'])
     if tags and 'genres' in tags:
         set_flac_artists(target, tags['genres'], key='GENRE')
+    for field, key in [('composers', 'COMPOSER'), ('performers', 'PERFORMER')]:
+        if tags and field in tags:
+            set_flac_artists(target, tags[field], key=key)
     _write_lyrics(target, spec.get('lyrics'))
     return _manifest_entry(spec, source)
 
@@ -258,7 +272,7 @@ def _tag_args(spec, target):
     if tags is None:
         return STRIP_ARGS + (['-id3v2_version', '0', '-write_id3v1', '0']
                              if target.suffix == '.mp3' else [])
-    values = {k: v for k, v in tags.items() if k not in ('artists', 'genres')}
+    values = {k: v for k, v in tags.items() if k not in ('artists', 'genres', 'composers', 'performers')}
     values.update(spec.get('replaygain') or {})
     if spec.get('lyrics') == 'embedded':
         values['LYRICS'] = EMBEDDED_LYRICS

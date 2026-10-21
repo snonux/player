@@ -31,7 +31,9 @@ void main() {
         'album': 'Café',
         'disc': 2,
         'disc_total': 3,
-        'genres': ['Jazz', 'Blues']
+        'genres': ['Jazz', 'Blues'],
+        'composers': ['Composer; 東京 / A', 'Other'],
+        'performers': ['Session Ensemble']
       }
     });
     final cached = Media.fromJson(media.toJson());
@@ -40,6 +42,8 @@ void main() {
     expect(cached.musicSubtitle, 'A feat. B; C · Café');
     expect(cached.music!.details['Disc'], '2 / 3');
     expect(cached.music!.details['Genres'], 'Jazz, Blues');
+    expect(cached.music!.details['Composer'], 'Composer; 東京 / A, Other');
+    expect(cached.music!.details['Performer'], 'Session Ensemble');
   });
   test('old snapshots and blank titles fall back to unchanged filename stem',
       () {

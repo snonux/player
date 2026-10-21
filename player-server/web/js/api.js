@@ -55,6 +55,8 @@ export const API = {
   logout: () => api('/api/logout', { method: 'POST' }),
   bootstrap: (username, password) => api('/api/bootstrap', { method: 'POST', body: { username, password } }),
   config: () => api('/api/config'),
+  artists: (params = {}) => api(`/api/music/artists?${new URLSearchParams(params)}`),
+  artist: key => api(`/api/music/artists/${encodeURIComponent(key)}`),
   albums: (params = {}) => api(`/api/music/albums?${new URLSearchParams(params)}`),
   album: key => api(`/api/music/albums/${encodeURIComponent(key)}`),
   sets: () => api('/api/sets'),

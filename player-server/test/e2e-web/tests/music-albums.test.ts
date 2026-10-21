@@ -63,16 +63,14 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   await openAlbum(page);
   await expect(page.locator('.album-header')).toContainText('3 songs');
   expect(await page.locator('.album-header img').evaluate((img:HTMLImageElement)=>img.naturalWidth)).toBeGreaterThan(0);
-  await page.getByRole('button',{name:'Aurora Lane',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Albums by Aurora Lane',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Album artist: Aurora Lane',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Aurora Lane',exact:true})).toBeVisible();
   for(const theme of ['dark','light']) {
     if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
     const shot=evidence.path(`m02-linked-artist-${theme}-390.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);
   }
-  await page.getByRole('button',{name:'← Back to albums',exact:true}).click();
-  await expect(page.locator('.album-card.selected')).toHaveAttribute('data-album',album.album_key);
-  await expect(page.locator('.album-card.selected')).toBeFocused();
-  await page.keyboard.press('Enter');
+  await page.getByRole('button',{name:'← Back',exact:true}).click();
+  await expect(page.getByRole('heading',{name:albumName,exact:true})).toBeVisible();
   await expect(page.getByRole('heading',{name:albumName,exact:true})).toBeVisible();
   for(const [theme,width] of [['dark',1366],['light',1366],['dark',390],['light',390]] as const) {
     await page.setViewportSize({width,height:844});

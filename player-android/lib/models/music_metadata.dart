@@ -25,6 +25,8 @@ class MusicMetadata {
     return {
       'Artist': artist,
       'Album artist': _text('album_artist'),
+      'Composer': _list('composers').join(', '),
+      'Performer': _list('performers').join(', '),
       'Album': album,
       'Track': number('track'),
       'Disc': number('disc'),

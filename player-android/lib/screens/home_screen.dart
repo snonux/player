@@ -161,6 +161,11 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                   AppRoutes.continueWatching
                 ),
                 (Icons.album_outlined, 'Music · Albums', AppRoutes.musicAlbums),
+                (
+                  Icons.people_outline,
+                  'Music · Artists',
+                  AppRoutes.musicArtists
+                ),
                 (Icons.podcasts, 'Podcasts', AppRoutes.podcasts),
                 (Icons.share_outlined, 'My Shares', AppRoutes.shares),
                 (Icons.settings_outlined, 'Settings', AppRoutes.settings),

@@ -309,3 +309,14 @@ queue retry uses explicit visible/open-state controls. Initial cached-target
 and closed-panel oracle failures remain in the external evidence. See
 [the M14 verification record](../../../docs/music-m14-implementation.md) for
 versions, exact commands, audio/ID evidence and the separate native UI checkpoint.
+
+
+M03 artist acceptance uses `tests/music-artists.test.ts` with the same disposable
+music fixture and `playwright.music.config.ts` (both installed browsers):
+`PLAYER_MUSIC_FIXTURE=/home/paul/tmp/zj3-fixture npx playwright test -c
+playwright.music.config.ts --workers=1 --grep M03`. It exercises default Artists,
+all four credit roles, separate structured people, artist/discography Back
+selection, light/dark/narrow layouts, native typing, actual offline Retry,
+real permission revocation/empty results and source-tone playback. M02 linked
+artist assertions now follow the full artist detail and Back to the originating
+album. Keep logs, screenshots, audio and test outputs outside the repository.

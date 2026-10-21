@@ -245,10 +245,8 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(album['title'] as String,
               style: Theme.of(context).textTheme.titleLarge),
-          TextButton(
-              onPressed: () => context.push(
-                  '${AppRoutes.musicAlbums}?artist=${Uri.encodeComponent(album['artist_key'] as String)}&name=${Uri.encodeComponent(album['artist'] as String)}'),
-              child: Text(album['artist'] as String)),
+          _creditLinks(
+              album['credits'], 'album_artist', album['artist'] as String),
           if (album['year'] != null) Text('${album['year']}'),
           if (album['from_folder'] == true) const Text('From folder'),
           Text(
@@ -292,7 +290,10 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 : SizedBox(width: 42, child: Text(_number(songs[i]))),
             title: Text(songs[i].displayTitle,
                 maxLines: 2, overflow: TextOverflow.ellipsis),
-            subtitle: Text(songs[i].music?.artist ?? 'Unknown artist'),
+            subtitle: _creditLinks(
+                (album['song_credits'] as Map?)?['${songs[i].id}'],
+                'track_artist',
+                songs[i].music?.artist ?? 'Unknown artist'),
             onTap: () {
               if (_selecting) {
                 setState(() {
@@ -326,6 +327,22 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 ],
               )
             ])),
+    ]);
+  }
+
+  Widget _creditLinks(dynamic credits, String role, String fallback) {
+    final people = (credits as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .where((person) => (person['roles'] as List).contains(role))
+        .toList();
+    if (people.isEmpty) return Text(fallback);
+    return Wrap(children: [
+      for (final person in people)
+        TextButton(
+          onPressed: () => context.push(
+              '${AppRoutes.musicArtists}?artist=${Uri.encodeComponent(person['artist_key'] as String)}'),
+          child: Text(person['name'] as String),
+        )
     ]);
   }
 

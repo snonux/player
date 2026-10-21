@@ -151,7 +151,7 @@ func vorbisComments(data []byte) (map[string]string, error) {
 			key = "album_artists"
 		}
 		switch key {
-		case "artist", "artists", "album_artist", "albumartist", "album_artists", "albumartists", "genre", "genres":
+		case "artist", "artists", "album_artist", "albumartist", "album_artists", "albumartists", "genre", "genres", "composer", "composers", "performer", "performers":
 			values[key] = append(values[key], value)
 		}
 	}

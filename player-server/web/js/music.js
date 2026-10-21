@@ -13,6 +13,8 @@ export function musicRows(media) {
  if (!m) return [];
  const number = (n, total) => n ? `${n}${total ? ` / ${total}` : ''}` : '';
  return [['Artist', m.artist || m.artists?.join(', ')], ['Album artist', m.album_artist],
- ['Album', m.album], ['Track', number(m.track, m.track_total)], ['Disc', number(m.disc, m.disc_total)],
+ ['Composer', m.composers?.join(', ')], ['Performer', m.performers?.join(', ')], ['Album', m.album], ['Track', number(m.track, m.track_total)], ['Disc', number(m.disc, m.disc_total)],
  ['Date', m.date], ['Year', m.year || ''], ['Genres', m.genres?.join(', ')]];
 }
+
+export const artistRoles = {artists: "Artists (track and album)", track_artist: "Track artist", album_artist: "Album artist", composer: "Composer", performer: "Performer"};

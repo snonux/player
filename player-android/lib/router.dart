@@ -1,3 +1,4 @@
+import 'screens/music_artists_screen.dart';
 import 'screens/music_albums_screen.dart';
 import 'dart:async';
 
@@ -201,6 +202,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           final setName = state.extra is String ? state.extra as String : null;
           return MediaGridScreen(setId: setId, setName: setName);
         },
+      ),
+      GoRoute(
+        path: AppRoutes.musicArtists,
+        builder: (context, state) =>
+            MusicArtistsScreen(artistKey: state.uri.queryParameters['artist']),
       ),
       GoRoute(
         path: AppRoutes.musicAlbums,
