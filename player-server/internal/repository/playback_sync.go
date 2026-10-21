@@ -65,6 +65,16 @@ func (s *SQLite) SyncPlayback(ctx context.Context, userID, mediaID int64, incomi
 					return nil, err
 				}
 			}
+			// Dual-write into the episode registers of a podcast copy: a
+			// natural end is an automatic completion together with the
+			// position of the same edit, a save the position only.
+			edit := positionEdit(p.PositionSeconds, p.ObservedMS)
+			if p.Finished {
+				edit.completed, edit.source = &p.Finished, completionAuto
+			}
+			if err := recordLinkedEpisodeEdit(ctx, tx, userID, mediaID, edit); err != nil {
+				return nil, err
+			}
 		}
 	}
 	for _, b := range incoming.Bookmarks {

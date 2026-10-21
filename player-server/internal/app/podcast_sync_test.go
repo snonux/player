@@ -191,3 +191,91 @@ func TestPodcastRemoveFromServerKeepsSubscribedFeed(t *testing.T) {
 		t.Fatalf("tombstone lost with the catalog row: %+v", pulled.Subscriptions)
 	}
 }
+
+// linkedEpisode creates a catalog feed with one episode whose server copy
+// is a media row alice may read, and returns the feed key, episode id and
+// media id.
+func (e *e2e) linkedEpisode(t *testing.T) (string, int64, int64) {
+	t.Helper()
+	ctx, now := context.Background(), time.Now()
+	setID, err := e.store.CreateSet(ctx, &model.Set{Name: "podcast", RootPath: "podcast", IsPodcast: true, CreatedAt: now})
+	e.must(err)
+	e.must(e.store.GrantPermission(ctx, &model.SetPermission{SetID: setID, UserID: e.users["alice"], Role: model.RoleViewer, CreatedAt: now}))
+	feed := &model.PodcastFeed{SetID: setID, FeedURL: "https://example.com/rss", Title: "Show", CheckIntervalMinutes: 60, CreatedAt: now}
+	feedID, err := e.store.CreateFeed(ctx, feed)
+	e.must(err)
+	epID, err := e.store.CreateEpisode(ctx, &model.PodcastEpisode{FeedID: feedID, GUID: "ep1", EpisodeURL: "https://cdn.example.com/1.mp3", CreatedAt: now})
+	e.must(err)
+	mediaID, err := e.store.CreateMedia(ctx, &model.Media{SetID: setID, RelPath: "Show/1.mp3", FileName: "1.mp3", AbsPath: "/nowhere/1.mp3", Type: model.MediaTypeAudio, Duration: 600, CreatedAt: now})
+	e.must(err)
+	e.must(e.store.UpdateEpisodeMedia(ctx, epID, mediaID, "1.mp3"))
+	return feed.FeedKey, epID, mediaID
+}
+
+// aliceEpisode pulls alice's registers of the linked episode.
+func (e *e2e) aliceEpisode(t *testing.T, feedKey string) model.PodcastEpisodeState {
+	t.Helper()
+	out := e.podcastSync("/api/v1/podcasts/sync", "alice", model.PodcastSyncRequest{})
+	for _, ep := range out.Episodes {
+		if ep.FeedKey == feedKey && ep.EpisodeKey == "guid:ep1" {
+			return ep
+		}
+	}
+	t.Fatalf("no episode state pulled: %+v", out.Episodes)
+	return model.PodcastEpisodeState{}
+}
+
+// TestLegacyProgressRoutesDualWriteEpisodeState covers the dual-write: every
+// legacy write of an episode copy's progress or completion also lands in the
+// caller's episode registers, so nothing is lost when wh3 switches readers.
+func TestLegacyProgressRoutesDualWriteEpisodeState(t *testing.T) {
+	e := newE2E(t, &fakeRunner{})
+	ctx := context.Background()
+	key, epID, mediaID := e.linkedEpisode(t)
+	post := func(path, body string) {
+		t.Helper()
+		if rr := e.request(ctx, http.MethodPost, path, "alice", body); rr.Code/100 != 2 {
+			t.Fatalf("%s = %d: %s", path, rr.Code, rr.Body)
+		}
+	}
+	base := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	at := func(s int) string { return base.Add(time.Duration(s) * time.Second).Format(time.RFC3339Nano) }
+
+	post("/api/v1/progress/batch", fmt.Sprintf(`{"updates":[{"media_id":%d,"position_seconds":120,"observed_at":%q}]}`, mediaID, at(1)))
+	got := e.aliceEpisode(t, key)
+	if got.Position == nil || got.Position.Seconds != 120 || got.Position.ObservedMS != base.Add(time.Second).UnixMilli() || got.Completion != nil {
+		t.Fatalf("position save: %+v", got)
+	}
+	post("/api/v1/progress/status", fmt.Sprintf(`{"media_id":%d,"status":"finished","observed_at":%q}`, mediaID, at(2)))
+	got = e.aliceEpisode(t, key)
+	if got.Completion == nil || !got.Completion.Completed || got.Completion.Source != "manual" || got.Position.Seconds != 120 {
+		t.Fatalf("manual finish must keep the position: %+v %+v", got.Completion, got.Position)
+	}
+	post("/api/v1/progress/status", fmt.Sprintf(`{"media_id":%d,"status":"not_started","observed_at":%q}`, mediaID, at(3)))
+	got = e.aliceEpisode(t, key)
+	if got.Position.Seconds != 0 || got.Completion.Completed || got.Completion.ObservedMS != base.Add(3*time.Second).UnixMilli() {
+		t.Fatalf("reset: %+v %+v", got.Position, got.Completion)
+	}
+	post(fmt.Sprintf("/api/v1/media/%d/playback-sync", mediaID),
+		fmt.Sprintf(`{"progress":{"position_seconds":598,"finished":true,"observed_ms":%d},"bookmarks":[]}`, base.Add(4*time.Second).UnixMilli()))
+	got = e.aliceEpisode(t, key)
+	if !got.Completion.Completed || got.Completion.Source != "auto" || got.Position.Seconds != 598 {
+		t.Fatalf("natural end: %+v %+v", got.Position, got.Completion)
+	}
+	// The legacy toggle (completed -> not completed in podcast_status, which
+	// never saw the earlier edits) writes a manual edit at server time.
+	post(fmt.Sprintf("/api/v1/podcasts/episodes/%d/complete", epID), "")
+	got = e.aliceEpisode(t, key)
+	if !got.Completion.Completed || got.Completion.Source != "manual" || got.Completion.ObservedMS < base.Add(time.Hour-time.Minute).UnixMilli() {
+		t.Fatalf("toggle: %+v", got.Completion)
+	}
+	post(fmt.Sprintf("/api/v1/podcasts/episodes/%d/complete", epID), "")
+	if got = e.aliceEpisode(t, key); got.Completion.Completed {
+		t.Fatalf("second toggle: %+v", got.Completion)
+	}
+	// Progress of ordinary media creates no episode state.
+	post("/api/v1/progress", fmt.Sprintf(`{"media_id":%d,"position_seconds":5}`, e.media["movie.mp4"]))
+	if out := e.podcastSync("/api/v1/podcasts/sync", "alice", model.PodcastSyncRequest{}); len(out.Episodes) != 1 {
+		t.Fatalf("non-podcast progress produced episode state: %+v", out.Episodes)
+	}
+}

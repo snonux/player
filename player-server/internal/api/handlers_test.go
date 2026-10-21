@@ -2239,3 +2239,6 @@ func (m *mockPingStore) ClearEpisodeDownloads(ctx context.Context, feedID int64)
 func (m *mockPingStore) MoveFeed(ctx context.Context, feedID int64, target string) (bool, error) {
 	return m.store.MoveFeed(ctx, feedID, target)
 }
+func (m *mockPingStore) SetEpisodeCompletion(ctx context.Context, userID, episodeID int64, completed bool, now time.Time) error {
+	return m.store.SetEpisodeCompletion(ctx, userID, episodeID, completed, now)
+}

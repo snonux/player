@@ -331,3 +331,30 @@ func TestDeleteUserRemovesSyncRows(t *testing.T) {
 		t.Fatalf("subscriptions of a deleted user: %d %v", n, err)
 	}
 }
+
+func TestActiveSubscriptionMatchesAliasKeys(t *testing.T) {
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	canonical := "feed:example.com/rss"
+	f.sync(f.bob, 0, 0, edit("b", canonical, true, 1))
+	f.sync(f.bob, 0, 0, edit("b2", canonical, false, 2)) // bob leaves; the row stays
+	// Alice's subscription is kept under a key that later became an alias.
+	f.sync(f.alice, 0, 0, edit("a", "feed:old.example.com/rss", true, 1))
+	if active, _ := f.s.HasActivePodcastSubscription(ctx, canonical); active {
+		t.Fatal("no subscriber yet under the canonical key or an alias")
+	}
+	if _, err := f.s.db.Exec(`INSERT INTO podcast_feed_aliases (alias_key, feed_key, change_seq) VALUES ('feed:old.example.com/rss', ?, 0)`, canonical); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := f.s.HasActivePodcastSubscription(ctx, canonical); err != nil || !active {
+		t.Fatalf("subscription under an alias not seen: %v %v", active, err)
+	}
+	feeds, err := f.s.ListFeedsNeedingCheck(ctx, f.now.Add(time.Hour), f.now.Add(time.Hour))
+	found := false
+	for _, feed := range feeds {
+		found = found || feed.FeedKey == canonical
+	}
+	if err != nil || !found {
+		t.Fatalf("feed with an alias subscriber not checked: %+v %v", feeds, err)
+	}
+}

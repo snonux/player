@@ -38,9 +38,18 @@ type PodcastSubscriptionRepo interface {
 	// subscribed (false for tombstones).
 	PodcastSubscriptionStates(ctx context.Context, userID int64) (map[string]bool, error)
 	// HasActivePodcastSubscription reports whether any user is subscribed
-	// to the feed key.
+	// to the feed key or to one of its aliases.
 	HasActivePodcastSubscription(ctx context.Context, feedKey string) (bool, error)
 }
+
+// PodcastEpisodeStateRepo writes per-account episode registers.
+type PodcastEpisodeStateRepo interface {
+	// SetEpisodeCompletion records a manual completion edit of the user's
+	// register for a catalog episode at server time (the legacy toggle).
+	SetEpisodeCompletion(ctx context.Context, userID, episodeID int64, completed bool, now time.Time) error
+}
+
+var _ PodcastEpisodeStateRepo = (*SQLite)(nil)
 
 var _ PodcastSubscriptionRepo = (*SQLite)(nil)
 
@@ -53,7 +62,7 @@ type subscriptionRow struct {
 // nextChangeSeq takes the next change sequence number inside tx. Every
 // written sync row takes its own, so paging never splits or skips one, and
 // with SQLite's single writer commit order equals sequence order.
-func nextChangeSeq(ctx context.Context, tx *sql.Tx) (int64, error) {
+func nextChangeSeq(ctx context.Context, tx sqlQueryRower) (int64, error) {
 	var seq int64
 	err := tx.QueryRowContext(ctx,
 		`UPDATE podcast_sync_seq SET next_seq = next_seq + 1 WHERE id = 1 RETURNING next_seq - 1`).Scan(&seq)
@@ -189,8 +198,8 @@ func (s *SQLite) PodcastSubscriptionStates(ctx context.Context, userID int64) (m
 // HasActivePodcastSubscription implements PodcastSubscriptionRepo.
 func (s *SQLite) HasActivePodcastSubscription(ctx context.Context, feedKey string) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM podcast_subscriptions WHERE feed_key = ? AND subscribed = 1`, feedKey).Scan(&n)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM podcast_subscriptions WHERE subscribed = 1
+ AND (feed_key = ? OR feed_key IN (SELECT alias_key FROM podcast_feed_aliases WHERE feed_key = ?))`, feedKey, feedKey).Scan(&n)
 	if err != nil {
 		return false, fmt.Errorf("count subscriptions: %w", err)
 	}

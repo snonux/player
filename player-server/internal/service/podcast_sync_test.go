@@ -152,3 +152,68 @@ func TestPodcastSyncStoreError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// TestPodcastSyncClampRetryOnRealStore pins the accepted cost of clock
+// clamping (contract §4 rule 4): an edit from a device whose clock runs far
+// ahead is stored at the server's receive time. If its acknowledgement is
+// lost and the device retries later, the retry is clamped again, to the
+// later receive time, and so overwrites an edit another device made in
+// between. The alternative, trusting the future clock, would block every
+// later edit of that register until the wall clock caught up.
+func TestPodcastSyncClampRetryOnRealStore(t *testing.T) {
+	store, err := repository.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	user, err := store.CreateUser(ctx, &model.User{Username: "u", PasswordHash: "h", CreatedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now1 := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	clk := &clock.MockClock{T: now1}
+	svc := NewPodcastSyncService(store, clk, 60)
+	sync := func(e model.PodcastSubscriptionEdit) *model.PodcastSyncResponse {
+		t.Helper()
+		out, err := svc.Sync(ctx, user, model.PodcastSyncRequest{Subscriptions: []model.PodcastSubscriptionEdit{e}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	register := func(out *model.PodcastSyncResponse) model.PodcastSubscription {
+		t.Helper()
+		if len(out.Subscriptions) != 1 {
+			t.Fatalf("subscriptions: %+v", out.Subscriptions)
+		}
+		return out.Subscriptions[0]
+	}
+
+	future := subEdit(func(e *model.PodcastSubscriptionEdit) {
+		e.Subscribed, e.ObservedMS = true, now1.Add(time.Hour).UnixMilli()
+	})
+	out := sync(future)
+	if len(out.Acked) != 1 || len(out.Clamped) != 1 || register(out).SubscriptionMS != now1.UnixMilli() {
+		t.Fatalf("first attempt: %+v", out)
+	}
+
+	// Another device unsubscribes between the two attempts and wins.
+	between := subEdit(func(e *model.PodcastSubscriptionEdit) {
+		e.EditID, e.Subscribed, e.ObservedMS = "betweenbetweenbe", false, now1.Add(30*time.Second).UnixMilli()
+	})
+	if got := register(sync(between)); got.Subscribed {
+		t.Fatalf("edit after the clamped clock lost: %+v", got)
+	}
+
+	// The lost acknowledgement makes the first device retry the same edit
+	// a minute later: clamped to now2, it overwrites the unsubscribe.
+	now2 := now1.Add(time.Minute)
+	clk.T = now2
+	out = sync(future)
+	got := register(out)
+	if len(out.Acked) != 1 || out.Acked[0] != future.EditID || len(out.Clamped) != 1 ||
+		!got.Subscribed || got.SubscriptionMS != now2.UnixMilli() {
+		t.Fatalf("retry: %+v", out)
+	}
+}

@@ -136,7 +136,10 @@ export const API = {
     return api(`/api/podcasts/${setId}/episodes?${params}`);
   },
   subscribePodcast: (feedUrl, setName) => api('/api/podcasts', { method: 'POST', body: { feed_url: feedUrl, set_name: setName } }),
-  unsubscribePodcast: (feedId) => api(`/api/podcasts/${feedId}`, { method: 'DELETE' }),
+  // Admin only: deletes the feed's server copies for everyone, and the
+  // catalog feed once nobody is subscribed. Not an unsubscribe.
+  removePodcastFromServer: (feedId) => api(`/api/podcasts/${feedId}`, { method: 'DELETE' }),
+  syncPodcastSubscriptions: (subscriptions) => api('/api/podcasts/sync', { method: 'POST', body: { subscriptions } }),
   downloadEpisode: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/download`, { method: 'POST' }),
   toggleEpisodeComplete: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/complete`, { method: 'POST' }),
 };

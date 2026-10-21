@@ -54,6 +54,7 @@ type PodcastServiceStore interface {
 	repository.PodcastRepo
 	repository.PodcastSubscriptionRepo
 	repository.PodcastCatalogRepo
+	repository.PodcastEpisodeStateRepo
 	repository.SetRepo
 	repository.SetPermissionRepo
 	repository.MediaRepo
@@ -80,14 +81,17 @@ type podcastService struct {
 	// WithThumbnailLayout); the zero value means beside the source.
 	thumbLayout thumb.Layout
 	httpClient  *http.Client
-	// restrictedClient fetches catalog feeds created by non-admin
-	// subscriptions: public unicast addresses only (podcast_outbound.go).
-	restrictedClient *http.Client
-	checkInterval    int // minutes
-	logger           *slog.Logger
-	parseFeed        func(*http.Client, string) (*podcast.ParsedFeed, error)
-	parseFeedReader  func(io.Reader) (*podcast.ParsedFeed, error)
-	downloadCover    func(*http.Client, string, string) error
+	// restrictedClient fetches feeds and covers of catalog rows created by
+	// non-admin subscriptions: public unicast addresses only, bodies capped
+	// (podcast_outbound.go); restrictedDownloadClient fetches their
+	// enclosures under the same address policy without the cap.
+	restrictedClient         *http.Client
+	restrictedDownloadClient *http.Client
+	checkInterval            int // minutes
+	logger                   *slog.Logger
+	parseFeed                func(*http.Client, string) (*podcast.ParsedFeed, error)
+	parseFeedReader          func(io.Reader) (*podcast.ParsedFeed, error)
+	downloadCover            func(*http.Client, string, string) error
 
 	// fetchPolicy controls HTTP-level retry/backoff for feed fetches.
 	// Exposed as a struct field so tests can shrink delays and shorten the
@@ -211,20 +215,21 @@ func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, med
 		panic("service.NewPodcastService: httpClient must not be nil")
 	}
 	s := &podcastService{
-		store:            store,
-		clock:            clk,
-		mediaRoot:        mediaRoot,
-		helper:           helper,
-		prober:           prober,
-		thumbGen:         thumbGen,
-		thumbs:           newThumbnailMaker(thumbGen, logger),
-		thumbRm:          newThumbnailRemover(logger, thumb.Layout{}),
-		httpClient:       httpClient,
-		restrictedClient: newRestrictedClient(clientTimeout(httpClient), publicUnicast),
-		checkInterval:    checkInterval,
-		logger:           logger,
-		fetchPolicy:      DefaultFeedFetchPolicy(),
-		hostFailures:     make(map[string]time.Time),
+		store:                    store,
+		clock:                    clk,
+		mediaRoot:                mediaRoot,
+		helper:                   helper,
+		prober:                   prober,
+		thumbGen:                 thumbGen,
+		thumbs:                   newThumbnailMaker(thumbGen, logger),
+		thumbRm:                  newThumbnailRemover(logger, thumb.Layout{}),
+		httpClient:               httpClient,
+		restrictedClient:         newRestrictedClient(clientTimeout(httpClient), publicUnicast, maxRestrictedFeedBytes),
+		restrictedDownloadClient: newRestrictedClient(clientTimeout(httpClient), publicUnicast, 0),
+		checkInterval:            checkInterval,
+		logger:                   logger,
+		fetchPolicy:              DefaultFeedFetchPolicy(),
+		hostFailures:             make(map[string]time.Time),
 	}
 	// Wire package-level helpers so tests can inject fakes.
 	s.parseFeed = podcast.ParseFeed

@@ -10,9 +10,37 @@ import (
 	"codeberg.org/snonux/player/internal/model"
 )
 
-// UpsertProgress inserts or replaces playback progress.
+// UpsertProgress inserts or replaces playback progress and, for the server
+// copy of a podcast episode, records the same edit in the user's episode
+// registers (dual-write, see recordLinkedEpisodeEdit).
 func (s *SQLite) UpsertProgress(ctx context.Context, progress *model.PlaybackProgress) error {
-	return upsertProgress(ctx, s.db, progress)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("upsert progress: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := upsertProgressAndEpisode(ctx, tx, progress); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("upsert progress: %w", err)
+	}
+	return nil
+}
+
+// upsertProgressAndEpisode writes progress and mirrors it into the episode
+// registers: a position save is a position edit, a finished row a manual
+// completion that keeps the position register (contract §7.1).
+func upsertProgressAndEpisode(ctx context.Context, tx sqlProgressTx, progress *model.PlaybackProgress) error {
+	if err := upsertProgress(ctx, tx, progress); err != nil {
+		return err
+	}
+	ms := progress.UpdatedAt.UnixMilli()
+	edit := positionEdit(progress.PositionSeconds, ms)
+	if progress.Finished {
+		edit = completionEdit(true, completionManual, ms)
+	}
+	return recordLinkedEpisodeEdit(ctx, tx, progress.UserID, progress.MediaID, edit)
 }
 
 func upsertProgress(ctx context.Context, db sqlExecer, progress *model.PlaybackProgress) error {
@@ -90,6 +118,13 @@ func (s *SQLite) ResetProgressAt(ctx context.Context, userID, mediaID int64, obs
 		_ = tx.Rollback()
 		return fmt.Errorf("delete user progress: %w", err)
 	}
+	// A reset of an episode copy is position 0 and a manual uncompletion.
+	ms := observed.UnixMilli()
+	reset := positionEdit(0, ms)
+	reset.completed, reset.source = new(bool), completionManual
+	if err := recordLinkedEpisodeEdit(ctx, tx, userID, mediaID, reset); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit reset progress: %w", err)
 	}
@@ -114,7 +149,7 @@ func (s *SQLite) FinishProgress(ctx context.Context, progress *model.PlaybackPro
 		_ = tx.Rollback()
 		return err
 	}
-	if err := upsertProgress(ctx, tx, progress); err != nil {
+	if err := upsertProgressAndEpisode(ctx, tx, progress); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("finish progress: %w", err)
 	}

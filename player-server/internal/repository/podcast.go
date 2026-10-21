@@ -190,14 +190,16 @@ func (s *SQLite) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
 // ListFeedsNeedingCheck returns feeds eligible for a background check:
 // next_check_at is NULL or in the past, last_checked_at is older than the
 // given threshold, the row is not merged into another, and at least one
-// user has an active subscription to its feed key. A feed nobody listens
-// to any more is not fetched (contract §7.3).
+// user has an active subscription to its feed key or one of its aliases (a
+// subscription kept under a key that only later became an alias). A feed
+// nobody listens to any more is not fetched (contract §7.3).
 func (s *SQLite) ListFeedsNeedingCheck(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+feedColumns+` FROM podcast_feeds
 		WHERE (next_check_at IS NULL OR next_check_at <= ?) AND (last_checked_at IS NULL OR last_checked_at < ?)
 		AND merged_into IS NULL
-		AND EXISTS (SELECT 1 FROM podcast_subscriptions s WHERE s.feed_key = podcast_feeds.feed_key AND s.subscribed = 1)
+		AND EXISTS (SELECT 1 FROM podcast_subscriptions s WHERE s.subscribed = 1 AND (s.feed_key = podcast_feeds.feed_key
+			OR s.feed_key IN (SELECT alias_key FROM podcast_feed_aliases a WHERE a.feed_key = podcast_feeds.feed_key)))
 		ORDER BY last_checked_at ASC`, now, before)
 	if err != nil {
 		return nil, fmt.Errorf("list feeds needing check: %w", err)

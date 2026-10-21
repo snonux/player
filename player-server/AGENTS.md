@@ -283,6 +283,8 @@ The contract is `../docs/podcast-sync-contract.md`. Keep its three kinds of stat
 
 `migratePodcastSync` (`repository/podcast_sync_migration.go`) upgrades every database, fresh or old: `tablesSchema` still creates the two podcast tables in their pre-sync shape. Do not reuse `UnsubscribeFeed` (`DELETE /api/podcasts/{id}`) for unsubscribing or file cleanup: it removes server copies, and the catalog row only when nobody is subscribed. Catalog rows a non-admin subscription created are fetched (feed, cover, enclosure) only through the restricted client of `service/podcast_outbound.go` (public unicast addresses, checked in the dialer); the checker skips feeds without an active subscription.
 
+Until `wh3` switches the readers, the legacy toggle (`podcast_status`) and the media progress writes of downloaded episodes (`UpsertProgress`, `FinishProgress`, `ResetProgressAt`, `SyncPlayback`) also record the same edit in the caller's episode registers (`recordLinkedEpisodeEdit`, `SetEpisodeCompletion`); keep that dual-write on any new write path. In the web UI, **Unsubscribe** (`web/js/podcast-subscriptions.js`) posts a tombstone to `/api/podcasts/sync`; only the admin **Remove from server** button calls the DELETE.
+
 ### Subscribing
 
 Admin opens the **Podcasts** button in the admin panel (or calls `POST /api/podcasts`):

@@ -26,6 +26,7 @@ func TestPublicUnicast(t *testing.T) {
 		"169.254.169.254": false, "fe80::1": false, "fc00::1": false, "fd12::1": false, "224.0.0.1": false,
 		"ff02::1": false, "0.0.0.0": false, "::": false, "100.64.0.1": false, "::ffff:127.0.0.1": false,
 		"::ffff:8.8.8.8": true, "64:ff9b::a00:1": false, "198.18.0.1": false, "255.255.255.255": false,
+		"240.0.0.1": false, "2002:a00:1::1": false,
 	}
 	for addr, want := range cases {
 		if got := publicUnicast(netip.MustParseAddr(addr)); got != want {
@@ -41,13 +42,58 @@ func TestRestrictedClientRefusesLoopbackAndOddRedirects(t *testing.T) {
 		http.Redirect(w, r, "ftp://example.com/feed", http.StatusFound)
 	}))
 	defer srv.Close()
-	_, err := newRestrictedClient(time.Second, publicUnicast).Get(srv.URL)
+	_, err := newRestrictedClient(time.Second, publicUnicast, 0).Get(srv.URL)
 	if !errors.Is(err, errBlockedAddress) || hits.Load() != 0 {
 		t.Fatalf("loopback fetch: err=%v hits=%d", err, hits.Load())
 	}
 	allowAll := func(netip.Addr) bool { return true }
-	if _, err := newRestrictedClient(time.Second, allowAll).Get(srv.URL); err == nil || !strings.Contains(err.Error(), "unsupported scheme") {
+	if _, err := newRestrictedClient(time.Second, allowAll, 0).Get(srv.URL); err == nil || !strings.Contains(err.Error(), "unsupported scheme") {
 		t.Fatalf("redirect to ftp: %v", err)
+	}
+}
+
+func TestRestrictedClientChecksEveryRedirectHop(t *testing.T) {
+	// The second server stands for an internal address a public feed
+	// redirects to (or a DNS answer that changed): only the first dial is
+	// allowed, so the hop is refused before any byte reaches it.
+	var internalHits atomic.Int64
+	internal := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { internalHits.Add(1) }))
+	defer internal.Close()
+	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, internal.URL+"/admin", http.StatusMovedPermanently)
+	}))
+	defer public.Close()
+	var dials atomic.Int64
+	firstOnly := func(netip.Addr) bool { return dials.Add(1) == 1 }
+	_, err := newRestrictedClient(time.Second, firstOnly, 0).Get(public.URL)
+	if !errors.Is(err, errBlockedAddress) || internalHits.Load() != 0 {
+		t.Fatalf("redirect hop: err=%v internal hits=%d", err, internalHits.Load())
+	}
+}
+
+func TestRestrictedClientCapsBodies(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", 100)))
+	}))
+	defer srv.Close()
+	allowAll := func(netip.Addr) bool { return true }
+	read := func(max int64) error {
+		resp, err := newRestrictedClient(time.Second, allowAll, max).Get(srv.URL)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		_, err = io.ReadAll(resp.Body)
+		return err
+	}
+	if err := read(99); !errors.Is(err, errResponseTooLarge) {
+		t.Fatalf("over the cap: %v", err)
+	}
+	if err := read(100); err != nil {
+		t.Fatalf("at the cap: %v", err)
+	}
+	if err := read(0); err != nil {
+		t.Fatalf("uncapped: %v", err)
 	}
 }
 
@@ -134,8 +180,16 @@ func TestFeedClientChoice(t *testing.T) {
 		{"deleted creator", &missing, f.svc.restrictedClient},
 	}
 	for _, tc := range cases {
-		if got := f.svc.feedClient(ctx, &model.PodcastFeed{CreatedBy: tc.createdBy}); got != tc.want {
-			t.Errorf("%s: wrong client", tc.name)
+		feed := &model.PodcastFeed{CreatedBy: tc.createdBy}
+		if got := f.svc.feedClient(ctx, feed); got != tc.want {
+			t.Errorf("%s: wrong feed client", tc.name)
+		}
+		wantDownload := tc.want
+		if tc.want == f.svc.restrictedClient {
+			wantDownload = f.svc.restrictedDownloadClient
+		}
+		if got := f.svc.enclosureClient(ctx, feed); got != wantDownload {
+			t.Errorf("%s: wrong enclosure client", tc.name)
 		}
 	}
 }
@@ -214,5 +268,25 @@ func TestCheckFeedMoveIntoAnotherCatalogFeedNeedsMerge(t *testing.T) {
 	}
 	if got := f.reload(t, target.ID); got.FeedKey != target.FeedKey {
 		t.Fatalf("target rewritten: %+v", got)
+	}
+}
+
+func TestLegacySubscribeReusesRowOfURLWithoutKey(t *testing.T) {
+	f := newCheckerFixture(t)
+	ctx := context.Background()
+	url := strings.Replace(f.srv.URL, "http://", "http://user:pw@", 1) + "/private-feed"
+	first, err := f.svc.SubscribeFeed(ctx, url, "", f.admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := f.svc.SubscribeFeed(ctx, url, "", f.admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != second.ID || !strings.HasPrefix(first.FeedKey, "legacy-feed:") {
+		t.Fatalf("rows %d/%d key %q", first.ID, second.ID, first.FeedKey)
+	}
+	if active, _ := f.store.HasActivePodcastSubscription(ctx, first.FeedKey); !active {
+		t.Fatal("legacy subscribe did not record the admin's subscription")
 	}
 }

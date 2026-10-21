@@ -18,6 +18,7 @@ type MockPodcastSyncRepo struct {
 	IngestFeedEpisodesFunc           func(ctx context.Context, feed *model.PodcastFeed, episodes []model.PodcastEpisode, now time.Time) error
 	ClearEpisodeDownloadsFunc        func(ctx context.Context, feedID int64) error
 	MoveFeedFunc                     func(ctx context.Context, feedID int64, target string) (bool, error)
+	SetEpisodeCompletionFunc         func(ctx context.Context, userID, episodeID int64, completed bool, now time.Time) error
 }
 
 // SyncPodcastSubscriptions implements PodcastSubscriptionRepo.
@@ -82,4 +83,12 @@ func (m *MockStore) MoveFeed(ctx context.Context, feedID int64, target string) (
 		return f(ctx, feedID, target)
 	}
 	return false, nil
+}
+
+// SetEpisodeCompletion implements PodcastEpisodeStateRepo.
+func (m *MockStore) SetEpisodeCompletion(ctx context.Context, userID, episodeID int64, completed bool, now time.Time) error {
+	if f := m.PodcastSyncRepo.SetEpisodeCompletionFunc; f != nil {
+		return f(ctx, userID, episodeID, completed, now)
+	}
+	return nil
 }

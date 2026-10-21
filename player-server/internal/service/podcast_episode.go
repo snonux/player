@@ -196,9 +196,9 @@ func (s *podcastEpisodeService) downloadEnclosure(ctx context.Context, episode *
 	if err != nil {
 		return 0, fmt.Errorf("build download request: %w", err)
 	}
-	client := s.svc.restrictedClient // fail closed when the feed is unknown
+	client := s.svc.restrictedDownloadClient // fail closed when the feed is unknown
 	if feed, err := s.svc.store.GetFeedByID(ctx, episode.FeedID); err == nil && feed != nil {
-		client = s.svc.feedClient(ctx, feed)
+		client = s.svc.enclosureClient(ctx, feed)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -272,7 +272,9 @@ func (s *podcastEpisodeService) persistDownloadedEpisode(ctx context.Context, ep
 	return media, cleanup, nil
 }
 
-// ToggleEpisodeComplete flips the completion status of an episode for a user.
+// ToggleEpisodeComplete flips the completion status of an episode for a
+// user. The flip reads podcast_status, which the legacy listing still
+// shows; it is not retry-safe, so new clients must not use it.
 func (s *podcastEpisodeService) ToggleEpisodeComplete(ctx context.Context, episodeID, userID int64) error {
 	// Verify user has access to the set containing this episode.
 	episode, err := s.svc.store.GetEpisodeByID(ctx, episodeID)
@@ -313,7 +315,16 @@ func (s *podcastEpisodeService) ToggleEpisodeComplete(ctx context.Context, episo
 		IsCompleted: isCompleted,
 		UpdatedAt:   now,
 	}
-	return s.svc.store.UpsertEpisodeProgress(ctx, newStatus)
+	if err := s.svc.store.UpsertEpisodeProgress(ctx, newStatus); err != nil {
+		return err
+	}
+	// Dual-write: the same edit in the caller's completion register, a
+	// manual edit at server time, so it survives the switch of readers from
+	// podcast_status to episode state (task wh3).
+	if err := s.svc.store.SetEpisodeCompletion(ctx, userID, episodeID, isCompleted, now); err != nil {
+		return fmt.Errorf("record episode completion: %w", err)
+	}
+	return nil
 }
 
 // relPathIn returns path relative to the set root, in slash form, or "" when

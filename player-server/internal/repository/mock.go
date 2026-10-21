@@ -32,6 +32,7 @@ var (
 	_ PodcastRepo                 = (*MockStore)(nil)
 	_ PodcastSubscriptionRepo     = (*MockStore)(nil)
 	_ PodcastCatalogRepo          = (*MockStore)(nil)
+	_ PodcastEpisodeStateRepo     = (*MockStore)(nil)
 )
 
 // NewMockStore returns a MockStore with all no-op defaults.

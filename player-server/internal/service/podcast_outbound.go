@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -26,6 +27,14 @@ var errBlockedAddress = errors.New("outbound address not allowed for this feed")
 // maxFeedRedirects bounds the redirect hops of one feed fetch.
 const maxFeedRedirects = 10
 
+// maxRestrictedFeedBytes bounds feed documents and cover images fetched for
+// non-admin catalog rows, so a hostile feed cannot fill memory or disk.
+// Enclosure downloads are not capped (episodes are large).
+const maxRestrictedFeedBytes = 32 << 20
+
+// errResponseTooLarge reports a response body over the cap.
+var errResponseTooLarge = errors.New("response body too large")
+
 // nonPublicPrefixes are unicast ranges netip does not classify as private
 // or local but that are not reachable public addresses either.
 var nonPublicPrefixes = []netip.Prefix{
@@ -33,6 +42,8 @@ var nonPublicPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"),  // carrier-grade NAT
 	netip.MustParsePrefix("192.0.0.0/24"),   // IETF protocol assignments
 	netip.MustParsePrefix("198.18.0.0/15"),  // benchmarking
+	netip.MustParsePrefix("240.0.0.0/4"),    // reserved
+	netip.MustParsePrefix("2002::/16"),      // 6to4, can embed private IPv4
 	netip.MustParsePrefix("64:ff9b::/96"),   // NAT64, can embed private IPv4
 	netip.MustParsePrefix("64:ff9b:1::/48"), // local-use NAT64
 }
@@ -54,8 +65,9 @@ func publicUnicast(ip netip.Addr) bool {
 
 // newRestrictedClient returns a client that connects only to addresses
 // allow accepts, never through a proxy (the proxy's address would be the
-// one checked), and follows only http and https redirects.
-func newRestrictedClient(timeout time.Duration, allow func(netip.Addr) bool) *http.Client {
+// one checked), and follows only http and https redirects. With maxBody > 0
+// reading more than maxBody bytes of a response body fails.
+func newRestrictedClient(timeout time.Duration, allow func(netip.Addr) bool, maxBody int64) *http.Client {
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second,
 		Control: func(_, address string, _ syscall.RawConn) error {
 			host, _, err := net.SplitHostPort(address)
@@ -72,7 +84,45 @@ func newRestrictedClient(timeout time.Duration, allow func(netip.Addr) bool) *ht
 		Proxy: nil, DialContext: dialer.DialContext, ForceAttemptHTTP2: true,
 		MaxIdleConns: 10, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second,
 	}
-	return &http.Client{Timeout: timeout, Transport: transport, CheckRedirect: httpRedirectsOnly}
+	var rt http.RoundTripper = transport
+	if maxBody > 0 {
+		rt = cappedTransport{base: transport, max: maxBody}
+	}
+	return &http.Client{Timeout: timeout, Transport: rt, CheckRedirect: httpRedirectsOnly}
+}
+
+// cappedTransport fails reads of response bodies beyond max bytes.
+type cappedTransport struct {
+	base http.RoundTripper
+	max  int64
+}
+
+func (t cappedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &cappedBody{ReadCloser: resp.Body, left: t.max}
+	return resp, nil
+}
+
+// cappedBody returns errResponseTooLarge once more than its budget is read,
+// instead of silently truncating (a cut feed or image would look valid).
+type cappedBody struct {
+	io.ReadCloser
+	left int64
+}
+
+func (b *cappedBody) Read(p []byte) (int, error) {
+	if int64(len(p)) > b.left+1 {
+		p = p[:b.left+1]
+	}
+	n, err := b.ReadCloser.Read(p)
+	b.left -= int64(n)
+	if b.left < 0 {
+		return n, errResponseTooLarge
+	}
+	return n, err
 }
 
 // httpRedirectsOnly stops redirect chains that are too long or leave http(s).
@@ -86,17 +136,31 @@ func httpRedirectsOnly(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
-// feedClient returns the client a catalog feed is fetched with: the
-// restricted one for rows a non-admin's subscription created (and, failing
-// closed, when the creator cannot be looked up or no longer exists), the
-// injected client otherwise.
+// feedClient returns the client a catalog feed and its cover are fetched
+// with: the restricted, size-capped one for rows a non-admin's subscription
+// created (and, failing closed, when the creator cannot be looked up or no
+// longer exists), the injected client otherwise.
 func (s *podcastService) feedClient(ctx context.Context, feed *model.PodcastFeed) *http.Client {
+	if s.restrictedFeed(ctx, feed) {
+		return s.restrictedClient
+	}
+	return s.httpClient
+}
+
+// enclosureClient is feedClient for episode downloads: restricted in the
+// same cases, but without the size cap.
+func (s *podcastService) enclosureClient(ctx context.Context, feed *model.PodcastFeed) *http.Client {
+	if s.restrictedFeed(ctx, feed) {
+		return s.restrictedDownloadClient
+	}
+	return s.httpClient
+}
+
+// restrictedFeed reports whether feed falls under the outbound policy.
+func (s *podcastService) restrictedFeed(ctx context.Context, feed *model.PodcastFeed) bool {
 	if feed.CreatedBy == nil {
-		return s.httpClient
+		return false
 	}
 	user, err := s.store.GetUserByID(ctx, *feed.CreatedBy)
-	if err == nil && user != nil && user.IsAdmin {
-		return s.httpClient
-	}
-	return s.restrictedClient
+	return err != nil || user == nil || !user.IsAdmin
 }

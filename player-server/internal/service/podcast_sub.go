@@ -35,7 +35,7 @@ func (s *podcastSubscriptionService) SubscribeFeed(ctx context.Context, feedURL,
 		return nil, err
 	}
 
-	feed, err := s.findExistingFeed(ctx, feedURL)
+	feed, err := s.findExistingFeed(ctx, set.ID, feedURL)
 	if err != nil {
 		return nil, err
 	}
@@ -126,19 +126,34 @@ func (s *podcastSubscriptionService) findPodcastSet(ctx context.Context) (*model
 
 // findExistingFeed returns the catalog feed whose key (or one of whose
 // aliases) is the key of feedURL, so http/https and other spellings of one
-// feed reuse its row. A URL without a key (credentials, odd scheme) never
-// matches: it gets a row of its own with a legacy key. Titles are not
+// feed reuse its row. A URL without a key (credentials, odd scheme) reuses
+// a row with exactly that URL, as before keys existed. Titles are not
 // identity and are no longer used to match.
-func (s *podcastSubscriptionService) findExistingFeed(ctx context.Context, feedURL string) (*model.PodcastFeed, error) {
+func (s *podcastSubscriptionService) findExistingFeed(ctx context.Context, setID int64, feedURL string) (*model.PodcastFeed, error) {
 	key, err := podcast.FeedKey(feedURL)
 	if err != nil {
-		return nil, nil
+		return s.findFeedByURL(ctx, setID, feedURL)
 	}
 	feed, err := s.podcastService.store.GetFeedByKey(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("find feed by key: %w", err)
 	}
 	return feed, nil
+}
+
+// findFeedByURL returns the catalog feed of setID fetched from exactly
+// feedURL, or nil.
+func (s *podcastSubscriptionService) findFeedByURL(ctx context.Context, setID int64, feedURL string) (*model.PodcastFeed, error) {
+	feeds, err := s.podcastService.store.ListFeedsBySetID(ctx, setID)
+	if err != nil {
+		return nil, fmt.Errorf("list feeds by set: %w", err)
+	}
+	for i := range feeds {
+		if feeds[i].FeedURL == feedURL && feeds[i].MergedInto == nil {
+			return &feeds[i], nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *podcastSubscriptionService) verifyAdmin(ctx context.Context, userID int64) error {

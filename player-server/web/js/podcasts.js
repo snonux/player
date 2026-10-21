@@ -3,6 +3,7 @@ import { API } from './api.js';
 import { state } from './state.js';
 import { escapeHtml, fmtDur, toast } from './utils.js';
 import { renderSets } from './views/sets.js';
+import { setSubscribed } from './podcast-subscriptions.js';
 
 export function initPodcasts() {
   const modal = document.getElementById('podcast-modal');
@@ -33,54 +34,94 @@ export function initPodcasts() {
   });
 }
 
+// refreshPodcasts lists the server's catalog feeds in two groups: those the
+// signed-in user is subscribed to, and those still on the server without
+// the user's subscription. Re-rendering keeps keyboard focus in place
+// through modal-focus.js.
 async function refreshPodcasts() {
   const listEl = document.getElementById('podcast-list');
   if (!listEl) return;
   try {
-    const podcasts = await API.podcasts();
-    if (!podcasts || !podcasts.length) {
-      listEl.innerHTML = '<p class="text-muted text-sm">No podcasts subscribed.</p>';
+    const podcasts = await API.podcasts() || [];
+    if (!podcasts.length) {
+      listEl.innerHTML = '<p class="text-muted text-sm">No podcasts on the server.</p>';
       return;
     }
-    listEl.innerHTML = podcasts.map(feedRowHtml).join('');
-    listEl.querySelectorAll('[data-unsubscribe]').forEach((button) => {
-      const feed = podcasts.find((p) => String(p.id) === button.dataset.unsubscribe);
-      button.addEventListener('click', () => unsubscribe(feed, button));
+    const subscribed = podcasts.filter((p) => p.subscribed);
+    const others = podcasts.filter((p) => !p.subscribed);
+    listEl.innerHTML = feedGroupHtml('Subscribed', subscribed, 'You are not subscribed to any podcast.')
+      + (others.length ? feedGroupHtml('Not subscribed (still on the server)', others, '') : '');
+    listEl.querySelectorAll('[data-feed-action]').forEach((button) => {
+      const feed = podcasts.find((p) => String(p.id) === button.dataset.feedId);
+      button.addEventListener('click', () => feedAction(button.dataset.feedAction, feed, button));
     });
   } catch (err) {
     listEl.innerHTML = `<p class="error-message">${escapeHtml(err.message)}</p>`;
   }
 }
 
+function feedGroupHtml(title, feeds, emptyText) {
+  const rows = feeds.length ? feeds.map(feedRowHtml).join('') : `<p class="text-muted text-sm">${escapeHtml(emptyText)}</p>`;
+  return `<h5 class="my-1 text-90">${escapeHtml(title)}</h5>${rows}`;
+}
+
 function feedRowHtml(p) {
   const name = escapeHtml(p.title || p.feed_url);
-  return `<div class="podcast-feed-row py-1 border-b">
+  const toggle = p.subscribed
+    ? `<button type="button" class="btn btn-sm" data-feed-action="unsubscribe" data-feed-id="${p.id}"
+      aria-label="Unsubscribe from ${name}">Unsubscribe</button>`
+    : `<button type="button" class="btn btn-primary btn-sm" data-feed-action="subscribe" data-feed-id="${p.id}"
+      aria-label="Subscribe to ${name}">Subscribe</button>`;
+  return `<div class="podcast-feed-row py-1 border-b" data-feed-key="${escapeHtml(p.feed_key || '')}">
     <img class="podcast-feed-cover" src="${escapeHtml(p.image_url || '/favicon.svg')}" alt="" loading="lazy">
     <span class="flex-1">${name}</span>
     <span class="text-xs text-muted">${escapeHtml(p.feed_url)}</span>
-    <button type="button" class="btn btn-danger btn-sm" data-unsubscribe="${p.id}"
-      aria-label="Unsubscribe from ${name}">Unsubscribe</button>
+    ${toggle}
+    <button type="button" class="btn btn-danger btn-sm" data-feed-action="remove" data-feed-id="${p.id}"
+      aria-label="Remove ${name} from the server">Remove from server</button>
   </div>`;
 }
 
-// Unsubscribing deletes downloaded episodes from the server, so it needs
-// an explicit confirmation naming the feed.
-async function unsubscribe(feed, button) {
-  const name = feed?.title || feed?.feed_url || 'this podcast';
-  if (!feed || !confirm(`Unsubscribe from "${name}"? Its downloaded episodes are deleted, including everyone's notes, progress, favorites and shares for them. Its cover art goes too unless another feed or other library media still uses the folder; other files are kept.`)) return;
+async function feedAction(action, feed, button) {
+  if (!feed) return;
+  if (action === 'remove') {
+    await removeFromServer(feed, button);
+    return;
+  }
+  const subscribe = action === 'subscribe';
   button.disabled = true;
   try {
-    await API.unsubscribePodcast(feed.id);
-    toast('Unsubscribed');
+    await setSubscribed(feed, subscribe);
+    toast(subscribe ? 'Subscribed' : 'Unsubscribed');
+    await refreshPodcasts();
+  } catch (err) {
+    restoreButton(button);
+    toast(err.message || (subscribe ? 'Subscribe failed' : 'Unsubscribe failed'), 'error');
+  }
+}
+
+// Removing from the server deletes the feed's downloaded episodes for every
+// user, so it needs an explicit confirmation naming the feed and the scope.
+async function removeFromServer(feed, button) {
+  const name = feed.title || feed.feed_url || 'this podcast';
+  if (!confirm(`Remove "${name}" from the server? This deletes its episodes downloaded to the server for everyone, including everyone's notes, bookmarks, favorites and shares for them. Its cover art goes too unless another feed or other library media still uses the folder; other files are kept. Subscriptions and listening history stay; while anyone is still subscribed the feed itself stays listed.`)) return;
+  button.disabled = true;
+  try {
+    await API.removePodcastFromServer(feed.id);
+    toast('Removed from the server');
     await refreshPodcasts();
     refreshSets();
     // The grid may be showing the removed feed's folder.
     document.dispatchEvent(new CustomEvent('library:changed'));
   } catch (err) {
-    button.disabled = false;
-    if (document.activeElement === document.body) button.focus();
-    toast(err.message || 'Unsubscribe failed', 'error');
+    restoreButton(button);
+    toast(err.message || 'Remove failed', 'error');
   }
+}
+
+function restoreButton(button) {
+  button.disabled = false;
+  if (document.activeElement === document.body) button.focus();
 }
 
 async function refreshSets() {

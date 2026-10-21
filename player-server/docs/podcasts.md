@@ -27,7 +27,20 @@ user and hour). Catalog rows created by non-admin users are fetched only
 from public unicast addresses. The checker refreshes a catalog feed only
 while at least one user is subscribed to it. Permanent redirects (301, 308)
 and `<itunes:new-feed-url>` move a feed's fetch URL and record the new
-URL's key as an alias; temporary redirects change nothing.
+URL's key as an alias; temporary redirects change nothing. Exceptions: a
+move to a URL whose key belongs to another catalog feed would need a merge
+(not implemented yet) and is only logged, the fetch URL stays; a feed with
+a `legacy-feed:` key gets the new fetch URL but no alias; at most 16 aliases
+are kept per feed, later moves still change the fetch URL.
+
+In the web UI (admin **Podcasts** dialog) **Unsubscribe** only changes the
+admin's own subscription; nothing is deleted. **Remove from server**
+deletes the feed's downloaded episodes for everyone (after a confirmation),
+and the feed itself only when nobody is subscribed any more.
+
+Until per-account episode state is read everywhere (task `wh3`), the
+listened toggle and media progress of downloaded episodes keep working as
+before and are additionally recorded in the user's episode state.
 
 Episodes are matched across fetches by stable keys (GUID, else enclosure
 URL), so GUID-less episodes, reordered items and changed GUIDs no longer

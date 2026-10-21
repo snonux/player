@@ -37,7 +37,7 @@ type sqlProgressTx interface {
 }
 
 func (s *progressTxStore) UpsertProgress(ctx context.Context, progress *model.PlaybackProgress) error {
-	return upsertProgress(ctx, s.tx, progress)
+	return upsertProgressAndEpisode(ctx, s.tx, progress)
 }
 
 func (s *progressTxStore) GetProgress(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error) {
