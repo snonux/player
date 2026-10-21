@@ -82,6 +82,24 @@ python3 adrv.py show            # list the labelled nodes on screen
 python3 adrv.py tap '^Settings$'
 ```
 
+## Music baseline (`music_e2e.py`)
+
+`music_e2e.py` runs the V01 music baseline against the disposable music
+fixture (`integration_test/support/music_fixture.py`) instead of a deployed
+server: sign-in, a touch journey to a track, media session and captured
+audio output, tap target sizes, Back hierarchy, saved progress, light and
+dark screenshots, ReplayGain fixture levels, a server restart and the
+regular account's permissions. It reaches the server through `adb reverse`
+(or `--host-alias` for 10.0.2.2) and writes evidence to the fixture's
+evidence directory. Shared steps live in `app_ui.py`. See
+`../../docs/music-e2e-verification.md` for the runbook, including the
+emulator's QEMU wav audio backend used for output capture.
+
+```sh
+python3 -u music_e2e.py <fixture-dir> --apk app-x86_64-release.apk \
+  --emulator-wav "$TMPDIR/emulator-output.wav"
+```
+
 ## Keeping it in sync
 
 - New extension in `player-server/internal/mediatype/mediatype.go`: add it to

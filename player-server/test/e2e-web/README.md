@@ -206,3 +206,23 @@ seeking, ranged compatibility/original downloads and single-use public share
 playback in installed Google Chrome and Playwright Firefox. No private media
 is used. The native checks use the same fixture; see
 `player-android/docs/media-format-verification.md`.
+
+## Music fixture suite (Chrome and Firefox)
+
+`tests/music-baseline.test.ts` runs against the disposable music fixture
+(`player-android/integration_test/support/music_fixture.py up`) with its own
+config: installed Google Chrome (`channel: 'chrome'`) and the system Firefox
+(`channel: 'moz-firefox'`, binary from `PLAYER_FIREFOX`, default
+`/usr/lib64/firefox/firefox`). It covers sign-in with a wrong password,
+a keyboard journey with focus restore and typing checks, a touch (Chrome) or
+mouse (Firefox) journey as the regular user, and calibration of the audio
+output capture (`tests/helpers/audio-tap.ts`).
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/printed/by/up \
+  npx playwright test -c playwright.music.config.ts
+```
+
+Results, screenshots and WAV captures go to the fixture's evidence
+directory. The full three-platform runbook is
+`player-android/docs/music-e2e-verification.md`.

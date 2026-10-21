@@ -14,10 +14,12 @@ directory). See README.md.
 import json, os, re, sys, time, urllib.parse, urllib.request, urllib.error, http.cookiejar
 from PIL import Image, ImageChops
 import adrv
+from app_ui import (back, labels, clear_field, swipe, ui_error_text, go_home, ensure_grid,
+                    open_detail)
+import app_ui
 
 BASE = sys.argv[1].rstrip("/")
 HOST = urllib.parse.urlparse(BASE).hostname
-PKG = "zone.foo.player_android"
 ENV_FILE = os.environ.get("PLAYER_E2E_ENV", os.path.expanduser("~/.config/player-e2e.env"))
 ENV = dict(line.strip().split("=", 1) for line in open(ENV_FILE) if "=" in line and not line.startswith("#"))
 OUT = os.environ.get("PLAYER_E2E_OUT", os.getcwd())
@@ -70,34 +72,10 @@ def anon_status(path):
     except urllib.error.HTTPError as err: return err.code
 
 # ---------------------------------------------------------------- UI helpers
-def back(n=1):
-    for _ in range(n):
-        adrv.adb("shell", "input", "keyevent", "KEYCODE_BACK"); time.sleep(1.3)
-
-def labels():
-    return [adrv.label(n) for n in adrv.nodes() if adrv.label(n)]
-
 def shot(name):
     path = os.path.join(SHOTS, name + ".png")
     adrv.shot(path)
     return path
-
-def clear_field(n=45):
-    adrv.adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
-    adrv.adb("shell", "input", "keyevent", *["KEYCODE_DEL"] * n)
-
-def swipe(up=True):
-    a, b = ("1700", "700") if up else ("700", "1700")
-    adrv.adb("shell", "input", "swipe", "540", a, "540", b, "400"); time.sleep(1.2)
-
-def find_scrolling(pattern):
-    """Find a grid item, scrolling the grid when it is off screen."""
-    for move in (None, True, True, False, False, False):
-        if move is not None: swipe(up=move)
-        node = adrv.find(pattern)
-        # Items clipped by the bottom edge are tappable but only just; nudge.
-        if node and node["b"][3] - node["b"][1] > 150: return node
-    return None
 
 def logcat_errors():
     out = adrv.adb("logcat", "-d")
@@ -116,75 +94,9 @@ def frames_differ(a, b, box):
     diff = ImageChops.difference(Image.open(a).convert("RGB").crop(box), Image.open(b).convert("RGB").crop(box))
     return diff.getbbox() is not None
 
-def ui_error_text():
-    hits = [l for l in labels() if re.search(r"(?i)error|failed|unsupported|cannot|could not|unable", l)]
-    return " | ".join(hits)[:200]
-
-def foreground():
-    return PKG in adrv.adb("shell", "dumpsys", "activity", "activities").split("topResumedActivity", 1)[-1][:200]
-
-def go_home():
-    """Return to the Library root without ever backing out of the app."""
-    adrv.adb("shell", "cmd", "statusbar", "collapse")
-    for _ in range(8):
-        if not foreground():
-            adrv.adb("shell", "monkey", "-p", PKG, "-c", "android.intent.category.LAUNCHER", "1"); time.sleep(4)
-        if "Open navigation menu" in labels(): return True
-        back()
-    return False
-
-def ensure_grid(set_name):
-    """Navigate back until the given set's grid is on screen."""
-    for _ in range(5):
-        current = labels()
-        if set_name in current and "Browse folders" in current: return True
-        if "Library" in current and "Open navigation menu" in current:
-            adrv.tap(f"^{set_name}$"); time.sleep(3); continue
-        if not foreground(): go_home(); continue
-        back()
-    return False
-
-def open_detail(set_name, file_name):
-    if not ensure_grid(set_name): return False
-    node = find_scrolling("^" + re.escape(file_name))
-    if not node: return False
-    adrv.tap_node(node); time.sleep(3)
-    return adrv.wait(r"^(Play Video|Play Audio|View Image)$", timeout=10) is not None
-
 # ---------------------------------------------------------------- journeys
 def connect_and_login(user, password, check_wrong_password=False):
-    adrv.adb("shell", "am", "force-stop", PKG)
-    adrv.adb("shell", "pm", "clear", PKG)
-    adrv.adb("shell", "monkey", "-p", PKG, "-c", "android.intent.category.LAUNCHER", "1")
-    ok = adrv.wait("^Connect to server$", timeout=40)
-    record("app starts in local mode with a Connect to server action", ok)
-    adrv.tap("^Connect to server$"); time.sleep(2)
-    adrv.tap(".", cls="EditText"); time.sleep(1)
-    clear_field(); adrv.type_text(BASE); time.sleep(1)
-    adrv.tap("^Save URL$")
-    record("saving the server URL leads to Sign In", adrv.wait("^Welcome back$", timeout=25))
-    fields = [n for n in adrv.nodes() if n["cls"] == "EditText"]
-    adrv.tap_node(fields[0]); time.sleep(1); adrv.type_text(user)
-    if check_wrong_password:
-        adrv.tap_node(fields[1]); time.sleep(1); adrv.type_text("definitely-wrong-pw")
-        adrv.adb("shell", "input", "keyevent", "KEYCODE_ENTER")
-        seen = ""
-        for _ in range(4):
-            seen = ui_error_text() or " | ".join(l for l in labels() if re.search(r"(?i)invalid|incorrect|credential", l))
-            if seen: break
-        shot("login-wrong-password")
-        still_login = adrv.find("^Welcome back$") is not None
-        record("wrong password is rejected with a visible message", bool(seen) and still_login, seen or "no error text found in UI")
-        fields = [n for n in adrv.nodes() if n["cls"] == "EditText"]
-        adrv.tap_node(fields[1]); time.sleep(1); clear_field(25)
-    else:
-        adrv.tap_node(fields[1]); time.sleep(1)
-    adrv.type_text(password)
-    adrv.adb("shell", "input", "keyevent", "KEYCODE_ENTER"); time.sleep(2)
-    if adrv.find("^Welcome back$"):
-        adrv.adb("shell", "input", "keyevent", "KEYCODE_BACK"); time.sleep(1)
-        adrv.tap("^Sign In$", cls="Button")
-    return adrv.wait("^Library$", timeout=30) is not None
+    return app_ui.connect_and_login(BASE, user, password, record, shot, check_wrong_password)
 
 def test_library_listing():
     found = labels()

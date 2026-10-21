@@ -1009,7 +1009,9 @@ Playlist detail routing: like the queue, an `isPlaylistEditable()` branch in
 Each dependent task follows its row in the candidate map and:
 
 1. Uses a disposable local server and the shared tagged fixture from `oj3`
-   (Music V01) — the fixture described in §2 is the minimum.
+   (Music V01) — the fixture described in §2 is the minimum. Runbook,
+   library contents, evidence format and audio-capture limits:
+   [`player-android/docs/music-e2e-verification.md`](../player-android/docs/music-e2e-verification.md).
 2. Runs the journey in installed Google Chrome (codec-capable, Playwright
    `channel: chrome`), installed Mozilla Firefox (Playwright `moz-firefox`
    channel with `executablePath` of the installed binary; Playwright's

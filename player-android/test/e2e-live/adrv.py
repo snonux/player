@@ -2,8 +2,12 @@
 """Tiny adb/uiautomator driver for the Player Android app (Flutter semantics)."""
 import re, subprocess, sys, time, html
 
+# A hung device command (uiautomator after a host suspend) must fail the step
+# instead of blocking a whole run.
+ADB_TIMEOUT = 120
+
 def adb(*a, binary=False):
-    r = subprocess.run(["adb", *a], capture_output=True)
+    r = subprocess.run(["adb", *a], capture_output=True, timeout=ADB_TIMEOUT)
     return r.stdout if binary else r.stdout.decode(errors="replace")
 
 def nodes():
