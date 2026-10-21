@@ -23,3 +23,11 @@ for (const bad of ['https://evil.example', '//evil.example', '/\\evil.example', 
 assert.equal(safeReturnTo(url), url);
 assert.equal(new URLSearchParams(loginDestination('/login.html', url).split('?')[1]).get('return_to'), url);
 console.log('Deep link serialization and return destination tests passed.');
+const music = { ...state, selectedSetIds: [], folderPath: '', virtualSet: '', music: {album:'al_123',artist:'ar_456',name:'A & B / 東京'} };
+assert.deepEqual(readLibraryURL(libraryURL(music).slice(1)).music, music.music);
+assert.equal(readLibraryURL('?view=in-progress').music, null);
+
+assert.match(libraryURL(music), /music=album/);
+assert.equal(new URLSearchParams(libraryURL(music).slice(2)).has('search'), false);
+assert.equal(readLibraryURL('?music=albums&search=ignored&set=1').filters.search, '');
+assert.deepEqual(readLibraryURL('?music=albums&set=1').sets, []);

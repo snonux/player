@@ -238,3 +238,27 @@ PLAYER_MUSIC_FIXTURE=/path/printed/by/up \
 These retain Sets browse/folder/wrap/resume behavior while ensuring that
 advancing from audio skips image cards. They do not assert a separate music
 queue or future repeat/shuffle/persistence behavior.
+
+M02 album catalog/detail and collection acceptance uses the same isolated
+fixture (regenerate it so Restricted includes the hidden contribution to
+Night Transit):
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/printed/by/up \
+  npx playwright test -c playwright.music.config.ts --workers=1 --grep M02
+```
+
+The three journeys per browser cover library and song entry, actual artwork,
+viewer-only totals vs an admin-only contribution, disc/track ordering, linked
+artist album filtering, light/dark/narrow catalog and detail layouts,
+selection/focus/typing, actual browser offline Retry and real ACL-empty states,
+original-source audible natural A→B→C playback while browsing another album,
+short-song start at zero, stop at collection end, and a real permission
+revocation/restoration during playback. The failed next source stays current
+and the existing Play/Pause retry reloads that source. The fixture account's
+permission is restored in `finally`; use serial workers because ACL edits
+are deliberately shared fixture state. A browser Back journey restores a
+different Sets source and proves Next follows that set, while ordinary album
+browsing retains the active collection snapshot. The design journey also
+checks that a pending search cannot override explicit Albums navigation,
+while intentional search still opens Sets results.

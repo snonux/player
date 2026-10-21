@@ -39,8 +39,13 @@ export function focusSearch() {
   }
 }
 
-export function trigger(query) {
+export function cancelPendingSearch() {
   clearTimeout(_debounceTimer);
+  _debounceTimer = null;
+}
+
+export function trigger(query) {
+  cancelPendingSearch();
   _onChange(query);
 }
 

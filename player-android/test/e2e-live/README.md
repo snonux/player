@@ -132,3 +132,25 @@ requires keyguard state before claiming lockscreen proof. `--scenario` selects
 a focused recovery while retaining prior attempts. It uses only the disposable
 fixture, adds one generated spoken-audio source there, and clears app/reverse
 state at teardown. Missing native controls or audio capture are failures.
+
+M02 albums use the disposable music fixture and an emulator started with QEMU
+WAV capture, as described in `../../docs/music-e2e-verification.md`:
+
+```sh
+python3 test/e2e-live/music_albums_e2e.py /path/printed/by/music_fixture/up \
+  --apk build/app/outputs/flutter-apk/app-release.apk \
+  --emulator-wav /outside/repository/emulator-output.wav
+```
+
+The runner signs into the regular viewer account, compares real permissioned
+catalog/detail/artwork identities with the admin-only contribution to the same
+album, uses library and song entry, linked artist filtering, disc rows,
+light/dark/long names and Back. It captures original audio for ordered natural
+A→B→C completion after leaving the player and album screens, proves start0 and
+stopend plus fresh progress on replay, uses the real notification shade Next
+for the album collection with audible target/progress proof, and exercises
+real album/stream ACL
+failure and Retry. It removes/restores the adb reverse route for actual
+offline request recovery; run without `--host-alias` for this check.
+`--scenario catalog|natural|errors` supports focused recovery while preserving
+failed evidence. Never point this runner at a production database.

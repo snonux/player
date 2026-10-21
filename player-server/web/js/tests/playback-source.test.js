@@ -463,8 +463,56 @@ async function testDelayedCompletionCannotAdvanceAReplacement() {
 }
 
 console.log = () => {};
+async function testAlbumCollectionSurvivesBrowseButNotRestoredSource() {
+  setup();
+  const nav = await import('../views/playback-nav.js');
+  const { state } = await import('../state.js');
+  state.selectedSetId = null;
+  state.selectedSetIds = [];
+  state.music = { album: 'al_test' };
+  const songs = [101, 102, 103].map(id => ({ id, type: 'audio', file_name: `${id}.mp3`, duration: 12 }));
+  await nav.playAlbumCollection(songs, 0, 'Album');
+  // Ordinary browsing changes the visible list but leaves the source alone.
+  state.music = null;
+  state.media = [{ id: 999, type: 'audio', file_name: 'restored.mp3', duration: 12 }];
+  await nav.navigatePlayable(1, { forcePlay: true });
+  assertEqual(player.currentMediaId(), 102, 'browsing another list retains the album snapshot');
+  // This is the actual replacement used by navigation.restore for a different
+  // history media ID, not merely a navigation event or visible-list mutation.
+  player.selectMedia(state.media[0], 0, 0);
+  await nav.navigatePlayable(1, { forcePlay: true });
+  assertEqual(player.currentMediaId(), 999, 'history source replacement discards stale album entries');
+}
+
+async function testRapidNextDuringLongAlbumResumeKeepsCollection() {
+  setup();
+  const nav = await import('../views/playback-nav.js');
+  const { state } = await import('../state.js');
+  state.selectedSetId = null;
+  state.selectedSetIds = [];
+  state.music = null;
+  state.media = [];
+  let resolveProgress;
+  const progress = new Promise(resolve => { resolveProgress = resolve; });
+  const originalDetail = API.mediaDetail;
+  API.mediaDetail = id => id === 202 ? progress : Promise.resolve({ progress: null });
+  try {
+    const songs = [201, 202, 203].map(id => ({ id, type: 'audio', file_name: `${id}.mp3`, duration: id === 202 ? 1300 : 12 }));
+    await nav.playAlbumCollection(songs, 0, 'Long album');
+    const pending = nav.navigatePlayable(1, { forcePlay: true });
+    assertEqual(player.currentMediaId(), 201, 'old source remains active during long-track resume read');
+    await nav.navigatePlayable(1, { forcePlay: true });
+    assertEqual(player.currentMediaId(), 203, 'rapid Next retains collection while the intermediate target is pending');
+    resolveProgress({ progress: { position_seconds: 300 } });
+    await pending;
+    assertEqual(player.currentMediaId(), 203, 'stale progress read cannot replace the newer target');
+  } finally { API.mediaDetail = originalDetail; }
+}
+
 console.info('Running playback source tests...');
 for (const test of [
+  testRapidNextDuringLongAlbumResumeKeepsCollection,
+  testAlbumCollectionSurvivesBrowseButNotRestoredSource,
   testLocalFlushDoesNotOverwriteRemoteOwners,
   testInactiveOrStaleEndedEventCannotFinishCurrentAudio,
   testCompletionPrecedesAdvanceWithoutReopeningFinished,
@@ -488,6 +536,27 @@ for (const test of [
     failures.push(`${test.name} threw: ${err?.stack || err}`);
   }
 }
+
+// A pending Sets search must not replace an explicit Music navigation.
+try {
+  const { initSearch } = await import('../search.js');
+  const { openAlbums, openAlbum } = await import('../views/music-catalog.js');
+  const { state } = await import('../state.js');
+  const input = fakeElement('search-input');
+  let searches = 0;
+  initSearch({input, onChange: () => { searches++; state.music = null; }});
+  input.value = 'pending'; input.dispatch('input');
+  openAlbums();
+  await settle();
+  assert(state.music?.album === '', 'pending search must not replace Albums');
+  input.dispatch('input'); openAlbum('al_test');
+  await settle();
+  assertEqual(state.music?.album, 'al_test', 'pending search must not replace album detail');
+  input.value = 'intentional'; input.dispatch('input');
+  await settle();
+  assertEqual(searches, 1, 'new intentional search still runs');
+  assertEqual(state.music, null, 'intentional search returns to Sets results');
+} catch (err) { failures.push(`Music search navigation threw: ${err?.stack || err}`); }
 
 if (failures.length) {
   console.error('FAILURES:');

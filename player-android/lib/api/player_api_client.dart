@@ -42,6 +42,21 @@ class PlayerApiClient implements ProgressSyncClient {
   // The configured Dio instance with auth/401 interceptors already applied.
   final Dio _dio;
 
+  Future<List<Map<String, dynamic>>> musicAlbums(
+      {String? artist, int? mediaId}) async {
+    final response =
+        await _dio.get<List<dynamic>>('/api/v1/music/albums', queryParameters: {
+      if (artist != null) 'artist': artist,
+      if (mediaId != null) 'media_id': mediaId,
+    });
+    return (response.data ?? []).cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> musicAlbum(String key) async =>
+      (await _dio.get<Map<String, dynamic>>(
+              '/api/v1/music/albums/${Uri.encodeComponent(key)}'))
+          .data!;
+
   // ---------------------------------------------------------------------------
   // Auth
   // ---------------------------------------------------------------------------

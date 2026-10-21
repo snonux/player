@@ -91,6 +91,11 @@ async function openMediaInfo(id) {
   try {
     const detail = await API.mediaDetail(id);
     body.innerHTML = renderMediaInfo(detail);
+    if (detail?.media?.type === 'audio') {
+      const button = document.createElement('button'); button.className='btn btn-ghost'; button.textContent='Open album';
+      button.onclick = () => { closeMediaInfo(); document.dispatchEvent(new CustomEvent('music:open-song-album',{detail:id})); };
+      body.prepend(button);
+    }
   } catch (err) {
     body.innerHTML = `<p class="error-message">${escapeHtml(err.message || 'Failed to load media info')}</p>`;
   }

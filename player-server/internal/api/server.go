@@ -357,6 +357,8 @@ func (s *Server) routesSets() {
 
 // routesMedia wires the media-related API routes.
 func (s *Server) routesMedia() {
+	s.handleBoth(http.MethodGet, "/api/music/albums", s.requireSession(s.handleMusicAlbums))
+	s.handleBoth(http.MethodGet, "/api/music/albums/{album_key}", s.requireSession(s.handleMusicAlbums))
 	s.handleBoth(http.MethodGet, "/api/media", s.requireSession(s.handleListMedia))
 	s.handleBoth(http.MethodGet, "/api/media/{id}", s.requireSession(s.handleGetMedia))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/stream", s.requireSession(s.handleStream))

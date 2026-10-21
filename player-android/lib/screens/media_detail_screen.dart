@@ -371,6 +371,25 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       child: _MediaDetailContent(
         media: _media!,
         thumbnailUrl: client.thumbnailUrl(_media!.id),
+        onOpenAlbum: () async {
+          try {
+            final albums = await client.musicAlbums(mediaId: _media!.id);
+            if (!context.mounted) return;
+            if (albums.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('No album for this item.')));
+              return;
+            }
+            context.push(
+                '${AppRoutes.musicAlbums}?album=${Uri.encodeComponent(albums.first['album_key'] as String)}');
+          } catch (_) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text(
+                      'Could not open album. Check your connection and try again.')));
+            }
+          }
+        },
         onFavoriteToggle: _toggleFavorite,
         onPlay: _play,
         // Pass the client so _MediaDetailContent can hand it to TagPicker;
@@ -407,6 +426,7 @@ class _MediaDetailContent extends StatelessWidget {
     required this.media,
     required this.thumbnailUrl,
     required this.onFavoriteToggle,
+    required this.onOpenAlbum,
     required this.onPlay,
     required this.client,
   });
@@ -418,6 +438,7 @@ class _MediaDetailContent extends StatelessWidget {
 
   /// Called when the favourite icon button is tapped.
   final VoidCallback onFavoriteToggle;
+  final VoidCallback onOpenAlbum;
 
   /// Called when the play button is tapped.
   final VoidCallback onPlay;
@@ -475,6 +496,11 @@ class _MediaDetailContent extends StatelessWidget {
             const SizedBox(height: 8),
 
             if (media.musicSubtitle.isNotEmpty) Text(media.musicSubtitle),
+            if (media.type == 'audio')
+              TextButton.icon(
+                  onPressed: onOpenAlbum,
+                  icon: const Icon(Icons.album_outlined),
+                  label: const Text('Open album')),
             if (media.type == 'audio')
               ExpansionTile(
                 title: const Text('Music details'),

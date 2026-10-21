@@ -70,6 +70,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   List<PlaybackRequest> _musicEntries = const [];
   int _musicIndex = -1;
   bool _movingTrack = false;
+  bool _musicWrap = true;
+  bool _collectionEnded = false;
   int? _failedMusicDelta;
   Duration? _retryMusicPosition;
   Duration _musicPosition = Duration.zero;
@@ -85,7 +87,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Transfers the displayed source list and account-scoped loader to the background
   /// handler. Neither callback may capture a screen or a WidgetRef.
   void startMusicSequence(
-      {required List<PlaybackRequest> entries,
+      {bool wrap = true,
+      required List<PlaybackRequest> entries,
       required int index,
       required Future<AudioSource?> Function(PlaybackRequest, bool Function())
           load,
@@ -102,6 +105,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         _musicPosition = position;
       }
     });
+    _collectionEnded = false;
+    _musicWrap = wrap;
     _musicEntries = List.unmodifiable(entries);
     _musicIndex = index;
     _musicLoader = load;
@@ -133,12 +138,21 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> _completeTrack(AudioProgressSession progress) async {
     await progress.record(force: true, completed: true);
     if (!identical(progress, _progress) || !_canControlSource) return;
-    if (_musicIndex >= 0) await _moveTrack(1);
+    if (_musicIndex >= 0) await _moveTrack(1, completed: true);
   }
 
-  Future<void> _moveTrack(int delta, {Duration? resumePosition}) async {
+  Future<void> _moveTrack(int delta,
+      {Duration? resumePosition, bool completed = false}) async {
     if (_movingTrack || !_canControlSource || _musicIndex < 0) return;
     var target = _musicIndex + delta;
+    // Manual boundary controls are no-ops: keep the source, playback and its
+    // progress session. Natural completion still flushes and stops below.
+    if (!_musicWrap &&
+        !completed &&
+        (target < 0 || target >= _musicEntries.length)) {
+      return;
+    }
+    _collectionEnded = false;
     _failedMusicDelta = delta;
     if (delta != 0) _retryMusicPosition = null;
     _movingTrack = true;
@@ -151,6 +165,14 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       if (!current()) return;
       await _player.pause();
       _publishMusic(loading: true);
+      if (!_musicWrap && (target < 0 || target >= _musicEntries.length)) {
+        _controlsEnabled = true;
+        _collectionEnded = completed;
+        _failedMusicDelta = null;
+        _publishMusic();
+        _broadcastState();
+        return;
+      }
       if (target < 0 || target >= _musicEntries.length) {
         final old = _musicEntries[_musicIndex].identity;
         final expanded = await _expandMusic!();
@@ -241,6 +263,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _retryMusicPosition = null;
     _musicEntries = const [];
     _musicIndex = -1;
+    _collectionEnded = false;
     _musicState = null;
     _musicLoader = null;
     _expandMusic = null;
@@ -324,7 +347,25 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> play() async {
     if (!_canControlSource) return;
+    // The visible Retry owns failed album transitions. Native Play must not
+    // resume the previous source while the failed target is shown.
+    if (!_musicWrap && _musicState?.error != null) return;
     try {
+      // A completed album ends its old terminal progress session. Replaying
+      // that source starts a fresh session; a deliberate seek back is kept.
+      if (_collectionEnded && _musicIndex >= 0 && _progress == null) {
+        _collectionEnded = false;
+        final generation = _sourceGeneration;
+        final total = _player.duration;
+        if (total != null && _player.position >= total) {
+          await seekForSession(Duration.zero, generation);
+        }
+        if (generation != _sourceGeneration || !_canControlSource) return;
+        final request = _musicEntries[_musicIndex];
+        startProgress(
+            savePosition: request.savePosition!,
+            markFinished: request.markFinished!);
+      }
       await _player.play();
     } catch (error) {
       _onPlaybackError(error);
@@ -345,6 +386,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _retryMusicPosition = null;
     _musicEntries = const [];
     _musicIndex = -1;
+    _collectionEnded = false;
     _musicState = null;
     _musicLoader = null;
     _expandMusic = null;
@@ -470,6 +512,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Marks the media session as failed, so the notification stops showing a
   /// playing item, and tells the screen (if one is listening).
   void _onPlaybackError(Object error) {
+    _collectionEnded = false;
     if (_musicIndex >= 0) {
       // Runtime failures belong to the handler's current track even after
       // Back. A later Retry must not rebuild the original route's source.

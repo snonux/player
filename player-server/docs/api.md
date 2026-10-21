@@ -2349,3 +2349,33 @@ ID3/MP4 values, so those containers currently retain its display string rather
 than infer boundaries from punctuation. Original display tags and structured
 artist arrays remain separate when both are present. No album/artist catalog
 identities or extra API endpoints are introduced in this slice.
+
+### Music albums
+
+`GET /api/v1/music/albums` (also `/api/music/albums`) returns an array of
+caller-visible albums. Optional `artist=ar_<hash>` filters by the linked album
+artist and `media_id=N` resolves the album containing an accessible song.
+`GET /api/v1/music/albums/{album_key}` (also `/api/music/albums/{album_key}`)
+returns one album with `songs`, existing Media objects in disc/track order.
+Unknown disc/track numbers follow known numbers; filename/path/id break ties.
+
+Album objects contain `album_key`, `title`, `artist`, `artist_key`, optional
+`year`, `from_folder`, optional `cover_media_id`, `song_count`, and `duration`
+(seconds). The detail adds `songs`. Artwork uses the ordinary authenticated
+media thumbnail endpoint. All counts, artwork and songs derive exclusively
+from the caller's permitted non-podcast audio. M4B and sources named as
+audiobooks are excluded, consistently with Sets music sequencing.
+
+Album keys use a valid indexed MusicBrainz release UUID (`music.release_mbid`)
+when present, otherwise whitespace-normalized lowercase album artist and title
+(with track artist/Unknown artist fallback). Year and disc folders do not
+split a tagged album. Without an album tag, a set/folder identity supplies the
+title and `from_folder: true`. Identical unqualified releases can merge until
+future mapping support; keys may change on retag. Artist links currently
+filter this album catalog; a complete artist discography is a separate feature.
+
+Both routes require cookie/Bearer auth. Empty catalogs return `[]`; missing,
+removed or forbidden detail keys all return `404` with an unavailable message,
+without revealing whether another account has that album. Internal read errors
+return `500`. Album playback remains client-owned, using existing media IDs,
+stream URLs and progress routes; no queue editing or persistence API is added.

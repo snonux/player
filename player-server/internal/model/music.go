@@ -3,6 +3,7 @@ package model
 // MusicMetadata holds embedded music tags, independently of file identity and user tags.
 // Empty fields represent missing tags; numbers are positive or zero (unknown).
 type MusicMetadata struct {
+	ReleaseMBID  string   `json:"release_mbid,omitempty"`
 	Title        string   `json:"title,omitempty"`
 	Artist       string   `json:"artist,omitempty"`
 	Artists      []string `json:"artists,omitempty"`

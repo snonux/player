@@ -124,3 +124,11 @@ func TestMusicRealContainers(t *testing.T) {
 		})
 	}
 }
+
+func TestMusicReleaseID(t *testing.T) {
+	const id = "12345678-1234-1234-abcd-123456789012"
+	got := parseMusicTags(musicTags(map[string]string{"MUSICBRAINZ_ALBUMID": id}))
+	if got.ReleaseMBID != id {
+		t.Fatalf("release id %q", got.ReleaseMBID)
+	}
+}

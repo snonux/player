@@ -166,6 +166,135 @@ void main() {
     });
   }
 
+  test(
+      'album boundaries preserve active progress; natural end stops without wrap',
+      () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    final saves = <String>[];
+    var completions = 0;
+    var expansions = 0;
+    final entries = [1, 2]
+        .map((id) => ServerPlaybackRequest(
+              mediaId: id,
+              serverOrigin: 'http://local',
+              userId: 1,
+              title: 'Song $id',
+              sourceUri: Uri.parse('http://local/$id'),
+              startPosition: 0,
+              readPosition: () async => 9,
+              savePosition: (position) async {
+                saves.add('$id:$position');
+              },
+              markFinished: () async {
+                completions++;
+              },
+            ))
+        .toList();
+    handler.activateSourceSession(handler.beginSourceSession());
+    handler.startProgress(
+        savePosition: entries.first.savePosition!,
+        markFinished: entries.first.markFinished!);
+    handler.startMusicSequence(
+        wrap: false,
+        entries: entries,
+        index: 0,
+        expand: () async {
+          expansions++;
+          return entries;
+        },
+        changed: (_) {},
+        load: (request, current) async => AudioSource.uri(request.sourceUri));
+    await handler.skipToPrevious();
+    expect(player.running, isTrue);
+    await handler.seek(const Duration(seconds: 4));
+    await handler.saveProgress();
+    expect(saves, contains('1:4.0'));
+    await handler.skipToNext();
+    expect(player.position, Duration.zero);
+    expect(handler.musicState?.request.identity, entries.last.identity);
+    final loads = player.loads;
+    await handler.skipToNext();
+    expect(player.loads, loads);
+    expect(player.running, isTrue);
+    await handler.seek(const Duration(seconds: 5));
+    await handler.saveProgress();
+    expect(saves, contains('2:5.0'));
+    player.elapsed = const Duration(seconds: 10);
+    player.processing.add(ProcessingState.completed);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(player.running, isFalse);
+    expect(expansions, 0);
+    expect(player.loads, loads);
+    expect(handler.musicState?.request.identity, entries.last.identity);
+    expect(completions, 1);
+    await handler.play();
+    expect(player.position, Duration.zero);
+    await handler.seek(const Duration(seconds: 3));
+    await handler.saveProgress();
+    expect(saves, contains('2:3.0'));
+    player.elapsed = const Duration(seconds: 10);
+    player.processing.add(ProcessingState.completed);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(completions, 2);
+    await handler.seek(const Duration(seconds: 2));
+    await handler.play();
+    expect(player.position, const Duration(seconds: 2));
+    await handler.seek(const Duration(seconds: 4));
+    await handler.saveProgress();
+    expect(saves, contains('2:4.0'));
+    await handler.stop();
+    await player.processing.close();
+    await player.events.close();
+    await player.positions.close();
+  });
+
+  test(
+      'native Play after a failed album transition cannot start target progress on an old source',
+      () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    final saves = <int>[];
+    final entries = [1, 2]
+        .map((id) => ServerPlaybackRequest(
+            mediaId: id,
+            serverOrigin: 'http://local',
+            userId: 1,
+            title: 'Song $id',
+            sourceUri: Uri.parse('http://local/$id'),
+            savePosition: (_) async {
+              saves.add(id);
+            },
+            markFinished: () async {}))
+        .toList();
+    handler.activateSourceSession(handler.beginSourceSession());
+    handler.startProgress(
+        savePosition: entries.first.savePosition!,
+        markFinished: entries.first.markFinished!);
+    handler.startMusicSequence(
+        wrap: false,
+        entries: entries,
+        index: 0,
+        expand: () async => entries,
+        changed: (_) {},
+        load: (_, __) async {
+          throw StateError('denied before source replacement');
+        });
+    await handler.skipToNext();
+    expect(handler.musicState?.request.identity, entries.last.identity);
+    expect(handler.musicState?.error, isStateError);
+    expect(player.loads, 0);
+    await handler.play();
+    expect(player.running, isFalse);
+    await handler.seek(const Duration(seconds: 4));
+    await handler.saveProgress();
+    expect(saves, isNot(contains(2)));
+    await handler.stop();
+    await player.processing.close();
+    await player.events.close();
+    await player.positions.close();
+  });
+
   test('stop invalidates pending track preparation and rapid skips do not race',
       () async {
     final player = _Player();
@@ -297,8 +426,9 @@ void main() {
         expand: () async => entries,
         changed: (_) {},
         load: (request, current) async {
-          if (failThird && request.title == 'Song 3')
+          if (failThird && request.title == 'Song 3') {
             throw StateError('third unavailable');
+          }
           return AudioSource.uri(request.sourceUri);
         });
     await handler.skipToNext();

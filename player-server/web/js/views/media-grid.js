@@ -42,7 +42,7 @@ export function initMediaGrid(options = {}) {
 
   grid?.addEventListener('dblclick', (e) => {
     const el = e.target.closest('.media-card, .media-row');
-    if (!el) return;
+    if (!el || state.music) return;
     selectByElement(el);
     if (el.classList.contains('set-card')) {
       callbacks.openSet?.(parseInt(el.dataset.setId, 10));
@@ -88,6 +88,11 @@ export async function loadMedia(options = {}) {
     const setIds = state.selectedSetIds.length > 1 ? state.selectedSetIds.join(',') : '';
     const singleSetId = state.selectedSetIds.length === 1 ? state.selectedSetIds[0] : null;
 
+    grid.classList.remove('music-detail');
+    if (state.music) {
+      await callbacks.renderMusic?.(grid, () => revision === loadRevision);
+      return;
+    }
     if (state.virtualSet === 'in-progress') {
       breadcrumb?.classList.add('hidden');
       syncMediaPage('virtual:in-progress', options.page);

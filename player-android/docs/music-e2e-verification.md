@@ -48,7 +48,10 @@ Library (all tones are sine waves, so the analyser can tell tracks apart):
   file, to calibrate gap detection on every platform); `Road Trip.m3u` with
   one unresolved entry. The M4A file carries iTunes atoms (`©nam`, `aART`,
   `trkn`, `disk`, `cpil`).
-- set `Restricted`: one admin-only track.
+- set `Restricted`: two admin-only tracks: Hidden Album, plus a contribution
+  to Night Transit with the same album identity as the permitted Music songs.
+  M02 expects admin totals of four vs viewer totals of three, proving that
+  hidden songs never affect viewer album counts, duration, artwork or order.
 
 Accounts: `music-admin` (admin) and `music-user` (viewer of `Music` only),
 with random passwords in `auth.json` and `e2e.env` (mode 600).

@@ -1,3 +1,4 @@
+import { initMusicCatalog, renderMusic, backMusic, openAlbum, openSongAlbum } from './views/music-catalog.js';
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initPictureLayout } from './views/picture-layout.js';
@@ -166,9 +167,13 @@ async function initApp() {
     onPrevious: (options) => navigatePlayable(options?.delta ?? -1, options),
   });
   initSelection();
+  initMusicCatalog(loadMedia);
+  document.addEventListener('music:song-info', toggleMediaInfo);
+  document.addEventListener('music:open-song-album', e => openSongAlbum(e.detail));
   initSearch({
     onChange: (q) => {
       const parsed = parseQuery(q);
+      state.music = null;
       state.virtualSet = '';
       syncChromeVirtualSets();
       applySearchSet(parsed);
@@ -187,12 +192,14 @@ async function initApp() {
   initPlaybackNav({ isShuffle });
   initSets({
     onLoadMedia: () => {
+      state.music = null;
       state.virtualSet = '';
       syncChromeVirtualSets();
       loadMedia();
     },
   });
   initMediaGrid({
+    renderMusic,
     isShuffle,
     shuffleRevision,
     onSetCleared: updateSetRowsUI,
@@ -377,7 +384,7 @@ function keyboardHandlers() {
     help: toggleHelp,
     backspace: (e) => {
       e.preventDefault();
-      if (!escapeMediaView()) navigateBack();
+      if (!escapeMediaView() && !backMusic()) navigateBack();
     },
     isMediaInfoOpen,
     isModalOpen: isDialogOpen,
@@ -439,6 +446,7 @@ function firstGridElement() {
 function activateGridElement(el) {
   if (!el) return;
   selectByElement(el);
+  if (el.dataset.album) { openAlbum(el.dataset.album); return; }
   if (el.classList.contains('set-card')) {
     const id = parseInt(el.dataset.setId, 10);
     openSet(id);
@@ -460,6 +468,7 @@ function activateGridElement(el) {
 }
 
 function openSet(id) {
+  state.music = null;
   if (!Number.isFinite(id)) return;
   state.virtualSet = '';
   state.selectedSetId = id;
@@ -483,6 +492,7 @@ async function markAsNotStartedAndRefresh(id) {
 }
 
 function openInProgress() {
+  state.music = null;
   state.virtualSet = state.virtualSet === 'in-progress' ? '' : 'in-progress';
   state.selectedSetId = null;
   state.selectedSetIds = [];

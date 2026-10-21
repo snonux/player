@@ -139,6 +139,12 @@ TRACKS = [
          codec='flac-16-44', tone_hz=[100.0, 1000.0, 8000.0], level_dbfs=-18,
          tags={'title': 'Three Tones', 'artist': 'Level Lab', 'album': 'EQ Probe',
                'genre': 'Test Tones'}),
+    # Shares the public album identity, but must never affect viewer totals,
+    # ordered songs or artwork. M02 verifies aggregation after ACL filtering.
+    dict(path='Restricted/Hidden contribution/00 - Hidden First Light.mp3',
+         codec='mp3-128', tone_hz=[233.08], level_dbfs=-12,
+         tags=dict(NIGHT_TRANSIT, title='Hidden Album Contribution',
+                   artist='Aurora Lane', track='4/4', disc='1/1')),
     dict(path='Restricted/Admin Only - Hidden Album/01 - Hidden Track.mp3',
          codec='mp3-128', tone_hz=[220.0], level_dbfs=-12,
          tags={'title': 'Hidden Track', 'artist': 'Secret Artist', 'album': 'Hidden Album',

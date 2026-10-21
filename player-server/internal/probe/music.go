@@ -37,6 +37,7 @@ func parseMusicTags(tags map[string]string) *model.MusicMetadata {
 		return ""
 	}
 	m := &model.MusicMetadata{Title: first("title"), Album: first("album"), Date: first("date", "year")}
+	m.ReleaseMBID = first("musicbrainz_albumid", "musicbrainz album id", "musicbrainz/release id")
 	m.Artists = musicValues(first("artists", "artist"))
 	m.Artist = first("artist")
 	if m.Artist == "" || strings.ContainsRune(m.Artist, 0) {

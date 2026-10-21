@@ -824,3 +824,27 @@ body {
   align-self: flex-start;
   margin-top: 0.2rem;
 }
+
+/* Music uses the library card grid and row selection vocabulary. */
+.album-cover { width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--bg-surface); }
+.album-placeholder { display: grid; place-items: center; font-size: 3rem; color: var(--text-muted); }
+.album-card { cursor: pointer; }
+.album-card .card-body { padding: 0.5rem; min-width: 0; }
+.album-card .card-body > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-grid.music-detail { display: flex; flex-direction: column; }
+.music-heading h1, #media-grid > .grid-full h1 { font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere; }
+.album-header { display: flex; gap: var(--gap); align-items: flex-start; margin-block: var(--gap); }
+.album-header .album-cover { width: min(30vw, 10rem); flex-shrink: 0; }
+.album-header > div { min-width: 0; }
+.album-header button[data-artist] { white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.music-song { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.music-song > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.music-number { min-width: 3rem; }
+@media (max-width: 480px) { .album-header { flex-wrap: wrap; } .music-detail .media-row { gap: 0.4rem; } .music-number { min-width: 2rem; } }
+
+.music-song .song-open { padding: 0; text-align: left; justify-content: flex-start; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 0.9rem; font-weight: 600; }
+
+/* Music credits and ordering are readable content in both themes. */
+.album-card .text-muted,
+.album-header .text-muted,
+.music-detail .text-muted { color: var(--text-secondary); }

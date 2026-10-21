@@ -1,5 +1,6 @@
 export const state = {
   user: null,
+  music: null,
   sets: [],
   selectedSetId: null,
   selectedSetIds: [], // multi-selection

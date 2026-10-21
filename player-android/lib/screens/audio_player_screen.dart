@@ -74,6 +74,7 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
     this.request,
     this.serverUserId = 0,
     this.sequence = const [],
+    this.albumCollection = false,
     this.traverseFolders = false,
   });
 
@@ -100,6 +101,7 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
   final PlaybackRequest? request;
   final int serverUserId;
   final List<Media> sequence;
+  final bool albumCollection;
   final bool traverseFolders;
 
   @override
@@ -503,11 +505,15 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         sourceUri: Uri.parse(client.playbackUrl(media)),
         title: media.displayTitle,
         sourceName: media.relPath,
+        startPosition:
+            widget.albumCollection && media.duration <= 1200 ? 0 : null,
         readPosition: () => client.getMediaProgress(media.id),
         savePosition: (seconds) => progress.enqueue(media.id, seconds),
         markFinished: () => progress.enqueueFinished(media.id));
     _musicEntries = widget.sequence
-        .where((m) => m.setId == setId && isMusicTrack(m, sets))
+        .where((m) =>
+            (widget.albumCollection || m.setId == setId) &&
+            isMusicTrack(m, sets))
         .map(entry)
         .toList();
     final displayed = List<PlaybackRequest>.of(_musicEntries);
@@ -517,6 +523,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       final media = await browseMusicSet(client, setId);
       return media.where((m) => isMusicTrack(m, sets)).map(entry).toList();
     };
+    if (widget.albumCollection) {
+      return _musicEntries
+          .firstWhere((entry) => entry.identity == request.identity);
+    }
     return request;
   }
 
@@ -531,6 +541,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     final baseUrl =
         Uri.parse((attempt.request as ServerPlaybackRequest).serverOrigin);
     handler.startMusicSequence(
+        wrap: !widget.albumCollection,
         entries: _musicEntries,
         index: _musicEntries
             .indexWhere((r) => r.identity == attempt.request.identity),

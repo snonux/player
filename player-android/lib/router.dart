@@ -1,3 +1,4 @@
+import 'screens/music_albums_screen.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -202,6 +203,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: AppRoutes.musicAlbums,
+        builder: (context, state) => MusicAlbumsScreen(
+          albumKey: state.uri.queryParameters['album'],
+          artistKey: state.uri.queryParameters['artist'],
+          artistName: state.uri.queryParameters['name'],
+        ),
+      ),
+      GoRoute(
         path: AppRoutes.mediaDetail,
         builder: (context, state) {
           // The ':id' path parameter is guaranteed by the route pattern.
@@ -327,6 +336,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                   ?.id ??
               0;
           return AudioPlayerScreen(
+            albumCollection: state.extra is Map &&
+                (state.extra as Map)['albumCollection'] == true,
             traverseFolders: state.extra is Map &&
                 (state.extra as Map)['traverseFolders'] == true,
             sequence: state.extra is Map
