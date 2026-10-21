@@ -119,8 +119,11 @@ func TestPodcastLegacyReadersSeeEpisodeState(t *testing.T) {
 	// The web replays the completed episode: position saves after the
 	// completion project unfinished, so it is In progress and an old
 	// Android client resumes it at the saved position instead of 0.
+	// One session (a device token) plays it: play counting is per session.
+	player := syncDeviceToken(t, e, "alice", "player")
 	for pos := 12; pos <= 72; pos += 12 {
-		if rr := e.request(ctx, http.MethodPost, "/api/v1/progress", "alice", fmt.Sprintf(`{"media_id":%d,"position_seconds":%d}`, mediaID, pos)); rr.Code != http.StatusOK {
+		rr := syncDeviceRequest(t, e.server, player, http.MethodPost, "/api/v1/progress", map[string]any{"media_id": mediaID, "position_seconds": pos})
+		if rr.Code != http.StatusOK {
 			t.Fatalf("progress = %d: %s", rr.Code, rr.Body)
 		}
 	}
@@ -128,6 +131,20 @@ func TestPodcastLegacyReadersSeeEpisodeState(t *testing.T) {
 	e.must(json.Unmarshal(e.get("/api/v1/in-progress", "alice").Body.Bytes(), &inProgress))
 	if len(inProgress) != 1 || inProgress[0].ID != mediaID || *inProgress[0].PositionSeconds != 72 {
 		t.Fatalf("in progress: %+v", inProgress)
+	}
+	// The listening counted as a play of the copy, as for any media, and a
+	// later sync API edit rewrites the mirror without losing the time.
+	media, err := e.store.GetMediaByID(ctx, mediaID)
+	e.must(err)
+	before, err := e.store.GetProgress(ctx, e.users["alice"], mediaID)
+	e.must(err)
+	if media.PlayCount != 1 || before.AccumulatedSeconds < 60 {
+		t.Fatalf("play count %d, accumulated %v", media.PlayCount, before.AccumulatedSeconds)
+	}
+	e.podcastSync("/api/v1/podcasts/sync", "alice", model.PodcastSyncRequest{
+		Episodes: []model.PodcastEpisodeEdit{episodeEdit(key, "seek", 72, nil, time.Now().UnixMilli())}})
+	if after, _ := e.store.GetProgress(ctx, e.users["alice"], mediaID); after.AccumulatedSeconds != before.AccumulatedSeconds {
+		t.Fatalf("mirror rewrite changed accumulated time: %v -> %v", before.AccumulatedSeconds, after.AccumulatedSeconds)
 	}
 	old := syncDevice(t, e.server, syncDeviceToken(t, e, "alice", "old-phone"), fmt.Sprintf("/api/v1/media/%d/playback-sync", mediaID), model.PlaybackSync{})
 	if old.Progress == nil || old.Progress.Finished || old.Progress.PositionSeconds != 72 {

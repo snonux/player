@@ -219,6 +219,9 @@ CREATE INDEX IF NOT EXISTS idx_podcast_status_episode ON podcast_status(episode_
 CREATE INDEX IF NOT EXISTS idx_sets_is_podcast ON sets(is_podcast);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_podcast_feeds_key ON podcast_feeds(feed_key) WHERE merged_into IS NULL;
 CREATE INDEX IF NOT EXISTS idx_podcast_feeds_created_by ON podcast_feeds(created_by, created_at);
+-- Every user's state of one episode: seeding a new server copy's progress
+-- mirrors and joining catalog episodes with state look it up by key.
+CREATE INDEX IF NOT EXISTS idx_podcast_state_episode ON podcast_episode_state(feed_key, episode_key);
 `
 
 // execSchema executes a raw SQL schema block against the given database.

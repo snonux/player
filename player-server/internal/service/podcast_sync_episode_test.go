@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"codeberg.org/snonux/player/internal/clock"
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/repository"
 )
 
 const (
@@ -127,5 +129,86 @@ func TestPodcastSyncPassesScopeToStore(t *testing.T) {
 	}
 	if got.Scope == nil || *got.Scope != *scope {
 		t.Fatalf("scope = %+v", got.Scope)
+	}
+}
+
+// TestPodcastSyncClampedEpisodeRetryOnRealStore pins the accepted cost of
+// clamping (contract §4 rule 4) for an episode register, as the
+// subscription test does for subscriptions: a far-future edit is stored at
+// the receive time; another device's later edit wins; a retry of the
+// first edit after a lost acknowledgement is clamped again, to the later
+// receive time, and overwrites it.
+func TestPodcastSyncClampedEpisodeRetryOnRealStore(t *testing.T) {
+	store, err := repository.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+	ctx := context.Background()
+	user, err := store.CreateUser(ctx, &model.User{Username: "u", PasswordHash: "h", CreatedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now1 := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	clk := &clock.MockClock{T: now1}
+	svc := NewPodcastSyncService(store, clk, 60)
+	sync := func(item model.PodcastEpisodeEdit) *model.PodcastSyncResponse {
+		t.Helper()
+		out, err := svc.Sync(ctx, user, model.PodcastSyncRequest{Episodes: []model.PodcastEpisodeEdit{item}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	position := func(out *model.PodcastSyncResponse) model.PodcastPositionRegister {
+		t.Helper()
+		if len(out.Episodes) != 1 || out.Episodes[0].Position == nil {
+			t.Fatalf("episodes: %+v", out.Episodes)
+		}
+		return *out.Episodes[0].Position
+	}
+	future := epEdit(func(e *model.PodcastEpisodeEdit) {
+		e.Completion, e.Position.Seconds, e.Position.ObservedMS = nil, 100, now1.Add(time.Hour).UnixMilli()
+	})
+	out := sync(future)
+	if len(out.Acked) != 1 || len(out.Clamped) != 1 || position(out).ObservedMS != now1.UnixMilli() {
+		t.Fatalf("first attempt: %+v", out)
+	}
+	between := epEdit(func(e *model.PodcastEpisodeEdit) {
+		e.Completion = nil
+		e.Position = &model.PodcastPositionEdit{EditID: "between-between-1", Seconds: 200, ObservedMS: now1.Add(30 * time.Second).UnixMilli()}
+	})
+	if got := position(sync(between)); got.Seconds != 200 {
+		t.Fatalf("edit after the clamped clock lost: %+v", got)
+	}
+	clk.T = now1.Add(time.Minute)
+	out = sync(future)
+	if got := position(out); len(out.Acked) != 1 || out.Acked[0] != validPositionEdit || len(out.Clamped) != 1 ||
+		got.Seconds != 100 || got.ObservedMS != clk.T.UnixMilli() {
+		t.Fatalf("retry: %+v", out)
+	}
+}
+
+// TestPodcastSyncDoesNotReportRejectedEditsAsClamped: an edit the store
+// rejects (here an unknown legacy key) was not applied, so it is not
+// listed in clamped either.
+func TestPodcastSyncDoesNotReportRejectedEditsAsClamped(t *testing.T) {
+	now := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	store := repository.NewMockStore()
+	store.PodcastSyncRepo.SyncPodcastFunc = func(_ context.Context, _ int64, in model.PodcastSyncBatch) (*model.PodcastSyncResponse, error) {
+		return &model.PodcastSyncResponse{Clamped: []string{}, Rejected: []model.PodcastSyncRejection{
+			{EditID: in.Episodes[0].Position.EditID, Reason: model.PodcastRejectInvalidKey}}}, nil
+	}
+	svc := NewPodcastSyncService(store, &clock.MockClock{T: now}, 0)
+	item := epEdit(func(e *model.PodcastEpisodeEdit) {
+		e.Position.ObservedMS = now.Add(time.Hour).UnixMilli()
+		e.Completion.ObservedMS = now.Add(time.Hour).UnixMilli()
+	})
+	out, err := svc.Sync(context.Background(), 1, model.PodcastSyncRequest{Episodes: []model.PodcastEpisodeEdit{item}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Clamped) != 1 || out.Clamped[0] != validCompletionEdit || len(out.Rejected) != 1 {
+		t.Fatalf("clamped %v, rejected %+v", out.Clamped, out.Rejected)
 	}
 }

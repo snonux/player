@@ -186,6 +186,9 @@ or redirect another user's feeds.
   re-ingesting the same document changes nothing.
 - **Incoming client keys** (§6). A feed key resolves as a canonical key, an
   alias, or through each of the subscription's `urls` as a feed key. An
+  episode item's feed key resolves the same way, through the caller's own
+  subscription register for it: the one edited in the same request, or the
+  stored register kept under that key or listing a URL with that key. An
   episode key resolves by the reference `podcast.ResolveClientEpisode`:
   as a canonical key or alias; an unknown `enc:` key also through the single
   episode carrying that enclosure (key or evidence); then the key-pass
@@ -554,7 +557,13 @@ LWW decisions for these calls use the episode registers, not
 rewrites the `playback_progress` row of each linked media item in the same
 transaction, as a projection in the legacy single-register form:
 
-- `position_seconds` = position;
+- `position_seconds` = position, except 0 when the projection is unfinished
+  (below), the copy's duration is known and the position is within 5
+  seconds of its end (`position >= duration - 5`). This is the start
+  position rule of §4.2 applied for old clients, which resume the saved
+  position as is: an episode uncompleted at its end position (or replayed
+  to just before the end) would otherwise start at the end and be
+  completed again at once. The register keeps the real position;
 - `finished` = `completed && completion_ms >= position_ms`, i.e. the legacy
   rule that the latest edit decides: a completed episode that is being
   replayed (position saved after the completion) projects as unfinished, so
@@ -745,7 +754,7 @@ episode state; they are not converted into `podcast_downloads`.
 
 | Case | Behavior |
 | --- | --- |
-| Old Android or cached web → new server | Legacy podcast routes keep their shapes (rows below). Media progress calls on episode media go through §7.1 and old clients read the projection. |
+| Old Android or cached web → new server | Legacy podcast routes keep their shapes (rows below). Media progress calls on episode media go through §7.1 and old clients read the projection, including its start-over rule: an unfinished position within 5 s of the end reads as 0. |
 | `POST /api/podcasts` (admin, legacy subscribe) | Creates or reuses the catalog row as today (including the existing owner grant of `ensurePodcastSet` to that admin) and also writes the caller's subscription register `subscribed = true` at server time, so the feed has an active subscriber and keeps refreshing (§7.3). |
 | `GET /api/podcasts` | Unchanged meaning: catalog feeds (not `merged_into`) whose set the caller may read, as today, including feeds the caller has unsubscribed from. New fields: `feed_key` and `subscribed` (the caller's register; `false` for a tombstone or no row). It is the catalog/admin view, not the subscription view. |
 | `GET /api/podcasts/{setId}/episodes` | Unchanged meaning: episodes of every catalog feed in the set, as today. `is_completed` and `position_seconds` come from the caller's episode state; new fields `feed_key` and `episode_key`. |

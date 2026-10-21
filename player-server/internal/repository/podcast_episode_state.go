@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"sort"
 	"time"
 
@@ -13,6 +14,11 @@ import (
 // Position and completion are independent last-writer-wins registers: an
 // edit replaces a register only when its clock is strictly greater, so ties
 // keep the stored value and a replayed edit changes nothing.
+
+// startOverSeconds is the end margin of the start position rule (contract
+// §4.2): a saved position this close to the end of the media starts
+// playback at 0.
+const startOverSeconds = 5
 
 // Completion sources of the completion register.
 const (
@@ -55,6 +61,19 @@ func (r *episodeRegisters) setCompletion(completed bool, source string, ms int64
 // completion projects as unfinished (old clients then resume it).
 func (r *episodeRegisters) mirrorFinished() bool {
 	return r.completed && r.completionMS >= r.positionMS
+}
+
+// mirrorPosition is the projection of the position for media of the given
+// duration (0 when unknown). An unfinished projection within
+// startOverSeconds of the end reads as 0: old clients resume the saved
+// position as is, and would otherwise start a just uncompleted (or
+// replayed) episode at its end and complete it again at once, which the
+// start position rule of §4.2 exists to prevent.
+func (r *episodeRegisters) mirrorPosition(duration float64) float64 {
+	if !r.mirrorFinished() && duration > 0 && r.position >= duration-startOverSeconds {
+		return 0
+	}
+	return r.position
 }
 
 // mirrorTime is the projection's edit time: the later of both clocks.
@@ -247,11 +266,26 @@ ORDER BY s.user_id, e.media_id`)
 // projection of episode state (§7.1). It is its own statement, not
 // upsertProgress or a finish/reset helper, so accumulated_seconds and the
 // play-count state are kept.
-func writeEpisodeMirror(ctx context.Context, tx sqlExecer, userID, mediaID int64, r *episodeRegisters) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO playback_progress (user_id, media_id, position_seconds, finished, updated_at)
+func writeEpisodeMirror(ctx context.Context, tx sqlExecQueryRower, userID, mediaID int64, r *episodeRegisters) error {
+	duration, err := mediaDuration(ctx, tx, mediaID)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO playback_progress (user_id, media_id, position_seconds, finished, updated_at)
 VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (user_id, media_id) DO UPDATE SET
  position_seconds = excluded.position_seconds, finished = excluded.finished, updated_at = excluded.updated_at`,
-		userID, mediaID, r.position, boolToInt(r.mirrorFinished()), r.mirrorTime())
+		userID, mediaID, r.mirrorPosition(duration), boolToInt(r.mirrorFinished()), r.mirrorTime())
 	return err
+}
+
+// mediaDuration returns the probed duration of a media item, 0 when it is
+// unknown or the item does not exist.
+func mediaDuration(ctx context.Context, q sqlQueryRower, mediaID int64) (float64, error) {
+	var duration sql.NullFloat64
+	err := q.QueryRowContext(ctx, `SELECT duration FROM media WHERE id = ?`, mediaID).Scan(&duration)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, fmt.Errorf("read media duration: %w", err)
+	}
+	return duration.Float64, nil
 }

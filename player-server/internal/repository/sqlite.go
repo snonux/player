@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
+
+	"codeberg.org/snonux/player/internal/clock"
 
 	// Register the pure-Go SQLite driver with database/sql.
 	_ "modernc.org/sqlite"
@@ -12,6 +15,9 @@ import (
 // SQLite is a concrete Store implementation backed by SQLite.
 type SQLite struct {
 	db *sql.DB
+	// clock is the server time of server-side edits and of clock clamping
+	// in the episode bridge; WithClock sets the services' clock.
+	clock clock.Clock
 }
 
 const sqliteBusyTimeoutMS = 5000
@@ -26,7 +32,7 @@ func New(db *sql.DB) (*SQLite, error) {
 	if err := initializeSchema(db); err != nil {
 		return nil, fmt.Errorf("initialize schema: %w", err)
 	}
-	return &SQLite{db: db}, nil
+	return &SQLite{db: db, clock: clock.RealClock{}}, nil
 }
 
 // Open opens a SQLite database at the given DSN and returns a connected Store.
@@ -50,6 +56,23 @@ func Open(dsn string) (*SQLite, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// WithClock returns the store using c as server time. The copy shares the
+// database; it lets the wiring give the store the same clock as the
+// services, so clamping and server-time edits agree with them.
+func (s *SQLite) WithClock(c clock.Clock) *SQLite {
+	clocked := *s
+	clocked.clock = c
+	return &clocked
+}
+
+// now is the store's server time.
+func (s *SQLite) now() time.Time {
+	if s.clock == nil {
+		return time.Now()
+	}
+	return s.clock.Now()
 }
 
 // Close closes the underlying database connection.
@@ -77,6 +100,12 @@ type sqlExecer interface {
 
 type sqlQueryRower interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// sqlExecQueryRower runs statements and single-row queries.
+type sqlExecQueryRower interface {
+	sqlExecer
+	sqlQueryRower
 }
 
 func boolToInt(b bool) int {

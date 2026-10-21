@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"codeberg.org/snonux/player/internal/model"
 )
@@ -14,7 +15,7 @@ func (s *SQLite) WithProgressTransaction(ctx context.Context, fn func(ProgressUp
 		return fmt.Errorf("begin progress transaction: %w", err)
 	}
 
-	txStore := &progressTxStore{tx: tx}
+	txStore := &progressTxStore{tx: tx, now: s.now}
 	if err := fn(txStore); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
 			return fmt.Errorf("rollback progress transaction after %w: %v", err, rollbackErr)
@@ -31,12 +32,14 @@ func (s *SQLite) WithProgressTransaction(ctx context.Context, fn func(ProgressUp
 // transaction.
 type progressTxStore struct {
 	tx sqlTx
+	// now is the store's server time (see SQLite.now).
+	now func() time.Time
 }
 
 // UpsertProgress writes progress, or the episode registers of an episode
 // copy (see upsertProgressOrEpisode).
 func (s *progressTxStore) UpsertProgress(ctx context.Context, progress *model.PlaybackProgress) error {
-	return upsertProgressOrEpisode(ctx, s.tx, progress)
+	return upsertProgressOrEpisode(ctx, s.tx, progress, s.now())
 }
 
 func (s *progressTxStore) GetProgress(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error) {

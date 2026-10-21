@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -23,8 +24,18 @@ const MaxPodcastEpisodeStatesPerUser = 200000
 // is kept under, caching each feed's resolution and catalog episodes for
 // the rest of the request.
 type episodeResolver struct {
-	feeds map[string]resolvedFeed
-	known map[string][]podcast.KnownEpisode // by canonical feed key
+	userID int64
+	feeds  map[string]resolvedFeed
+	known  map[string][]podcast.KnownEpisode // by canonical feed key
+	// subs are the user's subscription registers (key and urls), loaded
+	// once when a feed key needs resolving through them.
+	subs []subscriptionURLs
+}
+
+// subscriptionURLs is the identity evidence of one subscription register.
+type subscriptionURLs struct {
+	feedKey string
+	urls    []string
 }
 
 // resolvedFeed is the resolution of one feed key a client sent.
@@ -33,8 +44,17 @@ type resolvedFeed struct {
 	ok  bool
 }
 
-func newEpisodeResolver() *episodeResolver {
-	return &episodeResolver{feeds: map[string]resolvedFeed{}, known: map[string][]podcast.KnownEpisode{}}
+// newEpisodeResolver returns a resolver for the user's keys that already
+// knows the feed mappings the request's subscription edits applied, so an
+// episode sent under a subscription's old key follows its subscription.
+func newEpisodeResolver(userID int64, resolved []model.PodcastKeyMapping) *episodeResolver {
+	rv := &episodeResolver{userID: userID, feeds: map[string]resolvedFeed{}, known: map[string][]podcast.KnownEpisode{}}
+	for _, m := range resolved {
+		if m.Kind == model.PodcastKeyKindFeed {
+			rv.feeds[m.From] = resolvedFeed{key: m.To, ok: true}
+		}
+	}
+	return rv
 }
 
 // resolve returns the state key (without user) of an episode a client
@@ -60,17 +80,83 @@ func (rv *episodeResolver) resolve(ctx context.Context, tx *sql.Tx, feedKey, epi
 	return k, true, nil
 }
 
-// feed resolves a feed key like a subscription edit without urls.
+// feed resolves a feed key as contract §3.3 resolves a subscription's key:
+// as a canonical key or alias, else through the user's subscription
+// register for it (its key and each of its urls). That register is found
+// under the key itself or under the canonical key it was resolved to,
+// whose urls then include a URL of the sent key. Only the caller's own
+// registers are consulted, so no other user's evidence links keys.
 func (rv *episodeResolver) feed(ctx context.Context, tx *sql.Tx, key string) (resolvedFeed, error) {
 	if f, ok := rv.feeds[key]; ok {
 		return f, nil
 	}
-	canonical, ok, err := resolveFeedKey(ctx, tx, key, nil)
+	candidates, err := rv.feedCandidates(ctx, tx, key)
 	if err != nil {
 		return resolvedFeed{}, err
 	}
-	rv.feeds[key] = resolvedFeed{key: canonical, ok: ok}
-	return rv.feeds[key], nil
+	f := resolvedFeed{key: key, ok: !strings.HasPrefix(key, legacyFeedPrefix)}
+	for _, c := range candidates {
+		canonical, err := canonicalFeedKey(ctx, tx, c)
+		if err != nil {
+			return resolvedFeed{}, err
+		}
+		if canonical != "" {
+			f = resolvedFeed{key: canonical, ok: true}
+			break
+		}
+	}
+	rv.feeds[key] = f
+	return f, nil
+}
+
+// feedCandidates lists the keys a sent feed key may denote: the key, then
+// the key and url keys of every subscription register of the user that is
+// kept under it or lists a URL with that key.
+func (rv *episodeResolver) feedCandidates(ctx context.Context, tx *sql.Tx, key string) ([]string, error) {
+	if canonical, err := canonicalFeedKey(ctx, tx, key); err != nil || canonical != "" {
+		return []string{key}, err
+	}
+	if err := rv.loadSubscriptions(ctx, tx); err != nil {
+		return nil, err
+	}
+	candidates := []string{key}
+	for _, sub := range rv.subs {
+		urlKeys := make([]string, 0, len(sub.urls))
+		matches := sub.feedKey == key
+		for _, u := range sub.urls {
+			if k, err := podcast.FeedKey(u); err == nil {
+				urlKeys = append(urlKeys, k)
+				matches = matches || k == key
+			}
+		}
+		if matches {
+			candidates = append(append(candidates, sub.feedKey), urlKeys...)
+		}
+	}
+	return candidates, nil
+}
+
+// loadSubscriptions reads the user's subscription registers once.
+func (rv *episodeResolver) loadSubscriptions(ctx context.Context, tx *sql.Tx) error {
+	if rv.subs != nil {
+		return nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT feed_key, urls FROM podcast_subscriptions WHERE user_id = ?`, rv.userID)
+	if err != nil {
+		return fmt.Errorf("load subscription urls: %w", err)
+	}
+	rv.subs = []subscriptionURLs{}
+	for rows.Next() {
+		var sub subscriptionURLs
+		var urls string
+		if err := rows.Scan(&sub.feedKey, &urls); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan subscription urls: %w", err)
+		}
+		_ = json.Unmarshal([]byte(urls), &sub.urls) // a broken list is no evidence
+		rv.subs = append(rv.subs, sub)
+	}
+	return closeRows(rows)
 }
 
 // episodes returns the catalog episodes of a canonical feed key with their
@@ -159,6 +245,7 @@ func (run *syncRun) applyEpisodeEdits(ctx context.Context, rv *episodeResolver) 
 		}
 		run.out.Acked = append(run.out.Acked, ids...)
 		run.editedEpisodes = append(run.editedEpisodes, k)
+		run.episodeKeys[[2]string{item.FeedKey, item.EpisodeKey}] = k
 		run.resolveEpisode(item.FeedKey, item.EpisodeKey, k)
 	}
 	return nil
@@ -227,14 +314,20 @@ func (run *syncRun) resolveEpisode(feedKey, episodeKey string, k episodeStateKey
 
 // pullScope answers a scoped request (the pre-playback request, §8.1):
 // the current registers of that one episode and its aliases, no cursor.
-// A scope that resolves to nothing stored returns no episode row.
+// When the request edited the same keys, their resolution (which had the
+// item's enclosure evidence) is reused. A scope that resolves to nothing
+// stored returns no episode row.
 func (run *syncRun) pullScope(ctx context.Context, rv *episodeResolver, aliases aliasSet) error {
 	scope := run.in.Scope
-	k, ok, err := rv.resolve(ctx, run.tx, scope.FeedKey, scope.EpisodeKey, "")
-	if err != nil || !ok {
-		return err
+	k, edited := run.episodeKeys[[2]string{scope.FeedKey, scope.EpisodeKey}]
+	if !edited {
+		var ok bool
+		var err error
+		if k, ok, err = rv.resolve(ctx, run.tx, scope.FeedKey, scope.EpisodeKey, ""); err != nil || !ok {
+			return err
+		}
+		k.userID = run.userID
 	}
-	k.userID = run.userID
 	run.resolveEpisode(scope.FeedKey, scope.EpisodeKey, k)
 	return addEditedEpisodes(ctx, run.tx, []episodeStateKey{k}, run.out, aliases)
 }

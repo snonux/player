@@ -20,7 +20,7 @@ func (s *SQLite) UpsertProgress(ctx context.Context, progress *model.PlaybackPro
 		return fmt.Errorf("upsert progress: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := upsertProgressOrEpisode(ctx, tx, progress); err != nil {
+	if err := upsertProgressOrEpisode(ctx, tx, progress, s.now()); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -32,14 +32,14 @@ func (s *SQLite) UpsertProgress(ctx context.Context, progress *model.PlaybackPro
 // upsertProgressOrEpisode writes progress of ordinary media, or routes the
 // edit of an episode copy through its registers: a position save is a
 // position edit, a finished row a manual completion that keeps the
-// position register (contract §7.1).
-func upsertProgressOrEpisode(ctx context.Context, tx sqlTx, progress *model.PlaybackProgress) error {
+// position register (contract §7.1). now is the server time clamping uses.
+func upsertProgressOrEpisode(ctx context.Context, tx sqlTx, progress *model.PlaybackProgress, now time.Time) error {
 	k, linked, err := linkedEpisode(ctx, tx, progress.UserID, progress.MediaID)
 	if err != nil {
 		return err
 	}
 	if linked {
-		return saveLinkedProgress(ctx, tx, k, progress)
+		return saveLinkedProgress(ctx, tx, k, progress, now)
 	}
 	return upsertProgress(ctx, tx, progress)
 }
@@ -91,7 +91,7 @@ func (s *SQLite) DeleteProgress(ctx context.Context, userID, mediaID int64) erro
 
 // ResetProgress removes one user's progress and transient playback counters.
 func (s *SQLite) ResetProgress(ctx context.Context, userID, mediaID int64) error {
-	return s.ResetProgressAt(ctx, userID, mediaID, time.Now().UTC())
+	return s.ResetProgressAt(ctx, userID, mediaID, s.now().UTC())
 }
 
 // ResetProgressAt clears one user's progress of a media item as of
@@ -109,7 +109,7 @@ func (s *SQLite) ResetProgressAt(ctx context.Context, userID, mediaID int64, obs
 		return err
 	}
 	if linked {
-		err = resetLinkedProgress(ctx, tx, k, mediaID, observed)
+		err = resetLinkedProgress(ctx, tx, k, mediaID, observed, s.now())
 	} else {
 		err = resetMediaProgress(ctx, tx, userID, mediaID, observed)
 	}
@@ -155,7 +155,7 @@ func (s *SQLite) FinishProgress(ctx context.Context, progress *model.PlaybackPro
 		return err
 	}
 	if linked {
-		err = finishLinkedProgress(ctx, tx, k, progress.MediaID, progress.UpdatedAt.Truncate(time.Millisecond))
+		err = finishLinkedProgress(ctx, tx, k, progress.MediaID, progress.UpdatedAt.Truncate(time.Millisecond), s.now())
 	} else {
 		err = finishMediaProgress(ctx, tx, progress)
 	}

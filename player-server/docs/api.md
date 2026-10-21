@@ -1407,7 +1407,10 @@ the server's time. The progress these routes read back (`GET` progress,
 `position_seconds` is the position, `finished` is true only when the episode
 is completed and the completion is not older than the position (a completed
 episode being replayed reads as unfinished, so it is resumed and listed in
-progress), and the edit time is the later of both clocks. A `finished` or
+progress), and the edit time is the later of both clocks. An unfinished
+position within 5 seconds of the end of the copy (duration known) reads as
+`0`, so an episode marked unlistened at its end starts over instead of
+completing again at once; the episode state keeps the real position. A `finished` or
 `not_started` that changed the state starts a new play-count cycle, as for
 any media. A new server download starts from the episode state every client
 already shares; deleting the copy removes only its progress, never the
@@ -1888,7 +1891,10 @@ advertises it as `podcast_sync` in [`GET /api/v1/config`](#configuration).
 - `subscribed: false` is an unsubscribe: a tombstone kept forever, so a
   stale device cannot resurrect the subscription. It never touches files,
   media, catalog rows or episode history.
-- `episodes`: `episode_key` is `guid:<guid>` (trimmed, at most 1024 bytes,
+- `episodes`: `feed_key` resolves like a subscription's key, also through
+  the urls of the caller's subscription register for it (edited in the same
+  request or stored), so episode state follows a feed the server knows
+  under another key. `episode_key` is `guid:<guid>` (trimmed, at most 1024 bytes,
   else its `guid:sha256:` form), a canonical `enc:` key, or a
   `legacy-episode:<n>` key the server knows. `enclosure_url` is optional
   evidence for resolving the key and must canonicalize. `position` and

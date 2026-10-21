@@ -97,6 +97,11 @@ func Wire(cfg *internal.Config, store repository.Store, logger *slog.Logger, app
 // without running ffmpeg.
 func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.Logger, appCtx context.Context, runner transcode.Runner) *Deps {
 	clk := clock.RealClock{}
+	// The store clamps and stamps server-side episode edits with the same
+	// clock as the services.
+	if sqlite, ok := store.(*repository.SQLite); ok {
+		store = sqlite.WithClock(clk)
+	}
 	hasher := auth.NewBCryptHasher(12)
 	sm := auth.NewSessionManager(store, clk, time.Duration(cfg.SessionTimeoutHours)*time.Hour)
 	tm := auth.NewTokenManager()

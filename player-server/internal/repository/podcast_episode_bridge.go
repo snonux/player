@@ -42,9 +42,10 @@ JOIN podcast_feeds f ON f.id = e.feed_id WHERE e.media_id = ? ORDER BY e.id LIMI
 }
 
 // applyLinkedEdit merges an edit a legacy route made on an episode copy,
-// with its clocks clamped against the server's time.
-func applyLinkedEdit(ctx context.Context, q sqlTx, k episodeStateKey, e episodeEdit) (episodeMerge, error) {
-	return mergeEpisodeEdit(ctx, q, k, e.clamped(time.Now()), "")
+// with its clocks clamped against the server's time now (the store's
+// clock, the same as the services').
+func applyLinkedEdit(ctx context.Context, q sqlTx, k episodeStateKey, e episodeEdit, now time.Time) (episodeMerge, error) {
+	return mergeEpisodeEdit(ctx, q, k, e.clamped(now), "")
 }
 
 // editTime returns the time a new edit of the media's progress must be
@@ -78,11 +79,11 @@ func editTime(ctx context.Context, q sqlQueryRower, userID, mediaID int64, posit
 // saveLinkedProgress records a position save (or, for a finished row, a
 // manual finish) of an episode copy and raises the copy's accumulated play
 // time like an ordinary progress save.
-func saveLinkedProgress(ctx context.Context, tx sqlTx, k episodeStateKey, p *model.PlaybackProgress) error {
+func saveLinkedProgress(ctx context.Context, tx sqlTx, k episodeStateKey, p *model.PlaybackProgress, now time.Time) error {
 	if p.Finished {
-		return finishLinkedProgress(ctx, tx, k, p.MediaID, p.UpdatedAt)
+		return finishLinkedProgress(ctx, tx, k, p.MediaID, p.UpdatedAt, now)
 	}
-	if _, err := applyLinkedEdit(ctx, tx, k, positionEdit(p.PositionSeconds, p.UpdatedAt.UnixMilli())); err != nil {
+	if _, err := applyLinkedEdit(ctx, tx, k, positionEdit(p.PositionSeconds, p.UpdatedAt.UnixMilli()), now); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `UPDATE playback_progress SET accumulated_seconds = MAX(accumulated_seconds, ?)
@@ -96,8 +97,8 @@ WHERE user_id = ? AND media_id = ?`, p.AccumulatedSeconds, k.userID, p.MediaID)
 // finishLinkedProgress records POST /progress/status "finished" on an
 // episode copy: a manual completion that keeps the position register (the
 // route cannot tell the web's Mark as finished from a cast end).
-func finishLinkedProgress(ctx context.Context, tx sqlTx, k episodeStateKey, mediaID int64, observed time.Time) error {
-	m, err := applyLinkedEdit(ctx, tx, k, completionEdit(true, completionManual, observed.UnixMilli()))
+func finishLinkedProgress(ctx context.Context, tx sqlTx, k episodeStateKey, mediaID int64, observed, now time.Time) error {
+	m, err := applyLinkedEdit(ctx, tx, k, completionEdit(true, completionManual, observed.UnixMilli()), now)
 	if err != nil || !m.changed() {
 		return err
 	}
@@ -106,9 +107,9 @@ func finishLinkedProgress(ctx context.Context, tx sqlTx, k episodeStateKey, medi
 
 // resetLinkedProgress records POST /progress/status "not_started" on an
 // episode copy: position 0 and a manual uncompletion with the same clock.
-func resetLinkedProgress(ctx context.Context, tx sqlTx, k episodeStateKey, mediaID int64, observed time.Time) error {
+func resetLinkedProgress(ctx context.Context, tx sqlTx, k episodeStateKey, mediaID int64, observed, now time.Time) error {
 	ms := observed.UnixMilli()
-	m, err := applyLinkedEdit(ctx, tx, k, positionEdit(0, ms).withCompletion(false, completionManual, ms))
+	m, err := applyLinkedEdit(ctx, tx, k, positionEdit(0, ms).withCompletion(false, completionManual, ms), now)
 	if err != nil || !m.changed() {
 		return err
 	}
@@ -118,22 +119,23 @@ func resetLinkedProgress(ctx context.Context, tx sqlTx, k episodeStateKey, media
 // syncLinkedProgress records a playback-sync progress edit of an episode
 // copy: a save is a position edit; a natural end also an automatic
 // completion with the same clock, which starts a new playback cycle.
-func syncLinkedProgress(ctx context.Context, tx sqlTx, k episodeStateKey, mediaID int64, p *model.SyncedProgress) error {
+func syncLinkedProgress(ctx context.Context, tx sqlTx, k episodeStateKey, mediaID int64, p *model.SyncedProgress, now time.Time) error {
 	e := positionEdit(p.PositionSeconds, p.ObservedMS)
 	if p.Finished {
 		e = e.withCompletion(true, completionAuto, p.ObservedMS)
 	}
-	m, err := applyLinkedEdit(ctx, tx, k, e)
+	m, err := applyLinkedEdit(ctx, tx, k, e, now)
 	if err != nil || !p.Finished || !m.completionChanged() {
 		return err
 	}
 	return restartPlaybackCycle(ctx, tx, k.userID, mediaID)
 }
 
-// linkedSyncResult projects the registers of k into a playback-sync
-// answer: the position, finished as the mirror projects it and the later
-// of both clocks; nil when neither register was ever set.
-func linkedSyncResult(ctx context.Context, q sqlQueryRower, k episodeStateKey) (*model.SyncedProgress, error) {
+// linkedSyncResult projects the registers of k into the playback-sync
+// answer for copy mediaID exactly as the mirror projects them: position
+// (0 when unfinished near the end), finished and the later of both clocks;
+// nil when neither register was ever set.
+func linkedSyncResult(ctx context.Context, q sqlQueryRower, k episodeStateKey, mediaID int64) (*model.SyncedProgress, error) {
 	r, _, err := loadRegisters(ctx, q, k)
 	if err != nil {
 		return nil, err
@@ -142,7 +144,11 @@ func linkedSyncResult(ctx context.Context, q sqlQueryRower, k episodeStateKey) (
 	if ms == 0 {
 		return nil, nil
 	}
-	return &model.SyncedProgress{PositionSeconds: r.position, Finished: r.mirrorFinished(), ObservedMS: ms}, nil
+	duration, err := mediaDuration(ctx, q, mediaID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.SyncedProgress{PositionSeconds: r.mirrorPosition(duration), Finished: r.mirrorFinished(), ObservedMS: ms}, nil
 }
 
 // restartPlaybackCycle clears the media-scoped play-count state of one

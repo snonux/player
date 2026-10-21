@@ -71,7 +71,7 @@ func (s *SQLite) SyncPlayback(ctx context.Context, userID, mediaID int64, incomi
 	}
 	if p := incoming.Progress; p != nil {
 		if linked {
-			err = syncLinkedProgress(ctx, tx, k, mediaID, p)
+			err = syncLinkedProgress(ctx, tx, k, mediaID, p, s.now())
 		} else {
 			err = syncMediaProgress(ctx, tx, userID, mediaID, p)
 		}
@@ -84,7 +84,7 @@ func (s *SQLite) SyncPlayback(ctx context.Context, userID, mediaID int64, incomi
 	}
 	result := &model.PlaybackSync{}
 	if linked {
-		result.Progress, err = linkedSyncResult(ctx, tx, k)
+		result.Progress, err = linkedSyncResult(ctx, tx, k, mediaID)
 	} else {
 		result.Progress, err = mediaSyncResult(ctx, tx, userID, mediaID)
 	}

@@ -92,9 +92,26 @@ func (s *podcastSyncService) Sync(ctx context.Context, userID int64, req model.P
 	if err != nil {
 		return nil, err
 	}
+	out.Clamped = append(out.Clamped, v.clampedNotRejected(out.Rejected)...)
 	out.Rejected = append(v.rejected, out.Rejected...)
-	out.Clamped = append(out.Clamped, v.clamped...)
 	return out, nil
+}
+
+// clampedNotRejected returns the clamped edit ids the store did not reject
+// (unknown legacy key, quota): a rejected edit was not applied, so no
+// clamped clock of it exists to report.
+func (v *syncValidation) clampedNotRejected(rejected []model.PodcastSyncRejection) []string {
+	gone := make(map[string]bool, len(rejected))
+	for _, r := range rejected {
+		gone[r.EditID] = true
+	}
+	kept := []string{}
+	for _, id := range v.clamped {
+		if !gone[id] {
+			kept = append(kept, id)
+		}
+	}
+	return kept
 }
 
 // reject records a rejected edit.

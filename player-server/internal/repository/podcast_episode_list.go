@@ -36,8 +36,11 @@ type PodcastEpisodeViewRepo interface {
 var _ PodcastEpisodeViewRepo = (*SQLite)(nil)
 
 // subscribedEpisodesQuery lists the episode views; ?1 is the user, ?2 the
-// canonical feed key or "", ?3 the completion filter. Merged catalog rows
-// are skipped: their episodes are listed through the row they merged into.
+// canonical feed key or "", ?3 the completion filter. Only catalog rows not
+// merged into another are listed. Episodes that exist only on a merged-away
+// row (it keeps its episode rows, contract §3.3) are therefore missing from
+// the views; listing them through the winning row needs the feed merge
+// itself and is left to task mn3.
 const subscribedEpisodesQuery = `SELECT e.id, f.feed_key, e.episode_key, COALESCE(f.title, ''), COALESCE(e.title, ''),
  COALESCE(e.description, ''), e.published_at, e.duration_seconds, e.episode_url,
  COALESCE(s.completed, 0), COALESCE(s.completion_source, ''), COALESCE(s.position_seconds, 0),

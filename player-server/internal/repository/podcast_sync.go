@@ -24,7 +24,10 @@ type syncRun struct {
 	out            *model.PodcastSyncResponse
 	editedFeeds    []string
 	editedEpisodes []episodeStateKey
-	resolved       map[model.PodcastKeyMapping]bool
+	// episodeKeys maps the (feed, episode) keys of every acked episode
+	// item to the state key they resolved to.
+	episodeKeys map[[2]string]episodeStateKey
+	resolved    map[model.PodcastKeyMapping]bool
 }
 
 // SyncPodcast implements PodcastSyncRepo. Edits are applied first
@@ -39,14 +42,14 @@ func (s *SQLite) SyncPodcast(ctx context.Context, userID int64, in model.Podcast
 	}
 	defer func() { _ = tx.Rollback() }()
 	run := &syncRun{tx: tx, userID: userID, in: in, out: newPodcastSyncResponse(),
-		resolved: map[model.PodcastKeyMapping]bool{}}
+		episodeKeys: map[[2]string]episodeStateKey{}, resolved: map[model.PodcastKeyMapping]bool{}}
 	if run.out.Epoch, err = podcastSyncEpoch(ctx, tx); err != nil {
 		return nil, err
 	}
 	if err := run.applySubscriptionEdits(ctx); err != nil {
 		return nil, err
 	}
-	episodes := newEpisodeResolver()
+	episodes := newEpisodeResolver(userID, run.out.Resolved)
 	if err := run.applyEpisodeEdits(ctx, episodes); err != nil {
 		return nil, err
 	}
