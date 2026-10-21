@@ -1,5 +1,7 @@
 import 'playback_request.dart';
 
+enum QueueInsertion { now, next, append }
+
 /// Identifies an occurrence independently of its media identity.
 class MusicQueueEntry {
   const MusicQueueEntry(this.id, this.request);
@@ -16,9 +18,11 @@ class MusicQueueState {
       required this.active,
       required this.busy,
       required this.canUndo,
-      required this.status});
+      required this.status,
+      this.upNextIds = const {}});
   final List<MusicQueueEntry> entries;
   final int index;
   final String label, status;
   final bool active, busy, canUndo;
+  final Set<int> upNextIds;
 }

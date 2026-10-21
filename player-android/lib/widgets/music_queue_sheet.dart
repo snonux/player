@@ -76,7 +76,7 @@ class _MusicQueueSheet extends StatelessWidget {
                           child: Padding(
                               padding: EdgeInsets.all(24),
                               child: Text(
-                                  'Queue is empty. Play an album to start a queue.')))
+                                  'Queue is empty. Add songs or play an album to start.')))
                       : ListView.builder(
                           itemCount: q.entries.length,
                           itemBuilder: (context, index) {
@@ -113,7 +113,9 @@ class _MusicQueueSheet extends StatelessWidget {
                                             ? q.active
                                                 ? 'Now'
                                                 : 'Selected · paused'
-                                            : entry.request.sourceName,
+                                            : q.upNextIds.contains(entry.id)
+                                                ? 'Up next (you added)'
+                                                : entry.request.sourceName,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis),
                                     onTap: q.busy

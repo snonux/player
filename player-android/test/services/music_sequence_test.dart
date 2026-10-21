@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/music_sequence.dart';
+import 'package:player_android/services/music_queue.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 import 'package:player_android/services/playback_request.dart';
 
@@ -503,6 +504,283 @@ void main() {
     await player.processing.close();
     await player.events.close();
   });
+  for (final mode in ['jump', 'backward', 'natural']) {
+    test(
+        'Undo cannot resurrect FIFO invalidated by $mode; natural advance retains pending order',
+        () async {
+      final p = _Player();
+      final handler = PlayerAudioHandler(p),
+          coordinator = PlaybackSessionCoordinator();
+      PlaybackRequest request(int id) => ServerPlaybackRequest(
+          mediaId: id,
+          serverOrigin: 'http://local',
+          userId: 1,
+          title: 'Song $id',
+          sourceUri: Uri.parse('http://local/$id'),
+          startPosition: 0,
+          savePosition: (_) async {},
+          markFinished: () async {});
+      Future<PlaybackSessionLease?> claim(PlaybackRequest r) => coordinator
+          .claim(kind: r.kind, identity: r.identity, stop: handler.stop);
+      Future<AudioSource?> load(
+              PlaybackRequest r, bool Function() current) async =>
+          AudioSource.uri(r.sourceUri);
+      Future<bool> insert(List<int> ids, QueueInsertion action) =>
+          handler.insertQueue(
+              entries: ids.map(request).toList(),
+              action: action,
+              claim: claim,
+              load: load);
+      await insert([1, 2], QueueInsertion.now);
+      await insert([3, 4], QueueInsertion.next);
+      if (mode == 'backward') await handler.skipToNext();
+      await insert([5], QueueInsertion.append);
+      if (mode == 'jump') await handler.jumpQueue(0);
+      if (mode == 'backward') await handler.skipToPrevious();
+      if (mode == 'natural') await handler.skipToNext();
+      await handler.undoQueue();
+      await insert([6], QueueInsertion.next);
+      expect(
+          handler.musicQueue.entries.map((e) => e.request.title).toList(),
+          mode == 'natural'
+              ? ['Song 1', 'Song 3', 'Song 4', 'Song 6', 'Song 2']
+              : ['Song 1', 'Song 6', 'Song 3', 'Song 4', 'Song 2']);
+      expect(
+          handler.musicQueue.entries
+              .where((e) => handler.musicQueue.upNextIds.contains(e.id))
+              .map((e) => e.request.title)
+              .toList(),
+          mode == 'natural' ? ['Song 4', 'Song 6'] : ['Song 6']);
+      await handler.stop();
+      await p.processing.close();
+      await p.events.close();
+      await p.positions.close();
+    });
+  }
+  test('superseded Play now cannot confirm or capture a newer scope Undo',
+      () async {
+    final p = _Player(),
+        entered = Completer<void>(),
+        release = Completer<void>();
+    final h = PlayerAudioHandler(p), coordinator = PlaybackSessionCoordinator();
+    PlaybackRequest request(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    Future<PlaybackSessionLease?> claim(PlaybackRequest r) =>
+        coordinator.claim(kind: r.kind, identity: r.identity, stop: h.stop);
+    Future<AudioSource?> load(
+        PlaybackRequest r, bool Function() current) async {
+      if (r.title == 'Song 1') {
+        entered.complete();
+        await release.future;
+      }
+      return AudioSource.uri(r.sourceUri);
+    }
+
+    final pending = h.insertQueue(
+        entries: [request(1)],
+        action: QueueInsertion.now,
+        claim: claim,
+        load: load);
+    await entered.future;
+    h.clearRetainedQueue();
+    await h.insertQueue(
+        entries: [request(2)],
+        action: QueueInsertion.next,
+        claim: claim,
+        load: load);
+    final token = h.queueUndoToken;
+    release.complete();
+    expect(await pending, isFalse);
+    expect(h.queueUndoToken, same(token));
+    expect(h.musicQueue.entries.single.request.title, 'Song 2');
+    await h.stop();
+    await p.processing.close();
+    await p.events.close();
+    await p.positions.close();
+  });
+  test(
+      'explicit insertion preserves position, FIFO and duplicate occurrences; Undo current stops',
+      () async {
+    final p = _Player(), saves = <String>[];
+    final handler = PlayerAudioHandler(p),
+        coordinator = PlaybackSessionCoordinator();
+    PlaybackRequest request(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (seconds) async {
+          saves.add('$id:$seconds');
+        },
+        markFinished: () async {});
+    Future<PlaybackSessionLease?> claim(PlaybackRequest r) => coordinator.claim(
+        kind: r.kind, identity: r.identity, stop: handler.stop);
+    Future<AudioSource?> load(
+            PlaybackRequest r, bool Function() current) async =>
+        AudioSource.uri(r.sourceUri);
+    Future<bool> insert(List<int> ids, QueueInsertion action) =>
+        handler.insertQueue(
+            entries: ids.map(request).toList(),
+            action: action,
+            claim: claim,
+            load: load);
+    List<String> order() =>
+        handler.musicQueue.entries.map((e) => e.request.title).toList();
+    final initial = [request(1), request(2)],
+        lease = (await claim(request(1)))!;
+    handler.activateSourceSession(
+        handler.beginSourceSession(ownsSource: () => lease.isCurrent));
+    handler.startProgress(
+        savePosition: initial.first.savePosition!,
+        markFinished: initial.first.markFinished!);
+    handler.startMusicSequence(
+        wrap: false,
+        entries: initial,
+        index: 0,
+        claimQueue: claim,
+        changed: lease.updateSource,
+        expand: () async => initial,
+        load: load);
+    final current = handler.musicQueue.entries.first.id;
+    await insert([3, 4], QueueInsertion.next);
+    await insert([3], QueueInsertion.next);
+    await insert([5], QueueInsertion.append);
+    expect(
+        order(), ['Song 1', 'Song 3', 'Song 4', 'Song 3', 'Song 2', 'Song 5']);
+    expect(handler.musicQueue.entries.map((e) => e.id).toSet().length, 6);
+    expect(handler.musicQueue.entries.first.id, current);
+    expect(p.loads, 0);
+    expect(p.elapsed, const Duration(seconds: 7));
+    expect(handler.musicQueue.upNextIds.length, 3);
+    await handler.skipToNext();
+    await insert([6], QueueInsertion.next);
+    expect(order(),
+        ['Song 1', 'Song 3', 'Song 4', 'Song 3', 'Song 6', 'Song 2', 'Song 5']);
+    expect(handler.musicQueue.upNextIds.length, 3);
+    await handler.skipToPrevious();
+    await insert([7], QueueInsertion.next);
+    expect(order().take(3), ['Song 1', 'Song 7', 'Song 3']);
+    final before = order();
+    await insert([8], QueueInsertion.now);
+    expect(handler.musicState?.request.title, 'Song 8');
+    p.elapsed = const Duration(seconds: 4);
+    await handler.undoQueue();
+    expect(order(), before);
+    expect(p.running, isFalse);
+    expect(saves, contains('8:4.0'));
+    final sets = request(99), setsLease = (await claim(request(99)))!;
+    handler.activateSourceSession(
+        handler.beginSourceSession(ownsSource: () => setsLease.isCurrent));
+    handler.startProgress(
+        savePosition: sets.savePosition!, markFinished: sets.markFinished!);
+    handler.startMusicSequence(
+        entries: [sets],
+        index: 0,
+        changed: setsLease.updateSource,
+        expand: () async => [sets],
+        load: load);
+    p.running = true;
+    p.elapsed = const Duration(seconds: 5);
+    final loads = p.loads;
+    await insert([9], QueueInsertion.append);
+    expect(handler.musicState?.request.title, 'Song 99');
+    expect(p.elapsed, const Duration(seconds: 5));
+    expect(p.loads, loads);
+    final token = handler.queueUndoToken;
+    handler.moveQueue(0, 1);
+    final moved = order();
+    await handler.undoQueue(expected: token);
+    expect(order(), moved);
+    await handler.clearQueue();
+    await insert([10], QueueInsertion.next);
+    await insert([11], QueueInsertion.next);
+    expect(order(), ['Song 10', 'Song 11']);
+    expect(handler.musicQueue.active, isFalse);
+    expect(p.loads, loads);
+    handler.clearRetainedQueue();
+    expect(handler.musicQueue.label, isEmpty);
+    expect(handler.musicQueue.upNextIds, isEmpty);
+    expect(handler.queueUndoToken, isNull);
+    await handler.stop();
+    await p.processing.close();
+    await p.events.close();
+    await p.positions.close();
+  });
+  for (final replace in [false, true]) {
+    test(
+        'Undo inserted current cannot restore after delayed stop and ${replace ? 'new album' : 'scope clear'}',
+        () async {
+      final p = _Player(),
+          entered = Completer<void>(),
+          release = Completer<void>();
+      final handler = PlayerAudioHandler(p),
+          coordinator = PlaybackSessionCoordinator();
+      PlaybackRequest request(int id) => ServerPlaybackRequest(
+          mediaId: id,
+          serverOrigin: 'http://local',
+          userId: 1,
+          title: 'Song $id',
+          sourceUri: Uri.parse('http://local/$id'),
+          startPosition: 0,
+          savePosition: (seconds) async {
+            if (id == 2) {
+              if (!entered.isCompleted) entered.complete();
+              await release.future;
+            }
+          },
+          markFinished: () async {});
+      Future<PlaybackSessionLease?> claim(PlaybackRequest r) => coordinator
+          .claim(kind: r.kind, identity: r.identity, stop: handler.stop);
+      Future<AudioSource?> load(
+              PlaybackRequest r, bool Function() current) async =>
+          AudioSource.uri(r.sourceUri);
+      await handler.insertQueue(
+          entries: [request(1)],
+          action: QueueInsertion.next,
+          claim: claim,
+          load: load);
+      await handler.insertQueue(
+          entries: [request(2)],
+          action: QueueInsertion.now,
+          claim: claim,
+          load: load);
+      final pending = handler.undoQueue();
+      await entered.future;
+      if (replace) {
+        final fresh = [request(99)];
+        handler.activateSourceSession(handler.beginSourceSession());
+        handler.startMusicSequence(
+            wrap: false,
+            entries: fresh,
+            index: 0,
+            changed: (_) {},
+            expand: () async => fresh,
+            load: load);
+        p.running = true;
+      } else {
+        handler.clearRetainedQueue();
+      }
+      release.complete();
+      await pending;
+      expect(handler.musicQueue.entries.map((e) => e.request.title).toList(),
+          replace ? ['Song 99'] : isEmpty);
+      expect(handler.musicQueue.canUndo, isFalse);
+      if (replace) expect(p.running, isTrue);
+      await handler.stop();
+      await p.processing.close();
+      await p.events.close();
+      await p.positions.close();
+    });
+  }
   test(
       'editable queue keeps occurrence IDs, flushes removed current and Undo stays paused',
       () async {

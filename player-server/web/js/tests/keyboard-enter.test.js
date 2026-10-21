@@ -391,6 +391,20 @@ function testQueueKeysPrecedeModalAndButtonBlur() {
   initKeyboard({toggleQueue:()=>opened++}); pressKey('Q');
   assert(opened===1,'Q opens queue globally');
 }
+function testInsertionShortcutAndToastOwnership() {
+  const calls = [];
+  initKeyboard({queueNext:()=>calls.push('next'),queueAppend:()=>calls.push('append'),playPause:()=>calls.push('play')});
+  pressKey('e'); pressKey('E');
+  assert(calls.join() === 'next,append','e/E dispatch explicit insertion');
+  for (const tagName of ['INPUT','TEXTAREA','SELECT']) { pressKey('e',{tagName}); pressKey('E',{tagName}); }
+  assert(calls.length === 2,'typing cannot enqueue songs');
+  const undo = {tagName:'BUTTON',closest:selector=>selector==='#toast' ? {} : null};
+  assert(!pressKey(' ',undo),'toast Undo keeps native Space activation');
+  assert(calls.length===2,'toast Undo Space cannot play/pause the media');
+  assert(pressKey(' ',{tagName:'BUTTON'}),'ordinary toolbar retains global Space');
+  assert(calls[2]==='play','ordinary toolbar Space still toggles playback');
+}
+testInsertionShortcutAndToastOwnership();
 testQueueKeysPrecedeModalAndButtonBlur();
 
 testThumbnailSizeOwnership();

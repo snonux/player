@@ -91,6 +91,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   List<MusicQueueEntry> _albumQueue = [];
   List<MusicQueueEntry>? _queueUndo;
   int _queueSerial = 0, _queueIndex = -1, _queueUndoIndex = -1;
+  Set<int> _queueNextIds = {}, _queueUndoNextIds = {};
+  String _queueUndoLabel = '';
+  int _queueNextEpoch = 0, _queueUndoNextEpoch = 0;
   int _queueOperation = 0;
   String _queueLabel = '', _queueStatus = '';
   bool _queueActive = false, _queueBusy = false;
@@ -105,11 +108,19 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       active: _queueActive && _canControlSource,
       busy: _queueBusy || (_queueActive && _movingTrack),
       canUndo: _queueUndo != null,
-      status: _queueStatus);
+      status: _queueStatus,
+      upNextIds: Set.unmodifiable(_queueNextIds));
   void _notifyQueue() => _queueChanges.add(null);
+  void _invalidateQueueNext() {
+    _queueNextIds.clear();
+    ++_queueNextEpoch;
+  }
+
   void _deactivateQueue() {
     _queueActive = false;
     _queueUndo = null;
+    _invalidateQueueNext();
+    _queueUndoNextIds.clear();
     if (_albumQueue.isNotEmpty) {
       _queueStatus = 'Queue paused. Choose a track to play.';
     }
@@ -133,12 +144,16 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _queueActive = false;
     _queueLabel = '';
     _queueStatus = '';
+    _invalidateQueueNext();
+    _queueUndoNextIds.clear();
+    _queueUndoLabel = '';
     _notifyQueue();
   }
 
   /// Explicit queue play acquires fresh ownership after another source took over.
   Future<void> jumpQueue(int index) async {
     if (musicQueue.busy || index < 0 || index >= _albumQueue.length) return;
+    _invalidateQueueNext();
     final entry = _albumQueue[index], claim = _queueClaim, load = _queueLoader;
     if (!_queueActive && claim == null) return;
     final operation = ++_queueOperation;
@@ -180,6 +195,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   void _rememberQueue() {
     _queueUndo = List.of(_albumQueue);
     _queueUndoIndex = _queueIndex;
+    _queueUndoNextIds = Set.of(_queueNextIds);
+    _queueUndoLabel = _queueLabel;
+    _queueUndoNextEpoch = _queueNextEpoch;
   }
 
   void _syncQueueSequence() {
@@ -201,6 +219,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       return;
     }
     _rememberQueue();
+    _invalidateQueueNext();
     final current = _albumQueue[_queueIndex];
     final entry = _albumQueue.removeAt(index);
     _albumQueue.insert(target, entry);
@@ -212,6 +231,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> removeQueue(int index) async {
     if (musicQueue.busy || index < 0 || index >= _albumQueue.length) return;
     final old = List<MusicQueueEntry>.of(_albumQueue), oldIndex = _queueIndex;
+    final oldNext = Set<int>.of(_queueNextIds), oldLabel = _queueLabel;
+    final oldEpoch = _queueNextEpoch;
+    _invalidateQueueNext();
     final current = _albumQueue[_queueIndex];
     final operation = ++_queueOperation;
     _queueBusy = true;
@@ -224,6 +246,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
           : _albumQueue.indexOf(current);
       _queueUndo = old;
       _queueUndoIndex = oldIndex;
+      _queueUndoNextIds = oldNext;
+      _queueUndoLabel = oldLabel;
+      _queueUndoNextEpoch = oldEpoch;
       _queueStatus =
           'Track removed. Choose a track to play if paused. Undo available.';
       _syncQueueSequence();
@@ -238,6 +263,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> clearQueue() async {
     if (musicQueue.busy || _albumQueue.isEmpty) return;
     final old = List<MusicQueueEntry>.of(_albumQueue), oldIndex = _queueIndex;
+    final oldNext = Set<int>.of(_queueNextIds), oldLabel = _queueLabel;
+    final oldEpoch = _queueNextEpoch;
+    _invalidateQueueNext();
     final operation = ++_queueOperation;
     _queueBusy = true;
     try {
@@ -247,6 +275,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueIndex = -1;
       _queueUndo = old;
       _queueUndoIndex = oldIndex;
+      _queueUndoNextIds = oldNext;
+      _queueUndoLabel = oldLabel;
+      _queueUndoNextEpoch = oldEpoch;
       _queueStatus = 'Queue cleared. Undo available.';
     } finally {
       if (operation == _queueOperation) {
@@ -256,18 +287,94 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  void undoQueue() {
+  /// Adds occurrences without taking ownership until explicit Play now/jump.
+  Future<bool> insertQueue({
+    required List<PlaybackRequest> entries,
+    required QueueInsertion action,
+    required Future<PlaybackSessionLease?> Function(PlaybackRequest) claim,
+    required Future<AudioSource?> Function(PlaybackRequest, bool Function())
+        load,
+  }) async {
+    if (musicQueue.busy || entries.isEmpty) return false;
+    _rememberQueue();
+    final previous = _queueUndo!;
+    final previousIndex = _queueUndoIndex;
+    final previousNext = Set<int>.of(_queueUndoNextIds);
+    final previousLabel = _queueUndoLabel;
+    final previousEpoch = _queueUndoNextEpoch;
+    final added = entries
+        .map((request) => MusicQueueEntry(++_queueSerial, request))
+        .toList();
+    var at = action == QueueInsertion.append
+        ? _albumQueue.length
+        : (_queueIndex + 1).clamp(0, _albumQueue.length);
+    if (action == QueueInsertion.next) {
+      while (at < _albumQueue.length &&
+          _queueNextIds.contains(_albumQueue[at].id)) {
+        at++;
+      }
+    }
+    _albumQueue.insertAll(at, added);
+    if (_queueIndex < 0) _queueIndex = 0;
+    if (_queueLabel.isEmpty) _queueLabel = 'Songs you added';
+    _queueClaim = claim;
+    _queueLoader = load;
+    if (action == QueueInsertion.next) {
+      _queueNextIds.addAll(added.map((entry) => entry.id));
+    }
+    _syncQueueSequence();
+    if (action == QueueInsertion.now) {
+      await jumpQueue(at);
+      if (!_queueActive || _albumQueue[_queueIndex].id != added.first.id) {
+        return false;
+      }
+      _queueUndo = previous;
+      _queueUndoIndex = previousIndex;
+      _queueUndoNextIds = previousNext;
+      _queueUndoLabel = previousLabel;
+      _queueUndoNextEpoch = previousEpoch;
+    }
+    if (action != QueueInsertion.now || _musicState?.error == null) {
+      _queueStatus =
+          'Added ${added.length} ${added.length == 1 ? 'song' : 'songs'}. Undo available.';
+    }
+    _notifyQueue();
+    return true;
+  }
+
+  Object? get queueUndoToken => _queueUndo;
+
+  Future<void> undoQueue({Object? expected}) async {
+    if (expected != null && !identical(expected, _queueUndo)) return;
     if (musicQueue.busy || _queueUndo == null) return;
+    final previous = _queueUndo!, previousIndex = _queueUndoIndex;
+    final previousNext = Set<int>.of(_queueUndoNextIds),
+        previousLabel = _queueUndoLabel;
+    final previousEpoch = _queueUndoNextEpoch;
     final current = _queueIndex >= 0 && _queueIndex < _albumQueue.length
         ? _albumQueue[_queueIndex]
         : null;
-    _albumQueue = _queueUndo!;
-    _queueIndex = _queueActive && current != null
-        ? _albumQueue.indexOf(current)
-        : _queueUndoIndex;
-    _queueUndo = null;
-    _queueStatus = 'Queue restored. Choose a track to play if paused.';
-    _syncQueueSequence();
+    final operation = ++_queueOperation;
+    _queueBusy = true;
+    try {
+      if (_queueActive && !previous.contains(current)) await stop();
+      if (operation != _queueOperation) return;
+      _albumQueue = previous;
+      _queueIndex =
+          _queueActive && current != null && previous.contains(current)
+              ? previous.indexOf(current)
+              : previousIndex;
+      _queueLabel = previousLabel;
+      _queueNextIds = previousEpoch == _queueNextEpoch ? previousNext : {};
+      _queueUndo = null;
+      _queueStatus = 'Queue restored. Choose a track to play if paused.';
+      _syncQueueSequence();
+    } finally {
+      if (operation == _queueOperation) {
+        _queueBusy = false;
+        _notifyQueue();
+      }
+    }
   }
 
   /// Transfers the displayed source list and account-scoped loader to the background
@@ -309,6 +416,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueUndo = null;
       _queueActive = true;
       _queueStatus = '';
+      _invalidateQueueNext();
     }
     _publishMusic();
     _broadcastState();
@@ -345,6 +453,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _musicChanges.add(state);
     if (_queueActive) {
       _queueIndex = _musicIndex;
+      _queueNextIds.removeAll(
+          _albumQueue.take(_queueIndex + 1).map((entry) => entry.id));
       if (error != null) {
         _queueStatus = 'Could not play track. Tap the track to retry.';
       }
@@ -369,6 +479,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         (target < 0 || target >= _musicEntries.length)) {
       return;
     }
+    if (delta < 0) _invalidateQueueNext();
     _collectionEnded = false;
     _failedMusicDelta = delta;
     if (delta != 0) _retryMusicPosition = null;

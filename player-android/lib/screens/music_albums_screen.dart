@@ -1,3 +1,5 @@
+import '../services/music_queue.dart';
+import '../widgets/server_song_actions.dart';
 import '../widgets/music_queue_sheet.dart';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
@@ -23,7 +25,8 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
   List<Map<String, dynamic>>? _albums;
   Map<String, dynamic>? _album;
   String? _error;
-  bool _loading = true;
+  bool _loading = true, _selecting = false;
+  final _selected = <int>{};
   int _generation = 0;
   final _artwork = <int, Future<Uint8List>>{};
   @override
@@ -47,6 +50,8 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
       _error = null;
     });
     _artwork.clear();
+    _selected.clear();
+    _selecting = false;
     final generation = ++_generation;
     final key = widget.albumKey;
     try {
@@ -92,31 +97,42 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-          actions: const [MusicQueueButton()],
-          title: Text(widget.albumKey != null
-              ? (_album?['title'] as String? ?? 'Album')
-              : widget.artistKey != null
-                  ? 'Albums by ${widget.artistName ?? 'artist'}'
-                  : 'Music · Albums')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Text('Could not load albums. $_error',
-                            textAlign: TextAlign.center),
-                        const SizedBox(height: 16),
-                        FilledButton(
-                            onPressed: _load, child: const Text('Retry'))
-                      ])))
-              : widget.albumKey != null
-                  ? _detail()
-                  : _catalog(),
-    );
+    return PopScope(
+        canPop: !_selecting,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _selecting) {
+            setState(() {
+              _selecting = false;
+              _selected.clear();
+            });
+          }
+        },
+        child: Scaffold(
+          appBar: AppBar(
+              actions: const [MusicQueueButton()],
+              title: Text(widget.albumKey != null
+                  ? (_album?['title'] as String? ?? 'Album')
+                  : widget.artistKey != null
+                      ? 'Albums by ${widget.artistName ?? 'artist'}'
+                      : 'Music · Albums')),
+          body: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(
+                      child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child:
+                              Column(mainAxisSize: MainAxisSize.min, children: [
+                            Text('Could not load albums. $_error',
+                                textAlign: TextAlign.center),
+                            const SizedBox(height: 16),
+                            FilledButton(
+                                onPressed: _load, child: const Text('Retry'))
+                          ])))
+                  : widget.albumKey != null
+                      ? _detail()
+                      : _catalog(),
+        ));
   }
 
   Widget _cover(Map<String, dynamic> album, {double? size}) {
@@ -207,6 +223,19 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         .cast<Map<String, dynamic>>()
         .map(Media.fromJson)
         .toList();
+    final selectedSongs =
+        songs.where((song) => _selected.contains(song.id)).toList();
+    PopupMenuButton<QueueInsertion> actions(List<Media> items, String label) =>
+        PopupMenuButton<QueueInsertion>(
+            tooltip: label,
+            enabled: items.isNotEmpty,
+            onSelected: (action) =>
+                insertServerSongs(context, ref, items, action),
+            itemBuilder: (_) => [
+                  for (final action in QueueInsertion.values)
+                    PopupMenuItem(
+                        value: action, child: Text(queueActionLabel(action)))
+                ]);
     return ListView(padding: const EdgeInsets.all(16), children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _cover(album, size: 112),
@@ -233,22 +262,69 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
               onPressed: songs.isEmpty ? null : () => _play(songs, 0),
               icon: const Icon(Icons.play_arrow),
               label: const Text('Play album'))),
+      Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+        TextButton(
+            onPressed: () => setState(() {
+                  _selecting = !_selecting;
+                  if (!_selecting) _selected.clear();
+                }),
+            child: Text(_selecting ? 'Cancel selection' : 'Select songs')),
+        if (_selecting) ...[
+          Text('${_selected.length} selected'),
+          actions(selectedSongs, 'Selected song actions')
+        ],
+      ]),
       const SizedBox(height: 16),
       for (var i = 0; i < songs.length; i++)
         ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: SizedBox(width: 42, child: Text(_number(songs[i]))),
+            leading: _selecting
+                ? Checkbox(
+                    value: _selected.contains(songs[i].id),
+                    semanticLabel: 'Select ${songs[i].displayTitle}',
+                    onChanged: (checked) => setState(() {
+                          if (checked == true) {
+                            _selected.add(songs[i].id);
+                          } else {
+                            _selected.remove(songs[i].id);
+                          }
+                        }))
+                : SizedBox(width: 42, child: Text(_number(songs[i]))),
             title: Text(songs[i].displayTitle,
                 maxLines: 2, overflow: TextOverflow.ellipsis),
             subtitle: Text(songs[i].music?.artist ?? 'Unknown artist'),
-            onTap: () => _play(songs, i),
+            onTap: () {
+              if (_selecting) {
+                setState(() {
+                  if (!_selected.add(songs[i].id)) {
+                    _selected.remove(songs[i].id);
+                  }
+                });
+              } else {
+                _play(songs, i);
+              }
+            },
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               Text(_duration(songs[i].duration)),
-              IconButton(
-                  tooltip: 'Song details',
-                  icon: const Icon(Icons.info_outline),
-                  onPressed: () =>
-                      context.push(AppRoutes.mediaDetailPath(songs[i].id)))
+              PopupMenuButton<String>(
+                tooltip: 'Actions for ${songs[i].displayTitle}',
+                onSelected: (value) {
+                  if (value == 'details') {
+                    context.push(AppRoutes.mediaDetailPath(songs[i].id));
+                  } else {
+                    insertServerSongs(context, ref, [songs[i]],
+                        QueueInsertion.values.byName(value));
+                  }
+                },
+                itemBuilder: (_) => [
+                  for (final action in QueueInsertion.values)
+                    PopupMenuItem(
+                        value: action.name,
+                        child: Text(queueActionLabel(action))),
+                  const PopupMenuItem(
+                      value: 'details', child: Text('Song details')),
+                ],
+              )
             ])),
     ]);
   }

@@ -195,3 +195,51 @@ the locked remembered login before checking Queue is empty. It then logs out
 from a nonempty viewer queue and signs in as the admin through actual controls
 without resetting app data. Failed steps retain screenshots, UI XML and tracebacks; a unit or widget
 check does not count as native acceptance.
+
+### M14 explicit song insertion
+
+On the fresh disposable music fixture and running API34 emulator with actual
+QEMU WAV output, run:
+
+```sh
+python3 music_insertion_e2e.py <fixture> --apk <fresh-x86_64.apk> \
+  --emulator-wav <owned-emulator-output.wav>
+```
+
+Use `--scenario editing|natural|boundaries|themes|scope|feedback|batch` for a focused recovery;
+`all` includes the theme journey under editing. The runner exercises actual
+single/multiple selection in displayed order, repeated FIFO Play next, append,
+duplicate occurrences, source/position preservation, Play now with captured
+expected tone/viewer media ID, Undo without autoplay, natural A→C→B audible
+order and authoritative viewer finished IDs, native Sets file-detail actions,
+real revoked-source retry, offline queue insertion, light/dark/long labels and
+48dp menus, selection Back, cold locked restart and actual logout/admin scope.
+It reuses M13's strict viewer-ID/source-output helpers, never their old artifacts.
+Failed attempts retain screenshot/UI XML/traceback. APK/audio/database/evidence
+must remain outside git. Run the real browser and native journeys before M14
+acceptance; unit/widget checks and this runbook alone are insufficient.
+
+`--scenario feedback` isolates the UI correction: fresh empty queue, batch two
+songs with visible Added 2 songs, then append one with visible Added 1 song and
+no stale batch message. It taps that snackbar's Undo using bounds from the same
+semantic snapshot and proves the queue retains exactly the original two songs.
+No audio/volume loop is needed because this path only verifies confirmation UI.
+
+M14 verification checkpoint (2026-10-21): native API34/x86_64 release 0.8.2/code
+4022 (37c42671 FIFO-fix APK) passed all core scenarios in one clean run, with
+viewer UID 2 progress, actual 440/659/523 Hz order, duplicate transport, real
+permission recovery, offline insertion, cold restart and account clear. Parent
+screenshot review caught stale queued confirmation feedback; a widget regression
+now passes after replacing old feedback. A fresh 777c1ce9 UI-fix APK and full 1,361-test Flutter gate pass; the focused
+feedback smoke above passed with the latest Added 1 song confirmation and exact
+Undo restoring the original two. The focused batch scenario also passed on 777c: actively playing A preserved
+through Append, then retained six-row order and actual B523→C659 with viewer
+UID 2 media IDs 2/6/4. All exact single/multiple action combinations are accepted
+on native, Chrome and Firefox. See
+[the M14 verification record](../../../docs/music-m14-implementation.md) for
+the build distinction, commands and retained evidence.
+
+`--scenario batch` starts with two occurrences, prepares reverse-order selection
+while paused, then verifies batch Append preserves the actively playing A source
+and forward position with 440 Hz output. Batch Play now inserts displayed B,C
+contiguously, retains the remainder, and verifies B523→C659 with viewer media IDs.

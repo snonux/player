@@ -848,3 +848,7 @@ body {
 .album-card .text-muted,
 .album-header .text-muted,
 .music-detail .text-muted { color: var(--text-secondary); }
+
+.music-selection { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.music-detail input[type="checkbox"] { flex: 0 0 auto; width: 1.2rem; height: 1.2rem; accent-color: var(--accent); }
+.music-detail .media-row > [data-song-menu] { min-width: 2.75rem; min-height: 2.75rem; }

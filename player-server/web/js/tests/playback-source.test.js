@@ -618,8 +618,89 @@ async function testLatestQueueIntentCancelsPendingSetsResume() {
   API.mediaDetail=original;
 }
 
+async function testUndoCannotResurrectInvalidatedFIFO() {
+  const song=id=>({id,type:'audio',file_name:`${id}.mp3`,duration:12});
+  for (const mode of ['jump','backward','natural']) {
+    setup(); await queue.playAlbumCollection([song(901),song(902)],0);
+    await queue.insertQueue([song(903),song(904)],'next');
+    if (mode === 'backward') await queue.advanceQueue(1);
+    await queue.insertQueue([song(905)],'append');
+    if (mode === 'jump') await queue.jumpQueue(0);
+    if (mode === 'backward') await queue.advanceQueue(-1);
+    if (mode === 'natural') await queue.advanceQueue(1);
+    queue.undoQueue();
+    await queue.insertQueue([song(906)],'next');
+    assertEqual(queue.queueState().entries.map(entry=>entry.media.id).join(), mode==='natural' ? '901,903,904,906,902' : '901,906,903,904,902', `${mode}: Undo content cannot resurrect an explicitly invalidated FIFO, natural advance retains remaining FIFO`);
+    assertEqual(queue.queueState().entries.filter(entry=>entry.upNext).map(entry=>entry.media.id).join(),mode==='natural' ? '904,906' : '906',`${mode}: only valid future occurrences carry FIFO markers`);
+  }
+}
+
+async function testSupersededPlayNowDoesNotConfirmOrCaptureNewUndo() {
+  setup();
+  const song = (id,duration=12) => ({id,duration,type:'audio',file_name:`${id}.mp3`});
+  await queue.playAlbumCollection([song(850)],0);
+  const original=API.mediaDetail; let resolve;
+  API.mediaDetail=()=>new Promise(done=>resolve=done);
+  try {
+    const pending=queue.insertQueue([song(851,1300)],'now');
+    await queue.playAlbumCollection([song(852)],0,'New album');
+    await queue.insertQueue([song(853)],'append');
+    const token=queue.queueUndoToken();
+    resolve({progress:{position_seconds:60}});
+    assertEqual(await pending,false,'superseded insertion reports canceled instead of confirmation');
+    assertEqual(queue.queueUndoToken(),token,'stale insertion cannot replace new Undo token');
+    assertEqual(player.currentMediaId(),852,'stale insertion cannot replace newer playback');
+  } finally {API.mediaDetail=original;}
+}
+
+async function testExplicitInsertionFIFOAndUndo() {
+  setup();
+  const song = id => ({id,type:'audio',file_name:`${id}.mp3`,duration:12});
+  const ids = () => queue.queueState().entries.map(entry=>entry.media.id).join();
+  await queue.playAlbumCollection([song(801),song(802)],0,'Insertion');
+  audio().currentTime=4;
+  const loads=audio().loads, original=queue.queueState().entries[0].id;
+  await queue.insertQueue([song(803),song(804)],'next');
+  await queue.insertQueue([song(803)],'next');
+  await queue.insertQueue([song(805)],'append');
+  assertEqual(ids(),'801,803,804,803,802,805','successive Next blocks are FIFO and Append is tail');
+  assertEqual(audio().loads,loads,'Next/Append never reload source');
+  assertEqual(audio().currentTime,4,'Next/Append preserve position');
+  assertEqual(queue.queueState().entries[0].id,original,'active occurrence survives insertion');
+  assertEqual(new Set(queue.queueState().entries.map(entry=>entry.id)).size,6,'duplicates have independent entry IDs');
+  await queue.advanceQueue(1);
+  await queue.insertQueue([song(806)],'next');
+  assertEqual(ids(),'801,803,804,803,806,802,805','advance consumes one pending occurrence and preserves remaining FIFO');
+  await queue.advanceQueue(-1);
+  await queue.insertQueue([song(807)],'next');
+  assertEqual(ids(),'801,807,803,804,803,806,802,805','backward transport starts a new FIFO block');
+  const before=ids();
+  await queue.insertQueue([song(808)],'now');
+  assertEqual(player.currentMediaId(),808,'Play now starts inserted song');
+  assert(ids().includes('802,805'),'Play now preserves original remainder');
+  queue.undoQueue(); await settle();
+  assertEqual(ids(),before,'Undo Play now restores previous contents');
+  assertEqual(player.currentMediaId(),undefined,'Undo inserted current stays paused');
+  player.selectAndPlay(song(899),0); audio().currentTime=6;
+  await queue.insertQueue([song(810)],'append');
+  assertEqual(player.currentMediaId(),899,'inactive append never takes Sets source');
+  assertEqual(audio().currentTime,6,'inactive append cannot seek Sets');
+  const token=queue.queueUndoToken();
+  queue.moveQueue(0,1); const moved=ids(); queue.undoQueue(token);
+  assertEqual(ids(),moved,'stale toast Undo cannot undo a later queue edit');
+  queue.clearQueue();
+  await queue.insertQueue([song(811)],'next');
+  assertEqual(player.currentMediaId(),899,'empty Next does not start playback');
+  assertEqual(ids(),'811','empty Next stores song');
+  await queue.insertQueue([song(812)],'next');
+  assertEqual(ids(),'811,812','empty queue FIFO keeps first added song first');
+}
+
 console.info('Running playback source tests...');
 for (const test of [
+  testUndoCannotResurrectInvalidatedFIFO,
+  testSupersededPlayNowDoesNotConfirmOrCaptureNewUndo,
+  testExplicitInsertionFIFOAndUndo,
   testLatestQueueIntentCancelsPendingSetsResume,
   testEditableQueueIdentityOwnershipAndProgress,
   testInitialLongAlbumPlayAndPendingReplacement,

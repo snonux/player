@@ -90,3 +90,9 @@ typing, `/` and `?` stay text. Escape closes help and returns focus to its opene
 Clear and Remove offer Undo; restoring contents never starts stopped audio.
 Escape returns focus to the opener. Sets playback keeps its browse sequence;
 playing a retained queue entry explicitly resumes the album queue.
+
+`e` inserts checked album songs (or the selected audio file) with Play next;
+`E` appends with Add to queue. Repeated Play next actions keep FIFO order.
+Song actions (`a` / ⋮) also offer explicit Play now, which inserts and starts
+the songs while preserving the remaining queue. Existing album Play/Enter/tap
+still replaces the queue with the album. Each duplicate is a separate entry.

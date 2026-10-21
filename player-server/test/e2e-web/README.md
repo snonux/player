@@ -286,3 +286,26 @@ The first source is paused immediately before slow UI edits. Screenshots cover
 light/dark desktop and narrow modal layouts. A `--list` run only validates test
 discovery; it does not verify the feature. Set `PLAYER_QUEUE_SCALE=1` for actual
 acceptance so the scale scenario cannot be silently skipped.
+
+### M14 explicit song insertion
+
+`tests/music-insertion.test.ts` uses the disposable music fixture and installed
+Chrome/Firefox configuration above. With a fresh current server binary/fixture,
+run `PLAYER_MUSIC_FIXTURE=<fixture> PLAYER_E2E_PULSE_SINK=<owned-null-sink>
+npx playwright test -c playwright.music.config.ts --grep M14 --workers=1`.
+The five main journeys and focused batch case exercise actual selected/single Play now, FIFO Play next,
+append, duplicate occurrences, current source/position preservation, Undo,
+natural A→C→B source tones and saved completion IDs, focus/typing/native Space,
+Sets actions, real revoked permission/retry, empty/reload/offline cached modules,
+and light/dark/narrow/long labels. Evidence and WAVs go outside git to the fixture's
+evidence directory. A listed test or Node check does not count as browser proof.
+
+M14 verification checkpoint (2026-10-21): installed Chrome 144.0.7559.132 and
+Firefox 156.0 have accepted all five main journeys plus the focused batch case each across retained runs.
+The latter proves Append preserves an actively playing source and displayed
+selection order, then batch Play now retains the remainder and audibly starts B→C. The
+permission oracle uses an untouched stream and verifies a real revoked 403;
+queue retry uses explicit visible/open-state controls. Initial cached-target
+and closed-panel oracle failures remain in the external evidence. See
+[the M14 verification record](../../../docs/music-m14-implementation.md) for
+versions, exact commands, audio/ID evidence and the separate native UI checkpoint.

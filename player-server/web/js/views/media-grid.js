@@ -1,3 +1,4 @@
+import { songActionButtons, bindSongActions } from '../queue-actions.js';
 import { mediaTitle, musicSubtitle } from '../music.js';
 import { API } from '../api.js';
 import { state, setMedia } from '../state.js';
@@ -451,6 +452,11 @@ function bindPager(grid) {
 }
 
 function bindMediaItems(grid) {
+  grid.querySelectorAll('.media-card[data-id], .media-row[data-id]').forEach(row => {
+    const song = state.media.find(item => String(item.id) === row.dataset.id);
+    if (song) row.insertAdjacentHTML('beforeend', songActionButtons(song));
+  });
+  bindSongActions(grid);
   grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
     el.addEventListener('click', (e) => {
       selectByElement(el);

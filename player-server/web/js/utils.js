@@ -12,10 +12,18 @@ export function escapeHtml(s) {
   return (s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-export function toast(msg, type = 'info') {
+let toastTimer;
+export function toast(msg, type = 'info', action) {
   const t = document.getElementById('toast');
   if (!t) return;
   t.textContent = msg;
   t.className = 'toast show ' + type;
-  setTimeout(() => t.classList.remove('show'), 2800);
+  if (action) {
+    const button = document.createElement('button');
+    button.className = 'btn btn-ghost'; button.textContent = action.label;
+    button.addEventListener('click', () => { action.run(); t.classList.remove('show'); });
+    t.append(' ', button);
+  }
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), action ? 6500 : 2800);
 }

@@ -79,7 +79,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 30));
     });
     await tester.pumpAndSettle();
-    expect(find.text('Queue is empty. Play an album to start a queue.'),
+    expect(find.text('Queue is empty. Add songs or play an album to start.'),
         findsOneWidget);
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
@@ -127,7 +127,7 @@ void main() {
     expect(find.text('Playing from: Private album'), findsNothing);
     expect(find.text('Private track'), findsNothing);
     expect(find.text('Queue paused. Choose a track to play.'), findsNothing);
-    expect(find.text('Queue is empty. Play an album to start a queue.'),
+    expect(find.text('Queue is empty. Add songs or play an album to start.'),
         findsOneWidget);
     expect(handler.musicQueue.canUndo, isFalse);
     expect(tester.takeException(), isNull);

@@ -1,3 +1,5 @@
+import '../services/music_queue.dart';
+import '../widgets/server_song_actions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -311,10 +313,25 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
             final handlers = <_MenuAction, VoidCallback>{
               _MenuAction.notes: _openNotes,
               _MenuAction.share: _share,
+              _MenuAction.playNow: () => insertServerSongs(
+                  context, ref, [_media!], QueueInsertion.now),
+              _MenuAction.playNext: () => insertServerSongs(
+                  context, ref, [_media!], QueueInsertion.next),
+              _MenuAction.append: () => insertServerSongs(
+                  context, ref, [_media!], QueueInsertion.append),
             };
             handlers[action]?.call();
           },
           itemBuilder: (_) => [
+            for (final entry in {
+              _MenuAction.playNow: QueueInsertion.now,
+              _MenuAction.playNext: QueueInsertion.next,
+              _MenuAction.append: QueueInsertion.append
+            }.entries)
+              PopupMenuItem<_MenuAction>(
+                  value: entry.key,
+                  enabled: _media?.type == 'audio',
+                  child: Text(queueActionLabel(entry.value))),
             PopupMenuItem<_MenuAction>(
               key: const Key('media_detail_notes_menu_item'),
               // Disable the item until media has loaded so the mediaId is valid.
@@ -409,7 +426,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 /// Using a typed enum (rather than raw strings) makes [PopupMenuButton] type
 /// safe and avoids stringly-typed comparisons in [onSelected] (type safety /
 /// Open-Closed: add new actions here without touching the menu-builder switch).
-enum _MenuAction { notes, share }
+enum _MenuAction { notes, share, playNow, playNext, append }
 
 // ---------------------------------------------------------------------------
 // _MediaDetailContent

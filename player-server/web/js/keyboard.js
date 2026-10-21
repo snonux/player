@@ -8,7 +8,7 @@ export function initKeyboard(handlers) {
     // Enter activates a focused button or link natively. Space does so only
     // inside dialogs; elsewhere it stays play/pause, so a toolbar or card
     // button that kept focus after a mouse click cannot capture it.
-    const nativeActivation = buttonLike && (e.key === 'Enter' || (e.key === ' ' && (inDialog || inQueue)));
+    const nativeActivation = buttonLike && (e.key === 'Enter' || (e.key === ' ' && (inDialog || inQueue || e.target.closest?.('#toast'))));
     // Set/folder open buttons keep DOM focus while j/k/h/l move the
     // selection, so Enter there opens the selected card instead of
     // whichever card button happens to hold focus.
@@ -349,6 +349,8 @@ export function initKeyboard(handlers) {
         e.preventDefault();
         handlers.playPause?.(e);
         break;
+      case 'e': e.preventDefault(); handlers.queueNext?.(); break;
+      case 'E': e.preventDefault(); handlers.queueAppend?.(); break;
       case 'N':
         e.preventDefault();
         handlers.nextTrack?.(e);

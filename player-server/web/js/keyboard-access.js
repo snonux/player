@@ -227,6 +227,7 @@ export function initKeyboardAccess() {
     refresh();
     menu.querySelector('button:not(:disabled)')?.focus();
   }
+  document.addEventListener('media:actions', event => openMediaActions(event.detail));
   document.addEventListener('click', event => {
     if (event.pointerType !== 'touch' || event.target.closest('button, a, input, select, textarea')) return;
     const card = event.target.closest('#media-grid .media-card[data-id], #media-grid .media-row[data-id]');
