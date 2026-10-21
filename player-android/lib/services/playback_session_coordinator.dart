@@ -54,6 +54,15 @@ class PlaybackSessionCoordinator {
   bool isCurrent(PlaybackSessionLease lease) =>
       _generation == lease.generation && identical(_active?.lease, lease);
 
+  /// Updates a track within an already-owned background audio sequence.
+  /// The lease and stop callback remain unchanged.
+  void updateSource(PlaybackSessionLease lease, PlaybackRequest request) {
+    if (!isCurrent(lease)) return;
+    final active = _active!;
+    _active = _ActivePlayback(request.kind, request.identity, active.stop,
+        lease, request.sourceUri.toString());
+  }
+
   Future<void> stopServerSession() =>
       _stopIf((kind) => kind == PlaybackSourceKind.server);
 
@@ -137,6 +146,8 @@ class PlaybackSessionLease {
   final String identity;
 
   bool get isCurrent => _owner.isCurrent(this);
+  void updateSource(PlaybackRequest request) =>
+      _owner.updateSource(this, request);
   Future<void> release() => _owner.release(this);
   Future<void> stop() => _owner.stop(this);
 }

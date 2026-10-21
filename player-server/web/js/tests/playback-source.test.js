@@ -113,13 +113,14 @@ function script(...answers) {
 }
 
 const player = await import('../playback.js');
+const { API } = await import('../api.js');
 
 let failureReports = 0;
-function setup() {
+function setup(options = {}) {
   resetDom();
   failureReports = 0;
   globalThis.location = { pathname: '/', href: '/' };
-  player.initPlayer({ onPlaybackFailed: () => { failureReports += 1; } });
+  player.initPlayer({ onPlaybackFailed: () => { failureReports += 1; }, ...options });
   script(response(200));
 }
 
@@ -342,9 +343,132 @@ async function testDirectLoadProbesShareCompatUrl() {
   assertEqual(requests.length, 0, 'plain share stream is not probed');
 }
 
+async function testLocalFlushDoesNotOverwriteRemoteOwners() {
+  const progress = API.progress, ticket = API.castTicket;
+  let writes = 0;
+  try {
+    API.progress = async () => { writes++; };
+    setup();
+    player.selectAndPlay({ id: 6, type: 'audio', file_name: 'song.mp3' }, 0);
+    audio().currentTime = 5;
+    const popup = { closed: false, postMessage() {} };
+    window.open = () => popup;
+    player.toggleDetach();
+    player.selectAndPlay(plainVideo, 0);
+    await settle();
+    assertEqual(writes, 0, 'the detached popup owns progress, not the main stale element');
+    popup.closed = true;
+    delete window.open;
+
+    setup();
+    const cast = await import('../cast.js');
+    const listeners = {};
+    let session = { loadMedia: async () => {} };
+    const context = {
+      setOptions() {}, getCastState: () => 'none', getCurrentSession: () => session,
+      addEventListener: (type, listener) => { listeners[type] = listener; },
+      endCurrentSession: () => { session = null; listeners.session({ sessionState: 'ended' }); },
+    };
+    function Value() {}
+    window.chrome = { cast: { AutoJoinPolicy: {}, media: {
+      DEFAULT_MEDIA_RECEIVER_APP_ID: 'default', StreamType: { BUFFERED: 'buffered' },
+      PlayerState: { IDLE: 'idle' }, MediaInfo: Value, LoadRequest: Value,
+      GenericMediaMetadata: Value, MusicTrackMediaMetadata: Value,
+    } } };
+    window.isSecureContext = true;
+    window.cast = { framework: {
+      CastContext: { getInstance: () => context },
+      CastContextEventType: { CAST_STATE_CHANGED: 'cast', SESSION_STATE_CHANGED: 'session' },
+      CastState: { NO_DEVICES_AVAILABLE: 'none' },
+      SessionState: { SESSION_STARTED: 'started', SESSION_ENDED: 'ended' },
+      RemotePlayer: function () { return { isPaused: true }; },
+      RemotePlayerController: function () { return { addEventListener() {} }; },
+      RemotePlayerEventType: {},
+    } };
+    cast.initCast({ button: fakeElement('cast') }, window,
+      { createElement: () => ({}), head: { appendChild() {} } });
+    window.__onGCastApiAvailable(true);
+    API.castTicket = async () => ({ ticket: 'local-test', stream_content_type: 'audio/mpeg' });
+    player.selectAndPlay({ id: 6, type: 'audio', file_name: 'song.mp3' }, 0);
+    audio().currentTime = 5;
+    await cast.castItem({ id: 6, type: 'audio', file_name: 'song.mp3' }, 60);
+    assert(cast.isCasting(), 'test receiver owns the playback session');
+    player.selectAndPlay(plainVideo, 0);
+    await settle();
+    assertEqual(writes, 0, 'the receiver owns progress, stale local 5s cannot overwrite remote 60s');
+    cast.stopCasting();
+  } finally {
+    API.progress = progress; API.castTicket = ticket;
+    delete window.chrome; delete window.cast; delete window.isSecureContext;
+  }
+}
+
+async function testInactiveOrStaleEndedEventCannotFinishCurrentAudio() {
+  let writes = 0, advanced = 0;
+  setup({ onNext: () => { advanced++; } });
+  const progress = API.progress, status = API.progressStatus;
+  try {
+    API.progress = async () => { writes++; };
+    API.progressStatus = async () => { writes++; };
+    player.selectAndPlay({ id: 6, type: 'audio', file_name: 'song.mp3' }, 0);
+    video().currentTime = 12; video().ended = true;
+    video().dispatch('ended');
+    audio().currentTime = 3; audio().ended = false;
+    audio().dispatch('ended');
+    await settle();
+    assertEqual(writes, 0, 'idle old video and stale active events cannot finish current audio');
+    assertEqual(advanced, 0, 'inactive or stale ended events cannot advance');
+    assertEqual(player.isPlaybackActive(), true, 'stale events cannot stop active playback state');
+  } finally { API.progress = progress; API.progressStatus = status; }
+}
+
+async function testCompletionPrecedesAdvanceWithoutReopeningFinished() {
+  const calls = [];
+  let release;
+  setup({ onNext: () => { calls.push('next'); player.selectAndPlay(plainVideo, 0); } });
+  const progress = API.progress, status = API.progressStatus;
+  try {
+    API.progress = (id, position) => {
+      calls.push(`position:${id}:${position}`);
+      return new Promise(resolve => { release = resolve; });
+    };
+    API.progressStatus = async (id, state) => { calls.push(`${state}:${id}`); };
+    player.selectAndPlay({ id: 6, type: 'audio', file_name: 'song.mp3' }, 0);
+    audio().currentTime = 12;
+    audio().ended = true;
+    audio().dispatch('ended');
+    await settle();
+    assertEqual(calls.join(','), 'position:6:12', 'advance waits for the final save');
+    release();
+    await settle();
+    assertEqual(calls.join(','), 'position:6:12,finished:6,next', 'finish is before next and replacement does not reopen the old track');
+  } finally { API.progress = progress; API.progressStatus = status; }
+}
+
+async function testDelayedCompletionCannotAdvanceAReplacement() {
+  let release, advanced = 0;
+  setup({ onNext: () => { advanced++; } });
+  const progress = API.progress, status = API.progressStatus;
+  try {
+    API.progress = () => new Promise(resolve => { release = resolve; });
+    API.progressStatus = async () => {};
+    player.selectAndPlay({ id: 6, type: 'audio', file_name: 'song.mp3' }, 0);
+    audio().currentTime = 12; audio().ended = true;
+    audio().dispatch('ended');
+    await settle();
+    player.selectAndPlay(plainVideo, 0);
+    release(); await settle();
+    assertEqual(advanced, 0, 'a delayed old completion cannot navigate away from the new source');
+  } finally { API.progress = progress; API.progressStatus = status; }
+}
+
 console.log = () => {};
 console.info('Running playback source tests...');
 for (const test of [
+  testLocalFlushDoesNotOverwriteRemoteOwners,
+  testInactiveOrStaleEndedEventCannotFinishCurrentAudio,
+  testCompletionPrecedesAdvanceWithoutReopeningFinished,
+  testDelayedCompletionCannotAdvanceAReplacement,
   testPlainStreamIsAssignedDirectly,
   testCompatStreamWaitsUntilReady,
   testBusyStatusIsShown,

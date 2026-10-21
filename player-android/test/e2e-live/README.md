@@ -113,3 +113,22 @@ timing and saved-login oracle regression checks (no emulator needed).
   `FORMATS` here, to the web suite and to `gen-all-formats.sh`.
 - Changed button or screen labels: update the regular expressions passed to
   `adrv.tap` / `adrv.wait`.
+
+## M12 real track transport
+
+With a fresh APK, disposable music fixture and running emulator using the
+QEMU WAV backend from the music runbook:
+
+```sh
+python3 -u music_sequence_e2e.py <fixture-dir> --apk app-x86_64-release.apk \
+  --emulator-wav /path/to/emulator-output.wav
+```
+
+The runner checks touch controls and distinct 15-second seeking, three
+natural completions with actual source tones and server progress by media
+ID, Back/background playback, actual notification and lockscreen buttons,
+light/dark layouts, missing-source Retry and audiobook source seeking. It
+requires keyguard state before claiming lockscreen proof. `--scenario` selects
+a focused recovery while retaining prior attempts. It uses only the disposable
+fixture, adds one generated spoken-audio source there, and clears app/reverse
+state at teardown. Missing native controls or audio capture are failures.

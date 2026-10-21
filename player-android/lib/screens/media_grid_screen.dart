@@ -503,6 +503,7 @@ class _MediaGrid extends StatelessWidget {
         delegate: SliverChildBuilderDelegate(
           (context, index) => _MediaCard(
             item: media[index],
+            sequence: media,
             thumbnailUrl: thumbnailUrlBuilder(media[index].id),
             onFavoriteToggle: () => onFavoriteToggle(index),
           ),
@@ -560,11 +561,13 @@ class _MediaGrid extends StatelessWidget {
 class _MediaCard extends StatelessWidget {
   const _MediaCard({
     required this.item,
+    required this.sequence,
     required this.thumbnailUrl,
     required this.onFavoriteToggle,
   });
 
   final Media item;
+  final List<Media> sequence;
   final String thumbnailUrl;
 
   /// Called when the heart icon is tapped.  The parent state performs the
@@ -578,7 +581,10 @@ class _MediaCard extends StatelessWidget {
       key: Key('media_card_${item.id}'),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.push(AppRoutes.mediaDetailPath(item.id)),
+        onTap: () => context.push(AppRoutes.mediaDetailPath(item.id), extra: {
+          'sequence': List<Media>.of(sequence),
+          'traverseFolders': false
+        }),
         child: Stack(
           fit: StackFit.expand,
           children: [

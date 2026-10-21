@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'app_routes.dart';
+import 'models/media.dart';
 import 'navigation_key.dart';
 import 'providers/auth_state_provider.dart';
 import 'providers/first_run_provider.dart';
@@ -205,7 +206,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           // The ':id' path parameter is guaranteed by the route pattern.
           final id = state.pathParameters['id']!;
-          return MediaDetailScreen(mediaId: id);
+          return MediaDetailScreen(
+              mediaId: id,
+              sequence: state.extra is Map
+                  ? ((state.extra as Map)['sequence'] as List<Media>? ??
+                      const [])
+                  : const [],
+              traverseFolders: state.extra is Map &&
+                  (state.extra as Map)['traverseFolders'] == true);
         },
       ),
       GoRoute(
@@ -319,6 +327,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                   ?.id ??
               0;
           return AudioPlayerScreen(
+            traverseFolders: state.extra is Map &&
+                (state.extra as Map)['traverseFolders'] == true,
+            sequence: state.extra is Map
+                ? ((state.extra as Map)['sequence'] as List<Media>? ?? const [])
+                : const [],
             sourceName: state.extra is Map
                 ? ((state.extra as Map)['sourceName'] as String? ?? '')
                 : '',

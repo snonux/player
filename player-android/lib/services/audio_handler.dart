@@ -4,6 +4,8 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'audio_progress_session.dart';
+import 'music_sequence.dart';
+import 'playback_request.dart';
 
 // ---------------------------------------------------------------------------
 // PlayerAudioHandler
@@ -59,12 +61,151 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _broadcastState();
       final progress = _progress;
       if (state == ProcessingState.completed && progress != null) {
-        unawaited(progress.record(force: true, completed: true));
+        unawaited(_completeTrack(progress));
       }
     });
   }
 
   final AudioPlayer _player;
+  List<PlaybackRequest> _musicEntries = const [];
+  int _musicIndex = -1;
+  bool _movingTrack = false;
+  int? _failedMusicDelta;
+  Duration? _retryMusicPosition;
+  Duration _musicPosition = Duration.zero;
+  StreamSubscription<Duration>? _musicPositions;
+  Future<List<PlaybackRequest>> Function()? _expandMusic;
+  Future<AudioSource?> Function(PlaybackRequest, bool Function())? _musicLoader;
+  void Function(PlaybackRequest)? _musicChanged;
+  final _musicChanges = StreamController<MusicSequenceState>.broadcast();
+  MusicSequenceState? _musicState;
+  MusicSequenceState? get musicState => _musicState;
+  Stream<MusicSequenceState> get musicChanges => _musicChanges.stream;
+
+  /// Transfers the displayed source list and account-scoped loader to the background
+  /// handler. Neither callback may capture a screen or a WidgetRef.
+  void startMusicSequence(
+      {required List<PlaybackRequest> entries,
+      required int index,
+      required Future<AudioSource?> Function(PlaybackRequest, bool Function())
+          load,
+      required void Function(PlaybackRequest) changed,
+      required Future<List<PlaybackRequest>> Function() expand}) {
+    unawaited(_musicPositions?.cancel());
+    _musicPosition = _player.position;
+    _failedMusicDelta = null;
+    _retryMusicPosition = null;
+    _musicPositions = _player.positionStream.listen((position) {
+      if (_musicIndex >= 0 &&
+          _canControlSource &&
+          _player.processingState == ProcessingState.ready) {
+        _musicPosition = position;
+      }
+    });
+    _musicEntries = List.unmodifiable(entries);
+    _musicIndex = index;
+    _musicLoader = load;
+    _musicChanged = changed;
+    _expandMusic = expand;
+    _publishMusic();
+    _broadcastState();
+  }
+
+  Future<void> retryMusicTrack() {
+    final delta = _failedMusicDelta ?? 0;
+    return _moveTrack(delta,
+        resumePosition: delta == 0 ? _retryMusicPosition : null);
+  }
+
+  void _publishMusic({bool loading = false, Object? error}) {
+    if (_musicIndex < 0) return;
+    final state = MusicSequenceState(
+        request: _musicEntries[_musicIndex],
+        index: _musicIndex,
+        length: _musicEntries.length,
+        sourceGeneration: _sourceGeneration,
+        loading: loading,
+        error: error);
+    _musicState = state;
+    _musicChanges.add(state);
+  }
+
+  Future<void> _completeTrack(AudioProgressSession progress) async {
+    await progress.record(force: true, completed: true);
+    if (!identical(progress, _progress) || !_canControlSource) return;
+    if (_musicIndex >= 0) await _moveTrack(1);
+  }
+
+  Future<void> _moveTrack(int delta, {Duration? resumePosition}) async {
+    if (_movingTrack || !_canControlSource || _musicIndex < 0) return;
+    var target = _musicIndex + delta;
+    _failedMusicDelta = delta;
+    if (delta != 0) _retryMusicPosition = null;
+    _movingTrack = true;
+    final generation = ++_sourceGeneration;
+    final owns = _ownsSource;
+    bool current() => generation == _sourceGeneration && owns?.call() != false;
+    _controlsEnabled = false;
+    try {
+      await endProgress();
+      if (!current()) return;
+      await _player.pause();
+      _publishMusic(loading: true);
+      if (target < 0 || target >= _musicEntries.length) {
+        final old = _musicEntries[_musicIndex].identity;
+        final expanded = await _expandMusic!();
+        if (!current()) return;
+        final base = expanded.indexWhere((request) => request.identity == old);
+        if (expanded.isNotEmpty && base >= 0) {
+          _musicEntries = List.unmodifiable(expanded);
+          target = (base + delta) % expanded.length;
+        } else {
+          target = (target % _musicEntries.length);
+        }
+      }
+      _musicIndex = target;
+      _failedMusicDelta = 0;
+      _publishMusic(loading: true);
+      final request = _musicEntries[target];
+      final source = await _musicLoader!(request, current);
+      if (!current()) return;
+      if (source == null) throw StateError('Playback preparation stopped');
+      await loadSourceForSession(source, generation);
+      if (!current()) return;
+      double position = resumePosition?.inMilliseconds.toDouble() ?? -1;
+      position = position >= 0 ? position / 1000 : (request.startPosition ?? 0);
+      if (resumePosition == null &&
+          request.startPosition == null &&
+          request.readPosition != null) {
+        try {
+          position = await request.readPosition!() ?? 0;
+        } catch (_) {}
+      }
+      if (!current()) return;
+      await seekForSession(
+          Duration(milliseconds: (position * 1000).round()), generation);
+      if (!current()) return;
+      setMediaItem(id: request.identity, title: request.title);
+      startProgress(
+          savePosition: request.savePosition!,
+          markFinished: request.markFinished!);
+      _musicPosition = Duration(milliseconds: (position * 1000).round());
+      _retryMusicPosition = null;
+      _failedMusicDelta = null;
+      _musicChanged?.call(request);
+      activateSourceSession(generation);
+      _publishMusic();
+      unawaited(play());
+    } catch (error) {
+      if (current()) {
+        _controlsEnabled = true;
+        _onPlaybackError(error);
+      }
+    } finally {
+      _movingTrack = false;
+    }
+  }
+
   AudioProgressSession? _progress;
   int _stopGeneration = 0;
   int _sourceGeneration = 0;
@@ -94,6 +235,16 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Invalidates pending source work from the previous audio session.
   int beginSourceSession({bool Function()? ownsSource}) {
+    unawaited(_musicPositions?.cancel());
+    _musicPositions = null;
+    _failedMusicDelta = null;
+    _retryMusicPosition = null;
+    _musicEntries = const [];
+    _musicIndex = -1;
+    _musicState = null;
+    _musicLoader = null;
+    _expandMusic = null;
+    _musicChanged = null;
     _controlsEnabled = false;
     _ownsSource = ownsSource;
     return ++_sourceGeneration;
@@ -188,6 +339,16 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
+    unawaited(_musicPositions?.cancel());
+    _musicPositions = null;
+    _failedMusicDelta = null;
+    _retryMusicPosition = null;
+    _musicEntries = const [];
+    _musicIndex = -1;
+    _musicState = null;
+    _musicLoader = null;
+    _expandMusic = null;
+    _musicChanged = null;
     _controlsEnabled = false;
     _stopGeneration++;
     _sourceGeneration++;
@@ -235,6 +396,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// podcast and audiobook use-cases rather than a full track change).
   @override
   Future<void> skipToNext() async {
+    if (_musicIndex >= 0) return _moveTrack(1);
     if (!_canControlSource) return;
     final current = _player.position;
     final total = _player.duration ?? Duration.zero;
@@ -246,6 +408,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Skip back 15 seconds.
   @override
   Future<void> skipToPrevious() async {
+    if (_musicIndex >= 0) return _moveTrack(-1);
     if (!_canControlSource) return;
     final current = _player.position;
     final total = _player.duration ?? Duration.zero;
@@ -253,6 +416,15 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         _clamp(current - const Duration(seconds: 15), Duration.zero, total);
     await seek(prev);
   }
+
+  @override
+  Future<void> fastForward() => _seekBy(const Duration(seconds: 15));
+
+  @override
+  Future<void> rewind() => _seekBy(const Duration(seconds: -15));
+
+  Future<void> _seekBy(Duration delta) => seek(_clamp(_player.position + delta,
+      Duration.zero, _player.duration ?? Duration.zero));
 
   /// Changes playback speed and refreshes the notification state.
   @override
@@ -298,6 +470,16 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Marks the media session as failed, so the notification stops showing a
   /// playing item, and tells the screen (if one is listening).
   void _onPlaybackError(Object error) {
+    if (_musicIndex >= 0) {
+      // Runtime failures belong to the handler's current track even after
+      // Back. A later Retry must not rebuild the original route's source.
+      if (!_movingTrack) {
+        _retryMusicPosition = _player.processingState == ProcessingState.ready
+            ? _player.position
+            : _musicPosition;
+      }
+      _publishMusic(error: error);
+    }
     playbackState.add(
       playbackState.value.copyWith(
         processingState: AudioProcessingState.error,
@@ -320,10 +502,16 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         // Advertise all supported actions so the notification, lock screen,
         // and Bluetooth headset buttons all get the correct controls.
         controls: [
-          MediaControl.skipToPrevious, // maps to skipToPrevious (–15 s)
+          if (_musicIndex >= 0)
+            MediaControl.skipToPrevious
+          else
+            MediaControl.rewind,
           if (_player.playing) MediaControl.pause else MediaControl.play,
           MediaControl.stop,
-          MediaControl.skipToNext, // maps to skipToNext (+15 s)
+          if (_musicIndex < 0)
+            MediaControl.fastForward
+          else
+            MediaControl.skipToNext,
         ],
         systemActions: const {
           MediaAction.seek,

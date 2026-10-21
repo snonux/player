@@ -236,7 +236,10 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
   /// Navigates to the [MediaDetailScreen] for [mediaId].
   void _openMedia(int mediaId) =>
-      context.push(AppRoutes.mediaDetailPath(mediaId));
+      context.push(AppRoutes.mediaDetailPath(mediaId), extra: {
+        'sequence': List<Media>.of(_result?.media ?? []),
+        'traverseFolders': true
+      });
 
   /// Returns the URL for the cover image of a folder at [folderPath] within
   /// [widget.setId].

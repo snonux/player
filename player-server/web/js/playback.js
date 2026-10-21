@@ -53,6 +53,7 @@ export {
 let currentMedia = null;
 let isPlaying = false;
 let progressInterval = null;
+let progressWrites = Promise.resolve();
 let currentMediaIndex = -1;
 let reportProgress = true;
 let nextHandler = null;
@@ -262,11 +263,16 @@ function bindMediaEvents(e, m) {
   ['progress', 'durationchange', 'loadeddata', 'canplay', 'seeked'].forEach((event) => {
     m.addEventListener(event, () => updateBufferedRanges(m));
   });
-  m.addEventListener('ended', () => {
+  m.addEventListener('ended', async () => {
+    if (m !== currentMediaElement() || !m.ended) return;
+    const endedID = currentMedia?.id;
     updateUI(false);
     isPlaying = false;
     stopProgressTimer();
-    triggerNext({ forcePlay: true });
+    await saveCurrentProgress({ finished: true });
+    if (currentMedia?.id === endedID && currentMediaElement() === m && m.ended) {
+      triggerNext({ forcePlay: true });
+    }
   });
   m.addEventListener('play', () => { updateUI(true); isPlaying = true; startProgressTimer(); });
   m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
@@ -493,6 +499,7 @@ export function stopAndClose() {
 }
 
 export function selectAndPlay(media, index, resumeFrom = 0) {
+  saveCurrentProgress();
   document.dispatchEvent?.(new CustomEvent('player:media-opened', { detail: { media } }));
   currentMedia = media;
   personal?.setMedia(media);
@@ -567,6 +574,8 @@ function showMedia(media, source, thumbnailUrl) {
   // Whatever was still being prepared belongs to the previous item.
   cancelPendingSource();
   const e = els();
+  e.btnPrev?.setAttribute('aria-label', media.type === 'audio' ? 'Previous track' : 'Previous');
+  e.btnNext?.setAttribute('aria-label', media.type === 'audio' ? 'Next track' : 'Next');
   if (media.type === 'image') {
     currentSource = null;
     showImage(e, source.url);
@@ -902,7 +911,7 @@ function startProgressTimer() {
   progressInterval = setInterval(() => {
     const m = currentMediaElement();
     if (m && currentMedia && !m.paused) {
-      API.progress(currentMedia.id, m.currentTime).catch(() => {});
+      enqueueProgress(currentMedia.id, m.currentTime);
     }
   }, 3000);
 }
@@ -917,6 +926,27 @@ function highlightPlayingCard() {
   if (currentMedia?.id) {
     document.querySelector(`.media-card[data-id="${currentMedia.id}"], .media-row[data-id="${currentMedia.id}"]`)?.classList.add('playing');
   }
+}
+
+// Capture the old source before replacing it; periodic saves alone lose the
+// final seconds of short songs and manual track skips.
+function saveCurrentProgress({ finished = false } = {}) {
+  const element = currentMediaElement();
+  if (!reportProgress || isCasting() || isDetached() || !currentMedia || !element ||
+      (!finished && element.ended) || !(element.currentTime > 0)) {
+    return progressWrites;
+  }
+  return enqueueProgress(currentMedia.id, element.currentTime, finished);
+}
+
+// Keep completion after every earlier position write. The track replacement
+// must not reopen the item with another final-position write after "finished".
+function enqueueProgress(id, position, finished = false) {
+  progressWrites = progressWrites.catch(() => {}).then(async () => {
+    await API.progress(id, position);
+    if (finished) await API.progressStatus(id, 'finished');
+  }).catch(() => {});
+  return progressWrites;
 }
 
 function triggerPrevious(options = {}) {

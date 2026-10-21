@@ -37,7 +37,7 @@ fields and dialogs, then resumes folder/set navigation once the grid is shown.
 | `←` / `→` | Seek or switch pages |
 | `h` / `l` | Seek or switch pages |
 | `Enter` | Open selected media (navigate to detail) |
-| `Space` / `p` | Play / pause / switch to selected item |
+| `Space` / `p` | Play / pause the loaded item; play the selection when nothing is loaded |
 | `N` / `P` | Next / previous track |
 | `f` | Toggle fullscreen on the player wrapper |
 | `v` | Cycle five audio visualizations and Off (also available in the player’s Visuals selector) |

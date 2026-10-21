@@ -380,6 +380,17 @@ func buildFoldersIn(layout thumb.Layout, folderMap map[string]*folderContent, me
 		}
 	}
 	sort.Slice(folders, func(i, j int) bool { return folders[i].Name < folders[j].Name })
+	// Flattened files came from a map. Merge them back into the repository's
+	// filename order, with stable path/ID ties for repeated browse requests.
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].FileName != items[j].FileName {
+			return items[i].FileName < items[j].FileName
+		}
+		if items[i].RelPath != items[j].RelPath {
+			return items[i].RelPath < items[j].RelPath
+		}
+		return items[i].ID < items[j].ID
+	})
 	return folders, items
 }
 

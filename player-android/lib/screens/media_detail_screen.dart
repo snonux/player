@@ -38,7 +38,13 @@ class MediaDetailScreen extends ConsumerStatefulWidget {
   /// The string form of the media ID extracted from the '/media/:id' route.
   final String mediaId;
 
-  const MediaDetailScreen({super.key, required this.mediaId});
+  final List<Media> sequence;
+  final bool traverseFolders;
+  const MediaDetailScreen(
+      {super.key,
+      required this.mediaId,
+      this.sequence = const [],
+      this.traverseFolders = false});
 
   @override
   ConsumerState<MediaDetailScreen> createState() => _MediaDetailScreenState();
@@ -261,6 +267,8 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       context.push(
         AppRoutes.audioPlayerPath(media.id.toString()),
         extra: {
+          'sequence': widget.sequence.isEmpty ? [media] : widget.sequence,
+          'traverseFolders': widget.traverseFolders,
           'mediaUrl': playbackUrl,
           'sourceName': media.relPath,
           'title': media.displayTitle

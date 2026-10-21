@@ -47,6 +47,8 @@ import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/app_routes.dart';
 import 'package:player_android/models/lyrics.dart';
+import 'package:player_android/models/media.dart';
+import 'package:player_android/models/media_set.dart';
 import 'package:player_android/models/media_bookmark.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/local_library_provider.dart';
@@ -115,6 +117,17 @@ class _FakeApiClient extends PlayerApiClient {
   @override
   Future<void> deleteBookmark(int mediaId, int id) async {
     bookmarks.removeWhere((item) => item.id == id);
+  }
+
+  int browseCalls = 0;
+  @override
+  Future<List<MediaSet>> listSets() async => [
+        MediaSet.fromJson({'id': 1, 'name': 'Music'})
+      ];
+  @override
+  Future<Map<String, dynamic>> browseSet(int setId, {String? parent}) async {
+    browseCalls++;
+    throw StateError('Filtered list must not browse outside itself');
   }
 
   int getMediaProgressCallCount = 0;
@@ -309,6 +322,12 @@ class _PlayableAudioPlayer extends AudioPlayer {
   }
 
   @override
+  Future<void> pause() async {
+    isPlaying = false;
+    playingChanges.add(false);
+  }
+
+  @override
   Future<void> stop() async {
     isStopped = true;
     isPlaying = false;
@@ -371,6 +390,8 @@ Future<void> _pumpScreen(
   WidgetTester tester,
   _FakeApiClient fakeClient, {
   String mediaId = '42',
+  List<Media> sequence = const [],
+  bool traverseFolders = false,
   String? mediaUrl,
   String? mediaTitle,
   Uri? serverBaseUrl,
@@ -395,6 +416,8 @@ Future<void> _pumpScreen(
         path: '/audio/:mediaId',
         builder: (context, state) => AudioPlayerScreen(
           mediaId: state.pathParameters['mediaId']!,
+          sequence: sequence,
+          traverseFolders: traverseFolders,
           mediaUrl: mediaUrl,
           mediaTitle: mediaTitle,
           request: request,
@@ -1165,6 +1188,60 @@ void main() {
       await player.playingChanges.close();
     });
   }
+
+  testWidgets(
+      'music runtime failure retries B at B position and filtered edges stay inside displayed results',
+      (tester) async {
+    final (player, handler) = _usePlayableHandler();
+    addTearDown(handler.stop);
+    final client = _FakeApiClient()..progressResult = 2;
+    final songs = [1, 2]
+        .map((id) => Media.fromJson({
+              'id': id,
+              'set_id': 1,
+              'type': 'audio',
+              'file_name': 'song$id.mp3',
+              'music': {'title': 'Song $id'}
+            }))
+        .toList();
+    await _pumpScreen(tester, client,
+        mediaId: '1',
+        mediaTitle: 'Song 1',
+        mediaUrl: client.streamUrl(1),
+        sequence: songs,
+        handlerOverride: handler,
+        serverBaseUrl: Uri.parse('http://localhost:8080'));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    await tester.runAsync(handler.skipToNext);
+    await tester.pump();
+    expect(handler.lastTitle, 'Song 2');
+    player.elapsed = const Duration(seconds: 7);
+    await tester.pump(const Duration(seconds: 1));
+    player.playbackEvents.addError(StateError('late source failure'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('audio_player_error')), findsOneWidget);
+    expect(handler.musicState?.error, isStateError);
+    player.elapsed = Duration.zero;
+    await tester.tap(find.byKey(const Key('audio_player_retry')));
+    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    expect(handler.lastTitle, 'Song 2');
+    expect((player.loadedSource as UriAudioSource).uri.path,
+        '/api/v1/media/2/stream');
+    expect(player.position, const Duration(seconds: 7));
+    expect(find.byKey(const Key('audio_player_error')), findsNothing);
+    await tester.runAsync(handler.skipToNext);
+    await tester.pump();
+    expect(handler.lastTitle, 'Song 1');
+    expect(client.browseCalls, 0,
+        reason: 'filtered result must wrap without escaping into source set');
+    await tester.runAsync(handler.stop);
+  });
 
   testWidgets('hardware Back leaves audio playing on previous route',
       (tester) async {

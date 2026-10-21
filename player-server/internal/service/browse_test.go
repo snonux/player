@@ -260,3 +260,32 @@ func TestBrowseService_GetThumbnail_DelegatesToResolver(t *testing.T) {
 		}
 	})
 }
+
+// Flattened single-file folders must keep the same name order on every
+// request; playback resolves an edge and then reloads the target folder.
+func TestBuildFoldersIn_DeterministicMediaOrder(t *testing.T) {
+	media := []model.Media{
+		{ID: 9, RelPath: "z.mp3", FileName: "z.mp3"},
+		{ID: 8, RelPath: "same.mp3", FileName: "same.mp3"},
+		{ID: 2, RelPath: "A/a.mp3", FileName: "a.mp3"},
+		{ID: 3, RelPath: "C/same.mp3", FileName: "same.mp3"},
+		{ID: 1, RelPath: "A.flac", FileName: "A.flac"},
+		{ID: 4, RelPath: "B/same.mp3", FileName: "same.mp3"},
+		{ID: 7, RelPath: "same.mp3", FileName: "same.mp3"},
+	}
+	want := []int64{1, 2, 4, 3, 7, 8, 9}
+	for attempt := range 30 {
+		rotation := attempt % len(media)
+		input := append(append([]model.Media{}, media[rotation:]...), media[:rotation]...)
+		folderMap, items := buildFolderMap(input, "")
+		folders, got := buildFoldersIn(thumb.Layout{}, folderMap, input, items, "", "", "")
+		if len(folders) != 0 || len(got) != len(want) {
+			t.Fatalf("attempt %d: unexpected folders/media: %v/%v", attempt, folders, got)
+		}
+		for index, id := range want {
+			if got[index].ID != id {
+				t.Fatalf("attempt %d: position %d: got media %d, want %d", attempt, index, got[index].ID, id)
+			}
+		}
+	}
+}

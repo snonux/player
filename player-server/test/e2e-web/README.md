@@ -226,3 +226,15 @@ PLAYER_MUSIC_FIXTURE=/path/printed/by/up \
 Results, screenshots and WAV captures go to the fixture's evidence
 directory. The full three-platform runbook is
 `player-android/docs/music-e2e-verification.md`.
+
+For M12 track navigation, natural completion, audible source/progress and
+failure/Retry journeys on both installed browsers:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/printed/by/up \
+  npx playwright test -c playwright.music.config.ts --grep M12
+```
+
+These retain Sets browse/folder/wrap/resume behavior while ensuring that
+advancing from audio skips image cards. They do not assert a separate music
+queue or future repeat/shuffle/persistence behavior.

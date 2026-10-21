@@ -7,6 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../api/dio_client.dart';
+import '../models/models.dart';
+import '../services/music_sequence.dart';
+import '../providers/playback_preparer_provider.dart';
+import '../api/player_api_client.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/audio_handler_provider.dart';
 import '../providers/cast_provider.dart';
@@ -69,6 +73,8 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
     this.isPublicShare = false,
     this.request,
     this.serverUserId = 0,
+    this.sequence = const [],
+    this.traverseFolders = false,
   });
 
   /// The media item identifier extracted from the '/audio/:mediaId' route path.
@@ -93,6 +99,8 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
   final bool isPublicShare;
   final PlaybackRequest? request;
   final int serverUserId;
+  final List<Media> sequence;
+  final bool traverseFolders;
 
   @override
   ConsumerState<AudioPlayerScreen> createState() => _AudioPlayerScreenState();
@@ -110,6 +118,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   // continuing playback failed, or that another item took over the player.
   String? _error;
   PlaybackRequest? _activeRequest;
+  PlayerAudioHandler? _handler;
   int? _activeSourceGeneration;
 
   // True while the player is being set up; shows a full-screen spinner.
@@ -122,6 +131,9 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   // Native failures after the source was loaded (see [_watchPlayback]).
   StreamSubscription<Object>? _playbackErrorSubscription;
   StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<MusicSequenceState>? _musicSubscription;
+  List<PlaybackRequest> _musicEntries = const [];
+  Future<List<PlaybackRequest>> Function()? _expandMusic;
 
   // Where this item last was while it played on this screen; Retry resumes
   // here. Null before playback progressed and once the item completed.
@@ -171,10 +183,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   void dispose() {
     _initGeneration++;
     _stopWatchingPlayback();
+    unawaited(_musicSubscription?.cancel());
     // Completed setup belongs to the background handler. An abandoned setup
     // must release its source, even when credentials or resume reads are pending.
     final lease = _sessionLease;
-    if (_isLoading && lease?.isCurrent == true) {
+    if (_isLoading &&
+        lease?.isCurrent == true &&
+        _handler?.musicState == null) {
       unawaited(lease!.stop());
     }
     super.dispose();
@@ -192,10 +207,21 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     if (!mounted) return;
 
     final generation = _initGeneration;
+    unawaited(_musicSubscription?.cancel());
+    _musicSubscription = null;
     _stopWatchingPlayback();
-    final request = await _resolveRequest();
+    final PlaybackRequest request;
+    try {
+      request = await _resolveRequest();
+    } catch (error) {
+      if (mounted && generation == _initGeneration) {
+        _showError(error, _effectiveRequest(), generation);
+      }
+      return;
+    }
     if (!mounted || generation != _initGeneration) return;
     final handler = ref.read(audioHandlerProvider);
+    _handler = handler;
     _activeRequest = request;
     if (ref.read(castControllerProvider).isCasting(request.identity)) {
       // Reopened while it plays on a cast device: show the remote controls.
@@ -377,6 +403,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         markFinished: request.markFinished!,
       );
     }
+    if (_musicEntries.isNotEmpty) _attachMusicSequence(attempt);
     final startPaused = _startPaused;
     _startPaused = false;
     if (_isCurrent(attempt) &&
@@ -449,12 +476,110 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   /// Builds the request, looking up the playback URL when the route supplied
   /// only a media ID (no typed request and no URL in the route extra), as the
   /// podcast episode list does.
-  Future<PlaybackRequest> _resolveRequest() {
-    final request = _effectiveRequest();
-    if (widget.request != null || widget.mediaUrl != null) {
-      return Future.value(request);
+  Future<PlaybackRequest> _resolveRequest() async {
+    var request = _effectiveRequest();
+    _musicEntries = const [];
+    _expandMusic = null;
+    if (widget.request == null && widget.mediaUrl == null) {
+      request = await resolveServerPlaybackSource(
+          request, ref.read(apiClientProvider));
     }
-    return resolveServerPlaybackSource(request, ref.read(apiClientProvider));
+    if (request is! ServerPlaybackRequest || widget.sequence.isEmpty) {
+      return request;
+    }
+    final mediaId = request.mediaId;
+    final client = ref.read(apiClientProvider);
+    final progress = ref.read(progressQueueProvider);
+    final sets = await client.listSets();
+    final selected = widget.sequence.where((m) => m.id == mediaId);
+    if (selected.isEmpty || !isMusicTrack(selected.first, sets)) return request;
+    final origin = request.serverOrigin;
+    final user = request.userId;
+    final setId = selected.first.setId;
+    PlaybackRequest entry(Media media) => ServerPlaybackRequest(
+        mediaId: media.id,
+        serverOrigin: origin,
+        userId: user,
+        sourceUri: Uri.parse(client.playbackUrl(media)),
+        title: media.displayTitle,
+        sourceName: media.relPath,
+        readPosition: () => client.getMediaProgress(media.id),
+        savePosition: (seconds) => progress.enqueue(media.id, seconds),
+        markFinished: () => progress.enqueueFinished(media.id));
+    _musicEntries = widget.sequence
+        .where((m) => m.setId == setId && isMusicTrack(m, sets))
+        .map(entry)
+        .toList();
+    final displayed = List<PlaybackRequest>.of(_musicEntries);
+    final traverse = widget.traverseFolders;
+    _expandMusic = () async {
+      if (!traverse) return displayed;
+      final media = await browseMusicSet(client, setId);
+      return media.where((m) => isMusicTrack(m, sets)).map(entry).toList();
+    };
+    return request;
+  }
+
+  void _attachMusicSequence(_PlaybackAttempt attempt) {
+    final handler = attempt.handler;
+    final storage = ref.read(tokenStorageProvider);
+    final jar = ref.read(cookieJarProvider);
+    final mutations = ref.read(credentialMutationQueueProvider);
+    final client = ref.read(apiClientProvider);
+    final preparer = ref.read(playbackPreparerProvider);
+    final lease = attempt.lease;
+    final baseUrl =
+        Uri.parse((attempt.request as ServerPlaybackRequest).serverOrigin);
+    handler.startMusicSequence(
+        entries: _musicEntries,
+        index: _musicEntries
+            .indexWhere((r) => r.identity == attempt.request.identity),
+        expand: _expandMusic!,
+        changed: lease.updateSource,
+        load: (request, current) async {
+          if (isCompatStreamUrl(request.sourceUri)) {
+            final ready = await preparer
+                .prepare(request.sourceUri,
+                    probe: client.probePlayback, stillWanted: current)
+                .ready;
+            if (!current()) return null;
+            if (!ready) throw StateError('Playback preparation stopped');
+          }
+          final headers = await accountRequestHeaders(
+              uri: request.sourceUri,
+              baseUrl: baseUrl,
+              storage: storage,
+              cookieJar: jar,
+              mutations: mutations);
+          if (!current()) return null;
+          return AudioSource.uri(request.sourceUri,
+              headers: headers.isEmpty ? null : headers);
+        });
+    _musicSubscription = handler.musicChanges.listen((state) {
+      if (!mounted || !lease.isCurrent) return;
+      _stopWatchingPlayback();
+      if (_activeRequest?.identity != state.request.identity) {
+        _lastKnownPosition = null;
+      }
+      _activeRequest = state.request;
+      _activeSourceGeneration = state.sourceGeneration;
+      setState(() {
+        _isLoading = state.loading;
+        _error = state.error == null
+            ? null
+            : playbackErrorMessage(state.error!,
+                title: state.request.title, source: state.request.kind);
+      });
+      if (!state.loading && state.error == null) {
+        _watchPlayback(_PlaybackAttempt(
+            request: state.request,
+            lease: lease,
+            generation: _initGeneration,
+            handler: handler,
+            sourceGeneration: state.sourceGeneration,
+            stopGeneration: handler.stopGeneration));
+      }
+    });
   }
 
   PlaybackRequest _effectiveRequest() {
@@ -617,6 +742,11 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   ///
   /// Extracted to keep [_buildErrorView] below 30 lines (style guideline).
   void _onRetry() {
+    final handler = ref.read(audioHandlerProvider);
+    if (handler.musicState?.error != null && _sessionLease?.isCurrent == true) {
+      unawaited(handler.retryMusicTrack());
+      return;
+    }
     _initGeneration++;
     setState(() {
       cancelPlaybackPreparation();
@@ -800,6 +930,19 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                 const SizedBox(height: 16),
                 _buildControls(handler),
                 const SizedBox(height: 16),
+                if (handler.musicState != null)
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    IconButton(
+                        onPressed: () => _skip(-_kSkipDuration),
+                        tooltip: 'Skip back 15 seconds',
+                        icon:
+                            const Icon(Icons.fast_rewind, color: Colors.white)),
+                    IconButton(
+                        onPressed: () => _skip(_kSkipDuration),
+                        tooltip: 'Skip forward 15 seconds',
+                        icon: const Icon(Icons.fast_forward,
+                            color: Colors.white)),
+                  ]),
                 _buildSpeedSelector(),
                 if (_activeRequest?.kind != PlaybackSourceKind.local)
                   _buildLyrics(handler),
@@ -907,6 +1050,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   /// [AudioPlayer] directly, so the media-session notification stays in sync
   /// with every button press (Law of Demeter: one collaborator for mutations).
   Widget _buildControls(PlayerAudioHandler handler) {
+    final music = handler.musicState != null;
     return StreamBuilder<bool>(
       stream: handler.player.playingStream,
       builder: (context, snapshot) {
@@ -917,10 +1061,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             // Skip back 15 s
             IconButton(
               key: const Key('audio_player_skip_back'),
-              icon:
-                  const Icon(Icons.fast_rewind, color: Colors.white, size: 36),
-              onPressed: () => _skip(-_kSkipDuration),
-              tooltip: 'Skip back 15 seconds',
+              icon: Icon(music ? Icons.skip_previous : Icons.fast_rewind,
+                  color: Colors.white, size: 36),
+              onPressed: () =>
+                  music ? handler.skipToPrevious() : _skip(-_kSkipDuration),
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              tooltip: music ? 'Previous track' : 'Skip back 15 seconds',
             ),
             const SizedBox(width: 16),
             // Play / Pause — delegate to handler so the notification updates.
@@ -953,13 +1099,15 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             // Skip forward 15 s
             IconButton(
               key: const Key('audio_player_skip_forward'),
-              icon: const Icon(
-                Icons.fast_forward,
+              icon: Icon(
+                music ? Icons.skip_next : Icons.fast_forward,
                 color: Colors.white,
                 size: 36,
               ),
-              onPressed: () => _skip(_kSkipDuration),
-              tooltip: 'Skip forward 15 seconds',
+              onPressed: () =>
+                  music ? handler.skipToNext() : _skip(_kSkipDuration),
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              tooltip: music ? 'Next track' : 'Skip forward 15 seconds',
             ),
           ],
         );
