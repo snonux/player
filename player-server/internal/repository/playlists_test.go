@@ -41,6 +41,16 @@ func TestPlaylistAppendRollbackAndCascades(t *testing.T) {
 	if ok, err := s.AppendPlaylist(ctx, user, p.ID, []model.PlaylistEntry{{ID: "e1", MediaID: media}}); err != nil || !ok {
 		t.Fatalf("good append %v %v", ok, err)
 	}
+	if ok, err := s.EditPlaylist(ctx, user, p.ID, PlaylistChange{BeforeID: "e1", Entries: []model.PlaylistEntry{{ID: "valid", MediaID: media}, {ID: "invalid", MediaID: 9999}}}); err == nil || ok {
+		t.Fatalf("partial insert committed %v %v", ok, err)
+	}
+	got, err = s.GetPlaylist(ctx, user, p.ID)
+	if err != nil || len(got.Entries) != 1 || got.Entries[0].ID != "e1" {
+		t.Fatalf("edit rollback %+v %v", got, err)
+	}
+	if ok, err := s.EditPlaylist(ctx, user, p.ID, PlaylistChange{MoveID: "e1", NeighborID: "foreign"}); err != nil || ok {
+		t.Fatalf("missing swap %v %v", ok, err)
+	}
 	if err := s.HardDeleteMedia(ctx, media); err != nil {
 		t.Fatal(err)
 	}

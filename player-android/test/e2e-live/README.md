@@ -281,3 +281,22 @@ audio and exercises actual offline form failure after stopping the owned
 fixture server and removing adb reverse, then restarts the same database.
 All assertions are required, failures return a nonzero exit status, and
 screenshots/state/audio are external fixture evidence.
+
+M27 native playlist song editing uses `music_playlist_songs_e2e.py <fixture>
+--apk <current-release-apk> --emulator-wav <qemu-output.wav>`. It drives actual
+selected additions, an offline retained picker, Find over 47 saved occurrences,
+move/remove/Undo, Back, native light/dark layouts, later-duplicate full-queue
+source audio and force-stop persistence. It extends M26 helpers and supports
+`--resume-playlist <id> --resume-stage playback|persist` for retained accepted
+phases. Actual emulator execution and authoritative state/audio are required;
+Python syntax checks alone do not accept this feature.
+
+M27 acceptance (2026-10-21): exact release APK0.8.2/code4022 passed native API34
+touch selection/find/move/remove/Undo, verified offline failure plus same-DB
+restart, original full-queue occurrence46/source audio and force-stop persistence.
+The final retained-device run passed in277.99s; original bootstrap/input-label
+driver failures are preserved. Use `--hold-device` to leave the app/runtime for
+review and `--resume-device --resume-playlist <id>` to continue the already
+signed-in test device. Root accepted originals/JSON/audio then authorized owned
+stop-only cleanup; fixture/evidence remain outside git. See the shared
+[M27 record](../../../docs/music-m27-implementation.md) for commands and limits.

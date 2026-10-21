@@ -11,15 +11,19 @@ class _Client extends PlayerApiClient {
   _Client() : super(dio: Dio());
   bool fail = false;
   int saves = 0, deletes = 0, adds = 0;
+  List<Map<String, dynamic>> members = [];
+  final edits = <Map<String, dynamic>>[];
   String name = 'Road Trip', comment = 'Saved comment';
   Completer<Map<String, dynamic>>? pending;
   Map<String, dynamic> get data => {
         'playlist_id': 'pl_a',
         'name': name,
         'comment': comment,
-        'song_count': 0,
+        'song_count': members.length,
         'duration': 0,
-        'songs': <Map<String, dynamic>>[]
+        'songs':
+            members.map((entry) => song(entry['media_id'] as int)).toList(),
+        'entries': members
       };
   @override
   Future<List<Map<String, dynamic>>> playlists() async => [];
@@ -57,6 +61,44 @@ class _Client extends PlayerApiClient {
     return [
       {'album_key': 'al_a', 'title': 'Night Transit', 'artist': 'Aurora Lane'}
     ];
+  }
+
+  static Map<String, dynamic> song(int id) => {
+        'id': id,
+        'type': 'audio',
+        'file_name': '$id.mp3',
+        'duration': 12,
+        'music': {
+          'title': id == 1 ? 'First Light' : 'Harbour',
+          'artist': 'Aurora Lane',
+          'album': 'Night Transit'
+        }
+      };
+  @override
+  Future<Map<String, dynamic>> musicAlbum(String key) async => {
+        'songs': [song(1), song(2)]
+      };
+  @override
+  Future<Map<String, dynamic>> editPlaylistSongs(
+      String id, Map<String, dynamic> body) async {
+    edits.add(body);
+    if (fail) throw StateError('offline');
+    if (body['action'] == 'add') {
+      for (final id in body['media_ids'] as List) {
+        members.add({'entry_id': 'new${members.length}', 'media_id': id});
+      }
+    }
+    if (body['action'] == 'remove') {
+      members.removeWhere((entry) => entry['entry_id'] == body['entry_id']);
+    }
+    if (body['action'] == 'up' || body['action'] == 'down') {
+      final at =
+          members.indexWhere((entry) => entry['entry_id'] == body['entry_id']);
+      final to = at + (body['action'] == 'up' ? -1 : 1);
+      final moved = members.removeAt(at);
+      members.insert(to, moved);
+    }
+    return data;
   }
 
   @override
@@ -144,5 +186,89 @@ void main() {
     expect(api.name, 'Renamed 東京');
     expect(api.comment, 'New comment');
     expect(find.text('New comment'), findsOneWidget);
+  });
+  testWidgets(
+      'Find retains occurrence IDs for later duplicate move/remove and failed edit',
+      (t) async {
+    t.view.physicalSize = const Size(800, 1200);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    final api = _Client()
+      ..members = [
+        {'entry_id': 'first', 'media_id': 1},
+        {'entry_id': 'middle', 'media_id': 2},
+        {'entry_id': 'later', 'media_id': 1}
+      ];
+    await mount(t, api, id: 'pl_a');
+    await t.enterText(find.byType(TextField), 'First');
+    await t.pumpAndSettle();
+    expect(find.text('Showing 2 of 3 songs'), findsOneWidget);
+    await t.ensureVisible(find.byType(PopupMenuButton<String>).last);
+    await t.tap(find.byType(PopupMenuButton<String>).last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Move up'));
+    await t.pumpAndSettle();
+    expect(api.edits.last, {'action': 'up', 'entry_id': 'later'});
+    expect(api.members.map((e) => e['entry_id']), ['first', 'later', 'middle']);
+    await t.tap(find.byType(PopupMenuButton<String>).last);
+    await t.pumpAndSettle();
+    api.fail = true;
+    await t.tap(find.text('Remove from playlist'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Could not update playlist.'), findsOneWidget);
+    expect(api.members.length, 3);
+    api.fail = false;
+    await t.tap(find.byType(PopupMenuButton<String>).last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Remove from playlist'));
+    await t.pumpAndSettle();
+    expect(api.edits.last, {'action': 'remove', 'entry_id': 'later'});
+    expect(find.text('Song removed from playlist.'), findsOneWidget);
+    await t.tap(find.text('Undo'));
+    await t.pumpAndSettle();
+    expect(api.edits.last, {
+      'action': 'add',
+      'media_ids': [1],
+      'before_entry_id': 'middle'
+    });
+    await t.tap(find.byTooltip('Clear search'));
+    await t.pumpAndSettle();
+    expect(find.text('Showing 3 of 3 songs'), findsOneWidget);
+  });
+  testWidgets(
+      'Add songs retains selection across search and offline error then saves displayed order',
+      (t) async {
+    final api = _Client();
+    await mount(t, api, id: 'pl_a');
+    await t.tap(find.text('Add songs'));
+    await t.pumpAndSettle();
+    final dialog = find.byType(AlertDialog);
+    final search =
+        find.descendant(of: dialog, matching: find.byType(TextField));
+    await t.enterText(search, 'Harbour');
+    await t.pumpAndSettle();
+    await t.tap(find.widgetWithText(CheckboxListTile, 'Harbour'));
+    await t.pumpAndSettle();
+    await t.enterText(search, 'First');
+    await t.pumpAndSettle();
+    await t.tap(find.widgetWithText(CheckboxListTile, 'First Light'));
+    await t.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+    api.fail = true;
+    await t.tap(find.text('Add selected songs'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Could not add songs.'), findsOneWidget);
+    expect(find.text('2 selected'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'First'), findsOneWidget);
+    api.fail = false;
+    await t.tap(find.text('Add selected songs'));
+    await t.pumpAndSettle();
+    expect(api.edits.last, {
+      'action': 'add',
+      'media_ids': [1, 2]
+    });
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('Showing 2 of 2 songs'), findsOneWidget);
   });
 }

@@ -334,3 +334,20 @@ isolation in actual UI, a fresh browser client, authoritative totals, decoded
 artwork and source audio, delete cancel/confirm, offline form retention,
 cached app-shell module loading and dialog completion ownership. Evidence is
 written to the fixture's external evidence directory.
+
+M27 playlist song editing extends the same fixture/config with
+`music-playlist-songs`: selected additions, a 47-occurrence long list,
+filtered later-duplicate play/move/remove/Undo, actual saved-order persistence,
+offline and revoked permission failures, keyboard focus, narrow themes and a
+real delayed-response regression preventing duplicate pending saves. Run only
+against the disposable current server with the installed Chrome/Firefox config;
+artifacts and source audio stay in the fixture's external evidence directory.
+
+M27 acceptance (2026-10-21): installed Chrome144 and Firefox156 each passed all
+three scenarios across retained runs. The initial core journeys/Chrome pending
+case passed; boundary-only reruns corrected the documented Escape focus oracle;
+the final Firefox pending case used a controlled original-fetch response delay
+to avoid BiDi interception limitations. Original failures, source WAVs, themes
+and authoritative saved state are retained under `/home/paul/tmp/nl3-evidence`.
+See [M27 acceptance](../../../docs/music-m27-implementation.md) for exact commands,
+combined outcomes and fault-injection limits.

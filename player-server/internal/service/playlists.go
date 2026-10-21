@@ -157,6 +157,87 @@ func (s *PlaylistService) AddAlbum(ctx context.Context, user int64, id, key stri
 	return nil, ErrNotFound
 }
 
+// EditSongs validates all selected songs and occurrence identities before saving.
+func (s *PlaylistService) EditSongs(ctx context.Context, user int64, id, action, entryID, beforeID string, mediaIDs []int64) (*PlaylistView, error) {
+	p, err := s.Get(ctx, user, id)
+	if err != nil {
+		return nil, err
+	}
+	change := repository.PlaylistChange{}
+	switch action {
+	case "add":
+		if len(mediaIDs) == 0 || len(mediaIDs) > 1000 {
+			return nil, &apiError{msg: "Select between 1 and 1000 songs.", status: 400}
+		}
+		visible, err := s.visibleSongs(ctx, user)
+		if err != nil {
+			return nil, err
+		}
+		for _, mediaID := range mediaIDs {
+			if _, ok := visible[mediaID]; !ok {
+				return nil, ErrNotFound
+			}
+			entry, err := playlistID("pe")
+			if err != nil {
+				return nil, err
+			}
+			change.Entries = append(change.Entries, model.PlaylistEntry{ID: entry, MediaID: mediaID})
+		}
+		// An absent undo anchor appends; a saved but inaccessible anchor is refused.
+		if beforeID != "" {
+			saved, err := s.repo.GetPlaylist(ctx, user, id)
+			if err != nil {
+				return nil, err
+			}
+			if saved == nil {
+				return nil, ErrNotFound
+			}
+			for _, entry := range saved.Entries {
+				if entry.ID == beforeID {
+					if _, ok := visible[entry.MediaID]; !ok {
+						return nil, ErrNotFound
+					}
+				}
+			}
+		}
+		change.BeforeID = beforeID
+	case "remove", "up", "down":
+		at := -1
+		for i, entry := range p.Entries {
+			if entry.ID == entryID {
+				at = i
+				break
+			}
+		}
+		if at < 0 {
+			return nil, ErrNotFound
+		}
+		if action == "remove" {
+			change.RemoveID = entryID
+		} else {
+			neighbor := at - 1
+			if action == "down" {
+				neighbor = at + 1
+			}
+			if neighbor < 0 || neighbor >= len(p.Entries) {
+				return p, nil
+			}
+			change.MoveID = entryID
+			change.NeighborID = p.Entries[neighbor].ID
+		}
+	default:
+		return nil, &apiError{msg: "Unknown playlist song action.", status: 400}
+	}
+	ok, err := s.repo.EditPlaylist(ctx, user, id, change)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return s.Get(ctx, user, id)
+}
+
 func (s *PlaylistService) visibleSongs(ctx context.Context, user int64) (map[int64]model.Media, error) {
 	albums, err := MusicAlbums(ctx, s.source, user)
 	if err != nil {

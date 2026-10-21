@@ -2435,5 +2435,21 @@ need not be unique. Repeated album adds preserve duplicate occurrences with
 separate entry IDs. Songs no longer in the caller's permitted Music catalog
 are omitted from entries, songs, count, duration and cover. Totals reflect
 current source metadata; the cover is the first visible song with artwork.
-No track remove/reorder, sharing, import/export or offline playlist cache is
-part of this API slice.
+Song membership editing is described below. Sharing, import/export and an
+offline playlist cache remain outside this API slice.
+
+### Edit playlist songs
+
+`POST /api/playlists/{playlist_id}/songs` (also `/api/v1`) requires the
+session owner. Body: `{"action":"add","media_ids":[1,2]}` adds 1–1000
+currently permitted music songs in supplied order, including duplicates.
+Optional `before_entry_id` inserts before that occurrence; an absent anchor
+appends (used by Undo). A saved inaccessible anchor is rejected.
+`{"action":"remove","entry_id":"pe_…"}` removes only that occurrence.
+Actions `up` / `down` with `entry_id` swap with the adjacent currently
+accessible occurrence in the full playlist. An endpoint move is a no-op.
+Returns the updated playlist, songs, occurrence IDs and derived totals/cover.
+Foreign/missing playlists or entries and inaccessible/nonmusic songs return
+404; invalid actions/selection sizes return 400. Each change is atomic and
+preserves ACL-hidden saved membership and unrelated concurrent additions.
+Song edits do not change source files or an already-playing queue snapshot.

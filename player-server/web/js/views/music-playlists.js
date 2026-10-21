@@ -4,6 +4,7 @@ import { escapeHtml as esc, fmtDur, toast } from '../utils.js';
 import { selectByElement, focusSelectedCard } from '../selection.js';
 import { playAlbumCollection } from '../queue.js';
 import { mediaTitle } from '../music.js';
+import { openSongActions } from '../queue-actions.js';
 
 let reload = () => {};
 let open = () => {};
@@ -25,13 +26,7 @@ export async function renderPlaylists(grid, view, current, saved) {
   grid.querySelector('[data-create]').onclick=()=>editPlaylist(null,active);
   grid.querySelectorAll('[data-playlist]').forEach(card=>card.onclick=()=>open(card.dataset.playlist));
  }else{
-  state.media=p.songs;
-  grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header">${cover(p)}<div><h1>${esc(p.name)}</h1><p class="playlist-comment">${esc(p.comment)}</p><p>${totals(p)}</p><div class="playlist-actions"><button class="btn btn-primary" data-play ${p.songs.length?'':'disabled'}>▶ Play playlist</button><button class="btn ${p.songs.length?'':'btn-primary'}" data-add>Add music</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div>${p.songs.length?'':'<p>This playlist is empty.</p>'}</div>`+p.songs.map((song,index)=>`<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" aria-label="Play ${esc(mediaTitle(song))}"><span class="music-song"><button class="btn btn-ghost song-open">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(song.music?.artist||'Unknown artist')}</span></span><span>${fmtDur(song.duration)}</span></div>`).join('');
-  grid.querySelector('[data-play]').onclick=()=>playAlbumCollection(p.songs,0,p.name);
-  grid.querySelectorAll('.media-row').forEach(row=>row.onclick=()=>{selectByElement(row);playAlbumCollection(p.songs,Number(row.dataset.index),p.name);});
-  grid.querySelector('[data-edit]').onclick=()=>editPlaylist(p,active);
-  grid.querySelector('[data-add]').onclick=()=>addMusic(p,active);
-  grid.querySelector('[data-delete]').onclick=()=>deletePlaylist(p,active);
+  renderPlaylistDetail(grid,p,active);
  }
  grid.querySelector('[data-back]').onclick=back;
  const target=(saved?.playlist ? grid.querySelector(`[data-playlist="${CSS.escape(saved.playlist)}"]`) : null)||grid.querySelector('[data-playlist],.media-row');if(target){selectByElement(target);focusSelectedCard();if(saved)window.scrollTo(0,saved.scroll);}else grid.querySelector(detail?'[data-add]':'[data-create]')?.focus();
@@ -61,4 +56,73 @@ async function addMusic(p,current){
 function deletePlaylist(p,current){
  const {modal,close,alive}=dialog('Delete playlist',`<p>Delete “${esc(p.name)}”? Music files stay available in your library.</p><div class="playlist-actions"><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-confirm>Delete playlist</button></div>`);
  const button=modal.querySelector('[data-confirm]');button.onclick=async()=>{button.disabled=true;try{await API.deletePlaylist(p.playlist_id);if(!current()||!alive())return;close();toast('Playlist deleted.','success');back();}catch(e){if(!alive()||!current())return;modal.querySelector('[data-error]').textContent=e.message||'Could not delete playlist.';}finally{if(alive())button.disabled=false;}};
+}
+
+function matchesSong(song,query){return [mediaTitle(song),song.file_name,song.music?.artist,song.music?.album].join(' ').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());}
+function renderPlaylistDetail(grid,initial,current){
+ let p=initial, busy=false;
+ let undo=null;
+ grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover>${cover(p)}</div><div><h1>${esc(p.name)}</h1><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p><div class="playlist-actions"><button class="btn btn-primary" data-play>▶ Play playlist</button><button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
+ const rows=grid.querySelector('[data-rows]'),find=grid.querySelector('[data-find]');
+ const draw=(focusID=null)=>{
+  state.media=p.songs;
+  const visible=p.songs.map((song,index)=>({song,index,entry:p.entries[index]})).filter(({song})=>matchesSong(song,find.value));
+  grid.querySelector('[data-totals]').textContent=totals(p);
+  grid.querySelector('[data-playlist-cover]').innerHTML=cover(p);
+  grid.querySelector('[data-play]').disabled=!p.songs.length;
+  grid.querySelector('[data-count]').textContent=`Showing ${visible.length} of ${p.songs.length} songs`;
+  rows.innerHTML=visible.length?visible.map(({song,index,entry})=>`<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" data-entry="${esc(entry.entry_id)}" aria-label="Play ${esc(mediaTitle(song))}"><span class="text-muted music-number">${index+1}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(song.music?.artist||'Unknown artist')} · ${esc(song.music?.album||'')}</span></span><span>${fmtDur(song.duration)}</span><span hidden>${[['up','Move up'],['down','Move down'],['remove','Remove from playlist']].map(([action,label])=>`<button data-action="playlist-${action}" ${busy||(action==='up'&&index===0)||(action==='down'&&index===p.songs.length-1)?'disabled':''}>${label}</button>`).join('')}</span><button class="btn btn-ghost" data-song-menu aria-label="Song actions for ${esc(mediaTitle(song))}">⋮</button></div>`).join(''):`<p>${p.songs.length?'No matching songs. Clear the search to see all songs.':'This playlist is empty.'}</p>`;
+  rows.querySelectorAll('.media-row').forEach(row=>{
+   row.onclick=e=>{if(e.target.closest('[data-song-menu],[data-action]'))return;selectByElement(row);playAlbumCollection(p.songs,Number(row.dataset.index),p.name);};
+   row.querySelector('[data-song-menu]').onclick=()=>openSongActions(row);
+   row.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>mutate(button.dataset.action.slice(9),row));
+  });
+  const target=(focusID&&rows.querySelector(`[data-entry="${CSS.escape(focusID)}"]`))||rows.querySelector('.media-row');
+  if(target){selectByElement(target);if(focusID)focusSelectedCard();}else if(focusID)find.focus();
+  grid.querySelector('[data-undo]').hidden=!undo;
+ };
+ const save=async(body,focusID)=>{
+  if(busy)return false;busy=true;grid.querySelector('[data-song-error]').textContent='';
+  try{const result=await API.editPlaylistSongs(p.playlist_id,body);if(!current())return false;const added=focusID==='restored'?result.entries.find(entry=>!p.entries.some(old=>old.entry_id===entry.entry_id))?.entry_id:null;p=result;busy=false;draw(added||focusID);return true;}
+  catch(e){if(current()){grid.querySelector('[data-song-error]').textContent=e.message||'Could not update playlist. Check your connection.';focusSelectedCard();}return false;}
+  finally{busy=false;}
+ };
+ const mutate=async(action,row)=>{
+  const index=Number(row.dataset.index),entryID=row.dataset.entry;
+  const removed={media:p.songs[index].id,before:p.entries[index+1]?.entry_id||''};
+  const next=action==='remove'?(row.nextElementSibling?.dataset.entry||row.previousElementSibling?.dataset.entry||'search'):entryID;
+  if(await save({action,entry_id:entryID},next)){
+   if(action==='remove'){undo=removed;grid.querySelector('[data-undo]').hidden=false;}
+   toast(action==='remove'?'Song removed from playlist.':'Song moved.','success');
+  }
+ };
+ find.oninput=()=>draw();grid.querySelector('[data-clear]').onclick=()=>{find.value='';draw();find.focus();};
+ grid.querySelector('[data-play]').onclick=()=>playAlbumCollection(p.songs,0,p.name);
+ grid.querySelector('[data-add]').onclick=()=>addMusic(p,current);
+ grid.querySelector('[data-add-songs]').onclick=()=>addSongs(p,current);
+ grid.querySelector('[data-edit]').onclick=()=>editPlaylist(p,current);
+ grid.querySelector('[data-delete]').onclick=()=>deletePlaylist(p,current);
+ grid.querySelector('[data-restore]').onclick=async()=>{const saved=undo;if(!saved)return;if(await save({action:'add',media_ids:[saved.media],before_entry_id:saved.before},'restored')){undo=null;grid.querySelector('[data-undo]').hidden=true;toast('Song restored to playlist.','success');}};
+ draw();
+}
+async function addSongs(p,current){
+ const {modal,close,alive}=dialog('Add songs','<p role="status">Loading songs…</p>');
+ const body=modal.querySelector('.modal-body');
+ const selected=new Set();
+ let saving=false;
+ const load=async()=>{
+  try{
+   const albums=await API.albums();
+   const details=await Promise.all(albums.map(a=>API.album(a.album_key)));
+   if(!current()||!alive())return;
+   const songs=[...new Map(details.flatMap(a=>a.songs).map(song=>[song.id,song])).values()];
+   body.innerHTML='<label>Find songs<input type="search" aria-label="Find songs to add" autofocus></label><p>Repeated songs are added again.</p><p role="status" data-selected>0 selected</p><div class="playlist-albums" data-choices></div><p role="alert" data-error></p><div class="playlist-actions"><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-save disabled>Add selected songs</button></div>';
+   const input=body.querySelector('input'),choices=body.querySelector('[data-choices]'),submit=body.querySelector('[data-save]');
+   const draw=()=>{const matches=songs.filter(song=>matchesSong(song,input.value));choices.innerHTML=matches.length?matches.map(song=>`<label class="playlist-song-choice"><input type="checkbox" value="${song.id}" ${selected.has(song.id)?'checked':''} ${saving?'disabled':''} aria-label="Select ${esc(mediaTitle(song))}"><span>${esc(mediaTitle(song))}<span class="text-muted text-sm"> · ${esc(song.music?.artist||'Unknown artist')} · ${esc(song.music?.album||'')}</span></span></label>`).join(''):`<p>${songs.length?'No matching songs.':'No songs available. Browse Sets or ask an administrator to rescan music tags.'}</p>`;choices.querySelectorAll('input').forEach(check=>check.onchange=()=>{if(saving)return;check.checked?selected.add(Number(check.value)):selected.delete(Number(check.value));body.querySelector('[data-selected]').textContent=`${selected.size} selected`;submit.disabled=saving||!selected.size;});};
+   input.oninput=draw;body.querySelector('[data-cancel]').onclick=close;
+   submit.onclick=async()=>{if(saving||!selected.size)return;saving=true;submit.disabled=true;choices.querySelectorAll('input').forEach(check=>check.disabled=true);body.querySelector('[data-error]').textContent='';try{await API.editPlaylistSongs(p.playlist_id,{action:'add',media_ids:songs.filter(song=>selected.has(song.id)).map(song=>song.id)});if(!current()||!alive())return;close();toast('Songs added to playlist.','success');reload();}catch(e){if(current()&&alive())body.querySelector('[data-error]').textContent=e.message||'Could not add songs. Check your connection.';}finally{if(alive()){saving=false;choices.querySelectorAll('input').forEach(check=>check.disabled=false);submit.disabled=!selected.size;}}};
+   draw();input.focus();
+  }catch(e){if(!current()||!alive())return;body.innerHTML='<p role="alert">Could not load songs. Check your connection.</p><button class="btn" data-retry>Retry</button>';body.querySelector('[data-retry]').onclick=load;}
+ };
+ await load();
 }

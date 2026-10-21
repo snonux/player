@@ -2265,3 +2265,7 @@ func (m *mockPingStore) DeletePlaylist(ctx context.Context, user int64, id strin
 func (m *mockPingStore) AppendPlaylist(ctx context.Context, user int64, id string, entries []model.PlaylistEntry) (bool, error) {
 	return m.store.AppendPlaylist(ctx, user, id, entries)
 }
+
+func (m *mockPingStore) EditPlaylist(ctx context.Context, user int64, id string, change repository.PlaylistChange) (bool, error) {
+	return m.store.EditPlaylist(ctx, user, id, change)
+}

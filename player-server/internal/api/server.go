@@ -365,6 +365,7 @@ func (s *Server) routesMedia() {
 		s.handleBoth(method, "/api/playlists/{playlist_id}", s.requireSession(s.handlePlaylists))
 	}
 	s.handleBoth(http.MethodPost, "/api/playlists/{playlist_id}/albums", s.requireSession(s.handlePlaylists))
+	s.handleBoth(http.MethodPost, "/api/playlists/{playlist_id}/songs", s.requireSession(s.handlePlaylistSongs))
 	s.handleBoth(http.MethodGet, "/api/music/artists", s.requireSession(s.handleMusicArtists))
 	s.handleBoth(http.MethodGet, "/api/music/artists/{artist_key}", s.requireSession(s.handleMusicArtists))
 	s.handleBoth(http.MethodGet, "/api/music/albums", s.requireSession(s.handleMusicAlbums))

@@ -105,4 +105,22 @@ func TestPlaylistRoutesRequireSessionBothPrefixes(t *testing.T) {
 			}
 		}
 	}
+	for _, prefix := range []string{"/api", "/api/v1"} {
+		for _, authenticated := range []bool{false, true} {
+			r := httptest.NewRequest("POST", prefix+"/playlists/missing/songs", strings.NewReader(`{"action":"add","media_ids":[1]}`))
+			if authenticated {
+				r.AddCookie(cookie)
+			}
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, r)
+			want := 401
+			if authenticated {
+				want = 404
+			}
+			if w.Code != want {
+				t.Fatalf("song route %s auth=%v %d %s", prefix, authenticated, w.Code, w.Body.String())
+			}
+		}
+	}
+
 }

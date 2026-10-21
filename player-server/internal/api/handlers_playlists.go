@@ -57,3 +57,28 @@ func (s *Server) handlePlaylists(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, status, result)
 }
+
+func (s *Server) handlePlaylistSongs(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.media.Playlists) {
+		return
+	}
+	var body struct {
+		Action   string  `json:"action"`
+		EntryID  string  `json:"entry_id"`
+		BeforeID string  `json:"before_entry_id"`
+		MediaIDs []int64 `json:"media_ids"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 32768)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		writeError(w, 400, "Invalid playlist song request.")
+		return
+	}
+	result, err := s.media.Playlists.EditSongs(r.Context(), userIDFromContext(r), r.PathValue("playlist_id"), body.Action, body.EntryID, body.BeforeID, body.MediaIDs)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}

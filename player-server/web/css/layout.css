@@ -862,3 +862,9 @@ body {
 .playlist-albums button { white-space: normal; text-align: left; overflow-wrap: anywhere; }
 #playlist-modal label { display: flex; flex-direction: column; gap: var(--gap); margin-block: var(--gap); }
 #playlist-modal input, #playlist-modal textarea { width: 100%; box-sizing: border-box; }
+
+.playlist-song-choice { flex-direction: row !important; align-items: center; min-height: 2.75rem; }
+#playlist-modal .playlist-song-choice input { width: auto; flex-shrink: 0; }
+.music-detail [data-find] { max-width: 100%; }
+.music-detail [data-rows] .media-row { margin-block: var(--gap); }
+.music-detail [data-undo][hidden] { display: none; }

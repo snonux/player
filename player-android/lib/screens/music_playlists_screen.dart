@@ -26,6 +26,16 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
   String? _error;
   int _generation = 0;
   int get _accountEpoch => ref.read(credentialMutationQueueProvider).generation;
+  final _find = TextEditingController();
+  bool _editingSongs = false;
+  String? _songError;
+
+  @override
+  void dispose() {
+    _find.dispose();
+    super.dispose();
+  }
+
   final _artwork = <int, Future<Uint8List>>{};
 
   @override
@@ -38,6 +48,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
   void didUpdateWidget(covariant MusicPlaylistsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.playlistId != widget.playlistId) {
+      _find.clear();
       _load();
     }
   }
@@ -219,22 +230,145 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
             onPressed: _addMusic,
             icon: const Icon(Icons.add),
             label: const Text('Add music')),
+        FilledButton.tonalIcon(
+            onPressed: () => _addSongs(),
+            icon: const Icon(Icons.playlist_add),
+            label: const Text('Add songs')),
         TextButton(
             onPressed: () => _edit(p), child: const Text('Edit playlist')),
         TextButton(onPressed: _delete, child: const Text('Delete playlist')),
       ]),
+      const SizedBox(height: 16),
+      TextField(
+          controller: _find,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+              labelText: 'Find playlist songs',
+              suffixIcon: IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _find.clear();
+                    setState(() {});
+                  }))),
+      Text(
+          'Showing ${songs.where((song) => _matchesSong(song, _find.text)).length} of ${songs.length} songs'),
+      if (_songError != null)
+        Text(_songError!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error)),
       if (songs.isEmpty)
         const Padding(
             padding: EdgeInsets.all(16),
             child: Text('This playlist is empty.')),
+      if (songs.isNotEmpty &&
+          !songs.any((song) => _matchesSong(song, _find.text)))
+        const Padding(
+            padding: EdgeInsets.all(16),
+            child:
+                Text('No matching songs. Clear the search to see all songs.')),
       for (var i = 0; i < songs.length; i++)
-        ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(songs[i].displayTitle),
-            subtitle: Text(songs[i].music?.artist ?? 'Unknown artist'),
-            onTap: () => play(i),
-            trailing: Text(_duration(songs[i].duration))),
+        if (_matchesSong(songs[i], _find.text))
+          ListTile(
+              key: ValueKey((p['entries'] as List)[i]['entry_id']),
+              contentPadding: EdgeInsets.zero,
+              leading: Text('${i + 1}'),
+              title: Text(songs[i].displayTitle),
+              subtitle: Text(
+                  '${songs[i].music?.artist ?? 'Unknown artist'} · ${songs[i].music?.album ?? ''}'),
+              onTap: () => play(i),
+              trailing: PopupMenuButton<String>(
+                tooltip: 'Song actions for ${songs[i].displayTitle}',
+                enabled: !_editingSongs,
+                onSelected: (action) => _changeSong(action, i, songs),
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                      value: 'up',
+                      enabled: i > 0,
+                      child: const Text('Move up')),
+                  PopupMenuItem(
+                      value: 'down',
+                      enabled: i < songs.length - 1,
+                      child: const Text('Move down')),
+                  const PopupMenuItem(
+                      value: 'remove', child: Text('Remove from playlist')),
+                ],
+              )),
     ]);
+  }
+
+  Future<Map<String, dynamic>?> _saveSongs(Map<String, dynamic> body) async {
+    if (_editingSongs) return null;
+    final generation = _generation, epoch = _accountEpoch;
+    final api = ref.read(apiClientProvider), id = widget.playlistId!;
+    setState(() {
+      _editingSongs = true;
+      _songError = null;
+    });
+    try {
+      final result = await api.editPlaylistSongs(id, body);
+      if (!mounted ||
+          generation != _generation ||
+          epoch != _accountEpoch ||
+          !identical(api, ref.read(apiClientProvider))) {
+        return null;
+      }
+      setState(() {
+        _playlist = result;
+        _artwork.clear();
+      });
+      return result;
+    } catch (e) {
+      if (mounted && generation == _generation && epoch == _accountEpoch) {
+        setState(() =>
+            _songError = 'Could not update playlist. ${setsErrorMessage(e)}');
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _editingSongs = false);
+    }
+  }
+
+  Future<void> _changeSong(String action, int index, List<Media> songs) async {
+    final entries = _playlist!['entries'] as List;
+    final mediaID = songs[index].id;
+    final before = index + 1 < entries.length
+        ? entries[index + 1]['entry_id'] as String
+        : '';
+    final epoch = _accountEpoch, generation = _generation;
+    final result = await _saveSongs(
+        {'action': action, 'entry_id': entries[index]['entry_id']});
+    if (result == null || !mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+          action == 'remove' ? 'Song removed from playlist.' : 'Song moved.'),
+      action: action != 'remove'
+          ? null
+          : SnackBarAction(
+              label: 'Undo',
+              onPressed: () {
+                if (epoch == _accountEpoch && generation == _generation) {
+                  _saveSongs({
+                    'action': 'add',
+                    'media_ids': [mediaID],
+                    'before_entry_id': before
+                  });
+                }
+              }),
+    ));
+  }
+
+  Future<void> _addSongs() async {
+    final generation = _generation, epoch = _accountEpoch;
+    final saved = await showDialog<bool>(
+        context: context,
+        builder: (_) => _AddSongsDialog(playlistId: widget.playlistId!));
+    if (saved == true &&
+        mounted &&
+        generation == _generation &&
+        epoch == _accountEpoch) {
+      _load();
+    }
   }
 
   Future<void> _edit([Map<String, dynamic>? p]) async {
@@ -570,5 +704,173 @@ class _AddAlbumState extends ConsumerState<_AddAlbumDialog> {
                 child: const Text('Cancel'))
           ],
         ));
+  }
+}
+
+bool _matchesSong(Media song, String query) => [
+      song.displayTitle,
+      song.fileName,
+      song.music?.artist,
+      song.music?.album
+    ].join(' ').toLowerCase().contains(query.trim().toLowerCase());
+
+class _AddSongsDialog extends ConsumerStatefulWidget {
+  const _AddSongsDialog({required this.playlistId});
+  final String playlistId;
+  @override
+  ConsumerState<_AddSongsDialog> createState() => _AddSongsState();
+}
+
+class _AddSongsState extends ConsumerState<_AddSongsDialog> {
+  late final PlayerApiClient _api;
+  late final int _epoch;
+  final _find = TextEditingController();
+  final _selected = <int>{};
+  List<Media> _songs = [];
+  bool _loading = true, _saving = false, _changed = false;
+  String? _error;
+  bool get _same =>
+      !_changed &&
+      _epoch == ref.read(credentialMutationQueueProvider).generation &&
+      identical(_api, ref.read(apiClientProvider));
+  @override
+  void initState() {
+    super.initState();
+    _api = ref.read(apiClientProvider);
+    _epoch = ref.read(credentialMutationQueueProvider).generation;
+    Future.microtask(_load);
+  }
+
+  @override
+  void dispose() {
+    _find.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final albums = await _api.musicAlbums();
+      final details = await Future.wait(
+          albums.map((album) => _api.musicAlbum(album['album_key'] as String)));
+      final songs = <int, Media>{};
+      for (final detail in details) {
+        for (final data in detail['songs'] as List) {
+          final song = Media.fromJson(data as Map<String, dynamic>);
+          songs[song.id] = song;
+        }
+      }
+      if (mounted && _same) {
+        setState(() {
+          _songs = songs.values.toList();
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted && _same) {
+        setState(() {
+          _loading = false;
+          _error = 'Could not load songs. ${setsErrorMessage(e)}';
+        });
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_same || _selected.isEmpty || _saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await _api.editPlaylistSongs(widget.playlistId, {
+        'action': 'add',
+        'media_ids': _songs
+            .where((song) => _selected.contains(song.id))
+            .map((song) => song.id)
+            .toList()
+      });
+      if (mounted && _same) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted && _same) {
+        setState(() {
+          _saving = false;
+          _error = 'Could not add songs. ${setsErrorMessage(e)}';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(apiClientProvider, (_, next) {
+      if (!identical(_api, next)) {
+        setState(() {
+          _changed = true;
+          _songs = [];
+          _loading = false;
+          _saving = false;
+          _error = 'Account changed. Close this dialog and try again.';
+        });
+      }
+    });
+    final visible =
+        _songs.where((song) => _matchesSong(song, _find.text)).toList();
+    return AlertDialog(
+        scrollable: true,
+        title: const Text('Add songs'),
+        content: SizedBox(
+            width: double.maxFinite,
+            height: MediaQuery.sizeOf(context).height * .48,
+            child: Column(children: [
+              TextField(
+                  controller: _find,
+                  autofocus: true,
+                  onChanged: (_) => setState(() {}),
+                  decoration:
+                      const InputDecoration(labelText: 'Find songs to add')),
+              const Text('Repeated songs are added again.'),
+              Text('${_selected.length} selected'),
+              if (_error != null)
+                Text(_error!,
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error)),
+              if (_loading) const CircularProgressIndicator(),
+              if (!_loading && visible.isEmpty)
+                Text(_songs.isEmpty
+                    ? 'No songs available.'
+                    : 'No matching songs.'),
+              Expanded(
+                  child: ListView.builder(
+                      itemCount: visible.length,
+                      itemBuilder: (_, index) {
+                        final song = visible[index];
+                        return CheckboxListTile(
+                            title: Text(song.displayTitle),
+                            subtitle: Text(
+                                '${song.music?.artist ?? 'Unknown artist'} · ${song.music?.album ?? ''}'),
+                            value: _selected.contains(song.id),
+                            onChanged: _saving || !_same
+                                ? null
+                                : (checked) => setState(() {
+                                      checked == true
+                                          ? _selected.add(song.id)
+                                          : _selected.remove(song.id);
+                                    }));
+                      })),
+            ])),
+        actions: [
+          if (_error != null && _songs.isEmpty && !_changed)
+            TextButton(onPressed: _load, child: const Text('Retry')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: _saving || _selected.isEmpty || !_same ? null : _save,
+              child: Text(_saving ? 'Saving…' : 'Add selected songs')),
+        ]);
   }
 }
