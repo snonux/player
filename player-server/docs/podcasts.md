@@ -6,8 +6,9 @@ synchronization are specified in
 [podcast-sync-contract.md](../../docs/podcast-sync-contract.md). Implemented
 so far: identities, the migration, subscription and episode state sync
 (`POST /api/v1/podcasts/sync`, advertised as `podcast_sync` in
-`/api/v1/config`) and the catalog/fetch rules below. Feed merges and the web
-subscription views follow in later tasks.
+`/api/v1/config`), feed and episode merges, legacy identity retirement,
+and the catalog/fetch rules below. Platform verification belongs to task
+`5i3`; server tests alone do not verify Chrome, Firefox or Android.
 
 Podcasts are **special sets** (`sets.is_podcast = 1`). They reuse set permissions, browsing, and cover images, while adding feed management and episode tracking.
 
@@ -23,20 +24,37 @@ Each user has their own subscription registers, keyed by stable feed keys
 and synchronized between clients. The feeds the server fetches (the
 catalog) are shared: a sync subscription to an unknown feed creates a
 catalog row without folders, permissions or audio downloads (at most 20 per
-user and hour). Catalog rows created by non-admin users are fetched only
+user per rolling hour). Subscriptions beyond that quota are kept and the
+background checker creates their catalog rows when quota becomes available;
+no resubscribe is needed. Unsubscribing cancels deferred creation. Removing
+a catalog row does not reset the hourly quota. Catalog rows created by non-admin users are fetched only
 from public unicast addresses. The checker refreshes a catalog feed only
 while at least one user is subscribed to it. Permanent redirects (301, 308)
 and `<itunes:new-feed-url>` move a feed's fetch URL and record the new
-URL's key as an alias; temporary redirects change nothing. Exceptions: a
-move to a URL whose key belongs to another catalog feed would need a merge
-(not implemented yet) and is only logged, the fetch URL stays; a feed with
-a `legacy-feed:` key gets the new fetch URL but no alias; at most 16 aliases
-are kept per feed, later moves still change the fetch URL.
+URL's key as an alias; temporary redirects change nothing. A move into an
+existing catalog feed merges into that target. Only the source's
+subscriptions move; the target keeps its identity and its listeners. Each
+user's subscription, position and completion registers merge independently
+by edit time, with ties keeping the target value. Losing catalog rows stop
+refreshing and retain their episodes and server copies. Episode lists show
+each canonical episode once and find readable server copies across all
+those rows.
+
+A corrected or permanently redirected `legacy-feed:` key becomes an alias
+of the valid feed key. Ingest retires a `legacy-episode:` key when its stored
+enclosure identifies the episode. Retired keys remain accepted from old
+clients. State stored under a key before it became an alias moves to its
+canonical key. Episode merges keep the older catalog identity and retain
+both copies. Ordinary redirect and GUID alias creation is capped at 16 per
+identity; merges retain inherited mappings and retired identities so existing
+client keys keep working.
 
 In the web UI (admin **Podcasts** dialog) **Unsubscribe** only changes the
 admin's own subscription; nothing is deleted. **Remove from server**
 deletes the feed's downloaded episodes for everyone (after a confirmation),
-and the feed itself only when nobody is subscribed any more.
+and every catalog row sharing its canonical key only when nobody is
+subscribed any more. A failed file removal keeps the media and episode link
+so the request can be retried; other copies are still attempted.
 
 ### Listening state
 

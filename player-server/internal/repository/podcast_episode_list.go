@@ -35,26 +35,36 @@ type PodcastEpisodeViewRepo interface {
 
 var _ PodcastEpisodeViewRepo = (*SQLite)(nil)
 
-// subscribedEpisodesQuery lists the episode views; ?1 is the user, ?2 the
-// canonical feed key or "", ?3 the completion filter. Only catalog rows not
-// merged into another are listed. Episodes that exist only on a merged-away
-// row (it keeps its episode rows, contract §3.3) are therefore missing from
-// the views; listing them through the winning row needs the feed merge
-// itself and is left to task mn3.
-const subscribedEpisodesQuery = `SELECT e.id, f.feed_key, e.episode_key, COALESCE(f.title, ''), COALESCE(e.title, ''),
- COALESCE(e.description, ''), e.published_at, e.duration_seconds, e.episode_url,
- COALESCE(s.completed, 0), COALESCE(s.completion_source, ''), COALESCE(s.position_seconds, 0),
- CASE WHEN m.id IS NOT NULL AND m.deleted_at IS NULL THEN m.id END, f.set_id
+// subscribedEpisodesQuery emits each canonical episode once across every
+// catalog row sharing the feed key. Prefer a live copy the caller can read;
+// otherwise keep the oldest row for stable metadata and download controls.
+const subscribedEpisodesQuery = `WITH candidates AS (
+SELECT e.id, f.feed_key, COALESCE(a.episode_key, e.episode_key) AS episode_key, COALESCE(f.title, '') AS feed_title, COALESCE(e.title, '') AS title,
+ COALESCE(e.description, '') AS description, e.published_at, e.duration_seconds, e.episode_url,
+ COALESCE(s.completed, 0) AS completed, COALESCE(s.completion_source, '') AS completion_source,
+ COALESCE(s.position_seconds, 0) AS position_seconds,
+ CASE WHEN m.id IS NOT NULL AND m.deleted_at IS NULL AND
+  (EXISTS (SELECT 1 FROM users u WHERE u.id = ?1 AND u.is_admin = 1)
+   OR EXISTS (SELECT 1 FROM set_permissions p WHERE p.user_id = ?1 AND p.set_id = m.set_id))
+  THEN m.id END AS readable_copy, d.set_id
 FROM podcast_feeds f
-JOIN podcast_episodes e ON e.feed_id = f.id
-LEFT JOIN podcast_episode_state s ON s.user_id = ?1 AND s.feed_key = f.feed_key AND s.episode_key = e.episode_key
+JOIN podcast_feeds d ON d.feed_key = f.feed_key
+JOIN podcast_episodes e ON e.feed_id = d.id
+LEFT JOIN podcast_episode_aliases a ON a.feed_key = f.feed_key AND a.alias_key = e.episode_key
+LEFT JOIN podcast_episode_state s ON s.user_id = ?1 AND s.feed_key = f.feed_key AND s.episode_key = COALESCE(a.episode_key, e.episode_key)
 LEFT JOIN media m ON m.id = e.media_id
 WHERE f.merged_into IS NULL
  AND EXISTS (SELECT 1 FROM podcast_subscriptions sub WHERE sub.user_id = ?1 AND sub.subscribed = 1 AND (
   sub.feed_key = f.feed_key OR sub.feed_key IN (SELECT alias_key FROM podcast_feed_aliases a WHERE a.feed_key = f.feed_key)))
  AND (?2 = '' OR f.feed_key = ?2)
  AND (?3 = 'all' OR COALESCE(s.completed, 0) = (?3 = 'completed'))
-ORDER BY e.published_at IS NULL, e.published_at DESC, e.episode_key
+), ranked AS (
+ SELECT *, ROW_NUMBER() OVER (PARTITION BY feed_key, episode_key ORDER BY readable_copy IS NULL, id) AS rank FROM candidates
+)
+SELECT id, feed_key, episode_key, feed_title, title, description, published_at, duration_seconds, episode_url,
+ completed, completion_source, position_seconds, readable_copy, set_id
+FROM ranked WHERE rank = 1
+ORDER BY published_at IS NULL, published_at DESC, episode_key, feed_key
 LIMIT ?4 OFFSET ?5`
 
 // ListSubscribedEpisodes implements PodcastEpisodeViewRepo. A feed key that

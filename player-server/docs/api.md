@@ -1841,7 +1841,14 @@ Feeds and episodes carry stable identities: `feed_key` (the canonical feed
 URL without scheme, or `legacy-feed:<n>` for a stored URL that has none) and
 `episode_key` (`guid:<guid>`, `enc:<canonical enclosure URL>`, or
 `legacy-episode:<n>`). Database ids and server media ids are not identities
-and never appear in the sync API.
+and never appear in the sync API. A corrected or permanently redirected
+legacy feed key and an ingested legacy episode key are retired into aliases;
+clients may continue sending them. A server-observed permanent redirect into
+another catalog feed merges the source into the target. Episode merges keep
+the older catalog identity. Subscription and episode registers move by their
+own clocks, with ties keeping the target value; client evidence never creates
+a global alias or merge. Ordinary new redirect/GUID aliases are capped at 16
+per identity; inherited merge mappings and retired identities are retained.
 
 ---
 
@@ -1965,12 +1972,21 @@ the server.
 - `resolved`: keys the server mapped to its canonical key (a feed alias, one
   of the sent `urls`, an episode alias, or an `enc:` key of an episode the
   catalog knows under its GUID). A key that matches nothing is stored as sent.
+  If server ingest later makes it an alias, the caller's stored registers
+  are rekeyed and merged with canonical state under fresh change sequences.
 - Pull: the caller's subscription and episode rows changed after `since`, in
   change order, at most `limit`. `aliases` lists alias rows of the caller's
   feeds and episodes, and every alias of each returned row. Persist
   `next_since` after applying a page; repeat while `has_more`. A scoped
   request returns only the scoped episode (and edited rows) and has no
   `next_since` and `has_more`.
+
+Subscribing to an unknown feed creates a catalog row asynchronously fetched
+by the checker, subject to 20 new catalog rows per user per rolling hour.
+Beyond that creation quota the subscription is still accepted; the checker
+creates the deferred row later without another client edit. Deleting a
+catalog row does not free a quota slot. No permissions, folders or audio
+files are created by synchronization or deferred catalog creation.
 
 **Status codes:** `200` (also with item rejections), `400` (malformed body,
 more than 500 edits, invalid `limit` or `since`, an episode item without
@@ -2045,8 +2061,9 @@ reaches the admin's other clients through sync.
 ### `DELETE /api/podcasts/{id}` · `DELETE /api/v1/podcasts/{id}`
 
 Remove a feed from the server. Admin only. `{id}` is the **feed ID**.
-Deletes the feed's downloaded episodes (media rows and files). The catalog
-feed and its episodes are deleted only when no user has an active
+Deletes the feed's downloaded episodes (media rows and files), including
+copies under merged catalog rows sharing its canonical feed key. All those
+catalog rows and their episodes are deleted only when no user has an active
 subscription to it; otherwise they stay (without copies) and keep being
 refreshed. Subscriptions and episode history of every user are never touched
 (this is not a per-user unsubscribe: use `POST /api/v1/podcasts/sync` with
@@ -2058,10 +2075,10 @@ indexed media (uploads, another feed's episodes), and files that were never
 indexed.
 
 Deleting media also deletes every user's notes, bookmarks, progress, favorites
-and shares for it. After the feed is deleted, the remaining steps are
-best-effort: a failure to remove a file is reported as `500`, but the feed is
-already gone (a retry returns `404`) and the other items were still
-processed.
+and shares for it. A failed file cleanup is reported as `500`; its media row,
+episode link and catalog stay so removal can be retried. Other collected
+copies are still attempted. The final catalog deletion checks subscriptions
+atomically, so a concurrent subscribe keeps its catalog metadata.
 
 **Response `204`:** No body.
 

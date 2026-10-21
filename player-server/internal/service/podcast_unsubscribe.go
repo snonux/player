@@ -23,33 +23,10 @@ var feedArtwork = map[string]bool{"cover.jpg": true, ".cover.jpg": true}
 // cases, and a feed with active subscribers stays in the catalog (without
 // copies) and keeps being refreshed for them.
 //
-// Order matters:
-//  1. Collect the feed's downloaded episode media.
-//  2. Delete the feed (cascading its episodes), or with active subscribers
-//     clear its episodes' download flags instead. After a deletion, a
-//     download still running fails to link its media (UpdateEpisodeMedia
-//     reports sql.ErrNoRows) and removes its own file and row, so it cannot
-//     outlive the feed; when the feed stays, such a download links normally
-//     and its copy remains.
-//  3. Delete the collected media, row then file.
-//  4. Tidy the feed's folders (the current-title folder and any older-title
-//     folders its episodes were stored in). Only feed artwork goes, and the
-//     folder itself only once it is empty. A folder another remaining feed
-//     maps to by title, or that still holds any other indexed media (uploads,
-//     another feed's episodes), is left untouched. Folder names come from
-//     titles, so this never deletes user files that merely share a name.
-//
-// Steps 3 and 4 are best-effort: once the feed is gone a retry would 404 (and
-// a kept feed has nothing left to collect in step 1), so
-// they run detached from request cancellation, every item is attempted, and
-// all failures are returned joined.
-//
-// Hard-deleting media also removes users' notes, progress, favorites and
-// shares for it. One narrow race remains for a shared folder: a download that
-// links its media between steps 1 and 2 keeps its row and file, since the
-// store offers no transaction spanning both steps. A download that has
-// created but not yet linked its media when step 4 runs makes the folder
-// look in use; its own cleanup then tidies the folder (see DownloadEpisode).
+// All catalog rows of the canonical key participate. Copies are removed
+// before the catalog rows, so a failed cleanup can be retried with their
+// episode links intact. The final repository deletion checks subscriptions
+// atomically, preventing a concurrent subscribe from losing its catalog.
 func (s *podcastSubscriptionService) UnsubscribeFeed(ctx context.Context, feedID int64, userID int64) error {
 	store := s.podcastService.store
 	feed, err := store.GetFeedByID(ctx, feedID)
@@ -70,46 +47,54 @@ func (s *podcastSubscriptionService) UnsubscribeFeed(ctx context.Context, feedID
 	if err != nil {
 		return err
 	}
-	if err := s.removeCatalogFeed(ctx, feed); err != nil {
-		return err
-	}
-	// Past the point of no return: finish the cleanup even if the client
-	// goes away, since a retry would only get 404.
+	// Finish every collected copy even if the client disconnects.
 	ctx = context.WithoutCancel(ctx)
 
 	var errs []error
-	folders := map[string]bool{podcastFolderName("", feed.Title, feed.ID): true}
+	folders := map[int64]map[string]bool{feed.SetID: {podcastFolderName("", feed.Title, feed.ID): true}}
 	for _, m := range media {
 		if folder := topFolder(m.RelPath); folder != "" {
-			folders[folder] = true
+			if folders[m.SetID] == nil {
+				folders[m.SetID] = map[string]bool{}
+			}
+			folders[m.SetID][folder] = true
 		}
 		errs = append(errs, s.deleteMediaAndFile(ctx, m))
 	}
-	if set != nil {
-		errs = append(errs, s.tidyFolders(ctx, set, folders))
+	if err := errors.Join(errs...); err != nil {
+		err = errors.Join(err, s.tidyFeedFolders(ctx, set, folders))
+		return err // keep catalog/episode links for a retry
 	}
-	return errors.Join(errs...)
-}
-
-// removeCatalogFeed deletes the feed row (cascading its episodes) when no
-// user is subscribed to its key; otherwise it keeps the row and only marks
-// its episodes as no longer downloaded, since their copies go next.
-func (s *podcastSubscriptionService) removeCatalogFeed(ctx context.Context, feed *model.PodcastFeed) error {
-	store := s.podcastService.store
-	active, err := store.HasActivePodcastSubscription(ctx, feed.FeedKey)
-	if err != nil {
+	if err := store.ClearEpisodeDownloads(ctx, feed.ID); err != nil {
 		return err
-	}
-	if active {
-		return store.ClearEpisodeDownloads(ctx, feed.ID)
 	}
 	if err := store.DeleteFeed(ctx, feed.ID); err != nil {
 		return fmt.Errorf("delete feed: %w", err)
 	}
-	return nil
+	return s.tidyFeedFolders(ctx, set, folders)
 }
 
-// episodeMedia loads the media rows of feedID's downloaded episodes,
+// tidyFeedFolders handles copies retained by merges across different sets.
+func (s *podcastSubscriptionService) tidyFeedFolders(ctx context.Context, feedSet *model.Set, folders map[int64]map[string]bool) error {
+	var errs []error
+	for id, names := range folders {
+		set := feedSet
+		if set == nil || set.ID != id {
+			var err error
+			set, err = s.podcastService.store.GetSetByID(ctx, id)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+		}
+		if set != nil {
+			errs = append(errs, s.tidyFolders(ctx, set, names))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// episodeMedia loads the media rows of all catalog rows sharing feed's key,
 // including trashed ones: GetMediaByID skips those, and a trashed episode
 // left behind would keep its folder and could be restored without a feed.
 func (s *podcastSubscriptionService) episodeMedia(ctx context.Context, feed *model.PodcastFeed) ([]*model.Media, error) {
@@ -122,7 +107,7 @@ func (s *podcastSubscriptionService) episodeMedia(ctx context.Context, feed *mod
 	for _, id := range ids {
 		wanted[id] = true
 	}
-	all, err := store.ListMedia(ctx, repository.MediaFilter{SetID: &feed.SetID, IncludeDeleted: true})
+	all, err := store.ListMedia(ctx, repository.MediaFilter{IncludeDeleted: true})
 	if err != nil {
 		return nil, fmt.Errorf("list episode media: %w", err)
 	}
@@ -194,24 +179,19 @@ func (s *podcastSubscriptionService) tidyFolder(ctx context.Context, set *model.
 	return errors.Join(errs...)
 }
 
-// deleteMediaAndFile removes a media row, then its file and its generated
-// thumbnail. The row goes first so a failure never leaves a listed item whose
-// file is missing; the file is removed explicitly because folders are never
-// removed recursively, and a leftover file would be re-imported by the next
-// rescan. The thumbnail (of a video episode, or of indexed feed artwork) goes
-// too, or its .thumbnails directory would keep the folder in place. Only
-// files under the media root are touched.
+// deleteMediaAndFile removes the file before the row. On failure the row
+// and episode link stay available for a retry. Only files under the media
+// root are touched; media-scoped metadata goes with HardDeleteMedia.
 func (s *podcastSubscriptionService) deleteMediaAndFile(ctx context.Context, m *model.Media) error {
+	if m.AbsPath != "" && s.insideMediaRoot(m.AbsPath) {
+		if err := os.Remove(m.AbsPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove media file %d: %w", m.ID, err)
+		}
+		removeOwnThumbnail(s.podcastService.thumbRm, s.podcastService.thumbLayout, m)
+	}
 	if err := s.podcastService.store.HardDeleteMedia(ctx, m.ID); err != nil {
 		return fmt.Errorf("delete media %d: %w", m.ID, err)
 	}
-	if m.AbsPath == "" || !s.insideMediaRoot(m.AbsPath) {
-		return nil
-	}
-	if err := os.Remove(m.AbsPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove media file %d: %w", m.ID, err)
-	}
-	removeOwnThumbnail(s.podcastService.thumbRm, s.podcastService.thumbLayout, m)
 	return nil
 }
 

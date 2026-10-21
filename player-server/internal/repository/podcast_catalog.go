@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -33,26 +32,26 @@ type PodcastCatalogRepo interface {
 	// GetFeedByKey returns the catalog feed (not merged into another) whose
 	// key, or one of whose aliases, is key; nil when there is none.
 	GetFeedByKey(ctx context.Context, key string) (*model.PodcastFeed, error)
+	// CreateDeferredPodcastFeeds retries catalog creation for active
+	// subscriptions skipped by the hourly quota, without fetching.
+	CreateDeferredPodcastFeeds(ctx context.Context, now time.Time, checkInterval int) error
 	// IngestFeedEpisodes matches the episodes of one fetched feed document
 	// against the feed's catalog episodes (podcast.MatchEpisodes), creates
 	// the new ones, refreshes the enclosure of the known ones and records
 	// the aliases ingest found, in one transaction. It never downloads.
 	IngestFeedEpisodes(ctx context.Context, feed *model.PodcastFeed, episodes []model.PodcastEpisode, now time.Time) error
-	// ClearEpisodeDownloads marks every episode of a feed as not downloaded,
-	// after its server copies were deleted while the feed stays.
+	// ClearEpisodeDownloads clears stale download flags across the feed's
+	// catalog rows after copy deletion. Live media links stay intact.
 	ClearEpisodeDownloads(ctx context.Context, feedID int64) error
 	// MoveFeed records that a catalog feed permanently moved to target (a
-	// 301/308 redirect or <itunes:new-feed-url>): the target's key becomes
-	// an alias of the feed and target its fetch URL. It reports whether the
-	// feed moved; ErrFeedMergeRequired when the target is another catalog
-	// feed, which needs a merge.
-	MoveFeed(ctx context.Context, feedID int64, target string) (bool, error)
+	// 301/308 redirect, <itunes:new-feed-url>, or an admin's corrected
+	// URL): target becomes its fetch URL and the target's key an alias of
+	// the feed; a legacy-feed: key is retired into the target's key; when
+	// the target is another catalog feed, the feed is merged into it
+	// (contract §3.3). FeedNotMoved when the target has no feed key or the
+	// feed is not a catalog feed (missing or merged already).
+	MoveFeed(ctx context.Context, feedID int64, target string) (FeedMove, error)
 }
-
-// ErrFeedMergeRequired reports a feed move whose target key already
-// belongs to another catalog feed. Merging two catalog feeds is not
-// implemented yet, so the feed keeps its fetch URL.
-var ErrFeedMergeRequired = errors.New("feed moved into another catalog feed; merge required")
 
 var _ PodcastCatalogRepo = (*SQLite)(nil)
 
@@ -119,8 +118,8 @@ func (s *SQLite) GetFeedByKey(ctx context.Context, key string) (*model.PodcastFe
 // has none (§7.3): in the shared podcast set, created_by the subscriber,
 // never auto-downloading, without folders, permissions or fetching; the
 // feed checker fetches it later. Beyond MaxCatalogFeedsPerUserHour rows per
-// user and hour nothing is created; a later subscribe edit of the same key
-// tries again. Legacy keys always have a catalog row and are skipped.
+// user and hour nothing is created; the checker retries deferred rows.
+// Legacy keys always have a catalog row and are skipped.
 func ensureCatalogFeed(ctx context.Context, tx *sql.Tx, userID int64, sub model.PodcastSubscription, in model.PodcastSyncBatch) error {
 	if !strings.HasPrefix(sub.FeedKey, "feed:") {
 		return nil
@@ -129,7 +128,7 @@ func ensureCatalogFeed(ctx context.Context, tx *sql.Tx, userID int64, sub model.
 		return err
 	}
 	var recent int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM podcast_feeds WHERE created_by = ? AND created_at > ?`,
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM podcast_catalog_creations WHERE user_id = ? AND created_at > ?`,
 		userID, in.Now.Add(-time.Hour)).Scan(&recent); err != nil {
 		return fmt.Errorf("count recent catalog feeds: %w", err)
 	}
@@ -144,6 +143,10 @@ func ensureCatalogFeed(ctx context.Context, tx *sql.Tx, userID int64, sub model.
 		SetID: setID, FeedKey: sub.FeedKey, FeedURL: catalogFetchURL(sub), Title: sub.Title,
 		CheckIntervalMinutes: in.CheckIntervalMinutes, CreatedBy: &userID, CreatedAt: in.Now,
 	})
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO podcast_catalog_creations (user_id, created_at) VALUES (?, ?)`, userID, in.Now)
 	return err
 }
 
@@ -189,79 +192,93 @@ ORDER BY is_podcast DESC, root_path = ? DESC, id LIMIT 1`, podcastSetRoot, podca
 // ClearEpisodeDownloads implements PodcastCatalogRepo.
 func (s *SQLite) ClearEpisodeDownloads(ctx context.Context, feedID int64) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE podcast_episodes SET is_downloaded = 0, media_id = NULL, file_name = NULL WHERE feed_id = ?`, feedID)
+		`UPDATE podcast_episodes SET is_downloaded = 0, file_name = NULL
+WHERE media_id IS NULL AND feed_id IN
+ (SELECT id FROM podcast_feeds WHERE feed_key = (SELECT feed_key FROM podcast_feeds WHERE id = ?))`, feedID)
 	if err != nil {
 		return fmt.Errorf("clear episode downloads: %w", err)
 	}
 	return nil
 }
 
-// MoveFeed implements PodcastCatalogRepo. A target without a feed key is
-// ignored. A feed with a legacy key only gets the new fetch URL: retiring
-// the legacy key needs the same re-keying as a merge (not implemented yet).
-// At most podcast.MaxFeedAliases aliases are kept per feed; beyond that the
-// fetch URL still follows the move.
-func (s *SQLite) MoveFeed(ctx context.Context, feedID int64, target string) (bool, error) {
+// MoveFeed implements PodcastCatalogRepo. All of it happens in one
+// transaction: the alias or merge, the re-keying of every user's state and
+// the new fetch URL. The redirect target always wins, so a feed moving into
+// another moves only its own subscribers.
+func (s *SQLite) MoveFeed(ctx context.Context, feedID int64, target string) (FeedMove, error) {
 	targetKey, err := podcast.FeedKey(target)
 	if err != nil {
-		return false, nil
+		return FeedNotMoved, nil
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, fmt.Errorf("move feed: %w", err)
+		return FeedNotMoved, fmt.Errorf("move feed: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	var key string
 	err = tx.QueryRowContext(ctx, `SELECT feed_key FROM podcast_feeds WHERE id = ? AND merged_into IS NULL`, feedID).Scan(&key)
 	if err == sql.ErrNoRows {
-		return false, nil
+		return FeedNotMoved, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("move feed: %w", err)
+		return FeedNotMoved, fmt.Errorf("move feed: %w", err)
 	}
-	if err := addFeedAlias(ctx, tx, key, targetKey); err != nil {
-		return false, err
+	move, err := moveFeedKey(ctx, tx, feedID, key, targetKey)
+	if err != nil {
+		return FeedNotMoved, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE podcast_feeds SET feed_url = ? WHERE id = ?`, target, feedID); err != nil {
-		return false, fmt.Errorf("move feed: %w", err)
+		return FeedNotMoved, fmt.Errorf("move feed: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("move feed: %w", err)
+		return FeedNotMoved, fmt.Errorf("move feed: %w", err)
 	}
-	return true, nil
+	return move, nil
 }
 
-// addFeedAlias records alias as an alias of the catalog feed key, unless it
-// is that key already, the feed is a legacy one, or the alias cap is
-// reached. An alias that denotes another catalog feed needs a merge.
-func addFeedAlias(ctx context.Context, tx *sql.Tx, key, alias string) error {
-	if alias == key || strings.HasPrefix(key, legacyFeedPrefix) {
-		return nil
-	}
-	owner, err := canonicalFeedKey(ctx, tx, alias)
+// moveFeedKey applies the identity side of a move of the catalog feed
+// feedID (key) to a URL with targetKey:
+//   - the target denotes the feed already: nothing to record;
+//   - it denotes another feed (a catalog row, or a key whose row was
+//     removed while its aliases remain): the feed is merged into it;
+//   - the feed has a legacy key: the key is retired, targetKey becomes the
+//     feed's key and the legacy key its alias (§3.1);
+//   - otherwise targetKey becomes an alias of the feed, and state users
+//     kept under targetKey (a state-only key) moves to the feed.
+func moveFeedKey(ctx context.Context, tx *sql.Tx, feedID int64, key, targetKey string) (FeedMove, error) {
+	owner, err := canonicalFeedKey(ctx, tx, targetKey)
 	if err != nil {
-		return err
+		return FeedNotMoved, err
 	}
-	if owner == key {
-		return nil
+	switch {
+	case owner == key:
+		return FeedMoved, nil
+	case owner != "":
+		merged, err := mergeFeedInto(ctx, tx, feedID, key, owner)
+		if err != nil || !merged {
+			return FeedMoved, err
+		}
+		return FeedMerged, nil
+	case strings.HasPrefix(key, legacyFeedPrefix):
+		return FeedMoved, rekeyFeed(ctx, tx, key, targetKey)
 	}
-	if owner != "" {
-		return ErrFeedMergeRequired
+	added, err := addFeedAlias(ctx, tx, key, targetKey)
+	if err != nil || !added {
+		return FeedMoved, err
 	}
+	return FeedMoved, moveFeedState(ctx, tx, targetKey, key)
+}
+
+// addFeedAlias records alias, which denotes no catalog feed, as an alias
+// of the catalog feed key, unless the feed's alias cap is reached; it
+// reports whether the alias was added.
+func addFeedAlias(ctx context.Context, tx *sql.Tx, key, alias string) (bool, error) {
 	var n int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM podcast_feed_aliases WHERE feed_key = ?`, key).Scan(&n); err != nil {
-		return fmt.Errorf("count feed aliases: %w", err)
+		return false, fmt.Errorf("count feed aliases: %w", err)
 	}
 	if n >= podcast.MaxFeedAliases {
-		return nil
+		return false, nil
 	}
-	seq, err := nextChangeSeq(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO podcast_feed_aliases (alias_key, feed_key, change_seq) VALUES (?, ?, ?)`,
-		alias, key, seq); err != nil {
-		return fmt.Errorf("record feed alias: %w", err)
-	}
-	return nil
+	return true, putFeedAlias(ctx, tx, alias, key)
 }

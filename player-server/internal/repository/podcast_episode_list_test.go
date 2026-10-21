@@ -84,7 +84,8 @@ func TestListSubscribedEpisodesFiltersAndPages(t *testing.T) {
 	if a1 := all[2]; !a1.Completed || a1.CompletionSource != "auto" || a1.ServerCopy != nil {
 		t.Fatalf("a1: %+v", a1)
 	}
-	// A live server copy is reported, a deleted one is not.
+	// A live readable server copy is reported, a deleted one is not.
+	f.must(f.s.GrantPermission(ctx, &model.SetPermission{UserID: f.alice, SetID: setID, Role: model.RoleViewer, CreatedAt: f.now}))
 	mediaID := f.serverCopy(setID, ids["a3"], "a3.mp3")
 	if v := list(PodcastEpisodeQuery{Filter: model.PodcastFilterAll, Limit: 1})[0]; v.ServerCopy == nil || v.ServerCopy.MediaID != mediaID || v.SetID != setID {
 		t.Fatalf("server copy: %+v", v)
@@ -96,5 +97,52 @@ func TestListSubscribedEpisodesFiltersAndPages(t *testing.T) {
 	// Bob has no subscriptions and sees nothing.
 	if views, err := f.s.ListSubscribedEpisodes(ctx, f.bob, PodcastEpisodeQuery{Filter: model.PodcastFilterAll, Limit: 10}); err != nil || len(views) != 0 {
 		t.Fatalf("bob: %+v %v", views, err)
+	}
+}
+
+func TestMergedEpisodeViewsDeduplicateAndChooseReadableCopy(t *testing.T) {
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	setID := f.podcastSet()
+	otherSet, err := f.s.CreateSet(ctx, &model.Set{Name: "other", RootPath: "other", IsPodcast: true, CreatedAt: f.now})
+	f.must(err)
+	old, oldIDs := f.catalogFeed(setID, oldFeedURL, "shared", "old-only")
+	_, newIDs := f.catalogFeed(otherSet, newFeedURL, "shared", "new-only")
+	oldCopy := f.serverCopy(setID, oldIDs["shared"], "old.mp3")
+	newCopy := f.serverCopy(otherSet, newIDs["shared"], "new.mp3")
+	f.must(f.s.GrantPermission(ctx, &model.SetPermission{UserID: f.alice, SetID: otherSet, Role: model.RoleViewer, CreatedAt: f.now}))
+	f.sync(f.alice, 0, 0, edit("sub", oldFeedKey, true, 1))
+	f.sync(f.bob, 0, 0, edit("sub", newFeedKey, true, 1))
+	_, err = f.s.MoveFeed(ctx, old.ID, newFeedURL)
+	f.must(err)
+	list := func(user int64) []model.PodcastEpisodeView {
+		t.Helper()
+		out, err := f.s.ListSubscribedEpisodes(ctx, user, PodcastEpisodeQuery{FeedKey: oldFeedKey, Filter: model.PodcastFilterAll, Limit: 10})
+		f.must(err)
+		return out
+	}
+	views := list(f.alice)
+	if len(views) != 3 {
+		t.Fatalf("merged episodes duplicated or missing: %+v", views)
+	}
+	for _, v := range views {
+		if v.FeedKey != newFeedKey {
+			t.Fatalf("view kept losing feed key: %+v", v)
+		}
+		if v.EpisodeKey == "guid:shared" && (v.ServerCopy == nil || v.ServerCopy.MediaID != newCopy || v.SetID != otherSet) {
+			t.Fatalf("view did not select readable copy: %+v", v)
+		}
+	}
+	for _, v := range list(f.bob) {
+		if v.ServerCopy != nil {
+			t.Fatalf("unreadable media id leaked: %+v", v)
+		}
+	}
+	f.must(f.s.SoftDeleteMedia(ctx, newCopy))
+	f.must(f.s.GrantPermission(ctx, &model.SetPermission{UserID: f.alice, SetID: setID, Role: model.RoleViewer, CreatedAt: f.now}))
+	for _, v := range list(f.alice) {
+		if v.EpisodeKey == "guid:shared" && (v.ServerCopy == nil || v.ServerCopy.MediaID != oldCopy) {
+			t.Fatalf("view missed surviving merged-row copy: %+v", v)
+		}
 	}
 }

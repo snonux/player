@@ -41,21 +41,22 @@ const goTimeLayout = "2006-01-02 15:04:05.999999999 -0700 MST"
 // schema belongs here too, or rows a non-UTC writer left in it stay as they
 // are.
 var timeColumns = map[string][]string{
-	"users":                {"created_at"},
-	"api_tokens":           {"last_used_at", "expires_at", "created_at"},
-	"sets":                 {"created_at"},
-	"set_permissions":      {"created_at"},
-	"media":                {"deleted_at", "created_at"},
-	"favorites":            {"created_at"},
-	"playback_progress":    {"updated_at"},
-	"sessions":             {"created_at", "expires_at"},
-	"playback_accumulator": {"updated_at"},
-	"shares":               {"created_at", "expires_at"},
-	"media_notes":          {"created_at", "updated_at"},
-	"media_bookmarks":      {"created_at"},
-	"podcast_feeds":        {"last_checked_at", "next_check_at", "created_at"},
-	"podcast_episodes":     {"published_at", "created_at"},
-	"podcast_status":       {"updated_at"},
+	"users":                     {"created_at"},
+	"api_tokens":                {"last_used_at", "expires_at", "created_at"},
+	"sets":                      {"created_at"},
+	"set_permissions":           {"created_at"},
+	"media":                     {"deleted_at", "created_at"},
+	"favorites":                 {"created_at"},
+	"playback_progress":         {"updated_at"},
+	"sessions":                  {"created_at", "expires_at"},
+	"playback_accumulator":      {"updated_at"},
+	"shares":                    {"created_at", "expires_at"},
+	"media_notes":               {"created_at", "updated_at"},
+	"media_bookmarks":           {"created_at"},
+	"podcast_catalog_creations": {"created_at"},
+	"podcast_feeds":             {"last_checked_at", "next_check_at", "created_at"},
+	"podcast_episodes":          {"published_at", "created_at"},
+	"podcast_status":            {"updated_at"},
 }
 
 // utcTimesDSN returns dsn with the driver option that makes it write, bind

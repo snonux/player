@@ -2230,7 +2230,7 @@ func (m *mockPingStore) IngestFeedEpisodes(ctx context.Context, feed *model.Podc
 func (m *mockPingStore) ClearEpisodeDownloads(ctx context.Context, feedID int64) error {
 	return m.store.ClearEpisodeDownloads(ctx, feedID)
 }
-func (m *mockPingStore) MoveFeed(ctx context.Context, feedID int64, target string) (bool, error) {
+func (m *mockPingStore) MoveFeed(ctx context.Context, feedID int64, target string) (repository.FeedMove, error) {
 	return m.store.MoveFeed(ctx, feedID, target)
 }
 func (m *mockPingStore) ListSubscribedEpisodes(ctx context.Context, userID int64, q repository.PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error) {
@@ -2238,4 +2238,8 @@ func (m *mockPingStore) ListSubscribedEpisodes(ctx context.Context, userID int64
 }
 func (m *mockPingStore) ToggleEpisodeCompletion(ctx context.Context, userID, episodeID int64, now time.Time) (bool, error) {
 	return m.store.ToggleEpisodeCompletion(ctx, userID, episodeID, now)
+}
+
+func (m *mockPingStore) CreateDeferredPodcastFeeds(ctx context.Context, now time.Time, checkInterval int) error {
+	return m.store.CreateDeferredPodcastFeeds(ctx, now, checkInterval)
 }

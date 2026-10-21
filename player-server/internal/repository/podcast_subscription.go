@@ -176,7 +176,9 @@ func appendURL(urls []string, url string) []string {
 // PodcastSubscriptionStates implements PodcastSubscriptionRepo.
 func (s *SQLite) PodcastSubscriptionStates(ctx context.Context, userID int64) (map[string]bool, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT feed_key, subscribed FROM podcast_subscriptions WHERE user_id = ?`, userID)
+		`SELECT COALESCE(a.feed_key, s.feed_key), s.subscribed FROM podcast_subscriptions s
+LEFT JOIN podcast_feed_aliases a ON a.alias_key = s.feed_key
+WHERE s.user_id = ? ORDER BY s.subscription_ms, s.feed_key <> COALESCE(a.feed_key, s.feed_key) DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}

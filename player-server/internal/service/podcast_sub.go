@@ -248,7 +248,10 @@ func (s *podcastSubscriptionService) ListFeeds(ctx context.Context, userID int64
 	return visible, nil
 }
 
-// EditFeed updates the feed URL and check interval.
+// EditFeed updates the feed URL and check interval. A corrected URL of a
+// feed with a legacy key (one whose stored URL had no feed key) retires
+// that key (contract §3.1): the feed takes the URL's key, or is merged into
+// the catalog feed that already has it, and every user's state follows.
 func (s *podcastSubscriptionService) EditFeed(ctx context.Context, feedID int64, feedURL string, checkInterval int, userID int64) error {
 	feed, err := s.podcastService.store.GetFeedByID(ctx, feedID)
 	if err != nil {
@@ -267,5 +270,14 @@ func (s *podcastSubscriptionService) EditFeed(ctx context.Context, feedID int64,
 	if checkInterval >= 1 {
 		feed.CheckIntervalMinutes = checkInterval
 	}
-	return s.podcastService.store.UpdateFeed(ctx, feed)
+	if err := s.podcastService.store.UpdateFeed(ctx, feed); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(feed.FeedKey, legacyFeedKeyPrefix) {
+		return nil
+	}
+	if _, err := s.podcastService.store.MoveFeed(ctx, feed.ID, feedURL); err != nil {
+		return fmt.Errorf("retire legacy feed key: %w", err)
+	}
+	return nil
 }

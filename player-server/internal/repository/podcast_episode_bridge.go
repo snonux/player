@@ -30,8 +30,9 @@ import (
 // whose server copy is mediaID; ok is false for any other media.
 func linkedEpisode(ctx context.Context, q sqlQueryRower, userID, mediaID int64) (episodeStateKey, bool, error) {
 	k := episodeStateKey{userID: userID}
-	err := q.QueryRowContext(ctx, `SELECT f.feed_key, e.episode_key FROM podcast_episodes e
-JOIN podcast_feeds f ON f.id = e.feed_id WHERE e.media_id = ? ORDER BY e.id LIMIT 1`, mediaID).Scan(&k.feedKey, &k.episodeKey)
+	err := q.QueryRowContext(ctx, `SELECT f.feed_key, COALESCE(a.episode_key, e.episode_key) FROM podcast_episodes e
+JOIN podcast_feeds f ON f.id = e.feed_id
+LEFT JOIN podcast_episode_aliases a ON a.feed_key = f.feed_key AND a.alias_key = e.episode_key WHERE e.media_id = ? ORDER BY e.id LIMIT 1`, mediaID).Scan(&k.feedKey, &k.episodeKey)
 	if err == sql.ErrNoRows {
 		return k, false, nil
 	}
@@ -173,7 +174,8 @@ func seedEpisodeMirrors(ctx context.Context, tx sqlTx, episodeID, mediaID int64)
 	rows, err := tx.QueryContext(ctx, `SELECT s.user_id, s.position_seconds, s.position_ms, s.completed, s.completion_ms
 FROM podcast_episodes e
 JOIN podcast_feeds f ON f.id = e.feed_id
-JOIN podcast_episode_state s ON s.feed_key = f.feed_key AND s.episode_key = e.episode_key
+LEFT JOIN podcast_episode_aliases a ON a.feed_key = f.feed_key AND a.alias_key = e.episode_key
+JOIN podcast_episode_state s ON s.feed_key = f.feed_key AND s.episode_key = COALESCE(a.episode_key, e.episode_key)
 WHERE e.id = ? AND (s.position_ms > 0 OR s.completion_ms > 0)`, episodeID)
 	if err != nil {
 		return fmt.Errorf("list episode states: %w", err)

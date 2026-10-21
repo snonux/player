@@ -92,9 +92,15 @@ func (s *SQLite) UpdateFeed(ctx context.Context, feed *model.PodcastFeed) error 
 	return nil
 }
 
-// DeleteFeed removes a podcast feed by database ID.
+// DeleteFeed removes every catalog row sharing the given row's key only
+// while no active subscription exists. Checking and deleting in a single
+// statement serializes this decision with a concurrent subscription edit.
 func (s *SQLite) DeleteFeed(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM podcast_feeds WHERE id = ?`, id)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM podcast_feeds
+WHERE feed_key = (SELECT feed_key FROM podcast_feeds WHERE id = ?)
+ AND NOT EXISTS (SELECT 1 FROM podcast_subscriptions s WHERE s.subscribed = 1
+ AND (s.feed_key = podcast_feeds.feed_key OR s.feed_key IN
+  (SELECT alias_key FROM podcast_feed_aliases a WHERE a.feed_key = podcast_feeds.feed_key)))`, id)
 	if err != nil {
 		return fmt.Errorf("delete podcast feed: %w", err)
 	}
@@ -349,7 +355,8 @@ func (s *SQLite) ListEpisodeMediaIDs(ctx context.Context, feedIDs []int64) ([]in
 		return nil, nil
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT media_id FROM podcast_episodes WHERE media_id IS NOT NULL AND feed_id IN (`+placeholders(len(feedIDs))+`) ORDER BY media_id`,
+		`SELECT media_id FROM podcast_episodes WHERE media_id IS NOT NULL AND feed_id IN (SELECT id FROM podcast_feeds WHERE feed_key IN
+ (SELECT feed_key FROM podcast_feeds WHERE id IN (`+placeholders(len(feedIDs))+`))) ORDER BY media_id`,
 		anySlice(feedIDs)...)
 	if err != nil {
 		return nil, fmt.Errorf("list episode media ids: %w", err)
@@ -418,12 +425,13 @@ func (s *SQLite) DeleteEpisodesByFeed(ctx context.Context, feedID int64) error {
 
 // episodeWithStatusSelect lists episodes with the user's registers; the
 // first placeholder is the user id.
-const episodeWithStatusSelect = `SELECT e.id, e.feed_id, e.media_id, e.guid, e.episode_key, e.enclosure_key, e.title, e.description,
+const episodeWithStatusSelect = `SELECT e.id, e.feed_id, e.media_id, e.guid, COALESCE(a.episode_key, e.episode_key), e.enclosure_key, e.title, e.description,
  e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at, f.feed_key,
  COALESCE(s.completed, 0), COALESCE(s.position_seconds, 0)
 FROM podcast_episodes e
 JOIN podcast_feeds f ON f.id = e.feed_id
-LEFT JOIN podcast_episode_state s ON s.user_id = ? AND s.feed_key = f.feed_key AND s.episode_key = e.episode_key`
+LEFT JOIN podcast_episode_aliases a ON a.feed_key = f.feed_key AND a.alias_key = e.episode_key
+LEFT JOIN podcast_episode_state s ON s.user_id = ? AND s.feed_key = f.feed_key AND s.episode_key = COALESCE(a.episode_key, e.episode_key)`
 
 func scanEpisodeWithStatus(rows *sql.Rows) (model.PodcastEpisodeWithStatus, error) {
 	var e model.PodcastEpisodeWithStatus

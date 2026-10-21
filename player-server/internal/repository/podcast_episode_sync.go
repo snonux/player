@@ -74,8 +74,19 @@ func (rv *episodeResolver) resolve(ctx context.Context, tx *sql.Tx, feedKey, epi
 	k := episodeStateKey{feedKey: feed.key, episodeKey: episodeKey}
 	if canonical, found := podcast.ResolveClientEpisode(known, episodeKey, enclosureURL); found {
 		k.episodeKey = canonical
-	} else if strings.HasPrefix(episodeKey, legacyEpisodePrefix) {
-		return k, false, nil
+	} else {
+		// Aliases survive catalog removal. In particular a retired legacy
+		// key remains accepted while its episode is temporarily state-only.
+		var canonical string
+		err := tx.QueryRowContext(ctx, `SELECT episode_key FROM podcast_episode_aliases WHERE feed_key = ? AND alias_key = ?`, feed.key, episodeKey).Scan(&canonical)
+		if err != nil && err != sql.ErrNoRows {
+			return k, false, fmt.Errorf("resolve episode alias: %w", err)
+		}
+		if err == nil {
+			k.episodeKey = canonical
+		} else if strings.HasPrefix(episodeKey, legacyEpisodePrefix) {
+			return k, false, nil
+		}
 	}
 	return k, true, nil
 }
@@ -176,8 +187,10 @@ func (rv *episodeResolver) episodes(ctx context.Context, tx *sql.Tx, feedKey str
 // loadKnownEpisodesByKey lists the catalog episodes of every catalog row
 // with the feed key (merged rows share it), each key once, oldest first.
 func loadKnownEpisodesByKey(ctx context.Context, tx *sql.Tx, feedKey string) ([]podcast.KnownEpisode, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT e.episode_key, e.enclosure_key FROM podcast_episodes e
-JOIN podcast_feeds f ON f.id = e.feed_id WHERE f.feed_key = ? ORDER BY e.id`, feedKey)
+	rows, err := tx.QueryContext(ctx, `SELECT COALESCE(a.episode_key, e.episode_key), e.enclosure_key FROM podcast_episodes e
+JOIN podcast_feeds f ON f.id = e.feed_id
+LEFT JOIN podcast_episode_aliases a ON a.feed_key = f.feed_key AND a.alias_key = e.episode_key
+WHERE f.feed_key = ? ORDER BY e.id`, feedKey)
 	if err != nil {
 		return nil, fmt.Errorf("load catalog episodes: %w", err)
 	}

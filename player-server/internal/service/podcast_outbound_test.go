@@ -253,7 +253,7 @@ func TestCheckFeedFollowsPermanentMovesOnly(t *testing.T) {
 	}
 }
 
-func TestCheckFeedMoveIntoAnotherCatalogFeedNeedsMerge(t *testing.T) {
+func TestCheckFeedMoveIntoAnotherCatalogFeedMerges(t *testing.T) {
 	f := newCheckerFixture(t)
 	target := f.feed(t, "/target", nil)
 	f.routes["/source"] = func(w http.ResponseWriter, r *http.Request) {
@@ -263,8 +263,8 @@ func TestCheckFeedMoveIntoAnotherCatalogFeedNeedsMerge(t *testing.T) {
 	if err := f.svc.checkFeed(context.Background(), *source); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.reload(t, source.ID); got.FeedURL != source.FeedURL {
-		t.Fatalf("feed moved into another catalog feed without a merge: %q", got.FeedURL)
+	if got := f.reload(t, source.ID); got.MergedInto == nil || *got.MergedInto != target.ID || got.FeedKey != target.FeedKey {
+		t.Fatalf("source not merged into redirect target: %+v", got)
 	}
 	if got := f.reload(t, target.ID); got.FeedKey != target.FeedKey {
 		t.Fatalf("target rewritten: %+v", got)
@@ -288,5 +288,30 @@ func TestLegacySubscribeReusesRowOfURLWithoutKey(t *testing.T) {
 	}
 	if active, _ := f.store.HasActivePodcastSubscription(ctx, first.FeedKey); !active {
 		t.Fatal("legacy subscribe did not record the admin's subscription")
+	}
+}
+
+func TestCheckFeedAppliesNewFeedURLAfterIntermediateMerge(t *testing.T) {
+	f := newCheckerFixture(t)
+	ctx := context.Background()
+	target := f.feed(t, "/target", nil)
+	final := f.feed(t, "/final", nil)
+	f.routes["/source"] = func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.FeedURL, http.StatusMovedPermanently)
+	}
+	f.routes["/target"] = func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, `<?xml version="1.0"?><rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>target</title><itunes:new-feed-url>%s</itunes:new-feed-url></channel></rss>`, final.FeedURL)
+	}
+	source := f.feed(t, "/source", nil)
+	if err := f.svc.checkFeed(ctx, *source); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{source.ID, target.ID} {
+		if got := f.reload(t, id); got.MergedInto == nil || *got.MergedInto != final.ID || got.FeedKey != final.FeedKey {
+			t.Fatalf("explicit final target not applied: %+v", got)
+		}
+	}
+	if got := f.reload(t, final.ID); got.MergedInto != nil {
+		t.Fatal("final target was taken over")
 	}
 }

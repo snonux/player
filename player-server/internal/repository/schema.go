@@ -268,6 +268,13 @@ func initializeSchema(db *sql.DB) error {
 	if err := execSchema(db, "indexes", indexesSchema); err != nil {
 		return err
 	}
+	if err := migratePodcastCatalogCreations(db); err != nil {
+		return fmt.Errorf("migrate podcast catalog quota: %w", err)
+	}
+	// Needs the final podcast tables and the episode state index.
+	if err := repairPodcastIdentities(db); err != nil {
+		return fmt.Errorf("repair podcast identities: %w", err)
+	}
 	// Last, when every table has its final shape.
 	if err := normalizeStoredTimes(db); err != nil {
 		return fmt.Errorf("normalize stored times: %w", err)

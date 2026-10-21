@@ -168,7 +168,8 @@ func writeEpisodeMirrors(ctx context.Context, q sqlTx, k episodeStateKey, r *epi
 	rows, err := q.QueryContext(ctx, `SELECT DISTINCT e.media_id FROM podcast_episodes e
 JOIN podcast_feeds f ON f.id = e.feed_id
 JOIN media m ON m.id = e.media_id
-WHERE f.feed_key = ? AND e.episode_key = ?`, k.feedKey, k.episodeKey)
+LEFT JOIN podcast_episode_aliases a ON a.feed_key = f.feed_key AND a.alias_key = e.episode_key
+WHERE f.feed_key = ? AND COALESCE(a.episode_key, e.episode_key) = ?`, k.feedKey, k.episodeKey)
 	if err != nil {
 		return fmt.Errorf("list server copies: %w", err)
 	}
@@ -204,8 +205,9 @@ func (s *SQLite) ToggleEpisodeCompletion(ctx context.Context, userID, episodeID 
 	}
 	defer func() { _ = tx.Rollback() }()
 	k := episodeStateKey{userID: userID}
-	err = tx.QueryRowContext(ctx, `SELECT f.feed_key, e.episode_key FROM podcast_episodes e
-JOIN podcast_feeds f ON f.id = e.feed_id WHERE e.id = ?`, episodeID).Scan(&k.feedKey, &k.episodeKey)
+	err = tx.QueryRowContext(ctx, `SELECT f.feed_key, COALESCE(a.episode_key, e.episode_key) FROM podcast_episodes e
+JOIN podcast_feeds f ON f.id = e.feed_id
+LEFT JOIN podcast_episode_aliases a ON a.feed_key = f.feed_key AND a.alias_key = e.episode_key WHERE e.id = ?`, episodeID).Scan(&k.feedKey, &k.episodeKey)
 	if err != nil {
 		return false, fmt.Errorf("toggle episode completion: find episode %d: %w", episodeID, err)
 	}

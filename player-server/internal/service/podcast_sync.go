@@ -28,6 +28,9 @@ const (
 	maxSyncURLs = 10
 	// maxObservedMS is the last millisecond of year 9999.
 	maxObservedMS = 253402300799999
+	// legacyFeedKeyPrefix starts the server-minted key of a catalog feed
+	// whose stored URL had no feed key (contract §3.1).
+	legacyFeedKeyPrefix = "legacy-feed:"
 )
 
 // ErrInvalidPodcastSync rejects a malformed sync envelope (HTTP 400).
@@ -223,7 +226,7 @@ func validFeedKeyShape(key string) bool {
 	if len(key) > maxSyncKeyBytes {
 		return false
 	}
-	if n, ok := strings.CutPrefix(key, "legacy-feed:"); ok {
+	if n, ok := strings.CutPrefix(key, legacyFeedKeyPrefix); ok {
 		return isDecimal(n)
 	}
 	loc, ok := strings.CutPrefix(key, "feed:")

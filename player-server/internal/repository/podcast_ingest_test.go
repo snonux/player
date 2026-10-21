@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 
@@ -120,6 +119,18 @@ func TestIngestKeepsMediaLinksAndClearDownloads(t *testing.T) {
 	if err != nil || ep.MediaID == nil || *ep.MediaID != mediaID || !ep.IsDownloaded {
 		t.Fatalf("re-ingest lost the media link: %+v %v", ep, err)
 	}
+	// Clearing stale flags must not detach a live copy, including a
+	// download that finished concurrently with administrative removal.
+	if err := f.s.ClearEpisodeDownloads(ctx, feed.ID); err != nil {
+		t.Fatal(err)
+	}
+	ep, _ = f.s.GetEpisodeByID(ctx, epID)
+	if ep.MediaID == nil || *ep.MediaID != mediaID {
+		t.Fatal("clear detached a live copy")
+	}
+	if err := f.s.HardDeleteMedia(ctx, mediaID); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.s.ClearEpisodeDownloads(ctx, feed.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +189,7 @@ func TestMoveFeedAliasesCapLegacyAndMerge(t *testing.T) {
 	other := create("https://b.example.com/rss")
 	for i := 0; i < 18; i++ {
 		moved, err := f.s.MoveFeed(ctx, feed.ID, fmt.Sprintf("https://a%d.example.com/rss", i))
-		if err != nil || !moved {
+		if err != nil || moved != FeedMoved {
 			t.Fatalf("move %d: %v %v", i, moved, err)
 		}
 	}
@@ -189,21 +200,32 @@ func TestMoveFeedAliasesCapLegacyAndMerge(t *testing.T) {
 	if got, _ := f.s.GetFeedByID(ctx, feed.ID); got.FeedURL != "https://a17.example.com/rss" || got.FeedKey != "feed:a.example.com/rss" {
 		t.Fatalf("after moves: %+v", got)
 	}
-	if moved, err := f.s.MoveFeed(ctx, feed.ID, other.FeedURL); moved || !errors.Is(err, ErrFeedMergeRequired) {
-		t.Fatalf("move into another feed: %v %v", moved, err)
+	if moved, err := f.s.MoveFeed(ctx, feed.ID, "https://a3.example.com/rss"); moved != FeedMoved || err != nil {
+		t.Fatalf("move to an own alias: %v %v", moved, err)
 	}
-	if moved, err := f.s.MoveFeed(ctx, feed.ID, "ftp://nope/"); moved || err != nil {
+	if moved, err := f.s.MoveFeed(ctx, feed.ID, "ftp://nope/"); moved != FeedNotMoved || err != nil {
 		t.Fatalf("move to a URL without key: %v %v", moved, err)
 	}
-	if moved, err := f.s.MoveFeed(ctx, 9999, "https://c.example.com/rss"); moved || err != nil {
+	if moved, err := f.s.MoveFeed(ctx, 9999, "https://c.example.com/rss"); moved != FeedNotMoved || err != nil {
 		t.Fatalf("move of a missing feed: %v %v", moved, err)
 	}
+	// A legacy key is retired by a valid URL and stays resolvable as alias.
 	legacy := create("ftp://legacy/rss")
-	if moved, err := f.s.MoveFeed(ctx, legacy.ID, "https://legacy.example.com/rss"); !moved || err != nil {
+	if moved, err := f.s.MoveFeed(ctx, legacy.ID, "https://legacy.example.com/rss"); moved != FeedMoved || err != nil {
 		t.Fatalf("legacy move: %v %v", moved, err)
 	}
-	if byNew, _ := f.s.GetFeedByKey(ctx, "feed:legacy.example.com/rss"); byNew != nil {
-		t.Fatal("a legacy feed got an alias before its key is retired")
+	for _, key := range []string{"feed:legacy.example.com/rss", legacy.FeedKey} {
+		if got, _ := f.s.GetFeedByKey(ctx, key); got == nil || got.ID != legacy.ID || got.FeedKey != "feed:legacy.example.com/rss" {
+			t.Fatalf("after retirement %s → %+v", key, got)
+		}
+	}
+	// A move into another catalog feed merges into it; a merged feed does
+	// not move again.
+	if moved, err := f.s.MoveFeed(ctx, feed.ID, other.FeedURL); moved != FeedMerged || err != nil {
+		t.Fatalf("move into another feed: %v %v", moved, err)
+	}
+	if moved, err := f.s.MoveFeed(ctx, feed.ID, "https://d.example.com/rss"); moved != FeedNotMoved || err != nil {
+		t.Fatalf("move of a merged feed: %v %v", moved, err)
 	}
 }
 

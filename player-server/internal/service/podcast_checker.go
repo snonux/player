@@ -12,6 +12,7 @@ import (
 
 	"codeberg.org/snonux/player/internal/model"
 	"codeberg.org/snonux/player/internal/podcast"
+	"codeberg.org/snonux/player/internal/repository"
 )
 
 const (
@@ -35,6 +36,9 @@ func newPodcastFeedChecker(svc *podcastService) *podcastFeedChecker {
 
 // CheckFeeds refreshes all podcast feeds that are due for a check.
 func (s *podcastFeedChecker) CheckFeeds(ctx context.Context) error {
+	if err := s.store.CreateDeferredPodcastFeeds(ctx, s.clock.Now(), s.checkInterval); err != nil {
+		return fmt.Errorf("create deferred podcast feeds: %w", err)
+	}
 	before := s.clock.Now().Add(-time.Duration(s.checkInterval) * time.Minute)
 	feeds, err := s.store.ListFeedsNeedingCheck(ctx, s.clock.Now(), before)
 	if err != nil {
@@ -102,7 +106,9 @@ func (s *podcastFeedChecker) checkFeed(ctx context.Context, feed model.PodcastFe
 		s.recordFeedBackoff(ctx, &feed)
 		return err
 	}
-	s.applyFeedMoves(ctx, &feed, moves.permanent, parsed.NewFeedURL)
+	if s.applyFeedMoves(ctx, &feed, moves.permanent, parsed.NewFeedURL) {
+		return nil
+	}
 	if err := s.upsertFeedEpisodes(ctx, &feed, parsed); err != nil {
 		s.logger.Warn("upsert feed episodes failed", "error", err, "feed", feed.FeedURL)
 	}
@@ -121,22 +127,45 @@ func (s *podcastFeedChecker) recordFeedBackoff(ctx context.Context, feed *model.
 
 // applyFeedMoves records a permanent redirect and an <itunes:new-feed-url>
 // (in that order, so the explicit statement decides the final fetch URL).
-// A move into another catalog feed would need a merge and is only logged.
-func (s *podcastFeedChecker) applyFeedMoves(ctx context.Context, feed *model.PodcastFeed, targets ...string) {
+// A move into another catalog feed merges this feed into it (the target
+// wins, contract §3.3). It reports whether the feed was merged: a merged
+// feed is no catalog feed of its own any more, so the caller stores
+// nothing else for it and the target refreshes itself.
+func (s *podcastFeedChecker) applyFeedMoves(ctx context.Context, feed *model.PodcastFeed, targets ...string) bool {
+	merged := false
 	for _, target := range targets {
 		if target == "" || target == feed.FeedURL {
 			continue
 		}
-		moved, err := s.store.MoveFeed(ctx, feed.ID, target)
+		move, err := s.store.MoveFeed(ctx, feed.ID, target)
 		if err != nil {
 			s.logger.Warn("podcast: feed move not applied", "feed_id", feed.ID, "target", target, "err", err)
 			continue
 		}
-		if moved {
+		switch move {
+		case repository.FeedMerged:
+			s.logger.Info("podcast: feed merged into the feed it moved to", "feed_id", feed.ID, "from", feed.FeedURL, "to", target)
+			merged = true
+			// The fetched document belongs to the redirect target. Its
+			// explicit new-feed-url still applies after an intermediate
+			// merge, and must be applied to that target's canonical row.
+			key, err := podcast.FeedKey(target)
+			if err != nil {
+				s.logger.Warn("podcast: invalid merged feed target", "target", target, "err", err)
+				return true
+			}
+			winner, err := s.store.GetFeedByKey(ctx, key)
+			if err != nil || winner == nil {
+				s.logger.Warn("podcast: cannot follow merged feed", "target", target, "err", err)
+				return true
+			}
+			*feed = *winner
+		case repository.FeedMoved:
 			s.logger.Info("podcast: feed moved", "feed_id", feed.ID, "from", feed.FeedURL, "to", target)
 			feed.FeedURL = target
 		}
 	}
+	return merged
 }
 
 // refreshCover downloads the feed's cover art (never audio) with the same

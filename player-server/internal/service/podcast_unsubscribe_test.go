@@ -652,3 +652,71 @@ func (c *cancelOnLink) UpdateEpisodeMedia(ctx context.Context, episodeID, mediaI
 	c.cancel()
 	return context.Canceled
 }
+
+func TestRemoveMergedFeedCopiesAcrossSets(t *testing.T) {
+	f := newUnsubscribeFixture(t)
+	ctx := context.Background()
+	old, err := f.store.GetFeedByID(ctx, f.showA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setID, err := f.store.CreateSet(ctx, &model.Set{Name: "extra", RootPath: "extra", IsPodcast: true, CreatedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := &model.PodcastFeed{SetID: setID, FeedURL: "http://x/target", Title: "Target", CreatedAt: time.Now()}
+	target.ID, err = f.store.CreateFeed(ctx, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.MoveFeed(ctx, old.ID, target.FeedURL); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.UnsubscribeFeed(ctx, target.ID, f.admin); err != nil {
+		t.Fatal(err)
+	}
+	if f.mediaExists(t, f.showAMedia) || fileExists(f.showAFile) {
+		t.Fatal("merged-row copy in another set survived removal")
+	}
+	if got, err := f.store.GetFeedByID(ctx, old.ID); err != nil || got != nil {
+		t.Fatalf("merged row survived: %+v %v", got, err)
+	}
+}
+
+func TestRemoveFeedFailureKeepsCopyRetryable(t *testing.T) {
+	f := newUnsubscribeFixture(t)
+	ctx := context.Background()
+	// A non-empty directory where the episode file should be makes Remove
+	// fail even as root, without depending on filesystem permissions.
+	if err := os.Remove(f.otherFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(f.otherFile, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(f.otherFile, "child")
+	if err := os.WriteFile(child, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.UnsubscribeFeed(ctx, f.other, f.admin); err == nil {
+		t.Fatal("expected removal failure")
+	}
+	if !f.mediaExists(t, f.otherMedia) {
+		t.Fatal("failed removal discarded retryable media row")
+	}
+	if got, err := f.store.GetFeedByID(ctx, f.other); err != nil || got == nil {
+		t.Fatalf("failed removal discarded catalog: %+v %v", got, err)
+	}
+	if err := os.Remove(child); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(f.otherFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.UnsubscribeFeed(ctx, f.other, f.admin); err != nil {
+		t.Fatal(err)
+	}
+	if f.mediaExists(t, f.otherMedia) {
+		t.Fatal("retry did not delete media row")
+	}
+}
