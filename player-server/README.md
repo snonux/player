@@ -88,3 +88,18 @@ web and Android players, including public shares. The first play prepares the
 copy; subsequent plays use the cache. Seeking works after preparation.
 Original files and downloads retain their bytes and `video/mpeg` MIME type.
 Run an admin rescan after upgrading to index files previously skipped.
+
+## Recover a music queue
+
+The Now Playing music queue saves its order, selected occurrence and playback
+position on this browser for the signed-in account. After reload, open **Now
+Playing** (Q) and choose **Resume queue**. Recovery stays paused until you choose
+to play. Repeated songs retain their separate places. A library link you open
+keeps its own selected item while the saved queue remains available.
+
+The queue belongs to this browser and server/account; it does not synchronize
+to other devices. Songs you can no longer access are removed during recovery.
+A connection failure retains the saved queue and offers **Retry restore** after
+sign-in. **Clear queue** remains cleared after reload; Undo is available during
+the current session. Private browsing or clearing browser storage removes local
+recovery data.

@@ -321,3 +321,18 @@ activate a control. F2 also works while typing; Escape closes the hints.
 Select a slider and use Left/Right to adjust it, or select a scroll area and use
 Page Up/Down. Shift plus a shortcut invokes its long-press action when available.
 Hints are also available from Settings → Keyboard shortcuts.
+
+## Recover a music queue
+
+Music queues save their order, current song occurrence and position on this
+device for each server/account. After restarting, select and unlock the saved
+server as usual, open **Now Playing queue**, then tap **Resume queue**. Recovery
+stays paused until you choose to play; **Open current item** opens its details.
+Repeated songs keep their separate places. **Clear queue** stays cleared after
+a restart; Undo applies during the current session.
+
+Recovery rechecks access to the saved songs. Removed or forbidden songs are
+dropped with a quiet notice; connection failures keep the saved session and
+offer **Retry restore**. This is local music queue recovery, separate from
+per-file resume and podcast synchronization. It does not synchronize a queue
+between devices. Clearing app storage removes these local sessions.

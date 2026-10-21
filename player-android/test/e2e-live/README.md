@@ -300,3 +300,43 @@ review and `--resume-device --resume-playlist <id>` to continue the already
 signed-in test device. Root accepted originals/JSON/audio then authorized owned
 stop-only cleanup; fixture/evidence remain outside git. See the shared
 [M27 record](../../../docs/music-m27-implementation.md) for commands and limits.
+
+### M16 local queue recovery
+
+Use the fresh root-built release APK and disposable API34 emulator with actual
+QEMU WAV output. Before configuring reverse mapping, enable root adbd on that
+owned userdebug emulator (`adb root`, then `adb wait-for-device`). The runner
+reads just the scoped queue JSON from FlutterSharedPreferences.xml to verify
+occurrence IDs and exact position, never saves full auth preferences or writes
+application state. Root coordinates the runtime slot and cleanup:
+
+```sh
+python3 -u music_queue_recovery_e2e.py /home/paul/tmp/yk3-fixture \
+  --apk /home/paul/tmp/yk3-evidence/app-x86_64-release.apk \
+  --emulator-wav /home/paul/tmp/yk3-evidence/emulator-output.wav --hold-device
+```
+
+The runner seeds a real repeated playlist, taps its later duplicate, reorders
+that occurrence and pauses partway. It force-stops/relaunches, verifies the
+existing remembered-server/locked-login flow, explicitly signs in and requires
+identical queue IDs/index/position and no PLAYING source before Resume. It
+checks native light/dark paused-state screens and current-item detail/Back,
+then actual touch Resume plus original tone output, account isolation and
+original-account restoration, Clear/restart and real permission revocation.
+Initial setup clears only this disposable app data; the runner leaves all
+runtime and data at the end for root evidence audit and stop-only cleanup.
+Failure traces/screenshots and snapshots go to the external fixture evidence.
+A py_compile/pyflakes pass is preparation only, not native acceptance.
+
+For the focused recovery-to-normal-Next supplement on the retained exact APK,
+append `--resume-device --scenario normal-next`. This skips reinstall and initial
+app-data clearing. It performs a verified owned-server outage during cold unlock,
+checks visible connection failure with the scoped queue unchanged, restarts the
+same binary/database and updates server ownership, then retries explicit sign-in.
+After paused recovery, Resume and the actual notification Next control must
+select the following Long Road Home occurrence with runtime position and audio.
+The offline sign-in retry is distinct from queue Retry logic.
+
+Pass optional `--ownership-path /path/to/runtime-ownership.json` when an
+orchestrator tracks server PID/start identity there. The runner refreshes that
+JSON after its verified owned restart only when the option is supplied.

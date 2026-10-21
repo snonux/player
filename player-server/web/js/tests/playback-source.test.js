@@ -696,8 +696,98 @@ async function testExplicitInsertionFIFOAndUndo() {
   assertEqual(ids(),'811,812','empty queue FIFO keeps first added song first');
 }
 
+async function testRecoveredResumeRetainsFutureFIFO() {
+ setup(); globalThis.location.origin='http://test';
+ const snapshot={version:1,entries:[{id:9001,mediaId:61},{id:9002,mediaId:62},{id:9003,mediaId:63},{id:9004,mediaId:64}],index:0,position:4,label:'FIFO',upNext:[9002,9003]};
+ const values=new Map([['player.queue.http://test.15',JSON.stringify(snapshot)]]);
+ globalThis.localStorage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+ const original=API.mediaDetail; API.mediaDetail=async id=>({media:{id,type:'audio',duration:12}});
+ try {
+  await queue.restoreQueue(15); await queue.resumeQueue();
+  assertEqual(queue.queueState().entries.filter(e=>e.upNext).map(e=>e.media.id).join(','),'62,63','Resume retains future FIFO block');
+  await queue.insertQueue([{id:65,type:'audio',duration:12}],'next');
+  assertEqual(queue.queueState().entries.map(e=>e.media.id).join(','),'61,62,63,65,64','Play next after recovered Resume appends to retained FIFO');
+  await queue.jumpQueue(1);
+  assertEqual(queue.queueState().entries.filter(e=>e.upNext).length,0,'deliberate row jump retains normal invalidation');
+ } finally { API.mediaDetail=original; }
+}
+
+async function testPersistedQueueRecovery() {
+  setup(); queue.initQueue();
+  globalThis.location.origin = 'http://test';
+  const values = new Map();
+  globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key,value) => values.set(key,value), removeItem: key => values.delete(key) };
+  const key = 'player.queue.http://test.1', original = API.mediaDetail;
+  const snapshot = {version:1, entries:[{id:701,mediaId:51},{id:702,mediaId:52},{id:703,mediaId:51}],index:2,position:7.25,label:'Repeated album',upNext:[702]};
+  API.mediaDetail = async id => ({media:{id,type:'audio',duration:12,file_name:`${id}.mp3`}});
+  try {
+    values.set(key, JSON.stringify(snapshot));
+    const calls = audio().playCalls;
+    await queue.restoreQueue(1);
+    assertEqual(queue.queueState().entries.map(e=>e.id).join(','),'701,702,703','recovery preserves repeated occurrences');
+    assertEqual(queue.queueState().index,2,'recovery restores later repeated occurrence');
+    assertEqual(queue.queueState().position,7.25,'short-song exact queue offset survives');
+    assertEqual(audio().playCalls,calls,'recovery never calls play');
+    player.selectMedia({id:51,type:'audio',duration:12,file_name:'51.mp3'},-1,queue.recoveredQueuePosition(51));
+    assert(queue.queueState().entries[1].upNext,'paused route restoration preserves FIFO markers');
+    assertEqual(queue.queueState().position,7.25,'paused route restoration keeps offset');
+    queue.moveQueue(2,-1);
+    assertEqual(queue.queueState().index,1,'restored reorder follows current occurrence');
+    assertEqual(queue.queueState().position,7.25,'restored reorder retains offset');
+    await queue.resumeQueue();
+    audio().readyState=1; audio().dispatch('loadedmetadata');
+    assertEqual(audio().currentTime,7.25,'explicit resume seeks short song');
+    assertEqual(player.currentMediaId(),51,'explicit resume chooses current repeat');
+    audio().currentTime=8.5; audio().dispatch('pause');
+    assertEqual(JSON.parse(values.get(key)).position,8.5,'pause immediately persists exact queue offset');
+    queue.clearQueue();
+    assertEqual(JSON.parse(values.get(key)).entries.length,0,'clear empties durable queue');
+    queue.undoQueue();
+    assertEqual(JSON.parse(values.get(key)).entries.length,3,'Undo restores durable occurrence list');
+    // Denied media gets dropped; duplicate selected identity still follows its occurrence.
+    values.set(key,JSON.stringify(snapshot));
+    API.mediaDetail = async id => { if(id===52) throw Object.assign(new Error('denied'),{status:403}); return {media:{id,type:'audio',duration:12}}; };
+    await queue.restoreQueue(1);
+    assertEqual(queue.queueState().index,1,'dropping earlier unavailable row retains selected repeat');
+    assertEqual(queue.queueState().position,7.25,'unavailable earlier row keeps offset');
+    assert(queue.queueState().status.includes('1 song is no longer available'),'quiet unavailable notice');
+    // Network failure must never rewrite the snapshot as empty or deleted.
+    values.set(key,JSON.stringify(snapshot));
+    API.mediaDetail = async()=>{throw new Error('offline');};
+    await queue.restoreQueue(1);
+    assert(queue.queueState().restoreError,'offline has Retry');
+    assertEqual(values.get(key),JSON.stringify(snapshot),'offline retains snapshot bytes');
+    let finish;
+    API.mediaDetail = () => new Promise(resolve=>{ finish=resolve; });
+    const pending = queue.restoreQueue(2);
+    await Promise.resolve();
+    assertEqual(queue.queueState().entries.length,0,'scope switch hides old account rows immediately');
+    assertEqual(queue.queueState().label,'','scope switch hides old source label');
+    // No snapshot for account two; restore must not import account one.
+    await pending;
+    values.set('player.queue.http://test.2','bad JSON');
+    await queue.restoreQueue(2);
+    assert(queue.queueState().status.includes('unreadable'),'corrupt data has readable status');
+    assertEqual(values.get('player.queue.http://test.2') && JSON.parse(values.get('player.queue.http://test.2')).entries.length,0,'corrupt snapshot replaced with empty valid state');
+    values.set(key,JSON.stringify(snapshot));
+    API.mediaDetail = () => new Promise(resolve=>{ finish=resolve; });
+    const late=queue.restoreQueue(1); await Promise.resolve();
+    await queue.playAlbumCollection([{id:99,type:'audio',duration:12}],0,'Replacement');
+    finish({media:{id:51,type:'audio',duration:12}}); await late;
+    assertEqual(queue.queueState().label,'Replacement','late recovery cannot replace user action');
+    const realSet=localStorage.setItem;
+    localStorage.setItem=()=>{throw new Error('quota');};
+    await queue.insertQueue([{id:100,type:'audio'}],'append');
+    assertEqual(queue.queueState().entries.length,2,'quota failure leaves queue usable');
+    assert(queue.queueState().status.includes('could not be saved'),'quota failure visible');
+    localStorage.setItem=realSet;
+  } finally { API.mediaDetail=original; }
+}
+
 console.info('Running playback source tests...');
 for (const test of [
+  testRecoveredResumeRetainsFutureFIFO,
+  testPersistedQueueRecovery,
   testUndoCannotResurrectInvalidatedFIFO,
   testSupersededPlayNowDoesNotConfirmOrCaptureNewUndo,
   testExplicitInsertionFIFOAndUndo,

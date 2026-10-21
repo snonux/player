@@ -30,6 +30,8 @@ export function initDetach(options = {}) {
   });
 }
 
+export function detachedPosition() { return detachedPlaybackState?.currentTime ?? 0; }
+
 export function isDetached() {
   return !!detachWindow && !detachWindow.closed;
 }

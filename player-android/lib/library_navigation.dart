@@ -10,6 +10,7 @@ import 'providers/settings_provider.dart';
 import 'providers/api_client_provider.dart';
 import 'services/progress_queue.dart';
 import 'models/user.dart';
+import 'providers/music_queue_persistence_provider.dart';
 
 Future<void> switchToLocalLibrary(WidgetRef ref, BuildContext context) async {
   try {
@@ -49,6 +50,13 @@ Future<void> initializeServerProgressQueue(WidgetRef ref, User user) =>
 /// server switch, which keeps working after the router replaces its screen.
 Future<void> initializeServerProgressQueueWith(
     ProviderReader read, User user) async {
+  if (read(serverProgressQueueLifecycleProvider)) {
+    try {
+      await read(musicQueuePersistenceProvider).initialize(user.id);
+    } catch (_) {
+      read(audioHandlerProvider).queueStorageFailed();
+    }
+  }
   if (!read(serverProgressQueueLifecycleProvider)) return;
   try {
     await read(progressQueueProvider).init(

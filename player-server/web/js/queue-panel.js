@@ -1,4 +1,4 @@
-import { queueState, jumpQueue, moveQueue, removeQueue, clearQueue, undoQueue } from './queue.js';
+import { queueState, jumpQueue, moveQueue, removeQueue, clearQueue, undoQueue, resumeQueue, retryQueueRestore } from './queue.js';
 import { mediaTitle, musicSubtitle } from './music.js';
 import { escapeHtml as esc } from './utils.js';
 
@@ -38,6 +38,8 @@ export function initQueuePanel() {
     if (!action) return;
     const at = Number(action.closest('[data-queue-index]')?.dataset.queueIndex ?? selected);
     switch (action.dataset.queueAction) {
+      case 'resume': await resumeQueue(); break;
+      case 'retry': await retryQueueRestore(); break;
       case 'close': closeQueue(); return;
       case 'menu': selected = at; openRowMenu(); return;
       case 'play': selected = at; await jumpQueue(at); break;
@@ -105,7 +107,7 @@ function render() {
   const q = queueState();
   selected = Math.max(0, Math.min(selected, q.entries.length - 1));
   const start = Math.floor(Math.max(0, selected) / pageSize) * pageSize;
-  panel.innerHTML = `<section class="queue-content"><div class="modal-header"><h2 id="queue-title">Now Playing</h2><button class="icon-btn" data-queue-action="close" aria-label="Close queue">✕</button></div><p>${esc(q.label ? `Playing from: ${q.label}` : 'Music queue')}</p><p class="text-sm">j/k select · Enter play · K/J move · Delete remove</p><p role="status">${esc(q.status || (q.active ? 'Current track marked Now' : 'Queue paused. Choose a track to play.'))}</p><ol class="queue-list" role="list" start="${start + 1}">${q.entries.slice(start, start + pageSize).map((entry, offset) => {
+  panel.innerHTML = `<section class="queue-content"><div class="modal-header"><h2 id="queue-title">Now Playing</h2><button class="icon-btn" data-queue-action="close" aria-label="Close queue">✕</button></div><p>${esc(q.label ? `Playing from: ${q.label}` : 'Music queue')}</p><p class="text-sm">j/k select · Enter play · K/J move · Delete remove</p><p role="status">${esc(q.status || (q.active ? 'Current track marked Now' : 'Queue paused. Choose a track to play.'))}</p>${q.restored ? `<p>Paused at ${Math.floor(q.position / 60)}:${String(Math.floor(q.position % 60)).padStart(2, '0')}</p><button class="btn btn-primary" data-queue-action="resume" ${q.loading ? 'disabled' : ''}>Resume queue</button>` : ''}${q.restoreError ? `<button class="btn" data-queue-action="retry" ${q.loading ? 'disabled' : ''}>Retry restore</button>` : ''}<ol class="queue-list" role="list" start="${start + 1}">${q.entries.slice(start, start + pageSize).map((entry, offset) => {
     const i = start + offset, title = esc(mediaTitle(entry.media));
     return `<li tabindex="-1" data-queue-index="${i}" data-entry-id="${entry.id}" class="queue-row${i === q.index ? ' queue-current' : ''}${i === selected ? ' queue-selected' : ''}" ${i === q.index && q.active ? 'aria-current="true"' : ''}><span>${i + 1}${entry.upNext ? ' · Up next (you added)' : ''}${i === q.index ? q.active ? ' · Now' : ' · Selected' : ''}</span><button class="btn btn-ghost queue-track" data-queue-action="play" ${q.loading ? 'disabled' : ''} aria-label="Play ${title}">${title}<small>${esc(musicSubtitle(entry.media))}</small></button><div class="queue-actions"><button class="btn btn-ghost" data-queue-action="menu" aria-label="Actions for ${title}">⋮</button><button class="btn btn-ghost" data-queue-action="up" aria-label="Move ${title} up" ${q.loading || i === 0 ? 'disabled' : ''}>↑</button><button class="btn btn-ghost" data-queue-action="down" aria-label="Move ${title} down" ${q.loading || i === q.entries.length - 1 ? 'disabled' : ''}>↓</button><button class="btn btn-ghost" data-queue-action="remove" aria-label="Remove ${title}" ${q.loading ? 'disabled' : ''}>Remove</button></div></li>`;
   }).join('')}</ol>${q.entries.length ? '' : '<p>Queue is empty. Add songs or play an album to start.</p>'}<div class="queue-footer">${q.entries.length > pageSize ? `<span>Showing ${start + 1}–${Math.min(start + pageSize, q.entries.length)} of ${q.entries.length}</span><button class="btn" data-queue-action="previous" ${start === 0 ? 'disabled' : ''}>Previous page</button><button class="btn" data-queue-action="next" ${start + pageSize >= q.entries.length ? 'disabled' : ''}>Next page</button><button class="btn" data-queue-action="now">Jump to now</button>` : ''}<button class="btn" data-queue-action="clear" ${!q.entries.length || q.loading ? 'disabled' : ''}>Clear queue</button><button class="btn" data-queue-action="undo" ${!q.canUndo || q.loading ? 'disabled' : ''}>Undo</button></div></section>`;

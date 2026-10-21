@@ -19,10 +19,15 @@ class MusicQueueState {
       required this.busy,
       required this.canUndo,
       required this.status,
-      this.upNextIds = const {}});
+      this.upNextIds = const {},
+      this.restored = false,
+      this.position = 0,
+      this.restoreFailed = false});
   final List<MusicQueueEntry> entries;
   final int index;
   final String label, status;
   final bool active, busy, canUndo;
+  final bool restored, restoreFailed;
+  final double position;
   final Set<int> upNextIds;
 }

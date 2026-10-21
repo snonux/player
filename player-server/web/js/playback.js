@@ -20,6 +20,7 @@ import {
 } from './imageViewer.js';
 import {
   detachedIsPlaying,
+  detachedPosition,
   initDetach,
   isDetached,
   postToDetach,
@@ -1024,6 +1025,15 @@ function currentMediaListIndex() {
   }
   const idx = state.media.findIndex((m) => m.id === currentMedia?.id);
   return idx >= 0 ? idx : currentMediaIndex;
+}
+
+// Queue recovery reads source position without acquiring or starting playback.
+export function queuePlaybackPosition() {
+  if (isDetached()) return detachedPosition();
+  if (isCasting()) return castPosition();
+  const m = currentMediaElement();
+  if (pendingSource || !m?.readyState) return currentSource?.resumeFrom ?? 0;
+  return m.currentTime || 0;
 }
 
 export function currentMediaId() { return currentMedia?.id; }

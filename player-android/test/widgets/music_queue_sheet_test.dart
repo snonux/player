@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/theme_provider.dart';
 import 'package:player_android/services/audio_handler.dart';
+import 'package:player_android/services/music_queue.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/widgets/music_queue_sheet.dart';
 
@@ -29,6 +30,43 @@ class _QueuePlayer extends AudioPlayer {
 }
 
 void main() {
+  testWidgets(
+      'recovered queue shows paused offset and explicit Resume without loading audio',
+      (tester) async {
+    final handler = PlayerAudioHandler(_QueuePlayer());
+    final request = ServerPlaybackRequest(
+        mediaId: 1,
+        serverOrigin: 'http://one',
+        userId: 1,
+        title: 'Saved short song',
+        sourceUri: Uri.parse('http://one/1'));
+    handler.restoreMusicQueue(
+        entries: [MusicQueueEntry(71, request)],
+        index: 0,
+        label: 'Saved album',
+        position: 7.25,
+        upNext: {},
+        claim: (_) async => null,
+        load: (_, __) async => null);
+    await tester.pumpWidget(ProviderScope(
+        overrides: [audioHandlerProvider.overrideWithValue(handler)],
+        child: const MaterialApp(
+            home: Scaffold(
+                appBar: PreferredSize(
+                    preferredSize: Size.fromHeight(56),
+                    child: MusicQueueButton())))));
+    await tester.tap(find.byTooltip('Now Playing queue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Resume queue'), findsOneWidget);
+    expect(find.text('Paused at 0:07'), findsOneWidget);
+    expect(find.text('Selected · paused'), findsOneWidget);
+    expect(find.text('Open current item'), findsOneWidget);
+    expect(handler.musicState, isNull);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(handler.musicQueue.position, 7.25);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
       'native queue sheet has move/remove/Undo, empty state and Back keeps queue',
       (tester) async {

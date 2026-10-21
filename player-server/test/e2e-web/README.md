@@ -351,3 +351,34 @@ to avoid BiDi interception limitations. Original failures, source WAVs, themes
 and authoritative saved state are retained under `/home/paul/tmp/nl3-evidence`.
 See [M27 acceptance](../../../docs/music-m27-implementation.md) for exact commands,
 combined outcomes and fault-injection limits.
+
+### M16 local queue recovery (installed Chrome and Firefox)
+
+After root gates/review and a fresh server build, create the isolated music
+fixture on port 18809 with evidence outside git. Use the existing installed
+Chrome/Firefox music configuration and Pulse sink setup. From this directory:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/home/paul/tmp/yk3-fixture \
+PLAYER_E2E_PULSE_SINK=player_yk3 \
+npx playwright test -c playwright.music.config.ts music-queue-recovery --workers=1
+```
+
+The two main cases per browser build a repeated-occurrence playlist through the real
+API, play/reorder/pause through the UI, reload and assert original occurrence
+IDs/index/exact short-song position with paused nonadvancing media. Only explicit
+Resume starts original source audio, measured with the existing PCM tap. They
+exercise light/dark/narrow/focus/typing, explicit other-media URL priority,
+actual logout/account roundtrip, Clear/reload, real permission revocation and
+corrupt local data. Error testing first aborts metadata transport to expose Retry
+for a known authenticated scope, then uses actual `context.setOffline(true)` for
+Retry/retained snapshot/no-autoplay before online Retry. The initial abort is
+fault injection; the offline phase is the browser's actual network boundary.
+Snapshot reads/imported queue state are evidence only; successful playback and
+queue edits use visible controls. Corrupt JSON is explicit negative-state setup.
+Do not call a --list parse check actual browser acceptance.
+
+A focused third case (`--grep 'normal Next'`) sets up only the required recovered
+later duplicate, resumes it and uses the visible Next control. It requires the
+following occurrence, Long Road Home source/runtime and original tone, without
+replaying account/theme/error phases.

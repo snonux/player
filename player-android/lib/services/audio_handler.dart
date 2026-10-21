@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'audio_progress_session.dart';
 import 'music_sequence.dart';
 import 'music_queue.dart';
+import 'music_queue_snapshot.dart';
 import 'playback_session_coordinator.dart';
 import 'playback_request.dart';
 
@@ -109,14 +110,106 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       busy: _queueBusy || (_queueActive && _movingTrack),
       canUndo: _queueUndo != null,
       status: _queueStatus,
-      upNextIds: Set.unmodifiable(_queueNextIds));
-  void _notifyQueue() => _queueChanges.add(null);
+      upNextIds: Set.unmodifiable(_queueNextIds),
+      restored: _queueRestored,
+      restoreFailed: _queueRestoreFailed,
+      position: _queuePositionEntry ==
+              (_queueIndex >= 0 && _queueIndex < _albumQueue.length
+                  ? _albumQueue[_queueIndex].id
+                  : null)
+          ? _queuePosition
+          : 0);
+  void Function()? persistMusicQueue;
+  Future<void> Function()? retryQueueRestore;
+  int _queueScope = 0;
+  int _queueRecoveryGeneration = 0;
+  int get queueRecoveryGeneration => _queueRecoveryGeneration;
+  int get queueScope => _queueScope;
+  bool _queueRestored = false, _queueRestoreFailed = false;
+  double _queuePosition = 0;
+  int? _queuePositionEntry;
+  MusicQueueSnapshot get queueSnapshot => MusicQueueSnapshot(
+      entries: _albumQueue
+          .where((e) => e.request is ServerPlaybackRequest)
+          .map((e) =>
+              (id: e.id, mediaId: (e.request as ServerPlaybackRequest).mediaId))
+          .toList(),
+      index: _queueIndex,
+      position: _queuePositionEntry ==
+              (_queueIndex >= 0 && _queueIndex < _albumQueue.length
+                  ? _albumQueue[_queueIndex].id
+                  : null)
+          ? _queuePosition
+          : 0,
+      label: _queueLabel,
+      upNext: Set.of(_queueNextIds));
+  void _notifyQueue() {
+    persistMusicQueue?.call();
+    _queueChanges.add(null);
+  }
+
+  void queueRestoreStatus(String message,
+      {bool busy = false, bool failed = false}) {
+    _queueBusy = busy;
+    _queueRestoreFailed = failed;
+    _queueStatus = message;
+    _queueChanges.add(null);
+  }
+
+  void restoreMusicQueue(
+      {required List<MusicQueueEntry> entries,
+      required int index,
+      required String label,
+      required double position,
+      required Set<int> upNext,
+      required Future<PlaybackSessionLease?> Function(PlaybackRequest) claim,
+      required Future<AudioSource?> Function(PlaybackRequest, bool Function())
+          load,
+      int unavailable = 0}) {
+    _albumQueue = entries;
+    _queueIndex = index;
+    _queueLabel = label;
+    for (final entry in entries) {
+      if (entry.id > _queueSerial) _queueSerial = entry.id;
+    }
+    _queuePositionEntry = index >= 0 ? entries[index].id : null;
+    _queuePosition = position;
+    _queueRestored = entries.isNotEmpty;
+    _queueClaim = claim;
+    _queueLoader = load;
+    _queueActive = false;
+    _queueUndo = null;
+    _queueNextIds = upNext;
+    _queueBusy = false;
+    _queueRestoreFailed = false;
+    _queueStatus = entries.isNotEmpty
+        ? 'Queue restored · paused. Resume when you’re ready.'
+        : 'Queue is empty.';
+    if (unavailable > 0) {
+      _queueStatus +=
+          ' $unavailable ${unavailable == 1 ? 'song is' : 'songs are'} no longer available.';
+    }
+    _notifyQueue();
+  }
+
+  void queueStorageFailed() {
+    _queueStatus = 'Queue could not be saved on this device.';
+    _queueChanges.add(null);
+  }
+
   void _invalidateQueueNext() {
     _queueNextIds.clear();
     ++_queueNextEpoch;
   }
 
   void _deactivateQueue() {
+    if (_queueActive &&
+        _canControlSource &&
+        !_movingTrack &&
+        _queueIndex >= 0) {
+      _queuePosition = _player.position.inMilliseconds / 1000;
+      _queuePositionEntry = _albumQueue[_queueIndex].id;
+    }
     _queueActive = false;
     _queueUndo = null;
     _invalidateQueueNext();
@@ -130,6 +223,14 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Called when account/server/library scope changes; retained callbacks must
   /// never cross an authentication boundary.
   void clearRetainedQueue() {
+    persistMusicQueue?.call();
+    persistMusicQueue = null;
+    retryQueueRestore = null;
+    ++_queueScope;
+    _queueRestored = false;
+    _queueRestoreFailed = false;
+    _queuePosition = 0;
+    _queuePositionEntry = null;
     ++_queueOperation;
     _queueBusy = false;
     if (_queueActive) {
@@ -151,10 +252,17 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   /// Explicit queue play acquires fresh ownership after another source took over.
-  Future<void> jumpQueue(int index) async {
+  Future<void> resumeQueue() =>
+      jumpQueue(_queueIndex, preserveNext: _queueRestored);
+
+  Future<void> jumpQueue(int index, {bool preserveNext = false}) async {
     if (musicQueue.busy || index < 0 || index >= _albumQueue.length) return;
-    _invalidateQueueNext();
+    final retainedNext = preserveNext ? Set<int>.of(_queueNextIds) : <int>{};
+    if (!preserveNext) _invalidateQueueNext();
     final entry = _albumQueue[index], claim = _queueClaim, load = _queueLoader;
+    final resumePosition = _queueRestored && _queuePositionEntry == entry.id
+        ? Duration(milliseconds: (_queuePosition * 1000).round())
+        : null;
     if (!_queueActive && claim == null) return;
     final operation = ++_queueOperation;
     _queueBusy = true;
@@ -179,7 +287,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         _queueActive = true;
         _watchMusicPositions();
       }
-      await _moveTrack(index - _musicIndex);
+      if (preserveNext) _queueNextIds = retainedNext;
+      _queueRestored = false;
+      await _moveTrack(index - _musicIndex, resumePosition: resumePosition);
       if (operation != _queueOperation) return;
       _queueStatus = _musicState?.error == null
           ? ''
@@ -273,6 +383,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       if (operation != _queueOperation) return;
       _albumQueue = [];
       _queueIndex = -1;
+      _queueRestored = false;
       _queueUndo = old;
       _queueUndoIndex = oldIndex;
       _queueUndoNextIds = oldNext;
@@ -296,6 +407,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         load,
   }) async {
     if (musicQueue.busy || entries.isEmpty) return false;
+    ++_queueRecoveryGeneration;
+    _queueRestoreFailed = false;
     _rememberQueue();
     final previous = _queueUndo!;
     final previousIndex = _queueUndoIndex;
@@ -404,6 +517,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _musicChanged = changed;
     _expandMusic = expand;
     if (!wrap) {
+      ++_queueRecoveryGeneration;
+      _queueRestored = false;
+      _queuePosition = 0;
+      _queuePositionEntry = null;
       ++_queueOperation;
       _queueBusy = false;
       _albumQueue = entries
@@ -430,6 +547,13 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
           _canControlSource &&
           _player.processingState == ProcessingState.ready) {
         _musicPosition = position;
+        if (_queueActive && !_movingTrack && _queueIndex >= 0) {
+          final seconds = position.inMilliseconds / 1000;
+          final changed = seconds.floor() != _queuePosition.floor();
+          _queuePosition = seconds;
+          _queuePositionEntry = _albumQueue[_queueIndex].id;
+          if (changed) persistMusicQueue?.call();
+        }
       }
     });
   }
@@ -452,6 +576,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _musicState = state;
     _musicChanges.add(state);
     if (_queueActive) {
+      if (_queueIndex != _musicIndex) {
+        _queuePosition = 0;
+        _queuePositionEntry = null;
+      }
       _queueIndex = _musicIndex;
       _queueNextIds.removeAll(
           _albumQueue.take(_queueIndex + 1).map((entry) => entry.id));
@@ -586,6 +714,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Invalidates pending source work from the previous audio session.
   int beginSourceSession({bool Function()? ownsSource}) {
+    ++_queueRecoveryGeneration;
+    if (_queueBusy && _albumQueue.isEmpty) _queueStatus = '';
+    _queueBusy = false;
+    _queueRestoreFailed = false;
     _deactivateQueue();
     unawaited(_musicPositions?.cancel());
     _musicPositions = null;
@@ -658,6 +790,14 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Saves the current session without pausing background playback.
   Future<void> saveProgress() async {
+    if (_queueActive &&
+        _canControlSource &&
+        !_movingTrack &&
+        _queueIndex >= 0) {
+      _queuePosition = _player.position.inMilliseconds / 1000;
+      _queuePositionEntry = _albumQueue[_queueIndex].id;
+      persistMusicQueue?.call();
+    }
     await _progress?.record(force: true);
   }
 
@@ -707,6 +847,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> pause() async {
     await _player.pause();
     await _progress?.record(force: true);
+    if (_queueActive && _queueIndex >= 0) {
+      _queuePosition = _player.position.inMilliseconds / 1000;
+      _queuePositionEntry = _albumQueue[_queueIndex].id;
+      persistMusicQueue?.call();
+    }
   }
 
   @override

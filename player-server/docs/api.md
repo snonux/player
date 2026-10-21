@@ -601,8 +601,12 @@ podcast sync error.
 **Response `200`:**
 
 ```json
-{ "media_page_size": 100, "podcast_sync": 1 }
+{ "media_page_size": 100, "podcast_sync": 1, "user_id": 1 }
 ```
+
+`user_id` is the authenticated account ID, for locally scoped queue recovery.
+It is returned by both prefixes and does not expose credentials or another
+account’s queue. Clients without this field leave local queue recovery disabled.
 
 **Status codes:** `200`, `401`
 

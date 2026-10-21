@@ -1,5 +1,5 @@
 import { queueSelected } from './queue-actions.js';
-import { initQueue } from './queue.js';
+import { initQueue, restoreQueue, queueState } from './queue.js';
 import { initQueuePanel, isQueueFocused, queueKey, toggleQueue } from './queue-panel.js';
 import { initMusicCatalog, renderMusic, backMusic, openAlbum, openSongAlbum } from './views/music-catalog.js';
 import { API } from './api.js';
@@ -264,6 +264,8 @@ async function initApp() {
     }).catch(() => {});
     renderSets();
     const navigation = initNavigation({ isShuffle, setShuffle, syncChrome: syncChromeVirtualSets });
+    await restoreQueue(cfg?.user_id);
+    if (queueState().restored) toast('Queue restored, paused. Open Now Playing to resume.', 'info');
     await navigation.restore();
   } catch (err) {
     toast(err.message || 'Error loading sets', 'error');

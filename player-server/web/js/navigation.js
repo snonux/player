@@ -1,4 +1,5 @@
 import { mediaTitle } from './music.js';
+import { recoveredQueuePosition } from './queue.js';
 import { API } from './api.js';
 import { state } from './state.js';
 import { selectMedia, currentMediaId, stopAndClose } from './player.js';
@@ -73,7 +74,7 @@ export function initNavigation({ isShuffle, setShuffle, syncChrome }) {
         const index = state.media.findIndex(item => item.id === media.id);
         const card = document.querySelector(`#media-grid [data-id="${media.id}"]`);
         if (card) { selectByElement(card); card.scrollIntoView({ block: 'nearest' }); }
-        if (currentMediaId() !== media.id) selectMedia(media, index, detail?.progress?.position_seconds ?? 0);
+        if (currentMediaId() !== media.id) selectMedia(media, index, recoveredQueuePosition(media.id) ?? detail?.progress?.position_seconds ?? 0);
         document.title = `${mediaTitle(media)} — Player`;
       } else {
         if (currentMediaId()) stopAndClose();

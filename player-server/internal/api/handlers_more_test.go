@@ -114,6 +114,41 @@ func TestServer_Config(t *testing.T) {
 	}
 }
 
+func TestConfigQueueScopeRequiresSessionBothPrefixes(t *testing.T) {
+	store := buildSessionStore(1)
+	sessions := make(map[string]*model.Session)
+	store.SessionRepo.CreateSessionFunc = func(_ context.Context, session *model.Session) error { sessions[session.ID] = session; return nil }
+	store.SessionRepo.GetSessionByIDFunc = func(_ context.Context, id string) (*model.Session, error) { return sessions[id], nil }
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	srv := newTestServer(t, store, nil, sm, &internal.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	for _, path := range []string{"/api/config", "/api/v1/config"} {
+		for _, user := range []int64{0, 1, 2} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			if user > 0 {
+				req.AddCookie(addSessionCookie(t, store, sm, user))
+			}
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if user == 0 {
+				if rr.Code != http.StatusUnauthorized {
+					t.Fatalf("%s anonymous: %d", path, rr.Code)
+				}
+				continue
+			}
+			if rr.Code != http.StatusOK {
+				t.Fatalf("%s user %d: %d", path, user, rr.Code)
+			}
+			var body map[string]int64
+			if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["user_id"] != user || body["podcast_sync"] != 1 || body["media_page_size"] <= 0 {
+				t.Fatalf("%s user %d: %v", path, user, body)
+			}
+		}
+	}
+}
+
 func TestPingStore_nonPinger(t *testing.T) {
 	store := &repository.MockStore{}
 	srv := newTestServer(t, store, nil, nil, &internal.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)

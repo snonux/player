@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/audio_handler_provider.dart';
 import '../services/audio_handler.dart';
+import '../services/playback_request.dart';
+import 'package:go_router/go_router.dart';
+import '../app_routes.dart';
 
 /// Shared entry point on the player and library screens; no new player route.
 class MusicQueueButton extends ConsumerWidget {
@@ -70,6 +73,29 @@ class _MusicQueueSheet extends StatelessWidget {
                                     ? 'Current track marked Now'
                                     : 'Queue paused. Choose a track to play.',
                         semanticsLabel: q.status)),
+              if (q.restored) ...[
+                Text(
+                    'Paused at ${Duration(seconds: q.position.floor()).inMinutes}:${(q.position.floor() % 60).toString().padLeft(2, '0')}'),
+                FilledButton(
+                    onPressed: q.busy
+                        ? null
+                        : () => _run(context, handler.resumeQueue),
+                    child: const Text('Resume queue')),
+              ],
+              if (q.restoreFailed)
+                TextButton(
+                    onPressed: q.busy ? null : handler.retryQueueRestore,
+                    child: const Text('Retry restore')),
+              if (q.index >= 0 &&
+                  q.entries[q.index].request is ServerPlaybackRequest)
+                TextButton(
+                    onPressed: () {
+                      final request =
+                          q.entries[q.index].request as ServerPlaybackRequest;
+                      Navigator.pop(context);
+                      context.push(AppRoutes.mediaDetailPath(request.mediaId));
+                    },
+                    child: const Text('Open current item')),
               Expanded(
                   child: q.entries.isEmpty
                       ? const Center(
