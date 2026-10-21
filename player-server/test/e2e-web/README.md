@@ -382,3 +382,22 @@ A focused third case (`--grep 'normal Next'`) sets up only the required recovere
 later duplicate, resumes it and uses the visible Next control. It requires the
 following occurrence, Long Road Home source/runtime and original tone, without
 replaying account/theme/error phases.
+
+### M15 whole collection playback and enqueue
+
+With a fresh current disposable Music fixture and installed Chrome/Firefox:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/home/paul/tmp/kl3-fixture \
+PLAYER_E2E_PULSE_SINK=player_kl3 \
+npx playwright test -c playwright.music.config.ts music-collections --workers=1
+```
+
+The three cases per browser exercise album/artist/playlist detail Play, Play
+next and append, whole-batch Undo, catalog multi-selection in reverse click
+order, duplicate playlist occurrences, source PCM, keyboard navigation and
+native typing, light/dark/narrow layouts, real browser offline failure and
+visible shortcut feedback. A one-shot delayed original fetch checks duplicate
+submission and superseded source ownership; it changes timing only, not server
+metadata or playback responses. Runtime queue reads are evidence; feature
+mutations use visible controls. A `--list` parse pass is not feature acceptance.

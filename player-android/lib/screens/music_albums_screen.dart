@@ -1,3 +1,5 @@
+import '../services/music_collections.dart';
+import '../widgets/music_collection_actions.dart';
 import '../services/music_queue.dart';
 import '../widgets/server_song_actions.dart';
 import '../widgets/music_queue_sheet.dart';
@@ -173,48 +175,43 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                     child: const Text('Back to Library'))
               ])));
     }
-    return RefreshIndicator(
+    return MusicCollectionCatalog(
+        key: ValueKey('albums-${widget.artistKey ?? "all"}-$_generation'),
+        items: albums,
+        kind: 'album',
+        keyName: 'album_key',
+        nameName: 'title',
+        grid: true,
         onRefresh: _load,
-        child: LayoutBuilder(
-            builder: (context, box) => GridView.builder(
-                padding: const EdgeInsets.all(12),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: (box.maxWidth / 180).floor().clamp(2, 6),
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 0.72),
-                itemCount: albums.length,
-                itemBuilder: (context, index) {
-                  final album = albums[index];
-                  return Card(
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                          onTap: () => context.push(
-                              '${AppRoutes.musicAlbums}?album=${Uri.encodeComponent(album['album_key'] as String)}'),
+        itemBuilder: (album, checkbox, toggle) => Card(
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+                onTap: toggle ??
+                    () => context.push(
+                        '${AppRoutes.musicAlbums}?album=${Uri.encodeComponent(album['album_key'] as String)}'),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (checkbox != null)
+                        Align(alignment: Alignment.centerLeft, child: checkbox),
+                      Expanded(child: _cover(album)),
+                      Padding(
+                          padding: const EdgeInsets.all(8),
                           child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Expanded(child: _cover(album)),
-                                Padding(
-                                    padding: const EdgeInsets.all(8),
-                                    child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(album['title'] as String,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .titleSmall),
-                                          Text(album['artist'] as String,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis),
-                                          if (album['from_folder'] == true)
-                                            const Text('From folder')
-                                        ]))
-                              ])));
-                })));
+                                Text(album['title'] as String,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        Theme.of(context).textTheme.titleSmall),
+                                Text(album['artist'] as String,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                if (album['from_folder'] == true)
+                                  const Text('From folder'),
+                              ])),
+                    ]))));
   }
 
   Widget _detail() {
@@ -254,12 +251,12 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         ]))
       ]),
       const SizedBox(height: 16),
-      Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-              onPressed: songs.isEmpty ? null : () => _play(songs, 0),
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Play album'))),
+      MusicCollectionActions(
+          key: ValueKey('album-${widget.albumKey}-$_generation'),
+          collections: [MusicCollection('album', widget.albumKey!)],
+          playLabel: 'Play album',
+          sourceLabel: album['title'] as String,
+          enabled: songs.isNotEmpty),
       Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
         TextButton(
             onPressed: () => setState(() {

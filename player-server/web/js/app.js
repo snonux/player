@@ -1,3 +1,4 @@
+import { cancelCollectionSelection } from './collection-actions.js';
 import { queueSelected } from './queue-actions.js';
 import { initQueue, restoreQueue, queueState } from './queue.js';
 import { initQueuePanel, isQueueFocused, queueKey, toggleQueue } from './queue-panel.js';
@@ -367,7 +368,7 @@ function keyboardHandlers() {
         return;
       }
       cancelTagsLoad();
-      escapeMediaView();
+      if (!escapeMediaView()) cancelCollectionSelection();
     },
     shuffle: () => {
       enableShuffle();
@@ -455,6 +456,7 @@ function firstGridElement() {
 function activateGridElement(el) {
   if (!el) return;
   selectByElement(el);
+  if (el.dataset.collectionKey) { el.querySelector('.collection-open')?.click(); return; }
   if (el.dataset.playlist) { el.click(); return; }
   if (el.dataset.artistCard) { el.click(); return; }
   if (el.dataset.album) { openAlbum(el.dataset.album); return; }

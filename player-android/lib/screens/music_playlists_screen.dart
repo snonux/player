@@ -1,3 +1,5 @@
+import '../services/music_collections.dart';
+import '../widgets/music_collection_actions.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -161,34 +163,38 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
     );
   }
 
-  Widget _catalog() => RefreshIndicator(
+  Widget _catalog() => MusicCollectionCatalog(
+      key: ValueKey('playlists-$_generation'),
+      items: _list,
+      kind: 'playlist',
+      keyName: 'playlist_id',
+      nameName: 'name',
       onRefresh: _load,
-      child: ListView(padding: const EdgeInsets.all(16), children: [
-        Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
+      header: Padding(
+          padding: const EdgeInsets.all(16),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            FilledButton.icon(
                 onPressed: () => _edit(),
                 icon: const Icon(Icons.add),
-                label: const Text('Create playlist'))),
-        if (_list.isEmpty)
-          const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Text(
-                  'No playlists yet. Create a playlist to save music for later.')),
-        for (final p in _list)
-          ListTile(
-              leading: _cover(p, 56),
-              title: Text(p['name'] as String,
-                  maxLines: 2, overflow: TextOverflow.ellipsis),
-              subtitle: Text(_totals(p)),
-              onTap: () async {
+                label: const Text('Create playlist')),
+            if (_list.isEmpty)
+              const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                      'No playlists yet. Create a playlist to save music for later.')),
+          ])),
+      itemBuilder: (p, checkbox, toggle) => ListTile(
+          leading: checkbox ?? _cover(p, 56),
+          title: Text(p['name'] as String,
+              maxLines: 2, overflow: TextOverflow.ellipsis),
+          subtitle: Text(_totals(p)),
+          onTap: toggle ??
+              () async {
                 await context.push(
                     '${AppRoutes.musicPlaylists}?playlist=${Uri.encodeComponent(p['playlist_id'] as String)}');
-                if (mounted) {
-                  _load();
-                }
-              }),
-      ]));
+                if (mounted) _load();
+              }));
   Widget _detail() {
     final p = _playlist!;
     final songs = (p['songs'] as List)
@@ -222,10 +228,12 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       const SizedBox(height: 16),
       Text(p['comment'] as String),
       Wrap(spacing: 12, runSpacing: 8, children: [
-        FilledButton.icon(
-            onPressed: songs.isEmpty ? null : () => play(0),
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Play playlist')),
+        MusicCollectionActions(
+            key: ValueKey('playlist-${widget.playlistId}-$_generation'),
+            collections: [MusicCollection('playlist', widget.playlistId!)],
+            playLabel: 'Play playlist',
+            sourceLabel: p['name'] as String,
+            enabled: songs.isNotEmpty),
         FilledButton.tonalIcon(
             onPressed: _addMusic,
             icon: const Icon(Icons.add),

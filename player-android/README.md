@@ -322,6 +322,23 @@ Select a slider and use Left/Right to adjust it, or select a scroll area and use
 Page Up/Down. Shift plus a shortcut invokes its long-press action when available.
 Hints are also available from Settings → Keyboard shortcuts.
 
+## Play and queue music collections
+
+Open the server navigation menu and choose **Music · Albums**, **Music · Artists**
+or **Music · Playlists**. A collection's **Play** button replaces the current
+queue and starts its first song. **Queue actions** offers **Play next** and
+**Add to queue**, keeping the current song and position. An empty queue stays
+paused until you choose a song in Now Playing. Undo applies to the
+whole inserted collection or selection; the Now Playing queue remains available
+from the screen's queue button.
+
+Tap **Select albums**, **Select artists** or **Select playlists** in a catalog,
+check collections, then choose **Play selected** or **Queue actions**. Collections
+follow catalog order regardless of check order. Albums keep disc/track order,
+artist playback includes that person's credited songs in album order, and
+playlists retain saved order and repeated songs. Back cancels selection before
+leaving the catalog.
+
 ## Recover a music queue
 
 Music queues save their order, current song occurrence and position on this

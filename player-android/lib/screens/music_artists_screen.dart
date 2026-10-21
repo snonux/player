@@ -1,3 +1,5 @@
+import '../services/music_collections.dart';
+import '../widgets/music_collection_actions.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -110,10 +112,19 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
                     ? _detail()
                     : _catalog(),
       );
-  Widget _catalog() => Column(children: [
-        Padding(
-            padding: const EdgeInsets.all(16),
-            child: DropdownButtonFormField<String>(
+  Widget _catalog() => MusicCollectionCatalog(
+      key: ValueKey('artists-$_role-$_generation'),
+      emptyMessage:
+          'No artists available for this role. Choose another role or ask an administrator to rescan music tags.',
+      items: _people,
+      kind: 'artist',
+      keyName: 'artist_key',
+      nameName: 'name',
+      onRefresh: _load,
+      scrollController: _scroll,
+      header: Padding(
+          padding: const EdgeInsets.all(16),
+          child: DropdownButtonFormField<String>(
               initialValue: _role,
               decoration: const InputDecoration(labelText: 'Role'),
               isExpanded: true,
@@ -122,66 +133,59 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
                   DropdownMenuItem(value: role.key, child: Text(role.value))
               ],
               onChanged: (value) {
-                if (value == null) return;
-                _role = value;
-                if (_scroll.hasClients) _scroll.jumpTo(0);
-                _load();
-              },
-            )),
-        Expanded(
-            child: _people.isEmpty
-                ? const Center(
-                    child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                            'No artists available for this role. Choose another role or ask an administrator to rescan music tags.')))
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    child: ListView.builder(
-                      controller: _scroll,
-                      itemCount: _people.length,
-                      itemBuilder: (context, index) {
-                        final person = _people[index];
-                        return ListTile(
-                          title: Text(person['name'] as String),
-                          subtitle: Text(
-                              '${creditRoleLabels(person['roles'])}\n${person['album_count']} albums · ${person['song_count']} songs'),
-                          isThreeLine: true,
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => context.push(
-                              '${AppRoutes.musicArtists}?artist=${Uri.encodeComponent(person['artist_key'] as String)}'),
-                        );
-                      },
-                    ))),
-      ]);
+                if (value != null) {
+                  _role = value;
+                  if (_scroll.hasClients) _scroll.jumpTo(0);
+                  _load();
+                }
+              })),
+      itemBuilder: (person, checkbox, toggle) => ListTile(
+          leading: checkbox,
+          title: Text(person['name'] as String),
+          subtitle: Text(
+              '${creditRoleLabels(person['roles'])}\n${person['album_count']} albums · ${person['song_count']} songs'),
+          isThreeLine: true,
+          trailing: const Icon(Icons.chevron_right),
+          onTap: toggle ??
+              () => context.push(
+                  '${AppRoutes.musicArtists}?artist=${Uri.encodeComponent(person['artist_key'] as String)}')));
   Widget _detail() {
     final artist = _artist!;
     final albums =
         (artist['albums'] as List? ?? []).cast<Map<String, dynamic>>();
-    return RefreshIndicator(
+    return MusicCollectionCatalog(
+        key: ValueKey('artist-${widget.artistKey}-$_generation'),
+        items: albums,
+        kind: 'album',
+        keyName: 'album_key',
+        nameName: 'title',
         onRefresh: _load,
-        child: ListView(
-            controller: _scroll,
+        scrollController: _scroll,
+        header: Padding(
             padding: const EdgeInsets.all(16),
-            children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(artist['name'] as String,
                   style: Theme.of(context).textTheme.titleLarge),
               Text(creditRoleLabels(artist['roles'])),
               Text(
                   '${artist['album_count']} albums · ${artist['song_count']} songs'),
-              const SizedBox(height: 16),
-              for (final album in albums)
-                Card(
-                    child: ListTile(
-                  leading: const Icon(Icons.album_outlined),
-                  title: Text(album['title'] as String),
-                  subtitle: Text(
-                      '${album['artist']}\n${creditRoleLabels(album['roles'])}'),
-                  isThreeLine: true,
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push(
-                      '${AppRoutes.musicAlbums}?album=${Uri.encodeComponent(album['album_key'] as String)}'),
-                )),
-            ]));
+              MusicCollectionActions(
+                  collections: [MusicCollection('artist', widget.artistKey!)],
+                  playLabel: 'Play artist',
+                  sourceLabel: artist['name'] as String,
+                  enabled: albums.isNotEmpty),
+            ])),
+        itemBuilder: (album, checkbox, toggle) => Card(
+            child: ListTile(
+                leading: checkbox ?? const Icon(Icons.album_outlined),
+                title: Text(album['title'] as String),
+                subtitle: Text(
+                    '${album['artist']}\n${creditRoleLabels(album['roles'])}'),
+                isThreeLine: true,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: toggle ??
+                    () => context.push(
+                        '${AppRoutes.musicAlbums}?album=${Uri.encodeComponent(album['album_key'] as String)}'))));
   }
 }

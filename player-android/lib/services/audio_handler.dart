@@ -402,6 +402,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<bool> insertQueue({
     required List<PlaybackRequest> entries,
     required QueueInsertion action,
+    bool replace = false,
+    String sourceLabel = 'Collection',
     required Future<PlaybackSessionLease?> Function(PlaybackRequest) claim,
     required Future<AudioSource?> Function(PlaybackRequest, bool Function())
         load,
@@ -418,6 +420,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final added = entries
         .map((request) => MusicQueueEntry(++_queueSerial, request))
         .toList();
+    if (replace) {
+      _albumQueue.clear();
+      _queueIndex = -1;
+      _queueLabel = sourceLabel;
+      _invalidateQueueNext();
+    }
     var at = action == QueueInsertion.append
         ? _albumQueue.length
         : (_queueIndex + 1).clamp(0, _albumQueue.length);

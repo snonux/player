@@ -1,3 +1,4 @@
+import { collectionButtons, bindCollectionActions, bindCollectionCatalog } from '../collection-actions.js';
 import { API } from '../api.js';
 import { state } from '../state.js';
 import { escapeHtml as esc, fmtDur, toast } from '../utils.js';
@@ -25,6 +26,7 @@ export async function renderPlaylists(grid, view, current, saved) {
   grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to Sets</button><h1>Playlists</h1><button class="btn btn-primary" data-create>Create playlist</button></div>`+(p.length?p.map(item=>`<div class="media-card album-card" role="button" tabindex="0" data-playlist="${esc(item.playlist_id)}" aria-label="Open playlist ${esc(item.name)}">${cover(item)}<div class="card-body"><div class="title" title="${esc(item.name)}">${esc(item.name)}</div><p>${totals(item)}</p></div></div>`).join(''):'<p class="grid-full">No playlists yet. Create a playlist to save music for later.</p>');
   grid.querySelector('[data-create]').onclick=()=>editPlaylist(null,active);
   grid.querySelectorAll('[data-playlist]').forEach(card=>card.onclick=()=>open(card.dataset.playlist));
+  bindCollectionCatalog(grid,p,'playlist','playlist_id','name',active);
  }else{
   renderPlaylistDetail(grid,p,active);
  }
@@ -62,14 +64,14 @@ function matchesSong(song,query){return [mediaTitle(song),song.file_name,song.mu
 function renderPlaylistDetail(grid,initial,current){
  let p=initial, busy=false;
  let undo=null;
- grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover>${cover(p)}</div><div><h1>${esc(p.name)}</h1><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p><div class="playlist-actions"><button class="btn btn-primary" data-play>▶ Play playlist</button><button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
+ grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover>${cover(p)}</div><div><h1>${esc(p.name)}</h1><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p><div class="playlist-actions">${collectionButtons('Play playlist')}<button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
  const rows=grid.querySelector('[data-rows]'),find=grid.querySelector('[data-find]');
  const draw=(focusID=null)=>{
   state.media=p.songs;
   const visible=p.songs.map((song,index)=>({song,index,entry:p.entries[index]})).filter(({song})=>matchesSong(song,find.value));
   grid.querySelector('[data-totals]').textContent=totals(p);
   grid.querySelector('[data-playlist-cover]').innerHTML=cover(p);
-  grid.querySelector('[data-play]').disabled=!p.songs.length;
+  grid.querySelectorAll('[data-collection-play], [data-collection-menu]').forEach(button=>button.disabled=!p.songs.length);
   grid.querySelector('[data-count]').textContent=`Showing ${visible.length} of ${p.songs.length} songs`;
   rows.innerHTML=visible.length?visible.map(({song,index,entry})=>`<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" data-entry="${esc(entry.entry_id)}" aria-label="Play ${esc(mediaTitle(song))}"><span class="text-muted music-number">${index+1}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(song.music?.artist||'Unknown artist')} · ${esc(song.music?.album||'')}</span></span><span>${fmtDur(song.duration)}</span><span hidden>${[['up','Move up'],['down','Move down'],['remove','Remove from playlist']].map(([action,label])=>`<button data-action="playlist-${action}" ${busy||(action==='up'&&index===0)||(action==='down'&&index===p.songs.length-1)?'disabled':''}>${label}</button>`).join('')}</span><button class="btn btn-ghost" data-song-menu aria-label="Song actions for ${esc(mediaTitle(song))}">⋮</button></div>`).join(''):`<p>${p.songs.length?'No matching songs. Clear the search to see all songs.':'This playlist is empty.'}</p>`;
   rows.querySelectorAll('.media-row').forEach(row=>{
@@ -97,7 +99,7 @@ function renderPlaylistDetail(grid,initial,current){
   }
  };
  find.oninput=()=>draw();grid.querySelector('[data-clear]').onclick=()=>{find.value='';draw();find.focus();};
- grid.querySelector('[data-play]').onclick=()=>playAlbumCollection(p.songs,0,p.name);
+ bindCollectionActions(grid.querySelector('[data-collection-actions]'),()=>[{kind:'playlist',key:p.playlist_id}],current,p.name);
  grid.querySelector('[data-add]').onclick=()=>addMusic(p,current);
  grid.querySelector('[data-add-songs]').onclick=()=>addSongs(p,current);
  grid.querySelector('[data-edit]').onclick=()=>editPlaylist(p,current);

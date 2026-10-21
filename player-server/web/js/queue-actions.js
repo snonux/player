@@ -1,3 +1,4 @@
+import { queueCollectionSelected } from './collection-actions.js';
 import { insertQueue, undoQueue, queueState, queueUndoToken } from './queue.js';
 import { state } from './state.js';
 import { currentElement } from './selection.js';
@@ -22,6 +23,7 @@ export async function queueSongs(action, songs) {
   if (await insertQueue(songs, action)) { const token = queueUndoToken(); if (!token) return; toast(`Added ${songs.length} ${songs.length === 1 ? 'song' : 'songs'}`, 'info', {label:'Undo',run:() => undoQueue(token)}); }
 }
 export function queueSelected(action) {
+  if (queueCollectionSelected(action)) return;
   const checked = [...document.querySelectorAll('#media-grid [data-song-check]:checked')].map(input => input.dataset.songCheck);
   const id = currentElement()?.dataset.id;
   const songs = checked.length ? state.media.filter(song => checked.includes(String(song.id))) : state.media.filter(song => String(song.id) === id);

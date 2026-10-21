@@ -78,6 +78,47 @@ class _BrowseClient extends PlayerApiClient {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+      'collection replacement starts first and one Undo restores original occurrences and label',
+      () async {
+    final handler = PlayerAudioHandler(_Player());
+    final coordinator = PlaybackSessionCoordinator();
+    PlaybackRequest song(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0);
+    Future<PlaybackSessionLease?> claim(PlaybackRequest r) => coordinator.claim(
+        kind: r.kind, identity: r.identity, stop: handler.stop);
+    Future<AudioSource?> load(
+            PlaybackRequest r, bool Function() current) async =>
+        AudioSource.uri(r.sourceUri);
+    await handler.insertQueue(
+        entries: [song(1), song(2)],
+        action: QueueInsertion.append,
+        claim: claim,
+        load: load);
+    final before = handler.musicQueue.entries.map((e) => e.id).toList();
+    expect(handler.musicQueue.active, isFalse);
+    await handler.insertQueue(
+        entries: [song(3), song(4), song(3)],
+        action: QueueInsertion.now,
+        replace: true,
+        sourceLabel: 'Chosen playlists',
+        claim: claim,
+        load: load);
+    expect(handler.musicQueue.entries.map((e) => e.request.title),
+        ['Song 3', 'Song 4', 'Song 3']);
+    expect(handler.musicQueue.index, 0);
+    expect(handler.musicQueue.label, 'Chosen playlists');
+    expect(handler.musicState?.request.title, 'Song 3');
+    await handler.undoQueue(expected: handler.queueUndoToken);
+    expect(handler.musicQueue.entries.map((e) => e.id), before);
+    expect(handler.musicQueue.active, isFalse);
+    await handler.stop();
+  });
   test('music classification uses source filenames, paths and sets, not titles',
       () {
     Media media(String file,

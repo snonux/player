@@ -784,8 +784,58 @@ async function testPersistedQueueRecovery() {
   } finally { API.mediaDetail=original; }
 }
 
+async function testCollectionReplaceUndoAndOccurrenceOrder() {
+  setup();
+  const songs = [501,502,501].map(id => ({id,type:'audio',duration:12,file_name:`${id}.mp3`}));
+  await queue.playAlbumCollection([{id:500,type:'audio',duration:12}],0,'Original');
+  const previous = queue.queueState().entries.map(entry=>entry.id);
+  await queue.insertQueue(songs,'now',{replace:true,source:'Selected playlists'});
+  assertEqual(queue.queueState().entries.map(entry=>entry.media.id).join(','),'501,502,501','replacement keeps occurrences and drops old remainder');
+  assertEqual(queue.queueState().label,'Selected playlists','replacement label persists');
+  assertEqual(queue.queueState().index,0,'replacement starts first occurrence');
+  assertEqual(audio().src,'/api/media/501/stream','replacement assigns first original source');
+  queue.undoQueue(queue.queueUndoToken());
+  assertEqual(queue.queueState().entries.map(entry=>entry.id).join(','),previous.join(','),'one Undo restores original occurrence IDs');
+  assertEqual(queue.queueState().label,'Original','Undo restores source label');
+  assert(!queue.queueState().active,'replacement Undo stays paused');
+}
+
+async function testCollectionDuplicateSubmitAndSupersession() {
+  setup();
+  const {bindCollectionActions,queueCollectionSelected} = await import('../collection-actions.js');
+  const {state} = await import('../state.js');
+  const {beginPlaybackIntent} = await import('../playback-intent.js');
+  const original=API.album;
+  let complete, calls=0;
+  API.album=()=>{calls++;return new Promise(resolve=>complete=resolve);};
+  const play={}, menu={}, status={};
+  const root={isConnected:true,querySelector:selector=>selector==='[data-collection-play]'?play:selector==='[data-collection-menu]'?menu:status,querySelectorAll:()=>[play,menu]};
+  const owner=bindCollectionActions(root,()=>[{kind:'album',key:'a'}],()=>true,'Test album');
+  owner.catalog=true;owner.kind='album';owner.selecting=false;
+  // The shortcut path selects one catalog target while sharing the toolbar's busy owner.
+  const originalQuery=document.querySelectorAll;
+  const card={dataset:{collectionKey:'a'},classList:{contains:()=>true}};
+  document.querySelectorAll=selector=>selector.includes('.media-card')?[card]:[];
+  try {
+    state.user={id:7};
+    queueCollectionSelected('next'); queueCollectionSelected('next');
+    assertEqual(calls,1,'repeated e while resolving sends only one collection request');
+    complete({songs:[{id:503,type:'audio',duration:12}]});await settle();
+    assertEqual(queue.queueState().entries.filter(entry=>entry.media.id===503).length,1,'deferred repeated e inserts once');
+    play.onclick();
+    beginPlaybackIntent();
+    complete({songs:[{id:504,type:'audio',duration:12}]});await settle();
+    assert(!queue.queueState().entries.some(entry=>entry.media.id===504),'new source intent rejects deferred collection Play');
+    play.onclick(); state.user={id:8};
+    complete({songs:[{id:505,type:'audio',duration:12}]});await settle();
+    assert(!queue.queueState().entries.some(entry=>entry.media.id===505),'new account rejects deferred collection Play');
+  } finally {API.album=original;document.querySelectorAll=originalQuery;}
+}
+
 console.info('Running playback source tests...');
 for (const test of [
+  testCollectionReplaceUndoAndOccurrenceOrder,
+  testCollectionDuplicateSubmitAndSupersession,
   testRecoveredResumeRetainsFutureFIFO,
   testPersistedQueueRecovery,
   testUndoCannotResurrectInvalidatedFIFO,

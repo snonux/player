@@ -141,13 +141,14 @@ export async function advanceQueue(delta) {
   return true;
 }
 function remember() { undo = { entries: [...entries], index, nextIDs: new Set(nextIDs), nextEpoch, label }; }
-export async function insertQueue(songs, action = 'next') {
+export async function insertQueue(songs, action = 'next', {replace = false, source = 'Collection'} = {}) {
   if (loading) return false;
   const added = songs.filter(song => song.type === 'audio').map(media => ({ id: ++serial, media }));
   if (!added.length) return false;
   restoreError = false;
   remember();
   const previous = undo;
+  if (replace) { entries = []; index = -1; label = source; invalidateNext(); }
   let at = action === 'append' ? entries.length : Math.max(0, index + 1);
   if (action === 'next') {
     while (at < entries.length && nextIDs.has(entries[at].id)) at++;

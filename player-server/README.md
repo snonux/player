@@ -89,6 +89,22 @@ copy; subsequent plays use the cache. Seeking works after preparation.
 Original files and downloads retain their bytes and `video/mpeg` MIME type.
 Run an admin rescan after upgrading to index files previously skipped.
 
+## Play and queue music collections
+
+Open the Sets sidebar and choose **Albums**, **Artists** or **Playlists** under
+Music. A collection's **Play** button replaces the current queue and starts its
+first song. **Queue actions** offers **Play next** and **Add to queue**; these
+keep the current song and position. An empty queue stays paused until you
+choose a song in Now Playing. Undo applies to the whole batch.
+
+Use **Select albums**, **Select artists** or **Select playlists** in a catalog
+to choose several collections, then **Play selected** or **Queue actions**.
+Collections follow their displayed order, regardless of check order. Albums
+keep disc/track order, artist playback includes that person's credited songs in
+album order, and playlists retain saved order and repeated songs. Press **e**
+or **E** on a selected collection to play it next or append it. Escape cancels
+collection selection after closing an open menu or expanded player.
+
 ## Recover a music queue
 
 The Now Playing music queue saves its order, selected occurrence and playback

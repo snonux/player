@@ -12,7 +12,7 @@ export function initKeyboard(handlers) {
     // Set/folder open buttons keep DOM focus while j/k/h/l move the
     // selection, so Enter there opens the selected card instead of
     // whichever card button happens to hold focus.
-    const gridNavigation = e.target.matches?.('.set-open, .folder-open, .song-open');
+    const gridNavigation = e.target.matches?.('.set-open, .folder-open, .song-open, .collection-open');
 
     // Browser chords and editable/native controls own keys before any mode.
     if (e.ctrlKey || e.metaKey || e.altKey) return;

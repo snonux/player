@@ -340,3 +340,27 @@ The offline sign-in retry is distinct from queue Retry logic.
 Pass optional `--ownership-path /path/to/runtime-ownership.json` when an
 orchestrator tracks server PID/start identity there. The runner refreshes that
 JSON after its verified owned restart only when the option is supplied.
+
+M15 whole collections uses the same disposable Music fixture and the freshly
+built native APK on the running API 34 emulator:
+
+```sh
+python3 music_collections_e2e.py /home/paul/tmp/kl3-fixture \
+  --apk /path/to/current-app-x86_64-release.apk \
+  --emulator-wav /path/to/owned-emulator.wav
+```
+
+The runner covers album/artist/playlist detail and catalog selection Play,
+Play next and append, saved occurrence IDs/order, whole-batch Undo, actual
+media-session/source PCM, touch/Back, light/dark themes, verified owned-server cutoff plus adb-reverse offline
+failure and real permission revocation/retry. Select `--scenario detail`,
+`selection`, `boundaries` or `recovery` for a bounded rerun. `--scenario core`
+covers details, selections and boundaries without replaying recovery. Limit
+a detail or selection rerun with `--kind album`, `artist` or `playlist`. Add
+`--resume-device` to preserve an already signed-in device on a rerun and
+`--ownership-path <root-owned JSON>` to update the verified server fingerprint
+after the offline stop/restart phase. Queue preferences are read on
+the rooted disposable emulator solely as authoritative evidence; all feature
+mutations use visible controls. It deliberately leaves the app, fixture/server,
+emulator and evidence intact for root review and coordinated stop-only cleanup.
+It never invokes the baseline app-data-clearing teardown.
