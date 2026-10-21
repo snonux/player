@@ -25,7 +25,8 @@ type fileResult struct {
 	path  string // absolute path used for logging
 	// refresh marks an already indexed row whose thumbnail was generated
 	// anew; the row is updated instead of inserted.
-	refresh bool
+	refresh      bool
+	musicRefresh bool
 	// replaced is the generated thumbnail the row stored before, which is
 	// deleted once unused. Empty when there was none.
 	replaced string
@@ -125,18 +126,36 @@ func (pw *probeWorker) probeFile(
 
 	row, alreadyExists := existing[relPath]
 	pw.logger.Debug("scanner file checked", "set", setName, "path", relPath, "existing", alreadyExists)
-	if alreadyExists {
-		if kind, isStale := pw.stale[relPath]; isStale {
-			if row.Type == model.MediaTypeAudio {
-				if row.ThumbnailPath != "" {
-					if _, err := pw.fs.Stat(row.ThumbnailPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-						return nil, nil // preserve artwork whose accessibility is unknown
-					}
-				}
-				if findCoverImage(path, coverImages, setPath) != "" {
-					return nil, nil
+	if alreadyExists && row.Type == model.MediaTypeAudio {
+		meta, err := pw.prober.Probe(ctx, path)
+		if err != nil {
+			pw.logger.Warn("scanner preserving music tags after probe failure", "path", path, "err", err)
+			return nil, nil
+		}
+		info, err := pw.fs.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("stat refreshed audio %q: %w", path, err)
+		}
+		row.Music = meta.Music
+		row.FileSizeBytes = info.Size()
+		result := &fileResult{media: &row, path: path, musicRefresh: true}
+		if row.ThumbnailPath != "" {
+			if _, err := pw.fs.Stat(row.ThumbnailPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return result, nil
+			}
+		}
+		if kind, stale := pw.stale[relPath]; stale {
+			if row.ThumbnailPath == "" || findCoverImage(path, coverImages, setPath) == "" {
+				if refreshed := pw.refreshThumbnail(ctx, path, row, kind); refreshed != nil {
+					refreshed.musicRefresh = true
+					return refreshed, nil
 				}
 			}
+		}
+		return result, nil
+	}
+	if alreadyExists {
+		if kind, isStale := pw.stale[relPath]; isStale {
 			return pw.refreshThumbnail(ctx, path, row, kind), nil
 		}
 		return nil, nil
@@ -164,6 +183,7 @@ func (pw *probeWorker) probeFile(
 // metadata.
 func (pw *probeWorker) newMedia(setID int64, relPath, path string, mediaType model.MediaType, meta *model.Metadata, thumbnailPath string) *model.Media {
 	return &model.Media{
+		Music:           meta.Music,
 		SetID:           setID,
 		RelPath:         relPath,
 		FileName:        filepath.Base(path),

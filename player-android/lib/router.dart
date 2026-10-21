@@ -228,6 +228,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.sharedAudioPlayer,
         builder: (context, state) => AudioPlayerScreen(
           mediaId: '0',
+          sourceName: state.extra is Map
+              ? ((state.extra as Map)['sourceName'] as String? ?? '')
+              : '',
           mediaTitle: _parsePlayerExtra(state.extra).$3,
           mediaUrl: _sharedPlaybackUrl(context, state),
           isPublicShare: true,
@@ -316,6 +319,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                   ?.id ??
               0;
           return AudioPlayerScreen(
+            sourceName: state.extra is Map
+                ? ((state.extra as Map)['sourceName'] as String? ?? '')
+                : '',
             mediaId: mediaId,
             mediaUrl: mediaUrl,
             mediaTitle: title,

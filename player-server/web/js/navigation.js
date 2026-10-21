@@ -1,3 +1,4 @@
+import { mediaTitle } from './music.js';
 import { API } from './api.js';
 import { state } from './state.js';
 import { selectMedia, currentMediaId, stopAndClose } from './player.js';
@@ -31,7 +32,7 @@ export function initNavigation({ isShuffle, setShuffle, syncChrome }) {
   document.addEventListener('library:navigated', () => commit(true));
   document.addEventListener('player:media-opened', event => {
     mediaID = event.detail.media.id;
-    document.title = `${event.detail.media.file_name} — Player`;
+    document.title = `${mediaTitle(event.detail.media)} — Player`;
     commit();
   });
   document.addEventListener('player:closed', () => { mediaID = null; document.title = 'Player'; commit(); });
@@ -72,7 +73,7 @@ export function initNavigation({ isShuffle, setShuffle, syncChrome }) {
         const card = document.querySelector(`#media-grid [data-id="${media.id}"]`);
         if (card) { selectByElement(card); card.scrollIntoView({ block: 'nearest' }); }
         if (currentMediaId() !== media.id) selectMedia(media, index, detail?.progress?.position_seconds ?? 0);
-        document.title = `${media.file_name} — Player`;
+        document.title = `${mediaTitle(media)} — Player`;
       } else {
         if (currentMediaId()) stopAndClose();
         document.title = 'Player';

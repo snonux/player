@@ -257,11 +257,17 @@ void main() {
     });
     await db.execute('DROP TABLE sync_bookmarks');
     await db.execute('DROP TABLE sync_items');
+    // Model the actual v2 columns, before embedded music/source snapshots.
+    await db.execute('ALTER TABLE downloads DROP COLUMN music');
+    await db.execute('ALTER TABLE downloads DROP COLUMN source_name');
     await db.setVersion(2);
     await repo.close();
     repo = OfflineDownloadRepository(
         directory: dir, now: () => now.add(const Duration(days: 1)));
-    expect((await repo.get(media.key))?.positionSeconds, 19.5);
+    final migrated = await repo.get(media.key);
+    expect(migrated?.positionSeconds, 19.5);
+    expect(migrated?.music, isNull);
+    expect(migrated?.sourceName, isEmpty);
     final payload = await repo.syncPayload(media.key);
     expect(payload['progress'], isNull);
     final bookmark = (payload['bookmarks'] as List).single as Map;

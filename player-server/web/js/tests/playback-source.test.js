@@ -177,7 +177,7 @@ async function testBusyStatusIsShown() {
   })();
   player.selectAndPlay(wmaAudio, 0);
   await settle();
-  assertEqual(statusText(), 'Server is busy, song.wma is waiting to be prepared…', 'busy 503 keeps a preparing state');
+  assertEqual(statusText(), 'Server is busy, song is waiting to be prepared…', 'busy 503 keeps a preparing state');
   assertEqual(audio().getAttribute('src'), null, 'audio stays without source while busy');
   release(response(200));
   await settle();

@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { mediaTitle, musicSubtitle, musicRows } from '../music.js';
+assert.equal(mediaTitle({type:'audio',file_name:'01 - name.MP3'}), '01 - name');
+assert.equal(mediaTitle({type:'audio',file_name:'a.mp3',music:{title:'  \t '}}), 'a');
+assert.equal(mediaTitle({type:'video',file_name:'a.mp4',music:{title:'Wrong'}}), 'a.mp4');
+const media = {type:'audio',file_name:'a.flac',music:{title:'東京 Nights',artist:'A feat. B; C',album:'Café',disc:2,disc_total:3,genres:['Jazz','Blues']}};
+assert.equal(mediaTitle(media),'東京 Nights');
+assert.equal(musicSubtitle(media),'A feat. B; C · Café');
+assert.deepEqual(musicRows(media).filter(([,v])=>v),[['Artist','A feat. B; C'],['Album','Café'],['Disc','2 / 3'],['Genres','Jazz, Blues']]);
+assert.equal(media.file_name,'a.flac');
+console.log('Music title/metadata tests passed.');

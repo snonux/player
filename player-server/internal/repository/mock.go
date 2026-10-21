@@ -619,6 +619,7 @@ type MockMediaRepo struct {
 	CreateMediaFunc          func(ctx context.Context, media *model.Media) (int64, error)
 	GetMediaByIDFunc         func(ctx context.Context, id int64) (*model.Media, error)
 	UpdateMediaFunc          func(ctx context.Context, media *model.Media) error
+	UpdateMediaMusicFunc     func(ctx context.Context, id int64, music *model.MusicMetadata, fileSizeBytes int64) error
 	UpdateMediaThumbnailFunc func(ctx context.Context, id int64, thumbnailPath string) error
 	SoftDeleteMediaFunc      func(ctx context.Context, id int64) error
 	RestoreMediaFunc         func(ctx context.Context, id int64) error
@@ -1294,4 +1295,17 @@ func (m *MockPodcastRepo) ListEpisodesWithStatus(ctx context.Context, userID, fe
 		return m.ListEpisodesWithStatusFunc(ctx, userID, feedID, limit, offset)
 	}
 	return nil, nil
+}
+
+// UpdateMediaMusic implements MediaRepo.
+func (m *MockStore) UpdateMediaMusic(ctx context.Context, id int64, music *model.MusicMetadata, fileSizeBytes int64) error {
+	return m.MediaRepo.UpdateMediaMusic(ctx, id, music, fileSizeBytes)
+}
+
+// UpdateMediaMusic calls UpdateMediaMusicFunc or returns nil.
+func (m *MockMediaRepo) UpdateMediaMusic(ctx context.Context, id int64, music *model.MusicMetadata, fileSizeBytes int64) error {
+	if m.UpdateMediaMusicFunc != nil {
+		return m.UpdateMediaMusicFunc(ctx, id, music, fileSizeBytes)
+	}
+	return nil
 }

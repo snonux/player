@@ -605,11 +605,14 @@ class _MediaTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              item.fileName,
+              item.displayTitle,
               key: Key('media_tile_name_${item.id}'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+            if (item.musicSubtitle.isNotEmpty)
+              Text(item.musicSubtitle,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
             Row(
               children: [
                 Icon(_typeIcon(item.type), size: 12),

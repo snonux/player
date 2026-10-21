@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import '../models/music_metadata.dart';
 import 'dart:io';
 
 import 'package:sqflite/sqflite.dart';
@@ -32,9 +34,14 @@ class OfflineDownloadRepository {
     _directory ??= Directory('${await getDatabasesPath()}/offline-downloads');
     await directory.create(recursive: true);
     final db = await openDatabase('${directory.path}/index.db',
-        version: 3,
+        version: 4,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
         onUpgrade: (db, oldVersion, _) async {
+          if (oldVersion < 4) {
+            await db.execute('ALTER TABLE downloads ADD COLUMN music TEXT');
+            await db.execute(
+                "ALTER TABLE downloads ADD COLUMN source_name TEXT NOT NULL DEFAULT ''");
+          }
           if (oldVersion < 2) {
             await db.execute(
                 "ALTER TABLE downloads ADD COLUMN instance_id TEXT NOT NULL DEFAULT ''");
@@ -53,7 +60,7 @@ class OfflineDownloadRepository {
         media_id INTEGER NOT NULL, title TEXT NOT NULL, type TEXT NOT NULL,
         size_bytes INTEGER NOT NULL, added_at INTEGER NOT NULL,
         position_seconds REAL NOT NULL DEFAULT 0,
-        finished INTEGER NOT NULL DEFAULT 0
+        finished INTEGER NOT NULL DEFAULT 0, music TEXT, source_name TEXT NOT NULL DEFAULT ''
       )''');
           await _createPersonalSchema(db);
           await _createSyncSchema(db);
@@ -160,6 +167,9 @@ class OfflineDownloadRepository {
               'user_id': item.userId,
               'media_id': item.mediaId,
               'title': item.title,
+              'source_name': item.sourceName,
+              'music':
+                  item.music == null ? null : jsonEncode(item.music!.toJson()),
               'type': item.type,
               'size_bytes': item.sizeBytes,
               'added_at': item.addedAt.toUtc().millisecondsSinceEpoch,
@@ -231,6 +241,7 @@ class OfflineDownloadRepository {
     return OfflinePlaybackRequest(
       downloadKey: key,
       title: item.title,
+      sourceName: item.sourceName,
       sourceUri: file(key).uri,
       readPosition: () async {
         final saved = await get(key);
@@ -447,6 +458,11 @@ class OfflineDownloadRepository {
         userId: row['user_id'] as int,
         mediaId: row['media_id'] as int,
         title: row['title'] as String,
+        sourceName: row['source_name'] as String? ?? '',
+        music: row['music'] is String
+            ? MusicMetadata.fromJson(
+                jsonDecode(row['music'] as String) as Map<String, dynamic>)
+            : null,
         type: row['type'] as String,
         sizeBytes: row['size_bytes'] as int,
         addedAt: DateTime.fromMillisecondsSinceEpoch(row['added_at'] as int,

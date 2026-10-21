@@ -146,14 +146,15 @@ type BrowseResult struct {
 
 // SharedMediaView exposes only the metadata fields needed for a public share page.
 type SharedMediaView struct {
-	ID            int64           `json:"id"`
-	FileName      string          `json:"file_name"`
-	Type          model.MediaType `json:"type"`
-	Duration      float64         `json:"duration"`
-	Codec         string          `json:"codec"`
-	Resolution    string          `json:"resolution"`
-	Bitrate       int             `json:"bitrate"`
-	FileSizeBytes int64           `json:"file_size_bytes"`
+	Music         *model.MusicMetadata `json:"music,omitempty"`
+	ID            int64                `json:"id"`
+	FileName      string               `json:"file_name"`
+	Type          model.MediaType      `json:"type"`
+	Duration      float64              `json:"duration"`
+	Codec         string               `json:"codec"`
+	Resolution    string               `json:"resolution"`
+	Bitrate       int                  `json:"bitrate"`
+	FileSizeBytes int64                `json:"file_size_bytes"`
 }
 
 // GetSharedMediaResult wraps media metadata needed to render a share page.

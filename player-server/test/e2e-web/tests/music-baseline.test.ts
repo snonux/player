@@ -125,8 +125,8 @@ test('keyboard journey: open album, play, help, search, pause (admin, desktop da
     await expect(page).toHaveURL(new RegExp(`set=${fixture.setIds.Music}`));
     await selectByKeys(page, ALBUM);
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('button', { name: longRoad.file_name, exact: true })).toBeVisible();
-    await selectByKeys(page, longRoad.file_name);
+    await expect(page.getByRole('button', { name: longRoad.title, exact: true })).toBeVisible();
+    await selectByKeys(page, longRoad.title);
     await page.keyboard.press('Enter');
     data.playing = await expectPlaying(page, longRoad.id);
     const out = await captureOutput(page, 2500, evidence.path('keyboard-long-road-home.wav'));
@@ -143,7 +143,7 @@ test('keyboard journey: open album, play, help, search, pause (admin, desktop da
     await page.keyboard.press('Escape');
     await expect(page.locator('#help-modal')).not.toHaveClass(/open/);
     data.focus = { before_help: before, after_help: (await audioState(page)).active };
-    expect((await audioState(page)).active).toContain(longRoad.file_name);
+    expect((await audioState(page)).active).toContain(longRoad.title);
 
     await page.keyboard.press('/');
     await expect(page.getByRole('searchbox', { name: 'Search media' })).toBeFocused();
@@ -201,7 +201,7 @@ test('touch/pointer journey: granted set only, card Play (regular user, narrow l
       await shot(page, shots, 'narrow-light-sidebar');
       await press(page.locator('#set-list').getByRole('button', { name: 'Set Music', exact: true }));
       await press(page.getByRole('button', { name: `Folder ${ALBUM}` }));
-      await playFromCard(page, firstLight.file_name, touch, shots);
+      await playFromCard(page, firstLight.title, touch, shots);
       data.playing = await expectPlaying(page, firstLight.id);
       const out = await captureOutput(page, 2500, evidence.path('narrow-first-light.wav'));
       data.capture = { routed: out.routed, dropouts: out.dropouts, segments: out.analysis.segments };
@@ -274,7 +274,7 @@ test('audio output capture: ReplayGain fixture levels and tones', async ({ page 
     await openFolder(page, fixture.setIds.Music, 'Gain Check');
     const levels: Record<string, number | undefined> = {};
     for (const item of [loud, quiet]) {
-      await playCard(page, item.file_name, item.id);
+      await playCard(page, item.title, item.id);
       const out = await captureOutput(page, 2000, evidence.path(`gain-${item.file_name}.wav`));
       shots.push(out.wav);
       expectTone(out, item.tone_hz[0]);
@@ -292,7 +292,7 @@ test('audio output capture: EQ probe bands', async ({ page }) => {
   await keyboardLogin(page, fixture.admin);
   await journey('capture calibration: EQ probe bands 100 Hz / 1 kHz / 8 kHz measured (flat today)', async (data, shots) => {
     await openFolder(page, fixture.setIds.Music, 'EQ Probe');
-    await playCard(page, probe.file_name, probe.id);
+    await playCard(page, probe.title, probe.id);
     const out = await captureOutput(page, 2000, evidence.path('eq-probe.wav'), probe.tone_hz);
     shots.push(out.wav);
     assertValidCapture(out);
@@ -313,7 +313,7 @@ test('audio output capture: known gaps are measured (calibration)', async ({ pag
     const entry = track(fixture, item.path);
     await journey(`capture calibration: known ${gap.ms} ms gap measured`, async (data, shots) => {
       await openFolder(page, fixture.setIds.Music, 'Gap Calibration');
-      await playCard(page, item.file_name, entry.id);
+      await playCard(page, item.title, entry.id);
       const startedAt = (await audioState(page)).time;
       const out = await captureOutput(page, (gap.at_s - startedAt + 1.2) * 1000,
         evidence.path(`gap-calibration-${gap.ms}ms.wav`), [], item.tone_hz[0]);
@@ -342,7 +342,7 @@ test('audio output capture: gap at an automatic track change', async ({ page }) 
   await journey('capture timing: gap at automatic change Movement I -> II measured (baseline)', async (data, shots) => {
     await openFolder(page, fixture.setIds.Music, 'Gapless Suite (FLAC)');
     await resetProgress(page, second.id);
-    await playCard(page, first.file_name, first.id);
+    await playCard(page, first.title, first.id);
     // Harness step: jump near the end so the automatic change happens soon.
     await page.evaluate((t) => { (document.getElementById('media-audio') as HTMLAudioElement).currentTime = t; }, first.duration_s - 1.5);
     const out = await captureOutput(page, 5000, evidence.path('gapless-flac-transition.wav'), [], first.tone_hz[0]);

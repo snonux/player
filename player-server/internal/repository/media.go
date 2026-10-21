@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -12,13 +13,13 @@ import (
 // CreateMedia inserts a new media and returns the generated ID.
 func (s *SQLite) CreateMedia(ctx context.Context, media *model.Media) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO media (set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO media (set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		media.SetID, media.RelPath, media.FileName, media.AbsPath, string(media.Type),
 		media.Duration, media.Codec, media.Resolution, media.Bitrate, media.FileSizeBytes,
 		media.Width, media.Height, media.EXIFCamera, media.EXIFLens, media.EXIFDate,
 		media.EXIFISO, media.EXIFFNumber, media.EXIFExposure, media.EXIFFocalLength,
-		sqlNullString(media.ThumbnailPath), media.PlayCount, sqlNullTime(media.DeletedAt), media.CreatedAt,
+		sqlNullString(media.ThumbnailPath), media.PlayCount, sqlNullTime(media.DeletedAt), media.CreatedAt, musicJSON(media.Music),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert media: %w", err)
@@ -30,6 +31,7 @@ func (s *SQLite) CreateMedia(ctx context.Context, media *model.Media) (int64, er
 // a query selects after it (e.g. the saved position for in-progress media).
 func scanMedia(row sqlScanner, extra ...any) (*model.Media, error) {
 	var m model.Media
+	var music sql.NullString
 	var deleted sql.NullTime
 	var mediaType string
 	var thumbnail sql.NullString
@@ -52,7 +54,7 @@ func scanMedia(row sqlScanner, extra ...any) (*model.Media, error) {
 		&duration, &codec, &resolution, &bitrate, &fileSize,
 		&width, &height, &exifCamera, &exifLens, &exifDate, &exifISO,
 		&exifFNumber, &exifExposure, &exifFocalLength,
-		&thumbnail, &m.PlayCount, &deleted, &m.CreatedAt,
+		&thumbnail, &m.PlayCount, &deleted, &m.CreatedAt, &music,
 	}
 	err := row.Scan(append(dest, extra...)...)
 	if err == sql.ErrNoRows {
@@ -60,6 +62,11 @@ func scanMedia(row sqlScanner, extra ...any) (*model.Media, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if music.Valid && music.String != "" {
+		if err := json.Unmarshal([]byte(music.String), &m.Music); err != nil {
+			return nil, fmt.Errorf("decode music tags: %w", err)
+		}
 	}
 	m.Type = model.MediaType(mediaType)
 	if deleted.Valid {
@@ -116,20 +123,20 @@ func scanMedia(row sqlScanner, extra ...any) (*model.Media, error) {
 // GetMediaByID retrieves a media by ID.
 func (s *SQLite) GetMediaByID(ctx context.Context, id int64) (*model.Media, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at FROM media WHERE id = ? AND deleted_at IS NULL`, id)
+		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music FROM media WHERE id = ? AND deleted_at IS NULL`, id)
 	return scanMedia(row)
 }
 
 // UpdateMedia updates all mutable fields of a media record.
 func (s *SQLite) UpdateMedia(ctx context.Context, media *model.Media) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE media SET set_id = ?, rel_path = ?, file_name = ?, abs_path = ?, type = ?, duration = ?, codec = ?, resolution = ?, bitrate = ?, file_size_bytes = ?, width = ?, height = ?, exif_camera = ?, exif_lens = ?, exif_date = ?, exif_iso = ?, exif_f_number = ?, exif_exposure = ?, exif_focal_length = ?, thumbnail_path = ?, play_count = ?, deleted_at = ? WHERE id = ?`,
+		`UPDATE media SET set_id = ?, rel_path = ?, file_name = ?, abs_path = ?, type = ?, duration = ?, codec = ?, resolution = ?, bitrate = ?, file_size_bytes = ?, width = ?, height = ?, exif_camera = ?, exif_lens = ?, exif_date = ?, exif_iso = ?, exif_f_number = ?, exif_exposure = ?, exif_focal_length = ?, thumbnail_path = ?, play_count = ?, deleted_at = ?, music = ? WHERE id = ?`,
 		media.SetID, media.RelPath, media.FileName, media.AbsPath, string(media.Type), media.Duration,
 		media.Codec, media.Resolution, media.Bitrate, media.FileSizeBytes,
 		media.Width, media.Height, media.EXIFCamera, media.EXIFLens, media.EXIFDate,
 		media.EXIFISO, media.EXIFFNumber, media.EXIFExposure, media.EXIFFocalLength,
 		sqlNullString(media.ThumbnailPath),
-		media.PlayCount, sqlNullTime(media.DeletedAt), media.ID,
+		media.PlayCount, sqlNullTime(media.DeletedAt), musicJSON(media.Music), media.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update media: %w", err)
@@ -178,7 +185,7 @@ func (s *SQLite) HardDeleteMedia(ctx context.Context, id int64) error {
 
 // mediaListColumns is the column list scanMedia expects, qualified with the
 // media table because ListMedia may join favorites and tags.
-const mediaListColumns = `media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at`
+const mediaListColumns = `media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at, media.music`
 
 // mediaQuery collects SQL fragments with their bind arguments. JOIN and WHERE
 // arguments are kept apart because JOIN placeholders precede WHERE
@@ -231,7 +238,7 @@ func mediaFilterQuery(filter MediaFilter) *mediaQuery {
 	if filter.Search != "" {
 		// escapeLike escapes LIKE wildcards so user input is treated as a literal substring.
 		like := "%" + escapeLike(filter.Search) + "%"
-		q.where(`(media.file_name LIKE ? ESCAPE '\' OR media.rel_path LIKE ? ESCAPE '\')`, like, like)
+		q.where(`(media.file_name LIKE ? ESCAPE '\' OR media.rel_path LIKE ? ESCAPE '\' OR json_extract(media.music, '$.title') LIKE ? ESCAPE '\' OR json_extract(media.music, '$.artist') LIKE ? ESCAPE '\' OR json_extract(media.music, '$.album') LIKE ? ESCAPE '\')`, like, like, like, like, like)
 	}
 	if filter.Favorites {
 		q.join(` INNER JOIN favorites f ON f.media_id = media.id AND f.user_id = ?`, filter.UserID)
@@ -318,7 +325,7 @@ func anySlice[T any](values []T) []any {
 // ListDeletedMedia returns all soft-deleted media.
 func (s *SQLite) ListDeletedMedia(ctx context.Context) ([]model.Media, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at FROM media WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
+		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music FROM media WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list deleted media: %w", err)
 	}

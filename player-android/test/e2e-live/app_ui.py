@@ -82,6 +82,18 @@ def ensure_grid(set_name):
     return False
 
 
+def media_title(media):
+    """Visible server-media label, keeping file_name as the operation identity."""
+    name = media.get('file_name') or ''
+    if media.get('type') != 'audio':
+        return name
+    music = media.get('music')
+    title = music.get('title') if isinstance(music, dict) else None
+    if isinstance(title, str) and title.strip():
+        return title.strip()
+    return re.sub(r'\.[^.]+$', '', name) or name
+
+
 def open_detail(set_name, file_name):
     if not ensure_grid(set_name): return False
     node = find_scrolling("^" + re.escape(file_name))

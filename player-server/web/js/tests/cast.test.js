@@ -150,6 +150,9 @@ function testLoadFields() {
   assertEqual(compat.url, 'https://h/cast/a%2Fb/compat', 'compat URL for transcoded items');
   assertEqual(compat.contentType, 'video/mp4', 'compat type');
   assertEqual(compat.imageUrl, '', 'no image without a thumbnail');
+  const tagged = cast.castLoadFields({id:7,type:'audio',file_name:'song.flac',music:{title:'東京 Tagged Title'}},ticket,'https://h');
+  assertEqual(tagged.title,'東京 Tagged Title','embedded music title');
+  assertEqual(tagged.url,'https://h/cast/a%2Fb/stream','title leaves source URL unchanged');
 }
 
 async function testSession() {
@@ -187,7 +190,7 @@ async function testSession() {
   const load = sdk.loads[0];
   assertEqual(load?.media.contentId, 'https://player.test/cast/T%2F1/stream', 'receiver URL');
   assertEqual(load?.media.contentType, 'audio/flac', 'receiver content type');
-  assertEqual(load?.media.metadata.title, 'song.flac', 'title');
+  assertEqual(load?.media.metadata.title, 'song', 'filename-stem fallback');
   assertEqual(load?.currentTime, 33, 'starts at the local position');
   assert(load?.autoplay, 'autoplay');
   assert(cast.isCasting(), 'casting');

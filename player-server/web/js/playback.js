@@ -1,3 +1,4 @@
+import { mediaTitle } from './music.js';
 import { API, redirectToLogin } from './api.js';
 import { state } from './state.js';
 import {
@@ -711,7 +712,7 @@ function cancelPendingSource() {
 }
 
 function preparingText(media, status) {
-  const name = media?.file_name || 'this file';
+  const name = mediaTitle(media) || 'this file';
   if (status === 'busy') return `Server is busy, ${name} is waiting to be prepared…`;
   return `Preparing ${name} for playback…`;
 }
@@ -763,7 +764,7 @@ function failPlayback(media, reason) {
   isPlaying = false;
   stopProgressTimer();
   updateUI(false);
-  toast(`Cannot play ${media?.file_name || 'this file'}: ${reason}`, 'error');
+  toast(`Cannot play ${mediaTitle(media) || 'this file'}: ${reason}`, 'error');
   failureHandler?.();
 }
 
@@ -883,7 +884,7 @@ export function escapePlayerView() {
 function updateMinimizedTitle() {
   const e = els();
   if (!e.restoreTitle) return;
-  e.restoreTitle.textContent = currentMedia?.file_name ? `Restore: ${currentMedia.file_name}` : 'Restore player';
+  e.restoreTitle.textContent = mediaTitle(currentMedia) ? `Restore: ${mediaTitle(currentMedia)}` : 'Restore player';
 }
 
 export function exitFullscreenIfNeeded() {

@@ -109,6 +109,7 @@
 <footer class="toast" id="toast" role="status" aria-live="polite"></footer>
 
 <script type="module">
+  import { mediaTitle } from '/js/music.js';
   import { initPlayer, loadMediaDirect } from '/js/player.js';
   import { SHARE_DISPLAY_FAILED_MESSAGE, openShareViewing } from '/js/shareViewing.js';
 
@@ -136,7 +137,7 @@
     initPlayer();
     const data = JSON.parse(document.getElementById('share-meta').textContent);
     if (!data || !data.media) throw new Error('share metadata is missing');
-    const name = decodedFileName(data.media.file_name);
+    const name = mediaTitle({ ...data.media, file_name: decodedFileName(data.media.file_name) });
     document.getElementById('share-title').textContent = name;
     document.title = `${name} — Shared Media`;
 
@@ -188,7 +189,7 @@
   // wait for the rendition instead of loading a 503. Servers without the
   // hint only send stream_url. The decoded name is used in error toasts.
   function showSharedMedia(data, name) {
-    const media = { ...data.media, file_name: name, transcoded: !!data.transcoded };
+    const media = { ...data.media, transcoded: !!data.transcoded };
     loadMediaDirect(media, data.playback_url || data.stream_url, data.thumb_url, 0);
   }
 

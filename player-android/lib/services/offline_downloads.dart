@@ -65,7 +65,7 @@ class OfflineDownloads extends ChangeNotifier {
       throw StateError('Sign in to this server before downloading.');
     }
     final key = offlineMediaKey(origin, userId, media.id);
-    final job = OfflineDownloadJob(key, media.fileName);
+    final job = OfflineDownloadJob(key, media.displayTitle);
     active = job;
     error = null;
     _changed();
@@ -155,7 +155,9 @@ class OfflineDownloads extends ChangeNotifier {
         origin: origin,
         userId: userId,
         mediaId: media.id,
-        title: media.fileName,
+        title: media.displayTitle,
+        music: media.music,
+        sourceName: media.relPath,
         type: media.type,
         sizeBytes: job.received,
         addedAt: DateTime.now().toUtc(),

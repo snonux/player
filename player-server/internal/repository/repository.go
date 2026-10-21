@@ -246,6 +246,8 @@ type MediaRepo interface {
 	UpdateMedia(ctx context.Context, media *model.Media) error
 	// UpdateMediaThumbnail updates the thumbnail path for a media item.
 	UpdateMediaThumbnail(ctx context.Context, id int64, thumbnailPath string) error
+	// UpdateMediaMusic patches embedded tags and source size without changing user state.
+	UpdateMediaMusic(ctx context.Context, id int64, music *model.MusicMetadata, fileSizeBytes int64) error
 	// GetMediaByID returns a media item by database ID.
 	GetMediaByID(ctx context.Context, id int64) (*model.Media, error)
 	// ListMedia returns media matching the given filter.

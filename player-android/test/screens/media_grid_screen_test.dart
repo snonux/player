@@ -479,6 +479,29 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('renders grid', () {
+    testWidgets(
+        'tagged audio uses its title and subtitle while opening the same media ID',
+        (tester) async {
+      final tagged = Media.fromJson({
+        ..._kAudio.toJson(),
+        'music': {
+          'title': '東京 Tagged Song',
+          'artist': 'A & B; C/D',
+          'album': 'Café Album'
+        }
+      });
+      final client = _FakeApiClient()..mediaResult = [tagged];
+      await _pumpScreen(tester, client);
+      await tester.pumpAndSettle();
+      expect(find.text('東京 Tagged Song'), findsOneWidget);
+      expect(find.text('A & B; C/D · Café Album'), findsOneWidget);
+      expect(find.text('song.mp3'), findsNothing);
+      expect(tagged.fileName, 'song.mp3');
+      await tester.tap(find.byKey(const Key('media_card_2')));
+      await tester.pumpAndSettle();
+      expect(find.text('Media 2'), findsOneWidget);
+    });
+
     testWidgets('shows a card for each item returned by listMedia',
         (tester) async {
       final fakeClient = _FakeApiClient()..mediaResult = [_kVideo, _kAudio];
@@ -486,9 +509,9 @@ void main() {
       await _pumpScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // Both file names must be visible.
+      // Video filenames and audio filename-stem fallbacks remain readable.
       expect(find.text('movie.mp4'), findsOneWidget);
-      expect(find.text('song.mp3'), findsOneWidget);
+      expect(find.text('song'), findsOneWidget);
 
       // A card widget is rendered for each item.
       expect(find.byKey(const Key('media_card_1')), findsOneWidget);
@@ -611,8 +634,7 @@ void main() {
   });
 
   group('card duration', () {
-    testWidgets('still images show no 0:00 duration',
-        (tester) async {
+    testWidgets('still images show no 0:00 duration', (tester) async {
       final image = Media.fromJson({
         ..._kVideo.toJson(),
         'id': 7,

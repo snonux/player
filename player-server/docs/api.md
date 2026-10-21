@@ -799,7 +799,7 @@ List or search media visible to the authenticated user. Supports rich filtering.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `search` | string | Plain-text search on file name / path |
+| `search` | string | Plain-text search on file name / path / embedded title, artist and album |
 | `set_id` | integer | Filter to a single set |
 | `set_ids` | string | Comma-separated set IDs |
 | `type` | string | `video`, `audio`, or `image` |
@@ -2312,3 +2312,40 @@ server changes, and synchronizes only under that matching unlocked account.
 Older download resume positions without edit timestamps remain local until
 the next playback save or a server snapshot is available; migrated bookmarks
 keep their original creation timestamps.
+
+### Embedded audio metadata (`music`)
+
+Media JSON returned by existing list/detail/in-progress/trash/share routes can
+include an additive `music` object for audio. Existing `file_name`, paths, IDs,
+stream/download URLs and user-added `tags` keep their current meaning.
+
+```json
+{"music":{"title":"A Different Music Title","artist":"A & B; C/D","artists":["A & B; C/D"],"album_artist":"Album Ensemble","album_artists":["Album Ensemble"],"album":"Metadata Album","track":4,"track_total":9,"disc":2,"disc_total":3,"date":"2024-02-29","year":2024,"genres":["Jazz"]}}
+```
+
+Missing text/numbers/lists are omitted; `{}` means no supported embedded tags.
+`music` may be absent for old rows until a rescan, and for non-audio files.
+Titles use the tag or filename without its extension in clients; filenames
+remain available in Info/details. The existing plain text search also matches
+title, artist and album, subject to the same set permissions and filters.
+
+Scanning refreshes existing audio tags in place, including removed tags, and
+preserves IDs, filenames, artwork, counts, progress, favorites and bookmarks.
+Unreadable files retain their previously indexed tags. Existing libraries need
+an admin rescan to populate tags; each rescan probes audio again to detect tag
+edits. Uploads use the same prober. Tags are read only; no file-tag editor is
+added. Embedded genres are separate from editable user tags.
+
+Container tags take precedence over audio-stream tags. Common track/disc and
+album-artist aliases are recognized; `n/total` values become positive numeric
+fields and invalid numbers become unknown. Date is retained verbatim; a valid
+year prefix takes precedence over a separate year tag, which supplies a
+fallback when the date has no valid year. Artist punctuation (including `;`,
+`/`, `&`, commas and `feat.`) never creates extra artists. Actual repeated
+FLAC and Ogg Vorbis/Opus artist/album-artist/genre comments are preserved with
+a bounded comment reader; ffprobe handles other containers. Structured NUL
+values are retained when ffprobe supplies them. ffprobe can flatten repeated
+ID3/MP4 values, so those containers currently retain its display string rather
+than infer boundaries from punctuation. Original display tags and structured
+artist arrays remain separate when both are present. No album/artist catalog
+identities or extra API endpoints are introduced in this slice.

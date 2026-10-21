@@ -83,6 +83,7 @@ func applyMetadata(media *model.Media, meta *model.Metadata) {
 	media.EXIFFNumber = meta.EXIFFNumber
 	media.EXIFExposure = meta.EXIFExposure
 	media.EXIFFocalLength = meta.EXIFFocalLength
+	media.Music = meta.Music
 }
 
 // probeMedia probes a file at the given path and returns its metadata.

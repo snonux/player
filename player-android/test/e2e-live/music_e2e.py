@@ -122,7 +122,7 @@ class Run:
 
     def record(self, scenario, ok, detail='', data=None, artifacts=(), result=None):
         result = result or ('pass' if ok else 'fail')
-        self.evidence.record(FEATURE, scenario, result, detail, data, artifacts)
+        self.evidence.record('M01' if scenario.startswith('M01:') else FEATURE, scenario, result, detail, data, artifacts)
         print(f'{result.upper():5} {scenario}' + (f'  [{detail}]' if detail else ''), flush=True)
 
     def shot(self, name):
@@ -166,6 +166,17 @@ def reset_progress(client, media_id):
     client.request('POST', '/api/v1/progress/status', {'media_id': media_id, 'status': 'not_started'})
 
 
+def find_visible(pattern):
+    """Scroll to a labeled control/detail; text rows need no card-size threshold."""
+    for move in (None, True, True, False, False, False):
+        if move is not None:
+            app_ui.swipe(up=move)
+        node = adrv.find(pattern)
+        if node and node['b'][3] > node['b'][1]:
+            return node
+    return None
+
+
 def open_track(set_name, folder, file_name):
     """Library > set > Browse folders > folder > track detail, by touch."""
     if not app_ui.go_home():
@@ -173,16 +184,20 @@ def open_track(set_name, folder, file_name):
     adrv.tap(f'^{re.escape(set_name)}$'); time.sleep(3)
     if adrv.find('^Browse folders$'):
         adrv.tap('^Browse folders$'); time.sleep(2)
-    if folder:
-        node = app_ui.find_scrolling('^' + re.escape(folder) + '$')
+    for part in folder.split('/') if folder else []:
+        node = app_ui.find_scrolling('^' + re.escape(part) + '$')
         if not node:
+            # Browse intentionally lists single-file folders inline. Only
+            # skip the missing path segment when this source is visible.
+            if find_visible('^' + re.escape(file_name) + r'(?: /|$)'):
+                break
             return False
         adrv.tap_node(node); time.sleep(2)
     node = app_ui.find_scrolling('^' + re.escape(file_name))
     if not node:
         return False
     adrv.tap_node(node); time.sleep(2)
-    return adrv.wait('^Play Audio$', timeout=10) is not None
+    return find_visible('^Play Audio$') is not None
 
 
 def play_and_capture(run, client, track, name, seconds=4.0, bands=None, tone=None):
@@ -256,7 +271,7 @@ def step_sign_in(run):
 def step_touch_journey(run):
     """Open the album by touch, play track 2, prove playback by media session and captured tone."""
     track = run.track(f'Music/{ALBUM}/02 - Long Road Home.mp3')
-    opened = open_track('Music', ALBUM, track['file_name'])
+    opened = open_track('Music', ALBUM, track['title'])
     run.record('touch journey: Music > Browse folders > album > track detail', opened,
                artifacts=[run.shot('track-detail')])
     if not opened:
@@ -265,12 +280,115 @@ def step_touch_journey(run):
     # to start and still capture MIN_AUDIBLE_S of this 12 s track.
     sessions, analysis, wav = play_and_capture(run, run.admin, track, 'touch-long-road-home', seconds=7)
     # The last reading (end of the capture) must still be this track, playing.
-    playing = sessions[-1]['state'] == 'PLAYING' and sessions[-1]['title'] == track['file_name']
+    playing = sessions[-1]['state'] == 'PLAYING' and sessions[-1]['title'] == track['title']
     run.record('touch journey: Play Audio starts the media session with this track', playing,
                f'sessions={sessions}', {'sessions': sessions}, [run.shot('player-light')])
     # Advancing playback is proven by the captured output: seconds of the
     # track's own tone (the session position alone is only a snapshot).
     record_audio(run, 'audio output: emulator output carries the track tone', track, analysis, wav)
+    return playing
+
+
+def step_metadata(run):
+    """M01: actual folder/detail semantics, complete tags, playback and live rescans."""
+    from music_metadata import retag, TRACK
+    entries = [
+        (TRACK, {'Filename': 'source_001.flac', 'Artist': 'A & B; C/D',
+                 'Album artist': 'Album Ensemble', 'Album': 'Metadata Album',
+                 'Track': '4 / 9', 'Disc': '2 / 3', 'Date': '2024-02-29',
+                 'Year': '2024', 'Genres': 'Jazz'}),
+        ('Music/Ünïcødé Artïst - 東京 Nights/02 - Партия для двоих.flac',
+         {'Artist': 'Ünïcødé Artïst, Mika Sørensen', 'Genres': 'Électronique, Ambient'}),
+        ('Music/Various Artists - Synth Compilation/Disc 2/01 - Afterglow.ogg',
+         {'Artist': 'Dusk Choir', 'Disc': '2 / 2'}),
+        ('Music/Various Artists - Synth Compilation/Disc 1/01 - Neon Rain.m4a',
+         {'Artist': 'Neon Coast', 'Disc': '1 / 2'}),
+        ('Music/Various Artists - Synth Compilation/Disc 1/02 - Glass City.opus',
+         {'Artist': 'Glass Avenue', 'Disc': '1 / 2'}),
+        ('Music/Untagged/track_0042.mp3', {'Filename': 'track_0042.mp3'}),
+        ('Music/Tag Verification/blank_title.mp3', {'Filename': 'blank_title.mp3', 'Album': 'Partial Metadata'}),
+    ]
+    for path, expected in entries:
+        track = run.track(path)
+        folder = str(Path(path).parent.relative_to('Music'))
+        ok = open_track('Music', folder, track['title'])
+        title_visible = any(track['title'] in label for label in labels())
+        expansion = find_visible(r'^Music details(?:,|$)') if ok else None
+        if expansion:
+            adrv.tap_node(expansion); time.sleep(1)
+        found = {'expanded': adrv.find(r'^Music details, Expanded$') is not None} if expansion else {'expanded': False}
+        for key, value in expected.items():
+            label = f'{key}: {value}'
+            found[key] = find_visible('^' + re.escape(label) + '$') is not None
+        if path.endswith('blank_title.mp3') or '/Untagged/' in path:
+            found['missing fields omitted'] = find_visible(r'^(Artist|Album artist|Track|Disc|Year):') is None
+        run.record(f'M01: title and embedded details {track["file_name"]}',
+                   ok and title_visible and bool(expansion) and all(found.values()),
+                   f'title={track["title"]}; fields={found}', artifacts=[run.shot('m01-' + str(track['id']))])
+        back()
+    item = run.track(TRACK)
+    # Persist a known value before the rescan; field patch must retain it.
+    run.admin.request('POST', '/api/progress', {'media_id': item['id'], 'position_seconds': 4})
+    before = run.admin.request('GET', f'/api/media/{item["id"]}')
+    if not before.get('progress') or before['progress']['position_seconds'] != 4:
+        raise RuntimeError('M01 pre-rescan progress was not saved as 4 seconds')
+    initial_rows = run.admin.request('GET', f'/api/media?set_id={run.state["set_ids"]["Music"]}')
+    try:
+        for state, title in [('changed', 'Changed 東京 Title'), ('cleared', 'source_001')]:
+            retag(run.fixture_dir, state)
+            run.admin.request('POST', '/api/admin/rescan', {})
+            deadline = time.monotonic() + 30
+            after = None
+            while time.monotonic() < deadline:
+                after = run.admin.request('GET', f'/api/media/{item["id"]}')
+                actual = after['media'].get('music', {}).get('title', '')
+                if actual == (title if state == 'changed' else ''):
+                    break
+                time.sleep(0.25)
+            visible = open_track('Music', 'Tag Verification', title)
+            visible = visible and any(title in label for label in labels())
+            saved = after['media']['id'] == before['media']['id'] and after['progress'] == before['progress']
+            saved = saved and all(after['media'][key] == before['media'][key] for key in ('file_name', 'rel_path', 'play_count'))
+            rows = run.admin.request('GET', f'/api/media?set_id={run.state["set_ids"]["Music"]}')
+            copies = [row for row in rows if row['rel_path'] == before['media']['rel_path']]
+            saved = saved and len(rows) == len(initial_rows) and len(copies) == 1 and copies[0]['id'] == item['id']
+            run.record(f'M01: {state} tags visible after rescan with saved progress', visible and saved,
+                       data={'before': before, 'after': after}, artifacts=[run.shot('m01-rescan-' + state)])
+            back()
+    finally:
+        retag(run.fixture_dir, 'initial')
+        run.admin.request('POST', '/api/admin/rescan', {})
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            restored = run.admin.request('GET', f'/api/media/{item["id"]}')
+            if restored['media'].get('music', {}).get('title') == item['title']:
+                break
+            time.sleep(0.25)
+        else:
+            raise RuntimeError('Restored music title did not become authoritative after rescan')
+    for mode in ('no', 'yes'):
+        adrv.adb('shell', 'cmd', 'uimode', 'night', mode)
+        track = run.track('Music/Tag Verification/long_name.flac')
+        ok = open_track('Music', 'Tag Verification', track['title'])
+        run.record(f'M01: long Unicode detail {"dark" if mode == "yes" else "light"}', ok,
+                   artifacts=[run.shot('m01-long-' + mode)])
+        back()
+    # Play the differently named source after the tag removal/restore boundary.
+    step_metadata_audio(run, item)
+
+
+def step_metadata_audio(run, item):
+    """Mandatory native title/session and audible-source oracle; never silently skip."""
+    session_name = 'M01: playback media session uses music title'
+    tone_name = 'M01: original media source produces the expected tone'
+    if not open_track('Music', 'Tag Verification', item['title']):
+        run.record(session_name, False, 'Restored titled source could not be opened')
+        run.record(tone_name, False, 'Playback did not start because source navigation failed')
+        return False
+    sessions, analysis, wav = play_and_capture(run, run.admin, item, 'm01-title-source', seconds=7)
+    playing = sessions[-1]['state'] == 'PLAYING' and sessions[-1]['title'] == item['title']
+    run.record(session_name, playing, data={'sessions': sessions})
+    record_audio(run, tone_name, item, analysis, wav)
     return playing
 
 
@@ -295,7 +413,7 @@ def step_back_and_progress(run):
     # What identifies each level, measured on 0.8.2: the track detail (Play
     # Audio), the album's track list, the set's folder list (another album
     # folder), the set's flat grid (Browse folders toggle), the Library.
-    for expected in (r'^Play Audio$', r'^02 - Long Road Home\.mp3 / ', r'^Gain Check$',
+    for expected in (r'^Play Audio$', '^' + re.escape(track['title']) + r' / ', r'^Gain Check$',
                      r'^Browse folders$', r'^Library$'):
         back(); time.sleep(1)
         seen = any(re.search(expected, label) for label in labels())
@@ -331,7 +449,7 @@ def step_gain_levels(run):
     levels, wavs = {}, []
     for name in ('Loud.flac', 'Quiet.flac'):
         track = run.track(f'Music/Gain Check/{name}')
-        if not open_track('Music', 'Gain Check', name):
+        if not open_track('Music', 'Gain Check', track['title']):
             return run.record('audio output: Loud/Quiet level difference', False, f'could not open {name}')
         _, analysis, wav = play_and_capture(run, run.admin, track, f'gain-{name}', seconds=3.5)
         segment = main_segment(analysis)
@@ -420,7 +538,7 @@ def step_capture_calibration(run):
                {'discontinuities': clicks}, result=None if clicks == 0 else 'gap')
     probe = run.track('Music/EQ Probe/Three Tones.flac')
     # Single-file folders are listed inline in the set's folder view.
-    if not open_track('Music', None, probe['file_name']):
+    if not open_track('Music', None, probe['title']):
         return run.record('audio output: EQ probe bands measured', False, 'could not open the EQ probe')
     _, analysis, wav = play_and_capture(run, run.admin, probe, 'eq-probe', seconds=6, bands=probe['tone_hz'])
     bands = (main_segment(analysis) or {}).get('bands_dbfs', {})
@@ -441,7 +559,7 @@ def calibrate_gap(run, track):
     """
     gap = track['gap']
     scenario = f"audio output: known {gap['ms']} ms gap measured"
-    if not open_track('Music', 'Gap Calibration', track['file_name']):
+    if not open_track('Music', 'Gap Calibration', track['title']):
         run.record(scenario, False, 'could not open the track')
         return 0
     _, analysis, wav = play_and_capture(run, run.admin, track, f"gap-calibration-{gap['ms']}ms",
@@ -526,6 +644,7 @@ def parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('fixture_dir', help='directory printed by music_fixture.py up')
     parser.add_argument('--emulator-wav', help='QEMU_WAV_PATH the emulator was started with')
+    parser.add_argument('--metadata-only', action='store_true', help='M01 tags/rescan/title/audio feature journeys only')
     parser.add_argument('--apk', help='install this APK first (adb install -r)')
     parser.add_argument('--host-alias', action='store_true',
                         help='reach the server as http://10.0.2.2:<port> instead of adb reverse')
@@ -542,9 +661,9 @@ def main(argv=None):
         prepare_device(args, port)
         run = Run(args)
         if step_sign_in(run):
-            for step in (step_touch_journey, step_tap_targets, step_back_and_progress, step_themes,
+            for step in ((step_metadata,) if args.metadata_only else (step_metadata, step_touch_journey, step_tap_targets, step_back_and_progress, step_themes,
                          step_gain_levels, step_capture_calibration, step_gapless_auto_advance,
-                         step_server_restart, step_cold_relaunch, step_regular_user):
+                         step_server_restart, step_cold_relaunch, step_regular_user)):
                 try:
                     step(run)
                 except Exception as error:  # keep going: one broken step must not hide the others

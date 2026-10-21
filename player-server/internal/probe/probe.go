@@ -150,6 +150,19 @@ func (f *FFProber) probeOnce(ctx context.Context, path string) (*model.Metadata,
 	if err != nil {
 		return nil, err
 	}
+	if audioFile {
+		// ffprobe has already validated the container. Preserve repeated comments
+		// where its dictionary flattens them; malformed optional tags retain the
+		// successfully probed scalar fallback.
+		tags, tagErr := structuredMusicTags(path)
+		if tagErr == nil && len(tags) > 0 {
+			merged := musicTags(outMusicTags(out))
+			for key, value := range tags {
+				merged[key] = value
+			}
+			meta.Music = parseMusicTags(merged)
+		}
+	}
 	// For images, also extract EXIF data.
 	if mediatype.IsImageExt(path) {
 		extractEXIF(path, meta)
@@ -176,21 +189,20 @@ func probeFailure(path string, err error) error {
 
 type ffprobeOutput struct {
 	Format struct {
-		Duration string `json:"duration"`
-		BitRate  string `json:"bit_rate"`
+		Tags     map[string]string `json:"tags"`
+		Duration string            `json:"duration"`
+		BitRate  string            `json:"bit_rate"`
 	} `json:"format"`
 	Streams []struct {
 		Index       int `json:"index"`
 		Disposition struct {
 			AttachedPic int `json:"attached_pic"`
 		} `json:"disposition"`
-		Tags struct {
-			Comment string `json:"comment"`
-		} `json:"tags"`
-		CodecName string `json:"codec_name"`
-		Width     int    `json:"width"`
-		Height    int    `json:"height"`
-		CodecType string `json:"codec_type"`
+		Tags      map[string]string `json:"tags"`
+		CodecName string            `json:"codec_name"`
+		Width     int               `json:"width"`
+		Height    int               `json:"height"`
+		CodecType string            `json:"codec_type"`
 	} `json:"streams"`
 }
 
@@ -219,7 +231,7 @@ func parseFFprobeOutput(data []byte, audioFile bool) (*model.Metadata, error) {
 	frontArt := false
 	for _, s := range out.Streams {
 		if s.CodecType == "video" && s.Disposition.AttachedPic == 1 {
-			front := strings.Contains(strings.ToLower(s.Tags.Comment), "front")
+			front := strings.Contains(strings.ToLower(s.Tags["comment"]), "front")
 			if meta.EmbeddedArtIndex == nil || (front && !frontArt) {
 				index := s.Index
 				meta.EmbeddedArtIndex = &index
@@ -237,6 +249,15 @@ func parseFFprobeOutput(data []byte, audioFile bool) (*model.Metadata, error) {
 		case s.CodecType == "audio" && audioCodec == "":
 			audioCodec = s.CodecName
 		}
+	}
+	if audioFile {
+		tags := musicTags(out.Format.Tags)
+		for _, stream := range out.Streams {
+			if stream.CodecType == "audio" {
+				tags = mergeMusicTags(tags, stream.Tags)
+			}
+		}
+		meta.Music = parseMusicTags(tags)
 	}
 	meta.Codec = codecString(videoCodec, audioCodec, audioFile)
 

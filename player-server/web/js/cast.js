@@ -1,3 +1,4 @@
+import { mediaTitle } from './music.js';
 // Casting to a Chromecast (or another Google Cast receiver) with Google's Cast
 // Web Sender SDK. The SDK only exists in Chrome and Chromium-based browsers
 // and only on a secure page (HTTPS or localhost); elsewhere the cast button
@@ -49,7 +50,7 @@ export function castLoadFields(media, ticket, origin) {
   return {
     url: castStreamUrl(origin, ticket.ticket, transcoded),
     contentType: transcoded ? ticket.compat_content_type : ticket.stream_content_type,
-    title: media.file_name || 'Player',
+    title: mediaTitle(media) || 'Player',
     imageUrl: media.thumbnail_path ? `${origin}/cast/${encodeURIComponent(ticket.ticket)}/thumbnail` : '',
     isVideo: media.type === 'video',
   };
@@ -176,7 +177,7 @@ export async function castItem(media, resumeFrom = 0) {
     return true;
   } catch (err) {
     console.error('cast failed:', err);
-    deps.onError?.(`Cannot cast ${media.file_name || 'this file'}: the cast device could not load it`);
+    deps.onError?.(`Cannot cast ${mediaTitle(media) || 'this file'}: the cast device could not load it`);
     return false;
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../app_routes.dart';
+import '../models/media.dart';
 import '../providers/auth_state_provider.dart';
 import '../providers/public_api_client_provider.dart';
 import '../utils/duration_formatter.dart';
@@ -39,9 +40,11 @@ class SharePageMetadata {
     required this.thumbUrl,
     required this.downloadUrl,
     this.view = '',
+    this.sourceName = '',
   });
 
   final String fileName;
+  final String sourceName;
   final String type;
 
   /// Duration in seconds; null when the server omits the field.
@@ -82,7 +85,8 @@ class SharePageMetadata {
     final playbackUrl = map['playback_url'] as String?;
 
     return SharePageMetadata(
-      fileName: (media['file_name'] as String?) ?? 'Unknown file',
+      fileName: Media.fromJson(media).displayTitle,
+      sourceName: media['file_name'] as String? ?? '',
       type: (media['type'] as String?) ?? 'video',
       duration: (media['duration'] as num?)?.toDouble(),
       hasThumb: (map['has_thumb'] as bool?) ?? false,
@@ -199,6 +203,7 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
     final path = page.type == 'image' ? page.streamUrl : page.playbackUrl;
     context.push(AppRoutes.sharedPlayerPath(widget.token, page.type), extra: {
       'title': page.fileName,
+      'sourceName': page.sourceName,
       if (path.isNotEmpty)
         'mediaUrl': '${ref.read(publicApiClientProvider).baseUrl}$path',
       if (page.view.isNotEmpty) 'view': page.view,

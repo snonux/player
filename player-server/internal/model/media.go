@@ -55,30 +55,31 @@ type SetPermission struct {
 
 // Media represents a single media file within a set.
 type Media struct {
-	ID              int64      `json:"id"`
-	SetID           int64      `json:"set_id"`
-	RelPath         string     `json:"rel_path"`
-	FileName        string     `json:"file_name"`
-	AbsPath         string     `json:"abs_path"`
-	Type            MediaType  `json:"type"`
-	Duration        float64    `json:"duration"`
-	Codec           string     `json:"codec"`
-	Resolution      string     `json:"resolution"`
-	Bitrate         int        `json:"bitrate"`
-	FileSizeBytes   int64      `json:"file_size_bytes"`
-	Width           int        `json:"width"`
-	Height          int        `json:"height"`
-	EXIFCamera      string     `json:"exif_camera"`
-	EXIFLens        string     `json:"exif_lens"`
-	EXIFDate        string     `json:"exif_date"`
-	EXIFISO         string     `json:"exif_iso"`
-	EXIFFNumber     string     `json:"exif_f_number"`
-	EXIFExposure    string     `json:"exif_exposure"`
-	EXIFFocalLength string     `json:"exif_focal_length"`
-	ThumbnailPath   string     `json:"thumbnail_path"`
-	PlayCount       int        `json:"play_count"`
-	DeletedAt       *time.Time `json:"deleted_at"`
-	CreatedAt       time.Time  `json:"created_at"`
+	Music           *MusicMetadata `json:"music,omitempty"`
+	ID              int64          `json:"id"`
+	SetID           int64          `json:"set_id"`
+	RelPath         string         `json:"rel_path"`
+	FileName        string         `json:"file_name"`
+	AbsPath         string         `json:"abs_path"`
+	Type            MediaType      `json:"type"`
+	Duration        float64        `json:"duration"`
+	Codec           string         `json:"codec"`
+	Resolution      string         `json:"resolution"`
+	Bitrate         int            `json:"bitrate"`
+	FileSizeBytes   int64          `json:"file_size_bytes"`
+	Width           int            `json:"width"`
+	Height          int            `json:"height"`
+	EXIFCamera      string         `json:"exif_camera"`
+	EXIFLens        string         `json:"exif_lens"`
+	EXIFDate        string         `json:"exif_date"`
+	EXIFISO         string         `json:"exif_iso"`
+	EXIFFNumber     string         `json:"exif_f_number"`
+	EXIFExposure    string         `json:"exif_exposure"`
+	EXIFFocalLength string         `json:"exif_focal_length"`
+	ThumbnailPath   string         `json:"thumbnail_path"`
+	PlayCount       int            `json:"play_count"`
+	DeletedAt       *time.Time     `json:"deleted_at"`
+	CreatedAt       time.Time      `json:"created_at"`
 
 	// PositionSeconds is the requesting user's saved playback position. Only
 	// the in-progress list fills it; elsewhere it is nil and omitted.
@@ -155,6 +156,7 @@ type MediaTag struct {
 
 // Metadata holds extracted file properties from ffprobe and os.Stat.
 type Metadata struct {
+	Music *MusicMetadata `json:"music,omitempty"`
 	// EmbeddedArtIndex identifies the preferred attached picture stream, if any.
 	EmbeddedArtIndex *int    `json:"-"`
 	Duration         float64 `json:"duration"`

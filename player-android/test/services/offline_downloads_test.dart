@@ -87,6 +87,34 @@ void main() {
       );
 
   test(
+      'download retains tagged title, complete music and source context after reopen',
+      () async {
+    final item = Media.fromJson({
+      'id': 11,
+      'type': 'audio',
+      'file_name': 'chapter.m4b',
+      'rel_path': 'Books/chapter.m4b',
+      'file_size_bytes': 4,
+      'music': {
+        'title': '東京 Music Title',
+        'artist': 'A; B',
+        'album': 'Album',
+        'disc': 2,
+        'genres': ['Jazz', 'Blues']
+      }
+    });
+    final saved = await download(item: item);
+    await repository.close();
+    final reopened = await repository.get(saved.key);
+    expect(reopened!.title, '東京 Music Title');
+    expect(reopened.music!.details['Genres'], 'Jazz, Blues');
+    expect(reopened.music!.details['Disc'], '2');
+    expect(reopened.sourceName, 'Books/chapter.m4b');
+    expect((await repository.playbackRequest(saved.key)).visualContext,
+        contains('chapter.m4b'));
+  });
+
+  test(
       'actual HTTP file persists, plays offline after reopen, deletes only local copy',
       () async {
     // A real WAV file, not response mocks. Closing the server makes every

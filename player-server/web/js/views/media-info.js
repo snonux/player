@@ -1,3 +1,4 @@
+import { mediaTitle, musicRows } from '../music.js';
 import { API } from '../api.js';
 import { fmtDateTime, fmtSize } from '../dom.js';
 import { escapeHtml, fmtDur, toast } from '../utils.js';
@@ -102,7 +103,9 @@ function renderMediaInfo(detail) {
   const progress = detail?.progress;
   const note = detail?.note;
   let rows = [
-    ['Title', media.file_name],
+    ['Title', mediaTitle(media)],
+ ['Filename', media.file_name],
+ ...musicRows(media),
     ['Format', ext],
     ['Type', media.type],
     ['File size', media.file_size_bytes ? `${fmtSize(media.file_size_bytes)} (${media.file_size_bytes} bytes)` : ''],

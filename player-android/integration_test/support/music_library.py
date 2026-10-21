@@ -103,12 +103,25 @@ TRACKS = [
     dict(path='Music/Ünïcødé Artïst - 東京 Nights/02 - Партия для двоих.flac',
          codec='flac-16-44', tone_hz=[311.13], level_dbfs=-12,
          tags=dict(UNICODE_ALBUM, title='Партия для двоих',
-                   artists=['Ünïcødé Artïst', 'Mika Sørensen'], track='2/2', disc='1/1')),
+                   artists=['Ünïcødé Artïst', 'Mika Sørensen'], genres=['Électronique', 'Ambient'], track='2/2', disc='1/1')),
     dict(path='Music/Partial Tags/Lonely Single.mp3',
          codec='mp3-128', tone_hz=[466.16], level_dbfs=-12,
          tags={'title': 'Lonely Single', 'artist': 'Solo Act'}),
     dict(path='Music/Untagged/track_0042.mp3',
          codec='mp3-128', tone_hz=[277.18], level_dbfs=-12, tags=None),
+    dict(path='Music/Tag Verification/source_001.flac', codec='flac-16-44',
+         tone_hz=[415.30], level_dbfs=-12,
+         tags={'title': 'A Different Music Title', 'artist': 'A & B; C/D',
+               'album_artist': 'Album Ensemble', 'album': 'Metadata Album',
+               'track': '4/9', 'disc': '2/3', 'date': '2024-02-29', 'genre': 'Jazz'}),
+    dict(path='Music/Tag Verification/blank_title.mp3', codec='mp3-128',
+         tone_hz=[293.66], level_dbfs=-12,
+         tags={'title': '   ', 'artist': '  ', 'track': '-7', 'disc': 'invalid',
+               'album': 'Partial Metadata', 'date': 'unknown'}),
+    dict(path='Music/Tag Verification/long_name.flac', codec='flac-16-44',
+         tone_hz=[329.63], level_dbfs=-12,
+         tags={'title': '東京 Café Ñoño — ' + 'Long music title ' * 10,
+               'artist': 'Long Artist ' * 10, 'album': 'Long Album ' * 10}),
     dict(path='Music/Gain Check/Loud.flac',
          codec='flac-16-44', tone_hz=[1000.0], level_dbfs=-3,
          tags=dict(GAIN_ALBUM, title='Loud', artist='Level Lab', track='1/3'),
@@ -204,7 +217,7 @@ def generate(media_root):
 def expected_title(track):
     """Title a music-aware client should show: the tag, else the file stem."""
     tags = track.get('tags') or {}
-    return tags.get('title') or Path(track['path']).stem
+    return (tags.get('title') or '').strip() or Path(track['path']).stem
 
 
 def ffmpeg(*arguments):
@@ -228,6 +241,8 @@ def _make_track(media_root, spec, source=None):
     ffmpeg(*inputs, *CODECS[spec['codec']], *_tag_args(spec, target), str(target))
     if tags and 'artists' in tags:
         set_flac_artists(target, tags['artists'])
+    if tags and 'genres' in tags:
+        set_flac_artists(target, tags['genres'], key='GENRE')
     _write_lyrics(target, spec.get('lyrics'))
     return _manifest_entry(spec, source)
 
@@ -237,7 +252,7 @@ def _tag_args(spec, target):
     if tags is None:
         return STRIP_ARGS + (['-id3v2_version', '0', '-write_id3v1', '0']
                              if target.suffix == '.mp3' else [])
-    values = {k: v for k, v in tags.items() if k != 'artists'}
+    values = {k: v for k, v in tags.items() if k not in ('artists', 'genres')}
     values.update(spec.get('replaygain') or {})
     if spec.get('lyrics') == 'embedded':
         values['LYRICS'] = EMBEDDED_LYRICS
@@ -324,7 +339,7 @@ def _write_playlist(path):
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
-def set_flac_artists(path, artists):
+def set_flac_artists(path, artists, key='ARTIST'):
     """Replace a FLAC file's ARTIST comments with one comment per artist.
 
     ffmpeg can only write a single value per key, but real libraries carry
@@ -347,7 +362,7 @@ def set_flac_artists(path, artists):
     comments = [b for b in blocks if b[0] == 4]
     if not comments:
         raise ValueError(f'{path}: no VORBIS_COMMENT block to rewrite')
-    comments[0][1] = _rewrite_comments(comments[0][1], artists)
+    comments[0][1] = _rewrite_comments(comments[0][1], artists, key)
     out = bytearray(b'fLaC')
     for index, (kind, body) in enumerate(blocks):
         out.append(kind | (0x80 if index == len(blocks) - 1 else 0))
@@ -355,7 +370,7 @@ def set_flac_artists(path, artists):
     Path(path).write_bytes(bytes(out) + audio)
 
 
-def _rewrite_comments(body, artists):
+def _rewrite_comments(body, artists, key='ARTIST'):
     (vendor_length,) = struct.unpack_from('<I', body, 0)
     vendor = body[4:4 + vendor_length]
     offset = 4 + vendor_length
@@ -366,8 +381,8 @@ def _rewrite_comments(body, artists):
         (length,) = struct.unpack_from('<I', body, offset)
         comment = body[offset + 4:offset + 4 + length]
         offset += 4 + length
-        if not comment.upper().startswith(b'ARTIST='):
+        if not comment.upper().startswith((key + '=').encode()):
             kept.append(comment)
-    kept += [f'ARTIST={artist}'.encode() for artist in artists]
+    kept += [f'{key}={artist}'.encode() for artist in artists]
     out = struct.pack('<I', len(vendor)) + vendor + struct.pack('<I', len(kept))
     return out + b''.join(struct.pack('<I', len(c)) + c for c in kept)

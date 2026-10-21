@@ -26,7 +26,19 @@ Future<PlaybackRequest> resolveServerPlaybackSource(
     final media = await client
         .getMedia(request.mediaId, cancelToken: cancelToken)
         .timeout(timeout);
-    return request.withSourceUri(Uri.parse(client.playbackUrl(media)));
+    return ServerPlaybackRequest(
+        mediaId: request.mediaId,
+        serverOrigin: request.serverOrigin,
+        userId: request.userId,
+        sourceUri: Uri.parse(client.playbackUrl(media)),
+        title: media.music?.title.trim().isNotEmpty == true
+            ? media.displayTitle
+            : request.title,
+        sourceName: media.relPath.isNotEmpty ? media.relPath : media.fileName,
+        startPosition: request.startPosition,
+        readPosition: request.readPosition,
+        savePosition: request.savePosition,
+        markFinished: request.markFinished);
   } catch (_) {
     // After a timeout the request is still pending; nobody waits for it.
     cancelToken.cancel();
@@ -59,6 +71,7 @@ PlaybackRequest resolveNativeVideoSource(PlaybackRequest request) {
         shareToken: request.shareToken,
         sourceUri: original,
         title: request.title,
+        sourceName: request.sourceName,
       ),
     _ => request,
   };

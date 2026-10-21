@@ -2023,6 +2023,9 @@ func (m *mockPingStore) UpdateMedia(ctx context.Context, media *model.Media) err
 func (m *mockPingStore) UpdateMediaThumbnail(ctx context.Context, id int64, thumbnailPath string) error {
 	return m.store.UpdateMediaThumbnail(ctx, id, thumbnailPath)
 }
+func (m *mockPingStore) UpdateMediaMusic(ctx context.Context, id int64, music *model.MusicMetadata, fileSizeBytes int64) error {
+	return m.store.UpdateMediaMusic(ctx, id, music, fileSizeBytes)
+}
 func (m *mockPingStore) SoftDeleteMedia(ctx context.Context, id int64) error {
 	return m.store.SoftDeleteMedia(ctx, id)
 }

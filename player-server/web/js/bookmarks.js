@@ -1,3 +1,4 @@
+import { mediaTitle } from './music.js';
 import { API } from './api.js';
 
 export function bookmarkTime(seconds) {
@@ -136,7 +137,7 @@ export function initBookmarks({ getMedia, getElement, available = () => true, ap
     if (!available() || !['audio', 'video'].includes(media?.type)) return;
     epoch++;
     mediaId = media.id;
-    byId('bookmarks-media').textContent = media.file_name || 'Current media';
+    byId('bookmarks-media').textContent = mediaTitle(media) || 'Current media';
     rows = [];
     pending = false;
     label.value = '';

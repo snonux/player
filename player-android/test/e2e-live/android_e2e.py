@@ -14,8 +14,7 @@ directory). See README.md.
 import json, os, re, sys, time, urllib.parse, urllib.request, urllib.error, http.cookiejar
 from PIL import Image, ImageChops
 import adrv
-from app_ui import (back, labels, clear_field, swipe, ui_error_text, go_home, ensure_grid,
-                    open_detail)
+from app_ui import (back, labels, clear_field, swipe, ui_error_text, go_home, ensure_grid)
 import app_ui
 
 BASE = sys.argv[1].rstrip("/")
@@ -109,7 +108,7 @@ def test_library_listing():
             if move: swipe()
             seen |= {l.split(" / ")[0] for l in labels() if l.startswith("sample-")}
         swipe(up=False); swipe(up=False)
-        missing = [f"sample-{e}.{e}" for e in exts if f"sample-{e}.{e}" not in seen]
+        missing = [f"sample-{e}.{e}" for e in exts if SERVER["titles"].get(f"sample-{e}.{e}", f"sample-{e}.{e}") not in seen]
         shot(f"grid-{set_name}")
         record(f"{set_name} lists all {len(exts)} files", not missing, "missing: " + ", ".join(missing) if missing else "")
 
@@ -118,7 +117,12 @@ def test_library_listing():
 TRANSCODED = set()
 
 # Filled in main(): the admin API client and media ids by file name.
-SERVER = {"api": None, "ids": {}}
+SERVER = {"api": None, "ids": {}, "titles": {}}
+
+def open_detail(set_name, file_name):
+    # API/state/source dictionaries remain keyed by the original filename.
+    return app_ui.open_detail(set_name, SERVER['titles'].get(file_name, file_name))
+
 
 def reset_progress(name):
     """Forget saved progress, so playback starts at 0:00.
@@ -212,7 +216,7 @@ def test_favourite(api, media):
     back(); ensure_grid("test-audio")
     adrv.tap("^Show favourites only$"); time.sleep(3)
     only = [l.split(" / ")[0] for l in labels() if l.startswith("sample-")]
-    record("favourite is set from the app and filters the grid", in_ui and on_server and only == ["sample-mp3.mp3"], f"ui={in_ui} server={on_server} filtered={only}")
+    record("favourite is set from the app and filters the grid", in_ui and on_server and only == [SERVER["titles"]["sample-mp3.mp3"]], f"ui={in_ui} server={on_server} filtered={only}")
     adrv.tap("favourites") ; time.sleep(2)
     if not open_detail("test-audio", "sample-mp3.mp3"):
         return record("favourite can be removed again", False, "detail not opened")
@@ -367,7 +371,8 @@ def main():
     api = API(ENV["E2E_ADMIN_USER"], ENV["E2E_ADMIN_PASS"])
     media = {m["file_name"]: m for m in api.call("GET", "/api/v1/media?limit=500")}
     TRANSCODED.update(name for name, m in media.items() if m.get("transcoded"))
-    SERVER.update(api=api, ids={name: m["id"] for name, m in media.items()})
+    SERVER.update(api=api, ids={name: m["id"] for name, m in media.items()},
+                  titles={name: app_ui.media_title(item) for name, item in media.items()})
     record("admin can sign in", connect_and_login(ENV["E2E_ADMIN_USER"], ENV["E2E_ADMIN_PASS"], check_wrong_password=True))
     test_library_listing()
     for ext in FORMATS["test-videos"]: test_video(ext)

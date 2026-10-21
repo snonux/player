@@ -127,9 +127,9 @@ class ProgressUpdate {
   final double positionSeconds;
   final bool finished;
 
-  /// Wall-clock time the update was created (ISO-8601 UTC string stored in DB).
-  /// Used as the `observed_at` field in the batch request so the server applies
-  /// updates in chronological order.
+  /// Per-media edit time (ISO-8601 UTC string stored in DB), kept monotonic
+  /// for the server's `observed_at` conflict ordering. Durable row IDs, rather
+  /// than clocks from different media items, determine local enqueue order.
   final String queuedAt;
 
   /// Non-null after the row has been persisted; null for newly constructed
@@ -505,7 +505,9 @@ class ProgressQueue implements ProgressQueueBase {
       _kTable,
       where: '$_kColOrigin = ? AND $_kColUserId = ?',
       whereArgs: [scope.origin, scope.userId],
-      orderBy: '$_kColQueuedAt ASC, $_kColId ASC',
+      // Durable IDs preserve enqueue order across media. queued_at is a
+      // per-media wire clock and can be advanced beyond another item's clock.
+      orderBy: '$_kColId ASC',
     );
     if (rows.isEmpty) {
       if (current()) _clearRetry();

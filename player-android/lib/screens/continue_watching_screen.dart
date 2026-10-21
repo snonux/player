@@ -171,7 +171,8 @@ class _ContinueWatchingScreenState
     // immediately without a second round-trip to the server.
     final extra = <String, dynamic>{
       'mediaUrl': mediaUrl,
-      'title': item.fileName,
+      'sourceName': item.relPath,
+      'title': item.displayTitle,
       if (position != null) 'position': position,
     };
 
@@ -347,7 +348,7 @@ class _CardDetails extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  item.fileName,
+                  item.displayTitle,
                   key: Key('resume_card_title_${item.id}'),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w600,

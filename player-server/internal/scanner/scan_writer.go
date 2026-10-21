@@ -45,6 +45,15 @@ func (sw *scanWriter) run(
 		if scanCtx.Err() != nil {
 			continue
 		}
+		if result.musicRefresh {
+			if err := sw.store.UpdateMediaMusic(ctx, result.media.ID, result.media.Music, result.media.FileSizeBytes); err != nil {
+				sendErr(fmt.Errorf("refresh music %q: %w", result.path, err))
+				continue
+			}
+			if !result.refresh {
+				continue
+			}
+		}
 		if result.refresh {
 			sw.thumbs.apply(ctx, result)
 			continue

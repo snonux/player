@@ -6,6 +6,60 @@ from unittest.mock import patch
 import music_e2e
 
 
+class MediaTitleTest(unittest.TestCase):
+    def test_tagged_and_old_audio_labels_preserve_filename_identity(self):
+        original = {'id': 7, 'type': 'audio', 'file_name': 'sample-mp3.mp3'}
+        self.assertEqual(music_e2e.app_ui.media_title(original), 'sample-mp3')
+        tagged = dict(original, music={'title': ' 東京 Tagged Song '})
+        self.assertEqual(music_e2e.app_ui.media_title(tagged), '東京 Tagged Song')
+        self.assertEqual(tagged['file_name'], original['file_name'])
+        self.assertEqual(tagged['id'], original['id'])
+
+    def test_blank_tags_and_non_audio_keep_correct_fallbacks(self):
+        self.assertEqual(music_e2e.app_ui.media_title({'type':'audio', 'file_name':'01-name.flac', 'music':{'title':' \t '}}), '01-name')
+        self.assertEqual(music_e2e.app_ui.media_title({'type':'video', 'file_name':'clip.mp4'}), 'clip.mp4')
+        self.assertEqual(music_e2e.app_ui.media_title({'type':'audio', 'file_name':'.mp3'}), '.mp3')
+
+
+class FlattenedFolderNavigationTest(unittest.TestCase):
+    def test_missing_single_file_folder_requires_visible_target(self):
+        target = {'b': [0, 200, 900, 500]}
+        with patch.object(music_e2e.app_ui, 'go_home', return_value=True), \
+                patch.object(music_e2e.adrv, 'tap'), \
+                patch.object(music_e2e.adrv, 'find', return_value=None), \
+                patch.object(music_e2e.app_ui, 'find_scrolling', side_effect=[None, target]), \
+                patch.object(music_e2e, 'find_visible', side_effect=[target, target]), \
+                patch.object(music_e2e.adrv, 'tap_node') as tap, \
+                patch.object(music_e2e.time, 'sleep'):
+            self.assertTrue(music_e2e.open_track('Music', 'Untagged', 'track_0042'))
+        tap.assert_called_once_with(target)
+
+    def test_missing_folder_without_target_remains_failure(self):
+        with patch.object(music_e2e.app_ui, 'go_home', return_value=True), \
+                patch.object(music_e2e.adrv, 'tap'), \
+                patch.object(music_e2e.adrv, 'find', return_value=None), \
+                patch.object(music_e2e.app_ui, 'find_scrolling', return_value=None), \
+                patch.object(music_e2e, 'find_visible', return_value=None), \
+                patch.object(music_e2e.adrv, 'tap_node') as tap, \
+                patch.object(music_e2e.time, 'sleep'):
+            self.assertFalse(music_e2e.open_track('Music', 'Untagged', 'track_0042'))
+        tap.assert_not_called()
+
+
+class MetadataPlaybackOracleTest(unittest.TestCase):
+    def test_failed_restored_title_navigation_cannot_skip_audio_acceptance(self):
+        records = []
+        run = SimpleNamespace(record=lambda name, passed, *args, **kwargs: records.append((name, passed)))
+        with patch.object(music_e2e, 'open_track', return_value=False), \
+                patch.object(music_e2e, 'play_and_capture') as play:
+            self.assertFalse(music_e2e.step_metadata_audio(run, {'title': 'Restored title'}))
+        self.assertEqual(len(records), 2)
+        self.assertTrue(all(not passed for _, passed in records))
+        self.assertIn('session', records[0][0])
+        self.assertIn('tone', records[1][0])
+        play.assert_not_called()
+
+
 class ConnectivityPreflightTest(unittest.TestCase):
     def test_connected_android_network_passes(self):
         self.assertTrue(music_e2e.has_online_network(

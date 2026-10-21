@@ -1,3 +1,4 @@
+import { mediaTitle, musicSubtitle } from '../music.js';
 import { API } from '../api.js';
 import { state, setMedia } from '../state.js';
 import { clearSelection, selectByElement } from '../selection.js';
@@ -520,7 +521,7 @@ function renderItem(m, index) {
   const flattenedFolder = m.flattened_folder ? 'true' : 'false';
   if (m.type === 'video') {
     return `
-      <div class="media-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
+      <div class="media-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(mediaTitle(m))}">
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
@@ -535,7 +536,7 @@ function renderItem(m, index) {
           <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
         </div>
         <div class="meta">
-          <div class="title">${escapeHtml(m.file_name)}</div>
+          <div class="title" title="${escapeHtml(mediaTitle(m))}">${escapeHtml(mediaTitle(m))}</div>
           <div class="subtitle">${escapeHtml(m.codec || '')} ${escapeHtml(m.resolution || '')} ${m.bitrate ? Math.round(m.bitrate / 1000) + 'kbps' : ''}</div>
         </div>
       </div>
@@ -545,7 +546,7 @@ function renderItem(m, index) {
     const resText = escapeHtml(m.resolution || '');
     const safeSizeText = escapeHtml(sizeText || '');
     return `
-      <div class="media-card image-card" data-picture-ratio="${pictureRatio(m.width, m.height)}" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
+      <div class="media-card image-card" data-picture-ratio="${pictureRatio(m.width, m.height)}" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(mediaTitle(m))}">
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${resText}${safeSizeText ? ' • ' + safeSizeText : ''}</span>
@@ -560,14 +561,14 @@ function renderItem(m, index) {
           <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
         </div>
         <div class="meta">
-          <div class="title">${escapeHtml(m.file_name)}</div>
+          <div class="title" title="${escapeHtml(mediaTitle(m))}">${escapeHtml(mediaTitle(m))}</div>
           <div class="subtitle">${resText} ${safeSizeText}</div>
         </div>
       </div>
     `;
   }
   return `
-    <div class="media-card audio-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(m.file_name)}">
+    <div class="media-card audio-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(mediaTitle(m))}">
       <div class="thumb-wrap">
         ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No cover</span>`}
         <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
@@ -581,8 +582,8 @@ function renderItem(m, index) {
         <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
       </div>
       <div class="meta">
-        <div class="title">${escapeHtml(m.file_name)}</div>
-        <div class="subtitle">${escapeHtml(m.codec || '')} ${m.bitrate ? Math.round(m.bitrate/1000)+'kbps' : ''}</div>
+        <div class="title" title="${escapeHtml(mediaTitle(m))}">${escapeHtml(mediaTitle(m))}</div>
+        <div class="subtitle">${escapeHtml(musicSubtitle(m))}</div>
       </div>
     </div>
   `;

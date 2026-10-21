@@ -64,6 +64,7 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
     required this.mediaId,
     this.mediaUrl,
     this.mediaTitle,
+    this.sourceName = '',
     this.startPosition,
     this.isPublicShare = false,
     this.request,
@@ -83,6 +84,7 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
   /// media notification. Falls back to a generic label when the
   /// caller has no loaded metadata.
   final String? mediaTitle;
+  final String sourceName;
 
   /// Optional start position in seconds, forwarded from the continue-watching
   /// screen to resume at the saved position without an extra API round-trip.
@@ -467,6 +469,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         shareToken: shareTokenFromUrl(Uri.parse(url)),
         sourceUri: Uri.parse(url),
         title: title,
+        sourceName: widget.sourceName,
       );
     }
 
@@ -480,6 +483,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       userId: widget.serverUserId,
       sourceUri: Uri.parse(url),
       title: title,
+      sourceName: widget.sourceName,
       startPosition: widget.startPosition,
       readPosition: widget.startPosition == null
           ? () => client.getMediaProgress(mediaId)
@@ -788,8 +792,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                 AudioVisuals(
                   key: ValueKey('visuals:${_activeRequest!.identity}'),
                   player: handler.player,
-                  title:
-                      '${_activeRequest!.title} ${_activeRequest!.sourceUri.path}',
+                  title: _activeRequest!.visualContext,
                   artwork: AudioCoverArt(request: _activeRequest!),
                 ),
                 const SizedBox(height: 32),

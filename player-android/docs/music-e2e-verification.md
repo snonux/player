@@ -95,7 +95,11 @@ until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 3
 adb shell cmd connectivity airplane-mode disable
 adb shell svc wifi enable
 adb shell cmd wifi status  # wait until connected to AndroidWifi
-for i in $(seq 15); do adb shell input keyevent KEYCODE_VOLUME_UP; done   # media volume to max
+# With a responsive UI, raise volume; key events alone do not prove success.
+for i in $(seq 15); do adb shell input keyevent KEYCODE_VOLUME_UP; done
+adb shell dumpsys audio | sed -n '/^- STREAM_MUSIC:/,/^$/p'
+# Require the active speaker Current index to equal Max (15 on this AVD).
+# Repeat volume-up keys with pauses if necessary, then verify again.
 python3 -u test/e2e-live/music_e2e.py "$FIXTURE" \
   --apk build/app/outputs/flutter-apk/app-x86_64-release.apk \
   --emulator-wav "$TMPDIR/emulator-output.wav"
@@ -108,6 +112,14 @@ python3 player-android/integration_test/support/evidence.py summary \
 python3 player-android/integration_test/support/music_fixture.py down "$FIXTURE"
 pactl unload-module <module id from step 2>
 ```
+
+On the API 34 verification AVD, a rapid key loop during recovery left media
+volume at 5/15. Actual volume-up keys on the responsive UI eventually reached
+15/15, verified using `dumpsys audio` and the read-only
+`cmd media_session volume --stream 3 --get`. The corresponding `--set` command
+appeared successful but AudioService rejected it through AppOps; it is not a
+reliable setter on that AVD. Keep the before/after readback with audio evidence:
+at low volume the quiet fixture can fall below the unchanged detector floor.
 
 `down` stops the server and the doubles (only the processes the fixture
 started, identified by PID, executable and process start time), refuses to
@@ -238,3 +250,30 @@ interception remain unverified.
   the expected behavior. Web browser sessions have a separate cookie policy.
 - `adrv.adb` gives up after 120 s: after a host suspend, `uiautomator dump`
   hung forever on the old emulator; reboot the emulator in that case.
+
+## M01 embedded tags
+
+The same fixture now includes `Tag Verification/source_001.flac` with a title
+unrelated to its filename, whitespace/malformed fields, long Unicode tags and
+real repeated FLAC artists/genres. The baseline runners use the manifest's
+human title for visible selectors and media-session labels, retaining media
+IDs/filenames/tone output for source identity. The existing all-formats runner
+still checks formats independently.
+
+After building both components from the feature checkout, run the fixture as
+above, then `npx playwright test -c playwright.music.config.ts` (includes
+`music-metadata.test.ts`). For focused native M01 verification use
+`python3 -u test/e2e-live/music_e2e.py "$FIXTURE" --metadata-only --apk <new-apk>
+--emulator-wav <wav>`. Without `--metadata-only` the full baseline includes M01.
+Each runner discloses complete metadata in existing Info/details, checks missing
+fallbacks/Unicode/multivalues, and mutates only one known synthetic file through
+`music_metadata.py`. Changed/removed/restored tags must appear after rescan with
+unchanged media ID and saved progress. Fixture media and all evidence stay
+outside the repository. The Python mutation helper refuses non-fixture roots.
+
+M01 indexes server-managed audio. Standalone Android document-library files
+retain their existing device title behavior; this slice does not claim a local
+SAF tag index. New server downloads retain embedded metadata and their display
+title/source context in the offline SQLite snapshot; older snapshots keep their
+existing stored titles and continue to play. No shared version bump or release
+is needed for this unreleased feature change.

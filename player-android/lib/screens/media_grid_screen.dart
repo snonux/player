@@ -758,7 +758,7 @@ class _InfoOverlay extends StatelessWidget {
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  item.fileName,
+                  item.displayTitle,
                   key: Key('media_title_${item.id}'),
                   style: const TextStyle(
                     color: Colors.white,
@@ -771,6 +771,14 @@ class _InfoOverlay extends StatelessWidget {
               ),
             ],
           ),
+          if (item.musicSubtitle.isNotEmpty)
+            Text(item.musicSubtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.white70)),
           // Duration formatted as mm:ss or hh:mm:ss; still images and
           // unprobed media show none rather than a bogus 0:00.
           if (hasShownDuration(item.type, item.duration)) ...[

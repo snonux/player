@@ -1094,18 +1094,26 @@ void main() {
       final db = await _openInMemoryDb();
       final client = _FakeApiClient();
       final conn = _FakeConnectivity();
-      final queue =
-          ProgressQueue(apiClient: client, db: db, connectivity: conn);
+      final fixedNow = DateTime.utc(2026, 10, 21);
+      final queue = ProgressQueue(
+          apiClient: client, db: db, connectivity: conn, now: () => fixedNow);
       await queue.init(scope: _scopeA);
       await queue.enqueue(42, 94);
       await queue.enqueueFinished(42);
       await queue.enqueue(43, 4);
       final rows = await db.query('progress_queue', orderBy: 'id ASC');
       expect(rows.map((row) => row['finished']).toList(), [0, 1, 0]);
+      expect(rows.map((row) => row['media_id']).toList(), [42, 42, 43]);
+      // Per-media wire clocks can differ from durable cross-media enqueue order.
+      expect(rows[0]['queued_at'], rows[2]['queued_at']);
+      expect(
+          DateTime.parse(rows[1]['queued_at'] as String)
+              .isAfter(DateTime.parse(rows[2]['queued_at'] as String)),
+          isTrue);
       expect(client.calls, isEmpty);
 
       conn.emitStatus([ConnectivityResult.wifi]);
-      await _pump();
+      await _pumpUntil(() => client.operationOrder.length >= 3);
       expect(client.operationOrder, ['batch', 'status', 'batch']);
       expect(client.calls[0].single['media_id'], 42);
       expect(client.calls[1].single['media_id'], 43);

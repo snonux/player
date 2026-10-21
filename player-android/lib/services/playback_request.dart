@@ -15,6 +15,7 @@ sealed class PlaybackRequest {
   const PlaybackRequest({
     required this.identity,
     required this.title,
+    this.sourceName = '',
     required this.sourceUri,
     this.startPosition,
     this.readPosition,
@@ -24,6 +25,8 @@ sealed class PlaybackRequest {
 
   final String identity;
   final String title;
+  final String sourceName;
+  String get visualContext => '$sourceName $title ${sourceUri.path}';
   final Uri sourceUri;
   final double? startPosition;
   final ReadPlaybackPosition? readPosition;
@@ -41,6 +44,7 @@ final class ServerPlaybackRequest extends PlaybackRequest {
     required this.userId,
     required super.sourceUri,
     required super.title,
+    super.sourceName,
     super.startPosition,
     super.readPosition,
     super.savePosition,
@@ -59,6 +63,7 @@ final class ServerPlaybackRequest extends PlaybackRequest {
         userId: userId,
         sourceUri: sourceUri,
         title: title,
+        sourceName: sourceName,
         startPosition: startPosition,
         readPosition: readPosition,
         savePosition: savePosition,
@@ -75,6 +80,7 @@ final class LocalPlaybackRequest extends PlaybackRequest {
     required this.localMediaId,
     required super.sourceUri,
     required super.title,
+    super.sourceName,
     super.startPosition,
     super.readPosition,
     super.savePosition,
@@ -95,6 +101,7 @@ final class OfflinePlaybackRequest extends PlaybackRequest {
     required this.downloadKey,
     required super.sourceUri,
     required super.title,
+    super.sourceName,
     super.readPosition,
     super.savePosition,
     super.markFinished,
@@ -123,6 +130,7 @@ final class PublicSharePlaybackRequest extends PlaybackRequest {
     required this.shareToken,
     required super.sourceUri,
     required super.title,
+    super.sourceName,
   }) : super(identity: 'public-share:$shareToken');
 
   final String shareToken;

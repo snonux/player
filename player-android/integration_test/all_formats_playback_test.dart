@@ -96,7 +96,8 @@ void main() {
                 : AppRoutes.playerPathForType(item.type, '${item.id}'),
             extra: {
               'mediaUrl': api.playbackUrl(item),
-              'mediaTitle': item.fileName,
+              'title': item.displayTitle,
+              'sourceName': item.relPath.isEmpty ? item.fileName : item.relPath,
               'startPosition': 0.0,
             });
         await tester.pump(const Duration(milliseconds: 100));

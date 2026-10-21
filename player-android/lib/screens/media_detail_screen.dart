@@ -237,7 +237,11 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
       final epoch = ref.read(credentialMutationQueueProvider).generation;
       await context.push(
         AppRoutes.imageViewerPath(media.id.toString()),
-        extra: {'mediaUrl': streamUrl, 'title': media.fileName},
+        extra: {
+          'mediaUrl': streamUrl,
+          'sourceName': media.relPath,
+          'title': media.displayTitle
+        },
       );
       if (mounted &&
           widget.mediaId == media.id.toString() &&
@@ -247,12 +251,20 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     } else if (media.type == 'video') {
       context.push(
         AppRoutes.videoPlayerPath(media.id.toString()),
-        extra: {'mediaUrl': playbackUrl, 'title': media.fileName},
+        extra: {
+          'mediaUrl': playbackUrl,
+          'sourceName': media.relPath,
+          'title': media.displayTitle
+        },
       );
     } else if (media.type == 'audio') {
       context.push(
         AppRoutes.audioPlayerPath(media.id.toString()),
-        extra: {'mediaUrl': playbackUrl, 'title': media.fileName},
+        extra: {
+          'mediaUrl': playbackUrl,
+          'sourceName': media.relPath,
+          'title': media.displayTitle
+        },
       );
     }
   }
@@ -280,7 +292,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   /// with a stale ID.
   AppBar _buildAppBar() {
     return AppBar(
-      title: Text(_media?.fileName ?? 'Media ${widget.mediaId}'),
+      title: Text(_media?.displayTitle ?? 'Media ${widget.mediaId}'),
       actions: [
         PopupMenuButton<_MenuAction>(
           key: const Key('media_detail_overflow_menu'),
@@ -447,13 +459,32 @@ class _MediaDetailContent extends StatelessWidget {
           children: [
             // Title + favourite toggle on the same row.
             _TitleRow(
-              title: media.fileName,
+              title: media.displayTitle,
               isFavorite: media.favorite,
               onFavoriteToggle: onFavoriteToggle,
             ),
 
             const SizedBox(height: 8),
 
+            if (media.musicSubtitle.isNotEmpty) Text(media.musicSubtitle),
+            if (media.type == 'audio')
+              ExpansionTile(
+                title: const Text('Music details'),
+                tilePadding: EdgeInsets.zero,
+                children: [
+                  for (final entry in {
+                    'Filename': media.fileName,
+                    'Relative path': media.relPath,
+                    ...?media.music?.details
+                  }.entries)
+                    Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: SelectableText(
+                                '${entry.key}: ${entry.value}'))),
+                ],
+              ),
             // Codec · resolution · duration · file size.
             _MetadataRow(media: media),
 

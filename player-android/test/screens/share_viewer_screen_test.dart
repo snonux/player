@@ -314,7 +314,7 @@ void main() {
     ));
     router.go(AppRoutes.shareViewerPath('tok7'));
     await tester.pumpAndSettle();
-    expect(find.text('podcast.mp3'), findsOneWidget);
+    expect(find.text('podcast'), findsOneWidget);
     expect(find.byKey(const Key('login_username')), findsNothing);
     expect(client.callCount, 1);
     // Anonymous viewers get no library shortcut.
@@ -776,8 +776,8 @@ void main() {
 
       final thumbnail = tester.widget<PublicNetworkImage>(
           find.byKey(const Key('share_viewer_thumbnail')));
-      expect(
-          thumbnail.imageUrl, 'http://test.local/s/abc123/thumbnail?view=$view');
+      expect(thumbnail.imageUrl,
+          'http://test.local/s/abc123/thumbnail?view=$view');
     });
 
     testWidgets('an image share opens the credentialed original',
@@ -843,6 +843,25 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('renders metadata', () {
+    testWidgets(
+        'embedded audio title is visible while original share source remains intact',
+        (tester) async {
+      final json = jsonDecode(_kAudioShareJson) as Map<String, dynamic>;
+      (json['media'] as Map<String, dynamic>)['music'] = {
+        'title': '東京 Tagged Music'
+      };
+      final raw = jsonEncode(json);
+      final metadata = SharePageMetadata.fromJson(raw);
+      expect(metadata.sourceName, 'podcast.mp3');
+      expect(metadata.streamUrl, '/s/tok7/stream');
+      expect(metadata.playbackUrl, '/s/tok7/stream');
+      final client = _FakePublicApiClient()..pageJson = raw;
+      await _pumpShareViewerScreen(tester, client);
+      await tester.pumpAndSettle();
+      expect(find.text('東京 Tagged Music'), findsOneWidget);
+      expect(find.text('podcast.mp3'), findsNothing);
+    });
+
     testWidgets('shows filename after a successful load', (tester) async {
       final fakeClient = _FakePublicApiClient()..pageJson = _kVideoShareJson;
 
@@ -873,7 +892,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Audio'), findsOneWidget);
-      expect(find.text('podcast.mp3'), findsOneWidget);
+      expect(find.text('podcast'), findsOneWidget);
     });
 
     testWidgets('shows thumbnail placeholder when hasThumb is false',

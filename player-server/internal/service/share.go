@@ -235,6 +235,7 @@ func (s *shareService) GetSharedMedia(ctx context.Context, access ShareAccess) (
 // sharedMediaView copies the public subset of a media item.
 func sharedMediaView(media *model.Media) *SharedMediaView {
 	return &SharedMediaView{
+		Music:         media.Music,
 		ID:            media.ID,
 		FileName:      media.FileName,
 		Type:          media.Type,

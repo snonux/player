@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'music_metadata.dart';
 
 import 'package:crypto/crypto.dart';
 
@@ -17,6 +18,8 @@ class OfflineMedia {
     required this.type,
     required this.sizeBytes,
     required this.addedAt,
+    this.music,
+    this.sourceName = '',
     this.positionSeconds = 0,
     this.finished = false,
   });
@@ -26,6 +29,8 @@ class OfflineMedia {
   final int userId;
   final int mediaId;
   final String title;
+  final String sourceName;
+  final MusicMetadata? music;
   final String type;
   final int sizeBytes;
   final DateTime addedAt;
