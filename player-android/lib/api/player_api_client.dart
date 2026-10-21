@@ -42,6 +42,33 @@ class PlayerApiClient implements ProgressSyncClient {
   // The configured Dio instance with auth/401 interceptors already applied.
   final Dio _dio;
 
+  Future<List<Map<String, dynamic>>> playlists() async =>
+      ((await _dio.get<List<dynamic>>('/api/v1/playlists')).data ?? [])
+          .cast<Map<String, dynamic>>();
+  Future<Map<String, dynamic>> playlist(String id) async =>
+      (await _dio.get<Map<String, dynamic>>(
+              '/api/v1/playlists/${Uri.encodeComponent(id)}'))
+          .data!;
+  Future<Map<String, dynamic>> createPlaylist(
+          String name, String comment) async =>
+      (await _dio.post<Map<String, dynamic>>('/api/v1/playlists',
+              data: {'name': name, 'comment': comment}))
+          .data!;
+  Future<Map<String, dynamic>> updatePlaylist(
+          String id, String name, String comment) async =>
+      (await _dio.patch<Map<String, dynamic>>(
+              '/api/v1/playlists/${Uri.encodeComponent(id)}',
+              data: {'name': name, 'comment': comment}))
+          .data!;
+  Future<void> deletePlaylist(String id) async {
+    await _dio.delete<void>('/api/v1/playlists/${Uri.encodeComponent(id)}');
+  }
+
+  Future<void> addPlaylistAlbum(String id, String albumKey) async {
+    await _dio.post<void>('/api/v1/playlists/${Uri.encodeComponent(id)}/albums',
+        data: {'album_key': albumKey});
+  }
+
   Future<List<Map<String, dynamic>>> musicArtists(
           {String role = 'artists'}) async =>
       ((await _dio.get<List<dynamic>>('/api/v1/music/artists',

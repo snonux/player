@@ -39,3 +39,11 @@ assert.equal(decodedArtists.artist,'');
 const artistAlbum = {...music,music:{artists:true,artist:'ar_person',album:'al_release',role:'performer'}};
 assert.equal(readLibraryURL(libraryURL(artistAlbum).slice(1)).music.artist,'ar_person');
 assert.equal(readLibraryURL(libraryURL(artistAlbum).slice(1)).music.album,'al_release');
+
+for (const music of [{playlists:true,playlist:''},{playlists:true,playlist:'pl_abc'}]) {
+ const encoded=libraryURL({...state,music});
+ const decoded=readLibraryURL(encoded.slice(1)).music;
+ assert.equal(decoded.playlists,true);
+ assert.equal(decoded.playlist,music.playlist);
+ assert.deepEqual(readLibraryURL(encoded.slice(1)).sets,[]);
+}

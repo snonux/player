@@ -391,6 +391,7 @@ Future<void> _pumpScreen(
   _FakeApiClient fakeClient, {
   String mediaId = '42',
   List<Media> sequence = const [],
+  int? sequenceIndex,
   bool traverseFolders = false,
   bool albumCollection = false,
   String? mediaUrl,
@@ -418,6 +419,7 @@ Future<void> _pumpScreen(
         builder: (context, state) => AudioPlayerScreen(
           mediaId: state.pathParameters['mediaId']!,
           sequence: sequence,
+          sequenceIndex: sequenceIndex,
           traverseFolders: traverseFolders,
           albumCollection: albumCollection,
           mediaUrl: mediaUrl,
@@ -1244,6 +1246,86 @@ void main() {
         reason: 'filtered result must wrap without escaping into source set');
     await tester.runAsync(handler.stop);
   });
+
+  testWidgets(
+      'playlist later duplicate maps selected occurrence through nonmusic filtering',
+      (tester) async {
+    final (_, handler) = _usePlayableHandler();
+    addTearDown(handler.stop);
+    final client = _FakeApiClient();
+    final songs = [0, 1, 2, 1, 2]
+        .map((id) => Media.fromJson({
+              'id': id,
+              'set_id': 1,
+              'type': id == 0 ? 'image' : 'audio',
+              'file_name': id == 0 ? 'cover.jpg' : 'song$id.mp3',
+              'duration': 12,
+              'music': {'title': 'Song $id'},
+            }))
+        .toList();
+    await _pumpScreen(tester, client,
+        mediaId: '1',
+        mediaUrl: client.streamUrl(1),
+        mediaTitle: 'Song 1',
+        sequence: songs,
+        sequenceIndex: 3,
+        albumCollection: true,
+        handlerOverride: handler,
+        serverBaseUrl: Uri.parse('http://localhost:8080'));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    try {
+      expect(handler.musicQueue.entries.length, 4);
+      expect(handler.musicQueue.index, 2,
+          reason: 'selected repeated song is the third filtered occurrence');
+      await tester.runAsync(handler.skipToNext);
+      await tester.pump();
+      expect(handler.musicQueue.index, 3);
+      expect(handler.lastTitle, 'Song 2');
+      await tester.runAsync(handler.skipToNext);
+      await tester.pump();
+      expect(handler.musicQueue.index, 3,
+          reason: 'collection must not wrap from its last occurrence');
+      expect(handler.lastTitle, 'Song 2');
+    } finally {
+      await tester.runAsync(handler.stop);
+    }
+  });
+
+  for (final selectedIndex in [-1, 20, 1]) {
+    testWidgets(
+        'playlist invalid or mismatched occurrence $selectedIndex preserves identity fallback',
+        (tester) async {
+      final (_, handler) = _usePlayableHandler();
+      addTearDown(handler.stop);
+      final client = _FakeApiClient();
+      final songs = [1, 2, 1]
+          .map((id) => Media.fromJson({
+                'id': id,
+                'set_id': 1,
+                'type': 'audio',
+                'file_name': 'song$id.mp3',
+                'duration': 12,
+                'music': {'title': 'Song $id'}
+              }))
+          .toList();
+      await _pumpScreen(tester, client,
+          mediaId: '1',
+          mediaUrl: client.streamUrl(1),
+          sequence: songs,
+          sequenceIndex: selectedIndex,
+          albumCollection: true,
+          handlerOverride: handler,
+          serverBaseUrl: Uri.parse('http://localhost:8080'));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump();
+      }
+      expect(handler.musicQueue.index, 0);
+      expect(handler.lastTitle, 'Song 1');
+      await tester.runAsync(handler.stop);
+    });
+  }
 
   testWidgets(
       'retained queue resume adopts fresh lease and shows actual current song',

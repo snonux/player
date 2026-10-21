@@ -855,3 +855,10 @@ body {
 
 .credit-link { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 .music-song .credit-link { min-height: 2.75rem; padding: 0; font-size: .85rem; }
+
+.playlist-actions { display: flex; flex-wrap: wrap; gap: var(--gap); margin-block: var(--gap); }
+.playlist-comment { white-space: pre-wrap; overflow-wrap: anywhere; }
+.playlist-albums { display: flex; flex-direction: column; gap: var(--gap); max-height: 50vh; overflow: auto; }
+.playlist-albums button { white-space: normal; text-align: left; overflow-wrap: anywhere; }
+#playlist-modal label { display: flex; flex-direction: column; gap: var(--gap); margin-block: var(--gap); }
+#playlist-modal input, #playlist-modal textarea { width: 100%; box-sizing: border-box; }

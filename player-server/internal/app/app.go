@@ -352,6 +352,7 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 		Services: api.ServerServices{
 			Media: api.MediaServices{
 				Browse:        deps.MediaSvc,
+				Playlists:     service.NewPlaylistService(deps.Store, deps.MediaSvc),
 				Write:         deps.MediaSvc,
 				Share:         deps.MediaSvc,
 				Tag:           deps.MediaSvc,

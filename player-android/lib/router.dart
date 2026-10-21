@@ -1,3 +1,4 @@
+import 'screens/music_playlists_screen.dart';
 import 'screens/music_artists_screen.dart';
 import 'screens/music_albums_screen.dart';
 import 'dart:async';
@@ -209,6 +210,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             MusicArtistsScreen(artistKey: state.uri.queryParameters['artist']),
       ),
       GoRoute(
+        path: AppRoutes.musicPlaylists,
+        builder: (context, state) => MusicPlaylistsScreen(
+            playlistId: state.uri.queryParameters['playlist']),
+      ),
+      GoRoute(
         path: AppRoutes.musicAlbums,
         builder: (context, state) => MusicAlbumsScreen(
           albumKey: state.uri.queryParameters['album'],
@@ -342,6 +348,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                   ?.id ??
               0;
           return AudioPlayerScreen(
+            sequenceIndex: state.extra is Map
+                ? (state.extra as Map)['sequenceIndex'] as int?
+                : null,
             albumCollection: state.extra is Map &&
                 (state.extra as Map)['albumCollection'] == true,
             traverseFolders: state.extra is Map &&

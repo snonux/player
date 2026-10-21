@@ -23,6 +23,7 @@ import (
 // width of Server/ServerServices and makes it easy to see which concerns belong
 // to the media vertical slice. If any service is nil its routes return 501.
 type MediaServices struct {
+	Playlists     *service.PlaylistService
 	Browse        service.MediaBrowseService
 	Write         service.MediaWriteService
 	Share         service.MediaShareService
@@ -357,6 +358,13 @@ func (s *Server) routesSets() {
 
 // routesMedia wires the media-related API routes.
 func (s *Server) routesMedia() {
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		s.handleBoth(method, "/api/playlists", s.requireSession(s.handlePlaylists))
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPatch, http.MethodDelete} {
+		s.handleBoth(method, "/api/playlists/{playlist_id}", s.requireSession(s.handlePlaylists))
+	}
+	s.handleBoth(http.MethodPost, "/api/playlists/{playlist_id}/albums", s.requireSession(s.handlePlaylists))
 	s.handleBoth(http.MethodGet, "/api/music/artists", s.requireSession(s.handleMusicArtists))
 	s.handleBoth(http.MethodGet, "/api/music/artists/{artist_key}", s.requireSession(s.handleMusicArtists))
 	s.handleBoth(http.MethodGet, "/api/music/albums", s.requireSession(s.handleMusicAlbums))

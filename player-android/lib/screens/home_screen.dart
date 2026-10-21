@@ -162,6 +162,11 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                 ),
                 (Icons.album_outlined, 'Music · Albums', AppRoutes.musicAlbums),
                 (
+                  Icons.queue_music,
+                  'Music · Playlists',
+                  AppRoutes.musicPlaylists
+                ),
+                (
                   Icons.people_outline,
                   'Music · Artists',
                   AppRoutes.musicArtists

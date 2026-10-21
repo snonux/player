@@ -2413,3 +2413,27 @@ release. Album detail also adds `song_credits`, keyed by media ID, containing
 `artist_key`, `name`, `roles` for each linked person on that song. Track and album
 artist links use these structured credits individually, independently of the
 verbatim display artist. Existing album grouping and media identities stay intact.
+
+### Persistent playlists
+
+All routes require a session cookie or Bearer token and have both `/api` and
+`/api/v1` aliases. Playlists are private to their owning account, including
+from administrators. Foreign or missing IDs return 404.
+
+| Method | Route | Body / result |
+| --- | --- | --- |
+| GET | `/api/v1/playlists` | List metadata and visible song_count, duration (seconds), cover_media_id |
+| POST | `/api/v1/playlists` | `{name, comment}`; 201 with new empty playlist |
+| GET | `/api/v1/playlists/{id}` | Metadata, ordered entries (`entry_id`, `media_id`), ordered songs and aggregates |
+| PATCH | `/api/v1/playlists/{id}` | `{name, comment}` replaces both metadata fields; membership unchanged |
+| DELETE | `/api/v1/playlists/{id}` | 204; deletes document and entries, never media files |
+| POST | `/api/v1/playlists/{id}/albums` | `{album_key}` appends the caller-visible album songs in album order |
+
+Names are trimmed and require 1–200 Unicode code points; comments allow
+0–2000. Invalid metadata returns 400 without changing the document. Names
+need not be unique. Repeated album adds preserve duplicate occurrences with
+separate entry IDs. Songs no longer in the caller's permitted Music catalog
+are omitted from entries, songs, count, duration and cover. Totals reflect
+current source metadata; the cover is the first visible song with artwork.
+No track remove/reorder, sharing, import/export or offline playlist cache is
+part of this API slice.

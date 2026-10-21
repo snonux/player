@@ -1,0 +1,574 @@
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../app_routes.dart';
+import '../api/player_api_client.dart';
+import '../models/media.dart';
+import '../providers/api_client_provider.dart';
+import '../utils/error_mappers.dart';
+import '../widgets/music_queue_sheet.dart';
+
+/// Account playlists use the same server media identities and music queue.
+class MusicPlaylistsScreen extends ConsumerStatefulWidget {
+  const MusicPlaylistsScreen({super.key, this.playlistId});
+  final String? playlistId;
+  @override
+  ConsumerState<MusicPlaylistsScreen> createState() => _MusicPlaylistsState();
+}
+
+class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
+  List<Map<String, dynamic>> _list = [];
+  Map<String, dynamic>? _playlist;
+  bool _loading = true;
+  String? _error;
+  int _generation = 0;
+  int get _accountEpoch => ref.read(credentialMutationQueueProvider).generation;
+  final _artwork = <int, Future<Uint8List>>{};
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(_load);
+  }
+
+  @override
+  void didUpdateWidget(covariant MusicPlaylistsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.playlistId != widget.playlistId) {
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    final generation = ++_generation;
+    final accountEpoch = _accountEpoch;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    _artwork.clear();
+    try {
+      final api = ref.read(apiClientProvider);
+      final id = widget.playlistId;
+      final data = id == null ? await api.playlists() : await api.playlist(id);
+      if (!mounted ||
+          generation != _generation ||
+          accountEpoch != _accountEpoch) {
+        return;
+      }
+      setState(() {
+        if (id == null) {
+          _list = data as List<Map<String, dynamic>>;
+        } else {
+          _playlist = data as Map<String, dynamic>;
+        }
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted ||
+          generation != _generation ||
+          accountEpoch != _accountEpoch) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _error = setsErrorMessage(e);
+      });
+    }
+  }
+
+  String _totals(Map<String, dynamic> p) =>
+      '${p['song_count']} songs · ${_duration(p['duration'] as num)}';
+  String _duration(num value) {
+    final seconds = value.round();
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  Widget _cover(Map<String, dynamic> p, double size) {
+    final id = p['cover_media_id'] as int?;
+    final placeholder = ColoredBox(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: const Center(
+            child:
+                Icon(Icons.queue_music, semanticLabel: 'No playlist artwork')));
+    return SizedBox(
+        width: size,
+        height: size,
+        child: id == null
+            ? placeholder
+            : FutureBuilder<Uint8List>(
+                future: _artwork.putIfAbsent(
+                    id, () => ref.read(apiClientProvider).getThumbnail(id)),
+                builder: (_, snapshot) => snapshot.hasData
+                    ? Image.memory(snapshot.data!,
+                        fit: BoxFit.cover,
+                        semanticLabel: 'Artwork for ${p['name']}',
+                        errorBuilder: (_, __, ___) => placeholder)
+                    : placeholder));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(apiClientProvider, (previous, next) {
+      if (previous != next) {
+        _generation++;
+        _playlist = null;
+        _list = [];
+        Future.microtask(_load);
+      }
+    });
+    return Scaffold(
+      appBar: AppBar(
+          title: Text(widget.playlistId == null
+              ? 'Music · Playlists'
+              : _playlist?['name'] as String? ?? 'Playlist'),
+          actions: [
+            const MusicQueueButton(),
+            if (widget.playlistId == null)
+              IconButton(
+                  tooltip: 'Create playlist',
+                  icon: const Icon(Icons.add),
+                  onPressed: () => _edit()),
+          ]),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Text('Could not load playlists. $_error'),
+                        FilledButton(
+                            onPressed: _load, child: const Text('Retry'))
+                      ])))
+              : widget.playlistId == null
+                  ? _catalog()
+                  : _detail(),
+    );
+  }
+
+  Widget _catalog() => RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(padding: const EdgeInsets.all(16), children: [
+        Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+                onPressed: () => _edit(),
+                icon: const Icon(Icons.add),
+                label: const Text('Create playlist'))),
+        if (_list.isEmpty)
+          const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                  'No playlists yet. Create a playlist to save music for later.')),
+        for (final p in _list)
+          ListTile(
+              leading: _cover(p, 56),
+              title: Text(p['name'] as String,
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Text(_totals(p)),
+              onTap: () async {
+                await context.push(
+                    '${AppRoutes.musicPlaylists}?playlist=${Uri.encodeComponent(p['playlist_id'] as String)}');
+                if (mounted) {
+                  _load();
+                }
+              }),
+      ]));
+  Widget _detail() {
+    final p = _playlist!;
+    final songs = (p['songs'] as List)
+        .cast<Map<String, dynamic>>()
+        .map(Media.fromJson)
+        .toList();
+    void play(int index) {
+      final song = songs[index], api = ref.read(apiClientProvider);
+      context.push(AppRoutes.audioPlayerPath('${song.id}'), extra: {
+        'mediaUrl': api.playbackUrl(song),
+        'title': song.displayTitle,
+        'sequence': songs,
+        'sequenceIndex': index,
+        'albumCollection': true,
+        if (song.duration <= 1200) 'position': 0.0,
+      });
+    }
+
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _cover(p, 112),
+        const SizedBox(width: 16),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(p['name'] as String,
+              style: Theme.of(context).textTheme.titleLarge),
+          Text(_totals(p))
+        ]))
+      ]),
+      const SizedBox(height: 16),
+      Text(p['comment'] as String),
+      Wrap(spacing: 12, runSpacing: 8, children: [
+        FilledButton.icon(
+            onPressed: songs.isEmpty ? null : () => play(0),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Play playlist')),
+        FilledButton.tonalIcon(
+            onPressed: _addMusic,
+            icon: const Icon(Icons.add),
+            label: const Text('Add music')),
+        TextButton(
+            onPressed: () => _edit(p), child: const Text('Edit playlist')),
+        TextButton(onPressed: _delete, child: const Text('Delete playlist')),
+      ]),
+      if (songs.isEmpty)
+        const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('This playlist is empty.')),
+      for (var i = 0; i < songs.length; i++)
+        ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(songs[i].displayTitle),
+            subtitle: Text(songs[i].music?.artist ?? 'Unknown artist'),
+            onTap: () => play(i),
+            trailing: Text(_duration(songs[i].duration))),
+    ]);
+  }
+
+  Future<void> _edit([Map<String, dynamic>? p]) async {
+    final name = TextEditingController(text: p?['name'] as String? ?? '');
+    final comment = TextEditingController(text: p?['comment'] as String? ?? '');
+    final form = GlobalKey<FormState>();
+    final generation = _generation;
+    final accountEpoch = _accountEpoch;
+    final api = ref.read(apiClientProvider);
+    var saving = false;
+    String? error;
+    String? created;
+    await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+            builder: (context, update) => PopScope(
+                canPop: true,
+                child: AlertDialog(
+                  title: Text(p == null ? 'Create playlist' : 'Edit playlist'),
+                  content: SingleChildScrollView(
+                      child: Form(
+                          key: form,
+                          child:
+                              Column(mainAxisSize: MainAxisSize.min, children: [
+                            TextFormField(
+                                controller: name,
+                                autofocus: true,
+                                decoration: const InputDecoration(
+                                    labelText: 'Name',
+                                    helperText: '1–200 characters'),
+                                validator: (text) {
+                                  final n = (text ?? '').trim().runes.length;
+                                  return n < 1 || n > 200
+                                      ? 'Enter 1–200 characters.'
+                                      : null;
+                                }),
+                            TextFormField(
+                                controller: comment,
+                                minLines: 2,
+                                maxLines: 5,
+                                decoration: const InputDecoration(
+                                    labelText: 'Comment',
+                                    helperText: 'Up to 2000 characters'),
+                                validator: (text) =>
+                                    (text ?? '').runes.length > 2000
+                                        ? 'Enter at most 2000 characters.'
+                                        : null),
+                            if (error != null)
+                              Text(error!,
+                                  style: TextStyle(
+                                      color:
+                                          Theme.of(context).colorScheme.error)),
+                          ]))),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: saving
+                            ? null
+                            : () async {
+                                if (!form.currentState!.validate()) {
+                                  return;
+                                }
+                                if (generation != _generation ||
+                                    accountEpoch != _accountEpoch ||
+                                    !identical(
+                                        api, ref.read(apiClientProvider))) {
+                                  update(() => error =
+                                      'Account changed. Close this dialog and try again.');
+                                  return;
+                                }
+                                update(() {
+                                  saving = true;
+                                  error = null;
+                                });
+                                try {
+                                  final result = p == null
+                                      ? await api.createPlaylist(
+                                          name.text.trim(), comment.text)
+                                      : await api.updatePlaylist(
+                                          p['playlist_id'] as String,
+                                          name.text.trim(),
+                                          comment.text);
+                                  if (!mounted ||
+                                      generation != _generation ||
+                                      accountEpoch != _accountEpoch ||
+                                      !dialogContext.mounted) {
+                                    return;
+                                  }
+                                  if (p == null) {
+                                    created = result['playlist_id'] as String;
+                                  }
+                                  Navigator.pop(dialogContext);
+                                } catch (e) {
+                                  if (dialogContext.mounted) {
+                                    update(() {
+                                      saving = false;
+                                      error =
+                                          'Could not save playlist. ${setsErrorMessage(e)}';
+                                    });
+                                  }
+                                }
+                              },
+                        child: Text(saving
+                            ? 'Saving…'
+                            : p == null
+                                ? 'Create playlist'
+                                : 'Save changes'))
+                  ],
+                ))));
+    // Controllers are disposed after the route's closing animation finishes.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    name.dispose();
+    comment.dispose();
+    if (!mounted ||
+        generation != _generation ||
+        accountEpoch != _accountEpoch) {
+      return;
+    }
+    if (created != null) {
+      await context.push(
+          '${AppRoutes.musicPlaylists}?playlist=${Uri.encodeComponent(created!)}');
+      if (mounted) {
+        _load();
+      }
+    } else {
+      _load();
+    }
+  }
+
+  Future<void> _addMusic() async {
+    final generation = _generation;
+    final accountEpoch = _accountEpoch;
+    final saved = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _AddAlbumDialog(playlistId: widget.playlistId!));
+    if (saved == true &&
+        mounted &&
+        generation == _generation &&
+        accountEpoch == _accountEpoch) {
+      _load();
+    }
+  }
+
+  Future<void> _delete() async {
+    final p = _playlist!, generation = _generation;
+    final accountEpoch = _accountEpoch;
+    final api = ref.read(apiClientProvider);
+    var saving = false;
+    String? error;
+    var deleted = false;
+    await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+            builder: (context, update) => PopScope(
+                canPop: true,
+                child: AlertDialog(
+                  title: const Text('Delete playlist'),
+                  content: Text(error ??
+                      'Delete “${p['name']}”? Music files stay available in your library.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: saving
+                            ? null
+                            : () async {
+                                if (generation != _generation ||
+                                    accountEpoch != _accountEpoch ||
+                                    !identical(
+                                        api, ref.read(apiClientProvider))) {
+                                  update(() => error =
+                                      'Account changed. Close this dialog and try again.');
+                                  return;
+                                }
+                                update(() => saving = true);
+                                try {
+                                  await api.deletePlaylist(
+                                      p['playlist_id'] as String);
+                                  if (!mounted ||
+                                      generation != _generation ||
+                                      accountEpoch != _accountEpoch ||
+                                      !dialogContext.mounted) {
+                                    return;
+                                  }
+                                  deleted = true;
+                                  Navigator.pop(dialogContext);
+                                } catch (e) {
+                                  if (dialogContext.mounted) {
+                                    update(() {
+                                      saving = false;
+                                      error =
+                                          'Could not delete playlist. ${setsErrorMessage(e)}';
+                                    });
+                                  }
+                                }
+                              },
+                        child: const Text('Delete playlist'))
+                  ],
+                ))));
+    if (deleted &&
+        mounted &&
+        generation == _generation &&
+        accountEpoch == _accountEpoch) {
+      context.pop();
+    }
+  }
+}
+
+class _AddAlbumDialog extends ConsumerStatefulWidget {
+  const _AddAlbumDialog({required this.playlistId});
+  final String playlistId;
+  @override
+  ConsumerState<_AddAlbumDialog> createState() => _AddAlbumState();
+}
+
+class _AddAlbumState extends ConsumerState<_AddAlbumDialog> {
+  late final PlayerApiClient _api;
+  bool _accountChanged = false;
+  late final int _accountEpoch;
+  bool get _sameAccount =>
+      _accountEpoch == ref.read(credentialMutationQueueProvider).generation;
+  List<Map<String, dynamic>> _albums = [];
+  bool _loading = true, _saving = false;
+  String? _error;
+  @override
+  void initState() {
+    super.initState();
+    _api = ref.read(apiClientProvider);
+    _accountEpoch = ref.read(credentialMutationQueueProvider).generation;
+    Future.microtask(_load);
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await _api.musicAlbums();
+      if (mounted && !_accountChanged && _sameAccount) {
+        setState(() {
+          _albums = data;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted && !_accountChanged && _sameAccount) {
+        setState(() {
+          _loading = false;
+          _error = 'Could not load albums. ${setsErrorMessage(e)}';
+        });
+      }
+    }
+  }
+
+  Future<void> _add(String key) async {
+    if (!_sameAccount ||
+        _accountChanged ||
+        !identical(_api, ref.read(apiClientProvider))) {
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await _api.addPlaylistAlbum(widget.playlistId, key);
+      if (mounted && !_accountChanged && _sameAccount) {
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted && !_accountChanged && _sameAccount) {
+        setState(() {
+          _saving = false;
+          _error = 'Could not add music. ${setsErrorMessage(e)}';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(apiClientProvider, (previous, next) {
+      if (!identical(_api, next)) {
+        setState(() {
+          _accountChanged = true;
+          _saving = false;
+          _loading = false;
+          _albums = [];
+          _error = 'Account changed. Close this dialog and try again.';
+        });
+      }
+    });
+    return PopScope(
+        canPop: true,
+        child: AlertDialog(
+          title: const Text('Add music'),
+          content: SizedBox(
+              width: double.maxFinite,
+              child: _loading
+                  ? const Center(
+                      heightFactor: 2, child: CircularProgressIndicator())
+                  : SingleChildScrollView(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      if (_error != null)
+                        Text(_error!,
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.error)),
+                      if (_albums.isEmpty && _error == null)
+                        const Text(
+                            'No albums available. Browse Library or ask an administrator to rescan music tags.'),
+                      if (_albums.isNotEmpty)
+                        const Text(
+                            'Choose an album to add its songs in album order.'),
+                      for (final album in _albums)
+                        ListTile(
+                            title: Text(album['title'] as String),
+                            subtitle: Text(album['artist'] as String),
+                            enabled: !_saving && !_accountChanged,
+                            onTap: () => _add(album['album_key'] as String)),
+                    ]))),
+          actions: [
+            if (_error != null && _albums.isEmpty && !_accountChanged)
+              TextButton(onPressed: _load, child: const Text('Retry')),
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'))
+          ],
+        ));
+  }
+}

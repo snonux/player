@@ -71,6 +71,20 @@ CREATE TABLE IF NOT EXISTS media (
     UNIQUE(set_id, rel_path)
 );
 
+CREATE TABLE IF NOT EXISTS playlists (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    comment TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS playlist_entries (
+    id TEXT PRIMARY KEY,
+    playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    UNIQUE(playlist_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_playlists_user ON playlists(user_id);
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL

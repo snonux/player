@@ -2246,3 +2246,22 @@ func (m *mockPingStore) ToggleEpisodeCompletion(ctx context.Context, userID, epi
 func (m *mockPingStore) CreateDeferredPodcastFeeds(ctx context.Context, now time.Time, checkInterval int) error {
 	return m.store.CreateDeferredPodcastFeeds(ctx, now, checkInterval)
 }
+
+func (m *mockPingStore) ListPlaylists(ctx context.Context, user int64) ([]model.Playlist, error) {
+	return m.store.ListPlaylists(ctx, user)
+}
+func (m *mockPingStore) GetPlaylist(ctx context.Context, user int64, id string) (*model.Playlist, error) {
+	return m.store.GetPlaylist(ctx, user, id)
+}
+func (m *mockPingStore) CreatePlaylist(ctx context.Context, user int64, p model.Playlist) error {
+	return m.store.CreatePlaylist(ctx, user, p)
+}
+func (m *mockPingStore) UpdatePlaylist(ctx context.Context, user int64, id, name, comment string) (bool, error) {
+	return m.store.UpdatePlaylist(ctx, user, id, name, comment)
+}
+func (m *mockPingStore) DeletePlaylist(ctx context.Context, user int64, id string) (bool, error) {
+	return m.store.DeletePlaylist(ctx, user, id)
+}
+func (m *mockPingStore) AppendPlaylist(ctx context.Context, user int64, id string, entries []model.PlaylistEntry) (bool, error) {
+	return m.store.AppendPlaylist(ctx, user, id, entries)
+}

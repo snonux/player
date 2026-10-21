@@ -264,3 +264,20 @@ ineffective reverse-only cutoff with the verified owned-server cutoff. Exact
 commands, versions, original failures, original screenshots and source audio
 remain external; the full truthful record is in
 `../../../docs/music-m03-implementation.md`.
+
+M26 persistent playlists runs against a fresh disposable Music fixture and the
+native app on a running API34 emulator with QEMU WAV output:
+
+```sh
+python3 -u test/e2e-live/music_playlists_e2e.py /path/to/fresh/fixture \
+  --apk /path/to/current/app-x86_64-release.apk \
+  --emulator-wav /path/to/emulator-output.wav
+```
+
+It uses actual native create/edit/comment/Add music/delete controls, checks
+saved membership/count/duration and rendered cover, force-stops and relaunches
+the client, switches to the other account and back, captures original source
+audio and exercises actual offline form failure after stopping the owned
+fixture server and removing adb reverse, then restarts the same database.
+All assertions are required, failures return a nonzero exit status, and
+screenshots/state/audio are external fixture evidence.

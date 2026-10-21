@@ -42,7 +42,7 @@ async function playItem(media, index) {
 }
 
 export async function playSelected() {
-  if (state.music?.album) { const i=Number(currentElement()?.dataset.index); if (Number.isInteger(i)) await playAlbumCollection(state.media,i); return; }
+  if (state.music?.album || state.music?.playlist) { const i=Number(currentElement()?.dataset.index); if (Number.isInteger(i)) await playAlbumCollection(state.media,i); return; }
   let el = currentElement();
   if (!el) {
     el = document.querySelector('#media-grid .media-card[data-id], #media-grid .media-row[data-id]');

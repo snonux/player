@@ -75,6 +75,7 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
     this.request,
     this.serverUserId = 0,
     this.sequence = const [],
+    this.sequenceIndex,
     this.albumCollection = false,
     this.traverseFolders = false,
   });
@@ -102,6 +103,9 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
   final PlaybackRequest? request;
   final int serverUserId;
   final List<Media> sequence;
+
+  /// Selected occurrence in sequence; media IDs alone cannot identify repeats.
+  final int? sequenceIndex;
   final bool albumCollection;
   final bool traverseFolders;
 
@@ -136,6 +140,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<MusicSequenceState>? _musicSubscription;
   List<PlaybackRequest> _musicEntries = const [];
+  int _musicStartIndex = 0;
   Future<List<PlaybackRequest>> Function()? _expandMusic;
 
   // Where this item last was while it played on this screen; Retry resumes
@@ -482,6 +487,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   Future<PlaybackRequest> _resolveRequest() async {
     var request = _effectiveRequest();
     _musicEntries = const [];
+    _musicStartIndex = 0;
     _expandMusic = null;
     if (widget.request == null && widget.mediaUrl == null) {
       request = await resolveServerPlaybackSource(
@@ -511,12 +517,21 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         readPosition: () => client.getMediaProgress(media.id),
         savePosition: (seconds) => progress.enqueue(media.id, seconds),
         markFinished: () => progress.enqueueFinished(media.id));
-    _musicEntries = widget.sequence
-        .where((m) =>
-            (widget.albumCollection || m.setId == setId) &&
-            isMusicTrack(m, sets))
-        .map(entry)
-        .toList();
+    bool included(Media media) =>
+        (widget.albumCollection || media.setId == setId) &&
+        isMusicTrack(media, sets);
+    final requestedIndex = widget.sequenceIndex;
+    final selectedIndex = requestedIndex != null &&
+            requestedIndex >= 0 &&
+            requestedIndex < widget.sequence.length &&
+            widget.sequence[requestedIndex].id == mediaId
+        ? requestedIndex
+        : widget.sequence.indexWhere((media) => media.id == mediaId);
+    // Preserve the selected occurrence while filtering generic sequences.
+    // Repeated media IDs refer to distinct queue entries, not one song slot.
+    _musicStartIndex =
+        widget.sequence.take(selectedIndex).where(included).length;
+    _musicEntries = widget.sequence.where(included).map(entry).toList();
     final displayed = List<PlaybackRequest>.of(_musicEntries);
     final traverse = widget.traverseFolders;
     _expandMusic = () async {
@@ -525,8 +540,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       return media.where((m) => isMusicTrack(m, sets)).map(entry).toList();
     };
     if (widget.albumCollection) {
-      return _musicEntries
-          .firstWhere((entry) => entry.identity == request.identity);
+      return _musicEntries[_musicStartIndex];
     }
     return request;
   }
@@ -552,8 +566,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             stop: handler.stop),
         wrap: !widget.albumCollection,
         entries: _musicEntries,
-        index: _musicEntries
-            .indexWhere((r) => r.identity == attempt.request.identity),
+        index: _musicStartIndex,
         expand: _expandMusic!,
         changed: lease.updateSource,
         load: (request, current) async {

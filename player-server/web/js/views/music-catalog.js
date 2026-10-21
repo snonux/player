@@ -1,3 +1,4 @@
+import { initPlaylists, renderPlaylists } from './music-playlists.js';
 import { songActionButtons, bindSongActions, openSongActions, selectionActions } from '../queue-actions.js';
 import { cancelPendingSearch } from '../search.js';
 import { updateSetRowsUI } from './sets.js';
@@ -13,26 +14,28 @@ let selectedAlbum = '';
 let revision = 0;
 const positions = new Map();
 const history = [];
-const viewKey = view => JSON.stringify([view?.artists || false,view?.artist || '',view?.album || '',view?.role || 'artists']);
+const viewKey = view => JSON.stringify([view?.artists || false,view?.artist || '',view?.album || '',view?.role || 'artists',view?.playlists || false,view?.playlist || '']);
 function remember() {
  if (!state.music) return;
  const selected = document.querySelector('#media-grid .selected');
- positions.set(viewKey(state.music), {album:selected?.dataset.album, artist:selected?.dataset.artistCard, song:selected?.dataset.id, scroll:window.scrollY});
+ positions.set(viewKey(state.music), {album:selected?.dataset.album, artist:selected?.dataset.artistCard, song:selected?.dataset.id, playlist:selected?.dataset.playlist, scroll:window.scrollY});
 }
 function descend(next) { remember(); history.push({...state.music}); state.music=next; reload(); }
 export function openArtists() { openAlbums('', '', true); }
 function openArtist(key) { descend({artists:true,artist:key,album:'',role:state.music?.role || 'artists'}); }
 export function initMusicCatalog(load) {
  reload = load;
+ initPlaylists(load,openPlaylist,backMusic);
+ document.getElementById('music-playlists')?.addEventListener('click',()=>openAlbums('', '', false, true));
  document.getElementById('music-artists')?.addEventListener('click', openArtists);
  document.getElementById('music-albums')?.addEventListener('click', () => openAlbums());
  document.addEventListener('navigation:restore', () => { history.length=0; });
  document.addEventListener('music:album', e => openAlbum(e.detail));
 }
-export function openAlbums(artist = '', name = '', artists = false) {
+export function openAlbums(artist = '', name = '', artists = false, playlists = false) {
  cancelPendingSearch();
  history.length=0; positions.clear();
- state.music = artists ? {artists:true,artist:'',album:'',role:'artists'} : { artist, name, album: '' };
+ state.music = playlists ? {playlists:true,playlist:''} : artists ? {artists:true,artist:'',album:'',role:'artists'} : { artist, name, album: '' };
  state.virtualSet = ''; state.selectedSetId = null; state.selectedSetIds = []; state.folderPath = '';
  document.getElementById('sidebar')?.classList.remove('open');
  document.querySelector('.page')?.classList.remove('has-sidebar');
@@ -45,10 +48,12 @@ export function openAlbum(key) {
  selectedAlbum = key;
  descend({...state.music,album:key});
 }
+export function openPlaylist(id) { descend({playlists:true,playlist:id}); }
 export function backMusic() {
  if (!state.music) return false;
  remember();
  if (history.length) state.music=history.pop();
+ else if (state.music.playlist) state.music.playlist='';
  else if (state.music.album) state.music.album = '';
  else if (state.music.artist) { state.music.artist = ''; state.music.name = ''; }
  else { state.music = null; }
@@ -69,10 +74,11 @@ export async function renderMusic(grid, isCurrent) {
  state.media = [];
  document.getElementById('breadcrumb-bar')?.classList.add('hidden');
  const count = document.getElementById('result-count');
- count.textContent = view.artists && !view.album ? 'Music · Artists' : 'Music · Albums';
+ count.textContent = view.playlists ? 'Music · Playlists' : view.artists && !view.album ? 'Music · Artists' : 'Music · Albums';
  grid.classList.toggle('music-detail', Boolean(view.album));
- grid.innerHTML = `<p class="grid-full" role="status">Loading ${view.artists && !view.album ? 'artists' : 'albums'}…</p>`;
+ grid.innerHTML = `<p class="grid-full" role="status">Loading ${view.playlists ? 'playlists' : view.artists && !view.album ? 'artists' : 'albums'}…</p>`;
  try {
+  if (view.playlists) { await renderPlaylists(grid,view,current,positions.get(viewKey(view)));return; }
   if (view.artists && !view.album) { await renderArtists(grid, view, current); return; }
   const data = view.album ? await API.album(view.album) : await API.albums(view.artist ? {artist:view.artist} : {});
   if (!current()) return;
@@ -106,7 +112,7 @@ export async function renderMusic(grid, isCurrent) {
   if (saved) window.scrollTo(0,saved.scroll);
  } catch (e) {
   if (!current()) return;
-  grid.innerHTML = `<div class="grid-full" role="alert"><p>Could not load ${view.artists && !view.album ? 'artists' : 'albums'}: ${esc(e.message || 'Connection unavailable. Check your connection.')}</p><button class="btn" data-retry>Retry</button><button class="btn btn-ghost" data-music-back>← Back</button></div>`;
+  grid.innerHTML = `<div class="grid-full" role="alert"><p>Could not load ${view.artists && !view.album ? 'artists' : view.playlists ? 'playlists' : 'albums'}: ${esc(e.message || 'Connection unavailable. Check your connection.')}</p><button class="btn" data-retry>Retry</button><button class="btn btn-ghost" data-music-back>← Back</button></div>`;
   grid.querySelector('[data-retry]').onclick = reload;
   grid.querySelector('[data-music-back]').onclick = backMusic;
  }

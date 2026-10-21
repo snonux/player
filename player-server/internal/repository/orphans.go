@@ -20,6 +20,7 @@ type ownedRows struct {
 // connection did (see connection.go). DeleteUser removes them explicitly and
 // removeOrphanRows cleans up what earlier deletes left behind.
 var userOwned = []ownedRows{
+	{"playlists", "user_id"},
 	{"sessions", "user_id"},
 	{"api_tokens", "user_id"},
 	{"set_permissions", "user_id"},
@@ -37,6 +38,7 @@ var userOwned = []ownedRows{
 
 // mediaOwned are the rows that belong to a media item.
 var mediaOwned = []ownedRows{
+	{"playlist_entries", "media_id"},
 	{"favorites", "media_id"},
 	{"playback_progress", "media_id"},
 	{"playback_resets", "media_id"},
@@ -74,6 +76,10 @@ func removeOrphanRows(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	_, err = tx.Exec(`DELETE FROM playlist_entries WHERE playlist_id NOT IN (SELECT id FROM playlists)`)
+	if err != nil {
+		return fmt.Errorf("playlist entry orphans: %w", err)
+	}
 	res, err := tx.Exec(orphanedAccumulators)
 	if err != nil {
 		return fmt.Errorf("playback_accumulator.session_id: %w", err)
@@ -109,6 +115,9 @@ func deleteOrphans(tx *sql.Tx, owned []ownedRows, parent string) (int64, error) 
 // deleteUserRows removes everything a user owns, inside the caller's
 // transaction, without relying on the schema's cascades.
 func deleteUserRows(ctx context.Context, tx *sql.Tx, userID int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playlist_entries WHERE playlist_id IN (SELECT id FROM playlists WHERE user_id=?)`, userID); err != nil {
+		return fmt.Errorf("delete user playlist entries: %w", err)
+	}
 	for _, o := range userOwned {
 		if _, err := tx.ExecContext(ctx,
 			fmt.Sprintf(`DELETE FROM %s WHERE %s = ?`, o.table, o.column), userID); err != nil {

@@ -320,3 +320,17 @@ selection, light/dark/narrow layouts, native typing, actual offline Retry,
 real permission revocation/empty results and source-tone playback. M02 linked
 artist assertions now follow the full artist detail and Back to the originating
 album. Keep logs, screenshots, audio and test outputs outside the repository.
+
+M26 persistent playlists uses the disposable Music fixture in installed Chrome
+and Firefox. After starting the fixture with the current server binary:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fresh/fixture \
+  npx playwright test -c playwright.music.config.ts music-playlists
+```
+
+The journey covers create/rename/comments, minimal album addition, account
+isolation in actual UI, a fresh browser client, authoritative totals, decoded
+artwork and source audio, delete cancel/confirm, offline form retention,
+cached app-shell module loading and dialog completion ownership. Evidence is
+written to the fixture's external evidence directory.
