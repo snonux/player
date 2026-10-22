@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tiny adb/uiautomator driver for the Player Android app (Flutter semantics)."""
-import re, subprocess, sys, time, html
+import re, subprocess, sys, time, uuid
+import xml.etree.ElementTree as ET
 
 # A hung device command (uiautomator after a host suspend) must fail the step
 # instead of blocking a whole run.
@@ -10,20 +11,57 @@ def adb(*a, binary=False):
     r = subprocess.run(["adb", *a], capture_output=True, timeout=ADB_TIMEOUT)
     return r.stdout if binary else r.stdout.decode(errors="replace")
 
+def _ui_diagnostic(result):
+    return (f"command={result.args!r}, exit={result.returncode}, "
+            f"stdout={result.stdout!r}, stderr={result.stderr!r}")
+
+def _ui_command(*args):
+    command = ["adb", *args]
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=ADB_TIMEOUT)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(f"UI command timed out: command={command!r}, "
+                           f"stdout={error.stdout!r}, stderr={error.stderr!r}") from error
+    except OSError as error:
+        raise RuntimeError(f"UI command could not run: command={command!r}: {error}") from error
+    if result.returncode != 0:
+        raise RuntimeError("UI command failed: " + _ui_diagnostic(result))
+    return result
+
 def nodes():
-    for _ in range(4):
-        adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
-        x = adb("exec-out", "cat", "/sdcard/ui.xml")
-        if "<node" in x: break
-        time.sleep(1)
-    out = []
-    for m in re.finditer(r"<node[^>]*>", x):
-        n = m.group(0)
-        g = lambda k: html.unescape(re.search(k + r'="([^"]*)"', n).group(1))
-        b = [int(v) for v in re.findall(r"\d+", g("bounds"))]
-        out.append(dict(text=g("text"), desc=g("content-desc"), cls=g("class").split(".")[-1], b=b,
-                        click=g("clickable") == "true", checked=g("checked"), sel=g("selected"), focused=g("focused")))
-    return out
+    """Read one fresh complete screen, or raise before selectors can use it."""
+    remote = f"/sdcard/adrv-{uuid.uuid4().hex}.xml"
+    try:
+        dump = _ui_command("shell", "uiautomator", "dump", remote)
+        marker = f"UI hierchary dumped to: {remote}"
+        if (marker not in dump.stdout.decode(errors="replace").splitlines()
+                or b"ERROR" in dump.stdout.upper() or b"ERROR" in dump.stderr.upper()):
+            raise RuntimeError("Fresh UI dump failed: " + _ui_diagnostic(dump))
+        output = _ui_command("exec-out", "cat", remote)
+        try:
+            root = ET.fromstring(output.stdout)
+            if root.tag != "hierarchy":
+                raise ValueError("expected hierarchy root")
+            out = []
+            for node in root.iter("node"):
+                g = node.attrib.__getitem__
+                bounds = re.fullmatch(r"\[([+-]?\d+),([+-]?\d+)\]\[([+-]?\d+),([+-]?\d+)\]", g("bounds"))
+                if bounds is None:
+                    raise ValueError(f"invalid node bounds: {g('bounds')!r}")
+                out.append(dict(text=g("text"), desc=g("content-desc"), cls=g("class").split(".")[-1],
+                                b=[int(v) for v in bounds.groups()], click=g("clickable") == "true",
+                                checked=g("checked"), sel=g("selected"), focused=g("focused")))
+            return out
+        except (ET.ParseError, ValueError, KeyError) as error:
+            raise RuntimeError(f"Invalid fresh UI dump: {error}; " + _ui_diagnostic(output)) from error
+    finally:
+        primary = sys.exc_info()[1]
+        try:
+            _ui_command("shell", "rm", "-f", remote)
+        except RuntimeError as error:
+            if primary is None:
+                raise
+            print(f"UI dump cleanup also failed: {error}", file=sys.stderr)
 
 def label(n): return (n["desc"] or n["text"]).replace("\n", " / ")
 

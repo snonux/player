@@ -82,6 +82,17 @@ python3 adrv.py show            # list the labelled nodes on screen
 python3 adrv.py tap '^Settings$'
 ```
 
+Every shared `adrv.nodes()` call uses its own `/sdcard/adrv-<uuid>.xml`,
+requires a successful dump naming that exact path, checks the read and parses
+the complete hierarchy before returning nodes. Failed idle/write commands,
+missing files and malformed XML raise with command/stdout/stderr diagnostics;
+`find`, `wait` and `tap` propagate that failure instead of using a previous
+screen or treating it as a missing label. The owned dump is removed even after
+failure. A cleanup failure is reported without hiding an earlier error.
+There is no fallback to `/sdcard/ui.xml` or automatic retry of a failed dump.
+Run `python3 -m unittest test_adrv` here for the device-free regression checks.
+These checks do not replace an actual native touch smoke test.
+
 ## Music baseline (`music_e2e.py`)
 
 `music_e2e.py` runs the V01 music baseline against the disposable music
@@ -462,7 +473,8 @@ and keyguard controls, artwork, distinct audio and fresh progress), 5 (theme
 contexts and strict missing album/art fallback), and 6 (actual failed-source
 Retry, recovered system controls and logout). Failed attempts are preserved;
 merged semantics and failed idle dumps are described in the implementation
-record. Shared stale XML handling is pending follow-up task `bo3`.
+record. Shared stale XML handling is covered by follow-up task `bo3` and the
+driver contract above; the runner's existing local guard remains in place.
 
 The final unfinished outage/clear continuation used:
 
