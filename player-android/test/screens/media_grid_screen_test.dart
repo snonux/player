@@ -69,6 +69,19 @@ class _FakeApiClient extends PlayerApiClient {
 
   /// Records every call to [listMedia] — useful for refresh tests.
   int listMediaCallCount = 0;
+  final requests = <Map<String, Object?>>[];
+  @override
+  Future<List<MediaSet>> listSets() async => [
+        for (final id in [10, 20])
+          MediaSet(
+              id: id,
+              name: id == 10 ? 'Movies' : 'Other',
+              rootPath: '',
+              coverThumbnailPath: '',
+              isPodcast: false),
+      ];
+  @override
+  Future<List<Tag>> listTags() async => const [Tag(id: 1, name: 'keep')];
 
   @override
   Future<List<Media>> listMedia({
@@ -89,6 +102,16 @@ class _FakeApiClient extends PlayerApiClient {
     String? parent,
   }) async {
     listMediaCallCount++;
+    requests.add({
+      'setId': setId,
+      'setIds': setIds,
+      'tags': tags,
+      'minDuration': minDuration,
+      'maxDuration': maxDuration,
+      'fileSizeMin': fileSizeMin,
+      'fileSizeMax': fileSizeMax,
+      'offset': offset
+    });
     if (mediaError != null) throw mediaError!;
     return mediaResult!;
   }
@@ -1102,5 +1125,55 @@ void main() {
       // _load() so the stale _loadMore did not leave it permanently stuck.
       expect(find.byKey(const Key('media_loading_more')), findsNothing);
     });
+  });
+  testWidgets(
+      'advanced filters replace route scope, retain pagination and refresh after detail',
+      (tester) async {
+    final client = _FakeApiClient()
+      ..mediaResult = List.generate(
+          50, (i) => Media.fromJson({..._kVideo.toJson(), 'id': i + 1}));
+    await _pumpScreen(tester, client);
+    await tester.pumpAndSettle();
+    expect(client.requests.last['setId'], 10);
+    await tester.tap(find.text('Filters'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Other'));
+    await tester.tap(find.text('keep'));
+    for (final index in [0, 2]) {
+      final field = find.byKey(Key('media_filter_bound_$index'));
+      await tester.ensureVisible(field);
+      await tester.enterText(field, '0');
+    }
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    expect(client.requests.last, containsPair('setId', null));
+    expect(client.requests.last['setIds'], [10, 20]);
+    expect(client.requests.last['tags'], ['keep']);
+    expect(client.requests.last['minDuration'], 0);
+    expect(client.requests.last['fileSizeMin'], 0);
+    final first = Map.of(client.requests.last)..remove('offset');
+    final scrollable =
+        tester.state<ScrollableState>(find.byType(Scrollable).last);
+    scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(client.requests.last['offset'], 50);
+    expect(Map.of(client.requests.last)..remove('offset'), first);
+    await tester.drag(
+        find.byKey(const Key('media_grid')), const Offset(0, 8000));
+    await tester.pumpAndSettle();
+    final cards = find.byKey(const Key('media_card_1'));
+    await tester.ensureVisible(cards);
+    await tester.tap(cards);
+    await tester.pumpAndSettle();
+    final before = client.listMediaCallCount;
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(client.listMediaCallCount, greaterThan(before));
+    expect(find.text('Selected sets: Movies, Other'), findsOneWidget);
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    expect(client.requests.last['setId'], 10);
+    expect(client.requests.last['setIds'], isNull);
+    expect(client.requests.last['tags'], isEmpty);
   });
 }

@@ -92,6 +92,7 @@ export async function loadMedia(options = {}) {
     grid.classList.remove('music-detail');
     if (state.music) {
       await callbacks.renderMusic?.(grid, () => revision === loadRevision);
+      if(revision === loadRevision) document.dispatchEvent(new Event('library:navigated'));
       return;
     }
     if (state.virtualSet === 'in-progress') {

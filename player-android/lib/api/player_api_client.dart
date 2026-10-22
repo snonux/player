@@ -76,6 +76,12 @@ class PlayerApiClient implements ProgressSyncClient {
         data: {'album_key': albumKey});
   }
 
+  Future<Map<String, dynamic>> musicSearch(
+          {String query = '', String artist = '', String album = ''}) async =>
+      (await _dio.get<Map<String, dynamic>>('/api/v1/music/search',
+              queryParameters: {'q': query, 'artist': artist, 'album': album}))
+          .data!;
+
   Future<List<Map<String, dynamic>>> musicArtists(
           {String role = 'artists'}) async =>
       ((await _dio.get<List<dynamic>>('/api/v1/music/artists',

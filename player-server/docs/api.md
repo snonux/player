@@ -2508,3 +2508,28 @@ Foreign/missing playlists or entries and inaccessible/nonmusic songs return
 404; invalid actions/selection sizes return 400. Each change is atomic and
 preserves ACL-hidden saved membership and unrelated concurrent additions.
 Song edits do not change source files or an already-playing queue snapshot.
+
+### Metadata-aware music search
+
+`GET /api/v1/music/search` (also `/api/music/search`) accepts optional `q`,
+`artist` and `album` text parameters and returns
+`{"songs":[],"albums":[],"artists":[]}`. Empty parameters return empty groups.
+There is no minimum query length or hidden result cap. Songs use existing Media
+objects and catalog/disc/track ordering; albums and artists use existing summaries
+without embedded detail lists. Existing media IDs and entity keys retain their
+meaning. No file tags are changed.
+
+Search derives the authorized Music catalog first, with its existing podcast,
+audiobook and trash exclusions. Matching uses whitespace-normalized Unicode
+lowercase literal substrings; accents are significant, and `%`/`_` are literal.
+Song matching includes title (filename stem when absent), scalar and structured
+track/album artists and album. `artist` and `album` constrain those respective
+fields with AND semantics. Album results match album title or credited track/album
+artist context; artist results match track/album artist names and, when supplied,
+the album constraint on their visible discography. Composer/performer-only names
+remain available through existing artist-role browsing. Punctuation never splits
+an artist name. All counts and links derive exclusively from caller-visible songs.
+
+Both aliases require cookie/Bearer authentication; read failures use normal API
+errors. The route requires the server and does not search downloaded-only music.
+The generic `/media` search and existing file filter syntax remain available.

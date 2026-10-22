@@ -558,3 +558,51 @@ global song indices, source tones across the disc boundary, nonwrapping end,
 light/dark/narrow, keyboard/typing/Info, real offline/ACL Retry, absent/broken
 images and M04 rescan/clear/failed-probe/server-restart persistence. Shared
 foreground/two-frame viewport readiness matches M05 without forcing styles.
+
+### Metadata-aware search (M07)
+
+Use the existing disposable Music fixture; no extra generation flag is needed.
+The default tagged tracks include titles differing from filenames, structured
+artists, Unicode, missing metadata, long text and inaccessible music. From this
+directory, root runs actual installed Chrome and Firefox:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/home/paul/tmp/9k3-fixture \
+  npx playwright test -c playwright.music.config.ts tests/music-search.test.ts --workers=1
+```
+
+Four cases per browser cover Songs/Albums/Artists/Files, title/artist/album and
+Unicode scopes, exact artist punctuation, no results, keyboard typing/Enter/Escape,
+stale-request rejection, URL refresh, entity Back selection, Files resume semantics,
+real source audio, long light/dark/narrow layouts, queue isolation, real offline
+Retry, ACL changes and same-database server restart. The restart case uses the
+marked disposable fixture's ownership-aware helper. Never use production data.
+The hasTouch case uses trusted touchscreen taps on the Files open
+button and row action menu, verifies the menu does not start playback prematurely,
+and checks actual media source progression. Evidence records versions, source
+audio, screenshots, API state and failures in the external fixture evidence directory. `--list` only checks discovery; it is
+not browser acceptance. See [M07 implementation](../../../docs/music-m07-implementation.md).
+
+The installed Playwright BiDi touch method is empty. For system Firefox, the
+runner's `genuine-touch.cjs` helper preserves actionability checks and sends
+standard touch pointer actions through the browser's existing owned BiDi session.
+It fails if that transport is unavailable. Chrome retains `Locator.tap()`.
+Trusted touch events, source progression and menu behavior remain required;
+the runner records bounded input diagnostics without patching Playwright.
+
+### F03 existing file filters
+
+After final server build, augment the shared marked disposable music fixture
+with `python3 player-android/integration_test/support/music_filters.py
+"$PLAYER_MUSIC_FIXTURE"` from the monorepo root. Then run, from this directory:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/absolute/new/fixture npx --no-install playwright test \
+  -c playwright.music.config.ts tests/music-filters.test.ts --workers=1
+```
+
+Installed Chrome and Firefox exercise existing Sets query/type/favourite/sort,
+tag AND matching, single/multi-set scope, exact inclusive minutes/MiB and zero,
+combination/Clear, URL reload, tag editing/focus, light/dark/narrow and actual
+offline recovery. See [F03 contract and native runner](../../../docs/music-f03-implementation.md).
+Do not run the helper on production or reuse an already augmented namespace.

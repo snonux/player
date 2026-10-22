@@ -1,3 +1,4 @@
+import { musicQuery, captureSearchView, restoreSearchView, hasSearchView, forgetSearchView } from './music-search.js';
 import { cancelCollectionSelection } from './collection-actions.js';
 import { queueSelected } from './queue-actions.js';
 import { initQueue, restoreQueue, queueState, cycleQueueRepeat } from './queue.js';
@@ -30,7 +31,7 @@ import {
   panImage,
   resetZoom,
 } from './player.js';
-import { initSearch, parseQuery, showSearchHelp } from './search.js';
+import { initSearch, parseQuery, showSearchHelp, cancelPendingSearch, hideSearch } from './search.js';
 import { initShuffle, enable as enableShuffle, isOn as isShuffle, revision as shuffleRevision, setOn as setShuffle } from './shuffle.js';
 import { initNavigation } from './navigation.js';
 import { initKeyboardAccess } from './keyboard-access.js';
@@ -177,6 +178,9 @@ async function initApp() {
   initSearch({
     onChange: (q) => {
       const parsed = parseQuery(q);
+      captureSearchView();
+      const music=musicQuery(q,parsed,Boolean(state.music));
+      if(music) {state.music={search:true,...music};loadMedia();return;}
       state.music = null;
       state.virtualSet = '';
       syncChromeVirtualSets();
@@ -191,13 +195,21 @@ async function initApp() {
     input: document.getElementById('search-input'),
     clearBtn: document.getElementById('search-clear'),
   });
-  document.addEventListener('search:navigate-results', () => navDown());
+  let searchNavigate=false;
+  document.addEventListener('search:open', captureSearchView);
+  document.addEventListener('search:restore', async () => {cancelPendingSearch();hideSearch();searchNavigate=false; if(!await restoreSearchView(loadMedia) && state.music?.search) {state.music=null;await loadMedia();}});
+  document.addEventListener('search:forget', forgetSearchView);
+  document.addEventListener('navigation:restore', forgetSearchView);
+  document.addEventListener('search:play-selected', () => void playSelected());
+  document.addEventListener('search:navigate-results', () => {searchNavigate=true;});
+  document.addEventListener('library:navigated', () => {if(searchNavigate){searchNavigate=false;navDown();if(!focusSelectedCard())document.querySelector('#media-grid [data-retry], #media-grid [data-search-back], #media-grid [data-music-back]')?.focus();}});
   initShuffle({ onChange: () => loadMedia() });
   initPlaybackNav({ isShuffle });
   initQueue();
   initQueuePanel();
   initSets({
     onLoadMedia: () => {
+      forgetSearchView();
       state.music = null;
       state.virtualSet = '';
       syncChromeVirtualSets();
@@ -247,7 +259,7 @@ async function initApp() {
   initTags({
     onFilterChange: () => {
       document.dispatchEvent(new CustomEvent('filters:changed'));
-      loadMedia();
+      return loadMedia();
     },
   });
   initChrome();
@@ -367,6 +379,7 @@ function keyboardHandlers() {
         }
         return;
       }
+      if(hasSearchView() && (!state.music || state.music.search)) {if(!escapeMediaView())document.dispatchEvent(new Event('search:restore'));return;}
       cancelTagsLoad();
       if (!escapeMediaView()) cancelCollectionSelection();
     },
@@ -481,6 +494,7 @@ function activateGridElement(el) {
 }
 
 function openSet(id) {
+  forgetSearchView();
   state.music = null;
   if (!Number.isFinite(id)) return;
   state.virtualSet = '';

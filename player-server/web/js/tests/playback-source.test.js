@@ -1210,7 +1210,38 @@ async function testPlaybackShufflePreservesOccurrenceAndCanonicalIntent() {
   queue.clearQueue();
 }
 
+async function testSearchSongsAndFilesKeepSeparatePlaybackOwnership() {
+ setup();
+ const nav=await import('../views/playback-nav.js');
+ const {state}=await import('../state.js');
+ const originalQuery=document.querySelectorAll, originalDetail=API.mediaDetail;
+ const songs=[201,202].map(id=>({id,type:'audio',file_name:`${id}.mp3`,duration:12}));
+ const file={id:301,type:'audio',file_name:'file.mp3',duration:12};
+ const row=(id,index,kind)=>{const element=fakeElement();element.dataset={id,index,searchKind:kind};element.classList.add('selected');element.scrollIntoView=()=>{};return element;};
+ let selected=row('202','1','song');
+ document.querySelectorAll=()=>[selected];
+ state.music={search:true,query:'metadata'};state.searchSongs=songs;state.media=[...songs,file];
+ try {
+  await nav.playSelected();
+  assertEqual(player.currentMediaId(),202,'selected search song starts at its occurrence');
+  assertEqual(queue.queueState().entries.map(entry=>entry.media.id).join(),'201,202','only Songs enter search queue');
+  state.media=[];
+  await nav.navigatePlayable(-1,{forcePlay:true});
+  assertEqual(player.currentMediaId(),201,'subsequent search rendering does not change active queue');
+  state.media=[...songs,file];selected=row('301','2','file');
+  API.mediaDetail=async()=>({progress:{position_seconds:7}});
+  await nav.playSelected();
+  assertEqual(player.currentMediaId(),301,'Files result uses ordinary file playback');
+  audio().readyState=1;audio().dispatch('loadedmetadata');
+  assertEqual(audio().currentTime,7,'Files result keeps ordinary resume');
+  assertEqual(queue.queueState().active,false,'Files result releases Music queue ownership');
+  await nav.navigatePlayable(1,{forcePlay:true});
+  assertEqual(player.currentMediaId(),301,'Files navigation excludes Song-group rows');
+ } finally {document.querySelectorAll=originalQuery;API.mediaDetail=originalDetail;state.music=null;queue.deactivateQueue();}
+}
+
 for (const test of [
+  testSearchSongsAndFilesKeepSeparatePlaybackOwnership,
   testCanceledCollectionSelectionReleasesOnlyItsOwnBusyState,
   testShuffleOptionsEscapeRestoresOpenerAndCancelsPending,
   testPlaybackShufflePreservesOccurrenceAndCanonicalIntent,

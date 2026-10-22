@@ -11,6 +11,7 @@ import '../widgets/authenticated_network_image.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/search_filter_bar.dart';
+import '../widgets/media_filter_sheet.dart';
 import '../widgets/thumbnail_zoom.dart';
 
 // ---------------------------------------------------------------------------
@@ -81,7 +82,65 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   bool _isLoading = false;
 
   // Current filter state; starts with no filters applied.
-  MediaFilter _filter = const MediaFilter();
+  MediaFilter _filter = const MediaFilter.empty();
+  int _filterResetRevision = 0;
+  final Map<int, String> _setNames = {};
+
+  String get _currentSetName => widget.setName ?? 'Set ${widget.setId}';
+  String get _scopeLabel {
+    final ids = _filter.setIds;
+    if (ids == null) return 'Current set: $_currentSetName';
+    if (ids.isEmpty) return 'All visible sets';
+    final names = ids.map((id) => _setNames[id] ?? 'Set $id').join(', ');
+    return '${ids.length == 1 ? 'Selected set' : 'Selected sets'}: $names';
+  }
+
+  Future<MediaFilter?> _openFilters(MediaFilter filter) =>
+      showModalBottomSheet<MediaFilter>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => MediaFilterSheet(
+          initialFilter: filter,
+          currentSetId: widget.setId,
+          currentSetName: _currentSetName,
+          client: ref.read(apiClientProvider),
+          onSetsLoaded: (sets) {
+            for (final set in sets) {
+              _setNames[set.id] = set.name;
+            }
+          },
+        ),
+      );
+
+  void _clearFilters() {
+    _filterResetRevision++;
+    _onFiltersChanged(MediaFilter(sortBy: _filter.sortBy));
+  }
+
+  /// All page requests share the same composite filters and scope mapping.
+  Future<List<Media>> _requestPage(int offset) {
+    final ids = _filter.setIds;
+    return ref.read(apiClientProvider).listMedia(
+          setId: ids == null
+              ? widget.setId
+              : ids.length == 1
+                  ? ids.single
+                  : null,
+          setIds: ids != null && ids.length > 1 ? ids : null,
+          search: _filter.query,
+          type: _filter.type,
+          favorites: _filter.favoritesOnly ? true : null,
+          tags: _filter.tags,
+          minDuration: _filter.minDuration,
+          maxDuration: _filter.maxDuration,
+          fileSizeMin: _filter.fileSizeMin,
+          fileSizeMax: _filter.fileSizeMax,
+          sort: _filter.sortBy,
+          limit: _kPageSize,
+          offset: offset,
+        );
+  }
 
   // Generation counter — incremented whenever a new load is started.
   // The async callback checks this value before updating state so that a
@@ -172,16 +231,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     });
 
     try {
-      final client = ref.read(apiClientProvider);
-      final items = await client.listMedia(
-        setId: widget.setId,
-        search: _filter.query,
-        type: _filter.type,
-        favorites: _filter.favoritesOnly ? true : null,
-        sort: _filter.sortBy,
-        limit: _kPageSize,
-        offset: 0,
-      );
+      final items = await _requestPage(0);
 
       // Discard the result if a newer load was started while this one was
       // in flight (filter changed, pull-to-refresh, etc.).
@@ -211,23 +261,14 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   /// pull-to-refresh) that starts a new generation will cause this callback
   /// to discard its stale result.
   Future<void> _loadMore() async {
-    if (_isLoadingMore || !_hasMore) return;
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
     if (!mounted) return;
 
     final generation = _loadGeneration;
     setState(() => _isLoadingMore = true);
 
     try {
-      final client = ref.read(apiClientProvider);
-      final items = await client.listMedia(
-        setId: widget.setId,
-        search: _filter.query,
-        type: _filter.type,
-        favorites: _filter.favoritesOnly ? true : null,
-        sort: _filter.sortBy,
-        limit: _kPageSize,
-        offset: _offset,
-      );
+      final items = await _requestPage(_offset);
 
       // Discard if a fresher load (e.g. pull-to-refresh) has started.
       if (!mounted || generation != _loadGeneration) return;
@@ -240,7 +281,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
       });
     } catch (_) {
       // On error, allow the user to scroll again to retry.
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() => _isLoadingMore = false);
     }
   }
@@ -256,10 +297,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   }
 
   /// True when search, type or favourites narrow the list (sort does not).
-  bool get _hasActiveFilters =>
-      (_filter.query?.isNotEmpty ?? false) ||
-      _filter.type != null ||
-      _filter.favoritesOnly;
+  bool get _hasActiveFilters => _filter.hasConstraints;
 
   // ---------------------------------------------------------------------------
   // Favourite toggle
@@ -337,7 +375,12 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
           SearchFilterBar(
             initialFilter: _filter,
             onFiltersChanged: _onFiltersChanged,
+            onOpenFilters: _openFilters,
+            scopeLabel: _scopeLabel,
+            resetRevision: _filterResetRevision,
           ),
+          if (_isLoading && _media != null)
+            const LinearProgressIndicator(semanticsLabel: 'Updating media'),
           // The remaining space is occupied by the data body.
           Expanded(child: _buildBody(context)),
         ],
@@ -352,12 +395,18 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   /// always knows at a glance whether the favourites-only view is on.
   AppBar _buildAppBar() {
     return AppBar(
-      title: Text(widget.setName ?? 'Set ${widget.setId}'),
+      title: Text(_filter.setIds == null
+          ? _currentSetName
+          : _filter.setIds!.isEmpty
+              ? 'All sets'
+              : 'Selected sets'),
       actions: [
         const MusicQueueButton(),
         IconButton(
           key: const Key('media_grid_folders'),
-          tooltip: 'Browse folders',
+          tooltip: _filter.setIds == null
+              ? 'Browse folders'
+              : 'Browse folders in $_currentSetName',
           icon: const Icon(Icons.folder_open),
           onPressed: () => context.push(
             AppRoutes.folderBrowserPath(widget.setId),
@@ -407,13 +456,13 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
       child: _media == null || _media!.isEmpty
           ? _EmptyView(
               filtered: _hasActiveFilters,
-              onClearFilters: () =>
-                  _onFiltersChanged(MediaFilter(sortBy: _filter.sortBy)),
+              onClearFilters: _clearFilters,
             )
           : _MediaGrid(
               media: _media!,
               thumbnailUrlBuilder: _thumbnailUrl,
               onFavoriteToggle: _toggleFavoriteAt,
+              onReturn: _load,
               scrollController: _scrollController,
               isLoadingMore: _isLoadingMore,
               hasMore: _hasMore,
@@ -446,12 +495,14 @@ class _MediaGrid extends StatelessWidget {
     required this.media,
     required this.thumbnailUrlBuilder,
     required this.onFavoriteToggle,
+    required this.onReturn,
     required this.scrollController,
     required this.isLoadingMore,
     required this.hasMore,
   });
 
   final List<Media> media;
+  final VoidCallback onReturn;
 
   /// Callback that returns the full thumbnail URL for a given media ID.
   ///
@@ -510,6 +561,7 @@ class _MediaGrid extends StatelessWidget {
             sequence: media,
             thumbnailUrl: thumbnailUrlBuilder(media[index].id),
             onFavoriteToggle: () => onFavoriteToggle(index),
+            onReturn: onReturn,
           ),
           childCount: media.length,
         ),
@@ -568,9 +620,11 @@ class _MediaCard extends StatelessWidget {
     required this.sequence,
     required this.thumbnailUrl,
     required this.onFavoriteToggle,
+    required this.onReturn,
   });
 
   final Media item;
+  final VoidCallback onReturn;
   final List<Media> sequence;
   final String thumbnailUrl;
 
@@ -585,10 +639,13 @@ class _MediaCard extends StatelessWidget {
       key: Key('media_card_${item.id}'),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.push(AppRoutes.mediaDetailPath(item.id), extra: {
-          'sequence': List<Media>.of(sequence),
-          'traverseFolders': false
-        }),
+        onTap: () async {
+          await context.push(AppRoutes.mediaDetailPath(item.id), extra: {
+            'sequence': List<Media>.of(sequence),
+            'traverseFolders': false,
+          });
+          onReturn();
+        },
         child: Stack(
           fit: StackFit.expand,
           children: [

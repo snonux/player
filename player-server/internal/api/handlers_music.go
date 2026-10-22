@@ -97,3 +97,16 @@ func (s *Server) handleMusicArtists(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+
+func (s *Server) handleMusicSearch(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.media.Browse) {
+		return
+	}
+	albums, err := service.MusicAlbums(r.Context(), s.media.Browse, userIDFromContext(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	query := r.URL.Query()
+	writeJSON(w, http.StatusOK, service.SearchMusic(albums, query.Get("q"), query.Get("artist"), query.Get("album")))
+}

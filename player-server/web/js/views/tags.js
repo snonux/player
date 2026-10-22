@@ -1,5 +1,5 @@
 import { API } from '../api.js';
-import { currentElement, focusSelectedCard } from '../selection.js';
+import { currentElement, focusSelectedCard, selectByElement } from '../selection.js';
 import { state } from '../state.js';
 import { escapeHtml, toast } from '../utils.js';
 
@@ -97,7 +97,10 @@ async function addTagForSelected() {
   const input = document.getElementById('tags-new');
   const name = input?.value.trim();
   if (!name) return;
-  if (await mutateTags((id) => API.addTag(id, name), 'Add tag failed')) input.value = '';
+  const revision = tagLoadRevision;
+  const view = tagViewKey();
+  if (await mutateTags((id) => API.addTag(id, name), 'Add tag failed') &&
+      revision === tagLoadRevision && view === tagViewKey()) input.value = '';
 }
 
 // Applies a tag change to the media shown in the dialog. The media ID and the
@@ -109,6 +112,7 @@ async function mutateTags(mutate, failureMessage) {
   const id = tagsCurrentMediaId;
   if (!id) return false;
   const revision = tagLoadRevision;
+  const view = tagViewKey();
   try {
     await mutate(id);
   } catch (err) {
@@ -116,15 +120,33 @@ async function mutateTags(mutate, failureMessage) {
     return false;
   }
   refreshTagFilter();
-  if (state.filters.tags) tagFilterCallback();
-  if (revision !== tagLoadRevision) return true;
+  if (state.filters.tags) {
+    try {
+      await tagFilterCallback();
+    } catch (err) {
+      toast(err.message || 'Tags saved, but refreshing files failed', 'error');
+    }
+  }
+  if (revision !== tagLoadRevision || view !== tagViewKey()) return true;
+  // A filtered reload replaces cards and clears selection. Restore only the
+  // same visible target, without moving focus away from the dialog's input.
+  const cards = document.getElementById('media-grid')?.querySelectorAll('[data-id]') || [];
+  const target = Array.from(cards).find(card => String(card.dataset.id) === String(id));
+  if (target) selectByElement(target);
   try {
     const detail = await API.mediaDetail(id);
-    if (revision === tagLoadRevision) renderTagsList(detail?.tags || []);
+    if (revision === tagLoadRevision && view === tagViewKey()) renderTagsList(detail?.tags || []);
   } catch (err) {
     toast(err.message || 'Tags saved, but reloading them failed', 'error');
   }
   return true;
+}
+
+function tagViewKey() {
+  return JSON.stringify({
+    music: state.music, sets: state.selectedSetIds, virtual: state.virtualSet,
+    folder: state.folderPath, page: state.mediaPage, filters: state.filters,
+  });
 }
 
 async function refreshTagFilter() {

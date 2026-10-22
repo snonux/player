@@ -92,6 +92,27 @@ func TestMusicAlbumsRealPermissions(t *testing.T) {
 	if resolved := request("", "?media_id="+strconv.FormatInt(ids[1], 10)); resolved.Body.String() != "[]\n" {
 		t.Fatalf("hidden media resolver: %s", resolved.Body.String())
 	}
+
+	for _, query := range []string{"?q=Private", "?q=Hidden", "?artist=Secret"} {
+		r := httptest.NewRequest("GET", "/api/music/search"+query, nil)
+		r = r.WithContext(context.WithValue(r.Context(), sessionCtxKey, &model.Session{UserID: user}))
+		w := httptest.NewRecorder()
+		server.handleMusicSearch(w, r)
+		if w.Code != 200 || w.Body.String() != "{\"songs\":[],\"albums\":[],\"artists\":[]}\n" {
+			t.Fatalf("search ACL leak %s", w.Body.String())
+		}
+	}
+	r := httptest.NewRequest("GET", "/api/music/search?q=Shared", nil)
+	r = r.WithContext(context.WithValue(r.Context(), sessionCtxKey, &model.Session{UserID: user}))
+	w := httptest.NewRecorder()
+	server.handleMusicSearch(w, r)
+	var search service.MusicSearchResult
+	if err := json.Unmarshal(w.Body.Bytes(), &search); err != nil {
+		t.Fatal(err)
+	}
+	if len(search.Songs) != 1 || len(search.Albums) != 1 || search.Albums[0].SongCount != 1 || search.Songs[0].ID != ids[0] {
+		t.Fatalf("search aggregate leaked %+v", search)
+	}
 	// Granting permission changes aggregates immediately; derive the real private
 	// key, revoke again and prove key knowledge confers no access.
 	if err := store.GrantPermission(ctx, &model.SetPermission{SetID: sets[1], UserID: user, Role: model.RoleViewer}); err != nil {
@@ -223,5 +244,25 @@ func TestMusicArtistsRealPermissions(t *testing.T) {
 	}
 	if len(read("composer")) != 1 {
 		t.Fatal("revoked composer retained")
+	}
+}
+
+func TestMusicSearchRoutesAndAuth(t *testing.T) {
+	env := newIntegrationServer(t)
+	_, cookie := bootstrapAdmin(t, env)
+	for _, path := range []string{"/api/music/search?q=anything", "/api/v1/music/search?q=anything"} {
+		request := httptest.NewRequest("GET", path, nil)
+		response := httptest.NewRecorder()
+		env.srv.ServeHTTP(response, request)
+		if response.Code != 401 {
+			t.Fatalf("unauthenticated %s: %d", path, response.Code)
+		}
+		request = httptest.NewRequest("GET", path, nil)
+		request.AddCookie(cookie)
+		response = httptest.NewRecorder()
+		env.srv.ServeHTTP(response, request)
+		if response.Code != 200 {
+			t.Fatalf("authenticated %s: %d %s", path, response.Code, response.Body.String())
+		}
 	}
 }

@@ -67,7 +67,7 @@ export function initNavigation({ isShuffle, setShuffle, syncChrome }) {
       syncChrome();
       document.dispatchEvent(new CustomEvent('filters:changed'));
       const input = document.getElementById('search-input');
-      if (input) input.value = route.filters.search;
+      if (input) input.value = route.music?.search ? [route.music.query,route.music.artistQuery && `artist:"${route.music.artistQuery}"`,route.music.albumQuery && `album:"${route.music.albumQuery}"`].filter(Boolean).join(' ') : route.filters.search;
       await loadMedia({ restoring: true, page: route.page, mediaId: route.media });
       if (operation !== revision) return;
       if (media) {

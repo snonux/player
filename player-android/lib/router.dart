@@ -1,3 +1,4 @@
+import 'screens/music_search_screen.dart';
 import 'screens/music_playlists_screen.dart';
 import 'screens/music_artists_screen.dart';
 import 'screens/music_albums_screen.dart';
@@ -204,6 +205,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           return MediaGridScreen(setId: setId, setName: setName);
         },
       ),
+      GoRoute(
+          path: AppRoutes.musicSearch,
+          builder: (context, state) => const MusicSearchScreen()),
       GoRoute(
         path: AppRoutes.musicArtists,
         builder: (context, state) =>

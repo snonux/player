@@ -1,3 +1,4 @@
+import { renderMusicSearch } from '../music-search.js';
 import { collectionButtons, bindCollectionActions, bindCollectionCatalog, cancelCollectionSelection } from '../collection-actions.js';
 import { initPlaylists, renderPlaylists } from './music-playlists.js';
 import { songActionButtons, bindSongActions, openSongActions, selectionActions } from '../queue-actions.js';
@@ -15,8 +16,9 @@ let selectedAlbum = '';
 let revision = 0;
 const positions = new Map();
 const history = [];
-const viewKey = view => JSON.stringify([view?.artists || false,view?.artist || '',view?.album || '',view?.role || 'artists',view?.playlists || false,view?.playlist || '']);
+const viewKey = view => JSON.stringify([view?.artists || false,view?.artist || '',view?.album || '',view?.role || 'artists',view?.playlists || false,view?.playlist || '',view?.search || false,view?.query || '',view?.artistQuery || '',view?.albumQuery || '']);
 function remember() {
+ if (state.music?.search) { state.music.selected={...document.querySelector('#media-grid .selected')?.dataset}; state.music.scroll=window.scrollY; }
  if (!state.music) return;
  const selected = document.querySelector('#media-grid .selected');
  positions.set(viewKey(state.music), {album:selected?.dataset.album, artist:selected?.dataset.artistCard, song:selected?.dataset.id, playlist:selected?.dataset.playlist, scroll:window.scrollY});
@@ -31,9 +33,11 @@ export function initMusicCatalog(load) {
  document.getElementById('music-artists')?.addEventListener('click', openArtists);
  document.getElementById('music-albums')?.addEventListener('click', () => openAlbums());
  document.addEventListener('navigation:restore', () => { history.length=0; });
+ document.addEventListener('search:typing', () => { revision++; });
  document.addEventListener('music:album', e => openAlbum(e.detail));
 }
 export function openAlbums(artist = '', name = '', artists = false, playlists = false) {
+ document.dispatchEvent(new Event('search:forget'));
  cancelPendingSearch();
  history.length=0; positions.clear();
  state.music = playlists ? {playlists:true,playlist:''} : artists ? {artists:true,artist:'',album:'',role:'artists'} : { artist, name, album: '' };
@@ -47,12 +51,13 @@ export function openAlbum(key) {
  cancelPendingSearch();
  if (!state.music) state.music = {artist:'',name:'',album:''};
  selectedAlbum = key;
- descend({...state.music,album:key});
+ descend(state.music.search ? {album:key,artist:'',name:''} : {...state.music,album:key});
 }
 export function openPlaylist(id) { descend({playlists:true,playlist:id}); }
 export function backMusic() {
  if (cancelCollectionSelection()) return true;
  if (!state.music) return false;
+ if(state.music.search) { document.dispatchEvent(new Event('search:restore')); return true; }
  remember();
  if (history.length) state.music=history.pop();
  else if (state.music.playlist) state.music.playlist='';
@@ -76,10 +81,11 @@ export async function renderMusic(grid, isCurrent) {
  state.media = [];
  document.getElementById('breadcrumb-bar')?.classList.add('hidden');
  const count = document.getElementById('result-count');
- count.textContent = view.playlists ? 'Music · Playlists' : view.artists && !view.album ? 'Music · Artists' : 'Music · Albums';
+ count.textContent = view.search ? 'Music · Search' : view.playlists ? 'Music · Playlists' : view.artists && !view.album ? 'Music · Artists' : 'Music · Albums';
  grid.classList.toggle('music-detail', Boolean(view.album));
- grid.innerHTML = `<p class="grid-full" role="status">Loading ${view.playlists ? 'playlists' : view.artists && !view.album ? 'artists' : 'albums'}…</p>`;
+ grid.innerHTML = `<p class="grid-full" role="status">Loading ${view.search ? 'search results' : view.playlists ? 'playlists' : view.artists && !view.album ? 'artists' : 'albums'}…</p>`;
  try {
+  if (view.search) { await renderMusicSearch(grid,view,current,{openAlbum,openArtist,back:backMusic,reload});return; }
   if (view.playlists) { await renderPlaylists(grid,view,current,positions.get(viewKey(view)));return; }
   if (view.artists && !view.album) { await renderArtists(grid, view, current); return; }
   const data = view.album ? await API.album(view.album) : await API.albums(view.artist ? {artist:view.artist} : {});
@@ -118,7 +124,7 @@ export async function renderMusic(grid, isCurrent) {
   if (saved) window.scrollTo(0,saved.scroll);
  } catch (e) {
   if (!current()) return;
-  grid.innerHTML = `<div class="grid-full" role="alert"><p>Could not load ${view.artists && !view.album ? 'artists' : view.playlists ? 'playlists' : 'albums'}: ${esc(e.message || 'Connection unavailable. Check your connection.')}</p><button class="btn" data-retry>Retry</button><button class="btn btn-ghost" data-music-back>← Back</button></div>`;
+  grid.innerHTML = `<div class="grid-full" role="alert"><p>${view.search ? 'Could not search music' : 'Could not load'} ${view.search ? '' : view.artists && !view.album ? 'artists' : view.playlists ? 'playlists' : 'albums'}: ${esc(e.message || 'Connection unavailable. Check your connection.')}</p><button class="btn" data-retry>Retry</button><button class="btn btn-ghost" data-music-back>← Back</button></div>`;
   grid.querySelector('[data-retry]').onclick = reload;
   grid.querySelector('[data-music-back]').onclick = backMusic;
  }

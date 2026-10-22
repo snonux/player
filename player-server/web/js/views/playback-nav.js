@@ -42,6 +42,12 @@ async function playItem(media, index) {
 }
 
 export async function playSelected() {
+  const selected=currentElement();
+  if(state.music?.search && selected?.dataset.searchKind==='song') {
+    const index=(state.searchSongs || []).findIndex(song=>String(song.id)===selected.dataset.id);
+    if(index>=0) await playAlbumCollection(state.searchSongs,index,'Search results');
+    return;
+  }
   if (state.music?.album || state.music?.playlist) { const i=Number(currentElement()?.dataset.index); if (Number.isInteger(i)) await playAlbumCollection(state.media,i); return; }
   let el = currentElement();
   if (!el) {
@@ -75,7 +81,7 @@ export async function playRandom() {
 }
 
 function visiblePlayableCards() {
-  return Array.from(document.querySelectorAll('#media-grid .media-card[data-id], #media-grid .media-row[data-id]'));
+  return Array.from(document.querySelectorAll('#media-grid .media-card[data-id], #media-grid .media-row[data-id]')).filter(row=>!state.music?.search || row.dataset.searchKind==='file');
 }
 
 function selectedPlayableIndex(cards, preferCurrent) {

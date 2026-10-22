@@ -37,16 +37,62 @@ class MediaFilter {
   /// `'random'`, or `null` for the server default.
   final String? sortBy;
 
+  /// Null keeps the route's set; empty includes all caller-visible sets.
+  /// Lists are normalized and defensively copied by the constructor.
+  final List<int>? setIds;
+  final List<String> tags;
+  final double? minDuration;
+  final double? maxDuration;
+  final int? fileSizeMin;
+  final int? fileSizeMax;
+
+  bool get hasConstraints =>
+      (query?.isNotEmpty ?? false) ||
+      type != null ||
+      favoritesOnly ||
+      setIds != null ||
+      tags.isNotEmpty ||
+      minDuration != null ||
+      maxDuration != null ||
+      fileSizeMin != null ||
+      fileSizeMax != null;
+
   /// Creates a filter with all fields explicitly specified.
   ///
   /// All parameters have defaults corresponding to "no filter", so
-  /// `const MediaFilter()` is a valid zero-filter instance.
-  const MediaFilter({
+  /// `const MediaFilter.empty()` is a valid zero-filter instance.
+  MediaFilter({
     this.query,
     this.type,
     this.favoritesOnly = false,
     this.sortBy,
-  });
+    List<int>? setIds,
+    List<String> tags = const [],
+    this.minDuration,
+    this.maxDuration,
+    this.fileSizeMin,
+    this.fileSizeMax,
+  })  : setIds = setIds == null
+            ? null
+            : List.unmodifiable(setIds.toSet().toList()..sort()),
+        tags = List.unmodifiable(tags
+            .map((v) => v.trim())
+            .where((v) => v.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort());
+
+  const MediaFilter.empty()
+      : query = null,
+        type = null,
+        favoritesOnly = false,
+        sortBy = null,
+        setIds = null,
+        tags = const [],
+        minDuration = null,
+        maxDuration = null,
+        fileSizeMin = null,
+        fileSizeMax = null;
 
   /// Returns a new [MediaFilter] with the supplied fields overridden.
   ///
@@ -59,12 +105,32 @@ class MediaFilter {
     Object? type = _sentinel,
     bool? favoritesOnly,
     Object? sortBy = _sentinel,
+    Object? setIds = _sentinel,
+    List<String>? tags,
+    Object? minDuration = _sentinel,
+    Object? maxDuration = _sentinel,
+    Object? fileSizeMin = _sentinel,
+    Object? fileSizeMax = _sentinel,
   }) {
     return MediaFilter(
       query: query == _sentinel ? this.query : query as String?,
       type: type == _sentinel ? this.type : type as String?,
       favoritesOnly: favoritesOnly ?? this.favoritesOnly,
       sortBy: sortBy == _sentinel ? this.sortBy : sortBy as String?,
+      setIds: setIds == _sentinel
+          ? this.setIds
+          : setIds == null
+              ? null
+              : List<int>.from(setIds as Iterable),
+      tags: tags ?? this.tags,
+      minDuration:
+          minDuration == _sentinel ? this.minDuration : minDuration as double?,
+      maxDuration:
+          maxDuration == _sentinel ? this.maxDuration : maxDuration as double?,
+      fileSizeMin:
+          fileSizeMin == _sentinel ? this.fileSizeMin : fileSizeMin as int?,
+      fileSizeMax:
+          fileSizeMax == _sentinel ? this.fileSizeMax : fileSizeMax as int?,
     );
   }
 
@@ -79,11 +145,26 @@ class MediaFilter {
           other.query == query &&
           other.type == type &&
           other.favoritesOnly == favoritesOnly &&
-          other.sortBy == sortBy;
+          other.sortBy == sortBy &&
+          _sameList(other.setIds, setIds) &&
+          _sameList(other.tags, tags) &&
+          other.minDuration == minDuration &&
+          other.maxDuration == maxDuration &&
+          other.fileSizeMin == fileSizeMin &&
+          other.fileSizeMax == fileSizeMax;
 
   @override
-  int get hashCode =>
-      Object.hash(query, type, favoritesOnly, sortBy);
+  int get hashCode => Object.hash(
+      query,
+      type,
+      favoritesOnly,
+      sortBy,
+      setIds == null ? null : Object.hashAll(setIds!),
+      Object.hashAll(tags),
+      minDuration,
+      maxDuration,
+      fileSizeMin,
+      fileSizeMax);
 
   @override
   String toString() => 'MediaFilter('
@@ -96,3 +177,10 @@ class MediaFilter {
 // Private sentinel object used by [MediaFilter.copyWith] to distinguish
 // "omitted" from "explicitly set to null".
 const _sentinel = Object();
+
+bool _sameList<T>(List<T>? a, List<T>? b) =>
+    identical(a, b) ||
+    a != null &&
+        b != null &&
+        a.length == b.length &&
+        Iterable<int>.generate(a.length).every((i) => a[i] == b[i]);

@@ -81,7 +81,7 @@ const List<({String label, String? value})> _kTypeOptions = [
 class SearchFilterBar extends StatefulWidget {
   /// The filter state to display when the bar is first built.
   ///
-  /// Defaults to `const MediaFilter()` (no filters applied).
+  /// Defaults to `const MediaFilter.empty()` (no filters applied).
   final MediaFilter initialFilter;
 
   /// Called whenever any filter changes.
@@ -89,10 +89,17 @@ class SearchFilterBar extends StatefulWidget {
   /// The callee typically stores the new filter and re-fetches media.
   final void Function(MediaFilter filter) onFiltersChanged;
 
+  final Future<MediaFilter?> Function(MediaFilter)? onOpenFilters;
+  final String? scopeLabel;
+  final int resetRevision;
+
   const SearchFilterBar({
     super.key,
-    this.initialFilter = const MediaFilter(),
+    this.initialFilter = const MediaFilter.empty(),
     required this.onFiltersChanged,
+    this.onOpenFilters,
+    this.scopeLabel,
+    this.resetRevision = 0,
   });
 
   @override
@@ -130,6 +137,10 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
   void didUpdateWidget(SearchFilterBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     final newFilter = widget.initialFilter;
+    if (oldWidget.resetRevision != widget.resetRevision) {
+      _debounceTimer?.cancel();
+      _searchController.text = newFilter.query ?? '';
+    }
     if (newFilter == _filter) return; // nothing changed
 
     // Sync the internal filter state without calling onFiltersChanged —
@@ -197,6 +208,40 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
     widget.onFiltersChanged(updated);
   }
 
+  Future<void> _openFilters() async {
+    _debounceTimer?.cancel();
+    final text = _searchController.text.trim();
+    final latest = _filter.copyWith(query: text.isEmpty ? null : text);
+    if (latest != _filter) _applyFilter(latest);
+    final updated = await widget.onOpenFilters!(latest);
+    if (mounted && updated != null) {
+      _debounceTimer?.cancel();
+      _searchController.text = updated.query ?? '';
+      _applyFilter(updated);
+    }
+  }
+
+  void _clearFilters() {
+    _debounceTimer?.cancel();
+    _searchController.clear();
+    _applyFilter(MediaFilter(sortBy: _filter.sortBy));
+  }
+
+  String get _advancedSummary {
+    final labels = <String>[
+      if (_filter.tags.isNotEmpty) 'Tags: ${_filter.tags.join(', ')}',
+      if (_filter.minDuration != null)
+        'Duration ≥ ${_filter.minDuration! / 60} min',
+      if (_filter.maxDuration != null)
+        'Duration ≤ ${_filter.maxDuration! / 60} min',
+      if (_filter.fileSizeMin != null)
+        'Size ≥ ${_filter.fileSizeMin! ~/ 1048576} MiB',
+      if (_filter.fileSizeMax != null)
+        'Size ≤ ${_filter.fileSizeMax! ~/ 1048576} MiB',
+    ];
+    return labels.join(' · ');
+  }
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -215,6 +260,25 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
           onSearchChanged: _onSearchChanged,
           onSortSelected: _onSortSelected,
         ),
+        if (widget.onOpenFilters != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(child: Text(widget.scopeLabel ?? 'Current set')),
+                TextButton.icon(
+                    onPressed: _openFilters,
+                    icon: const Icon(Icons.filter_list),
+                    label: const Text('Filters')),
+              ]),
+              if (_advancedSummary.isNotEmpty) Text(_advancedSummary),
+              if (_filter.hasConstraints)
+                TextButton(
+                    onPressed: _clearFilters,
+                    child: const Text('Clear filters')),
+            ]),
+          ),
         // Row 2: media-type filter chips (All / Video / Audio / Image).
         _TypeFilterRow(
           selectedType: _filter.type,

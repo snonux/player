@@ -4,7 +4,8 @@ const positiveID = value => /^[1-9]\d*$/.test(String(value)) && Number.isSafeInt
 
 export function readLibraryURL(search) {
   const params = new URLSearchParams(search);
-  const music = ['albums','album','artists','artist','playlists','playlist'].includes(params.get('music')) ? { album: params.get('music') === 'album' ? params.get('id') || '' : '', artist: params.get('martist') || '', name: params.get('martist_name') || '' } : null;
+  const music = ['albums','album','artists','artist','playlists','playlist','search'].includes(params.get('music')) ? { album: params.get('music') === 'album' ? params.get('id') || '' : '', artist: params.get('martist') || '', name: params.get('martist_name') || '' } : null;
+  if (music && params.get('music')==='search') Object.assign(music,{search:true,query:params.get('mq') || '',artistQuery:params.get('mq_artist') || '',albumQuery:params.get('mq_album') || ''});
   if (music && ['playlists','playlist'].includes(params.get('music'))) { music.playlists=true; music.playlist=params.get('music')==='playlist' ? params.get('id') || '' : ''; }
   if (music && ['artists','artist'].includes(params.get('music'))) { music.artists=true; music.artist=params.get('music')==='artist' ? params.get('id') || '' : ''; music.role=params.get('mrole') || 'artists'; }
   if (music && params.get('mfrom')==='artists') { music.artists=true; music.role=params.get('mrole') || 'artists'; }
@@ -24,7 +25,8 @@ export function readLibraryURL(search) {
 
 export function libraryURL(state, media = null, shuffle = false) {
   const params = new URLSearchParams();
-  if (state.music) { params.set('music',state.music.playlists ? state.music.playlist ? 'playlist' : 'playlists' : state.music.album ? 'album' : state.music.artists ? state.music.artist ? 'artist' : 'artists' : 'albums'); if (state.music.playlist) params.set('id',state.music.playlist); else if (state.music.album) params.set('id',state.music.album); else if (state.music.artists && state.music.artist) params.set('id',state.music.artist); if(state.music.artists) { params.set('mrole',state.music.role || 'artists'); if(state.music.album) params.set('mfrom','artists'); } if (state.music.artist) params.set('martist',state.music.artist); if (state.music.name) params.set('martist_name',state.music.name); }
+  if (state.music) { params.set('music',state.music.search ? 'search' : state.music.playlists ? state.music.playlist ? 'playlist' : 'playlists' : state.music.album ? 'album' : state.music.artists ? state.music.artist ? 'artist' : 'artists' : 'albums'); if (state.music.playlist) params.set('id',state.music.playlist); else if (state.music.album) params.set('id',state.music.album); else if (state.music.artists && state.music.artist) params.set('id',state.music.artist); if(state.music.artists) { params.set('mrole',state.music.role || 'artists'); if(state.music.album) params.set('mfrom','artists'); } if (state.music.artist) params.set('martist',state.music.artist); if (state.music.name) params.set('martist_name',state.music.name); }
+  if(state.music?.search) { if(state.music.query) params.set('mq',state.music.query); if(state.music.artistQuery) params.set('mq_artist',state.music.artistQuery); if(state.music.albumQuery) params.set('mq_album',state.music.albumQuery); }
   if (!state.music) {
   if (state.virtualSet) params.set('view', state.virtualSet);
   if (state.selectedSetIds.length) params.set('set', state.selectedSetIds.join(','));

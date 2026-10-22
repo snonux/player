@@ -6,6 +6,7 @@
 abstract final class AppRoutes {
   static const login = '/login';
   static const home = '/home';
+  static const musicSearch = '/music/search';
   static const musicArtists = '/music/artists';
   static const musicPlaylists = '/music/playlists';
   static const musicAlbums = '/music/albums';

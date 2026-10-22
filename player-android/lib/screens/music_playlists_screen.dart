@@ -1,3 +1,4 @@
+import '../widgets/music_search_button.dart';
 import '../widgets/music_mini_player.dart';
 import '../services/music_collections.dart';
 import '../widgets/music_collection_actions.dart';
@@ -141,6 +142,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
               ? 'Music · Playlists'
               : _playlist?['name'] as String? ?? 'Playlist'),
           actions: [
+            const MusicSearchButton(),
             const MusicQueueButton(),
             if (widget.playlistId == null)
               IconButton(

@@ -5,19 +5,26 @@ let _helpTimer = null;
 export function initSearch({ onChange, input, clearBtn }) {
   _onChange = onChange;
   if (!input) return;
+  let composing = false;
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' || e.key === 'Enter') {
-      e.preventDefault();
-      e.stopPropagation();
-      input.blur();
-      hideSearch();
+    if (e.isComposing || composing) return;
+    if (e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation(); cancelPendingSearch(); hideSearch(); input.blur();
+      document.dispatchEvent(new Event('search:restore'));
+    } else if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation(); trigger(input.value.trim()); hideSearch(); input.blur();
       document.dispatchEvent(new CustomEvent('search:navigate-results'));
     }
   });
-  input.addEventListener('input', () => {
-    clearTimeout(_debounceTimer);
+  const schedule = (isComposing = false) => {
+    cancelPendingSearch();
+    document.dispatchEvent(new Event('search:typing'));
+    if (composing || isComposing) return;
     _debounceTimer = setTimeout(() => trigger(input.value.trim()), 300);
-  });
+  };
+  input.addEventListener('compositionstart', () => { composing = true; schedule(); });
+  input.addEventListener('compositionend', () => { composing = false; schedule(); });
+  input.addEventListener('input', (event) => schedule(event.isComposing));
   input.addEventListener('blur', () => {
     hideSearchHelp();
   });
@@ -50,6 +57,7 @@ export function trigger(query) {
 }
 
 export function showSearch() {
+  document.dispatchEvent(new Event('search:open'));
   document.getElementById('search-overlay')?.classList.remove('hidden');
 }
 

@@ -878,3 +878,15 @@ body {
 .music-disc { display: flex; align-items: center; gap: var(--gap); margin-block: var(--gap); min-width: 0; }
 .music-disc .album-cover { width: 3rem; height: 3rem; flex-shrink: 0; }
 .music-disc h2 { font-size: 1rem; margin: 0; overflow-wrap: anywhere; min-width: 0; }
+
+/* Grouped search keeps long metadata readable on narrow screens. */
+.music-detail [data-search-kind] .music-song > span { white-space: normal; overflow-wrap: anywhere; }
+.music-detail .media-row[data-album] > span,
+.music-detail .media-row[data-artist-card] > span,
+.music-detail [data-search-kind="file"] > span { min-width: 0; overflow-wrap: anywhere; }
+
+/* Search file opening is a primary touch control, not a hover-only row action. */
+.music-detail [data-search-kind="file"] button[data-action="search-file-open"] {
+  display: inline-flex;
+  min-height: 2.75rem;
+}

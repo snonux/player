@@ -595,3 +595,55 @@ state` supports focused continuation. `--resume-device` retains data/mapping at
 exit; initial isolated sign-in still clears app data. Root owns one shared
 emulator and all cleanup. See [the M04 runbook](../../../docs/music-m04-implementation.md)
 for guarded additive fixture setup and exact pending acceptance boundaries.
+
+### Metadata-aware search (M07)
+
+Use the existing disposable Music fixture and the root-owned normal APK/emulator
+session with real QEMU WAV capture; no new fixture-generation mode is needed:
+
+```sh
+python3 music_search_e2e.py /home/paul/tmp/9k3-fixture \
+  --emulator-wav /home/paul/tmp/9k3-evidence/emulator.wav
+```
+
+`--scenario journey` covers native Music Search entry, title/artist/album entities,
+Songs-only source playback/audio, query/chip preservation on Back, real artist
+punctuation, Unicode, no results, long light/dark text and retained source identity.
+Unicode uses the app's existing selectable Album metadata: actual Select all/Copy,
+then Paste into the actual search field and native cursor/delete operations remove
+the label. The runner requires the exact editable Unicode query; adb's ASCII-only
+`input text` is never treated as Unicode proof. All controls use stabilized `adrv`.
+
+`--scenario errors` stops only the verified owned fixture server to close existing
+transports, verifies actual search failure, restarts the same database/server,
+restores adb reverse, then exercises Retry and permission revoke/restore. It retains
+query and authoritative IDs. Run with isolated test data only. The shared teardown
+clears app data and adb reverse; all external fixture/evidence files remain.
+`python3 -m unittest test_music_search_e2e` checks negative audio/Unicode oracles
+without a device; it does not replace actual native acceptance.
+
+### F03 existing file-library filters
+
+Use the same final marked disposable fixture as M07, augmented once with
+`integration_test/support/music_filters.py`. With the final APK and running
+emulator, from `player-android/`:
+
+```sh
+python3 test/e2e-live/music_filters_e2e.py /absolute/new/fixture \
+  --apk /absolute/final/player.apk --emulator-wav /absolute/emulator-output.wav
+```
+
+This drives the native Filters sheet, draft Apply/Back, inclusive zero and
+minutes/MiB bounds, tags/sets/query/type/favourites/sort, Clear, detail tag editing,
+light/dark, actual offline options Retry and authoritative result identity.
+Use `--scenario journey` or `--scenario errors` for bounded continuations.
+`--scenario controls` restores the combined-filter state and continues with
+tag permissions/editing, set scopes, type/sort, Clear and theme checks after
+range acceptance. The runner checks actual keyboard visibility before grid
+scrolling and dismisses it without popping a route when it is already hidden.
+`--scenario scopes` resumes set scopes, type/sort, Clear and themes after tag
+acceptance. Grid swipes start below the actual preview toolbar so wrapping
+filter summaries cannot turn a grid gesture into toolbar or keyboard input.
+Results/screenshots use the fixture evidence directory; teardown clears app data
+and removes its reverse mapping. The shared emulator stays running. Fixture
+setup and persistence semantics are in [the F03 contract](../../../docs/music-f03-implementation.md).

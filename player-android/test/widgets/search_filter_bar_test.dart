@@ -29,7 +29,7 @@ import 'package:player_android/widgets/search_filter_bar.dart';
 /// emitted value.  [initialFilter] seeds the bar's initial state.
 Future<void> _pumpBar(
   WidgetTester tester, {
-  MediaFilter initialFilter = const MediaFilter(),
+  MediaFilter initialFilter = const MediaFilter.empty(),
   required void Function(MediaFilter) onChanged,
 }) async {
   await tester.pumpWidget(
@@ -90,7 +90,7 @@ class _ControlledFilterBarState extends State<_ControlledFilterBar> {
 /// Pumps [_ControlledFilterBar] and returns the wrapper key.
 Future<GlobalKey<_ControlledFilterBarState>> _pumpControlledBar(
   WidgetTester tester, {
-  MediaFilter initialFilter = const MediaFilter(),
+  MediaFilter initialFilter = const MediaFilter.empty(),
   required void Function(MediaFilter) onChanged,
 }) async {
   await tester.pumpWidget(
@@ -176,7 +176,7 @@ void main() {
       MediaFilter? emitted;
       await _pumpBar(
         tester,
-        initialFilter: const MediaFilter(query: 'hello'),
+        initialFilter: MediaFilter(query: 'hello'),
         onChanged: (f) => emitted = f,
       );
 
@@ -230,7 +230,7 @@ void main() {
       MediaFilter? emitted;
       await _pumpBar(
         tester,
-        initialFilter: const MediaFilter(type: 'video'),
+        initialFilter: MediaFilter(type: 'video'),
         onChanged: (f) => emitted = f,
       );
 
@@ -266,7 +266,7 @@ void main() {
       MediaFilter? emitted;
       await _pumpBar(
         tester,
-        initialFilter: const MediaFilter(favoritesOnly: true),
+        initialFilter: MediaFilter(favoritesOnly: true),
         onChanged: (f) => emitted = f,
       );
 
@@ -327,7 +327,7 @@ void main() {
       MediaFilter? emitted;
       await _pumpBar(
         tester,
-        initialFilter: const MediaFilter(sortBy: 'name'),
+        initialFilter: MediaFilter(sortBy: 'name'),
         onChanged: (f) => emitted = f,
       );
 
@@ -348,7 +348,7 @@ void main() {
     testWidgets('initial query is shown in the search field', (tester) async {
       await _pumpBar(
         tester,
-        initialFilter: const MediaFilter(query: 'test query'),
+        initialFilter: MediaFilter(query: 'test query'),
         onChanged: (_) {},
       );
 
@@ -372,13 +372,13 @@ void main() {
       MediaFilter? emitted;
       final key = await _pumpControlledBar(
         tester,
-        initialFilter: const MediaFilter(favoritesOnly: false),
+        initialFilter: MediaFilter(favoritesOnly: false),
         onChanged: (f) => emitted = f,
       );
       await tester.pumpAndSettle();
 
       // The app bar heart changes the filter from outside the bar.
-      key.currentState!.pushFilter(const MediaFilter(favoritesOnly: true));
+      key.currentState!.pushFilter(MediaFilter(favoritesOnly: true));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Audio'));
       await tester.pumpAndSettle();
@@ -391,7 +391,7 @@ void main() {
         (tester) async {
       final key = await _pumpControlledBar(
         tester,
-        initialFilter: const MediaFilter(query: 'original'),
+        initialFilter: MediaFilter(query: 'original'),
         onChanged: (_) {},
       );
       await tester.pumpAndSettle();
@@ -405,7 +405,7 @@ void main() {
       );
 
       // External clear: push a filter with no query.
-      key.currentState!.pushFilter(const MediaFilter());
+      key.currentState!.pushFilter(const MediaFilter.empty());
       await tester.pumpAndSettle();
 
       expect(
@@ -416,5 +416,33 @@ void main() {
         equals(''),
       );
     });
+  });
+  testWidgets(
+      'Clear cancels pending search and keeps sort, sheet receives latest query',
+      (tester) async {
+    final emitted = <MediaFilter>[];
+    MediaFilter? opened;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: SearchFilterBar(
+      initialFilter: MediaFilter(tags: ['keep'], sortBy: 'date'),
+      scopeLabel: 'Current set: Music',
+      onFiltersChanged: emitted.add,
+      onOpenFilters: (filter) async {
+        opened = filter;
+        return null;
+      },
+    ))));
+    await tester.enterText(find.byKey(const Key('search_input')), 'late');
+    await tester.tap(find.text('Clear filters'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(emitted, [MediaFilter(sortBy: 'date')]);
+    await tester.enterText(find.byKey(const Key('search_input')), 'latest');
+    await tester.tap(find.text('Filters'));
+    await tester.pump();
+    expect(opened!.query, 'latest');
+    expect(opened!.sortBy, 'date');
+    await tester.pump(const Duration(seconds: 1));
+    expect(emitted.length, 2);
   });
 }

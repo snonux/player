@@ -1,3 +1,4 @@
+import '../widgets/music_search_button.dart';
 import '../widgets/music_mini_player.dart';
 import '../services/music_collections.dart';
 import '../widgets/music_collection_actions.dart';
@@ -95,7 +96,7 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
             title: Text(widget.artistKey == null
                 ? 'Music · Artists'
                 : _artist?['name'] as String? ?? 'Artist'),
-            actions: const [MusicQueueButton()]),
+            actions: const [MusicSearchButton(), MusicQueueButton()]),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
