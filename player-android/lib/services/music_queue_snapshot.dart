@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'music_queue.dart';
 
 /// Durable identifiers only. Authentication and sources are rebuilt after unlock.
 class MusicQueueSnapshot {
@@ -7,12 +8,14 @@ class MusicQueueSnapshot {
       required this.index,
       required this.position,
       required this.label,
-      required this.upNext});
+      required this.upNext,
+      this.repeat = MusicRepeat.off});
   final List<({int id, int mediaId})> entries;
   final int index;
   final double position;
   final String label;
   final Set<int> upNext;
+  final MusicRepeat repeat;
   static String key(String origin, int userId) =>
       'player.queue.$origin.$userId';
 
@@ -28,7 +31,9 @@ class MusicQueueSnapshot {
         json['position'] < 0 ||
         json['label'] is! String ||
         (json['label'] as String).length > 2000 ||
-        json['upNext'] is! List) {
+        json['upNext'] is! List ||
+        (json.containsKey('repeat') &&
+            !MusicRepeat.values.any((mode) => mode.name == json['repeat']))) {
       throw const FormatException('Invalid queue');
     }
     final entries = <({int id, int mediaId})>[];
@@ -56,7 +61,10 @@ class MusicQueueSnapshot {
         index: index,
         position: (json['position'] as num).toDouble(),
         label: json['label'] as String,
-        upNext: (json['upNext'] as List).cast<int>().toSet());
+        upNext: (json['upNext'] as List).cast<int>().toSet(),
+        repeat: MusicRepeat.values.firstWhere(
+            (mode) => mode.name == json['repeat'],
+            orElse: () => MusicRepeat.off));
   }
 
   String encode() => jsonEncode({
@@ -66,6 +74,7 @@ class MusicQueueSnapshot {
         'index': index,
         'position': position,
         'label': label,
-        'upNext': upNext.toList()
+        'upNext': upNext.toList(),
+        'repeat': repeat.name
       });
 }

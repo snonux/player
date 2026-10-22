@@ -401,3 +401,23 @@ visible shortcut feedback. A one-shot delayed original fetch checks duplicate
 submission and superseded source ownership; it changes timing only, not server
 metadata or playback responses. Runtime queue reads are evidence; feature
 mutations use visible controls. A `--list` parse pass is not feature acceptance.
+
+## Music M20 repeat modes
+
+`music-repeat.test.ts` drives installed Chrome and installed Firefox using the
+Music fixture and `playwright.music.config.ts`. Four cases per browser cover
+Off natural stop and same-source Replay, All wrap with actual distinct output
+and edited occurrence order, One same-occurrence time reset versus manual
+Next/Previous, paused reload/mode/account isolation, Clear/Undo, native typing
+and Y focus, light/dark narrow layouts, real offline Retry, and the actual
+detached window's completion/finished writes and popup Y. Natural tests let
+short tracks reach their real end; no synthetic ended events or playback mocks.
+PCM WAVs, snapshots, versions and screenshots go to the fixture evidence path.
+
+```sh
+PLAYER_MUSIC_FIXTURE=/home/paul/tmp/dk3-fixture PLAYER_E2E_PULSE_SINK=player_dk3 \
+  npx --no-install playwright test -c playwright.music.config.ts music-repeat --workers=1
+```
+
+Use a fresh disposable fixture built from the current server. This command is
+an acceptance runner; a successful `--list` only validates runner discovery.

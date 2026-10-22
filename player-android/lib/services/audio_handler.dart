@@ -75,6 +75,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _movingTrack = false;
   bool _musicWrap = true;
   bool _collectionEnded = false;
+  AudioProgressSession? _completingProgress;
+  int _completionCycle = 0;
+  MusicRepeat _queueRepeat = MusicRepeat.off;
   int? _failedMusicDelta;
   Duration? _retryMusicPosition;
   Duration _musicPosition = Duration.zero;
@@ -110,6 +113,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       busy: _queueBusy || (_queueActive && _movingTrack),
       canUndo: _queueUndo != null,
       status: _queueStatus,
+      repeat: _queueRepeat,
       upNextIds: Set.unmodifiable(_queueNextIds),
       restored: _queueRestored,
       restoreFailed: _queueRestoreFailed,
@@ -142,7 +146,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
           ? _queuePosition
           : 0,
       label: _queueLabel,
-      upNext: Set.of(_queueNextIds));
+      upNext: Set.of(_queueNextIds),
+      repeat: _queueRepeat);
   void _notifyQueue() {
     persistMusicQueue?.call();
     _queueChanges.add(null);
@@ -165,8 +170,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       required Future<PlaybackSessionLease?> Function(PlaybackRequest) claim,
       required Future<AudioSource?> Function(PlaybackRequest, bool Function())
           load,
-      int unavailable = 0}) {
+      int unavailable = 0,
+      MusicRepeat repeat = MusicRepeat.off}) {
     _albumQueue = entries;
+    _queueRepeat = repeat;
     _queueIndex = index;
     _queueLabel = label;
     for (final entry in entries) {
@@ -189,6 +196,13 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueStatus +=
           ' $unavailable ${unavailable == 1 ? 'song is' : 'songs are'} no longer available.';
     }
+    _notifyQueue();
+  }
+
+  void cycleQueueRepeat() {
+    if (musicQueue.busy || _queueRestoreFailed) return;
+    _queueRepeat = MusicRepeat
+        .values[(_queueRepeat.index + 1) % MusicRepeat.values.length];
     _notifyQueue();
   }
 
@@ -227,6 +241,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     persistMusicQueue = null;
     retryQueueRestore = null;
     ++_queueScope;
+    _queueRepeat = MusicRepeat.off;
     _queueRestored = false;
     _queueRestoreFailed = false;
     _queuePosition = 0;
@@ -599,18 +614,38 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> _completeTrack(AudioProgressSession progress) async {
-    await progress.record(force: true, completed: true);
-    if (!identical(progress, _progress) || !_canControlSource) return;
-    if (_musicIndex >= 0) await _moveTrack(1, completed: true);
+    if (identical(_completingProgress, progress)) return;
+    _completingProgress = progress;
+    final generation = _sourceGeneration, cycle = _completionCycle;
+    try {
+      await progress.record(force: true, completed: true);
+      if (cycle != _completionCycle ||
+          generation != _sourceGeneration ||
+          !identical(progress, _progress) ||
+          !_canControlSource) {
+        return;
+      }
+      if (_musicIndex >= 0) await _moveTrack(1, completed: true);
+    } finally {
+      if (identical(_completingProgress, progress)) _completingProgress = null;
+    }
   }
 
   Future<void> _moveTrack(int delta,
       {Duration? resumePosition, bool completed = false}) async {
     if (_movingTrack || !_canControlSource || _musicIndex < 0) return;
-    var target = _musicIndex + delta;
+    final repeatOne =
+        _queueActive && completed && _queueRepeat == MusicRepeat.one;
+    final queueWrap = _queueActive && _queueRepeat == MusicRepeat.all;
+    var target = repeatOne ? _musicIndex : _musicIndex + delta;
+    if (queueWrap) target %= _musicEntries.length;
+    if (completed && _queueActive && (repeatOne || target == 0)) {
+      resumePosition = Duration.zero;
+    }
     // Manual boundary controls are no-ops: keep the source, playback and its
     // progress session. Natural completion still flushes and stops below.
     if (!_musicWrap &&
+        !queueWrap &&
         !completed &&
         (target < 0 || target >= _musicEntries.length)) {
       return;
@@ -629,7 +664,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       if (!current()) return;
       await _player.pause();
       _publishMusic(loading: true);
-      if (!_musicWrap && (target < 0 || target >= _musicEntries.length)) {
+      if (!_musicWrap &&
+          !queueWrap &&
+          (target < 0 || target >= _musicEntries.length)) {
         _controlsEnabled = true;
         _collectionEnded = completed;
         _failedMusicDelta = null;
@@ -770,12 +807,16 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       });
 
   /// A delayed seek from an old screen cannot seek a replacement source.
-  Future<bool> seekForSession(Duration position, int generation) =>
-      _serializeSourceOperation(() async {
-        if (generation != _sourceGeneration) return false;
-        await _player.seek(position);
-        return generation == _sourceGeneration;
-      });
+  Future<bool> seekForSession(Duration position, int generation) {
+    // The player slider and +/- controls use this entry point directly.
+    // A current seek intent supersedes an end callback waiting on progress I/O.
+    if (generation == _sourceGeneration) ++_completionCycle;
+    return _serializeSourceOperation(() async {
+      if (generation != _sourceGeneration) return false;
+      await _player.seek(position);
+      return generation == _sourceGeneration;
+    });
+  }
 
   /// Starts tracking the loaded item. Call after the source and resume seek
   /// complete. The callbacks capture account-scoped API/queue dependencies
@@ -826,6 +867,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> play() async {
     if (!_canControlSource) return;
+    ++_completionCycle;
     // The visible Retry owns failed album transitions. Native Play must not
     // resume the previous source while the failed target is shown.
     if (!_musicWrap && _musicState?.error != null) return;
@@ -896,6 +938,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// implementations in terms of this method.
   @override
   Future<void> seek(Duration position) async {
+    ++_completionCycle;
     if (_canControlSource) await seekForSession(position, _sourceGeneration);
   }
 

@@ -1,5 +1,7 @@
 import 'playback_request.dart';
 
+enum MusicRepeat { off, all, one }
+
 enum QueueInsertion { now, next, append }
 
 /// Identifies an occurrence independently of its media identity.
@@ -19,6 +21,7 @@ class MusicQueueState {
       required this.busy,
       required this.canUndo,
       required this.status,
+      this.repeat = MusicRepeat.off,
       this.upNextIds = const {},
       this.restored = false,
       this.position = 0,
@@ -30,4 +33,5 @@ class MusicQueueState {
   final bool restored, restoreFailed;
   final double position;
   final Set<int> upNextIds;
+  final MusicRepeat repeat;
 }

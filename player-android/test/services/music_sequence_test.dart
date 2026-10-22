@@ -78,6 +78,181 @@ class _BrowseClient extends PlayerApiClient {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  for (final mode in MusicRepeat.values) {
+    test(
+        'repeat ${mode.name} completion and explicit transport use current occurrences',
+        () async {
+      final player = _Player();
+      // A separate handler with the observed player owns the real sequence.
+      final h = PlayerAudioHandler(player);
+      final coordinator = PlaybackSessionCoordinator();
+      var finishes = 0;
+      PlaybackRequest song(int id) => ServerPlaybackRequest(
+          mediaId: id,
+          serverOrigin: 'http://local',
+          userId: 1,
+          title: 'Song $id',
+          sourceUri: Uri.parse('http://local/$id'),
+          startPosition: 0,
+          savePosition: (_) async {},
+          markFinished: () async {
+            finishes++;
+          });
+      await h.insertQueue(
+          entries: [song(1), song(2), song(1)],
+          action: QueueInsertion.now,
+          claim: (r) => coordinator.claim(
+              kind: r.kind, identity: r.identity, stop: h.stop),
+          load: (r, current) async => AudioSource.uri(r.sourceUri));
+      while (h.musicQueue.repeat != mode) {
+        h.cycleQueueRepeat();
+      }
+      await h.jumpQueue(2);
+      final occurrence = h.musicQueue.entries[2].id;
+      player.elapsed = const Duration(seconds: 10);
+      player.processing.add(ProcessingState.completed);
+      player.processing.add(ProcessingState.completed);
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(finishes, 1);
+      expect(h.musicQueue.index, mode == MusicRepeat.all ? 0 : 2);
+      if (mode == MusicRepeat.off) {
+        expect(player.running, isFalse);
+        await h.play();
+        player.elapsed = const Duration(seconds: 10);
+        player.processing.add(ProcessingState.completed);
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        expect(finishes, 2,
+            reason: 'Off same-source Replay starts fresh completion run');
+      } else {
+        expect(player.elapsed, Duration.zero);
+      }
+      if (mode == MusicRepeat.one) {
+        expect(h.musicQueue.entries[h.musicQueue.index].id, occurrence);
+        await h.skipToNext();
+        expect(h.musicQueue.index, 2);
+        await h.skipToPrevious();
+        expect(h.musicQueue.index, 1);
+        await h.insertQueue(
+            entries: [song(3), song(4)],
+            action: QueueInsertion.next,
+            claim: (r) => coordinator.claim(
+                kind: r.kind, identity: r.identity, stop: h.stop),
+            load: (r, current) async => AudioSource.uri(r.sourceUri));
+        final next = Set<int>.of(h.musicQueue.upNextIds);
+        player.processing.add(ProcessingState.completed);
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        expect(h.musicQueue.upNextIds, next);
+        h.moveQueue(1, 1);
+        final selected = h.musicQueue.entries[h.musicQueue.index].id;
+        player.processing.add(ProcessingState.completed);
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        expect(h.musicQueue.entries[h.musicQueue.index].id, selected);
+      }
+      await h.clearQueue();
+      await h.undoQueue();
+      expect(h.musicQueue.repeat, mode);
+      h.clearRetainedQueue();
+      expect(h.musicQueue.repeat, MusicRepeat.off);
+      await h.stop();
+    });
+  }
+
+  test('deferred completion rejects same-source seek and replacement epoch',
+      () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    final gate = Completer<void>();
+    var finishes = 0;
+    final request = ServerPlaybackRequest(
+        mediaId: 1,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Long',
+        sourceUri: Uri.parse('http://local/1'),
+        startPosition: 0,
+        savePosition: (_) => gate.future,
+        markFinished: () async {
+          finishes++;
+        });
+    handler.activateSourceSession(handler.beginSourceSession());
+    handler.startProgress(
+        savePosition: request.savePosition!,
+        markFinished: request.markFinished!);
+    handler.startMusicSequence(
+        wrap: false,
+        entries: [request],
+        index: 0,
+        expand: () async => [request],
+        changed: (_) {},
+        load: (r, current) async => AudioSource.uri(r.sourceUri));
+    handler.cycleQueueRepeat();
+    handler.cycleQueueRepeat();
+    player.processing.add(ProcessingState.completed);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await handler.seekForSession(
+        const Duration(seconds: 2), handler.musicState!.sourceGeneration);
+    gate.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    expect(player.loads, 0,
+        reason: 'seeking invalidates pending natural completion');
+    expect(finishes, 1);
+    await handler.stop();
+  });
+
+  test(
+      'repeat One failed reload stays retryable and source takeover cancels pending completion',
+      () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player),
+        coordinator = PlaybackSessionCoordinator();
+    var fail = false;
+    final gate = Completer<void>();
+    PlaybackRequest song(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    await handler.insertQueue(
+        entries: [song(1), song(2)],
+        action: QueueInsertion.now,
+        claim: (r) => coordinator.claim(
+            kind: r.kind, identity: r.identity, stop: handler.stop),
+        load: (r, current) async {
+          if (fail) throw StateError('offline');
+          return AudioSource.uri(r.sourceUri);
+        });
+    handler.cycleQueueRepeat();
+    handler.cycleQueueRepeat();
+    fail = true;
+    player.processing.add(ProcessingState.completed);
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    expect(handler.musicState!.error, isNotNull);
+    expect(player.running, isFalse);
+    expect(handler.musicQueue.index, 0);
+    fail = false;
+    await handler.retryMusicTrack();
+    expect(player.running, isTrue);
+    expect(player.elapsed, Duration.zero);
+    await handler.endProgress();
+    handler.startProgress(
+        savePosition: (_) => gate.future, markFinished: () async {});
+    player.processing.add(ProcessingState.completed);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    final loads = player.loads;
+    handler.beginSourceSession();
+    gate.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    expect(player.loads, loads);
+    expect(handler.musicState, isNull);
+    expect(handler.musicQueue.active, isFalse);
+    expect(handler.musicQueue.repeat, MusicRepeat.one);
+    await handler.stop();
+  });
+
   test(
       'collection replacement starts first and one Undo restores original occurrences and label',
       () async {

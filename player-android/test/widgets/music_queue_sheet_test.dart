@@ -58,6 +58,14 @@ void main() {
     await tester.tap(find.byTooltip('Now Playing queue'));
     await tester.pumpAndSettle();
     expect(find.text('Resume queue'), findsOneWidget);
+    await tester.tap(find.text('Repeat: Off'));
+    await tester.pumpAndSettle();
+    expect(find.text('Repeat: All'), findsOneWidget);
+    await tester.tap(find.text('Repeat: All'));
+    await tester.pumpAndSettle();
+    expect(find.text('Repeat: One'), findsOneWidget);
+    expect(find.byIcon(Icons.repeat_one), findsOneWidget);
+    expect(handler.musicQueue.repeat, MusicRepeat.one);
     expect(find.text('Paused at 0:07'), findsOneWidget);
     expect(find.text('Selected · paused'), findsOneWidget);
     expect(find.text('Open current item'), findsOneWidget);

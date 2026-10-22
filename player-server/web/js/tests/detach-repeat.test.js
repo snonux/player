@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { initDetach } from '../detach.js';
+let receive;
+const calls=[];
+globalThis.window={location:{origin:'http://local'},addEventListener:(_,fn)=>receive=fn};
+globalThis.document={dispatchEvent:event=>calls.push(event.type)};
+initDetach({triggerNext:options=>calls.push(options)});
+receive({origin:'http://local',data:{type:'detach-next',completed:true}});
+receive({origin:'http://local',data:{type:'detach-next',play:false}});
+receive({origin:'http://local',data:{type:'detach-repeat'}});
+receive({origin:'http://other',data:{type:'detach-repeat'}});
+assert.deepEqual(calls,[{forcePlay:true,completed:true},{forcePlay:false,completed:false},'queue:repeat']);
+console.log('Detached repeat completion/manual/shortcut forwarding passed.');

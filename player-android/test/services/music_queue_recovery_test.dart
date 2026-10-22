@@ -84,6 +84,24 @@ const snapshot = MusicQueueSnapshot(
 Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 40));
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('repeat snapshot supports legacy default and all explicit modes', () {
+    final legacy = jsonDecode(snapshot.encode()) as Map;
+    legacy.remove('repeat');
+    expect(
+        MusicQueueSnapshot.decode(jsonEncode(legacy)).repeat, MusicRepeat.off);
+    for (final mode in MusicRepeat.values) {
+      expect(
+          MusicQueueSnapshot.decode(
+              jsonEncode({...legacy, 'repeat': mode.name})).repeat,
+          mode);
+    }
+    for (final bad in [null, 0, false, 'invalid']) {
+      expect(
+          () =>
+              MusicQueueSnapshot.decode(jsonEncode({...legacy, 'repeat': bad})),
+          throwsFormatException);
+    }
+  });
   test(
       'codec rejects corrupt and unknown data and preserves repeated identities',
       () {
@@ -127,6 +145,7 @@ void main() {
             markFinished: () async {}))
         .toList();
     handler.restoreMusicQueue(
+        repeat: MusicRepeat.one,
         entries: [
           for (var i = 0; i < 3; i++) MusicQueueEntry(71 + i, requests[i])
         ],
@@ -137,6 +156,7 @@ void main() {
         claim: (r) => coordinator.claim(
             kind: r.kind, identity: r.identity, stop: handler.stop),
         load: (r, current) async => AudioSource.uri(r.sourceUri));
+    expect(handler.musicQueue.repeat, MusicRepeat.one);
     expect(player.plays, 0);
     expect(player.loads, 0);
     expect(handler.musicQueue.restored, isTrue);
@@ -155,6 +175,7 @@ void main() {
     expect(writes.last.position, 8.25);
     await handler.clearQueue();
     expect(writes.last.entries, isEmpty);
+    expect(writes.last.repeat, MusicRepeat.one);
     await handler.undoQueue();
     expect(writes.last.entries.length, 3);
     expect(player.running, isFalse);

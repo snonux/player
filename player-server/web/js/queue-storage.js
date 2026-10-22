@@ -4,6 +4,7 @@ export function readQueueSnapshot(raw) {
   if (raw === null) return null;
   const value = JSON.parse(raw);
   if (value?.version !== 1 || !Array.isArray(value.entries) || value.entries.length > 10000 ||
+      (value.repeat !== undefined && !['off', 'all', 'one'].includes(value.repeat)) ||
       !Number.isInteger(value.index) || value.index < -1 || value.index >= value.entries.length ||
       (value.entries.length > 0 && value.index < 0) ||
       !Number.isFinite(value.position) || value.position < 0 || typeof value.label !== 'string' ||

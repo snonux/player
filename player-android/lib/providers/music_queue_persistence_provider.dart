@@ -154,6 +154,7 @@ class MusicQueuePersistence {
             entries: entries,
             index: index,
             label: snapshot.label,
+            repeat: snapshot.repeat,
             position: position,
             upNext:
                 snapshot.upNext.intersection(entries.map((e) => e.id).toSet()),

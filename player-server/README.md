@@ -119,3 +119,16 @@ A connection failure retains the saved queue and offers **Retry restore** after
 sign-in. **Clear queue** remains cleared after reload; Undo is available during
 the current session. Private browsing or clearing browser storage removes local
 recovery data.
+
+## Repeat a music queue
+
+Open **Now Playing** (Q) and use **Repeat** or press **Y** to cycle **Off → All →
+One**. Off advances through the queue and stops after its last song. All wraps
+to the first song. One restarts the current occurrence from zero when it ends.
+Manual Next/Previous still choose adjacent songs in One; only All wraps those
+controls at the queue ends. The button shows the current mode and stays active
+for All/One. Sets browse playback keeps its existing behavior.
+
+Repeat belongs to the same server/account queue on this browser, including an
+empty queue. Reload restores it paused with the saved selection and position;
+choose **Resume queue** to play. Clear and Undo keep the chosen repeat mode.

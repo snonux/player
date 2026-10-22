@@ -65,7 +65,7 @@ const elements = {};
 function resetDom() {
   for (const key of Object.keys(elements)) delete elements[key];
   for (const id of ['player', 'btn-play', 'big-play', 'cover-art', 'media-image', 'progress-track', 'progress-buffered',
-    'progress-fill', 'progress-thumb', 'time-elapsed', 'time-total', 'toast']) {
+    'progress-fill', 'progress-thumb', 'time-elapsed', 'time-total', 'toast', 'btn-cast']) {
     elements[id] = fakeElement(id);
   }
   elements['media-video'] = fakeMedia('media-video');
@@ -79,6 +79,7 @@ globalThis.HTMLMediaElement = { HAVE_METADATA: 1 };
 const documentListeners = {};
 globalThis.CustomEvent = class extends Event { constructor(type, options) { super(type); this.detail = options?.detail; } };
 globalThis.document = {
+  head: {appendChild() {}},
   fullscreenElement: null,
   getElementById: (id) => elements[id] || null,
   createElement: () => fakeElement(),
@@ -718,7 +719,7 @@ async function testPersistedQueueRecovery() {
   const values = new Map();
   globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key,value) => values.set(key,value), removeItem: key => values.delete(key) };
   const key = 'player.queue.http://test.1', original = API.mediaDetail;
-  const snapshot = {version:1, entries:[{id:701,mediaId:51},{id:702,mediaId:52},{id:703,mediaId:51}],index:2,position:7.25,label:'Repeated album',upNext:[702]};
+  const snapshot = {version:1, entries:[{id:701,mediaId:51},{id:702,mediaId:52},{id:703,mediaId:51}],index:2,position:7.25,label:'Repeated album',upNext:[702],repeat:'one'};
   API.mediaDetail = async id => ({media:{id,type:'audio',duration:12,file_name:`${id}.mp3`}});
   try {
     values.set(key, JSON.stringify(snapshot));
@@ -726,6 +727,7 @@ async function testPersistedQueueRecovery() {
     await queue.restoreQueue(1);
     assertEqual(queue.queueState().entries.map(e=>e.id).join(','),'701,702,703','recovery preserves repeated occurrences');
     assertEqual(queue.queueState().index,2,'recovery restores later repeated occurrence');
+    assertEqual(queue.queueState().repeat,'one','recovery restores scoped mode');
     assertEqual(queue.queueState().position,7.25,'short-song exact queue offset survives');
     assertEqual(audio().playCalls,calls,'recovery never calls play');
     player.selectMedia({id:51,type:'audio',duration:12,file_name:'51.mp3'},-1,queue.recoveredQueuePosition(51));
@@ -832,8 +834,124 @@ async function testCollectionDuplicateSubmitAndSupersession() {
   } finally {API.album=original;document.querySelectorAll=originalQuery;}
 }
 
+async function testQueueRepeatModesAndEdits() {
+  const song = id => ({id, type:'audio', file_name:`${id}.mp3`, duration:12});
+  const mode = value => { for (let i=0; queue.queueState().repeat !== value && i<3; i++) queue.cycleQueueRepeat(); };
+  setup(); mode('off');
+  await queue.playAlbumCollection([song(601),song(602),song(601)],2);
+  const occurrence = queue.queueState().entries[2].id;
+  await queue.advanceQueue(1,{completed:true});
+  assertEqual(queue.queueState().entries[queue.queueState().index].id,occurrence,'Off completion stops at last occurrence');
+  mode('all'); await queue.advanceQueue(1,{completed:true});
+  assertEqual(queue.queueState().index,0,'All completion wraps to first');
+  await queue.advanceQueue(-1);
+  assertEqual(queue.queueState().index,2,'All explicit Previous wraps');
+  mode('one'); await queue.advanceQueue(1,{completed:true});
+  assertEqual(queue.queueState().entries[queue.queueState().index].id,occurrence,'One completion retains later duplicate occurrence');
+  await queue.advanceQueue(1);
+  assertEqual(queue.queueState().index,2,'One explicit Next boundary does not wrap');
+  await queue.advanceQueue(-1);
+  assertEqual(queue.queueState().index,1,'One explicit Previous follows adjacency');
+  await queue.insertQueue([song(603),song(604)],'next');
+  await queue.advanceQueue(1,{completed:true});
+  await queue.insertQueue([song(605)],'next');
+  assertEqual(queue.queueState().entries.map(e=>e.media.id).join(), '601,602,603,604,605,601','One does not consume future next FIFO');
+  queue.moveQueue(1,1);
+  const moved = queue.queueState().entries[queue.queueState().index].id;
+  await queue.advanceQueue(1,{completed:true});
+  assertEqual(queue.queueState().entries[queue.queueState().index].id,moved,'One follows occurrence after reorder');
+  queue.clearQueue(); queue.undoQueue();
+  assertEqual(queue.queueState().repeat,'one','Clear and Undo never roll preference back');
+  player.selectAndPlay(song(699),0); await queue.advanceQueue(1,{completed:true});
+  assertEqual(player.currentMediaId(),699,'repeat cannot take over replacement Sets source');
+  mode('off');
+}
+
+async function testRepeatCompletionEpochAndGenuineReplay() {
+  let advances=0, release;
+  setup({onNext:()=>advances++});
+  const original=API.progress, status=API.progressStatus;
+  API.progressStatus=async()=>{};
+  try {
+    player.selectAndPlay({id:611,type:'audio',duration:12},0);
+    API.progress=()=>new Promise(done=>release=done);
+    audio().currentTime=12; audio().ended=true;
+    audio().dispatch('ended'); audio().dispatch('ended'); await settle();
+    audio().dispatch('seeking'); audio().currentTime=2; audio().ended=false;
+    release(); await settle();
+    assertEqual(advances,0,'seek while final save waits cancels old completion');
+    API.progress=async()=>{};
+    audio().dispatch('play'); audio().currentTime=12; audio().ended=true; audio().dispatch('ended'); await settle();
+    assertEqual(advances,1,'genuine replay same source can complete');
+    audio().dispatch('play'); audio().dispatch('ended'); audio().dispatch('ended'); await settle();
+    assertEqual(advances,2,'later replay completes once despite duplicate event');
+    API.progress=()=>new Promise(done=>release=done);
+    audio().dispatch('play'); audio().dispatch('ended'); await settle();
+    player.selectAndPlay({id:611,type:'audio',duration:12},0); // same media, new occurrence/source
+    audio().currentTime=12; audio().ended=true;
+    release(); await settle();
+    assertEqual(advances,2,'same-media replacement rejects stale deferred completion');
+  } finally { API.progress=original; API.progressStatus=status; }
+}
+
+async function testSenderNaturalCompletionRetainsRepeatOneOccurrence() {
+  const cast=await import('../cast.js'), ticket=API.castTicket;
+  const remoteListeners={}, contextListeners={};
+  const remote={isPaused:false,isMediaLoaded:true,currentTime:0,playerState:'playing'};
+  let session={loadMedia:async()=>{}};
+  const context={setOptions(){},getCastState:()=> 'none',getCurrentSession:()=>session,
+    addEventListener:(type,fn)=>contextListeners[type]=fn,
+    endCurrentSession:()=>{session=null;contextListeners.session({sessionState:'ended'});}};
+  function Value() {}
+  window.chrome={cast:{AutoJoinPolicy:{},media:{DEFAULT_MEDIA_RECEIVER_APP_ID:'default',StreamType:{BUFFERED:'buffered'},PlayerState:{IDLE:'idle'},MediaInfo:Value,LoadRequest:Value,GenericMediaMetadata:Value,MusicTrackMediaMetadata:Value}}};
+  window.isSecureContext=true;
+  window.cast={framework:{CastContext:{getInstance:()=>context},CastContextEventType:{CAST_STATE_CHANGED:'cast',SESSION_STATE_CHANGED:'session'},CastState:{NO_DEVICES_AVAILABLE:'none'},SessionState:{SESSION_STARTED:'started',SESSION_ENDED:'ended'},RemotePlayer:function(){return remote;},RemotePlayerController:function(){return {addEventListener:(type,fn)=>remoteListeners[type]=fn};},RemotePlayerEventType:{CURRENT_TIME_CHANGED:'time',IS_PAUSED_CHANGED:'pause',PLAYER_STATE_CHANGED:'state'}}};
+  try {
+    setup({cast:true,onNext:options=>queue.advanceQueue(1,options)});
+    window.__onGCastApiAvailable(true);
+    API.castTicket=async()=>({ticket:'local-test',stream_content_type:'audio/mpeg'});
+    await queue.playAlbumCollection([{id:621,type:'audio',duration:12},{id:621,type:'audio',duration:12},{id:622,type:'audio',duration:12}],1);
+    while(queue.queueState().repeat!=='one') queue.cycleQueueRepeat();
+    const occurrence=queue.queueState().entries[1].id;
+    await cast.castItem({id:621,type:'audio',duration:12},0);
+    remote.currentTime=12;remoteListeners.time();remote.isMediaLoaded=false;remote.playerState='idle';remoteListeners.state();await settle();
+    assertEqual(queue.queueState().index,1,'production sender natural callback retains One index');
+    assertEqual(queue.queueState().entries[queue.queueState().index].id,occurrence,'production sender retains exact later occurrence');
+    player.stopAndClose();await settle();
+  } finally {API.castTicket=ticket;delete window.chrome;delete window.cast;delete window.isSecureContext;}
+}
+
+async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
+  setup();
+  const listeners={}, messages=[], writes=[];
+  const oldListener=window.addEventListener, original=API.progress, status=API.progressStatus;
+  window.addEventListener=(type,fn)=>{(listeners[type] ||= []).push(fn);};
+  window.location.origin='http://test';
+  window.opener={closed:false,postMessage:message=>messages.push(message)};
+  let release;
+  API.progress=async(id,position)=>{writes.push(`position:${id}:${position}`);};
+  API.progressStatus=async(id,value)=>{writes.push(`${value}:${id}`);};
+  try {
+    await import('../detachPopup.js');
+    const load=id=>{for(const fn of listeners.message||[]) fn({origin:'http://test',data:{type:'detach-load',media:{id,type:'audio',duration:1301},index:1,streamUrl:`/api/media/${id}/stream`,play:false}});audio().readyState=1;};
+    load(631);audio().currentTime=1301;audio().ended=true;
+    audio().dispatch('ended');audio().dispatch('ended');await settle();
+    assertEqual(writes.join(','),'position:631:1301,finished:631','actual popup finalizes long-source progress in order exactly once');
+    assertEqual(messages.filter(m=>m.type==='detach-next'&&m.completed).length,1,'actual popup advances once after final save');
+    writes.length=0;messages.length=0;
+    load(631);audio().currentTime=1301;audio().ended=true;
+    API.progress=async(id,position)=>{writes.push(`position:${id}:${position}`);await new Promise(done=>release=done);};
+    audio().dispatch('ended');await settle();load(631); // same media, newer occurrence
+    release?.();await settle();
+    assertEqual(messages.filter(m=>m.type==='detach-next').length,0,'new same-ID popup load rejects deferred old completion');
+  } finally {API.progress=original;API.progressStatus=status;window.addEventListener=oldListener;delete window.opener;}
+}
+
 console.info('Running playback source tests...');
 for (const test of [
+  testSenderNaturalCompletionRetainsRepeatOneOccurrence,
+  testQueueRepeatModesAndEdits,
+  testRepeatCompletionEpochAndGenuineReplay,
   testCollectionReplaceUndoAndOccurrenceOrder,
   testCollectionDuplicateSubmitAndSupersession,
   testRecoveredResumeRetainsFutureFIFO,
@@ -862,6 +980,7 @@ for (const test of [
   testElementErrorShowsToast,
   testIdleElementErrorIsIgnored,
   testDirectLoadProbesShareCompatUrl,
+  testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle,
 ]) {
   try {
     await test();

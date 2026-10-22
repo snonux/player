@@ -1,3 +1,4 @@
+import { API } from './api.js';
 import { hasPendingPlay, initPlayer, loadMediaDirect, requestPlay, togglePlay } from './player.js';
 import { initModalFocus } from './modal-focus.js';
 import { initNotes } from './notes.js';
@@ -10,6 +11,8 @@ let currentIndex = -1;
 let progressInterval = null;
 let lastStateSent = 0;
 let lastKnownPosition = 0;
+let sourceCycle = 0, completingCycle = null;
+let progressWrites = Promise.resolve();
 
 // A failed load fires no pause event when nothing was playing yet (compat
 // stream still preparing), so the main window is told explicitly.
@@ -30,6 +33,7 @@ window.__playerDetachCurrentState = currentState;
 
 [video, audio].forEach((el) => {
   el?.addEventListener('play', () => {
+    sourceCycle++;
     sendState();
     startProgress();
   });
@@ -45,11 +49,25 @@ window.__playerDetachCurrentState = currentState;
       lastStateSent = now;
     }
   });
+  el?.addEventListener('seeking', () => { sourceCycle++; });
   el?.addEventListener('seeked', () => {
     lastKnownPosition = el.currentTime || 0;
     sendState();
   });
-  el?.addEventListener('ended', () => post({ type: 'detach-next' }));
+  el?.addEventListener('ended', async () => {
+    if (el !== mediaElement() || !el.ended || !currentMedia) return;
+    const cycle = sourceCycle;
+    if (completingCycle === cycle) return;
+    completingCycle = cycle;
+    const id = currentMedia.id;
+    stopProgress();
+    // This window owns progress while detached. Finish after all older
+    // position writes, then let the opener select the next occurrence.
+    await enqueueProgress(id, el.currentTime, true);
+    if (cycle === sourceCycle && currentMedia?.id === id && el === mediaElement() && el.ended) {
+      post({ type: 'detach-next', completed: true });
+    }
+  });
 });
 
 document.addEventListener('keydown', (ev) => {
@@ -79,7 +97,10 @@ document.addEventListener('keydown', (ev) => {
     return;
   }
 
-  if (ev.key === 'Q') {
+  if (ev.key === 'Y') {
+    ev.preventDefault();
+    post({ type: 'detach-repeat' });
+  } else if (ev.key === 'Q') {
     ev.preventDefault();
     post({ type: 'detach-queue' });
   } else if (ev.key === ' ' || ev.code === 'Space') {
@@ -139,6 +160,7 @@ window.addEventListener('beforeunload', () => {
 post({ type: 'detach-ready' });
 
 function loadDetachedMedia(payload) {
+  sourceCycle++;
   currentMedia = payload.media || null;
   currentIndex = Number.isInteger(payload.index) ? payload.index : -1;
   if (!currentMedia) return;
@@ -272,13 +294,16 @@ function startProgress() {
   progressInterval = setInterval(() => {
     const el = mediaElement();
     if (!currentMedia || !el || el.paused) return;
-    fetch('/api/progress', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ media_id: currentMedia.id, position_seconds: el.currentTime }),
-    }).catch(() => {});
+    enqueueProgress(currentMedia.id, el.currentTime);
   }, 3000);
+}
+
+function enqueueProgress(id, seconds, finished = false) {
+  progressWrites = progressWrites.catch(() => {}).then(async () => {
+    await API.progress(id, seconds);
+    if (finished) await API.progressStatus(id, 'finished');
+  }).catch(() => {});
+  return progressWrites;
 }
 
 function stopProgress() {

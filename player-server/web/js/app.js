@@ -1,6 +1,6 @@
 import { cancelCollectionSelection } from './collection-actions.js';
 import { queueSelected } from './queue-actions.js';
-import { initQueue, restoreQueue, queueState } from './queue.js';
+import { initQueue, restoreQueue, queueState, cycleQueueRepeat } from './queue.js';
 import { initQueuePanel, isQueueFocused, queueKey, toggleQueue } from './queue-panel.js';
 import { initMusicCatalog, renderMusic, backMusic, openAlbum, openSongAlbum } from './views/music-catalog.js';
 import { API } from './api.js';
@@ -223,7 +223,7 @@ async function initApp() {
   });
   initKeyboard({
     ...keyboardHandlers(),
-    isQueueFocused, queueKey, toggleQueue,
+    isQueueFocused, queueKey, toggleQueue, cycleQueueRepeat,
     queueNext: () => queueSelected('next'), queueAppend: () => queueSelected('append'),
     togglePictureLayout: initPictureLayout(document.getElementById('media-grid')),
     ...initThumbnailSize(document.getElementById('media-grid')),

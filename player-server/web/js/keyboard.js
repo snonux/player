@@ -349,6 +349,7 @@ export function initKeyboard(handlers) {
         e.preventDefault();
         handlers.playPause?.(e);
         break;
+      case 'Y': e.preventDefault(); handlers.cycleQueueRepeat?.(); break;
       case 'e': e.preventDefault(); handlers.queueNext?.(); break;
       case 'E': e.preventDefault(); handlers.queueAppend?.(); break;
       case 'N':

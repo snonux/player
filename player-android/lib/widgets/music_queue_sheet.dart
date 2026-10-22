@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/audio_handler_provider.dart';
 import '../services/audio_handler.dart';
+import '../services/music_queue.dart';
 import '../services/playback_request.dart';
 import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
@@ -61,6 +62,22 @@ class _MusicQueueSheet extends StatelessWidget {
                 Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text('Playing from: ${q.label}')),
+              Semantics(
+                  selected: q.repeat != MusicRepeat.off,
+                  child: TextButton.icon(
+                      style: TextButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                          foregroundColor: q.repeat == MusicRepeat.off
+                              ? Theme.of(context).colorScheme.onSurfaceVariant
+                              : Theme.of(context).colorScheme.primary),
+                      onPressed: q.busy || q.restoreFailed
+                          ? null
+                          : handler.cycleQueueRepeat,
+                      icon: Icon(q.repeat == MusicRepeat.one
+                          ? Icons.repeat_one
+                          : Icons.repeat),
+                      label: Text(
+                          'Repeat: ${q.repeat.name[0].toUpperCase()}${q.repeat.name.substring(1)}'))),
               if (q.entries.isNotEmpty || q.status.isNotEmpty)
                 Padding(
                     padding: const EdgeInsets.all(12),

@@ -7,6 +7,7 @@ import { currentMediaId, queuePlaybackPosition, selectAndPlay, stopAndClose } fr
 let entries = [], index = -1, label = '', activeID = null, serial = 0;
 let revision = 0, loading = false, undo = null, status = '';
 let nextIDs = new Set(), nextEpoch = 0;
+let repeat = 'off';
 function invalidateNext() { nextIDs.clear(); nextEpoch++; }
 let storageKey = null, savedPosition = 0, positionEntry = null, restoreError = false, restored = false;
 const notify = () => { saveQueue(); document.dispatchEvent(new Event('queue:changed')); };
@@ -22,7 +23,7 @@ function saveQueue() {
     localStorage.setItem(storageKey, JSON.stringify({ version: 1,
       entries: entries.map(entry => ({ id: entry.id, mediaId: entry.media.id })), index,
       position: positionEntry === entries[index]?.id ? savedPosition : 0, label,
-      upNext: [...nextIDs] }));
+      repeat, upNext: [...nextIDs] }));
   } catch {
     const message = 'Queue could not be saved on this device.';
     if (status !== message) { status = message; document.dispatchEvent(new Event('queue:changed')); }
@@ -38,7 +39,7 @@ export async function restoreQueue(userId) {
     saveQueue();
     if (queueState().active) stopAndClose();
     beginPlaybackIntent();
-    entries = []; index = -1; activeID = null; label = ''; undo = null;
+    entries = []; index = -1; activeID = null; label = ''; undo = null; repeat = 'off';
     restored = false; positionEntry = null; savedPosition = 0; invalidateNext();
   }
   storageKey = key;
@@ -49,7 +50,7 @@ export async function restoreQueue(userId) {
   catch {
     if (operation !== revision) return;
     try { localStorage.removeItem(storageKey); } catch {}
-    restoreError = false; loading = false; status = 'Saved queue was unreadable. Add songs to start again.'; notify(); return;
+    repeat = 'off'; restoreError = false; loading = false; status = 'Saved queue was unreadable. Add songs to start again.'; notify(); return;
   }
   if (!snapshot) { restoreError = false; loading = false; status = ''; notify(); return; }
   try {
@@ -66,6 +67,7 @@ export async function restoreQueue(userId) {
     const keptCurrent = index >= 0;
     if (!keptCurrent) index = entries.length ? Math.min(snapshot.index, entries.length - 1) : -1;
     serial = Math.max(serial, ...snapshot.entries.map(entry => entry.id));
+    repeat = snapshot.repeat ?? 'off';
     label = snapshot.label; activeID = null; undo = null;
     nextIDs = new Set(snapshot.upNext.filter(id => entries.some(entry => entry.id === id)));
     positionEntry = entries[index]?.id; savedPosition = keptCurrent ? snapshot.position : 0;
@@ -87,9 +89,15 @@ export function retryQueueRestore() {
 }
 export function resumeQueue() { return jumpQueue(index, false, restored); }
 
+export function cycleQueueRepeat() {
+  if (loading || restoreError) return;
+  repeat = { off: 'all', all: 'one', one: 'off' }[repeat];
+  notify();
+}
+
 export function queueUndoToken() { return undo; }
 export function queueState() {
-  return { entries: entries.map(entry => ({ ...entry, upNext: nextIDs.has(entry.id) })), index, label, active: activeID !== null && String(currentMediaId()) === String(activeID), loading, canUndo: !!undo, status, restored, restoreError, position: positionEntry === entries[index]?.id ? savedPosition : 0 };
+  return { entries: entries.map(entry => ({ ...entry, upNext: nextIDs.has(entry.id) })), index, label, active: activeID !== null && String(currentMediaId()) === String(activeID), loading, repeat, canUndo: !!undo, status, restored, restoreError, position: positionEntry === entries[index]?.id ? savedPosition : 0 };
 }
 export function deactivateQueue({ keepNext = false } = {}) {
   capturePosition();
@@ -110,6 +118,7 @@ export function initQueue() {
     }
   });
   document.addEventListener('player:closed', deactivateQueue);
+  document.addEventListener('queue:repeat', cycleQueueRepeat);
 }
 export async function playAlbumCollection(songs, at = 0, source = '') {
   restoreError = false; restored = false; savedPosition = 0; positionEntry = null;
@@ -118,14 +127,14 @@ export async function playAlbumCollection(songs, at = 0, source = '') {
   index = at; label = source || songs[at]?.music?.album || 'Album'; undo = null;
   await jumpQueue(index);
 }
-export async function jumpQueue(at, automatic = false, preserveNext = false) {
+export async function jumpQueue(at, automatic = false, preserveNext = false, restart = false) {
   if (!entries[at]) return;
   if (!automatic && !preserveNext) invalidateNext();
   else nextIDs = new Set(entries.slice(at + 1).filter(entry => nextIDs.has(entry.id)).map(entry => entry.id));
   const operation = ++revision, intent = beginPlaybackIntent(), entry = entries[at];
   index = at; loading = true; status = 'Loading track…'; notify();
   let position = restored && positionEntry === entry.id ? savedPosition : 0;
-  if (!(restored && positionEntry === entry.id) && entry.media.duration > 1200) {
+  if (!restart && !(restored && positionEntry === entry.id) && entry.media.duration > 1200) {
     try { const p = (await API.mediaDetail(entry.media.id))?.progress; position = p?.finished ? 0 : p?.position_seconds || 0; } catch {}
   }
   if (operation !== revision || !isPlaybackIntent(intent) || entries[index]?.id !== entry.id) return;
@@ -134,10 +143,12 @@ export async function jumpQueue(at, automatic = false, preserveNext = false) {
   selectAndPlay(entry.media, index, position);
   loading = false; status = ''; notify();
 }
-export async function advanceQueue(delta) {
+export async function advanceQueue(delta, { completed = false } = {}) {
   if (!loading && !queueState().active) return false;
-  const target = index + delta;
-  if (target >= 0 && target < entries.length) await jumpQueue(target, delta > 0);
+  if ((loading && completed) || !entries.length) return true;
+  let target = completed && repeat === 'one' ? index : index + delta;
+  if (repeat === 'all') target = ((target % entries.length) + entries.length) % entries.length;
+  if (target >= 0 && target < entries.length) await jumpQueue(target, completed || delta > 0, false, completed && (repeat === 'one' || target === 0));
   return true;
 }
 function remember() { undo = { entries: [...entries], index, nextIDs: new Set(nextIDs), nextEpoch, label }; }

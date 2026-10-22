@@ -20,9 +20,11 @@ export function initDetach(options = {}) {
     } else if (ev.data.type === 'detach-prev') {
       deps.triggerPrevious?.({ forcePlay: ev.data.play ?? true });
     } else if (ev.data.type === 'detach-next') {
-      deps.triggerNext?.({ forcePlay: ev.data.play ?? true });
+      deps.triggerNext?.({ forcePlay: ev.data.play ?? true, completed: ev.data.completed === true });
     } else if (ev.data.type === 'detach-nav') {
       deps.triggerNavigate?.(Number(ev.data.delta || 0), { forcePlay: ev.data.play ?? true });
+    } else if (ev.data.type === 'detach-repeat') {
+      document.dispatchEvent(new Event('queue:repeat'));
     } else if (ev.data.type === 'detach-queue') {
       window.focus();
       document.dispatchEvent(new Event('queue:open'));

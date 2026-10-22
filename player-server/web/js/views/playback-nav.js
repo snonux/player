@@ -91,7 +91,7 @@ function selectedPlayableIndex(cards, preferCurrent) {
 
 export async function navigatePlayable(delta, options = {}) {
   const intent = currentPlaybackIntent();
-  if (await advanceQueue(delta)) return;
+  if (await advanceQueue(delta, options)) return;
   if (!isPlaybackIntent(intent)) return;
   skipImages = currentMediaInfo()?.type === 'audio';
   const cards = visiblePlayableCards().filter((card) => !skipImages || state.media.find((m) => String(m.id) === card.dataset.id)?.type !== 'image');

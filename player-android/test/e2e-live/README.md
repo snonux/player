@@ -364,3 +364,45 @@ the rooted disposable emulator solely as authoritative evidence; all feature
 mutations use visible controls. It deliberately leaves the app, fixture/server,
 emulator and evidence intact for root review and coordinated stop-only cleanup.
 It never invokes the baseline app-data-clearing teardown.
+
+## Music M20 repeat modes
+
+`music_repeat_e2e.py` drives the actual native app on the rooted disposable
+API34 emulator. Transport checks let tracks naturally finish: Off stops and
+same-source Replay stops again, All wraps edited occurrence order with both
+source tones, One resets the exact later duplicate to zero, and touch Next /
+notification Previous still change sources. Recovery checks mode/order/offset
+through force-stop and explicit unlock/Resume, account separation, current
+removal and Clear/Undo, empty-queue persistence and original portrait light/dark
+screenshots. The offline phase stops only the owned fixture server, attempts
+real cold unlock, then restarts that same binary/database for explicit retry.
+The runner updates the optional ownership JSON after that restart and retains
+all runtimes for root audit and stop-only cleanup. It reads only the scoped
+identifier-only queue preference document, never changes preferences directly.
+
+```sh
+python3 player-android/test/e2e-live/music_repeat_e2e.py /home/paul/tmp/dk3-fixture \
+  --apk /home/paul/tmp/dk3-evidence/app-x86_64-release.apk \
+  --emulator-wav /home/paul/tmp/dk3-evidence/emulator-output.wav \
+  --ownership-path /home/paul/tmp/dk3-evidence/runtime-ownership.json
+```
+
+Root must first authorize and start the fresh local fixture and emulator with
+QEMU audio output. `--scenario transport|recovery|offline` and `--resume-device`
+allow unfinished phases to run without repeating accepted ones; a resume still
+force-stops/unlocks the retained app. All screenshots/audio/state remain outside
+git. Compile/lint or unit results do not constitute native acceptance.
+
+Within transport, `--transport-from all|one|manual` skips already accepted earlier
+phases. M20's local preference reader retries transient failed/empty/XML reads
+up to ten times and never logs full preferences; valid JSON/schema failures
+remain failures. One's natural reset oracle reads the handler's persisted live
+queue offset because Android media-session dumps can retain a snapshot position
+between state events. It still requires the same occurrence, real PLAYING state
+and measured original source audio.
+
+Offline-only continuation can retain an existing real paused queue rather than
+repeat transport setup. `--offline-snapshot <identifier-only.json>` checks its
+exact order, selected occurrence/index/offset and mode against the recorded
+oracle before stopping the owned server. No arbitrary maximum offset below the
+actual track duration is required.

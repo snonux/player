@@ -353,3 +353,18 @@ dropped with a quiet notice; connection failures keep the saved session and
 offer **Retry restore**. This is local music queue recovery, separate from
 per-file resume and podcast synchronization. It does not synchronize a queue
 between devices. Clearing app storage removes these local sessions.
+
+## Repeat a music queue
+
+Open **Now Playing queue** and tap **Repeat** to cycle **Off → All → One**. Off
+advances through the queue and stops after the last song. All wraps to the
+first song. One restarts the current occurrence from zero when it ends.
+Touch, notification and headset Next/Previous still choose adjacent songs in
+One; only All wraps those controls at the queue ends. The labeled repeat icon
+shows the mode and its active state. Back closes the queue sheet.
+
+Repeat is saved with the server/account queue on this device, including an
+empty queue. After restart and unlock, recovery stays paused at the saved
+selection and position until you tap **Resume queue**. Clear and Undo keep the
+chosen mode. Sets, podcast, local-file and downloaded playback keep their
+existing behavior.

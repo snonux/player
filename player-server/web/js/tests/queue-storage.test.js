@@ -7,3 +7,6 @@ for(const value of ['bad','{}',JSON.stringify({...snapshot,version:2}),JSON.stri
 assert.notEqual(queueStorageKey('http://a',1),queueStorageKey('http://b',1));
 assert.notEqual(queueStorageKey('http://a',1),queueStorageKey('http://a',2));
 console.log('Queue snapshot validation passed.');
+
+for (const repeat of ['off','all','one']) assert.equal(readQueueSnapshot(JSON.stringify({...snapshot,repeat})).repeat,repeat);
+for (const repeat of [null, false, 'invalid', 0]) assert.throws(()=>readQueueSnapshot(JSON.stringify({...snapshot,repeat})));

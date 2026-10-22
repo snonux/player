@@ -1,3 +1,4 @@
+import { currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { mediaTitle } from './music.js';
 import { API, redirectToLogin } from './api.js';
 import { state } from './state.js';
@@ -59,6 +60,8 @@ let progressInterval = null;
 let progressWrites = Promise.resolve();
 let currentMediaIndex = -1;
 let reportProgress = true;
+let sourceEpoch = 0;
+let completingEpoch = null;
 let nextHandler = null;
 let previousHandler = null;
 // Set while the current item's compat stream is being probed and its media
@@ -190,7 +193,7 @@ function bindCast(e) {
     },
     onRemoteTime: (seconds, duration) => showPosition(e, seconds, duration || effectiveDuration()),
     onRemotePlaying: (playing) => updateUI(playing),
-    onRemoteEnded: () => triggerNext({ forcePlay: true }),
+    onRemoteEnded: () => triggerNext({ forcePlay: true, completed: true }),
     onCastStarted: (device) => {
       updateUI(true);
       setPlayerStatus(`Playing on ${device}`);
@@ -268,16 +271,20 @@ function bindMediaEvents(e, m) {
   });
   m.addEventListener('ended', async () => {
     if (m !== currentMediaElement() || !m.ended) return;
+    const epoch = sourceEpoch, intent = currentPlaybackIntent();
+    if (completingEpoch === epoch) return;
+    completingEpoch = epoch;
     const endedID = currentMedia?.id;
     updateUI(false);
     isPlaying = false;
     stopProgressTimer();
     await saveCurrentProgress({ finished: true });
-    if (currentMedia?.id === endedID && currentMediaElement() === m && m.ended) {
-      triggerNext({ forcePlay: true });
+    if (sourceEpoch === epoch && isPlaybackIntent(intent) && currentMedia?.id === endedID && currentMediaElement() === m && m.ended) {
+      triggerNext({ forcePlay: true, completed: true });
     }
   });
-  m.addEventListener('play', () => { updateUI(true); isPlaying = true; startProgressTimer(); });
+  m.addEventListener('seeking', () => { sourceEpoch++; });
+  m.addEventListener('play', () => { sourceEpoch++; completingEpoch = null; updateUI(true); isPlaying = true; startProgressTimer(); });
   m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
   m.addEventListener('error', () => handleElementError(m));
 }
@@ -460,6 +467,7 @@ export function seekRelative(seconds) {
 }
 
 export function stopAndClose() {
+  sourceEpoch++;
   saveCurrentProgress();
   const detached = stopDetached();
   if (reportProgress && detached?.media?.id && detached.currentTime > 0) enqueueProgress(detached.media.id, detached.currentTime);
@@ -577,6 +585,7 @@ function loadMedia(media, resumeFrom = 0) {
 // library marks session-authenticated library playback in the main window
 // (as opposed to share and popup URLs); see finishPendingSource.
 function showMedia(media, source, thumbnailUrl) {
+  sourceEpoch++;
   personal?.setMedia(media);
   resetSeekPreview();
   // Whatever was still being prepared belongs to the previous item.
