@@ -41,7 +41,8 @@ function fakeElement(id = '') {
     getAttribute(name) { return name in attrs ? attrs[name] : null; },
     removeAttribute(name) { delete attrs[name]; },
     appendChild(child) { el.children.push(child); elements[child.id] = child; },
-    querySelector: () => null,
+    prepend(child) { el.children.unshift(child); elements[child.id] = child; },
+    querySelector: selector => el.children.find(child => selector === `.${child.className}`) || null,
   };
   return el;
 }
@@ -65,13 +66,13 @@ const elements = {};
 function resetDom() {
   for (const key of Object.keys(elements)) delete elements[key];
   for (const id of ['player', 'btn-play', 'big-play', 'cover-art', 'media-image', 'progress-track', 'progress-buffered',
-    'progress-fill', 'progress-thumb', 'time-elapsed', 'time-total', 'toast', 'btn-cast']) {
+    'progress-fill', 'progress-thumb', 'time-elapsed', 'time-total', 'toast', 'btn-cast', 'btn-restore-player', 'player-restore-title']) {
     elements[id] = fakeElement(id);
   }
   elements['media-video'] = fakeMedia('media-video');
   elements['media-audio'] = fakeMedia('media-audio');
   const stage = fakeElement('stage');
-  elements.player.querySelector = (selector) => (selector === '.stage' ? stage : null);
+  elements.player.querySelector = selector => selector === '.stage' ? stage : null;
 }
 
 globalThis.CSS = { escape: String };
@@ -116,6 +117,11 @@ function script(...answers) {
   requests = [];
   answer = async () => (answers.length > 1 ? answers.shift() : answers[0]);
 }
+
+const osActions = {};
+const os = { metadata: null, setActionHandler(action, callback) { osActions[action] = callback; }, setPositionState() {} };
+Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaSession: os } });
+globalThis.MediaMetadata = class { constructor(fields) { Object.assign(this, fields); } };
 
 const player = await import('../playback.js');
 const { API } = await import('../api.js');
@@ -921,6 +927,115 @@ async function testSenderNaturalCompletionRetainsRepeatOneOccurrence() {
   } finally {API.castTicket=ticket;delete window.chrome;delete window.cast;delete window.isSecureContext;}
 }
 
+async function testPausedReattachHintPreservesIntentAndPreparation() {
+  const callbacks={},oldListener=window.addEventListener,oldOpen=window.open;
+  const popup={closed:false,postMessage(){},close(){this.closed=true;}};
+  window.addEventListener=(type,fn)=>{(callbacks[type] ||= []).push(fn);};
+  window.open=()=>popup;
+  const close=(media,position=7)=>{
+    for(const fn of callbacks.message||[])fn({origin:'http://test',source:popup,data:{type:'detach-closing',state:{media,currentTime:position,playing:false,index:0}}});
+  };
+  try{
+    setup();player.selectAndPlay({id:720,type:'audio',file_name:'a.mp3'},0);player.toggleDetach();
+    const b={id:721,type:'audio',file_name:'b.mp3'};close(b);
+    assertEqual(audio().paused,true,'paused popup return never autoplays');
+    audio().readyState=1;audio().dispatch('loadedmetadata');
+    assertEqual(audio().currentTime,7,'paused return retains current source position');
+    assertEqual(statusText(),'Playback returned here. Press Play to resume.','paused return explains visible Play precondition');
+    assertEqual(elements['btn-play'].textContent,'▶','existing Play is the primary action');
+    player.requestPlay();audio().dispatch('playing');
+    assertEqual(statusText(),'','actual playback clears return hint');
+    player.toggleDetach();close(b);player.selectMedia({id:722,type:'audio',file_name:'c.mp3'},0);
+    assertEqual(statusText(),'','new source clears old return hint');
+    player.toggleDetach();let release;answer=()=>new Promise(done=>release=done);close(wmaAudio);
+    assert(statusText().startsWith('Preparing '),'return hint never replaces compat preparation');
+    release(response(200));await settle();
+    assertEqual(audio().paused,true,'prepared paused return remains paused');
+    assertEqual(statusText(),'Playback returned here. Press Play to resume.','hint appears only after source ready');
+    audio().error={code:2};audio().dispatch('error');
+    assertEqual(statusText(),'','runtime error clears return hint instead of masking Retry feedback');
+    player.stopAndClose();
+  }finally{window.addEventListener=oldListener;window.open=oldOpen;}
+}
+
+async function testRegisteredSystemPauseCancelsPreparingPlayIntent() {
+  setup();let release;
+  answer=()=>new Promise(done=>release=done);
+  player.selectMedia(wmaAudio,0,4);
+  osActions.play({});osActions.pause({});
+  assertEqual(player.hasPendingPlay(),false,'OS Pause cancels preparing autoplay intent');
+  release(response(200));await settle();
+  assertEqual(audio().playCalls,0,'resolved preparation cannot play after OS Pause');
+  player.stopAndClose();
+}
+async function testRegisteredSystemPlayRetriesErrorsIdempotently() {
+  setup();script(response(500),response(200));
+  player.selectAndPlay(wmaAudio,0,4);await settle();
+  assertEqual(audio().getAttribute('src'),null,'OS retry fixture first fails preparation');
+  osActions.play({});await settle();
+  assertEqual(requests.length,2,'OS Play reprobes failed preparation');
+  assertEqual(audio().src,'/api/media/3/compat','OS Play restores prepared source');
+  assertEqual(audio().playCalls,1,'OS Play starts exactly once after successful retry');
+  const plays=audio().playCalls;osActions.play({});
+  assertEqual(audio().playCalls,plays,'OS Play already-playing is idempotent');
+  audio().currentTime=7;audio().error={code:2};audio().dispatch('error');
+  const loads=audio().loads;
+  osActions.play({});await settle();
+  assertEqual(audio().loads,loads+2,'OS Play clears failed compat source then attaches successfully probed source');
+  assertEqual(audio().error,null,'OS Play clears runtime failure by reloading source');
+  player.stopAndClose();
+}
+async function testRegisteredSystemMetadataReturnsAfterCastAndFailedStart() {
+  const cast=await import('../cast.js'), listeners={};let failed=false;
+  let session={loadMedia:async()=>{if(failed)throw Error('receiver load failed');},getCastDevice:()=>({friendlyName:'Owned fake receiver'})};
+  const context={setOptions(){},getCastState:()=> 'none',getCurrentSession:()=>session,
+    addEventListener:(type,fn)=>listeners[type]=fn,endCurrentSession:()=>{session=null;listeners.session({sessionState:'ended'});}};
+  function Value(){}
+  window.chrome={cast:{AutoJoinPolicy:{},Image:Value,media:{DEFAULT_MEDIA_RECEIVER_APP_ID:'default',StreamType:{BUFFERED:'buffered'},PlayerState:{IDLE:'idle'},MediaInfo:Value,LoadRequest:Value,GenericMediaMetadata:Value,MusicTrackMediaMetadata:Value}}};
+  window.isSecureContext=true;
+  window.cast={framework:{CastContext:{getInstance:()=>context},CastContextEventType:{CAST_STATE_CHANGED:'cast',SESSION_STATE_CHANGED:'session'},CastState:{NO_DEVICES_AVAILABLE:'none'},SessionState:{SESSION_STARTED:'started',SESSION_ENDED:'ended'},RemotePlayer:function(){return {isPaused:true};},RemotePlayerController:function(){return {addEventListener(){}};},RemotePlayerEventType:{}}};
+  const ticket=API.castTicket;
+  try {
+    setup({cast:true});window.__onGCastApiAvailable(true);
+    API.castTicket=async()=>({ticket:'owned',stream_content_type:'audio/mpeg'});
+    answer=async()=>({ok:true,blob:async()=>new Blob(['art'],{type:'image/png'})});
+    const media={id:711,type:'audio',file_name:'file.mp3',thumbnail_path:'art',music:{title:'Actual song',artist:'Actual artist',album:'Actual album'}};
+    player.selectAndPlay(media,0);await settle();
+    assertEqual(os.metadata?.title,'Actual song','local music initially published');
+    listeners.session({sessionState:'started'});await settle();
+    assertEqual(os.metadata,null,'Cast takeover clears local OS session');
+    cast.stopCasting();await settle();
+    assertEqual(os.metadata?.title,'Actual song','Cast handback republishes local title');
+    assertEqual(os.metadata?.artist,'Actual artist','Cast handback republishes actual artist');
+    assertEqual(os.metadata?.artwork?.length,1,'Cast handback republishes owned artwork');
+    assert(typeof osActions.play==='function'&&typeof osActions.nexttrack==='function','Cast handback restores OS actions');
+    osActions.play?.({});assertEqual(audio().paused,false,'returned OS Play controls actual local element');
+    session={loadMedia:async()=>{throw Error('failed start');}};failed=true;
+    listeners.session({sessionState:'started'});await settle();
+    assertEqual(os.metadata?.title,'Actual song','failed Cast start rolls back to local OS metadata');
+    assert(typeof osActions.play==='function','failed Cast start restores system Play');
+    player.stopAndClose();
+  } finally {API.castTicket=ticket;delete window.chrome;delete window.cast;delete window.isSecureContext;}
+}
+
+async function testRichIdentityClearsArtworkAcrossMediaKinds() {
+  setup();
+  elements['player-music-identity'] = fakeElement('player-music-identity');
+  player.selectMedia({id:701,type:'audio',file_name:'01.mp3',thumbnail_path:'cover',music:{title:'Tagged title',artist:'Real artist',album:'Real album'}},0);
+  assertEqual(elements['player-music-identity'].hidden,false,'full music identity visible');
+  assertEqual(elements['player-restore-title'].textContent,'Restore: Tagged title · Real artist · Real album','mini title includes actual tags');
+  const art=elements['btn-restore-player'].querySelector('.player-mini-art');
+  assertEqual(art.hidden,false,'mini uses artwork');
+  player.toggleMinimize();
+  assertEqual(elements['player-restore-title'].textContent,'Restore: Tagged title · Real artist · Real album','minimize retains metadata');
+  player.selectMedia({id:702,type:'video',file_name:'film.mp4'},0);
+  assertEqual(art.hidden,true,'video clears old music mini art');
+  assertEqual(elements['player-music-identity'].hidden,true,'video hides music text');
+  player.selectMedia({id:703,type:'image',file_name:'cover.jpg'},0);
+  assertEqual(art.hidden,true,'image clears old mini art');
+  player.stopAndClose();assertEqual(art.hidden,true,'stop leaves no artwork');
+}
+
 async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
   setup();
   const listeners={}, messages=[], writes=[];
@@ -980,6 +1095,11 @@ for (const test of [
   testElementErrorShowsToast,
   testIdleElementErrorIsIgnored,
   testDirectLoadProbesShareCompatUrl,
+  testPausedReattachHintPreservesIntentAndPreparation,
+  testRegisteredSystemPauseCancelsPreparingPlayIntent,
+  testRegisteredSystemPlayRetriesErrorsIdempotently,
+  testRegisteredSystemMetadataReturnsAfterCastAndFailedStart,
+  testRichIdentityClearsArtworkAcrossMediaKinds,
   testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle,
 ]) {
   try {

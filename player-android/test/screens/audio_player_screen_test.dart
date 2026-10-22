@@ -66,6 +66,8 @@ import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/progress_queue.dart';
 import 'package:player_android/services/playback_preparer.dart';
 import 'package:player_android/services/playback_request.dart';
+import 'package:player_android/services/music_queue.dart';
+import 'package:player_android/widgets/music_mini_player.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 import 'package:player_android/services/cast/cast_controller.dart';
 import 'package:player_android/services/cast/cast_device.dart';
@@ -347,9 +349,10 @@ class _PlayableHandler extends PlayerAudioHandler {
   String? lastId;
 
   @override
-  void setMediaItem({required String id, required String title}) {
-    lastId = id;
-    lastTitle = title;
+  void setMediaRequest(PlaybackRequest request) {
+    lastId = request.identity;
+    lastTitle = request.title;
+    super.setMediaRequest(request);
   }
 
   @override
@@ -508,6 +511,136 @@ String _errorText(WidgetTester tester) => tester
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets(
+      'mini player attaches active lease without source load or position reset',
+      (tester) async {
+    final (player, handler) = _usePlayableHandler();
+    final coordinator = PlaybackSessionCoordinator();
+    final request = ServerPlaybackRequest(
+        mediaId: 1,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Real title',
+        artist: 'Real artist',
+        album: 'Real album',
+        sourceUri: Uri.parse('http://local/1'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    await tester.runAsync(() => handler.insertQueue(
+        entries: [request],
+        action: QueueInsertion.now,
+        claim: (r) => coordinator.claim(
+            kind: r.kind, identity: r.identity, stop: handler.stop),
+        load: (r, current) async => AudioSource.uri(r.sourceUri)));
+    player.elapsed = const Duration(seconds: 37);
+    final loads = player.sourceRequests, lease = handler.sequenceLease;
+    await tester.pumpWidget(ProviderScope(
+        overrides: [
+          audioHandlerProvider.overrideWithValue(handler),
+          apiClientProvider.overrideWithValue(_FakeApiClient()),
+        ],
+        child: const MaterialApp(
+            home: Scaffold(bottomNavigationBar: MusicMiniPlayer()))));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Real artist · Real album'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('music_mini_open')));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    expect(find.byKey(const Key('audio_track_title')), findsOneWidget);
+    expect(player.sourceRequests, loads);
+    expect(player.elapsed, const Duration(seconds: 37));
+    expect(identical(handler.sequenceLease, lease), isTrue);
+    await tester.pageBack();
+    await tester.pump();
+    expect(player.isPlaying, isTrue);
+    expect(player.sourceRequests, loads);
+    await tester.runAsync(handler.stop);
+    await tester.pump();
+    expect(find.byKey(const Key('music_mini_open')), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      'mini attachment seeds loading and error snapshots and rejects stopped lease',
+      (tester) async {
+    final (player, handler) = _usePlayableHandler();
+    final coordinator = PlaybackSessionCoordinator();
+    PlaybackRequest request(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Track $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    final pending = Completer<AudioSource?>();
+    await tester.runAsync(() => handler.insertQueue(
+        entries: [request(1), request(2)],
+        action: QueueInsertion.now,
+        claim: (r) => coordinator.claim(
+            kind: r.kind, identity: r.identity, stop: handler.stop),
+        load: (r, current) async => r.title == 'Track 2'
+            ? await pending.future
+            : AudioSource.uri(r.sourceUri)));
+    late Future<void> moving;
+    await tester.runAsync(() async {
+      moving = handler.skipToNext();
+      await Future<void>.delayed(Duration.zero);
+    });
+    final state = handler.musicState!, lease = handler.sequenceLease!;
+    expect(state.loading, isTrue);
+    await tester.pumpWidget(ProviderScope(
+        overrides: [
+          audioHandlerProvider.overrideWithValue(handler),
+          apiClientProvider.overrideWithValue(_FakeApiClient())
+        ],
+        child: const MaterialApp(
+            home: Scaffold(bottomNavigationBar: MusicMiniPlayer()))));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('music_mini_open')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('audio_player_loading')), findsOneWidget);
+    await tester.runAsync(() async {
+      pending.completeError(StateError('track unavailable'));
+      await moving;
+    });
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    expect(find.byKey(const Key('audio_player_retry')), findsOneWidget);
+    await tester.pageBack();
+    await tester.pump();
+    final next = tester.widget<IconButton>(find.byWidgetPredicate(
+        (w) => w is IconButton && w.tooltip == 'Next track'));
+    expect(next.onPressed, isNotNull,
+        reason: 'failure snapshot rebuilds mini controls after loading ends');
+    final loads = player.sourceRequests;
+    await tester.runAsync(handler.stop);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(ProviderScope(
+        overrides: [audioHandlerProvider.overrideWithValue(handler)],
+        child: MaterialApp(
+            home: AudioPlayerScreen(
+                mediaId: '2',
+                request: state.request,
+                attachCurrent: true,
+                attachmentLease: lease,
+                attachmentGeneration: state.sourceGeneration))));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('This track is no longer playing. Return to the queue.'),
+        findsOneWidget);
+    expect(player.sourceRequests, loads,
+        reason: 'stale attachment never reloads the stopped source');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
       'server lyrics use the current media and line taps seek its session',
       (tester) async {
@@ -806,6 +939,7 @@ void main() {
     await tester.pump();
     expect(player.isPlaying, isFalse);
     await tester.tap(find.byKey(const Key('audio_player_play_pause')));
+    await tester.ensureVisible(find.byKey(const Key('audio_player_speed_1_5')));
     await tester.tap(find.byKey(const Key('audio_player_speed_1_5')));
     await tester.pump();
     expect(handler.playCalls, 1);
@@ -1061,7 +1195,8 @@ void main() {
         serverBaseUrl: Uri.parse('http://localhost:8080'));
     await tester.pump();
     await tester.pump();
-    expect(find.text('Chapter One.mp3'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, 'Chapter One.mp3'), findsOneWidget);
+    expect(find.byKey(const Key('audio_track_title')), findsOneWidget);
     expect(handler.lastTitle, 'Chapter One.mp3');
     expect((player.loadedSource as UriAudioSource).headers, {
       'Authorization': 'Bearer test-token',
@@ -1137,7 +1272,7 @@ void main() {
     expect(handler.playCalls, 1);
     expect((player.loadedSource as UriAudioSource).headers, isNull);
     expect(handler.lastTitle, 'Shared podcast.mp3');
-    expect(find.text('Shared podcast.mp3'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, 'Shared podcast.mp3'), findsOneWidget);
     expect(client.getMediaProgressCallCount, 0);
     player.elapsed = const Duration(seconds: 97);
     await tester.pump(const Duration(seconds: 5));

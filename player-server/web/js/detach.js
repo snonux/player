@@ -76,6 +76,7 @@ export function toggleDetach() {
   }
   // The popup loads (and, for a compat stream, prepares) the item itself; a
   // probe still pending here must not start playback in the hidden player.
+  deps.releaseLocalSession?.();
   deps.cancelPendingSource?.();
   deps.currentMediaElement?.()?.pause();
   e.player.classList.add('hidden');
@@ -132,6 +133,7 @@ function reattachDetached({ closePopup = true } = {}) {
     }
     // requestPlay also covers a compat stream that is not ready yet.
     if (state.playing) deps.requestPlay?.();
+    else if (state.media.type !== 'image') deps.onPausedReattach?.();
   }
 }
 

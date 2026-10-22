@@ -70,6 +70,47 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   final AudioPlayer _player;
+  Future<Uri?> Function(PlaybackRequest request, bool Function() current)?
+      artworkLoader;
+  int _metadataEpoch = 0;
+  PlaybackRequest? _metadataRequest;
+  PlaybackRequest? get currentMetadataRequest => _metadataRequest;
+
+  void clearMediaItem() {
+    _metadataEpoch++;
+    _metadataRequest = null;
+    mediaItem.add(null);
+  }
+
+  void setMediaRequest(PlaybackRequest request) {
+    final same = identical(_metadataRequest, request);
+    _metadataRequest = request;
+    final epoch = same ? _metadataEpoch : ++_metadataEpoch;
+    mediaItem.add(MediaItem(
+        id: request.identity,
+        title: request.title,
+        artist: request.artist.isEmpty ? 'Unknown artist' : request.artist,
+        album: request.album.isEmpty ? null : request.album,
+        artUri: same ? mediaItem.value?.artUri : null,
+        duration: _player.duration));
+    if (same || request.artworkUri == null || artworkLoader == null) return;
+    unawaited(() async {
+      try {
+        bool current() =>
+            epoch == _metadataEpoch &&
+            _ownsSource?.call() != false &&
+            identical(_metadataRequest, request);
+        final art = await artworkLoader!(request, current);
+        if (art != null &&
+            epoch == _metadataEpoch &&
+            _ownsSource?.call() != false &&
+            identical(_metadataRequest, request)) {
+          mediaItem.add(mediaItem.value!.copyWith(artUri: art));
+        }
+      } catch (_) {/* Optional artwork must never fail playback. */}
+    }());
+  }
+
   List<PlaybackRequest> _musicEntries = const [];
   int _musicIndex = -1;
   bool _movingTrack = false;
@@ -656,6 +697,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (delta != 0) _retryMusicPosition = null;
     _movingTrack = true;
     final generation = ++_sourceGeneration;
+    if (!(!_musicWrap &&
+        !queueWrap &&
+        completed &&
+        (target < 0 || target >= _musicEntries.length))) {
+      clearMediaItem();
+    }
     final owns = _ownsSource;
     bool current() => generation == _sourceGeneration && owns?.call() != false;
     _controlsEnabled = false;
@@ -690,6 +737,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _failedMusicDelta = 0;
       _publishMusic(loading: true);
       final request = _musicEntries[target];
+      setMediaRequest(request);
       final source = await _musicLoader!(request, current);
       if (!current()) return;
       if (source == null) throw StateError('Playback preparation stopped');
@@ -708,7 +756,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       await seekForSession(
           Duration(milliseconds: (position * 1000).round()), generation);
       if (!current()) return;
-      setMediaItem(id: request.identity, title: request.title);
+      setMediaRequest(request);
       startProgress(
           savePosition: request.savePosition!,
           markFinished: request.markFinished!);
@@ -759,6 +807,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Invalidates pending source work from the previous audio session.
   int beginSourceSession({bool Function()? ownsSource}) {
+    clearMediaItem();
     ++_queueRecoveryGeneration;
     if (_queueBusy && _albumQueue.isEmpty) _queueStatus = '';
     _queueBusy = false;
@@ -906,6 +955,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
+    clearMediaItem();
     _deactivateQueue();
     unawaited(_musicPositions?.cancel());
     _musicPositions = null;

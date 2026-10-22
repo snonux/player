@@ -406,3 +406,86 @@ repeat transport setup. `--offline-snapshot <identifier-only.json>` checks its
 exact order, selected occurrence/index/offset and mode against the recorded
 oracle before stopping the owned server. No arbitrary maximum offset below the
 actual track duration is required.
+
+## Rich music system session (M54)
+
+`music_media_session_e2e.py` uses the optional `--session-artwork` music fixture
+and a rooted disposable API34 emulator. It reads the real OS MediaController,
+including the actual MediaMetadata bitmap, through the small `app_process`
+helper, and operates visible notification and keyguard buttons. Build the
+helper outside git (the script records exact javac/d8/jar commands):
+
+```sh
+# From player-android/test/e2e-live/:
+python3 media_session_probe.py /tmp/qk3-evidence/session-probe
+python3 -u music_media_session_e2e.py /tmp/qk3-fixture \
+  --apk /tmp/qk3-evidence/app-x86_64-release.apk \
+  --emulator-wav /tmp/qk3-evidence/emulator-output.wav \
+  --probe-jar /tmp/qk3-evidence/session-probe/media-session-probe.jar
+```
+
+The runner verifies distinct real titles/artists/albums and blue/orange decoded
+OS bitmaps after Next/Previous, actual audio tones and fresh per-ID saved
+progress, visible system Play/Pause, mini/full attachment without position reset,
+light/dark, untagged/no-art fallback, actual adb-reverse cutoff, recovery and
+logout clearing. The outage check waits for visible Retry while the reverse
+tunnel is still removed; temporary preparing state is not counted as a failure.
+The actual API34 error session became inactive (no old OS identity or artwork),
+while the full player identified the failed target. Existing native error
+behavior is preserved: system Play while
+the source is failed is a no-op; the full player's visible Retry loads the
+failed target, after which system Play/Pause works normally. The run retains
+its runtime for the owning orchestrator's evidence audit and stop-only cleanup;
+it never targets another emulator or an external server.
+
+The standalone probe initializes Android's real media-service manager before
+reading sessions, and preserves exit status/stdout/stderr beside each bitmap.
+`--resume-device` keeps the signed-in installed app; `--evidence-dir` separates
+attempts, `--skip-mini` skips an already accepted attachment check, and
+`--from-boundaries` resumes the current paused A queue for the remaining cases.
+`--offline-only` retains the existing queue and selects/pauses C through the
+visible player before the remaining outage/recovery/logout checks.
+
+Animated system media cards can prevent `uiautomator dump` reaching idle.
+System controls require a successful fresh dump from `com.android.systemui`;
+failed dumps never reuse `/sdcard/ui.xml`. In `--coordinate-controls` mode the
+runner instead saves each current system screenshot and waits for a matching
+coordinate JSON containing `screenshot`, `dimensions`, `x`, and `y`. Inspect that
+exact original before supplying the visible button center. The actual OS
+metadata/bitmap, source audio, and fresh progress still determine success.
+
+For qk3 on 2026-10-22, the installed API34 x86_64 app was version 0.8.2, code
+4022 (pubspec 0.8.2+22). Its installed APK matched the final artifact SHA256
+`db92e0d82b055ab4ebb38d04e1ae95bbb8a9a94d529e049f18059c471541bc2a`.
+Accepted phases span native attempts 2 (attachment), 4 (all four notification
+and keyguard controls, artwork, distinct audio and fresh progress), 5 (theme
+contexts and strict missing album/art fallback), and 6 (actual failed-source
+Retry, recovered system controls and logout). Failed attempts are preserved;
+merged semantics and failed idle dumps are described in the implementation
+record. Shared stale XML handling is pending follow-up task `bo3`.
+
+The final unfinished outage/clear continuation used:
+
+```sh
+python3 -u player-android/test/e2e-live/music_media_session_e2e.py \
+  /home/paul/tmp/qk3-fixture-attempt2 --resume-device --offline-only \
+  --coordinate-controls --evidence-dir /home/paul/tmp/qk3-evidence/native-attempt6 \
+  --emulator-wav /home/paul/tmp/qk3-evidence/emulator-output.wav \
+  --probe-jar /home/paul/tmp/qk3-evidence/session-probe-fixed/media-session-probe.jar
+```
+
+Run that form from the repo root only after owning and verifying the retained
+runtime, installed app and signed-in account. Each coordinate-mode step prints
+the current screenshot and expected JSON path; it waits for inspection rather
+than inventing coordinates. In the accepted run, visible Retry appeared before
+reverse restoration; recovered OS artwork/audio/progress and actual system
+Play/Pause were then checked. The full audio screen retains its established
+black presentation in both system theme contexts; the library mini bar follows
+light/dark themes. Physical Cast receivers and headsets were not exercised.
+
+The external `m54-native-acceptance-index.json` and `native-actual-attempt*.log`
+files under `/home/paul/tmp/qk3-evidence` map originals to accepted phases.
+Root subsequently stopped only verified task server/emulator/Pulse resources,
+verified no task browser processes remained, and preserved both fixtures and all
+evidence. Full cross-component gates, reviews and the observed Chrome activation
+limits are recorded in `docs/music-m54-implementation.md` from the repo root.

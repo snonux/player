@@ -132,3 +132,29 @@ for All/One. Sets browse playback keeps its existing behavior.
 Repeat belongs to the same server/account queue on this browser, including an
 empty queue. Reload restores it paused with the saved selection and position;
 choose **Resume queue** to play. Clear and Undo keep the chosen repeat mode.
+
+## Music identity and system controls
+
+Music playback shows the real title, artist, album and available cover in the
+full player and minimized Restore bar. Missing artist uses **Unknown artist**;
+untagged songs use the filename stem. Missing or unavailable artwork clears the
+previous cover. The Restore bar combines the identity in one truncated line;
+full accessible labels retain the complete text.
+
+An active browser OS media session receives the same identity and artwork.
+System Previous/Next change tracks; seeking remains separate. Detached playback
+owns its own session, and Cast takeover clears the local session. Clearing or
+signing out removes obsolete identity. Actual Chrome 144 and Firefox 156 OS
+metadata, readable artwork and all four transport controls were verified.
+
+In the observed Chrome 144 environment, returning a paused detached track needs
+the visible **Play** button to resume and activate system controls. The player
+shows **Playback returned here. Press Play to resume.** A new source that failed
+before playing also needs visible **Play** after reconnect. Firefox supported
+those OS-only resume/retry paths. These are recorded browser activation limits;
+setting metadata alone does not activate a stopped OS session.
+
+See [the M54 verification record](../docs/music-m54-implementation.md) and
+[the browser runner](test/e2e-web/README.md#rich-music-os-controls-m54) for accepted
+phases, retained failures, commands and limits. Physical Cast receivers and
+headsets were not exercised for this change.

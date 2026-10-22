@@ -16,7 +16,9 @@ let progressWrites = Promise.resolve();
 
 // A failed load fires no pause event when nothing was playing yet (compat
 // stream still preparing), so the main window is told explicitly.
-initPlayer({ onPlaybackFailed: sendState, personalActions: true });
+initPlayer({ onPlaybackFailed: sendState, personalActions: true,
+  onSessionPrevious: () => post({ type: 'detach-prev', play: true }),
+  onSessionNext: () => post({ type: 'detach-next', play: true }) });
 initNotes((status, message) => toast(status === 'error' ? message || 'Could not update note.' : status === 'deleted' ? 'Note deleted' : 'Note saved', status === 'error' ? 'error' : 'info'));
 initModalFocus();
 

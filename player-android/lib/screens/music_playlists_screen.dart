@@ -1,3 +1,4 @@
+import '../widgets/music_mini_player.dart';
 import '../services/music_collections.dart';
 import '../widgets/music_collection_actions.dart';
 import 'dart:typed_data';
@@ -134,6 +135,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       }
     });
     return Scaffold(
+      bottomNavigationBar: const MusicMiniPlayer(),
       appBar: AppBar(
           title: Text(widget.playlistId == null
               ? 'Music · Playlists'

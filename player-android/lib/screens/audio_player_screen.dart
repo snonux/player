@@ -78,6 +78,9 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
     this.sequenceIndex,
     this.albumCollection = false,
     this.traverseFolders = false,
+    this.attachCurrent = false,
+    this.attachmentLease,
+    this.attachmentGeneration,
   });
 
   /// The media item identifier extracted from the '/audio/:mediaId' route path.
@@ -108,6 +111,9 @@ class AudioPlayerScreen extends ConsumerStatefulWidget {
   final int? sequenceIndex;
   final bool albumCollection;
   final bool traverseFolders;
+  final bool attachCurrent;
+  final PlaybackSessionLease? attachmentLease;
+  final int? attachmentGeneration;
 
   @override
   ConsumerState<AudioPlayerScreen> createState() => _AudioPlayerScreenState();
@@ -214,6 +220,45 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   Future<void> _initPlayer() async {
     if (!mounted) return;
 
+    if (widget.attachCurrent) {
+      final handler = ref.read(audioHandlerProvider);
+      final state = handler.musicState;
+      final lease = handler.sequenceLease;
+      if (state == null ||
+          lease?.isCurrent != true ||
+          state.request.identity != widget.request?.identity ||
+          !identical(lease, widget.attachmentLease) ||
+          state.sourceGeneration != widget.attachmentGeneration) {
+        setState(() {
+          _isLoading = false;
+          _error = 'This track is no longer playing. Return to the queue.';
+        });
+        return;
+      }
+      _handler = handler;
+      _sessionLease = lease;
+      _activeRequest = state.request;
+      _activeSourceGeneration = state.sourceGeneration;
+      _watchMusicState(handler, lease!);
+      if (!state.loading && state.error == null) {
+        _watchPlayback(_PlaybackAttempt(
+            request: state.request,
+            lease: lease,
+            generation: _initGeneration,
+            handler: handler,
+            sourceGeneration: state.sourceGeneration,
+            stopGeneration: handler.stopGeneration));
+      }
+      setState(() {
+        _isLoading = state.loading;
+        _error = state.error == null
+            ? null
+            : playbackErrorMessage(state.error!,
+                title: state.request.title, source: state.request.kind);
+      });
+      return;
+    }
+    ref.read(audioHandlerProvider).clearMediaItem();
     final generation = _initGeneration;
     unawaited(_musicSubscription?.cancel());
     _musicSubscription = null;
@@ -249,6 +294,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       stopGeneration: handler.stopGeneration,
     );
     _activeSourceGeneration = attempt.sourceGeneration;
+    handler.setMediaRequest(request);
 
     final headers = await _readHeaders(attempt);
     if (headers == null || !_isCurrent(attempt)) return;
@@ -399,7 +445,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   void _startLoadedSource(_PlaybackAttempt attempt) {
     final request = attempt.request;
     final handler = attempt.handler;
-    handler.setMediaItem(id: request.identity, title: request.title);
+    handler.setMediaRequest(request);
 
     setState(() => _isLoading = false);
 
@@ -511,6 +557,11 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         userId: user,
         sourceUri: Uri.parse(client.playbackUrl(media)),
         title: media.displayTitle,
+        artist: media.music?.artist ?? '',
+        album: media.music?.album ?? '',
+        artworkUri: media.thumbnailPath.isNotEmpty
+            ? Uri.parse(client.thumbnailUrl(media.id))
+            : null,
         sourceName: media.relPath,
         startPosition:
             widget.albumCollection && media.duration <= 1200 ? 0 : null,
@@ -542,7 +593,21 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     if (widget.albumCollection) {
       return _musicEntries[_musicStartIndex];
     }
-    return request;
+    final display = _musicEntries[_musicStartIndex];
+    return ServerPlaybackRequest(
+        mediaId: request.mediaId,
+        serverOrigin: request.serverOrigin,
+        userId: request.userId,
+        sourceUri: request.sourceUri,
+        title: display.title,
+        artist: display.artist,
+        album: display.album,
+        artworkUri: display.artworkUri,
+        sourceName: request.sourceName,
+        startPosition: request.startPosition,
+        readPosition: request.readPosition,
+        savePosition: request.savePosition,
+        markFinished: request.markFinished);
   }
 
   void _attachMusicSequence(_PlaybackAttempt attempt) {
@@ -588,6 +653,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
           return AudioSource.uri(request.sourceUri,
               headers: headers.isEmpty ? null : headers);
         });
+    _watchMusicState(handler, lease);
+  }
+
+  void _watchMusicState(
+      PlayerAudioHandler handler, PlaybackSessionLease lease) {
+    unawaited(_musicSubscription?.cancel());
     _musicSubscription = handler.musicChanges.listen((state) {
       final activeLease = handler.sequenceLease ?? lease;
       if (!mounted || !activeLease.isCurrent) return;
@@ -961,7 +1032,29 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   title: _activeRequest!.visualContext,
                   artwork: AudioCoverArt(request: _activeRequest!),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 16),
+                Semantics(
+                    label:
+                        '${_activeRequest!.title}, ${_activeRequest!.subtitle}',
+                    child: Column(children: [
+                      Text(_activeRequest!.title,
+                          key: const Key('audio_track_title'),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Text(_activeRequest!.subtitle,
+                          key: const Key('audio_track_subtitle'),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.white70)),
+                    ])),
+                const SizedBox(height: 16),
                 _buildSeekBar(handler),
                 const SizedBox(height: 16),
                 _buildControls(handler),

@@ -34,6 +34,11 @@ Future<PlaybackRequest> resolveServerPlaybackSource(
         title: media.music?.title.trim().isNotEmpty == true
             ? media.displayTitle
             : request.title,
+        artist: media.music?.artist ?? '',
+        album: media.music?.album ?? '',
+        artworkUri: media.thumbnailPath.isNotEmpty
+            ? Uri.parse(client.thumbnailUrl(media.id))
+            : null,
         sourceName: media.relPath.isNotEmpty ? media.relPath : media.fileName,
         startPosition: request.startPosition,
         readPosition: request.readPosition,

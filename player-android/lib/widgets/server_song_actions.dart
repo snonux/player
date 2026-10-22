@@ -49,6 +49,11 @@ Future<void> insertServerSongs(BuildContext context, WidgetRef ref,
           userId: user.id,
           sourceUri: Uri.parse(client.playbackUrl(song)),
           title: song.displayTitle,
+          artist: song.music?.artist ?? '',
+          album: song.music?.album ?? '',
+          artworkUri: song.thumbnailPath.isNotEmpty
+              ? Uri.parse(client.thumbnailUrl(song.id))
+              : null,
           sourceName: song.relPath,
           startPosition: song.duration <= 1200 ? 0 : null,
           readPosition: () => client.getMediaProgress(song.id),

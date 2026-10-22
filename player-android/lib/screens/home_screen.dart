@@ -1,3 +1,4 @@
+import '../widgets/music_mini_player.dart';
 import '../widgets/music_queue_sheet.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -134,6 +135,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      bottomNavigationBar: const MusicMiniPlayer(),
       appBar: _buildAppBar(context),
       drawer: Drawer(
         child: SafeArea(

@@ -78,6 +78,42 @@ class _BrowseClient extends PlayerApiClient {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+      'rich metadata clears immediately and stale artwork cannot cross sources',
+      () async {
+    final player = _Player();
+    final h = PlayerAudioHandler(player);
+    final oldArt = Completer<Uri?>(), newArt = Completer<Uri?>();
+    h.artworkLoader =
+        (r, current) => r.title == 'A' ? oldArt.future : newArt.future;
+    PlaybackRequest song(String title) => ServerPlaybackRequest(
+        mediaId: title == 'A' ? 1 : 2,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: title,
+        artist: 'Artist $title',
+        album: 'Album $title',
+        artworkUri: Uri.parse('http://local/$title.png'),
+        sourceUri: Uri.parse('http://local/$title'));
+    h.beginSourceSession();
+    h.setMediaRequest(song('A'));
+    expect(h.mediaItem.value?.artist, 'Artist A');
+    h.beginSourceSession();
+    expect(h.mediaItem.value, isNull);
+    h.setMediaRequest(song('B'));
+    expect(h.mediaItem.value?.artUri, isNull);
+    oldArt.complete(Uri.file('/old.png'));
+    await Future<void>.delayed(Duration.zero);
+    expect(h.mediaItem.value?.title, 'B');
+    expect(h.mediaItem.value?.artUri, isNull);
+    newArt.complete(Uri.file('/new.png'));
+    await Future<void>.delayed(Duration.zero);
+    expect(h.mediaItem.value?.album, 'Album B');
+    expect(h.mediaItem.value?.artUri, Uri.file('/new.png'));
+    await h.stop();
+    expect(h.mediaItem.value, isNull);
+  });
+
   for (final mode in MusicRepeat.values) {
     test(
         'repeat ${mode.name} completion and explicit transport use current occurrences',
@@ -117,7 +153,11 @@ void main() {
       expect(h.musicQueue.index, mode == MusicRepeat.all ? 0 : 2);
       if (mode == MusicRepeat.off) {
         expect(player.running, isFalse);
+        expect(h.mediaItem.value?.title, 'Song 1',
+            reason: 'terminal Off preserves current OS identity');
         await h.play();
+        expect(h.mediaItem.value?.title, 'Song 1',
+            reason: 'system Replay retains identity');
         player.elapsed = const Duration(seconds: 10);
         player.processing.add(ProcessingState.completed);
         await Future<void>.delayed(const Duration(milliseconds: 40));

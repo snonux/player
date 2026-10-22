@@ -302,6 +302,8 @@ CastMediaResolver serverCastMediaResolver(PlayerApiClient Function() client) =>
           contentType:
               compat ? ticket.compatContentType : ticket.streamContentType,
           title: request.title,
+          artist: request.artist,
+          album: request.album,
           imageUrl: Uri.parse(api.castThumbnailUrl(ticket)),
           isVideo: isVideo,
         );
@@ -315,6 +317,8 @@ CastMediaResolver serverCastMediaResolver(PlayerApiClient Function() client) =>
               ? (isVideo ? 'video/mp4' : 'audio/mp4')
               : (isVideo ? 'video/mp4' : 'audio/mpeg'),
           title: request.title,
+          artist: request.artist,
+          album: request.album,
           isVideo: isVideo,
         );
       }

@@ -1,3 +1,4 @@
+import '../widgets/music_mini_player.dart';
 import '../services/music_collections.dart';
 import '../widgets/music_collection_actions.dart';
 import 'package:dio/dio.dart';
@@ -89,6 +90,7 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+        bottomNavigationBar: const MusicMiniPlayer(),
         appBar: AppBar(
             title: Text(widget.artistKey == null
                 ? 'Music · Artists'

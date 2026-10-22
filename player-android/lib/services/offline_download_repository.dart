@@ -241,6 +241,8 @@ class OfflineDownloadRepository {
     return OfflinePlaybackRequest(
       downloadKey: key,
       title: item.title,
+      artist: item.music?.artist ?? '',
+      album: item.music?.album ?? '',
       sourceName: item.sourceName,
       sourceUri: file(key).uri,
       readPosition: () async {

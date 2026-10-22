@@ -208,23 +208,36 @@ ID3_ARGS = ['-id3v2_version', '3', '-write_id3v1', '0']
 STRIP_ARGS = ['-map_metadata', '-1', '-fflags', '+bitexact', '-flags:a', '+bitexact']
 
 
-def generate(media_root):
+def generate(media_root, *, session_artwork=False):
     """Write the library below media_root and return the manifest dict."""
     media_root = Path(media_root)
-    tracks = [_make_track(media_root, spec) for spec in TRACKS]
+    session_tracks = {
+        'Music/Aurora Lane - Night Transit (2021)/01 - First Light.mp3',
+        'Music/Tag Verification/source_001.flac',
+        'Music/Untagged/track_0042.mp3',
+    }
+    specs = [dict(spec, seconds=45) if session_artwork and spec['path'] in session_tracks else spec
+             for spec in TRACKS]
+    tracks = [_make_track(media_root, spec) for spec in specs]
     tracks += _make_gapless(media_root)
     tracks += _make_gap_calibration(media_root)
     _make_cover(media_root / COVER)
+    images = [COVER]
+    if session_artwork:
+        second = 'Music/Tag Verification/cover.jpg'
+        ffmpeg('-f', 'lavfi', '-i', 'color=c=0xd25a20:s=600x600', '-frames:v', '1',
+               '-threads', '1', str(media_root / second))
+        images.append(second)
     _write_playlist(media_root / PLAYLIST)
     manifest = {
         'sets': sorted({t['path'].split('/')[0] for t in tracks}),
         'tracks': tracks,
-        'images': [COVER],
+        'images': images,
         'playlists': [{'path': PLAYLIST, 'entries': PLAYLIST_ENTRIES,
                        'unresolved': [PLAYLIST_ENTRIES[1]]}],
         # Every file the server lists as media (audio plus the cover image);
         # the M3U and lyric sidecars are not media items.
-        'media_count': len(tracks) + 1,
+        'media_count': len(tracks) + len(images),
     }
     (media_root.parent / 'manifest.json').write_text(
         json.dumps(manifest, indent=1, ensure_ascii=False))
@@ -253,7 +266,7 @@ def _make_track(media_root, spec, source=None):
     target = media_root / spec['path']
     target.parent.mkdir(parents=True, exist_ok=True)
     inputs = ['-i', str(source)] if source else [
-        '-f', 'lavfi', '-i', tone_filter(spec['tone_hz'], spec['level_dbfs'], TRACK_SECONDS)]
+        '-f', 'lavfi', '-i', tone_filter(spec['tone_hz'], spec['level_dbfs'], spec.get('seconds', TRACK_SECONDS))]
     tags = spec.get('tags')
     ffmpeg(*inputs, *CODECS[spec['codec']], *_tag_args(spec, target), str(target))
     if tags and 'artists' in tags:

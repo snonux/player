@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'providers/audio_handler_provider.dart';
+import 'providers/media_artwork_provider.dart';
 import 'providers/auth_state_provider.dart';
 import 'providers/progress_queue_provider.dart';
 import 'providers/offline_playback_sync_provider.dart';
@@ -90,6 +91,7 @@ void main() async {
     }
   }
 
+  handler.artworkLoader = container.read(mediaArtworkLoaderProvider);
   container.read(offlinePlaybackSyncProvider);
 
   runApp(

@@ -16,6 +16,9 @@ sealed class PlaybackRequest {
     required this.identity,
     required this.title,
     this.sourceName = '',
+    this.artist = '',
+    this.album = '',
+    this.artworkUri,
     required this.sourceUri,
     this.startPosition,
     this.readPosition,
@@ -26,6 +29,12 @@ sealed class PlaybackRequest {
   final String identity;
   final String title;
   final String sourceName;
+  final String artist;
+  final String album;
+  final Uri? artworkUri;
+  String get subtitle => [artist.isEmpty ? 'Unknown artist' : artist, album]
+      .where((s) => s.isNotEmpty)
+      .join(' · ');
   String get visualContext => '$sourceName $title ${sourceUri.path}';
   final Uri sourceUri;
   final double? startPosition;
@@ -45,6 +54,9 @@ final class ServerPlaybackRequest extends PlaybackRequest {
     required super.sourceUri,
     required super.title,
     super.sourceName,
+    super.artist,
+    super.album,
+    super.artworkUri,
     super.startPosition,
     super.readPosition,
     super.savePosition,
@@ -64,6 +76,9 @@ final class ServerPlaybackRequest extends PlaybackRequest {
         sourceUri: sourceUri,
         title: title,
         sourceName: sourceName,
+        artist: artist,
+        album: album,
+        artworkUri: artworkUri,
         startPosition: startPosition,
         readPosition: readPosition,
         savePosition: savePosition,
@@ -81,6 +96,9 @@ final class LocalPlaybackRequest extends PlaybackRequest {
     required super.sourceUri,
     required super.title,
     super.sourceName,
+    super.artist,
+    super.album,
+    super.artworkUri,
     super.startPosition,
     super.readPosition,
     super.savePosition,
@@ -102,6 +120,9 @@ final class OfflinePlaybackRequest extends PlaybackRequest {
     required super.sourceUri,
     required super.title,
     super.sourceName,
+    super.artist,
+    super.album,
+    super.artworkUri,
     super.readPosition,
     super.savePosition,
     super.markFinished,
@@ -131,6 +152,9 @@ final class PublicSharePlaybackRequest extends PlaybackRequest {
     required super.sourceUri,
     required super.title,
     super.sourceName,
+    super.artist,
+    super.album,
+    super.artworkUri,
   }) : super(identity: 'public-share:$shareToken');
 
   final String shareToken;

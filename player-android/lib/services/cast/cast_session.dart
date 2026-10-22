@@ -114,6 +114,8 @@ class CastMedia {
     required this.contentType,
     required this.title,
     this.imageUrl,
+    this.artist = '',
+    this.album = '',
     this.isVideo = false,
   });
 
@@ -121,6 +123,8 @@ class CastMedia {
   final String contentType;
   final String title;
   final Uri? imageUrl;
+  final String artist;
+  final String album;
   final bool isVideo;
 }
 
@@ -255,6 +259,8 @@ class CastSession {
     final metadata = <String, dynamic>{
       // 0 = generic, 3 = music track; the receiver shows title and image.
       'metadataType': media.isVideo ? 0 : 3,
+      if (!media.isVideo && media.artist.isNotEmpty) 'artist': media.artist,
+      if (!media.isVideo && media.album.isNotEmpty) 'albumName': media.album,
       'title': media.title,
       if (media.imageUrl != null)
         'images': [

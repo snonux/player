@@ -1,3 +1,4 @@
+import '../widgets/music_mini_player.dart';
 import '../services/music_collections.dart';
 import '../widgets/music_collection_actions.dart';
 import '../services/music_queue.dart';
@@ -110,6 +111,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
           }
         },
         child: Scaffold(
+          bottomNavigationBar: const MusicMiniPlayer(),
           appBar: AppBar(
               actions: const [MusicQueueButton()],
               title: Text(widget.albumKey != null

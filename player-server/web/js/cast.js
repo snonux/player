@@ -51,6 +51,8 @@ export function castLoadFields(media, ticket, origin) {
     url: castStreamUrl(origin, ticket.ticket, transcoded),
     contentType: transcoded ? ticket.compat_content_type : ticket.stream_content_type,
     title: mediaTitle(media) || 'Player',
+    artist: media.music?.artist || media.music?.artists?.join(', ') || '',
+    album: media.music?.album || '',
     imageUrl: media.thumbnail_path ? `${origin}/cast/${encodeURIComponent(ticket.ticket)}/thumbnail` : '',
     isVideo: media.type === 'video',
   };
@@ -188,6 +190,7 @@ function loadOnReceiver(session, fields, resumeFrom) {
   info.streamType = media.StreamType.BUFFERED;
   info.metadata = fields.isVideo ? new media.GenericMediaMetadata() : new media.MusicTrackMediaMetadata();
   info.metadata.title = fields.title;
+  if (!fields.isVideo) { info.metadata.artist = fields.artist; info.metadata.albumName = fields.album; }
   if (fields.imageUrl) info.metadata.images = [new window.chrome.cast.Image(fields.imageUrl)];
   const request = new media.LoadRequest(info);
   request.currentTime = resumeFrom;

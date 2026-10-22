@@ -1,3 +1,4 @@
+import '../widgets/music_mini_player.dart';
 import '../widgets/music_queue_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -328,6 +329,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      bottomNavigationBar: const MusicMiniPlayer(),
       appBar: _buildAppBar(),
       body: Column(
         children: [

@@ -520,3 +520,11 @@
   inset: 0.5rem 0.5rem auto auto;
   background: transparent;
 }
+
+.player-music-identity { padding: 8px 12px; color: var(--text-primary); min-width: 0; }
+.player-song-title, .player-song-subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-song-title { font-weight: 600; }
+.player-song-subtitle { color: var(--text-secondary); font-size: .85rem; }
+.player.minimized .player-music-identity { display: none; }
+.player-mini-art { width: 36px; height: 36px; object-fit: cover; flex: 0 0 36px; border-radius: 4px; }
+.player-mini-art[hidden] { display: none; }

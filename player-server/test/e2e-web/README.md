@@ -421,3 +421,68 @@ PLAYER_MUSIC_FIXTURE=/home/paul/tmp/dk3-fixture PLAYER_E2E_PULSE_SINK=player_dk3
 
 Use a fresh disposable fixture built from the current server. This command is
 an acceptance runner; a successful `--list` only validates runner discovery.
+
+## Rich music OS controls (M54)
+
+The M54 suite needs a disposable fixture created with `--session-artwork` and
+an existing Linux desktop session bus. It uses installed **headful** Chrome and
+Firefox, serially. Headless metadata queries do not count as OS acceptance.
+The optional fixture mode leaves default fixtures unchanged; its three transport
+sources last 45 seconds and the first two have distinct album/artist tags,
+tones and blue/orange covers.
+
+```sh
+# From player-android/, after building a fresh external server binary:
+python3 integration_test/support/music_fixture.py up /tmp/qk3-evidence/player \
+  --port 18812 --no-doubles --session-artwork \
+  --dir /tmp/qk3-fixture --evidence /tmp/qk3-evidence/actual-attempt1
+
+# From player-server/test/e2e-web/, after creating an owned task audio sink:
+PLAYER_MUSIC_FIXTURE=/tmp/qk3-fixture PLAYER_E2E_PULSE_SINK=player_qk3 \
+  npx playwright test -c playwright.media-session.config.ts
+```
+
+Every MPRIS command verifies the exported bus owner PID, executable, exact
+profile, process start and ancestry to this test worker. No command targets
+other players or uses `playerctl --all`. Evidence includes actual exported
+metadata, copies of OS-readable cached artwork decoded with Pillow, system
+Next/Previous/Play/Pause effects on real source tones and fresh per-ID progress,
+full/mini screenshots, keyboard focus/typing, detached ownership, denied art,
+actual browser offline transport/retry and logout/close clearing. A physical Cast
+receiver is not part of this local test; sender payload tests do not verify one.
+
+Observed Chrome 144 preconditions are explicit: after a paused detached window
+returns, the player stays paused and says “Playback returned here. Press Play
+to resume.” A new source that failed while offline also needs the existing
+visible Play after reconnect before Chrome exposes an active OS session.
+The failed OS-only attempts are retained; they are not reported as passing.
+After that visible action, the suite verifies real OS metadata/artwork and
+transport. Firefox also verifies OS-only paused-return resume and failed-source
+retry. Existing visualizations are preserved; selecting their visible Off
+option allows the full-player artwork to be inspected alongside mini/OS art.
+
+The accepted qk3 run used Chrome 144 and Firefox 156 on 2026-10-22. Normal
+transport/artwork passed in Chrome attempt 1 and Firefox attempt 3; supported
+Chrome paused return and denied art were accepted from attempt 7, Firefox's
+strengthened boundary case from attempt 8, and Chrome's remaining offline/clear
+case from attempt 9. Failed attempts remain under
+`/home/paul/tmp/qk3-evidence`; this is not an all-attempts-pass report. The shared
+server version was 0.8.2. See `docs/music-m54-implementation.md` from the repo root
+for full gates, review findings, native evidence and platform limits.
+
+For example, the final focused Chrome continuation used this command from this
+directory, against the retained task fixture and already owned sink:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/home/paul/tmp/qk3-fixture-attempt2 \
+PLAYER_MUSIC_EVIDENCE=/home/paul/tmp/qk3-evidence/actual-attempt9 \
+PLAYER_E2E_PULSE_SINK=player_qk3 \
+  npx --no-install playwright test -c playwright.media-session.config.ts \
+  --project=chrome --grep 'Chrome failed untouched source' --workers=1
+```
+
+Use the main test title or `--grep 'detached OS owner'` for the respective
+normal/boundary phases; preserve failed outputs before a bounded unfinished
+retry. All task runtimes were subsequently stopped after identity checks; both
+fixtures and all evidence were preserved. Physical Cast and headset checks were
+not run and are not implied by these local OS control checks.

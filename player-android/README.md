@@ -368,3 +368,31 @@ empty queue. After restart and unlock, recovery stays paused at the saved
 selection and position until you tap **Resume queue**. Clear and Undo keep the
 chosen mode. Sets, podcast, local-file and downloaded playback keep their
 existing behavior.
+
+## Music identity and system controls
+
+The full audio player and Music mini bar show the current title, artist, album
+and available cover. Tap the mini bar's text or artwork to reopen the existing
+source without resetting playback; its Play/Pause and Next buttons remain
+available while browsing. Back returns to the library. The bar follows the
+actual Music source, so a retained queue does not label unrelated playback.
+The mini bar follows light/dark themes; the full audio player retains its
+established black presentation.
+
+Android notification and lock-screen controls receive the same music identity
+and artwork. Previous/Next select tracks; seeking uses separate controls.
+Missing artist uses **Unknown artist**, untagged title uses the filename stem,
+and unavailable artwork clears the previous image. Source/account changes and
+sign-out remove obsolete identity and artwork.
+
+Actual API34 notification and keyguard Previous, Next, Play and Pause were
+verified with real OS artwork bitmaps, distinct artist/album sources, audio and
+saved progress. During a failed source load the OS session can become inactive;
+the visible full player identifies the failed target and offers **Retry**.
+Reconnect and use that visible Retry to recover before using system controls.
+System Play was not used to recover a failed native source.
+
+See [the M54 verification record](../docs/music-m54-implementation.md) and
+[the native runner](test/e2e-live/README.md#rich-music-system-session-m54) for
+commands, accepted phases and retained failures. Physical Cast receivers and
+headsets were not exercised for this change.

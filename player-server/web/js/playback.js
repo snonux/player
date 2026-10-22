@@ -1,5 +1,6 @@
 import { currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
-import { mediaTitle } from './music.js';
+import { mediaTitle, musicSubtitle } from './music.js';
+import { createMediaSession } from './media-session.js';
 import { API, redirectToLogin } from './api.js';
 import { state } from './state.js';
 import {
@@ -77,6 +78,9 @@ let resetSeekPreview = () => {};
 let audioVisuals = null;
 let lyrics = null;
 let personal = null;
+let osSession = null;
+let currentThumbnailUrl = '';
+let pausedReturnHint = false;
 
 function currentMediaElement() {
   const e = els();
@@ -142,6 +146,10 @@ export function initPlayer(options = {}) {
   lyrics = initLyrics(e);
   initCompactControls(e.player);
   initKeyboardAccess();
+  osSession = createMediaSession({ session: globalThis.navigator?.mediaSession, Metadata: globalThis.MediaMetadata,
+    getElement: currentMediaElement, ownsSource: () => !isDetached() && !isCasting() && !!currentMedia,
+    play: playFromSystem, pause: pauseFromSystem,
+    previous: options.onSessionPrevious || (() => triggerPrevious({ forcePlay: true })), next: options.onSessionNext || (() => triggerNext({ forcePlay: true })) });
   bindControlButtons(e);
   initImageViewer({ els, isImageMode, playNext: () => navigateImage(1) });
   initDetach({
@@ -153,6 +161,8 @@ export function initPlayer(options = {}) {
     loadMedia,
     localPlaybackState,
     cancelPendingSource,
+    releaseLocalSession: () => osSession?.clear(),
+    onPausedReattach: showPausedReturnHint,
     requestPlay,
     triggerPrevious,
     triggerNext,
@@ -190,6 +200,7 @@ function bindCast(e) {
       cancelPendingSource();
       currentMediaElement()?.pause();
       stopProgressTimer();
+      osSession?.clear();
     },
     onRemoteTime: (seconds, duration) => showPosition(e, seconds, duration || effectiveDuration()),
     onRemotePlaying: (playing) => updateUI(playing),
@@ -203,8 +214,9 @@ function bindCast(e) {
       updateUI(false);
       const m = currentMediaElement();
       if (m && currentMedia?.id === mediaId) seekWhenMetadataReady(m, seconds);
+      publishLocalSession();
     },
-    onError: (message) => toast(message, 'error'),
+    onError: (message) => { toast(message, 'error'); publishLocalSession(); },
   });
 }
 
@@ -253,6 +265,7 @@ function bindVolume(e) {
 // bindMediaEvents wires one <video>/<audio> element to the transport UI.
 function bindMediaEvents(e, m) {
   m.addEventListener('timeupdate', () => {
+    osSession?.refresh();
     const dur = effectiveDuration();
     if (!dur) return;
     const pct = (m.currentTime / dur) * 100;
@@ -286,6 +299,7 @@ function bindMediaEvents(e, m) {
   m.addEventListener('seeking', () => { sourceEpoch++; });
   m.addEventListener('play', () => { sourceEpoch++; completingEpoch = null; updateUI(true); isPlaying = true; startProgressTimer(); });
   m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
+  m.addEventListener('playing', () => { if (m === currentMediaElement()) clearPausedReturnHint(); });
   m.addEventListener('error', () => handleElementError(m));
 }
 
@@ -467,6 +481,8 @@ export function seekRelative(seconds) {
 }
 
 export function stopAndClose() {
+  clearPausedReturnHint();
+  osSession?.clear();
   sourceEpoch++;
   saveCurrentProgress();
   const detached = stopDetached();
@@ -499,6 +515,8 @@ export function stopAndClose() {
   e.btnZoomOut?.classList.add('hidden');
   e.btnSlideshow?.classList.add('hidden');
   currentMedia = null;
+  currentThumbnailUrl = '';
+  updateMusicIdentity(null, '');
   personal?.setMedia(null);
   currentSource = null;
   currentMediaIndex = -1;
@@ -585,7 +603,10 @@ function loadMedia(media, resumeFrom = 0) {
 // library marks session-authenticated library playback in the main window
 // (as opposed to share and popup URLs); see finishPendingSource.
 function showMedia(media, source, thumbnailUrl) {
+  clearPausedReturnHint();
+  currentThumbnailUrl = thumbnailUrl;
   sourceEpoch++;
+  osSession?.clear();
   personal?.setMedia(media);
   resetSeekPreview();
   // Whatever was still being prepared belongs to the previous item.
@@ -604,6 +625,8 @@ function showMedia(media, source, thumbnailUrl) {
   audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
   lyrics?.setMedia(media, source.url);
   updateMinimizedTitle();
+  updateMusicIdentity(media, thumbnailUrl);
+  publishLocalSession();
 }
 
 function showImage(e, url) {
@@ -667,6 +690,7 @@ function showCoverArt(e, thumbnailUrl) {
   if (!e.coverArt) return;
   e.coverArt.classList.toggle('hidden', !thumbnailUrl);
   e.coverArt.src = thumbnailUrl || '';
+  e.coverArt.onerror = () => e.coverArt.classList.add('hidden');
 }
 
 // startSource gives the element its source. Plain streams are assigned right
@@ -713,6 +737,7 @@ function finishPendingSource(pending, m, media, url, resumeFrom, result) {
   }
   attachSource(m, url, resumeFrom);
   if (pending.autoplay) playElement(m);
+  else if (pausedReturnHint) setPlayerStatus('Playback returned here. Press Play to resume.');
 }
 
 // retrySource loads the current item again after its compat stream failed or
@@ -754,6 +779,22 @@ function announcePreparing(pending, media, status) {
   pending.announced = true;
 }
 
+// Chromium 144 does not restore OS audio focus for a newly loaded paused
+// element after a popup closes. Keep the paused intent and expose the existing
+// Play control; Firefox can also resume through its OS controls. No audio is
+// started just to acquire focus. Preparation and errors keep their own status.
+function showPausedReturnHint() {
+  pausedReturnHint = true;
+  if (!pendingSource) setPlayerStatus('Playback returned here. Press Play to resume.');
+  updateUI(false);
+}
+
+function clearPausedReturnHint() {
+  if (!pausedReturnHint) return;
+  pausedReturnHint = false;
+  if (!pendingSource) setPlayerStatus('');
+}
+
 // setPlayerStatus shows text over the stage; an empty text hides it (the
 // element is styled away via :empty). The element is created on demand so
 // index.html, detach.html and share.html need no extra markup.
@@ -786,12 +827,36 @@ function handleElementError(m) {
 // onPlaybackFailed callback therefore lets the detached popup report the lost
 // play intent to the main window in every case.
 function failPlayback(media, reason) {
+  clearPausedReturnHint();
   currentMediaElement()?.pause();
   isPlaying = false;
   stopProgressTimer();
   updateUI(false);
   toast(`Cannot play ${mediaTitle(media) || 'this file'}: ${reason}`, 'error');
   failureHandler?.();
+}
+
+// System controls are commands, not toggles. Preserve preparation intent and
+// reuse Retry for a failed current source without playing an empty element.
+function playFromSystem() {
+  if (pendingSource) { setPendingPlay(true); return; }
+  const m = currentMediaElement();
+  if (!m) return;
+  if (!m.getAttribute('src') || m.error) { retrySource(m); return; }
+  if (m.paused || m.ended) requestPlay();
+}
+
+function pauseFromSystem() {
+  if (pendingSource) setPendingPlay(false);
+  currentMediaElement()?.pause();
+  isPlaying = false;
+  stopProgressTimer();
+  updateUI(false);
+}
+
+function publishLocalSession() {
+  if (!currentMedia || isDetached() || isCasting()) return;
+  osSession?.select(currentMedia, currentThumbnailUrl);
 }
 
 // requestPlay starts playback of the current item, or remembers the wish
@@ -842,6 +907,7 @@ function seekWhenMetadataReady(m, seconds) {
 }
 
 function updateUI(playing) {
+  osSession?.refresh();
   const e = els();
   isPlaying = playing;
   e.btnPlay.textContent = playing ? '⏸' : '▶';
@@ -907,10 +973,38 @@ export function escapePlayerView() {
   return true;
 }
 
+function updateMusicIdentity(media, thumbnailUrl) {
+  const e = els();
+  if (!e.player || !document.createElement) return;
+  let identity = document.getElementById('player-music-identity');
+  if (!identity) {
+    identity = document.createElement('div'); identity.id = 'player-music-identity'; identity.className = 'player-music-identity';
+    e.player.querySelector('.controls')?.before?.(identity);
+  }
+  identity.textContent = '';
+  identity.hidden = media?.type !== 'audio';
+  if (identity.hidden) {
+    const art = e.btnRestore?.querySelector('.player-mini-art');
+    if (art) { art.hidden = true; art.src = ''; }
+    return;
+  }
+  const title = mediaTitle(media), subtitle = musicSubtitle(media) || 'Unknown artist';
+  for (const [text, className] of [[title, 'player-song-title'], [subtitle, 'player-song-subtitle']]) {
+    const line = document.createElement('div'); line.className = className; line.textContent = text; line.title = text; identity.appendChild(line);
+  }
+  if (e.restoreTitle) { e.restoreTitle.textContent = `Restore: ${title} · ${subtitle}`; e.restoreTitle.title = `${title} · ${subtitle}`; }
+  if (e.btnRestore) {
+    let art = e.btnRestore.querySelector('.player-mini-art');
+    if (!art) { art = document.createElement('img'); art.className = 'player-mini-art'; art.alt = ''; e.btnRestore.prepend(art); }
+    art.hidden = !thumbnailUrl; art.src = thumbnailUrl || ''; art.onerror = () => { art.hidden = true; };
+  }
+}
+
 function updateMinimizedTitle() {
   const e = els();
   if (!e.restoreTitle) return;
-  e.restoreTitle.textContent = mediaTitle(currentMedia) ? `Restore: ${mediaTitle(currentMedia)}` : 'Restore player';
+  const title = mediaTitle(currentMedia), subtitle = musicSubtitle(currentMedia);
+  e.restoreTitle.textContent = title ? `Restore: ${title}${subtitle ? ` · ${subtitle}` : ''}` : 'Restore player';
 }
 
 export function exitFullscreenIfNeeded() {
