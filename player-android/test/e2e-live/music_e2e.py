@@ -295,8 +295,7 @@ def step_metadata(run):
     entries = [
         (TRACK, {'Filename': 'source_001.flac', 'Artist': 'A & B; C/D',
                  'Album artist': 'Album Ensemble', 'Album': 'Metadata Album',
-                 'Track': '4 / 9', 'Disc': '2 / 3', 'Date': '2024-02-29',
-                 'Year': '2024', 'Genres': 'Jazz'}),
+                 'Track': '4 / 9', 'Disc': '2 / 3', 'Release date': '2024-02-29', 'Genres': 'Jazz'}),
         ('Music/Ünïcødé Artïst - 東京 Nights/02 - Партия для двоих.flac',
          {'Artist': 'Ünïcødé Artïst, Mika Sørensen', 'Genres': 'Électronique, Ambient'}),
         ('Music/Various Artists - Synth Compilation/Disc 2/01 - Afterglow.ogg',

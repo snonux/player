@@ -8,6 +8,7 @@ import '../providers/offline_downloads_provider.dart';
 import '../providers/personal_media_provider.dart';
 import '../widgets/personal_media_actions.dart';
 import '../widgets/keep_offline_button.dart';
+import '../widgets/music_metadata_details.dart';
 
 class OfflineDownloadsScreen extends ConsumerStatefulWidget {
   const OfflineDownloadsScreen({super.key});
@@ -95,6 +96,35 @@ class _OfflineDownloadsScreenState
                           ? null
                           : () => _open(item),
                       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (item.type == 'audio')
+                          IconButton(
+                            tooltip: 'Music details',
+                            icon: const Icon(Icons.info_outline),
+                            onPressed: () => showDialog<void>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                      title: const Text('Music details'),
+                                      content: SingleChildScrollView(
+                                          child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                            const Text(
+                                                'Saved offline snapshot'),
+                                            const SizedBox(height: 12),
+                                            MusicMetadataDetails(
+                                                music: item.music,
+                                                filename: item.sourceName),
+                                          ])),
+                                      actions: [
+                                        TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(context),
+                                            child: const Text('Close'))
+                                      ],
+                                    )),
+                          ),
                         IconButton(
                             tooltip: 'Notes',
                             icon: const Icon(Icons.notes_outlined),

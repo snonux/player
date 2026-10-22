@@ -31,6 +31,8 @@ void main() {
         'album': 'Café',
         'disc': 2,
         'disc_total': 3,
+        'disc_subtitle': 'Encore 東京',
+        'compilation': true,
         'genres': ['Jazz', 'Blues'],
         'composers': ['Composer; 東京 / A', 'Other'],
         'performers': ['Session Ensemble']
@@ -41,6 +43,8 @@ void main() {
     expect(cached.fileName, '01-name.flac');
     expect(cached.musicSubtitle, 'A feat. B; C · Café');
     expect(cached.music!.details['Disc'], '2 / 3');
+    expect(cached.music!.details['Disc subtitle'], 'Encore 東京');
+    expect(cached.music!.details['Compilation'], 'Yes');
     expect(cached.music!.details['Genres'], 'Jazz, Blues');
     expect(cached.music!.details['Composer'], 'Composer; 東京 / A, Other');
     expect(cached.music!.details['Performer'], 'Session Ensemble');

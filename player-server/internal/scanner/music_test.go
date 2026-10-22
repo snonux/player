@@ -25,7 +25,7 @@ func TestScan_MusicRefreshPreservesIdentityAndState(t *testing.T) {
 		t.Helper()
 		args := []string{"-f", "lavfi", "-i", "sine=duration=1", "-c:a", "flac"}
 		if title != "" {
-			args = append(args, "-metadata", "title="+title, "-metadata", "artist=Ünïcødé", "-metadata", "disc=2/3", "-metadata", "composer=Composer; 東京 "+title, "-metadata", "performer=Performer / A")
+			args = append(args, "-metadata", "title="+title, "-metadata", "artist=Ünïcødé", "-metadata", "discsubtitle=Disc "+title, "-metadata", "compilation=1", "-metadata", "disc=2/3", "-metadata", "composer=Composer; 東京 "+title, "-metadata", "performer=Performer / A", "-metadata", "release_date=2025-04", "-metadata", "originaldate=1979", "-metadata", "recordingdate=1978-11", "-metadata", "label=Label "+title, "-metadata", "credit:Tape Op=A / B")
 		}
 		ffsafetest.Generate(t, path, args...)
 	}
@@ -85,11 +85,11 @@ func TestScan_MusicRefreshPreservesIdentityAndState(t *testing.T) {
 			t.Fatalf("progress=%+v %v", progress, err)
 		}
 		if title == "" {
-			if len(row.Music.Composers) != 0 || len(row.Music.Performers) != 0 {
+			if row.Music.DiscSubtitle != "" || row.Music.Compilation || len(row.Music.Composers) != 0 || len(row.Music.Performers) != 0 || row.Music.ReleaseDate != "" || row.Music.OriginalDate != "" || row.Music.RecordingDate != "" || len(row.Music.Labels) != 0 || len(row.Music.Credits) != 0 {
 				t.Fatalf("removed credits retained %+v", row.Music)
 			}
 		} else {
-			if len(row.Music.Composers) != 1 || row.Music.Composers[0] != "Composer; 東京 "+title || len(row.Music.Performers) != 1 || row.Music.Performers[0] != "Performer / A" {
+			if row.Music.DiscSubtitle != "Disc "+title || !row.Music.Compilation || len(row.Music.Composers) != 1 || row.Music.Composers[0] != "Composer; 東京 "+title || len(row.Music.Performers) != 1 || row.Music.Performers[0] != "Performer / A" || row.Music.ReleaseDate != "2025-04" || row.Music.OriginalDate != "1979" || row.Music.RecordingDate != "1978-11" || len(row.Music.Labels) != 1 || row.Music.Labels[0] != "Label "+title || len(row.Music.Credits) != 1 {
 				t.Fatalf("scan/rescan credits %+v", row.Music)
 			}
 		}
@@ -97,6 +97,18 @@ func TestScan_MusicRefreshPreservesIdentityAndState(t *testing.T) {
 			matches, err := store.ListMedia(ctx, repository.MediaFilter{Search: title})
 			if err != nil || len(matches) != 1 {
 				t.Fatalf("title search rows=%v %v", matches, err)
+			}
+		}
+		if title == "First Title" {
+			if err := os.WriteFile(path, append([]byte("fLaC"), make([]byte, 100)...), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := scanner.Scan(ctx, root, nil); err != nil {
+				t.Fatal(err)
+			}
+			retained, err := store.GetMediaByID(ctx, id)
+			if err != nil || retained.Music.DiscSubtitle != "Disc First Title" || !retained.Music.Compilation || retained.Music.ReleaseDate != "2025-04" || retained.Music.OriginalDate != "1979" || len(retained.Music.Credits) != 1 {
+				t.Fatalf("failed probe discarded release snapshot: %+v %v", retained, err)
 			}
 		}
 	}

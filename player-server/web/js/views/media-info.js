@@ -1,4 +1,4 @@
-import { mediaTitle, musicRows } from '../music.js';
+import { mediaTitle, musicRows, musicDetailGroups } from '../music.js';
 import { API } from '../api.js';
 import { fmtDateTime, fmtSize } from '../dom.js';
 import { escapeHtml, fmtDur, toast } from '../utils.js';
@@ -107,10 +107,12 @@ function renderMediaInfo(detail) {
   const ext = media.file_name?.includes('.') ? media.file_name.split('.').pop().toUpperCase() : '';
   const progress = detail?.progress;
   const note = detail?.note;
-  let rows = [
+  const basicRows = [
     ['Title', mediaTitle(media)],
  ['Filename', media.file_name],
  ...musicRows(media),
+  ];
+  let rows = [
     ['Format', ext],
     ['Type', media.type],
     ['File size', media.file_size_bytes ? `${fmtSize(media.file_size_bytes)} (${media.file_size_bytes} bytes)` : ''],
@@ -151,16 +153,21 @@ function renderMediaInfo(detail) {
     ['Note updated', fmtDateTime(note?.updated_at)],
     ['Note length', note?.content ? `${note.content.length} characters` : ''],
   ]);
-  const table = rows
+  const renderRows = entries => entries
     .filter(([, value]) => value !== undefined && value !== null && value !== '')
     .map(([label, value]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${escapeHtml(String(value))}</td></tr>`)
     .join('');
+  const table = renderRows(rows);
+  const basicTable = renderRows(basicRows);
   const raw = escapeHtml(JSON.stringify(detail || {}, null, 2));
+  const groups = musicDetailGroups(media).map(([title, entries]) => `<details class="media-info-music"><summary tabindex="0">${escapeHtml(title)}</summary><table class="media-info-table">${entries.map(([label, value]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${escapeHtml(String(value))}</td></tr>`).join('')}</table></details>`).join('');
   return `
     <div class="flex flex-wrap gap-2 mt-1 mb-2">
       <button class="btn btn-ghost btn-sm" type="button" data-media-info-action="mark-finished" data-media-id="${escapeHtml(String(media.id || ''))}">✓ Finished</button>
       <button class="btn btn-ghost btn-sm" type="button" data-media-info-action="mark-not-started" data-media-id="${escapeHtml(String(media.id || ''))}">↺ Not started</button>
     </div>
+    <table class="media-info-table">${basicTable}</table>
+    ${groups}
     <table class="media-info-table">${table}</table>
     <details class="media-info-raw">
       <summary>Raw API detail</summary>

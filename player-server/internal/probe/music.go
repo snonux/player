@@ -37,6 +37,11 @@ func parseMusicTags(tags map[string]string) *model.MusicMetadata {
 		return ""
 	}
 	m := &model.MusicMetadata{Title: first("title"), Album: first("album"), Date: first("date", "year")}
+	m.DiscSubtitle = first("discsubtitle", "disc_subtitle", "discname", "disc_name")
+	switch strings.ToLower(first("compilation", "tcmp", "cpil")) {
+	case "1", "true", "yes":
+		m.Compilation = true
+	}
 	m.ReleaseMBID = first("musicbrainz_albumid", "musicbrainz album id", "musicbrainz/release id")
 	m.Artists = musicValues(first("artists", "artist"))
 	m.Artist = first("artist")
@@ -62,6 +67,7 @@ func parseMusicTags(tags map[string]string) *model.MusicMetadata {
 	m.Composers = musicValues(first("composers", "composer"))
 	m.Performers = musicValues(first("performers", "performer"))
 	m.Genres = musicValues(first("genre", "genres"))
+	parseReleaseTags(m, tags)
 	return m
 }
 

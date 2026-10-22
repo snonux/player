@@ -44,7 +44,7 @@ func TestMusicAlbumsRealPermissions(t *testing.T) {
 		if i == 2 {
 			title = "Private Album"
 		}
-		id, err := store.CreateMedia(ctx, &model.Media{SetID: set, FileName: strconv.Itoa(i) + ".mp3", RelPath: strconv.Itoa(i) + ".mp3", AbsPath: "/not-read/" + strconv.Itoa(i), Type: model.MediaTypeAudio, Duration: 10, ThumbnailPath: "art", CreatedAt: now, Music: &model.MusicMetadata{Album: title, AlbumArtist: "Same Artist", Track: i + 1}})
+		id, err := store.CreateMedia(ctx, &model.Media{SetID: set, FileName: strconv.Itoa(i) + ".mp3", RelPath: strconv.Itoa(i) + ".mp3", AbsPath: "/not-read/" + strconv.Itoa(i), Type: model.MediaTypeAudio, Duration: 10, ThumbnailPath: "art", CreatedAt: now, Music: &model.MusicMetadata{Album: title, AlbumArtist: "Same Artist", Track: i + 1, Disc: i + 1, DiscSubtitle: []string{"Visible subtitle", "Hidden subtitle", "Private"}[i]}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -72,6 +72,9 @@ func TestMusicAlbumsRealPermissions(t *testing.T) {
 	if len(albums) != 1 || albums[0].SongCount != 1 || albums[0].Duration != 10 || albums[0].CoverMediaID != ids[0] {
 		t.Fatalf("ACL aggregate leaked: %+v", albums)
 	}
+	if len(albums[0].Discs) != 0 {
+		t.Fatal("summary embeds discs")
+	}
 	if len(albums[0].Songs) != 0 {
 		t.Fatal("list embeds songs")
 	}
@@ -82,6 +85,9 @@ func TestMusicAlbumsRealPermissions(t *testing.T) {
 	}
 	if detail.Code != 200 || len(album.Songs) != 1 || album.Songs[0].ID != ids[0] {
 		t.Fatalf("detail leaked: %s", detail.Body.String())
+	}
+	if len(album.Discs) != 1 || album.Discs[0].Subtitle != "Visible subtitle" || album.Discs[0].CoverMediaID != ids[0] || len(album.Discs[0].SongIDs) != 1 {
+		t.Fatalf("disc ACL leak %+v", album.Discs)
 	}
 	if resolved := request("", "?media_id="+strconv.FormatInt(ids[1], 10)); resolved.Body.String() != "[]\n" {
 		t.Fatalf("hidden media resolver: %s", resolved.Body.String())

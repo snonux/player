@@ -52,6 +52,18 @@ class _Client extends PlayerApiClient {
       'artist': 'Aurora Lane',
       'artist_key': 'ar_a',
       'song_count': 2,
+      'discs': [
+        {
+          'number': 1,
+          'subtitle': 'Original',
+          'song_ids': [2]
+        },
+        {
+          'number': 2,
+          'subtitle': 'Encore',
+          'song_ids': [1]
+        }
+      ],
       'duration': 24,
       'songs': [
         {
@@ -374,14 +386,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('2 songs · 0:24'), findsOneWidget);
     expect(find.text('First by track'), findsOneWidget);
-    expect(find.text('1 · 1'), findsOneWidget);
-    expect(find.text('2 · 1'), findsOneWidget);
-    await tester.tap(find.text('First by track'));
+    expect(find.text('1-1'), findsOneWidget);
+    expect(find.text('2-1'), findsOneWidget);
+    expect(find.text('Disc 2 — Encore'), findsOneWidget);
+    await tester.tap(find.text('Second by track'));
     await tester.pumpAndSettle();
     final request = extra! as Map<String, dynamic>;
     expect(request['albumCollection'], true);
     expect(request['position'], 0.0);
-    expect(request['mediaUrl'], 'http://local/api/v1/media/2/stream');
+    expect(request['mediaUrl'], 'http://local/api/v1/media/1/stream');
     expect((request['sequence'] as List).map((m) => m.id), [2, 1]);
     router.dispose();
   });

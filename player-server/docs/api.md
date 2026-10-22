@@ -2354,6 +2354,53 @@ than infer boundaries from punctuation. Original display tags and structured
 artist arrays remain separate when both are present. No album/artist catalog
 identities or extra API endpoints are introduced in this slice.
 
+### Rich release metadata
+
+M05 adds optional read-only fields in each audio `music` object:
+`release_date`, `original_date`, `recording_date`, `release_version`,
+`release_types[]`, `labels[]`, `catalog_numbers[]`, `media[]`, `moods[]`,
+`grouping`, `comment` and `credits[]` (`{"role":"tape op","names":["A; B","東京"]}`).
+These use the same existing media permissions, persistence, scan/clear and
+offline snapshot behavior; no tag-writing endpoint is provided.
+
+Release date aliases, in order: `release_date`, `releasedate`, `date`, `year`.
+Original date: `original_date`, `originaldate`, `originalyear`. Recording date:
+`recording_date`, `recordingdate`, with no original/release fallback. Date text
+and precision remain verbatim after trimming; legacy `date`/`year` and catalog
+year semantics remain unchanged. Clients label a different legacy date
+**Tagged date**, and hide Year only when it repeats the release date's leading
+four-digit year.
+
+Version aliases: `release_version`, `albumversion`, `album_version`; release
+type: `releasetype`, `release_type`, `musicbrainz_albumtype`, `musicbrainz album
+type`; label: `label`, `publisher`, `organization`; catalog number:
+`catalognumber`, `catalog_number`, `catalogue_number`; media: `media`,
+`mediatype`, `media_type`; mood: `mood`; grouping: `grouping`, `contentgroup`;
+comment: `comment`, `description`. Keys are case insensitive, first nonempty
+alias wins, and container/stream precedence follows the existing tag parser.
+
+Additional descriptive credits use `conductor`, `lyricist`, `arranger`,
+`producer`, `director`, `engineer`, `mixer`, `remixer`, `djmixer` or explicit
+`credit:<role>` tags. Custom role suffixes are trimmed/lowercased; participant
+names keep punctuation and line breaks. Composer/performer fields retain their
+existing roles. Repeated FLAC/Vorbis/Opus release types, labels, catalog numbers,
+media, moods and credit comments retain actual boundaries through the existing
+bounded comment reader. NUL is the other supported structured separator;
+commas, semicolons and slashes never split names. Other containers retain what
+ffprobe supplies, with no invented repeated-value boundaries. New credits do
+not extend artist-role browsing.
+
+### Disc and compilation metadata
+
+M04 adds optional `music.disc_subtitle` and `music.compilation` (true only).
+Subtitle aliases: `discsubtitle`, `disc_subtitle`, `discname`, `disc_name`.
+Compilation aliases: `compilation`, `tcmp`, `cpil`; explicit `1`, `true`,
+`yes` (case insensitive) enable it; absent/false/unknown values do not.
+Embedded album/track artist fields remain unchanged. A flagged compilation
+without album artists uses derived **Various Artists** for album grouping and
+the album-artist role; real structured track credits remain separate links.
+Explicit album artists and valid release MBIDs retain the existing identity rules.
+
 ### Music albums
 
 `GET /api/v1/music/albums` (also `/api/music/albums`) returns an array of
@@ -2365,7 +2412,11 @@ Unknown disc/track numbers follow known numbers; filename/path/id break ties.
 
 Album objects contain `album_key`, `title`, `artist`, `artist_key`, optional
 `year`, `from_folder`, optional `cover_media_id`, `song_count`, and `duration`
-(seconds). The detail adds `songs`. Artwork uses the ordinary authenticated
+(seconds). The detail adds `songs` and `discs`: `{number, subtitle?, cover_media_id?, song_ids}`.
+Disc number 0 means unknown; descriptors follow canonical song order and
+first nonempty subtitle/art wins within each visible disc. Summaries omit discs.
+All disc fields derive after permission filtering, including subtitle/art choices.
+Artwork uses the ordinary authenticated
 media thumbnail endpoint. All counts, artwork and songs derive exclusively
 from the caller's permitted non-podcast audio. M4B and sources named as
 audiobooks are excluded, consistently with Sets music sequencing.

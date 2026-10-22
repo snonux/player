@@ -533,3 +533,28 @@ have exited; server/emulator/sink cleanup belongs to the coordinating agent.
 Use the fresh fixture's `up <server> --shuffle-playback` flag for M18: all three
 Night Transit source files are generated at 45 seconds and must pass actual
 ffprobe/server/manifest duration preflight before browser/native playback.
+# Rich release metadata (M05)
+
+Start the disposable music fixture with `--release-metadata`, then run:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/home/paul/tmp/0k3-fixture npx playwright test -c playwright.music.config.ts tests/music-release.test.ts --workers=1
+```
+
+This drives installed Chrome and Firefox through release/credit disclosures,
+Tab/Enter/Space and focus, light/dark/narrow layouts, source playback, real
+retag/clear/failed-probe rescans, restart persistence and permission denial.
+The fixture must be the original marked directory, since tests retag and
+restart its server. Exact setup and native counterpart are recorded in
+[`music-m05-implementation.md`](../../../docs/music-m05-implementation.md).
+
+### M04 multi-disc albums and compilations
+
+Run `tests/music-discs.test.ts` with the disposable `--multi-disc` fixture, or
+root-owned guarded augmentation of the retained fixture described in
+[the M04 runbook](../../../docs/music-m04-implementation.md). It exercises
+actual disc headings/subtitles/art, separate credited artist links and Back,
+global song indices, source tones across the disc boundary, nonwrapping end,
+light/dark/narrow, keyboard/typing/Info, real offline/ACL Retry, absent/broken
+images and M04 rescan/clear/failed-probe/server-restart persistence. Shared
+foreground/two-frame viewport readiness matches M05 without forcing styles.

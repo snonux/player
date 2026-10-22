@@ -153,6 +153,10 @@ func vorbisComments(data []byte) (map[string]string, error) {
 		switch key {
 		case "artist", "artists", "album_artist", "albumartist", "album_artists", "albumartists", "genre", "genres", "composer", "composers", "performer", "performers":
 			values[key] = append(values[key], value)
+		default:
+			if structuredReleaseTag(key) {
+				values[key] = append(values[key], value)
+			}
 		}
 	}
 	result := map[string]string{}

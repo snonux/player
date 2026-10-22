@@ -560,7 +560,10 @@ body {
 .media-info-table td {
   color: var(--text-primary);
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
+.media-info-music { margin: 0.75rem 0; }
+.media-info-music summary { cursor: pointer; color: var(--text-primary); padding: 0.5rem 0; }
 .media-info-raw {
   margin-top: 1rem;
   font-size: 0.85rem;
@@ -868,3 +871,10 @@ body {
 .music-detail [data-find] { max-width: 100%; }
 .music-detail [data-rows] .media-row { margin-block: var(--gap); }
 .music-detail [data-undo][hidden] { display: none; }
+
+/* Release credit role labels may contain user-supplied, unbroken text. */
+.media-info-music th { overflow-wrap: anywhere; }
+
+.music-disc { display: flex; align-items: center; gap: var(--gap); margin-block: var(--gap); min-width: 0; }
+.music-disc .album-cover { width: 3rem; height: 3rem; flex-shrink: 0; }
+.music-disc h2 { font-size: 1rem; margin: 0; overflow-wrap: anywhere; min-width: 0; }

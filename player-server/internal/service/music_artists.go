@@ -59,7 +59,11 @@ func MusicCredits(song model.Media) []ArtistCredit {
 	}
 	albums := creditNames(m.AlbumArtists, m.AlbumArtist)
 	if len(albums) == 0 {
-		albums = tracks
+		if m.Compilation {
+			albums = []string{"Various Artists"}
+		} else {
+			albums = tracks
+		}
 	}
 	add("track_artist", tracks)
 	add("album_artist", albums)
@@ -91,6 +95,7 @@ func MusicArtists(albums []Album) []Artist {
 				release := credits[credit.Key]
 				if release == nil {
 					summary := album
+					summary.Discs = nil
 					summary.Songs = nil
 					summary.SongCredits = nil
 					release = &ArtistAlbum{Album: summary}

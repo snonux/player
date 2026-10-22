@@ -16,6 +16,64 @@ class MusicMetadata {
       : _list('artists').join(', ');
   String get album => _text('album');
   Map<String, dynamic> toJson() => Map.of(_json);
+  String get releaseDate => _text('release_date').isNotEmpty
+      ? _text('release_date')
+      : _text('date').isNotEmpty
+          ? _text('date')
+          : _number('year') > 0
+              ? '${_number('year')}'
+              : '';
+  bool get _showYear {
+    final prefix = RegExp(r'^[1-9]\d{3}(?:\D|$)')
+        .firstMatch(releaseDate)
+        ?.group(0)
+        ?.substring(0, 4);
+    return _number('year') > 0 && '${_number('year')}' != prefix;
+  }
+
+  Map<String, List<MapEntry<String, String>>> get detailGroups {
+    const roles = {
+      'conductor': 'Conductor',
+      'lyricist': 'Lyricist',
+      'arranger': 'Arranger',
+      'producer': 'Producer',
+      'director': 'Director',
+      'engineer': 'Engineer',
+      'mixer': 'Mixer',
+      'remixer': 'Remixer',
+      'djmixer': 'DJ mixer'
+    };
+    final groups = <String, List<MapEntry<String, String>>>{
+      'Release details': [
+        MapEntry('Release date', releaseDate),
+        MapEntry('Original date', _text('original_date')),
+        MapEntry('Recording date', _text('recording_date')),
+        MapEntry('Version', _text('release_version')),
+        MapEntry('Release type', _list('release_types').join('\n')),
+        MapEntry('Label', _list('labels').join('\n')),
+        MapEntry('Catalog number', _list('catalog_numbers').join('\n')),
+        MapEntry('Media', _list('media').join('\n')),
+      ],
+      'Additional music details': [
+        MapEntry('Mood', _list('moods').join('\n')),
+        MapEntry('Grouping', _text('grouping')),
+        MapEntry('Comment', _text('comment')),
+        if (_json['credits'] is List)
+          for (final credit in _json['credits'] as List)
+            if (credit is Map &&
+                credit['role'] is String &&
+                credit['names'] is List)
+              MapEntry(roles[credit['role']] ?? credit['role'] as String,
+                  (credit['names'] as List).whereType<String>().join('\n')),
+      ],
+    };
+    for (final rows in groups.values) {
+      rows.removeWhere((entry) => entry.value.isEmpty);
+    }
+    groups.removeWhere((key, rows) => rows.isEmpty);
+    return groups;
+  }
+
   Map<String, String> get details {
     String number(String field) {
       final n = _number(field), total = _number('${field}_total');
@@ -28,10 +86,12 @@ class MusicMetadata {
       'Composer': _list('composers').join(', '),
       'Performer': _list('performers').join(', '),
       'Album': album,
+      'Disc subtitle': _text('disc_subtitle'),
+      'Compilation': _json['compilation'] == true ? 'Yes' : '',
       'Track': number('track'),
       'Disc': number('disc'),
-      'Date': _text('date'),
-      'Year': _number('year') > 0 ? '${_number('year')}' : '',
+      'Tagged date': _text('date') != releaseDate ? _text('date') : '',
+      'Year': _showYear ? '${_number('year')}' : '',
       'Genres': _list('genres').join(', ')
     }..removeWhere((key, value) => value.isEmpty);
   }

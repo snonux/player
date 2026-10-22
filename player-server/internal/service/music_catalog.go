@@ -14,6 +14,7 @@ import (
 
 // Album is a caller-visible aggregate over existing media identities.
 type Album struct {
+	Discs        []AlbumDisc              `json:"discs,omitempty"`
 	Credits      []ArtistCredit           `json:"credits,omitempty"`
 	SongCredits  map[int64][]ArtistCredit `json:"song_credits,omitempty"`
 	Key          string                   `json:"album_key"`
@@ -26,6 +27,14 @@ type Album struct {
 	SongCount    int                      `json:"song_count"`
 	Duration     float64                  `json:"duration"`
 	Songs        []model.Media            `json:"songs,omitempty"`
+}
+
+// AlbumDisc describes one caller-visible disc in canonical song order.
+type AlbumDisc struct {
+	Number       int     `json:"number"`
+	Subtitle     string  `json:"subtitle,omitempty"`
+	CoverMediaID int64   `json:"cover_media_id,omitempty"`
+	SongIDs      []int64 `json:"song_ids"`
 }
 
 // CatalogSource exposes only permission-aware reads needed by the music lens.
@@ -72,6 +81,7 @@ func MusicAlbums(ctx context.Context, source CatalogSource, userID int64) ([]Alb
 	for _, album := range groups {
 		sort.Slice(album.Songs, func(i, j int) bool { return albumSongLess(album.Songs[i], album.Songs[j]) })
 		album.SongCount = len(album.Songs)
+		album.Discs = albumDiscs(album.Songs)
 		album.SongCredits = map[int64][]ArtistCredit{}
 		people := map[string]*ArtistCredit{}
 		for _, song := range album.Songs {
@@ -120,6 +130,9 @@ func albumForSong(song model.Media, set model.Set) Album {
 		m = &model.MusicMetadata{}
 	}
 	title, artist := strings.TrimSpace(m.Album), strings.TrimSpace(m.AlbumArtist)
+	if artist == "" && m.Compilation {
+		artist = "Various Artists"
+	}
 	if artist == "" {
 		artist = strings.TrimSpace(m.Artist)
 	}
@@ -175,4 +188,26 @@ func albumSongLess(a, b model.Media) bool {
 		return a.RelPath < b.RelPath
 	}
 	return a.ID < b.ID
+}
+
+func albumDiscs(songs []model.Media) []AlbumDisc {
+	var discs []AlbumDisc
+	for _, song := range songs {
+		number, subtitle := 0, ""
+		if song.Music != nil {
+			number, subtitle = song.Music.Disc, song.Music.DiscSubtitle
+		}
+		if len(discs) == 0 || discs[len(discs)-1].Number != number {
+			discs = append(discs, AlbumDisc{Number: number})
+		}
+		disc := &discs[len(discs)-1]
+		disc.SongIDs = append(disc.SongIDs, song.ID)
+		if disc.Subtitle == "" {
+			disc.Subtitle = subtitle
+		}
+		if disc.CoverMediaID == 0 && song.ThumbnailPath != "" {
+			disc.CoverMediaID = song.ID
+		}
+	}
+	return discs
 }

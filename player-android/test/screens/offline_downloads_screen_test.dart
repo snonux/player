@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:player_android/app_routes.dart';
 import 'package:player_android/screens/offline_playback_route.dart';
 import 'package:player_android/models/offline_media.dart';
+import 'package:player_android/models/music_metadata.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/offline_downloads_provider.dart';
 import 'package:player_android/screens/offline_downloads_screen.dart';
@@ -48,6 +49,16 @@ void main() {
         userId: 7,
         mediaId: 11,
         title: 'Saved audio.mp3',
+        music: MusicMetadata.fromJson({
+          'release_date': '2025-04',
+          'original_date': '1979',
+          'credits': [
+            {
+              'role': 'tape op',
+              'names': ['A; B', '東京']
+            }
+          ]
+        }),
         type: 'audio',
         sizeBytes: 4,
         addedAt: DateTime.now());
@@ -72,6 +83,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Saved audio.mp3'), findsOneWidget);
     expect(find.textContaining('https://saved.example:8443'), findsOneWidget);
+    await tester.tap(find.byTooltip('Music details'));
+    await tester.pumpAndSettle();
+    expect(find.text('Saved offline snapshot'), findsOneWidget);
+    expect(find.text('Release date: 2025-04'), findsOneWidget);
+    expect(find.text('Original date: 1979'), findsOneWidget);
+    expect(find.text('tape op: A; B\n東京'), findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(find.text('Saved offline snapshot'), findsNothing);
     await tester.tap(find.byTooltip('Delete offline copy'));
     await tester.pumpAndSettle();
     expect(find.textContaining('The server file stays available.'),

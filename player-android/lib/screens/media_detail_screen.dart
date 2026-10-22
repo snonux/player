@@ -1,4 +1,5 @@
 import '../services/music_queue.dart';
+import '../widgets/music_metadata_details.dart';
 import '../widgets/server_song_actions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -523,17 +524,10 @@ class _MediaDetailContent extends StatelessWidget {
                 title: const Text('Music details'),
                 tilePadding: EdgeInsets.zero,
                 children: [
-                  for (final entry in {
-                    'Filename': media.fileName,
-                    'Relative path': media.relPath,
-                    ...?media.music?.details
-                  }.entries)
-                    Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: SelectableText(
-                                '${entry.key}: ${entry.value}'))),
+                  MusicMetadataDetails(
+                      music: media.music,
+                      filename: media.fileName,
+                      path: media.relPath),
                 ],
               ),
             // Codec · resolution · duration · file size.

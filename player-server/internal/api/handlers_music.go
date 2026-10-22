@@ -42,6 +42,7 @@ func (s *Server) handleMusicAlbums(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, album)
 			return
 		}
+		album.Discs = nil
 		album.Songs = nil
 		album.SongCredits = nil
 		result = append(result, album)

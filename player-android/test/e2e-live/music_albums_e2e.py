@@ -113,7 +113,7 @@ def catalog_design(run):
     assert adrv.wait('^Play album$'), app_ui.labels()
     album('Synth Compilation')
     text = labels_text()
-    for value in ['1 · 1', '1 · 2', '2 · 1', 'Neon Rain', 'Glass City', 'Afterglow']:
+    for value in ['1-1', '1-2', '2-1', 'Neon Rain', 'Glass City', 'Afterglow']:
         assert value in text, (value, text)
     artifacts.append(run.shot('m02-disc-ordered-songs'))
     adrv.adb('shell', 'cmd', 'uimode', 'night', 'yes')

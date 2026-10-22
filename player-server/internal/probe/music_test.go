@@ -19,11 +19,11 @@ func TestMusicTags(t *testing.T) {
 		tags map[string]string
 		want model.MusicMetadata
 	}{
-		{"complete Unicode", map[string]string{"TITLE": " Café Ñoño ", "ARTIST": "Aurora feat. Kei; A/B", "ALBUM_ARTIST": "Ünïcødé", "ALBUM": "東京 Nights", "TRACK": "02/12", "DISCNUMBER": "2/3", "DATE": "2022-11-03", "GENRE": "Électronique"}, model.MusicMetadata{Title: "Café Ñoño", Artist: "Aurora feat. Kei; A/B", Artists: []string{"Aurora feat. Kei; A/B"}, AlbumArtist: "Ünïcødé", AlbumArtists: []string{"Ünïcødé"}, Album: "東京 Nights", Track: 2, TrackTotal: 12, Disc: 2, DiscTotal: 3, Date: "2022-11-03", Year: 2022, Genres: []string{"Électronique"}}},
-		{"missing and invalid", map[string]string{"title": " \t ", "track": "-2/no", "disc": "banana", "date": "unknown"}, model.MusicMetadata{Date: "unknown"}},
+		{"complete Unicode", map[string]string{"TITLE": " Café Ñoño ", "ARTIST": "Aurora feat. Kei; A/B", "ALBUM_ARTIST": "Ünïcødé", "ALBUM": "東京 Nights", "TRACK": "02/12", "DISCNUMBER": "2/3", "DATE": "2022-11-03", "GENRE": "Électronique"}, model.MusicMetadata{Title: "Café Ñoño", Artist: "Aurora feat. Kei; A/B", Artists: []string{"Aurora feat. Kei; A/B"}, AlbumArtist: "Ünïcødé", AlbumArtists: []string{"Ünïcødé"}, Album: "東京 Nights", Track: 2, TrackTotal: 12, Disc: 2, DiscTotal: 3, Date: "2022-11-03", ReleaseDate: "2022-11-03", Year: 2022, Genres: []string{"Électronique"}}},
+		{"missing and invalid", map[string]string{"title": " \t ", "track": "-2/no", "disc": "banana", "date": "unknown"}, model.MusicMetadata{Date: "unknown", ReleaseDate: "unknown"}},
 		{"structured values", map[string]string{"artist": "A\x00B\x00A", "albumartist": "C\x00D", "genre": "Jazz\x00Blues"}, model.MusicMetadata{Artist: "A, B", Artists: []string{"A", "B"}, AlbumArtist: "C, D", AlbumArtists: []string{"C", "D"}, Genres: []string{"Jazz", "Blues"}}},
-		{"non-year date retains separate year", map[string]string{"date": "Spring release", "year": "2024"}, model.MusicMetadata{Date: "Spring release", Year: 2024}},
-		{"date year wins conflict", map[string]string{"date": "2023-03-01", "year": "2024"}, model.MusicMetadata{Date: "2023-03-01", Year: 2023}},
+		{"non-year date retains separate year", map[string]string{"date": "Spring release", "year": "2024"}, model.MusicMetadata{Date: "Spring release", ReleaseDate: "Spring release", Year: 2024}},
+		{"date year wins conflict", map[string]string{"date": "2023-03-01", "year": "2024"}, model.MusicMetadata{Date: "2023-03-01", ReleaseDate: "2023-03-01", Year: 2023}},
 		{"display plus explicit artists", map[string]string{"artist": "A & B", "artists": "A\x00B"}, model.MusicMetadata{Artist: "A & B", Artists: []string{"A", "B"}}},
 	}
 	for _, tc := range cases {
@@ -130,5 +130,24 @@ func TestMusicReleaseID(t *testing.T) {
 	got := parseMusicTags(musicTags(map[string]string{"MUSICBRAINZ_ALBUMID": id}))
 	if got.ReleaseMBID != id {
 		t.Fatalf("release id %q", got.ReleaseMBID)
+	}
+}
+
+func TestDiscSubtitleCompilation(t *testing.T) {
+	for _, key := range []string{"discsubtitle", "disc_subtitle", "discname", "disc_name"} {
+		m := parseMusicTags(map[string]string{key: "Encore 東京", "compilation": "YES"})
+		if m.DiscSubtitle != "Encore 東京" || !m.Compilation {
+			t.Fatalf("%s: %+v", key, m)
+		}
+	}
+	for _, value := range []string{"0", "false", "no", "unknown", ""} {
+		if parseMusicTags(map[string]string{"compilation": value}).Compilation {
+			t.Fatalf("accepted %q", value)
+		}
+	}
+	for _, key := range []string{"tcmp", "cpil"} {
+		if !parseMusicTags(map[string]string{key: "1"}).Compilation {
+			t.Fatal(key)
+		}
 	}
 }

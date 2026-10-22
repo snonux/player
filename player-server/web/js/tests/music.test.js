@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mediaTitle, musicSubtitle, musicRows } from '../music.js';
+import { mediaTitle, musicSubtitle, musicRows, musicDetailGroups, albumDiscLayout, albumSongNumber, discTitle } from '../music.js';
 assert.equal(mediaTitle({type:'audio',file_name:'01 - name.MP3'}), '01 - name');
 assert.equal(mediaTitle({type:'audio',file_name:'a.mp3',music:{title:'  \t '}}), 'a');
 assert.equal(mediaTitle({type:'video',file_name:'a.mp4',music:{title:'Wrong'}}), 'a.mp4');
@@ -8,4 +8,19 @@ assert.equal(mediaTitle(media),'東京 Nights');
 assert.equal(musicSubtitle(media),'A feat. B; C · Café');
 assert.deepEqual(musicRows(media).filter(([,v])=>v),[['Artist','A feat. B; C'],['Album','Café'],['Disc','2 / 3'],['Genres','Jazz, Blues']]);
 assert.equal(media.file_name,'a.flac');
+const rich = {type:'audio',music:{date:'2024',year:2024,release_date:'2025-04',original_date:'1979',recording_date:'1978-11',release_version:'Live 東京',labels:['A; B','C / D'],comment:'<b>Text</b>\n第二行',credits:[{role:'tape op',names:['A/B','C, D']}]}};
+assert.deepEqual(musicRows(rich).filter(([,v])=>v),[['Tagged date','2024'],['Year',2024]]);
+assert.deepEqual(musicDetailGroups(rich),[['Release details',[['Release date','2025-04'],['Original date','1979'],['Recording date','1978-11'],['Version','Live 東京'],['Label','A; B\nC / D']]],['Additional music details',[['Comment','<b>Text</b>\n第二行'],['tape op','A/B\nC, D']]]]);
+assert.deepEqual(musicRows({type:'audio',music:{date:'2024-02',year:2024}}).filter(([,v])=>v),[]);
+assert.deepEqual(musicRows({type:'audio',music:{date:'Spring release',year:2024}}).filter(([,v])=>v),[['Year',2024]]);
+assert.deepEqual(musicDetailGroups({type:'audio',music:{}}),[]);
 console.log('Music title/metadata tests passed.');
+
+const album={songs:[{id:8,music:{disc:1,track:2}},{id:3,music:{disc:2,track:1}}],discs:[{number:1,song_ids:[8]},{number:2,subtitle:'Encore',song_ids:[3]}]};
+const layout=albumDiscLayout(album);
+assert.equal(layout.grouped,true); assert.equal(layout.heads.get(3).subtitle,'Encore');
+assert.equal(albumSongNumber(album.songs[1],layout.multi),'2-1');
+assert.deepEqual(album.songs.map((song,index)=>({id:song.id,index})),[{id:8,index:0},{id:3,index:1}]);
+assert.equal(discTitle({number:0}),'Unnumbered disc');
+assert.equal(albumDiscLayout({songs:[{music:{disc:1}}],discs:[{number:1,song_ids:[1]}]}).grouped,false);
+assert.deepEqual(musicRows({type:'audio',music:{disc_subtitle:'Bonus',compilation:true}}).filter(([,v])=>v),[['Disc subtitle','Bonus'],['Compilation','Yes']]);

@@ -63,3 +63,47 @@ func TestAlbumIdentity(t *testing.T) {
 		t.Fatal("folder fallback leaked across sets")
 	}
 }
+
+func TestCompilationDiscsAndCredits(t *testing.T) {
+	songs := []model.Media{}
+	for i, disc := range []int{2, 1, 1, 0} {
+		songs = append(songs, model.Media{ID: int64(i + 1), SetID: 1, Type: model.MediaTypeAudio, FileName: string(rune('a' + i)), ThumbnailPath: "art", Music: &model.MusicMetadata{Album: "Compilation", Compilation: true, Artists: []string{"A / B", "東京"}, Artist: []string{"Duo", "Guest", "Duo", "Other"}[i], Disc: disc, Track: i + 1, DiscSubtitle: map[int]string{1: "Original", 2: "Encore"}[disc]}})
+	}
+	songs[1].Music.Artists = []string{"Guest"}
+	songs[3].Music.Artists = []string{"Other"}
+	albums, err := MusicAlbums(context.Background(), albumSource{sets: []model.Set{{ID: 1}}, songs: songs}, 1)
+	if err != nil || len(albums) != 1 || albums[0].SongCount != 4 {
+		t.Fatalf("albums %v %v", albums, err)
+	}
+	a := albums[0]
+	if a.Artist != "Various Artists" || len(a.Discs) != 3 || a.Discs[0].Number != 1 || a.Discs[0].Subtitle != "Original" || a.Discs[0].CoverMediaID != 2 || len(a.Discs[0].SongIDs) != 2 || a.Discs[1].SongIDs[0] != 1 || a.Discs[2].Number != 0 {
+		t.Fatalf("discs %+v", a)
+	}
+	credits := MusicCredits(songs[0])
+	if len(credits) != 3 {
+		t.Fatalf("credits %+v", credits)
+	}
+	if songs[0].Music.AlbumArtist != "" || songs[0].Music.Artist != "Duo" {
+		t.Fatal("embedded tags overwritten")
+	}
+	ordinary := songs[0]
+	ordinary.Music = &model.MusicMetadata{Album: "Compilation", Artist: "Different"}
+	if albumForSong(ordinary, model.Set{}).Key == a.Key {
+		t.Fatal("ordinary album merged")
+	}
+	unflagged := make([]model.Media, len(songs))
+	for i, song := range songs {
+		metadata := *song.Music
+		metadata.Compilation = false
+		unflagged[i] = song
+		unflagged[i].Music = &metadata
+	}
+	separate, err := MusicAlbums(context.Background(), albumSource{sets: []model.Set{{ID: 1}}, songs: unflagged}, 1)
+	if err != nil || len(separate) != 3 {
+		t.Fatalf("unflagged divergent artists must form three albums: %+v %v", separate, err)
+	}
+	songs[0].Music.AlbumArtist = "Explicit"
+	if albumForSong(songs[0], model.Set{}).Artist != "Explicit" {
+		t.Fatal("explicit album artist lost")
+	}
+}

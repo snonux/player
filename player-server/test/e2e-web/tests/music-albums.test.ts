@@ -89,7 +89,7 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   await selectByKeys(page,'Open album Synth Compilation by Various Artists',100);await page.keyboard.press('Enter');
   await expect(page.getByRole('heading',{name:'Synth Compilation',exact:true})).toBeVisible();
   await expect(page.locator('.music-number')).toHaveCount(3);
-  expect(await page.locator('.music-number').allTextContents()).toEqual(['1 · 1','1 · 2','2 · 1']);
+  expect(await page.locator('.music-number').allTextContents()).toEqual(['1-1','1-2','2-1']);
   expect(await page.locator('.song-open').allTextContents()).toEqual(['Neon Rain','Glass City','Afterglow']);
   await page.getByRole('button',{name:'← Back to albums',exact:true}).click();
   const long=catalog.find((a:any)=>a.title.startsWith('Long Album '));

@@ -25,13 +25,14 @@ async function info(page: any, title: string) {
   await expect(page.locator('#media-info-body')).toContainText('Filename');
 }
 async function row(page: any, label: string, value: string) {
+  if (label === 'Release date') { const group = page.locator('details').filter({has:page.locator('summary', {hasText:'Release details'})}); if (!(await group.evaluate((el:any)=>el.open))) await group.locator('summary').click(); }
   await expect(page.locator('#media-info-body tr').filter({has: page.getByRole('rowheader', {name: label, exact: true})}).locator('td')).toHaveText(value);
 }
 
 test('M01 tags, filename fallback, Unicode and real structured multivalues in Info and cards', async ({ page }, testInfo) => {
   const artifacts: string[] = [];
   const entries = [
-    {path:'Music/Tag Verification/source_001.flac', fields: {Title:'A Different Music Title',Filename:'source_001.flac',Artist:'A & B; C/D','Album artist':'Album Ensemble',Album:'Metadata Album',Track:'4 / 9',Disc:'2 / 3',Date:'2024-02-29',Year:'2024',Genres:'Jazz'}},
+    {path:'Music/Tag Verification/source_001.flac', fields: {Title:'A Different Music Title',Filename:'source_001.flac',Artist:'A & B; C/D','Album artist':'Album Ensemble',Album:'Metadata Album',Track:'4 / 9',Disc:'2 / 3','Release date':'2024-02-29',Genres:'Jazz'}},
     {path:'Music/Ünïcødé Artïst - 東京 Nights/02 - Партия для двоих.flac', fields:{Title:'Партия для двоих',Artist:'Ünïcødé Artïst, Mika Sørensen',Genres:'Électronique, Ambient'}},
     {path:'Music/Various Artists - Synth Compilation/Disc 2/01 - Afterglow.ogg', fields:{Title:'Afterglow',Artist:'Dusk Choir',Disc:'2 / 2'}},
     {path:'Music/Various Artists - Synth Compilation/Disc 1/01 - Neon Rain.m4a', fields:{Title:'Neon Rain',Artist:'Neon Coast',Disc:'1 / 2'}},

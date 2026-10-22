@@ -208,7 +208,7 @@ ID3_ARGS = ['-id3v2_version', '3', '-write_id3v1', '0']
 STRIP_ARGS = ['-map_metadata', '-1', '-fflags', '+bitexact', '-flags:a', '+bitexact']
 
 
-def generate(media_root, *, session_artwork=False, shuffle_playback=False):
+def generate(media_root, *, session_artwork=False, shuffle_playback=False, release_metadata=False, multi_disc=False):
     """Write the library below media_root and return the manifest dict."""
     media_root = Path(media_root)
     session_tracks = {
@@ -221,10 +221,17 @@ def generate(media_root, *, session_artwork=False, shuffle_playback=False):
                  (shuffle_playback and spec['path'].startswith('Music/Aurora Lane - Night Transit (2021)/')))
              else spec for spec in TRACKS]
     tracks = [_make_track(media_root, spec) for spec in specs]
+    if release_metadata:
+        from music_release import make_tracks
+        tracks += make_tracks(media_root)
     tracks += _make_gapless(media_root)
     tracks += _make_gap_calibration(media_root)
     _make_cover(media_root / COVER)
     images = [COVER]
+    if multi_disc:
+        from music_discs import make_tracks, IMAGES
+        tracks += make_tracks(media_root)
+        images += IMAGES
     if session_artwork:
         second = 'Music/Tag Verification/cover.jpg'
         ffmpeg('-f', 'lavfi', '-i', 'color=c=0xd25a20:s=600x600', '-frames:v', '1',

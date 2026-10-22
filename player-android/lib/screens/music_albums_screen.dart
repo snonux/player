@@ -222,6 +222,20 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         .cast<Map<String, dynamic>>()
         .map(Media.fromJson)
         .toList();
+    final discs = (album['discs'] as List? ?? []).cast<Map<String, dynamic>>();
+    final grouped = discs.length > 1 ||
+        discs.any((d) =>
+            (d['number'] as int? ?? 0) > 1 ||
+            (d['subtitle'] as String? ?? '').isNotEmpty) ||
+        songs.any((s) => (s.music?.toJson()['disc_total'] as int? ?? 0) > 1);
+    final multi = discs.length > 1 ||
+        discs.any((d) => (d['number'] as int? ?? 0) > 1) ||
+        songs.any((s) => (s.music?.toJson()['disc_total'] as int? ?? 0) > 1);
+    final headings = {
+      for (final d in discs)
+        if ((d['song_ids'] as List? ?? []).isNotEmpty)
+          (d['song_ids'] as List).first: d
+    };
     final selectedSongs =
         songs.where((song) => _selected.contains(song.id)).toList();
     PopupMenuButton<QueueInsertion> actions(List<Media> items, String label) =>
@@ -272,7 +286,9 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         ],
       ]),
       const SizedBox(height: 16),
-      for (var i = 0; i < songs.length; i++)
+      for (var i = 0; i < songs.length; i++) ...[
+        if (grouped && headings.containsKey(songs[i].id))
+          _discHeading(headings[songs[i].id]!),
         ListTile(
             contentPadding: EdgeInsets.zero,
             leading: _selecting
@@ -286,7 +302,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                             _selected.remove(songs[i].id);
                           }
                         }))
-                : SizedBox(width: 42, child: Text(_number(songs[i]))),
+                : SizedBox(width: 42, child: Text(_number(songs[i], multi))),
             title: Text(songs[i].displayTitle,
                 maxLines: 2, overflow: TextOverflow.ellipsis),
             subtitle: _creditLinks(
@@ -326,7 +342,27 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 ],
               )
             ])),
+      ],
     ]);
+  }
+
+  Widget _discHeading(Map<String, dynamic> disc) {
+    final number = disc['number'] as int? ?? 0;
+    final subtitle = disc['subtitle'] as String? ?? '';
+    final title =
+        '${number > 0 ? 'Disc $number' : 'Unnumbered disc'}${subtitle.isNotEmpty ? ' — $subtitle' : ''}';
+    return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(children: [
+          _cover({'title': title, 'cover_media_id': disc['cover_media_id']},
+              size: 48),
+          const SizedBox(width: 12),
+          Expanded(
+              child: Semantics(
+                  header: true,
+                  child: Text(title,
+                      style: Theme.of(context).textTheme.titleMedium))),
+        ]));
   }
 
   Widget _creditLinks(dynamic credits, String role, String fallback) {
@@ -345,9 +381,9 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
     ]);
   }
 
-  String _number(Media song) {
+  String _number(Media song, bool multi) {
     final data = song.music?.toJson() ?? {};
-    return '${data['disc'] != null ? '${data['disc']} · ' : ''}${data['track'] ?? '—'}';
+    return '${multi ? '${data['disc'] ?? '—'}-' : ''}${data['track'] ?? '—'}';
   }
 
   String _duration(double seconds) {

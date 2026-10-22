@@ -567,3 +567,31 @@ into the three Night Transit encoder source specifications before generation;
 the manifest uses the same specifications. The native runner independently
 ffprobes all three actual files and compares server durations and manifest before
 playing. A 45-second manifest alone does not pass this preflight.
+# Rich release metadata (M05)
+
+`music_release_e2e.py` requires the disposable music fixture started with
+`--release-metadata`, a current release APK, and a running API34 emulator with
+QEMU WAV output. Run from the repository root:
+
+```sh
+python3 player-android/test/e2e-live/music_release_e2e.py /home/paul/tmp/0k3-fixture --apk /home/paul/tmp/0k3-evidence/player.apk --emulator-wav /home/paul/tmp/0k3-evidence/emulator-output.wav
+```
+
+It touches native release/credit details across formats/themes, real rescan
+change/removal/failure and restart, permission denial, source playback, then
+opens a saved metadata snapshot in Downloads after removing the adb server
+route. Back returns to Downloads. Failures exit nonzero and retain evidence.
+Use the original marked fixture directory; retag/restart cannot use a copy.
+See [`music-m05-implementation.md`](../../../docs/music-m05-implementation.md).
+
+### M04 multi-disc albums and compilations
+
+`music_discs_e2e.py FIXTURE --apk FINAL_APK --emulator-wav QEMU_WAV` exercises
+native disc headings/subtitles/art, compilation aggregation, multiple linked
+credits/Back, direct second-disc global-index audio, natural disc-boundary tones
+and collection end, light/dark/long text, missing/broken art, actual offline/ACL
+Retry and M04 retag/clear/failed-probe/server restart. `--scenario core|errors|
+state` supports focused continuation. `--resume-device` retains data/mapping at
+exit; initial isolated sign-in still clears app data. Root owns one shared
+emulator and all cleanup. See [the M04 runbook](../../../docs/music-m04-implementation.md)
+for guarded additive fixture setup and exact pending acceptance boundaries.
