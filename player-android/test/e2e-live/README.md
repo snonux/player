@@ -489,3 +489,69 @@ Root subsequently stopped only verified task server/emulator/Pulse resources,
 verified no task browser processes remained, and preserved both fixtures and all
 evidence. Full cross-component gates, reviews and the observed Chrome activation
 limits are recorded in `docs/music-m54-implementation.md` from the repo root.
+
+## M18 playback shuffle
+
+Use the final normal release APK, disposable API34 rooted emulator, existing
+music fixture and actual QEMU output WAV. Root owns startup and stop-only cleanup:
+
+```sh
+python3 player-android/test/e2e-live/music_shuffle_e2e.py \
+  /home/paul/tmp/zk3-fixture \
+  --apk /home/paul/tmp/zk3-evidence/app-x86_64-release.apk \
+  --emulator-wav /home/paul/tmp/zk3-evidence/emulator-output.wav \
+  --ownership-path /home/paul/tmp/zk3-evidence/runtime-ownership.json
+```
+
+`--scenario core|options|recovery|remaining|permission` allows bounded continuation; each creates its
+own isolated playlist through the actual fixture API then uses native UI to
+play it. `remaining` runs options and recovery only; `--from-cycle` skips an
+already accepted core queue phase. `--resume-device` follows the saved-server/password unlock flow.
+Production randomness is not seeded. Assertions compare exact occurrence IDs,
+canonical order, mode/current/position and expected source PCM across a full
+cycle including duplicate media. Touch/Back exercises direct Shuffle, queue
+remainder/reshuffle/Undo, independent album browsing, optional genre/year/max,
+invalid/no-match/actual reverse-cutoff offline retry and dialog cancellation,
+portrait light/dark originals, force-stop and real account roundtrip recovery.
+
+This runner locally uses unique, checked UI dump paths before parsing; failed
+uiautomator output cannot reuse an older XML screen. Touch evidence records
+fresh stable semantic targets and their original screenshots. It reads only the
+current origin/account's queue document from preferences, never writes app
+state. The existing delayed-result production widget regression supplies the
+controlled pending-resolution Cancel/Back boundary. `py_compile` is only a driver
+syntax check. Native acceptance spans attempt7 (queue remainder,
+reshuffle/Undo, canonical Off/current/position, independent browse), attempt10
+(full six-occurrence audible cycle), attempt13 (options/offline/filtered audio
+and Cancel/Back), attempt14 (exact 3.219-second paused force-stop/account
+recovery plus audible Resume), and attempt15 (real ACL denial for direct
+Shuffle/options, exact source/3.721-second retention and restored-grant audible
+retry). The actual album-denial HTTP status was 404; no fake 403 was injected.
+The permission case captures the existing fixture grant and restores its exact
+role in finally, then verifies restoration. All attempts live under
+`/home/paul/tmp/zk3-evidence`.
+
+This API34 UiAutomator XML omits EditText hint attributes. The runner builds
+`MusicAccessibilityProbe.java` with existing SDK javac/d8, pushes its test-only
+JAR, and sequentially reads fresh actual AccessibilityNodeInfo `getHintText()`
+values. Exact labels must identify one editable, enabled, visible field with
+valid bounds. A fresh root/tree is polled for at most seven seconds after each
+connection; empty-tree exhaustion fails rather than falling back to old XML or
+ordinal fields. `test_music_shuffle_e2e.py` has four negative/oracle tests,
+including failed-idle stale-dump and empty-tree rejection. Original hint JSON,
+field screenshots and target coordinates are retained for every action.
+
+Earlier attempts retain compound-card selector, active-animation idle failure,
+synthetic media Play routing, transient null-root, absent unused-account storage,
+and auto-play startup-race
+driver corrections. Playback uses actual visible Play/Next, with working scoped
+media Pause only for stabilization. No new OS transport verification, physical
+hardware or operated TalkBack is claimed. No product code changed during these
+runtime corrections.
+
+Create the fresh M18 fixture with `music_fixture.py up <server> --shuffle-playback`
+(the normal 12-second baseline remains unchanged). This flag passes 45 seconds
+into the three Night Transit encoder source specifications before generation;
+the manifest uses the same specifications. The native runner independently
+ffprobes all three actual files and compares server durations and manifest before
+playing. A 45-second manifest alone does not pass this preflight.

@@ -18,7 +18,7 @@
     <a href="/" class="logo"><img src="/favicon.svg" alt="" class="logo-img">Player</a>
     <div class="spacer"></div>
     <button id="sidebar-toggle" class="icon-btn" title="Sets" aria-label="Toggle sets sidebar">☰</button>
-    <button id="shuffle-toggle" class="icon-btn" title="Shuffle (r)" aria-label="Toggle shuffle">🔀︎</button>
+    <button id="shuffle-toggle" class="icon-btn" title="Shuffle library listing (r)" aria-label="Toggle library listing shuffle">🔀︎</button>
     <button class="btn btn-ghost btn-sm" data-queue-toggle title="Now Playing queue (Q)" aria-controls="queue-panel">Queue</button>
     <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
     <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
@@ -233,7 +233,7 @@
         <div class="help-row"><span><kbd>Esc</kbd></span><span>Close dialog / exit fullscreen / return to thumbnails</span></div>
         <div class="help-row"><span><kbd>q</kbd></span><span>Stop playback and close player</span></div>
         <div class="help-row"><span><kbd>Backspace</kbd></span><span>Exit media view / go up one folder</span></div>
-        <div class="help-row"><span><kbd>r</kbd></span><span>Enable / reshuffle</span></div>
+        <div class="help-row"><span><kbd>r</kbd></span><span>Shuffle / reshuffle library listing (queue shuffle is in Now Playing)</span></div>
         <div class="help-row"><span><kbd>s</kbd></span><span>Share selected media</span></div>
         <div class="help-row"><span><kbd>c</kbd></span><span>Toggle display fill-crop (fullscreen)</span></div>
         <div class="help-row"><span><kbd>Shift+↑</kbd> <kbd>Shift+↓</kbd> <kbd>Shift+←</kbd> <kbd>Shift+→</kbd></span><span>Nudge display crop position (active crop)</span></div>
@@ -412,6 +412,7 @@
   </div>
 </div>
 
+<div id="shuffle-options-modal" class="modal-overlay"></div>
 <div id="playlist-modal" class="modal-overlay"></div>
 </body>
 </html>

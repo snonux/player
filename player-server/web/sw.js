@@ -24,6 +24,7 @@ const ASSETS = [
   '/js/media-session.js',
   '/js/queue.js',
   '/js/queue-storage.js',
+  '/js/queue-shuffle.js',
   '/js/queue-actions.js',
   '/js/collection-actions.js',
   '/js/collection-resolver.js',

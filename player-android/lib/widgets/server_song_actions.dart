@@ -23,7 +23,9 @@ String queueActionLabel(QueueInsertion action) => switch (action) {
 /// Captures account dependencies now; retained callbacks never capture a screen/ref.
 Future<void> insertServerSongs(BuildContext context, WidgetRef ref,
     List<Media> songs, QueueInsertion action,
-    {bool replace = false, String sourceLabel = 'Collection'}) async {
+    {bool replace = false,
+    bool shuffled = false,
+    String sourceLabel = 'Collection'}) async {
   if (songs.isEmpty || songs.any((song) => song.type != 'audio')) return;
   final handler = ref.read(audioHandlerProvider);
   if (handler.musicQueue.busy) {
@@ -65,6 +67,7 @@ Future<void> insertServerSongs(BuildContext context, WidgetRef ref,
         entries: entries,
         action: action,
         replace: replace,
+        shuffled: shuffled,
         sourceLabel: sourceLabel,
         claim: (request) async {
           if (generation != mutations.generation) return null;

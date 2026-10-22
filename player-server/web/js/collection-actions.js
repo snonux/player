@@ -1,4 +1,5 @@
 import { API } from './api.js';
+import { parseShuffleOptions, selectShuffleSongs } from './queue-shuffle.js';
 import { resolveCollections } from './collection-resolver.js';
 import { insertQueue, queueState, queueUndoToken, undoQueue } from './queue.js';
 import { currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
@@ -8,12 +9,13 @@ import { escapeHtml as esc, toast } from './utils.js';
 
 let context = null, collectionIntent = 0;
 export function collectionButtons(label) {
- return `<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${esc(label)}</button><button class="btn" data-collection-menu>Queue actions ▾</button><span role="status" data-collection-status></span></span>`;
+ return `<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${esc(label)}</button><button class="btn" data-collection-shuffle>Shuffle</button><button class="btn" data-collection-menu>Queue actions ▾</button><span role="status" data-collection-status></span></span>`;
 }
 export function bindCollectionActions(root, collections, current, sourceLabel = 'Selected collections') {
  const owner = {root, collections, current, sourceLabel, busy:false, generation:0};
  context = owner;
  root.querySelector('[data-collection-play]').onclick = () => run(owner, 'replace');
+ root.querySelector('[data-collection-shuffle]').onclick = () => run(owner, 'shuffle');
  root.querySelector('[data-collection-menu]').onclick = event => menu(event.currentTarget, owner);
  return owner;
 }
@@ -21,33 +23,41 @@ function menu(button, owner) {
  const popover = document.createElement('div');
  popover.className = 'shortcut-picker'; popover.setAttribute('popover', 'auto');
  popover.setAttribute('role', 'group'); popover.setAttribute('aria-label', 'Collection queue actions');
- popover.innerHTML = '<button class="btn btn-ghost" data-action="next">Play next</button><button class="btn btn-ghost" data-action="append">Add to queue</button>';
- popover.querySelectorAll('button').forEach(item => item.onclick = () => { popover.hidePopover(); void run(owner,item.dataset.action); });
+ popover.innerHTML = '<button class="btn btn-ghost" data-action="next">Play next</button><button class="btn btn-ghost" data-action="append">Add to queue</button><button class="btn btn-ghost" data-action="options">Shuffle options…</button>';
+ popover.querySelectorAll('button').forEach(item => item.onclick = () => { popover.hidePopover(); if (item.dataset.action === 'options') shuffleOptions(owner, button); else void run(owner,item.dataset.action); });
  popover.addEventListener('toggle', event => { if (event.newState === 'closed') { popover.remove(); if(button.isConnected)button.focus(); } });
  document.body.append(popover); popover.showPopover(); popover.querySelector('button').focus();
 }
-async function run(owner, action, targets) {
+async function run(owner, action, targets, settings = {}) {
  if (owner.busy || !owner.current() || !owner.root.isConnected) return;
  if (queueState().loading) { toast('Loading track… Please wait.', 'info'); return; }
  const collections = targets || owner.collections();
  if (!collections.length) { toast('Select a collection first.', 'info'); return; }
  const intent = currentPlaybackIntent(), user = state.user, generation = owner.generation, request = ++collectionIntent;
- const current = () => owner.root.isConnected && owner.current() && request === collectionIntent && generation === owner.generation && state.user === user && isPlaybackIntent(intent);
+ const current = () => owner.root.isConnected && owner.current() && request === collectionIntent && generation === owner.generation && state.user === user && isPlaybackIntent(intent) && (!settings.alive || settings.alive());
  owner.busy = true;
- const status = owner.root.querySelector('[data-collection-status]');
- const buttons = [...owner.root.querySelectorAll('[data-collection-play], [data-collection-menu]')];
+ const status = settings.status || owner.root.querySelector('[data-collection-status]');
+ const buttons = [...owner.root.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu]')];
  buttons.forEach(button => button.disabled = true); status.textContent = 'Loading songs…';
  try {
-  const songs = await resolveCollections(API, collections, current);
+  let songs = await resolveCollections(API, collections, current);
+  if (action === 'shuffle') songs = selectShuffleSongs(songs, settings.options);
   if (!current()) return;
-  if (!songs.length) { status.textContent = 'No songs available.'; return; }
-  if (await insertQueue(songs, action === 'replace' ? 'now' : action, {replace:action === 'replace', source:owner.sourceLabel})) {
+  if (!songs.length) { status.textContent = action === 'shuffle' ? 'No songs match these options.' : 'No songs available.'; return; }
+  if (await insertQueue(songs, ['replace', 'shuffle'].includes(action) ? 'now' : action, {replace:['replace', 'shuffle'].includes(action), shuffled:action === 'shuffle', source:owner.sourceLabel})) {
    const token = queueUndoToken();
    status.textContent = `Added ${songs.length} ${songs.length === 1 ? 'song' : 'songs'}.`;
    if (token) toast(status.textContent, 'info', {label:'Undo', run:() => undoQueue(token)});
+   return true;
   }
  } catch(error) { if (current()) status.textContent = `Could not load songs. ${error.message || 'Check your connection and try again.'}`; }
- finally { owner.busy = false; if (owner.root.isConnected) { if (!current()) status.textContent=''; buttons.forEach(button => button.disabled = !owner.collections().length); } }
+ finally {
+  // A canceled dialog may already have started a newer transaction.
+  if (generation === owner.generation) {
+   owner.busy = false;
+   if (owner.root.isConnected) { if (!current()) status.textContent=''; buttons.forEach(button => button.disabled = !owner.collections().length); }
+  }
+ }
 }
 export function queueCollectionSelected(action) {
  if (!context?.current() || !context.root.isConnected) return false;
@@ -96,7 +106,7 @@ export function bindCollectionCatalog(grid, items, kind, keyName, nameName, curr
  const update = () => {
   const count = selected().length;
   toolbar.querySelector('[data-batch-count]').textContent = `${count} selected`;
-  if (!owner.busy) toolbar.querySelectorAll('[data-collection-play], [data-collection-menu]').forEach(button => button.disabled=!count);
+  if (!owner.busy) toolbar.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu]').forEach(button => button.disabled=!count);
  };
  const setSelecting = value => {
   owner.selecting=value; toolbar.querySelector('[data-batch]').hidden=!value;
@@ -104,8 +114,44 @@ export function bindCollectionCatalog(grid, items, kind, keyName, nameName, curr
   cards.forEach(card=>{const check=card.querySelector('input');check.hidden=!value;if(!value)check.checked=false;});
   update();
  };
- owner.cancel=()=>{owner.generation++;toolbar.querySelector('[data-collection-status]').textContent='';setSelecting(false);toggle.focus();};
+ owner.cancel=()=>{owner.generation++;owner.busy=false;toolbar.querySelector('[data-collection-status]').textContent='';setSelecting(false);toggle.focus();};
  toggle.onclick=()=>{if(owner.selecting)owner.cancel();else setSelecting(true);};
  update();
  return owner;
+}
+
+function shuffleOptions(owner, opener) {
+ const modal = document.getElementById('shuffle-options-modal');
+ modal.innerHTML = `<section class="modal" role="dialog" aria-modal="true" aria-labelledby="shuffle-options-title"><div class="modal-header"><h2 id="shuffle-options-title">Shuffle options</h2><button class="icon-btn" data-cancel aria-label="Close shuffle options">✕</button></div><form class="modal-body">${[['genre','Genre'],['from','From year'],['to','To year'],['maximum','Maximum songs']].map(([name,label]) => `<label>${label} (optional)<input name="${name}" aria-label="${label} (optional)" ${name === 'genre' ? '' : 'inputmode="numeric"'}></label>`).join('')}<p>Blank includes every song. Applies to this collection only.</p><p role="status" data-shuffle-status></p><div class="playlist-actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn btn-primary">Shuffle</button></div></form></section>`;
+ const panel = modal.firstElementChild;
+ const alive = () => modal.classList.contains('open') && modal.firstElementChild === panel;
+ const close = () => {
+  modal.classList.remove('open');
+  if (owner.busy) {
+   // Cancel ownership immediately; late completion cannot unlock a newer action.
+   owner.generation++; owner.busy = false;
+   if (owner.root.isConnected) {
+    owner.root.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu]').forEach(button => button.disabled = !owner.collections().length);
+   }
+  }
+  if (opener?.isConnected) opener.focus();
+ };
+ // This dialog owns Escape before the global close path selects a library card.
+ modal.onkeydown = event => {
+  if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing) {
+   event.preventDefault(); event.stopPropagation(); close();
+  }
+ };
+ modal.querySelectorAll('[data-cancel]').forEach(button => button.onclick = close);
+ const form = modal.querySelector('form'), status = modal.querySelector('[data-shuffle-status]');
+ form.onsubmit = async event => {
+  event.preventDefault(); if (owner.busy) return;
+  let options;
+  try { options = parseShuffleOptions(Object.fromEntries(new FormData(form))); }
+  catch (error) { status.textContent = error.message; return; }
+  const submit = form.querySelector('[type="submit"]'); submit.disabled = true;
+  const success = await run(owner, 'shuffle', null, {options, alive, status});
+  if (alive()) { submit.disabled = false; if (success) close(); }
+ };
+ modal.classList.add('open');
 }

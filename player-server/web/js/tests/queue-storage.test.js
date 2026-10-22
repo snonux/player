@@ -10,3 +10,7 @@ console.log('Queue snapshot validation passed.');
 
 for (const repeat of ['off','all','one']) assert.equal(readQueueSnapshot(JSON.stringify({...snapshot,repeat})).repeat,repeat);
 for (const repeat of [null, false, 'invalid', 0]) assert.throws(()=>readQueueSnapshot(JSON.stringify({...snapshot,repeat})));
+
+const shuffled = {...snapshot,shuffle:true,canonical:[2,1]};
+assert.deepEqual(readQueueSnapshot(JSON.stringify(shuffled)),shuffled);
+for (const invalid of [{shuffle:'yes'},{shuffle:true},{canonical:[1]},{canonical:[1,1]},{canonical:[1,99]},{canonical:null}]) assert.throws(()=>readQueueSnapshot(JSON.stringify({...snapshot,...invalid})));

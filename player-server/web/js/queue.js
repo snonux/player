@@ -1,5 +1,6 @@
 import { beginPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { queueStorageKey, readQueueSnapshot } from './queue-storage.js';
+import { orderRemainder, shuffledCopy } from './queue-shuffle.js';
 import { API } from './api.js';
 import { currentMediaId, queuePlaybackPosition, selectAndPlay, stopAndClose } from './player.js';
 
@@ -7,7 +8,20 @@ import { currentMediaId, queuePlaybackPosition, selectAndPlay, stopAndClose } fr
 let entries = [], index = -1, label = '', activeID = null, serial = 0;
 let revision = 0, loading = false, undo = null, status = '';
 let nextIDs = new Set(), nextEpoch = 0;
-let repeat = 'off';
+let repeat = 'off', shuffle = false, canonical = [];
+function canonicalInsert(added, at) {
+  const anchor = entries[at - 1]?.id;
+  canonical.splice(anchor ? canonical.indexOf(anchor) + 1 : 0, 0, ...added.map(e => e.id));
+}
+export function shuffleQueue({ reshuffle = false } = {}) {
+  if (loading || restoreError || (!shuffle && eligibleShuffleCount() < 2) || (reshuffle && eligibleShuffleCount() < 2)) return;
+  remember();
+  shuffle = reshuffle || !shuffle;
+  entries = orderRemainder(entries, index, canonical, nextIDs, shuffle);
+  status = `${shuffle ? 'Upcoming songs shuffled.' : 'Remaining song order restored.'} Undo available.`;
+  notify();
+}
+function eligibleShuffleCount() { return entries.slice(index + 1).filter(e => !nextIDs.has(e.id)).length; }
 function invalidateNext() { nextIDs.clear(); nextEpoch++; }
 let storageKey = null, savedPosition = 0, positionEntry = null, restoreError = false, restored = false;
 const notify = () => { saveQueue(); document.dispatchEvent(new Event('queue:changed')); };
@@ -23,7 +37,7 @@ function saveQueue() {
     localStorage.setItem(storageKey, JSON.stringify({ version: 1,
       entries: entries.map(entry => ({ id: entry.id, mediaId: entry.media.id })), index,
       position: positionEntry === entries[index]?.id ? savedPosition : 0, label,
-      repeat, upNext: [...nextIDs] }));
+      repeat, shuffle, canonical, upNext: [...nextIDs] }));
   } catch {
     const message = 'Queue could not be saved on this device.';
     if (status !== message) { status = message; document.dispatchEvent(new Event('queue:changed')); }
@@ -39,7 +53,7 @@ export async function restoreQueue(userId) {
     saveQueue();
     if (queueState().active) stopAndClose();
     beginPlaybackIntent();
-    entries = []; index = -1; activeID = null; label = ''; undo = null; repeat = 'off';
+    entries = []; index = -1; activeID = null; label = ''; undo = null; repeat = 'off'; shuffle = false; canonical = [];
     restored = false; positionEntry = null; savedPosition = 0; invalidateNext();
   }
   storageKey = key;
@@ -68,6 +82,7 @@ export async function restoreQueue(userId) {
     if (!keptCurrent) index = entries.length ? Math.min(snapshot.index, entries.length - 1) : -1;
     serial = Math.max(serial, ...snapshot.entries.map(entry => entry.id));
     repeat = snapshot.repeat ?? 'off';
+    shuffle = snapshot.shuffle ?? false; canonical = (snapshot.canonical ?? snapshot.entries.map(e => e.id)).filter(id => entries.some(e => e.id === id));
     label = snapshot.label; activeID = null; undo = null;
     nextIDs = new Set(snapshot.upNext.filter(id => entries.some(entry => entry.id === id)));
     positionEntry = entries[index]?.id; savedPosition = keptCurrent ? snapshot.position : 0;
@@ -97,7 +112,7 @@ export function cycleQueueRepeat() {
 
 export function queueUndoToken() { return undo; }
 export function queueState() {
-  return { entries: entries.map(entry => ({ ...entry, upNext: nextIDs.has(entry.id) })), index, label, active: activeID !== null && String(currentMediaId()) === String(activeID), loading, repeat, canUndo: !!undo, status, restored, restoreError, position: positionEntry === entries[index]?.id ? savedPosition : 0 };
+  return { entries: entries.map(entry => ({ ...entry, upNext: nextIDs.has(entry.id) })), index, label, active: activeID !== null && String(currentMediaId()) === String(activeID), loading, repeat, shuffle, shuffleEligible: eligibleShuffleCount(), canUndo: !!undo, status, restored, restoreError, position: positionEntry === entries[index]?.id ? savedPosition : 0 };
 }
 export function deactivateQueue({ keepNext = false } = {}) {
   capturePosition();
@@ -123,7 +138,7 @@ export function initQueue() {
 export async function playAlbumCollection(songs, at = 0, source = '') {
   restoreError = false; restored = false; savedPosition = 0; positionEntry = null;
   entries = songs.filter(song => song.type === 'audio').map(media => ({ id: ++serial, media }));
-  invalidateNext();
+  invalidateNext(); shuffle = false; canonical = entries.map(e => e.id);
   index = at; label = source || songs[at]?.music?.album || 'Album'; undo = null;
   await jumpQueue(index);
 }
@@ -151,19 +166,20 @@ export async function advanceQueue(delta, { completed = false } = {}) {
   if (target >= 0 && target < entries.length) await jumpQueue(target, completed || delta > 0, false, completed && (repeat === 'one' || target === 0));
   return true;
 }
-function remember() { undo = { entries: [...entries], index, nextIDs: new Set(nextIDs), nextEpoch, label }; }
-export async function insertQueue(songs, action = 'next', {replace = false, source = 'Collection'} = {}) {
+function remember() { undo = { entries: [...entries], index, nextIDs: new Set(nextIDs), nextEpoch, label, shuffle, canonical: [...canonical] }; }
+export async function insertQueue(songs, action = 'next', {replace = false, source = 'Collection', shuffled = false} = {}) {
   if (loading) return false;
   const added = songs.filter(song => song.type === 'audio').map(media => ({ id: ++serial, media }));
   if (!added.length) return false;
   restoreError = false;
   remember();
   const previous = undo;
-  if (replace) { entries = []; index = -1; label = source; invalidateNext(); }
+  if (replace) { entries = []; index = -1; label = source; invalidateNext(); shuffle = shuffled; canonical = []; if (shuffled) { const ordered = [...added]; added.splice(0, added.length, ...shuffledCopy(added)); canonical = ordered.map(e => e.id); } }
   let at = action === 'append' ? entries.length : Math.max(0, index + 1);
   if (action === 'next') {
     while (at < entries.length && nextIDs.has(entries[at].id)) at++;
   }
+  if (!replace || !shuffled) action === 'append' ? canonical.push(...added.map(e => e.id)) : canonicalInsert(added, at);
   entries.splice(at, 0, ...added);
   if (index < 0) index = 0;
   if (!label) label = 'Songs you added';
@@ -183,7 +199,7 @@ export function moveQueue(at, delta) {
   remember(); invalidateNext();
   const current = entries[index];
   const [entry] = entries.splice(at, 1); entries.splice(target, 0, entry);
-  index = entries.indexOf(current); status = 'Track moved. Undo available.'; notify();
+  index = entries.indexOf(current); canonical = entries.map(e => e.id); status = 'Track moved. Undo available.'; notify();
 }
 export function removeQueue(at) {
   if (loading || !entries[at]) return;
@@ -191,7 +207,7 @@ export function removeQueue(at) {
   const previous = undo, current = entries[index];
   invalidateNext();
   if (at === index && queueState().active) stopAndClose();
-  entries.splice(at, 1);
+  const removed = entries.splice(at, 1); canonical = canonical.filter(id => id !== removed[0].id);
   index = at === index ? Math.min(at, entries.length - 1) : entries.indexOf(current);
   undo = previous; status = 'Track removed. Queue paused if it was playing. Undo available.'; notify();
 }
@@ -200,7 +216,7 @@ export function clearQueue() {
   remember();
   const previous = undo; invalidateNext();
   if (queueState().active) stopAndClose();
-  revision++; activeID = null; entries = []; index = -1; restored = false; restoreError = false;
+  revision++; activeID = null; entries = []; canonical = []; index = -1; restored = false; restoreError = false;
   undo = previous; status = 'Queue cleared. Undo available.'; notify();
 }
 export function undoQueue(expected) {
@@ -208,7 +224,7 @@ export function undoQueue(expected) {
   if (loading || !undo) return;
   const current = entries[index], previous = undo;
   if (queueState().active && !previous.entries.includes(current)) stopAndClose();
-  entries = previous.entries; label = previous.label;
+  entries = previous.entries; label = previous.label; shuffle = previous.shuffle; canonical = previous.canonical;
   nextIDs = previous.nextEpoch === nextEpoch ? previous.nextIDs : new Set();
   index = activeID !== null && entries.includes(current) ? entries.indexOf(current) : previous.index;
   if (queueState().active) nextIDs = new Set(entries.slice(index + 1).filter(entry => nextIDs.has(entry.id)).map(entry => entry.id));

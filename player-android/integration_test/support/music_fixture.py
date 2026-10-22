@@ -65,7 +65,8 @@ def cmd_up(args):
     state = {}
     try:
         server = PlayerServer(binary, directory, args.port)
-        manifest = music_library.generate(server.media, session_artwork=args.session_artwork)
+        manifest = music_library.generate(server.media, session_artwork=args.session_artwork,
+                                          shuffle_playback=args.shuffle_playback)
         auth = make_credentials(directory)
         run_id = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         state = base_state(directory, server, auth, run_id, args)
@@ -292,6 +293,7 @@ def parse_args(argv):
     up.add_argument('--port', type=int, default=18766)
     up.add_argument('--doubles-port', type=int, default=18767)
     up.add_argument('--no-doubles', action='store_true')
+    up.add_argument('--shuffle-playback', action='store_true', help='M18: generate all three Night Transit sources at 45 seconds for native shuffle journeys')
     up.add_argument('--session-artwork', action='store_true', help='M54: 45-second transport tracks and distinct second album cover')
     up.add_argument('--dir', help='fixture directory to create (default: new temp dir)')
     up.add_argument('--evidence', help='evidence directory (default: see module doc)')

@@ -22,6 +22,8 @@ class MusicQueueState {
       required this.canUndo,
       required this.status,
       this.repeat = MusicRepeat.off,
+      this.shuffle = false,
+      this.shuffleEligible = 0,
       this.upNextIds = const {},
       this.restored = false,
       this.position = 0,
@@ -34,4 +36,6 @@ class MusicQueueState {
   final double position;
   final Set<int> upNextIds;
   final MusicRepeat repeat;
+  final bool shuffle;
+  final int shuffleEligible;
 }

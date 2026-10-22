@@ -5,6 +5,8 @@ import '../providers/api_client_provider.dart';
 import '../providers/playback_session_provider.dart';
 import '../services/music_collections.dart';
 import '../services/music_queue.dart';
+import '../services/music_shuffle.dart';
+import 'music_shuffle_options_dialog.dart';
 import 'server_song_actions.dart';
 
 class _ResolutionOwner {
@@ -44,8 +46,13 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
     _routeCurrent = current;
   }
 
-  Future<void> _run(QueueInsertion action, {bool replace = false}) async {
-    if (_busy || !widget.enabled || widget.collections.isEmpty) return;
+  Future<bool> _run(QueueInsertion action,
+      {bool replace = false,
+      bool shuffled = false,
+      MusicShuffleOptions? options,
+      bool Function()? dialogCurrent,
+      void Function(String)? report}) async {
+    if (_busy || !widget.enabled || widget.collections.isEmpty) return false;
     final mutations = ref.read(credentialMutationQueueProvider);
     final epoch = mutations.generation;
     final coordinator = ref.read(playbackSessionCoordinatorProvider);
@@ -60,28 +67,38 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
         departure == _departureGeneration &&
         epoch == mutations.generation &&
         source == coordinator.generation &&
-        (ModalRoute.of(context)?.isCurrent ?? true);
+        (dialogCurrent?.call() ?? (ModalRoute.of(context)?.isCurrent ?? true));
     setState(() {
       _busy = true;
       _message = 'Loading songs…';
+      report?.call(_message!);
     });
     try {
-      final songs =
+      var songs =
           await resolveMusicCollections(api, widget.collections, current);
-      if (!mounted || !current()) return;
+      if (!mounted || !current()) return false;
+      if (shuffled) {
+        songs = (options ?? const MusicShuffleOptions()).select(songs);
+      }
       if (songs.isEmpty) {
-        setState(() => _message = 'No songs available.');
-        return;
+        setState(() => _message =
+            shuffled ? 'No songs match these options.' : 'No songs available.');
+        report?.call(_message!);
+        return false;
       }
       await insertServerSongs(context, ref, songs, action,
-          replace: replace, sourceLabel: widget.sourceLabel);
+          replace: replace,
+          shuffled: shuffled,
+          sourceLabel: widget.sourceLabel);
       if (mounted && epoch == mutations.generation) {
         setState(() => _message = null);
+        return true;
       }
     } catch (_) {
       if (current()) {
         setState(() => _message =
             'Could not load songs. Check your connection and access, then try again.');
+        report?.call(_message!);
       }
     } finally {
       if (mounted) {
@@ -91,6 +108,7 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
         });
       }
     }
+    return false;
   }
 
   @override
@@ -108,22 +126,48 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                     : null,
                 icon: const Icon(Icons.play_arrow),
                 label: Text(widget.playLabel)),
+            OutlinedButton.icon(
+                onPressed: enabled
+                    ? () =>
+                        _run(QueueInsertion.now, replace: true, shuffled: true)
+                    : null,
+                style:
+                    OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+                icon: const Icon(Icons.shuffle),
+                label: const Text('Shuffle')),
             // Keep the native popup semantic target within its own control;
             // otherwise the custom-child tap semantics can merge into Wrap.
             Semantics(
                 container: true,
-                child: PopupMenuButton<QueueInsertion>(
+                child: PopupMenuButton<String>(
                     tooltip: 'Queue actions',
                     enabled: enabled,
-                    onSelected: (action) => _run(action),
+                    onSelected: (action) {
+                      if (action == 'options') {
+                        showDialog<void>(
+                            context: context,
+                            builder: (_) => MusicShuffleOptionsDialog(
+                                run: (options, current, report) => _run(
+                                    QueueInsertion.now,
+                                    replace: true,
+                                    shuffled: true,
+                                    options: options,
+                                    dialogCurrent: current,
+                                    report: report)));
+                      } else {
+                        _run(QueueInsertion.values.byName(action));
+                      }
+                    },
                     itemBuilder: (_) => [
                           for (final action in [
                             QueueInsertion.next,
                             QueueInsertion.append
                           ])
                             PopupMenuItem(
-                                value: action,
-                                child: Text(queueActionLabel(action)))
+                                value: action.name,
+                                child: Text(queueActionLabel(action))),
+                          const PopupMenuItem(
+                              value: 'options', child: Text('Shuffle options…'))
                         ],
                     child: ConstrainedBox(
                         constraints: const BoxConstraints(minHeight: 48),

@@ -6,7 +6,6 @@ import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/models/user.dart';
 import 'package:player_android/services/audio_handler.dart';
-import 'package:player_android/services/music_queue.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -196,8 +195,10 @@ void main() {
     await tester.tap(find.text('Play next'));
     await tester.pumpAndSettle();
     expect(find.text('Loading songs…'), findsOneWidget);
-    final popup = tester
-        .widget<PopupMenuButton>(find.byType(PopupMenuButton<QueueInsertion>));
+    final popup = tester.widget<PopupMenuButton<String>>(find.byWidgetPredicate(
+        (widget) =>
+            widget is PopupMenuButton<String> &&
+            widget.tooltip == 'Queue actions'));
     expect(popup.enabled, isFalse);
     expect(api.albumCalls, 1);
     final pop = tester.binding.handlePopRoute();

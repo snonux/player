@@ -113,6 +113,7 @@ class _ObservedHandler extends PlayerAudioHandler {
       {required List<PlaybackRequest> entries,
       required QueueInsertion action,
       bool replace = false,
+      bool shuffled = false,
       String sourceLabel = 'Collection',
       required Future<PlaybackSessionLease?> Function(PlaybackRequest) claim,
       required Future<AudioSource?> Function(PlaybackRequest, bool Function())
@@ -122,6 +123,7 @@ class _ObservedHandler extends PlayerAudioHandler {
         entries: entries,
         action: action,
         replace: replace,
+        shuffled: shuffled,
         sourceLabel: sourceLabel,
         claim: claim,
         // Keep real handler ownership/queue/source behavior; skip transport auth.
@@ -130,6 +132,108 @@ class _ObservedHandler extends PlayerAudioHandler {
 }
 
 void main() {
+  for (final cancel in ['none', 'Cancel', 'Back', 'no-match']) {
+    testWidgets(
+        'Shuffle options actual menu submits or cancels deferred resolver $cancel',
+        (tester) async {
+      final api = _Api(), player = _Player();
+      final handler = _ObservedHandler(player);
+      await tester.pumpWidget(ProviderScope(
+          overrides: [
+            apiClientProvider.overrideWithValue(api),
+            audioHandlerProvider.overrideWithValue(handler),
+            authStateProvider.overrideWith(_Auth.new),
+            cookieJarProvider.overrideWithValue(CookieJar()),
+            playerBaseUrlProvider.overrideWithValue(Uri.parse('http://local')),
+          ],
+          child: Consumer(builder: (context, ref, _) {
+            ref.watch(authStateProvider);
+            return const MaterialApp(
+                home: MusicArtistsScreen(artistKey: 'artist'));
+          })));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Queue actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Shuffle options…'));
+      await tester.pumpAndSettle();
+      expect(find.text('Shuffle options'), findsOneWidget);
+      await tester.enterText(
+          find.widgetWithText(TextField, 'Maximum songs (optional)'), '0');
+      await tester.tap(find.widgetWithText(FilledButton, 'Shuffle'));
+      await tester.pumpAndSettle();
+      expect(find.text('Maximum songs must be a whole number from 1 to 10000.'),
+          findsOneWidget);
+      expect(handler.insertions, 0);
+      await tester.enterText(
+          find.widgetWithText(TextField, 'Maximum songs (optional)'), '2');
+      if (cancel == 'no-match') {
+        await tester.enterText(
+            find.widgetWithText(TextField, 'Genre (optional)'),
+            'Unknown genre');
+      }
+      await tester.tap(find.widgetWithText(FilledButton, 'Shuffle'));
+      await tester.pumpAndSettle();
+      expect(find.text('Loading songs…'), findsWidgets);
+      if (cancel == 'Cancel') {
+        await tester.tap(find.text('Cancel'));
+      }
+      if (cancel == 'Back') {
+        await tester.binding.handlePopRoute();
+      }
+      await tester.pumpAndSettle();
+      api.album.complete({
+        'songs': [
+          for (var i = 1; i <= 3; i++)
+            {
+              'id': i,
+              'set_id': 1,
+              'file_name': '$i.mp3',
+              'type': 'audio',
+              'duration': 12
+            }
+        ],
+        'song_credits': {
+          for (var i = 1; i <= 3; i++)
+            '$i': [
+              {
+                'artist_key': 'artist',
+                'roles': ['track_artist']
+              }
+            ]
+        }
+      });
+      await tester.pumpAndSettle();
+      if (cancel == 'no-match') {
+        expect(find.text('No songs match these options.'), findsWidgets);
+        expect(handler.insertions, 0);
+        expect(handler.musicQueue.entries, isEmpty);
+        expect(find.widgetWithText(TextField, 'Maximum songs (optional)'),
+            findsOneWidget);
+        expect(
+            tester
+                .widget<TextField>(
+                    find.widgetWithText(TextField, 'Maximum songs (optional)'))
+                .controller!
+                .text,
+            '2');
+        await tester.enterText(
+            find.widgetWithText(TextField, 'Genre (optional)'), '');
+        await tester.tap(find.widgetWithText(FilledButton, 'Shuffle'));
+        await tester.pumpAndSettle();
+      }
+      expect(handler.insertions,
+          (cancel == 'none' || cancel == 'no-match') ? 1 : 0);
+      expect(handler.musicQueue.entries.length,
+          (cancel == 'none' || cancel == 'no-match') ? 2 : 0);
+      expect(handler.musicQueue.shuffle,
+          (cancel == 'none' || cancel == 'no-match'));
+      expect(player.loads, (cancel == 'none' || cancel == 'no-match') ? 1 : 0);
+      expect(find.text('Shuffle options'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(handler.stop);
+    });
+  }
+
   testWidgets(
       'playlist Queue actions semantic rectangle is a compact target excluding adjacent Add songs and opens its menu',
       (tester) async {
@@ -144,7 +248,7 @@ void main() {
           child: const MaterialApp(
               home: MusicPlaylistsScreen(playlistId: 'playlist'))));
       await tester.pumpAndSettle();
-      final menu = find.byType(PopupMenuButton<QueueInsertion>);
+      final menu = find.byTooltip('Queue actions');
       final node = tester.getSemantics(menu);
       var rect = node.rect;
       for (var ancestor = node;;) {

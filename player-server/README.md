@@ -133,6 +133,26 @@ Repeat belongs to the same server/account queue on this browser, including an
 empty queue. Reload restores it paused with the saved selection and position;
 choose **Resume queue** to play. Clear and Undo keep the chosen repeat mode.
 
+## Shuffle a music queue
+
+Open **Now Playing** and choose **Shuffle: On** to randomize the remaining
+songs. The current song and its position stay in place; songs added with
+Play next keep their place and order.
+**Shuffle: Off** restores the remaining songs to their original relative order
+without replaying consumed songs. **Reshuffle remaining** makes another ordering;
+**Undo** restores the previous order and mode. Repeat All reuses that concrete
+ordering on each cycle.
+
+An album, artist, playlist or selection has a direct **Shuffle** action.
+**Queue actions → Shuffle options…** optionally filters genre and inclusive
+from/to years, then limits the number of song occurrences before replacement.
+Blank fields include everything; invalid input or no matches preserves the queue.
+Repeated songs retain separate occurrences. Shuffle state and order belong to the
+local server/account queue and restore paused after reload.
+
+Playback shuffle is separate from the header Shuffle button and **r**, which
+continue to randomize the library listing. Browsing does not reorder the queue.
+
 ## Music identity and system controls
 
 Music playback shows the real title, artist, album and available cover in the

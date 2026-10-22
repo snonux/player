@@ -160,6 +160,10 @@ class MusicQueuePersistence {
             index: index,
             label: snapshot.label,
             repeat: snapshot.repeat,
+            shuffle: snapshot.shuffle,
+            canonical: snapshot.canonical
+                .where((id) => entries.any((e) => e.id == id))
+                .toList(),
             position: position,
             upNext:
                 snapshot.upNext.intersection(entries.map((e) => e.id).toSet()),

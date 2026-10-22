@@ -112,6 +112,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(handler.musicQueue.entries.first.request.title, 'Song 1');
     expect(handler.musicQueue.index, 1);
+    await tester.scrollUntilVisible(
+        find.byTooltip('Queue actions for Song 2'), 80,
+        scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.byTooltip('Queue actions for Song 2'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Queue actions for Song 2'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Remove'));

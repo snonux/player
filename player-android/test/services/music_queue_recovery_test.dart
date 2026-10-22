@@ -80,10 +80,49 @@ const snapshot = MusicQueueSnapshot(
     index: 2,
     position: 7.25,
     label: 'Repeated album',
+    shuffle: true,
+    canonical: [72, 71, 73],
     upNext: {72});
 Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 40));
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+      'shuffle snapshot validates exact canonical occurrence permutation and legacy',
+      () {
+    final legacy = jsonDecode(snapshot.encode()) as Map;
+    legacy.remove('shuffle');
+    legacy.remove('canonical');
+    expect(MusicQueueSnapshot.decode(jsonEncode(legacy)).shuffle, isFalse);
+    expect(
+        MusicQueueSnapshot.decode(jsonEncode(legacy)).canonical, [71, 72, 73]);
+    final shuffled = {
+      ...legacy,
+      'shuffle': true,
+      'canonical': [73, 71, 72]
+    };
+    expect(MusicQueueSnapshot.decode(jsonEncode(shuffled)).canonical,
+        [73, 71, 72]);
+    for (final bad in [
+      {...legacy, 'shuffle': 'yes'},
+      {...legacy, 'shuffle': true},
+      {
+        ...shuffled,
+        'canonical': [71, 72]
+      },
+      {
+        ...shuffled,
+        'canonical': [71, 71, 73]
+      },
+      {
+        ...shuffled,
+        'canonical': [71, 72, 99]
+      },
+      {...shuffled, 'canonical': null},
+    ]) {
+      expect(() => MusicQueueSnapshot.decode(jsonEncode(bad)),
+          throwsFormatException);
+    }
+  });
   test('repeat snapshot supports legacy default and all explicit modes', () {
     final legacy = jsonDecode(snapshot.encode()) as Map;
     legacy.remove('repeat');
@@ -314,11 +353,16 @@ void main() {
         await handler.retryQueueRestore!();
         await settle();
         expect(handler.musicQueue.entries.length, 3);
+        expect(handler.musicQueue.shuffle, isTrue);
+        expect(handler.queueSnapshot.canonical, [72, 71, 73]);
         expect(handler.musicQueue.position, 7.25);
       } else if (scenario == 'corrupt') {
         expect(handler.musicQueue.status, contains('unreadable'));
         expect((await SharedPreferences.getInstance()).getString(key), isNull);
       } else {
+        expect(handler.musicQueue.shuffle, isTrue);
+        expect(handler.queueSnapshot.canonical.toSet(),
+            handler.musicQueue.entries.map((e) => e.id).toSet());
         expect(
             handler.musicQueue.entries.length,
             scenario == 'normal'

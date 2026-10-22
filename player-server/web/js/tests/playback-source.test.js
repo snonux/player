@@ -725,7 +725,7 @@ async function testPersistedQueueRecovery() {
   const values = new Map();
   globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key,value) => values.set(key,value), removeItem: key => values.delete(key) };
   const key = 'player.queue.http://test.1', original = API.mediaDetail;
-  const snapshot = {version:1, entries:[{id:701,mediaId:51},{id:702,mediaId:52},{id:703,mediaId:51}],index:2,position:7.25,label:'Repeated album',upNext:[702],repeat:'one'};
+  const snapshot = {version:1, entries:[{id:701,mediaId:51},{id:702,mediaId:52},{id:703,mediaId:51}],index:2,position:7.25,label:'Repeated album',upNext:[702],repeat:'one',shuffle:true,canonical:[702,701,703]};
   API.mediaDetail = async id => ({media:{id,type:'audio',duration:12,file_name:`${id}.mp3`}});
   try {
     values.set(key, JSON.stringify(snapshot));
@@ -734,6 +734,8 @@ async function testPersistedQueueRecovery() {
     assertEqual(queue.queueState().entries.map(e=>e.id).join(','),'701,702,703','recovery preserves repeated occurrences');
     assertEqual(queue.queueState().index,2,'recovery restores later repeated occurrence');
     assertEqual(queue.queueState().repeat,'one','recovery restores scoped mode');
+    assert(queue.queueState().shuffle,'recovery restores shuffle');
+    assertEqual(JSON.parse(values.get(key)).canonical.join(),'702,701,703','recovery retains canonical order');
     assertEqual(queue.queueState().position,7.25,'short-song exact queue offset survives');
     assertEqual(audio().playCalls,calls,'recovery never calls play');
     player.selectMedia({id:51,type:'audio',duration:12,file_name:'51.mp3'},-1,queue.recoveredQueuePosition(51));
@@ -757,6 +759,7 @@ async function testPersistedQueueRecovery() {
     API.mediaDetail = async id => { if(id===52) throw Object.assign(new Error('denied'),{status:403}); return {media:{id,type:'audio',duration:12}}; };
     await queue.restoreQueue(1);
     assertEqual(queue.queueState().index,1,'dropping earlier unavailable row retains selected repeat');
+    assertEqual(JSON.parse(values.get(key)).canonical.join(),'701,703','unavailable canonical IDs removed too');
     assertEqual(queue.queueState().position,7.25,'unavailable earlier row keeps offset');
     assert(queue.queueState().status.includes('1 song is no longer available'),'quiet unavailable notice');
     // Network failure must never rewrite the snapshot as empty or deleted.
@@ -771,6 +774,7 @@ async function testPersistedQueueRecovery() {
     await Promise.resolve();
     assertEqual(queue.queueState().entries.length,0,'scope switch hides old account rows immediately');
     assertEqual(queue.queueState().label,'','scope switch hides old source label');
+    assert(!queue.queueState().shuffle,'new account clears shuffle');
     // No snapshot for account two; restore must not import account one.
     await pending;
     values.set('player.queue.http://test.2','bad JSON');
@@ -1063,7 +1067,153 @@ async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
 }
 
 console.info('Running playback source tests...');
+async function testCanceledCollectionSelectionReleasesOnlyItsOwnBusyState() {
+  setup();
+  const {bindCollectionCatalog,cancelCollectionSelection}=await import('../collection-actions.js');
+  const {state}=await import('../state.js');state.user={id:44};
+  const oldCreate=document.createElement,oldAlbum=API.album;
+  const controls=new Map();
+  for(const key of ['data-select-collections','data-collection-play','data-collection-shuffle','data-collection-menu','data-collection-status','data-batch','data-batch-count']) controls.set(`[${key}]`,{focus(){},isConnected:true});
+  const toolbar={isConnected:true,querySelector:s=>controls.get(s),querySelectorAll:()=>['data-collection-play','data-collection-shuffle','data-collection-menu'].map(k=>controls.get(`[${k}]`)),append(){}};
+  let check,created=0;
+  const card=fakeElement();card.dataset={};card.prepend=value=>{check=value;};card.querySelector=s=>s==='input'?check:{append(){}};
+  const grid={querySelector:()=>({append(){}}),querySelectorAll:()=>[card]};
+  document.createElement=()=>{if(created++===0)return toolbar;const el=fakeElement();el.dataset={};return el;};
+  const completions=[];API.album=()=>new Promise(resolve=>completions.push(resolve));
+  try{
+    const owner=bindCollectionCatalog(grid,[{album_key:'a',title:'Album'}],'album','album_key','title',()=>true);
+    const toggle=controls.get('[data-select-collections]'),play=controls.get('[data-collection-play]');
+    toggle.onclick();check.checked=true;check.onchange();
+    const canceled=play.onclick();assertEqual(completions.length,1,'selection starts actual resolver');
+    assert(cancelCollectionSelection(),'actual selection Cancel handled');
+    toggle.onclick();check.checked=true;check.onchange();
+    const newer=play.onclick();assertEqual(completions.length,2,'new explicit selection action works immediately after Cancel');
+    completions[0]({songs:[{id:1181,type:'audio',duration:12}]});await canceled;
+    if(completions[1]) {
+      assert(owner.busy && play.disabled,'late canceled selection cannot unlock newer operation');
+      completions[1]({songs:[{id:1182,type:'audio',duration:12}]});await newer;
+      assertEqual(queue.queueState().entries[0].media.id,1182,'only new selection mutates queue');
+    }
+  } finally { document.createElement=oldCreate;API.album=oldAlbum; }
+}
+
+async function testShuffleOptionsEscapeRestoresOpenerAndCancelsPending() {
+  setup();
+  const {bindCollectionActions} = await import('../collection-actions.js');
+  const {initKeyboard} = await import('../keyboard.js');
+  const {state} = await import('../state.js');
+  const oldCreate=document.createElement, oldBody=document.body, oldForm=globalThis.FormData;
+  const oldAlbum=API.album, oldKeys=documentListeners.keydown;
+  const focusable = () => ({isConnected:true,focus(){if (!this.disabled) document.activeElement=this;}});
+  const opener=focusable(), card=focusable(), input={...focusable(),tagName:'INPUT',blur(){document.activeElement=null;}};
+  const play={}, shuffle={}, status={}, submit={}, cancel={};
+  const modal=fakeElement('shuffle-options-modal'), form={querySelector:()=>submit};
+  modal.firstElementChild={};
+  modal.querySelector=selector=>selector==='form'?form:status;
+  modal.querySelectorAll=()=>[cancel];
+  elements['shuffle-options-modal']=modal;
+  let popover;
+  document.body={append(value){popover=value;}};
+  document.createElement=()=>{
+    const el=fakeElement();
+    const option={dataset:{action:'options'},focus(){}};
+    el.querySelectorAll=()=>[option];el.querySelector=()=>option;
+    el.showPopover=()=>{};el.hidePopover=()=>{};
+    return el;
+  };
+  globalThis.FormData=class { *[Symbol.iterator](){yield ['genre',''];yield ['maximum',''];} };
+  const root={isConnected:true,querySelector:selector=>selector==='[data-collection-play]'?play:selector==='[data-collection-shuffle]'?shuffle:selector==='[data-collection-menu]'?opener:status,querySelectorAll:()=>[play,shuffle,opener]};
+  try {
+    state.user={id:41};
+    await queue.playAlbumCollection([{id:1199,type:'audio',duration:12}],0);
+    const before=queue.queueState().entries.map(e=>e.id).join();
+    let complete;
+    API.album=()=>new Promise(resolve=>complete=resolve);
+    bindCollectionActions(root,()=>[{kind:'album',key:'test'}],()=>true,'Escape');
+    opener.focus();opener.onclick({currentTarget:opener});popover.querySelector().onclick();
+    const pending=form.onsubmit({preventDefault(){}});
+    await Promise.resolve();
+    assertEqual(status.textContent,'Loading songs…','actual options form starts delayed collection resolution');
+    input.focus();
+    initKeyboard({escape:()=>{modal.classList.remove('open');card.focus();}});
+    const event={key:'Escape',target:input,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;},type:'keydown'};
+    modal.onkeydown?.(event);
+    if(!event.stopped) document.dispatchEvent(event);
+    assert(!modal.classList.contains('open'),'Escape closes shuffle options');
+    assert(document.activeElement===opener,'Escape must focus original Queue actions opener rather than selected song');
+    assert(!opener.disabled,'pending Escape re-enables actual opener');
+    const canceledComplete=complete;
+    const newer=shuffle.onclick();
+    assert(shuffle.disabled,'newer collection transaction owns busy controls');
+    canceledComplete({songs:[{id:1198,type:'audio',duration:12}]});await pending;
+    assertEqual(queue.queueState().entries.map(e=>e.id).join(),before,'Escape cancels delayed option resolution before queue replacement');
+    assert(shuffle.disabled,'late canceled finally cannot unlock newer controls');
+    assertEqual(status.textContent,'Loading songs…','late canceled finally cannot erase newer status');
+    complete({songs:[{id:1197,type:'audio',duration:12}]});await newer;
+    assertEqual(queue.queueState().entries[0].media.id,1197,'new explicit action remains usable after pending cancel');
+
+  } finally {
+    document.createElement=oldCreate;document.body=oldBody;globalThis.FormData=oldForm;
+    API.album=oldAlbum;documentListeners.keydown=oldKeys||[];
+  }
+}
+
+async function testPlaybackShufflePreservesOccurrenceAndCanonicalIntent() {
+  setup();
+  const queue = await import('../queue.js');
+  const song = id => ({id,type:'audio',duration:12});
+  await queue.playAlbumCollection([song(1101),song(1102),song(1101),song(1103),song(1104)],1,'Shuffle');
+  const original = queue.queueState(), current = original.entries[1].id;
+  audio().currentTime=4;
+  const loads=audio().loads;
+  queue.shuffleQueue();
+  let q=queue.queueState();
+  assert(q.shuffle,'toggle selects playback shuffle');
+  assertEqual(q.entries[q.index].id,current,'shuffle preserves selected occurrence');
+  assertEqual(audio().currentTime,4,'shuffle preserves actual source position');
+  assertEqual(audio().loads,loads,'shuffle never reloads source');
+  assertEqual(q.entries.map(e=>e.id).sort((a,b)=>a-b).join(),original.entries.map(e=>e.id).join(),'no occurrence missing or duplicated');
+  queue.shuffleQueue({reshuffle:true}); queue.undoQueue();
+  assertEqual(queue.queueState().entries.map(e=>e.id).join(),q.entries.map(e=>e.id).join(),'Undo reshuffle restores exact concrete permutation');
+  queue.shuffleQueue();
+  assertEqual(queue.queueState().entries.map(e=>e.id).join(),original.entries.map(e=>e.id).join(),'Off restores canonical remainder');
+  queue.shuffleQueue();
+  await queue.insertQueue([song(1105),song(1106)],'next');
+  const fifo=queue.queueState().entries.slice(2,4).map(e=>e.id).join();
+  queue.shuffleQueue({reshuffle:true});
+  assertEqual(queue.queueState().entries.slice(2,4).map(e=>e.id).join(),fifo,'pinned Play next FIFO is not shuffled');
+  await queue.insertQueue([song(1107)],'append');
+  queue.shuffleQueue();
+  assertEqual(queue.queueState().entries.at(-1).media.id,1107,'append stays at canonical tail');
+  assertEqual(queue.queueState().entries.slice(2,4).map(e=>e.id).join(),fifo,'Off retains pinned FIFO');
+  await queue.advanceQueue(1); // Consume one explicit next occurrence.
+  const before=queue.queueState();
+  queue.shuffleQueue(); queue.shuffleQueue();
+  assertEqual(queue.queueState().entries.slice(0,before.index+1).map(e=>e.id).join(),before.entries.slice(0,before.index+1).map(e=>e.id).join(),'Off after advance never moves consumed prefix');
+  queue.removeQueue(queue.queueState().entries.length-1);
+  queue.undoQueue();
+  assertEqual(queue.queueState().entries.length,before.entries.length,'remove Undo retains occurrences/canonical');
+  await queue.insertQueue([song(1110),song(1110),song(1111)],'now',{replace:true,shuffled:true});
+  q=queue.queueState();
+  assert(q.shuffle,'collection replacement enables shuffle');
+  assertEqual(q.index,0,'collection starts first shuffled occurrence');
+  assertEqual(q.entries.map(e=>e.media.id).sort().join(),'1110,1110,1111','collection shuffle preserves repeated media');
+  queue.shuffleQueue();
+  const selected=q.entries[0].id;
+  assertEqual(queue.queueState().entries[0].id,selected,'Off never changes current shuffled collection item');
+  queue.undoQueue(); assert(queue.queueState().shuffle,'Undo toggle restores selected shuffle state');
+  queue.moveQueue(1,1);const moved=queue.queueState().entries.map(e=>e.id).join();
+  queue.shuffleQueue();assertEqual(queue.queueState().entries.map(e=>e.id).join(),moved,'manual move establishes canonical order');
+  await queue.playAlbumCollection([song(1112)],0);
+  assert(!queue.queueState().shuffle,'normal Play restores ordered mode');
+  queue.shuffleQueue(); assert(!queue.queueState().shuffle,'less than two upcoming cannot enable');
+  queue.clearQueue();
+}
+
 for (const test of [
+  testCanceledCollectionSelectionReleasesOnlyItsOwnBusyState,
+  testShuffleOptionsEscapeRestoresOpenerAndCancelsPending,
+  testPlaybackShufflePreservesOccurrenceAndCanonicalIntent,
   testSenderNaturalCompletionRetainsRepeatOneOccurrence,
   testQueueRepeatModesAndEdits,
   testRepeatCompletionEpochAndGenuineReplay,

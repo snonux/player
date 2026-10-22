@@ -62,22 +62,54 @@ class _MusicQueueSheet extends StatelessWidget {
                 Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text('Playing from: ${q.label}')),
-              Semantics(
-                  selected: q.repeat != MusicRepeat.off,
-                  child: TextButton.icon(
-                      style: TextButton.styleFrom(
-                          minimumSize: const Size(48, 48),
-                          foregroundColor: q.repeat == MusicRepeat.off
-                              ? Theme.of(context).colorScheme.onSurfaceVariant
-                              : Theme.of(context).colorScheme.primary),
-                      onPressed: q.busy || q.restoreFailed
-                          ? null
-                          : handler.cycleQueueRepeat,
-                      icon: Icon(q.repeat == MusicRepeat.one
-                          ? Icons.repeat_one
-                          : Icons.repeat),
-                      label: Text(
-                          'Repeat: ${q.repeat.name[0].toUpperCase()}${q.repeat.name.substring(1)}'))),
+              Wrap(alignment: WrapAlignment.center, children: [
+                Semantics(
+                    selected: q.shuffle,
+                    child: TextButton.icon(
+                        style: TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                            foregroundColor: q.shuffle
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant),
+                        onPressed: q.busy ||
+                                q.restoreFailed ||
+                                (!q.shuffle && q.shuffleEligible < 2)
+                            ? null
+                            : handler.shuffleQueue,
+                        icon: const Icon(Icons.shuffle),
+                        label: Text('Shuffle: ${q.shuffle ? 'On' : 'Off'}'))),
+                if (q.shuffle)
+                  TextButton(
+                      style:
+                          TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                      onPressed:
+                          q.busy || q.restoreFailed || q.shuffleEligible < 2
+                              ? null
+                              : () => handler.shuffleQueue(reshuffle: true),
+                      child: const Text('Reshuffle remaining')),
+                Semantics(
+                    selected: q.repeat != MusicRepeat.off,
+                    child: TextButton.icon(
+                        style: TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                            foregroundColor: q.repeat == MusicRepeat.off
+                                ? Theme.of(context).colorScheme.onSurfaceVariant
+                                : Theme.of(context).colorScheme.primary),
+                        onPressed: q.busy || q.restoreFailed
+                            ? null
+                            : handler.cycleQueueRepeat,
+                        icon: Icon(q.repeat == MusicRepeat.one
+                            ? Icons.repeat_one
+                            : Icons.repeat),
+                        label: Text(
+                            'Repeat: ${q.repeat.name[0].toUpperCase()}${q.repeat.name.substring(1)}'))),
+              ]),
+              Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                      'Only upcoming songs change. Library order stays the same.${q.shuffleEligible < 2 ? ' At least two upcoming songs outside Play next are needed to shuffle.' : ''}')),
               if (q.entries.isNotEmpty || q.status.isNotEmpty)
                 Padding(
                     padding: const EdgeInsets.all(12),

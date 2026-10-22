@@ -208,7 +208,7 @@ ID3_ARGS = ['-id3v2_version', '3', '-write_id3v1', '0']
 STRIP_ARGS = ['-map_metadata', '-1', '-fflags', '+bitexact', '-flags:a', '+bitexact']
 
 
-def generate(media_root, *, session_artwork=False):
+def generate(media_root, *, session_artwork=False, shuffle_playback=False):
     """Write the library below media_root and return the manifest dict."""
     media_root = Path(media_root)
     session_tracks = {
@@ -216,8 +216,10 @@ def generate(media_root, *, session_artwork=False):
         'Music/Tag Verification/source_001.flac',
         'Music/Untagged/track_0042.mp3',
     }
-    specs = [dict(spec, seconds=45) if session_artwork and spec['path'] in session_tracks else spec
-             for spec in TRACKS]
+    specs = [dict(spec, seconds=45)
+             if ((session_artwork and spec['path'] in session_tracks) or
+                 (shuffle_playback and spec['path'].startswith('Music/Aurora Lane - Night Transit (2021)/')))
+             else spec for spec in TRACKS]
     tracks = [_make_track(media_root, spec) for spec in specs]
     tracks += _make_gapless(media_root)
     tracks += _make_gap_calibration(media_root)

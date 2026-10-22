@@ -486,3 +486,50 @@ normal/boundary phases; preserve failed outputs before a bounded unfinished
 retry. All task runtimes were subsequently stopped after identity checks; both
 fixtures and all evidence were preserved. Physical Cast and headset checks were
 not run and are not implied by these local OS control checks.
+
+### M18 playback shuffle
+
+`tests/music-shuffle.test.ts` uses the existing isolated music configuration:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/home/paul/tmp/zk3-fixture \
+PLAYER_E2E_PULSE_SINK=player_zk3 \
+npx playwright test -c playwright.music.config.ts tests/music-shuffle.test.ts
+```
+
+It drives installed Chrome and Firefox with production randomness: queue
+remainder toggle/Off, reshuffle/Undo, current source and position, independent
+browsing and unchanged `r`, a full audible occurrence cycle with duplicate
+media, optional genre/year/max validation, no-match/offline retry, delayed real
+response cancellation, Escape focus, account/reload recovery, native typing,
+and light/dark narrow layouts. It asserts occurrence multisets rather than
+requiring each random draw to differ. Sources are measured through the existing
+PCM tap. No fixture or browser is started by `--list`.
+
+The accepted 2026-10-22 final-server runs used installed Chrome 144.0.7559.132
+and Firefox 156, headful, one worker and zero retries. Under
+`/home/paul/tmp/zk3-evidence`, Chrome recovery was accepted in
+`browser-attempt1-chrome`, core/options in `browser-attempt2-chrome`, and real
+settled light/dark themes in `browser-attempt4-chrome-themes`. Firefox's three
+functional scenarios passed in `browser-attempt3-firefox`, with settled themes
+in `browser-attempt5-firefox-themes`. Real permission-boundary scenarios passed
+in `browser-attempt6-chrome-permission` and `browser-attempt7-firefox-permission`.
+Each captures the exact existing fixture Music grant, revokes it for direct
+Shuffle and options, checks actual resolver 404 errors preserve queue/current
+source/position, restores the prior grant in finally, then retries with actual
+source PCM and resolver 200. Both pending Escape and Cancel release the
+actual disabled opener before restoring exact focus, then reject late responses.
+
+Attempt1's other failures were retained driver navigation mistakes (closed
+Albums sidebar and an expanded floating player). Early screenshots changed the
+theme attribute directly and mislabeled a dark queue as light; they are retained,
+not accepted theme evidence. The accepted theme case uses the visible theme
+control, persisted preference and settled computed colors; Cancel contrast is
+18.522:1 in light and 12.991:1 in dark. Original PNGs, actual source WAVs,
+versions, PID/start/executable/profile ownership and phase results remain per
+attempt. The browser-process stop audit confirms all owned browser processes
+have exited; server/emulator/sink cleanup belongs to the coordinating agent.
+
+Use the fresh fixture's `up <server> --shuffle-playback` flag for M18: all three
+Night Transit source files are generated at 45 seconds and must pass actual
+ffprobe/server/manifest duration preflight before browser/native playback.
