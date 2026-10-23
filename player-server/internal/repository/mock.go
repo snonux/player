@@ -51,6 +51,7 @@ type MockStore struct {
 	MockMusicRatingRepo
 	MockMusicFavoriteRepo
 	MockMusicLibraryRepo
+	MockMusicIdentityRepo
 	SavedQueueRepo
 	FinishProgressFunc      func(ctx context.Context, progress *model.PlaybackProgress) error
 	ResetProgressFunc       func(ctx context.Context, userID, mediaID int64) error
@@ -579,6 +580,46 @@ func (m *MockMusicLibraryRepo) EnsureDefaultMusicLibrary(ctx context.Context, me
 func (m *MockMusicLibraryRepo) ListSetIDsByLibrary(ctx context.Context, libraryID int64) ([]int64, error) {
 	if m.ListSetIDsByLibraryFunc != nil {
 		return m.ListSetIDsByLibraryFunc(ctx, libraryID)
+	}
+	return nil, nil
+}
+
+// MockMusicIdentityRepo is a fake MusicIdentityRepo.
+type MockMusicIdentityRepo struct {
+	ReplaceMusicIdentityConflictsFunc func(ctx context.Context, conflicts []model.MusicIdentityConflict) error
+	ListMusicIdentityConflictsFunc    func(ctx context.Context) ([]model.MusicIdentityConflict, error)
+	GetMusicIdentityConflictFunc      func(ctx context.Context, id int64) (*model.MusicIdentityConflict, error)
+	ResolveMusicIdentityConflictFunc  func(ctx context.Context, id int64, resolution string, at time.Time) error
+	GetMediaByIDAnyFunc               func(ctx context.Context, id int64) (*model.Media, error)
+}
+
+func (m *MockMusicIdentityRepo) ReplaceMusicIdentityConflicts(ctx context.Context, conflicts []model.MusicIdentityConflict) error {
+	if m.ReplaceMusicIdentityConflictsFunc != nil {
+		return m.ReplaceMusicIdentityConflictsFunc(ctx, conflicts)
+	}
+	return nil
+}
+func (m *MockMusicIdentityRepo) ListMusicIdentityConflicts(ctx context.Context) ([]model.MusicIdentityConflict, error) {
+	if m.ListMusicIdentityConflictsFunc != nil {
+		return m.ListMusicIdentityConflictsFunc(ctx)
+	}
+	return nil, nil
+}
+func (m *MockMusicIdentityRepo) GetMusicIdentityConflict(ctx context.Context, id int64) (*model.MusicIdentityConflict, error) {
+	if m.GetMusicIdentityConflictFunc != nil {
+		return m.GetMusicIdentityConflictFunc(ctx, id)
+	}
+	return nil, nil
+}
+func (m *MockMusicIdentityRepo) ResolveMusicIdentityConflict(ctx context.Context, id int64, resolution string, at time.Time) error {
+	if m.ResolveMusicIdentityConflictFunc != nil {
+		return m.ResolveMusicIdentityConflictFunc(ctx, id, resolution, at)
+	}
+	return nil
+}
+func (m *MockMusicIdentityRepo) GetMediaByIDAny(ctx context.Context, id int64) (*model.Media, error) {
+	if m.GetMediaByIDAnyFunc != nil {
+		return m.GetMediaByIDAnyFunc(ctx, id)
 	}
 	return nil, nil
 }

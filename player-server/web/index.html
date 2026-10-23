@@ -416,6 +416,7 @@
       <button id="admin-podcasts" class="btn btn-primary btn-sm">Podcasts</button>
       <button id="admin-plugins-toggle" class="btn btn-primary btn-sm" aria-expanded="false" aria-controls="admin-plugins-section">Plugins</button>
       <button id="admin-libraries-toggle" class="btn btn-primary btn-sm" aria-expanded="false" aria-controls="admin-libraries-section">Libraries</button>
+      <button id="admin-identity-toggle" class="btn btn-primary btn-sm" aria-expanded="false" aria-controls="admin-identity-section">Music identity</button>
     </div>
     <section id="admin-auth-section" class="mt-3" aria-labelledby="admin-auth-title">
       <h4 id="admin-auth-title" class="my-1 text-90">Sign-in</h4>
@@ -441,6 +442,12 @@
         <label class="text-xs">Path<input name="root_path" required autocomplete="off" placeholder="/media/other" aria-label="Library filesystem path"></label>
         <button type="submit" class="btn btn-primary btn-sm">Add library</button>
       </form>
+    </section>
+    <section id="admin-identity-section" class="hidden mt-3" aria-labelledby="admin-identity-title">
+      <h4 id="admin-identity-title" class="my-1 text-90">Music identity</h4>
+      <p class="text-muted text-xs mb-1">Normal moves and renames keep playlists and history automatically. Only ambiguous matches appear here — keep separate (safe) or merge into the older song.</p>
+      <div id="admin-identity-status" class="text-muted text-xs mb-1" role="status" aria-live="polite"></div>
+      <div id="admin-identity-conflicts"></div>
     </section>
   </div>
 </div>

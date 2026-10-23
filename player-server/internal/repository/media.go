@@ -127,6 +127,13 @@ func (s *SQLite) GetMediaByID(ctx context.Context, id int64) (*model.Media, erro
 	return scanMedia(row)
 }
 
+// GetMediaByIDAny retrieves a media by ID including soft-deleted rows (identity recovery).
+func (s *SQLite) GetMediaByIDAny(ctx context.Context, id int64) (*model.Media, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music FROM media WHERE id = ?`, id)
+	return scanMedia(row)
+}
+
 // UpdateMedia updates all mutable fields of a media record.
 func (s *SQLite) UpdateMedia(ctx context.Context, media *model.Media) error {
 	_, err := s.db.ExecContext(ctx,

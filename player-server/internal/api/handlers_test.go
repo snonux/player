@@ -1962,6 +1962,21 @@ func (m *mockPingStore) EnsureDefaultMusicLibrary(ctx context.Context, mediaRoot
 func (m *mockPingStore) ListSetIDsByLibrary(ctx context.Context, libraryID int64) ([]int64, error) {
 	return m.store.ListSetIDsByLibrary(ctx, libraryID)
 }
+func (m *mockPingStore) ReplaceMusicIdentityConflicts(ctx context.Context, conflicts []model.MusicIdentityConflict) error {
+	return m.store.ReplaceMusicIdentityConflicts(ctx, conflicts)
+}
+func (m *mockPingStore) ListMusicIdentityConflicts(ctx context.Context) ([]model.MusicIdentityConflict, error) {
+	return m.store.ListMusicIdentityConflicts(ctx)
+}
+func (m *mockPingStore) GetMusicIdentityConflict(ctx context.Context, id int64) (*model.MusicIdentityConflict, error) {
+	return m.store.GetMusicIdentityConflict(ctx, id)
+}
+func (m *mockPingStore) ResolveMusicIdentityConflict(ctx context.Context, id int64, resolution string, at time.Time) error {
+	return m.store.ResolveMusicIdentityConflict(ctx, id, resolution, at)
+}
+func (m *mockPingStore) GetMediaByIDAny(ctx context.Context, id int64) (*model.Media, error) {
+	return m.store.GetMediaByIDAny(ctx, id)
+}
 
 func (m *mockPingStore) CreateBookmark(ctx context.Context, bookmark *model.Bookmark) (int64, error) {
 	return m.store.CreateBookmark(ctx, bookmark)

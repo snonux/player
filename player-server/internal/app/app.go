@@ -48,6 +48,7 @@ type Deps struct {
 	PluginMgr       *plugin.Manager
 	JukeboxSvc      service.JukeboxService
 	MusicLibs       *service.MusicLibraryService
+	MusicIdentity   *service.MusicIdentityService
 	PathRoots       *service.PathRoots
 	ProgressSvc     service.ProgressService
 	AuthSvc         service.AuthService
@@ -132,6 +133,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	if _, err := musicLibs.EnsureDefault(appCtx, cfg.MediaRoot); err != nil {
 		logger.Warn("music library default setup", "err", err)
 	}
+	musicIdentity := service.NewMusicIdentityService(store, clk)
 
 	playlists := service.NewPlaylistService(store, mediaSvc).WithImportRoot(cfg.MediaRoot)
 	fsScanner := scanner.NewFSScannerWithMaker(store, prober, thumbMaker, clk, cfg.MediaRoot, logger).
@@ -173,6 +175,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		PluginSvc:       service.NewPluginService(pluginMgr),
 		JukeboxSvc:      jukeboxSvc,
 		MusicLibs:       musicLibs,
+		MusicIdentity:   musicIdentity,
 		PathRoots:       pathRoots,
 		ProgressSvc:     service.NewProgressService(store, clk),
 		AuthSvc:         service.NewAuthService(store, clk, hasher, sm, tm),
@@ -417,6 +420,7 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 			Podcast:        deps.PodcastSvc,
 			PodcastSync:    deps.PodcastSyncSvc,
 			MusicLibraries: deps.MusicLibs,
+			MusicIdentity:  deps.MusicIdentity,
 			PathRoots:      deps.PathRoots,
 		},
 		StaticFS:      staticFS,

@@ -173,6 +173,7 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 	}
 	s.log().Info("scanner scan started", "roots", len(roots), "sets", setCount)
 
+	ledger := &identityLedger{}
 	for _, r := range roots {
 		entries, err := s.fs.ReadDir(r.path)
 		if err != nil {
@@ -183,7 +184,7 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 				continue
 			}
 			setPath := filepath.Join(r.path, entry.Name())
-			if err := s.scanSet(ctx, r.id, r.path, setPath, progress); err != nil {
+			if err := s.scanSet(ctx, r.id, r.path, setPath, progress, ledger); err != nil {
 				return err
 			}
 			if progress != nil {
@@ -191,6 +192,9 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 			}
 		}
 		s.log().Info("scanner library finished", "library_id", r.id, "root", r.path)
+	}
+	if err := s.reconcileMusicIdentity(ctx, ledger, progress); err != nil {
+		return err
 	}
 	s.log().Info("scanner scan finished", "roots", len(roots), "sets", setCount)
 	if s.afterScan != nil {
@@ -325,7 +329,7 @@ func (s *FSScanner) loadExistingMedia(ctx context.Context, setID int64, setName 
 // current scan; any active media row in existing whose key is NOT in
 // seenRel had its file deleted between scans, unless its directory was skipped.
 // Soft-deleted rows are left alone so the soft-delete state survives the rescan.
-func (s *FSScanner) reconcileOrphans(ctx context.Context, existing map[string]model.Media, seenRel map[string]struct{}, skipped map[string]error, setPath, setName string) {
+func (s *FSScanner) reconcileOrphans(ctx context.Context, existing map[string]model.Media, seenRel map[string]struct{}, skipped map[string]error, setPath, setName string, ledger *identityLedger) {
 	for relPath, media := range existing {
 		if _, ok := seenRel[relPath]; ok {
 			continue
@@ -341,6 +345,9 @@ func (s *FSScanner) reconcileOrphans(ctx context.Context, existing map[string]mo
 		if err := s.store.SoftDeleteMedia(ctx, media.ID); err != nil {
 			s.log().Warn("scanner orphan soft-delete failed", "set", setName, "rel_path", relPath, "id", media.ID, "err", err)
 			continue
+		}
+		if ledger != nil {
+			ledger.noteSoftDeleted(media)
 		}
 		s.log().Info("scanner soft-deleted orphan", "set", setName, "rel_path", relPath, "id", media.ID)
 	}
@@ -432,14 +439,15 @@ type setScan struct {
 	skipped     map[string]error
 	// stale holds the relPaths of the rows that get a thumbnail generated
 	// in this scan, and why (see staleThumbnails).
-	stale map[string]staleKind
+	stale  map[string]staleKind
+	ledger *identityLedger
 }
 
 // scanSet scans a single set in three phases: discoverSet finds the files
 // and brings the already indexed rows up to date, probeAndStore probes and
 // persists the new files, and finally audio tracks pick up cover images
 // that appeared since they were indexed.
-func (s *FSScanner) scanSet(ctx context.Context, libraryID int64, root, setPath string, progress *model.ScanProgress) error {
+func (s *FSScanner) scanSet(ctx context.Context, libraryID int64, root, setPath string, progress *model.ScanProgress, ledger *identityLedger) error {
 	setID, setName, err := s.ensureSet(ctx, libraryID, root, setPath)
 	if err != nil {
 		return err
@@ -453,7 +461,7 @@ func (s *FSScanner) scanSet(ctx context.Context, libraryID int64, root, setPath 
 	if err != nil {
 		return err
 	}
-	sc := &setScan{id: setID, name: setName, path: setPath, existing: existing}
+	sc := &setScan{id: setID, name: setName, path: setPath, existing: existing, ledger: ledger}
 	if err := s.discoverSet(ctx, sc, progress); err != nil {
 		return fmt.Errorf("scan set %q: %w", setName, err)
 	}
@@ -513,7 +521,7 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 			seenRel[filepath.ToSlash(rel)] = struct{}{}
 		}
 	}
-	s.reconcileOrphans(ctx, sc.existing, seenRel, skipped, sc.path, sc.name)
+	s.reconcileOrphans(ctx, sc.existing, seenRel, skipped, sc.path, sc.name, sc.ledger)
 
 	s.sweepStaleTemporaries(sc.path, files)
 	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path, s.fileExists, s.layout)
@@ -560,7 +568,7 @@ func (s *FSScanner) probeAndStore(ctx context.Context, sc *setScan, progress *mo
 
 	// scanWriter persists results sequentially to avoid SQLite write conflicts.
 	thumbs := newThumbSwitcher(s.store, s.remover, s.log(), sc.existing, sc.files, s.layout)
-	sw := newScanWriter(s.store, thumbs, s.log())
+	sw := newScanWriter(s.store, thumbs, s.log(), sc.ledger)
 	var newFiles int32
 	var writerWg sync.WaitGroup
 	writerWg.Add(1)

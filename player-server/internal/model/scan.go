@@ -4,14 +4,16 @@ import "sync"
 
 // ScanProgress tracks the state of an in-progress or recently completed scan.
 type ScanProgress struct {
-	mu         sync.RWMutex
-	Running    bool   `json:"running"`
-	CurrentSet string `json:"current_set,omitempty"`
-	SetsTotal  int    `json:"sets_total"`
-	SetsDone   int    `json:"sets_done"`
-	FilesTotal int    `json:"files_total"`
-	FilesDone  int    `json:"files_done"`
-	LastError  string `json:"last_error,omitempty"`
+	mu                sync.RWMutex
+	Running           bool   `json:"running"`
+	CurrentSet        string `json:"current_set,omitempty"`
+	SetsTotal         int    `json:"sets_total"`
+	SetsDone          int    `json:"sets_done"`
+	FilesTotal        int    `json:"files_total"`
+	FilesDone         int    `json:"files_done"`
+	IdentityMoved     int    `json:"identity_moved,omitempty"`
+	IdentityConflicts int    `json:"identity_conflicts,omitempty"`
+	LastError         string `json:"last_error,omitempty"`
 }
 
 // Start marks a scan running and resets counters for the given set count.
@@ -23,7 +25,17 @@ func (p *ScanProgress) Start(setsTotal int) {
 	p.SetsDone = 0
 	p.FilesTotal = 0
 	p.FilesDone = 0
+	p.IdentityMoved = 0
+	p.IdentityConflicts = 0
 	p.LastError = ""
+}
+
+// SetIdentityStats records how many songs were rematched and how many conflicts remain.
+func (p *ScanProgress) SetIdentityStats(moved, conflicts int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.IdentityMoved = moved
+	p.IdentityConflicts = conflicts
 }
 
 // SetCurrentSet records the set currently being scanned.
@@ -77,12 +89,14 @@ func (p *ScanProgress) Copy() ScanProgress {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return ScanProgress{
-		Running:    p.Running,
-		CurrentSet: p.CurrentSet,
-		SetsTotal:  p.SetsTotal,
-		SetsDone:   p.SetsDone,
-		FilesTotal: p.FilesTotal,
-		FilesDone:  p.FilesDone,
-		LastError:  p.LastError,
+		Running:           p.Running,
+		CurrentSet:        p.CurrentSet,
+		SetsTotal:         p.SetsTotal,
+		SetsDone:          p.SetsDone,
+		FilesTotal:        p.FilesTotal,
+		FilesDone:         p.FilesDone,
+		IdentityMoved:     p.IdentityMoved,
+		IdentityConflicts: p.IdentityConflicts,
+		LastError:         p.LastError,
 	}
 }

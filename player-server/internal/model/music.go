@@ -29,6 +29,7 @@ type MusicMetadata struct {
 	Composers             []string      `json:"composers,omitempty"`
 	Performers            []string      `json:"performers,omitempty"`
 	ReleaseMBID           string        `json:"release_mbid,omitempty"`
+	RecordingMBID         string        `json:"recording_mbid,omitempty"`
 	Title                 string        `json:"title,omitempty"`
 	Artist                string        `json:"artist,omitempty"`
 	Artists               []string      `json:"artists,omitempty"`

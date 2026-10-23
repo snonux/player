@@ -46,6 +46,7 @@ var timeColumns = map[string][]string{
 	"sets":                      {"created_at"},
 	"set_permissions":           {"created_at"},
 	"media":                     {"deleted_at", "created_at"},
+	"music_identity_conflicts":  {"created_at", "resolved_at"},
 	"favorites":                 {"created_at"},
 	"playback_progress":         {"updated_at"},
 	"sessions":                  {"created_at", "expires_at"},

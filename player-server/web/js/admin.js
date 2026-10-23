@@ -72,6 +72,16 @@ export function initAdmin() {
     } catch (err) { toast(err.message || 'Could not add library', 'error'); }
   });
 
+  const identityBtn = document.getElementById('admin-identity-toggle');
+  identityBtn?.addEventListener('click', async () => {
+    const section = document.getElementById('admin-identity-section');
+    const open = section?.classList.contains('hidden');
+    section?.classList.toggle('hidden', !open);
+    identityBtn.setAttribute('aria-expanded', String(Boolean(open)));
+    identityBtn.textContent = open ? 'Hide music identity' : 'Music identity';
+    if (open) await refreshIdentityConflicts();
+  });
+
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
@@ -409,6 +419,84 @@ function libraryRowHtml(lib, users) {
       <button type="button" class="btn btn-danger btn-sm" data-library-delete data-id="${lib.id}" data-name="${escapeHtml(lib.name)}" aria-label="Remove ${escapeHtml(lib.name)}">Remove</button>
     </span>
   </li>`;
+}
+
+async function refreshIdentityConflicts() {
+  const status = document.getElementById('admin-identity-status');
+  const el = document.getElementById('admin-identity-conflicts');
+  if (status) status.textContent = 'Loading identity conflicts…';
+  try {
+    const list = await API.musicIdentityConflicts();
+    renderIdentityConflicts(list);
+    if (status) {
+      status.textContent = list.length
+        ? `${list.length} conflict${list.length === 1 ? '' : 's'} need a choice`
+        : 'No identity conflicts. Moved songs keep playlists and history automatically.';
+    }
+  } catch (err) {
+    if (status) status.textContent = err.message || 'Could not load conflicts';
+  }
+}
+
+function renderIdentityConflicts(list) {
+  const el = document.getElementById('admin-identity-conflicts');
+  if (!el) return;
+  if (!Array.isArray(list) || !list.length) {
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = `<ul class="admin-list">${list.map((c) => {
+    const paths = (c.candidate_paths || []).map((p) => escapeHtml(p)).join(', ') || 'unknown path';
+    const ids = (() => {
+      try { return JSON.parse(c.candidate_media_ids || '[]'); } catch { return []; }
+    })();
+    const mergeBtns = ids.map((id, i) =>
+      `<button type="button" class="btn btn-primary btn-sm" data-identity-merge data-conflict="${c.id}" data-candidate="${id}"
+        aria-label="Merge into older song using candidate ${i + 1}">Merge → ${escapeHtml((c.candidate_paths || [])[i] || String(id))}</button>`
+    ).join(' ');
+    return `<li>
+      <span>
+        <strong>${escapeHtml(c.missing_path || ('#' + c.missing_media_id))}</strong>
+        <br><span class="text-muted text-75">Candidates: ${paths}</span>
+        <br><span class="text-muted text-75">${escapeHtml(c.reason || '')}</span>
+      </span>
+      <span class="flex gap-1 flex-wrap">
+        <button type="button" class="btn btn-sm" data-identity-keep data-conflict="${c.id}" aria-label="Keep separate">Keep separate</button>
+        ${mergeBtns}
+      </span>
+    </li>`;
+  }).join('')}</ul>`;
+
+  el.querySelectorAll('[data-identity-keep]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await API.resolveMusicIdentityConflict(b.dataset.conflict, { action: 'keep_separate' });
+        toast('Kept separate');
+        await refreshIdentityConflicts();
+      } catch (err) {
+        b.disabled = false;
+        toast(err.message || 'Resolve failed', 'error');
+      }
+    });
+  });
+  el.querySelectorAll('[data-identity-merge]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await API.resolveMusicIdentityConflict(b.dataset.conflict, {
+          action: 'merge',
+          candidate_media_id: Number(b.dataset.candidate),
+        });
+        toast('Merged — playlists and history kept on the older song');
+        await refreshIdentityConflicts();
+        document.dispatchEvent(new CustomEvent('library:changed'));
+      } catch (err) {
+        b.disabled = false;
+        toast(err.message || 'Merge failed', 'error');
+      }
+    });
+  });
 }
 
 function renderTrash(data) {

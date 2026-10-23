@@ -19,12 +19,13 @@ type scanWriter struct {
 	store  repository.ScannerStore
 	thumbs *thumbSwitcher
 	logger *slog.Logger
+	ledger *identityLedger
 }
 
 // newScanWriter creates a scanWriter backed by the given store. thumbs
 // handles the results that migrate an indexed row's thumbnail.
-func newScanWriter(store repository.ScannerStore, thumbs *thumbSwitcher, logger *slog.Logger) *scanWriter {
-	return &scanWriter{store: store, thumbs: thumbs, logger: logger}
+func newScanWriter(store repository.ScannerStore, thumbs *thumbSwitcher, logger *slog.Logger, ledger *identityLedger) *scanWriter {
+	return &scanWriter{store: store, thumbs: thumbs, logger: logger, ledger: ledger}
 }
 
 // run reads fileResults from resultChan and persists each: a new media
@@ -58,9 +59,13 @@ func (sw *scanWriter) run(
 			sw.thumbs.apply(ctx, result)
 			continue
 		}
-		if _, err := sw.store.CreateMedia(ctx, result.media); err != nil {
+		id, err := sw.store.CreateMedia(ctx, result.media)
+		if err != nil {
 			sendErr(fmt.Errorf("create media %q: %w", result.path, err))
 			continue
+		}
+		if sw.ledger != nil {
+			sw.ledger.noteCreated(id)
 		}
 		nf := atomic.AddInt32(newFiles, 1)
 		// Log progress on the first insert and every 25 thereafter to give

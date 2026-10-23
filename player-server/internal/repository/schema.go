@@ -355,6 +355,9 @@ func initializeSchema(db *sql.DB) error {
 	if err := migrateMusicLibraries(db); err != nil {
 		return fmt.Errorf("migrate music libraries: %w", err)
 	}
+	if err := migrateMusicIdentityConflicts(db); err != nil {
+		return fmt.Errorf("migrate music identity conflicts: %w", err)
+	}
 	// Needs the final podcast tables and the episode state index.
 	if err := repairPodcastIdentities(db); err != nil {
 		return fmt.Errorf("repair podcast identities: %w", err)

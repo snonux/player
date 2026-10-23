@@ -63,6 +63,7 @@ type Server struct {
 	podcastSvc    service.PodcastEpisodeService
 	podcastSync   service.PodcastSyncService
 	musicLibs     *service.MusicLibraryService
+	musicIdentity *service.MusicIdentityService
 	pathRoots     *service.PathRoots
 	// subsonicSvc adapts the music catalog for optional /rest clients (A01a).
 	subsonicSvc   *service.SubsonicService
@@ -81,9 +82,9 @@ type Server struct {
 // (Auth, Admin, Podcast) remain as direct fields.
 // If any service is nil, its respective routes return 501.
 type ServerServices struct {
-	Media   MediaServices
-	Auth    service.AuthService
-	Admin   service.AdminService
+	Media MediaServices
+	Auth  service.AuthService
+	Admin service.AdminService
 	// Plugins is the optional A08 WASM extension boundary (admin only).
 	Plugins service.PluginService
 	// Jukebox is the optional A02a server-audio engine (admin-controlled).
@@ -93,6 +94,8 @@ type ServerServices struct {
 	PodcastSync service.PodcastSyncService
 	// MusicLibraries is optional A05 multi-root library admin/browse.
 	MusicLibraries *service.MusicLibraryService
+	// MusicIdentity is optional A06a conflict recovery for moved/retagged songs.
+	MusicIdentity *service.MusicIdentityService
 	// PathRoots is the streaming allowlist shared with MediaStreamer.
 	PathRoots *service.PathRoots
 }
@@ -184,6 +187,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		podcastSvc:    deps.Services.Podcast,
 		podcastSync:   deps.Services.PodcastSync,
 		musicLibs:     deps.Services.MusicLibraries,
+		musicIdentity: deps.Services.MusicIdentity,
 		pathRoots:     deps.Services.PathRoots,
 		subsonicSvc:   subsonicSvc,
 		streamer:      deps.MediaStreamer,
@@ -502,6 +506,8 @@ func (s *Server) routesAdmin() {
 	s.handleBoth(http.MethodDelete, "/api/admin/libraries/{id}", s.requireAdmin(s.handleAdminLibrary))
 	s.handleBoth(http.MethodPost, "/api/admin/libraries/{id}/access", s.requireAdmin(s.handleAdminLibraryAccess))
 	s.handleBoth(http.MethodDelete, "/api/admin/libraries/{id}/access", s.requireAdmin(s.handleAdminLibraryAccess))
+	s.handleBoth(http.MethodGet, "/api/admin/music-identity/conflicts", s.requireAdmin(s.handleAdminMusicIdentityConflicts))
+	s.handleBoth(http.MethodPost, "/api/admin/music-identity/conflicts/{id}/resolve", s.requireAdmin(s.handleAdminMusicIdentityResolve))
 	s.handleBoth(http.MethodGet, "/api/admin/plugins", s.requireAdmin(s.handleListPlugins))
 	s.handleBoth(http.MethodGet, "/api/admin/plugins/{id}", s.requireAdmin(s.handleGetPlugin))
 	s.handleBoth(http.MethodPost, "/api/admin/plugins/{id}/enable", s.requireAdmin(s.handleEnablePlugin))

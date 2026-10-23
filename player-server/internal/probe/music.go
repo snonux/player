@@ -43,6 +43,7 @@ func parseMusicTags(tags map[string]string) *model.MusicMetadata {
 		m.Compilation = true
 	}
 	m.ReleaseMBID = first("musicbrainz_albumid", "musicbrainz album id", "musicbrainz/release id")
+	m.RecordingMBID = first("musicbrainz_trackid", "musicbrainz track id", "musicbrainz/recording id", "musicbrainz_recordingid", "ufid:http://musicbrainz.org")
 	m.Artists = musicValues(first("artists", "artist"))
 	m.Artist = first("artist")
 	if m.Artist == "" || strings.ContainsRune(m.Artist, 0) {

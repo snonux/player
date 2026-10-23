@@ -1963,10 +1963,14 @@ library access grants or revokes viewer/owner on every set in that library.
 | `POST` | `/api/admin/libraries/{id}/access` | Admin `{user_id, role}` on all sets in the library |
 | `DELETE` | `/api/admin/libraries/{id}/access` | Admin `{user_id}` revoke on all sets in the library |
 | `GET` | `/api/music/libraries` · `/api/v1/music/libraries` | Session: libraries the caller can see (+ ACL-filtered stats) |
+| `GET` | `/api/admin/music-identity/conflicts` | Admin: unresolved ambiguous move/retag matches (A06a) |
+| `POST` | `/api/admin/music-identity/conflicts/{id}/resolve` | Admin: `{action:"keep_separate"}` or `{action:"merge",candidate_media_id}` |
 
 Music catalog endpoints accept optional `library_ids=1,2` (albums today;
 inaccessible music stays omitted). Single-library installs expose one
-library and clients hide the selector.
+library and clients hide the selector. Song identity (`media.id`) is
+preserved across in-library moves/renames/retags; see
+`docs/music-a06a-implementation.md`.
 
 ---
 
@@ -2074,9 +2078,15 @@ Return the current or most recent scan state.
   "sets_done": 2,
   "files_total": 1200,
   "files_done": 480,
+  "identity_moved": 0,
+  "identity_conflicts": 0,
   "last_error": ""
 }
 ```
+
+After a finished scan, `identity_moved` / `identity_conflicts` report how many
+songs were rematched in-library and how many ambiguous matches remain for
+Admin › Music identity.
 
 **Status codes:** `200`, `401`, `403`, `500`
 

@@ -31,6 +31,8 @@ export async function refreshScanProgress() {
   } catch {}
 }
 
+let lastIdentityNotice = '';
+
 export function renderScanProgress(progress) {
   const indicator = document.getElementById('scan-indicator');
   const text = document.getElementById('scan-indicator-text');
@@ -38,6 +40,16 @@ export function renderScanProgress(progress) {
 
   if (!progress.running) {
     indicator.classList.add('hidden');
+    const moved = progress.identity_moved || 0;
+    const conflicts = progress.identity_conflicts || 0;
+    if (moved || conflicts) {
+      const notice = `${moved} song${moved === 1 ? '' : 's'} kept across moves` +
+        (conflicts ? ` · ${conflicts} identity conflict${conflicts === 1 ? '' : 's'} (Admin › Music identity)` : '');
+      if (notice !== lastIdentityNotice) {
+        lastIdentityNotice = notice;
+        toast(notice);
+      }
+    }
     return;
   }
 

@@ -15,6 +15,7 @@ type Store interface {
 	MusicRatingRepo
 	MusicFavoriteRepo
 	MusicLibraryRepo
+	MusicIdentityRepo
 	SavedQueueRepo
 	PlaylistRepo
 	FinishProgress(ctx context.Context, progress *model.PlaybackProgress) error
