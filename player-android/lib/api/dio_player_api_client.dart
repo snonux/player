@@ -28,6 +28,15 @@ const _kProbeTimeout = Duration(seconds: 60);
 /// responsible for those concerns (Separation of Concerns / ISP).
 class DioPlayerApiClient extends PlayerApiClient
     implements TimestampedProgressSyncClient {
+  @override
+  Future<Map<String, dynamic>> syncPodcasts(Map<String, dynamic> state) async {
+    final response = await rawDio.post<Map<String, dynamic>>(
+        '/api/v1/podcasts/sync',
+        data: state,
+        options: _personalOptions);
+    return response.data!;
+  }
+
   Future<Map<String, dynamic>> syncPlayback(
       int mediaId, Map<String, dynamic> state) async {
     final response = await rawDio.post<Map<String, dynamic>>(
@@ -776,7 +785,8 @@ class DioPlayerApiClient extends PlayerApiClient
   /// clients can paginate consistently with the server defaults.
   @override
   Future<Map<String, dynamic>> getConfig() async {
-    final response = await rawDio.get<Map<String, dynamic>>('$_kApiV1/config');
+    final response = await rawDio.get<Map<String, dynamic>>('$_kApiV1/config',
+        options: _personalOptions);
     return response.data ?? {};
   }
 

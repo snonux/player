@@ -32,8 +32,7 @@ final offlinePlaybackSyncProvider = Provider<OfflinePlaybackSync>((ref) {
             mutations.credentialOrigin == origin &&
             ref.read(authStateProvider).valueOrNull?.user?.id == userId,
         send: client.syncPlayback);
-  });
-  ref.listen(authStateProvider, (_, __) => sync.trigger());
+  }, automatic: false);
   ref.onDispose(() => unawaited(sync.dispose()));
   return sync;
 });

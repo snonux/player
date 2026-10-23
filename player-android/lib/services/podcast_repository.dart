@@ -21,7 +21,10 @@ class PodcastRepository {
   final PodcastFeedFetcher fetcher;
   Future<Database>? _opening;
   Future<Database> get database => _opening ??=
-          openDatabase(databasePath, version: 1, onCreate: (db, _) async {
+          openDatabase(databasePath, version: 2, onUpgrade: (db, old, _) async {
+        if (old < 2) await createSyncSchema(db);
+      }, onCreate: (db, _) async {
+        await createSyncSchema(db);
         await db.execute(
             'CREATE TABLE podcast_scopes(scope TEXT PRIMARY KEY, epoch TEXT NOT NULL DEFAULT "", cursor INTEGER NOT NULL DEFAULT 0, last_full_success_ms INTEGER, last_attempt_ms INTEGER, last_error_kind TEXT, associated_from_local INTEGER NOT NULL DEFAULT 0)');
         await db.execute(
@@ -35,6 +38,16 @@ class PodcastRepository {
         await db.execute(
             'CREATE TABLE podcast_sync_rejections(id INTEGER PRIMARY KEY AUTOINCREMENT, scope TEXT NOT NULL, edit_id TEXT NOT NULL, reason TEXT NOT NULL)');
       });
+  void Function()? onSyncNeeded;
+  static Future<void> createSyncSchema(DatabaseExecutor db) async {
+    await db.execute(
+        'CREATE TABLE podcast_account_aliases(scope TEXT NOT NULL, kind TEXT NOT NULL, feed_key TEXT NOT NULL DEFAULT "", source TEXT NOT NULL, target TEXT NOT NULL, PRIMARY KEY(scope,kind,feed_key,source))');
+    await db.execute(
+        'CREATE TABLE podcast_epoch_recovery(scope TEXT NOT NULL, kind TEXT NOT NULL, feed_key TEXT NOT NULL, episode_key TEXT NOT NULL DEFAULT "", PRIMARY KEY(scope,kind,feed_key,episode_key))');
+    await db.execute(
+        'CREATE TABLE podcast_recovery_epochs(scope TEXT PRIMARY KEY, epoch TEXT NOT NULL)');
+  }
+
   Future<void> close() async {
     if (_opening != null) await (await _opening!).close();
     _opening = null;
@@ -60,17 +73,32 @@ class PodcastRepository {
     return key;
   }
 
+  Future<String> resolveAccountKey(DatabaseExecutor tx, String scope,
+      String kind, String feed, String key) async {
+    final visited = <String>{};
+    while (visited.add(key)) {
+      final aliases = await tx.query('podcast_account_aliases',
+          where: 'scope=? AND kind=? AND feed_key=? AND source=?',
+          whereArgs: [scope, kind, kind == 'feed' ? '' : feed, key]);
+      if (aliases.isEmpty) return key;
+      key = aliases.single['target'] as String;
+    }
+    throw StateError('Cyclic podcast alias');
+  }
+
   Future<String> subscribe(String scope, String url) async {
     final minted = podcastFeedKey(url);
     final db = await database;
     final key = await db.transaction((tx) async {
-      final key = await resolveFeed(tx, minted);
+      final key = await resolveAccountKey(
+          tx, scope, 'feed', '', await resolveFeed(tx, minted));
       await tx.insert(
           'podcast_feeds', {'feed_key': key, 'fetch_url': _fetchUrl(url)},
           conflictAlgorithm: ConflictAlgorithm.ignore);
       await _subscription(tx, scope, key, true, url: _fetchUrl(url));
       return key;
     });
+    onSyncNeeded?.call();
     await refresh(key);
     return key;
   }
@@ -87,11 +115,16 @@ class PodcastRepository {
         : 'http://$inner';
   }
 
-  Future<void> unsubscribe(String scope, String key) async => (await database)
-      .transaction((tx) => _subscription(tx, scope, key, false));
+  Future<void> unsubscribe(String scope, String key) async {
+    await (await database)
+        .transaction((tx) => _subscription(tx, scope, key, false));
+    onSyncNeeded?.call();
+  }
+
   Future<void> _subscription(
       DatabaseExecutor tx, String scope, String key, bool subscribed,
       {String? url}) async {
+    key = await resolveAccountKey(tx, scope, 'feed', '', key);
     await tx.insert('podcast_scopes', {'scope': scope},
         conflictAlgorithm: ConflictAlgorithm.ignore);
     final old = await tx.query('podcast_subscriptions',
@@ -342,7 +375,8 @@ class PodcastRepository {
           conflictAlgorithm: ConflictAlgorithm.ignore);
       for (final row in await tx.query('podcast_subscriptions',
           where: 'scope=?', whereArgs: ['local'])) {
-        final key = await resolveFeed(tx, row['feed_key'] as String);
+        final key = await resolveAccountKey(tx, accountScope, 'feed', '',
+            await resolveFeed(tx, row['feed_key'] as String));
         final old = await tx.query('podcast_subscriptions',
             where: 'scope=? AND feed_key=?', whereArgs: [accountScope, key]);
         if (old.isEmpty ||
@@ -361,7 +395,8 @@ class PodcastRepository {
       }
       for (final row in await tx.query('podcast_episode_state',
           where: 'scope=?', whereArgs: ['local'])) {
-        final key = await resolveFeed(tx, row['feed_key'] as String);
+        final key = await resolveAccountKey(tx, accountScope, 'feed', '',
+            await resolveFeed(tx, row['feed_key'] as String));
         final episodes = await tx
             .query('podcast_episodes', where: 'feed_key=?', whereArgs: [key]);
         final known = episodes
@@ -370,13 +405,16 @@ class PodcastRepository {
                 e['enclosure_key'] as String,
                 (jsonDecode(e['aliases'] as String) as List).cast<String>()))
             .toList();
-        final episodeKey = podcastResolveEpisode(known,
+        final localEpisodeKey = podcastResolveEpisode(known,
                 row['episode_key'] as String, row['enclosure_url'] as String) ??
             row['episode_key'] as String;
+        final episodeKey = await resolveAccountKey(
+            tx, accountScope, 'episode', key, localEpisodeKey);
         await _mergeState(tx, row, accountScope, key, episodeKey);
       }
       await tx.update('podcast_scopes', {'associated_from_local': 1},
           where: 'scope=?', whereArgs: [accountScope]);
     });
+    onSyncNeeded?.call();
   }
 }

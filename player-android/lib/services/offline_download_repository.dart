@@ -34,9 +34,13 @@ class OfflineDownloadRepository {
     _directory ??= Directory('${await getDatabasesPath()}/offline-downloads');
     await directory.create(recursive: true);
     final db = await openDatabase('${directory.path}/index.db',
-        version: 4,
+        version: 5,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
         onUpgrade: (db, oldVersion, _) async {
+          if (oldVersion >= 3 && oldVersion < 5) {
+            await db
+                .execute('ALTER TABLE sync_items ADD COLUMN gone_ms INTEGER');
+          }
           if (oldVersion < 4) {
             await db.execute('ALTER TABLE downloads ADD COLUMN music TEXT');
             await db.execute(
@@ -269,7 +273,7 @@ class OfflineDownloadRepository {
       key TEXT PRIMARY KEY, origin TEXT NOT NULL, user_id INTEGER NOT NULL,
       media_id INTEGER NOT NULL, position_seconds REAL NOT NULL DEFAULT 0,
       finished INTEGER NOT NULL DEFAULT 0, observed_ms INTEGER NOT NULL DEFAULT 0,
-      pending INTEGER NOT NULL DEFAULT 0)''');
+      pending INTEGER NOT NULL DEFAULT 0, gone_ms INTEGER)''');
     await db.execute('''CREATE TABLE sync_bookmarks (
       id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL,
       sync_key TEXT NOT NULL, position_seconds REAL NOT NULL, label TEXT NOT NULL,
@@ -294,6 +298,22 @@ class OfflineDownloadRepository {
           String origin, int userId) async =>
       (await database).query('sync_items',
           where: 'origin=? AND user_id=?', whereArgs: [origin, userId]);
+
+  Future<void> markSyncGone(String key, bool Function() current) =>
+      _write((db) async {
+        if (current()) {
+          await db.update(
+              'sync_items', {'gone_ms': DateTime.now().millisecondsSinceEpoch},
+              where: 'key=?', whereArgs: [key]);
+        }
+      });
+  Future<void> clearSyncGone(String key, bool Function() current) =>
+      _write((db) async {
+        if (current()) {
+          await db.update('sync_items', {'gone_ms': null},
+              where: 'key=?', whereArgs: [key]);
+        }
+      });
 
   Future<Map<String, dynamic>> syncPayload(String key) async {
     final db = await database;

@@ -7,7 +7,7 @@ import 'providers/audio_handler_provider.dart';
 import 'providers/media_artwork_provider.dart';
 import 'providers/auth_state_provider.dart';
 import 'providers/progress_queue_provider.dart';
-import 'providers/offline_playback_sync_provider.dart';
+import 'providers/global_sync_provider.dart';
 import 'providers/api_client_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/svg_image_provider.dart';
@@ -92,7 +92,7 @@ void main() async {
   }
 
   handler.artworkLoader = container.read(mediaArtworkLoaderProvider);
-  container.read(offlinePlaybackSyncProvider);
+  container.read(globalSyncCoordinatorProvider);
 
   runApp(
     UncontrolledProviderScope(

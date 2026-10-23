@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:dio/dio.dart';
 
 import 'offline_download_repository.dart';
+import 'podcast_sync.dart' show syncBeforePlaybackTimeout;
 
 /// Credentials stay outside the durable store. A captured account generation
 /// guards both request dispatch and applying a response after an account switch.
@@ -21,9 +23,11 @@ class OfflineSyncAccount {
 class OfflinePlaybackSync {
   OfflinePlaybackSync(this.repository, this.account,
       {Duration interval = const Duration(seconds: 15),
-      Connectivity? connectivity}) {
+      Connectivity? connectivity,
+      bool automatic = true}) {
     repository.onSyncNeeded = trigger;
     repository.beforePlayback = syncKey;
+    if (!automatic) return;
     _timer = Timer.periodic(interval, (_) => trigger());
     _connectivity = (connectivity ?? Connectivity())
         .onConnectivityChanged
@@ -68,10 +72,12 @@ class OfflinePlaybackSync {
     final active = account();
     if (active == null || !active.current() || _disposed) return;
     final items = await repository.syncItems(active.origin, active.userId);
-    final matching = items.where((item) => item['key'] == key);
+    final matching =
+        items.where((item) => item['key'] == key && item['gone_ms'] == null);
     if (matching.isEmpty) return;
     await _syncItem(active, matching.single)
-        .timeout(const Duration(seconds: 5), onTimeout: () {});
+        .timeout(syncBeforePlaybackTimeout, onTimeout: () {})
+        .catchError((_) {});
   }
 
   Future<void> _syncItem(
@@ -85,7 +91,15 @@ class OfflinePlaybackSync {
       if (_disposed || !active.current()) return;
       await repository.mergeSync(
           key, result, () => !_disposed && active.current());
-    } catch (_) {/* Durable rows remain available for retry. */}
+    } on DioException catch (error) {
+      if (active.current() && [403, 404].contains(error.response?.statusCode)) {
+        await repository.markSyncGone(
+            key, () => !_disposed && active.current());
+        return;
+      }
+      rethrow;
+    }
+    await repository.clearSyncGone(key, () => !_disposed && active.current());
   }
 
   Future<void> _sync() async {
@@ -94,8 +108,51 @@ class OfflinePlaybackSync {
     final items = await repository.syncItems(active.origin, active.userId);
     for (final item in items) {
       if (_disposed || !active.current()) return;
-      await _syncItem(active, item);
+      if (item['gone_ms'] == null) await _syncItem(active, item);
     }
+  }
+
+  /// Coordinator path propagates failures instead of mistaking a quiet
+  /// background retry for a successful run. Gone copies count as completed.
+  Future<void> syncAll(OfflineSyncAccount active,
+      {bool explicit = false}) async {
+    Object? failure;
+    final items = await repository.syncItems(active.origin, active.userId);
+    for (final item in items) {
+      if (_disposed || !active.current()) throw StateError('Account changed');
+      if (!explicit && item['gone_ms'] != null) continue;
+      try {
+        final key = item['key'] as String;
+        Set<String> identities(Map<String, dynamic> payload) => {
+              if (payload['progress'] != null)
+                'p:${payload['progress']['observed_ms']}',
+              for (final b in payload['bookmarks'] as List)
+                'b:${b['sync_key']}:${b['observed_ms']}',
+            };
+        final initial = identities(await repository.syncPayload(key));
+        var previous = initial.length + 1;
+        do {
+          await _syncItem(active, item);
+          final currentItems =
+              await repository.syncItems(active.origin, active.userId);
+          if (currentItems
+              .any((row) => row['key'] == key && row['gone_ms'] != null)) {
+            break;
+          }
+          final remaining = initial
+              .intersection(identities(await repository.syncPayload(key)));
+          if (remaining.isEmpty) break;
+          if (remaining.length >= previous) {
+            throw StateError('Media edits remain pending');
+          }
+          previous = remaining.length;
+        } while (active.current() && !_disposed);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    if (_disposed || !active.current()) throw StateError('Account changed');
+    if (failure != null) throw failure;
   }
 
   Future<void> dispose() async {

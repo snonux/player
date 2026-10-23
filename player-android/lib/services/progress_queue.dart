@@ -308,7 +308,7 @@ class ProgressQueue implements ProgressQueueBase {
 
   @override
   Future<void> resume(ProgressScope scope) async {
-    if (_db != null) await init(scope: scope);
+    await init(scope: scope);
   }
 
   @override
@@ -420,8 +420,39 @@ class ProgressQueue implements ProgressQueueBase {
     // updates sent while online bypass the DB round-trip latency.
     // Once inserted, success means durable storage. Connectivity and HTTP
     // failures must never make the caller enqueue a duplicate completion.
+    onSyncNeeded?.call();
     await _flushIfOnline();
   }
+
+  void Function()? onSyncNeeded;
+
+  /// The coordinator captures IDs first so edits made during its run do not
+  /// prevent a truthful success for the work that existed at its start.
+  Future<Set<int>> pendingIds(ProgressScope scope) async {
+    final rows = await _db?.query(_kTable,
+        columns: [_kColId],
+        where: 'origin=? AND user_id=?',
+        whereArgs: [scope.origin, scope.userId]);
+    return {
+      for (final row in rows ?? <Map<String, Object?>>[]) row[_kColId] as int
+    };
+  }
+
+  Future<void> flushForSync(ProgressScope scope) async {
+    if (_disposed || _suspended || _scope != scope || _db == null) {
+      throw StateError('Progress queue is unavailable for this account');
+    }
+    final starting = await pendingIds(scope);
+    if (_flushFuture != null) await _flushFuture;
+    await _flush();
+    if (_scope != scope ||
+        _suspended ||
+        starting.intersection(await pendingIds(scope)).isNotEmpty) {
+      throw _lastSyncError ?? StateError('Progress remains pending');
+    }
+  }
+
+  Object? _lastSyncError;
 
   Future<void> _flushIfOnline() async {
     if (_disposed || _suspended) return;
@@ -477,6 +508,7 @@ class ProgressQueue implements ProgressQueueBase {
       return Future.value();
     }
     _isFlushing = true;
+    _lastSyncError = null;
     _flushFuture = _flushPendingRows().whenComplete(() {
       _isFlushing = false;
       _flushFuture = null;
@@ -533,6 +565,7 @@ class ProgressQueue implements ProgressQueueBase {
         } catch (error) {
           if (!current()) return;
           if (!_permanentlyRejectedStatus(error)) {
+            _lastSyncError = error;
             _scheduleRetry();
             return; // Transient status failure retains ordering for retry.
           }
@@ -555,6 +588,7 @@ class ProgressQueue implements ProgressQueueBase {
         if (!current()) return;
         final index = _permanentlyRejectedIndex(error, positions.length);
         if (index == null) {
+          _lastSyncError = error;
           _scheduleRetry();
           return; // Network/5xx/unknown errors stay queued.
         }

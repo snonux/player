@@ -200,6 +200,10 @@ class PlayerApiClient implements ProgressSyncClient {
   // Config
   // ---------------------------------------------------------------------------
 
+  /// Reconcile account podcast registers; audio and server media IDs are absent.
+  Future<Map<String, dynamic>> syncPodcasts(Map<String, dynamic> state) =>
+      throw UnimplementedError('Podcast sync is unavailable');
+
   Future<Map<String, dynamic>> getConfig() => throw UnimplementedError();
 
   // ---------------------------------------------------------------------------
