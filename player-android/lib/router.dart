@@ -1,3 +1,4 @@
+import 'screens/radio_screen.dart';
 import 'providers/navigation_preferences_provider.dart';
 import 'screens/music_search_screen.dart';
 import 'screens/music_playlists_screen.dart';
@@ -229,6 +230,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
           path: AppRoutes.musicSearch,
           builder: (context, state) => const MusicSearchScreen()),
+      GoRoute(
+        path: AppRoutes.radio,
+        builder: (context, state) => const RadioScreen(),
+      ),
       GoRoute(
         path: AppRoutes.musicArtists,
         builder: (context, state) =>

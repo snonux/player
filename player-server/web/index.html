@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/css/components.css">
 <link rel="stylesheet" href="/css/toast.css">
 <link rel="stylesheet" href="/css/player.css">
+<link rel="stylesheet" href="/css/radio.css">
 <script type="module" src="/js/app.js"></script>
 </head>
 <body>
@@ -67,6 +68,7 @@
   <button id="music-albums" class="btn btn-ghost">Albums</button>
   <button id="music-playlists" class="btn btn-ghost">Playlists</button>
   <button id="music-artists" class="btn btn-ghost">Artists</button>
+  <button id="internet-radio" class="btn btn-ghost">Internet radio</button>
   <div id="set-list"></div>
 </nav>
 
@@ -96,6 +98,25 @@
     <!-- Media grid: hidden until a set is loaded or search is active -->
     <div id="media-grid" class="media-grid hidden" tabindex="0" aria-label="Media grid"></div>
   </div>
+</div>
+
+<div id="radio-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="radio-title">
+ <div class="modal"><div class="modal-header"><h3 id="radio-title">Internet radio</h3><div class="spacer"></div><button id="radio-close" class="icon-btn" aria-label="Close internet radio">✕</button></div>
+ <input id="radio-search" type="search" aria-label="Search stations" placeholder="Search stations">
+ <button id="radio-refresh" class="btn btn-ghost">Refresh</button><button id="radio-add" class="btn" hidden>Add station</button>
+ <p id="radio-status" role="status"></p><div id="radio-list" aria-label="Stations"></div></div>
+</div>
+<div id="radio-editor" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="radio-editor-title">
+ <div class="modal"><div class="modal-header"><h3 id="radio-editor-title">Add station</h3><div class="spacer"></div><button id="radio-editor-close" class="icon-btn" aria-label="Cancel station editing">✕</button></div>
+ <form id="radio-form" class="radio-form">
+ <label>Station name<input name="name" required maxlength="200"></label>
+ <label>Stream URL<input name="stream_url" type="url" required maxlength="4096" placeholder="https://station.example/live"></label>
+ <label>Website URL (optional)<input name="homepage_url" type="url" maxlength="4096"></label>
+ <label>Artwork URL (optional)<input name="artwork_url" type="url" maxlength="4096"></label>
+ <label class="radio-local"><input name="local_network" type="checkbox">Allow local-network station</label>
+ <p class="text-muted">Permit private or loopback stream and artwork hosts. Live audio is relayed through Player; station URLs never receive your Player credentials.</p>
+ <p id="radio-editor-status" role="alert"></p><button class="btn" type="submit">Save</button>
+ </form></div>
 </div>
 
 <div id="settings-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">

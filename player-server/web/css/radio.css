@@ -1,0 +1,20 @@
+.radio-station {display:flex;gap:var(--space-md, 16px);padding:16px;border:1px solid var(--border);border-radius:var(--radius-md, 8px);margin-bottom:12px;background:var(--bg-surface);}
+.radio-station.selected {border-color:var(--accent);}
+.radio-art {width:72px;height:72px;object-fit:cover;flex-shrink:0;border-radius:var(--radius-md, 8px);}
+.radio-description {min-width:0;flex:1;overflow-wrap:anywhere;}
+.radio-description h4 {margin:0 0 8px;}
+.radio-state {color:var(--text-secondary);}
+.radio-actions {display:flex;flex-wrap:wrap;gap:8px;}
+.radio-form {display:grid;gap:12px;}
+.radio-form label {display:grid;gap:4px;}
+.radio-form input {max-width:100%;min-width:0;}
+.radio-form .radio-local {display:flex;align-items:center;gap:8px;}
+#radio-search {width:100%;margin-bottom:12px;}
+@media(max-width:480px) {.radio-station {padding:12px;gap:12px;}.radio-art {width:48px;height:48px;}}
+#player.live-radio .seek-controls,
+#player.live-radio #btn-prev,
+#player.live-radio #btn-next,
+#player.live-radio #btn-cast,
+#player.live-radio #btn-detach,
+#player.live-radio [aria-label="Play on a network speaker"],
+#player.live-radio .playback-speed-control {display:none;}

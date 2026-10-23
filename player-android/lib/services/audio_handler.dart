@@ -183,7 +183,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       sleepTimer.check();
       return _canControlSource &&
           !sleepTimer.expired &&
-          _player.processingState == ProcessingState.ready &&
+          (_player.processingState == ProcessingState.ready ||
+              isLiveRadio && _liveReconnectNeeded && _liveSource != null) &&
           _musicState?.error == null;
     },
     pausePlayback: () => pause(automatic: true),
@@ -208,7 +209,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _transportRevision++;
     // Set the latch synchronously before any I/O: delayed automatic loads
     // cannot turn playback back on after expiry.
-    final localPause = _player.pause();
+    if (isLiveRadio) _liveReconnectNeeded = true;
+    final localPause = isLiveRadio ? _player.stop() : _player.pause();
     final remotePause = pauseSleepRemote?.call();
     await localPause;
     await remotePause;
@@ -238,7 +240,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         artist: request.artist.isEmpty ? 'Unknown artist' : request.artist,
         album: request.album.isEmpty ? null : request.album,
         artUri: same ? mediaItem.value?.artUri : null,
-        duration: _player.duration));
+        duration:
+            request is LiveRadioPlaybackRequest ? null : _player.duration));
     if (same || request.artworkUri == null || artworkLoader == null) return;
     unawaited(() async {
       try {
@@ -1126,6 +1129,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Invalidates pending source work from the previous audio session.
   int beginSourceSession({bool Function()? ownsSource, int? sleepIntent}) {
+    _liveSource = null;
+    _liveReconnectNeeded = false;
     headset.userPlaybackIntent();
     _transportRevision++;
     _gapless.invalidate();
@@ -1171,6 +1176,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   bool isSourceSessionCurrent(int generation) =>
       generation == _sourceGeneration && _canControlSource;
 
+  AudioSource? _liveSource;
+  bool _liveReconnectNeeded = false;
+
+  bool get isLiveRadio => _metadataRequest is LiveRadioPlaybackRequest;
+
   bool get _canControlSource =>
       _controlsEnabled && _ownsSource?.call() != false;
 
@@ -1191,8 +1201,37 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         _gapless.playlist = playlist;
         _gapless.currentIndex = 0;
         _gapless.children = [null];
+        if (isLiveRadio) {
+          await _player.setSpeed(1);
+          if (generation != _sourceGeneration) return;
+        }
         await _player.setAudioSource(playlist ?? source);
       });
+
+  /// Loads a live source without replacing the original user playback intent.
+  /// Deliberate pause/unplug/sleep during loading leaves usable paused controls.
+  Future<void> loadLiveSourceForSession(
+      AudioSource source, int generation, int transport) async {
+    if (generation != _sourceGeneration || _ownsSource?.call() == false) return;
+    _liveSource = source;
+    try {
+      await loadSourceForSession(source, generation);
+    } catch (_) {
+      if (generation == _sourceGeneration && transport != _transportRevision) {
+        activateSourceSession(generation);
+        return;
+      }
+      rethrow;
+    }
+    if (!activateSourceSession(generation)) return;
+    if (transport != _transportRevision ||
+        !headset.allowsAutomaticPlayback ||
+        !sleepTimer.allowsPlayback(_sourceSleepIntent)) {
+      return;
+    }
+    _liveReconnectNeeded = false;
+    unawaited(play(automatic: true));
+  }
 
   /// A delayed seek from an old screen cannot seek a replacement source.
   Future<bool> seekForSession(Duration position, int generation) {
@@ -1200,7 +1239,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     // A current seek intent supersedes an end callback waiting on progress I/O.
     if (generation == _sourceGeneration) ++_completionCycle;
     return _serializeSourceOperation(() async {
-      if (generation != _sourceGeneration) return false;
+      if (generation != _sourceGeneration || isLiveRadio) return false;
       await _player.seek(position);
       return generation == _sourceGeneration;
     });
@@ -1281,6 +1320,23 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (!automatic) _sourceSleepIntent = sleepIntent;
     if (!_canControlSource) return;
     final generation = _sourceGeneration;
+    if (isLiveRadio &&
+        (!automatic || _liveReconnectNeeded) &&
+        _liveSource != null &&
+        !_player.playing) {
+      try {
+        await loadSourceForSession(_liveSource!, generation);
+      } catch (error) {
+        if (generation == _sourceGeneration &&
+            transport == _transportRevision) {
+          _onPlaybackError(error);
+        }
+        return;
+      }
+      if (generation == _sourceGeneration && transport == _transportRevision) {
+        _liveReconnectNeeded = false;
+      }
+    }
     await _refreshLoudness();
     if (generation != _sourceGeneration ||
         !_canControlSource ||
@@ -1323,7 +1379,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (!automatic) headset.suspend();
     _transportRevision++;
     _gapless.transportIntent++;
-    await _player.pause();
+    if (isLiveRadio) {
+      _liveReconnectNeeded = true;
+      await _player.stop(); // Resume reconnects at the live edge.
+    } else {
+      await _player.pause();
+    }
     await _progress?.record(force: true);
     if (_queueActive && _queueIndex >= 0) {
       _queuePosition = _player.position.inMilliseconds / 1000;
@@ -1334,6 +1395,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
+    _liveSource = null;
+    _liveReconnectNeeded = false;
     headset.suspend();
     _transportRevision++;
     _gapless.invalidate();
@@ -1403,6 +1466,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// podcast and audiobook use-cases rather than a full track change).
   @override
   Future<void> skipToNext() async {
+    if (isLiveRadio) return;
     if (_musicIndex >= 0) return _moveTrack(1);
     if (!_canControlSource) return;
     final current = _player.position;
@@ -1415,6 +1479,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Skip back 15 seconds.
   @override
   Future<void> skipToPrevious() async {
+    if (isLiveRadio) return;
     if (_musicIndex >= 0) return _moveTrack(-1);
     if (!_canControlSource) return;
     final current = _player.position;
@@ -1503,37 +1568,55 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// advertises which controls are enabled so Android can render the correct
   /// notification buttons.
   void _broadcastState() {
-    final processingState = _mapProcessingState(_player.processingState);
+    final live = isLiveRadio;
+    final processingState = live &&
+            _canControlSource &&
+            _liveReconnectNeeded &&
+            _player.processingState == ProcessingState.idle
+        ? AudioProcessingState.ready
+        : _mapProcessingState(_player.processingState);
 
     playbackState.add(
       PlaybackState(
         // Advertise all supported actions so the notification, lock screen,
         // and Bluetooth headset buttons all get the correct controls.
-        controls: [
-          if (_musicIndex >= 0)
-            MediaControl.skipToPrevious
-          else
-            MediaControl.rewind,
-          if (_player.playing) MediaControl.pause else MediaControl.play,
-          MediaControl.stop,
-          if (_musicIndex < 0)
-            MediaControl.fastForward
-          else
-            MediaControl.skipToNext,
-        ],
-        systemActions: const {
-          MediaAction.seek,
-          MediaAction.seekForward,
-          MediaAction.seekBackward,
-          MediaAction.playFromMediaId,
-          MediaAction.playFromSearch,
-          MediaAction.skipToQueueItem,
-        },
-        androidCompactActionIndices: const [0, 1, 3], // prev, play/pause, next
+        controls: live
+            ? [
+                if (_player.playing) MediaControl.pause else MediaControl.play,
+                MediaControl.stop,
+              ]
+            : [
+                if (_musicIndex >= 0)
+                  MediaControl.skipToPrevious
+                else
+                  MediaControl.rewind,
+                if (_player.playing) MediaControl.pause else MediaControl.play,
+                MediaControl.stop,
+                if (_musicIndex < 0)
+                  MediaControl.fastForward
+                else
+                  MediaControl.skipToNext,
+              ],
+        systemActions: live
+            ? const {
+                MediaAction.playFromMediaId,
+                MediaAction.playFromSearch,
+                MediaAction.skipToQueueItem,
+              }
+            : const {
+                MediaAction.seek,
+                MediaAction.seekForward,
+                MediaAction.seekBackward,
+                MediaAction.playFromMediaId,
+                MediaAction.playFromSearch,
+                MediaAction.skipToQueueItem,
+              },
+        androidCompactActionIndices:
+            live ? const [0, 1] : const [0, 1, 3], // prev, play/pause, next
         processingState: processingState,
         playing: _player.playing,
-        updatePosition: _player.position,
-        bufferedPosition: _player.bufferedPosition,
+        updatePosition: live ? Duration.zero : _player.position,
+        bufferedPosition: live ? Duration.zero : _player.bufferedPosition,
         speed: _player.speed,
         queueIndex: _autoQueueIndex,
       ),

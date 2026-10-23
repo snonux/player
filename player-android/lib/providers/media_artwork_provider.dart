@@ -13,18 +13,21 @@ final mediaArtworkLoaderProvider =
     Provider<Future<Uri?> Function(PlaybackRequest, bool Function())>((ref) {
   var serial = 0;
   return (request, sourceCurrent) async {
-    if (request is! ServerPlaybackRequest || request.artworkUri == null) {
-      return null;
-    }
+    final (serverOrigin, userId) = switch (request) {
+      ServerPlaybackRequest() => (request.serverOrigin, request.userId),
+      LiveRadioPlaybackRequest() => (request.serverOrigin, request.userId),
+      _ => ('', -1),
+    };
+    if (serverOrigin.isEmpty || request.artworkUri == null) return null;
     final base = ref.read(playerBaseUrlProvider);
     final mutations = ref.read(credentialMutationQueueProvider);
     final generation = mutations.generation;
     bool current() =>
         sourceCurrent() &&
         mutations.generation == generation &&
-        ref.read(playerBaseUrlProvider).origin == request.serverOrigin &&
-        ref.read(authStateProvider).valueOrNull?.user?.id == request.userId;
-    if (base.origin != request.serverOrigin || !current()) return null;
+        ref.read(playerBaseUrlProvider).origin == serverOrigin &&
+        ref.read(authStateProvider).valueOrNull?.user?.id == userId;
+    if (base.origin != serverOrigin || !current()) return null;
     final uri = request.artworkUri!;
     final headers = await accountRequestHeaders(
         uri: uri,

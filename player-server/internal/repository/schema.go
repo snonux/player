@@ -8,6 +8,15 @@ import (
 
 // tablesSchema defines all CREATE TABLE statements for a fresh database.
 const tablesSchema = `
+CREATE TABLE IF NOT EXISTS radio_stations (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ name TEXT NOT NULL,
+ stream_url TEXT NOT NULL,
+ homepage_url TEXT NOT NULL DEFAULT '',
+ artwork_url TEXT NOT NULL DEFAULT '',
+ local_network INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,

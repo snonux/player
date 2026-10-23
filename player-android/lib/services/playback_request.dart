@@ -183,3 +183,25 @@ final class PublicSharePlaybackRequest extends PlaybackRequest {
   @override
   PlaybackSourceKind get kind => PlaybackSourceKind.publicShare;
 }
+
+/// An account-owned live station. There is no file progress or finite timeline.
+@immutable
+final class LiveRadioPlaybackRequest extends PlaybackRequest {
+  const LiveRadioPlaybackRequest({
+    required this.stationId,
+    required this.serverOrigin,
+    required this.userId,
+    required super.sourceUri,
+    required super.title,
+    super.artworkUri,
+  }) : super(
+            identity: 'radio:$serverOrigin:$userId:$stationId',
+            sourceName: 'Internet radio',
+            artist: 'Live radio');
+
+  final int stationId;
+  final String serverOrigin;
+  final int userId;
+  @override
+  PlaybackSourceKind get kind => PlaybackSourceKind.server;
+}

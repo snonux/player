@@ -90,6 +90,7 @@ bool playbackWidgetMetadataAllowed(PlaybackRequest? request,
   }
   final (String?, int?) owner = switch (request) {
     ServerPlaybackRequest() => (request.serverOrigin, request.userId),
+    LiveRadioPlaybackRequest() => (request.serverOrigin, request.userId),
     OfflinePlaybackRequest() => (request.serverOrigin, request.userId),
     _ => (null, null),
   };

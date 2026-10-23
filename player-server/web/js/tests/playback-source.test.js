@@ -1480,6 +1480,32 @@ try {
   delete window.open;
 } catch (err) { failures.push(`Detached speed media transition threw: ${err?.stack || err}`); }
 
+// Live radio reuses the actual player owner but never a finite song timeline.
+try {
+  let next = 0;
+  setup({onNext: () => next++});
+  const station = {type:'audio',file_name:'Station',live_radio:true,radio_station_id:7};
+  assertEqual(await player.playLiveRadio(station,'/api/radio/7/stream',''),true,'radio starts after owner release');
+  assertEqual(audio().src,'/api/radio/7/stream','radio uses same-origin relay');
+  assert(elements.player.classList.contains('live-radio'),'live presentation is explicit');
+  audio().duration=120;audio().currentTime=20;
+  assertEqual(player.seekPercent(.1),false,'live percent seek refused');
+  assertEqual(player.seekRelative(15),false,'live relative seek refused');
+  audio().ended=true;audio().dispatch('ended');await settle();
+  assertEqual(next,0,'live disconnect never advances into library');
+  player.pausePlayback();
+  assertEqual(audio().getAttribute('src'),null,'live Stop closes network source');
+  const loads=audio().loads;
+  player.requestPlay();
+  assertEqual(audio().src,'/api/radio/7/stream','live Play reconnects endpoint');
+  assert(audio().loads>loads,'live Play loads a fresh connection');
+  audio().error={code:2};audio().dispatch('error');
+  assertEqual(failureReports,0,'radio error never invokes library skip fallback');
+  player.selectAndPlay(plainVideo,0);
+  assert(!elements.player.classList.contains('live-radio'),'normal source restores finite presentation');
+  player.stopAndClose();
+} catch (err) { failures.push(`Live radio integration threw: ${err?.stack || err}`); }
+
 if (failures.length) {
   console.error('FAILURES:');
   failures.forEach((m) => console.error('  - ' + m));

@@ -1,3 +1,4 @@
+import { initRadio } from './radio.js';
 import { stopRenderer } from './renderer.js';
 import { setListeningProgressAccount } from './listening-progress.js';
 import { initListeningHistory } from './listening-history.js';
@@ -259,6 +260,7 @@ async function initApp() {
   initNotes((status, message) => toast(status === 'error' ? message || 'Could not update note.' : status === 'deleted' ? 'Note deleted' : 'Note saved', status === 'error' ? 'error' : 'info'));
   initAdmin();
   initTrash();
+  initRadio();
   initModalFocus();
   // Admin actions such as restoring from trash change what the grid shows.
   document.addEventListener('library:changed', () => loadMedia());

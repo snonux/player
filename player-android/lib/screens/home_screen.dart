@@ -207,6 +207,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                   'Continue Watching',
                   AppRoutes.continueWatching
                 ),
+                (Icons.radio, 'Internet radio', AppRoutes.radio),
                 (Icons.album_outlined, 'Music · Albums', AppRoutes.musicAlbums),
                 (
                   Icons.queue_music,

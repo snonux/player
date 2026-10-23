@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import { createMediaSession } from '../media-session.js';
+const actions = {};
+const session = {setActionHandler(name,callback){actions[name]=callback;},setPositionState(value){this.position=value;}};
+let plays=0, pauses=0;
+const element={duration:120,currentTime:30,paused:false,ended:false,playbackRate:1};
+const owner=createMediaSession({session,Metadata:class{constructor(value){Object.assign(this,value);}},getElement:()=>element,ownsSource:()=>true,play:()=>plays++,pause:()=>pauses++,next:()=>assert.fail('live skip'),previous:()=>assert.fail('live skip')});
+owner.select({type:'audio',file_name:'Station',live_radio:true,music:{title:'Station',artist:'Live radio'}});
+assert.equal(session.metadata.title,'Station');
+assert.equal(session.position,undefined,'radio never claims a finite duration even if the decoder reports one');
+for(const name of ['seekto','seekforward','seekbackward','nexttrack','previoustrack'])assert.equal(actions[name],null,`${name} is absent for live radio`);
+actions.play();actions.pause();assert.equal(plays,1);assert.equal(pauses,1);
+owner.select({type:'audio',file_name:'song.mp3'});
+assert.equal(typeof actions.seekto,'function','normal source restores finite controls');
+assert.equal(session.position.duration,120);
+console.log('Live radio system controls and normal-source restoration PASS');

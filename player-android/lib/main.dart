@@ -1,3 +1,4 @@
+import 'services/playback_request.dart';
 import 'services/stream_quality.dart';
 import 'services/headset_preferences.dart';
 import 'providers/headset_preferences_provider.dart';
@@ -124,6 +125,22 @@ void main() async {
   // even when no subsequent audio event arrives. Local playback stays usable.
   container.listen(authStateProvider, (_, __) => playbackWidgets.refresh());
   container.listen(playerBaseUrlProvider, (_, __) => playbackWidgets.refresh());
+
+  AudioService.notificationClicked.where((clicked) => clicked).listen((_) {
+    final request = handler.currentMetadataRequest;
+    final auth = container.read(authStateProvider).valueOrNull;
+    if (request is! LiveRadioPlaybackRequest ||
+        auth?.isAuthenticated != true ||
+        auth?.user?.id != request.userId ||
+        container.read(playerBaseUrlProvider).origin != request.serverOrigin ||
+        !container.read(credentialMutationQueueProvider).credentialsEnabled) {
+      return;
+    }
+    final router = container.read(routerProvider);
+    if (router.routeInformationProvider.value.uri.path != AppRoutes.radio) {
+      router.push(AppRoutes.radio);
+    }
+  });
 
   handler.artworkLoader = container.read(mediaArtworkLoaderProvider);
   handler.autoCatalog = container.read(androidAutoCatalogProvider);

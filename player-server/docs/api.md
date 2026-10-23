@@ -3066,3 +3066,26 @@ Ties use normalized title and canonical key. Random shuffles every accessible
 album once. ACL filtering and personal-field hydration precede collection
 selection. Client previews show a subset while Play/View all use the complete
 ordered snapshot; ordinary album queue resolution rechecks current access.
+
+### Internet radio
+
+Authenticated `GET /api/radio` (and `/api/v1/radio`) returns shared stations.
+Administrators create with `POST /api/radio`, replace with
+`PUT /api/radio/{station_id}`, and remove with `DELETE` on that station route.
+Fields are `name`, `stream_url`, `homepage_url`, `artwork_url` and
+`local_network` (default false); optional URLs may be empty. HTTP(S) URLs must
+not contain userinfo. Local/private access requires the explicit admin opt-in;
+link-local, metadata, multicast and reserved destinations remain refused.
+Redirects and the actual dial address are revalidated. Player credentials are
+never forwarded to stations.
+
+Authenticated `GET /api/radio/{station_id}/stream` relays live MP3 through a
+bounded, pipe-only FFmpeg decoder. Playlists cannot fetch secondary resources.
+It is a live source: no finite duration, seek, resume history or queue auto-next.
+`HEAD` is bodyless and does not reserve a decoder. Four concurrent decoders are
+allowed; capacity returns 503. Startup and idle input have a 30-second watchdog,
+and output chunks have a renewed bounded write budget rather than an absolute
+whole-stream lifetime. `/artwork` returns a bounded decoded JPEG, never active
+external markup. Missing stations return 404; unsafe/unreachable/undecodable
+sources report a visible failure and can be retried. No decoder/platform support
+is inferred from API tests; actual Chrome/Firefox/Android verification is pending.

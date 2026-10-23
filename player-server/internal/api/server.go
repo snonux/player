@@ -473,6 +473,7 @@ func (s *Server) routes() {
 	s.routesConfig()
 	s.routesSets()
 	s.routesMedia()
+	s.routesRadio()
 	s.routesNotes()
 	s.routesProgress()
 	s.routesShares()

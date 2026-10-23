@@ -1,3 +1,4 @@
+import { stopRenderer } from './renderer.js';
 import { listeningOccurrenceID, saveListeningProgress } from './listening-progress.js';
 let listeningOccurrence = '';
 import { announceSong, suspendSongAnnouncement } from './song-notifications.js';
@@ -35,7 +36,7 @@ import {
   isDetached,
   postToDetach,
   sendDetachedLoad,
-  toggleDetach,
+  toggleDetach as toggleDetachedWindow,
   stopDetached,
 } from './detach.js';
 import { mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from './streamSource.js';
@@ -58,7 +59,6 @@ export {
   panImage,
   shiftCropPosition,
   toggleCrop,
-  toggleDetach,
   stopDetached,
   toggleSlideshow,
   zoomIn,
@@ -66,6 +66,7 @@ export {
 };
 
 let currentMedia = null;
+let liveRequest = 0, pendingLiveRequest = 0;
 let isPlaying = false;
 let progressInterval = null;
 let progressWrites = Promise.resolve();
@@ -96,6 +97,33 @@ let pausedReturnHint = false;
 let audioTransport = null;
 let gapless = null;
 
+function cancelLiveRequest() { liveRequest++; pendingLiveRequest = 0; }
+export function toggleDetach() {
+  if (!currentMedia?.live_radio) toggleDetachedWindow();
+}
+// A radio selection must release the existing owner before opening any decoder.
+export async function playLiveRadio(media, url, art = '') {
+  const request = ++liveRequest; pendingLiveRequest = request;
+  try {
+    if (!await stopRenderer()) throw new Error('Speaker could not be stopped. Retry before playing radio here.');
+    if (request !== liveRequest) return false;
+    if (isCasting()) {
+      stopCasting();
+      const deadline = Date.now() + 5000;
+      while (isCasting() && Date.now() < deadline && request === liveRequest) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      if (isCasting()) throw new Error('Cast playback could not be stopped. Stop casting, then retry radio.');
+    }
+    if (request !== liveRequest) return false;
+    saveCurrentProgress();
+    stopDetached();
+    loadMediaDirect(media, url, art);
+    requestPlay();
+    return true;
+  } finally { if (pendingLiveRequest === request) pendingLiveRequest = 0; }
+}
+
 function currentMediaElement() {
   const e = els();
   if (currentMedia?.type === 'audio') return audioTransport || e.audio;
@@ -111,6 +139,7 @@ function setCurrentMediaState(media, index) {
 }
 
 function effectiveDuration() {
+  if (currentMedia?.live_radio) return 0;
   const m = currentMediaElement();
   if (!m) return 0;
   if (isFinite(m.duration) && m.duration > 0) return m.duration;
@@ -237,7 +266,7 @@ export function initPlayer(options = {}) {
 function bindCast(e) {
   initCast({
     button: e.btnCast,
-    getCurrentMedia: () => (isDetached() ? null : currentMedia),
+    getCurrentMedia: () => (isDetached() || currentMedia?.live_radio ? null : currentMedia),
     getListeningOccurrence: () => listeningOccurrence,
     localPosition: () => currentMediaElement()?.currentTime || 0,
     pauseLocal: () => {
@@ -344,6 +373,7 @@ function bindMediaEvents(e, m) {
   });
   m.addEventListener('ended', async () => {
     if (m !== currentMediaElement() || !m.ended) return;
+    if (currentMedia?.live_radio) { updateUI(false); setPlayerStatus('Station disconnected · press Play to reconnect.'); return; }
     const epoch = sourceEpoch, intent = currentPlaybackIntent();
     if (completingEpoch === epoch) return;
     completingEpoch = epoch;
@@ -366,6 +396,14 @@ function bindMediaEvents(e, m) {
     if (!isDetached() && !m.paused && !m.error) announceSong(currentMedia, () => !isDetached() && !m.paused && !m.error && m === currentMediaElement());
   });
   m.addEventListener('error', () => handleElementError(m));
+  for (const event of ['loadstart','waiting','stalled','playing','pause']) m.addEventListener(event, () => {
+    if (currentMedia?.live_radio && m === currentMediaElement()) {
+      const text = m.error ? 'Station unavailable or offline · press Play to retry.' :
+        globalThis.navigator?.onLine === false ? 'Offline · reconnect, then press Play.' :
+        !m.getAttribute('src') ? 'Stopped · Play reconnects live' : event === 'playing' ? 'Live radio' : event === 'pause' ? 'Stopped · Play reconnects live' : 'Buffering live radio…';
+      setPlayerStatus(text);
+    }
+  });
 }
 
 function setupMediaDebug(m) {
@@ -386,6 +424,7 @@ function setupMediaDebug(m) {
 function bindSeekTrack(e) {
   let seeking = false;
   const seekToFraction = (frac) => {
+    if (currentMedia?.live_radio) return;
     if (isCasting()) {
       castSeek(Math.max(0, Math.min(1, frac)) * (castDuration() || effectiveDuration()));
       return;
@@ -477,6 +516,12 @@ function updateBufferedRanges(m) {
 }
 
 export function togglePlay() {
+  cancelLiveRequest();
+  if (currentMedia?.live_radio) {
+    const m = currentMediaElement();
+    if (m?.getAttribute('src') && !m.paused) pauseFromSystem(); else requestPlay();
+    return;
+  }
   if (isCasting()) {
     castTogglePlay();
     return;
@@ -509,7 +554,7 @@ export function hasLoadedMedia() {
 
 export function seekPercent(deltaPercent) {
   const dp = Number(deltaPercent);
-  if (!currentMedia || !isFinite(dp)) return false;
+  if (!currentMedia || currentMedia.live_radio || !isFinite(dp)) return false;
   if (isCasting()) {
     castSeek(castPosition() + (castDuration() || effectiveDuration()) * dp);
     return true;
@@ -529,7 +574,7 @@ export function seekPercent(deltaPercent) {
 
 export function seekRelative(seconds) {
   const amount = Number(seconds);
-  if (!currentMedia || !isFinite(amount)) return false;
+  if (!currentMedia || currentMedia.live_radio || !isFinite(amount)) return false;
   if (isCasting()) {
     castSeek(castPosition() + amount);
     return true;
@@ -546,6 +591,7 @@ export function seekRelative(seconds) {
 }
 
 export function stopAndClose() {
+  cancelLiveRequest();
   suspendSongAnnouncement();
   sleepTimer?.cancel();
   clearPausedReturnHint();
@@ -602,6 +648,7 @@ export function stopAndClose() {
 }
 
 export function selectAndPlay(media, index, resumeFrom = 0) {
+  cancelLiveRequest();
   saveCurrentProgress();
   listeningOccurrence = listeningOccurrenceID();
   document.dispatchEvent?.(new CustomEvent('player:media-opened', { detail: { media } }));
@@ -643,6 +690,7 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
 
 // Deep links restore the same authenticated library item without autoplay.
 export function selectMedia(media, index = -1, resumeFrom = 0) {
+  cancelLiveRequest();
   listeningOccurrence = listeningOccurrenceID();
   document.dispatchEvent?.(new CustomEvent('player:media-opened', { detail: { media, restored: true } }));
   currentMedia = media;
@@ -658,6 +706,7 @@ export function selectMedia(media, index = -1, resumeFrom = 0) {
 // streamUrl must be the server's playback URL (the compat stream when
 // media.transcoded is true).
 export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) {
+  cancelLiveRequest();
   currentMedia = media;
   currentMediaIndex = -1;
   reportProgress = false;
@@ -688,12 +737,13 @@ function showMedia(media, source, thumbnailUrl) {
   currentThumbnailUrl = thumbnailUrl;
   sourceEpoch++;
   osSession?.clear();
-  personal?.setMedia(media);
+  personal?.setMedia(media.live_radio ? null : media);
   sleepTimer?.setMedia(media);
   resetSeekPreview();
   // Whatever was still being prepared belongs to the previous item.
   cancelPendingSource();
   const e = els();
+  e.player?.classList.toggle('live-radio', !!media.live_radio);
   e.btnPrev?.setAttribute('aria-label', media.type === 'audio' ? 'Previous track' : 'Previous');
   e.btnNext?.setAttribute('aria-label', media.type === 'audio' ? 'Next track' : 'Next');
   if (media.type === 'image') {
@@ -704,12 +754,12 @@ function showMedia(media, source, thumbnailUrl) {
     currentSource = source;
     showAudioVideo(e, media, source.url, thumbnailUrl, source.resumeFrom);
   }
-  playbackSpeed?.setMedia(media);
+  playbackSpeed?.setMedia(media.live_radio ? null : media);
   playbackSpeed?.setCasting(isCasting());
   audioVisuals?.setCasting(isCasting());
   audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
-  lyrics?.setMedia(media, source.url);
-  if (!source.library && media.type === 'audio') gapless?.message('Normal streaming · shared or detached playback.');
+  lyrics?.setMedia(media.live_radio ? null : media, source.url);
+  if (!source.library && media.type === 'audio' && !media.live_radio) gapless?.message('Normal streaming · shared or detached playback.');
   updateMinimizedTitle();
   updateMusicIdentity(media, thumbnailUrl);
   publishLocalSession();
@@ -827,6 +877,7 @@ function startSource(m, media, url, resumeFrom) {
 }
 
 function attachSource(m, url, resumeFrom) {
+  if (currentMedia?.live_radio) { m.defaultPlaybackRate = 1; m.playbackRate = 1; }
   m.src = url;
   m.load();
   playbackSpeed?.apply();
@@ -930,6 +981,7 @@ function setPlayerStatus(text) {
 // report an "empty src" error that is not a playback failure.
 function handleElementError(m) {
   if (m !== currentMediaElement() || !m.getAttribute('src')) return;
+  if (currentMedia?.live_radio) { m.pause(); updateUI(false); setPlayerStatus('Station unavailable or offline · press Play to retry.'); return; }
   failPlayback(currentMedia, mediaErrorReason(m.error));
 }
 
@@ -951,6 +1003,7 @@ function failPlayback(media, reason) {
 // System controls are commands, not toggles. Preserve preparation intent and
 // reuse Retry for a failed current source without playing an empty element.
 function playFromSystem() {
+  if (currentMedia?.live_radio) { requestPlay(); return; }
   if (pendingSource) { setPendingPlay(true); return; }
   const m = currentMediaElement();
   if (!m) return;
@@ -972,6 +1025,14 @@ export function currentSleepDeadline() { return sleepTimer?.deadline() ?? null; 
 export function setSleepDeadline(value) { sleepTimer?.restore(value); sleepTimer?.tick(); }
 
 function pauseFromSystem() {
+  cancelLiveRequest();
+  if (currentMedia?.live_radio) {
+    const m = currentMediaElement();
+    m?.pause(); m?.removeAttribute('src'); m?.load();
+    isPlaying = false; updateUI(false);
+    setPlayerStatus('Stopped · Play reconnects live');
+    return;
+  }
   if (pendingSource) setPendingPlay(false);
   currentMediaElement()?.pause();
   isPlaying = false;
@@ -987,6 +1048,12 @@ function publishLocalSession() {
 // requestPlay starts playback of the current item, or remembers the wish
 // while its compat stream is still being prepared.
 export function requestPlay() {
+  if (currentMedia?.live_radio) {
+    const m = currentMediaElement();
+    if (!m || !currentSource) return;
+    if (!m.getAttribute('src') || m.error || m.ended) attachSource(m, currentSource.url, 0);
+    playElement(m); return;
+  }
   audioVisuals?.prepare();
   if (pendingSource) {
     setPendingPlay(true);
@@ -1054,6 +1121,7 @@ function returnToStreaming(reason) {
 }
 
 function seekWhenMetadataReady(m, seconds) {
+  if (currentMedia?.live_radio) return;
   const target = Number(seconds || 0);
   if (!m || !isFinite(target) || target <= 0) return;
   const seek = () => {
@@ -1224,6 +1292,7 @@ function enqueueProgress(id, position, finished = false) {
 }
 
 function triggerPrevious(options = {}) {
+  if (currentMedia?.live_radio) return;
   if (previousHandler) {
     previousHandler(options);
     return;
@@ -1232,6 +1301,7 @@ function triggerPrevious(options = {}) {
 }
 
 function triggerNext(options = {}) {
+  if (currentMedia?.live_radio) return;
   if (nextHandler) {
     nextHandler(options);
     return;
@@ -1240,6 +1310,7 @@ function triggerNext(options = {}) {
 }
 
 function triggerNavigate(delta, options = {}) {
+  if (currentMedia?.live_radio) return;
   const step = Number(delta || 0);
   if (!step) return;
   if (step < 0 && previousHandler && step === -1) {
@@ -1259,6 +1330,7 @@ function triggerNavigate(delta, options = {}) {
 }
 
 export function playPrevious() {
+  if (currentMedia?.live_radio) return;
   const list = state.media;
   if (!list.length) return;
   const currentIdx = currentMediaListIndex();
@@ -1267,6 +1339,7 @@ export function playPrevious() {
 }
 
 export function playNext() {
+  if (currentMedia?.live_radio) return;
   const list = state.media;
   if (!list.length) return;
   const currentIdx = currentMediaListIndex();

@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v70';
+const CACHE = 'kiss-v71';
 const ASSETS = [
   '/',
   '/index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   '/css/layout.css',
   '/css/components.css',
   '/css/renderer.css',
+  '/css/radio.css',
   '/css/toast.css',
   '/css/player.css',
   '/css/login.css',
@@ -55,6 +56,7 @@ const ASSETS = [
   '/js/streamSource.js',
   '/js/cast.js',
   '/js/renderer.js',
+  '/js/radio.js',
   '/js/imageViewer.js',
   '/js/detach.js',
   '/js/detachPopup.js',

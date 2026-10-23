@@ -29,7 +29,7 @@ export function createMediaSession({ session, Metadata, getElement, ownsSource, 
     session.playbackState = element && !element.paused && !element.ended && !element.error ? 'playing' : 'paused';
     const duration = element?.duration;
     try {
-      if (Number.isFinite(duration) && duration > 0) session.setPositionState?.({ duration,
+      if (!media.live_radio && Number.isFinite(duration) && duration > 0) session.setPositionState?.({ duration,
         playbackRate: element.playbackRate || 1, position: Math.max(0, Math.min(duration, element.currentTime || 0)) });
       else session.setPositionState?.();
     } catch (_) { /* An unsupported position API must not interrupt audio. */ }
@@ -41,7 +41,7 @@ export function createMediaSession({ session, Metadata, getElement, ownsSource, 
     publish();
     const guarded = callback => details => { if (current === epoch && ownsSource()) callback(details); };
     const seek = delta => { const el = getElement(); if (el) el.currentTime = Math.max(0, Math.min(el.duration || Infinity, el.currentTime + delta)); };
-    const actions = { play, pause, previoustrack: previous, nexttrack: next,
+    const actions = media.live_radio ? { play, pause } : { play, pause, previoustrack: previous, nexttrack: next,
       seekbackward: d => seek(-(d.seekOffset || 15)), seekforward: d => seek(d.seekOffset || 15),
       seekto: d => { const el = getElement(); if (el && Number.isFinite(d.seekTime)) el.currentTime = Math.max(0, Math.min(el.duration || Infinity, d.seekTime)); } };
     for (const [action, callback] of Object.entries(actions)) {
