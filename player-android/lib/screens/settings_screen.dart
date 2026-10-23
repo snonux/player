@@ -1,3 +1,4 @@
+import '../widgets/navigation_settings.dart';
 import '../widgets/server_endpoint_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -322,6 +323,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                 const _ThemeToggle(),
                 const PresentationSettings(),
+                const SizedBox(height: 24),
+                const NavigationSettings(),
 
                 const SizedBox(height: 32),
                 const Divider(),

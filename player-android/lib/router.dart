@@ -1,3 +1,4 @@
+import 'providers/navigation_preferences_provider.dart';
 import 'screens/music_search_screen.dart';
 import 'screens/music_playlists_screen.dart';
 import 'screens/music_artists_screen.dart';
@@ -65,6 +66,10 @@ final routerProvider = Provider<GoRouter>((ref) {
   final notifier = _RouterRefreshNotifier(ref.container);
   ref.onDispose(notifier.dispose);
 
+  var coldEntry =
+      WidgetsBinding.instance.platformDispatcher.defaultRouteName == "/";
+  final initialCollection = ValueNotifier<MusicCollection?>(null);
+  ref.onDispose(initialCollection.dispose);
   return GoRouter(
     // Share the navigator key with DioClient so imperative 401 redirects
     // work through go_router rather than the raw Navigator.
@@ -88,7 +93,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           state.fullPath == AppRoutes.localPlayer ||
           location == AppRoutes.offlineDownloads ||
           state.fullPath == AppRoutes.offlinePlayer;
-      if (isShareViewerRoute || isPublicSetupRoute || isLocalRoute) return null;
+      if (isShareViewerRoute || isPublicSetupRoute || isLocalRoute) {
+        coldEntry = false;
+        return null;
+      }
 
       final container = ProviderScope.containerOf(context, listen: false);
       final settings = container.read(settingsProvider).valueOrNull;
@@ -148,6 +156,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         return isFirstRun ? AppRoutes.bootstrap : AppRoutes.login;
       }
 
+      if (auth.isAuthenticated && coldEntry) {
+        if (location != AppRoutes.home ||
+            state.uri.hasQuery ||
+            state.uri.hasFragment) {
+          coldEntry = false;
+        } else {
+          final navigation = container.read(navigationPreferencesProvider);
+          if (navigation.isLoading) return null;
+          coldEntry = false;
+          initialCollection.value = navigation.valueOrNull?.initialCollection;
+        }
+      }
       // No redirect needed.
       return null;
     },
@@ -185,7 +205,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.home,
         // HomeScreen now hosts SetsListScreen — the real media-library view.
-        builder: (context, state) => const SetsListScreen(),
+        builder: (context, state) =>
+            SetsListScreen(initialCollection: initialCollection),
       ),
       GoRoute(
         // Continue-watching screen — lists all in-progress media items.
@@ -589,6 +610,9 @@ String sharePlaybackUrl({
 /// re-runs its redirect callback whenever auth state or first-run status settles.
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(this._container) {
+    _navigationSubscription =
+        _container.listen<AsyncValue<NavigationPreferences>>(
+            navigationPreferencesProvider, (_, __) => notifyListeners());
     _settingsSubscription = _container.listen<AsyncValue<AppSettings>>(
       settingsProvider,
       (previous, next) {
@@ -626,6 +650,8 @@ class _RouterRefreshNotifier extends ChangeNotifier {
   }
 
   final ProviderContainer _container;
+  ProviderSubscription<AsyncValue<NavigationPreferences>>?
+      _navigationSubscription;
   ProviderSubscription<AsyncValue<AppSettings>>? _settingsSubscription;
   ProviderSubscription<AsyncValue<AuthState>>? _authSubscription;
   ProviderSubscription<AsyncValue<bool>>? _firstRunSubscription;
@@ -652,6 +678,7 @@ class _RouterRefreshNotifier extends ChangeNotifier {
 
   @override
   void dispose() {
+    _navigationSubscription?.close();
     _settingsSubscription?.close();
     _authSubscription?.close();
     _firstRunSubscription?.close();

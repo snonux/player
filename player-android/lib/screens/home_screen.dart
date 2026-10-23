@@ -1,3 +1,5 @@
+import '../providers/navigation_preferences_provider.dart';
+import '../widgets/navigation_settings.dart';
 import '../widgets/music_mini_player.dart';
 import '../widgets/music_queue_sheet.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -38,13 +40,44 @@ typedef _CoverHeaders = Map<String, String>;
 ///     errors using top-level helper functions (not instance methods), keeping
 ///     the error-mapping logic testable and decoupled from the widget.
 class SetsListScreen extends ConsumerStatefulWidget {
-  const SetsListScreen({super.key});
+  const SetsListScreen({super.key, this.initialCollection});
+  final ValueNotifier<MusicCollection?>? initialCollection;
 
   @override
   ConsumerState<SetsListScreen> createState() => _SetsListScreenState();
 }
 
 class _SetsListScreenState extends ConsumerState<SetsListScreen> {
+  bool _landingOpened = false;
+  void _openInitialCollection() {
+    final collection = widget.initialCollection?.value;
+    if (_landingOpened ||
+        collection == null ||
+        collection == MusicCollection.library) {
+      return;
+    }
+    _landingOpened = true;
+    widget.initialCollection?.value = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && GoRouterState.of(context).uri.path == AppRoutes.home) {
+        context.push(collection.route);
+      }
+    });
+    // A router refresh can leave its equal route configuration untouched, so
+    // there may be no frame scheduled to deliver this one-shot handoff.
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  @override
+  void didUpdateWidget(covariant SetsListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialCollection != widget.initialCollection) {
+      oldWidget.initialCollection?.removeListener(_openInitialCollection);
+      widget.initialCollection?.addListener(_openInitialCollection);
+    }
+    _openInitialCollection();
+  }
+
   // Nullable: null means "not yet loaded" (loading indicator is shown).
   List<MediaSet>? _sets;
 
@@ -65,12 +98,20 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
   @override
   void initState() {
     super.initState();
+    widget.initialCollection?.addListener(_openInitialCollection);
+    _openInitialCollection();
     // Defer the first load until after the first frame so [ref] is fully bound
     // and any provider overrides in the test environment are applied.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadCoverHeaders();
       if (mounted) await _load();
     });
+  }
+
+  @override
+  void dispose() {
+    widget.initialCollection?.removeListener(_openInitialCollection);
+    super.dispose();
   }
 
   // ---------------------------------------------------------------------------
@@ -134,6 +175,9 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hiddenMusicSections =
+        ref.watch(navigationPreferencesProvider).valueOrNull?.hidden ??
+            const <MusicCollection>{};
     return Scaffold(
       bottomNavigationBar: const MusicMiniPlayer(),
       appBar: _buildAppBar(context),
@@ -151,6 +195,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                   await switchToLocalLibrary(ref, context);
                 },
               ),
+              const AllMusicViews(closeDrawer: true),
               for (final destination in [
                 (
                   Icons.download_outlined,
@@ -176,7 +221,9 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                 (Icons.podcasts, 'Podcasts', AppRoutes.podcasts),
                 (Icons.share_outlined, 'My Shares', AppRoutes.shares),
                 (Icons.settings_outlined, 'Settings', AppRoutes.settings),
-              ])
+              ].where((destination) => !MusicCollection.values.any((section) =>
+                  section.route == destination.$3 &&
+                  hiddenMusicSections.contains(section))))
                 ListTile(
                   leading: Icon(destination.$1),
                   title: Text(destination.$2),

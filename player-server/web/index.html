@@ -63,6 +63,7 @@
     <button id="menu-close" class="icon-btn btn-sm" title="Close">✕</button>
   </div>
   <div class="sidebar-header"><h2>Music</h2></div>
+  <button id="all-music-views" class="btn btn-ghost">All music views</button>
   <button id="music-albums" class="btn btn-ghost">Albums</button>
   <button id="music-playlists" class="btn btn-ghost">Playlists</button>
   <button id="music-artists" class="btn btn-ghost">Artists</button>
@@ -100,6 +101,22 @@
 <div id="settings-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
   <div class="modal">
     <div class="modal-header"><h3 id="settings-title">Settings</h3><div class="spacer"></div><button id="settings-close" class="icon-btn" aria-label="Close settings">✕</button></div>
+    <h4>Navigation</h4>
+    <p class="text-muted text-sm">Saved on this device for all accounts. Hiding shortcuts does not restrict access. Explicit links keep their destination.</p>
+    <div class="appearance-controls">
+      <label>Initial collection <select id="navigation-landing"><option value="library">Library</option><option value="albums">Albums</option><option value="artists">Artists</option><option value="playlists">Playlists</option></select></label>
+      <label><input id="navigation-albums" type="checkbox"> Show Albums shortcut</label>
+      <label><input id="navigation-artists" type="checkbox"> Show Artists shortcut</label>
+      <label><input id="navigation-playlists" type="checkbox"> Show Playlists shortcut</label>
+    </div>
+    <button id="navigation-reset" class="btn btn-ghost">Reset navigation</button>
+    <p id="navigation-status" role="status"></p>
+    <h4>All music views</h4>
+    <div class="appearance-controls">
+      <button id="all-music-albums" class="btn btn-ghost">Open Albums</button>
+      <button id="all-music-artists" class="btn btn-ghost">Open Artists</button>
+      <button id="all-music-playlists" class="btn btn-ghost">Open Playlists</button>
+    </div>
     <h4>Appearance</h4>
     <div class="appearance-controls">
       <label>Theme <select id="appearance-mode"><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select></label>

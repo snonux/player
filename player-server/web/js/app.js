@@ -1,9 +1,10 @@
+import { initNavigationPreferences, readNavigationPreferences, coldLanding } from './navigation-preferences.js';
 import { nextMusicSearch, musicQuery, captureSearchView, restoreSearchView, hasSearchView, forgetSearchView } from './music-search.js';
 import { cancelCollectionSelection } from './collection-actions.js';
 import { queueSelected } from './queue-actions.js';
 import { initQueue, restoreQueue, queueState, cycleQueueRepeat } from './queue.js';
 import { initQueuePanel, isQueueFocused, queueKey, toggleQueue } from './queue-panel.js';
-import { initMusicCatalog, renderMusic, backMusic, openAlbum, openSongAlbum } from './views/music-catalog.js';
+import { initMusicCatalog, renderMusic, backMusic, openAlbums, openAlbum, openSongAlbum } from './views/music-catalog.js';
 import { API } from './api.js';
 import { initKeyboard } from './keyboard.js';
 import { initPictureLayout } from './views/picture-layout.js';
@@ -173,6 +174,14 @@ async function initApp() {
   });
   initSelection();
   initMusicCatalog(loadMedia);
+  let navigatedDuringStartup = false;
+  window.addEventListener('popstate', () => { navigatedDuringStartup = true; }, { once: true });
+  const initialCollection = coldLanding(readNavigationPreferences(), {
+    search: location.search, hash: location.hash,
+    historyNavigation: performance.getEntriesByType('navigation')[0]?.type === 'back_forward',
+  });
+  const openCollection = name => openAlbums('', '', name === 'artists', name === 'playlists');
+  initNavigationPreferences(openCollection);
   document.addEventListener('music:song-info', toggleMediaInfo);
   document.addEventListener('music:open-song-album', e => openSongAlbum(e.detail));
   initSearch({
@@ -280,6 +289,7 @@ async function initApp() {
     await restoreQueue(cfg?.user_id);
     if (queueState().restored) toast('Queue restored, paused. Open Now Playing to resume.', 'info');
     await navigation.restore();
+    if (!navigatedDuringStartup && initialCollection !== 'library' && !location.search && !location.hash) openCollection(initialCollection);
   } catch (err) {
     toast(err.message || 'Error loading sets', 'error');
   }

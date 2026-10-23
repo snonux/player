@@ -1,3 +1,8 @@
+import 'package:player_android/providers/auth_state_provider.dart';
+import 'package:player_android/providers/first_run_provider.dart';
+import 'package:player_android/router.dart' show routerProvider;
+import 'package:player_android/providers/settings_provider.dart';
+import 'package:player_android/providers/navigation_preferences_provider.dart';
 // Widget tests for SetsListScreen (home_screen.dart).
 //
 // Tests cover:
@@ -67,6 +72,11 @@ class _FakeTokenStorage implements TokenStorage {
 class _FakeApiClient extends PlayerApiClient {
   _FakeApiClient() : super(dio: Dio());
 
+  @override
+  Future<List<Map<String, dynamic>>> musicAlbums(
+          {String? artist, int? mediaId}) async =>
+      [];
+
   /// When non-null, [listSets] returns this list.
   List<MediaSet>? setsResult;
 
@@ -93,6 +103,24 @@ class _FakeApiClient extends PlayerApiClient {
     final builder = coverUrlBuilder;
     return builder == null ? '' : builder(setId, folder: folder);
   }
+}
+
+class _DelayedNavigation extends NavigationPreferencesNotifier {
+  final ready = Completer<NavigationPreferences>();
+  @override
+  Future<NavigationPreferences> build() => ready.future;
+}
+
+class _DelayedAuth extends AuthStateNotifier {
+  final ready = Completer<AuthState>();
+  @override
+  Future<AuthState> build() => ready.future;
+}
+
+class _ServerSettings extends SettingsNotifier {
+  @override
+  Future<AppSettings> build() async =>
+      const AppSettings(serverBaseUrl: 'http://test.invalid');
 }
 
 /// [PlayerApiClient] stub that delays [listSets] until [complete] is called.
@@ -195,6 +223,114 @@ void main() {
     expect(client.listSetsCallCount, 2);
     expect(tester.takeException(), isNull);
   });
+  for (final explicit in [false, true]) {
+    testWidgets(
+        'real router delayed auth/preferences ${explicit ? "preserves explicit route" : "opens cold landing once"}',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final navigation = _DelayedNavigation();
+      final auth = _DelayedAuth();
+      final container = ProviderContainer(overrides: [
+        apiClientProvider.overrideWithValue(_FakeApiClient()..setsResult = []),
+        tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
+        credentialMutationQueueProvider.overrideWithValue(
+            CredentialMutationQueue(credentialsEnabled: true)),
+        playerBaseUrlProvider
+            .overrideWithValue(Uri.parse('http://test.invalid')),
+        settingsProvider.overrideWith(_ServerSettings.new),
+        navigationPreferencesProvider.overrideWith(() => navigation),
+        authStateProvider.overrideWith(() => auth),
+        firstRunProvider.overrideWith((_) async => false),
+      ]);
+      final router = container.read(routerProvider);
+      addTearDown(() {
+        router.dispose();
+        container.dispose();
+      });
+      await tester.pumpWidget(UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(routerConfig: router)));
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, AppRoutes.home);
+      if (explicit) {
+        router.go(AppRoutes.musicAlbums);
+        await tester.pumpAndSettle();
+      }
+      auth.ready.complete(const AuthState.authenticated());
+      await tester.pumpAndSettle();
+      if (!explicit) expect(router.state.uri.path, AppRoutes.home);
+      navigation.ready.complete(NavigationPreferences(
+          landing:
+              explicit ? MusicCollection.playlists : MusicCollection.albums));
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, AppRoutes.musicAlbums);
+      expect(find.text('Music · Albums'), findsOneWidget);
+      if (!explicit) {
+        await tester.tap(find.byTooltip('Back'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, AppRoutes.home);
+        container.invalidate(firstRunProvider);
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, AppRoutes.home);
+        router.go(AppRoutes.musicAlbums);
+        await tester.pumpAndSettle();
+        router.go(AppRoutes.home);
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, AppRoutes.home);
+        expect(find.text('Music · Albums'), findsNothing);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets(
+      'initial music entry retains Library and hidden catalogs stay reachable',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'player_navigation':
+          '{"landing":"library","hidden":["albums","artists","playlists"]}'
+    });
+    final client = _FakeApiClient()..setsResult = [];
+    var builds = 0;
+    final router = GoRouter(initialLocation: AppRoutes.home, routes: [
+      GoRoute(
+          path: AppRoutes.home,
+          builder: (_, __) => SetsListScreen(
+              initialCollection: builds++ == 0
+                  ? ValueNotifier<MusicCollection?>(MusicCollection.albums)
+                  : null)),
+      GoRoute(
+          path: AppRoutes.musicAlbums,
+          builder: (_, __) => Scaffold(
+              appBar: AppBar(title: const Text('Albums destination')))),
+    ]);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(ProviderScope(overrides: [
+      apiClientProvider.overrideWithValue(client),
+      tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
+      credentialMutationQueueProvider
+          .overrideWithValue(CredentialMutationQueue(credentialsEnabled: true)),
+      playerBaseUrlProvider.overrideWithValue(Uri.parse('http://test.invalid')),
+    ], child: MaterialApp.router(routerConfig: router)));
+    await tester.pumpAndSettle();
+    expect(find.text('Albums destination'), findsOneWidget);
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(router.state.uri.path, AppRoutes.home);
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('Music · Albums'), findsNothing);
+    await tester.tap(find.text('All music views'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open Albums'));
+    await tester.pumpAndSettle();
+    expect(find.text('Albums destination'), findsOneWidget);
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(router.state.uri.path, AppRoutes.home);
+    expect(find.byType(Drawer), findsNothing);
+  });
+
   testWidgets('Library menu reaches each feature and Back returns to Library',
       (tester) async {
     final client = _FakeApiClient()..setsResult = [];
