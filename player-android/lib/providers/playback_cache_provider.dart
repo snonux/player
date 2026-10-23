@@ -35,6 +35,37 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
   final generation = mutations.generation;
   final preparer = ref.read(playbackPreparerProvider);
   final handler = ref.read(audioHandlerProvider);
+  // Decoder preparation must not cancel current downloads, change cache
+  // protection, or publish a different playing URI. ExoPlayer will buffer
+  // this authenticated source itself as the second concatenating child.
+  handler.prepareGaplessSource = (request, current) async {
+    bool wanted() =>
+        current() &&
+        generation == mutations.generation &&
+        mutations.credentialsEnabled &&
+        request is ServerPlaybackRequest &&
+        mutations.credentialOrigin == request.serverOrigin;
+    if (!wanted() || request is! ServerPlaybackRequest) return null;
+    final canonical = await currentServerAudioUri(request, client);
+    if (!wanted()) return null;
+    final headers = await accountRequestHeaders(
+        uri: canonical,
+        baseUrl: Uri.parse(request.serverOrigin),
+        storage: storage,
+        cookieJar: jar,
+        mutations: mutations);
+    if (!wanted()) return null;
+    if (isCompatStreamUrl(canonical)) {
+      final ready = await preparer
+          .prepare(canonical, probe: client.probePlayback, stillWanted: wanted)
+          .ready;
+      if (!ready || !wanted()) return null;
+    }
+    final transport = await router.mediaUri(canonical);
+    if (!wanted()) return null;
+    return AudioSource.uri(transport,
+        headers: headers.isEmpty ? null : headers);
+  };
   final subscription = handler.player.sequenceStateStream.listen((state) {
     final source = state?.currentSource;
     cache.playingUri(source is UriAudioSource ? source.uri : null);

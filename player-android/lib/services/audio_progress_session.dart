@@ -29,11 +29,15 @@ class AudioProgressSession {
   bool _closed = false;
 
   /// A regular tick skips paused audio; transitions force one final sample.
-  Future<void> record({bool force = false, bool completed = false}) {
+  Future<void> record(
+      {bool force = false,
+      bool completed = false,
+      Duration? positionOverride,
+      Duration? durationOverride}) {
     if (_closed || (!force && !playing())) return _pending;
     if (completed) _completionReceived = true;
-    final elapsed = position();
-    final total = duration();
+    final elapsed = positionOverride ?? position();
+    final total = durationOverride ?? duration();
     final elapsedMs = elapsed.inMilliseconds;
     if (elapsedMs < 0) return _pending;
 
@@ -65,11 +69,16 @@ class AudioProgressSession {
   }
 
   /// Cancels future ticks and saves the final position before source changes.
-  Future<void> close() async {
+  Future<void> close({bool completed = false, Duration? finalPosition}) async {
     if (_closed) return _pending;
     _timer.cancel();
-    await record(force: true);
+    final pending = record(
+        force: true,
+        completed: completed,
+        positionOverride: finalPosition,
+        durationOverride: finalPosition);
     _closed = true;
+    await pending;
     await _pending;
   }
 }

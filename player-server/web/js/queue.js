@@ -1,4 +1,5 @@
 import { cachedMediaDetail } from './playback-cache.js';
+import { preparedQueuePlan } from './queue-prepared.js';
 import { SavedQueueSync, savedQueueRequest } from './queue-sync.js';
 import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { queueStorageKey, readQueueSnapshot } from './queue-storage.js';
@@ -176,6 +177,23 @@ export function queueUndoToken() { return undo; }
 export function queueState() {
   return { entries: entries.map(entry => ({ ...entry, upNext: nextIDs.has(entry.id) })), index, label, active: activeID !== null && String(currentMediaId()) === String(activeID), loading: loading || albumLoading, repeat, shuffle, shuffleMode, shuffleEligible: eligibleShuffleCount(), canUndo: !!undo, status, restored, restoreError, position: positionEntry === entries[index]?.id ? savedPosition : 0 };
 }
+// Prepared playback is tied to queue occurrences, not media IDs (duplicates
+// are legal), account scope, order and the active source generation.
+export function preparedQueueNext() {
+  if (!queueState().active || loading || restoreError || !entries[index]) return null;
+  return preparedQueuePlan({ entries, index, scope: storageKey, revision, repeat });
+}
+export function commitPreparedQueueNext(token) {
+  const next = preparedQueueNext();
+  if (!next || next.token !== token) return false;
+  const target = next.target;
+  index = target; activeID = entries[index].media.id;
+  savedPosition = 0; positionEntry = entries[index].id;
+  nextIDs = new Set(entries.slice(index + 1).filter(entry => nextIDs.has(entry.id)).map(entry => entry.id));
+  // The playback owner updates its identity before publishing queue changes,
+  // so persistence cannot save the old transport's position under the new ID.
+  return { media: entries[index].media, index, publish: notify };
+}
 export function deactivateQueue({ keepNext = false } = {}) {
   capturePosition();
   beginPlaybackIntent();
@@ -186,6 +204,7 @@ export function deactivateQueue({ keepNext = false } = {}) {
 export function initQueue() {
   const audio = document.getElementById('media-audio');
   for (const event of ['pause', 'seeked']) audio?.addEventListener(event, () => { capturePosition(); saveQueue(); });
+  document.addEventListener('player:position', () => { capturePosition(); saveQueue(); });
   window.setInterval?.(() => { if (queueState().active) saveQueue(); }, 1000);
   window.addEventListener('online', () => void portableSync.sync());
   window.addEventListener('pagehide', () => { saveQueue(); void portableSync.sync(); });

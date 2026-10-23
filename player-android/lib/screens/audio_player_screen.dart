@@ -1106,6 +1106,26 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                             color: Colors.white)),
                   ]),
                 _buildSpeedSelector(),
+                StreamBuilder<void>(
+                    stream: handler.queueChanges,
+                    builder: (context, _) => Column(children: [
+                          SwitchListTile.adaptive(
+                              title: const Text('Gapless music queue',
+                                  style: TextStyle(color: Colors.white)),
+                              subtitle: Text(handler.gaplessStatus,
+                                  style:
+                                      const TextStyle(color: Colors.white70)),
+                              value: handler.gaplessEnabled,
+                              onChanged: handler.setGaplessEnabled),
+                          const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 16),
+                              child: Text(
+                                  'Prepares the next song in the native decoder. '
+                                  'Applies when you next open a Music queue song. '
+                                  'Spoken audio, resume items and remote playback '
+                                  'use normal advance.',
+                                  style: TextStyle(color: Colors.white70))),
+                        ])),
                 TextButton.icon(
                   onPressed: () => showLoudnessSheet(context, handler.loudness),
                   icon: const Icon(Icons.volume_up),

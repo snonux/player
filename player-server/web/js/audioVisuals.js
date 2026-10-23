@@ -13,7 +13,7 @@ export function isAudiobook(media, setName = '') {
     /(^|[^a-z])audio[\s_-]*books?([^a-z]|$)/i.test(`${media?.file_name || ''} ${media?.rel_path || ''} ${setName}`);
 }
 
-export function initAudioVisuals({ audio, player, coverArt }) {
+export function initAudioVisuals({ audio, nativeAudio = audio, player, coverArt }) {
   const stage = player?.querySelector('.stage');
   const controls = player?.querySelector('.controls');
   if (!audio || !stage || !controls || !globalThis.MutationObserver) return null;
@@ -61,6 +61,7 @@ export function initAudioVisuals({ audio, player, coverArt }) {
   let remoteAlbumContext = null;
   let filters = null;
   let casting = false;
+  let decodedWanted = false;
   const equalizer = createEqualizerControls(controls, () => {
     updateGain(); prepare(); sync(); document.dispatchEvent(new Event('loudness:changed'));
   });
@@ -90,7 +91,7 @@ export function initAudioVisuals({ audio, player, coverArt }) {
       unavailable ? 'Loudness processing unavailable in this browser.' : failure ||
       (context?.state === 'running' && routed ? result.message : 'Start playback to allow loudness processing.'));
   }
-  function processingWanted() { return wanted() || (media?.type === 'audio' && (loudness.settings.mode !== 'off' || equalizer.settings.enabled) && !unavailable && !failure); }
+  function processingWanted() { return decodedWanted || wanted() || (media?.type === 'audio' && (loudness.settings.mode !== 'off' || equalizer.settings.enabled) && !unavailable && !failure); }
   function wanted() {
     return media?.type === 'audio' && !book && mode !== 'off' && !unavailable && !failure;
   }
@@ -173,7 +174,7 @@ export function initAudioVisuals({ audio, player, coverArt }) {
         updateGain();
         if (!routed) {
           gainNode.connect(context.destination);
-          source ||= context.createMediaElementSource(audio);
+          source ||= context.createMediaElementSource(nativeAudio);
           filters ||= frequencies.map(frequency => {
             const filter = context.createBiquadFilter();
             filter.type = 'peaking'; filter.frequency.value = frequency; filter.Q.value = 0.7;
@@ -272,6 +273,23 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     frame = requestAnimationFrame(draw);
   }
   return {
+    async decodedGraph() {
+      decodedWanted = true;
+      prepare();
+      if (!context) throw Error('Web Audio is unavailable or blocked');
+      await context.resume(); connectGraph();
+      if (context.state !== 'running' || !filters) throw Error('Audio processing is blocked');
+      return { context, input: filters[0] };
+    },
+    scheduleTrack(next, when) {
+      const result = replayGain(next?.music, loudness.settings, albumContext());
+      gainNode?.gain.setValueAtTime(result.multiplier, when);
+    },
+    resetScheduledTrack() {
+      gainNode?.gain.cancelScheduledValues(context.currentTime);
+      updateGain();
+    },
+    releaseDecodedGraph() { decodedWanted = false; gainNode?.gain.cancelScheduledValues(context.currentTime); updateGain(); },
     setMedia(next, thumbnailUrl = '', setName = '') {
       stop();
       media = next;

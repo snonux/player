@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'equalizer.dart';
 import 'audio_progress_session.dart';
@@ -14,6 +15,8 @@ import 'playback_session_coordinator.dart';
 import 'playback_request.dart';
 import 'replay_gain.dart';
 import 'loudness_effect.dart';
+
+part 'audio_handler_gapless.dart';
 
 // ---------------------------------------------------------------------------
 // PlayerAudioHandler
@@ -47,6 +50,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         loudness = ReplayGainController(player, loudnessEnhancer),
         equalizer = EqualizerController(player) {
     unawaited(equalizer.restore());
+    _restoreGapless();
+    _player.currentIndexStream.listen(_onGaplessIndex, onError: (Object _) {});
     // Propagate just_audio's playback state into the audio_service stream so
     // the notification, lock screen, and Wear OS clients see live updates.
     // just_audio adds a failure (for example `PlatformException(0, Source
@@ -81,6 +86,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player;
   final ReplayGainController loudness;
   final EqualizerController equalizer;
+  final _gapless = _NativeGaplessState();
+  Future<AudioSource?> Function(PlaybackRequest, bool Function())?
+      prepareGaplessSource;
+  bool get gaplessEnabled => _gapless.enabled;
+  String get gaplessStatus => _gapless.status;
 
   Future<void> _refreshLoudness() => loudness.setTrack(_metadataRequest?.music,
       albumContext: _queueActive &&
@@ -231,6 +241,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     unawaited(_refreshLoudness());
     persistMusicQueue?.call();
     _queueChanges.add(null);
+    _refreshGapless();
   }
 
   void queueRestoreStatus(String message,
@@ -875,6 +886,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _failedMusicDelta = delta;
     if (delta != 0) _retryMusicPosition = null;
     _movingTrack = true;
+    _gapless.invalidate();
+    final pauseForTransition =
+        _gapless.playlist != null ? _player.pause() : null;
     final generation = ++_sourceGeneration;
     if (!(!_musicWrap &&
         !queueWrap &&
@@ -888,7 +902,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     try {
       await endProgress();
       if (!current()) return;
-      await _player.pause();
+      await (pauseForTransition ?? _player.pause());
       _publishMusic(loading: true);
       if (!_musicWrap &&
           !queueWrap &&
@@ -946,7 +960,17 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       activateSourceSession(generation);
       _publishMusic();
       _sourceSleepIntent = sleepIntent;
-      unawaited(play(automatic: true));
+      // Loading already applied this track's gain. Start the decoder directly:
+      // handler.play performs another asynchronous gain pass, whereas this
+      // transition must establish the playing state before returning. The
+      // native play Future lasts until pause/end and must remain unawaited.
+      sleepTimer.check();
+      if (current() &&
+          _canControlSource &&
+          sleepTimer.allowsPlayback(sleepIntent)) {
+        ++_completionCycle;
+        unawaited(_player.play().catchError(_onPlaybackError));
+      }
     } catch (error) {
       if (current()) {
         _controlsEnabled = true;
@@ -987,6 +1011,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Invalidates pending source work from the previous audio session.
   int beginSourceSession({bool Function()? ownsSource, int? sleepIntent}) {
+    _gapless.invalidate();
+    _gapless.playlist = null;
+    _gapless.transportIntent++;
+    _gapless.status = _gapless.enabled
+        ? 'Normal advance · open a Music queue for gapless.'
+        : 'Gapless off.';
     _sourceSleepIntent = sleepIntent ?? sleepTimer.beginPlaybackIntent();
     clearMediaItem();
     ++_queueRecoveryGeneration;
@@ -1017,6 +1047,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       return false;
     }
     _controlsEnabled = true;
+    _refreshGapless();
     return true;
   }
 
@@ -1035,7 +1066,15 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         if (generation != _sourceGeneration) return;
         await _refreshLoudness();
         if (generation != _sourceGeneration) return;
-        await _player.setAudioSource(source);
+        _gapless.invalidate();
+        final playlist = _gapless.enabled
+            ? ConcatenatingAudioSource(
+                children: [source], useLazyPreparation: false)
+            : null;
+        _gapless.playlist = playlist;
+        _gapless.currentIndex = 0;
+        _gapless.children = [null];
+        await _player.setAudioSource(playlist ?? source);
       });
 
   /// A delayed seek from an old screen cannot seek a replacement source.
@@ -1098,6 +1137,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// do not await the outcome, so a thrown error would go unhandled.
   @override
   Future<void> play({bool automatic = false}) async {
+    _gapless.transportIntent++;
     sleepTimer.check();
     final sleepIntent =
         automatic ? _sourceSleepIntent : sleepTimer.beginPlaybackIntent();
@@ -1136,6 +1176,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> pause() async {
+    _gapless.transportIntent++;
     await _player.pause();
     await _progress?.record(force: true);
     if (_queueActive && _queueIndex >= 0) {
@@ -1147,6 +1188,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
+    _gapless.invalidate();
+    _gapless.playlist = null;
+    _gapless.transportIntent++;
     clearMediaItem();
     _deactivateQueue();
     unawaited(_musicPositions?.cancel());

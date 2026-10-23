@@ -1,4 +1,7 @@
 import { announceSong, suspendSongAnnouncement } from './song-notifications.js';
+import { createAudioTransport } from './audio-transport.js';
+import { initGapless } from './gapless.js';
+import { queueState, preparedQueueNext, commitPreparedQueueNext } from './queue.js';
 import { playbackCacheSource, playbackCacheEnabled, cacheSong, releasePlaybackCache } from './playback-cache.js';
 import { initStreamQuality } from './stream-quality.js';
 import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
@@ -88,10 +91,12 @@ let playbackSpeed = null;
 let sleepTimer = null;
 let currentThumbnailUrl = '';
 let pausedReturnHint = false;
+let audioTransport = null;
+let gapless = null;
 
 function currentMediaElement() {
   const e = els();
-  if (currentMedia?.type === 'audio') return e.audio;
+  if (currentMedia?.type === 'audio') return audioTransport || e.audio;
   if (currentMedia?.type === 'video') return e.video;
   return null;
 }
@@ -150,18 +155,22 @@ export function initPlayer(options = {}) {
     getMedia: () => currentMedia, getElement: currentMediaElement, available: () => !isDetached(),
   });
 
-  audioVisuals = initAudioVisuals(e);
+  audioTransport = createAudioTransport(e.audio);
+  audioVisuals = initAudioVisuals({ ...e, audio: audioTransport, nativeAudio: e.audio });
+  gapless = initGapless({ audio: audioTransport, player: e.player, graph: () => audioVisuals,
+    next: preparedQueueNext, available: () => queueState().active && !isDetached() && !isCasting() && reportProgress,
+    boundary: adoptGaplessBoundary, fallback: returnToStreaming });
  initStreamQuality(e.player);
-  lyrics = initLyrics({ ...e, getPosition: () => isCasting() ? castPosition() : e.audio.currentTime, onSeek: seconds => {
+  lyrics = initLyrics({ ...e, audio: audioTransport, getPosition: () => isCasting() ? castPosition() : audioTransport.currentTime, onSeek: seconds => {
     if (isCasting()) {
       const duration = castDuration() || effectiveDuration();
       if (!Number.isFinite(seconds) || seconds < 0 || !Number.isFinite(duration) || duration <= 0 || seconds > duration) return false;
       castSeek(seconds);
       return true;
     }
-    return !isDetached() && seekLyric(e.audio, seconds);
+    return !isDetached() && seekLyric(audioTransport, seconds);
   } });
-  playbackSpeed = initPlaybackSpeed({ ...e, ownsSource: () => !isDetached(), remoteStep: delta => {
+  playbackSpeed = initPlaybackSpeed({ ...e, audio: audioTransport, ownsSource: () => !isDetached(), remoteStep: delta => {
     postToDetach({ type: 'detach-command', action: 'speed-step', delta }); return true;
   } });
   sleepTimer = initSleepTimer({ player: e.player, ownsSource: () => !isDetached(), expire: expireSleepTimer });
@@ -182,7 +191,11 @@ export function initPlayer(options = {}) {
     loadMedia,
     localPlaybackState,
     cancelPendingSource,
-    releaseLocalSession: () => osSession?.clear(),
+    releaseLocalSession: () => {
+      osSession?.clear(); audioTransport?.pause(); gapless?.reset();
+      audioTransport?.use(null); audioVisuals?.releaseDecodedGraph();
+      gapless?.message('Normal streaming · detached playback.');
+    },
     onPausedReattach: showPausedReturnHint,
     requestPlay,
     setPlaybackSpeed,
@@ -197,7 +210,7 @@ export function initPlayer(options = {}) {
     if (isDetached()) postToDetach({ type: 'detach-loudness-context', albumContext: currentPlaybackLoudness()?.albumContext === true });
   });
   bindVolume(e);
-  [e.video, e.audio].forEach((m) => {
+  [e.video, audioTransport].forEach((m) => {
     bindMediaEvents(e, m);
     setupMediaDebug(m);
   });
@@ -243,6 +256,7 @@ function bindCast(e) {
     },
     onRemoteEnded: () => triggerNext({ forcePlay: true, completed: true }),
     onCastStarted: (device) => {
+      returnToStreaming('Normal streaming · casting uses the receiver.');
       playbackSpeed?.setCasting(true);
       audioVisuals?.setCasting(true);
       updateUI(true);
@@ -297,8 +311,10 @@ function bindVolume(e) {
     const v = parseFloat(e.volume.value);
     e.video.volume = v;
     e.audio.volume = v;
+    if (audioTransport?.decoded) audioTransport.volume = v;
     e.video.muted = v === 0;
     e.audio.muted = v === 0;
+    if (audioTransport?.decoded) audioTransport.muted = v === 0;
     updateMuteIcon();
   });
 }
@@ -338,6 +354,7 @@ function bindMediaEvents(e, m) {
     }
   });
   m.addEventListener('seeking', () => { sourceEpoch++; });
+  for (const event of ['pause', 'seeked']) m.addEventListener(event, () => document.dispatchEvent(new Event('player:position')));
   m.addEventListener('play', () => { sourceEpoch++; completingEpoch = null; updateUI(true); isPlaying = true; startProgressTimer(); });
   m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
   m.addEventListener('playing', () => {
@@ -544,6 +561,7 @@ export function stopAndClose() {
   cancelPendingSource();
   const m = currentMediaElement();
   if (m) m.pause();
+  gapless?.reset(); audioTransport?.use(null); audioVisuals?.releaseDecodedGraph();
   if (currentMedia?.type === 'image') {
     stopSlideshow();
     resetImageZoom();
@@ -656,6 +674,9 @@ function loadMedia(media, resumeFrom = 0) {
 // library marks session-authenticated library playback in the main window
 // (as opposed to share and popup URLs); see finishPendingSource.
 function showMedia(media, source, thumbnailUrl) {
+  gapless?.reset();
+  audioTransport?.use(null);
+  audioVisuals?.releaseDecodedGraph();
   suspendSongAnnouncement();
   releasePlaybackCache();
   clearPausedReturnHint();
@@ -683,6 +704,7 @@ function showMedia(media, source, thumbnailUrl) {
   audioVisuals?.setCasting(isCasting());
   audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
   lyrics?.setMedia(media, source.url);
+  if (!source.library && media.type === 'audio') gapless?.message('Normal streaming · shared or detached playback.');
   updateMinimizedTitle();
   updateMusicIdentity(media, thumbnailUrl);
   publishLocalSession();
@@ -758,7 +780,8 @@ function showCoverArt(e, thumbnailUrl) {
 // rendition, so a 503 never reaches the element as a bogus decode error.
 function startSource(m, media, url, resumeFrom) {
   const useCache = currentSource?.library && playbackCacheEnabled(media);
-  if (!useCache && !/\/compat(?:\?|$)/.test(url)) {
+  const tryGapless = m === els().audio && currentSource?.library && gapless?.wants(media);
+  if (!tryGapless && !useCache && !/\/compat(?:\?|$)/.test(url)) {
     attachSource(m, url, resumeFrom);
     return;
   }
@@ -769,14 +792,21 @@ function startSource(m, media, url, resumeFrom) {
   const pending = { controller: new AbortController(), autoplay: false, announced: false };
   pendingSource = pending;
   setPlayerStatus(preparingText(media, ''));
-  if (!useCache) {
-    waitForCompatStream(url, {
-      signal: pending.controller.signal,
-      onPreparing: status => announcePreparing(pending, media, status),
-    }).then(result => finishPendingSource(pending, m, media, url, resumeFrom, result));
-    return;
-  }
   (async () => {
+    if (tryGapless) {
+      const engine = await gapless.prepare(media, url, resumeFrom, pending.controller.signal);
+      if (pendingSource !== pending || pending.controller.signal.aborted) { engine?.dispose(); return; }
+      if (engine) {
+        pendingSource = null;
+        audioTransport.use(engine);
+        setPlayerStatus('');
+        audioTransport.dispatchEvent(new Event('loadedmetadata'));
+        void gapless.refresh();
+        if (pending.autoplay) playElement(audioTransport);
+        return;
+      }
+      audioVisuals?.releaseDecodedGraph();
+    }
     let selected = url;
     if (useCache) selected = await playbackCacheSource(media, url, pending.controller.signal);
     const result = /\/compat(?:\?|$)/.test(selected)
@@ -982,6 +1012,36 @@ function playElement(m) {
     // click; show the play prompt instead of a pause button that lies.
     if (err?.name === 'NotAllowedError') updateUI(false);
   });
+}
+
+// A PCM successor is already scheduled on the audio clock. Update identity
+// without pausing/reloading, and complete only the outgoing item's progress.
+function adoptGaplessBoundary(token, media, outgoingDuration) {
+  const result = commitPreparedQueueNext(token);
+  if (!result || !currentMedia || isDetached() || isCasting()) return false;
+  enqueueProgress(currentMedia.id, outgoingDuration, true);
+  currentMedia = result.media; currentMediaIndex = result.index;
+  currentSource = { url: mediaPlaybackUrl(media), resumeFrom: 0, library: true };
+  currentThumbnailUrl = media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
+  sourceEpoch++; completingEpoch = null;
+  personal?.setMedia(media); sleepTimer?.setMedia(media);
+  audioVisuals?.setMedia(media, currentThumbnailUrl, state.sets.find(set => set.id === media.set_id)?.name || '');
+  lyrics?.setMedia(media, currentSource.url);
+  showCoverArt(els(), currentThumbnailUrl);
+  updateMusicIdentity(media, currentThumbnailUrl); updateMinimizedTitle(); highlightPlayingCard();
+  publishLocalSession(); result.publish();
+  return true;
+}
+
+function returnToStreaming(reason) {
+  const engine = audioTransport?.decoded;
+  if (!engine || !currentSource) { gapless?.message(reason); return; }
+  engine.promote();
+  const position = engine.currentTime, playing = !engine.paused;
+  gapless?.reset(); audioTransport.use(null); audioVisuals?.releaseDecodedGraph();
+  attachSource(els().audio, currentSource.url, position);
+  gapless?.message(reason);
+  if (playing) playElement(audioTransport);
 }
 
 function seekWhenMetadataReady(m, seconds) {
