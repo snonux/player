@@ -7,6 +7,7 @@ import { state, setMedia } from './state.js';
 import { escapeHtml, fmtDur, toast } from './utils.js';
 import { setEpisodeCompleted } from './podcast-episode-state.js';
 import { clearSelection, selectByElement } from './selection.js';
+import { dismissSidebarAfterNav } from './views/help.js';
 
 // episodePlayableMedia builds a state.media slot for playMediaById /
 // playSelected. Subscription views clear the browse list, so Play must put
@@ -87,6 +88,7 @@ function openPodcastView(feedKey) {
   state.folderPath = '';
   state.mediaPage = 0;
   updatePodcastSidebarUI();
+  dismissSidebarAfterNav();
   loadMediaCallback();
 }
 

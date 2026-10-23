@@ -15,6 +15,7 @@ import { initPlaylists, renderPlaylists } from './music-playlists.js';
 import { songActionButtons, bindSongActions, openSongActions, selectionActions } from '../queue-actions.js';
 import { cancelPendingSearch } from '../search.js';
 import { updateSetRowsUI } from './sets.js';
+import { dismissSidebarAfterNav } from './help.js';
 import { API } from '../api.js';
 import { state } from '../state.js';
 import { escapeHtml as esc, fmtDur, toast } from '../utils.js';
@@ -57,8 +58,7 @@ export function openAlbums(artist = '', name = '', artists = false, playlists = 
  history.length=0; positions.clear();
  state.music = playlists ? {playlists:true,playlist:''} : artists ? {artists:true,artist:'',album:'',role:'artists'} : { artist, name, album: '' };
  state.virtualSet = ''; state.podcastFeedKey = ''; state.selectedSetId = null; state.selectedSetIds = []; state.folderPath = '';
- document.getElementById('sidebar')?.classList.remove('open');
- document.querySelector('.page')?.classList.remove('has-sidebar');
+ dismissSidebarAfterNav();
  updateSetRowsUI();
  reload();
 }

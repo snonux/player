@@ -1,6 +1,7 @@
 import { API } from '../api.js';
 import { state } from '../state.js';
 import { escapeHtml, toast } from '../utils.js';
+import { dismissSidebarAfterNav } from './help.js';
 
 let loadMediaCallback = () => {};
 
@@ -21,7 +22,7 @@ export function renderSets() {
       row.addEventListener('click', (e) => {
         if (e.target.closest('[data-cover-set]')) return;
         e.preventDefault();
-        selectSet(parseInt(row.dataset.id, 10));
+        if (selectSet(parseInt(row.dataset.id, 10))) dismissSidebarAfterNav();
       });
     });
     el.querySelectorAll('[data-cover-set]').forEach((b) => {
@@ -56,7 +57,9 @@ export function selectSetByHotkey(key) {
   if (!Number.isFinite(index) || index < 0 || index >= 9 || index >= state.sets.length) {
     return false;
   }
-  return selectSet(state.sets[index].id);
+  if (!selectSet(state.sets[index].id)) return false;
+  dismissSidebarAfterNav();
+  return true;
 }
 
 export function updateSetRowsUI() {

@@ -7,6 +7,7 @@ import { clearSelection, selectByElement } from '../selection.js';
 import { fmtSize } from '../dom.js';
 import { escapeHtml, fmtDur, toast } from '../utils.js';
 import { pictureRatio } from './picture-layout.js';
+import { dismissSidebarAfterNav } from './help.js';
 
 let callbacks = {};
 let mediaPageSize = 100;
@@ -215,6 +216,7 @@ function updateBreadcrumb(currentPath) {
 
 export function enterFolder(name) {
   state.folderPath = state.folderPath ? `${state.folderPath}/${name}` : name;
+  dismissSidebarAfterNav();
   loadMedia();
 }
 

@@ -61,7 +61,7 @@ import { closeAllModals } from './dom.js';
 import { toast } from './utils.js';
 import { initShareLinkFallback } from './share-link.js';
 import { showAdmin, triggerRescan } from './views/admin-status.js';
-import { focusHelpSearch, initHelp, showSearch, toggleHelp, toggleSidebar } from './views/help.js';
+import { closeSidebar, dismissSidebarAfterNav, focusHelpSearch, initHelp, showSearch, toggleHelp, toggleSidebar } from './views/help.js';
 import {
   initMediaGrid,
   loadMedia,
@@ -556,6 +556,7 @@ function openSet(id) {
   state.mediaPage = 0;
   updateSetRowsUI();
   syncChromeVirtualSets();
+  dismissSidebarAfterNav();
   loadMedia();
 }
 
@@ -608,8 +609,7 @@ function initChrome() {
   });
 
   document.getElementById('menu-close')?.addEventListener('click', () => {
-    document.getElementById('sidebar')?.classList.remove('open');
-    document.querySelector('.page')?.classList.remove('has-sidebar');
+    closeSidebar();
   });
 
   document.getElementById('logout-btn')?.addEventListener('click', async () => {

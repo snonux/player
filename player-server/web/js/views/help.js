@@ -1,4 +1,42 @@
 import { focusSearch } from '../search.js';
+import { focusSelectedCard } from '../selection.js';
+
+/** Matches `.sidebar` overlay breakpoint in layout.css (max-width: 860px). */
+export const NARROW_SIDEBAR_MQ = '(max-width: 860px)';
+
+export function isNarrowSidebar() {
+  return Boolean(globalThis.matchMedia?.(NARROW_SIDEBAR_MQ)?.matches);
+}
+
+export function closeSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return false;
+  const wasOpen = sidebar.classList.contains('open');
+  sidebar.classList.remove('open');
+  document.querySelector('.page')?.classList.remove('has-sidebar');
+  return wasOpen;
+}
+
+/**
+ * After a navigation choice (set, folder, music, podcast), hide the overlay
+ * sidebar on narrow viewports and move focus into the content. Desktop keeps
+ * the sidebar open; Esc / ✕ / ☰ stay available for manual close/toggle.
+ */
+export function dismissSidebarAfterNav() {
+  if (!isNarrowSidebar()) return false;
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar?.classList.contains('open')) return false;
+  closeSidebar();
+  if (sidebar.contains(document.activeElement)) document.activeElement.blur?.();
+  const focusContent = () => {
+    if (focusSelectedCard()) return;
+    document.getElementById('media-grid')
+      ?.querySelector('.folder-open, .set-open, .media-open, .song-open, button, [href]')
+      ?.focus?.();
+  };
+  document.addEventListener('library:navigated', focusContent, { once: true });
+  return true;
+}
 
 export function initHelp() {
   const modal = document.getElementById('help-modal');
