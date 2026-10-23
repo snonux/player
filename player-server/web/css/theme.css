@@ -121,3 +121,13 @@
   --shadow-md: 0 4px 12px rgba(0,0,0,0.10);
   --shadow-lg: 0 10px 28px rgba(0,0,0,0.12);
 }
+
+/* Accent alternatives keep the existing surface/text palette. */
+[data-accent="teal"] { --accent: #55d6c2; --accent-hover: #78e3d3; --accent-active: #55d6c2; --accent-soft: rgba(85,214,194,.18); }
+[data-accent="plum"] { --accent: #c6a0ff; --accent-hover: #d6bcff; --accent-active: #c6a0ff; --accent-soft: rgba(198,160,255,.18); }
+[data-theme="light"][data-accent="teal"] { --accent: #08776a; --accent-hover: #065f55; --accent-active: #054f47; --accent-soft: rgba(8,119,106,.14); }
+[data-theme="light"][data-accent="plum"] { --accent: #7541a8; --accent-hover: #60328d; --accent-active: #502976; --accent-soft: rgba(117,65,168,.14); }
+[data-accent] { --selected-border: var(--accent); --selected-bg: var(--accent-soft); --player-progress-fill: var(--accent); --player-thumb: var(--accent-hover); }
+.appearance-controls { display: grid; gap: var(--gap); }
+.appearance-controls label { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gap); }
+.appearance-controls select { max-width: 100%; min-height: var(--control-height); }

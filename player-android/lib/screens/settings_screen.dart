@@ -12,6 +12,7 @@ import '../providers/current_user_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/first_run_provider.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/presentation_settings.dart';
 import '../library_navigation.dart';
 
 /// Settings screen: editable server base URL, current username, and logout.
@@ -225,6 +226,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 const _ThemeToggle(),
+                const PresentationSettings(),
                 const SizedBox(height: 32),
                 if (settingsAsync.valueOrNull?.configurationError != null)
                   Text(
@@ -319,6 +321,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const SizedBox(height: 12),
 
                 const _ThemeToggle(),
+                const PresentationSettings(),
 
                 const SizedBox(height: 32),
                 const Divider(),

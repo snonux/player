@@ -562,3 +562,9 @@
 .sleep-timer-control { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; width: 100%; grid-column: 1 / -1; color: var(--text-secondary); font-size: .8rem; }
 .sleep-timer-control select, .sleep-timer-control button { min-height: 2.75rem; background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; padding: .4rem; }
 .sleep-timer-control :focus-visible { outline: 2px solid var(--accent); }
+
+/* Preferences affect audio artwork only; video/image viewing keeps its controls. */
+.player .cover-art { object-fit: contain; border-radius: var(--radius-lg); }
+[data-fit="cover"] .player .cover-art { object-fit: cover; }
+[data-shape="square"] .player .cover-art { border-radius: 0; }
+[data-shape="circle"] .player .cover-art { border-radius: 0; clip-path: circle(closest-side); }

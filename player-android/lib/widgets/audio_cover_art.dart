@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/api_client_provider.dart';
+import '../providers/presentation_provider.dart';
 import '../providers/auth_state_provider.dart';
 import '../services/playback_request.dart';
 import 'authenticated_network_image.dart';
@@ -16,6 +17,11 @@ class AudioCoverArt extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final presentation = ref.watch(presentationProvider).valueOrNull ??
+        const PresentationPreferences();
+    final fit = presentation.display == ArtworkDisplay.cover
+        ? BoxFit.cover
+        : BoxFit.contain;
     const fallback = Icon(Icons.headphones,
         key: Key('audio_artwork_unavailable'), size: 80, color: Colors.white54);
     const loading = Icon(Icons.headphones,
@@ -27,7 +33,7 @@ class AudioCoverArt extends ConsumerWidget {
         _ownsAccount(ref, source)) {
       image = AuthenticatedNetworkImage(
         imageUrl: ref.read(apiClientProvider).thumbnailUrl(source.mediaId),
-        fit: BoxFit.cover,
+        fit: fit,
         placeholder: (_, __) => loading,
         errorWidget: (_, __, ___) => fallback,
       );
@@ -37,7 +43,7 @@ class AudioCoverArt extends ConsumerWidget {
       final uri = source.sourceUri;
       image = PublicNetworkImage(
         imageUrl: uri.resolve('thumbnail').replace(query: uri.query).toString(),
-        fit: BoxFit.cover,
+        fit: fit,
         placeholder: (_, __) => loading,
         errorWidget: (_, __, ___) => fallback,
       );
@@ -49,7 +55,11 @@ class AudioCoverArt extends ConsumerWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.grey[850],
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(switch (presentation.shape) {
+          ArtworkShape.rounded => 12,
+          ArtworkShape.square => 0,
+          ArtworkShape.circle => 100,
+        }),
       ),
       child: image,
     );

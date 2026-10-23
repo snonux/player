@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'presentation_provider.dart';
 
 // SharedPreferences key for the persisted theme mode.
 const _kThemeModeKey = 'theme_mode';
@@ -113,16 +114,18 @@ const lightColorScheme = ColorScheme(
 ///
 /// [useMaterial3] must be true so that the ColorScheme tokens above are
 /// interpreted correctly by all M3 components (NavigationBar, Card, etc.).
-ThemeData buildDarkTheme() => ThemeData(
+ThemeData buildDarkTheme([PlayerAccent accent = PlayerAccent.blue]) =>
+    ThemeData(
       useMaterial3: true,
-      colorScheme: darkColorScheme,
+      colorScheme: _accentScheme(darkColorScheme, accent),
       scaffoldBackgroundColor: const Color(0xFF0F1117), // --bg-body dark
     );
 
 /// Builds a Material 3 [ThemeData] for light mode.
-ThemeData buildLightTheme() => ThemeData(
+ThemeData buildLightTheme([PlayerAccent accent = PlayerAccent.blue]) =>
+    ThemeData(
       useMaterial3: true,
-      colorScheme: lightColorScheme,
+      colorScheme: _accentScheme(lightColorScheme, accent),
       scaffoldBackgroundColor: const Color(0xFFF4F5F8), // --bg-body light
     );
 
@@ -175,3 +178,19 @@ class ThemeNotifier extends AsyncNotifier<ThemeMode> {
 final themeProvider = AsyncNotifierProvider<ThemeNotifier, ThemeMode>(
   ThemeNotifier.new,
 );
+
+ColorScheme _accentScheme(ColorScheme base, PlayerAccent accent) {
+  final dark = base.brightness == Brightness.dark;
+  final color = switch (accent) {
+    PlayerAccent.blue => base.primary,
+    PlayerAccent.teal => Color(dark ? 0xFF55D6C2 : 0xFF08776A),
+    PlayerAccent.plum => Color(dark ? 0xFFC6A0FF : 0xFF7541A8),
+  };
+  return base.copyWith(
+      primary: color,
+      inversePrimary: switch (accent) {
+        PlayerAccent.blue => base.inversePrimary,
+        PlayerAccent.teal => Color(dark ? 0xFF08776A : 0xFF55D6C2),
+        PlayerAccent.plum => Color(dark ? 0xFF7541A8 : 0xFFC6A0FF),
+      });
+}

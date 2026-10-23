@@ -24,6 +24,7 @@
     <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
     <button id="trash-toggle" class="icon-btn" title="Trash" aria-label="Open trash">🗑</button>
     <button id="admin-toggle" class="icon-btn hidden" title="Admin panel" aria-label="Admin settings">⚙</button>
+    <button id="settings-toggle" class="btn btn-ghost btn-sm" aria-controls="settings-modal">Settings</button>
     <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
   </div>
 </header>
@@ -93,6 +94,21 @@
 
     <!-- Media grid: hidden until a set is loaded or search is active -->
     <div id="media-grid" class="media-grid hidden" tabindex="0" aria-label="Media grid"></div>
+  </div>
+</div>
+
+<div id="settings-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="modal">
+    <div class="modal-header"><h3 id="settings-title">Settings</h3><div class="spacer"></div><button id="settings-close" class="icon-btn" aria-label="Close settings">✕</button></div>
+    <h4>Appearance</h4>
+    <div class="appearance-controls">
+      <label>Theme <select id="appearance-mode"><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select></label>
+      <label>Accent <select id="appearance-accent"><option value="blue">Blue</option><option value="teal">Teal</option><option value="plum">Plum</option></select></label>
+      <label>Player artwork shape <select id="appearance-shape"><option value="rounded">Rounded</option><option value="square">Square</option><option value="circle">Circle</option></select></label>
+      <label>Player artwork display <select id="appearance-fit"><option value="contain">Fit whole image</option><option value="cover">Fill frame</option></select></label>
+    </div>
+    <p class="text-muted text-sm">Changes apply immediately on this device. Visualizers remain available in the player.</p>
+    <p id="appearance-status" role="status"></p>
   </div>
 </div>
 

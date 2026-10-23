@@ -12,6 +12,9 @@ import io.flutter.plugin.common.MethodChannel
 // The audio_service fragment activity supports both background audio controls
 // and local_auth's biometric dialog, which requires a FragmentActivity.
 class MainActivity : AudioServiceFragmentActivity() {
+    private var screenAwakeChannel: MethodChannel? = null
+    private var screenAwakeRequested = false
+    private var foreground = false
     private lateinit var documentChannel: MethodChannel
     private var pendingPicker: MethodChannel.Result? = null
     private var playlistExport: PlaylistExport? = null
@@ -22,6 +25,16 @@ class MainActivity : AudioServiceFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
         if (!flutterEngine.plugins.has(NativeLoudness::class.java)) {
             flutterEngine.plugins.add(NativeLoudness())
+        }
+        screenAwakeChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
+            "zone.foo.player_android/screen_awake").also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                if (call.method == "setEnabled" && call.arguments is Boolean) {
+                    screenAwakeRequested = call.arguments as Boolean
+                    updateScreenAwake()
+                    result.success(null)
+                } else result.notImplemented()
+            }
         }
         audioVisuals = AudioVisuals(this, flutterEngine.dartExecutor.binaryMessenger)
         playlistExport = PlaylistExport(this, flutterEngine.dartExecutor.binaryMessenger)
@@ -93,12 +106,34 @@ class MainActivity : AudioServiceFragmentActivity() {
         serverWifi?.onPermissionResult(requestCode)
     }
 
+    private fun updateScreenAwake() {
+        // A View-owned request composes with video/chewie's window flag.
+        // Clearing this preference must never clear another owner's flag.
+        window.decorView.keepScreenOn = screenAwakeRequested && foreground
+    }
+
+    override fun onResume() {
+        super.onResume()
+        foreground = true
+        updateScreenAwake()
+    }
+
+    override fun onPause() {
+        foreground = false
+        updateScreenAwake()
+        super.onPause()
+    }
+
     override fun onStop() {
         audioVisuals?.stop()
         super.onStop()
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        screenAwakeChannel?.setMethodCallHandler(null)
+        screenAwakeChannel = null
+        screenAwakeRequested = false
+        updateScreenAwake()
         playlistExport?.close()
         playlistExport = null
         serverWifi?.close()

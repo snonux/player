@@ -12,6 +12,8 @@ import 'providers/api_client_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/svg_image_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/presentation_provider.dart';
+import 'widgets/playback_screen_awake.dart';
 import 'navigation_key.dart';
 import 'router.dart';
 import 'services/audio_handler.dart';
@@ -113,10 +115,14 @@ void main() async {
 // ---------------------------------------------------------------------------
 
 // Built once at startup rather than on every rebuild of PlayerAndroidApp.
-// ThemeData construction is not cheap, and the colour tokens never change
-// at runtime — only the active ThemeMode (light/dark/system) does.
-final _lightTheme = buildLightTheme();
-final _darkTheme = buildDarkTheme();
+// Cache both brightness variants per accent so changing appearance does not
+// repeatedly build ThemeData or recreate the router/audio handler.
+final _lightThemes = {
+  for (final accent in PlayerAccent.values) accent: buildLightTheme(accent)
+};
+final _darkThemes = {
+  for (final accent in PlayerAccent.values) accent: buildDarkTheme(accent)
+};
 
 // ---------------------------------------------------------------------------
 // Root widget
@@ -145,16 +151,18 @@ class PlayerAndroidApp extends ConsumerWidget {
     // does not flash an incorrect theme during startup.
     final themeMode = ref.watch(themeProvider).valueOrNull ?? ThemeMode.system;
 
+    final accent = ref.watch(presentationProvider).valueOrNull?.accent ??
+        PlayerAccent.blue;
     return MaterialApp.router(
       scaffoldMessengerKey: appMessengerKey,
       title: 'Player',
       routerConfig: router,
       // Material 3 is enabled in both ThemeData instances; see theme_provider.dart.
-      theme: _lightTheme,
-      darkTheme: _darkTheme,
+      theme: _lightThemes[accent],
+      darkTheme: _darkThemes[accent],
       themeMode: themeMode,
-      builder: (context, child) =>
-          KeyboardAccess(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => PlaybackScreenAwake(
+          child: KeyboardAccess(child: child ?? const SizedBox.shrink())),
     );
   }
 }
