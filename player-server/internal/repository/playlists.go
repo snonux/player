@@ -21,6 +21,7 @@ type PlaylistChange struct {
 
 // PlaylistRepo stores account-owned playlist documents and ordered occurrences.
 type PlaylistRepo interface {
+	AddPlaylistSongs(context.Context, int64, map[string][]model.PlaylistEntry, bool) (bool, error)
 	ImportPlaylist(context.Context, int64, model.Playlist, bool) (bool, error)
 	PlaylistSources(context.Context) ([]model.Playlist, error)
 	DetachPlaylistSource(context.Context, int64, string) (bool, error)

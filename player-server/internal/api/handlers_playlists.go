@@ -116,3 +116,37 @@ func (s *Server) handlePlaylistSongs(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+
+func (s *Server) handlePlaylistMembership(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.media.Playlists) {
+		return
+	}
+	result, err := s.media.Playlists.Membership(r.Context(), userIDFromContext(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+func (s *Server) handleAddToPlaylists(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.media.Playlists) {
+		return
+	}
+	var body struct {
+		PlaylistIDs []string `json:"playlist_ids"`
+		MediaIDs    []int64  `json:"media_ids"`
+		Policy      string   `json:"duplicate_policy"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 32768)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		writeError(w, 400, "Invalid playlist song request.")
+		return
+	}
+	if err := s.media.Playlists.AddToPlaylists(r.Context(), userIDFromContext(r), body.PlaylistIDs, body.MediaIDs, body.Policy); err != nil {
+		handleError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

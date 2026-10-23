@@ -369,6 +369,8 @@ func (s *Server) routesMedia() {
 	s.handleBoth(http.MethodPost, "/api/playlists/{playlist_id}/albums", s.requireSession(s.handlePlaylists))
 	s.handleBoth(http.MethodPost, "/api/playlists/{playlist_id}/songs", s.requireSession(s.handlePlaylistSongs))
 	s.handleBoth(http.MethodGet, "/api/playlists/{playlist_id}/export.m3u", s.requireSession(s.handlePlaylistExport))
+	s.handleBoth(http.MethodGet, "/api/playlists/membership", s.requireSession(s.handlePlaylistMembership))
+	s.handleBoth(http.MethodPost, "/api/playlists/songs", s.requireSession(s.handleAddToPlaylists))
 	s.handleBoth(http.MethodPost, "/api/playlists/import", s.requireSession(s.handlePlaylistImport))
 	s.handleBoth(http.MethodPost, "/api/playlists/{playlist_id}/source", s.requireSession(s.handlePlaylistSource))
 	s.handleBoth(http.MethodDelete, "/api/playlists/{playlist_id}/source", s.requireSession(s.handlePlaylistSource))

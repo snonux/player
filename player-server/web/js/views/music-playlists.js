@@ -132,14 +132,17 @@ async function addSongs(p,current){
  const load=async()=>{
   try{
    const albums=await API.albums();
-   const details=await Promise.all(albums.map(a=>API.album(a.album_key)));
+   const [details,membership]=await Promise.all([Promise.all(albums.map(a=>API.album(a.album_key))),API.playlistMembership()]);
+   const targets=new Set([p.playlist_id]);
    if(!current()||!alive())return;
    const songs=[...new Map(details.flatMap(a=>a.songs).map(song=>[song.id,song])).values()];
-   body.innerHTML='<label>Find songs<input type="search" aria-label="Find songs to add" autofocus></label><p>Repeated songs are added again.</p><p role="status" data-selected>0 selected</p><div class="playlist-albums" data-choices></div><p role="alert" data-error></p><div class="playlist-actions"><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-save disabled>Add selected songs</button></div>';
+   body.innerHTML='<label>Find songs<input type="search" aria-label="Find songs to add" autofocus></label><label>Repeated songs<select data-duplicates aria-label="Repeated songs"><option value="skip">Skip songs already in each playlist</option><option value="add">Add repeated songs again</option></select></label><details><summary>Add to more playlists</summary><div data-targets></div></details><p role="status" data-selected>0 selected</p><div class="playlist-albums" data-choices></div><p role="alert" data-error></p><div class="playlist-actions"><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-save disabled>Add selected songs</button></div>';
+   body.querySelector('[data-targets]').innerHTML=membership.filter(list=>list.can_edit&&!list.source&&list.playlist_id!==p.playlist_id).map(list=>`<label class="playlist-song-choice"><input type="checkbox" data-target="${esc(list.playlist_id)}">${esc(list.name)}</label>`).join('')||'<p>No other editable playlists.</p>';
+   body.querySelectorAll('[data-target]').forEach(check=>check.onchange=()=>{if(saving)return;check.checked?targets.add(check.dataset.target):targets.delete(check.dataset.target);});
    const input=body.querySelector('input'),choices=body.querySelector('[data-choices]'),submit=body.querySelector('[data-save]');
-   const draw=()=>{const matches=songs.filter(song=>matchesSong(song,input.value));choices.innerHTML=matches.length?matches.map(song=>`<label class="playlist-song-choice"><input type="checkbox" value="${song.id}" ${selected.has(song.id)?'checked':''} ${saving?'disabled':''} aria-label="Select ${esc(mediaTitle(song))}"><span>${esc(mediaTitle(song))}<span class="text-muted text-sm"> · ${esc(song.music?.artist||'Unknown artist')} · ${esc(song.music?.album||'')}</span></span></label>`).join(''):`<p>${songs.length?'No matching songs.':'No songs available. Browse Sets or ask an administrator to rescan music tags.'}</p>`;choices.querySelectorAll('input').forEach(check=>check.onchange=()=>{if(saving)return;check.checked?selected.add(Number(check.value)):selected.delete(Number(check.value));body.querySelector('[data-selected]').textContent=`${selected.size} selected`;submit.disabled=saving||!selected.size;});};
+   const draw=()=>{const matches=songs.filter(song=>matchesSong(song,input.value));choices.innerHTML=matches.length?matches.map(song=>`<label class="playlist-song-choice"><input type="checkbox" value="${song.id}" ${selected.has(song.id)?'checked':''} ${saving?'disabled':''} aria-label="Select ${esc(mediaTitle(song))}"><span>${esc(mediaTitle(song))}<span class="text-muted text-sm"> · ${esc(song.music?.artist||'Unknown artist')} · ${esc(song.music?.album||'')}</span><span class="text-muted text-sm"> · In playlists: ${membership.filter(list=>list.entries?.some(entry=>entry.media_id===song.id)).map(list=>esc(list.name)).join(', ')||'None'}</span></span></label>`).join(''):`<p>${songs.length?'No matching songs.':'No songs available. Browse Sets or ask an administrator to rescan music tags.'}</p>`;choices.querySelectorAll('input').forEach(check=>check.onchange=()=>{if(saving)return;check.checked?selected.add(Number(check.value)):selected.delete(Number(check.value));body.querySelector('[data-selected]').textContent=`${selected.size} selected`;submit.disabled=saving||!selected.size;});};
    input.oninput=draw;body.querySelector('[data-cancel]').onclick=close;
-   submit.onclick=async()=>{if(saving||!selected.size)return;saving=true;submit.disabled=true;choices.querySelectorAll('input').forEach(check=>check.disabled=true);body.querySelector('[data-error]').textContent='';try{await API.editPlaylistSongs(p.playlist_id,{action:'add',media_ids:songs.filter(song=>selected.has(song.id)).map(song=>song.id)});if(!current()||!alive())return;close();toast('Songs added to playlist.','success');reload();}catch(e){if(current()&&alive())body.querySelector('[data-error]').textContent=e.message||'Could not add songs. Check your connection.';}finally{if(alive()){saving=false;choices.querySelectorAll('input').forEach(check=>check.disabled=false);submit.disabled=!selected.size;}}};
+   submit.onclick=async()=>{if(saving||!selected.size)return;saving=true;submit.disabled=true;body.querySelectorAll('[data-target], [data-duplicates]').forEach(control=>control.disabled=true);choices.querySelectorAll('input').forEach(check=>check.disabled=true);body.querySelector('[data-error]').textContent='';try{await API.addToPlaylists({playlist_ids:[...targets],duplicate_policy:body.querySelector('[data-duplicates]').value,media_ids:songs.filter(song=>selected.has(song.id)).map(song=>song.id)});if(!current()||!alive())return;close();toast('Selected playlists updated.','success');reload();}catch(e){if(current()&&alive())body.querySelector('[data-error]').textContent=e.message||'Could not add songs. Check your connection.';}finally{if(alive()){saving=false;body.querySelectorAll('[data-target], [data-duplicates]').forEach(control=>control.disabled=false);choices.querySelectorAll('input').forEach(check=>check.disabled=false);submit.disabled=!selected.size;}}};
    draw();input.focus();
   }catch(e){if(!current()||!alive())return;body.innerHTML='<p role="alert">Could not load songs. Check your connection.</p><button class="btn" data-retry>Retry</button>';body.querySelector('[data-retry]').onclick=load;}
  };
@@ -147,7 +150,8 @@ async function addSongs(p,current){
 }
 
 function playlistActions(p,current){
- const {modal,close}=dialog('Playlist actions','<button class="btn" data-export>Export M3U8…</button>');
+ const {modal,close}=dialog('Playlist actions','<button class="btn" data-export>Export M3U8…</button><button class="btn" data-membership>Containing playlists…</button>');
+ modal.querySelector('[data-membership]').onclick=()=>{close();showMembership(p,current);};
  modal.querySelector('[data-export]').onclick=()=>{close();exportPlaylist(p,current);};
 }
 function exportPlaylist(p,current){
@@ -193,4 +197,14 @@ function bindArtworkFallbacks(grid) {
   if(image.dataset.coverFallback)image.src=`/api/media/${image.dataset.coverFallback}/thumbnail`;
   else { const placeholder=document.createElement('div');placeholder.className='album-cover album-placeholder';placeholder.setAttribute('role','img');placeholder.setAttribute('aria-label','Artwork unavailable');placeholder.textContent='♫';image.replaceWith(placeholder); }
  },{once:true}));
+}
+
+async function showMembership(p,current){
+ const {modal,alive}=dialog('Containing playlists','<p role="status">Loading memberships…</p>');
+ const body=modal.querySelector('.modal-body');
+ const load=async()=>{try{
+  const lists=await API.playlistMembership();if(!current()||!alive())return;
+  body.innerHTML=p.songs.length?p.songs.map(song=>`<p class="playlist-comment"><strong>${esc(mediaTitle(song))}</strong>: ${lists.filter(list=>list.entries?.some(entry=>entry.media_id===song.id)).map(list=>esc(list.name)).join(', ')||'None'}</p>`).join(''):'<p>This playlist is empty.</p>';
+ }catch(e){if(current()&&alive()){body.innerHTML='<p role="alert">Could not load memberships. Check your connection.</p><button class="btn" data-retry>Retry</button>';body.querySelector('[data-retry]').onclick=load;}}};
+ await load();
 }

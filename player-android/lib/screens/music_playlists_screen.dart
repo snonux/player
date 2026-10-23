@@ -200,10 +200,14 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                 _playlist != null)
               PopupMenuButton<String>(
                   tooltip: 'Playlist actions',
-                  onSelected: (_) => _export(),
+                  onSelected: (action) =>
+                      action == 'membership' ? _memberships() : _export(),
                   itemBuilder: (_) => const [
                         PopupMenuItem(
-                            value: 'export', child: Text('Export M3U8…'))
+                            value: 'export', child: Text('Export M3U8…')),
+                        PopupMenuItem(
+                            value: 'membership',
+                            child: Text('Containing playlists…'))
                       ]),
             if (widget.playlistId == null)
               IconButton(
@@ -788,6 +792,48 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
     }
   }
 
+  Future<void> _memberships() async {
+    final api = ref.read(apiClientProvider);
+    final epoch = _accountEpoch;
+    final generation = _generation;
+    final songs = (_playlist?['songs'] as List? ?? [])
+        .map((data) => Media.fromJson(data as Map<String, dynamic>))
+        .toList();
+    try {
+      final lists = await api.playlistMembership();
+      if (!mounted || epoch != _accountEpoch || generation != _generation) {
+        return;
+      }
+      await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+                  title: const Text('Containing playlists'),
+                  scrollable: true,
+                  content: Column(mainAxisSize: MainAxisSize.min, children: [
+                    if (songs.isEmpty) const Text('This playlist is empty.'),
+                    for (final song in songs)
+                      ListTile(
+                          title: Text(song.displayTitle),
+                          subtitle: Text(lists
+                              .where((list) => (list['entries'] as List? ?? [])
+                                  .any((entry) => entry['media_id'] == song.id))
+                              .map((list) => list['name'])
+                              .join(', ')))
+                  ]),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Close'))
+                  ]));
+    } catch (e) {
+      if (mounted && epoch == _accountEpoch && generation == _generation) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('Could not load memberships. ${setsErrorMessage(e)}')));
+      }
+    }
+  }
+
   Future<void> _export() async {
     final p = _playlist!, generation = _generation;
     final epoch = _accountEpoch, api = ref.read(apiClientProvider);
@@ -1108,6 +1154,9 @@ class _AddSongsState extends ConsumerState<_AddSongsDialog> {
   final _find = TextEditingController();
   final _selected = <int>{};
   List<Media> _songs = [];
+  List<Map<String, dynamic>> _membership = [];
+  final _targets = <String>{};
+  bool _skipDuplicates = true;
   bool _loading = true, _saving = false, _changed = false;
   String? _error;
   bool get _same =>
@@ -1119,6 +1168,7 @@ class _AddSongsState extends ConsumerState<_AddSongsDialog> {
     super.initState();
     _api = ref.read(apiClientProvider);
     _epoch = ref.read(credentialMutationQueueProvider).generation;
+    _targets.add(widget.playlistId);
     Future.microtask(_load);
   }
 
@@ -1134,6 +1184,7 @@ class _AddSongsState extends ConsumerState<_AddSongsDialog> {
       _error = null;
     });
     try {
+      final membership = await _api.playlistMembership();
       final albums = await _api.musicAlbums();
       final details = await Future.wait(
           albums.map((album) => _api.musicAlbum(album['album_key'] as String)));
@@ -1146,6 +1197,7 @@ class _AddSongsState extends ConsumerState<_AddSongsDialog> {
       }
       if (mounted && _same) {
         setState(() {
+          _membership = membership;
           _songs = songs.values.toList();
           _loading = false;
         });
@@ -1167,8 +1219,9 @@ class _AddSongsState extends ConsumerState<_AddSongsDialog> {
       _error = null;
     });
     try {
-      await _api.editPlaylistSongs(widget.playlistId, {
-        'action': 'add',
+      await _api.addToPlaylists({
+        'playlist_ids': _targets.toList(),
+        'duplicate_policy': _skipDuplicates ? 'skip' : 'add',
         'media_ids': _songs
             .where((song) => _selected.contains(song.id))
             .map((song) => song.id)
@@ -1183,6 +1236,14 @@ class _AddSongsState extends ConsumerState<_AddSongsDialog> {
         });
       }
     }
+  }
+
+  String _containing(int id) {
+    final names = _membership
+        .where((list) => (list['entries'] as List? ?? [])
+            .any((entry) => entry['media_id'] == id))
+        .map((list) => list['name']);
+    return names.isEmpty ? 'None' : names.join(', ');
   }
 
   @override
@@ -1206,14 +1267,40 @@ class _AddSongsState extends ConsumerState<_AddSongsDialog> {
         content: SizedBox(
             width: double.maxFinite,
             height: MediaQuery.sizeOf(context).height * .48,
-            child: Column(children: [
+            child: ListView(children: [
               TextField(
                   controller: _find,
                   autofocus: true,
                   onChanged: (_) => setState(() {}),
                   decoration:
                       const InputDecoration(labelText: 'Find songs to add')),
-              const Text('Repeated songs are added again.'),
+              CheckboxListTile(
+                  title: const Text('Skip repeated songs'),
+                  subtitle: const Text('Skip songs already in each playlist'),
+                  value: _skipDuplicates,
+                  onChanged: _saving || !_same
+                      ? null
+                      : (value) =>
+                          setState(() => _skipDuplicates = value ?? true)),
+              ExpansionTile(
+                  title: const Text('Add to more playlists'),
+                  children: [
+                    for (final list in _membership.where((list) =>
+                        list['can_edit'] == true &&
+                        list['source'] == null &&
+                        list['playlist_id'] != widget.playlistId))
+                      CheckboxListTile(
+                          title: Text(list['name'] as String),
+                          value: _targets.contains(list['playlist_id']),
+                          onChanged: _saving || !_same
+                              ? null
+                              : (value) => setState(() {
+                                    value == true
+                                        ? _targets
+                                            .add(list['playlist_id'] as String)
+                                        : _targets.remove(list['playlist_id']);
+                                  }))
+                  ]),
               Text('${_selected.length} selected'),
               if (_error != null)
                 Text(_error!,
@@ -1224,24 +1311,25 @@ class _AddSongsState extends ConsumerState<_AddSongsDialog> {
                 Text(_songs.isEmpty
                     ? 'No songs available.'
                     : 'No matching songs.'),
-              Expanded(
-                  child: ListView.builder(
-                      itemCount: visible.length,
-                      itemBuilder: (_, index) {
-                        final song = visible[index];
-                        return CheckboxListTile(
-                            title: Text(song.displayTitle),
-                            subtitle: Text(
-                                '${song.music?.artist ?? 'Unknown artist'} · ${song.music?.album ?? ''}'),
-                            value: _selected.contains(song.id),
-                            onChanged: _saving || !_same
-                                ? null
-                                : (checked) => setState(() {
-                                      checked == true
-                                          ? _selected.add(song.id)
-                                          : _selected.remove(song.id);
-                                    }));
-                      })),
+              ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: visible.length,
+                  itemBuilder: (_, index) {
+                    final song = visible[index];
+                    return CheckboxListTile(
+                        title: Text(song.displayTitle),
+                        subtitle: Text(
+                            '${song.music?.artist ?? 'Unknown artist'} · ${song.music?.album ?? ''}\nIn playlists: ${_containing(song.id)}'),
+                        value: _selected.contains(song.id),
+                        onChanged: _saving || !_same
+                            ? null
+                            : (checked) => setState(() {
+                                  checked == true
+                                      ? _selected.add(song.id)
+                                      : _selected.remove(song.id);
+                                }));
+                  }),
             ])),
         actions: [
           if (_error != null && _songs.isEmpty && !_changed)

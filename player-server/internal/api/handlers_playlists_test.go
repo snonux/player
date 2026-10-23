@@ -112,6 +112,27 @@ func TestPlaylistRoutesRequireSessionBothPrefixes(t *testing.T) {
 	cookie := addSessionCookie(t, store, sm, user)
 	for _, prefix := range []string{"/api", "/api/v1"} {
 		for _, authenticated := range []bool{false, true} {
+			for _, path := range []string{"/playlists/membership", "/playlists/songs"} {
+				method, want := "GET", 200
+				if path == "/playlists/songs" {
+					method, want = "POST", 400
+				}
+				r := httptest.NewRequest(method, prefix+path, strings.NewReader(`{}`))
+				if authenticated {
+					r.AddCookie(cookie)
+				} else {
+					want = 401
+				}
+				w := httptest.NewRecorder()
+				srv.ServeHTTP(w, r)
+				if w.Code != want {
+					t.Fatalf("membership route %s auth=%v got %d: %s", prefix+path, authenticated, w.Code, w.Body.String())
+				}
+			}
+		}
+	}
+	for _, prefix := range []string{"/api", "/api/v1"} {
+		for _, authenticated := range []bool{false, true} {
 			r := httptest.NewRequest("GET", prefix+"/playlists", nil)
 			if authenticated {
 				r.AddCookie(cookie)

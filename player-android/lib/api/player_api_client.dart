@@ -132,6 +132,14 @@ class PlayerApiClient implements ProgressSyncClient {
     await _dio.delete<void>('/api/v1/playlists/${Uri.encodeComponent(id)}');
   }
 
+  Future<List<Map<String, dynamic>>> playlistMembership() async =>
+      ((await _dio.get<List<dynamic>>('/api/v1/playlists/membership')).data!)
+          .cast<Map<String, dynamic>>();
+
+  Future<void> addToPlaylists(Map<String, dynamic> body) async {
+    await _dio.post<void>('/api/v1/playlists/songs', data: body);
+  }
+
   Future<Map<String, dynamic>> editPlaylistSongs(
           String id, Map<String, dynamic> body) async =>
       (await _dio.post<Map<String, dynamic>>(

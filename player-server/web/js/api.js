@@ -58,6 +58,8 @@ export const API = {
   logout: () => api('/api/logout', { method: 'POST' }),
   bootstrap: (username, password) => api('/api/bootstrap', { method: 'POST', body: { username, password } }),
   config: () => api('/api/config'),
+  playlistMembership: () => api('/api/playlists/membership'),
+  addToPlaylists: body => api('/api/playlists/songs',{method:'POST',body}),
   editPlaylistSongs: (id,body) => api(`/api/playlists/${encodeURIComponent(id)}/songs`,{method:'POST',body}),
   importPlaylist: body => api('/api/playlists/import',{method:'POST',body}),
   syncPlaylistSource: (id,detach=false) => api(`/api/playlists/${encodeURIComponent(id)}/source`,{method:detach?'DELETE':'POST'}),

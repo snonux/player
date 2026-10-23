@@ -2894,3 +2894,23 @@ rules. Saving never changes the playing queue, current occurrence or position.
 Clients capture one snapshot when opening the naming dialog; connection errors
 retain that snapshot and name. If a response is lost after creation, check the
 playlist list before retrying to avoid creating a second copy.
+
+### Playlist duplicate choices and memberships
+
+`GET /api/v1/playlists/membership` (also `/api`) returns readable playlist views
+with ordered `entries` containing only currently accessible music identities;
+`songs` is empty. Private foreign lists and inaccessible song/occurrence IDs are
+omitted. Source bindings remain visible only to editors. This is a snapshot;
+permissions and duplicate membership are checked again when writing.
+
+`POST /api/v1/playlists/songs` (also `/api`) accepts
+`{"playlist_ids":["pl_a","pl_b"],"media_ids":[1,2],"duplicate_policy":"skip"}`.
+Select 1–100 targets and 1–1000 songs. Policy is required: `skip` omits songs
+already saved in each target, including duplicates within the request; `add`
+retains every requested occurrence in order. Target IDs are deduplicated.
+All target writes commit together; success is 204. The caller must own each target
+or be an administrator; shared readers cannot write (403), private foreign/missing
+lists or inaccessible/nonmusic songs return 404, source-following or changed
+noneditable targets return 409. Bad limits/policy return 400.
+Legacy per-playlist song edits, album adds and queue-to-new-playlist creation keep
+their occurrence-preserving behavior.

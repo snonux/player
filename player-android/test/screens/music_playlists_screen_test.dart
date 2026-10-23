@@ -115,6 +115,21 @@ class _Client extends PlayerApiClient {
         'songs': [song(1), song(2)]
       };
   @override
+  Future<List<Map<String, dynamic>>> playlistMembership() async => [
+        data,
+        {
+          'playlist_id': 'pl_b',
+          'name': 'Focus',
+          'can_edit': true,
+          'entries': []
+        }
+      ];
+  @override
+  Future<void> addToPlaylists(Map<String, dynamic> body) async {
+    await editPlaylistSongs('pl_a', {...body, 'action': 'add'});
+  }
+
+  @override
   Future<Map<String, dynamic>> editPlaylistSongs(
       String id, Map<String, dynamic> body) async {
     edits.add(body);
@@ -360,6 +375,8 @@ void main() {
     await t.pumpAndSettle();
     expect(api.edits.last, {
       'action': 'add',
+      'playlist_ids': ['pl_a'],
+      'duplicate_policy': 'skip',
       'media_ids': [1, 2]
     });
     expect(find.byType(AlertDialog), findsNothing);

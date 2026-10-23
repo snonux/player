@@ -2275,3 +2275,7 @@ func (m *mockPingStore) EditPlaylist(ctx context.Context, user int64, id string,
 func (m *mockPingStore) UpdatePlaylistDetails(ctx context.Context, user int64, id, name, comment string, visibility *string, owner *int64) (bool, error) {
 	return m.store.UpdatePlaylistDetails(ctx, user, id, name, comment, visibility, owner)
 }
+
+func (m *mockPingStore) AddPlaylistSongs(ctx context.Context, user int64, targets map[string][]model.PlaylistEntry, skip bool) (bool, error) {
+	return m.store.AddPlaylistSongs(ctx, user, targets, skip)
+}

@@ -53,6 +53,15 @@ func TestPlaylistVisibilityOwnershipAndMediaACL(t *testing.T) {
 	if _, err := svc.EditSongs(ctx, alice, p.ID, "add", "", "", []int64{song}); err != nil {
 		t.Fatal(err)
 	}
+	if docs, err := svc.Membership(ctx, bob); err != nil || len(docs) != 0 {
+		t.Fatalf("private membership leak %+v %v", docs, err)
+	}
+	if err := svc.AddToPlaylists(ctx, alice, []string{p.ID}, []int64{song, song}, "skip"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := svc.Get(ctx, alice, p.ID); err != nil || len(got.Entries) != 1 {
+		t.Fatalf("skip %+v %v", got, err)
+	}
 	shared := "shared"
 	p, err = svc.UpdateDetails(ctx, alice, p.ID, p.Name, p.Comment, &shared, nil)
 	if err != nil {
@@ -64,6 +73,12 @@ func TestPlaylistVisibilityOwnershipAndMediaACL(t *testing.T) {
 	}
 	if list, err := svc.List(ctx, bob); err != nil || len(list) != 1 || list[0].SongCount != 0 {
 		t.Fatalf("shared list %+v %v", list, err)
+	}
+	if docs, err := svc.Membership(ctx, bob); err != nil || len(docs) != 1 || len(docs[0].Entries) != 0 {
+		t.Fatalf("hidden membership leak %+v %v", docs, err)
+	}
+	if err := svc.AddToPlaylists(ctx, bob, []string{p.ID}, []int64{song}, "skip"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("hidden song add %v", err)
 	}
 	for name, action := range map[string]func() error{
 		"metadata":       func() error { _, e := svc.Update(ctx, bob, p.ID, "stolen", ""); return e },

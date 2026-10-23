@@ -53,3 +53,8 @@ func (s *MockStore) PlaylistSources(context.Context) ([]model.Playlist, error) {
 func (s *MockStore) DetachPlaylistSource(context.Context, int64, string) (bool, error) {
 	return false, nil
 }
+
+// AddPlaylistSongs is the missing-document default.
+func (s *MockStore) AddPlaylistSongs(context.Context, int64, map[string][]model.PlaylistEntry, bool) (bool, error) {
+	return false, nil
+}
