@@ -1,3 +1,5 @@
+import '../api/playlist_rules_api.dart';
+import 'music_playlist_rules_screen.dart';
 import '../l10n/music_localizations.dart';
 import '../api/music_artwork_api.dart';
 import '../widgets/music_artwork_section.dart';
@@ -263,6 +265,10 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                 onPressed: _import,
                 icon: const Icon(Icons.playlist_add),
                 label: Text(context.tr('Import M3U…'))),
+            OutlinedButton.icon(
+                onPressed: () => _edit(null, true),
+                icon: const Icon(Icons.rule),
+                label: Text(context.tr('Create smart playlist'))),
           ])),
       itemBuilder: (p, checkbox, toggle) => ListTile(
           leading: checkbox ?? _cover(p, 56),
@@ -316,6 +322,15 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       ]),
       const SizedBox(height: 16),
       Text(p['comment'] as String),
+      if (p['rules'] is Map) ...[
+        Text(playlistRulesSummary(context, p['rules'] as Map<String, dynamic>)),
+        Text(context.tr(
+            'Your plays, favorites and ratings use your account. Shared smart playlists can show different songs to each viewer.')),
+        OutlinedButton.icon(
+            onPressed: _load,
+            icon: const Icon(Icons.refresh),
+            label: Text(context.tr('Refresh results'))),
+      ],
       if (p['source'] is Map) ...[
         Text(
             'Following ${(p['source'] as Map)['path']} · ${(p['source'] as Map)['base'] == 'library' ? 'Library root' : 'Playlist folder'} paths'),
@@ -342,16 +357,19 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
             sourceLabel: p['name'] as String,
             enabled: songs.isNotEmpty),
         if (p['can_edit'] != false) ...[
-          if (p['source'] == null)
+          if (p['source'] == null && p['rules'] == null)
             FilledButton.tonalIcon(
                 onPressed: _addMusic,
                 icon: const Icon(Icons.add),
                 label: Text(context.tr('Add music'))),
-          if (p['source'] == null)
+          if (p['source'] == null && p['rules'] == null)
             FilledButton.tonalIcon(
                 onPressed: () => _addSongs(),
                 icon: const Icon(Icons.playlist_add),
                 label: Text(context.tr('Add songs'))),
+          if (p['source'] == null)
+            TextButton(
+                onPressed: () => _rules(p), child: Text(context.tr('Rules'))),
           TextButton(
               onPressed: () => _edit(p),
               child: Text(context.tr('Edit playlist'))),
@@ -382,7 +400,9 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       if (songs.isEmpty)
         Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(context.tr('This playlist is empty.'))),
+            child: Text(context.tr(p['rules'] != null
+                ? 'No songs match these rules.'
+                : 'This playlist is empty.'))),
       if (songs.isNotEmpty &&
           !songs.any((song) => _matchesSong(song, _find.text)))
         Padding(
@@ -399,7 +419,9 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
               subtitle: Text(
                   '${songs[i].music?.artist ?? 'Unknown artist'} · ${songs[i].music?.album ?? ''}'),
               onTap: () => play(i),
-              trailing: p['can_edit'] == false || p['source'] != null
+              trailing: p['can_edit'] == false ||
+                      p['source'] != null ||
+                      p['rules'] != null
                   ? null
                   : PopupMenuButton<String>(
                       tooltip: context.tr('Song actions for {name}',
@@ -566,7 +588,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
     }
   }
 
-  Future<void> _edit([Map<String, dynamic>? p]) async {
+  Future<void> _edit([Map<String, dynamic>? p, bool smart = false]) async {
     final generation = _generation;
     final accountEpoch = _accountEpoch;
     final api = ref.read(apiClientProvider);
@@ -605,7 +627,8 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                 canPop: true,
                 child: AlertDialog(
                   title: Text(p == null
-                      ? context.tr('Create playlist')
+                      ? context.tr(
+                          smart ? 'Create smart playlist' : 'Create playlist')
                       : context.tr('Edit playlist')),
                   content: SingleChildScrollView(
                       child: Form(
@@ -800,12 +823,48 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       return;
     }
     if (created != null) {
+      if (smart) {
+        await _rules({'playlist_id': created}, enable: true, reload: false);
+        if (!mounted || accountEpoch != _accountEpoch) return;
+      }
       await context.push(
           '${AppRoutes.musicPlaylists}?playlist=${Uri.encodeComponent(created!)}');
       if (mounted) {
         _load();
       }
     } else {
+      _load();
+    }
+  }
+
+  Future<void> _rules(Map<String, dynamic> playlist,
+      {bool enable = false, bool reload = true}) async {
+    final epoch = _accountEpoch, generation = _generation;
+    final api = ref.read(apiClientProvider);
+    final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
+        builder: (_) => MusicPlaylistRulesScreen(
+              rules: playlist['rules'] as Map<String, dynamic>?,
+              enable: enable,
+              save: (rules) async {
+                if (!mounted ||
+                    epoch != _accountEpoch ||
+                    !identical(api, ref.read(apiClientProvider))) {
+                  throw StateError('Account changed');
+                }
+                await api.savePlaylistRules(
+                    playlist['playlist_id'] as String, rules);
+                if (!mounted ||
+                    epoch != _accountEpoch ||
+                    !identical(api, ref.read(apiClientProvider))) {
+                  throw StateError('Account changed');
+                }
+              },
+            )));
+    if (reload &&
+        saved == true &&
+        mounted &&
+        epoch == _accountEpoch &&
+        generation == _generation) {
       _load();
     }
   }
@@ -1310,6 +1369,7 @@ class _AddSongsState extends ConsumerState<_AddSongsDialog> {
                     for (final list in _membership.where((list) =>
                         list['can_edit'] == true &&
                         list['source'] == null &&
+                        list['rules'] == null &&
                         list['playlist_id'] != widget.playlistId))
                       CheckboxListTile(
                           title: Text(list['name'] as String),

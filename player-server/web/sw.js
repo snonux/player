@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v76';
+const CACHE = 'kiss-v77';
 const ASSETS = [
   '/',
   '/index.html',
@@ -103,6 +103,7 @@ const ASSETS = [
   '/js/views/media-grid.js',
   '/js/views/music-catalog.js',
   '/js/views/music-playlists.js',
+  '/js/views/music-playlist-rules.js',
   '/js/views/picture-layout.js',
   '/js/views/thumbnail-size.js',
   '/js/views/media-info.js',

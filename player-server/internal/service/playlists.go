@@ -45,6 +45,7 @@ func (s *PlaylistService) List(ctx context.Context, user int64) ([]PlaylistView,
 	if err != nil {
 		return nil, err
 	}
+	var ruleData *playlistRuleData
 	result := make([]PlaylistView, 0, len(docs))
 	for _, doc := range docs {
 		p, err := s.repo.GetPlaylist(ctx, user, doc.ID)
@@ -63,6 +64,17 @@ func (s *PlaylistService) List(ctx context.Context, user int64) ([]PlaylistView,
 				if p == nil {
 					continue
 				}
+			}
+			if p.Rules != nil {
+				if ruleData == nil {
+					data, err := s.ruleData(ctx, user, songs)
+					if err != nil {
+						return nil, err
+					}
+					ruleData = &data
+				}
+				evaluated := smartPlaylist(*p, songs, *ruleData)
+				p = &evaluated
 			}
 			v := playlistView(*p, songs)
 			v.Songs = []model.Media{}
@@ -97,6 +109,14 @@ func (s *PlaylistService) Get(ctx context.Context, user int64, id string) (*Play
 	songs, err := s.visibleSongs(ctx, user)
 	if err != nil {
 		return nil, err
+	}
+	if p.Rules != nil {
+		data, err := s.ruleData(ctx, user, songs)
+		if err != nil {
+			return nil, err
+		}
+		evaluated := smartPlaylist(*p, songs, data)
+		p = &evaluated
 	}
 	v := playlistView(*p, songs)
 	return &v, nil
@@ -195,6 +215,9 @@ func (s *PlaylistService) AddAlbum(ctx context.Context, user int64, id, key stri
 	if !p.CanEdit {
 		return nil, ErrForbidden
 	}
+	if p.Rules != nil {
+		return nil, &apiError{msg: "Edit rules instead of changing smart playlist songs.", status: 409}
+	}
 	if p.Source != nil {
 		return nil, &apiError{msg: "Stop following the source before editing songs.", status: 409}
 	}
@@ -234,6 +257,9 @@ func (s *PlaylistService) EditSongs(ctx context.Context, user int64, id, action,
 	}
 	if !p.CanEdit {
 		return nil, ErrForbidden
+	}
+	if p.Rules != nil {
+		return nil, &apiError{msg: "Edit rules instead of changing smart playlist songs.", status: 409}
 	}
 	if p.Source != nil {
 		return nil, &apiError{msg: "Stop following the source before editing songs.", status: 409}

@@ -3124,3 +3124,69 @@ whole-stream lifetime. `/artwork` returns a bounded decoded JPEG, never active
 external markup. Missing stations return 404; unsafe/unreachable/undecodable
 sources report a visible failure and can be retried. No decoder/platform support
 is inferred from API tests; actual Chrome/Firefox/Android verification is pending.
+
+### Smart playlist rules
+
+`PUT /api/playlists/{playlist_id}/rules` (also `/api/v1`) saves the owner's or
+an administrator's dynamic rules. Shared read-only viewers receive 403 on this
+write; private foreign/missing playlist IDs receive 404. Ordinary playlist
+reads, collection playback, queue actions and M3U8 export evaluate current rules
+against the requesting viewer's currently accessible Music songs. Podcast,
+audiobook, trashed and inaccessible media stay excluded by the Music catalog.
+Rules referencing personal data use the **viewer**, so shared smart playlists
+may have different songs and totals for each account.
+
+Example request (all values in conditions are scalar strings):
+
+```json
+{
+  "rules": {
+    "match": "all",
+    "conditions": [
+      {"field": "genre", "operator": "contains", "value": "Synth"},
+      {"field": "rating", "operator": "gte", "value": "4"},
+      {"field": "plays", "operator": "lte", "value": "10"}
+    ],
+    "sort": "added",
+    "descending": true,
+    "limit": 100
+  }
+}
+```
+
+`match` is `all` (AND) or `any` (OR), with 1–20 conditions and values at most
+300 Unicode characters. Unknown fields/operators and invalid numeric/date
+values return 400. Every rule applies to the same song.
+
+| Field | Operators | Value and meaning |
+| --- | --- | --- |
+| `title`, `artist`, `album`, `genre` | `contains`, `is` | Nonblank text; case-insensitive, trimmed; artist/genre match any structured value. Untagged titles use the filename stem. |
+| `year` | `eq`, `gte`, `lte` | Integer 0–9999; 0 means unknown embedded year. |
+| `plays` | `eq`, `gte`, `lte` | Integer 0–1000000000; viewer's qualified personal plays, distinct from global file play_count. |
+| `rating` | `eq`, `gte`, `lte` | Viewer's personal song rating, integer 0–5; 0 means unrated. |
+| `starred` | `is` | String `true` or `false`; viewer's file favorite. |
+| `added`, `last_played` | `before`, `after` | `YYYY-MM-DD` UTC calendar date. Before excludes that day; after starts at the following UTC midnight. `added` is file CreatedAt, not release date. `last_played` is viewer's last qualified play; never-played songs do not match date rules. |
+| `added`, `last_played` | `within_days` | Integer 1–36500; inclusive rolling UTC interval `[now − N days, now]`, excluding future dates. |
+
+`sort` is `title`, `artist`, `album`, `year`, `plays`, `rating`, `added` or
+`last_played`; `descending` defaults to false. Unknown last-play dates sort as
+missing dates before known dates in ascending order. Equal values use ascending
+media ID regardless of direction. `limit` must be 1–1000, applied after ACLs,
+matching and sorting. Results refresh on each read; there is no persisted
+result snapshot or background refresh delay. Queueing captures the read's
+current ordered songs, preserving normal independent queue behavior.
+
+A 200 response is the normal playlist view with additive `rules`, current
+ordered songs/entries and viewer-visible totals/cover. Smart occurrence IDs
+are stable per playlist/song, not editable saved membership IDs. List responses
+retain `rules` and evaluated totals while omitting songs/entries as usual.
+
+`{"rules":null}` disables rules and restores the untouched saved manual
+membership. Enabling rules retains existing manual entries; it never overwrites
+them. Manual album/song adds, batch adds, duplicate handling and occurrence
+removal/reorder return 409 while rules are active, including repository guards
+against races. Filesystem-following playlists must stop following before rule
+writes (409); filesystem imports create their own playlists and cannot replace
+smart results. Name/comment/visibility, owner/admin editing, sharing and delete
+keep their ordinary playlist semantics. Changing owner preserves rules and the
+new viewer's personal conditions still apply on reads.

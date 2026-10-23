@@ -1,3 +1,6 @@
+import 'package:just_audio/just_audio.dart';
+import 'package:player_android/providers/audio_handler_provider.dart';
+import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/providers/current_user_provider.dart';
 import 'package:player_android/models/user.dart';
 import 'dart:async';
@@ -35,6 +38,7 @@ class _Client extends PlayerApiClient {
   }
 
   Map<String, dynamic>? sourceBinding;
+  Map<String, dynamic>? rules;
   int sourceSyncs = 0;
   @override
   Future<Map<String, dynamic>> syncPlaylistSource(String id,
@@ -53,6 +57,7 @@ class _Client extends PlayerApiClient {
         'owner_id': 1,
         'can_edit': true,
         if (sourceBinding != null) 'source': sourceBinding,
+        if (rules != null) 'rules': rules,
         'name': name,
         'comment': comment,
         'song_count': members.length,
@@ -159,11 +164,25 @@ class _Client extends PlayerApiClient {
   }
 }
 
+class _IdlePlayer extends AudioPlayer {
+  @override
+  Stream<PlaybackEvent> get playbackEventStream => const Stream.empty();
+  @override
+  Stream<ProcessingState> get processingStateStream => const Stream.empty();
+  @override
+  Stream<bool> get playingStream => const Stream.empty();
+  @override
+  Future<void> stop() async {}
+}
+
 void main() {
   Future<void> mount(WidgetTester t, _Client api,
       {String? id,
       User user = const User(id: 1, username: "owner", isAdmin: false)}) async {
+    final handler = PlayerAudioHandler(_IdlePlayer());
+    addTearDown(handler.stop);
     await t.pumpWidget(ProviderScope(overrides: [
+      audioHandlerProvider.overrideWithValue(handler),
       apiClientProvider.overrideWithValue(api),
       currentUserProvider.overrideWith((ref) async => user)
     ], child: MaterialApp(home: MusicPlaylistsScreen(playlistId: id))));
@@ -447,5 +466,38 @@ void main() {
     await t.pumpAndSettle();
     expect(saves, 0);
     expect(find.byType(AlertDialog), findsNothing);
+  });
+  testWidgets(
+      'smart detail exposes rules and refresh while manual changes stay hidden',
+      (t) async {
+    final api = _Client()
+      ..rules = {
+        'match': 'all',
+        'conditions': [
+          {'field': 'genre', 'operator': 'contains', 'value': 'Synth'}
+        ],
+        'sort': 'title',
+        'descending': false,
+        'limit': 10
+      };
+    await mount(t, api, id: 'pl_a');
+    expect(find.text('Rules'), findsOneWidget);
+    expect(find.text('Refresh results'), findsOneWidget);
+    expect(find.text('Add music'), findsNothing);
+    expect(find.text('Add songs'), findsNothing);
+    await t.scrollUntilVisible(find.text('No songs match these rules.'), 200,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('No songs match these rules.'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Rules'), -200,
+        scrollable: find.byType(Scrollable).first);
+    await t.tap(find.text('Rules'));
+    await t.pumpAndSettle();
+    expect(find.text('Smart playlist rules'), findsOneWidget);
+    await t.scrollUntilVisible(find.textContaining('Genre contains Synth'), 200,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.textContaining('Genre contains Synth'), findsOneWidget);
+    await t.tap(find.byTooltip('Back'));
+    await t.pumpAndSettle();
+    expect(find.text('Refresh results'), findsOneWidget);
   });
 }

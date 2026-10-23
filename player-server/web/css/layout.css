@@ -890,3 +890,14 @@ body {
   display: inline-flex;
   min-height: 2.75rem;
 }
+
+/* Smart rule forms retain native controls and stack on narrow screens. */
+[data-rule-form] fieldset {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--gap);
+  margin-block: var(--gap);
+}
+[data-rule-form] legend { color: var(--text-secondary); padding-inline: .25rem; }
+[data-rule-form] [data-summary] { overflow-wrap: anywhere; }

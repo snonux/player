@@ -17,7 +17,7 @@ func (s *SQLite) AddPlaylistSongs(ctx context.Context, user int64, targets map[s
 	defer func() { _ = tx.Rollback() }()
 	for id, entries := range targets {
 		// Obtain the write lock before inspecting membership, including with multiple connections.
-		result, err := tx.ExecContext(ctx, `UPDATE playlists SET name=name WHERE id=? AND source='' AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user)
+		result, err := tx.ExecContext(ctx, `UPDATE playlists SET name=name WHERE id=? AND source='' AND rules='' AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user)
 		if err != nil {
 			return false, err
 		}

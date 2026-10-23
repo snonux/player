@@ -56,8 +56,14 @@ func (s *SQLite) ListPlaylists(ctx context.Context, user int64) ([]model.Playlis
 // GetPlaylist returns nil when the caller cannot read the playlist.
 func (s *SQLite) GetPlaylist(ctx context.Context, user int64, id string) (*model.Playlist, error) {
 	p := model.Playlist{Entries: []model.PlaylistEntry{}}
-	var source string
-	err := s.db.QueryRowContext(ctx, `SELECT p.id,p.name,p.comment,p.user_id,u.username,p.visibility,(p.user_id=? OR a.is_admin),a.is_admin,p.source,COALESCE((SELECT revision FROM music_artwork WHERE kind='playlist' AND entity_key=p.id),'') FROM playlists p JOIN users u ON u.id=p.user_id JOIN users a ON a.id=? WHERE p.id=? AND (p.user_id=? OR p.visibility='shared' OR a.is_admin)`, user, user, id, user).Scan(&p.ID, &p.Name, &p.Comment, &p.OwnerID, &p.OwnerName, &p.Visibility, &p.CanEdit, &p.CanTransfer, &source, &p.ArtworkRevision)
+	var source, rules string
+	err := s.db.QueryRowContext(ctx, `SELECT p.id,p.name,p.comment,p.user_id,u.username,p.visibility,(p.user_id=? OR a.is_admin),a.is_admin,p.source,p.rules,COALESCE((SELECT revision FROM music_artwork WHERE kind='playlist' AND entity_key=p.id),'') FROM playlists p JOIN users u ON u.id=p.user_id JOIN users a ON a.id=? WHERE p.id=? AND (p.user_id=? OR p.visibility='shared' OR a.is_admin)`, user, user, id, user).Scan(&p.ID, &p.Name, &p.Comment, &p.OwnerID, &p.OwnerName, &p.Visibility, &p.CanEdit, &p.CanTransfer, &source, &rules, &p.ArtworkRevision)
+	if rules != "" {
+		p.Rules = new(model.PlaylistRules)
+		if err := json.Unmarshal([]byte(rules), p.Rules); err != nil {
+			return nil, err
+		}
+	}
 	if source != "" {
 		p.Source = new(model.PlaylistSource)
 		if err := json.Unmarshal([]byte(source), p.Source); err != nil {
@@ -112,7 +118,7 @@ func (s *SQLite) AppendPlaylist(ctx context.Context, user int64, id string, entr
 	}
 	defer func() { _ = tx.Rollback() }()
 	var owner int64
-	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE source='' AND id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE source='' AND rules='' AND id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
@@ -147,7 +153,7 @@ func (s *SQLite) EditPlaylist(ctx context.Context, user int64, id string, change
 	}
 	defer func() { _ = tx.Rollback() }()
 	var owner int64
-	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE source='' AND id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE source='' AND rules='' AND id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err

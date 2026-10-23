@@ -1,3 +1,4 @@
+import { openPlaylistRules, playlistRulesSummary } from './music-playlist-rules.js';
 import { t, html, plural, ui, uiCount } from '../i18n.js';
 import { mountMusicArtwork } from '../music-artwork.js';
 import { favoriteButton, bindFavorites, favoriteFilter } from '../music-favorites.js';
@@ -14,7 +15,8 @@ let reload = () => {};
 let open = () => {};
 let back = () => {};
 let generation = 0;
-export function initPlaylists(load, navigate, goBack) { reload=load;open=navigate;back=goBack; }
+let pendingRulesID = "";
+export function initPlaylists(load, navigate, goBack) { reload=load;open=navigate;back=goBack; document.addEventListener('language:changed',()=>{document.querySelectorAll('[data-rule-summary]').forEach(node=>{try{node.textContent=playlistRulesSummary(JSON.parse(node.dataset.ruleSummary));}catch{}});}); }
 const cover = p => p.artwork_revision ? html`<img class="album-cover" src="/api/music/artwork/playlist/${encodeURIComponent(p.playlist_id)}/image?revision=${encodeURIComponent(p.artwork_revision)}" alt="Artwork for ${esc(p.name)}" data-custom-playlist-art data-cover-fallback="${p.cover_media_id || ''}">` : p.cover_media_id ? html`<img class="album-cover" src="/api/media/${p.cover_media_id}/thumbnail" alt="Artwork for ${esc(p.name)}">` : html`<div class="album-cover album-placeholder" role="img" aria-label="No playlist artwork">♫</div>`;
 const accessLabel = p => `${ui(p.visibility === 'shared' ? 'Shared with server' : 'Private')} · ${ui('Owner')}: ${esc(p.owner_name || '')}${p.can_edit === false ? ' · '+ui('Read only') : ''}${p.source ? ' · '+ui('Following source') : ''}`;
 const totals = p => `${uiCount(p.song_count, '{count} song', '{count} songs')} · ${fmtDur(p.duration)}`;
@@ -27,9 +29,10 @@ export async function renderPlaylists(grid, view, current, saved) {
  const count=document.getElementById('result-count');count.innerHTML=detail?`${ui('Music · Playlists')} · ${esc(p.name)}`:ui('Music · Playlists');
  grid.classList.toggle('music-detail',detail);
  if(!detail){
-  grid.innerHTML=html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to Sets</button><h1>Playlists</h1><button class="btn btn-primary" data-create>Create playlist</button><button class="btn" data-import>Import M3U…</button></div>`+(p.length?p.map(item=>html`<div class="media-card album-card" role="button" tabindex="0" data-playlist="${esc(item.playlist_id)}" aria-label="Open playlist ${esc(item.name)}">${cover(item)}<div class="card-body">${favoriteButton('playlist',item.playlist_id,item)}<div class="title" title="${esc(item.name)}">${esc(item.name)}</div><p>${totals(item)}</p><p>${accessLabel(item)}</p></div></div>`).join(''):html`<p class="grid-full">${view.favorites?'No favorite playlists. Show all playlists to favorite one.':'No playlists yet. Create a playlist to save music for later.'}</p>`);
+  grid.innerHTML=html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to Sets</button><h1>Playlists</h1><button class="btn btn-primary" data-create>Create playlist</button><button class="btn" data-smart>Create smart playlist</button><button class="btn" data-import>Import M3U…</button></div>`+(p.length?p.map(item=>html`<div class="media-card album-card" role="button" tabindex="0" data-playlist="${esc(item.playlist_id)}" aria-label="Open playlist ${esc(item.name)}">${cover(item)}<div class="card-body">${favoriteButton('playlist',item.playlist_id,item)}<div class="title" title="${esc(item.name)}">${esc(item.name)}</div><p>${totals(item)}</p><p>${accessLabel(item)}</p></div></div>`).join(''):html`<p class="grid-full">${view.favorites?'No favorite playlists. Show all playlists to favorite one.':'No playlists yet. Create a playlist to save music for later.'}</p>`);
   grid.querySelector('[data-create]').onclick=()=>editPlaylist(null,active);
   grid.querySelector('[data-import]').onclick=()=>importPlaylist(active);
+  grid.querySelector('[data-smart]').onclick=()=>editPlaylist(null,active,true);
   grid.querySelectorAll('[data-playlist]').forEach(card=>card.onclick=()=>open(card.dataset.playlist));
   bindCollectionCatalog(grid,p,'playlist','playlist_id','name',active);
  }else{
@@ -48,10 +51,10 @@ function dialog(title,content){
  modal.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=close);
  modal.classList.add('open');const panel=modal.firstElementChild;const alive=()=>modal.classList.contains('open')&&modal.firstElementChild===panel;return {modal,close,alive};
 }
-async function editPlaylist(p,current){
+async function editPlaylist(p,current,smart=false){
  let users=[];
  if(p?.can_transfer){try{users=await API.users();if(!current())return;}catch(e){toast(e.message||'Could not load owners. Check your connection.','error');return;}}
- const {modal,close,alive}=dialog(p?'Edit playlist':'Create playlist',playlistEditorContent(p,users));
+ const {modal,close,alive}=dialog(p?'Edit playlist':smart?'Create smart playlist':'Create playlist',playlistEditorContent(p,users));
  modal.querySelector('form').onsubmit=async e=>{
   e.preventDefault();const name=modal.querySelector('[name=name]').value.trim(),comment=modal.querySelector('[name=comment]').value;
   if([...name].length<1||[...name].length>200||[...comment].length>2000){modal.querySelector('[data-error]').textContent='Name must be 1–200 characters and comment at most 2000 characters.';return;}
@@ -60,7 +63,7 @@ async function editPlaylist(p,current){
   if(owner!==null&&owner!==p.owner_id&&!window.confirm('Transfer ownership? The previous owner will lose edit access unless they are an administrator.'))return;
   const body={name,comment,visibility,...(owner!==null&&owner!==p.owner_id?{owner_id:owner}:{})};
   const submit=modal.querySelector('[type=submit]');submit.disabled=true;
-  try{const saved=p?await API.updatePlaylist(p.playlist_id,body):await API.createPlaylist(body);if(!current()||!alive())return;close();toast(t('Playlist saved.'),'success');p?reload():open(saved.playlist_id);}catch(e){if(!alive()||!current())return;modal.querySelector('[data-error]').textContent=e.message||'Could not save playlist. Check your connection.';}finally{if(alive())submit.disabled=false;}
+  try{const saved=p?await API.updatePlaylist(p.playlist_id,body):await API.createPlaylist(body);if(!current()||!alive())return;close();toast(t('Playlist saved.'),'success');if(smart)pendingRulesID=saved.playlist_id;p?reload():open(saved.playlist_id);}catch(e){if(!alive()||!current())return;modal.querySelector('[data-error]').textContent=e.message||'Could not save playlist. Check your connection.';}finally{if(alive())submit.disabled=false;}
  };
 }
 async function addMusic(p,current){
@@ -78,7 +81,7 @@ function matchesSong(song,query){return [mediaTitle(song),song.file_name,song.mu
 function renderPlaylistDetail(grid,initial,current){
  let p=initial, busy=false;
  let undo=null;
- grid.innerHTML=html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← ${ui('Back to playlists')}</button><div class="album-header"><div data-playlist-cover></div><div><h1>${esc(p.name)}</h1><p>${accessLabel(p)}</p><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p>${p.source?html`<div class="playlist-comment"><p>Following ${esc(p.source.path)} · ${p.source.base==='library'?'Library root':t('Playlist folder')} paths</p><p role="status">${p.source.status==='ready'?`${p.source.unavailable} unavailable · ${p.source.rejected} unsafe entries skipped`:"Source unavailable. Last imported songs retained."}</p>${p.owner_id===state.user?.id?html`<button class="btn" data-sync>Sync now</button>`:''}<button class="btn" data-detach>Stop following…</button><p>Stop following to add, remove or move songs.</p></div>`:''}<div class="playlist-actions">${favoriteButton('playlist',p.playlist_id,p)}${collectionButtons('Play playlist')}<button class="btn btn-ghost" data-playlist-actions aria-label="Playlist actions">Playlist actions ⋮</button><button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
+ grid.innerHTML=html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← ${ui('Back to playlists')}</button><div class="album-header"><div data-playlist-cover></div><div><h1>${esc(p.name)}</h1><p>${accessLabel(p)}</p><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p>${p.rules?html`<p class="playlist-comment" data-rule-summary="${esc(JSON.stringify(p.rules))}">${esc(playlistRulesSummary(p.rules))}</p><p>${ui('Your plays, favorites and ratings use your account. Shared smart playlists can show different songs to each viewer.')}</p><button class="btn" data-refresh-rules>Refresh results</button>`:''}${p.source?html`<div class="playlist-comment"><p>Following ${esc(p.source.path)} · ${p.source.base==='library'?'Library root':t('Playlist folder')} paths</p><p role="status">${p.source.status==='ready'?`${p.source.unavailable} unavailable · ${p.source.rejected} unsafe entries skipped`:"Source unavailable. Last imported songs retained."}</p>${p.owner_id===state.user?.id?html`<button class="btn" data-sync>Sync now</button>`:''}<button class="btn" data-detach>Stop following…</button><p>Stop following to add, remove or move songs.</p></div>`:''}<div class="playlist-actions">${favoriteButton('playlist',p.playlist_id,p)}${collectionButtons('Play playlist')}<button class="btn btn-ghost" data-playlist-actions aria-label="Playlist actions">Playlist actions ⋮</button><button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-rules>Rules</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
  mountMusicArtwork(grid.querySelector('[data-playlist-cover]'),'playlist',p.playlist_id,current,cover({...p,artwork_revision:''}));
  const rows=grid.querySelector('[data-rows]'),find=grid.querySelector('[data-find]');
  const draw=(focusID=null)=>{
@@ -88,7 +91,7 @@ function renderPlaylistDetail(grid,initial,current){
 
   grid.querySelectorAll('[data-collection-play], [data-collection-menu]').forEach(button=>button.disabled=!p.songs.length);
   grid.querySelector('[data-count]').innerHTML=ui('Showing {shown} of {count} songs', {shown: visible.length, count: p.songs.length});
-  rows.innerHTML=visible.length?visible.map(({song,index,entry})=>html`<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" data-entry="${esc(entry.entry_id)}" aria-label="Play ${esc(mediaTitle(song))}"><span class="text-muted music-number">${index+1}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(song.music?.artist||t('Unknown artist'))} · ${esc(song.music?.album||'')}</span></span><span>${fmtDur(song.duration)}</span><span hidden>${(p.can_edit===false||p.source?[]:[['up',t('Move up')],['down',t('Move down')],['remove','Remove from playlist']]).map(([action,label])=>html`<button data-action="playlist-${action}" ${busy||(action==='up'&&index===0)||(action==='down'&&index===p.songs.length-1)?'disabled':''}>${label}</button>`).join('')}</span><button class="btn btn-ghost" data-song-menu aria-label="Song actions for ${esc(mediaTitle(song))}">⋮</button></div>`).join(''):html`<p>${p.songs.length?'No matching songs. Clear the search to see all songs.':t('This playlist is empty.')}</p>`;
+  rows.innerHTML=visible.length?visible.map(({song,index,entry})=>html`<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" data-entry="${esc(entry.entry_id)}" aria-label="Play ${esc(mediaTitle(song))}"><span class="text-muted music-number">${index+1}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(song.music?.artist||t('Unknown artist'))} · ${esc(song.music?.album||'')}</span></span><span>${fmtDur(song.duration)}</span><span hidden>${(p.can_edit===false||p.source||p.rules?[]:[['up',t('Move up')],['down',t('Move down')],['remove','Remove from playlist']]).map(([action,label])=>html`<button data-action="playlist-${action}" ${busy||(action==='up'&&index===0)||(action==='down'&&index===p.songs.length-1)?'disabled':''}>${label}</button>`).join('')}</span><button class="btn btn-ghost" data-song-menu aria-label="Song actions for ${esc(mediaTitle(song))}">⋮</button></div>`).join(''):html`<p>${p.songs.length?'No matching songs. Clear the search to see all songs.':t(p.rules?'No songs match these rules.':'This playlist is empty.')}</p>`;
   rows.querySelectorAll('.media-row').forEach(row=>{
    row.onclick=e=>{if(e.target.closest('[data-song-menu],[data-action]'))return;selectByElement(row);playAlbumCollection(p.songs,Number(row.dataset.index),p.name);};
    row.querySelector('[data-song-menu]').onclick=()=>openSongActions(row);
@@ -115,15 +118,21 @@ function renderPlaylistDetail(grid,initial,current){
  };
  find.oninput=()=>draw();grid.querySelector('[data-clear]').onclick=()=>{find.value='';draw();find.focus();};
  bindCollectionActions(grid.querySelector('[data-collection-actions]'),()=>[{kind:'playlist',key:p.playlist_id}],current,p.name);
- grid.querySelectorAll('[data-add],[data-add-songs],[data-edit],[data-delete]').forEach(button=>button.hidden=p.can_edit===false);
- if(p.source){grid.querySelectorAll('[data-add],[data-add-songs]').forEach(b=>b.hidden=true);const sync=grid.querySelector('[data-sync]');if(sync)sync.onclick=()=>changeSource(p,false,current);grid.querySelector('[data-detach]').onclick=()=>changeSource(p,true,current);}
+ grid.querySelectorAll('[data-add],[data-add-songs],[data-rules],[data-edit],[data-delete]').forEach(button=>button.hidden=p.can_edit===false);
+ if(p.rules){grid.querySelectorAll('[data-add],[data-add-songs]').forEach(b=>b.hidden=true);grid.querySelector('[data-refresh-rules]').onclick=reload;}
+ if(p.source){grid.querySelector('[data-rules]').hidden=true;grid.querySelectorAll('[data-add],[data-add-songs]').forEach(b=>b.hidden=true);const sync=grid.querySelector('[data-sync]');if(sync)sync.onclick=()=>changeSource(p,false,current);grid.querySelector('[data-detach]').onclick=()=>changeSource(p,true,current);}
  grid.querySelector('[data-playlist-actions]').onclick=()=>playlistActions(p,current);
  grid.querySelector('[data-add]').onclick=()=>addMusic(p,current);
  grid.querySelector('[data-add-songs]').onclick=()=>addSongs(p,current);
+ grid.querySelector('[data-rules]').onclick=()=>editRules(p,current);
  grid.querySelector('[data-edit]').onclick=()=>editPlaylist(p,current);
  grid.querySelector('[data-delete]').onclick=()=>deletePlaylist(p,current);
  grid.querySelector('[data-restore]').onclick=async()=>{const saved=undo;if(!saved)return;if(await save({action:'add',media_ids:[saved.media],before_entry_id:saved.before},'restored')){undo=null;grid.querySelector('[data-undo]').hidden=true;toast('Song restored to playlist.','success');}};
  draw();
+ if(pendingRulesID===p.playlist_id){pendingRulesID='';queueMicrotask(()=>{if(current())editRules(p,current,true);});}
+}
+function editRules(p,current,enable=Boolean(p.rules)){
+ openPlaylistRules(p,{dialog,current,enable,save:API.playlistRules,saved:()=>{toast(t('Playlist rules saved.'),'success');reload();}});
 }
 async function addSongs(p,current){
  const {modal,close,alive}=dialog('Add songs',html`<p role="status">Loading songs…</p>`);
@@ -138,7 +147,7 @@ async function addSongs(p,current){
    if(!current()||!alive())return;
    const songs=[...new Map(details.flatMap(a=>a.songs).map(song=>[song.id,song])).values()];
    body.innerHTML=html`<label>Find songs<input type="search" aria-label="Find songs to add" autofocus></label><label>Repeated songs<select data-duplicates aria-label="Repeated songs"><option value="skip">Skip songs already in each playlist</option><option value="add">Add repeated songs again</option></select></label><details><summary>Add to more playlists</summary><div data-targets></div></details><p role="status" data-selected>0 selected</p><div class="playlist-albums" data-choices></div><p role="alert" data-error></p><div class="playlist-actions"><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-save disabled>Add selected songs</button></div>`;
-   body.querySelector('[data-targets]').innerHTML=membership.filter(list=>list.can_edit&&!list.source&&list.playlist_id!==p.playlist_id).map(list=>html`<label class="playlist-song-choice"><input type="checkbox" data-target="${esc(list.playlist_id)}">${esc(list.name)}</label>`).join('')||html`<p>No other editable playlists.</p>`;
+   body.querySelector('[data-targets]').innerHTML=membership.filter(list=>list.can_edit&&!list.source&&!list.rules&&list.playlist_id!==p.playlist_id).map(list=>html`<label class="playlist-song-choice"><input type="checkbox" data-target="${esc(list.playlist_id)}">${esc(list.name)}</label>`).join('')||html`<p>No other editable playlists.</p>`;
    body.querySelectorAll('[data-target]').forEach(check=>check.onchange=()=>{if(saving)return;check.checked?targets.add(check.dataset.target):targets.delete(check.dataset.target);});
    const input=body.querySelector('input'),choices=body.querySelector('[data-choices]'),submit=body.querySelector('[data-save]');
    const draw=()=>{const matches=songs.filter(song=>matchesSong(song,input.value));choices.innerHTML=matches.length?matches.map(song=>html`<label class="playlist-song-choice"><input type="checkbox" value="${song.id}" ${selected.has(song.id)?'checked':''} ${saving?'disabled':''} aria-label="Select ${esc(mediaTitle(song))}"><span>${esc(mediaTitle(song))}<span class="text-muted text-sm"> · ${esc(song.music?.artist||t('Unknown artist'))} · ${esc(song.music?.album||'')}</span><span class="text-muted text-sm"> · In playlists: ${membership.filter(list=>list.entries?.some(entry=>entry.media_id===song.id)).map(list=>esc(list.name)).join(', ')||'None'}</span></span></label>`).join(''):html`<p>${songs.length?'No matching songs.':'No songs available. Browse Sets or ask an administrator to rescan music tags.'}</p>`;choices.querySelectorAll('input').forEach(check=>check.onchange=()=>{if(saving)return;check.checked?selected.add(Number(check.value)):selected.delete(Number(check.value));body.querySelector('[data-selected]').textContent=`${selected.size} selected`;submit.disabled=saving||!selected.size;});};

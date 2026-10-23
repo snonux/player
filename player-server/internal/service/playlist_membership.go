@@ -52,6 +52,9 @@ func (s *PlaylistService) AddToPlaylists(ctx context.Context, user int64, ids []
 		if !p.CanEdit {
 			return ErrForbidden
 		}
+		if p.Rules != nil {
+			return &apiError{msg: "Edit rules instead of adding smart playlist songs.", status: 409}
+		}
 		if p.Source != nil {
 			return &apiError{msg: "Stop following the source before editing songs.", status: 409}
 		}

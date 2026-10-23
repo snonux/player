@@ -115,6 +115,26 @@ for(const initial of ['de','en']) {
 }
 console.log('Production search headings, layout options/columns/direction and create/edit playlist dialogs switch both directions with form state retained.');
 
+// Smart editor passes the canonical title key to the shared production dialog.
+const { openPlaylistRules } = await import('../views/music-playlist-rules.js');
+for (const initial of ['de', 'en']) {
+  select.value=initial;select.change();
+  let titleKey;
+  const stop=Symbol('captured smart editor template');
+  assert.throws(()=>openPlaylistRules({rules:null}, {
+    dialog:(title,content)=>{titleKey=title;throw stop;},
+    current:()=>true,saved:()=>{},save:async()=>{},
+  }),error=>error===stop);
+  assert.equal(titleKey,'Smart playlist rules','dialog receives a canonical key, never pretranslated prose');
+  const bindings=mountProductionBindings(playlistDialogContent(titleKey,''));
+  for (const locale of ['de','en']) {
+    select.value=locale;select.change();
+    assert(bindings.some(node=>node.textContent===t('Smart playlist rules',{},locale)),`${initial}->${locale}: smart editor title updates`);
+  }
+}
+console.log('Production smart editor title keeps a canonical binding in both locale directions.');
+
+
 // Exercise the real keyboard handler and the real Undo click handler against the
 // real queue, under German. Keyboard/action tokens never use translated prose.
 const { insertQueue, queueState } = await import('../queue.js');

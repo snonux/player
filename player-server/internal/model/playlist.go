@@ -2,6 +2,7 @@ package model
 
 // Playlist is an account-owned document; metadata aggregates are derived per viewer.
 type Playlist struct {
+	Rules           *PlaylistRules  `json:"rules,omitempty"`
 	ArtworkRevision string          `json:"artwork_revision,omitempty"`
 	Source          *PlaylistSource `json:"source,omitempty"`
 	OwnerID         int64           `json:"owner_id"`
