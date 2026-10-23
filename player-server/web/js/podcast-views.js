@@ -3,10 +3,39 @@
 // downloaded episodes as podcast cards (server_copy) instead of dropping
 // them into generic media cards.
 import { API } from './api.js';
-import { state } from './state.js';
+import { state, setMedia } from './state.js';
 import { escapeHtml, fmtDur, toast } from './utils.js';
 import { setEpisodeCompleted } from './podcast-episode-state.js';
 import { clearSelection, selectByElement } from './selection.js';
+
+// episodePlayableMedia builds a state.media slot for playMediaById /
+// playSelected. Subscription views clear the browse list, so Play must put
+// downloaded copies (or a fresh download) into state.media by card index.
+export function episodePlayableMedia(ep, downloaded = null) {
+  if (downloaded?.id) return downloaded;
+  const id = ep?.server_copy?.media_id;
+  if (!id) return null;
+  return {
+    id,
+    type: 'audio',
+    title: ep.title || '',
+    is_podcast: true,
+  };
+}
+
+export function mediaSlotsForEpisodes(episodes) {
+  return (episodes || []).map((ep) => episodePlayableMedia(ep));
+}
+
+// rememberEpisodeMedia writes a playable row at the card's index so
+// playMediaById (which only searches state.media) can start playback.
+export function rememberEpisodeMedia(index, media) {
+  if (!media?.id || !Number.isInteger(index) || index < 0) return;
+  const list = state.media.slice();
+  while (list.length <= index) list.push(null);
+  list[index] = media;
+  setMedia(list);
+}
 
 const FILTERS = [
   { id: 'uncompleted', label: 'Uncompleted' },
@@ -162,6 +191,10 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
     + (episodes.length ? '' : `<p class="text-muted text-sm grid-full">No episodes.</p>`)
     + pagerHtml(pageInfo, 'bottom');
 
+  // Align state.media with episode card indices so Play / Space / Enter can
+  // resolve downloaded copies the same way set-browse playMediaById does.
+  setMedia(mediaSlotsForEpisodes(episodes));
+
   const before = grid.querySelector('[data-page-pager="bottom"]');
   episodes.forEach((ep, index) => {
     const card = document.createElement('div');
@@ -170,6 +203,8 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
     card.dataset.feedKey = ep.feed_key || '';
     card.dataset.episodeKey = ep.episode_key || '';
     card.dataset.index = String(index);
+    const mediaId = ep.server_copy?.media_id;
+    if (mediaId) card.dataset.id = String(mediaId);
     card.tabIndex = -1;
     renderViewEpisodeCard(card, ep, { showFeed: !feedKey });
     if (before) grid.insertBefore(card, before);
@@ -279,16 +314,34 @@ function episodeCardHtml(ep, { showFeed } = {}) {
 }
 
 async function playEpisode(card, ep, buttons) {
+  const index = parseInt(card.dataset.index, 10);
+  let media = Number.isInteger(index) ? state.media[index] : null;
+  if (media?.id) {
+    card.dataset.id = String(media.id);
+    if (!(await playMediaById(media.id))) toast('Select the episode to play', 'info');
+    return;
+  }
   const mediaId = ep.server_copy?.media_id;
   if (mediaId) {
-    if (!(await playMediaById(mediaId))) toast('Select the episode to play', 'info');
+    // Detail fills fields playMediaById / the player need when the slot was
+    // empty (e.g. after a filter refresh race).
+    try {
+      media = (await API.mediaDetail(mediaId))?.media || episodePlayableMedia(ep);
+    } catch {
+      media = episodePlayableMedia(ep);
+    }
+    rememberEpisodeMedia(index, media);
+    card.dataset.id = String(media.id);
+    if (!(await playMediaById(media.id))) toast('Select the episode to play', 'info');
     return;
   }
   buttons.forEach((b) => { b.disabled = true; });
   toast('Downloading episode…', 'info');
   try {
-    const media = await API.downloadEpisode(ep.id);
+    media = await API.downloadEpisode(ep.id);
     ep.server_copy = { media_id: media.id };
+    rememberEpisodeMedia(index, media);
+    card.dataset.id = String(media.id);
     toast('Episode downloaded');
     renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
     if (!(await playMediaById(media.id))) toast('Episode downloaded; select it to play', 'info');
@@ -299,10 +352,13 @@ async function playEpisode(card, ep, buttons) {
 }
 
 async function downloadEpisodeOnly(card, ep, buttons) {
+  const index = parseInt(card.dataset.index, 10);
   buttons.forEach((b) => { b.disabled = true; });
   try {
     const media = await API.downloadEpisode(ep.id);
     ep.server_copy = { media_id: media.id };
+    rememberEpisodeMedia(index, media);
+    card.dataset.id = String(media.id);
     toast('Episode downloaded');
     renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
   } catch (err) {
