@@ -2301,11 +2301,21 @@ LRC timestamps expand to separate lines. LRC `[offset:N]` applies milliseconds
 no usable lyrics exist, including for non-audio media, the result is HTTP 200:
 `{"source":"","synced":false,"lines":[]}`.
 
-Only local sources are read, in order: matching filename stem `.lrc`, `.txt`,
-then embedded format/stream lyrics tags through hardened ffprobe. No database
+Only local sources are read, in order: matching filename stem `.ttml`, `.yaml`,
+`.yml`, `.elrc`, `.lrc`, `.srt`, `.txt`, then embedded lyrics through hardened
+ffprobe. The first usable candidate wins; malformed structured candidates fall
+through. Embedded format tags precede stream tags in stream order, with keys
+sorted lexically within each group. TTML parallel paragraphs and inherited timing,
+Lyricsfile YAML 1.0, Enhanced LRC and SRT project onto the same line contract.
+Word timing is omitted; sequential TTML containers are rejected. YAML
+`metadata.offset_ms` uses the same positive-earlier convention as LRC.
+No database
 rescan or external lyrics service is needed. The source and sidecars must be
 regular files confined to `MEDIA_ROOT`, including resolved symlinks. Sidecars
-and expanded lyrics are limited to 1 MiB; ffprobe output to 2 MiB and runtime
+and expanded lyrics are limited to 1 MiB; structured depth is limited to 32,
+YAML nodes and TTML tokens to 32,768, and structured start times to finite
+0–1,000,000,000 seconds. YAML aliases are rejected. ffprobe output is limited
+to 2 MiB and runtime
 to three seconds. Unreadable, unsafe, oversized and unavailable lyrics return
 the same empty result. Text is returned as data; clients must render it as text.
 

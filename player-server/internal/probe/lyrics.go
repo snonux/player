@@ -27,11 +27,25 @@ func lyricsArgs(path string) ([]string, error) {
 // ReadLyrics reads local format/stream lyrics tags, with bounded output and runtime.
 // The caller must validate that path is a regular file inside its media root.
 func ReadLyrics(ctx context.Context, path string) (string, error) {
+	candidates, err := ReadLyricsCandidates(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	if len(candidates) == 0 {
+		return "", nil
+	}
+	return candidates[0], nil
+}
+
+// ReadLyricsCandidates reads bounded local lyrics in deterministic priority:
+// format tags before stream tags in stream order, with keys sorted per group.
+// The caller validates the source path and selects the first usable candidate.
+func ReadLyricsCandidates(ctx context.Context, path string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	args, err := lyricsArgs(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	cmd := exec.CommandContext(ctx, "ffprobe", args...)
 	cmd.WaitDelay = time.Second
@@ -39,7 +53,7 @@ func ReadLyrics(ctx context.Context, path string) (string, error) {
 	cmd.Stdout = out
 	// Diagnostics are intentionally discarded: they may contain local paths.
 	if err := cmd.Run(); err != nil {
-		return "", err
+		return nil, err
 	}
 	var result struct {
 		Format struct {
@@ -50,12 +64,13 @@ func ReadLyrics(ctx context.Context, path string) (string, error) {
 		} `json:"streams"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
-		return "", err
+		return nil, err
 	}
 	tags := []map[string]string{result.Format.Tags}
 	for _, stream := range result.Streams {
 		tags = append(tags, stream.Tags)
 	}
+	var candidates []string
 	for _, group := range tags {
 		keys := make([]string, 0, len(group))
 		for key := range group {
@@ -67,12 +82,12 @@ func ReadLyrics(ctx context.Context, path string) (string, error) {
 			if name == "lyrics" || name == "unsyncedlyrics" || name == "unsynced lyrics" || strings.HasPrefix(name, "lyrics-") {
 				value := group[key]
 				if len(value) <= MaxLyricsBytes && strings.TrimSpace(value) != "" {
-					return value, nil
+					candidates = append(candidates, value)
 				}
 			}
 		}
 	}
-	return "", nil
+	return candidates, nil
 }
 
 type boundedLyricsOutput struct{ bytes.Buffer }

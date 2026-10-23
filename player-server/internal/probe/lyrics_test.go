@@ -1,13 +1,14 @@
 package probe
 
 import (
-	"codeberg.org/snonux/player/internal/ffsafe"
-	"codeberg.org/snonux/player/internal/ffsafe/ffsafetest"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"codeberg.org/snonux/player/internal/ffsafe"
+	"codeberg.org/snonux/player/internal/ffsafe/ffsafetest"
 )
 
 func TestLyricsArgs(t *testing.T) {
@@ -52,5 +53,15 @@ func TestLyricsOutputBound(t *testing.T) {
 	b := &boundedLyricsOutput{}
 	if _, err := b.Write([]byte(strings.Repeat("a", 2*MaxLyricsBytes+1))); err == nil || b.Len() != 0 {
 		t.Fatal("output not bounded")
+	}
+}
+
+func TestReadLyricsCandidatesReal(t *testing.T) {
+	ffsafetest.RequireFFmpeg(t)
+	path := filepath.Join(t.TempDir(), "song.flac")
+	ffsafetest.Generate(t, path, "-f", "lavfi", "-i", "sine=duration=0.1", "-metadata", "lyrics=<tt>malformed", "-metadata", "unsyncedlyrics=fallback")
+	got, err := ReadLyricsCandidates(context.Background(), path)
+	if err != nil || len(got) != 2 || got[0] != "<tt>malformed" || got[1] != "fallback" {
+		t.Fatalf("%q %v", got, err)
 	}
 }

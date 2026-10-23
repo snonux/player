@@ -1,15 +1,16 @@
 package service
 
 import (
-	"codeberg.org/snonux/player/internal/ffsafe/ffsafetest"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+
+	"codeberg.org/snonux/player/internal/ffsafe/ffsafetest"
+	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/probe"
 )
 
 func TestParseLyrics(t *testing.T) {
@@ -163,6 +164,18 @@ func TestLocalLyricsRealEmbeddedFallback(t *testing.T) {
 	}
 	got = localLyrics(context.Background(), root, media)
 	if got.Source != "sidecar" || got.Synced || got.Lines[0].Text != "sidecar" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestLocalLyricsAdditionalEmbeddedFallback(t *testing.T) {
+	ffsafetest.RequireFFmpeg(t)
+	root := t.TempDir()
+	path := filepath.Join(root, "song.flac")
+	ffsafetest.Generate(t, path, "-f", "lavfi", "-i", "sine=duration=0.1", "-metadata", "lyrics=<tt>malformed", "-metadata", "unsyncedlyrics=1\n00:00:01,000 --> 00:00:02,000\nembedded fallback")
+	media := &model.Media{AbsPath: path, Type: model.MediaTypeAudio}
+	got := localLyrics(context.Background(), root, media)
+	if got.Source != "embedded" || !got.Synced || len(got.Lines) != 1 || got.Lines[0].Text != "embedded fallback" {
 		t.Fatalf("%+v", got)
 	}
 }

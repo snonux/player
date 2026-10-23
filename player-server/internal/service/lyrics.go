@@ -72,7 +72,7 @@ func localLyrics(ctx context.Context, root string, media *model.Media) *Lyrics {
 	}
 	// Match the indexed filename, including when it is a confined symlink.
 	stem := strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath))
-	for _, ext := range []string{".lrc", ".txt"} {
+	for _, ext := range []string{".ttml", ".yaml", ".yml", ".elrc", ".lrc", ".srt", ".txt"} {
 		path := stem + ext
 		if !confinedPath(root, path) {
 			continue
@@ -90,40 +90,40 @@ func localLyrics(ctx context.Context, root string, media *model.Media) *Lyrics {
 		}
 		realRoot, err := filepath.EvalSymlinks(root)
 		if err != nil {
-			rootDir.Close()
+			_ = rootDir.Close()
 			continue
 		}
 		absRoot, err := filepath.Abs(realRoot)
 		if err != nil {
-			rootDir.Close()
+			_ = rootDir.Close()
 			continue
 		}
 		absPath, err := filepath.Abs(realPath)
 		if err != nil {
-			rootDir.Close()
+			_ = rootDir.Close()
 			continue
 		}
 		relative, err := filepath.Rel(absRoot, absPath)
 		if err != nil {
-			rootDir.Close()
+			_ = rootDir.Close()
 			continue
 		}
 		f, err := rootDir.OpenFile(relative, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-		rootDir.Close()
+		_ = rootDir.Close()
 		if err != nil {
 			continue
 		}
 		info, err := f.Stat()
 		if err != nil || !info.Mode().IsRegular() || info.Size() > probe.MaxLyricsBytes {
-			f.Close()
+			_ = f.Close()
 			continue
 		}
 		data, err := io.ReadAll(io.LimitReader(f, probe.MaxLyricsBytes+1))
-		f.Close()
+		_ = f.Close()
 		if err != nil || len(data) > probe.MaxLyricsBytes {
 			continue
 		}
-		result := parseLyrics(string(data), "sidecar")
+		result := parseLyricsFormat(string(data), "sidecar", ext)
 		if len(result.Lines) > 0 {
 			return result
 		}
@@ -131,20 +131,26 @@ func localLyrics(ctx context.Context, root string, media *model.Media) *Lyrics {
 	if ctx.Err() != nil {
 		return empty
 	}
-	text, err := probe.ReadLyrics(ctx, source)
+	candidates, err := probe.ReadLyricsCandidates(ctx, source)
 	if err != nil {
 		return empty
 	}
-	return parseLyrics(text, "embedded")
+	for _, text := range candidates {
+		if result := parseLyrics(text, "embedded"); len(result.Lines) > 0 {
+			return result
+		}
+	}
+	return empty
 }
 
-func parseLyrics(text, source string) *Lyrics {
+func parseLRCLyrics(text, source string) *Lyrics {
 	result := &Lyrics{Lines: []LyricsLine{}}
 	if len(text) > probe.MaxLyricsBytes {
 		return result
 	}
 	text = strings.TrimPrefix(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), "\ufeff")
 	// Compile locally: no package-level mutable state.
+	wordTimestamp := regexp.MustCompile(`<\d{1,5}:[0-5]\d(?:\.\d{1,3})?>`)
 	timestamp := regexp.MustCompile(`^\[(\d{1,5}):([0-5]\d(?:\.\d{1,3})?)\]`)
 	offsetTag := regexp.MustCompile(`(?i)^\[offset:\s*([+-]?\d+)\s*\]$`)
 	metadata := regexp.MustCompile(`(?i)^\[(ar|al|ti|au|by|re|ve|length|offset|lang|la|lr|tool|#):.*\]$`)
@@ -182,6 +188,7 @@ func parseLyrics(text, source string) *Lyrics {
 				plain = append(plain, LyricsLine{Text: line})
 			}
 		} else {
+			line = wordTimestamp.ReplaceAllString(line, "")
 			for _, start := range starts {
 				outputBytes += len(line) + 64
 				if outputBytes > probe.MaxLyricsBytes {
