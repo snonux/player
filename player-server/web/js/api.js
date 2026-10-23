@@ -58,6 +58,7 @@ export const API = {
   bootstrap: (username, password) => api('/api/bootstrap', { method: 'POST', body: { username, password } }),
   config: () => api('/api/config'),
   editPlaylistSongs: (id,body) => api(`/api/playlists/${encodeURIComponent(id)}/songs`,{method:'POST',body}),
+  exportPlaylist: id => api(`/api/playlists/${encodeURIComponent(id)}/export.m3u`),
   playlists: () => api('/api/playlists'),
   playlist: id => api(`/api/playlists/${encodeURIComponent(id)}`),
   createPlaylist: body => api('/api/playlists', {method:'POST',body}),

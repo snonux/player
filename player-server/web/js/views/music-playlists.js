@@ -71,7 +71,7 @@ function matchesSong(song,query){return [mediaTitle(song),song.file_name,song.mu
 function renderPlaylistDetail(grid,initial,current){
  let p=initial, busy=false;
  let undo=null;
- grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover>${cover(p)}</div><div><h1>${esc(p.name)}</h1><p>${esc(accessLabel(p))}</p><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p><div class="playlist-actions">${collectionButtons('Play playlist')}<button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
+ grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover>${cover(p)}</div><div><h1>${esc(p.name)}</h1><p>${esc(accessLabel(p))}</p><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p><div class="playlist-actions">${collectionButtons('Play playlist')}<button class="btn btn-ghost" data-playlist-actions aria-label="Playlist actions">Playlist actions ⋮</button><button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
  const rows=grid.querySelector('[data-rows]'),find=grid.querySelector('[data-find]');
  const draw=(focusID=null)=>{
   state.media=p.songs;
@@ -108,6 +108,7 @@ function renderPlaylistDetail(grid,initial,current){
  find.oninput=()=>draw();grid.querySelector('[data-clear]').onclick=()=>{find.value='';draw();find.focus();};
  bindCollectionActions(grid.querySelector('[data-collection-actions]'),()=>[{kind:'playlist',key:p.playlist_id}],current,p.name);
  grid.querySelectorAll('[data-add],[data-add-songs],[data-edit],[data-delete]').forEach(button=>button.hidden=p.can_edit===false);
+ grid.querySelector('[data-playlist-actions]').onclick=()=>playlistActions(p,current);
  grid.querySelector('[data-add]').onclick=()=>addMusic(p,current);
  grid.querySelector('[data-add-songs]').onclick=()=>addSongs(p,current);
  grid.querySelector('[data-edit]').onclick=()=>editPlaylist(p,current);
@@ -135,4 +136,26 @@ async function addSongs(p,current){
   }catch(e){if(!current()||!alive())return;body.innerHTML='<p role="alert">Could not load songs. Check your connection.</p><button class="btn" data-retry>Retry</button>';body.querySelector('[data-retry]').onclick=load;}
  };
  await load();
+}
+
+function playlistActions(p,current){
+ const {modal,close}=dialog('Playlist actions','<button class="btn" data-export>Export M3U8…</button>');
+ modal.querySelector('[data-export]').onclick=()=>{close();exportPlaylist(p,current);};
+}
+function exportPlaylist(p,current){
+ const filename=`playlist-${p.playlist_id}.m3u8`;
+ const {modal,close,alive}=dialog('Export playlist',`<p class="playlist-comment">${esc(p.name)}</p><p>UTF-8 M3U8 · <span class="playlist-comment">${esc(filename)}</span></p><p>Paths are relative to the server’s media root. Save this file beside the corresponding library folders in the other tool.</p><p>Only songs you can access with exportable paths are included; repeated songs keep their order. This file does not grant access to music.</p><p role="status" data-export-status></p><div class="playlist-actions"><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-download>Download M3U8</button></div>`);
+ const button=modal.querySelector('[data-download]');
+ button.onclick=async()=>{
+  button.disabled=true;modal.querySelector('[data-error]').textContent='';modal.querySelector('[data-export-status]').textContent='Preparing…';
+  try{
+   const data=await API.exportPlaylist(p.playlist_id);
+   if(!alive()||!current())return;
+   const url=URL.createObjectURL(new Blob([data],{type:'application/vnd.apple.mpegurl;charset=utf-8'}));
+   const link=document.createElement('a');link.href=url;link.download=filename;document.body.append(link);link.click();link.remove();
+   window.setTimeout(()=>URL.revokeObjectURL(url),60000);
+   close();toast('Playlist download started.','success');
+  }catch(e){if(alive()&&current())modal.querySelector('[data-error]').textContent=e.message||'Could not export playlist. Check your connection and try again.';}
+  finally{if(alive()){button.disabled=false;modal.querySelector('[data-export-status]').textContent='';}}
+ };
 }

@@ -42,6 +42,12 @@ class PlayerApiClient implements ProgressSyncClient {
   // The configured Dio instance with auth/401 interceptors already applied.
   final Dio _dio;
 
+  /// Exports accessible saved occurrences as UTF-8, media-root-relative M3U8.
+  Future<String> exportPlaylist(String id) async => (await _dio.get<String>(
+          '/api/v1/playlists/${Uri.encodeComponent(id)}/export.m3u',
+          options: Options(responseType: ResponseType.plain)))
+      .data!;
+
   Future<List<Map<String, dynamic>>> playlists() async =>
       ((await _dio.get<List<dynamic>>('/api/v1/playlists')).data ?? [])
           .cast<Map<String, dynamic>>();

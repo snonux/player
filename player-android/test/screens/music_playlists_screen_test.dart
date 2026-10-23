@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/api/player_api_client.dart';
@@ -10,7 +11,16 @@ import 'package:player_android/screens/music_playlists_screen.dart';
 class _Client extends PlayerApiClient {
   _Client() : super(dio: Dio());
   bool fail = false;
-  int saves = 0, deletes = 0, adds = 0;
+  int saves = 0, deletes = 0, adds = 0, exports = 0;
+  Completer<String>? pendingExport;
+  @override
+  Future<String> exportPlaylist(String id) async {
+    exports++;
+    if (fail) throw StateError('offline');
+    if (pendingExport != null) return pendingExport!.future;
+    return '#EXTM3U\n#PLAYLIST:Road Trip\n';
+  }
+
   List<Map<String, dynamic>> members = [];
   final edits = <Map<String, dynamic>>[];
   String name = 'Road Trip', comment = 'Saved comment';
@@ -270,5 +280,71 @@ void main() {
     });
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.text('Showing 2 of 2 songs'), findsOneWidget);
+  });
+  testWidgets(
+      'export offers M3U8 system save, keeps retry and cancellation usable',
+      (t) async {
+    final api = _Client();
+    final calls = <MethodCall>[];
+    const channel = MethodChannel('zone.foo.player_android/playlist_export');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return calls.length > 1;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    await mount(t, api, id: 'pl_a');
+    await t.tap(find.byTooltip('Playlist actions'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Export M3U8…'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('playlist-pl_a.m3u8'), findsOneWidget);
+    api.fail = true;
+    await t.tap(find.text('Save M3U8'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Could not export playlist.'), findsOneWidget);
+    expect(calls, isEmpty);
+    api.fail = false;
+    await t.tap(find.text('Save M3U8'));
+    await t.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(calls.single.arguments, {
+      'filename': 'playlist-pl_a.m3u8',
+      'content': '#EXTM3U\n#PLAYLIST:Road Trip\n'
+    });
+    await t.tap(find.text('Save M3U8'));
+    await t.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('Playlist saved.'), findsOneWidget);
+  });
+
+  testWidgets('closing export while fetching prevents a late native save',
+      (t) async {
+    final api = _Client()..pendingExport = Completer<String>();
+    var saves = 0;
+    const channel = MethodChannel('zone.foo.player_android/playlist_export');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async {
+      saves++;
+      return true;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    await mount(t, api, id: 'pl_a');
+    await t.tap(find.byTooltip('Playlist actions'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Export M3U8…'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Save M3U8'));
+    await t.pump();
+    await t.tap(find.text('Cancel'));
+    await t.pumpAndSettle();
+    api.pendingExport!.complete('#EXTM3U\n');
+    await t.pumpAndSettle();
+    expect(saves, 0);
+    expect(find.byType(AlertDialog), findsNothing);
   });
 }

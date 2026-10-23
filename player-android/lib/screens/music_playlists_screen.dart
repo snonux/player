@@ -1,3 +1,4 @@
+import '../services/playlist_export.dart';
 import '../widgets/music_search_button.dart';
 import '../widgets/music_mini_player.dart';
 import '../services/music_collections.dart';
@@ -147,6 +148,17 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
           actions: [
             const MusicSearchButton(),
             const MusicQueueButton(),
+            if (widget.playlistId != null &&
+                !_loading &&
+                _error == null &&
+                _playlist != null)
+              PopupMenuButton<String>(
+                  tooltip: 'Playlist actions',
+                  onSelected: (_) => _export(),
+                  itemBuilder: (_) => const [
+                        PopupMenuItem(
+                            value: 'export', child: Text('Export M3U8…'))
+                      ]),
             if (widget.playlistId == null)
               IconButton(
                   tooltip: 'Create playlist',
@@ -625,6 +637,100 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
     } else {
       _load();
     }
+  }
+
+  Future<void> _export() async {
+    final p = _playlist!, generation = _generation;
+    final epoch = _accountEpoch, api = ref.read(apiClientProvider);
+    final filename = 'playlist-${p['playlist_id']}.m3u8';
+    var saving = false;
+    String? error;
+    bool sameAccount() =>
+        mounted &&
+        generation == _generation &&
+        epoch == _accountEpoch &&
+        identical(api, ref.read(apiClientProvider));
+    await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+            builder: (context, update) => AlertDialog(
+                    scrollable: true,
+                    title: const Text('Export playlist'),
+                    content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(p['name'] as String),
+                          Text('UTF-8 M3U8 · $filename'),
+                          const SizedBox(height: 12),
+                          const Text(
+                              'Paths are relative to the server’s media root. Save this file beside the corresponding library folders in the other tool.'),
+                          const SizedBox(height: 12),
+                          const Text(
+                              'Only songs you can access with exportable paths are included; repeated songs keep their order. This file does not grant access to music.'),
+                          if (saving) const Text('Preparing…'),
+                          if (error != null)
+                            Semantics(
+                                liveRegion: true,
+                                child: Text(error!,
+                                    style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .error))),
+                        ]),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Cancel')),
+                      FilledButton(
+                          onPressed: saving
+                              ? null
+                              : () async {
+                                  if (!sameAccount()) {
+                                    update(() => error =
+                                        'Account changed. Close this dialog and try again.');
+                                    return;
+                                  }
+                                  update(() {
+                                    saving = true;
+                                    error = null;
+                                  });
+                                  try {
+                                    final content = await api.exportPlaylist(
+                                        p['playlist_id'] as String);
+                                    if (!mounted ||
+                                        !dialogContext.mounted ||
+                                        !sameAccount()) {
+                                      return;
+                                    }
+                                    final saved = await PlaylistExport.save(
+                                        filename, content);
+                                    if (!mounted ||
+                                        !dialogContext.mounted ||
+                                        !sameAccount()) {
+                                      return;
+                                    }
+                                    if (saved) {
+                                      Navigator.pop(dialogContext);
+                                      ScaffoldMessenger.of(this.context)
+                                          .showSnackBar(const SnackBar(
+                                              content:
+                                                  Text('Playlist saved.')));
+                                    }
+                                  } catch (e) {
+                                    if (dialogContext.mounted &&
+                                        sameAccount()) {
+                                      update(() => error =
+                                          'Could not export playlist. ${setsErrorMessage(e)}');
+                                    }
+                                  } finally {
+                                    if (dialogContext.mounted) {
+                                      update(() => saving = false);
+                                    }
+                                  }
+                                },
+                          child: Text(saving ? 'Preparing…' : 'Save M3U8')),
+                    ])));
   }
 
   Future<void> _addMusic() async {

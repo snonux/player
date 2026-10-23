@@ -2518,7 +2518,7 @@ owner loses write access (and private read access) immediately. A nonadministrat
 transfer returns 403; an invalid owner or visibility returns 400 without updates.
 Existing playlists migrate to private. Older `{name, comment}` clients preserve
 visibility and ownership. Song membership editing is described below; public
-links, import/export and offline playlist caching remain separate features.
+links, import and offline playlist caching remain separate features. Export is documented below.
 
 ### Edit playlist songs
 
@@ -2601,3 +2601,30 @@ authentication or an encryption guarantee. Users must trust both origins;
 plain HTTP exposes login details and media to the network. Wi-Fi names are
 optional routing hints and never authorize an endpoint. Browser clients remain
 on their page origin and use the normal session/authentication behavior.
+
+### Export playlist (M3U8)
+
+`GET /api/playlists/{playlist_id}/export.m3u` (also `/api/v1`) requires a
+session/Bearer token and the same playlist read access as detail. Private
+foreign/missing playlists return 404; readable shared playlists can be exported
+without edit access. The response is `application/vnd.apple.mpegurl;
+charset=utf-8`, `Cache-Control: no-store`, with attachment filename
+`playlist-{playlist_id}.m3u8`.
+
+The extended M3U8 text is UTF-8 without BOM, LF lines, `#EXTM3U`, `#PLAYLIST:`
+name, then ordered `#EXTINF:` integer seconds (`-1` unknown) and artist/title
+(filename stem fallback), followed by `./{set.root_path}/{media.rel_path}`.
+These are literal local paths relative to `MEDIA_ROOT`; save the playlist
+beside the matching library folders when moving it to another tool.
+Repeated song occurrences are preserved. Only currently caller-accessible
+indexed music is included; deleted/restricted tracks and unsafe paths
+(traversal, controls, invalid UTF-8 or backslashes) are omitted without leaking
+hidden names/counts. Metadata is collapsed to a single line. Leading `./`
+prevents `#` and URI-like paths being read as directives or remote URLs.
+An empty playlist yields a valid header-only file. Export neither reads audio
+bytes nor verifies whether the indexed source still exists on disk.
+
+The file contains no credentials, signed streaming links, absolute host paths
+or access grants. The destination tool needs the corresponding local files;
+this is not an unauthenticated streaming playlist. Filesystem import/roundtrip
+is a separate M31 feature.

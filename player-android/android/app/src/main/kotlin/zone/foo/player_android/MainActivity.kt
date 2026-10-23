@@ -14,12 +14,14 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : AudioServiceFragmentActivity() {
     private lateinit var documentChannel: MethodChannel
     private var pendingPicker: MethodChannel.Result? = null
+    private var playlistExport: PlaylistExport? = null
     private var serverWifi: ServerWifi? = null
     private var audioVisuals: AudioVisuals? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         audioVisuals = AudioVisuals(this, flutterEngine.dartExecutor.binaryMessenger)
+        playlistExport = PlaylistExport(this, flutterEngine.dartExecutor.binaryMessenger)
         serverWifi = ServerWifi(this, flutterEngine.dartExecutor.binaryMessenger)
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, CastDiscovery.CHANNEL)
             .setStreamHandler(CastDiscovery(applicationContext))
@@ -94,6 +96,8 @@ class MainActivity : AudioServiceFragmentActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        playlistExport?.close()
+        playlistExport = null
         serverWifi?.close()
         serverWifi = null
         audioVisuals?.close()
@@ -103,6 +107,7 @@ class MainActivity : AudioServiceFragmentActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (playlistExport?.onActivityResult(requestCode, resultCode, data) == true) return
         if (requestCode != DOCUMENT_PICKER_REQUEST) return
         val callback = pendingPicker ?: return
         pendingPicker = null
