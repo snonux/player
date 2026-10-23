@@ -1,3 +1,6 @@
+import '../models/offline_media.dart';
+import '../models/music_metadata.dart';
+import 'playback_request.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -91,6 +94,70 @@ class PlaybackCache extends ChangeNotifier {
     }
     await _prune();
     _changed();
+  }
+
+  /// Read-only local browsing adapter; old cache rows retain their saved title.
+  Future<List<OfflineMedia>> offlineLibrary() async {
+    await initialize();
+    final result = <OfflineMedia>[];
+    if (budget == 0) return result;
+    for (final entry in _rows.entries.toList()) {
+      final row = entry.value;
+      if (_invalidated.contains(entry.key) ||
+          !await _file(entry.key).exists() ||
+          await _file(entry.key).length() != row['size']) {
+        continue;
+      }
+      result.add(OfflineMedia(
+          key: 'cache:${entry.key}',
+          origin: row['origin'] as String,
+          userId: row['user'] as int,
+          mediaId: row['media_id'] as int? ?? 0,
+          title: row['title'] as String,
+          type: 'audio',
+          sizeBytes: row['size'] as int,
+          addedAt: DateTime.fromMillisecondsSinceEpoch(row['used'] as int),
+          sourceName: row['source_name'] as String? ?? '',
+          music: row['music'] is Map
+              ? MusicMetadata.fromJson(
+                  Map<String, dynamic>.from(row['music'] as Map))
+              : null));
+    }
+    return result;
+  }
+
+  /// Resolves only bytes already owned by this saved cache account. No API or
+  /// credentials participate; evicted/missing files never become streams.
+  Future<OfflinePlaybackRequest> offlineRequest(
+      String key, String origin, int user,
+      {bool protect = false}) async {
+    await initialize();
+    final row = _rows[key];
+    if (row == null ||
+        row['origin'] != origin ||
+        row['user'] != user ||
+        _invalidated.contains(key) ||
+        !await _file(key).exists() ||
+        await _file(key).length() != row['size']) {
+      throw StateError('Cached copy unavailable.');
+    }
+    final uri = await lookup(key, protect: protect);
+    if (uri == null || _rows[key] != row) {
+      throw StateError('Cached copy unavailable.');
+    }
+    final music = row['music'] is Map
+        ? MusicMetadata.fromJson(Map<String, dynamic>.from(row['music'] as Map))
+        : null;
+    return OfflinePlaybackRequest(
+        downloadKey: 'cache:$key',
+        serverOrigin: origin,
+        userId: user,
+        sourceUri: uri,
+        title: row['title'] as String,
+        sourceName: row['source_name'] as String? ?? '',
+        music: music,
+        artist: music?.artist ?? '',
+        album: music?.album ?? '');
   }
 
   String key(String origin, int user, int media, String variant) => sha256
@@ -270,6 +337,9 @@ class PlaybackCache extends ChangeNotifier {
       required Uri uri,
       required Map<String, String> headers,
       required String title,
+      int? mediaId,
+      MusicMetadata? music,
+      String sourceName = '',
       required String origin,
       required int userId,
       required bool Function() authorized}) async {
@@ -326,6 +396,9 @@ class PlaybackCache extends ChangeNotifier {
         _invalidated.remove(key);
         _rows[key] = {
           'title': title,
+          if (mediaId != null) 'media_id': mediaId,
+          if (music != null) 'music': music.toJson(),
+          'source_name': sourceName,
           'size': received,
           'used': DateTime.now().millisecondsSinceEpoch,
           'origin': origin,

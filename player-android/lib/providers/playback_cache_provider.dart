@@ -18,6 +18,15 @@ import 'server_endpoint_provider.dart';
 
 final playbackCacheProvider = ChangeNotifierProvider<PlaybackCache>((ref) {
   final cache = PlaybackCache();
+  // Local cached playback can start without creating an online audio loader.
+  // Track source release here so cold offline playback has the same eviction
+  // protection lifecycle as authenticated cached streaming.
+  final handler = ref.read(audioHandlerProvider);
+  final subscription = handler.player.sequenceStateStream.listen((state) {
+    final source = state?.currentSource;
+    cache.playingUri(source is UriAudioSource ? source.uri : null);
+  });
+  ref.onDispose(() => unawaited(subscription.cancel()));
   MusicNetworkPolicy.changes.addListener(cache.cancel);
   ref.onDispose(() => MusicNetworkPolicy.changes.removeListener(cache.cancel));
   ref.listen(authStateProvider, (_, __) => cache.release());
@@ -78,11 +87,6 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
     return AudioSource.uri(transport,
         headers: headers.isEmpty ? null : headers);
   };
-  final subscription = handler.player.sequenceStateStream.listen((state) {
-    final source = state?.currentSource;
-    cache.playingUri(source is UriAudioSource ? source.uri : null);
-  });
-  ref.onDispose(() => unawaited(subscription.cancel()));
   Future<AudioSource?> load(PlaybackRequest request, bool Function() current,
       {bool prefetch = false}) async {
     if (request is! ServerPlaybackRequest) {
@@ -174,6 +178,9 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
         uri: transport,
         headers: headers,
         title: request.title,
+        mediaId: request.mediaId,
+        music: request.music,
+        sourceName: request.sourceName,
         origin: request.serverOrigin,
         userId: request.userId,
         authorized: () =>

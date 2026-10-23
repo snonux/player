@@ -1,3 +1,4 @@
+import { offlineMusicMode } from './offline-context.js';
 const API_BASE = '';
 import { loginDestination } from './navigation-url.js';
 
@@ -7,6 +8,7 @@ export const NO_NOTE = Symbol('no note');
 // session), unless it already is on the login or bootstrap page. Shared with
 // playback.js, whose compat-stream probe does not go through api().
 export function redirectToLogin() {
+  if (offlineMusicMode()) return;
   const p = location.pathname;
   if (!p.includes('login') && !p.includes('bootstrap')) {
     location.href = loginDestination('/login.html', location.pathname + location.search + location.hash);
@@ -14,6 +16,7 @@ export function redirectToLogin() {
 }
 
 async function api(path, options = {}) {
+  if (offlineMusicMode()) throw new TypeError('Offline music uses saved downloads. Reconnect and sign in for online actions.');
   const url = `${API_BASE}${path}`;
   const isForm = options.body instanceof FormData;
   const headers = { Accept: 'application/json', ...(options.headers || {}) };

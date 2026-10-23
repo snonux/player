@@ -1,3 +1,4 @@
+import { offlineMusicMode } from './offline-context.js';
 import { libraryPresenceSnapshot } from './playback-presence.js';
 import { musicStreamingBlocked, MusicNetworkRestricted, networkPolicyMessage } from './network-policy.js';
 import { stopRenderer } from './renderer.js';
@@ -101,7 +102,7 @@ let gapless = null;
 
 function cancelLiveRequest() { liveRequest++; pendingLiveRequest = 0; }
 export function toggleDetach() {
-  if (!currentMedia?.live_radio) toggleDetachedWindow();
+  if (!offlineMusicMode() && !currentMedia?.live_radio) toggleDetachedWindow();
 }
 // A radio selection must release the existing owner before opening any decoder.
 export async function playLiveRadio(media, url, art = '') {
@@ -193,7 +194,7 @@ export function initPlayer(options = {}) {
   gapless = initGapless({ audio: audioTransport, player: e.player, graph: () => audioVisuals,
     next: preparedQueueNext, available: () => queueState().active && !isDetached() && !isCasting() && reportProgress,
     boundary: adoptGaplessBoundary, fallback: returnToStreaming });
- initStreamQuality(e.player);
+ if (!offlineMusicMode()) initStreamQuality(e.player);
   lyrics = initLyrics({ ...e, audio: audioTransport, getPosition: () => isCasting() ? castPosition() : audioTransport.currentTime, onSeek: seconds => {
     if (isCasting()) {
       const duration = castDuration() || effectiveDuration();
@@ -721,8 +722,8 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
 // loadMedia shows a library item in the main window; the caller has already
 // set currentMedia.
 function loadMedia(media, resumeFrom = 0) {
-  reportProgress = true;
-  const thumbnailUrl = media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
+  reportProgress = !offlineMusicMode();
+  const thumbnailUrl = !offlineMusicMode() && media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
   showMedia(media, { url: mediaPlaybackUrl(media), resumeFrom, library: true, userId: state.user?.id }, thumbnailUrl);
 }
 
@@ -760,7 +761,7 @@ function showMedia(media, source, thumbnailUrl) {
   playbackSpeed?.setCasting(isCasting());
   audioVisuals?.setCasting(isCasting());
   audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
-  lyrics?.setMedia(media.live_radio ? null : media, source.url);
+  lyrics?.setMedia(offlineMusicMode() || media.live_radio ? null : media, source.url);
   if (!source.library && media.type === 'audio' && !media.live_radio) gapless?.message('Normal streaming · shared or detached playback.');
   updateMinimizedTitle();
   updateMusicIdentity(media, thumbnailUrl);
@@ -836,6 +837,10 @@ function showCoverArt(e, thumbnailUrl) {
 // stays empty and the "preparing" status is shown until the server has the
 // rendition, so a 503 never reaches the element as a bogus decode error.
 function startSource(m, media, url, resumeFrom) {
+  if (offlineMusicMode() && !media.offlinePinURL) {
+    failPlayback(media, 'Saved download unavailable. Reconnect to download it again.');
+    return;
+  }
   const networkBlocked = currentSource?.library && media.type === 'audio' && !media.offlinePinURL && musicStreamingBlocked();
   const useCache = currentSource?.library && playbackCacheEnabled(media);
   const tryGapless = m === els().audio && currentSource?.library && !media.offlinePinURL && gapless?.wants(media);
@@ -1114,7 +1119,7 @@ function adoptGaplessBoundary(token, media, outgoingDuration) {
   sourceEpoch++; completingEpoch = null;
   personal?.setMedia(media); sleepTimer?.setMedia(media);
   audioVisuals?.setMedia(media, currentThumbnailUrl, state.sets.find(set => set.id === media.set_id)?.name || '');
-  lyrics?.setMedia(media, currentSource.url);
+  lyrics?.setMedia(offlineMusicMode() ? null : media, currentSource.url);
   showCoverArt(els(), currentThumbnailUrl);
   updateMusicIdentity(media, currentThumbnailUrl); updateMinimizedTitle(); highlightPlayingCard();
   publishLocalSession(); result.publish();

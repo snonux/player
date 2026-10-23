@@ -32,8 +32,9 @@ PersonalMediaStore? playbackPersonalStore(
         WidgetRef ref, PlaybackRequest request) =>
     switch (request) {
       LocalPlaybackRequest() => localPersonalStore(ref, request.localMediaId),
-      OfflinePlaybackRequest() =>
-        offlinePersonalStore(ref, request.downloadKey),
+      OfflinePlaybackRequest() => request.downloadKey.startsWith('cache:')
+          ? null
+          : offlinePersonalStore(ref, request.downloadKey),
       ServerPlaybackRequest() =>
         request.serverOrigin == ref.read(playerBaseUrlProvider).origin
             ? serverPersonalStore(ref, request.mediaId)

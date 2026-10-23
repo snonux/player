@@ -1,3 +1,4 @@
+import { offlineMusicMode } from './offline-context.js';
 import { cachedMediaDetail } from './playback-cache.js';
 import { preparedQueuePlan } from './queue-prepared.js';
 import { SavedQueueSync, savedQueueRequest } from './queue-sync.js';
@@ -26,7 +27,7 @@ export async function shuffleQueue({ reshuffle = false, mode = null } = {}) {
   if (enabled && chosen === 'albums') {
     const edits = queueChanges, scope = storageKey;
     albumLoading = true; status = 'Loading album order…'; document.dispatchEvent(new Event('queue:changed'));
-    try { albums = await API.queueAlbums([...new Set(entries.map(e => e.media.id))]); }
+    try { albums = offlineMusicMode() ? Object.fromEntries(entries.map((entry,order) => [entry.media.id, {album_key:JSON.stringify([entry.media.music?.album || entry.media.id, entry.media.music?.album_artist || entry.media.music?.artist || '']),order}])) : await API.queueAlbums([...new Set(entries.map(e => e.media.id))]); }
     catch { if (scope === storageKey) { albumLoading = false; status = 'Could not shuffle albums. Check your connection and retry.'; document.dispatchEvent(new Event('queue:changed')); } return; }
     if (edits !== queueChanges || scope !== storageKey) { if (scope === storageKey) { albumLoading = false; document.dispatchEvent(new Event('queue:changed')); } return; }
     albumLoading = false;
@@ -232,7 +233,7 @@ export async function jumpQueue(at, automatic = false, preserveNext = false, res
   const operation = ++revision, intent = beginPlaybackIntent(), entry = entries[at];
   index = at; loading = true; status = 'Loading track…'; notify();
   let position = restored && positionEntry === entry.id ? savedPosition : 0;
-  if (!restart && !(restored && positionEntry === entry.id) && entry.media.duration > 1200) {
+  if (!offlineMusicMode() && !restart && !(restored && positionEntry === entry.id) && entry.media.duration > 1200) {
     try { const p = (await API.mediaDetail(entry.media.id))?.progress; position = p?.finished ? 0 : p?.position_seconds || 0; } catch {}
   }
   if (operation !== revision || !isPlaybackIntent(intent) || entries[index]?.id !== entry.id) return;
@@ -312,4 +313,15 @@ export function undoQueue(expected) {
   index = activeID !== null && entries.includes(current) ? entries.indexOf(current) : previous.index;
   if (queueState().active) nextIDs = new Set(entries.slice(index + 1).filter(entry => nextIDs.has(entry.id)).map(entry => entry.id));
   undo = null; status = 'Queue restored. Choose a track to play.'; notify();
+}
+
+// Switching local snapshots drops Undo and all old-account occurrences. It does
+// not bind or overwrite authenticated account queue/session persistence.
+export function resetOfflineQueue() {
+ if (!offlineMusicMode()) return;
+ beginPlaybackIntent(); revision++; activeID=null; entries=[]; index=-1;
+ canonical=[]; undo=null; label=''; loading=false; albumLoading=false;
+ restored=false; restoreError=false; savedPosition=0; positionEntry=null;
+ repeat='off'; shuffle=false; shuffleMode='tracks'; invalidateNext();
+ storageKey=null; status=''; document.dispatchEvent(new Event('queue:changed'));
 }

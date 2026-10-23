@@ -1,3 +1,5 @@
+import '../widgets/offline_music_browser.dart';
+import '../l10n/music_localizations.dart';
 import '../widgets/music_pin_button.dart';
 import '../widgets/music_download_dialog.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +44,11 @@ class _OfflineDownloadsScreenState
             padding: EdgeInsets.all(16),
             child: Text(
                 'Play saved files without signing in or connecting. Removing a download keeps the server file.')),
+        TextButton.icon(
+            icon: const Icon(Icons.library_music),
+            label: Text(context.tr('Browse offline music')),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const OfflineMusicBrowser()))),
         const OfflinePinnedCollections(),
         if (downloads.batch case final batch?)
           ListTile(
@@ -206,8 +213,7 @@ class _OfflineDownloadsScreenState
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content:
-                Text('Could not remove the download. Please try again.')));
+            content: Text('Could not remove the download. Please try again.')));
       }
     } finally {
       if (mounted) setState(() => _removing.remove(item.key));

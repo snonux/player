@@ -13,7 +13,8 @@ import 'saved_queue_controls.dart';
 
 /// Shared entry point on the player and library screens; no new player route.
 class MusicQueueButton extends ConsumerWidget {
-  const MusicQueueButton({super.key});
+  const MusicQueueButton({super.key, this.offlineOnly = false});
+  final bool offlineOnly;
   @override
   Widget build(BuildContext context, WidgetRef ref) => IconButton(
       tooltip: context.tr('Now Playing queue'),
@@ -22,11 +23,13 @@ class MusicQueueButton extends ConsumerWidget {
           context: context,
           isScrollControlled: true,
           useSafeArea: true,
-          builder: (_) => _MusicQueueSheet(ref.read(audioHandlerProvider))));
+          builder: (_) => _MusicQueueSheet(ref.read(audioHandlerProvider),
+              offlineOnly: offlineOnly)));
 }
 
 class _MusicQueueSheet extends StatelessWidget {
-  const _MusicQueueSheet(this.handler);
+  const _MusicQueueSheet(this.handler, {this.offlineOnly = false});
+  final bool offlineOnly;
   final PlayerAudioHandler handler;
   Future<void> _run(
       BuildContext context, Future<void> Function() action) async {
@@ -61,7 +64,7 @@ class _MusicQueueSheet extends StatelessWidget {
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.close))
                   ])),
-              const SavedQueueControls(),
+              if (!offlineOnly) const SavedQueueControls(),
               if (q.label.isNotEmpty)
                 Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -100,9 +103,10 @@ class _MusicQueueSheet extends StatelessWidget {
                           PopupMenuItem(
                               value: 'tracks',
                               child: Text(context.tr('Shuffle tracks'))),
-                          PopupMenuItem(
-                              value: 'albums',
-                              child: Text(context.tr('Shuffle albums'))),
+                          if (!offlineOnly)
+                            PopupMenuItem(
+                                value: 'albums',
+                                child: Text(context.tr('Shuffle albums'))),
                         ],
                     child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -277,7 +281,7 @@ class _MusicQueueSheet extends StatelessWidget {
                   child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Wrap(spacing: 12, children: [
-                        SaveQueuePlaylistButton(queue: q),
+                        if (!offlineOnly) SaveQueuePlaylistButton(queue: q),
                         TextButton(
                             onPressed: q.busy || q.entries.isEmpty
                                 ? null

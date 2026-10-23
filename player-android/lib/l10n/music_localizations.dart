@@ -512,11 +512,45 @@ const _german = <String, String>{
   "Use YYYY-MM-DD.": "Verwende JJJJ-MM-TT.",
   "Choose a date.": "Wähle ein Datum.",
   "Choose date (UTC)": "Datum wählen (UTC)",
+  "Offline music": "Offline-Musik",
+  "Browse offline music": "Offline-Musik durchsuchen",
+  "Saved server and account": "Gespeicherter Server und Konto",
+  "Browse": "Durchsuchen",
+  "Search downloaded music": "Heruntergeladene Musik suchen",
+  "Saved on this device. Online actions need a connection and sign-in.":
+      "Auf diesem Gerät gespeichert. Online-Aktionen benötigen eine Verbindung und Anmeldung.",
+  "No downloaded music yet.": "Noch keine Musik heruntergeladen.",
+  "No downloaded music matches.": "Keine passende heruntergeladene Musik.",
+  "{saved} of {total} songs downloaded":
+      "{saved} von {total} Titeln heruntergeladen",
+  "Some downloads are missing. Reconnect and download them again.":
+      "Einige Downloads fehlen. Stelle die Verbindung wieder her und lade sie erneut herunter.",
+  "Choose Play now to replace another account’s queue.":
+      "Wähle Jetzt abspielen, um die Warteschlange eines anderen Kontos zu ersetzen.",
+  "Playback is busy. Retry.":
+      "Die Wiedergabe ist beschäftigt. Versuche es erneut.",
+  "Added to queue": "Zur Warteschlange hinzugefügt",
+  "Account {id}": "Konto {id}",
+  "j/k or arrows select · Enter open · / search · Esc back · p play/pause · Q queue":
+      "j/k oder Pfeile auswählen · Eingabe öffnen · / suchen · Esc zurück · p Wiedergabe/Pause · Q Warteschlange",
   "Edit share": "Freigabe bearbeiten",
   "Link expires (local time)": "Link läuft ab (Ortszeit)",
   "Change expiry": "Ablaufzeit ändern",
-  "The link and viewing limits stay the same.": "Der Link und die Aufruflimits bleiben erhalten.",
-  "Description must be at most 1000 characters.": "Die Beschreibung darf höchstens 1000 Zeichen lang sein.",
+  "The link and viewing limits stay the same.":
+      "Der Link und die Aufruflimits bleiben erhalten.",
+  "Description must be at most 1000 characters.":
+      "Die Beschreibung darf höchstens 1000 Zeichen lang sein.",
   "Choose a future expiry.": "Wähle eine Ablaufzeit in der Zukunft.",
-  "Could not save share. Check your connection and edit permission, then retry.": "Die Freigabe konnte nicht gespeichert werden. Prüfe Verbindung und Bearbeitungsrechte und versuche es erneut.",
+  "Could not save share. Check your connection and edit permission, then retry.":
+      "Die Freigabe konnte nicht gespeichert werden. Prüfe Verbindung und Bearbeitungsrechte und versuche es erneut.",
+  "Cached (disposable)": "Zwischengespeichert (flüchtig)",
+  "Downloaded": "Heruntergeladen",
+  "{saved} of {total} songs available": "{saved} von {total} Titeln verfügbar",
+  "Cached copies are disposable and may be evicted. Downloads stay separate.":
+      "Zwischengespeicherte Kopien sind flüchtig und können entfernt werden. Downloads bleiben separat.",
+  "Loading saved collections…": "Gespeicherte Sammlungen werden geladen…",
+  "Could not read saved downloads. Check browser storage and retry.":
+      "Gespeicherte Downloads konnten nicht gelesen werden. Prüfe den Browser-Speicher und versuche es erneut.",
+  "Could not load downloads. Retry":
+      "Downloads konnten nicht geladen werden. Erneut versuchen",
 };

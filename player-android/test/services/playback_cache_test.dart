@@ -1,3 +1,4 @@
+import 'package:player_android/models/music_metadata.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
@@ -31,10 +32,29 @@ void main() {
           uri: Uri.parse('http://127.0.0.1:${server.port}/stream'),
           headers: {'Authorization': 'Bearer temporary'},
           title: 'Seven',
+          mediaId: 7,
+          sourceName: 'seven.mp3',
+          music: MusicMetadata.fromJson({
+            'artist': 'Saved Artist',
+            'album': 'Saved Album',
+            'title': 'Seven'
+          }),
           origin: 'https://canonical.test',
           userId: 1,
           authorized: () => true);
       expect(cache.bytes, 3);
+      final local = await cache.offlineLibrary();
+      expect(local.single.key, 'cache:$key');
+      expect(local.single.mediaId, 7);
+      expect(local.single.music?.artist, 'Saved Artist');
+      final offline =
+          await cache.offlineRequest(key, 'https://canonical.test', 1);
+      expect(offline.sourceUri.scheme, 'file');
+      expect(offline.artist, 'Saved Artist');
+      await expectLater(cache.offlineRequest(key, 'https://canonical.test', 2),
+          throwsStateError);
+      await expectLater(
+          cache.offlineRequest(key, 'https://other.test', 1), throwsStateError);
       expect(
           await cache.lookup(cache.key('https://canonical.test', 2, 7, 'auto')),
           isNull);
@@ -51,6 +71,9 @@ void main() {
       await cache.clear();
       expect(await cache.lookup(key), isNull);
       expect(cache.bytes, 0);
+      expect(await cache.offlineLibrary(), isEmpty);
+      await expectLater(cache.offlineRequest(key, 'https://canonical.test', 1),
+          throwsStateError);
       final forbidden = cache.key('https://canonical.test', 1, 8, 'auto');
       await cache.download(
           key: forbidden,
