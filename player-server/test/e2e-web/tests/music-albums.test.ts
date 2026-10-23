@@ -117,8 +117,9 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   await expect(page.getByRole('heading',{name:albumName,exact:true})).toBeVisible();
   await page.keyboard.press('/');await page.keyboard.type('Np');
   await expect(page.getByRole('searchbox',{name:'Search media'})).toHaveValue('Np');
+  // Debounced search (300ms) must apply before Escape cancels a pending query.
+  await expect(page.locator('#media-grid')).toContainText('No results.',{timeout:5_000});
   await page.keyboard.press('Escape');
-  await expect(page.locator('#media-grid')).toContainText('No results.');
   // An intentional search works; a subsequent still-debounced search must
   // not override the user's explicit Albums navigation.
   await page.keyboard.press('/');
