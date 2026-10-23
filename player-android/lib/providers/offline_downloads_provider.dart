@@ -9,6 +9,7 @@ import '../models/media.dart';
 import '../models/offline_media.dart';
 import '../services/offline_download_repository.dart';
 import '../services/offline_downloads.dart';
+import '../services/download_quality.dart';
 import 'api_client_provider.dart';
 import 'auth_state_provider.dart';
 import 'playback_preparer_provider.dart';
@@ -50,7 +51,7 @@ Future<void> keepMediaOffline(WidgetRef ref, Media media) =>
 
 /// Capture dependencies once so a batch can outlive its initiating screen.
 Future<void> Function(Media) mediaOfflineSaver(WidgetRef ref,
-    {bool batchMember = false}) {
+    {bool batchMember = false, String? downloadProfile}) {
   final user = ref.read(authStateProvider).valueOrNull?.user;
   if (user == null) throw StateError('Sign in before downloading.');
   final origin = ref.read(playerBaseUrlProvider).origin;
@@ -62,8 +63,22 @@ Future<void> Function(Media) mediaOfflineSaver(WidgetRef ref,
   final storage = ref.read(tokenStorageProvider);
   final cookieJar = ref.read(cookieJarProvider);
   final endpointRouter = ref.read(serverEndpointRouterProvider);
+  final quality = downloadProfile == null
+      ? DownloadQuality.selected(client.rawDio.options.baseUrl)
+      : Future.value(downloadProfile);
   return (media) async {
-    final uri = Uri.parse(client.offlineDownloadUrl(media));
+    final selected = media.type == 'audio' ? await quality : '';
+    final explicit = selected.isNotEmpty && selected != 'original';
+    final sourceName = media.type == 'audio'
+        ? DownloadQuality.sourceName(media.relPath, selected)
+        : media.transcoded
+            ? '${media.relPath}.mp4'
+            : media.relPath;
+    final uri = Uri.parse(media.type == 'audio'
+        ? explicit
+            ? '${client.compatUrl(media.id)}?profile=${Uri.encodeQueryComponent(selected)}'
+            : client.downloadUrl(media.id)
+        : client.offlineDownloadUrl(media));
     final headers = await accountRequestHeaders(
       uri: uri,
       baseUrl: Uri.parse(origin),
@@ -75,6 +90,10 @@ Future<void> Function(Media) mediaOfflineSaver(WidgetRef ref,
     try {
       await downloads.download(
         media: media,
+        downloadProfile: selected,
+        expectedContentType: DownloadQuality.contentType(selected),
+        sourceName: sourceName,
+        originalBytes: media.type == 'audio' ? !explicit : !media.transcoded,
         batchMember: batchMember,
         origin: origin,
         userId: user.id,
@@ -86,7 +105,7 @@ Future<void> Function(Media) mediaOfflineSaver(WidgetRef ref,
             mutations.credentialsEnabled &&
             mutations.generation == generation &&
             mutations.credentialOrigin == origin,
-        prepare: !media.transcoded
+        prepare: !(media.type == 'audio' ? explicit : media.transcoded)
             ? null
             : (job) async {
                 final preparation = preparer.prepare(uri,

@@ -1,5 +1,6 @@
 import { queueCollectionSelected } from '../collection-actions.js';
 import { shareMusicCollection } from '../collection-share.js';
+import { downloadMusic } from '../music-downloads.js';
 import { state } from '../state.js';
 import { API, NO_NOTE } from '../api.js';
 import { currentElement } from '../selection.js';
@@ -94,6 +95,8 @@ export async function openNotesForSelected() {
 export async function downloadSelected() {
   const id = selectedCardMediaId();
   if (!id) return;
+  const media = state.media.find(item => String(item.id) === String(id));
+  if (media?.type === 'audio') { downloadMusic([media], currentElement()); return; }
   window.open(`/api/media/${id}/download`, '_blank');
 }
 

@@ -1,3 +1,4 @@
+import '../widgets/download_quality_picker.dart';
 import '../widgets/listening_history_settings.dart';
 import '../providers/api_client_provider.dart';
 import '../widgets/playback_cache_settings.dart';
@@ -334,6 +335,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const SizedBox(height: 24),
                 const NavigationSettings(),
                 const PlaybackCacheSettings(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.download_outlined),
+                  title: const Text('Download quality'),
+                  subtitle:
+                      const Text('Saved separately from streaming quality'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => showDownloadQualitySheet(
+                      context, ref.read(apiClientProvider)),
+                ),
                 ListeningHistorySettings(
                     key: ValueKey(
                         'history:${ref.watch(playerBaseUrlProvider).origin}:${currentUser?.id}')),

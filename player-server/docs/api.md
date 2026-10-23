@@ -2993,3 +2993,17 @@ persisted browser samples after an account switch. Old clients without occurrenc
 IDs retain their original per-authentication-session qualification behavior.
 Android downloaded music keeps the existing durable `playback-sync.music_plays`
 IDs, so it is not also qualified through streamed-progress IDs.
+
+### Music download quality
+
+`POST /api/music/downloads` (and `/api/v1/music/downloads`) accepts optional
+`profile`: `original` (default), `aac128`, `aac256`, `mp3192`, or `opus96`.
+The chosen profile is frozen for the archive request independently of streaming
+preferences. Each prepared song is copied immediately into the atomic ZIP before
+preparing the next; names use the actual output container extension. There is
+no fallback to Original for an unavailable selected profile. Existing song-count,
+byte, permission and cancellation limits still apply. Preparation is bounded to
+five minutes per song; busy or still-preparing work can return 503 for retry,
+and no partial archive is served. Android keeps the chosen profile, response
+MIME type and source filename with each new offline copy; older copies retain
+unknown quality. Changing the preference does not replace existing copies.

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/media.dart';
+import 'download_quality_picker.dart';
 import '../providers/offline_downloads_provider.dart';
 import '../providers/api_client_provider.dart';
 
@@ -11,7 +12,9 @@ Future<void> showMusicDownloadDialog(
   final downloads = ref.read(offlineDownloadsProvider);
   final mutations = ref.read(credentialMutationQueueProvider);
   final generation = mutations.generation;
-  final save = mediaOfflineSaver(ref, batchMember: true);
+  String? selectedProfile;
+  Future<void> Function(Media)? save;
+  final client = ref.read(apiClientProvider);
   bool authorized() =>
       mutations.generation == generation && mutations.credentialsEnabled;
   var started = false;
@@ -32,7 +35,9 @@ Future<void> showMusicDownloadDialog(
                     error = null;
                   });
                   try {
-                    await downloads.downloadBatch(pending, save, authorized);
+                    save ??= mediaOfflineSaver(ref,
+                        batchMember: true, downloadProfile: selectedProfile);
+                    await downloads.downloadBatch(pending, save!, authorized);
                   } catch (_) {
                     if (context.mounted) {
                       update(() => error =
@@ -60,8 +65,14 @@ Future<void> showMusicDownloadDialog(
                               children: [
                             Text('$count unique songs · Saved to Downloads'),
                             const SizedBox(height: 12),
+                            DownloadQualityPicker(
+                                client: client,
+                                enabled: !started,
+                                onSelectionReady: (value) {
+                                  update(() => selectedProfile = value);
+                                }),
                             const Text(
-                                'Original files for supported formats; compatibility copies when required. Streaming quality settings do not change these copies. Keep Player open while downloading.'),
+                                'Keep Player open while downloading. Each batch keeps the quality selected when it starts.'),
                             if (batch != null) ...[
                               const SizedBox(height: 12),
                               Semantics(
@@ -96,7 +107,9 @@ Future<void> showMusicDownloadDialog(
                           child: const Text('Cancel downloads'))
                     else
                       FilledButton(
-                          onPressed: !authorized() || (started && retry.isEmpty)
+                          onPressed: !authorized() ||
+                                  (!started && selectedProfile == null) ||
+                                  (started && retry.isEmpty)
                               ? null
                               : () => run(started ? retry : songs),
                           child: Text(started ? 'Retry' : 'Keep offline')),

@@ -91,6 +91,63 @@ void main() {
         authorized: authorized ?? () => true,
       );
 
+  test(
+      'selected rendition persists encoding metadata and preserves an existing copy',
+      () async {
+    respond = (request) async {
+      request.response.headers.contentType = ContentType('audio', 'ogg');
+      request.response.contentLength = 4;
+      request.response.add([1, 2, 3, 4]);
+      await request.response.close();
+    };
+    final saved = await downloads.download(
+      media: media(size: 99),
+      origin: origin,
+      userId: 7,
+      uri: Uri.parse('$origin/api/v1/media/11/compat?profile=opus96'),
+      headers: {'Authorization': 'Bearer test-secret'},
+      authorized: () => true,
+      downloadProfile: 'opus96',
+      sourceName: 'tone.ogg',
+      originalBytes: false,
+      expectedContentType: 'audio/ogg',
+    );
+    final restored = await repository.get(saved.key);
+    expect(restored!.downloadProfile, 'opus96');
+    expect(restored.contentType, 'audio/ogg');
+    expect(restored.sourceName, 'tone.ogg');
+    expect(restored.downloadQualityLabel, 'Opus 96 kbps');
+    final retained = await downloads.download(
+      media: media(),
+      origin: origin,
+      userId: 7,
+      uri: Uri.parse('$origin/api/v1/media/11/download'),
+      headers: {'Authorization': 'Bearer test-secret'},
+      authorized: () => true,
+      downloadProfile: 'original',
+      originalBytes: true,
+    );
+    expect(retained.downloadProfile, 'opus96');
+    expect(requests.length, 1);
+  });
+
+  test('selected rendition rejects a mismatched media format', () async {
+    await expectLater(
+        downloads.download(
+          media: media(),
+          origin: origin,
+          userId: 7,
+          uri: Uri.parse('$origin/api/v1/media/11/compat?profile=opus96'),
+          headers: {'Authorization': 'Bearer test-secret'},
+          authorized: () => true,
+          downloadProfile: 'opus96',
+          originalBytes: false,
+          expectedContentType: 'audio/ogg',
+        ),
+        throwsA(isA<HttpException>()));
+    expect(await repository.list(), isEmpty);
+  });
+
   test('bulk saves unique IDs, retains successes and reports failures',
       () async {
     final saved = <int>[];

@@ -29,7 +29,14 @@ type MusicDownloadArchive struct {
 // BuildMusicDownloadArchive rechecks access using the normal download service
 // and opens originals through the normal confined streamer. A failure discards
 // the entire archive; retrying never saves an incomplete song as successful.
-func BuildMusicDownloadArchive(ctx context.Context, browse MediaBrowseService, streamer MediaStreamer, ids []int64, userID int64) (*MusicDownloadArchive, error) {
+func BuildMusicDownloadArchive(ctx context.Context, browse MediaBrowseService, streamer MediaStreamer, ids []int64, userID int64, selection ...MusicDownloadQuality) (*MusicDownloadArchive, error) {
+	quality := MusicDownloadQuality{}
+	if len(selection) > 0 {
+		quality = selection[0]
+	}
+	if err := quality.validate(); err != nil {
+		return nil, err
+	}
 	if len(ids) == 0 || len(ids) > MusicDownloadCountLimit {
 		return nil, &apiError{msg: fmt.Sprintf("select 1–%d songs per download", MusicDownloadCountLimit), status: http.StatusBadRequest}
 	}
@@ -73,7 +80,7 @@ func BuildMusicDownloadArchive(ctx context.Context, browse MediaBrowseService, s
 		if res == nil {
 			return nil, ErrNotFound
 		}
-		size, err := appendMusicOriginal(ctx, archive, streamer, res, id, MusicDownloadLimit-total)
+		size, err := appendMusicDownload(ctx, archive, streamer, res, id, userID, MusicDownloadLimit-total, quality)
 		if err != nil {
 			return nil, err
 		}
@@ -102,11 +109,15 @@ func appendMusicOriginal(ctx context.Context, archive *zip.Writer, streamer Medi
 	if err != nil {
 		return 0, fmt.Errorf("song %d is unavailable; refresh and retry", id)
 	}
+	return appendMusicFile(ctx, archive, stream, res.FileName, id, remaining)
+}
+
+func appendMusicFile(ctx context.Context, archive *zip.Writer, stream *StreamResult, fileName string, id, remaining int64) (int64, error) {
 	defer func() { _ = stream.File.Close() }()
 	if stream.Size < 0 || stream.Size > remaining {
 		return 0, &apiError{msg: "archive exceeds 512 MiB; select fewer songs", status: http.StatusRequestEntityTooLarge}
 	}
-	name := filepath.Base(strings.ReplaceAll(res.FileName, "\\", "/"))
+	name := filepath.Base(strings.ReplaceAll(fileName, "\\", "/"))
 	if name == "." || name == "/" || name == "" {
 		name = "song"
 	}

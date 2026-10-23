@@ -11,7 +11,8 @@ import 'playback_session_coordinator.dart';
 class OfflineDownloadCancelled implements Exception {}
 
 class OfflineDownloadJob {
-  OfflineDownloadJob(this.key, this.title);
+  OfflineDownloadJob(this.key, this.title, {this.downloadProfile = ''});
+  final String downloadProfile;
   final String key;
   final String title;
   int received = 0;
@@ -98,6 +99,10 @@ class OfflineDownloads extends ChangeNotifier {
 
   Future<OfflineMedia> download({
     required Media media,
+    String downloadProfile = '',
+    String? expectedContentType,
+    String? sourceName,
+    bool? originalBytes,
     bool batchMember = false,
     required String origin,
     String? trustedTransportOrigin,
@@ -121,7 +126,8 @@ class OfflineDownloads extends ChangeNotifier {
       throw StateError('Sign in to this server before downloading.');
     }
     final key = offlineMediaKey(origin, userId, media.id);
-    final job = OfflineDownloadJob(key, media.displayTitle);
+    final job = OfflineDownloadJob(key, media.displayTitle,
+        downloadProfile: downloadProfile);
     active = job;
     error = null;
     _changed();
@@ -161,6 +167,10 @@ class OfflineDownloads extends ChangeNotifier {
             'Server refused download (HTTP ${response.statusCode}).');
       }
       final mime = response.headers.contentType?.mimeType;
+      if (expectedContentType != null && mime != expectedContentType) {
+        throw const HttpException(
+            'Server returned a different download format. Retry or choose another quality.');
+      }
       if (mime != null &&
           mime != 'application/octet-stream' &&
           !mime.startsWith('${media.type}/')) {
@@ -168,9 +178,10 @@ class OfflineDownloads extends ChangeNotifier {
       }
       final declared =
           response.contentLength >= 0 ? response.contentLength : null;
-      final expected = !media.transcoded && media.fileSizeBytes > 0
-          ? media.fileSizeBytes
-          : null;
+      final expected =
+          (originalBytes ?? !media.transcoded) && media.fileSizeBytes > 0
+              ? media.fileSizeBytes
+              : null;
       if (declared != null && expected != null && declared != expected) {
         throw const HttpException(
             'File size changed. Refresh the media and try again.');
@@ -213,7 +224,9 @@ class OfflineDownloads extends ChangeNotifier {
         mediaId: media.id,
         title: media.displayTitle,
         music: media.music,
-        sourceName: media.relPath,
+        sourceName: sourceName ?? media.relPath,
+        downloadProfile: downloadProfile,
+        contentType: mime ?? '',
         type: media.type,
         sizeBytes: job.received,
         addedAt: DateTime.now().toUtc(),

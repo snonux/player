@@ -20,6 +20,8 @@ class OfflineMedia {
     required this.addedAt,
     this.music,
     this.sourceName = '',
+    this.downloadProfile = '',
+    this.contentType = '',
     this.positionSeconds = 0,
     this.finished = false,
   });
@@ -30,6 +32,10 @@ class OfflineMedia {
   final int mediaId;
   final String title;
   final String sourceName;
+  final String downloadProfile;
+  final String contentType;
+  String get downloadQualityLabel =>
+      offlineDownloadQualityLabel(downloadProfile);
   final MusicMetadata? music;
   final String type;
   final int sizeBytes;
@@ -37,3 +43,12 @@ class OfflineMedia {
   final double positionSeconds;
   final bool finished;
 }
+
+String offlineDownloadQualityLabel(String profile) => switch (profile) {
+      'original' => 'Original',
+      'aac128' => 'AAC 128 kbps',
+      'aac256' => 'AAC 256 kbps',
+      'mp3192' => 'MP3 192 kbps',
+      'opus96' => 'Opus 96 kbps',
+      _ => 'Existing copy (quality not recorded)',
+    };

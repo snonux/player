@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { downloadQuality, initDownloadQuality } from '../download-quality.js';
+
+const stored = new Map([['player-stream-quality', 'aac256']]);
+globalThis.localStorage = {getItem:key=>stored.get(key), setItem:(key,value)=>stored.set(key,value)};
+assert.equal(downloadQuality(), 'original');
+const select = {options:[], value:'', replaceChildren(){this.options=[];}, append(option){this.options.push(option);}};
+const status = {}, reload = {};
+const root = {isConnected:true, querySelector:selector=>({'[data-download-quality]':select,'[data-quality-status]':status,'[data-quality-reload]':reload})[selector]};
+globalThis.document = {createElement:()=>({})};
+globalThis.fetch = async()=>({ok:true, json:async()=>[{id:'opus96',label:'Data saver · Opus 96 kbps'}]});
+initDownloadQuality(root);
+await new Promise(resolve=>setImmediate(resolve));
+select.value='opus96'; select.onchange();
+assert.equal(downloadQuality(),'opus96');
+assert.equal(stored.get('player-stream-quality'),'aac256');
+stored.set('player-download-quality','removed');
+initDownloadQuality(root);
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(select.value,'removed','unavailable profiles are not silently replaced');
+assert.ok(select.options.some(option=>option.value==='removed' && option.textContent.includes('Unavailable')));
+globalThis.fetch=async()=>{throw Error('offline');};
+await reload.onclick();
+assert.equal(select.value,'removed');
+assert.match(status.textContent,/unavailable/i);
+console.log('Independent download quality, unavailable profile and offline recovery checks passed.');

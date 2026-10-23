@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api/player_api_client.dart';
 import '../services/stream_quality.dart';
+import 'download_quality_picker.dart';
 
 Future<void> showStreamQualitySheet(
         BuildContext context, PlayerApiClient client) =>
@@ -116,6 +117,10 @@ class _QualitySheetState extends State<_QualitySheet> {
                   Text(status, semanticsLabel: status),
                   TextButton(
                       onPressed: load, child: const Text('Reload profiles')),
+                  TextButton(
+                      onPressed: () =>
+                          showDownloadQualitySheet(context, widget.client),
+                      child: const Text('Download quality…')),
                 ])));
   }
 }

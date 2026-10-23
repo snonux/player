@@ -63,6 +63,9 @@ class _OfflineDownloadsScreenState
             title: Text(job.title),
             subtitle:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (job.downloadProfile.isNotEmpty)
+                Text(
+                    'Download quality: ${offlineDownloadQualityLabel(job.downloadProfile)}'),
               Text(
                   '${formatOfflineBytes(job.received)}${job.total == null ? '' : ' of ${formatOfflineBytes(job.total!)}'} downloaded'),
               LinearProgressIndicator(
@@ -130,6 +133,9 @@ class _OfflineDownloadsScreenState
                                               children: [
                                             const Text(
                                                 'Saved offline snapshot'),
+                                            Text(item.downloadQualityLabel),
+                                            if (item.contentType.isNotEmpty)
+                                              Text(item.contentType),
                                             const SizedBox(height: 12),
                                             MusicMetadataDetails(
                                                 music: item.music,

@@ -1,3 +1,4 @@
+import { downloadMusic } from '../music-downloads.js';
 import { songActionButtons, bindSongActions } from '../queue-actions.js';
 import { mediaTitle, musicSubtitle } from '../music.js';
 import { API } from '../api.js';
@@ -499,7 +500,9 @@ function bindMediaItems(grid) {
     });
     downloadBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
-      window.open(`/api/media/${el.dataset.id}/download`, '_blank');
+      const media = state.media.find(item => String(item.id) === el.dataset.id);
+      if (media?.type === 'audio') downloadMusic([media], downloadBtn);
+      else window.open(`/api/media/${el.dataset.id}/download`, '_blank');
     });
     tagBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
