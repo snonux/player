@@ -324,8 +324,9 @@ body {
   font-size: 0.65rem;
   padding: 0.15rem 0.4rem;
   border-radius: var(--radius-sm);
-  background: var(--bg-overlay);
-  color: var(--text-primary);
+  /* Artwork chip: §5.1 overlay-button pair (4.5:1 in both themes; fixes B9). */
+  background: var(--overlay-button-bg);
+  color: var(--overlay-button-color);
 }
 
 .media-card .card-actions {

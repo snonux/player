@@ -44,4 +44,28 @@ for (const [mode,colors,text,surfaces] of [
   assert(contrast(color,text) >= 4.5, `${mode} ${color} filled text`);
   for (const surface of surfaces) assert(contrast(color,surface) >= 4.5, `${mode} ${color} label on ${surface}`);
 }
-console.log('Theme persistence, system/cross-window changes, unavailable storage and alternative accent contrast passed.');
+
+// Artwork duration/size badge (B9 / mm3): must use the §5.1 overlay-button
+// pair, not theme text on --bg-overlay (fails in light over dark artwork).
+const layout = fs.readFileSync(new URL('../../css/layout.css', import.meta.url), 'utf8');
+const badge = layout.match(/\.media-card \.badge\s*\{([^}]+)\}/);
+assert(badge, 'media-card badge rule present');
+assert.match(badge[1], /background:\s*var\(--overlay-button-bg\)/);
+assert.match(badge[1], /color:\s*var\(--overlay-button-color\)/);
+function overlayPair(block) {
+  const bg = block.match(/--overlay-button-bg:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)/);
+  const fg = block.match(/--overlay-button-color:\s*#([0-9a-fA-F]{3,8})/);
+  assert(bg && fg, 'overlay-button tokens in theme block');
+  const alpha = Number(bg[4]);
+  // Composite the translucent chip over black artwork (worst case for light fill).
+  const hex = [bg[1], bg[2], bg[3]].map((c) => Math.round(Number(c) * alpha).toString(16).padStart(2, '0')).join('');
+  return { bg: hex, fg: fg[1].length === 3 ? [...fg[1]].map((c) => c + c).join('') : fg[1] };
+}
+const root = css.match(/:root\s*\{([\s\S]*?)\n\}/);
+const light = css.match(/\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/);
+assert(root && light, 'theme blocks present');
+for (const [mode, block] of [['dark', root[1]], ['light', light[1]]]) {
+  const { bg, fg } = overlayPair(block);
+  assert(contrast(bg, fg) >= 4.5, `${mode} artwork badge overlay-button contrast`);
+}
+console.log('Theme persistence, system/cross-window changes, unavailable storage, alternative accent contrast and artwork badge overlay contrast passed.');
