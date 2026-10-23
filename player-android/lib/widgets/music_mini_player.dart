@@ -3,6 +3,8 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/audio_handler_provider.dart';
+import '../providers/cast_provider.dart';
+import '../services/cast/cast_session.dart';
 import '../screens/audio_player_screen.dart';
 import '../services/music_sequence.dart';
 
@@ -17,6 +19,40 @@ class MusicMiniPlayer extends ConsumerWidget {
   const MusicMiniPlayer({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final remote = ref.watch(castControllerProvider);
+    final cast = remote.active;
+    if (cast != null && cast.device.isRenderer) {
+      final playing = cast.status.playerState == CastPlayerState.playing;
+      return Material(
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        child: SafeArea(
+            top: false,
+            child: Row(children: [
+              Expanded(
+                  child: ListTile(
+                key: const Key('renderer_mini_open'),
+                leading: const Icon(Icons.speaker),
+                title: Text(cast.request.title,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text('On ${cast.device.name}',
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => AudioPlayerScreen(
+                        mediaId: cast.request.identity,
+                        request: cast.request))),
+              )),
+              IconButton(
+                  tooltip: playing ? 'Pause' : 'Play',
+                  onPressed: () => playing ? remote.pause() : remote.play(),
+                  icon: Icon(playing ? Icons.pause : Icons.play_arrow)),
+              IconButton(
+                  tooltip: 'Next track',
+                  onPressed:
+                      remote.hasNext ? () => remote.moveRendererQueue(1) : null,
+                  icon: const Icon(Icons.skip_next)),
+            ])),
+      );
+    }
     ref.watch(_currentMusicState);
     final item = ref.watch(_currentItem).valueOrNull;
     if (item == null) return const SizedBox.shrink();

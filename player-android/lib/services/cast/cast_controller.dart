@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -16,7 +17,8 @@ typedef CastMediaResolver = Future<CastMedia> Function(
   required bool isVideo,
 });
 
-typedef CastSessionStarter = Future<CastSession> Function(CastDevice device);
+typedef CastSessionStarter = Future<RemotePlaybackSession> Function(
+    CastDevice device);
 
 /// Why casting could not start or stopped early; each has its own message.
 enum CastFailure {
@@ -50,8 +52,8 @@ String castFailureMessage(CastFailure failure) => switch (failure) {
       CastFailure.notCastable =>
         'Files stored on this phone cannot be cast. Play them here instead.',
       CastFailure.deviceUnreachable =>
-        'Could not connect to the cast device. Check that it is on the same '
-            'network as this phone.',
+        'Could not connect to the playback device. DLNA speakers must be on '
+            'the Player server’s network; Cast devices use this phone’s Wi-Fi.',
       CastFailure.serverRefused =>
         'The server did not allow casting this item. Try again.',
       CastFailure.loadFailed =>
@@ -117,15 +119,34 @@ class CastController extends ChangeNotifier {
   final CastSessionStarter _startSession;
   final Duration progressInterval;
 
-  CastSession? _session;
+  RemotePlaybackSession? _session;
+  RemotePlaybackSession? _pendingRenderer;
+  int _startRevision = 0;
   PlaybackRequest? _request;
   PlaybackSessionLease? _lease;
   StreamSubscription<CastMediaStatus>? _statusSubscription;
   Timer? _progressTimer;
   bool _finished = false;
   bool _starting = false;
+  bool _startingRenderer = false;
+  bool get isStartingRenderer => _startingRenderer;
   Duration? _lastSaved;
   final _ended = StreamController<CastEnded>.broadcast();
+  List<PlaybackRequest> _rendererQueue = const [];
+  int _rendererIndex = 0;
+  bool _advancing = false;
+  bool _isVideo = false;
+  bool _rendererRepeatAll = false, _rendererRepeatOne = false;
+  String _occurrence = '';
+  int get rendererIndex => _rendererIndex;
+  bool get hasPrevious =>
+      _rendererQueue.isNotEmpty && (_rendererIndex > 0 || _rendererRepeatAll);
+  bool get hasNext =>
+      _rendererQueue.isNotEmpty &&
+      (_rendererIndex + 1 < _rendererQueue.length || _rendererRepeatAll);
+  List<PlaybackRequest> get rendererQueue => List.unmodifiable(_rendererQueue);
+  PlaybackRequest? get currentRequest => _request;
+  String get currentOccurrenceID => _occurrence;
 
   /// The cast in progress, or null.
   ActiveCast? get active {
@@ -154,35 +175,62 @@ class CastController extends ChangeNotifier {
     required PlaybackRequest request,
     required Duration position,
     required bool isVideo,
+    List<PlaybackRequest> rendererQueue = const [],
+    int rendererIndex = 0,
+    String? existingOccurrence,
+    bool rendererRepeatAll = false,
+    bool rendererRepeatOne = false,
   }) async {
     if (!isCastable(request)) {
       throw const CastStartException(CastFailure.notCastable);
     }
     if (_starting) return;
+    final startRevision = ++_startRevision;
+    var localGeneration = _coordinator.generation;
     final sleepRevision = sleepTimer?.beginPlaybackIntent();
     _starting = true;
+    _startingRenderer = device.isRenderer;
     notifyListeners();
     try {
       await _end(saveProgress: true);
+      if (_coordinator.generation != localGeneration &&
+          _coordinator.activeIdentity != null) {
+        return;
+      }
+      localGeneration = _coordinator.generation;
       final CastMedia media;
       try {
         media = await _resolveMedia(request, isVideo: isVideo);
       } catch (_) {
         throw const CastStartException(CastFailure.serverRefused);
       }
-      final CastSession session;
+      if (startRevision != _startRevision ||
+          localGeneration != _coordinator.generation) {
+        return;
+      }
+      final RemotePlaybackSession session;
       try {
         session = await _startSession(device);
       } catch (_) {
         throw const CastStartException(CastFailure.deviceUnreachable);
       }
+      if (startRevision != _startRevision ||
+          localGeneration != _coordinator.generation) {
+        try {
+          await session.stop();
+        } catch (_) {}
+        return;
+      }
+      if (device.isRenderer) _pendingRenderer = session;
       try {
         // Resolve/connect can outlive expiry. Never issue an autoplay LOAD
         // once that deadline has already expired.
         sleepTimer?.check();
         if (sleepRevision != null &&
             !sleepTimer!.allowsPlayback(sleepRevision)) {
-          await session.stop();
+          try {
+            await session.stop();
+          } catch (_) {}
           return;
         }
         await session.load(media, position: position);
@@ -192,8 +240,17 @@ class CastController extends ChangeNotifier {
           await session.pause();
         }
       } catch (_) {
-        await session.stop();
+        try {
+          await session.stop();
+        } catch (_) {}
         throw const CastStartException(CastFailure.loadFailed);
+      }
+      if (startRevision != _startRevision ||
+          localGeneration != _coordinator.generation) {
+        try {
+          await session.stop();
+        } catch (_) {}
+        return;
       }
       // Claimed only now: until the TV plays, the phone keeps playing.
       final lease = await _coordinator.claim(
@@ -201,19 +258,35 @@ class CastController extends ChangeNotifier {
         identity: request.identity,
         stop: () => _end(saveProgress: true),
       );
-      if (lease == null) {
-        await session.stop();
+      if (lease == null || startRevision != _startRevision) {
+        try {
+          await session.stop();
+        } catch (_) {}
+        await lease?.release();
         return;
       }
+      _pendingRenderer = null;
+      _rendererQueue =
+          device.isRenderer ? List.unmodifiable(rendererQueue) : const [];
+      _rendererIndex = rendererIndex.clamp(
+          0, _rendererQueue.isEmpty ? 0 : _rendererQueue.length - 1);
+      _isVideo = isVideo;
+      _rendererRepeatAll = rendererRepeatAll;
+      _rendererRepeatOne = rendererRepeatOne;
+      _occurrence = existingOccurrence?.isNotEmpty == true
+          ? existingOccurrence!
+          : _newOccurrence();
       _attach(session, request, lease);
     } finally {
+      _pendingRenderer = null;
       _starting = false;
+      _startingRenderer = false;
       notifyListeners();
     }
   }
 
   void _attach(
-    CastSession session,
+    RemotePlaybackSession session,
     PlaybackRequest request,
     PlaybackSessionLease lease,
   ) {
@@ -223,9 +296,11 @@ class CastController extends ChangeNotifier {
     _finished = false;
     _lastSaved = null;
     _statusSubscription = session.status.listen((status) {
-      if (status.finished) {
+      if (_advancing) return;
+      if (status.finished && !_finished) {
         _finished = true;
-        unawaited(_finish(request));
+        unawaited(
+            _finish(_request ?? request, session, _occurrence, _startRevision));
         return;
       }
       if (status.failed) {
@@ -255,27 +330,108 @@ class CastController extends ChangeNotifier {
   /// Ends the cast and the receiver's playback. Returns where it was, for
   /// the phone to continue from.
   Future<Duration?> stop() async {
+    ++_startRevision;
+    final pending = _pendingRenderer;
+    _pendingRenderer = null;
+    if (pending != null) {
+      try {
+        await pending.stop();
+      } catch (_) {}
+    }
     final position = _finished ? null : _session?.position;
     await _end(saveProgress: true);
     return position;
   }
 
-  Future<void> _finish(PlaybackRequest request) async {
+  Future<void> _finish(PlaybackRequest request, RemotePlaybackSession session,
+      String occurrence, int revision) async {
     try {
       await request.markFinished?.call();
     } catch (_) {}
-    await _end(saveProgress: false);
+    // Saving completion may outlive a manual queue move or a replacement
+    // session, including another occurrence of the same media identity.
+    if (!identical(_session, session) ||
+        !identical(_request, request) ||
+        _occurrence != occurrence ||
+        _startRevision != revision ||
+        _lease?.isCurrent != true) {
+      return;
+    }
+    if (_session?.device.isRenderer == true &&
+        (_rendererRepeatOne || hasNext)) {
+      await moveRendererQueue(_rendererRepeatOne ? 0 : 1, explicit: false);
+    } else {
+      await _end(saveProgress: false);
+    }
+  }
+
+  String _newOccurrence() {
+    final random = Random.secure();
+    return List.generate(
+            16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
+
+  /// Advances a renderer's snapshot without releasing remote playback ownership.
+  Future<void> moveRendererQueue(int delta, {bool explicit = true}) async {
+    if (_advancing || _starting) return;
+    var index = _rendererIndex + delta;
+    if (_rendererRepeatAll && _rendererQueue.isNotEmpty) {
+      index %= _rendererQueue.length;
+    }
+    final session = _session;
+    if (session == null ||
+        !session.device.isRenderer ||
+        index < 0 ||
+        index >= _rendererQueue.length) {
+      return;
+    }
+    ++_startRevision;
+    _saveProgress();
+    _advancing = true;
+    final request = _rendererQueue[index];
+    try {
+      sleepTimer?.check();
+      if (!explicit && sleepTimer?.expired == true) return;
+      final revision =
+          explicit ? sleepTimer?.beginPlaybackIntent() : sleepTimer?.revision;
+      final media = await _resolveMedia(request, isVideo: _isVideo);
+      if (!identical(_session, session) || _lease?.isCurrent != true) return;
+      sleepTimer?.check();
+      if (revision != null && !sleepTimer!.allowsPlayback(revision)) return;
+      await session.load(media);
+      sleepTimer?.check();
+      if (revision != null && !sleepTimer!.allowsPlayback(revision)) {
+        await session.pause();
+      }
+      if (!identical(_session, session)) return;
+      _request = request;
+      _rendererIndex = index;
+      _finished = false;
+      _lastSaved = null;
+      _occurrence = _newOccurrence();
+      _lease?.updateSource(request);
+      notifyListeners();
+    } catch (_) {
+      await _end(saveProgress: true, failure: CastFailure.loadFailed);
+    } finally {
+      _advancing = false;
+    }
   }
 
   void _saveProgress() {
     final session = _session;
     final save = _request?.savePosition;
-    if (session == null || save == null || _finished) return;
+    if (session == null || save == null || _finished || _advancing) return;
     if (session.lastStatus.playerState == CastPlayerState.idle) return;
     final position = session.position;
     if (position <= Duration.zero || position == _lastSaved) return;
     _lastSaved = position;
-    unawaited(save(position.inMilliseconds / 1000.0).catchError((_) {}));
+    final listening = _request?.saveListeningPosition;
+    final seconds = position.inMilliseconds / 1000.0;
+    unawaited(
+        (listening != null ? listening(seconds, _occurrence) : save(seconds))
+            .catchError((_) {}));
   }
 
   Future<void> _end({required bool saveProgress, CastFailure? failure}) async {
@@ -292,7 +448,11 @@ class CastController extends ChangeNotifier {
     _progressTimer = null;
     await _statusSubscription?.cancel();
     _statusSubscription = null;
-    await session.stop();
+    try {
+      await session.stop();
+    } catch (_) {
+      failure ??= CastFailure.deviceUnreachable;
+    }
     if (lease != null) await lease.release();
     _ended.add(CastEnded(
       identity: request.identity,
@@ -318,6 +478,7 @@ CastMediaResolver serverCastMediaResolver(PlayerApiClient Function() client) =>
         final ticket = await api.createCastTicket(request.mediaId);
         final compat = (await api.getMedia(request.mediaId)).transcoded;
         return CastMedia(
+          mediaId: request.mediaId,
           url: Uri.parse(api.castStreamUrl(ticket, compat: compat)),
           contentType:
               compat ? ticket.compatContentType : ticket.streamContentType,

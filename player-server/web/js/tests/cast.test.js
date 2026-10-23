@@ -1,3 +1,5 @@
+import { webcrypto } from 'node:crypto';
+globalThis.crypto ??= webcrypto;
 // Unit tests for cast.js: when the Cast SDK is used, the URLs and metadata a
 // receiver is given, and a whole cast session against a fake Cast SDK (the
 // real one only exists in Chrome): ticket request, LOAD from the local
@@ -122,6 +124,7 @@ function fakeSdk() {
 const sdk = fakeSdk();
 const appended = [];
 globalThis.window = {
+  addEventListener() {},
   chrome: { cast: sdk.chromeCast },
   cast: { framework: sdk.framework },
   isSecureContext: true,

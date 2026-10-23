@@ -7,6 +7,7 @@ import '../models/user.dart';
 import '../services/saved_server_credentials.dart';
 import 'api_client_provider.dart';
 import 'audio_handler_provider.dart';
+import 'cast_provider.dart';
 import 'playback_session_provider.dart';
 import 'progress_queue_provider.dart';
 import 'settings_provider.dart';
@@ -336,6 +337,18 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
   /// Revokes the mobile token and session when reachable, then always removes
   /// local credentials. Returns false if either server request failed.
   Future<bool> logout() async {
+    // Stop server-mediated output while its credentials still work. Progress
+    // enqueueing is fire-and-forget; neither receiver loss nor failed cleanup
+    // may prevent local credentials from being cleared below.
+    if (ref.exists(castControllerProvider)) {
+      final remote = ref.read(castControllerProvider);
+      if (remote.active?.device.isRenderer == true ||
+          remote.isStartingRenderer) {
+        try {
+          await remote.stop().timeout(const Duration(seconds: 8));
+        } catch (_) {}
+      }
+    }
     final api = ref.read(apiClientProvider);
     ref.read(credentialMutationQueueProvider).beginAuthChange();
     final snapshot =

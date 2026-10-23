@@ -12,6 +12,7 @@ class CastDevice {
     required this.host,
     required this.port,
     this.model,
+    this.isRenderer = false,
   });
 
   final String id;
@@ -21,6 +22,7 @@ class CastDevice {
   final String host;
   final int port;
   final String? model;
+  final bool isRenderer;
 
   @override
   bool operator ==(Object other) =>

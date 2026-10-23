@@ -1,3 +1,4 @@
+import 'package:cookie_jar/cookie_jar.dart';
 // Widget tests for AudioPlayerScreen (audio_player_screen.dart).
 //
 // Tests cover:
@@ -57,6 +58,7 @@ import 'package:player_android/providers/playback_preparer_provider.dart';
 import 'package:player_android/providers/public_api_client_provider.dart';
 import 'package:player_android/providers/playback_session_provider.dart';
 import 'package:player_android/providers/cast_provider.dart';
+import 'package:player_android/providers/playback_cache_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/screens/audio_player_screen.dart';
 import 'package:player_android/screens/local_library_screen.dart';
@@ -254,10 +256,10 @@ class _FakePlayerAudioHandler extends PlayerAudioHandler {
   }
 
   @override
-  Future<void> play() async {} // no-op
+  Future<void> play({bool automatic = false}) async {} // no-op
 
   @override
-  Future<void> pause() async {} // no-op
+  Future<void> pause({bool automatic = false}) async {} // no-op
 
   @override
   Future<void> stop() async {} // no-op
@@ -356,9 +358,9 @@ class _PlayableHandler extends PlayerAudioHandler {
   }
 
   @override
-  Future<void> play() async {
+  Future<void> play({bool automatic = false}) async {
     playCalls++;
-    await super.play();
+    await super.play(automatic: automatic);
   }
 }
 
@@ -511,6 +513,91 @@ String _errorText(WidgetTester tester) => tester
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets(
+      'renderer mini reopens current queue occurrence without local source claim',
+      (tester) async {
+    final (player, handler) = _usePlayableHandler();
+    final coordinator = PlaybackSessionCoordinator();
+    ServerPlaybackRequest request(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Renderer song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    final entries = [request(1), request(2), request(1)];
+    const device = CastDevice(
+        id: 'opaque', name: 'Kitchen', host: '', port: 0, isRenderer: true);
+    final controller = CastController(
+        coordinator: coordinator,
+        resolveMedia: (request, {required isVideo}) async => CastMedia(
+            url: request.sourceUri,
+            contentType: 'audio/mpeg',
+            title: request.title),
+        startSession: (device) => CastSession.start(device,
+            connect: (_) async => FakeCastReceiver()));
+    await tester.runAsync(() => controller.start(
+        device: device,
+        request: entries[2],
+        position: const Duration(seconds: 37),
+        isVideo: false,
+        rendererQueue: entries,
+        rendererIndex: 2,
+        existingOccurrence: 'a' * 32));
+    final generation = coordinator.generation;
+    await tester.pumpWidget(ProviderScope(
+        overrides: [
+          audioHandlerProvider.overrideWithValue(handler),
+          playbackSessionCoordinatorProvider.overrideWithValue(coordinator),
+          castControllerProvider.overrideWith((ref) => controller),
+          apiClientProvider.overrideWithValue(_FakeApiClient()),
+          playerBaseUrlProvider.overrideWithValue(Uri.parse('http://local')),
+          credentialMutationQueueProvider.overrideWithValue(
+              CredentialMutationQueue(credentialsEnabled: true)),
+          tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
+          cookieJarProvider.overrideWith((ref) => CookieJar()),
+          progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
+          cachedAudioLoaderProvider.overrideWith((ref) =>
+              (request, current) async => AudioSource.uri(request.sourceUri)),
+        ],
+        child: const MaterialApp(
+            home: Scaffold(bottomNavigationBar: MusicMiniPlayer()))));
+    await tester.pump();
+    expect(find.text('On Kitchen'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('renderer_mini_open')));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    expect(find.text('Playing on Kitchen'), findsOneWidget);
+    expect(find.text('Queue · 3 of 3'), findsOneWidget);
+    expect(player.sourceRequests, 0);
+    expect(coordinator.generation, generation);
+    expect(controller.currentOccurrenceID, 'a' * 32);
+    await tester.pageBack();
+    await tester.pump();
+    expect(find.byKey(const Key('renderer_mini_open')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('renderer_mini_open')));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    await tester.runAsync(controller.stop);
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(player.sourceRequests, 1);
+    expect(player.elapsed.inSeconds, greaterThanOrEqualTo(37));
+    expect(player.isPlaying, isFalse);
+    expect(handler.musicQueue.index, 2);
+    expect(handler.listeningOccurrenceID, 'a' * 32);
+    unawaited(handler.stop());
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
       'mini player attaches active lease without source load or position reset',
       (tester) async {

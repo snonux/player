@@ -466,6 +466,7 @@ func (s *Server) routes() {
 	s.routesPublic()
 	s.routesSharePublic()
 	s.routesCast()
+	s.routesRenderer()
 	s.routesStatic()
 	s.routesHTML()
 	s.routesAuth()

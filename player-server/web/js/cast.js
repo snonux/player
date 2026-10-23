@@ -1,3 +1,5 @@
+import { initRenderer, rendererActive, rendererLoad, rendererPause, rendererToggle, rendererSeek, rendererPosition, rendererDuration, stopRenderer } from './renderer.js';
+import { listeningOccurrenceID, saveListeningProgress } from './listening-progress.js';
 import { mediaTitle } from './music.js';
 // Casting to a Chromecast (or another Google Cast receiver) with Google's Cast
 // Web Sender SDK. The SDK only exists in Chrome and Chromium-based browsers
@@ -33,6 +35,7 @@ let progressTimer = null;
 // Latest receiver position in seconds: saved as progress and handed back to
 // the local player when the session ends.
 let lastRemoteTime = 0;
+let castOccurrence = '';
 
 // castSupported tells whether the Cast SDK can work in this browser: a
 // Chromium browser (window.chrome) on a secure page.
@@ -74,6 +77,9 @@ export function castLoadFields(media, ticket, origin) {
 //   onError         (message) when casting failed
 export function initCast(options = {}, win = window, doc = document) {
   deps = options;
+  initRenderer({ ...options, beforeRendererStart: () => {
+    if (castMediaId !== null) { handBack(); context?.endCurrentSession(true); }
+  } }, doc);
   if (!castSupported(win) || !options.button) return false;
   options.button.addEventListener('click', toggleCastSession);
   win.__onGCastApiAvailable = (available) => {
@@ -144,7 +150,7 @@ function updateButton(state, framework) {
 
 // isCasting tells whether playback currently runs on a cast device.
 export function isCasting() {
-  return castMediaId !== null && !!context?.getCurrentSession();
+  return rendererActive() || (castMediaId !== null && !!context?.getCurrentSession());
 }
 
 function toggleCastSession() {
@@ -159,6 +165,7 @@ function toggleCastSession() {
 
 // castCurrent casts the current item from the local position.
 function castCurrent() {
+  if (rendererActive()) stopRenderer();
   const media = deps.getCurrentMedia?.();
   if (!media || media.type === 'image') return;
   const position = deps.localPosition?.() || 0;
@@ -169,11 +176,13 @@ function castCurrent() {
 // castItem plays media on the receiver from resumeFrom seconds. Used for the
 // item the session started with and for every item selected afterwards.
 export async function castItem(media, resumeFrom = 0) {
+  if (rendererActive()) return rendererLoad(media, resumeFrom);
   const session = context?.getCurrentSession();
   if (!session) return false;
   const revision = pauseRevision;
   const manual = manualRevision;
   const load = ++loadRevision;
+  const occurrence = deps.getListeningOccurrence?.() || listeningOccurrenceID();
   try {
     const ticket = await API.castTicket(media.id);
     if ((revision !== pauseRevision && manual === manualRevision) || load !== loadRevision || context?.getCurrentSession() !== session) return false;
@@ -185,6 +194,7 @@ export async function castItem(media, resumeFrom = 0) {
       return false;
     }
     castMediaId = media.id;
+    castOccurrence = occurrence;
     lastRemoteTime = resumeFrom;
     startProgressTimer();
     deps.onCastStarted?.(session.getCastDevice?.()?.friendlyName || 'the cast device');
@@ -211,17 +221,21 @@ function loadOnReceiver(session, fields, resumeFrom) {
 }
 
 export function pauseCastPlayback() {
+  rendererPause();
+  if (rendererActive()) return;
   pauseRevision++;
   if (remotePlayer && !remotePlayer.isPaused) remoteController?.playOrPause();
 }
 
 export function castTogglePlay() {
+  if (rendererActive()) { rendererToggle(); return; }
   manualRevision++;
   remoteController?.playOrPause();
 }
 
 // castSeek moves the receiver to seconds, clamped to the item.
 export function castSeek(seconds) {
+  if (rendererActive()) { rendererSeek(seconds); return; }
   if (!remotePlayer || !remoteController) return;
   const duration = remotePlayer.duration || Infinity;
   remotePlayer.currentTime = Math.max(0, Math.min(duration, seconds));
@@ -229,15 +243,18 @@ export function castSeek(seconds) {
 }
 
 export function castPosition() {
+  if (rendererActive()) return rendererPosition();
   return remotePlayer?.currentTime || 0;
 }
 
 export function castDuration() {
+  if (rendererActive()) return rendererDuration();
   return remotePlayer?.duration || 0;
 }
 
 // stopCasting ends the session and the playback on the receiver.
 export function stopCasting() {
+  if (rendererActive()) { stopRenderer(); return; }
   context?.endCurrentSession(true);
 }
 
@@ -268,6 +285,6 @@ function reportProgress(finished) {
     return;
   }
   if (remotePlayer && !remotePlayer.isPaused && lastRemoteTime > 0) {
-    API.progress(castMediaId, lastRemoteTime).catch(() => {});
+    saveListeningProgress(castMediaId, lastRemoteTime, castOccurrence).catch(() => {});
   }
 }

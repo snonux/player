@@ -19,6 +19,27 @@ import '../widgets/cast_controls.dart';
 /// [isCastingRequest] is true.
 mixin CastScreenMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   StreamSubscription<CastEnded>? _castEnded;
+  late final CastController _observedCast;
+  List<PlaybackRequest> get castQueue => const [];
+  int get castQueueIndex => 0;
+  String? get castOccurrenceID => null;
+  bool get castRepeatAll => false;
+  bool get castRepeatOne => false;
+  void onRemoteRequestChanged(PlaybackRequest request) {}
+
+  void _remoteChanged() {
+    final active = _observedCast.active;
+    final request = active?.request;
+    final identity = castableRequest?.identity;
+    if (mounted &&
+        active?.device.isRenderer == true &&
+        request != null &&
+        (identity == request.identity ||
+            _observedCast.rendererQueue
+                .any((entry) => entry.identity == identity))) {
+      onRemoteRequestChanged(request);
+    }
+  }
 
   /// The request the screen shows, or null before it is known.
   PlaybackRequest? get castableRequest;
@@ -39,6 +60,8 @@ mixin CastScreenMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   @override
   void initState() {
     super.initState();
+    _observedCast = ref.read(castControllerProvider);
+    _observedCast.addListener(_remoteChanged);
     _castEnded = ref.read(castControllerProvider).ended.listen((ended) {
       if (!mounted || ended.identity != castableRequest?.identity) return;
       final failure = ended.failure;
@@ -49,6 +72,7 @@ mixin CastScreenMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
   @override
   void dispose() {
+    _observedCast.removeListener(_remoteChanged);
     unawaited(_castEnded?.cancel());
     super.dispose();
   }
@@ -79,8 +103,9 @@ mixin CastScreenMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   }
 
   Future<void> _pickAndCast(PlaybackRequest request) async {
-    final device =
-        await showCastDevicePicker(context, ref.read(castDiscoveryProvider));
+    final device = await showCastDevicePicker(
+        context, ref.read(castDiscoveryProvider),
+        includeRenderers: !castIsVideo && request is ServerPlaybackRequest);
     if (device == null || !mounted) return;
     final position = currentLocalPosition();
     try {
@@ -92,6 +117,11 @@ mixin CastScreenMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             request: request,
             position: position,
             isVideo: castIsVideo,
+            rendererQueue: castQueue,
+            rendererIndex: castQueueIndex,
+            existingOccurrence: castOccurrenceID,
+            rendererRepeatAll: castRepeatAll,
+            rendererRepeatOne: castRepeatOne,
           );
     } on CastStartException catch (error) {
       _showCastMessage(error.message);

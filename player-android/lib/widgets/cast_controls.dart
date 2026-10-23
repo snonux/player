@@ -45,7 +45,7 @@ class CastButton extends StatelessWidget {
     return IconButton(
       key: const Key('cast_button'),
       icon: Icon(casting ? Icons.cast_connected : Icons.cast),
-      tooltip: casting ? 'Stop casting' : 'Cast to a device',
+      tooltip: casting ? 'Return to this device' : 'Play on a device',
       onPressed: casting ? onStop : onCast,
     );
   }
@@ -54,25 +54,32 @@ class CastButton extends StatelessWidget {
 /// Lets the user pick a cast device; null when dismissed.
 Future<CastDevice?> showCastDevicePicker(
   BuildContext context,
-  CastDiscovery discovery,
-) =>
+  CastDiscovery discovery, {
+  bool includeRenderers = true,
+}) =>
     showModalBottomSheet<CastDevice>(
       context: context,
       showDragHandle: true,
-      builder: (context) => _CastDevicePicker(discovery: discovery),
+      builder: (context) => _CastDevicePicker(
+          discovery: discovery, includeRenderers: includeRenderers),
     );
 
 class _CastDevicePicker extends StatefulWidget {
-  const _CastDevicePicker({required this.discovery});
+  const _CastDevicePicker(
+      {required this.discovery, required this.includeRenderers});
 
   final CastDiscovery discovery;
+  final bool includeRenderers;
 
   @override
   State<_CastDevicePicker> createState() => _CastDevicePickerState();
 }
 
 class _CastDevicePickerState extends State<_CastDevicePicker> {
-  late final Stream<List<CastDevice>> _devices = widget.discovery.devices();
+  late final Stream<List<CastDevice>> _devices = widget.discovery.devices().map(
+      (devices) => devices
+          .where((device) => widget.includeRenderers || !device.isRenderer)
+          .toList());
   Timer? _hintTimer;
   bool _showHint = false;
 
@@ -104,20 +111,20 @@ class _CastDevicePickerState extends State<_CastDevicePicker> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-                child: Text('Cast to',
+                child: Text('Play on',
                     style: Theme.of(context).textTheme.titleLarge),
               ),
               for (final device in devices)
                 ListTile(
                   key: Key('cast_device_${device.id}'),
-                  leading: const Icon(Icons.tv),
+                  leading: Icon(device.isRenderer ? Icons.speaker : Icons.tv),
                   title: Text(device.name),
                   subtitle: device.model == null ? null : Text(device.model!),
                   onTap: () => Navigator.of(context).pop(device),
                 ),
               if (snapshot.hasError)
                 const _PickerNote(
-                  'This phone cannot search the network for cast devices.',
+                  'Cannot search for speakers. Check the Player server network and reopen Play on to retry.',
                 )
               else if (devices.isEmpty) ...[
                 const ListTile(
@@ -126,12 +133,12 @@ class _CastDevicePickerState extends State<_CastDevicePicker> {
                     height: 24,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                  title: Text('Looking for cast devices…'),
+                  title: Text('Looking for devices…'),
                 ),
                 if (_showHint)
                   const _PickerNote(
-                    'No devices found yet. The cast device must be switched '
-                    'on and on the same Wi-Fi network as this phone.',
+                    'No devices found yet. DLNA speakers must be on the same '
+                    'network as the Player server; Cast devices use this phone’s Wi-Fi.',
                   ),
               ],
               const SizedBox(height: 16),
@@ -227,6 +234,40 @@ class _CastPlaybackViewState extends ConsumerState<CastPlaybackView> {
               style: const TextStyle(color: Colors.white, fontSize: 18),
               textAlign: TextAlign.center,
             ),
+            if (cast.device.isRenderer && controller.rendererQueue.isNotEmpty)
+              TextButton.icon(
+                icon: const Icon(Icons.queue_music, color: Colors.white),
+                label: Text(
+                    'Queue · ${controller.rendererIndex + 1} of ${controller.rendererQueue.length}',
+                    style: const TextStyle(color: Colors.white)),
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (sheetContext) => SafeArea(
+                      child: SizedBox(
+                    height: MediaQuery.sizeOf(sheetContext).height * .6,
+                    child: ListView.builder(
+                      itemCount: controller.rendererQueue.length,
+                      itemBuilder: (context, index) {
+                        final request = controller.rendererQueue[index];
+                        return ListTile(
+                          selected: index == controller.rendererIndex,
+                          title: Text(request.title),
+                          subtitle: Text(request.subtitle),
+                          leading: Icon(index == controller.rendererIndex
+                              ? Icons.speaker
+                              : Icons.music_note),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            unawaited(controller.moveRendererQueue(
+                                index - controller.rendererIndex));
+                          },
+                        );
+                      },
+                    ),
+                  )),
+                ),
+              ),
             if (status.playerState == CastPlayerState.buffering) ...[
               const SizedBox(height: 12),
               const SizedBox(
@@ -262,6 +303,22 @@ class _CastPlaybackViewState extends ConsumerState<CastPlaybackView> {
                 ],
               ),
             ),
+            if (cast.device.isRenderer &&
+                (controller.hasPrevious || controller.hasNext))
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                IconButton(
+                    tooltip: 'Previous track',
+                    icon: const Icon(Icons.skip_previous, color: Colors.white),
+                    onPressed: controller.hasPrevious
+                        ? () => unawaited(controller.moveRendererQueue(-1))
+                        : null),
+                IconButton(
+                    tooltip: 'Next track',
+                    icon: const Icon(Icons.skip_next, color: Colors.white),
+                    onPressed: controller.hasNext
+                        ? () => unawaited(controller.moveRendererQueue(1))
+                        : null),
+              ]),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -318,7 +375,7 @@ class _CastPlaybackViewState extends ConsumerState<CastPlaybackView> {
               key: const Key('cast_stop'),
               onPressed: widget.onStop,
               icon: const Icon(Icons.stop),
-              label: const Text('Stop casting'),
+              label: const Text('Return to this device'),
             ),
           ],
         ),

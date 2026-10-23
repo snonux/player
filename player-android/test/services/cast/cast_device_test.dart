@@ -65,7 +65,7 @@ void main() {
 
   testWidgets('the picker explains an empty search', (tester) async {
     await open(tester, const Stream.empty());
-    expect(find.text('Looking for cast devices…'), findsOneWidget);
+    expect(find.text('Looking for devices…'), findsOneWidget);
     expect(find.byKey(const Key('cast_picker_note')), findsNothing);
     await tester.pump(kCastSearchHintDelay);
     expect(find.byKey(const Key('cast_picker_note')), findsOneWidget);

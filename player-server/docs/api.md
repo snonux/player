@@ -1039,6 +1039,50 @@ at the base URL the sender uses (for example the same LAN address).
 
 ---
 
+### DLNA / UPnP output
+
+`GET /api/renderers` (also `/api/v1/renderers`) searches the **server's LAN**
+for compatible AVTransport speakers. Requires authentication; returns an array
+of `{id, name}` with opaque IDs, never device control URLs. Responses are not
+cached. An empty array means no compatible speaker answered the bounded search.
+Multicast connectivity between server and speaker is required.
+
+`POST /api/renderers/control` (also `/api/v1/renderers/control`) accepts:
+
+```json
+{"device_id":"opaque discovery ID","session_id":"0123456789abcdef0123456789abcdef","revision":1,"action":"load","media_id":42,"position":12.5}
+```
+
+`session_id` is a random 16-byte hex output-session ID. Advance `revision` on
+each load and stop; other commands carry the current revision. Stale revisions
+and retired sessions cannot take over a newer queue entry or restart after stop.
+Version checks and complete SOAP sequences are serialized together.
+
+Actions: `load`, `status`, `play`, `pause`, `seek`, `stop`. Only `load` needs
+`media_id`; `load` and `seek` accept position in seconds (0 through seven days).
+`load` checks current media permission and audio MIME type, claims the speaker
+for the account, supplies an existing media-scoped cast ticket, seeks and plays.
+It returns `{state:"PLAYING",duration:123.4}`. `status` returns transport `state`
+(`PLAYING`, `PAUSED_PLAYBACK`, `STOPPED`, or `TRANSITIONING`), `position`, and
+`duration` in seconds. Other commands return `{ok:true}`. `stop` releases
+ownership even if the receiver cannot be reached; abandoned ownership can be
+reclaimed after two minutes without status/control traffic.
+
+Arbitrary URLs/SOAP commands are refused. Device HTTP URLs must be numeric
+private LAN addresses on the discovery response host; redirects, proxies,
+loopback and link-local addresses are refused. The receiver gets no cookie or
+bearer token. Its original-format audio URL uses this request's scheme and Host,
+which must be reachable from the speaker. Codec and network failures return a
+readable error; a failed stop can mean the disconnected speaker is still playing.
+See [M59 implementation boundaries](music-m59-implementation.md).
+
+Status codes: `200`, `400`, `401`, `404` (media permission/missing), `409` (unknown
+or account-owned device on load), `502` (control failure), `503` (discovery/service
+unavailable). Browser and native journeys with a compatible receiver remain
+required before feature acceptance.
+
+---
+
 ### `GET /api/media/{id}/thumbnail` · `GET /api/v1/media/{id}/thumbnail`
 
 Return the thumbnail image for a media item. Generated thumbnails are JPEG;

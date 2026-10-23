@@ -1,3 +1,4 @@
+import { stopRenderer } from './renderer.js';
 import { setListeningProgressAccount } from './listening-progress.js';
 import { initListeningHistory } from './listening-history.js';
 import { initSongNotifications, clearSongNotifications } from './song-notifications.js';
@@ -578,6 +579,7 @@ function initChrome() {
 
   document.getElementById('logout-btn')?.addEventListener('click', async () => {
     try {
+      try { await stopRenderer(); } catch {}
       setListeningProgressAccount(null);
       clearSongNotifications();
       releasePlaybackCache();

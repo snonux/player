@@ -117,8 +117,10 @@ class CastMedia {
     this.artist = '',
     this.album = '',
     this.isVideo = false,
+    this.mediaId,
   });
 
+  final int? mediaId;
   final Uri url;
   final String contentType;
   final String title;
@@ -142,7 +144,21 @@ class CastException implements Exception {
 /// [start] connects, launches the receiver app, and joins it; [load] plays a
 /// URL; the transport methods control it. [status] follows the receiver.
 /// [disconnect] leaves the receiver playing; [stop] ends it.
-class CastSession {
+abstract interface class RemotePlaybackSession {
+  CastDevice get device;
+  Stream<CastMediaStatus> get status;
+  CastMediaStatus get lastStatus;
+  Future<void> get closed;
+  Duration get position;
+  Future<void> load(CastMedia media, {Duration position = Duration.zero});
+  Future<void> play();
+  Future<void> pause();
+  Future<void> seek(Duration position);
+  Future<void> setVolume(double level);
+  Future<void> stop();
+}
+
+class CastSession implements RemotePlaybackSession {
   CastSession._(this.device, this._transport, this._now) {
     _subscription = _transport.input.listen(
       _onData,
@@ -162,6 +178,7 @@ class CastSession {
   /// for a fresh status at this pace so progress saving stays accurate.
   static const _statusPollInterval = Duration(seconds: 5);
 
+  @override
   final CastDevice device;
   final CastTransport _transport;
   final DateTime Function() _now;
@@ -200,17 +217,21 @@ class CastSession {
   }
 
   /// Receiver updates. Completes when the connection ends.
+  @override
   Stream<CastMediaStatus> get status => _statusController.stream;
 
+  @override
   CastMediaStatus get lastStatus => _status;
 
   /// Completes once the connection to the device is gone.
+  @override
   Future<void> get closed => _closed.future;
 
   bool get isClosed => _closing;
 
   /// The playback position now: the last reported one plus the time since,
   /// while playing.
+  @override
   Duration get position {
     if (_status.playerState != CastPlayerState.playing) return _status.position;
     final estimate = _status.position + _now().difference(_statusAt);
@@ -254,6 +275,7 @@ class CastSession {
   }
 
   /// Loads [media] and starts it at [position].
+  @override
   Future<void> load(CastMedia media,
       {Duration position = Duration.zero}) async {
     final metadata = <String, dynamic>{
@@ -291,16 +313,20 @@ class CastSession {
     });
   }
 
+  @override
   Future<void> play() => _mediaCommand({'type': 'PLAY'});
 
+  @override
   Future<void> pause() => _mediaCommand({'type': 'PAUSE'});
 
+  @override
   Future<void> seek(Duration position) => _mediaCommand({
         'type': 'SEEK',
         'currentTime': position.inMilliseconds / 1000.0,
       });
 
   /// Sets the receiver's volume, 0..1.
+  @override
   Future<void> setVolume(double level) async {
     final clamped = level.clamp(0.0, 1.0);
     _publish(_status.copyWith(volume: clamped), keepTime: true);
@@ -312,6 +338,7 @@ class CastSession {
   }
 
   /// Ends playback on the device and closes the connection.
+  @override
   Future<void> stop() async {
     if (isClosed) return;
     final appSession = _appSessionId;

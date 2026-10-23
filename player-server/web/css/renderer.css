@@ -1,0 +1,9 @@
+/* Output picker uses the same modal surfaces and controls as player settings. */
+.renderer-output-dialog {
+  color: var(--text-primary);
+  margin: auto;
+}
+.renderer-output-dialog::backdrop { background: var(--bg-overlay); }
+.renderer-output-dialog [data-devices] { display: grid; gap: var(--gap); margin-block: var(--gap); }
+.renderer-output-dialog button { white-space: normal; overflow-wrap: anywhere; min-height: var(--control-height); }
+.renderer-output-dialog p { overflow-wrap: anywhere; }

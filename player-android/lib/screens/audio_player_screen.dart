@@ -18,6 +18,7 @@ import 'package:just_audio/just_audio.dart';
 import '../api/dio_client.dart';
 import '../models/models.dart';
 import '../services/music_sequence.dart';
+import '../services/music_queue.dart';
 import '../api/player_api_client.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/audio_handler_provider.dart';
@@ -164,6 +165,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   // Set when casting ended: load the item where the TV left it, but do not
   // start playing on the phone by surprise.
   bool _startPaused = false;
+  PlaybackRequest? _remoteReturnRequest;
+  List<PlaybackRequest> _remoteReturnQueue = const [];
+  int _remoteReturnIndex = 0;
+  String? _remoteReturnOccurrence;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -228,7 +233,23 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   Future<void> _initPlayer() async {
     if (!mounted) return;
 
-    if (widget.attachCurrent) {
+    final remoteController = ref.read(castControllerProvider);
+    final remote = remoteController.active;
+    if (remote?.device.isRenderer == true &&
+        remote!.request.identity == _effectiveRequest().identity) {
+      _handler = ref.read(audioHandlerProvider);
+      _activeRequest = remote.request;
+      _remoteReturnRequest = remote.request;
+      _remoteReturnQueue = remoteController.rendererQueue;
+      _remoteReturnIndex = remoteController.rendererIndex;
+      _remoteReturnOccurrence = remoteController.currentOccurrenceID;
+      setState(() {
+        _isLoading = false;
+        _error = null;
+      });
+      return;
+    }
+    if (widget.attachCurrent && _remoteReturnRequest == null) {
       final handler = ref.read(audioHandlerProvider);
       final state = handler.musicState;
       final lease = handler.sequenceLease;
@@ -468,6 +489,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       handler.startProgress(
         savePosition: request.savePosition!,
         saveListeningPosition: request.saveListeningPosition,
+        listeningOccurrenceID: _remoteReturnOccurrence,
         markFinished: request.markFinished!,
       );
     }
@@ -546,6 +568,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   /// podcast episode list does.
   Future<PlaybackRequest> _resolveRequest() async {
     var request = _effectiveRequest();
+    if (_remoteReturnRequest != null) {
+      _musicEntries = _remoteReturnQueue;
+      _musicStartIndex = _remoteReturnIndex;
+      final entries = _musicEntries;
+      _expandMusic = () async => entries;
+      return _remoteReturnRequest!;
+    }
     _musicEntries = const [];
     _musicStartIndex = 0;
     _expandMusic = null;
@@ -641,7 +670,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             identity: request.identity,
             sourceUri: request.sourceUri.toString(),
             stop: handler.stop),
-        wrap: !widget.albumCollection,
+        wrap: _remoteReturnRequest == null && !widget.albumCollection,
         entries: _musicEntries,
         index: _musicStartIndex,
         expand: _expandMusic!,
@@ -662,6 +691,16 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         _lastKnownPosition = null;
       }
       _activeRequest = state.request;
+      if (_remoteReturnRequest != null) {
+        _remoteReturnRequest = state.request;
+        _remoteReturnIndex = state.index;
+        final queue = handler.musicQueue;
+        _remoteReturnQueue = queue.active && queue.entries.isNotEmpty
+            ? queue.entries.map((entry) => entry.request).toList()
+            : _musicEntries;
+        _remoteReturnOccurrence = handler.listeningOccurrenceID;
+      }
+
       _activeSourceGeneration = state.sourceGeneration;
       setState(() {
         _isLoading = state.loading;
@@ -683,7 +722,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   }
 
   PlaybackRequest _effectiveRequest() {
-    final request = widget.request;
+    final request = _remoteReturnRequest ?? widget.request;
     if (request != null) return request;
     final title = widget.mediaTitle ??
         (widget.isPublicShare ? 'Shared Audio' : 'Audio – ${widget.mediaId}');
@@ -814,6 +853,50 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   PlaybackRequest? get castableRequest => _activeRequest;
 
   @override
+  List<PlaybackRequest> get castQueue {
+    final handler = ref.read(audioHandlerProvider);
+    final queue = handler.musicQueue;
+    return queue.active && queue.entries.isNotEmpty
+        ? queue.entries.map((entry) => entry.request).toList()
+        : _musicEntries;
+  }
+
+  @override
+  int get castQueueIndex {
+    final handler = ref.read(audioHandlerProvider);
+    return handler.musicQueue.active
+        ? handler.musicQueue.index
+        : (handler.musicState?.index ?? _musicStartIndex);
+  }
+
+  @override
+  String? get castOccurrenceID =>
+      ref.read(audioHandlerProvider).listeningOccurrenceID;
+  @override
+  bool get castRepeatAll =>
+      ref.read(audioHandlerProvider).musicQueue.repeat == MusicRepeat.all;
+  @override
+  bool get castRepeatOne =>
+      ref.read(audioHandlerProvider).musicQueue.repeat == MusicRepeat.one;
+
+  @override
+  void onRemoteRequestChanged(PlaybackRequest request) {
+    final controller = ref.read(castControllerProvider);
+    unawaited(_musicSubscription?.cancel());
+    _musicSubscription = null;
+    _stopWatchingPlayback();
+    _activeRequest = request;
+    _remoteReturnRequest = request;
+    _remoteReturnQueue = controller.rendererQueue;
+    _remoteReturnIndex = controller.rendererIndex;
+    _remoteReturnOccurrence = controller.currentOccurrenceID;
+    setState(() {
+      _isLoading = false;
+      _error = null;
+    });
+  }
+
+  @override
   bool get castIsVideo => false;
 
   @override
@@ -832,6 +915,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   @override
   void onCastEnded(Duration? position) {
     // Finished on the TV: start over here rather than at the very end.
+    final controller = ref.read(castControllerProvider);
+    _remoteReturnOccurrence = controller.currentOccurrenceID;
     _lastKnownPosition = position ?? Duration.zero;
     _startPaused = true;
     _onRetry();
@@ -906,7 +991,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       backgroundColor: Colors.black,
       appBar: AppBar(
         actions: [
-          if (!widget.isPublicShare) const MusicQueueButton(),
+          if (!widget.isPublicShare && !casting) const MusicQueueButton(),
           if (_activeRequest is ServerPlaybackRequest &&
               !_isLoading &&
               _error == null)

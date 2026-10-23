@@ -1,3 +1,8 @@
+import 'package:player_android/providers/cast_provider.dart';
+import 'package:player_android/services/cast/cast_controller.dart';
+import 'package:player_android/services/cast/cast_device.dart';
+import 'package:player_android/services/cast/cast_session.dart';
+import 'package:player_android/services/playback_session_coordinator.dart';
 import '../support/saved_server_auth.dart';
 import 'package:player_android/services/saved_server_credentials.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -318,6 +323,39 @@ class _PausingCookieJar implements CookieJar {
   }
 }
 
+class _FailingRendererLogout extends CastController {
+  _FailingRendererLogout(this.onStop)
+      : super(
+          coordinator: PlaybackSessionCoordinator(),
+          resolveMedia: (request, {required isVideo}) async =>
+              throw StateError('unused'),
+        );
+  final void Function() onStop;
+  @override
+  ActiveCast? get active => ActiveCast(
+        device: const CastDevice(
+            id: 'renderer',
+            name: 'Kitchen',
+            host: '',
+            port: 0,
+            isRenderer: true),
+        request: ServerPlaybackRequest(
+            mediaId: 5,
+            serverOrigin: 'https://player.example',
+            userId: 1,
+            sourceUri:
+                Uri.parse('https://player.example/api/v1/media/5/stream'),
+            title: 'Song'),
+        status: CastMediaStatus.initial,
+        position: Duration.zero,
+      );
+  @override
+  Future<Duration?> stop() async {
+    onStop();
+    throw StateError('speaker unreachable');
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
@@ -430,6 +468,50 @@ void main() {
       throwsA(isA<DioException>()
           .having((error) => error.response?.statusCode, 'status', 401)),
     );
+  });
+
+  test(
+      'renderer stop runs before credential disable; failed stop cannot prevent logout',
+      () async {
+    final storage = _MemoryTokenStorage();
+    final adapter = _AuthAdapter([]);
+    late DioClient testClient;
+    late ProviderContainer container;
+    var stopCalls = 0;
+    final remote = _FailingRendererLogout(() {
+      stopCalls++;
+      expect(storage.token, isNotNull);
+      expect(container.read(credentialMutationQueueProvider).credentialsEnabled,
+          isTrue);
+    });
+    container = ProviderContainer(overrides: [
+      serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      tokenStorageProvider.overrideWithValue(storage),
+      playerBaseUrlProvider
+          .overrideWithValue(Uri.parse('https://player.example')),
+      cookieJarProvider.overrideWith((ref) => testClient.cookieJar),
+      castControllerProvider.overrideWith((ref) => remote),
+      apiClientProvider.overrideWith((ref) {
+        final dio = testClient = DioClient(
+            baseUrl: ref.watch(playerBaseUrlProvider),
+            storage: ref.watch(tokenStorageProvider),
+            mutationQueue: ref.watch(credentialMutationQueueProvider),
+            navigatorKey: GlobalKey<NavigatorState>());
+        dio.dio.httpClientAdapter = adapter;
+        return DioPlayerApiClient(dio: dio.dio);
+      }),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(authStateProvider.future);
+    final user = await container
+        .read(apiClientProvider)
+        .login(username: 'alice', password: 'secret');
+    await container.read(authStateProvider.notifier).login(user);
+    container.read(castControllerProvider);
+    expect(await container.read(authStateProvider.notifier).logout(), isTrue);
+    expect(stopCalls, 1);
+    expect(storage.token, isNull);
+    expect(adapter.revoked, isTrue);
   });
 
   test('logout revokes a legacy bearer without a saved token ID', () async {
