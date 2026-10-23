@@ -60,6 +60,26 @@ class PlayerApiClient implements ProgressSyncClient {
               '/api/v1/playlists/${Uri.encodeComponent(id)}',
               data: {'name': name, 'comment': comment}))
           .data!;
+  Future<Map<String, dynamic>> createPlaylistDetails(
+          String name, String comment, String visibility) async =>
+      (await _dio.post<Map<String, dynamic>>('/api/v1/playlists', data: {
+        'name': name,
+        'comment': comment,
+        'visibility': visibility
+      }))
+          .data!;
+  Future<Map<String, dynamic>> updatePlaylistDetails(
+          String id, String name, String comment, String visibility,
+          {int? ownerId}) async =>
+      (await _dio.patch<Map<String, dynamic>>(
+              '/api/v1/playlists/${Uri.encodeComponent(id)}',
+              data: {
+            'name': name,
+            'comment': comment,
+            'visibility': visibility,
+            if (ownerId != null) 'owner_id': ownerId
+          }))
+          .data!;
   Future<void> deletePlaylist(String id) async {
     await _dio.delete<void>('/api/v1/playlists/${Uri.encodeComponent(id)}');
   }

@@ -13,6 +13,7 @@ let back = () => {};
 let generation = 0;
 export function initPlaylists(load, navigate, goBack) { reload=load;open=navigate;back=goBack; }
 const cover = p => p.cover_media_id ? `<img class="album-cover" src="/api/media/${p.cover_media_id}/thumbnail" alt="Artwork for ${esc(p.name)}">` : '<div class="album-cover album-placeholder" role="img" aria-label="No playlist artwork">♫</div>';
+const accessLabel = p => `${p.visibility === 'shared' ? 'Shared with server' : 'Private'} · Owner: ${p.owner_name || ''}${p.can_edit === false ? ' · Read only' : ''}`;
 const totals = p => `${p.song_count} songs · ${fmtDur(p.duration)}`;
 export async function renderPlaylists(grid, view, current, saved) {
  const own=++generation;
@@ -23,7 +24,7 @@ export async function renderPlaylists(grid, view, current, saved) {
  const count=document.getElementById('result-count');count.textContent=detail?`Music · Playlists · ${p.name}`:'Music · Playlists';
  grid.classList.toggle('music-detail',detail);
  if(!detail){
-  grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to Sets</button><h1>Playlists</h1><button class="btn btn-primary" data-create>Create playlist</button></div>`+(p.length?p.map(item=>`<div class="media-card album-card" role="button" tabindex="0" data-playlist="${esc(item.playlist_id)}" aria-label="Open playlist ${esc(item.name)}">${cover(item)}<div class="card-body"><div class="title" title="${esc(item.name)}">${esc(item.name)}</div><p>${totals(item)}</p></div></div>`).join(''):'<p class="grid-full">No playlists yet. Create a playlist to save music for later.</p>');
+  grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to Sets</button><h1>Playlists</h1><button class="btn btn-primary" data-create>Create playlist</button></div>`+(p.length?p.map(item=>`<div class="media-card album-card" role="button" tabindex="0" data-playlist="${esc(item.playlist_id)}" aria-label="Open playlist ${esc(item.name)}">${cover(item)}<div class="card-body"><div class="title" title="${esc(item.name)}">${esc(item.name)}</div><p>${totals(item)}</p><p>${esc(accessLabel(item))}</p></div></div>`).join(''):'<p class="grid-full">No playlists yet. Create a playlist to save music for later.</p>');
   grid.querySelector('[data-create]').onclick=()=>editPlaylist(null,active);
   grid.querySelectorAll('[data-playlist]').forEach(card=>card.onclick=()=>open(card.dataset.playlist));
   bindCollectionCatalog(grid,p,'playlist','playlist_id','name',active);
@@ -31,7 +32,7 @@ export async function renderPlaylists(grid, view, current, saved) {
   renderPlaylistDetail(grid,p,active);
  }
  grid.querySelector('[data-back]').onclick=back;
- const target=(saved?.playlist ? grid.querySelector(`[data-playlist="${CSS.escape(saved.playlist)}"]`) : null)||grid.querySelector('[data-playlist],.media-row');if(target){selectByElement(target);focusSelectedCard();if(saved)window.scrollTo(0,saved.scroll);}else grid.querySelector(detail?'[data-add]':'[data-create]')?.focus();
+ const target=(saved?.playlist ? grid.querySelector(`[data-playlist="${CSS.escape(saved.playlist)}"]`) : null)||grid.querySelector('[data-playlist],.media-row');if(target){selectByElement(target);focusSelectedCard();if(saved)window.scrollTo(0,saved.scroll);}else grid.querySelector(detail?'[data-add]:not([hidden]),[data-find]':'[data-create]')?.focus();
 }
 function dialog(title,content){
  const modal=document.getElementById('playlist-modal');
@@ -40,13 +41,19 @@ function dialog(title,content){
  modal.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=close);
  modal.classList.add('open');const panel=modal.firstElementChild;const alive=()=>modal.classList.contains('open')&&modal.firstElementChild===panel;return {modal,close,alive};
 }
-function editPlaylist(p,current){
- const {modal,close,alive}=dialog(p?'Edit playlist':'Create playlist',`<form><label>Name<input name="name" aria-label="Name" required value="${esc(p?.name||'')}"></label><label>Comment<textarea name="comment" aria-label="Comment" rows="4">${esc(p?.comment||'')}</textarea></label><p class="text-muted">Name: 1–200 characters. Comment: up to 2000 characters.</p><div class="playlist-actions"><button type="button" class="btn" data-cancel>Cancel</button><button class="btn btn-primary" type="submit">${p?'Save changes':'Create playlist'}</button></div></form>`);
+async function editPlaylist(p,current){
+ let users=[];
+ if(p?.can_transfer){try{users=await API.users();if(!current())return;}catch(e){toast(e.message||'Could not load owners. Check your connection.','error');return;}}
+ const {modal,close,alive}=dialog(p?'Edit playlist':'Create playlist',`<form><label>Name<input name="name" aria-label="Name" required value="${esc(p?.name||'')}"></label><label>Comment<textarea name="comment" aria-label="Comment" rows="4">${esc(p?.comment||'')}</textarea></label><label>Visibility<select name="visibility" aria-label="Visibility"><option value="private" ${p?.visibility!=='shared'?'selected':''}>Private</option><option value="shared" ${p?.visibility==='shared'?'selected':''}>Shared with server</option></select></label><p>Shared playlists can be read by signed-in accounts on this server. This does not create a public link or grant access to music.</p>${p?.can_transfer?`<label>Owner<select name="owner" aria-label="Owner">${users.map(u=>`<option value="${u.id}" ${u.id===p.owner_id?'selected':''}>${esc(u.username)}</option>`).join('')}</select></label>`:''}<p class="text-muted">Name: 1–200 characters. Comment: up to 2000 characters.</p><div class="playlist-actions"><button type="button" class="btn" data-cancel>Cancel</button><button class="btn btn-primary" type="submit">${p?'Save changes':'Create playlist'}</button></div></form>`);
  modal.querySelector('form').onsubmit=async e=>{
   e.preventDefault();const name=modal.querySelector('[name=name]').value.trim(),comment=modal.querySelector('[name=comment]').value;
   if([...name].length<1||[...name].length>200||[...comment].length>2000){modal.querySelector('[data-error]').textContent='Name must be 1–200 characters and comment at most 2000 characters.';return;}
+  const visibility=modal.querySelector('[name=visibility]').value;
+  const owner=p?.can_transfer?Number(modal.querySelector('[name=owner]').value):null;
+  if(owner!==null&&owner!==p.owner_id&&!window.confirm('Transfer ownership? The previous owner will lose edit access unless they are an administrator.'))return;
+  const body={name,comment,visibility,...(owner!==null&&owner!==p.owner_id?{owner_id:owner}:{})};
   const submit=modal.querySelector('[type=submit]');submit.disabled=true;
-  try{const saved=p?await API.updatePlaylist(p.playlist_id,{name,comment}):await API.createPlaylist({name,comment});if(!current()||!alive())return;close();toast('Playlist saved.','success');p?reload():open(saved.playlist_id);}catch(e){if(!alive()||!current())return;modal.querySelector('[data-error]').textContent=e.message||'Could not save playlist. Check your connection.';}finally{if(alive())submit.disabled=false;}
+  try{const saved=p?await API.updatePlaylist(p.playlist_id,body):await API.createPlaylist(body);if(!current()||!alive())return;close();toast('Playlist saved.','success');p?reload():open(saved.playlist_id);}catch(e){if(!alive()||!current())return;modal.querySelector('[data-error]').textContent=e.message||'Could not save playlist. Check your connection.';}finally{if(alive())submit.disabled=false;}
  };
 }
 async function addMusic(p,current){
@@ -64,7 +71,7 @@ function matchesSong(song,query){return [mediaTitle(song),song.file_name,song.mu
 function renderPlaylistDetail(grid,initial,current){
  let p=initial, busy=false;
  let undo=null;
- grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover>${cover(p)}</div><div><h1>${esc(p.name)}</h1><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p><div class="playlist-actions">${collectionButtons('Play playlist')}<button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
+ grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover>${cover(p)}</div><div><h1>${esc(p.name)}</h1><p>${esc(accessLabel(p))}</p><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p><div class="playlist-actions">${collectionButtons('Play playlist')}<button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
  const rows=grid.querySelector('[data-rows]'),find=grid.querySelector('[data-find]');
  const draw=(focusID=null)=>{
   state.media=p.songs;
@@ -73,7 +80,7 @@ function renderPlaylistDetail(grid,initial,current){
   grid.querySelector('[data-playlist-cover]').innerHTML=cover(p);
   grid.querySelectorAll('[data-collection-play], [data-collection-menu]').forEach(button=>button.disabled=!p.songs.length);
   grid.querySelector('[data-count]').textContent=`Showing ${visible.length} of ${p.songs.length} songs`;
-  rows.innerHTML=visible.length?visible.map(({song,index,entry})=>`<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" data-entry="${esc(entry.entry_id)}" aria-label="Play ${esc(mediaTitle(song))}"><span class="text-muted music-number">${index+1}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(song.music?.artist||'Unknown artist')} · ${esc(song.music?.album||'')}</span></span><span>${fmtDur(song.duration)}</span><span hidden>${[['up','Move up'],['down','Move down'],['remove','Remove from playlist']].map(([action,label])=>`<button data-action="playlist-${action}" ${busy||(action==='up'&&index===0)||(action==='down'&&index===p.songs.length-1)?'disabled':''}>${label}</button>`).join('')}</span><button class="btn btn-ghost" data-song-menu aria-label="Song actions for ${esc(mediaTitle(song))}">⋮</button></div>`).join(''):`<p>${p.songs.length?'No matching songs. Clear the search to see all songs.':'This playlist is empty.'}</p>`;
+  rows.innerHTML=visible.length?visible.map(({song,index,entry})=>`<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" data-entry="${esc(entry.entry_id)}" aria-label="Play ${esc(mediaTitle(song))}"><span class="text-muted music-number">${index+1}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(song.music?.artist||'Unknown artist')} · ${esc(song.music?.album||'')}</span></span><span>${fmtDur(song.duration)}</span><span hidden>${(p.can_edit===false?[]:[['up','Move up'],['down','Move down'],['remove','Remove from playlist']]).map(([action,label])=>`<button data-action="playlist-${action}" ${busy||(action==='up'&&index===0)||(action==='down'&&index===p.songs.length-1)?'disabled':''}>${label}</button>`).join('')}</span><button class="btn btn-ghost" data-song-menu aria-label="Song actions for ${esc(mediaTitle(song))}">⋮</button></div>`).join(''):`<p>${p.songs.length?'No matching songs. Clear the search to see all songs.':'This playlist is empty.'}</p>`;
   rows.querySelectorAll('.media-row').forEach(row=>{
    row.onclick=e=>{if(e.target.closest('[data-song-menu],[data-action]'))return;selectByElement(row);playAlbumCollection(p.songs,Number(row.dataset.index),p.name);};
    row.querySelector('[data-song-menu]').onclick=()=>openSongActions(row);
@@ -84,7 +91,7 @@ function renderPlaylistDetail(grid,initial,current){
   grid.querySelector('[data-undo]').hidden=!undo;
  };
  const save=async(body,focusID)=>{
-  if(busy)return false;busy=true;grid.querySelector('[data-song-error]').textContent='';
+  if(busy||p.can_edit===false)return false;busy=true;grid.querySelector('[data-song-error]').textContent='';
   try{const result=await API.editPlaylistSongs(p.playlist_id,body);if(!current())return false;const added=focusID==='restored'?result.entries.find(entry=>!p.entries.some(old=>old.entry_id===entry.entry_id))?.entry_id:null;p=result;busy=false;draw(added||focusID);return true;}
   catch(e){if(current()){grid.querySelector('[data-song-error]').textContent=e.message||'Could not update playlist. Check your connection.';focusSelectedCard();}return false;}
   finally{busy=false;}
@@ -100,6 +107,7 @@ function renderPlaylistDetail(grid,initial,current){
  };
  find.oninput=()=>draw();grid.querySelector('[data-clear]').onclick=()=>{find.value='';draw();find.focus();};
  bindCollectionActions(grid.querySelector('[data-collection-actions]'),()=>[{kind:'playlist',key:p.playlist_id}],current,p.name);
+ grid.querySelectorAll('[data-add],[data-add-songs],[data-edit],[data-delete]').forEach(button=>button.hidden=p.can_edit===false);
  grid.querySelector('[data-add]').onclick=()=>addMusic(p,current);
  grid.querySelector('[data-add-songs]').onclick=()=>addSongs(p,current);
  grid.querySelector('[data-edit]').onclick=()=>editPlaylist(p,current);

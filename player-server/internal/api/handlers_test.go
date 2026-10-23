@@ -2269,3 +2269,7 @@ func (m *mockPingStore) AppendPlaylist(ctx context.Context, user int64, id strin
 func (m *mockPingStore) EditPlaylist(ctx context.Context, user int64, id string, change repository.PlaylistChange) (bool, error) {
 	return m.store.EditPlaylist(ctx, user, id, change)
 }
+
+func (m *mockPingStore) UpdatePlaylistDetails(ctx context.Context, user int64, id, name, comment string, visibility *string, owner *int64) (bool, error) {
+	return m.store.UpdatePlaylistDetails(ctx, user, id, name, comment, visibility, owner)
+}

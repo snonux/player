@@ -35,3 +35,8 @@ func (s *MockStore) AppendPlaylist(context.Context, int64, string, []model.Playl
 func (s *MockStore) EditPlaylist(context.Context, int64, string, PlaylistChange) (bool, error) {
 	return false, nil
 }
+
+// UpdatePlaylistDetails is the missing-document default.
+func (s *MockStore) UpdatePlaylistDetails(context.Context, int64, string, string, string, *string, *int64) (bool, error) {
+	return false, nil
+}

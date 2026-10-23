@@ -309,6 +309,7 @@ type migration struct {
 }
 
 var migrations = []migration{
+	{name: "playlist_visibility", sql: `ALTER TABLE playlists ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('private','shared'));`},
 	{name: "media_music", sql: `ALTER TABLE media ADD COLUMN music TEXT;`},
 	{name: "bookmark_sync_key", sql: `ALTER TABLE media_bookmarks ADD COLUMN sync_key TEXT NOT NULL DEFAULT '';`},
 	{name: "bookmark_sync_time", sql: `ALTER TABLE media_bookmarks ADD COLUMN updated_ms INTEGER NOT NULL DEFAULT 0;`},

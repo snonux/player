@@ -30,7 +30,7 @@ func TestPlaylistsPersistencePermissionsAndLifecycle(t *testing.T) {
 		return id
 	}
 	owner := mustID(store.CreateUser(ctx, &model.User{Username: "owner", PasswordHash: "x", CreatedAt: now}))
-	other := mustID(store.CreateUser(ctx, &model.User{Username: "admin", IsAdmin: true, PasswordHash: "x", CreatedAt: now}))
+	other := mustID(store.CreateUser(ctx, &model.User{Username: "other", IsAdmin: false, PasswordHash: "x", CreatedAt: now}))
 	set := mustID(store.CreateSet(ctx, &model.Set{Name: "Music", RootPath: "Music", CreatedAt: now}))
 	hidden := mustID(store.CreateSet(ctx, &model.Set{Name: "Hidden", RootPath: "Hidden", CreatedAt: now}))
 	if err := store.GrantPermission(ctx, &model.SetPermission{UserID: owner, SetID: set, Role: model.RoleViewer}); err != nil {

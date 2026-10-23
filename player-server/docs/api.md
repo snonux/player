@@ -2488,15 +2488,21 @@ verbatim display artist. Existing album grouping and media identities stay intac
 ### Persistent playlists
 
 All routes require a session cookie or Bearer token and have both `/api` and
-`/api/v1` aliases. Playlists are private to their owning account, including
-from administrators. Foreign or missing IDs return 404.
+`/api/v1` aliases. Playlists default to `visibility: "private"`; owners and
+administrators can read/edit them. `visibility: "shared"` makes metadata and
+caller-accessible songs readable by every signed-in account on this server.
+Private foreign/missing IDs return 404; writes to a readable shared playlist
+by a non-owner/non-administrator return 403. Sharing never changes media ACLs
+and never creates an anonymous link. Lists return owned/shared documents plus
+all documents for administrators. Responses include `owner_id`, `owner_name`,
+`visibility`, `can_edit` and `can_transfer` (administrator only).
 
 | Method | Route | Body / result |
 | --- | --- | --- |
 | GET | `/api/v1/playlists` | List metadata and visible song_count, duration (seconds), cover_media_id |
-| POST | `/api/v1/playlists` | `{name, comment}`; 201 with new empty playlist |
+| POST | `/api/v1/playlists` | `{name, comment, visibility?}`; 201 with new empty playlist |
 | GET | `/api/v1/playlists/{id}` | Metadata, ordered entries (`entry_id`, `media_id`), ordered songs and aggregates |
-| PATCH | `/api/v1/playlists/{id}` | `{name, comment}` replaces both metadata fields; membership unchanged |
+| PATCH | `/api/v1/playlists/{id}` | `{name, comment, visibility?, owner_id?}`; metadata replaced, omitted access fields preserved; membership unchanged |
 | DELETE | `/api/v1/playlists/{id}` | 204; deletes document and entries, never media files |
 | POST | `/api/v1/playlists/{id}/albums` | `{album_key}` appends the caller-visible album songs in album order |
 
@@ -2506,13 +2512,18 @@ need not be unique. Repeated album adds preserve duplicate occurrences with
 separate entry IDs. Songs no longer in the caller's permitted Music catalog
 are omitted from entries, songs, count, duration and cover. Totals reflect
 current source metadata; the cover is the first visible song with artwork.
-Song membership editing is described below. Sharing, import/export and an
-offline playlist cache remain outside this API slice.
+Only administrators may submit `owner_id` to transfer an existing document to
+an existing account. Transfer is atomic with metadata/visibility edits; previous
+owner loses write access (and private read access) immediately. A nonadministrator
+transfer returns 403; an invalid owner or visibility returns 400 without updates.
+Existing playlists migrate to private. Older `{name, comment}` clients preserve
+visibility and ownership. Song membership editing is described below; public
+links, import/export and offline playlist caching remain separate features.
 
 ### Edit playlist songs
 
 `POST /api/playlists/{playlist_id}/songs` (also `/api/v1`) requires the
-session owner. Body: `{"action":"add","media_ids":[1,2]}` adds 1–1000
+playlist owner or an administrator. Body: `{"action":"add","media_ids":[1,2]}` adds 1–1000
 currently permitted music songs in supplied order, including duplicates.
 Optional `before_entry_id` inserts before that occurrence; an absent anchor
 appends (used by Undo). A saved inaccessible anchor is rejected.

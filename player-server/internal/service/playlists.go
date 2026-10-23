@@ -31,7 +31,7 @@ func NewPlaylistService(repo repository.PlaylistRepo, source CatalogSource) *Pla
 	return &PlaylistService{repo: repo, source: source}
 }
 
-// List returns owner-scoped playlists with current visible totals and covers.
+// List returns readable playlists with current viewer-visible totals and covers.
 func (s *PlaylistService) List(ctx context.Context, user int64) ([]PlaylistView, error) {
 	docs, err := s.repo.ListPlaylists(ctx, user)
 	if err != nil {
@@ -57,7 +57,7 @@ func (s *PlaylistService) List(ctx context.Context, user int64) ([]PlaylistView,
 	return result, nil
 }
 
-// Get rejects foreign documents before reading the catalog.
+// Get rejects unreadable documents before reading the catalog.
 func (s *PlaylistService) Get(ctx context.Context, user int64, id string) (*PlaylistView, error) {
 	p, err := s.repo.GetPlaylist(ctx, user, id)
 	if err != nil {
@@ -76,6 +76,14 @@ func (s *PlaylistService) Get(ctx context.Context, user int64, id string) (*Play
 
 // Create validates human metadata and creates an empty document.
 func (s *PlaylistService) Create(ctx context.Context, user int64, name, comment string) (*PlaylistView, error) {
+	return s.CreateDetails(ctx, user, name, comment, nil)
+}
+
+// CreateDetails creates a private-by-default document with explicit optional visibility.
+func (s *PlaylistService) CreateDetails(ctx context.Context, user int64, name, comment string, visibility *string) (*PlaylistView, error) {
+	if visibility != nil && *visibility != "private" && *visibility != "shared" {
+		return nil, &apiError{msg: "Visibility must be private or shared.", status: 400}
+	}
 	name, err := validatePlaylist(name, comment)
 	if err != nil {
 		return nil, err
@@ -84,32 +92,59 @@ func (s *PlaylistService) Create(ctx context.Context, user int64, name, comment 
 	if err != nil {
 		return nil, err
 	}
-	p := model.Playlist{ID: id, Name: name, Comment: comment}
+	p := model.Playlist{ID: id, Name: name, Comment: comment, Visibility: "private"}
+	if visibility != nil {
+		p.Visibility = *visibility
+	}
 	if err := s.repo.CreatePlaylist(ctx, user, p); err != nil {
 		return nil, err
 	}
-	v := playlistView(p, nil)
-	return &v, nil
+	return s.Get(ctx, user, p.ID)
 }
 
 // Update changes name and comment without replacing membership.
 func (s *PlaylistService) Update(ctx context.Context, user int64, id, name, comment string) (*PlaylistView, error) {
-	name, err := validatePlaylist(name, comment)
+	return s.UpdateDetails(ctx, user, id, name, comment, nil, nil)
+}
+
+// UpdateDetails preserves omitted access fields and limits ownership transfers to administrators.
+func (s *PlaylistService) UpdateDetails(ctx context.Context, user int64, id, name, comment string, visibility *string, owner *int64) (*PlaylistView, error) {
+	p, err := s.Get(ctx, user, id)
 	if err != nil {
 		return nil, err
 	}
-	ok, err := s.repo.UpdatePlaylist(ctx, user, id, name, comment)
+	if !p.CanEdit || (owner != nil && !p.CanTransfer) {
+		return nil, ErrForbidden
+	}
+	name, err = validatePlaylist(name, comment)
+	if err != nil {
+		return nil, err
+	}
+	if visibility != nil && *visibility != "private" && *visibility != "shared" {
+		return nil, &apiError{msg: "Visibility must be private or shared.", status: 400}
+	}
+	if owner != nil && *owner <= 0 {
+		return nil, &apiError{msg: "Choose a valid owner.", status: 400}
+	}
+	ok, err := s.repo.UpdatePlaylistDetails(ctx, user, id, name, comment, visibility, owner)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, ErrNotFound
+		return nil, &apiError{msg: "Playlist or selected owner is no longer available.", status: 400}
 	}
 	return s.Get(ctx, user, id)
 }
 
-// Delete removes only the caller's playlist; source music is unchanged.
+// Delete removes an owner/admin-authorized playlist; source music is unchanged.
 func (s *PlaylistService) Delete(ctx context.Context, user int64, id string) error {
+	p, err := s.Get(ctx, user, id)
+	if err != nil {
+		return err
+	}
+	if !p.CanEdit {
+		return ErrForbidden
+	}
 	ok, err := s.repo.DeletePlaylist(ctx, user, id)
 	if err != nil {
 		return err
@@ -128,6 +163,9 @@ func (s *PlaylistService) AddAlbum(ctx context.Context, user int64, id, key stri
 	}
 	if p == nil {
 		return nil, ErrNotFound
+	}
+	if !p.CanEdit {
+		return nil, ErrForbidden
 	}
 	albums, err := MusicAlbums(ctx, s.source, user)
 	if err != nil {
@@ -162,6 +200,9 @@ func (s *PlaylistService) EditSongs(ctx context.Context, user int64, id, action,
 	p, err := s.Get(ctx, user, id)
 	if err != nil {
 		return nil, err
+	}
+	if !p.CanEdit {
+		return nil, ErrForbidden
 	}
 	change := repository.PlaylistChange{}
 	switch action {

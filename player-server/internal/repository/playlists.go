@@ -20,6 +20,7 @@ type PlaylistChange struct {
 
 // PlaylistRepo stores account-owned playlist documents and ordered occurrences.
 type PlaylistRepo interface {
+	UpdatePlaylistDetails(context.Context, int64, string, string, string, *string, *int64) (bool, error)
 	ListPlaylists(context.Context, int64) ([]model.Playlist, error)
 	GetPlaylist(context.Context, int64, string) (*model.Playlist, error)
 	CreatePlaylist(context.Context, int64, model.Playlist) error
@@ -29,9 +30,9 @@ type PlaylistRepo interface {
 	EditPlaylist(context.Context, int64, string, PlaylistChange) (bool, error)
 }
 
-// ListPlaylists returns only the named owner's documents without entries.
+// ListPlaylists returns owned/shared documents and all documents for administrators.
 func (s *SQLite) ListPlaylists(ctx context.Context, user int64) ([]model.Playlist, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,comment FROM playlists WHERE user_id=? ORDER BY name COLLATE NOCASE,id`, user)
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.name,p.comment,p.user_id,u.username,p.visibility,(p.user_id=? OR a.is_admin),a.is_admin FROM playlists p JOIN users u ON u.id=p.user_id JOIN users a ON a.id=? WHERE p.user_id=? OR p.visibility='shared' OR a.is_admin ORDER BY p.name COLLATE NOCASE,p.id`, user, user, user)
 	if err != nil {
 		return nil, fmt.Errorf("list playlists: %w", err)
 	}
@@ -39,7 +40,7 @@ func (s *SQLite) ListPlaylists(ctx context.Context, user int64) ([]model.Playlis
 	result := []model.Playlist{}
 	for rows.Next() {
 		var p model.Playlist
-		if err := rows.Scan(&p.ID, &p.Name, &p.Comment); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Comment, &p.OwnerID, &p.OwnerName, &p.Visibility, &p.CanEdit, &p.CanTransfer); err != nil {
 			return nil, err
 		}
 		result = append(result, p)
@@ -47,10 +48,10 @@ func (s *SQLite) ListPlaylists(ctx context.Context, user int64) ([]model.Playlis
 	return result, rows.Err()
 }
 
-// GetPlaylist returns nil when the owner cannot resolve the playlist.
+// GetPlaylist returns nil when the caller cannot read the playlist.
 func (s *SQLite) GetPlaylist(ctx context.Context, user int64, id string) (*model.Playlist, error) {
 	p := model.Playlist{Entries: []model.PlaylistEntry{}}
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,comment FROM playlists WHERE id=? AND user_id=?`, id, user).Scan(&p.ID, &p.Name, &p.Comment)
+	err := s.db.QueryRowContext(ctx, `SELECT p.id,p.name,p.comment,p.user_id,u.username,p.visibility,(p.user_id=? OR a.is_admin),a.is_admin FROM playlists p JOIN users u ON u.id=p.user_id JOIN users a ON a.id=? WHERE p.id=? AND (p.user_id=? OR p.visibility='shared' OR a.is_admin)`, user, user, id, user).Scan(&p.ID, &p.Name, &p.Comment, &p.OwnerID, &p.OwnerName, &p.Visibility, &p.CanEdit, &p.CanTransfer)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -74,19 +75,19 @@ func (s *SQLite) GetPlaylist(ctx context.Context, user int64, id string) (*model
 
 // CreatePlaylist inserts a new owner-scoped document.
 func (s *SQLite) CreatePlaylist(ctx context.Context, user int64, p model.Playlist) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO playlists(id,user_id,name,comment) VALUES(?,?,?,?)`, p.ID, user, p.Name, p.Comment)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO playlists(id,user_id,name,comment,visibility) VALUES(?,?,?,?,COALESCE(NULLIF(?,''),'private'))`, p.ID, user, p.Name, p.Comment, p.Visibility)
 	return err
 }
 
-// UpdatePlaylist changes metadata only if the authenticated owner matches.
+// UpdatePlaylist changes metadata for an owner or administrator.
 func (s *SQLite) UpdatePlaylist(ctx context.Context, user int64, id, name, comment string) (bool, error) {
-	result, err := s.db.ExecContext(ctx, `UPDATE playlists SET name=?,comment=? WHERE id=? AND user_id=?`, name, comment, id, user)
+	result, err := s.db.ExecContext(ctx, `UPDATE playlists SET name=?,comment=? WHERE id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, name, comment, id, user, user)
 	return playlistAffected(result, err)
 }
 
-// DeletePlaylist removes one owner's document and cascades its entries.
+// DeletePlaylist removes an authorized document and cascades its entries.
 func (s *SQLite) DeletePlaylist(ctx context.Context, user int64, id string) (bool, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM playlists WHERE id=? AND user_id=?`, id, user)
+	result, err := s.db.ExecContext(ctx, `DELETE FROM playlists WHERE id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user)
 	return playlistAffected(result, err)
 }
 
@@ -99,7 +100,7 @@ func (s *SQLite) AppendPlaylist(ctx context.Context, user int64, id string, entr
 	}
 	defer func() { _ = tx.Rollback() }()
 	var owner int64
-	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE id=? AND user_id=?`, id, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
@@ -134,7 +135,7 @@ func (s *SQLite) EditPlaylist(ctx context.Context, user int64, id string, change
 	}
 	defer func() { _ = tx.Rollback() }()
 	var owner int64
-	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE id=? AND user_id=?`, id, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
@@ -207,4 +208,14 @@ func (s *SQLite) EditPlaylist(ctx context.Context, user int64, id string, change
 		}
 	}
 	return true, tx.Commit()
+}
+
+// UpdatePlaylistDetails atomically updates metadata, visibility and administrator ownership.
+// Authorization is checked in the same statement as the update, including transfer.
+func (s *SQLite) UpdatePlaylistDetails(ctx context.Context, user int64, id, name, comment string, visibility *string, owner *int64) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE playlists SET name=?,comment=?,visibility=COALESCE(?,visibility),user_id=COALESCE(?,user_id)
+ WHERE id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))
+ AND (? IS NULL OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))
+ AND (? IS NULL OR EXISTS(SELECT 1 FROM users WHERE id=?))`, name, comment, visibility, owner, id, user, user, owner, user, owner, owner)
+	return playlistAffected(result, err)
 }

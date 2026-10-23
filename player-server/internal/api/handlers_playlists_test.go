@@ -37,7 +37,7 @@ func TestPlaylistAPIValidationOwnerAndSavedState(t *testing.T) {
 		s.handlePlaylists(w, r)
 		return w
 	}
-	for _, body := range []string{`{`, `{"name":" "}`, `{"name":"ok","unknown":true}`, `{"name":"ok","comment":` + "\"" + strings.Repeat("a", 2001) + "\"}"} {
+	for _, body := range []string{`{`, `{"name":" "}`, `{"name":"ok","visibility":"public"}`, `{"name":"ok","owner_id":1}`, `{"name":"ok","unknown":true}`, `{"name":"ok","comment":` + "\"" + strings.Repeat("a", 2001) + "\"}"} {
 		if w := request("POST", "", body, user); w.Code != 400 {
 			t.Fatalf("bad request %d %s", w.Code, w.Body.String())
 		}
@@ -63,6 +63,28 @@ func TestPlaylistAPIValidationOwnerAndSavedState(t *testing.T) {
 	}
 	if w := request("GET", p.ID, "", user); !strings.Contains(w.Body.String(), "Saved comment") {
 		t.Fatal(w.Body.String())
+	}
+
+	other, err := store.CreateUser(context.Background(), &model.User{Username: "reader", PasswordHash: "x", CreatedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := request("PATCH", p.ID, `{"name":"Renamed","comment":"Saved comment","visibility":"shared"}`, user); w.Code != 200 {
+		t.Fatalf("share %d %s", w.Code, w.Body.String())
+	}
+	if w := request("GET", p.ID, "", other); w.Code != 200 || !strings.Contains(w.Body.String(), `"can_edit":false`) {
+		t.Fatalf("shared reader %d %s", w.Code, w.Body.String())
+	}
+	for _, method := range []string{"PATCH", "DELETE"} {
+		if w := request(method, p.ID, `{"name":"stolen"}`, other); w.Code != 403 {
+			t.Fatalf("read-only %s %d %s", method, w.Code, w.Body.String())
+		}
+	}
+	if w := request("PATCH", p.ID, `{"name":"Renamed","comment":"Saved comment","visibility":"private"}`, user); w.Code != 200 {
+		t.Fatalf("private %d", w.Code)
+	}
+	if w := request("GET", p.ID, "", other); w.Code != 404 {
+		t.Fatalf("private reader %d", w.Code)
 	}
 	if w := request("DELETE", p.ID, "", user); w.Code != 204 {
 		t.Fatalf("delete %d", w.Code)

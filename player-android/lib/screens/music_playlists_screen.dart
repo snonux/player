@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
 import '../api/player_api_client.dart';
 import '../models/media.dart';
+import '../models/user.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/music_queue_sheet.dart';
@@ -95,6 +96,8 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
     }
   }
 
+  String _accessLabel(Map<String, dynamic> p) =>
+      '${p['visibility'] == 'shared' ? 'Shared with server' : 'Private'} · Owner: ${p['owner_name'] ?? ''}${p['can_edit'] == false ? ' · Read only' : ''}';
   String _totals(Map<String, dynamic> p) =>
       '${p['song_count']} songs · ${_duration(p['duration'] as num)}';
   String _duration(num value) {
@@ -192,7 +195,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
           leading: checkbox ?? _cover(p, 56),
           title: Text(p['name'] as String,
               maxLines: 2, overflow: TextOverflow.ellipsis),
-          subtitle: Text(_totals(p)),
+          subtitle: Text('${_totals(p)}\n${_accessLabel(p)}'),
           onTap: toggle ??
               () async {
                 await context.push(
@@ -226,7 +229,8 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(p['name'] as String,
               style: Theme.of(context).textTheme.titleLarge),
-          Text(_totals(p))
+          Text(_totals(p)),
+          Text(_accessLabel(p))
         ]))
       ]),
       const SizedBox(height: 16),
@@ -238,17 +242,19 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
             playLabel: 'Play playlist',
             sourceLabel: p['name'] as String,
             enabled: songs.isNotEmpty),
-        FilledButton.tonalIcon(
-            onPressed: _addMusic,
-            icon: const Icon(Icons.add),
-            label: const Text('Add music')),
-        FilledButton.tonalIcon(
-            onPressed: () => _addSongs(),
-            icon: const Icon(Icons.playlist_add),
-            label: const Text('Add songs')),
-        TextButton(
-            onPressed: () => _edit(p), child: const Text('Edit playlist')),
-        TextButton(onPressed: _delete, child: const Text('Delete playlist')),
+        if (p['can_edit'] != false) ...[
+          FilledButton.tonalIcon(
+              onPressed: _addMusic,
+              icon: const Icon(Icons.add),
+              label: const Text('Add music')),
+          FilledButton.tonalIcon(
+              onPressed: () => _addSongs(),
+              icon: const Icon(Icons.playlist_add),
+              label: const Text('Add songs')),
+          TextButton(
+              onPressed: () => _edit(p), child: const Text('Edit playlist')),
+          TextButton(onPressed: _delete, child: const Text('Delete playlist')),
+        ],
       ]),
       const SizedBox(height: 16),
       TextField(
@@ -288,28 +294,31 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
               subtitle: Text(
                   '${songs[i].music?.artist ?? 'Unknown artist'} · ${songs[i].music?.album ?? ''}'),
               onTap: () => play(i),
-              trailing: PopupMenuButton<String>(
-                tooltip: 'Song actions for ${songs[i].displayTitle}',
-                enabled: !_editingSongs,
-                onSelected: (action) => _changeSong(action, i, songs),
-                itemBuilder: (_) => [
-                  PopupMenuItem(
-                      value: 'up',
-                      enabled: i > 0,
-                      child: const Text('Move up')),
-                  PopupMenuItem(
-                      value: 'down',
-                      enabled: i < songs.length - 1,
-                      child: const Text('Move down')),
-                  const PopupMenuItem(
-                      value: 'remove', child: Text('Remove from playlist')),
-                ],
-              )),
+              trailing: p['can_edit'] == false
+                  ? null
+                  : PopupMenuButton<String>(
+                      tooltip: 'Song actions for ${songs[i].displayTitle}',
+                      enabled: !_editingSongs,
+                      onSelected: (action) => _changeSong(action, i, songs),
+                      itemBuilder: (_) => [
+                        PopupMenuItem(
+                            value: 'up',
+                            enabled: i > 0,
+                            child: const Text('Move up')),
+                        PopupMenuItem(
+                            value: 'down',
+                            enabled: i < songs.length - 1,
+                            child: const Text('Move down')),
+                        const PopupMenuItem(
+                            value: 'remove',
+                            child: Text('Remove from playlist')),
+                      ],
+                    )),
     ]);
   }
 
   Future<Map<String, dynamic>?> _saveSongs(Map<String, dynamic> body) async {
-    if (_editingSongs) return null;
+    if (_editingSongs || _playlist?['can_edit'] == false) return null;
     final generation = _generation, epoch = _accountEpoch;
     final api = ref.read(apiClientProvider), id = widget.playlistId!;
     setState(() {
@@ -384,12 +393,33 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
   }
 
   Future<void> _edit([Map<String, dynamic>? p]) async {
-    final name = TextEditingController(text: p?['name'] as String? ?? '');
-    final comment = TextEditingController(text: p?['comment'] as String? ?? '');
-    final form = GlobalKey<FormState>();
     final generation = _generation;
     final accountEpoch = _accountEpoch;
     final api = ref.read(apiClientProvider);
+    var visibility = p?['visibility'] as String? ?? 'private';
+    var ownerId = p?['owner_id'] as int?;
+    List<User> owners = [];
+    if (p?['can_transfer'] == true) {
+      try {
+        owners = await api.listUsers();
+      } catch (e) {
+        if (mounted &&
+            generation == _generation &&
+            accountEpoch == _accountEpoch) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Could not load owners. ${setsErrorMessage(e)}')));
+        }
+        return;
+      }
+      if (!mounted ||
+          generation != _generation ||
+          accountEpoch != _accountEpoch) {
+        return;
+      }
+    }
+    final name = TextEditingController(text: p?['name'] as String? ?? '');
+    final comment = TextEditingController(text: p?['comment'] as String? ?? '');
+    final form = GlobalKey<FormState>();
     var saving = false;
     String? error;
     String? created;
@@ -429,6 +459,39 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                                     (text ?? '').runes.length > 2000
                                         ? 'Enter at most 2000 characters.'
                                         : null),
+                            DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              initialValue: visibility,
+                              decoration: const InputDecoration(
+                                  labelText: 'Visibility'),
+                              items: const [
+                                DropdownMenuItem(
+                                    value: 'private', child: Text('Private')),
+                                DropdownMenuItem(
+                                    value: 'shared',
+                                    child: Text('Shared with server'))
+                              ],
+                              onChanged: saving
+                                  ? null
+                                  : (value) =>
+                                      update(() => visibility = value!),
+                            ),
+                            const Text(
+                                'Shared playlists can be read by signed-in accounts on this server. This does not create a public link or grant access to music.'),
+                            if (p?['can_transfer'] == true)
+                              DropdownButtonFormField<int>(
+                                isExpanded: true,
+                                initialValue: ownerId,
+                                decoration:
+                                    const InputDecoration(labelText: 'Owner'),
+                                items: owners
+                                    .map((u) => DropdownMenuItem(
+                                        value: u.id, child: Text(u.username)))
+                                    .toList(),
+                                onChanged: saving
+                                    ? null
+                                    : (value) => update(() => ownerId = value),
+                              ),
                             if (error != null)
                               Text(error!,
                                   style: TextStyle(
@@ -454,18 +517,69 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                                       'Account changed. Close this dialog and try again.');
                                   return;
                                 }
+                                if (ownerId != null &&
+                                    ownerId != p?['owner_id']) {
+                                  final confirmed = await showDialog<bool>(
+                                      context: dialogContext,
+                                      builder: (confirmationContext) =>
+                                          AlertDialog(
+                                              title: const Text(
+                                                  'Transfer ownership?'),
+                                              content: const Text(
+                                                  'The previous owner will lose edit access unless they are an administrator.'),
+                                              actions: [
+                                                TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            confirmationContext,
+                                                            false),
+                                                    child:
+                                                        const Text('Cancel')),
+                                                FilledButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            confirmationContext,
+                                                            true),
+                                                    child: const Text(
+                                                        'Transfer ownership'))
+                                              ]));
+                                  if (confirmed != true ||
+                                      !mounted ||
+                                      !dialogContext.mounted ||
+                                      generation != _generation ||
+                                      accountEpoch != _accountEpoch) {
+                                    return;
+                                  }
+                                }
                                 update(() {
                                   saving = true;
                                   error = null;
                                 });
                                 try {
                                   final result = p == null
-                                      ? await api.createPlaylist(
-                                          name.text.trim(), comment.text)
-                                      : await api.updatePlaylist(
-                                          p['playlist_id'] as String,
-                                          name.text.trim(),
-                                          comment.text);
+                                      ? visibility == 'private'
+                                          ? await api.createPlaylist(
+                                              name.text.trim(), comment.text)
+                                          : await api.createPlaylistDetails(
+                                              name.text.trim(),
+                                              comment.text,
+                                              visibility)
+                                      : visibility ==
+                                                  (p['visibility'] ??
+                                                      'private') &&
+                                              ownerId == p['owner_id']
+                                          ? await api.updatePlaylist(
+                                              p['playlist_id'] as String,
+                                              name.text.trim(),
+                                              comment.text)
+                                          : await api.updatePlaylistDetails(
+                                              p['playlist_id'] as String,
+                                              name.text.trim(),
+                                              comment.text,
+                                              visibility,
+                                              ownerId: ownerId != p['owner_id']
+                                                  ? ownerId
+                                                  : null);
                                   if (!mounted ||
                                       generation != _generation ||
                                       accountEpoch != _accountEpoch ||

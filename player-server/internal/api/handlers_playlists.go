@@ -24,9 +24,11 @@ func (s *Server) handlePlaylists(w http.ResponseWriter, r *http.Request) {
 		err = svc.Delete(r.Context(), user, id)
 	default:
 		var body struct {
-			Name     string `json:"name"`
-			Comment  string `json:"comment"`
-			AlbumKey string `json:"album_key"`
+			Visibility *string `json:"visibility"`
+			OwnerID    *int64  `json:"owner_id"`
+			Name       string  `json:"name"`
+			Comment    string  `json:"comment"`
+			AlbumKey   string  `json:"album_key"`
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 32768)
 		decoder := json.NewDecoder(r.Body)
@@ -38,9 +40,13 @@ func (s *Server) handlePlaylists(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && id != "" {
 			result, err = svc.AddAlbum(r.Context(), user, id, body.AlbumKey)
 		} else if r.Method == http.MethodPost {
-			result, err = svc.Create(r.Context(), user, body.Name, body.Comment)
+			if body.OwnerID != nil {
+				writeError(w, 400, "Ownership can be changed after creating a playlist.")
+				return
+			}
+			result, err = svc.CreateDetails(r.Context(), user, body.Name, body.Comment, body.Visibility)
 		} else {
-			result, err = svc.Update(r.Context(), user, id, body.Name, body.Comment)
+			result, err = svc.UpdateDetails(r.Context(), user, id, body.Name, body.Comment, body.Visibility, body.OwnerID)
 		}
 	}
 	if err != nil {

@@ -30,7 +30,7 @@ func TestPlaylistSongsOccurrenceEditingPreservesHiddenAndRestart(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	owner := must(store.CreateUser(ctx, &model.User{Username: "owner", PasswordHash: "x", CreatedAt: now}))
-	other := must(store.CreateUser(ctx, &model.User{Username: "admin", PasswordHash: "x", IsAdmin: true, CreatedAt: now}))
+	other := must(store.CreateUser(ctx, &model.User{Username: "other", PasswordHash: "x", IsAdmin: false, CreatedAt: now}))
 	set := must(store.CreateSet(ctx, &model.Set{Name: "Music", RootPath: "Music", CreatedAt: now}))
 	hidden := must(store.CreateSet(ctx, &model.Set{Name: "Hidden", RootPath: "Hidden", CreatedAt: now}))
 	if err := store.GrantPermission(ctx, &model.SetPermission{UserID: owner, SetID: set, Role: model.RoleViewer}); err != nil {
