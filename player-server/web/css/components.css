@@ -372,3 +372,11 @@ label {
 .music-related .album-cover { width: 5rem; height: 5rem; border-radius: var(--radius-sm); }
 .music-related h3 { font-size: 1rem; margin-block: .5rem; }
 .music-related [role="status"] { display: block; }
+
+/* Enrichment is secondary to playback and does not replace library covers. */
+.music-enrichment { margin-block: .75rem; min-width: 0; overflow-wrap: anywhere; }
+.music-enrichment > div { max-width: 65ch; padding: .75rem; border-left: 2px solid var(--border); }
+.music-enrichment .music-biography { white-space: pre-wrap; line-height: 1.6; }
+.music-enrichment .album-cover { width: 10rem; height: 10rem; object-fit: contain; }
+.music-enrichment a { color: var(--accent); }
+.music-enrichment .text-secondary { color: var(--text-secondary); }

@@ -53,6 +53,7 @@ async function api(path, options = {}) {
 }
 
 export const API = {
+  musicEnrichment: (kind,key,refresh=false) => api(`/api/music/enrichment/${kind}/${encodeURIComponent(key)}`,{method:refresh?'POST':'GET'}),
   login: (username, password) => api('/api/login', { method: 'POST', body: { username, password } }),
   logout: () => api('/api/logout', { method: 'POST' }),
   bootstrap: (username, password) => api('/api/bootstrap', { method: 'POST', body: { username, password } }),

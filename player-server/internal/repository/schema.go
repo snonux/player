@@ -107,6 +107,14 @@ CREATE TABLE IF NOT EXISTS music_listening_sessions (
  PRIMARY KEY(user_id,session_id,media_id)
 );
 
+CREATE TABLE IF NOT EXISTS music_enrichment (
+    provider TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('artist','album')),
+    entity_key TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY(provider,kind,entity_key)
+);
+
 CREATE TABLE IF NOT EXISTS music_ratings (
  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  kind TEXT NOT NULL CHECK(kind IN ('song','album','artist')),

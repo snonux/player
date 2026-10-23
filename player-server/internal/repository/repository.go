@@ -10,6 +10,7 @@ import (
 
 // Store is the composite interface for all repositories.
 type Store interface {
+	MusicEnrichmentRepo
 	MusicRatingRepo
 	MusicFavoriteRepo
 	SavedQueueRepo

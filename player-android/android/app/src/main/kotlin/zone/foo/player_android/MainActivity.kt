@@ -44,6 +44,26 @@ class MainActivity : AudioServiceFragmentActivity() {
             if (call.method == "externalDirectory") result.success(getExternalFilesDir(null)?.absolutePath)
             else result.notImplemented()
         }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
+            "zone.foo.player_android/metadata_links").setMethodCallHandler { call, result ->
+            if (call.method != "open") {
+                result.notImplemented()
+            } else {
+                val value = call.arguments as? String
+                val uri = value?.let { Uri.parse(it) }
+                if (uri == null || uri.scheme !in listOf("http", "https") ||
+                    uri.host.isNullOrEmpty() || !uri.userInfo.isNullOrEmpty()) {
+                    result.error("invalid_url", "Invalid metadata link", null)
+                } else try {
+                    startActivity(Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE))
+                    result.success(null)
+                } catch (_: android.content.ActivityNotFoundException) {
+                    result.error("no_browser", "No browser is installed", null)
+                } catch (_: SecurityException) {
+                    result.error("open_failed", "Could not open metadata link", null)
+                }
+            }
+        }
         audioVisuals = AudioVisuals(this, flutterEngine.dartExecutor.binaryMessenger)
         playlistExport = PlaylistExport(this, flutterEngine.dartExecutor.binaryMessenger)
         serverWifi = ServerWifi(this, flutterEngine.dartExecutor.binaryMessenger)

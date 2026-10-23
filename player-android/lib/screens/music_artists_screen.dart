@@ -1,4 +1,5 @@
 import '../widgets/music_related_section.dart';
+import '../widgets/music_enrichment_section.dart';
 import '../widgets/music_listening_details.dart';
 import '../widgets/music_rating_button.dart';
 import '../widgets/music_rating_filter.dart';
@@ -280,6 +281,8 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
                   playLabel: 'Play artist',
                   sourceLabel: artist['name'] as String,
                   enabled: albums.isNotEmpty),
+              MusicEnrichmentSection(
+                  kind: 'artist', entityKey: widget.artistKey!),
             ])),
         itemBuilder: (album, checkbox, toggle) => Card(
             child: ListTile(

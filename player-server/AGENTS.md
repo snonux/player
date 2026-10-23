@@ -245,6 +245,7 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 | `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first); also the largest single rendition |
 | `TRANSCODE_MAX_JOBS` | `1` | ≥ 1 | Parallel ffmpeg transcodes; each needs about 400 MB of memory at 1080p |
 | `THUMBNAIL_CACHE_DIR` | unset | writable directory outside `MEDIA_ROOT` | When set, all generated thumbnails are stored there (mirroring the media tree) instead of in `.thumbnails` beside each media file; unset keeps them beside the media |
+| `MUSIC_ENRICHMENT_URL` | unset (disabled) | HTTP(S) JSON agent endpoint | Optional artist/album biography, image and links; explicit admin refresh only. Implements the [Player external-agent contract](../docs/music-m10-implementation.md), not arbitrary provider APIs. |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 

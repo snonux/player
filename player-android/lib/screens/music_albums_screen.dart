@@ -1,3 +1,4 @@
+import '../widgets/music_enrichment_section.dart';
 import '../widgets/music_download_dialog.dart';
 import '../widgets/music_related_section.dart';
 import '../widgets/music_listening_details.dart';
@@ -405,6 +406,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
           playLabel: 'Play album',
           sourceLabel: album['title'] as String,
           enabled: songs.isNotEmpty),
+      MusicEnrichmentSection(kind: 'album', entityKey: widget.albumKey!),
       Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
         TextButton(
             onPressed: () => setState(() {

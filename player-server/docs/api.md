@@ -2811,3 +2811,28 @@ Completed native files survive cancel/failure; retry skips already saved files.
 Batches are manual foreground work: keep the tab/app open. They resume through
 retry, with no background scheduling, automatic collection syncing or partial
 byte resumption.
+
+
+### Artist and album enrichment
+
+`GET /api/v1/music/enrichment/{kind}/{entity_key}` returns optional external
+metadata for an accessible `artist` or `album`. `POST` at the same path explicitly
+refreshes metadata; only administrators may refresh because the cache is shared.
+Both endpoints also exist below `/api/music/`. Missing/inaccessible identities
+return 404; other kinds return 400; viewer refresh returns 403. Every request
+rechecks current library access before reading the cache or contacting the agent.
+
+The JSON response includes `enabled`, `can_refresh`, `state` (`disabled`,
+`unfetched`, `empty`, `ready`, `error`), `stale`, and optional `description`,
+`image_url`, `links: [{label,url}]`, `source`, `fetched_at` and `message`. Text is
+plain text. Cached descriptions/links/images are attributed to their source;
+`fetched_at` is UTC server time and data older than 30 days is marked stale.
+GET never contacts the external agent. Failed POST returns state `error` with
+last good data retained; it never overwrites tags or local artwork. Successful
+no-match POST returns `empty` and replaces any previous enrichment. Persistence
+errors retain normal server errors. Responses use `Cache-Control: no-store`.
+
+`MUSIC_ENRICHMENT_URL` configures an optional compatible Player JSON agent.
+Unset disables the section. This is an explicit JSON agent contract, not direct
+compatibility with arbitrary external provider APIs. See [M10 configuration,
+limits and deterministic local fixture](../../docs/music-m10-implementation.md).
