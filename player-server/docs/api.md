@@ -3190,3 +3190,88 @@ writes (409); filesystem imports create their own playlists and cannot replace
 smart results. Name/comment/visibility, owner/admin editing, sharing and delete
 keep their ordinary playlist semantics. Changing owner preserves rules and the
 new viewer's personal conditions still apply on reads.
+
+## Live music listeners
+
+`GET`, `PUT` and `DELETE /api/v1/music/presence` (also `/api/music/presence`)
+require the normal authenticated cookie session or bearer token. Every request
+must include `?expected_user_id=<authenticated-user-id>`; missing, malformed or
+mismatching identity returns 409. All responses use `Cache-Control: no-store`.
+Public share credentials cannot access these routes.
+
+Sharing is an explicit per-client opt-in, off by default. Opening the Listeners
+panel only reads current listeners. Clients reset sharing off after account or
+server changes and page/app restart. Only current locally played authenticated
+server-library music is reported: exclude device files, downloaded/offline
+playback, public shares, radio, detached windows, Cast and network speaker
+output. Ordinary native and decoded/gapless web library transports are supported.
+Presence never writes playback progress, personal/global counts or history.
+
+`PUT` sends a heartbeat while sharing, normally every 10 seconds and after
+source/play/pause/seek changes:
+
+```json
+{
+  "client_id": "d2accfab061ca7d97fa93d557a840009",
+  "sequence": 1,
+  "client": "web",
+  "media_id": 42,
+  "state": "playing",
+  "position_seconds": 32.5
+}
+```
+
+`client_id` is an opaque random ID generated for this tab/app instance, 16–80
+ASCII letters, digits or hyphens. `sequence` is a positive integer increasing
+across that client's heartbeats and removals; equal/older sequences are ignored
+with 204. `client` accepts only `web` or `android`; `state` accepts only
+`playing` or `paused`. `media_id` must identify a current music song accessible
+to the publishing account (normal music scope excludes podcast/audiobook/trash
+items). Positions must be finite and nonnegative, and are clamped to current
+song duration (zero if duration is unavailable). Invalid input returns 400;
+unavailable/inaccessible music returns 404. Successful PUT returns 204.
+
+`DELETE` disables this client's presence and returns 204:
+
+```json
+{"client_id":"d2accfab061ca7d97fa93d557a840009","sequence":2}
+```
+
+Removals retain a sequence tombstone for 45 seconds so an older delayed
+heartbeat cannot restore sharing. Presence and tombstones expire after 45
+seconds without an accepted update. Storage is synchronized process-local
+memory only; restart clears it. At most eight client records per account and
+256 total records, including unexpired tombstones, are retained. A new client
+over either limit returns 429 and can retry after expiry. Clients should bound
+request timeouts below the expiry interval and never queue offline heartbeats.
+
+`GET` returns an array; an empty result is `[]`:
+
+```json
+[
+  {
+    "username":"alice",
+    "client":"Android",
+    "media_id":42,
+    "title":"First Light",
+    "artist":"Aurora Lane",
+    "state":"paused",
+    "position_seconds":32.5,
+    "duration":194,
+    "updated_at":"2026-10-23T12:00:00Z"
+  }
+]
+```
+
+The server reads fresh viewer and publisher music permissions, publisher
+existence/username, and originating session/API-token validity and expiry.
+Only songs currently accessible to both accounts appear, with fresh server
+metadata; no hidden-song placeholders or counts expose unauthorized listeners.
+Publisher permission loss or credential revocation suppresses and tombstones
+that entry until a fresh authorized heartbeat. Repeated clients from the same
+publisher reuse that publisher's catalog within one GET only. Raw client IDs,
+credential/session IDs and device names are never returned. Progress is the
+last reported position, not an estimate of elapsed playback. Clients clear rows
+on failed reads, account/server changes and logout, and reject late responses
+from a previous identity. Disconnected clients disappear at the 45-second
+boundary; stopping/unsupported sources and explicit opt-out send DELETE.

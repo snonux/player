@@ -222,6 +222,16 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   PlaybackRequest? _metadataRequest;
   PlaybackRequest? get currentMetadataRequest => _metadataRequest;
 
+  /// The request activated on the decoder, excluding prepared or failed tracks.
+  /// Display metadata may lead source activation while the next loader awaits.
+  PlaybackRequest? get currentActivatedMediaRequest => _canControlSource &&
+          !_movingTrack &&
+          _failedMusicDelta == null &&
+          _musicState?.loading != true &&
+          _musicState?.error == null
+      ? _metadataRequest
+      : null;
+
   void clearMediaItem() {
     _metadataEpoch++;
     _metadataRequest = null;

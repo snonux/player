@@ -1,3 +1,4 @@
+import { libraryPresenceSnapshot } from './playback-presence.js';
 import { musicStreamingBlocked, MusicNetworkRestricted, networkPolicyMessage } from './network-policy.js';
 import { stopRenderer } from './renderer.js';
 import { listeningOccurrenceID, saveListeningProgress } from './listening-progress.js';
@@ -722,7 +723,7 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) 
 function loadMedia(media, resumeFrom = 0) {
   reportProgress = true;
   const thumbnailUrl = media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
-  showMedia(media, { url: mediaPlaybackUrl(media), resumeFrom, library: true }, thumbnailUrl);
+  showMedia(media, { url: mediaPlaybackUrl(media), resumeFrom, library: true, userId: state.user?.id }, thumbnailUrl);
 }
 
 // showMedia displays media from source = { url, resumeFrom, library }.
@@ -1107,7 +1108,8 @@ function adoptGaplessBoundary(token, media, outgoingDuration) {
   enqueueProgress(currentMedia.id, outgoingDuration, true);
   listeningOccurrence = listeningOccurrenceID();
   currentMedia = result.media; currentMediaIndex = result.index;
-  currentSource = { url: audioTransport.currentSrc, resumeFrom: 0, library: true };
+  // Preserve the owner captured before the original source/gapless preparation.
+  currentSource = { url: audioTransport.currentSrc, resumeFrom: 0, library: true, userId: currentSource?.userId };
   currentThumbnailUrl = media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
   sourceEpoch++; completingEpoch = null;
   personal?.setMedia(media); sleepTimer?.setMedia(media);
@@ -1452,4 +1454,11 @@ function fmt(s) {
   const mm = String(m).padStart(2, '0');
   const ss = String(sec).padStart(2, '0');
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+// currentLibraryPresenceSnapshot reports the actual local transport, including decoded audio.
+export function currentLibraryPresenceSnapshot() {
+  return libraryPresenceSnapshot({media:currentMedia, source:currentSource, account:state.user?.id,
+    transport:currentMediaElement(), pending:!!pendingSource, reportProgress,
+    remote:isDetached() || isCasting()});
 }

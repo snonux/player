@@ -1,3 +1,4 @@
+import '../widgets/music_presence_panel.dart';
 import '../l10n/music_localizations.dart';
 import '../providers/navigation_preferences_provider.dart';
 import '../widgets/navigation_settings.dart';
@@ -246,7 +247,16 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
           ),
         ),
       ),
-      body: _buildBody(context),
+      body: Column(children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 320),
+          child: SingleChildScrollView(
+            child: MusicPresencePanel(
+                key: ObjectKey(ref.watch(apiClientProvider))),
+          ),
+        ),
+        Expanded(child: _buildBody(context)),
+      ]),
     );
   }
 

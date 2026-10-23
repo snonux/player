@@ -1,5 +1,6 @@
 import { initLanguage } from './i18n.js';
 import { initOfflinePinLibrary } from './offline-pin-library.js';
+import { mountMusicPresence } from './music-presence.js';
 import { initRadio } from './radio.js';
 import { stopRenderer } from './renderer.js';
 import { setListeningProgressAccount } from './listening-progress.js';
@@ -110,6 +111,7 @@ import { cancelTagsLoad, initTags, openTagsForElement, openTagsForSelected } fro
 import { initUpload, showUpload } from './views/upload.js';
 
 let loggingOut = false;
+let closeMusicPresence = null;
 
 const pageMap = { '/index.html': 'spa', '/login.html': 'login', '/bootstrap.html': 'bootstrap' };
 
@@ -295,6 +297,10 @@ async function initApp() {
     ]);
     if (loggingOut) return;
     setAuthenticatedUser(cfg?.user_id);
+    closeMusicPresence?.();
+    closeMusicPresence = null;
+    const presenceHost = document.querySelector('.main-content');
+    if (state.user && presenceHost) closeMusicPresence = mountMusicPresence(presenceHost);
     setPlaybackCacheAccount(cfg?.user_id);
     setListeningProgressAccount(cfg?.user_id);
     initSongNotifications(cfg?.user_id);
@@ -589,6 +595,8 @@ function initChrome() {
 
   document.getElementById('logout-btn')?.addEventListener('click', async () => {
     loggingOut = true;
+    closeMusicPresence?.();
+    closeMusicPresence = null;
     setAuthenticatedUser(null);
     try {
       try { await stopRenderer(); } catch {}

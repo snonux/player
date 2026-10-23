@@ -24,6 +24,7 @@ import (
 // to the media vertical slice. If any service is nil its routes return 501.
 type MediaServices struct {
 	Playlists     *service.PlaylistService
+	Presence      *service.MusicPresenceService
 	Browse        service.MediaBrowseService
 	Write         service.MediaWriteService
 	Share         service.MediaShareService
@@ -137,6 +138,9 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 	// wiring stays simple and tests that don't pin time keep working.
 	if deps.Clock == nil {
 		deps.Clock = clock.RealClock{}
+	}
+	if deps.Services.Media.Presence == nil && deps.Store != nil && deps.Services.Media.Browse != nil {
+		deps.Services.Media.Presence = service.NewMusicPresenceService(deps.Store, deps.Services.Media.Browse, deps.Clock)
 	}
 	if deps.CastTickets == nil {
 		signer, err := auth.NewCastTicketSigner(deps.Clock)
@@ -391,6 +395,9 @@ func (s *Server) routesMedia() {
 	s.handleBoth(http.MethodPost, "/api/music/downloads", s.requireSession(s.handleMusicDownloads))
 	s.handleBoth(http.MethodGet, "/api/music/related/{kind}/{entity_key}", s.requireSession(s.handleMusicRelated))
 	s.handleBoth(http.MethodGet, "/api/music/mix/{kind}/{entity_key}", s.requireSession(s.handleMusicMix))
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+		s.handleBoth(method, "/api/music/presence", s.requireSession(s.handleMusicPresence))
+	}
 	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
 		s.handleBoth(method, "/api/music/artwork/{kind}/{entity_key}", s.requireSession(s.handleMusicArtwork))
 	}

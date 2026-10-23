@@ -114,6 +114,79 @@ void main() {
     expect(h.mediaItem.value, isNull);
   });
 
+  for (final fails in [false, true]) {
+    test(
+        'presence excludes delayed next metadata and failed preparation $fails',
+        () async {
+      final player = _Player();
+      final handler = PlayerAudioHandler(player);
+      final coordinator = PlaybackSessionCoordinator();
+      final loaderEntered = Completer<void>();
+      final nextSource = Completer<AudioSource?>();
+      PlaybackRequest song(int id) => ServerPlaybackRequest(
+          mediaId: id,
+          serverOrigin: 'http://local',
+          userId: 1,
+          title: 'Song $id',
+          sourceUri: Uri.parse('http://local/$id'),
+          startPosition: 0,
+          savePosition: (_) async {},
+          markFinished: () async {});
+      await handler.insertQueue(
+          entries: [song(1), song(2)],
+          action: QueueInsertion.now,
+          claim: (request) => coordinator.claim(
+              kind: request.kind,
+              identity: request.identity,
+              stop: handler.stop),
+          load: (request, current) async {
+            if ((request as ServerPlaybackRequest).mediaId == 2) {
+              loaderEntered.complete();
+              return nextSource.future;
+            }
+            return AudioSource.uri(request.sourceUri);
+          });
+      expect(
+          (handler.currentActivatedMediaRequest as ServerPlaybackRequest)
+              .mediaId,
+          1);
+      player.elapsed = const Duration(seconds: 7);
+      final oldLoads = player.loads;
+      final transition = handler.skipToNext();
+      await loaderEntered.future;
+      expect(
+          (handler.currentMetadataRequest as ServerPlaybackRequest).mediaId, 2,
+          reason:
+              'real handler installs next display metadata before its awaited loader');
+      expect(player.processingState, ProcessingState.ready);
+      expect(player.position, const Duration(seconds: 7));
+      expect(handler.currentActivatedMediaRequest, isNull,
+          reason: 'old ready decoder cannot authorize prepared-song presence');
+      if (fails) {
+        nextSource.completeError(StateError('prepare failed'));
+      } else {
+        nextSource.complete(AudioSource.uri(Uri.parse('http://local/2')));
+      }
+      await transition;
+      if (fails) {
+        expect(player.loads, oldLoads,
+            reason: 'failed preparation preserves the prior decoder');
+        expect(player.position, const Duration(seconds: 7));
+        expect(handler.currentActivatedMediaRequest, isNull,
+            reason:
+                'failed next metadata never inherits the old decoder position');
+      } else {
+        expect(player.loads, oldLoads + 1);
+        expect(player.position, Duration.zero);
+        expect(
+            (handler.currentActivatedMediaRequest as ServerPlaybackRequest)
+                .mediaId,
+            2);
+      }
+      await handler.stop();
+    });
+  }
+
   for (final mode in MusicRepeat.values) {
     test(
         'repeat ${mode.name} completion and explicit transport use current occurrences',

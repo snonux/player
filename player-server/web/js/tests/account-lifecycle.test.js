@@ -14,10 +14,18 @@ assert.ok(startupStart>0 && startupEnd>startupStart && logoutEnd>logoutBodyStart
 const run=(body,env)=>new Function('env',`with(env){return(async()=>{${body}})();}`)(env);
 const {state,setAuthenticatedUser}=await import('../state.js');
 const noop=()=>{};
-const env={state,setAuthenticatedUser,loggingOut:false,API:{config:async()=>({user_id:17}),sets:async()=>[],users:async()=>[],logout:async()=>{}},setPlaybackCacheAccount:noop,setListeningProgressAccount:noop,initSongNotifications:noop,setMediaPageSize:noop,showAdmin:noop,renderSets:()=>assert.equal(state.user?.id,17,'identity must exist before library rendering'),initNavigation:()=>({restore:async()=>{}}),isShuffle:noop,setShuffle:noop,syncChromeVirtualSets:noop,restoreQueue:async()=>{},queueState:()=>({}),toast:noop,navigatedDuringStartup:false,initialCollection:'library',openCollection:noop,stopRenderer:async()=>{},clearSongNotifications:noop,releasePlaybackCache:noop,location:{origin:'http://fixture',search:'',hash:''}};
+const presenceEvents=[], presenceHost={};
+const trackedIdentity=id=>{presenceEvents.push(`identity:${id}`);setAuthenticatedUser(id);};
+const mountMusicPresence=host=>{
+ assert.equal(host,presenceHost);assert.ok(state.user?.id>0,'mount follows authenticated identity');
+ const account=state.user.id;presenceEvents.push(`mount:${account}`);
+ return ()=>presenceEvents.push(`cleanup:${account}:visible:${state.user?.id}`);
+};
+const env={state,setAuthenticatedUser:trackedIdentity,closeMusicPresence:null,mountMusicPresence,document:{querySelector:selector=>{assert.equal(selector,'.main-content');return presenceHost;}},loggingOut:false,API:{config:async()=>({user_id:17}),sets:async()=>[],users:async()=>[],logout:async()=>{}},setPlaybackCacheAccount:noop,setListeningProgressAccount:noop,initSongNotifications:noop,setMediaPageSize:noop,showAdmin:noop,renderSets:()=>assert.equal(state.user?.id,17,'identity must exist before library rendering'),initNavigation:()=>({restore:async()=>{}}),isShuffle:noop,setShuffle:noop,syncChromeVirtualSets:noop,restoreQueue:async()=>{},queueState:()=>({}),toast:noop,navigatedDuringStartup:false,initialCollection:'library',openCollection:noop,stopRenderer:async()=>{},clearSongNotifications:noop,releasePlaybackCache:noop,location:{origin:'http://fixture',search:'',hash:''}};
 const startup=source.slice(startupStart,startupEnd),logout=source.slice(logoutBodyStart,logoutEnd);
 await run(startup,env);
 assert.equal(state.user.id,17,'authenticated config initializes production identity');
+assert.deepEqual(presenceEvents,['identity:17','mount:17'],'production startup mounts only after identity is established');
 
 // Logout invalidates in-flight home actors before awaiting slow renderer/network I/O.
 let finishRenderer;
@@ -25,17 +33,21 @@ env.stopRenderer=()=>new Promise(resolve=>{finishRenderer=resolve;});
 const pendingLogout=run(logout,env);
 assert.equal(state.user,null,'logout clears identity synchronously');
 assert.equal(env.loggingOut,true);
+assert.deepEqual(presenceEvents.slice(-2),['cleanup:17:visible:17','identity:null'],'logout cleans up the live panel before clearing identity or awaiting output/network');
+assert.equal(env.closeMusicPresence,null);
 finishRenderer();await pendingLogout;
 assert.equal(env.location.href,'/login.html');
 
 // A delayed config response from startup cannot resurrect a logged-out account.
 let finishConfig;
 env.loggingOut=false;env.API.config=()=>new Promise(resolve=>{finishConfig=resolve;});
+const mountsBefore=presenceEvents.filter(event=>event.startsWith('mount:')).length;
 const pendingStartup=run(startup,env);
 env.stopRenderer=async()=>{};
 await run(logout,env);
 finishConfig({user_id:17});await pendingStartup;
 assert.equal(state.user,null);
+assert.equal(presenceEvents.filter(event=>event.startsWith('mount:')).length,mountsBefore,'delayed config cannot remount a logged-out listener panel');
 
 // Exercise production home storage using identity populated by that startup body.
 globalThis.window={addEventListener(){}};
@@ -78,4 +90,6 @@ checkbox.checked=false;checkbox.onchange();
 const restored=failedEditor.querySelector('[data-home-show="recently_added"]');
 assert.equal(restored.checked,true,'failed hide restores the previous visible setting');
 assert.equal(document.activeElement,restored,'failed save restores intended checkbox focus');
-console.log('Production config/logout lifecycle, delayed startup invalidation and home account/unknown identity persistence passed.');
+env.API.config=async()=>({});await run(startup,env);
+assert.equal(env.closeMusicPresence,null,'unknown identity never mounts presence');
+console.log('Production config/logout/presence lifecycle, delayed startup invalidation and home account/unknown identity persistence passed.');
