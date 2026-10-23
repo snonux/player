@@ -39,7 +39,10 @@ export async function keyboardLogin(page: Page, account: Account): Promise<void>
   await page.keyboard.press('Tab');
   await page.keyboard.type(account.password);
   await page.keyboard.press('Enter');
-  await page.waitForURL((url) => url.pathname === '/');
+  // Prefer domcontentloaded: heavy music shell can delay the window load
+  // event past Playwright's default waitForURL budget.
+  await page.waitForURL((url) => url.pathname === '/', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'Toggle sets sidebar', exact: true })).toBeVisible();
 }
 
 /** Move the grid selection with `l` until the card labelled name is selected. */
