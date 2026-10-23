@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/podcast"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/podcast"
 )
 
 // podcastSubscriptionService manages podcast feed subscriptions.

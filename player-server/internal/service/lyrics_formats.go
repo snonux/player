@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/probe"
+	"github.com/snonux/player/internal/probe"
 	"gopkg.in/yaml.v3"
 )
 

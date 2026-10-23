@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func parseAudioTags(m *model.MusicMetadata, tags map[string]string) {

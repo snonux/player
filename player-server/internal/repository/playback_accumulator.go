@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // UpsertAccumulator inserts or replaces a playback accumulator.

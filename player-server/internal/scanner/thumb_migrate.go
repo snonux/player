@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/thumb"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/thumb"
 )
 
 // This file holds the migration of thumbnails written under an older naming

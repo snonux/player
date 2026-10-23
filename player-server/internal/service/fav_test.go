@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
 )
 
 func TestFavService_ToggleFavorite(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/service"
 )
 
 func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {

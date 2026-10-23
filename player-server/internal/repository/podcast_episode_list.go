@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // Episode views of the web (docs/podcast-sync-contract.md §6.3): the

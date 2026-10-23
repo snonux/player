@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func TestProgressMigration_BackfillsExistingSessionPlayback(t *testing.T) {

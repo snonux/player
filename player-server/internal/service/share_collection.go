@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // CreateCollectionShare captures ordered occurrences, preserving repeated songs.

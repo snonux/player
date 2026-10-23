@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
-	"codeberg.org/snonux/player/internal/thumb"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/probe"
+	"github.com/snonux/player/internal/thumb"
 )
 
 // ImportMediaFile probes an existing media file on disk, generates a thumbnail if

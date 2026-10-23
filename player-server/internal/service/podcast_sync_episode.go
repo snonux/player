@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/podcast"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/podcast"
 )
 
 // Validation of the episode items of a sync request

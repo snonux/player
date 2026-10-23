@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/thumb"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/thumb"
 )
 
 // ThumbnailMaker is what the services need to create and delete generated

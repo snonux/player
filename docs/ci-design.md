@@ -2,7 +2,7 @@
 
 **Status:** Proposal / Decision gate — requires user approval before implementation.
 **Date:** 2026-05-18
-**Scope:** `codeberg.org/snonux/player` monorepo — `player-server/` (Go) and `player-android/` (Flutter)
+**Scope:** `github.com/snonux/player` monorepo — `player-server/` (Go) and `player-android/` (Flutter)
 
 ---
 
@@ -21,39 +21,32 @@
 
 ## 1. Provider
 
-### The choice: Woodpecker CI on Codeberg
+### The choice: GitHub Actions (primary), Woodpecker optional
 
-The repository lives at `codeberg.org/snonux/player`. Codeberg's native CI system is
-Woodpecker CI, which reads pipeline definitions from `.woodpecker/` YAML files. Using
-Woodpecker as the primary CI system is the path of least friction:
+The repository lives at `github.com/snonux/player`. GitHub Actions
+(`.github/workflows/`) is the native CI for that host. Historical
+`.woodpecker/` pipelines remain in-tree as an optional/self-hosted path:
 
-- No token-based mirroring required for basic push/PR triggers.
-- Codeberg's shared Woodpecker runners are available for free-tier public repos.
-- Configuration is near-identical to GitHub Actions conceptually (steps inside jobs
-  inside pipelines) so migration later is low-cost.
+- Push/PR triggers work without a forge mirror.
+- GitHub-hosted runners cover unit and (where needed) KVM emulator jobs.
+- Woodpecker YAML stays available for a self-hosted agent if desired.
 
-### Trade-offs vs GitHub Actions
+### Trade-offs vs Woodpecker
 
-| Factor | Woodpecker CI | GitHub Actions |
-|--------|---------------|----------------|
-| Native Codeberg integration | Yes (no mirror needed) | Requires mirror push |
-| Shared runner availability | Codeberg shared pool | Generous free tier |
-| KVM for Android emulator | Not guaranteed on shared runners | Available on `ubuntu-latest` |
-| Ecosystem / community docs | Smaller but sufficient | Very large |
-| Cost at current scale | Free (shared pool) | Free (within monthly quota) |
-| Self-hosted runner support | Yes (same agent) | Yes |
+| Factor | GitHub Actions | Woodpecker CI |
+|--------|----------------|---------------|
+| Native GitHub integration | Yes | Requires self-hosted agent or mirror |
+| Shared runner availability | Generous free tier | Depends on self-hosted pool |
+| KVM for Android emulator | Available on `ubuntu-latest` | Not guaranteed without custom runners |
+| Ecosystem / community docs | Very large | Smaller but sufficient |
+| Cost at current scale | Free (within monthly quota) | Free if self-hosted |
+| Self-hosted runner support | Yes | Yes |
 
 ### Recommendation
 
-Use **Woodpecker CI as the sole provider** for now. The pipeline files live in
-`.woodpecker/`. Do not add a GitHub Actions mirror until there is a concrete reason
-(e.g., emulator tests that require GitHub's KVM-enabled runners, or GitHub Packages
-publishing). Adding both providers simultaneously doubles maintenance without adding
-value at this stage.
-
-If the emulator decision changes later and Codeberg shared runners cannot provide KVM,
-revisit a targeted GitHub Actions mirror for Android integration tests only — keeping
-the Go and Flutter unit pipelines on Woodpecker.
+Use **GitHub Actions as the primary provider**. Keep `.woodpecker/` only if a
+self-hosted Woodpecker agent is still useful. Prefer GitHub-hosted KVM runners
+for Android emulator work rather than maintaining a second forge CI.
 
 ---
 
@@ -86,7 +79,7 @@ The f3s homelab's Raspberry Pi 3 nodes are aarch64, but they are not suitable CI
 runner targets (arm64 cannot run an x86_64 Android emulator, and Go cross-compilation
 testing is a different concern from functional testing). The Beelink S12 Pro nodes
 (Intel N100, x86_64) are viable as self-hosted runners but are not needed at this
-stage — shared Codeberg runners handle the load.
+stage — GitHub-hosted runners handle the load.
 
 ---
 
@@ -405,15 +398,15 @@ Nightly (main only):
 
 ## 8. Honest Trade-offs and Risks
 
-### Risk: Codeberg shared runner availability
+### Risk: shared runner availability
 
-Codeberg's shared Woodpecker runners are a shared pool. Under load, jobs may queue.
-This is acceptable for a personal/hobby project but could become frustrating during
-active development sprints.
+GitHub-hosted runners can queue under load, and a self-hosted Woodpecker pool
+has the same constraint. This is acceptable for a personal/hobby project but
+could become frustrating during active development sprints.
 
-**Mitigation:** The f3s homelab Beelink x86 nodes can run a self-hosted Woodpecker
-agent. If queue times become a problem, registering one of r0/r1/r2 as a self-hosted
-runner is a straightforward solution — the runner agent is a single Go binary.
+**Mitigation:** The f3s homelab Beelink x86 nodes can run a self-hosted GitHub
+Actions or Woodpecker agent. If queue times become a problem, registering one of
+r0/r1/r2 as a self-hosted runner is a straightforward solution.
 
 ### Risk: Flutter SDK version drift
 
@@ -468,8 +461,8 @@ Each is scoped to produce one concrete artifact.
    currently exits 0 as a placeholder. Add cost logging step.
 
 4. **Build and publish a Flutter CI Docker image** — `Dockerfile.flutter-ci` in the
-   repo root pinning Flutter SDK version; publish to Codeberg Container Registry or
-   GitHub Container Registry. Update `android.yml` to use this image.
+   repo root pinning Flutter SDK version; publish to GitHub Container Registry.
+   Update Android CI workflows to use this image.
 
 5. **Register a self-hosted Woodpecker runner on f3s (optional)** — If shared runner
    queue times become a problem, register one of the bhyve VMs (r0/r1/r2) as a

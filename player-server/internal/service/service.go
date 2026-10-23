@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // apiError is a sentinel error that knows its own HTTP status. It implements

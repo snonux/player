@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/service"
 )
 
 func (s *Server) handlePlaylistImport(w http.ResponseWriter, r *http.Request) {

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"codeberg.org/snonux/player/internal/auth"
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/auth"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
 )
 
 // authService is the concrete implementation of AuthService.

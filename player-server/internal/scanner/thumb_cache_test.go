@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/thumb"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/thumb"
 )
 
 // These tests cover scans with a thumbnail cache directory configured

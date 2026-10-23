@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // Outbound policy for catalog feeds created by non-admin subscriptions

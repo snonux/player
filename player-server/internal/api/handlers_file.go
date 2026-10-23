@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/service"
 )
 
 // ------------------------------------------------------------------

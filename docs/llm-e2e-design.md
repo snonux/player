@@ -270,10 +270,10 @@ Run scenario
    and annotates the task with the Playwright HTML report path and a snippet of
    the failure output. This creates a visible, trackable item without noisy
    notifications.
-3. **File a Codeberg issue (opt-in)** — for nightly runs only, if the task has
+3. **File a GitHub issue (opt-in)** — for nightly runs only, if the task has
    been open for more than 24 hours without human annotation, the agent can
-   create a Codeberg issue via the `gh` CLI (configured to point at
-   codeberg.org/snonux/player). This is opt-in and controlled by an environment
+   create a GitHub issue via the `gh` CLI for
+   `github.com/snonux/player`. This is opt-in and controlled by an environment
    variable `LLM_E2E_OPEN_ISSUE=true`.
 
 **What the agent does NOT do:**
@@ -428,7 +428,7 @@ Before implementation begins, please confirm or override:
 - [ ] **Screenshot oracle approved?** Haiku for visual checks, gated behind env var?
 - [ ] **Trigger approved?** Nightly via /schedule, optional PR gate for S01 only?
 - [ ] **Budget approved?** ~$5.50/month for nightly runs; alert if >$0.50/run?
-- [ ] **Failure handling approved?** One retry, then `ask add` task; Codeberg issue opt-in via env var?
+- [ ] **Failure handling approved?** One retry, then `ask add` task; GitHub issue opt-in via env var?
 - [ ] **Android deferred?** S05 marked skip until integration_test/ is populated?
 
 ---

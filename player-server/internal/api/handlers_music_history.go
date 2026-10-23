@@ -1,9 +1,9 @@
 package api
 
 import (
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/service"
 	"encoding/json"
 	"net/http"
 	"strconv"

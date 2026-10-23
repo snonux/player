@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // The bridge between the media progress routes and episode state

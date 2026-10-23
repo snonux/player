@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func TestMusicDownloadArchive(t *testing.T) {

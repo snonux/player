@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"codeberg.org/snonux/player/internal/podcast"
+	"github.com/snonux/player/internal/podcast"
 )
 
 // The podcast synchronization migration (docs/podcast-sync-contract.md, §9.1).

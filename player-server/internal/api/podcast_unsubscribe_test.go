@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/service"
 )
 
 // unsubscribeStub records the unsubscribe call and returns a fixed error.

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // RelatedMusic is an explained local metadata match, never an acoustic estimate.

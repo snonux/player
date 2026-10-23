@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/clock"
 )
 
 // fakeRunner is a Runner that writes a fixed payload instead of running

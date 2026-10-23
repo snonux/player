@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/ffsafe"
-	"codeberg.org/snonux/player/internal/mediatype"
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/ffsafe"
+	"github.com/snonux/player/internal/mediatype"
+	"github.com/snonux/player/internal/model"
 	"github.com/rwcarlsen/goexif/exif"
 )
 

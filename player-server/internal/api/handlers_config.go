@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"codeberg.org/snonux/player/internal"
+	"github.com/snonux/player/internal"
 )
 
 // podcastSyncVersion is the podcast_sync capability advertised in the

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/model"
 )
 
 func TestScanService_ScanLibrary(t *testing.T) {

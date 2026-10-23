@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/repository"
 )
 
 // handleServerIdentity is credential-free so clients can test a paired address

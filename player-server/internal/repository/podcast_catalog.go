@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/podcast"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/podcast"
 )
 
 // Catalog identity: resolving feed keys through aliases, creating catalog

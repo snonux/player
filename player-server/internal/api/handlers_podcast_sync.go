@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // maxPodcastSyncBody bounds the body of a podcast sync request (2 MiB).

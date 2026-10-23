@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 
-	"codeberg.org/snonux/player/internal"
-	"codeberg.org/snonux/player/internal/app"
+	"github.com/snonux/player/internal"
+	"github.com/snonux/player/internal/app"
 )
 
 // parseVersionFlag parses CLI flags and returns whether --version was requested.

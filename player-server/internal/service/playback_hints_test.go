@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func TestContainerFromPath(t *testing.T) {

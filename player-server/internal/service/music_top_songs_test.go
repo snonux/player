@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func TestMusicArtistTopSongs(t *testing.T) {

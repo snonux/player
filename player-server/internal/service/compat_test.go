@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
-	"codeberg.org/snonux/player/internal/thumb"
-	"codeberg.org/snonux/player/internal/transcode"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/thumb"
+	"github.com/snonux/player/internal/transcode"
 )
 
 // fakeRenditions is a RenditionProvider that records its calls.

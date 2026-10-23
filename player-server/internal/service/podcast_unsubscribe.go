@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
 )
 
 // Feed-owned artwork file names: cover.jpg is downloaded on subscribe and

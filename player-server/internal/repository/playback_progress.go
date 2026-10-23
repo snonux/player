@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // UpsertProgress inserts or replaces playback progress. For the server copy

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // previewers are requests of the kind chat apps, mail scanners and

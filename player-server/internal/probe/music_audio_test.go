@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/ffsafe/ffsafetest"
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/ffsafe/ffsafetest"
+	"github.com/snonux/player/internal/model"
 )
 
 func TestAudioTagNumbers(t *testing.T) {

@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal"
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal"
+	"github.com/snonux/player/internal/model"
 )
 
 // Exercise the real Android cover endpoint with the production service wiring,

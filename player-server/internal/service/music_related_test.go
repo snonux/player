@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func TestMusicRelatedMetadataRankingAndEmpty(t *testing.T) {

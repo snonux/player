@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // Create inserts a new API token and returns the generated ID.

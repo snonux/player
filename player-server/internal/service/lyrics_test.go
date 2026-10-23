@@ -8,9 +8,9 @@ import (
 	"syscall"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/ffsafe/ffsafetest"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
+	"github.com/snonux/player/internal/ffsafe/ffsafetest"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/probe"
 )
 
 func TestParseLyrics(t *testing.T) {

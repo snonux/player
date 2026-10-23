@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/service"
 )
 
 type queueAlbumMembership struct {

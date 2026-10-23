@@ -1,7 +1,7 @@
 package api
 
 import (
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/service"
 	"net/http"
 	"strconv"
 )

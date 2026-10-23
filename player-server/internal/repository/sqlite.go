@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"codeberg.org/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/clock"
 
 	// Register the pure-Go SQLite driver with database/sql.
 	_ "modernc.org/sqlite"

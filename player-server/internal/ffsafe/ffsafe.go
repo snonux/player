@@ -35,7 +35,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"codeberg.org/snonux/player/internal/mediatype"
+	"github.com/snonux/player/internal/mediatype"
 )
 
 // FormatWhitelist lists the demuxers allowed to open audio and video files:

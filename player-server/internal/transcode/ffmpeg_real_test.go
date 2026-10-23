@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/clock"
 )
 
 // requireFFmpegEnv makes the real-ffmpeg tests mandatory. They skip when the

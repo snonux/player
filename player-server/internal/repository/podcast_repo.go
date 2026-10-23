@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // PodcastRepo manages podcast feeds, episodes, and per-user status.

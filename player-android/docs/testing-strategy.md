@@ -41,14 +41,13 @@ Adds boilerplate `integration_test/app_test.dart` that launches the app on an em
 
 ## 3. Question 2 — Emulator on CI
 
-**Three sub-options:** (a) KVM-enabled CI runner (GitHub Actions / Codeberg / Gitea cloud), (b) defer entirely until real app, (c) use the f3s homelab as a self-hosted runner.
+**Three sub-options:** (a) KVM-enabled CI runner (GitHub Actions / Gitea cloud), (b) defer entirely until real app, (c) use the f3s homelab as a self-hosted runner.
 
 ### Sub-option A — Cloud CI with KVM
 
 `flutter test` for unit tests needs no emulator and no KVM. Only `flutter drive` / `integration_test` requires a running Android emulator, which in turn requires KVM (hardware virtualisation) inside the CI runner.
 
 - GitHub Actions offers `ubuntu-latest` runners with KVM available (enabled via the `enable-kvm` step in workflow YAML — confirmed available as of early 2026). An integration test pass on an Android emulator typically costs **8–15 CI minutes** per run (emulator boot ~3–4 min, tests ~1–2 min, overhead ~1–2 min).
-- For Codeberg CI (Woodpecker), KVM availability depends on runner configuration — not guaranteed on shared runners.
 - For unit-only `flutter test`: roughly **2–3 CI minutes** (Flutter setup ~1 min, pub get ~30 s, test run ~10–20 s).
 
 ### Sub-option B — Defer emulator until real app (recommended)
@@ -75,7 +74,7 @@ The Beelink x86 nodes are more capable, but:
 
 For now: a simple cloud CI job that runs `flutter analyze` and `flutter test`. No emulator, no KVM, no self-hosted runner. When integration tests land, revisit whether to use GitHub Actions KVM runners or a homelab x86 node.
 
-**Open decision — CI platform:** The monorepo currently has no CI pipeline for either subproject. The CI platform (GitHub Actions, Codeberg Woodpecker, or another) should be agreed before the implementation task (Section 8, Task 1) is started. The choice does not change any other decision in this document; it only affects workflow file syntax. This is an explicit open item to resolve at approval time.
+**CI platform:** The monorepo hosts on `github.com/snonux/player` and uses GitHub Actions as the primary CI. Optional self-hosted Woodpecker agents may still run from `.woodpecker/` if desired; that choice only affects workflow file syntax.
 
 ---
 

@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
 )
 
 // Compile-time check that *sessionManager satisfies the SessionManager interface.

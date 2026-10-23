@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // ErrNotFound is returned by a Resolver when a media item has no thumbnail

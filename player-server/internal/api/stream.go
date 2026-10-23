@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/service"
 )
 
 // fileETag returns a strong ETag value (without surrounding quotes) for a

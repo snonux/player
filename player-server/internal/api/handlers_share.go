@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/service"
-	"codeberg.org/snonux/player/internal/web"
+	"github.com/snonux/player/internal/service"
+	"github.com/snonux/player/internal/web"
 )
 
 type createShareRequest struct {

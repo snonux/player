@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/ffsafe/ffsafetest"
+	"github.com/snonux/player/internal/ffsafe/ffsafetest"
 )
 
 // These tests run the real ffprobe with the arguments built here. They skip

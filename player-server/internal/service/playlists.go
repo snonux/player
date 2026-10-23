@@ -8,8 +8,8 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
 )
 
 // PlaylistView contains only currently accessible music and derived aggregates.

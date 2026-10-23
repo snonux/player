@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/podcast"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/podcast"
 )
 
 // Episode edits of POST /api/v1/podcasts/sync (docs/podcast-sync-contract.md

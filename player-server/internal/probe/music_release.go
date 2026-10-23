@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func parseReleaseTags(m *model.MusicMetadata, tags map[string]string) {

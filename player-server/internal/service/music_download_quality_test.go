@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/transcode"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/transcode"
 )
 
 type downloadQualityStub struct {

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // ImportPlaylist atomically creates an import, or refreshes a still-owned binding.

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"codeberg.org/snonux/player/internal/podcast"
+	"github.com/snonux/player/internal/podcast"
 )
 
 // Feed and episode merges, legacy key retirement and re-keying of account

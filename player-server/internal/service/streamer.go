@@ -8,9 +8,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"codeberg.org/snonux/player/internal/mediatype"
-	"codeberg.org/snonux/player/internal/probe"
-	"codeberg.org/snonux/player/internal/thumb"
+	"github.com/snonux/player/internal/mediatype"
+	"github.com/snonux/player/internal/probe"
+	"github.com/snonux/player/internal/thumb"
 )
 
 // Compile-time check that *mediaStreamer satisfies MediaStreamer.

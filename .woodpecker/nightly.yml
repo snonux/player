@@ -1,4 +1,4 @@
-# LLM e2e pipeline for codeberg.org/snonux/player
+# LLM e2e pipeline for github.com/snonux/player
 #
 # Trigger: Manual only — do NOT configure a Woodpecker cron schedule for this
 #          pipeline. The intended way to run LLM e2e tests is locally via:

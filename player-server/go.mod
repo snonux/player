@@ -1,4 +1,4 @@
-module codeberg.org/snonux/player
+module github.com/snonux/player
 
 go 1.25.0
 

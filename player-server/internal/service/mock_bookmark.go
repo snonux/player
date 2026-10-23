@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func (m *MockMediaService) ListBookmarks(ctx context.Context, mediaID, userID int64) ([]model.Bookmark, error) {

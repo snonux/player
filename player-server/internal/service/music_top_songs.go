@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // ArtistTopSongs explains a local popularity ranking over caller-visible songs.

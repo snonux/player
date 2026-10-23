@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"codeberg.org/snonux/player/internal/repository"
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/service"
 )
 
 // ------------------------------------------------------------------

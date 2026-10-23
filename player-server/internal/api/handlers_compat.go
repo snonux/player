@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"codeberg.org/snonux/player/internal/service"
-	"codeberg.org/snonux/player/internal/transcode"
+	"github.com/snonux/player/internal/service"
+	"github.com/snonux/player/internal/transcode"
 )
 
 const (

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/transcode"
+	"github.com/snonux/player/internal/transcode"
 )
 
 // MusicDownloadQuality snapshots an independent download profile for an archive.

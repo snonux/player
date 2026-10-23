@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/ffsafe"
+	"github.com/snonux/player/internal/ffsafe"
 )
 
 // MaxLyricsBytes bounds sidecar text and embedded lyrics.

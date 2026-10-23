@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/clock"
 )
 
 // writeCached creates a cache file of the given size and modification time.

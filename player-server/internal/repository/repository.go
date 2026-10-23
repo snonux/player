@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // Store is the composite interface for all repositories.

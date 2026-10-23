@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/repository"
 )
 
 // scanWriter persists probed media results to the database. It runs in a

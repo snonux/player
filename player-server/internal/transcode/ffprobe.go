@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 
-	"codeberg.org/snonux/player/internal/ffsafe"
+	"github.com/snonux/player/internal/ffsafe"
 )
 
 // mediaInfo describes the container and the first video and first audio

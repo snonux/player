@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // MockPodcastSyncRepo is a fake PodcastSyncRepo, PodcastSubscriptionRepo,

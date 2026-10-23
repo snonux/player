@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/mediatype"
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/mediatype"
+	"github.com/snonux/player/internal/model"
 )
 
 func generateEXIFImage(t *testing.T, dst string) {

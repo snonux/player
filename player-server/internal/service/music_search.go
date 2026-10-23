@@ -4,7 +4,7 @@ import (
 	"path"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // MusicSearchResult groups matches from an already permission-filtered catalog.

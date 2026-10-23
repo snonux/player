@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // UpdateMediaMusic patches embedded tags and source size without overwriting saved state.

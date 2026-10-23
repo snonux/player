@@ -59,7 +59,7 @@ var commandAllowlist = map[string]string{
 
 const (
 	execImport   = "os/exec"
-	ffsafeImport = "codeberg.org/snonux/player/internal/ffsafe"
+	ffsafeImport = "github.com/snonux/player/internal/ffsafe"
 )
 
 // pkgFile is one parsed source file of a package.
@@ -288,7 +288,7 @@ func TestEveryCommandGetsFFsafeArguments(t *testing.T) {
 // TestCheckPackage runs the checker on small in-memory packages: each case
 // is one or more files, and the findings they must produce.
 func TestCheckPackage(t *testing.T) {
-	const header = "package p\nimport (\n\"os/exec\"\n\"codeberg.org/snonux/player/internal/ffsafe\"\n)\nvar _ = ffsafe.FormatWhitelist\n"
+	const header = "package p\nimport (\n\"os/exec\"\n\"github.com/snonux/player/internal/ffsafe\"\n)\nvar _ = ffsafe.FormatWhitelist\n"
 	tests := []struct {
 		name  string
 		files []string
@@ -340,7 +340,7 @@ func TestCheckPackage(t *testing.T) {
 			name: "rule b: helper in another file of the package",
 			files: []string{
 				"package p\nimport \"os/exec\"\nfunc Probe(p string) { exec.Command(\"ffprobe\", args(p)...).Run() }",
-				"package p\nimport safe \"codeberg.org/snonux/player/internal/ffsafe\"\nfunc args(p string) []string { a, _ := safe.ImageInputArgs(p); return a }",
+				"package p\nimport safe \"github.com/snonux/player/internal/ffsafe\"\nfunc args(p string) []string { a, _ := safe.ImageInputArgs(p); return a }",
 			},
 		},
 		{

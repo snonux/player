@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
 )
 
 // Episode views of the web (docs/podcast-sync-contract.md §6.3). Task 0i3

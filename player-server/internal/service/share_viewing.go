@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // A share's max_uses counts viewings, not HTTP requests: a player fetches one

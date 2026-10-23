@@ -2,7 +2,7 @@ package service
 
 import (
 	"bytes"
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 	"context"
 	"encoding/binary"
 	"image"

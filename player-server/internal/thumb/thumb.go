@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"codeberg.org/snonux/player/internal/ffsafe"
-	"codeberg.org/snonux/player/internal/mediatype"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
+	"github.com/snonux/player/internal/ffsafe"
+	"github.com/snonux/player/internal/mediatype"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/probe"
 )
 
 // Generator creates a thumbnail for a given media file.

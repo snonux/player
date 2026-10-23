@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/service"
 )
 
 // shareViewCookie is the cookie that carries a share viewing credential for

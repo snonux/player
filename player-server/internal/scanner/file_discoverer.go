@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/mediatype"
+	"github.com/snonux/player/internal/mediatype"
 )
 
 // appleDoublePrefix is the filename prefix macOS uses for AppleDouble

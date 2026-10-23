@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // CreateMedia inserts a new media and returns the generated ID.

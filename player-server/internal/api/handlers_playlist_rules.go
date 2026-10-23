@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func (s *Server) handlePlaylistRules(w http.ResponseWriter, r *http.Request) {

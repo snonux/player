@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
 )
 
 // accessHelper encapsulates permission checks used by media sub-services.

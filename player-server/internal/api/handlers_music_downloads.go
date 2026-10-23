@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/service"
 )
 
 func (s *Server) handleMusicDownloads(w http.ResponseWriter, r *http.Request) {

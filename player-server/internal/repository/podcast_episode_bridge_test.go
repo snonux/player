@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // bridgeFixture is a sync fixture with alice's server copy of ep1.

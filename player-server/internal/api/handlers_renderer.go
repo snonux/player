@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"codeberg.org/snonux/player/internal/renderer"
+	"github.com/snonux/player/internal/renderer"
 )
 
 type rendererCommand struct {

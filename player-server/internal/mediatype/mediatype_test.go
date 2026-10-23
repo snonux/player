@@ -3,7 +3,7 @@ package mediatype
 import (
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func TestTypeForExt(t *testing.T) {

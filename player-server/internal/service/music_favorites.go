@@ -1,7 +1,7 @@
 package service
 
 import (
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/repository"
 	"context"
 )
 

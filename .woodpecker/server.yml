@@ -1,4 +1,4 @@
-# Go server CI pipeline for codeberg.org/snonux/player
+# Go server CI pipeline for github.com/snonux/player
 #
 # Stage 1 — server-unit (every push, every PR):
 #   Fast gate: go test -race -count=1 ./...

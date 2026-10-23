@@ -8,7 +8,7 @@ import (
 	"strings"
 	"syscall"
 
-	"codeberg.org/snonux/player/internal/thumb"
+	"github.com/snonux/player/internal/thumb"
 )
 
 // confinedPath checks both the lexical path and existing symlink ancestors.

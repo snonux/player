@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"codeberg.org/snonux/player/internal"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal"
+	"github.com/snonux/player/internal/repository"
 )
 
 func TestServerIdentityPublicAliases(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // ingestDoc builds a parsed feed document from (guid, enclosure) pairs.

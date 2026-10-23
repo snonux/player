@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/ffsafe"
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/ffsafe"
+	"github.com/snonux/player/internal/model"
 )
 
 // RadioRelay fetches stations without forwarding Player credentials. Live input

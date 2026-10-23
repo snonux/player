@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
 )
 
 // noteService handles CRUD for per-user per-media notes.

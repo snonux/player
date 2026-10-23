@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"codeberg.org/snonux/player/internal"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal"
+	"github.com/snonux/player/internal/repository"
 )
 
 func TestServer_CORSDisabled(t *testing.T) {

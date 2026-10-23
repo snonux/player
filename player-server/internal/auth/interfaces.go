@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // SessionManager is the abstraction for session lifecycle operations.

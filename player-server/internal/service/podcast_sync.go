@@ -7,10 +7,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/podcast"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/podcast"
+	"github.com/snonux/player/internal/repository"
 )
 
 // Limits of POST /api/v1/podcasts/sync (docs/podcast-sync-contract.md §6.2).

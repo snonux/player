@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
-	"codeberg.org/snonux/player/internal/thumb"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/thumb"
 )
 
 // RenditionGC is the part of the transcode cache the GC worker maintains.

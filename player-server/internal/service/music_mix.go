@@ -3,7 +3,7 @@ package service
 import (
 	"sort"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // MusicMix is a finite, explained local-library queue, separate from live radio.

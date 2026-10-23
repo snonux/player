@@ -9,7 +9,7 @@ import (
 	_ "image/jpeg"
 	"image/png"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // MaxMusicArtworkBytes bounds uploads before image decoding.

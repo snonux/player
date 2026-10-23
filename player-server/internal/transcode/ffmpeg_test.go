@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/ffsafe"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/ffsafe"
 )
 
 // TestFFmpegArgs pins the complete argument lists. It needs no ffmpeg, so the

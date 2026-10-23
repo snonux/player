@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // Episode state registers (docs/podcast-sync-contract.md, §4 and §7.1).

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"syscall"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/probe"
 )
 
 // Lyrics contains local text; Start is in seconds and absent for plain lyrics.

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/service"
 )
 
 func (s *Server) handleMusicPresence(w http.ResponseWriter, r *http.Request) {

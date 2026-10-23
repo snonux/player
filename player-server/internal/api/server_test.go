@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"codeberg.org/snonux/player/internal"
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal"
+	"github.com/snonux/player/internal/service"
 )
 
 // TestNewServerWithLogger_ErrorsOnNilConfig verifies that the constructor

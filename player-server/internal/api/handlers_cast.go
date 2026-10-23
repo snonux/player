@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/auth"
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/auth"
+	"github.com/snonux/player/internal/service"
 )
 
 // castTicketTTL bounds how long a cast URL works. It must outlast a long

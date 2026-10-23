@@ -16,16 +16,16 @@ import (
 	"syscall"
 	"time"
 
-	"codeberg.org/snonux/player/internal"
-	"codeberg.org/snonux/player/internal/api"
-	"codeberg.org/snonux/player/internal/auth"
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/probe"
-	"codeberg.org/snonux/player/internal/repository"
-	"codeberg.org/snonux/player/internal/scanner"
-	"codeberg.org/snonux/player/internal/service"
-	"codeberg.org/snonux/player/internal/thumb"
-	"codeberg.org/snonux/player/internal/transcode"
+	"github.com/snonux/player/internal"
+	"github.com/snonux/player/internal/api"
+	"github.com/snonux/player/internal/auth"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/probe"
+	"github.com/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/scanner"
+	"github.com/snonux/player/internal/service"
+	"github.com/snonux/player/internal/thumb"
+	"github.com/snonux/player/internal/transcode"
 )
 
 // Deps bundles all wired service-layer dependencies assembled during

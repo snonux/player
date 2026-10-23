@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal"
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal"
+	"github.com/snonux/player/internal/service"
 )
 
 // Both presented credentials are handed to the service, the parameter first:

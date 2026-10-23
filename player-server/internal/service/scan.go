@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/scanner"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/scanner"
 )
 
 // scanService handles triggering and tracking media library scans.

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // Per-account subscription registers (docs/podcast-sync-contract.md, §4 and

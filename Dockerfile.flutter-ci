@@ -7,9 +7,9 @@
 # To build and push (replace TAG with the Flutter SDK version, e.g. 3.32.0):
 #
 #   docker build --build-arg FLUTTER_VERSION=3.32.0 \
-#     -t codeberg.org/snonux/player/flutter-ci:3.32.0 \
+#     -t github.com/snonux/player/flutter-ci:3.32.0 \
 #     -f Dockerfile.flutter-ci .
-#   docker push codeberg.org/snonux/player/flutter-ci:3.32.0
+#   docker push github.com/snonux/player/flutter-ci:3.32.0
 #
 # Update .woodpecker/android.yml to reference the new tag when upgrading.
 

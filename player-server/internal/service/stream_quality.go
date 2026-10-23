@@ -4,8 +4,8 @@ import (
 	"context"
 	"strconv"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/transcode"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/transcode"
 )
 
 // QualityStreamService offers explicitly selected audio encodes with the same

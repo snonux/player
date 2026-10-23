@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/probe"
+	"github.com/snonux/player/internal/repository"
 )
 
 // TestUploadMedia_RefusedFileLeavesNothing uploads, through the real prober

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 func TestFSResolver_Resolve(t *testing.T) {

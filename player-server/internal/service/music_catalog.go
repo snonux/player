@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // Album is a caller-visible aggregate over existing media identities.

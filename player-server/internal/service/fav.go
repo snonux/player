@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"codeberg.org/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/repository"
 )
 
 // favService handles toggling favorite status.

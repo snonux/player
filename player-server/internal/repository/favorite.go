@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // ToggleFavorite inserts or deletes a favorite row, returning whether it is now favorited.

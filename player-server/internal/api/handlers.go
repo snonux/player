@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // ------------------------------------------------------------------

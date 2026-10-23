@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/probe"
-	"codeberg.org/snonux/player/internal/repository"
-	"codeberg.org/snonux/player/internal/thumb"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/probe"
+	"github.com/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/thumb"
 )
 
 func TestBeetsArtRescan(t *testing.T) {

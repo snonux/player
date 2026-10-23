@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal/ffsafe"
-	"codeberg.org/snonux/player/internal/ffsafe/ffsafetest"
+	"github.com/snonux/player/internal/ffsafe"
+	"github.com/snonux/player/internal/ffsafe/ffsafetest"
 )
 
 // pngHead is enough of a PNG for ffsafe to recognise the format.

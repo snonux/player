@@ -1,7 +1,7 @@
 package repository
 
 import (
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 	"context"
 	"path/filepath"
 	"testing"

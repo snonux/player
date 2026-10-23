@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"codeberg.org/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/clock"
 )
 
 // ErrInvalidCastTicket is returned for a cast ticket that is malformed,

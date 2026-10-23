@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/player/internal"
-	"codeberg.org/snonux/player/internal/app"
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/repository"
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal"
+	"github.com/snonux/player/internal/app"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/service"
 )
 
 func captureStdout(fn func()) string {

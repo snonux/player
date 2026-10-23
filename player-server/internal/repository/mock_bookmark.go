@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // MockBookmarkRepo is a hand-written bookmark repository fake.

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/transcode"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/transcode"
 )
 
 // CompatStreamService returns a client-compatible rendition (H.264/AAC MP4

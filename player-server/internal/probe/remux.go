@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"time"
 
-	"codeberg.org/snonux/player/internal/ffsafe"
+	"github.com/snonux/player/internal/ffsafe"
 )
 
 // Remuxer remuxes media on-the-fly to a browser-friendly container.

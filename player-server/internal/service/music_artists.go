@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // ArtistCredit is one explicitly tagged person and their roles on a song.

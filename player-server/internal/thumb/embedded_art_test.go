@@ -7,8 +7,8 @@ import (
 	"slices"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/ffsafe"
-	"codeberg.org/snonux/player/internal/ffsafe/ffsafetest"
+	"github.com/snonux/player/internal/ffsafe"
+	"github.com/snonux/player/internal/ffsafe/ffsafetest"
 )
 
 func TestEmbeddedArtworkArgs(t *testing.T) {

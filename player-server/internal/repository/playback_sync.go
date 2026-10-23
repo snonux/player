@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // latestProgressTime returns the latest edit time of ordinary media's

@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // CreateFromQueue atomically saves a private snapshot without changing playback.

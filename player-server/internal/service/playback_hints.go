@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // PlaybackHint tells a client what to play. PlaybackURL is the URL to hand to

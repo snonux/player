@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"codeberg.org/snonux/player/internal/podcast"
+	"github.com/snonux/player/internal/podcast"
 )
 
 // repairPodcastIdentities runs on every start, after the podcast migration

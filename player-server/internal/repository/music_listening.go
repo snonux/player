@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // MusicListeningRepo reads personal counters; callers must apply current ACLs.

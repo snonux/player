@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/service"
 )
 
 func (s *Server) handleMusicArtwork(w http.ResponseWriter, r *http.Request) {

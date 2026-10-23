@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // PlaylistRulesRepo provides a narrow capability for dynamic selection writes.

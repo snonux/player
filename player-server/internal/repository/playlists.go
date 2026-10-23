@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // PlaylistChange describes one occurrence edit without replacing saved membership.

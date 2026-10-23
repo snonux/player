@@ -8,9 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/service"
 )
 
 // Exercise the response boundary with nil collections from services. Repositories

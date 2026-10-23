@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/service"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/service"
 )
 
 const multipartFormMemoryLimit = 32 << 20

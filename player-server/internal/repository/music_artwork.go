@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"codeberg.org/snonux/player/internal/model"
+	"github.com/snonux/player/internal/model"
 )
 
 // MusicArtworkRepo persists normalized custom artwork independently of tags.

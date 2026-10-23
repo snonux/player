@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 
-	"codeberg.org/snonux/player/internal/auth"
-	"codeberg.org/snonux/player/internal/clock"
-	"codeberg.org/snonux/player/internal/model"
-	"codeberg.org/snonux/player/internal/repository"
-	"codeberg.org/snonux/player/internal/scanner"
+	"github.com/snonux/player/internal/auth"
+	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
+	"github.com/snonux/player/internal/scanner"
 )
 
 // Compile-time check that *adminService satisfies AdminService.
