@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, SUPPORT_DIR, type MusicFixture } from './helpers/music-fixture';
-import { keyboardLogin, captureOutput, assertValidCapture, mainSegment, expectPlaying } from './helpers/music-ui';
+import { keyboardLogin, captureOutput, assertValidCapture, mainSegment, expectPlaying, openSidebarMusic } from './helpers/music-ui';
 import { installAudioTap } from './helpers/audio-tap';
 import { settleMusicViewport } from './helpers/music-viewport';
 
@@ -19,8 +19,7 @@ test.beforeEach(async({page})=>{
 async function albums(page:Page) {
  const classes=await page.locator('#player').getAttribute('class') || '';
  if(classes.includes('open')&&!classes.includes('minimized')) await page.keyboard.press('Escape');
- await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();
- await page.getByRole('button',{name:'Albums',exact:true}).click();
+ await openSidebarMusic(page,'Albums');
  await expect(page.locator('.album-card').first()).toBeVisible();
 }
 async function open(page:Page,title:string) {

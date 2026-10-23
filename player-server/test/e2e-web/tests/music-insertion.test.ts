@@ -1,7 +1,7 @@
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress, playCard } from './helpers/music-ui';
+import { keyboardLogin, openSidebarMusic, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress, playCard } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let fixture:MusicFixture, evidence:Evidence;
@@ -138,7 +138,7 @@ test('M14 long song action labels and selection remain usable in narrow themes',
  const artifacts:string[]=[];
  try{
   const catalog=await(await page.request.get('/api/v1/music/albums')).json();const long=catalog.find((a:any)=>a.title.startsWith('Long Album '));
-  await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();await page.getByRole('button',{name:'Albums',exact:true}).click();await page.locator(`[data-album="${long.album_key}"]`).click();
+  await openSidebarMusic(page,'Albums');await page.locator(`[data-album="${long.album_key}"]`).click();
   await page.setViewportSize({width:390,height:844});
   for(const theme of ['dark','light']){
    if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();

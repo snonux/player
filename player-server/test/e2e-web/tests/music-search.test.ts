@@ -5,7 +5,7 @@ import { genuineTouchTap } from './helpers/genuine-touch.cjs';
 import { join } from 'node:path';
 import { Evidence, loadFixture, SUPPORT_DIR, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, selectByKeys, expectPlaying, audioState, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, selectByKeys, expectPlaying, audioState, captureOutput, assertValidCapture, mainSegment , openSidebarMusic} from './helpers/music-ui';
 import { settleMusicViewport } from './helpers/music-viewport';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE,'Requires disposable local music fixture');
@@ -19,8 +19,7 @@ async function search(page:Page,text:string) {
  await expect(page.getByRole('heading',{name:/^Songs \(/})).toBeVisible();
 }
 async function albums(page:Page) {
- await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();
- await page.getByRole('button',{name:'Albums',exact:true}).click();
+ await openSidebarMusic(page,'Albums');
  await expect(page.locator('[data-album]').first()).toBeVisible();
 }
 

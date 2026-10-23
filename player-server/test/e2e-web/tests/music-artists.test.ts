@@ -1,15 +1,14 @@
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, selectByKeys, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, selectByKeys, expectPlaying, captureOutput, assertValidCapture, mainSegment, openSidebarMusic } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable music fixture');
 let fixture:MusicFixture,evidence:Evidence;
 test.beforeAll(async({browser},info)=>{fixture=loadFixture();evidence=new Evidence(fixture.evidenceDir,info.project.name,{browser_version:browser.version(),server_version:fixture.serverVersion,server_build:fixture.buildRevision,checkout:fixture.checkout});});
 test.beforeEach(async({page})=>{await page.addInitScript(installAudioTap);await keyboardLogin(page,fixture.user);});
 async function artists(page:Page) {
- await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();
- await page.getByRole('button',{name:'Artists',exact:true}).click();
+ await openSidebarMusic(page,'Artists');
  await expect(page.getByRole('heading',{name:'Artists',exact:true})).toBeVisible();
 }
 

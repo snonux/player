@@ -1,7 +1,7 @@
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress } from './helpers/music-ui';
+import { keyboardLogin, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress , openSidebarMusic} from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let fixture: MusicFixture, evidence: Evidence;
@@ -16,8 +16,7 @@ test.beforeAll(async ({ browser }, info) => {
 test.beforeEach(async ({page}) => { await page.addInitScript(installAudioTap); await keyboardLogin(page,fixture.user); });
 async function album(page: Page) {
  if ((await page.locator('#player').getAttribute('class') || '').includes('open')) await page.keyboard.press('Escape');
- await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();
- await page.getByRole('button',{name:'Albums',exact:true}).click();
+ await openSidebarMusic(page,'Albums');
  await page.getByRole('button',{name:'Open album Night Transit by Aurora Lane',exact:true}).click();
  await page.getByRole('button',{name:'▶ Play album',exact:true}).click();
  await expectPlaying(page,songs()[0].id);
@@ -106,7 +105,7 @@ test('M13 edited natural source order is independent of browsing and the Next bu
   await row(page,0).getByRole('button',{name:'Play First Light',exact:true}).click();
   proof.push(await audible(page,a,'m13-natural-first'));artifacts.push(proof.at(-1).wav);
   await page.keyboard.press('Escape');await page.keyboard.press('Escape');
-  await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();await page.getByRole('button',{name:'Albums',exact:true}).click();
+  await openSidebarMusic(page,'Albums');
   await page.getByRole('button',{name:'Open album Synth Compilation by Various Artists',exact:true}).click();
   proof.push(await audible(page,c,'m13-natural-second'));artifacts.push(proof.at(-1).wav);
   proof.push(await audible(page,b,'m13-natural-third'));artifacts.push(proof.at(-1).wav);
@@ -164,7 +163,7 @@ test('M13 1001 actual library entries remain reachable with bounded queue render
  try {
   const catalog=await(await page.request.get('/api/v1/music/albums')).json();const scale=catalog.find((a:any)=>a.title==='Queue Scale');
   expect(scale.song_count).toBe(1001);const detail=await(await page.request.get(`/api/v1/music/albums/${scale.album_key}`)).json();
-  await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();await page.getByRole('button',{name:'Albums',exact:true}).click();
+  await openSidebarMusic(page,'Albums');
   await page.getByRole('button',{name:'Open album Queue Scale by Queue Scale',exact:true}).click();await page.getByRole('button',{name:'▶ Play album',exact:true}).click();
   await expectPlaying(page,detail.songs[0].id);await page.locator('#btn-play').click();await page.keyboard.press('Q');
   expect(await panel(page).locator('.queue-row').count()).toBe(200);
@@ -183,7 +182,7 @@ test('M13 long title and artist remain usable in narrow queue themes',async({pag
  try {
   const catalog=await(await page.request.get('/api/v1/music/albums')).json();const long=catalog.find((a:any)=>a.title.startsWith('Long Album '));
   const detail=await(await page.request.get(`/api/v1/music/albums/${long.album_key}`)).json();
-  await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();await page.getByRole('button',{name:'Albums',exact:true}).click();
+  await openSidebarMusic(page,'Albums');
   await page.locator(`[data-album="${long.album_key}"]`).click();await page.getByRole('button',{name:'▶ Play album',exact:true}).click();
   await expectPlaying(page,detail.songs[0].id);await page.locator('#btn-play').click();await page.setViewportSize({width:390,height:844});
   for(const theme of ['dark','light']) {

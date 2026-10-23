@@ -112,6 +112,30 @@ export async function openFolder(page: Page, setId: number, folder: string): Pro
 }
 
 /**
+ * Open the sets sidebar only when the named Music shortcut is not already
+ * visible. Blindly toggling closes an open drawer (display:none), so Albums /
+ * Artists / Playlists become unreachable for getByRole.
+ */
+export async function openSidebarMusic(
+  page: Page,
+  section: 'Albums' | 'Artists' | 'Playlists' | 'Internet radio' = 'Albums',
+): Promise<void> {
+  const shortcut = page.getByRole('button', { name: section, exact: true });
+  if (!(await shortcut.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: 'Toggle sets sidebar', exact: true }).click();
+    await expect(shortcut).toBeVisible();
+  }
+  await shortcut.click();
+  // Desktop keeps the drawer open; its overlay then intercepts clicks on the
+  // catalog. Close when the ✕ control is shown (narrow auto-dismisses).
+  const close = page.locator('#menu-close');
+  if (await close.isVisible().catch(() => false)) {
+    await close.click();
+    await expect(shortcut).toBeHidden();
+  }
+}
+
+/**
  * Forget saved progress so the item starts at 0:00. Player resumes audio
  * where the account left off; a short fixture track left near its end by an
  * earlier run would otherwise finish (and advance) before it is measured.

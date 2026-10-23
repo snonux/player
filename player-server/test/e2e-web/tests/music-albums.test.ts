@@ -1,7 +1,7 @@
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, selectByKeys, openFolder, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress } from './helpers/music-ui';
+import { keyboardLogin, selectByKeys, openFolder, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress, openSidebarMusic } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable music fixture');
 let fixture: MusicFixture;
@@ -21,16 +21,20 @@ async function albums(page:Page) {
     await page.keyboard.press('Escape');
     await expect(page.locator('#player')).toHaveClass(/minimized/);
   }
-  await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();
-  await page.getByRole('button',{name:'Albums',exact:true}).click();
+  if(await page.locator('.album-card').count() && !(await page.getByRole('heading',{name:albumName,exact:true}).isVisible().catch(()=>false))) {
+    return;
+  }
+  await openSidebarMusic(page,'Albums');
   await expect(page.locator('.album-card').first()).toBeVisible();
 }
 async function openAlbum(page:Page,title=albumName,artist='Aurora Lane') {
   await albums(page);
-  // Back correctly restores the previous card, which can be after the target.
-  for(let i=0,n=await page.locator('.album-card').count();i<n;i++) await page.keyboard.press('h');
-  await selectByKeys(page,`Open album ${title} by ${artist}`,100);
-  await page.keyboard.press('Enter');
+  // Nested favorite/rating flatten the card to role=group; the primary open
+  // control is the labelled sibling/button (same label as the card).
+  const label=`Open album ${title} by ${artist}`;
+  const open=page.getByRole('button',{name:label,exact:true});
+  await open.scrollIntoViewIfNeeded();
+  await open.click();
   await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
 }
 async function audible(page:Page,song:any,name:string) {
@@ -93,7 +97,7 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   expect(await page.locator('.song-open').allTextContents()).toEqual(['Neon Rain','Glass City','Afterglow']);
   await page.getByRole('button',{name:'← Back to albums',exact:true}).click();
   const long=catalog.find((a:any)=>a.title.startsWith('Long Album '));
-  await page.locator(`[data-album="${long.album_key}"]`).click();
+  await openAlbum(page,long.title,long.artist);
   for(const theme of ['dark','light']) {
     if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
     await expect(page.getByRole('heading',{name:long.title,exact:true})).toBeVisible();
@@ -123,8 +127,7 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   // retaining the already loaded shell and its Back/Retry controls.
   await page.context().setOffline(true);
   try {
-    await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();
-    await page.getByRole('button',{name:'Albums',exact:true}).click();
+    await openSidebarMusic(page,'Albums');
     await expect(page.getByRole('alert')).toContainText('Could not load albums');
     await expect(page.getByRole('button',{name:'Retry',exact:true})).toBeVisible();
     await expect(page.getByRole('button',{name:'← Back',exact:true})).toBeVisible();
@@ -142,8 +145,7 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
     const userId=(await (await admin.get('/api/v1/admin/users')).json()).find((u:any)=>u.username===fixture.user.username).id;
     try {
       expect((await admin.delete('/api/v1/admin/permissions',{data:{set_id:fixture.setIds.Music,user_id:userId}})).status()).toBe(200);
-      await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();
-      await page.getByRole('button',{name:'Albums',exact:true}).click();
+      await openSidebarMusic(page,'Albums');
       await expect(page.locator('#media-grid')).toContainText('No albums available.');
       const shot=evidence.path('m02-real-acl-empty-catalog.png');await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);
     } finally {

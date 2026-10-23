@@ -1,7 +1,7 @@
 import { test, expect, request } from '@playwright/test';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, selectByKeys, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, selectByKeys, expectPlaying, captureOutput, assertValidCapture, mainSegment , openSidebarMusic} from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let f:MusicFixture,e:Evidence;
@@ -108,7 +108,7 @@ test('M26 cached app shell imports playlist module and offers actual offline err
  await expect.poll(()=>page.evaluate(async()=>Boolean(await caches.match('/?music=playlists')))).toBe(true);
  await context.setOffline(true);await page.reload();
  await expect(page.locator('#toast')).toHaveClass(/error/);
- await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();await page.getByRole('button',{name:'Playlists',exact:true}).click();
+ await openSidebarMusic(page,'Playlists');
  await expect(page.locator('#media-grid [role=alert]')).toContainText('Could not load playlists');
  const shot=e.path('m26-cached-offline.png');await page.screenshot({path:shot,fullPage:true,animations:'disabled'});
  await context.setOffline(false);await page.getByRole('button',{name:'Retry',exact:true}).click();await expect(page.getByRole('heading',{name:'Playlists',exact:true})).toBeVisible();
