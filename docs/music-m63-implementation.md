@@ -25,6 +25,10 @@ immediately; extending a link never renews old credentials or resets spent uses.
 Guest web/native views display the saved description. Migration retains legacy
 links and descriptions through the collection-table rebuild.
 
+Clearing description always returns `"description":""` on the Share PATCH body
+and My Shares merges with `description: updated.description ?? ''`, so the list
+never keeps stale text.
+
 Focused checks passed:
 
 - `cd player-server && go test ./internal/service ./internal/repository ./internal/api -run 'ShareEdit|ShareCollectionMigration' -count=1`.

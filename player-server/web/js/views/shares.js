@@ -1,4 +1,4 @@
-import { editShare } from '../share-edit.js';
+import { editShare, mergeShareEdit } from '../share-edit.js';
 import { ui } from '../i18n.js';
 import { API } from '../api.js';
 import { state } from '../state.js';
@@ -68,7 +68,7 @@ function renderSharesList(shares) {
     button.onclick = () => {
       const index = Number(button.dataset.edit);
       editShare(el, shares[index], updated => {
-        if (updated) shares[index] = { ...shares[index], ...updated };
+        if (updated) shares[index] = mergeShareEdit(shares[index], updated);
         renderSharesList(shares);
         state.sharesCurrentRow = index;
         updateSharesSelection();

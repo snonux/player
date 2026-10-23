@@ -3,6 +3,11 @@ import { state } from './state.js';
 import { escapeHtml as esc } from './utils.js';
 import { html, t } from './i18n.js';
 
+// Empty description may be omitted on older payloads; never keep stale list text.
+export function mergeShareEdit(existing, updated) {
+  return { ...existing, ...updated, description: updated.description ?? '' };
+}
+
 // A local datetime input is only submitted when changed, preserving the exact
 // stored instant (including seconds) on description-only edits.
 export function localShareExpiry(value) {

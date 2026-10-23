@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { editShare, localShareExpiry } from '../share-edit.js';
+import { editShare, localShareExpiry, mergeShareEdit } from '../share-edit.js';
 import { API } from '../api.js';
 import { state } from '../state.js';
 
@@ -43,4 +43,18 @@ invalid.form.elements.expiry.value='2001-01-01T00:00';
 await invalid.form.onsubmit({preventDefault(){}});
 assert.match(invalid.status.textContent,/future expiry/);
 assert.equal(closed,false);
+
+// Clearing description must not leave stale list text when the PATCH body omits
+// the field (omitempty) or returns an explicit empty string.
+const listed = {token:'unchanged', description:'Old', file_name:'a.mp3'};
+assert.equal(mergeShareEdit(listed, {token:'unchanged'}).description, '');
+assert.equal(mergeShareEdit(listed, {token:'unchanged', description:''}).description, '');
+assert.equal(mergeShareEdit(listed, {token:'unchanged', description:'New'}).description, 'New');
+API.updateShare = async (_token, body) => ({token:'unchanged', ...(body.description === '' ? {} : body)});
+const clear = container(); let cleared;
+editShare(clear, original, updated => {cleared = mergeShareEdit(original, updated);});
+clear.form.elements.description.value = '';
+await clear.form.onsubmit({preventDefault(){}});
+assert.equal(cleared.description, '', 'clear→list shows empty after omitempty response');
+
 console.log('share edit UI tests passed');

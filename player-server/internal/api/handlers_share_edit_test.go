@@ -32,7 +32,11 @@ func TestShareEditStrictFields(t *testing.T) {
 				if token != "same-token" {
 					t.Fatalf("wrong token: %s", token)
 				}
-				return &model.Share{Token: token}, nil
+				desc := ""
+				if description != nil {
+					desc = *description
+				}
+				return &model.Share{Token: token, Description: desc}, nil
 			}}
 			srv := &Server{media: MediaServices{Share: ms}}
 			request := httptest.NewRequest(http.MethodPatch, "/api/shares/same-token", strings.NewReader(test.body))
@@ -41,6 +45,10 @@ func TestShareEditStrictFields(t *testing.T) {
 			srv.handleUpdateShare(response, request)
 			if response.Code != test.status || called != (test.status == 200) {
 				t.Fatalf("status=%d called=%v body=%s", response.Code, called, response.Body.String())
+			}
+			// Cleared descriptions must stay in JSON so My Shares can drop stale text.
+			if test.body == `{"description":""}` && !strings.Contains(response.Body.String(), `"description":""`) {
+				t.Fatalf("empty description omitted: %s", response.Body.String())
 			}
 		})
 	}

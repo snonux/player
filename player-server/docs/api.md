@@ -1622,12 +1622,14 @@ existing viewing limit still allows them and the source is available.
 
 **Response `200`:** The updated `Share` object. The existing token/URL, creator,
 source snapshot, creation time, `max_uses` and `used_count` remain unchanged.
-Nonempty `description` is included in share objects, My Shares and public share
-metadata, and displayed as plain text by guest clients. Editing does not open a
-viewing, reset uses or renew existing viewing credentials. Shortening expiry
-takes effect immediately on all content requests, including active viewings;
-extending expiry does not extend an already-issued credential's expiry.
-Existing source access, download, revocation and viewing rules remain in effect.
+`description` is always present on this object (empty string when cleared) so
+clients can replace a previous value without keeping stale text. Nonempty
+descriptions also appear in My Shares and public share metadata and are shown
+as plain text by guest clients. Editing does not open a viewing, reset uses or
+renew existing viewing credentials. Shortening expiry takes effect immediately
+on all content requests, including active viewings; extending expiry does not
+extend an already-issued credential's expiry. Existing source access, download,
+revocation and viewing rules remain in effect.
 
 **Status codes:** `200`, `400`, `401`, `403` (foreign non-admin), `404` (missing or
 revoked), `500`.
