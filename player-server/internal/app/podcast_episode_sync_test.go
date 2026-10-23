@@ -104,9 +104,9 @@ func TestPodcastLegacyReadersSeeEpisodeState(t *testing.T) {
 	e := newE2E(t, &fakeRunner{})
 	ctx := context.Background()
 	key, epID, mediaID := e.linkedEpisode(t)
-	var cfg map[string]int
+	var cfg map[string]any
 	e.must(json.Unmarshal(e.get("/api/v1/config", "alice").Body.Bytes(), &cfg))
-	if cfg["podcast_sync"] != 1 {
+	if cfg["podcast_sync"] != float64(1) {
 		t.Fatalf("config: %+v", cfg)
 	}
 	done := true
