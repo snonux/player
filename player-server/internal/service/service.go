@@ -338,6 +338,10 @@ type AuthService interface {
 	RevokeAPIToken(ctx context.Context, userID, tokenID int64) error
 	// AuthenticateBearer validates a Bearer token and returns a synthetic session.
 	AuthenticateBearer(ctx context.Context, plaintext string) (*model.Session, error)
+	// AuthenticateProxyUser maps a reverse-proxy username to an existing account
+	// and returns a synthetic session. Unknown usernames are rejected; accounts
+	// are never auto-created (operators create matching Player users).
+	AuthenticateProxyUser(ctx context.Context, username string) (*model.Session, error)
 	// CountUsers returns the number of user accounts.
 	CountUsers(ctx context.Context) (int, error)
 	// GetUserByID returns a user by database ID.

@@ -64,6 +64,7 @@ export const API = {
   login: (username, password) => api('/api/login', { method: 'POST', body: { username, password } }),
   logout: () => api('/api/logout', { method: 'POST' }),
   bootstrap: (username, password) => api('/api/bootstrap', { method: 'POST', body: { username, password } }),
+  authStatus: () => api('/api/v1/auth/status'),
   config: () => api('/api/config'),
   playlistRules: (id,rules) => api(`/api/playlists/${encodeURIComponent(id)}/rules`,{method:'PUT',body:{rules}}),
   playlistMembership: () => api('/api/playlists/membership'),

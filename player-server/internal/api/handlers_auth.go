@@ -119,6 +119,14 @@ func (s *Server) handleCountUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"count": count})
 }
 
+// handleAuthStatus is a public summary of configured sign-in modes for the
+// login page (password vs reverse-proxy note) without exposing trusted CIDRs.
+//
+// GET /api/v1/auth/status → 200 {"password":true,"bearer":true,"proxy":bool,...}
+func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.authModeInfo())
+}
+
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session")
 	if err == nil && cookie.Value != "" {
@@ -129,6 +137,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.clearSessionCookie(w)
+	if s.cfg != nil && s.cfg.ProxyAuth != nil && s.cfg.ProxyAuth.LogoutURL != "" {
+		writeJSON(w, http.StatusOK, map[string]string{"logout_url": s.cfg.ProxyAuth.LogoutURL})
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -168,7 +168,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		shareRenderer: web.NewSharePageRenderer(deps.StaticFS),
 		castTickets:   deps.CastTickets,
 		logger:        logger,
-		mw:            NewMiddleware(deps.Services.Auth, deps.SessionManager),
+		mw:            NewMiddleware(deps.Services.Auth, deps.SessionManager, deps.Config.ProxyAuth),
 	}
 	s.routes()
 	s.handler = withCORS(s.cfg.CORSAllowedOrigins, s.mw.BootstrapRedirect(s.mux))
@@ -256,6 +256,8 @@ func (s *Server) routesPublic() {
 	// Public user-count endpoint: mobile clients query this on first launch to
 	// decide whether to show the bootstrap screen (count=0) or the login screen.
 	s.handlePublicFunc("/api/v1/auth/count", publicMethod(http.MethodGet, s.handleCountUsers))
+	s.handlePublicFunc("/api/auth/status", publicMethod(http.MethodGet, s.handleAuthStatus))
+	s.handlePublicFunc("/api/v1/auth/status", publicMethod(http.MethodGet, s.handleAuthStatus))
 	s.handlePublicFunc("/healthz", publicMethod(http.MethodGet, s.handleHealthz))
 	s.handlePublicFunc("/readyz", publicMethod(http.MethodGet, s.handleReadyz))
 }

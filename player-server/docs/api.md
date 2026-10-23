@@ -32,8 +32,8 @@ document alone, mint a Bearer token, and begin implementing
 
 ## Authentication
 
-Every session-required endpoint accepts credentials via **either** of two
-mechanisms, checked in this order:
+Every session-required endpoint accepts credentials via **one** of the
+mechanisms below, checked in this order:
 
 ### 1. Bearer Token (recommended for API clients / mobile apps)
 
@@ -89,12 +89,49 @@ curl -s -c cookies.txt -X POST https://player.example.com/api/login \
 curl -s -b cookies.txt https://player.example.com/api/v1/media
 ```
 
+### 3. Trusted reverse-proxy header (optional)
+
+Disabled by default. When `PROXY_AUTH_TRUSTED_SOURCES` is set, requests whose
+**immediate peer** (`RemoteAddr`) matches a configured CIDR (or `@` for a
+UNIX socket listener) may authenticate with the username in
+`PROXY_AUTH_USER_HEADER` (default `Remote-User`).
+
+**Account mapping:** the header value must match an existing Player
+`users.username` exactly. Accounts are **not** auto-created — create matching
+users in the admin panel (or bootstrap) before enabling the proxy.
+
+**Security:** untrusted clients must not be able to set the user header.
+Configure the reverse proxy to strip client-supplied copies of that header and
+only set it after successful upstream authentication. Player ignores the
+header unless the peer is in `PROXY_AUTH_TRUSTED_SOURCES`; it never trusts
+`X-Forwarded-For` for this check. Bearer tokens and session cookies continue
+to work (and take precedence when present).
+
+```bash
+# Example: trusted proxy at 10.0.0.2 injects Remote-User=alice
+curl -s http://player.example.com/api/v1/media \
+  -H "Remote-User: alice" \
+  # (request must arrive from an address in PROXY_AUTH_TRUSTED_SOURCES)
+```
+
+Public `GET /api/v1/auth/status` reports whether proxy auth is enabled (for
+the login page note) without exposing trusted CIDRs. Authenticated
+`GET /api/v1/config` includes the same `auth` object for the admin panel.
+
+Optional `PROXY_AUTH_LOGOUT_URL` makes `POST /api/logout` return
+`{"logout_url":"..."}` (instead of `204`) so the web UI can finish logout at
+the identity provider.
+
+Android and other API clients should keep using Bearer tokens; they do not
+need reverse-proxy headers.
+
 ### Auth precedence in middleware
 
-`RequireSession` (in `internal/api/middleware.go`) tries Bearer first, then
-falls back to the session cookie. If neither is present or valid it returns
-`401 Unauthorized`. HTML-page requests (browsers sending `Accept: text/html`)
-are redirected to `/login.html` instead.
+`RequireSession` (in `internal/api/middleware.go`) tries Bearer first, then a
+valid session cookie, then (when configured) a trusted reverse-proxy user
+header. If none succeed it returns `401 Unauthorized`. HTML-page requests
+(browsers sending `Accept: text/html`) are redirected to `/login.html`
+instead.
 
 Endpoints that also require admin status apply `RequireAdmin` on top of
 `RequireSession`.

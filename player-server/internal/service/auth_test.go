@@ -85,6 +85,38 @@ func TestAuthService_APITokenCRUD(t *testing.T) {
 	}
 }
 
+func TestAuthService_AuthenticateProxyUser(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	created := now.Add(-24 * time.Hour)
+	store := &repository.MockStore{
+		UserRepo: repository.MockUserRepo{
+			GetUserByUsernameFunc: func(ctx context.Context, username string) (*model.User, error) {
+				if username != "alice" {
+					return nil, nil
+				}
+				return &model.User{ID: 9, Username: "alice", CreatedAt: created}, nil
+			},
+		},
+	}
+	svc := NewAuthService(store, &clock.MockClock{T: now}, nil, nil, fixedTokenManager{plaintext: "x", hash: "y"})
+
+	sess, err := svc.AuthenticateProxyUser(ctx, "alice")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sess == nil || sess.ID != "proxy-user:9" || sess.UserID != 9 {
+		t.Fatalf("unexpected session: %#v", sess)
+	}
+
+	if _, err := svc.AuthenticateProxyUser(ctx, "missing"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+	if _, err := svc.AuthenticateProxyUser(ctx, "  "); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials for blank, got %v", err)
+	}
+}
+
 func TestAuthService_AuthenticateBearer(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 5, 17, 12, 0, 0, 0, time.UTC)

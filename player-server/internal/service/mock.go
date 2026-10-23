@@ -379,9 +379,10 @@ type MockAuthService struct {
 	CreateAPITokenFunc     func(ctx context.Context, userID int64, name string, expiresAt *time.Time) (*CreateAPITokenResult, error)
 	ListAPITokensFunc      func(ctx context.Context, userID int64) ([]model.APIToken, error)
 	RevokeAPITokenFunc     func(ctx context.Context, userID, tokenID int64) error
-	AuthenticateBearerFunc func(ctx context.Context, plaintext string) (*model.Session, error)
-	CountUsersFunc         func(ctx context.Context) (int, error)
-	GetUserByIDFunc        func(ctx context.Context, id int64) (*model.User, error)
+	AuthenticateBearerFunc    func(ctx context.Context, plaintext string) (*model.Session, error)
+	AuthenticateProxyUserFunc func(ctx context.Context, username string) (*model.Session, error)
+	CountUsersFunc            func(ctx context.Context) (int, error)
+	GetUserByIDFunc           func(ctx context.Context, id int64) (*model.User, error)
 }
 
 // Bootstrap calls BootstrapFunc or returns nil.
@@ -428,6 +429,14 @@ func (m *MockAuthService) RevokeAPIToken(ctx context.Context, userID, tokenID in
 func (m *MockAuthService) AuthenticateBearer(ctx context.Context, plaintext string) (*model.Session, error) {
 	if m.AuthenticateBearerFunc != nil {
 		return m.AuthenticateBearerFunc(ctx, plaintext)
+	}
+	return nil, nil
+}
+
+// AuthenticateProxyUser calls AuthenticateProxyUserFunc or returns nil.
+func (m *MockAuthService) AuthenticateProxyUser(ctx context.Context, username string) (*model.Session, error) {
+	if m.AuthenticateProxyUserFunc != nil {
+		return m.AuthenticateProxyUserFunc(ctx, username)
 	}
 	return nil, nil
 }

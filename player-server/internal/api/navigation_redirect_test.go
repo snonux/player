@@ -12,7 +12,7 @@ func TestLibrarySignInReturn(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		r.Header.Set("Accept", "text/html")
 		w := httptest.NewRecorder()
-		NewMiddleware(nil, nil).RequireSession(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("unauthenticated request passed") })).ServeHTTP(w, r)
+		NewMiddleware(nil, nil, nil).RequireSession(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("unauthenticated request passed") })).ServeHTTP(w, r)
 		if w.Code != http.StatusTemporaryRedirect {
 			t.Fatalf("%s: status %d", path, w.Code)
 		}

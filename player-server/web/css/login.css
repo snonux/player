@@ -36,6 +36,18 @@ body {
   color: var(--text-secondary);
   font-size: 0.85rem;
 }
+.login-auth-note {
+  width: min(100%, 24rem);
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.login-auth-note.hidden { display: none; }
 .login-form {
   width: 100%;
   max-width: 24rem;

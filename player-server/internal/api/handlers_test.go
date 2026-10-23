@@ -174,7 +174,7 @@ func TestMiddleware_BootstrapRedirect(t *testing.T) {
 					return tt.userCount, tt.userErr
 				},
 			}
-			mw := NewMiddleware(authSvc, nil)
+			mw := NewMiddleware(authSvc, nil, nil)
 			for _, p := range publicPaths {
 				mw.RegisterPublic(p)
 			}
@@ -225,7 +225,7 @@ func TestMiddleware_RequireSession(t *testing.T) {
 				},
 			}
 			sm := auth.NewSessionManager(&repo, &clock.MockClock{T: now}, time.Hour)
-			mw := NewMiddleware(nil, sm)
+			mw := NewMiddleware(nil, sm, nil)
 
 			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				sess, ok := r.Context().Value(sessionCtxKey).(*model.Session)
@@ -304,7 +304,7 @@ func TestMiddleware_RequireSession_BearerOrCookie(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mw := NewMiddleware(tt.authSvc, tt.sm)
+			mw := NewMiddleware(tt.authSvc, tt.sm, nil)
 			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				sess, ok := r.Context().Value(sessionCtxKey).(*model.Session)
 				if !ok || sess == nil {
@@ -382,7 +382,7 @@ func TestMiddleware_RequireAdmin(t *testing.T) {
 					return nil, tt.userErr
 				},
 			}
-			mw := NewMiddleware(authSvc, nil)
+			mw := NewMiddleware(authSvc, nil, nil)
 			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})

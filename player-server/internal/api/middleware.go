@@ -32,6 +32,8 @@ const (
 type Authenticator interface {
 	// AuthenticateBearer validates a Bearer token and returns a synthetic session.
 	AuthenticateBearer(ctx context.Context, plaintext string) (*model.Session, error)
+	// AuthenticateProxyUser maps a reverse-proxy username to an existing account.
+	AuthenticateProxyUser(ctx context.Context, username string) (*model.Session, error)
 	// CountUsers reports the number of registered users (used by BootstrapRedirect).
 	CountUsers(ctx context.Context) (int, error)
 	// GetUserByID returns a user by database ID (used by RequireAdmin).
@@ -49,6 +51,7 @@ type Authenticator interface {
 type Middleware struct {
 	authSvc        Authenticator
 	sm             auth.SessionManager
+	proxyAuth      *auth.ProxyAuth
 	publicPaths    map[string]bool
 	publicPrefixes []string
 }
@@ -56,16 +59,21 @@ type Middleware struct {
 // NewMiddleware creates middleware handlers.
 //
 // The auth dependency is the narrow Authenticator interface rather than the
-// full service.AuthService — middleware only needs three methods, and the
+// full service.AuthService — middleware only needs a few methods, and the
 // smaller surface keeps tests cheap and prevents accidental coupling to
 // unrelated auth-service operations.
 //
+// proxyAuth may be nil (feature disabled). When set, requests from trusted
+// reverse-proxy peers may authenticate via the configured user header after
+// Bearer and session-cookie checks.
+//
 // The public route registry starts empty; callers register public paths
 // via RegisterPublic / RegisterPublicPrefix as routes are wired up.
-func NewMiddleware(authSvc Authenticator, sm auth.SessionManager) *Middleware {
+func NewMiddleware(authSvc Authenticator, sm auth.SessionManager, proxyAuth *auth.ProxyAuth) *Middleware {
 	return &Middleware{
 		authSvc:     authSvc,
 		sm:          sm,
+		proxyAuth:   proxyAuth,
 		publicPaths: make(map[string]bool),
 	}
 }
@@ -125,14 +133,29 @@ func (mw *Middleware) authenticate(r *http.Request) (*model.Session, error) {
 		}
 		return mw.authSvc.AuthenticateBearer(r.Context(), token)
 	}
-	cookie, err := r.Cookie("session")
-	if err != nil {
+	if cookie, err := r.Cookie("session"); err == nil && cookie.Value != "" && mw.sm != nil {
+		if sess, err := mw.sm.ValidateSession(r.Context(), cookie.Value); err == nil && sess != nil {
+			return sess, nil
+		}
+	}
+	return mw.authenticateProxy(r)
+}
+
+// authenticateProxy accepts identity from a configured reverse-proxy header
+// only when the immediate peer is in PROXY_AUTH_TRUSTED_SOURCES. Forged
+// headers from untrusted clients are ignored.
+func (mw *Middleware) authenticateProxy(r *http.Request) (*model.Session, error) {
+	if mw.proxyAuth == nil || !mw.proxyAuth.Enabled() || mw.authSvc == nil {
 		return nil, errUnauthorized
 	}
-	if mw.sm == nil {
+	if !mw.proxyAuth.Trusted(r.RemoteAddr) {
 		return nil, errUnauthorized
 	}
-	return mw.sm.ValidateSession(r.Context(), cookie.Value)
+	username := strings.TrimSpace(r.Header.Get(mw.proxyAuth.UserHeader))
+	if username == "" {
+		return nil, errUnauthorized
+	}
+	return mw.authSvc.AuthenticateProxyUser(r.Context(), username)
 }
 
 func bearerToken(r *http.Request) (string, bool) {

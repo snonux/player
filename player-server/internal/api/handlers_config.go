@@ -18,9 +18,35 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	if s.cfg != nil && s.cfg.MediaPageSize > 0 {
 		pageSize = s.cfg.MediaPageSize
 	}
-	writeJSON(w, http.StatusOK, map[string]int64{
+	body := map[string]any{
 		"media_page_size": int64(pageSize),
 		"user_id":         userIDFromContext(r),
 		"podcast_sync":    podcastSyncVersion,
-	})
+		"auth":            s.authModeInfo(),
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+// authModeInfo describes configured sign-in modes for clients and the admin UI.
+// Trusted-source CIDRs are not exposed; only whether proxy auth is enabled and
+// the header / logout URL operators configured.
+func (s *Server) authModeInfo() map[string]any {
+	info := map[string]any{
+		"password": true,
+		"bearer":   true,
+		"proxy":    false,
+	}
+	if s.cfg == nil || s.cfg.ProxyAuth == nil || !s.cfg.ProxyAuth.Enabled() {
+		return info
+	}
+	info["proxy"] = true
+	proxy := map[string]any{
+		"enabled":     true,
+		"user_header": s.cfg.ProxyAuth.UserHeader,
+	}
+	if s.cfg.ProxyAuth.LogoutURL != "" {
+		proxy["logout_url"] = s.cfg.ProxyAuth.LogoutURL
+	}
+	info["proxy_auth"] = proxy
+	return info
 }

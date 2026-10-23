@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/snonux/player/internal/auth"
 )
 
 // Default configuration values.
@@ -73,6 +75,10 @@ type Config struct {
 	TranscodeCacheMaxMB int
 	// TranscodeMaxJobs is the number of ffmpeg transcodes run in parallel.
 	TranscodeMaxJobs int
+	// ProxyAuth enables reverse-proxy authentication when non-nil. See
+	// PROXY_AUTH_TRUSTED_SOURCES. Untrusted clients cannot spoof identity via
+	// the user header; Bearer and session-cookie auth remain available.
+	ProxyAuth *auth.ProxyAuth
 }
 
 // envInt reads an integer environment variable, validates it with the given check,
@@ -219,6 +225,20 @@ func loadCORSSettings(cfg *Config) {
 	}
 }
 
+// loadProxyAuthSettings reads reverse-proxy authentication settings.
+func loadProxyAuthSettings(cfg *Config) error {
+	pa, err := auth.ParseProxyAuth(
+		os.Getenv("PROXY_AUTH_TRUSTED_SOURCES"),
+		os.Getenv("PROXY_AUTH_USER_HEADER"),
+		os.Getenv("PROXY_AUTH_LOGOUT_URL"),
+	)
+	if err != nil {
+		return err
+	}
+	cfg.ProxyAuth = pa
+	return nil
+}
+
 // LoadConfig reads configuration from environment variables and returns
 // a populated Config. Unset variables use the package defaults.
 func LoadConfig() (*Config, error) {
@@ -236,6 +256,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if err := loadSecureCookies(cfg); err != nil {
+		return nil, err
+	}
+
+	if err := loadProxyAuthSettings(cfg); err != nil {
 		return nil, err
 	}
 

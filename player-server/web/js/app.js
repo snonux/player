@@ -135,6 +135,8 @@ function initLogin() {
   const form = document.getElementById('login-form');
   const err = document.getElementById('login-error');
   if (!form) return;
+  explainLoginAuthMode();
+  tryProxySignIn();
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     err.textContent = '';
@@ -149,9 +151,46 @@ function initLogin() {
       await API.login(username, password);
       location.href = safeReturnTo(new URLSearchParams(location.search).get('return_to'));
     } catch (ex) {
-      err.textContent = ex.message || 'Login failed';
+      err.textContent = actionableLoginFailure(ex);
     }
   });
+}
+
+async function explainLoginAuthMode() {
+  const note = document.getElementById('login-auth-mode');
+  if (!note) return;
+  try {
+    const status = await API.authStatus();
+    if (!status?.proxy) return;
+    const header = status.proxy_auth?.user_header || 'Remote-User';
+    note.textContent = `Reverse-proxy sign-in is enabled (${header}). If you reached this page, the proxy did not map you to a Player account — use password sign-in below, or ask an admin to create a matching username.`;
+    note.classList.remove('hidden');
+  } catch {
+    // Public status is optional; keep the password form usable.
+  }
+}
+
+async function tryProxySignIn() {
+  try {
+    // Probe without api()'s 401→login redirect (we are already on login).
+    const res = await fetch('/api/config', { credentials: 'include', headers: { Accept: 'application/json' } });
+    if (res.ok) {
+      location.href = safeReturnTo(new URLSearchParams(location.search).get('return_to'));
+    }
+  } catch {
+    // Not already authenticated via proxy/cookie.
+  }
+}
+
+function actionableLoginFailure(ex) {
+  const message = ex?.message || 'Login failed';
+  if (ex?.status === 401 || /invalid credentials/i.test(message)) {
+    return 'Username or password is wrong. If your site uses reverse-proxy sign-in, confirm the proxy sends your username and that a matching Player account exists.';
+  }
+  if (ex?.status === 0 || /failed to fetch|network/i.test(message)) {
+    return 'Could not reach the Player server. Check the address and your connection, then try again.';
+  }
+  return message;
 }
 
 function initBootstrap() {
@@ -622,8 +661,8 @@ function initChrome() {
       setListeningProgressAccount(null);
       clearSongNotifications();
       releasePlaybackCache();
-      await API.logout();
-      location.href = '/login.html';
+      const result = await API.logout();
+      location.href = result?.logout_url || '/login.html';
     } catch {}
   });
 }

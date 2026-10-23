@@ -100,17 +100,21 @@ func TestServer_Config(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
 	}
-	var body map[string]int
+	var body map[string]any
 	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body["media_page_size"] != 37 {
-		t.Fatalf("expected media_page_size 37, got %d", body["media_page_size"])
+	if body["media_page_size"] != float64(37) {
+		t.Fatalf("expected media_page_size 37, got %v", body["media_page_size"])
 	}
 	// The podcast sync capability (contract §6.1) tells new clients that
 	// the sync API takes episode edits.
-	if body["podcast_sync"] != 1 {
-		t.Fatalf("expected podcast_sync 1, got %d", body["podcast_sync"])
+	if body["podcast_sync"] != float64(1) {
+		t.Fatalf("expected podcast_sync 1, got %v", body["podcast_sync"])
+	}
+	authInfo, ok := body["auth"].(map[string]any)
+	if !ok || authInfo["password"] != true || authInfo["proxy"] != false {
+		t.Fatalf("expected auth modes with proxy disabled, got %#v", body["auth"])
 	}
 }
 
@@ -138,12 +142,15 @@ func TestConfigQueueScopeRequiresSessionBothPrefixes(t *testing.T) {
 			if rr.Code != http.StatusOK {
 				t.Fatalf("%s user %d: %d", path, user, rr.Code)
 			}
-			var body map[string]int64
+			var body map[string]any
 			if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 				t.Fatal(err)
 			}
-			if body["user_id"] != user || body["podcast_sync"] != 1 || body["media_page_size"] <= 0 {
+			if body["user_id"] != float64(user) || body["podcast_sync"] != float64(1) {
 				t.Fatalf("%s user %d: %v", path, user, body)
+			}
+			if pageSize, _ := body["media_page_size"].(float64); pageSize <= 0 {
+				t.Fatalf("%s user %d: media_page_size %v", path, user, body["media_page_size"])
 			}
 		}
 	}

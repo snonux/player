@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/snonux/player/internal/auth"
@@ -162,6 +163,31 @@ func (s *authService) AuthenticateBearer(ctx context.Context, plaintext string) 
 	_ = s.store.TouchLastUsed(ctx, token.ID, now)
 
 	return syntheticSession(token, now), nil
+}
+
+// AuthenticateProxyUser maps a trusted reverse-proxy username to an existing
+// Player account. The username must match users.username exactly; missing
+// accounts yield ErrInvalidCredentials so callers cannot distinguish mapping
+// failures from other auth failures in logs that reach clients.
+func (s *authService) AuthenticateProxyUser(ctx context.Context, username string) (*model.Session, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, ErrInvalidCredentials
+	}
+	user, err := s.store.GetUserByUsername(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("get user by username: %w", err)
+	}
+	if user == nil {
+		return nil, ErrInvalidCredentials
+	}
+	now := s.clock.Now()
+	return &model.Session{
+		ID:        fmt.Sprintf("proxy-user:%d", user.ID),
+		UserID:    user.ID,
+		ExpiresAt: now.Add(100 * 365 * 24 * time.Hour),
+		CreatedAt: user.CreatedAt,
+	}, nil
 }
 
 // CountUsers returns the number of user accounts.

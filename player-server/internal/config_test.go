@@ -49,6 +49,9 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if len(cfg.CORSAllowedOrigins) != 0 {
 		t.Errorf("CORSAllowedOrigins: expected empty, got %v", cfg.CORSAllowedOrigins)
 	}
+	if cfg.ProxyAuth != nil {
+		t.Errorf("ProxyAuth: expected nil when unset, got %#v", cfg.ProxyAuth)
+	}
 }
 
 func TestLoadConfig_EnvOverrides(t *testing.T) {
@@ -104,6 +107,31 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 	wantOrigins := []string{"http://localhost:5173", "https://player.example.com"}
 	if !reflect.DeepEqual(cfg.CORSAllowedOrigins, wantOrigins) {
 		t.Errorf("CORSAllowedOrigins: expected %v, got %v", wantOrigins, cfg.CORSAllowedOrigins)
+	}
+}
+
+func TestLoadConfig_ProxyAuth(t *testing.T) {
+	clearEnv()
+	setEnvPairs(t, []envPair{
+		{"PROXY_AUTH_TRUSTED_SOURCES", "127.0.0.1/32,10.0.0.0/8"},
+		{"PROXY_AUTH_USER_HEADER", "X-User"},
+		{"PROXY_AUTH_LOGOUT_URL", "https://idp.example/logout"},
+	})
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ProxyAuth == nil || !cfg.ProxyAuth.Enabled() {
+		t.Fatal("expected ProxyAuth enabled")
+	}
+	if cfg.ProxyAuth.UserHeader != "X-User" {
+		t.Fatalf("UserHeader: got %q", cfg.ProxyAuth.UserHeader)
+	}
+	if cfg.ProxyAuth.LogoutURL != "https://idp.example/logout" {
+		t.Fatalf("LogoutURL: got %q", cfg.ProxyAuth.LogoutURL)
+	}
+	if !cfg.ProxyAuth.Trusted("127.0.0.1:9") {
+		t.Fatal("expected 127.0.0.1 trusted")
 	}
 }
 
@@ -163,6 +191,16 @@ func TestLoadConfig_InvalidValues(t *testing.T) {
 			env:     []envPair{{"SECURE_COOKIES", "maybe"}},
 			wantErr: "invalid SECURE_COOKIES",
 		},
+		{
+			name:    "proxy auth header without trusted sources",
+			env:     []envPair{{"PROXY_AUTH_USER_HEADER", "Remote-User"}},
+			wantErr: "PROXY_AUTH_TRUSTED_SOURCES",
+		},
+		{
+			name:    "invalid proxy auth cidr",
+			env:     []envPair{{"PROXY_AUTH_TRUSTED_SOURCES", "not-a-network"}},
+			wantErr: "PROXY_AUTH_TRUSTED_SOURCES",
+		},
 	}
 
 	for _, tc := range cases {
@@ -196,6 +234,9 @@ func clearEnv() {
 		"PLAYER_CORS_ORIGINS",
 		"TRANSCODE_CACHE_DIR", "TRANSCODE_CACHE_MAX_MB", "TRANSCODE_MAX_JOBS",
 		"THUMBNAIL_CACHE_DIR",
+		"PROXY_AUTH_TRUSTED_SOURCES", "PROXY_AUTH_USER_HEADER", "PROXY_AUTH_LOGOUT_URL",
+		"MUSIC_ENRICHMENT_URL",
+		"PLUGIN_DIR",
 	} {
 		os.Unsetenv(k)
 	}

@@ -59,10 +59,29 @@ export function initAdmin() {
 
 async function refreshAdmin() {
   try {
-    const [users, perms] = await Promise.all([API.users(), API.permissions()]);
+    const [users, perms, cfg] = await Promise.all([API.users(), API.permissions(), API.config()]);
     renderUsers(users);
     renderPermissions(perms);
+    renderAuthHelp(cfg?.auth);
   } catch (err) { toast(err.message, 'error'); }
+}
+
+function renderAuthHelp(auth) {
+  const el = document.getElementById('admin-auth-help');
+  if (!el) return;
+  if (!auth) {
+    el.textContent = 'Authentication settings are unavailable.';
+    return;
+  }
+  if (!auth.proxy) {
+    el.textContent = 'Sign-in modes: password and Bearer API tokens. Reverse-proxy authentication is off (set PROXY_AUTH_TRUSTED_SOURCES to enable). Create Player usernames that match IdP users before enabling proxy mapping.';
+    return;
+  }
+  const header = auth.proxy_auth?.user_header || 'Remote-User';
+  const logout = auth.proxy_auth?.logout_url
+    ? ` Logout redirects to ${auth.proxy_auth.logout_url}.`
+    : ' No PROXY_AUTH_LOGOUT_URL configured — proxy sessions may return immediately after logout.';
+  el.textContent = `Reverse-proxy authentication is on. Trusted proxies may set ${header} to a Player username (exact match; accounts are not auto-created). Password and Bearer token sign-in still work. Untrusted clients cannot spoof ${header}.${logout}`;
 }
 
 function renderUsers(users) {

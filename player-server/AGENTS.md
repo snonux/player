@@ -246,6 +246,11 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 | `TRANSCODE_MAX_JOBS` | `1` | ≥ 1 | Parallel ffmpeg transcodes; each needs about 400 MB of memory at 1080p |
 | `THUMBNAIL_CACHE_DIR` | unset | writable directory outside `MEDIA_ROOT` | When set, all generated thumbnails are stored there (mirroring the media tree) instead of in `.thumbnails` beside each media file; unset keeps them beside the media |
 | `MUSIC_ENRICHMENT_URL` | unset (disabled) | HTTP(S) JSON agent endpoint | Optional artist/album biography, image and links; explicit admin refresh only. Implements the [Player external-agent contract](../docs/music-m10-implementation.md), not arbitrary provider APIs. |
+| `PROXY_AUTH_TRUSTED_SOURCES` | unset (disabled) | comma-separated CIDRs and optional `@` | Enables reverse-proxy authentication for peers in these ranges (`@` = UNIX socket). Empty keeps password/Bearer-only auth. |
+| `PROXY_AUTH_USER_HEADER` | `Remote-User` when proxy auth is on | non-empty header name | Header trusted proxies set to the Player username (exact `users.username` match; no auto-create). Requires `PROXY_AUTH_TRUSTED_SOURCES`. |
+| `PROXY_AUTH_LOGOUT_URL` | unset | absolute URL | When set with proxy auth, `POST /api/logout` returns `{"logout_url"}` for IdP logout. Requires `PROXY_AUTH_TRUSTED_SOURCES`. |
+
+**Reverse-proxy auth:** only the immediate peer (`RemoteAddr`) is checked — never `X-Forwarded-For`. The proxy must strip client-supplied user headers and set the configured header only after authentication. Untrusted clients forging the header are ignored. See `docs/api.md` (Authentication §3).
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 
@@ -393,18 +398,19 @@ A share's `max_uses` counts **viewings**, not HTTP requests. Browsers and player
 
 ---
 
-## Auth Middleware — Bearer-or-Cookie Unified Pattern
+## Auth Middleware — Bearer / Cookie / Trusted-Proxy Unified Pattern
 
 `RequireSession` in `internal/api/middleware.go` implements a single unified
 authentication path: it tries a Bearer token first (via the `Authorization:
-Bearer <token>` header) and falls back to the `session` cookie if no Bearer
-header is present. Both paths resolve to the same `*model.Session` value in the
-request context, so all downstream handlers are auth-method-agnostic. Do not
-add a separate middleware or a parallel code path for Bearer-only or
-cookie-only routes — doing so would create duplicate auth logic and silently
-break the unified contract. If you need to handle a new auth mechanism, extend
-`authenticate()` inside `Middleware` and keep the single `RequireSession`
-wrapper as the sole gate for session-required routes.
+Bearer <token>` header), then a valid `session` cookie, then (when
+`PROXY_AUTH_TRUSTED_SOURCES` is configured) a username from the trusted
+reverse-proxy header. All paths resolve to the same `*model.Session` value in
+the request context, so all downstream handlers are auth-method-agnostic. Do
+not add a separate middleware or a parallel code path for Bearer-only,
+cookie-only, or proxy-only routes — doing so would create duplicate auth logic
+and silently break the unified contract. If you need to handle a new auth
+mechanism, extend `authenticate()` inside `Middleware` and keep the single
+`RequireSession` wrapper as the sole gate for session-required routes.
 
 ## Route Registration — `handleBoth` Convention
 
