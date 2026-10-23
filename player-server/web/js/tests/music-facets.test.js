@@ -18,7 +18,9 @@ const {API}=await import('../api.js');
 const originalOptions=API.musicFacets;
 API.musicFacets=async()=>({genre:['Ambient'],role:['composer'],year:[]});
 const handlers={};
-const details={open:false,addEventListener(){}};
+const detailHandlers={};
+const summary={tagName:'SUMMARY',closest:()=>null,matches:()=>false,focus(){this.focused=true;}};
+const details={open:false,querySelector:()=>summary,addEventListener(name,handler){detailHandlers[name]=handler;}};
 const remove={dataset:{removeFacet:'role'}};
 const clear={addEventListener:(event,handler)=>{handlers.clear=handler;}};
 const panel={querySelector:selector=>selector==='details'?details:selector==='[data-clear-facets]'?clear:null,querySelectorAll:selector=>selector==='[data-remove-facet]'?[remove]:[]};
@@ -68,3 +70,18 @@ await mountMusicFacets({prepend(){}},liveState.music,()=>true,()=>{},true);
 assert.match(panel.innerHTML,/Remove Genre: Ambient/);assert.match(panel.innerHTML,/data-clear-facets/);
 API.musicFacets=originalOptions;
 console.log('Typed modifier removal, explicit facet preservation, coherent chip/Clear and loading controls passed.');
+
+const {initKeyboard}=await import('../keyboard.js');
+let globalKey,opened=0,played=0;
+document.addEventListener=(name,handler)=>{if(name==='keydown')globalKey=handler;};
+initKeyboard({enter:()=>opened++,playPause:()=>played++});
+function disclosureKey(key,target=summary){
+ const event={key,target,currentTarget:details,stopped:false,defaultPrevented:false,stopPropagation(){this.stopped=true;},preventDefault(){this.defaultPrevented=true;}};
+ detailHandlers.keydown(event);if(!event.stopped)globalKey(event);return event;
+}
+for(const key of ['Enter',' ']){const event=disclosureKey(key);assert(event.stopped);assert(!event.defaultPrevented);}
+assert.equal(opened,0);assert.equal(played,0);
+assert(!disclosureKey(' ',{tagName:'SELECT',closest:()=>null,matches:()=>false}).stopped);
+assert(!disclosureKey('p').stopped);assert.equal(played,1);
+details.open=true;assert(disclosureKey('Escape').defaultPrevented);assert(!details.open);assert(summary.focused);
+console.log('More filters summary preserves native activation without opening selection or toggling playback.');

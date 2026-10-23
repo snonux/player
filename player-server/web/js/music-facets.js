@@ -41,5 +41,5 @@ export async function mountMusicFacets(grid,view,current,reload,loading=false) {
  panel.querySelector('details').open=Boolean(view.moreFacets);
  panel.querySelector('details').addEventListener('toggle',()=>{if(current())state.music.moreFacets=panel.querySelector('details').open;});
  if(view.focusFacet) panel.querySelector(`[data-music-facet="${view.focusFacet}"]`)?.focus();
- panel.querySelector('details')?.addEventListener('keydown',event=>{if(event.key==='Escape'&&event.currentTarget.open){event.preventDefault();event.stopPropagation();event.currentTarget.open=false;event.currentTarget.querySelector('summary').focus();}});
+ panel.querySelector('details')?.addEventListener('keydown',event=>{if(event.target?.tagName==='SUMMARY'&&['Enter',' '].includes(event.key))event.stopPropagation();if(event.key==='Escape'&&event.currentTarget.open){event.preventDefault();event.stopPropagation();event.currentTarget.open=false;event.currentTarget.querySelector('summary').focus();}});
 }
