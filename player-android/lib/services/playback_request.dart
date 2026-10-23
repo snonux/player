@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../models/music_metadata.dart';
 
 enum PlaybackSourceKind { server, local, publicShare }
 
@@ -19,6 +20,7 @@ sealed class PlaybackRequest {
     this.artist = '',
     this.album = '',
     this.artworkUri,
+    this.music,
     required this.sourceUri,
     this.startPosition,
     this.readPosition,
@@ -32,6 +34,7 @@ sealed class PlaybackRequest {
   final String artist;
   final String album;
   final Uri? artworkUri;
+  final MusicMetadata? music;
   String get subtitle => [artist.isEmpty ? 'Unknown artist' : artist, album]
       .where((s) => s.isNotEmpty)
       .join(' · ');
@@ -57,6 +60,7 @@ final class ServerPlaybackRequest extends PlaybackRequest {
     super.artist,
     super.album,
     super.artworkUri,
+    super.music,
     super.startPosition,
     super.readPosition,
     super.savePosition,
@@ -79,6 +83,7 @@ final class ServerPlaybackRequest extends PlaybackRequest {
         artist: artist,
         album: album,
         artworkUri: artworkUri,
+        music: music,
         startPosition: startPosition,
         readPosition: readPosition,
         savePosition: savePosition,
@@ -99,6 +104,7 @@ final class LocalPlaybackRequest extends PlaybackRequest {
     super.artist,
     super.album,
     super.artworkUri,
+    super.music,
     super.startPosition,
     super.readPosition,
     super.savePosition,
@@ -123,6 +129,7 @@ final class OfflinePlaybackRequest extends PlaybackRequest {
     super.artist,
     super.album,
     super.artworkUri,
+    super.music,
     super.readPosition,
     super.savePosition,
     super.markFinished,
@@ -155,6 +162,7 @@ final class PublicSharePlaybackRequest extends PlaybackRequest {
     super.artist,
     super.album,
     super.artworkUri,
+    super.music,
   }) : super(identity: 'public-share:$shareToken');
 
   final String shareToken;

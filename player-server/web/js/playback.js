@@ -178,9 +178,13 @@ export function initPlayer(options = {}) {
     onPausedReattach: showPausedReturnHint,
     requestPlay,
     setPlaybackSpeed,
+    setPlaybackLoudness,
     triggerPrevious,
     triggerNext,
     triggerNavigate,
+  });
+  document.addEventListener('queue:changed', () => {
+    if (isDetached()) postToDetach({ type: 'detach-loudness-context', albumContext: currentPlaybackLoudness()?.albumContext === true });
   });
   bindVolume(e);
   [e.video, e.audio].forEach((m) => {
@@ -1195,6 +1199,10 @@ export function isImageMode() {
   return currentMedia?.type === 'image';
 }
 
+export function currentPlaybackLoudness() { return audioVisuals?.loudnessState() ?? null; }
+export function setPlaybackLoudness(value, options) { audioVisuals?.setLoudnessState(value, options); }
+export function setPlaybackLoudnessContext(value) { audioVisuals?.setLoudnessContext(value); }
+
 export function currentPlaybackSpeed() { return playbackSpeed?.get() ?? 1; }
 
 export function setPlaybackSpeed(rate) { playbackSpeed?.set(rate); }
@@ -1214,6 +1222,7 @@ function localPlaybackState() {
     volume: m?.volume ?? 1,
     muted: !!m?.muted,
     playbackRate: playbackSpeed?.get() ?? 1,
+    loudness: currentPlaybackLoudness(),
   };
 }
 

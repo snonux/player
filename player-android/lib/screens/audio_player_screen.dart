@@ -1,3 +1,4 @@
+import '../widgets/loudness_sheet.dart';
 import '../providers/server_endpoint_provider.dart';
 import '../widgets/music_queue_sheet.dart';
 import '../widgets/music_info_dialog.dart';
@@ -563,6 +564,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         title: media.displayTitle,
         artist: media.music?.artist ?? '',
         album: media.music?.album ?? '',
+        music: media.music,
         artworkUri: media.thumbnailPath.isNotEmpty
             ? Uri.parse(client.thumbnailUrl(media.id))
             : null,
@@ -606,6 +608,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         title: display.title,
         artist: display.artist,
         album: display.album,
+        music: display.music,
         artworkUri: display.artworkUri,
         sourceName: request.sourceName,
         startPosition: request.startPosition,
@@ -1124,6 +1127,11 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                             color: Colors.white)),
                   ]),
                 _buildSpeedSelector(),
+                TextButton.icon(
+                  onPressed: () => showLoudnessSheet(context, handler.loudness),
+                  icon: const Icon(Icons.volume_up),
+                  label: const Text('Loudness'),
+                ),
                 if (_activeRequest?.kind != PlaybackSourceKind.local)
                   _buildLyrics(handler),
               ],

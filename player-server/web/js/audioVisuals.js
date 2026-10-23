@@ -1,3 +1,6 @@
+import { createLoudnessControls, replayGain, sameAlbum } from './replay-gain.js';
+import { queueState } from './queue.js';
+
 // One graph per player/audio element. Keep the direct destination connected
 // even when visuals are off: disconnecting it would mute routed playback.
 export const VISUAL_MODES = ['bars', 'wave', 'radial', 'mirror', 'orbit', 'off'];
@@ -53,6 +56,11 @@ export function initAudioVisuals({ audio, player, coverArt }) {
   let context = null;
   let source = null;
   let routed = false;
+  let gainNode = null;
+  let remoteAlbumContext = null;
+  const loudness = createLoudnessControls(controls, () => {
+    updateGain(); prepare(); sync(); document.dispatchEvent(new Event('loudness:changed'));
+  });
   let analyser = null;
   let frequency = null;
   let waveform = null;
@@ -61,6 +69,19 @@ export function initAudioVisuals({ audio, player, coverArt }) {
   const unavailable = !AudioContext;
   let failure = '';
 
+  function albumContext() {
+    if (remoteAlbumContext !== null) return remoteAlbumContext;
+    const queue = queueState();
+    return queue.active && !queue.shuffle && sameAlbum(queue.entries.map(entry => entry.media));
+  }
+  function updateGain() {
+    const result = replayGain(media?.music, loudness.settings, albumContext());
+    if (gainNode) gainNode.gain.setValueAtTime(result.multiplier, context.currentTime);
+    loudness.update(media, loudness.settings.mode === 'off' ? result.message :
+      unavailable ? 'Loudness processing unavailable in this browser.' : failure ||
+      (context?.state === 'running' && routed ? result.message : 'Start playback to allow loudness processing.'));
+  }
+  function processingWanted() { return wanted() || (media?.type === 'audio' && loudness.settings.mode !== 'off' && !unavailable && !failure); }
   function wanted() {
     return media?.type === 'audio' && !book && mode !== 'off' && !unavailable && !failure;
   }
@@ -72,6 +93,7 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     frame = 0;
   }
   function sync() {
+    updateGain();
     select.value = book || unavailable ? 'off' : mode;
     label.classList.toggle('hidden', media?.type !== 'audio');
     select.disabled = book || unavailable;
@@ -94,14 +116,14 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     // cross-origin media without CORS makes Web Audio output silence.
     if (media?.type !== 'audio') return;
     failure = '';
-    if (!context && wanted()) {
+    if (!context && processingWanted()) {
       // Track details or conversion can outlast transient click activation.
       // Web Audio accepts the page's prior gesture (sticky activation); wait
       // for a running context below before routing native audio through it.
       if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
       try {
         if (new URL(audio.currentSrc || audio.src, location.href).origin !== location.origin) {
-          failure = 'Visuals require a stream from this server.';
+          failure = 'Audio processing requires a stream from this server.';
           sync();
           return;
         }
@@ -132,23 +154,28 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     sync();
   }
   function connectGraph() {
-    if (!wanted() || analyser || context?.state !== 'running') return;
+    if (!processingWanted() || context?.state !== 'running') return;
     try {
       // The source may change while resume is pending (including next track).
       if (new URL(audio.currentSrc || audio.src, location.href).origin !== location.origin) {
-        failure = 'Visuals require a stream from this server.';
+        failure = 'Audio processing requires a stream from this server.';
       } else {
-        const nextAnalyser = context.createAnalyser();
-        nextAnalyser.fftSize = 1024;
-        source ||= context.createMediaElementSource(audio);
+        gainNode ||= context.createGain();
+        updateGain();
         if (!routed) {
-          source.connect(context.destination);
+          gainNode.connect(context.destination);
+          source ||= context.createMediaElementSource(audio);
+          source.connect(gainNode);
           routed = true;
         }
-        source.connect(nextAnalyser);
-        frequency = new Uint8Array(nextAnalyser.frequencyBinCount);
-        waveform = new Uint8Array(nextAnalyser.fftSize);
-        analyser = nextAnalyser;
+        if (wanted() && !analyser) {
+          const nextAnalyser = context.createAnalyser();
+          nextAnalyser.fftSize = 1024;
+          gainNode.connect(nextAnalyser);
+          frequency = new Uint8Array(nextAnalyser.frequencyBinCount);
+          waveform = new Uint8Array(nextAnalyser.fftSize);
+          analyser = nextAnalyser;
+        }
       }
     } catch (error) {
       failed(error);
@@ -161,6 +188,7 @@ export function initAudioVisuals({ audio, player, coverArt }) {
     if (!audio.paused) prepare();
     sync();
   }
+  document.addEventListener('queue:changed', () => { updateGain(); });
   select.addEventListener('change', change);
   retry.addEventListener('click', () => { prepare(); sync(); });
   document.addEventListener('keydown', (event) => {
@@ -233,8 +261,17 @@ export function initAudioVisuals({ audio, player, coverArt }) {
       media = next;
       book = isAudiobook(next, setName);
       art = !!thumbnailUrl;
+      updateGain();
       sync();
     },
     prepare,
+    loudnessState: () => ({ settings: { ...loudness.settings }, albumContext: albumContext() }),
+    setLoudnessState(value, { remoteContext = false } = {}) {
+      if (!value) return;
+      remoteAlbumContext = remoteContext ? value.albumContext === true : null;
+      if (value.settings) loudness.set(value.settings, { announce: false });
+      updateGain(); prepare(); sync();
+    },
+    setLoudnessContext(value) { remoteAlbumContext = value === true; updateGain(); sync(); },
   };
 }

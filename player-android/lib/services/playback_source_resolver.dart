@@ -36,6 +36,7 @@ Future<PlaybackRequest> resolveServerPlaybackSource(
             : request.title,
         artist: media.music?.artist ?? '',
         album: media.music?.album ?? '',
+        music: media.music,
         artworkUri: media.thumbnailPath.isNotEmpty
             ? Uri.parse(client.thumbnailUrl(media.id))
             : null,

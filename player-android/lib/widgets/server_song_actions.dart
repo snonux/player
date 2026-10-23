@@ -55,6 +55,7 @@ Future<void> insertServerSongs(BuildContext context, WidgetRef ref,
           title: song.displayTitle,
           artist: song.music?.artist ?? '',
           album: song.music?.album ?? '',
+          music: song.music,
           artworkUri: song.thumbnailPath.isNotEmpty
               ? Uri.parse(client.thumbnailUrl(song.id))
               : null,

@@ -1044,6 +1044,22 @@ async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
   setup();
   const listeners={}, messages=[], writes=[];
   const oldListener=window.addEventListener, original=API.progress, status=API.progressStatus;
+  const oldCreate=document.createElement, oldStorage=globalThis.localStorage, oldObserver=globalThis.MutationObserver, oldCancel=globalThis.cancelAnimationFrame;
+  const stage=elements.player.querySelector('.stage'), controls=fakeElement(), loudnessPanels=[];
+  elements.player.querySelector=selector=>selector==='.stage'?stage:selector==='.controls'?controls:null;
+  globalThis.localStorage={getItem(){throw Error('blocked');},setItem(){throw Error('blocked');}};
+  globalThis.MutationObserver=class {observe(){}};globalThis.cancelAnimationFrame=()=>{};
+  document.createElement=tag=>{
+    const el=fakeElement();el.tagName=tag.toUpperCase();el.append=(...children)=>children.forEach(child=>el.appendChild(child));el.contains=()=>false;el.replaceChildren=(...children)=>{el.children=children;};
+    if(tag==='canvas')el.getContext=()=>({});
+    if(tag==='div'){
+      const select=fakeElement(),inputs=[fakeElement(),fakeElement()],details=fakeElement(),summary=fakeElement(),status=fakeElement();
+      summary.focus=()=>{};details.querySelector=()=>summary;
+      el.querySelector=selector=>selector==='select'?select:selector==='details'?details:status;
+      el.querySelectorAll=()=>inputs;el.parts={select,inputs,details,status};loudnessPanels.push(el);
+    }
+    return el;
+  };
   window.addEventListener=(type,fn)=>{(listeners[type] ||= []).push(fn);};
   window.location.origin='http://test';
   window.opener={closed:false,postMessage:message=>messages.push(message)};
@@ -1052,6 +1068,30 @@ async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
   API.progressStatus=async(id,value)=>{writes.push(`${value}:${id}`);};
   try {
     await import('../detachPopup.js');
+    const gainTags={replaygain_track_gain_db:-8,replaygain_album_gain_db:-4};
+    const {replayGain}=await import('../replay-gain.js');
+    const popupMessage=data=>{for(const fn of listeners.message||[])fn({origin:'http://test',source:window.opener,data});};
+    popupMessage({type:'detach-load',media:{id:630,type:'audio',music:gainTags},streamUrl:'/api/media/630/stream',play:false,
+      loudness:{settings:{mode:'automatic'},albumContext:true}});
+    let gainState=window.__playerDetachCurrentState().loudness;
+    assertEqual(gainState.albumContext,true,'actual popup receives ordered album context despite empty local queue');
+    assertEqual(replayGain(gainTags,gainState.settings,gainState.albumContext).db,-4,'actual popup retains main album gain');
+    popupMessage({type:'detach-loudness-context',albumContext:false});
+    gainState=window.__playerDetachCurrentState().loudness;
+    assertEqual(replayGain(gainTags,gainState.settings,gainState.albumContext).db,-8,'live shuffle or mixed queue update selects track gain');
+    const panel=loudnessPanels.find(panel=>panel.className==='loudness-control hidden');
+    panel.parts.select.value='off';panel.dispatch('change');
+    assertEqual(window.__playerDetachCurrentState().loudness.settings.mode,'off','actual popup Off stays in memory when storage denied');
+    assertEqual(messages.filter(message=>message.type==='detach-state').at(-1).state.loudness.settings.mode,'off','actual popup immediately reports settings edit to opener');
+    popupMessage({type:'detach-load',media:{id:632,type:'audio',music:gainTags},streamUrl:'/api/media/632/stream',play:false,
+      loudness:{settings:window.__playerDetachCurrentState().loudness.settings,albumContext:true}});
+    gainState=window.__playerDetachCurrentState().loudness;
+    assertEqual(gainState.settings.mode,'off','actual next load preserves popup preference');
+    assertEqual(gainState.albumContext,true,'next load replaces old shuffled context with authoritative album context');
+    const beforeForeign=window.__playerDetachCurrentState().loudness;
+    for(const fn of listeners.message||[])fn({origin:'http://foreign',source:window.opener,data:{type:'detach-loudness-context',albumContext:false}});
+    assertEqual(window.__playerDetachCurrentState().loudness.albumContext,beforeForeign.albumContext,'foreign-origin context cannot change popup mode');
+    writes.length=0;messages.length=0;
     const load=id=>{for(const fn of listeners.message||[]) fn({origin:'http://test',data:{type:'detach-load',media:{id,type:'audio',duration:1301},index:1,streamUrl:`/api/media/${id}/stream`,play:false}});audio().readyState=1;};
     load(631);audio().currentTime=1301;audio().ended=true;
     audio().dispatch('ended');audio().dispatch('ended');await settle();
@@ -1063,7 +1103,10 @@ async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
     audio().dispatch('ended');await settle();load(631); // same media, newer occurrence
     release?.();await settle();
     assertEqual(messages.filter(m=>m.type==='detach-next').length,0,'new same-ID popup load rejects deferred old completion');
-  } finally {API.progress=original;API.progressStatus=status;window.addEventListener=oldListener;delete window.opener;}
+  } finally {
+    player.stopAndClose();API.progress=original;API.progressStatus=status;window.addEventListener=oldListener;delete window.opener;
+    document.createElement=oldCreate;globalThis.localStorage=oldStorage;globalThis.MutationObserver=oldObserver;globalThis.cancelAnimationFrame=oldCancel;
+  }
 }
 
 console.info('Running playback source tests...');

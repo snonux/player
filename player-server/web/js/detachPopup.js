@@ -1,5 +1,5 @@
 import { API } from './api.js';
-import { hasPendingPlay, initPlayer, loadMediaDirect, requestPlay, togglePlay, currentPlaybackSpeed, setPlaybackSpeed, stepPlaybackSpeed } from './player.js';
+import { hasPendingPlay, initPlayer, loadMediaDirect, requestPlay, togglePlay, currentPlaybackSpeed, setPlaybackSpeed, stepPlaybackSpeed, currentPlaybackLoudness, setPlaybackLoudness, setPlaybackLoudnessContext } from './player.js';
 import { initModalFocus } from './modal-focus.js';
 import { initNotes } from './notes.js';
 import { closeAllModals } from './dom.js';
@@ -32,6 +32,7 @@ const btnNext = document.getElementById('btn-next');
 btnPrev?.addEventListener('click', () => post({ type: 'detach-prev' }));
 btnNext?.addEventListener('click', () => post({ type: 'detach-next' }));
 window.__playerDetachCurrentState = currentState;
+document.addEventListener('loudness:changed', sendState);
 
 [video, audio].forEach((el) => {
   el?.addEventListener('ratechange', sendState);
@@ -146,6 +147,10 @@ window.addEventListener('message', (ev) => {
     case 'detach-load':
       loadDetachedMedia(ev.data);
       break;
+    case 'detach-loudness-context':
+      setPlaybackLoudnessContext(ev.data.albumContext === true);
+      sendState();
+      break;
     case 'detach-command':
       handleCommand(ev.data);
       break;
@@ -170,6 +175,7 @@ function loadDetachedMedia(payload) {
 
   const resumeFrom = Number(payload.resumeFrom || 0);
   lastKnownPosition = resumeFrom;
+  setPlaybackLoudness(payload.loudness, { remoteContext: true });
   loadMediaDirect(currentMedia, payload.streamUrl, payload.thumbnailUrl, resumeFrom);
   setPlaybackSpeed(payload.playbackRate ?? 1);
 
@@ -338,6 +344,7 @@ function currentState() {
     volume: el?.volume ?? 1,
     muted: !!el?.muted,
     playbackRate: currentPlaybackSpeed(),
+    loudness: currentPlaybackLoudness(),
   };
 }
 

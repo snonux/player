@@ -550,3 +550,12 @@
 .playback-speed-control select:disabled { opacity: 0.65; }
 .playback-speed-status { flex: 0 0 100%; font-size: 0.8rem; }
 .playback-speed-status:empty { display: none; }
+
+/* Loudness remains a secondary player option and wraps on narrow screens. */
+.loudness-control { grid-column: 1 / -1; width: 100%; font-size: 0.85rem; }
+.loudness-control label { display: inline-flex; align-items: center; gap: 0.5rem; margin: 0.3rem 0.7rem 0.3rem 0; flex-wrap: wrap; }
+.loudness-control select, .loudness-control input { color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem; max-width: 100%; }
+.loudness-control input { width: 5rem; }
+.loudness-control p { margin: 0.4rem 0; }
+.loudness-control summary { cursor: pointer; padding: 0.4rem 0; }
+.loudness-control [role="status"] { display: block; margin-top: 0.4rem; }

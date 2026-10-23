@@ -28,7 +28,7 @@ export function initCompactControls(player) {
   panel.appendChild(header);
   for (const control of player.querySelectorAll(
     '#btn-save-position, #btn-bookmarks, #btn-player-notes, #btn-player-favorite, ' +
-    '.volume-control, .audio-visual-control, .playback-speed-control, .lyrics-toggle')) {
+    '.volume-control, .audio-visual-control, .playback-speed-control, .loudness-control, .lyrics-toggle')) {
     panel.appendChild(control);
   }
   const more = document.createElement('button');
@@ -69,6 +69,12 @@ export function initCompactControls(player) {
   document.addEventListener('keydown', event => {
     if (!panel.matches(':popover-open')) return;
     if (event.key === 'Escape') {
+      const disclosure = event.target?.closest?.('.loudness-control details[open]');
+      if (disclosure) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        disclosure.open = false; disclosure.querySelector('summary')?.focus();
+        return;
+      }
       event.preventDefault();
       event.stopImmediatePropagation();
       dismiss();

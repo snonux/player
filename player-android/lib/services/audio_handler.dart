@@ -10,6 +10,8 @@ import 'music_shuffle.dart';
 import 'music_queue_snapshot.dart';
 import 'playback_session_coordinator.dart';
 import 'playback_request.dart';
+import 'replay_gain.dart';
+import 'loudness_effect.dart';
 
 // ---------------------------------------------------------------------------
 // PlayerAudioHandler
@@ -38,7 +40,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   ///
   /// The player is injected so that tests can supply a mock without any
   /// platform channels (Dependency Inversion Principle).
-  PlayerAudioHandler(AudioPlayer player) : _player = player {
+  PlayerAudioHandler(AudioPlayer player, {LoudnessEffect? loudnessEnhancer})
+      : _player = player,
+        loudness = ReplayGainController(player, loudnessEnhancer) {
     // Propagate just_audio's playback state into the audio_service stream so
     // the notification, lock screen, and Wear OS clients see live updates.
     // just_audio adds a failure (for example `PlatformException(0, Source
@@ -71,6 +75,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   final AudioPlayer _player;
+  final ReplayGainController loudness;
+
+  Future<void> _refreshLoudness() => loudness.setTrack(_metadataRequest?.music,
+      albumContext: _queueActive &&
+          !_queueShuffle &&
+          sameLoudnessAlbum(_albumQueue.map((entry) => entry.request.music)));
   Future<Uri?> Function(PlaybackRequest request, bool Function() current)?
       artworkLoader;
   int _metadataEpoch = 0;
@@ -80,12 +90,14 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   void clearMediaItem() {
     _metadataEpoch++;
     _metadataRequest = null;
+    unawaited(_refreshLoudness());
     mediaItem.add(null);
   }
 
   void setMediaRequest(PlaybackRequest request) {
     final same = identical(_metadataRequest, request);
     _metadataRequest = request;
+    unawaited(_refreshLoudness());
     final epoch = same ? _metadataEpoch : ++_metadataEpoch;
     mediaItem.add(MediaItem(
         id: request.identity,
@@ -197,6 +209,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       shuffle: _queueShuffle,
       canonical: List.of(_queueCanonical));
   void _notifyQueue() {
+    unawaited(_refreshLoudness());
     persistMusicQueue?.call();
     _queueChanges.add(null);
   }
@@ -922,6 +935,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   ) =>
       _serializeSourceOperation(() async {
         if (generation != _sourceGeneration) return;
+        await _refreshLoudness();
+        if (generation != _sourceGeneration) return;
         await _player.setAudioSource(source);
       });
 
@@ -986,6 +1001,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> play() async {
     if (!_canControlSource) return;
+    final generation = _sourceGeneration;
+    await _refreshLoudness();
+    if (generation != _sourceGeneration || !_canControlSource) return;
     ++_completionCycle;
     // The visible Retry owns failed album transitions. Native Play must not
     // resume the previous source while the failed target is shown.

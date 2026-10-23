@@ -16,7 +16,9 @@ export function initDetach(options = {}) {
     } else if (ev.data.type === 'detach-closing') {
       onDetachClosing(ev.data.state);
     } else if (ev.data.type === 'detach-state') {
+      if (ev.source !== detachWindow) return;
       detachedPlaybackState = mergeDetachedState(detachedPlaybackState, ev.data.state);
+      deps.setPlaybackLoudness?.(detachedPlaybackState?.loudness);
     } else if (ev.data.type === 'detach-prev') {
       deps.triggerPrevious?.({ forcePlay: ev.data.play ?? true });
     } else if (ev.data.type === 'detach-next') {
@@ -47,6 +49,7 @@ export function stopDetached() {
   if (!isDetached()) return null;
   const popup = detachWindow;
   const state = readDetachedWindowState(popup) || detachedPlaybackState;
+  deps.setPlaybackLoudness?.(state?.loudness);
   detachWindow = null; detachReady = false; pendingDetachMessage = null;
   detachedPlaybackState = null;
   popup.close();
@@ -92,7 +95,11 @@ export function sendDetachedLoad(media, resumeFrom = 0, play = true) {
 export function postToDetach(message) {
   if (!detachWindow || detachWindow.closed) return;
   if (!detachReady && message.type !== 'detach-request-state') {
-    pendingDetachMessage = message;
+    if (message.type === 'detach-loudness-context') {
+      if (pendingDetachMessage?.type === 'detach-load') {
+        pendingDetachMessage.loudness = { ...pendingDetachMessage.loudness, albumContext: message.albumContext === true };
+      }
+    } else pendingDetachMessage = message;
     return;
   }
   detachWindow.postMessage(message, window.location.origin);
@@ -125,6 +132,7 @@ function reattachDetached({ closePopup = true } = {}) {
 
   if (state?.media) {
     deps.setCurrentMediaState?.(state.media, Number.isInteger(state.index) ? state.index : undefined);
+    deps.setPlaybackLoudness?.(state.loudness);
     deps.loadMedia?.(state.media, state.currentTime || 0);
     deps.setPlaybackSpeed?.(state.playbackRate ?? 1);
     const m = deps.currentMediaElement?.();
@@ -174,6 +182,8 @@ function detachedLoadMessage(media, resumeFrom = 0, play = true) {
     volume: detachedPlaybackState?.volume ?? local.volume,
     muted: detachedPlaybackState?.muted ?? local.muted,
     playbackRate: remote?.playbackRate ?? local.playbackRate ?? 1,
+    loudness: { settings: remote?.loudness?.settings ?? local.loudness?.settings,
+      albumContext: local.loudness?.albumContext === true },
   };
 }
 

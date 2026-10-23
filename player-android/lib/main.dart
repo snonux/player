@@ -15,6 +15,7 @@ import 'providers/theme_provider.dart';
 import 'navigation_key.dart';
 import 'router.dart';
 import 'services/audio_handler.dart';
+import 'services/loudness_effect.dart';
 import 'services/audio_progress_lifecycle.dart';
 import 'services/progress_queue.dart';
 import 'widgets/keyboard_access.dart';
@@ -40,8 +41,11 @@ void main() async {
   // AudioService.init<T> returns the exact T from the builder.  We pass it
   // directly into ProviderScope so [audioHandlerProvider] is resolved without
   // any global mutable state.
+  final audioPlayer = AudioPlayer();
+  final loudnessEnhancer = SessionLoudnessEffect(audioPlayer);
   final handler = await AudioService.init<PlayerAudioHandler>(
-    builder: () => PlayerAudioHandler(AudioPlayer()),
+    builder: () =>
+        PlayerAudioHandler(audioPlayer, loudnessEnhancer: loudnessEnhancer),
     config: const AudioServiceConfig(
       // Notification channel name shown in Android Settings → App info.
       androidNotificationChannelName: 'Player Audio',
@@ -60,6 +64,8 @@ void main() async {
       androidNotificationOngoing: false,
     ),
   );
+
+  await handler.loudness.restore();
 
   // Flush the active source at lifecycle boundaries while audio keeps playing.
   WidgetsBinding.instance.addObserver(

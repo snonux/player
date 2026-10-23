@@ -20,6 +20,9 @@ class MainActivity : AudioServiceFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        if (!flutterEngine.plugins.has(NativeLoudness::class.java)) {
+            flutterEngine.plugins.add(NativeLoudness())
+        }
         audioVisuals = AudioVisuals(this, flutterEngine.dartExecutor.binaryMessenger)
         playlistExport = PlaylistExport(this, flutterEngine.dartExecutor.binaryMessenger)
         serverWifi = ServerWifi(this, flutterEngine.dartExecutor.binaryMessenger)
