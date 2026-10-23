@@ -1,16 +1,14 @@
-import { API } from '../api.js';
-import { state } from '../state.js';
-import { initMediaGrid, loadMedia } from '../views/media-grid.js';
-
 const failures = [];
 const requests = [];
+
+globalThis.window = { addEventListener() {}, open() {} };
+globalThis.location = { pathname: '/index.html', href: '' };
 
 const grid = mockElement();
 const emptyHint = mockElement();
 const breadcrumb = mockElement();
 const resultCount = mockElement();
 
-globalThis.location = { pathname: '/index.html', href: '' };
 globalThis.document = {
   getElementById(id) {
     if (id === 'media-grid') return grid;
@@ -20,7 +18,13 @@ globalThis.document = {
     return null;
   },
   querySelectorAll() { return []; },
+  addEventListener() {},
+  dispatchEvent() { return true; },
 };
+
+const { API } = await import('../api.js');
+const { state } = await import('../state.js');
+const { initMediaGrid, loadMedia } = await import('../views/media-grid.js');
 
 globalThis.fetch = async (url, options = {}) => {
   requests.push({ url: String(url), options });
@@ -112,6 +116,10 @@ async function testInProgressVirtualGrid() {
   assert(state.media.length === 1 && state.media[0].id === 7, 'virtual set should store flat media results');
   assert(grid.innerHTML.includes('data-action="mark-finished"'), 'cards should render a finished action');
   assert(grid.innerHTML.includes('data-action="mark-not-started"'), 'cards should render a not-started action');
+  assert(/role="group"/.test(grid.innerHTML), 'media cards should be role=group so nested actions stay in the a11y tree');
+  assert(!/class="media-card[^"]*"[^>]*role="button"/.test(grid.innerHTML), 'media cards must not use role=button');
+  assert(/class="media-open"/.test(grid.innerHTML), 'media cards should expose a sibling primary open control');
+  assert(/data-action="play"[^>]*aria-label="Play"/.test(grid.innerHTML), 'play action should have an accessible name');
   assert(resultCount.textContent === '1 items', 'result count should reflect in-progress media');
 }
 

@@ -125,14 +125,14 @@ export async function resetProgress(page: Page, mediaId: number): Promise<void> 
  * Play a card from 0:00 with the mouse: hover it and click its Play (▶)
  * button. (A double-click would also play, but Playwright's double-click
  * reaches system Firefox over WebDriver BiDi as two single clicks.)
- * The ▶ button is found by its data-action and title: inside a card with
- * role="button" the accessibility tree treats children as presentational,
- * so role queries cannot see it.
+ * Action buttons are siblings of the primary open control (not nested in
+ * role="button"), so they are found by accessible role and name.
  */
 export async function playCard(page: Page, fileName: string, mediaId: number): Promise<AudioState> {
   await resetProgress(page, mediaId);
-  const card = page.getByRole('button', { name: fileName, exact: true });
+  const open = page.getByRole('button', { name: fileName, exact: true });
+  const card = page.locator('.media-card').filter({ has: open });
   await card.hover();
-  await card.locator('button[data-action="play"][title="Play"]').click();
+  await card.getByRole('button', { name: 'Play', exact: true }).click();
   return expectPlaying(page, mediaId);
 }

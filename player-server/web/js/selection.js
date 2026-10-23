@@ -14,11 +14,11 @@ export function initSelection() {
   });
 }
 
-// Moves keyboard focus to the selected card. Set and folder cards are not
-// focusable themselves; their primary open button is.
+// Moves keyboard focus to the selected card. Set, folder and media cards are
+// not focusable themselves; their primary open button is.
 export function focusSelectedCard() {
   const el = currentElement();
-  const target = el?.matches('.set-card, .folder-card') ? el.querySelector('.set-open, .folder-open') : el;
+  const target = el?.querySelector('.set-open, .folder-open, .media-open') || el;
   target?.focus();
   return Boolean(target);
 }

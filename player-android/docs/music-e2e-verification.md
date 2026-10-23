@@ -240,8 +240,8 @@ interception remain unverified.
   the Firefox run uses the mouse for the pointer journey and records the
   missing touch check as a gap. Its double-click also arrives as two single
   clicks, so cards are played with their ▶ button.
-- Card action buttons sit inside `role="button"` cards and are therefore
-  hidden from the accessibility tree; tests find them by `data-action`.
+- Media card action buttons are siblings of the primary open control (card
+  is `role="group"`); tests find ▶ and other actions by accessible role/name.
 - `uiautomator dump` waits for an idle UI and can take seconds on the
   animated player screen; the Android runner reads playback state from
   `dumpsys media_session` instead of on-screen time labels.

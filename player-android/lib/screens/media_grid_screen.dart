@@ -713,20 +713,25 @@ class _FavoriteIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      key: Key('media_card_favorite_$mediaId'),
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Icon(
-        isFavorite ? Icons.favorite : Icons.favorite_border,
-        size: 20,
-        color: isFavorite ? Colors.redAccent : Colors.white70,
-        shadows: const [
-          Shadow(
-            color: Colors.black54,
-            blurRadius: 4,
-          ),
-        ],
+    return Semantics(
+      button: true,
+      label: isFavorite ? 'Remove from favorites' : 'Add to favorites',
+      child: GestureDetector(
+        key: Key('media_card_favorite_$mediaId'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Icon(
+          isFavorite ? Icons.favorite : Icons.favorite_border,
+          size: 20,
+          color: isFavorite ? Colors.redAccent : Colors.white70,
+          excludeFromSemantics: true,
+          shadows: const [
+            Shadow(
+              color: Colors.black54,
+              blurRadius: 4,
+            ),
+          ],
+        ),
       ),
     );
   }

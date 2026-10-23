@@ -351,10 +351,24 @@ body {
 }
 .media-card > .thumb-wrap { grid-area: 1 / 1; }
 .media-card > .meta { grid-area: 2 / 1; }
+.media-card > .media-open {
+  grid-area: 1 / 1 / 3 / 2;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
 .media-card:not(.set-card):not(.folder-card) > .card-actions {
   grid-area: 1 / 1;
   align-self: end;
   position: absolute;
+  z-index: 2;
 }
 .media-card .card-actions .icon-btn { flex: 0 0 var(--control-height-sm); }
 .set-card .set-open,
@@ -370,7 +384,8 @@ body {
   cursor: pointer;
 }
 .set-card .set-open:focus-visible,
-.folder-card .folder-open:focus-visible {
+.folder-card .folder-open:focus-visible,
+.media-card > .media-open:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }

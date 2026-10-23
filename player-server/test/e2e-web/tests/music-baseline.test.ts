@@ -237,13 +237,14 @@ async function pointerSignIn(page: Page, press: (locator: Locator) => Promise<vo
  * plays; with the mouse, hover the card and click its ▶ button.
  */
 async function playFromCard(page: Page, fileName: string, touch: boolean, shots: string[]) {
-  const card = page.getByRole('button', { name: fileName, exact: true });
+  const open = page.getByRole('button', { name: fileName, exact: true });
+  const card = page.locator('.media-card').filter({ has: open });
   if (!touch) {
     await card.hover();
-    await card.locator('button[data-action="play"][title="Play"]').click();
+    await card.getByRole('button', { name: 'Play', exact: true }).click();
     return;
   }
-  await card.tap();
+  await open.tap();
   const menu = page.getByRole('group', { name: 'Media actions' });
   await expect(menu).toBeVisible();
   await shot(page, shots, 'narrow-light-card-menu');

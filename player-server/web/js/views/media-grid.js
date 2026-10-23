@@ -486,6 +486,11 @@ function bindMediaItems(grid) {
   });
   bindSongActions(grid);
   grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
+    el.querySelector('.media-open')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectByElement(el);
+      if (el.dataset.flattenedFolder === 'true') callbacks.playSelected?.();
+    });
     el.addEventListener('click', (e) => {
       selectByElement(el);
       if (el.dataset.flattenedFolder !== 'true' || e.target.closest('.card-actions, button')) return;
@@ -551,33 +556,42 @@ function bindMediaItems(grid) {
 
 function renderProgressActions() {
   return `
-    <button class="icon-btn btn-sm" data-action="trash" title="Move to trash" aria-label="Move to trash">🗑</button>
-    <button class="icon-btn btn-sm" data-action="mark-finished" title="Mark as finished">✓</button>
-    <button class="icon-btn btn-sm" data-action="mark-not-started" title="Mark as not started">↺</button>
+    <button type="button" class="icon-btn btn-sm" data-action="trash" title="Move to trash" aria-label="Move to trash">🗑</button>
+    <button type="button" class="icon-btn btn-sm" data-action="mark-finished" title="Mark as finished" aria-label="Mark as finished">✓</button>
+    <button type="button" class="icon-btn btn-sm" data-action="mark-not-started" title="Mark as not started" aria-label="Mark as not started">↺</button>
+  `;
+}
+
+function renderMediaActions(extra = '') {
+  return `
+    <div class="card-actions">
+      <button type="button" class="icon-btn btn-sm" data-action="play" title="Play" aria-label="Play">▶</button>
+      <button type="button" class="icon-btn btn-sm" data-action="favorite" title="Favorite" aria-label="Favorite">♥</button>
+      <button type="button" class="icon-btn btn-sm" data-action="notes" title="Notes" aria-label="Notes">📝</button>
+      ${renderProgressActions()}
+      <button type="button" class="icon-btn btn-sm" data-action="download" title="Download" aria-label="Download">⬇</button>
+      <button type="button" class="icon-btn btn-sm" data-action="tags" title="Tags" aria-label="Tags">🏷</button>
+      ${extra}
+    </div>
   `;
 }
 
 function renderItem(m, index) {
   const sizeText = fmtSize(m.file_size_bytes);
   const flattenedFolder = m.flattened_folder ? 'true' : 'false';
+  const title = escapeHtml(mediaTitle(m));
+  const regenThumb = '<button type="button" class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail" aria-label="Regenerate thumbnail">🔄</button>';
   if (m.type === 'video') {
     return `
-      <div class="media-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(mediaTitle(m))}">
+      <div class="media-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" role="group" aria-label="${title}">
+        <button type="button" class="media-open" aria-label="${title}"></button>
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
         </div>
-        <div class="card-actions">
-          <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
-          <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
-          <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
-          ${renderProgressActions()}
-          <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
-          <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
-          <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
-        </div>
+        ${renderMediaActions(regenThumb)}
         <div class="meta">
-          <div class="title" title="${escapeHtml(mediaTitle(m))}">${escapeHtml(mediaTitle(m))}</div>
+          <div class="title" title="${title}">${title}</div>
           <div class="subtitle">${escapeHtml(m.codec || '')} ${escapeHtml(m.resolution || '')} ${m.bitrate ? Math.round(m.bitrate / 1000) + 'kbps' : ''}</div>
         </div>
       </div>
@@ -587,43 +601,30 @@ function renderItem(m, index) {
     const resText = escapeHtml(m.resolution || '');
     const safeSizeText = escapeHtml(sizeText || '');
     return `
-      <div class="media-card image-card" data-picture-ratio="${pictureRatio(m.width, m.height)}" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(mediaTitle(m))}">
+      <div class="media-card image-card" data-picture-ratio="${pictureRatio(m.width, m.height)}" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" role="group" aria-label="${title}">
+        <button type="button" class="media-open" aria-label="${title}"></button>
         <div class="thumb-wrap">
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${resText}${safeSizeText ? ' • ' + safeSizeText : ''}</span>
         </div>
-        <div class="card-actions">
-          <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
-          <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
-          <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
-          ${renderProgressActions()}
-          <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
-          <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
-          <button class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail">🔄</button>
-        </div>
+        ${renderMediaActions(regenThumb)}
         <div class="meta">
-          <div class="title" title="${escapeHtml(mediaTitle(m))}">${escapeHtml(mediaTitle(m))}</div>
+          <div class="title" title="${title}">${title}</div>
           <div class="subtitle">${resText} ${safeSizeText}</div>
         </div>
       </div>
     `;
   }
   return `
-    <div class="media-card audio-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" tabindex="0" role="button" aria-label="${escapeHtml(mediaTitle(m))}">
+    <div class="media-card audio-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" role="group" aria-label="${title}">
+      <button type="button" class="media-open" aria-label="${title}"></button>
       <div class="thumb-wrap">
         ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No cover</span>`}
         <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
       </div>
-      <div class="card-actions">
-        <button class="icon-btn btn-sm" data-action="play" title="Play">▶</button>
-        <button class="icon-btn btn-sm" data-action="favorite" title="Favorite">♥</button>
-        <button class="icon-btn btn-sm" data-action="notes" title="Notes">📝</button>
-        ${renderProgressActions()}
-        <button class="icon-btn btn-sm" data-action="download" title="Download">⬇</button>
-        <button class="icon-btn btn-sm" data-action="tags" title="Tags">🏷</button>
-      </div>
+      ${renderMediaActions()}
       <div class="meta">
-        <div class="title" title="${escapeHtml(mediaTitle(m))}">${escapeHtml(mediaTitle(m))}</div>
+        <div class="title" title="${title}">${title}</div>
         <div class="subtitle">${escapeHtml(musicSubtitle(m))}</div>
       </div>
     </div>

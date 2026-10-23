@@ -229,7 +229,17 @@ export function initKeyboardAccess() {
   }
   document.addEventListener('media:actions', event => openMediaActions(event.detail));
   document.addEventListener('click', event => {
-    if (event.pointerType !== 'touch' || event.target.closest('button, a, input, select, textarea')) return;
+    if (event.pointerType !== 'touch') return;
+    // Primary media-open is a real button for AT, but on touch it must still
+    // open the card action menu (narrow/B8), not activate like a toolbar control.
+    const mediaOpen = event.target.closest?.('.media-open');
+    if (mediaOpen) {
+      const card = mediaOpen.closest('#media-grid .media-card[data-id], #media-grid .media-row[data-id]');
+      if (!card) return;
+      event.preventDefault(); event.stopImmediatePropagation(); openMediaActions(card);
+      return;
+    }
+    if (event.target.closest('button, a, input, select, textarea')) return;
     const card = event.target.closest('#media-grid .media-card[data-id], #media-grid .media-row[data-id]');
     if (!card) return;
     event.preventDefault(); event.stopImmediatePropagation(); openMediaActions(card);
