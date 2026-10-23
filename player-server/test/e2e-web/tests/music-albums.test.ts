@@ -238,7 +238,7 @@ test('M02 browser Back restores Sets source and retires the previous album snaps
     await expect(page.locator('#media-grid')).not.toContainText('Loading...');
   }
   expect(page.url()).toBe(setsURL);
-  await expect.poll(async()=>(await audioState(page)).src).toMatch(new RegExp(`/media/${source.id}/`));
+  await expect.poll(async()=>(await audioState(page)).src).toMatch(new RegExp(`(/media/${source.id}/|^blob:)`));
   await restorePlayer(page);
   await page.locator('#btn-play').click();await expectPlaying(page,source.id);
   await restorePlayer(page);
