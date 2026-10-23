@@ -16,6 +16,7 @@ type ArtistCredit struct {
 
 // Artist is a permission-filtered catalog of credited releases and songs.
 type Artist struct {
+	model.ListeningStats
 	Rating     int  `json:"rating"`
 	IsFavorite bool `json:"is_favorite"`
 	ArtistCredit
@@ -92,6 +93,9 @@ func MusicArtists(albums []Album) []Artist {
 					person = &Artist{ArtistCredit: credit}
 					people[credit.Key] = person
 					songIDs[credit.Key] = map[int64]bool{}
+				}
+				if !songIDs[credit.Key][song.ID] {
+					person.ListeningStats.Add(song.ListeningStats)
 				}
 				songIDs[credit.Key][song.ID] = true
 				release := credits[credit.Key]

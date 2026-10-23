@@ -83,6 +83,12 @@ func (s *SQLite) SyncPlayback(ctx context.Context, userID, mediaID int64, incomi
 		return nil, err
 	}
 	result := &model.PlaybackSync{}
+	for _, play := range incoming.MusicPlays {
+		if err := mergeMusicPlay(ctx, tx, userID, mediaID, play); err != nil {
+			return nil, err
+		}
+		result.AcceptedMusicPlays = append(result.AcceptedMusicPlays, play.ID)
+	}
 	if linked {
 		result.Progress, err = linkedSyncResult(ctx, tx, k, mediaID)
 	} else {

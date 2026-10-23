@@ -96,6 +96,17 @@ CREATE TABLE IF NOT EXISTS media_tags (
     PRIMARY KEY (media_id, tag_id)
 );
 
+CREATE TABLE IF NOT EXISTS music_listening_sessions (
+ user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ session_id TEXT NOT NULL,
+ media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+ last_position REAL NOT NULL,
+ accumulated_seconds REAL NOT NULL,
+ observed_ms INTEGER NOT NULL,
+ qualified_ms INTEGER,
+ PRIMARY KEY(user_id,session_id,media_id)
+);
+
 CREATE TABLE IF NOT EXISTS music_ratings (
  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  kind TEXT NOT NULL CHECK(kind IN ('song','album','artist')),

@@ -1,3 +1,4 @@
+import '../widgets/music_listening_details.dart';
 import '../widgets/music_rating_button.dart';
 import '../widgets/music_rating_filter.dart';
 import '../widgets/music_layout_panel.dart';
@@ -259,9 +260,10 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
         children.add(ListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(song.displayTitle),
-          subtitle: layout.columns.isEmpty
-              ? null
-              : Text(layout.subtitle(song.toJson())),
+          subtitle: Text([
+            if (layout.columns.isNotEmpty) layout.subtitle(song.toJson()),
+            musicListeningText(song.toJson())
+          ].join('\n')),
           onTap: () => _play(songs, i),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             _rating('song', songMaps[i]),
@@ -286,7 +288,7 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.album_outlined),
           title: Text(album['title'] as String),
-          subtitle: Text(album['artist'] as String),
+          subtitle: Text('${album['artist']}\n${musicListeningText(album)}'),
           trailing: _rating('album', album),
           onTap: () {
             FocusScope.of(context).unfocus();
@@ -304,7 +306,7 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
           leading: const Icon(Icons.person_outline),
           title: Text(artist['name'] as String),
           subtitle: Text(
-              '${artist['album_count']} albums · ${artist['song_count']} songs'),
+              '${artist['album_count']} albums · ${artist['song_count']} songs\n${musicListeningText(artist)}'),
           trailing: _rating('artist', artist),
           onTap: () {
             FocusScope.of(context).unfocus();

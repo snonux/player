@@ -20,6 +20,7 @@ type ownedRows struct {
 // connection did (see connection.go). DeleteUser removes them explicitly and
 // removeOrphanRows cleans up what earlier deletes left behind.
 var userOwned = []ownedRows{
+	{"music_listening_sessions", "user_id"},
 	{"music_ratings", "user_id"},
 	{"music_entity_favorites", "user_id"},
 	{"saved_queues", "user_id"},
@@ -41,6 +42,7 @@ var userOwned = []ownedRows{
 
 // mediaOwned are the rows that belong to a media item.
 var mediaOwned = []ownedRows{
+	{"music_listening_sessions", "media_id"},
 	{"music_ratings", "media_id"},
 	{"playlist_entries", "media_id"},
 	{"favorites", "media_id"},

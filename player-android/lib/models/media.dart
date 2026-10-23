@@ -3,6 +3,8 @@ import 'music_metadata.dart';
 
 class Media {
   final int rating;
+  final int personalPlayCount;
+  final DateTime? lastPlayedAt;
   final int id, setId, bitrate, fileSizeBytes, width, height, playCount;
   final String relPath,
       fileName,
@@ -57,6 +59,8 @@ class Media {
       required this.playCount,
       this.music,
       this.rating = 0,
+      this.personalPlayCount = 0,
+      this.lastPlayedAt,
       this.favorite = false,
       this.transcoded = false,
       this.tags = const [],
@@ -84,6 +88,8 @@ class Media {
       thumbnailPath: json['thumbnail_path'] as String? ?? '',
       playCount: json['play_count'] as int? ?? 0,
       rating: json['rating'] as int? ?? 0,
+      personalPlayCount: json['personal_play_count'] as int? ?? 0,
+      lastPlayedAt: dateTimeFromJson(json['last_played_at']),
       favorite: json['favorite'] as bool? ?? false,
       transcoded: json['transcoded'] as bool? ??
           false, // Safe tag deserialization: keep only elements that are already Strings,
@@ -112,6 +118,9 @@ class Media {
         'thumbnail_path': thumbnailPath,
         'play_count': playCount,
         'rating': rating,
+        'personal_play_count': personalPlayCount,
+        if (lastPlayedAt != null)
+          'last_played_at': dateTimeToJson(lastPlayedAt),
         'favorite': favorite,
         'transcoded': transcoded,
         'tags': tags,

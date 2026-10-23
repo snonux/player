@@ -2740,3 +2740,26 @@ Music album/artist/search lists accept `rated=true` and `sort=rating` (highest
 first). Search applies the filter and order independently to songs/albums/artists;
 ratings never change album track/disc playback order. Stars persist across restarts,
 are account scoped and follow current permissions, with song/user deletion cleanup.
+
+### Personal music listening (M36)
+
+Music songs, albums and artists add `personal_play_count` and optional
+`last_played_at` (UTC RFC3339). Counts belong to the authenticated account;
+`play_count` remains the existing global file counter. Albums sum visible songs;
+artists sum unique visible credited songs across roles. Music filters recompute
+collection totals. Existing global history is not attributed/backfilled.
+
+Existing progress and batch-progress saves qualify once per account/session/song
+at 60 accumulated seconds, capped at 12 positive position seconds per save.
+`last_played_at` is the qualification time, not the latest resume/status edit.
+Resume reset, bookmarks and manual completion do not fabricate a play.
+
+`POST /api/v1/media/{id}/playback-sync` additionally accepts `music_plays`, up
+to 100 `{id,observed_ms,accumulated_seconds}` events. `id` is a random 32-character
+lowercase hex ID retained by the client across retries; `observed_ms` is the
+original qualification time and accumulated seconds must be 60..72. Clients
+create events only after the same capped listening threshold, never from a
+saved final position. Response `accepted_music_plays` lists acknowledged IDs.
+Events are idempotent per account/media/ID and merge in the resume/bookmark
+transaction; stale resume clocks do not discard genuine listening events.
+Podcast and M4B events are acknowledged without adding music statistics.

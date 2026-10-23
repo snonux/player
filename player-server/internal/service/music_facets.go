@@ -91,8 +91,10 @@ func FilterMusic(albums []Album, filter MusicFilter) []Album {
 			continue
 		}
 		album.Songs, album.SongCount, album.Duration = songs, len(songs), 0
+		album.ListeningStats = model.ListeningStats{}
 		for _, song := range songs {
 			album.Duration += song.Duration
+			album.ListeningStats.Add(song.ListeningStats)
 		}
 		album.Discs, album.SongCredits, album.Credits = nil, nil, nil
 		album.CoverMediaID = 0

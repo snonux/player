@@ -1,3 +1,4 @@
+import '../widgets/music_listening_details.dart';
 import '../widgets/music_rating_button.dart';
 import '../widgets/music_rating_filter.dart';
 import '../widgets/music_favorite_button.dart';
@@ -245,7 +246,7 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
           leading: checkbox,
           title: Text(person['name'] as String),
           subtitle: Text(
-              '${creditRoleLabels(person['roles'])}\n${person['album_count']} albums · ${person['song_count']} ${_facets.isEmpty ? 'songs' : 'matching songs'}'),
+              '${creditRoleLabels(person['roles'])}\n${person['album_count']} albums · ${person['song_count']} ${_facets.isEmpty ? 'songs' : 'matching songs'}\n${musicListeningText(person)}'),
           isThreeLine: true,
           trailing: _personal('artist', person),
           onTap: toggle ?? () => _openArtist(person['artist_key'] as String)));
@@ -270,6 +271,7 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
               Text(creditRoleLabels(artist['roles'])),
               Text(
                   '${artist['album_count']} albums · ${artist['song_count']} songs'),
+              MusicListeningDetails(artist),
               MusicCollectionActions(
                   collections: [MusicCollection('artist', widget.artistKey!)],
                   playLabel: 'Play artist',

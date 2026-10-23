@@ -124,6 +124,8 @@ class OfflinePlaybackSync {
       try {
         final key = item['key'] as String;
         Set<String> identities(Map<String, dynamic> payload) => {
+              for (final play in payload['music_plays'] as List? ?? const [])
+                'm:${play['id']}',
               if (payload['progress'] != null)
                 'p:${payload['progress']['observed_ms']}',
               for (final b in payload['bookmarks'] as List)

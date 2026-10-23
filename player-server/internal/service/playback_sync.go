@@ -23,6 +23,19 @@ func SyncPlayback(ctx context.Context, store PlaybackSyncStore, userID, mediaID 
 	valid := func(position float64, ms int64) bool {
 		return !math.IsNaN(position) && !math.IsInf(position, 0) && position >= 0 && position <= 9000000000000 && ms > 0 && ms <= 253402300799999
 	}
+	if len(incoming.MusicPlays) > 100 {
+		return nil, ErrInvalidBookmark
+	}
+	for _, play := range incoming.MusicPlays {
+		if m.Type != model.MediaTypeAudio || len(play.ID) != 32 || !valid(play.AccumulatedSeconds, play.ObservedMS) || play.AccumulatedSeconds < 60 || play.AccumulatedSeconds > 72 {
+			return nil, ErrInvalidBookmark
+		}
+		for _, c := range play.ID {
+			if !strings.ContainsRune("0123456789abcdef", c) {
+				return nil, ErrInvalidBookmark
+			}
+		}
+	}
 	if len(incoming.Bookmarks) > 1000 {
 		return nil, ErrInvalidBookmark
 	}

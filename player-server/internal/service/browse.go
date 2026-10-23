@@ -166,6 +166,13 @@ func (s *browseService) GetMediaDetail(ctx context.Context, mediaID, userID int6
 		return nil, err
 	}
 
+	if personal, ok := s.store.(repository.MusicListeningRepo); ok {
+		stats, err := personal.ListMusicListening(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		media.ListeningStats = stats[mediaID]
+	}
 	tags, err := s.store.ListTagsByMedia(ctx, mediaID)
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
@@ -222,13 +229,13 @@ func (s *browseService) ListMedia(ctx context.Context, userID int64, filter Medi
 		return nil, err
 	}
 	if isAdmin {
-		return s.store.ListMedia(ctx, repoFilter)
+		return s.listMediaWithListening(ctx, userID, repoFilter)
 	}
 	if len(allowed) == 0 {
 		return []model.Media{}, nil
 	}
 	repoFilter.AllowedSetIDs = allowed
-	return s.store.ListMedia(ctx, repoFilter)
+	return s.listMediaWithListening(ctx, userID, repoFilter)
 }
 
 func (s *browseService) StreamMedia(ctx context.Context, mediaID, userID int64) (*FileResult, error) {
@@ -617,4 +624,21 @@ func preferredFolderArtwork(media []model.Media) []model.Media {
 func preferredArtworkName(candidate, previous string) bool {
 	a, b := mediatype.CoverImageRank(candidate), mediatype.CoverImageRank(previous)
 	return a < b || (a == b && filepath.Base(candidate) < filepath.Base(previous))
+}
+
+func (s *browseService) listMediaWithListening(ctx context.Context, user int64, filter repository.MediaFilter) ([]model.Media, error) {
+	media, err := s.store.ListMedia(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	if personal, ok := s.store.(repository.MusicListeningRepo); ok {
+		stats, err := personal.ListMusicListening(ctx, user)
+		if err != nil {
+			return nil, err
+		}
+		for i := range media {
+			media[i].ListeningStats = stats[media[i].ID]
+		}
+	}
+	return media, nil
 }

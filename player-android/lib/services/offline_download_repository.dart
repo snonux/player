@@ -34,9 +34,10 @@ class OfflineDownloadRepository {
     _directory ??= Directory('${await getDatabasesPath()}/offline-downloads');
     await directory.create(recursive: true);
     final db = await openDatabase('${directory.path}/index.db',
-        version: 5,
+        version: 6,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
         onUpgrade: (db, oldVersion, _) async {
+          if (oldVersion < 6) await _createMusicListeningSchema(db);
           if (oldVersion >= 3 && oldVersion < 5) {
             await db
                 .execute('ALTER TABLE sync_items ADD COLUMN gone_ms INTEGER');
@@ -68,6 +69,7 @@ class OfflineDownloadRepository {
       )''');
           await _createPersonalSchema(db);
           await _createSyncSchema(db);
+          await _createMusicListeningSchema(db);
         });
     try {
       // A killed process may leave a partial download or a completed file whose
@@ -211,12 +213,13 @@ class OfflineDownloadRepository {
   static Future<void> _pruneSynced(DatabaseExecutor db, String key) async {
     await db.rawDelete('''DELETE FROM sync_items WHERE key=? AND pending=0
       AND NOT EXISTS(SELECT 1 FROM downloads WHERE downloads.key=sync_items.key)
-      AND NOT EXISTS(SELECT 1 FROM sync_bookmarks WHERE owner_id=sync_items.key AND pending=1)''',
+      AND NOT EXISTS(SELECT 1 FROM sync_bookmarks WHERE owner_id=sync_items.key AND pending=1)
+      AND NOT EXISTS(SELECT 1 FROM sync_music_plays WHERE owner_id=sync_items.key AND accumulated_seconds>=60)''',
         [key]);
   }
 
   Future<void> saveProgress(String key, double seconds,
-      {bool finished = false}) {
+      {bool finished = false, String? listeningSession}) {
     if (!validBookmarkPosition(seconds)) {
       return Future.error(ArgumentError('Invalid position'));
     }
@@ -226,6 +229,13 @@ class OfflineDownloadRepository {
               {'position_seconds': seconds, 'finished': finished ? 1 : 0},
               where: 'key=?', whereArgs: [key]);
           if (changed == 0) return;
+          if (listeningSession != null && !finished) {
+            await tx.rawUpdate('''UPDATE sync_music_plays SET
+              accumulated_seconds=accumulated_seconds+MIN(MAX(?-last_position,0),12),
+              last_position=?,observed_ms=CASE WHEN accumulated_seconds<60 THEN ? ELSE observed_ms END
+              WHERE id=? AND owner_id=? AND accumulated_seconds<60''',
+                [seconds, seconds, observed, listeningSession, key]);
+          }
           await tx.rawUpdate(
               'UPDATE sync_items SET position_seconds=?,finished=?,observed_ms=MAX(observed_ms+1,?),pending=1 WHERE key=?',
               [seconds, finished ? 1 : 0, observed, key]);
@@ -242,6 +252,21 @@ class OfflineDownloadRepository {
       throw StateError(
           'Offline copy is missing or incomplete. Delete it and download again.');
     }
+    final db = await database;
+    final session =
+        (await db.rawQuery('SELECT lower(hex(randomblob(16))) AS id'))
+            .single['id'] as String;
+    await _write((db) => db.transaction((tx) async {
+          await tx.delete('sync_music_plays',
+              where: 'owner_id=? AND accumulated_seconds<60', whereArgs: [key]);
+          await tx.insert('sync_music_plays', {
+            'id': session,
+            'owner_id': key,
+            'last_position': item.finished ? 0 : item.positionSeconds,
+            'accumulated_seconds': 0,
+            'observed_ms': 0
+          });
+        }));
     return OfflinePlaybackRequest(
       downloadKey: key,
       title: item.title,
@@ -254,7 +279,8 @@ class OfflineDownloadRepository {
         final saved = await get(key);
         return saved?.finished == true ? 0 : saved?.positionSeconds;
       },
-      savePosition: (seconds) => saveProgress(key, seconds),
+      savePosition: (seconds) => saveProgress(key, seconds,
+          listeningSession: item.type == 'audio' ? session : null),
       markFinished: () async {
         final saved = await get(key);
         if (saved != null) {
@@ -266,6 +292,12 @@ class OfflineDownloadRepository {
 
   void Function()? onSyncNeeded;
   Future<void> Function(String key)? beforePlayback;
+
+  static Future<void> _createMusicListeningSchema(DatabaseExecutor db) async {
+    await db.execute('''CREATE TABLE IF NOT EXISTS sync_music_plays (
+      id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES sync_items(key) ON DELETE CASCADE,
+      last_position REAL NOT NULL,accumulated_seconds REAL NOT NULL,observed_ms INTEGER NOT NULL)''');
+  }
 
   static Future<void> _createSyncSchema(DatabaseExecutor db) async {
     // Sync state deliberately outlives removal of downloaded bytes. Removing a
@@ -323,7 +355,19 @@ class OfflineDownloadRepository {
       return {'bookmarks': <Object>[]};
     }
     final item = rows.single;
+    final musicPlays = await db.query('sync_music_plays',
+        where: 'owner_id=? AND accumulated_seconds>=60',
+        whereArgs: [key],
+        limit: 100);
     return {
+      if (musicPlays.isNotEmpty)
+        'music_plays': musicPlays
+            .map((play) => {
+                  'id': play['id'],
+                  'observed_ms': play['observed_ms'],
+                  'accumulated_seconds': 60
+                })
+            .toList(),
       if (item['pending'] == 1)
         'progress': {
           'position_seconds': item['position_seconds'],
@@ -350,6 +394,14 @@ class OfflineDownloadRepository {
             final rows =
                 await tx.query('sync_items', where: 'key=?', whereArgs: [key]);
             if (rows.isEmpty) return;
+            for (final id
+                in (result['accepted_music_plays'] as List? ?? const [])) {
+              if (id is String) {
+                await tx.delete('sync_music_plays',
+                    where: 'owner_id=? AND id=? AND accumulated_seconds>=60',
+                    whereArgs: [key, id]);
+              }
+            }
             final p = result['progress'];
             if (p is Map &&
                 (p['observed_ms'] as int) >=

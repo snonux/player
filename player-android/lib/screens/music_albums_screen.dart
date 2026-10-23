@@ -1,3 +1,4 @@
+import '../widgets/music_listening_details.dart';
 import '../widgets/music_rating_button.dart';
 import '../widgets/music_rating_filter.dart';
 import '../widgets/music_favorite_button.dart';
@@ -293,9 +294,10 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 leading: checkbox,
                 title: Text(album['title'] as String,
                     maxLines: 2, overflow: TextOverflow.ellipsis),
-                subtitle: layout.columns.isEmpty
-                    ? null
-                    : Text(layout.subtitle(album)),
+                subtitle: Text([
+                  if (layout.columns.isNotEmpty) layout.subtitle(album),
+                  musicListeningText(album)
+                ].join('\n')),
                 trailing: _personal('album', album),
                 onTap: toggle ?? () => _openAlbum(album['album_key'] as String),
               )
@@ -385,7 +387,8 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
           if (album['year'] != null) Text('${album['year']}'),
           if (album['from_folder'] == true) const Text('From folder'),
           Text(
-              '${album['song_count']} songs · ${_duration((album['duration'] as num).toDouble())}')
+              '${album['song_count']} songs · ${_duration((album['duration'] as num).toDouble())}'),
+          MusicListeningDetails(album)
         ]))
       ]),
       const SizedBox(height: 16),
@@ -427,10 +430,12 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 : SizedBox(width: 42, child: Text(_number(songs[i], multi))),
             title: Text(songs[i].displayTitle,
                 maxLines: 2, overflow: TextOverflow.ellipsis),
-            subtitle: _creditLinks(
-                (album['song_credits'] as Map?)?['${songs[i].id}'],
-                'track_artist',
-                songs[i].music?.artist ?? 'Unknown artist'),
+            subtitle:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _creditLinks((album['song_credits'] as Map?)?['${songs[i].id}'],
+                  'track_artist', songs[i].music?.artist ?? 'Unknown artist'),
+              MusicListeningDetails(songs[i].toJson()),
+            ]),
             onTap: () {
               if (_selecting) {
                 setState(() {

@@ -46,6 +46,54 @@ void main() {
   });
 
   test(
+      'qualified offline plays survive retries, removal and account boundaries',
+      () async {
+    final media = item();
+    await repo.add(media);
+    await repo.file(media.key).writeAsBytes([1, 2, 3]);
+    final request = await repo.playbackRequest(media.key);
+    for (final seconds in [0, 10, 20, 30, 40, 50]) {
+      now = now.add(const Duration(seconds: 1));
+      await request.savePosition!(seconds.toDouble());
+    }
+    expect((await repo.syncPayload(media.key))['music_plays'], isNull);
+    now = now.add(const Duration(seconds: 1));
+    await request.savePosition!(60);
+    final payload = await repo.syncPayload(media.key);
+    final plays = payload['music_plays'] as List;
+    expect(plays.single['accumulated_seconds'], 60);
+    await request.savePosition!(70);
+    expect((await repo.syncPayload(media.key))['music_plays'], plays);
+    await repo.remove(media.key);
+    await repo.close();
+    repo = OfflineDownloadRepository(directory: dir, now: () => now);
+    expect((await repo.syncPayload(media.key))['music_plays'], plays);
+    final other = item(user: 2);
+    await repo.add(other);
+    await repo.mergeSync(
+        other.key,
+        {
+          'accepted_music_plays': [plays.single['id']]
+        },
+        () => true);
+    expect((await repo.syncPayload(media.key))['music_plays'], plays);
+    await repo.mergeSync(
+        media.key,
+        {
+          'accepted_music_plays': [plays.single['id']]
+        },
+        () => false);
+    expect((await repo.syncPayload(media.key))['music_plays'], plays);
+    await repo.mergeSync(
+        media.key,
+        {
+          'accepted_music_plays': [plays.single['id']]
+        },
+        () => true);
+    expect((await repo.syncPayload(media.key))['music_plays'], isNull);
+  });
+
+  test(
       'offline edits and tombstones survive reopen and copy removal, and keep edit timestamps',
       () async {
     final media = item();

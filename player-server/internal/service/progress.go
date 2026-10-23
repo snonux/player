@@ -144,6 +144,15 @@ func (s *progressService) applyProgress(
 	}); err != nil {
 		return fmt.Errorf("upsert progress: %w", err)
 	}
+	if personal, ok := store.(repository.MusicProgressStore); ok {
+		initial := float64(0)
+		if existing != nil && !existing.Finished {
+			initial = existing.PositionSeconds
+		}
+		if err := personal.ApplyMusicProgress(ctx, userID, sessionID, mediaID, position, initial, observedAt); err != nil {
+			return fmt.Errorf("personal music progress: %w", err)
+		}
+	}
 	return countPlay(ctx, store, acc)
 }
 

@@ -73,6 +73,10 @@ class _MusicInfoDialogState extends State<MusicInfoDialog> {
                             fileDetails: {
                                 if (media.codec.isNotEmpty)
                                   'Codec': media.codec,
+                                'Your plays': '${media.personalPlayCount}',
+                                'Your last played':
+                                    media.lastPlayedAt?.toLocal().toString() ??
+                                        'Not played yet',
                                 if (media.bitrate > 0)
                                   'Bitrate':
                                       '${(media.bitrate / 1000).round()} kbps (${media.bitrate} bps)',

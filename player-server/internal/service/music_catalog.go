@@ -14,6 +14,7 @@ import (
 
 // Album is a caller-visible aggregate over existing media identities.
 type Album struct {
+	model.ListeningStats
 	Rating       int                      `json:"rating"`
 	IsFavorite   bool                     `json:"is_favorite"`
 	Discs        []AlbumDisc              `json:"discs,omitempty"`
@@ -88,6 +89,7 @@ func MusicAlbums(ctx context.Context, source CatalogSource, userID int64) ([]Alb
 		people := map[string]*ArtistCredit{}
 		for _, song := range album.Songs {
 			album.Duration += song.Duration
+			album.ListeningStats.Add(song.ListeningStats)
 			credits := MusicCredits(song)
 			album.SongCredits[song.ID] = credits
 			for _, credit := range credits {
