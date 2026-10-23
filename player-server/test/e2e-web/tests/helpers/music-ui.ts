@@ -108,7 +108,9 @@ export function mainSegment(analysis: Analysis) {
 /** Open a folder of a set directly by URL (harness navigation, not a journey). */
 export async function openFolder(page: Page, setId: number, folder: string): Promise<void> {
   await page.goto(`/?set=${setId}&folder=${encodeURIComponent(folder)}`);
-  await expect(page.locator('#media-grid [role="button"]').first()).toBeVisible();
+  // Media cards are role=group with a sibling open button (yn3); folders may
+  // still be role=button. Either proves the folder listing loaded.
+  await expect(page.locator('#media-grid .media-card, #media-grid .folder-card, #media-grid .media-row').first()).toBeVisible();
 }
 
 /**
