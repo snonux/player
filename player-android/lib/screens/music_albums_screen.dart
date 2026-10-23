@@ -80,6 +80,8 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
 
   List<Map<String, dynamic>>? _albums;
   Map<String, dynamic>? _album;
+  List<Map<String, dynamic>> _libraries = [];
+  final Set<int> _libraryIds = {};
   String? _error;
   bool _loading = true, _selecting = false;
   final _selected = <int>{};
@@ -133,10 +135,15 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
           _loading = false;
         });
       } else {
+        final libraries = await client.musicLibraries();
         final albums = _facets.isEmpty
-            ? await client.musicAlbums(artist: widget.artistKey)
+            ? await client.musicAlbums(
+                artist: widget.artistKey,
+                libraryIds: _libraryIds.isEmpty ? null : _libraryIds.toList())
             : ((await client.filteredMusic('albums', _facets, query: {
-                if (widget.artistKey != null) 'artist': widget.artistKey!
+                if (widget.artistKey != null) 'artist': widget.artistKey!,
+                if (_libraryIds.isNotEmpty)
+                  'library_ids': _libraryIds.join(','),
               })) as List)
                 .cast<Map<String, dynamic>>();
         if (!mounted ||
@@ -145,6 +152,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
           return;
         }
         setState(() {
+          _libraries = libraries;
           _albums = albums;
           _loading = false;
         });
@@ -265,14 +273,54 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                           ])))
                   : widget.albumKey != null
                       ? _detail()
-                      : _discover
-                          ? _catalog(MusicLayout('albums'))
-                          : MusicLayoutPanel(
-                              kind: 'albums',
-                              fixedOrder: _collection != null,
-                              builder: _catalog),
+                      : Column(
+                          children: [
+                            if (_libraries.length > 1) _libraryChips(),
+                            Expanded(
+                              child: _discover
+                                  ? _catalog(MusicLayout('albums'))
+                                  : MusicLayoutPanel(
+                                      kind: 'albums',
+                                      fixedOrder: _collection != null,
+                                      builder: _catalog),
+                            ),
+                          ],
+                        ),
         ));
   }
+
+  Widget _libraryChips() => SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Row(children: [
+        FilterChip(
+          label: Text(context.tr('All libraries')),
+          selected: _libraryIds.isEmpty,
+          onSelected: (_) {
+            setState(() => _libraryIds.clear());
+            _load();
+          },
+        ),
+        for (final lib in _libraries) ...[
+          const SizedBox(width: 8),
+          FilterChip(
+            label: Text('${lib['name'] ?? 'Library'}'),
+            selected: _libraryIds.contains(lib['id'] as int?),
+            onSelected: (on) {
+              final id = lib['id'] as int?;
+              if (id == null) return;
+              setState(() {
+                if (on) {
+                  _libraryIds.add(id);
+                } else {
+                  _libraryIds.remove(id);
+                }
+              });
+              _load();
+            },
+          ),
+        ],
+      ]));
 
   Widget _cover(Map<String, dynamic> album, {double? size}) {
     final id = album['cover_media_id'] as int?;

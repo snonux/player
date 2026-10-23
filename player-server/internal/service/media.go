@@ -55,6 +55,14 @@ func (s *mediaService) WithThumbnailLayout(layout thumb.Layout) *mediaService {
 	return s
 }
 
+// WithPathRoots allows writes under every registered music library root.
+func (s *mediaService) WithPathRoots(roots *PathRoots) *mediaService {
+	if ws, ok := s.MediaWriteService.(*writeService); ok {
+		ws.WithPathRoots(roots)
+	}
+	return s
+}
+
 // NewMediaService creates a concrete MediaService by wiring role-focused sub-services.
 func NewMediaService(store repository.MediaServiceStore, clk clock.Clock, mediaRoot string, thumbGen thumb.Generator, prober probe.Prober) *mediaService {
 	return NewMediaServiceWithPodcastBrowser(store, clk, mediaRoot, thumbGen, prober, nil)

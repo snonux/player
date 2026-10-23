@@ -135,11 +135,8 @@ func (s *FSScanner) log() *slog.Logger {
 	return slog.Default()
 }
 
-// Scan walks immediate subdirectories of root, treating each as a set.
-// It orchestrates the fileDiscoverer, probeWorker, scanWriter and
-// thumbSwitcher collaborators: new files are indexed, rows whose file is
-// gone are soft-deleted, and thumbnails stored under an older naming scheme
-// are migrated (see thumb_migrate.go).
+// Scan walks every registered music library root (or the given root when no
+// libraries exist yet), treating each immediate subdirectory as a set.
 //
 // Scans on one FSScanner run one at a time. A rescan triggered while another
 // is running cancels that one but does not wait for it, so without the lock
@@ -151,44 +148,88 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
 	if err := ctx.Err(); err != nil {
-		// Superseded or shut down while waiting for the previous scan.
 		return err
 	}
 
-	entries, err := s.fs.ReadDir(root)
+	roots, err := s.scanRoots(ctx, root)
 	if err != nil {
-		return fmt.Errorf("read media root %q: %w", root, err)
+		return err
 	}
 
-	// Count total sets for progress reporting.
 	var setCount int
-	for _, entry := range entries {
-		if isSetDir(entry) {
-			setCount++
+	for _, r := range roots {
+		entries, err := s.fs.ReadDir(r.path)
+		if err != nil {
+			return fmt.Errorf("read media root %q: %w", r.path, err)
+		}
+		for _, entry := range entries {
+			if isSetDir(entry) {
+				setCount++
+			}
 		}
 	}
 	if progress != nil {
 		progress.Start(setCount)
 	}
-	s.log().Info("scanner scan started", "root", root, "sets", setCount)
+	s.log().Info("scanner scan started", "roots", len(roots), "sets", setCount)
 
-	for _, entry := range entries {
-		if !isSetDir(entry) {
-			continue
+	for _, r := range roots {
+		entries, err := s.fs.ReadDir(r.path)
+		if err != nil {
+			return fmt.Errorf("read media root %q: %w", r.path, err)
 		}
-		setPath := filepath.Join(root, entry.Name())
-		if err := s.scanSet(ctx, root, setPath, progress); err != nil {
-			return err
+		for _, entry := range entries {
+			if !isSetDir(entry) {
+				continue
+			}
+			setPath := filepath.Join(r.path, entry.Name())
+			if err := s.scanSet(ctx, r.id, r.path, setPath, progress); err != nil {
+				return err
+			}
+			if progress != nil {
+				progress.IncrementSet()
+			}
 		}
-		if progress != nil {
-			progress.IncrementSet()
-		}
+		s.log().Info("scanner library finished", "library_id", r.id, "root", r.path)
 	}
-	s.log().Info("scanner scan finished", "root", root, "sets", setCount)
+	s.log().Info("scanner scan finished", "roots", len(roots), "sets", setCount)
 	if s.afterScan != nil {
 		return s.afterScan(ctx)
 	}
 	return nil
+}
+
+type scanRoot struct {
+	id   int64
+	path string
+}
+
+func (s *FSScanner) scanRoots(ctx context.Context, fallback string) ([]scanRoot, error) {
+	if lister, ok := s.store.(interface {
+		ListMusicLibraries(context.Context) ([]model.MusicLibrary, error)
+	}); ok {
+		libs, err := lister.ListMusicLibraries(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list music libraries: %w", err)
+		}
+		if len(libs) > 0 {
+			out := make([]scanRoot, 0, len(libs))
+			for _, lib := range libs {
+				path := lib.RootPath
+				if path == "" {
+					path = fallback
+				}
+				if path == "" {
+					continue
+				}
+				out = append(out, scanRoot{id: lib.ID, path: path})
+			}
+			if len(out) > 0 {
+				return out, nil
+			}
+		}
+	}
+	return []scanRoot{{id: 0, path: fallback}}, nil
 }
 
 // isSetDir reports whether a media root entry is scanned as a set: every
@@ -207,8 +248,8 @@ func (s *FSScanner) fileExists(path string) bool {
 	return err == nil
 }
 
-// ensureSet returns the set ID for the given root/relative paths, creating the set if necessary.
-func (s *FSScanner) ensureSet(ctx context.Context, root, setPath string) (int64, string, error) {
+// ensureSet returns the set ID for the given library/root/relative paths, creating the set if necessary.
+func (s *FSScanner) ensureSet(ctx context.Context, libraryID int64, root, setPath string) (int64, string, error) {
 	setName := filepath.Base(setPath)
 	relRoot, err := filepath.Rel(root, setPath)
 	if err != nil {
@@ -221,11 +262,21 @@ func (s *FSScanner) ensureSet(ctx context.Context, root, setPath string) (int64,
 	}
 
 	for i := range sets {
-		if sets[i].RootPath == relRoot {
+		samePath := sets[i].RootPath == relRoot
+		sameLibrary := libraryID == 0 || sets[i].LibraryID == 0 || sets[i].LibraryID == libraryID
+		if samePath && sameLibrary {
+			changed := false
+			if libraryID != 0 && sets[i].LibraryID != libraryID {
+				sets[i].LibraryID = libraryID
+				changed = true
+			}
 			if isPodcastRoot(relRoot) && !sets[i].IsPodcast {
 				sets[i].IsPodcast = true
+				changed = true
+			}
+			if changed {
 				if err := s.store.UpdateSet(ctx, &sets[i]); err != nil {
-					return 0, "", fmt.Errorf("update podcast set %q: %w", setName, err)
+					return 0, "", fmt.Errorf("update set %q: %w", setName, err)
 				}
 			}
 			return sets[i].ID, setName, nil
@@ -233,6 +284,7 @@ func (s *FSScanner) ensureSet(ctx context.Context, root, setPath string) (int64,
 	}
 
 	newSet := &model.Set{
+		LibraryID: libraryID,
 		Name:      setName,
 		RootPath:  relRoot,
 		IsPodcast: isPodcastRoot(relRoot),
@@ -387,8 +439,8 @@ type setScan struct {
 // and brings the already indexed rows up to date, probeAndStore probes and
 // persists the new files, and finally audio tracks pick up cover images
 // that appeared since they were indexed.
-func (s *FSScanner) scanSet(ctx context.Context, root, setPath string, progress *model.ScanProgress) error {
-	setID, setName, err := s.ensureSet(ctx, root, setPath)
+func (s *FSScanner) scanSet(ctx context.Context, libraryID int64, root, setPath string, progress *model.ScanProgress) error {
+	setID, setName, err := s.ensureSet(ctx, libraryID, root, setPath)
 	if err != nil {
 		return err
 	}

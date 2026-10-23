@@ -12,7 +12,12 @@ func (s *Server) handleMusicAlbums(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.media.Browse) {
 		return
 	}
-	albums, err := service.MusicAlbums(r.Context(), s.media.Browse, userIDFromContext(r))
+	libraryIDs, libErr := service.ParseLibraryIDs(r.URL.Query().Get("library_ids"))
+	if libErr != nil {
+		writeError(w, http.StatusBadRequest, libErr.Error())
+		return
+	}
+	albums, err := service.MusicAlbumsInLibraries(r.Context(), s.media.Browse, userIDFromContext(r), libraryIDs)
 	if err != nil {
 		handleError(w, err)
 		return

@@ -47,6 +47,8 @@ type Deps struct {
 	PluginSvc       service.PluginService
 	PluginMgr       *plugin.Manager
 	JukeboxSvc      service.JukeboxService
+	MusicLibs       *service.MusicLibraryService
+	PathRoots       *service.PathRoots
 	ProgressSvc     service.ProgressService
 	AuthSvc         service.AuthService
 	PodcastSvc      service.PodcastEpisodeService
@@ -122,9 +124,14 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 
 	trashLock := new(sync.Mutex)
 	helper := service.NewAccessHelper(store)
+	pathRoots := service.NewPathRoots(cfg.MediaRoot)
 	browser := service.NewPodcastBrowseService(store, cfg.MediaRoot)
 	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, browser, thumbResolver).
-		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock)
+		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock).WithPathRoots(pathRoots)
+	musicLibs := service.NewMusicLibraryService(store, clk, pathRoots, mediaSvc)
+	if _, err := musicLibs.EnsureDefault(appCtx, cfg.MediaRoot); err != nil {
+		logger.Warn("music library default setup", "err", err)
+	}
 
 	playlists := service.NewPlaylistService(store, mediaSvc).WithImportRoot(cfg.MediaRoot)
 	fsScanner := scanner.NewFSScannerWithMaker(store, prober, thumbMaker, clk, cfg.MediaRoot, logger).
@@ -165,6 +172,8 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		PluginMgr:       pluginMgr,
 		PluginSvc:       service.NewPluginService(pluginMgr),
 		JukeboxSvc:      jukeboxSvc,
+		MusicLibs:       musicLibs,
+		PathRoots:       pathRoots,
 		ProgressSvc:     service.NewProgressService(store, clk),
 		AuthSvc:         service.NewAuthService(store, clk, hasher, sm, tm),
 		PodcastSvc:      podcastSvc,
@@ -212,7 +221,11 @@ func wireTranscoding(deps *Deps, runner transcode.Runner) {
 	// SharedMediaAccess interface; it is stateless, so it behaves exactly
 	// like the one inside MediaSvc.
 	shares := service.NewShareService(deps.Store, deps.Clk, helper)
-	deps.CompatSvc = service.NewCompatStreamService(helper, shares, deps.Transcodes, cfg.MediaRoot)
+	compat := service.NewCompatStreamService(helper, shares, deps.Transcodes, cfg.MediaRoot)
+	if deps.PathRoots != nil {
+		compat = compat.WithPathRoots(deps.PathRoots)
+	}
+	deps.CompatSvc = compat
 
 	// The GC tick also bounds the transcode cache and drops renditions of
 	// hard-deleted media.
@@ -373,7 +386,9 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 	if deps.Playlists == nil {
 		deps.Playlists = service.NewPlaylistService(deps.Store, deps.MediaSvc).WithImportRoot(cfg.MediaRoot)
 	}
-	streamer := service.NewMediaStreamer(probe.NewFFRemuxer(), cfg.MediaRoot).WithThumbnailCache(deps.Thumbnails.CacheDir())
+	streamer := service.NewMediaStreamer(probe.NewFFRemuxer(), cfg.MediaRoot).
+		WithThumbnailCache(deps.Thumbnails.CacheDir()).
+		WithPathRoots(deps.PathRoots)
 	return api.NewServerWithLogger(api.ServerDeps{
 		Store:          deps.Store,
 		Hasher:         deps.Hasher,
@@ -395,12 +410,14 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 				PlaybackHints: deps.PlaybackHintSvc,
 				Compat:        deps.CompatSvc,
 			},
-			Admin:       deps.AdminSvc,
-			Plugins:     deps.PluginSvc,
-			Jukebox:     deps.JukeboxSvc,
-			Auth:        deps.AuthSvc,
-			Podcast:     deps.PodcastSvc,
-			PodcastSync: deps.PodcastSyncSvc,
+			Admin:          deps.AdminSvc,
+			Plugins:        deps.PluginSvc,
+			Jukebox:        deps.JukeboxSvc,
+			Auth:           deps.AuthSvc,
+			Podcast:        deps.PodcastSvc,
+			PodcastSync:    deps.PodcastSyncSvc,
+			MusicLibraries: deps.MusicLibs,
+			PathRoots:      deps.PathRoots,
 		},
 		StaticFS:      staticFS,
 		MediaStreamer: streamer,

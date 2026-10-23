@@ -1938,6 +1938,31 @@ type mockPingStore struct {
 	err   error
 }
 
+func (m *mockPingStore) CreateMusicLibrary(ctx context.Context, lib *model.MusicLibrary) (int64, error) {
+	return m.store.CreateMusicLibrary(ctx, lib)
+}
+func (m *mockPingStore) GetMusicLibrary(ctx context.Context, id int64) (*model.MusicLibrary, error) {
+	return m.store.GetMusicLibrary(ctx, id)
+}
+func (m *mockPingStore) ListMusicLibraries(ctx context.Context) ([]model.MusicLibrary, error) {
+	return m.store.ListMusicLibraries(ctx)
+}
+func (m *mockPingStore) UpdateMusicLibrary(ctx context.Context, lib *model.MusicLibrary) error {
+	return m.store.UpdateMusicLibrary(ctx, lib)
+}
+func (m *mockPingStore) DeleteMusicLibrary(ctx context.Context, id int64) error {
+	return m.store.DeleteMusicLibrary(ctx, id)
+}
+func (m *mockPingStore) MusicLibraryStats(ctx context.Context, libraryID int64, allowedSetIDs []int64) (*model.MusicLibraryStats, error) {
+	return m.store.MusicLibraryStats(ctx, libraryID, allowedSetIDs)
+}
+func (m *mockPingStore) EnsureDefaultMusicLibrary(ctx context.Context, mediaRoot string, now time.Time) (*model.MusicLibrary, error) {
+	return m.store.EnsureDefaultMusicLibrary(ctx, mediaRoot, now)
+}
+func (m *mockPingStore) ListSetIDsByLibrary(ctx context.Context, libraryID int64) ([]int64, error) {
+	return m.store.ListSetIDsByLibrary(ctx, libraryID)
+}
+
 func (m *mockPingStore) CreateBookmark(ctx context.Context, bookmark *model.Bookmark) (int64, error) {
 	return m.store.CreateBookmark(ctx, bookmark)
 }

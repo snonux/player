@@ -70,6 +70,7 @@ type compatStreamService struct {
 	shares     SharedMediaAccess
 	renditions RenditionProvider
 	mediaRoot  string // sources must stay under this directory when non-empty
+	roots      *PathRoots
 }
 
 // NewCompatStreamService creates a CompatStreamService. mediaRoot, when
@@ -77,6 +78,12 @@ type compatStreamService struct {
 // resolving symlinks) live below it.
 func NewCompatStreamService(helper *accessHelper, shares SharedMediaAccess, renditions RenditionProvider, mediaRoot string) *compatStreamService {
 	return &compatStreamService{helper: helper, shares: shares, renditions: renditions, mediaRoot: mediaRoot}
+}
+
+// WithPathRoots allows compatibility streams from any registered library root.
+func (s *compatStreamService) WithPathRoots(roots *PathRoots) *compatStreamService {
+	s.roots = roots
+	return s
 }
 
 // CompatStream verifies the user's access exactly like StreamMedia does and
@@ -126,7 +133,7 @@ func (s *compatStreamService) rendition(ctx context.Context, media *model.Media,
 	if !media.NeedsCompatStream() {
 		return nil, ErrCompatNotNeeded
 	}
-	path, err := resolveSourcePath(s.mediaRoot, media.AbsPath)
+	path, err := resolveSourcePathRoots(s.roots, s.mediaRoot, media.AbsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -189,10 +196,33 @@ func renditionKind(t model.MediaType) (transcode.Kind, error) {
 // An empty root disables the check (tests, setups without a media root).
 // Errors carry no path because they reach the client.
 func resolveSourcePath(root, path string) (string, error) {
-	if root == "" {
+	return resolveSourcePathRoots(nil, root, path)
+}
+
+func resolveSourcePathRoots(roots *PathRoots, fallbackRoot, path string) (string, error) {
+	if roots != nil {
+		realPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return "", ErrNotFound
+		}
+		for _, root := range roots.All() {
+			realRoot, err := filepath.EvalSymlinks(root)
+			if err != nil {
+				continue
+			}
+			if pathWithinRoot(realRoot, realPath) {
+				return realPath, nil
+			}
+		}
+		if len(roots.All()) == 0 {
+			return path, nil
+		}
+		return "", fmt.Errorf("%w: path escapes media root", ErrForbidden)
+	}
+	if fallbackRoot == "" {
 		return path, nil
 	}
-	realRoot, err := filepath.EvalSymlinks(root)
+	realRoot, err := filepath.EvalSymlinks(fallbackRoot)
 	if err != nil {
 		return "", ErrNotFound
 	}

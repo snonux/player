@@ -1948,6 +1948,28 @@ Revoke a user's access to a set.
 
 ---
 
+### Music libraries (A05)
+
+Independent filesystem roots for music. Extends existing set permissions:
+library access grants or revokes viewer/owner on every set in that library.
+`GET /api/admin/permissions` remains the fine-grained matrix.
+
+| Method | Path | Who |
+| --- | --- | --- |
+| `GET` | `/api/admin/libraries` · `/api/v1/admin/libraries` | Admin list + aggregate stats |
+| `POST` | `/api/admin/libraries` | Admin create `{name, root_path}` |
+| `PUT` | `/api/admin/libraries/{id}` | Admin rename `{name}` |
+| `DELETE` | `/api/admin/libraries/{id}` | Admin delete (refuses last library or libraries that still own sets) |
+| `POST` | `/api/admin/libraries/{id}/access` | Admin `{user_id, role}` on all sets in the library |
+| `DELETE` | `/api/admin/libraries/{id}/access` | Admin `{user_id}` revoke on all sets in the library |
+| `GET` | `/api/music/libraries` · `/api/v1/music/libraries` | Session: libraries the caller can see (+ ACL-filtered stats) |
+
+Music catalog endpoints accept optional `library_ids=1,2` (albums today;
+inaccessible music stays omitted). Single-library installs expose one
+library and clients hide the selector.
+
+---
+
 ### `POST /api/admin/rescan` · `POST /api/v1/admin/rescan`
 
 Trigger a library rescan. The scan runs asynchronously. Poll

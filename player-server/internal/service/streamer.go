@@ -19,6 +19,7 @@ var _ MediaStreamer = (*mediaStreamer)(nil)
 type mediaStreamer struct {
 	remuxer   probe.Remuxer
 	mediaRoot string // root directory that all streamed paths must stay under
+	roots     *PathRoots
 	// thumbCache is the one directory outside mediaRoot files are served
 	// from: the thumbnail cache (see WithThumbnailCache). Empty: none.
 	thumbCache string
@@ -30,6 +31,12 @@ type mediaStreamer struct {
 // rejected to prevent filepath-traversal via a compromised AbsPath in the DB.
 func NewMediaStreamer(remuxer probe.Remuxer, mediaRoot string) *mediaStreamer {
 	return &mediaStreamer{remuxer: remuxer, mediaRoot: mediaRoot}
+}
+
+// WithPathRoots allows streaming from any registered music library root.
+func (s *mediaStreamer) WithPathRoots(roots *PathRoots) *mediaStreamer {
+	s.roots = roots
+	return s
 }
 
 // WithThumbnailCache also allows generated thumbnails below dir, the
@@ -50,10 +57,14 @@ func (s *mediaStreamer) WithThumbnailCache(dir string) *mediaStreamer {
 	return s
 }
 
-// servable reports whether path may be opened: it lies below the media
-// root, or it is a generated thumbnail in the thumbnail cache.
+// servable reports whether path may be opened: it lies below a media
+// library root, or it is a generated thumbnail in the thumbnail cache.
 func (s *mediaStreamer) servable(path string) bool {
-	if pathWithinRoot(s.mediaRoot, path) {
+	if s.roots != nil {
+		if s.roots.ContainsLexical(path) {
+			return true
+		}
+	} else if pathWithinRoot(s.mediaRoot, path) {
 		return true
 	}
 	return s.thumbCache != "" && thumb.IsGenerated(filepath.Clean(path)) && pathWithinRoot(s.thumbCache, path)

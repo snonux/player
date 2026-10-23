@@ -22,6 +22,7 @@ import { escapeHtml as esc, fmtDur, toast } from '../utils.js';
 import { mediaTitle, artistRoles, albumDiscLayout, albumSongNumber, discTitle } from '../music.js';
 import { selectByElement, focusSelectedCard } from '../selection.js';
 import { playAlbumCollection } from './playback-nav.js';
+import { libraryQueryParams, mountMusicLibraryFilter } from '../music-libraries.js';
 
 let reload = () => {};
 let selectedAlbum = '';
@@ -107,8 +108,9 @@ export async function renderMusic(grid, isCurrent) {
   if (view.search) { await renderMusicSearch(grid,view,current,{openAlbum,openArtist,back:backMusic,reload});await mountMusicFacets(grid,view,current,reload);return; }
   if (view.playlists) { await renderPlaylists(grid,view,current,positions.get(viewKey(view)));return; }
   if (view.artists && !view.album) { await renderArtists(grid, view, current);await mountMusicFacets(grid,view,current,reload); return; }
-  let data = view.album ? await API.album(view.album) : await API.albums({...ratingParams(view),collection:personalCollections.includes(view.collection)?'':view.collection || '',favorite:view.favorites || false,...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {})});
+  let data = view.album ? await API.album(view.album) : await API.albums({...ratingParams(view),collection:personalCollections.includes(view.collection)?'':view.collection || '',favorite:view.favorites || false,...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {}),...libraryQueryParams()});
   if (!current()) return;
+  if (!view.album) await mountMusicLibraryFilter(grid, () => { if (current()) reload(); });
   if(!view.album && personalCollections.includes(view.collection)) data=discoverAlbums(data,view.collection);
   const layoutPreferences=readMusicLayout('albums');
   if(!view.album && !view.ratingSort && !view.collection) data=sortMusic(data,layoutPreferences,'albums');

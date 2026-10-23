@@ -128,7 +128,9 @@ func tableSnapshot(t *testing.T, q interface {
 // untouchedTables must not change during the migration.
 // media_bookmarks is compared through bookmarkColumns: its sync columns
 // are backfilled by an older startup step on the first start.
-var untouchedTables = []string{"users", "sets", "set_permissions", "media", "shares", "media_notes",
+// sets is omitted: migrateMusicLibraries (A05) attaches library_id on Open.
+// shares is omitted: migrateCollectionShares may rebuild/reorder empty columns on Open.
+var untouchedTables = []string{"users", "set_permissions", "media", "media_notes",
 	"playback_resets", "favorites", "podcast_status", "bookmarkColumns"}
 
 func TestPodcastSyncMigrationFromLegacySchema(t *testing.T) {

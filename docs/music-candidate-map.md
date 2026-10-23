@@ -154,7 +154,7 @@ infrastructure does not invent its own screens.
 | A03c `dm3` | Offline lyrics | A offline player shows lyrics | A airplane mode shows cached lyrics; web unchanged. |
 | A04a `gl3` | Acoustic similarity index | none (server analysis); admin scan status line | deterministic analysis fixture produces expected neighbours. |
 | A04b `em3` | Acoustic mixes and sonic paths | *Start mix* menu option *Sounds like* (M42 menu) | mix from C, F and A uses the index; index missing → option hidden. |
-| A05 `sk3` | Independent library roots and access | admin panel *Libraries* | ACL on roots respected in Music lens for nj3-user. |
+| A05 `sk3` | Independent library roots and access | admin panel *Libraries*; Music selector when >1 library | ACL on roots via set permissions; hide inaccessible music; see `docs/music-a05-implementation.md`. |
 | A06a `tk3` | Identity across moves/retags | none; keys stable (§10.1) | move/retag fixture keeps favorites, playlists, queue entries. |
 | A06b `yl3` | Custom tag mapping | admin panel | mapped tag appears as facet (M08). |
 | A06c `hl3` | Missing-record retention/repair | admin panel *Missing files* | missing file shown greyed in playlists with reason. |

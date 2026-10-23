@@ -35,13 +35,22 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS sets (
+CREATE TABLE IF NOT EXISTS music_libraries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     root_path TEXT UNIQUE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    library_id INTEGER REFERENCES music_libraries(id),
+    name TEXT NOT NULL,
+    root_path TEXT NOT NULL,
     cover_thumbnail_path TEXT,
     is_podcast INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(library_id, root_path)
 );
 
 CREATE TABLE IF NOT EXISTS set_permissions (
@@ -342,6 +351,9 @@ func initializeSchema(db *sql.DB) error {
 	}
 	if err := migratePodcastCatalogCreations(db); err != nil {
 		return fmt.Errorf("migrate podcast catalog quota: %w", err)
+	}
+	if err := migrateMusicLibraries(db); err != nil {
+		return fmt.Errorf("migrate music libraries: %w", err)
 	}
 	// Needs the final podcast tables and the episode state index.
 	if err := repairPodcastIdentities(db); err != nil {

@@ -37,6 +37,7 @@ type writeService struct {
 	store     repository.WriteServiceStore
 	clock     clock.Clock
 	mediaRoot string
+	roots     *PathRoots
 	// thumbGen renders covers into a temporary file before atomic replacement.
 	thumbGen    thumb.Generator
 	thumbLayout thumb.Layout
@@ -77,6 +78,40 @@ func (s *writeService) WithThumbnailLayout(layout thumb.Layout) *writeService {
 	return s
 }
 
+// WithPathRoots allows writes under any registered music library root.
+func (s *writeService) WithPathRoots(roots *PathRoots) *writeService {
+	s.roots = roots
+	return s
+}
+
+func (s *writeService) pathAllowed(path string) bool {
+	if s.roots != nil {
+		return s.roots.ContainsConfined(path)
+	}
+	return confinedPath(s.mediaRoot, path)
+}
+
+func (s *writeService) libraryRoot(ctx context.Context, set *model.Set) (string, error) {
+	if set != nil && set.LibraryID != 0 {
+		lib, err := s.store.GetMusicLibrary(ctx, set.LibraryID)
+		if err != nil {
+			return "", err
+		}
+		if lib != nil && lib.RootPath != "" {
+			return lib.RootPath, nil
+		}
+	}
+	return s.mediaRoot, nil
+}
+
+func (s *writeService) setDirectory(ctx context.Context, set *model.Set) (string, error) {
+	root, err := s.libraryRoot(ctx, set)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(filepath.Join(root, set.RootPath)), nil
+}
+
 func (s *writeService) SoftDeleteMedia(ctx context.Context, mediaID, userID int64) error {
 	s.trashLock.Lock()
 	defer s.trashLock.Unlock()
@@ -85,6 +120,7 @@ func (s *writeService) SoftDeleteMedia(ctx context.Context, mediaID, userID int6
 		return err
 	}
 	path := media.AbsPath
+	var root string
 	if path == "" {
 		set, err := s.store.GetSetByID(ctx, media.SetID)
 		if err != nil {
@@ -93,15 +129,32 @@ func (s *writeService) SoftDeleteMedia(ctx context.Context, mediaID, userID int6
 		if set == nil {
 			return ErrNotFound
 		}
-		path = filepath.Join(s.mediaRoot, set.RootPath, media.RelPath)
+		root, err = s.libraryRoot(ctx, set)
+		if err != nil {
+			return err
+		}
+		path = filepath.Join(root, set.RootPath, media.RelPath)
+	} else {
+		root = s.rootForPath(path)
 	}
-	if !confinedPath(s.mediaRoot, path) {
+	if !s.pathAllowed(path) {
 		return ErrForbidden
 	}
-	if err := writableMediaDir(s.mediaRoot, filepath.Dir(path)); err != nil {
+	if err := writableMediaDir(root, filepath.Dir(path)); err != nil {
 		return err
 	}
 	return s.store.SoftDeleteMedia(ctx, mediaID)
+}
+
+func (s *writeService) rootForPath(path string) string {
+	if s.roots != nil {
+		for _, root := range s.roots.All() {
+			if pathWithinRoot(root, path) || confinedPath(root, path) {
+				return root
+			}
+		}
+	}
+	return s.mediaRoot
 }
 
 func (s *writeService) RestoreMedia(ctx context.Context, mediaID, userID int64) error {
@@ -132,9 +185,13 @@ func (s *writeService) checkRestoreSource(ctx context.Context, media *model.Medi
 		if set == nil {
 			return ErrNotFound
 		}
-		path = filepath.Join(s.mediaRoot, set.RootPath, filepath.FromSlash(media.RelPath))
+		root, err := s.libraryRoot(ctx, set)
+		if err != nil {
+			return err
+		}
+		path = filepath.Join(root, set.RootPath, filepath.FromSlash(media.RelPath))
 	}
-	if !confinedPath(s.mediaRoot, path) {
+	if !s.pathAllowed(path) {
 		return ErrForbidden
 	}
 	info, err := os.Stat(path)
@@ -182,15 +239,22 @@ func (s *writeService) UploadMedia(ctx context.Context, setID, userID int64, fil
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedExtension, filepath.Ext(filename))
 	}
 
-	dir := filepath.Clean(filepath.Join(s.mediaRoot, set.RootPath))
-	if !confinedPath(s.mediaRoot, dir) {
+	dir, err := s.setDirectory(ctx, set)
+	if err != nil {
+		return nil, err
+	}
+	root, err := s.libraryRoot(ctx, set)
+	if err != nil {
+		return nil, err
+	}
+	if !s.pathAllowed(dir) {
 		return nil, ErrForbidden
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, mutationError(err)
 	}
 
-	if err := writableMediaDir(s.mediaRoot, dir); err != nil {
+	if err := writableMediaDir(root, dir); err != nil {
 		return nil, err
 	}
 	path := uniqueFilename(dir, filename)

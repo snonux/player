@@ -50,6 +50,7 @@ type MockStore struct {
 	MockMusicEnrichmentRepo
 	MockMusicRatingRepo
 	MockMusicFavoriteRepo
+	MockMusicLibraryRepo
 	SavedQueueRepo
 	FinishProgressFunc      func(ctx context.Context, progress *model.PlaybackProgress) error
 	ResetProgressFunc       func(ctx context.Context, userID, mediaID int64) error
@@ -519,6 +520,67 @@ func (m *MockAPITokenRepo) TouchLastUsed(ctx context.Context, id int64, lastUsed
 		return m.TouchLastUsedFunc(ctx, id, lastUsedAt)
 	}
 	return nil
+}
+
+// MockMusicLibraryRepo is a fake MusicLibraryRepo.
+type MockMusicLibraryRepo struct {
+	CreateMusicLibraryFunc        func(ctx context.Context, lib *model.MusicLibrary) (int64, error)
+	GetMusicLibraryFunc           func(ctx context.Context, id int64) (*model.MusicLibrary, error)
+	ListMusicLibrariesFunc        func(ctx context.Context) ([]model.MusicLibrary, error)
+	UpdateMusicLibraryFunc        func(ctx context.Context, lib *model.MusicLibrary) error
+	DeleteMusicLibraryFunc        func(ctx context.Context, id int64) error
+	MusicLibraryStatsFunc         func(ctx context.Context, libraryID int64, allowedSetIDs []int64) (*model.MusicLibraryStats, error)
+	EnsureDefaultMusicLibraryFunc func(ctx context.Context, mediaRoot string, now time.Time) (*model.MusicLibrary, error)
+	ListSetIDsByLibraryFunc       func(ctx context.Context, libraryID int64) ([]int64, error)
+}
+
+func (m *MockMusicLibraryRepo) CreateMusicLibrary(ctx context.Context, lib *model.MusicLibrary) (int64, error) {
+	if m.CreateMusicLibraryFunc != nil {
+		return m.CreateMusicLibraryFunc(ctx, lib)
+	}
+	return 1, nil
+}
+func (m *MockMusicLibraryRepo) GetMusicLibrary(ctx context.Context, id int64) (*model.MusicLibrary, error) {
+	if m.GetMusicLibraryFunc != nil {
+		return m.GetMusicLibraryFunc(ctx, id)
+	}
+	return &model.MusicLibrary{ID: id, Name: "Library"}, nil
+}
+func (m *MockMusicLibraryRepo) ListMusicLibraries(ctx context.Context) ([]model.MusicLibrary, error) {
+	if m.ListMusicLibrariesFunc != nil {
+		return m.ListMusicLibrariesFunc(ctx)
+	}
+	return nil, nil
+}
+func (m *MockMusicLibraryRepo) UpdateMusicLibrary(ctx context.Context, lib *model.MusicLibrary) error {
+	if m.UpdateMusicLibraryFunc != nil {
+		return m.UpdateMusicLibraryFunc(ctx, lib)
+	}
+	return nil
+}
+func (m *MockMusicLibraryRepo) DeleteMusicLibrary(ctx context.Context, id int64) error {
+	if m.DeleteMusicLibraryFunc != nil {
+		return m.DeleteMusicLibraryFunc(ctx, id)
+	}
+	return nil
+}
+func (m *MockMusicLibraryRepo) MusicLibraryStats(ctx context.Context, libraryID int64, allowedSetIDs []int64) (*model.MusicLibraryStats, error) {
+	if m.MusicLibraryStatsFunc != nil {
+		return m.MusicLibraryStatsFunc(ctx, libraryID, allowedSetIDs)
+	}
+	return &model.MusicLibraryStats{}, nil
+}
+func (m *MockMusicLibraryRepo) EnsureDefaultMusicLibrary(ctx context.Context, mediaRoot string, now time.Time) (*model.MusicLibrary, error) {
+	if m.EnsureDefaultMusicLibraryFunc != nil {
+		return m.EnsureDefaultMusicLibraryFunc(ctx, mediaRoot, now)
+	}
+	return &model.MusicLibrary{ID: 1, Name: "Library", RootPath: mediaRoot, CreatedAt: now}, nil
+}
+func (m *MockMusicLibraryRepo) ListSetIDsByLibrary(ctx context.Context, libraryID int64) ([]int64, error) {
+	if m.ListSetIDsByLibraryFunc != nil {
+		return m.ListSetIDsByLibraryFunc(ctx, libraryID)
+	}
+	return nil, nil
 }
 
 // MockSetRepo is a fake SetRepo.

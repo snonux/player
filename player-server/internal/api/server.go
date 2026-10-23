@@ -62,6 +62,8 @@ type Server struct {
 	jukeboxSvc    service.JukeboxService
 	podcastSvc    service.PodcastEpisodeService
 	podcastSync   service.PodcastSyncService
+	musicLibs     *service.MusicLibraryService
+	pathRoots     *service.PathRoots
 	// subsonicSvc adapts the music catalog for optional /rest clients (A01a).
 	subsonicSvc   *service.SubsonicService
 	streamer      service.MediaStreamer
@@ -89,6 +91,10 @@ type ServerServices struct {
 	Podcast service.PodcastEpisodeService
 	// PodcastSync serves the account podcast synchronization endpoint.
 	PodcastSync service.PodcastSyncService
+	// MusicLibraries is optional A05 multi-root library admin/browse.
+	MusicLibraries *service.MusicLibraryService
+	// PathRoots is the streaming allowlist shared with MediaStreamer.
+	PathRoots *service.PathRoots
 }
 
 // ServerDeps contains the dependencies needed to construct a Server.
@@ -177,6 +183,8 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		jukeboxSvc:    deps.Services.Jukebox,
 		podcastSvc:    deps.Services.Podcast,
 		podcastSync:   deps.Services.PodcastSync,
+		musicLibs:     deps.Services.MusicLibraries,
+		pathRoots:     deps.Services.PathRoots,
 		subsonicSvc:   subsonicSvc,
 		streamer:      deps.MediaStreamer,
 		staticFS:      deps.StaticFS,
@@ -424,6 +432,7 @@ func (s *Server) routesMedia() {
 	s.handleBoth(http.MethodGet, "/api/music/facets", s.requireSession(s.handleMusicFacets))
 	s.handleBoth(http.MethodGet, "/api/music/search", s.requireSession(s.handleMusicSearch))
 	s.handleBoth(http.MethodPost, "/api/music/queue-albums", s.requireSession(s.handleMusicQueueAlbums))
+	s.handleBoth(http.MethodGet, "/api/music/libraries", s.requireSession(s.handleMusicLibraries))
 	s.handleBoth(http.MethodGet, "/api/music/albums", s.requireSession(s.handleMusicAlbums))
 	s.handleBoth(http.MethodGet, "/api/music/albums/{album_key}", s.requireSession(s.handleMusicAlbums))
 	s.handleBoth(http.MethodGet, "/api/media", s.requireSession(s.handleListMedia))
@@ -487,6 +496,12 @@ func (s *Server) routesAdmin() {
 	s.handleBoth(http.MethodGet, "/api/admin/permissions", s.requireAdmin(s.handleListPermissions))
 	s.handleBoth(http.MethodPost, "/api/admin/permissions", s.requireAdmin(s.handleGrantPermission))
 	s.handleBoth(http.MethodDelete, "/api/admin/permissions", s.requireAdmin(s.handleRevokePermission))
+	s.handleBoth(http.MethodGet, "/api/admin/libraries", s.requireAdmin(s.handleAdminLibraries))
+	s.handleBoth(http.MethodPost, "/api/admin/libraries", s.requireAdmin(s.handleAdminLibraries))
+	s.handleBoth(http.MethodPut, "/api/admin/libraries/{id}", s.requireAdmin(s.handleAdminLibrary))
+	s.handleBoth(http.MethodDelete, "/api/admin/libraries/{id}", s.requireAdmin(s.handleAdminLibrary))
+	s.handleBoth(http.MethodPost, "/api/admin/libraries/{id}/access", s.requireAdmin(s.handleAdminLibraryAccess))
+	s.handleBoth(http.MethodDelete, "/api/admin/libraries/{id}/access", s.requireAdmin(s.handleAdminLibraryAccess))
 	s.handleBoth(http.MethodGet, "/api/admin/plugins", s.requireAdmin(s.handleListPlugins))
 	s.handleBoth(http.MethodGet, "/api/admin/plugins/{id}", s.requireAdmin(s.handleGetPlugin))
 	s.handleBoth(http.MethodPost, "/api/admin/plugins/{id}/enable", s.requireAdmin(s.handleEnablePlugin))

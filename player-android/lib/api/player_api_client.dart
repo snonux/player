@@ -204,12 +204,20 @@ class PlayerApiClient implements ProgressSyncClient {
               '/api/v1/music/artists/${Uri.encodeComponent(key)}'))
           .data!;
 
+  Future<List<Map<String, dynamic>>> musicLibraries() async {
+    final response =
+        await _dio.get<List<dynamic>>('/api/v1/music/libraries');
+    return (response.data ?? []).cast<Map<String, dynamic>>();
+  }
+
   Future<List<Map<String, dynamic>>> musicAlbums(
-      {String? artist, int? mediaId}) async {
+      {String? artist, int? mediaId, List<int>? libraryIds}) async {
     final response =
         await _dio.get<List<dynamic>>('/api/v1/music/albums', queryParameters: {
       if (artist != null) 'artist': artist,
       if (mediaId != null) 'media_id': mediaId,
+      if (libraryIds != null && libraryIds.isNotEmpty)
+        'library_ids': libraryIds.join(','),
     });
     return (response.data ?? []).cast<Map<String, dynamic>>();
   }

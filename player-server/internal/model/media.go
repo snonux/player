@@ -34,9 +34,10 @@ type User struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// Set represents a top-level media collection (a directory under MEDIA_ROOT).
+// Set represents a top-level media collection (a directory under a music library root).
 type Set struct {
 	ID                 int64           `json:"id"`
+	LibraryID          int64           `json:"library_id"`
 	Name               string          `json:"name"`
 	RootPath           string          `json:"root_path"`
 	CoverThumbnailPath string          `json:"cover_thumbnail_path"`

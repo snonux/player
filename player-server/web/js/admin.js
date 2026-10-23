@@ -50,6 +50,28 @@ export function initAdmin() {
     if (open) await refreshPlugins();
   });
 
+  const librariesBtn = document.getElementById('admin-libraries-toggle');
+  librariesBtn?.addEventListener('click', async () => {
+    const section = document.getElementById('admin-libraries-section');
+    const open = section?.classList.contains('hidden');
+    section?.classList.toggle('hidden', !open);
+    librariesBtn.setAttribute('aria-expanded', String(Boolean(open)));
+    librariesBtn.textContent = open ? 'Hide libraries' : 'Libraries';
+    if (open) await refreshLibraries();
+  });
+
+  document.getElementById('admin-library-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await API.createLibrary({ name: fd.get('name'), root_path: fd.get('root_path') });
+      e.target.reset();
+      toast('Library added');
+      await refreshLibraries();
+      await refreshAdmin();
+    } catch (err) { toast(err.message || 'Could not add library', 'error'); }
+  });
+
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
@@ -289,6 +311,103 @@ function pluginRowHtml(p) {
       <br><span class="text-muted text-75">Capabilities: ${caps}</span>
     </span>
     <span class="flex gap-1">${enable}${probe}</span>
+  </li>`;
+}
+
+async function refreshLibraries() {
+  const status = document.getElementById('admin-libraries-status');
+  const el = document.getElementById('admin-libraries');
+  if (status) status.textContent = 'Loading libraries…';
+  try {
+    const [libs, perms] = await Promise.all([API.adminLibraries(), API.permissions()]);
+    renderLibraries(libs, perms);
+    if (status) {
+      status.textContent = libs.length
+        ? `${libs.length} librar${libs.length === 1 ? 'y' : 'ies'} configured.`
+        : 'No libraries yet.';
+    }
+  } catch (err) {
+    if (status) status.textContent = '';
+    if (el) el.innerHTML = `<p class="text-muted text-xs">Could not load libraries: ${escapeHtml(err.message || 'error')}</p>`;
+    toast(err.message || 'Failed to load libraries', 'error');
+  }
+}
+
+function renderLibraries(libs, perms) {
+  const el = document.getElementById('admin-libraries');
+  if (!el) return;
+  if (!Array.isArray(libs) || !libs.length) {
+    el.innerHTML = '<p class="text-muted text-xs">Add a filesystem root to create another music library.</p>';
+    return;
+  }
+  const users = perms?.users || [];
+  el.innerHTML = `<ul class="admin-list">${libs.map((lib) => libraryRowHtml(lib, users)).join('')}</ul>`;
+  el.querySelectorAll('[data-library-rename]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const name = prompt('Library name', btn.dataset.name || '');
+      if (!name) return;
+      try {
+        await API.renameLibrary(btn.dataset.id, { name });
+        toast('Library renamed');
+        await refreshLibraries();
+      } catch (err) { toast(err.message || 'Rename failed', 'error'); }
+    });
+  });
+  el.querySelectorAll('[data-library-delete]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm(`Remove library "${btn.dataset.name}"? It must have no sets.`)) return;
+      try {
+        await API.deleteLibrary(btn.dataset.id);
+        toast('Library removed');
+        await refreshLibraries();
+        await refreshAdmin();
+      } catch (err) { toast(err.message || 'Remove failed', 'error'); }
+    });
+  });
+  el.querySelectorAll('[data-library-access]').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const body = { user_id: parseInt(sel.dataset.user, 10) };
+      sel.disabled = true;
+      try {
+        if (sel.value) {
+          await API.grantLibraryAccess(sel.dataset.id, { ...body, role: sel.value });
+          toast('Library access granted');
+        } else {
+          await API.revokeLibraryAccess(sel.dataset.id, body);
+          toast('Library access revoked');
+        }
+      } catch (err) {
+        toast(err.message || 'Access change failed', 'error');
+        await refreshLibraries();
+      } finally {
+        sel.disabled = false;
+      }
+    });
+  });
+}
+
+function libraryRowHtml(lib, users) {
+  const stats = lib.stats || {};
+  const access = users.map((u) => `
+    <label class="text-xs">${escapeHtml(u.username)}
+      <select class="perm-select" data-library-access data-id="${lib.id}" data-user="${u.id}"
+        aria-label="Access for ${escapeHtml(u.username)} on ${escapeHtml(lib.name)}">
+        <option value="">—</option>
+        <option value="viewer">Viewer</option>
+        <option value="owner">Owner</option>
+      </select>
+    </label>`).join('');
+  return `<li>
+    <span>
+      <strong>${escapeHtml(lib.name)}</strong>
+      <span class="text-muted text-75"> · ${escapeHtml(lib.root_path)}</span>
+      <br><span class="text-muted text-75">${stats.set_count || 0} sets · ${stats.song_count || 0} songs</span>
+      <div class="flex gap-2 flex-wrap mt-1">${access}</div>
+    </span>
+    <span class="flex gap-1">
+      <button type="button" class="btn btn-sm" data-library-rename data-id="${lib.id}" data-name="${escapeHtml(lib.name)}" aria-label="Rename ${escapeHtml(lib.name)}">Rename</button>
+      <button type="button" class="btn btn-danger btn-sm" data-library-delete data-id="${lib.id}" data-name="${escapeHtml(lib.name)}" aria-label="Remove ${escapeHtml(lib.name)}">Remove</button>
+    </span>
   </li>`;
 }
 
