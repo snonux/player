@@ -128,7 +128,8 @@ test('M05 scan/removal/failed probe, permission and restart round trips',async({
   await rescan('broken');expect((await detail()).media.music.release_date).toBe('2026-06');
   await rescan('cleared');const after=await detail();expect(after.media.music.release_date).toBeUndefined();expect(after.media.music.credits).toBeUndefined();
   expect(after.media.id).toBe(before.media.id);expect(after.favorite).toBe(before.favorite);expect(after.progress).toEqual(before.progress);
-  await info(page);await expect(page.locator('.media-info-music')).toHaveCount(0);await page.keyboard.press('Escape');
+  await info(page);await expect(page.locator('.media-info-music summary').filter({hasText:/^(Release details|Additional music details)$/})).toHaveCount(0);
+  await expand(page,'Advanced audio');await row(page,'Sample rate','44.1 kHz (44100 Hz)');await row(page,'Bit depth','16 bits');await page.keyboard.press('Escape');
   await rescan('initial');restored=true;
   execFileSync('python3',[join(SUPPORT_DIR,'music_fixture.py'),'restart',fixture.dir]);
   await page.reload();await info(page);await expand(page,'Release details');await row(page,'Original date','1979');await page.keyboard.press('Escape');

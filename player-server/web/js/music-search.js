@@ -1,3 +1,4 @@
+import { facetParams, hasFacets } from './music-facets.js';
 import { state } from './state.js';
 import { API } from './api.js';
 import { escapeHtml as esc, fmtDur } from './utils.js';
@@ -10,14 +11,25 @@ export function musicQuery(raw, parsed, musicActive = false) {
  // Clearing ordinary Sets filters must keep the generic view and set scope.
  if (!raw.trim() && !musicActive) return null;
  const constraints = {query: [], artistQuery: [], albumQuery: []};
+ const facets={};
  // Quoted phrases keep spaces, while punctuation in a real name stays literal.
  for (const token of raw.match(/(?:[^\s"]+|"[^"]*")+/gu) || []) {
+  const facet=token.match(/^(genre|year):(.+)$/iu);
+  if(facet){facets[facet[1].toLowerCase()]=facet[2].replaceAll('"','');continue;}
   const match = token.match(/^(artist|album):(.+)$/iu);
   const value = (match ? match[2] : token).replaceAll('"','');
   constraints[match ? `${match[1].toLowerCase()}Query` : 'query'].push(value);
  }
  const fileOnly = Object.entries(parsed).some(([key,value]) => key !== 'search' && Boolean(value)) || (raw.match(/(?:[^\s"]+|"[^"]*")+/gu) || []).some(token=>/^(?:min|max|tag|like|type|set|sort|minsize|maxsize):.+/iu.test(token));
- return fileOnly ? null : Object.fromEntries(Object.entries(constraints).map(([key,parts]) => [key,parts.join(' ').trim()]));
+ return fileOnly ? null : {...Object.fromEntries(Object.entries(constraints).map(([key,parts]) => [key,parts.join(' ').trim()])),...(Object.keys(facets).length?{facets}:{})};
+}
+// Keep typed modifiers separate from explicit toolbar values, including values
+// temporarily shadowed by a modifier for the same dimension.
+export function nextMusicSearch(previous, query) {
+ const explicitFacets={...(previous?.explicitFacets ?? previous?.facets ?? {})};
+ if(!previous?.explicitFacets) for(const key of Object.keys(previous?.queryFacets || {})) delete explicitFacets[key];
+ const queryFacets={...query.facets};
+ return {search:true,...query,explicitFacets,queryFacets,facets:{...explicitFacets,...queryFacets}};
 }
 export function captureSearchView() {
  if (previous || state.music?.search) return;
@@ -44,8 +56,8 @@ export async function renderMusicSearch(grid, view, current, {openAlbum, openArt
  const query=view.query || '', artist=view.artistQuery || '', album=view.albumQuery || '';
  const header=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-search-back>← Back</button><h1>Search results</h1><p>${esc([query,artist && `Artist: ${artist}`,album && `Album: ${album}`].filter(Boolean).join(' · '))}</p></div>`;
  const wire=()=>{grid.querySelector('[data-search-back]')?.addEventListener('click',back);};
- if(!query && !artist && !album) {grid.innerHTML=header+'<p class="grid-full" role="status">Search songs, albums and artists.</p>';wire();return;}
- const [data, media]=await Promise.all([API.musicSearch({q:query,artist,album}), query && !artist && !album ? searchFiles(query,current) : []]);
+ if(!query && !artist && !album && !hasFacets(view)) {grid.innerHTML=header+'<p class="grid-full" role="status">Search songs, albums and artists.</p>';wire();return;}
+ const [data, media]=await Promise.all([API.musicSearch({q:query,artist,album,...facetParams(view.facets)}), query && !artist && !album && !hasFacets(view) ? searchFiles(query,current) : []]);
  if(!current()) return;
  const songs=data.songs || [], ids=new Set(songs.map(song=>song.id));
  const needle=query.toLocaleLowerCase();

@@ -9,7 +9,7 @@ for (const [raw,expected] of [
  ['東京 / A & B; C/D',{query:'東京 / A & B; C/D',artistQuery:'',albumQuery:''}],
  ['artist:"A & B; C/D" album:"Café 夜" song',{query:'song',artistQuery:'A & B; C/D',albumQuery:'Café 夜'}],
  ['ALBUM:Café',{query:'',artistQuery:'',albumQuery:'Café'}],
- ['genre:Jazz',{query:'genre:Jazz',artistQuery:'',albumQuery:''}],
+ ['genre:Jazz',{query:'',artistQuery:'',albumQuery:'',facets:{genre:'Jazz'}}],
  ['',null],
 ]) assert.deepEqual(musicQuery(raw,parseQuery(raw)),expected);
 for(const raw of ['tag:a','set:"Yoga Flow" x','like:1','like:0','min:3','max:5','minsize:1','maxsize:3','type:video','sort:name']) assert.equal(musicQuery(raw,parseQuery(raw)),null,raw);

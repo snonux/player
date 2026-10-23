@@ -68,6 +68,7 @@ func parseMusicTags(tags map[string]string) *model.MusicMetadata {
 	m.Performers = musicValues(first("performers", "performer"))
 	m.Genres = musicValues(first("genre", "genres"))
 	parseReleaseTags(m, tags)
+	parseAudioTags(m, tags)
 	return m
 }
 

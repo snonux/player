@@ -160,7 +160,11 @@ func (f *FFProber) probeOnce(ctx context.Context, path string) (*model.Metadata,
 			for key, value := range tags {
 				merged[key] = value
 			}
+			source := meta.Music
 			meta.Music = parseMusicTags(merged)
+			meta.Music.SampleRate = source.SampleRate
+			meta.Music.BitDepth = source.BitDepth
+			meta.Music.Channels = source.Channels
 		}
 	}
 	// For images, also extract EXIF data.
@@ -198,11 +202,15 @@ type ffprobeOutput struct {
 		Disposition struct {
 			AttachedPic int `json:"attached_pic"`
 		} `json:"disposition"`
-		Tags      map[string]string `json:"tags"`
-		CodecName string            `json:"codec_name"`
-		Width     int               `json:"width"`
-		Height    int               `json:"height"`
-		CodecType string            `json:"codec_type"`
+		Tags             map[string]string `json:"tags"`
+		SampleRate       string            `json:"sample_rate"`
+		BitsPerRawSample string            `json:"bits_per_raw_sample"`
+		BitsPerSample    int               `json:"bits_per_sample"`
+		Channels         int               `json:"channels"`
+		CodecName        string            `json:"codec_name"`
+		Width            int               `json:"width"`
+		Height           int               `json:"height"`
+		CodecType        string            `json:"codec_type"`
 	} `json:"streams"`
 }
 
@@ -258,6 +266,20 @@ func parseFFprobeOutput(data []byte, audioFile bool) (*model.Metadata, error) {
 			}
 		}
 		meta.Music = parseMusicTags(tags)
+		for _, stream := range out.Streams {
+			if stream.CodecType != "audio" {
+				continue
+			}
+			meta.Music.SampleRate = positiveNumber(stream.SampleRate)
+			meta.Music.BitDepth = positiveNumber(stream.BitsPerRawSample)
+			if meta.Music.BitDepth == 0 && stream.BitsPerSample > 0 {
+				meta.Music.BitDepth = stream.BitsPerSample
+			}
+			if stream.Channels > 0 {
+				meta.Music.Channels = stream.Channels
+			}
+			break
+		}
 	}
 	meta.Codec = codecString(videoCodec, audioCodec, audioFile)
 

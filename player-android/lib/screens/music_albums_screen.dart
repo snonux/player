@@ -1,3 +1,4 @@
+import '../widgets/music_filter_sheet.dart';
 import '../widgets/music_search_button.dart';
 import '../widgets/music_mini_player.dart';
 import '../services/music_collections.dart';
@@ -32,6 +33,12 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
   bool _loading = true, _selecting = false;
   final _selected = <int>{};
   int _generation = 0;
+  Map<String, String> _facets = {};
+  void _filtersChanged(Map<String, String> value) {
+    _facets = value;
+    _load();
+  }
+
   final _artwork = <int, Future<Uint8List>>{};
   @override
   void initState() {
@@ -68,7 +75,12 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
           _loading = false;
         });
       } else {
-        final albums = await client.musicAlbums(artist: widget.artistKey);
+        final albums = _facets.isEmpty
+            ? await client.musicAlbums(artist: widget.artistKey)
+            : ((await client.filteredMusic('albums', _facets, query: {
+                if (widget.artistKey != null) 'artist': widget.artistKey!
+              })) as List)
+                .cast<Map<String, dynamic>>();
         if (!mounted || generation != _generation) return;
         setState(() {
           _albums = albums;
@@ -114,6 +126,9 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         child: Scaffold(
           bottomNavigationBar: const MusicMiniPlayer(),
           appBar: AppBar(
+              bottom: widget.albumKey == null
+                  ? MusicFilterBar(onChanged: _filtersChanged)
+                  : null,
               actions: const [MusicSearchButton(), MusicQueueButton()],
               title: Text(widget.albumKey != null
                   ? (_album?['title'] as String? ?? 'Album')
@@ -172,7 +187,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
               padding: const EdgeInsets.all(24),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 const Text(
-                    'No albums available. Music includes audio from your permitted sets. Browse Library or ask an administrator to rescan music tags.'),
+                    'Nothing matches these filters. Clear filters or browse Library for more music.'),
                 TextButton(
                     onPressed: () => context.pop(),
                     child: const Text('Back to Library'))
@@ -181,6 +196,12 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
     return MusicCollectionCatalog(
         key: ValueKey('albums-${widget.artistKey ?? "all"}-$_generation'),
         items: albums,
+        header: _facets.isEmpty
+            ? null
+            : Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                    '${albums.length} matching albums · ${albums.fold<int>(0, (sum, album) => sum + (album['song_count'] as int? ?? 0))} matching songs')),
         kind: 'album',
         keyName: 'album_key',
         nameName: 'title',

@@ -31,6 +31,44 @@ class MusicMetadata {
     return _number('year') > 0 && '${_number('year')}' != prefix;
   }
 
+  num? _audioNumber(String key, {bool nonnegative = false}) {
+    final value = _json[key];
+    if (value is! num || !value.isFinite || (nonnegative && value < 0)) {
+      return null;
+    }
+    return value;
+  }
+
+  String _audioText(num value) => value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toString();
+
+  List<MapEntry<String, String>> get audioDetails {
+    final rate = _number('sample_rate'), depth = _number('bit_depth');
+    final channels = _number('channels');
+    return [
+      if (rate > 0)
+        MapEntry('Sample rate', '${_audioText(rate / 1000)} kHz ($rate Hz)'),
+      if (depth > 0) MapEntry('Bit depth', '$depth bits'),
+      if (channels > 0)
+        MapEntry(
+            'Channels',
+            '$channels${channels == 1 ? ' (mono)' : channels == 2 ? ' (stereo)' : ''}'),
+      for (final entry in {
+        'replaygain_track_gain_db': 'Track ReplayGain',
+        'replaygain_album_gain_db': 'Album ReplayGain'
+      }.entries)
+        if (_audioNumber(entry.key) case final num value)
+          MapEntry(entry.value, '${_audioText(value)} dB'),
+      for (final entry in {
+        'replaygain_track_peak': 'Track peak',
+        'replaygain_album_peak': 'Album peak'
+      }.entries)
+        if (_audioNumber(entry.key, nonnegative: true) case final num value)
+          MapEntry(entry.value, '${_audioText(value)} (1 = full scale)'),
+    ];
+  }
+
   Map<String, List<MapEntry<String, String>>> get detailGroups {
     const roles = {
       'conductor': 'Conductor',
@@ -66,6 +104,7 @@ class MusicMetadata {
               MapEntry(roles[credit['role']] ?? credit['role'] as String,
                   (credit['names'] as List).whereType<String>().join('\n')),
       ],
+      'Advanced audio': audioDetails,
     };
     for (final rows in groups.values) {
       rows.removeWhere((entry) => entry.value.isEmpty);
@@ -92,7 +131,10 @@ class MusicMetadata {
       'Disc': number('disc'),
       'Tagged date': _text('date') != releaseDate ? _text('date') : '',
       'Year': _showYear ? '${_number('year')}' : '',
-      'Genres': _list('genres').join(', ')
+      'Genres': _list('genres').join(', '),
+      if (_audioNumber('bpm', nonnegative: true) case final num bpm
+          when bpm > 0)
+        'Tempo': '${_audioText(bpm)} BPM (beats/min)'
     }..removeWhere((key, value) => value.isEmpty);
   }
 }

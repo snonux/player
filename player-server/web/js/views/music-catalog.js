@@ -1,3 +1,4 @@
+import { mountMusicFacets, facetParams, hasFacets } from '../music-facets.js';
 import { renderMusicSearch } from '../music-search.js';
 import { collectionButtons, bindCollectionActions, bindCollectionCatalog, cancelCollectionSelection } from '../collection-actions.js';
 import { initPlaylists, renderPlaylists } from './music-playlists.js';
@@ -16,7 +17,7 @@ let selectedAlbum = '';
 let revision = 0;
 const positions = new Map();
 const history = [];
-const viewKey = view => JSON.stringify([view?.artists || false,view?.artist || '',view?.album || '',view?.role || 'artists',view?.playlists || false,view?.playlist || '',view?.search || false,view?.query || '',view?.artistQuery || '',view?.albumQuery || '']);
+const viewKey = view => JSON.stringify([view?.artists || false,view?.artist || '',view?.album || '',view?.role || 'artists',view?.playlists || false,view?.playlist || '',view?.search || false,view?.query || '',view?.artistQuery || '',view?.albumQuery || '',view?.facets || {}]);
 function remember() {
  if (state.music?.search) { state.music.selected={...document.querySelector('#media-grid .selected')?.dataset}; state.music.scroll=window.scrollY; }
  if (!state.music) return;
@@ -85,10 +86,12 @@ export async function renderMusic(grid, isCurrent) {
  grid.classList.toggle('music-detail', Boolean(view.album));
  grid.innerHTML = `<p class="grid-full" role="status">Loading ${view.search ? 'search results' : view.playlists ? 'playlists' : view.artists && !view.album ? 'artists' : 'albums'}…</p>`;
  try {
-  if (view.search) { await renderMusicSearch(grid,view,current,{openAlbum,openArtist,back:backMusic,reload});return; }
+  await mountMusicFacets(grid,view,current,reload,true);
+  if(!current())return;
+  if (view.search) { await renderMusicSearch(grid,view,current,{openAlbum,openArtist,back:backMusic,reload});await mountMusicFacets(grid,view,current,reload);return; }
   if (view.playlists) { await renderPlaylists(grid,view,current,positions.get(viewKey(view)));return; }
-  if (view.artists && !view.album) { await renderArtists(grid, view, current); return; }
-  const data = view.album ? await API.album(view.album) : await API.albums(view.artist ? {artist:view.artist} : {});
+  if (view.artists && !view.album) { await renderArtists(grid, view, current);await mountMusicFacets(grid,view,current,reload); return; }
+  const data = view.album ? await API.album(view.album) : await API.albums({...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {})});
   if (!current()) return;
   if (view.album) {
    state.media = data.songs || [];
@@ -111,8 +114,8 @@ export async function renderMusic(grid, isCurrent) {
    });
    grid.querySelectorAll('[data-song-info]').forEach(button => button.onclick = () => { selectByElement(button.closest('.media-row')); document.dispatchEvent(new Event('music:song-info')); });
   } else {
-   count.textContent = view.artist ? `Albums by ${view.name || 'artist'}` : `Music · ${data.length} albums`;
-   grid.innerHTML = `<div class="grid-full"><button class="btn btn-ghost" data-music-back>← ${view.artist ? 'Back to albums' : 'Back to Sets'}</button>${view.artist ? `<h1>Albums by ${esc(view.name || 'artist')}</h1>` : ''}</div>` + (data.length ? data.map(album => `<div class="media-card album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${cover(album)}<div class="card-body"><div class="title" title="${esc(album.title)}">${esc(album.title)}</div><div class="text-muted text-sm">${esc(album.artist)}${album.year ? ` · ${album.year}` : ''}</div>${album.from_folder ? '<span class="text-muted text-xs">From folder</span>' : ''}</div></div>`).join('') : '<p class="grid-full">No albums available. Music includes audio from your permitted sets. Browse Sets or ask an administrator to rescan music tags.</p>');
+   count.textContent = view.artist ? `Albums by ${view.name || 'artist'}` : `Music · ${data.length} albums${hasFacets(view)?' matching filters':''}`;
+   grid.innerHTML = `<div class="grid-full"><button class="btn btn-ghost" data-music-back>← ${view.artist ? 'Back to albums' : 'Back to Sets'}</button>${view.artist ? `<h1>Albums by ${esc(view.name || 'artist')}</h1>` : ''}</div>` + (data.length ? data.map(album => `<div class="media-card album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${cover(album)}<div class="card-body"><div class="title" title="${esc(album.title)}">${esc(album.title)}</div><div class="text-muted text-sm">${esc(album.artist)}${album.year ? ` · ${album.year}` : ''}</div>${hasFacets(view) ? `<span class="text-muted text-sm">${album.song_count} matching songs</span>` : ''}${album.from_folder ? '<span class="text-muted text-xs">From folder</span>' : ''}</div></div>`).join('') : '<p class="grid-full">Nothing matches these filters. Clear filters or browse Sets for more music.</p>');
    grid.querySelectorAll('[data-album]').forEach(card => card.onclick = () => openAlbum(card.dataset.album));
    bindCollectionCatalog(grid,data,'album','album_key','title',current);
   }
@@ -122,9 +125,11 @@ export async function renderMusic(grid, isCurrent) {
   const target = restored || (!view.album && selectedAlbum ? grid.querySelector(`[data-album="${CSS.escape(selectedAlbum)}"]`) : grid.querySelector('.media-row, .album-card'));
   if (target) { selectByElement(target); focusSelectedCard(); } else grid.querySelector('[data-music-back]')?.focus();
   if (saved) window.scrollTo(0,saved.scroll);
+  await mountMusicFacets(grid,view,current,reload);
  } catch (e) {
   if (!current()) return;
   grid.innerHTML = `<div class="grid-full" role="alert"><p>${view.search ? 'Could not search music' : 'Could not load'} ${view.search ? '' : view.artists && !view.album ? 'artists' : view.playlists ? 'playlists' : 'albums'}: ${esc(e.message || 'Connection unavailable. Check your connection.')}</p><button class="btn" data-retry>Retry</button><button class="btn btn-ghost" data-music-back>← Back</button></div>`;
+  await mountMusicFacets(grid,view,current,reload);
   grid.querySelector('[data-retry]').onclick = reload;
   grid.querySelector('[data-music-back]').onclick = backMusic;
  }
@@ -140,12 +145,12 @@ function creditLinks(credits, role, fallback) {
 function bindCredits(grid) { grid.querySelectorAll('[data-artist]').forEach(button=>button.onclick=()=>{ const row=button.closest('.media-row'); if(row) selectByElement(row); openArtist(button.dataset.artist); }); }
 async function renderArtists(grid, view, current) {
  const detail=Boolean(view.artist);
- const data=detail ? await API.artist(view.artist) : await API.artists({role:view.role || 'artists'});
+ const data=detail ? await API.artist(view.artist) : await API.artists({...facetParams(view.facets),role:view.facets?.role || view.role || 'artists'});
  if (!current()) return;
  document.getElementById('result-count').textContent=detail ? `Music · Artists · ${data.name}` : `Music · ${data.length} artists`;
  const labels=roles=>roles.map(role=>artistRoles[role]).join(' · ');
  const heading=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-music-back>← ${detail?'Back':'Back to Sets'}</button><h1>${detail?esc(data.name):'Artists'}</h1>${detail ? `<p>${esc(labels(data.roles))}</p><p>${data.album_count} albums · ${data.song_count} songs</p>` : `<label>Role <select aria-label="Role">${Object.entries(artistRoles).map(([key,label])=>`<option value="${key}" ${key===(view.role || 'artists')?'selected':''}>${esc(label)}</option>`).join('')}</select></label>`}</div>`;
- grid.innerHTML=heading+(detail ? data.albums.map(album=>`<div class="media-card album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${cover(album)}<div class="card-body"><div class="title">${esc(album.title)}</div><div class="text-muted">${esc(album.artist)}</div><div class="text-muted" title="${esc(labels(album.roles))}">${esc(labels(album.roles))}</div></div></div>`).join('') : data.length ? data.map(person=>`<div class="media-card album-card" role="button" tabindex="0" data-artist-card="${esc(person.artist_key)}" aria-label="Open artist ${esc(person.name)}"><div class="card-body"><div class="title" title="${esc(person.name)}">${esc(person.name)}</div><div class="text-muted" title="${esc(labels(person.roles))}">${esc(labels(person.roles))}</div><div class="text-muted">${person.album_count} albums · ${person.song_count} songs</div></div></div>`).join('') : '<p class="grid-full">No artists available for this role. Choose another role or ask an administrator to rescan music tags.</p>');
+ grid.innerHTML=heading+(detail ? data.albums.map(album=>`<div class="media-card album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${cover(album)}<div class="card-body"><div class="title">${esc(album.title)}</div><div class="text-muted">${esc(album.artist)}</div><div class="text-muted" title="${esc(labels(album.roles))}">${esc(labels(album.roles))}</div></div></div>`).join('') : data.length ? data.map(person=>`<div class="media-card album-card" role="button" tabindex="0" data-artist-card="${esc(person.artist_key)}" aria-label="Open artist ${esc(person.name)}"><div class="card-body"><div class="title" title="${esc(person.name)}">${esc(person.name)}</div><div class="text-muted" title="${esc(labels(person.roles))}">${esc(labels(person.roles))}</div><div class="text-muted">${person.album_count} albums · ${person.song_count} ${hasFacets(view)?'matching songs':'songs'}</div></div></div>`).join('') : '<p class="grid-full">No artists available for this role. Choose another role or ask an administrator to rescan music tags.</p>');
  grid.querySelector('[data-music-back]').onclick=backMusic;
  grid.querySelectorAll('[data-album]').forEach(card=>card.onclick=()=>openAlbum(card.dataset.album));
  grid.querySelectorAll('[data-artist-card]').forEach(card=>card.onclick=()=>openArtist(card.dataset.artistCard));
@@ -156,7 +161,7 @@ async function renderArtists(grid, view, current) {
  }
  bindCollectionCatalog(grid,detail?data.albums:data,detail?'album':'artist',detail?'album_key':'artist_key',detail?'title':'name',current);
  const select=grid.querySelector('select');
- if (select) select.onchange=()=>{ remember(); state.music.role=select.value; reload(); };
+ if (select) select.onchange=()=>{ remember(); state.music.role=select.value; state.music.facets={...state.music.facets,role:select.value==='artists'?'':select.value};reload(); };
  const saved=positions.get(viewKey(view));
  const target=(saved?.artist && grid.querySelector(`[data-artist-card="${CSS.escape(saved.artist)}"]`)) || (saved?.album && grid.querySelector(`[data-album="${CSS.escape(saved.album)}"]`)) || grid.querySelector('.media-card');
  if (target) { selectByElement(target); focusSelectedCard(); } else grid.querySelector('select, [data-music-back]')?.focus();

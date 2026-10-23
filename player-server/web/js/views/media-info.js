@@ -160,7 +160,7 @@ function renderMediaInfo(detail) {
   const table = renderRows(rows);
   const basicTable = renderRows(basicRows);
   const raw = escapeHtml(JSON.stringify(detail || {}, null, 2));
-  const groups = musicDetailGroups(media).map(([title, entries]) => `<details class="media-info-music"><summary tabindex="0">${escapeHtml(title)}</summary><table class="media-info-table">${entries.map(([label, value]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${escapeHtml(String(value))}</td></tr>`).join('')}</table></details>`).join('');
+  const groups = musicDetailGroups(media).map(([title, entries]) => `<details class="media-info-music"><summary tabindex="0">${escapeHtml(title)}</summary>${title === 'Advanced audio' ? '<p class="text-muted text-sm">Indexed original file. ReplayGain tags are informational; playback volume is unchanged.</p>' : ''}<table class="media-info-table">${entries.map(([label, value]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${escapeHtml(String(value))}</td></tr>`).join('')}</table></details>`).join('');
   return `
     <div class="flex flex-wrap gap-2 mt-1 mb-2">
       <button class="btn btn-ghost btn-sm" type="button" data-media-info-action="mark-finished" data-media-id="${escapeHtml(String(media.id || ''))}">✓ Finished</button>

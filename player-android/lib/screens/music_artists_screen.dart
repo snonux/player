@@ -1,3 +1,4 @@
+import '../widgets/music_filter_sheet.dart';
 import '../widgets/music_search_button.dart';
 import '../widgets/music_mini_player.dart';
 import '../services/music_collections.dart';
@@ -36,6 +37,13 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
   List<Map<String, dynamic>> _people = [];
   Map<String, dynamic>? _artist;
   int _generation = 0;
+  Map<String, String> _facets = {};
+  void _filtersChanged(Map<String, String> value) {
+    _facets = value;
+    _role = value['role'] ?? 'artists';
+    _load();
+  }
+
   final _scroll = ScrollController();
   @override
   void initState() {
@@ -66,7 +74,11 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
       final client = ref.read(apiClientProvider);
       final key = widget.artistKey;
       final data = key == null
-          ? await client.musicArtists(role: _role)
+          ? (_facets.isEmpty
+              ? await client.musicArtists(role: _role)
+              : ((await client.filteredMusic('artists', _facets,
+                      query: {'role': _role})) as List)
+                  .cast<Map<String, dynamic>>())
           : await client.musicArtist(key);
       if (!mounted || generation != _generation) return;
       setState(() {
@@ -93,6 +105,9 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
   Widget build(BuildContext context) => Scaffold(
         bottomNavigationBar: const MusicMiniPlayer(),
         appBar: AppBar(
+            bottom: widget.artistKey == null
+                ? MusicFilterBar(onChanged: _filtersChanged)
+                : null,
             title: Text(widget.artistKey == null
                 ? 'Music · Artists'
                 : _artist?['name'] as String? ?? 'Artist'),
@@ -127,26 +142,28 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
       scrollController: _scroll,
       header: Padding(
           padding: const EdgeInsets.all(16),
-          child: DropdownButtonFormField<String>(
-              initialValue: _role,
-              decoration: const InputDecoration(labelText: 'Role'),
-              isExpanded: true,
-              items: [
-                for (final role in artistRoles.entries)
-                  DropdownMenuItem(value: role.key, child: Text(role.value))
-              ],
-              onChanged: (value) {
-                if (value != null) {
-                  _role = value;
-                  if (_scroll.hasClients) _scroll.jumpTo(0);
-                  _load();
-                }
-              })),
+          child: _facets.containsKey('role')
+              ? Text('Role: ${artistRoles[_facets['role']] ?? _facets['role']}')
+              : DropdownButtonFormField<String>(
+                  initialValue: _role,
+                  decoration: const InputDecoration(labelText: 'Role'),
+                  isExpanded: true,
+                  items: [
+                    for (final role in artistRoles.entries)
+                      DropdownMenuItem(value: role.key, child: Text(role.value))
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      _role = value;
+                      if (_scroll.hasClients) _scroll.jumpTo(0);
+                      _load();
+                    }
+                  })),
       itemBuilder: (person, checkbox, toggle) => ListTile(
           leading: checkbox,
           title: Text(person['name'] as String),
           subtitle: Text(
-              '${creditRoleLabels(person['roles'])}\n${person['album_count']} albums · ${person['song_count']} songs'),
+              '${creditRoleLabels(person['roles'])}\n${person['album_count']} albums · ${person['song_count']} ${_facets.isEmpty ? 'songs' : 'matching songs'}'),
           isThreeLine: true,
           trailing: const Icon(Icons.chevron_right),
           onTap: toggle ??

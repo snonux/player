@@ -14,7 +14,7 @@ export function musicRows(media) {
  const number = (n, total) => n ? `${n}${total ? ` / ${total}` : ''}` : '';
  return [['Artist', m.artist || m.artists?.join(', ')], ['Album artist', m.album_artist],
  ['Composer', m.composers?.join(', ')], ['Performer', m.performers?.join(', ')], ['Album', m.album], ['Disc subtitle', m.disc_subtitle], ['Compilation', m.compilation ? 'Yes' : ''], ['Track', number(m.track, m.track_total)], ['Disc', number(m.disc, m.disc_total)],
- ['Tagged date', m.date !== releaseDate(m) ? m.date : ''], ['Year', showMusicYear(m) ? m.year : ''], ['Genres', m.genres?.join(', ')]];
+ ['Tempo', audioTempo(m.bpm)], ['Tagged date', m.date !== releaseDate(m) ? m.date : ''], ['Year', showMusicYear(m) ? m.year : ''], ['Genres', m.genres?.join(', ')]];
 }
 
 const releaseDate = m => m.release_date || m.date || (m.year ? String(m.year) : '');
@@ -33,7 +33,7 @@ export function musicDetailGroups(media) {
  ]], ['Additional music details', [
   ['Mood', m.moods?.join('\n')], ['Grouping', m.grouping], ['Comment', m.comment],
   ...(m.credits || []).map(credit => [Object.hasOwn(roles, credit.role) ? roles[credit.role] : credit.role, credit.names?.join('\n')])
- ]]].map(([title, rows]) => [title, rows.filter(([, value]) => value)]).filter(([, rows]) => rows.length);
+ ]], ['Advanced audio', musicAudioRows(m)]].map(([title, rows]) => [title, rows.filter(([, value]) => value)]).filter(([, rows]) => rows.length);
 }
 
 export const artistRoles = {artists: "Artists (track and album)", track_artist: "Track artist", album_artist: "Album artist", composer: "Composer", performer: "Performer"};
@@ -51,4 +51,18 @@ export function albumSongNumber(song, multi) {
 }
 export function discTitle(disc) {
  return `${disc.number ? `Disc ${disc.number}` : 'Unnumbered disc'}${disc.subtitle ? ` — ${disc.subtitle}` : ''}`;
+}
+
+const audioValue = value => typeof value === 'number' && Number.isFinite(value);
+const audioTempo = value => audioValue(value) && value > 0 ? `${value} BPM (beats/min)` : '';
+export function musicAudioRows(m) {
+ const gain = value => audioValue(value) ? `${value} dB` : '';
+ const peak = value => audioValue(value) && value >= 0 ? `${value} (1 = full scale)` : '';
+ return [
+  ['Sample rate', Number.isInteger(m.sample_rate) && m.sample_rate > 0 ? `${m.sample_rate / 1000} kHz (${m.sample_rate} Hz)` : ''],
+  ['Bit depth', Number.isInteger(m.bit_depth) && m.bit_depth > 0 ? `${m.bit_depth} bits` : ''],
+  ['Channels', Number.isInteger(m.channels) && m.channels > 0 ? `${m.channels}${m.channels === 1 ? ' (mono)' : m.channels === 2 ? ' (stereo)' : ''}` : ''],
+  ['Track ReplayGain', gain(m.replaygain_track_gain_db)], ['Album ReplayGain', gain(m.replaygain_album_gain_db)],
+  ['Track peak', peak(m.replaygain_track_peak)], ['Album peak', peak(m.replaygain_album_peak)]
+ ].filter(([, value]) => value !== '');
 }

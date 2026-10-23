@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,7 +45,7 @@ func TestMusicAlbumsRealPermissions(t *testing.T) {
 		if i == 2 {
 			title = "Private Album"
 		}
-		id, err := store.CreateMedia(ctx, &model.Media{SetID: set, FileName: strconv.Itoa(i) + ".mp3", RelPath: strconv.Itoa(i) + ".mp3", AbsPath: "/not-read/" + strconv.Itoa(i), Type: model.MediaTypeAudio, Duration: 10, ThumbnailPath: "art", CreatedAt: now, Music: &model.MusicMetadata{Album: title, AlbumArtist: "Same Artist", Track: i + 1, Disc: i + 1, DiscSubtitle: []string{"Visible subtitle", "Hidden subtitle", "Private"}[i]}})
+		id, err := store.CreateMedia(ctx, &model.Media{SetID: set, FileName: strconv.Itoa(i) + ".mp3", RelPath: strconv.Itoa(i) + ".mp3", AbsPath: "/not-read/" + strconv.Itoa(i), Type: model.MediaTypeAudio, Duration: 10, ThumbnailPath: "art", CreatedAt: now, Music: &model.MusicMetadata{Genres: []string{[]string{"Visible genre", "Restricted only", "Restricted only"}[i]}, Album: title, AlbumArtist: "Same Artist", Track: i + 1, Disc: i + 1, DiscSubtitle: []string{"Visible subtitle", "Hidden subtitle", "Private"}[i]}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -60,6 +61,21 @@ func TestMusicAlbumsRealPermissions(t *testing.T) {
 		w := httptest.NewRecorder()
 		server.handleMusicAlbums(w, r)
 		return w
+	}
+	hiddenFacet := request("", "?genre=Restricted%20only")
+	if hiddenFacet.Code != 200 || strings.TrimSpace(hiddenFacet.Body.String()) != "[]" {
+		t.Fatalf("facet ACL leaked: %s", hiddenFacet.Body.String())
+	}
+	badFacet := request("", "?year=2029-2020")
+	if badFacet.Code != 400 {
+		t.Fatalf("invalid facet accepted: %d", badFacet.Code)
+	}
+	facetRequest := httptest.NewRequest("GET", "/api/music/facets", nil)
+	facetRequest = facetRequest.WithContext(context.WithValue(facetRequest.Context(), sessionCtxKey, &model.Session{UserID: user}))
+	facetResponse := httptest.NewRecorder()
+	server.handleMusicFacets(facetResponse, facetRequest)
+	if facetResponse.Code != 200 || strings.Contains(facetResponse.Body.String(), "Restricted only") || !strings.Contains(facetResponse.Body.String(), "Visible genre") {
+		t.Fatalf("facet options ACL: %s", facetResponse.Body.String())
 	}
 	list := request("", "")
 	if list.Code != 200 {
@@ -212,6 +228,26 @@ func TestMusicArtistsRealPermissions(t *testing.T) {
 	composers := read("composer")
 	if len(composers) != 1 || composers[0].Name != "Shared Composer" || composers[0].SongCount != 1 || composers[0].AlbumCount != 1 {
 		t.Fatalf("composer ACL %+v", composers)
+	}
+	for _, query := range []string{"?role=composer&role=performer", "?role=performer&role=composer"} {
+		w := request("", query)
+		var matches []service.Artist
+		if w.Code != 200 {
+			t.Fatalf("repeated roles %d %s", w.Code, w.Body.String())
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &matches); err != nil {
+			t.Fatal(err)
+		}
+		names := map[string]bool{}
+		for _, person := range matches {
+			names[person.Name] = true
+		}
+		if len(names) != 2 || !names["Shared Composer"] || !names["Player"] {
+			t.Fatalf("repeated role OR %s: %+v", query, matches)
+		}
+	}
+	if w := request("", "?role=composer&role=invalid"); w.Code != 400 {
+		t.Fatalf("invalid repeated role %d", w.Code)
 	}
 	if w := request("", "?role=invalid"); w.Code != 400 {
 		t.Fatalf("unknown role %d", w.Code)

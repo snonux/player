@@ -148,7 +148,7 @@ TRACKS = [
     dict(path='Restricted/Admin Only - Hidden Album/01 - Hidden Track.mp3',
          codec='mp3-128', tone_hz=[220.0], level_dbfs=-12,
          tags={'title': 'Hidden Track', 'artist': 'Secret Artist', 'album': 'Hidden Album',
-               'album_artist': 'Secret Artist', 'composer': 'Hidden Composer', 'performer': 'Hidden Performer', 'track': '1/1'}),
+               'album_artist': 'Secret Artist', 'genre': 'Restricted only', 'composer': 'Hidden Composer', 'performer': 'Hidden Performer', 'track': '1/1'}),
 ]
 
 # M03 needs actual scrolled Artists and discography views for Back-position proof.

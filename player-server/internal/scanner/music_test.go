@@ -25,7 +25,7 @@ func TestScan_MusicRefreshPreservesIdentityAndState(t *testing.T) {
 		t.Helper()
 		args := []string{"-f", "lavfi", "-i", "sine=duration=1", "-c:a", "flac"}
 		if title != "" {
-			args = append(args, "-metadata", "title="+title, "-metadata", "artist=Ünïcødé", "-metadata", "discsubtitle=Disc "+title, "-metadata", "compilation=1", "-metadata", "disc=2/3", "-metadata", "composer=Composer; 東京 "+title, "-metadata", "performer=Performer / A", "-metadata", "release_date=2025-04", "-metadata", "originaldate=1979", "-metadata", "recordingdate=1978-11", "-metadata", "label=Label "+title, "-metadata", "credit:Tape Op=A / B")
+			args = append(args, "-metadata", "title="+title, "-metadata", "artist=Ünïcødé", "-metadata", "discsubtitle=Disc "+title, "-metadata", "compilation=1", "-metadata", "disc=2/3", "-metadata", "composer=Composer; 東京 "+title, "-metadata", "performer=Performer / A", "-metadata", "release_date=2025-04", "-metadata", "originaldate=1979", "-metadata", "recordingdate=1978-11", "-metadata", "label=Label "+title, "-metadata", "credit:Tape Op=A / B", "-metadata", "bpm=123.5", "-metadata", "replaygain_track_gain=0 dB", "-metadata", "replaygain_album_gain=-6.25 dB", "-metadata", "replaygain_track_peak=0.89")
 		}
 		ffsafetest.Generate(t, path, args...)
 	}
@@ -84,6 +84,15 @@ func TestScan_MusicRefreshPreservesIdentityAndState(t *testing.T) {
 		if err != nil || progress == nil || progress.PositionSeconds != 0.3 {
 			t.Fatalf("progress=%+v %v", progress, err)
 		}
+		if row.Music.SampleRate != 44100 || row.Music.BitDepth != 16 || row.Music.Channels != 1 {
+			t.Fatalf("source technical fields lost after rescan: %+v", row.Music)
+		}
+		if title == "" && (row.Music.BPM != nil || row.Music.ReplayGainTrackGainDB != nil || row.Music.ReplayGainAlbumGainDB != nil || row.Music.ReplayGainTrackPeak != nil) {
+			t.Fatalf("removed audio tags retained: %+v", row.Music)
+		}
+		if title != "" && (row.Music.BPM == nil || *row.Music.BPM != 123.5 || row.Music.ReplayGainTrackGainDB == nil || *row.Music.ReplayGainTrackGainDB != 0 || row.Music.ReplayGainAlbumGainDB == nil || *row.Music.ReplayGainAlbumGainDB != -6.25 || row.Music.ReplayGainTrackPeak == nil || *row.Music.ReplayGainTrackPeak != 0.89) {
+			t.Fatalf("audio tags lost after retag: %+v", row.Music)
+		}
 		if title == "" {
 			if row.Music.DiscSubtitle != "" || row.Music.Compilation || len(row.Music.Composers) != 0 || len(row.Music.Performers) != 0 || row.Music.ReleaseDate != "" || row.Music.OriginalDate != "" || row.Music.RecordingDate != "" || len(row.Music.Labels) != 0 || len(row.Music.Credits) != 0 {
 				t.Fatalf("removed credits retained %+v", row.Music)
@@ -107,7 +116,7 @@ func TestScan_MusicRefreshPreservesIdentityAndState(t *testing.T) {
 				t.Fatal(err)
 			}
 			retained, err := store.GetMediaByID(ctx, id)
-			if err != nil || retained.Music.DiscSubtitle != "Disc First Title" || !retained.Music.Compilation || retained.Music.ReleaseDate != "2025-04" || retained.Music.OriginalDate != "1979" || len(retained.Music.Credits) != 1 {
+			if err != nil || retained.Music.BPM == nil || *retained.Music.BPM != 123.5 || retained.Music.ReplayGainTrackGainDB == nil || *retained.Music.ReplayGainTrackGainDB != 0 || retained.Music.SampleRate != 44100 || retained.Music.BitDepth != 16 || retained.Music.DiscSubtitle != "Disc First Title" || !retained.Music.Compilation || retained.Music.ReleaseDate != "2025-04" || retained.Music.OriginalDate != "1979" || len(retained.Music.Credits) != 1 {
 				t.Fatalf("failed probe discarded release snapshot: %+v %v", retained, err)
 			}
 		}

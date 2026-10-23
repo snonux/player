@@ -1,4 +1,4 @@
-import { musicQuery, captureSearchView, restoreSearchView, hasSearchView, forgetSearchView } from './music-search.js';
+import { nextMusicSearch, musicQuery, captureSearchView, restoreSearchView, hasSearchView, forgetSearchView } from './music-search.js';
 import { cancelCollectionSelection } from './collection-actions.js';
 import { queueSelected } from './queue-actions.js';
 import { initQueue, restoreQueue, queueState, cycleQueueRepeat } from './queue.js';
@@ -180,7 +180,7 @@ async function initApp() {
       const parsed = parseQuery(q);
       captureSearchView();
       const music=musicQuery(q,parsed,Boolean(state.music));
-      if(music) {state.music={search:true,...music};loadMedia();return;}
+      if(music) {state.music=nextMusicSearch(state.music,music);loadMedia();return;}
       state.music = null;
       state.virtualSet = '';
       syncChromeVirtualSets();

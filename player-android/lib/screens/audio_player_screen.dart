@@ -1,4 +1,7 @@
 import '../widgets/music_queue_sheet.dart';
+import '../widgets/music_info_dialog.dart';
+import '../api/dio_player_api_client.dart';
+import '../providers/auth_state_provider.dart';
 import 'dart:async';
 
 import 'package:cookie_jar/cookie_jar.dart';
@@ -910,6 +913,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       appBar: AppBar(
         actions: [
           if (!widget.isPublicShare) const MusicQueueButton(),
+          if (_activeRequest is ServerPlaybackRequest &&
+              !_isLoading &&
+              _error == null)
+            IconButton(
+                tooltip: 'Info',
+                icon: const Icon(Icons.info_outline),
+                onPressed: _showMusicInfo),
           buildCastButton(ready: !_isLoading && _error == null),
           if (_activeRequest != null &&
               !_isLoading &&
@@ -928,6 +938,37 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       ),
       body: casting ? CastPlaybackView(onStop: stopCasting) : _buildBody(),
     );
+  }
+
+  void _showMusicInfo() {
+    final request = _activeRequest;
+    if (request is! ServerPlaybackRequest) return;
+    final lease = _sessionLease;
+    final generation = _activeSourceGeneration;
+    final mutations = ref.read(credentialMutationQueueProvider);
+    final epoch = mutations.generation;
+    final currentClient = ref.read(apiClientProvider);
+    final client = currentClient is DioPlayerApiClient
+        ? DioPlayerApiClient(
+            dio: currentClient.rawDio, credentialEpoch: () => epoch)
+        : currentClient;
+    bool current() =>
+        mounted &&
+        lease != null &&
+        lease.isCurrent &&
+        _sessionLease == lease &&
+        _activeRequest?.identity == request.identity &&
+        generation != null &&
+        ref.read(audioHandlerProvider).isSourceSessionCurrent(generation) &&
+        mutations.generation == epoch &&
+        request.serverOrigin == ref.read(playerBaseUrlProvider).origin &&
+        !ref.read(authStateProvider).isLoading &&
+        ref.read(authStateProvider).valueOrNull?.isAuthenticated == true &&
+        ref.read(authStateProvider).valueOrNull?.user?.id == request.userId;
+    showDialog<void>(
+        context: context,
+        builder: (_) => MusicInfoDialog(
+            load: () => client.getMedia(request.mediaId), isCurrent: current));
   }
 
   Widget _buildPersonalActions() {

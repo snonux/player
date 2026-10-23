@@ -2390,6 +2390,22 @@ commas, semicolons and slashes never split names. Other containers retain what
 ffprobe supplies, with no invented repeated-value boundaries. New credits do
 not extend artist-role browsing.
 
+### Music source audio information
+
+Optional `music` fields expose indexed original-file information: `bpm` is
+positive beats per minute; `sample_rate` is in Hz; `bit_depth` is bits per sample;
+`channels` is the channel count. Technical integer fields come from the first
+audio stream. Unknown bit depth is omitted rather than inferred from the
+decoder's sample format.
+
+`replaygain_track_gain_db` and `replaygain_album_gain_db` are finite signed dB
+values, including zero. `replaygain_track_peak` and `replaygain_album_peak` are
+finite nonnegative ratios, where 1 is full scale. Missing or invalid values are
+omitted. Tempo aliases are `bpm`, `tbpm`, and `tempo`; ReplayGain tags use their
+standard `replaygain_*` names, with an optional dB suffix for gain tags.
+These informational fields do not change playback volume. Existing file codec,
+bitrate, and size fields retain their meaning; no additional endpoint is needed.
+
 ### Disc and compilation metadata
 
 M04 adds optional `music.disc_subtitle` and `music.compilation` (true only).
@@ -2533,3 +2549,26 @@ an artist name. All counts and links derive exclusively from caller-visible song
 Both aliases require cookie/Bearer authentication; read failures use normal API
 errors. The route requires the server and does not search downloaded-only music.
 The generic `/media` search and existing file filter syntax remain available.
+
+### Music metadata facets (M08)
+
+`GET /api/v1/music/facets` (also `/api/music/facets`) returns arrays for
+`genre`, `year`, `role`, `release_type`, `compilation`, `mood`, `grouping`,
+and `label`, derived from the authenticated caller's complete authorized music
+catalog. No restricted metadata or per-option counts are exposed.
+
+Albums, artists and music search list endpoints accept these optional repeated
+query parameters. Dimensions combine with AND on the same song; repeated values
+within one dimension combine with OR. Text values match normalized exact tags,
+including Unicode case folding and preserved punctuation. `year` accepts a
+four-digit year or inclusive range `2020-2029`, using indexed `music.year`.
+Unknown years do not match. `compilation=true|false` means Marked / Not marked;
+absent metadata is not marked. Role values reuse `track_artist`, `album_artist`,
+`composer`, `performer` and the existing `artists` alias. Invalid structured
+values return 400; unknown text produces empty matches.
+
+Album and artist result counts describe matching songs. Full detail endpoints
+continue returning the full authorized collection; opening or playing an album
+therefore includes its full songs. Search with empty text and active facets
+returns matching songs/albums/artists. Search song queues contain only matching
+songs. Existing generic file filters and public share routes are unaffected.

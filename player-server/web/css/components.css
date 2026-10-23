@@ -335,3 +335,11 @@ label {
 .queue-actions .btn { min-height: 2.75rem; min-width: 2.75rem; }
 @media (min-width: 700px) { body.queue-open .page { margin-right: min(28rem, 45vw); } }
 @media (max-width: 699px) { .queue-panel { top: 0; width: 100%; z-index: 300; } .queue-panel.open { display: block; } .queue-content { background: var(--bg-surface); padding: 1rem; } }
+
+.music-facet-controls, .music-facet-chips { display: flex; flex-wrap: wrap; gap: var(--gap); align-items: center; }
+.music-facet-controls label { display: flex; align-items: center; gap: .375rem; max-width: 100%; }
+.music-facet-controls select { max-width: min(16rem, 65vw); }
+.music-facet-controls details { padding: .5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.music-facet-controls summary { cursor: pointer; }
+.music-facet-chips { margin-top: .5rem; }
+.music-facet-chips button { max-width: 100%; overflow-wrap: anywhere; }

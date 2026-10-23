@@ -1,3 +1,4 @@
+import '../widgets/music_filter_sheet.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,9 +24,11 @@ Map<String, String> musicSearchQuery(String raw) {
   final parts = {'q': <String>[], 'artist': <String>[], 'album': <String>[]};
   for (final match in RegExp(r'(?:[^\s"]+|"[^"]*")+').allMatches(raw)) {
     final token = match.group(0)!;
-    final scoped = RegExp(r'^(artist|album):(.+)$', caseSensitive: false)
-        .firstMatch(token);
-    parts[scoped?.group(1)?.toLowerCase() ?? 'q']!
+    final scoped =
+        RegExp(r'^(artist|album|genre|year):(.+)$', caseSensitive: false)
+            .firstMatch(token);
+    parts
+        .putIfAbsent(scoped?.group(1)?.toLowerCase() ?? 'q', () => <String>[])
         .add((scoped?.group(2) ?? token).replaceAll('"', ''));
   }
   return parts.map((key, value) => MapEntry(key, value.join(' ').trim()));
@@ -36,6 +39,12 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
   final _scroll = ScrollController();
   Timer? _timer;
   int _generation = 0;
+  Map<String, String> _facets = {};
+  void _filtersChanged(Map<String, String> value) {
+    _facets = value;
+    _load();
+  }
+
   bool _loading = false;
   String? _error;
   String _group = 'All';
@@ -69,8 +78,13 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
   Future<void> _load() async {
     _timer?.cancel();
     final query = musicSearchQuery(_text.text);
+    final facets = {
+      ..._facets,
+      for (final key in ['genre', 'year'])
+        if (query.containsKey(key)) key: query.remove(key)!
+    };
     final generation = ++_generation;
-    if (query.values.every((value) => value.isEmpty)) {
+    if (query.values.every((value) => value.isEmpty) && facets.isEmpty) {
       setState(() {
         _results = null;
         _error = null;
@@ -84,8 +98,14 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
       _results = null;
     });
     try {
-      final data = await ref.read(apiClientProvider).musicSearch(
-          query: query['q']!, artist: query['artist']!, album: query['album']!);
+      final client = ref.read(apiClientProvider);
+      final data = facets.isEmpty
+          ? await client.musicSearch(
+              query: query['q']!,
+              artist: query['artist']!,
+              album: query['album']!)
+          : Map<String, dynamic>.from(await client
+              .filteredMusic('search', facets, query: query) as Map);
       if (!mounted || generation != _generation) return;
       setState(() {
         _results = data;
@@ -121,6 +141,7 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
   Widget build(BuildContext context) => Scaffold(
         bottomNavigationBar: const MusicMiniPlayer(),
         appBar: AppBar(
+            bottom: MusicFilterBar(onChanged: _filtersChanged),
             title: TextField(
               controller: _text,
               autofocus: true,

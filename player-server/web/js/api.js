@@ -64,6 +64,7 @@ export const API = {
   updatePlaylist: (id,body) => api(`/api/playlists/${encodeURIComponent(id)}`,{method:'PATCH',body}),
   deletePlaylist: id => api(`/api/playlists/${encodeURIComponent(id)}`,{method:'DELETE'}),
   addPlaylistAlbum: (id,album_key) => api(`/api/playlists/${encodeURIComponent(id)}/albums`,{method:'POST',body:{album_key}}),
+  musicFacets: () => api(`/api/music/facets`),
   musicSearch: params => api(`/api/music/search?${new URLSearchParams(params)}`),
   artists: (params = {}) => api(`/api/music/artists?${new URLSearchParams(params)}`),
   artist: key => api(`/api/music/artists/${encodeURIComponent(key)}`),
