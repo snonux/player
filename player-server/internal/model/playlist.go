@@ -2,6 +2,7 @@ package model
 
 // Playlist is an account-owned document; metadata aggregates are derived per viewer.
 type Playlist struct {
+	Source      *PlaylistSource `json:"source,omitempty"`
 	OwnerID     int64           `json:"owner_id"`
 	OwnerName   string          `json:"owner_name"`
 	Visibility  string          `json:"visibility"`
@@ -17,4 +18,13 @@ type Playlist struct {
 type PlaylistEntry struct {
 	ID      string `json:"entry_id"`
 	MediaID int64  `json:"media_id"`
+}
+
+// PlaylistSource is editable-only filesystem binding status.
+type PlaylistSource struct {
+	Path        string `json:"path"`
+	Base        string `json:"base"`
+	Status      string `json:"status"`
+	Unavailable int    `json:"unavailable"`
+	Rejected    int    `json:"rejected"`
 }

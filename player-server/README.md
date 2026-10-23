@@ -27,6 +27,7 @@ Features
 ### Organization
 
 - **Sets** — media is grouped into sets (one subdirectory of `MEDIA_ROOT` per set)
+- **Filesystem playlists** — Music → Playlists → Import M3U… previews a server M3U/M3U8 file inside an accessible set. Choose playlist-folder paths for ordinary M3U, or library-root paths for Player exports. Import once, or follow changes on library rescans and owner playlist opens. Unavailable/unsafe counts are shown; stop following to edit songs. See [API contract](docs/api.md#filesystem-m3u-import-and-following).
 - **Folder browsing** — navigate subfolders within a set via breadcrumbs
 - **Tags** — add and remove tags on any media item; filter by tag
 - **Favorites** — mark items as favorites; filter to favorites-only view

@@ -40,6 +40,7 @@ type Scanner interface {
 //   - thumbSwitcher:  points migrated rows at their new thumbnail and deletes
 //     the old file (driven by the scanWriter)
 type FSScanner struct {
+	afterScan func(context.Context) error
 	store     repository.ScannerStore
 	prober    probe.Prober
 	thumbMkr  thumb.Maker
@@ -100,6 +101,12 @@ func NewFSScannerWithMaker(store repository.ScannerStore, prober probe.Prober, m
 		workers:   runtime.NumCPU(),
 		trashLock: new(sync.Mutex),
 	}
+}
+
+// WithAfterScan configures a completion hook before the first scan.
+func (s *FSScanner) WithAfterScan(fn func(context.Context) error) *FSScanner {
+	s.afterScan = fn
+	return s
 }
 
 // WithThumbnailLayout tells the scanner where thumbnails are created, which
@@ -178,6 +185,9 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 		}
 	}
 	s.log().Info("scanner scan finished", "root", root, "sets", setCount)
+	if s.afterScan != nil {
+		return s.afterScan(ctx)
+	}
 	return nil
 }
 

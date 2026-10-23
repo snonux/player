@@ -1,3 +1,5 @@
+import '../providers/current_user_provider.dart';
+import '../widgets/playlist_import_dialog.dart';
 import '../services/playlist_export.dart';
 import '../widgets/music_search_button.dart';
 import '../widgets/music_mini_player.dart';
@@ -34,6 +36,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
   int get _accountEpoch => ref.read(credentialMutationQueueProvider).generation;
   final _find = TextEditingController();
   bool _editingSongs = false;
+  bool _syncingSource = false;
   String? _songError;
 
   @override
@@ -98,7 +101,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
   }
 
   String _accessLabel(Map<String, dynamic> p) =>
-      '${p['visibility'] == 'shared' ? 'Shared with server' : 'Private'} · Owner: ${p['owner_name'] ?? ''}${p['can_edit'] == false ? ' · Read only' : ''}';
+      '${p['visibility'] == 'shared' ? 'Shared with server' : 'Private'} · Owner: ${p['owner_name'] ?? ''}${p['can_edit'] == false ? ' · Read only' : ''}${p['source'] != null ? ' · Following source' : ''}';
   String _totals(Map<String, dynamic> p) =>
       '${p['song_count']} songs · ${_duration(p['duration'] as num)}';
   String _duration(num value) {
@@ -197,6 +200,10 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                 onPressed: () => _edit(),
                 icon: const Icon(Icons.add),
                 label: const Text('Create playlist')),
+            OutlinedButton.icon(
+                onPressed: _import,
+                icon: const Icon(Icons.playlist_add),
+                label: const Text('Import M3U…')),
             if (_list.isEmpty)
               const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
@@ -216,6 +223,8 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
               }));
   Widget _detail() {
     final p = _playlist!;
+    final canSyncSource = p['source'] != null &&
+        p['owner_id'] == ref.watch(currentUserProvider).valueOrNull?.id;
     final songs = (p['songs'] as List)
         .cast<Map<String, dynamic>>()
         .map(Media.fromJson)
@@ -247,6 +256,24 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       ]),
       const SizedBox(height: 16),
       Text(p['comment'] as String),
+      if (p['source'] is Map) ...[
+        Text(
+            'Following ${(p['source'] as Map)['path']} · ${(p['source'] as Map)['base'] == 'library' ? 'Library root' : 'Playlist folder'} paths'),
+        Text((p['source'] as Map)['status'] == 'ready'
+            ? '${(p['source'] as Map)['unavailable']} unavailable · ${(p['source'] as Map)['rejected']} unsafe entries skipped.'
+            : 'Source unavailable. Last imported songs retained.'),
+        const Text('Stop following to add, remove or move songs.'),
+        if (_syncingSource) const Text('Updating source…'),
+        Wrap(spacing: 12, children: [
+          if (canSyncSource)
+            OutlinedButton(
+                onPressed: _syncingSource ? null : () => _source(false),
+                child: const Text('Sync now')),
+          TextButton(
+              onPressed: _syncingSource ? null : () => _source(true),
+              child: const Text('Stop following…'))
+        ]),
+      ],
       Wrap(spacing: 12, runSpacing: 8, children: [
         MusicCollectionActions(
             key: ValueKey('playlist-${widget.playlistId}-$_generation'),
@@ -255,14 +282,16 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
             sourceLabel: p['name'] as String,
             enabled: songs.isNotEmpty),
         if (p['can_edit'] != false) ...[
-          FilledButton.tonalIcon(
-              onPressed: _addMusic,
-              icon: const Icon(Icons.add),
-              label: const Text('Add music')),
-          FilledButton.tonalIcon(
-              onPressed: () => _addSongs(),
-              icon: const Icon(Icons.playlist_add),
-              label: const Text('Add songs')),
+          if (p['source'] == null)
+            FilledButton.tonalIcon(
+                onPressed: _addMusic,
+                icon: const Icon(Icons.add),
+                label: const Text('Add music')),
+          if (p['source'] == null)
+            FilledButton.tonalIcon(
+                onPressed: () => _addSongs(),
+                icon: const Icon(Icons.playlist_add),
+                label: const Text('Add songs')),
           TextButton(
               onPressed: () => _edit(p), child: const Text('Edit playlist')),
           TextButton(onPressed: _delete, child: const Text('Delete playlist')),
@@ -306,7 +335,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
               subtitle: Text(
                   '${songs[i].music?.artist ?? 'Unknown artist'} · ${songs[i].music?.album ?? ''}'),
               onTap: () => play(i),
-              trailing: p['can_edit'] == false
+              trailing: p['can_edit'] == false || p['source'] != null
                   ? null
                   : PopupMenuButton<String>(
                       tooltip: 'Song actions for ${songs[i].displayTitle}',
@@ -327,6 +356,72 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                       ],
                     )),
     ]);
+  }
+
+  Future<void> _import() async {
+    final epoch = _accountEpoch, generation = _generation;
+    final id = await showDialog<String>(
+        context: context, builder: (_) => const PlaylistImportDialog());
+    if (!mounted ||
+        epoch != _accountEpoch ||
+        generation != _generation ||
+        id == null) {
+      return;
+    }
+    await context.push(
+        '${AppRoutes.musicPlaylists}?playlist=${Uri.encodeComponent(id)}');
+    if (mounted && epoch == _accountEpoch) _load();
+  }
+
+  Future<void> _source(bool detach) async {
+    if (_syncingSource) return;
+    final epoch = _accountEpoch, generation = _generation;
+    if (detach) {
+      final yes = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+                  title: const Text('Stop following source?'),
+                  content:
+                      const Text('Current songs remain and can be edited.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Stop following'))
+                  ]));
+      if (yes != true ||
+          !mounted ||
+          epoch != _accountEpoch ||
+          generation != _generation) {
+        return;
+      }
+    }
+    setState(() => _syncingSource = true);
+    try {
+      final result = await ref
+          .read(apiClientProvider)
+          .syncPlaylistSource(widget.playlistId!, detach: detach);
+      if (!mounted || epoch != _accountEpoch || generation != _generation) {
+        return;
+      }
+      setState(() => _playlist = result);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result['source'] is Map &&
+                  (result['source'] as Map)['status'] == 'unavailable'
+              ? 'Source unavailable. Last imported songs retained.'
+              : detach
+                  ? 'Stopped following source.'
+                  : 'Playlist synchronized.')));
+    } catch (e) {
+      if (mounted && epoch == _accountEpoch && generation == _generation) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Could not update source. ${setsErrorMessage(e)}')));
+      }
+    } finally {
+      if (mounted) setState(() => _syncingSource = false);
+    }
   }
 
   Future<Map<String, dynamic>?> _saveSongs(Map<String, dynamic> body) async {
@@ -490,6 +585,10 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                             ),
                             const Text(
                                 'Shared playlists can be read by signed-in accounts on this server. This does not create a public link or grant access to music.'),
+                            if (p?['source'] != null &&
+                                p?['can_transfer'] == true)
+                              const Text(
+                                  'Changing owner stops following the source and keeps the current songs.'),
                             if (p?['can_transfer'] == true)
                               DropdownButtonFormField<int>(
                                 isExpanded: true,

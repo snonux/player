@@ -441,3 +441,14 @@ for title, artist, album, year and duration. Choices are remembered on this devi
 for each primary server address and account; clearing app storage resets them.
 Unknown metadata sorts last in either direction. Rating, last-played and
 star-date sorting will need their corresponding metadata.
+
+
+## Server filesystem playlists
+
+Music → Playlists → Import M3U… previews an M3U/M3U8 **on the server**, inside
+a set you can access. Enter its library-relative path. Choose Playlist folder
+for ordinary relative entries or Library root for Player exports. Preview shows
+available, unavailable and rejected entries before importing once or following
+changes. Following refreshes on server rescans and owner playlist opens; detail
+provides Sync now and Stop following. Stop following retains songs and enables
+manual membership editing. This does not import device-local playlists.

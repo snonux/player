@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"codeberg.org/snonux/player/internal/model"
@@ -22,8 +23,10 @@ type PlaylistView struct {
 
 // PlaylistService combines durable account documents with permission-aware music.
 type PlaylistService struct {
-	repo   repository.PlaylistRepo
-	source CatalogSource
+	repo      repository.PlaylistRepo
+	source    CatalogSource
+	mediaRoot string
+	importMu  sync.Mutex
 }
 
 // NewPlaylistService keeps storage and catalog dependencies independently testable.
@@ -48,6 +51,18 @@ func (s *PlaylistService) List(ctx context.Context, user int64) ([]PlaylistView,
 			return nil, err
 		}
 		if p != nil {
+			if p.Source != nil && p.OwnerID == user {
+				if err := s.refreshSource(ctx, *p); err != nil {
+					return nil, err
+				}
+				p, err = s.repo.GetPlaylist(ctx, user, p.ID)
+				if err != nil {
+					return nil, err
+				}
+				if p == nil {
+					continue
+				}
+			}
 			v := playlistView(*p, songs)
 			v.Songs = []model.Media{}
 			v.Entries = nil
@@ -65,6 +80,18 @@ func (s *PlaylistService) Get(ctx context.Context, user int64, id string) (*Play
 	}
 	if p == nil {
 		return nil, ErrNotFound
+	}
+	if p.Source != nil && p.OwnerID == user {
+		if err := s.refreshSource(ctx, *p); err != nil {
+			return nil, err
+		}
+		p, err = s.repo.GetPlaylist(ctx, user, id)
+		if err != nil {
+			return nil, err
+		}
+		if p == nil {
+			return nil, ErrNotFound
+		}
 	}
 	songs, err := s.visibleSongs(ctx, user)
 	if err != nil {
@@ -167,6 +194,9 @@ func (s *PlaylistService) AddAlbum(ctx context.Context, user int64, id, key stri
 	if !p.CanEdit {
 		return nil, ErrForbidden
 	}
+	if p.Source != nil {
+		return nil, &apiError{msg: "Stop following the source before editing songs.", status: 409}
+	}
 	albums, err := MusicAlbums(ctx, s.source, user)
 	if err != nil {
 		return nil, err
@@ -203,6 +233,9 @@ func (s *PlaylistService) EditSongs(ctx context.Context, user int64, id, action,
 	}
 	if !p.CanEdit {
 		return nil, ErrForbidden
+	}
+	if p.Source != nil {
+		return nil, &apiError{msg: "Stop following the source before editing songs.", status: 409}
 	}
 	change := repository.PlaylistChange{}
 	switch action {
@@ -294,6 +327,9 @@ func (s *PlaylistService) visibleSongs(ctx context.Context, user int64) (map[int
 }
 func playlistView(p model.Playlist, songs map[int64]model.Media) PlaylistView {
 	v := PlaylistView{Playlist: p, Songs: []model.Media{}}
+	if !p.CanEdit {
+		v.Source = nil
+	}
 	v.Entries = nil
 	for _, entry := range p.Entries {
 		song, ok := songs[entry.MediaID]

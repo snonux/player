@@ -2657,3 +2657,38 @@ Clients must revalidate available media before applying a saved queue. Remote
 sync never grants playback ownership: Continue is explicit and loads paused;
 Resume is the separate play action. Local-only playback and per-file/podcast
 progress remain independent.
+
+
+### Filesystem M3U import and following
+
+`POST /api/v1/playlists/import` (also `/api/playlists/import`) accepts
+`{path,base,follow,preview,fingerprint}`. `path` is a server media-root-relative
+`.m3u`/`.m3u8` file **inside an accessible set**, e.g. `Music/lists/trip.m3u8`.
+No URL fetch or device upload is performed. `base` is explicitly `folder`
+(ordinary file-relative M3U) or `library` (media root, for Player M3U8 exports).
+Use `preview:true` first; the response has `name`, `available`, `unavailable`,
+`rejected`, up to 30 `unavailable_lines`, and `fingerprint`. Missing and
+inaccessible tracks are indistinguishable and no unavailable names are returned.
+Confirm with the same options, `preview:false` and the returned fingerprint;
+changed content/accessibility returns 409 requiring another preview. Success
+adds `playlist`, a newly created private playlist. `follow:false` is a one-time
+editable import; `follow:true` persists a filesystem binding.
+
+M3U input is bounded to 1 MiB and 10,000 entries, UTF-8 (optional BOM),
+LF/CRLF. `#PLAYLIST:` sets the initial name; other comments including EXTINF
+are descriptive only. Order/repeats and literal Unicode paths survive. Absolute
+paths, URL schemes, backslashes, control characters and library escapes are
+skipped as rejected; symlinks and nonregular/unindexed/inaccessible files are
+unavailable. Relative `..` is permitted within the library. A leading `./`
+disambiguates names beginning with `#` or URI-like text. Files are never fetched.
+
+Follow bindings refresh after successful library rescans, on owner playlist
+list/detail reads, or `POST /api/v1/playlists/{id}/source` (owner only).
+`DELETE /api/v1/playlists/{id}/source` stops following for an owner/admin while
+retaining songs. Both have legacy aliases. Editable playlist responses include
+`source:{path,base,status,unavailable,rejected}`; shared readers never receive
+this binding/status. `status:unavailable` retains the last imported membership;
+a later successful refresh recovers. Equal membership preserves occurrence IDs.
+Following disables membership writes (409); metadata/sharing remain manual.
+Administrator ownership transfer detaches the source atomically. Source changes
+are detected at these refresh points, not by a continuous filesystem watcher.

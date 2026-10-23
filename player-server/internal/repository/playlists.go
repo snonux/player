@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -20,6 +21,9 @@ type PlaylistChange struct {
 
 // PlaylistRepo stores account-owned playlist documents and ordered occurrences.
 type PlaylistRepo interface {
+	ImportPlaylist(context.Context, int64, model.Playlist, bool) (bool, error)
+	PlaylistSources(context.Context) ([]model.Playlist, error)
+	DetachPlaylistSource(context.Context, int64, string) (bool, error)
 	UpdatePlaylistDetails(context.Context, int64, string, string, string, *string, *int64) (bool, error)
 	ListPlaylists(context.Context, int64) ([]model.Playlist, error)
 	GetPlaylist(context.Context, int64, string) (*model.Playlist, error)
@@ -51,7 +55,14 @@ func (s *SQLite) ListPlaylists(ctx context.Context, user int64) ([]model.Playlis
 // GetPlaylist returns nil when the caller cannot read the playlist.
 func (s *SQLite) GetPlaylist(ctx context.Context, user int64, id string) (*model.Playlist, error) {
 	p := model.Playlist{Entries: []model.PlaylistEntry{}}
-	err := s.db.QueryRowContext(ctx, `SELECT p.id,p.name,p.comment,p.user_id,u.username,p.visibility,(p.user_id=? OR a.is_admin),a.is_admin FROM playlists p JOIN users u ON u.id=p.user_id JOIN users a ON a.id=? WHERE p.id=? AND (p.user_id=? OR p.visibility='shared' OR a.is_admin)`, user, user, id, user).Scan(&p.ID, &p.Name, &p.Comment, &p.OwnerID, &p.OwnerName, &p.Visibility, &p.CanEdit, &p.CanTransfer)
+	var source string
+	err := s.db.QueryRowContext(ctx, `SELECT p.id,p.name,p.comment,p.user_id,u.username,p.visibility,(p.user_id=? OR a.is_admin),a.is_admin,p.source FROM playlists p JOIN users u ON u.id=p.user_id JOIN users a ON a.id=? WHERE p.id=? AND (p.user_id=? OR p.visibility='shared' OR a.is_admin)`, user, user, id, user).Scan(&p.ID, &p.Name, &p.Comment, &p.OwnerID, &p.OwnerName, &p.Visibility, &p.CanEdit, &p.CanTransfer, &source)
+	if source != "" {
+		p.Source = new(model.PlaylistSource)
+		if err := json.Unmarshal([]byte(source), p.Source); err != nil {
+			return nil, err
+		}
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -100,7 +111,7 @@ func (s *SQLite) AppendPlaylist(ctx context.Context, user int64, id string, entr
 	}
 	defer func() { _ = tx.Rollback() }()
 	var owner int64
-	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE source='' AND id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
@@ -135,7 +146,7 @@ func (s *SQLite) EditPlaylist(ctx context.Context, user int64, id string, change
 	}
 	defer func() { _ = tx.Rollback() }()
 	var owner int64
-	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `SELECT user_id FROM playlists WHERE source='' AND id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))`, id, user, user).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
@@ -213,9 +224,9 @@ func (s *SQLite) EditPlaylist(ctx context.Context, user int64, id string, change
 // UpdatePlaylistDetails atomically updates metadata, visibility and administrator ownership.
 // Authorization is checked in the same statement as the update, including transfer.
 func (s *SQLite) UpdatePlaylistDetails(ctx context.Context, user int64, id, name, comment string, visibility *string, owner *int64) (bool, error) {
-	result, err := s.db.ExecContext(ctx, `UPDATE playlists SET name=?,comment=?,visibility=COALESCE(?,visibility),user_id=COALESCE(?,user_id)
+	result, err := s.db.ExecContext(ctx, `UPDATE playlists SET name=?,comment=?,visibility=COALESCE(?,visibility),user_id=COALESCE(?,user_id),source=CASE WHEN ? IS NULL OR ?=user_id THEN source ELSE '' END
  WHERE id=? AND (user_id=? OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))
  AND (? IS NULL OR EXISTS(SELECT 1 FROM users WHERE id=? AND is_admin))
- AND (? IS NULL OR EXISTS(SELECT 1 FROM users WHERE id=?))`, name, comment, visibility, owner, id, user, user, owner, user, owner, owner)
+ AND (? IS NULL OR EXISTS(SELECT 1 FROM users WHERE id=?))`, name, comment, visibility, owner, owner, owner, id, user, user, owner, user, owner, owner)
 	return playlistAffected(result, err)
 }

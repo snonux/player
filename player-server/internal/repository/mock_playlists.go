@@ -40,3 +40,16 @@ func (s *MockStore) EditPlaylist(context.Context, int64, string, PlaylistChange)
 func (s *MockStore) UpdatePlaylistDetails(context.Context, int64, string, string, string, *string, *int64) (bool, error) {
 	return false, nil
 }
+
+// ImportPlaylist is the missing-document default.
+func (s *MockStore) ImportPlaylist(context.Context, int64, model.Playlist, bool) (bool, error) {
+	return false, nil
+}
+
+// PlaylistSources is the empty default.
+func (s *MockStore) PlaylistSources(context.Context) ([]model.Playlist, error) { return nil, nil }
+
+// DetachPlaylistSource is the missing-document default.
+func (s *MockStore) DetachPlaylistSource(context.Context, int64, string) (bool, error) {
+	return false, nil
+}

@@ -40,6 +40,7 @@ type Deps struct {
 	Cfg             *internal.Config
 	Clk             clock.Clock
 	MediaSvc        service.MediaService
+	Playlists       *service.PlaylistService
 	AdminSvc        service.AdminService
 	ProgressSvc     service.ProgressService
 	AuthSvc         service.AuthService
@@ -120,8 +121,9 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, browser, thumbResolver).
 		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock)
 
+	playlists := service.NewPlaylistService(store, mediaSvc).WithImportRoot(cfg.MediaRoot)
 	fsScanner := scanner.NewFSScannerWithMaker(store, prober, thumbMaker, clk, cfg.MediaRoot, logger).
-		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock)
+		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock).WithAfterScan(playlists.SyncSources)
 	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
 
 	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger).
@@ -135,6 +137,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		Cfg:             cfg,
 		Clk:             clk,
 		MediaSvc:        mediaSvc,
+		Playlists:       playlists,
 		AdminSvc:        adminSvc,
 		ProgressSvc:     service.NewProgressService(store, clk),
 		AuthSvc:         service.NewAuthService(store, clk, hasher, sm, tm),
@@ -341,6 +344,9 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 	cfg := deps.Cfg
 	// Thumbnails in THUMBNAIL_CACHE_DIR lie outside the media root and are
 	// served through the same streamer as media.
+	if deps.Playlists == nil {
+		deps.Playlists = service.NewPlaylistService(deps.Store, deps.MediaSvc).WithImportRoot(cfg.MediaRoot)
+	}
 	streamer := service.NewMediaStreamer(probe.NewFFRemuxer(), cfg.MediaRoot).WithThumbnailCache(deps.Thumbnails.CacheDir())
 	return api.NewServerWithLogger(api.ServerDeps{
 		Store:          deps.Store,
@@ -352,7 +358,7 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 		Services: api.ServerServices{
 			Media: api.MediaServices{
 				Browse:        deps.MediaSvc,
-				Playlists:     service.NewPlaylistService(deps.Store, deps.MediaSvc),
+				Playlists:     deps.Playlists,
 				Write:         deps.MediaSvc,
 				Share:         deps.MediaSvc,
 				Tag:           deps.MediaSvc,

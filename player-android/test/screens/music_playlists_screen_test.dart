@@ -1,3 +1,5 @@
+import 'package:player_android/providers/current_user_provider.dart';
+import 'package:player_android/models/user.dart';
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -21,12 +23,25 @@ class _Client extends PlayerApiClient {
     return '#EXTM3U\n#PLAYLIST:Road Trip\n';
   }
 
+  Map<String, dynamic>? sourceBinding;
+  int sourceSyncs = 0;
+  @override
+  Future<Map<String, dynamic>> syncPlaylistSource(String id,
+      {bool detach = false}) async {
+    sourceSyncs++;
+    if (detach) sourceBinding = null;
+    return data;
+  }
+
   List<Map<String, dynamic>> members = [];
   final edits = <Map<String, dynamic>>[];
   String name = 'Road Trip', comment = 'Saved comment';
   Completer<Map<String, dynamic>>? pending;
   Map<String, dynamic> get data => {
         'playlist_id': 'pl_a',
+        'owner_id': 1,
+        'can_edit': true,
+        if (sourceBinding != null) 'source': sourceBinding,
         'name': name,
         'comment': comment,
         'song_count': members.length,
@@ -119,10 +134,13 @@ class _Client extends PlayerApiClient {
 }
 
 void main() {
-  Future<void> mount(WidgetTester t, _Client api, {String? id}) async {
-    await t.pumpWidget(ProviderScope(
-        overrides: [apiClientProvider.overrideWithValue(api)],
-        child: MaterialApp(home: MusicPlaylistsScreen(playlistId: id))));
+  Future<void> mount(WidgetTester t, _Client api,
+      {String? id,
+      User user = const User(id: 1, username: "owner", isAdmin: false)}) async {
+    await t.pumpWidget(ProviderScope(overrides: [
+      apiClientProvider.overrideWithValue(api),
+      currentUserProvider.overrideWith((ref) async => user)
+    ], child: MaterialApp(home: MusicPlaylistsScreen(playlistId: id))));
     await t.pumpAndSettle();
   }
 
@@ -197,6 +215,61 @@ void main() {
     expect(api.comment, 'New comment');
     expect(find.text('New comment'), findsOneWidget);
   });
+  testWidgets('follow status keeps membership read only until confirmed detach',
+      (t) async {
+    final api = _Client()
+      ..sourceBinding = {
+        'path': 'Music/trip.m3u8',
+        'base': 'folder',
+        'status': 'unavailable',
+        'unavailable': 1,
+        'rejected': 0
+      }
+      ..members = [
+        {'entry_id': 'first', 'media_id': 1}
+      ];
+    await mount(t, api, id: 'pl_a');
+    expect(find.text('Source unavailable. Last imported songs retained.'),
+        findsOneWidget);
+    expect(find.text('Sync now'), findsOneWidget);
+    await t.ensureVisible(find.text('Sync now'));
+    await t.tap(find.text('Sync now'));
+    await t.pumpAndSettle();
+    expect(api.sourceSyncs, 1);
+    expect(find.text('Add music'), findsNothing);
+    expect(find.byTooltip('Song actions for First Light'), findsNothing);
+    await t.ensureVisible(find.text('Stop following…'));
+    await t.tap(find.text('Stop following…'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Cancel'));
+    await t.pumpAndSettle();
+    expect(api.sourceBinding, isNotNull);
+    await t.tap(find.text('Stop following…'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Stop following'));
+    await t.pumpAndSettle();
+    expect(api.sourceBinding, isNull);
+    expect(api.members.length, 1);
+    expect(find.text('Add music'), findsOneWidget);
+    expect(find.byTooltip('Song actions for First Light'), findsOneWidget);
+  });
+  testWidgets('admin can detach another owner source but cannot sync it',
+      (t) async {
+    final api = _Client()
+      ..sourceBinding = {
+        'path': 'Music/trip.m3u8',
+        'base': 'folder',
+        'status': 'ready',
+        'unavailable': 0,
+        'rejected': 0
+      };
+    await mount(t, api,
+        id: 'pl_a', user: const User(id: 2, username: 'admin', isAdmin: true));
+    expect(find.text('Sync now'), findsNothing);
+    expect(find.text('Stop following…'), findsOneWidget);
+    expect(find.text('Edit playlist'), findsOneWidget);
+    expect(api.sourceSyncs, 0);
+  });
   testWidgets(
       'Find retains occurrence IDs for later duplicate move/remove and failed edit',
       (t) async {
@@ -214,14 +287,14 @@ void main() {
     await t.enterText(find.byType(TextField), 'First');
     await t.pumpAndSettle();
     expect(find.text('Showing 2 of 3 songs'), findsOneWidget);
-    await t.ensureVisible(find.byType(PopupMenuButton<String>).last);
-    await t.tap(find.byType(PopupMenuButton<String>).last);
+    await t.ensureVisible(find.byTooltip('Song actions for First Light').last);
+    await t.tap(find.byTooltip('Song actions for First Light').last);
     await t.pumpAndSettle();
     await t.tap(find.text('Move up'));
     await t.pumpAndSettle();
     expect(api.edits.last, {'action': 'up', 'entry_id': 'later'});
     expect(api.members.map((e) => e['entry_id']), ['first', 'later', 'middle']);
-    await t.tap(find.byType(PopupMenuButton<String>).last);
+    await t.tap(find.byTooltip('Song actions for First Light').last);
     await t.pumpAndSettle();
     api.fail = true;
     await t.tap(find.text('Remove from playlist'));
@@ -229,7 +302,7 @@ void main() {
     expect(find.textContaining('Could not update playlist.'), findsOneWidget);
     expect(api.members.length, 3);
     api.fail = false;
-    await t.tap(find.byType(PopupMenuButton<String>).last);
+    await t.tap(find.byTooltip('Song actions for First Light').last);
     await t.pumpAndSettle();
     await t.tap(find.text('Remove from playlist'));
     await t.pumpAndSettle();

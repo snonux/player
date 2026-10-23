@@ -48,6 +48,20 @@ class PlayerApiClient implements ProgressSyncClient {
           options: Options(responseType: ResponseType.plain)))
       .data!;
 
+  Future<Map<String, dynamic>> importPlaylist(
+          Map<String, dynamic> body) async =>
+      (await _dio.post<Map<String, dynamic>>('/api/v1/playlists/import',
+              data: body))
+          .data!;
+  Future<Map<String, dynamic>> syncPlaylistSource(String id,
+          {bool detach = false}) async =>
+      (detach
+              ? await _dio.delete<Map<String, dynamic>>(
+                  '/api/v1/playlists/${Uri.encodeComponent(id)}/source')
+              : await _dio.post<Map<String, dynamic>>(
+                  '/api/v1/playlists/${Uri.encodeComponent(id)}/source'))
+          .data!;
+
   Future<List<Map<String, dynamic>>> playlists() async =>
       ((await _dio.get<List<dynamic>>('/api/v1/playlists')).data ?? [])
           .cast<Map<String, dynamic>>();
