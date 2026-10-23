@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/media.dart';
 import '../services/music_queue.dart';
 import '../services/music_queue_snapshot.dart';
+import '../services/network_policy.dart';
 import '../services/saved_queue_sync.dart';
 import '../services/playback_request.dart';
 import 'api_client_provider.dart';
@@ -58,6 +59,40 @@ class MusicQueuePersistence {
       final albums = await client.musicQueueAlbums(ids);
       if (!current()) throw StateError('Account changed');
       return albums;
+    };
+    handler.autoplayOnline = () => MusicNetworkPolicy.detected != 'unknown';
+    handler.autoplayAvailable = MusicNetworkPolicy.detected != 'unknown';
+    handler.relatedSongsForAutoplay = (seed) async {
+      if (!current()) throw StateError('Account changed');
+      final items = await client.relatedMusic('song', '${seed.mediaId}');
+      if (!current()) throw StateError('Account changed');
+      final songs = <PlaybackRequest>[];
+      for (final item in items) {
+        final raw = item['song'];
+        if (raw is! Map) continue;
+        final song = Media.fromJson(Map<String, dynamic>.from(raw));
+        if (song.type != 'audio') continue;
+        songs.add(ServerPlaybackRequest(
+            mediaId: song.id,
+            serverOrigin: origin.origin,
+            userId: userId,
+            sourceUri: Uri.parse(client.playbackUrl(song)),
+            title: song.displayTitle,
+            artist: song.music?.artist ?? '',
+            album: song.music?.album ?? '',
+            music: song.music,
+            artworkUri: song.thumbnailPath.isNotEmpty
+                ? Uri.parse(client.thumbnailUrl(song.id))
+                : null,
+            sourceName: song.relPath,
+            startPosition: song.duration <= 1200 ? 0 : null,
+            readPosition: () => client.getMediaProgress(song.id),
+            savePosition: (seconds) => progress.enqueue(song.id, seconds),
+            saveListeningPosition: (seconds, occurrence) => progress
+                .enqueueListeningPosition(song.id, seconds, occurrence),
+            markFinished: () => progress.enqueueFinished(song.id)));
+      }
+      return songs;
     };
     final prefs = await SharedPreferences.getInstance();
     if (!current()) return;

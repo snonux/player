@@ -9,6 +9,7 @@ import '../services/music_queue.dart';
 import '../services/playback_request.dart';
 import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
+import 'music_autoplay_control.dart';
 import 'saved_queue_controls.dart';
 
 /// Shared entry point on the player and library screens; no new player route.
@@ -140,6 +141,11 @@ class _MusicQueueSheet extends StatelessWidget {
                               q.repeat.name.substring(1))
                         })))),
               ]),
+              MusicAutoplayControl(
+                  enabled: q.autoplayEnabled,
+                  available: !offlineOnly && q.autoplayAvailable,
+                  status: q.autoplayStatus,
+                  onChanged: handler.setQueueAutoplay),
               Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
@@ -226,10 +232,13 @@ class _MusicQueueSheet extends StatelessWidget {
                                             ? q.active
                                                 ? 'Now'
                                                 : 'Selected · paused'
-                                            : q.upNextIds.contains(entry.id)
-                                                ? context
-                                                    .tr('Up next (you added)')
-                                                : entry.request.sourceName,
+                                            : entry.autoplayRelated
+                                                ? context.tr(
+                                                    'Autoplay · related music')
+                                                : q.upNextIds.contains(entry.id)
+                                                    ? context.tr(
+                                                        'Up next (you added)')
+                                                    : entry.request.sourceName,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis),
                                     onTap: q.busy

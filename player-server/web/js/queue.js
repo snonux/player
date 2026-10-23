@@ -5,6 +5,7 @@ import { SavedQueueSync, savedQueueRequest } from './queue-sync.js';
 import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { queueStorageKey, readQueueSnapshot } from './queue-storage.js';
 import { orderRemainder, shuffledCopy } from './queue-shuffle.js';
+import { QueueAutoplay } from './queue-autoplay.js';
 import { API } from './api.js';
 import { currentMediaId, queuePlaybackPosition, selectAndPlay, stopAndClose } from './player.js';
 
@@ -14,6 +15,11 @@ let revision = 0, loading = false, undo = null, status = '';
 let nextIDs = new Set(), nextEpoch = 0;
 let albumLoading = false;
 let repeat = 'off', shuffle = false, shuffleMode = 'tracks', canonical = [];
+const autoplay = new QueueAutoplay();
+export function setQueueAutoplay(enabled) {
+  autoplay.setEnabled(enabled);
+  notify();
+}
 function canonicalInsert(added, at) {
   const anchor = entries[at - 1]?.id;
   canonical.splice(anchor ? canonical.indexOf(anchor) + 1 : 0, 0, ...added.map(e => e.id));
@@ -32,6 +38,7 @@ export async function shuffleQueue({ reshuffle = false, mode = null } = {}) {
     if (edits !== queueChanges || scope !== storageKey) { if (scope === storageKey) { albumLoading = false; document.dispatchEvent(new Event('queue:changed')); } return; }
     albumLoading = false;
   }
+  autoplay.cancel();
   remember(); shuffle = enabled; shuffleMode = chosen;
   entries = orderRemainder(entries, index, canonical, nextIDs, shuffle ? shuffleMode : false, Math.random, albums);
   status = `${shuffle ? (shuffleMode === 'albums' ? 'Upcoming albums shuffled; album song order preserved.' : 'Upcoming songs shuffled.') : 'Remaining song order restored.'} Undo available.`;
@@ -72,6 +79,7 @@ async function applySavedSession(remote, operation, edits, intent, scope) {
   applyingServerQueue = true;
   if (currentMediaId() !== null) stopAndClose();
   beginPlaybackIntent(); revision++;
+  autoplay.reset();
   entries = remote.entries.filter(e => media.has(e.media_id)).map(e => ({id:e.id, media:media.get(e.media_id)}));
   index = entries.findIndex(e => e.id === remote.current_id);
   const selectedSurvived = index >= 0;
@@ -114,6 +122,7 @@ export async function restoreQueue(userId) {
     saveQueue();
     if (queueState().active) stopAndClose();
     beginPlaybackIntent();
+    autoplay.reset();
     entries = []; albumLoading = false; index = -1; activeID = null; label = ''; undo = null; repeat = 'off'; shuffle = false; shuffleMode = 'tracks'; canonical = [];
     restored = false; positionEntry = null; savedPosition = 0; invalidateNext();
   }
@@ -139,6 +148,7 @@ export async function restoreQueue(userId) {
       if (operation !== revision) return;
     }
     const current = snapshot.entries[snapshot.index];
+    autoplay.reset();
     entries = snapshot.entries.filter(entry => media.get(entry.mediaId)).map(entry => ({ id: entry.id, media: media.get(entry.mediaId) }));
     index = entries.findIndex(entry => entry.id === current?.id);
     const keptCurrent = index >= 0;
@@ -170,13 +180,26 @@ export function resumeQueue() { return jumpQueue(index, false, restored); }
 
 export function cycleQueueRepeat() {
   if (loading || restoreError) return;
+  autoplay.cancel();
   repeat = { off: 'all', all: 'one', one: 'off' }[repeat];
   notify();
 }
 
 export function queueUndoToken() { return undo; }
 export function queueState() {
-  return { entries: entries.map(entry => ({ ...entry, upNext: nextIDs.has(entry.id) })), index, label, active: activeID !== null && String(currentMediaId()) === String(activeID), loading: loading || albumLoading, repeat, shuffle, shuffleMode, shuffleEligible: eligibleShuffleCount(), canUndo: !!undo, status, restored, restoreError, position: positionEntry === entries[index]?.id ? savedPosition : 0 };
+  const autoplayStatus = autoplay.status;
+  return {
+    entries: entries.map(entry => ({ ...entry, upNext: nextIDs.has(entry.id) })),
+    index, label,
+    active: activeID !== null && String(currentMediaId()) === String(activeID),
+    loading: loading || albumLoading || autoplay.loading,
+    repeat, shuffle, shuffleMode, shuffleEligible: eligibleShuffleCount(),
+    canUndo: !!undo,
+    status: autoplayStatus || status,
+    restored, restoreError,
+    position: positionEntry === entries[index]?.id ? savedPosition : 0,
+    autoplay: { enabled: autoplay.enabled, loading: autoplay.loading, status: autoplayStatus, available: !offlineMusicMode() },
+  };
 }
 // Prepared playback is tied to queue occurrences, not media IDs (duplicates
 // are legal), account scope, order and the active source generation.
@@ -221,6 +244,7 @@ export function initQueue() {
 }
 export async function playAlbumCollection(songs, at = 0, source = '') {
   restoreError = false; restored = false; savedPosition = 0; positionEntry = null;
+  autoplay.reset();
   entries = songs.filter(song => song.type === 'audio').map(media => ({ id: ++serial, media }));
   invalidateNext(); shuffle = false; shuffleMode = 'tracks'; canonical = entries.map(e => e.id);
   index = at; label = source || songs[at]?.music?.album || 'Album'; undo = null;
@@ -242,12 +266,38 @@ export async function jumpQueue(at, automatic = false, preserveNext = false, res
   selectAndPlay(entry.media, index, position);
   loading = false; status = ''; notify();
 }
+async function tryAutoplayRelated() {
+  const seed = entries[index];
+  if (!seed || repeat !== 'off' || !autoplay.enabled) return false;
+  const occurrence = seed.id;
+  const pending = autoplay.resolve({
+    seedId: seed.media.id,
+    excluded: entries.map(entry => entry.media.id),
+    online: !offlineMusicMode() && (typeof navigator === 'undefined' || navigator.onLine !== false),
+    current: () => queueState().active && entries[index]?.id === occurrence,
+    fetch: id => API.relatedMusic('song', String(id)),
+  });
+  notify();
+  const songs = await pending;
+  notify();
+  if (!songs?.length || entries[index]?.id !== occurrence) return false;
+  const at = entries.length;
+  const added = songs.map(media => ({ id: ++serial, media, autoplayRelated: true }));
+  canonical.push(...added.map(entry => entry.id));
+  entries.push(...added);
+  await jumpQueue(at, true, true);
+  return true;
+}
 export async function advanceQueue(delta, { completed = false } = {}) {
   if (!loading && !queueState().active) return false;
   if ((loading && completed) || !entries.length) return true;
   let target = completed && repeat === 'one' ? index : index + delta;
   if (repeat === 'all') target = ((target % entries.length) + entries.length) % entries.length;
-  if (target >= 0 && target < entries.length) await jumpQueue(target, completed || delta > 0, false, completed && (repeat === 'one' || target === 0));
+  if (target >= 0 && target < entries.length) {
+    await jumpQueue(target, completed || delta > 0, false, completed && (repeat === 'one' || target === 0));
+    return true;
+  }
+  if (completed && delta > 0 && repeat === 'off') await tryAutoplayRelated();
   return true;
 }
 function remember() { undo = { entries: [...entries], index, nextIDs: new Set(nextIDs), nextEpoch, label, shuffle, shuffleMode, canonical: [...canonical] }; }
@@ -256,6 +306,8 @@ export async function insertQueue(songs, action = 'next', {replace = false, sour
   const added = songs.filter(song => song.type === 'audio').map(media => ({ id: ++serial, media }));
   if (!added.length) return false;
   restoreError = false;
+  autoplay.cancel();
+  if (replace) autoplay.reset();
   remember();
   const previous = undo;
   if (replace) { entries = []; index = -1; label = source; invalidateNext(); shuffle = shuffled; shuffleMode = 'tracks'; canonical = []; if (shuffled) { const ordered = [...added]; added.splice(0, added.length, ...shuffledCopy(added)); canonical = ordered.map(e => e.id); } }
@@ -280,6 +332,7 @@ export async function insertQueue(songs, action = 'next', {replace = false, sour
 export function moveQueue(at, delta) {
   const target = at + delta;
   if (loading || !entries[at] || target < 0 || target >= entries.length) return;
+  autoplay.cancel();
   remember(); invalidateNext();
   const current = entries[index];
   const [entry] = entries.splice(at, 1); entries.splice(target, 0, entry);
@@ -287,6 +340,7 @@ export function moveQueue(at, delta) {
 }
 export function removeQueue(at) {
   if (loading || !entries[at]) return;
+  autoplay.cancel();
   remember();
   const previous = undo, current = entries[index];
   invalidateNext();
@@ -297,6 +351,7 @@ export function removeQueue(at) {
 }
 export function clearQueue() {
   if (loading || !entries.length) return;
+  autoplay.cancel();
   remember();
   const previous = undo; invalidateNext();
   if (queueState().active) stopAndClose();
@@ -323,5 +378,6 @@ export function resetOfflineQueue() {
  canonical=[]; undo=null; label=''; loading=false; albumLoading=false;
  restored=false; restoreError=false; savedPosition=0; positionEntry=null;
  repeat='off'; shuffle=false; shuffleMode='tracks'; invalidateNext();
+ autoplay.reset();
  storageKey=null; status=''; document.dispatchEvent(new Event('queue:changed'));
 }

@@ -11,6 +11,7 @@ import 'audio_progress_session.dart';
 import 'sleep_timer.dart';
 import 'music_sequence.dart';
 import 'music_queue.dart';
+import 'music_autoplay.dart';
 import 'music_shuffle.dart';
 import 'music_queue_snapshot.dart';
 import 'playback_session_coordinator.dart';
@@ -308,14 +309,28 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<AudioSource?> Function(PlaybackRequest, bool Function())? _queueLoader;
   final _queueChanges = StreamController<void>.broadcast();
   Stream<void> get queueChanges => _queueChanges.stream;
+  final musicAutoplay = MusicAutoplay();
+  Future<List<PlaybackRequest>> Function(ServerPlaybackRequest seed)?
+      relatedSongsForAutoplay;
+  bool Function()? autoplayOnline;
+  bool autoplayAvailable = true;
+
+  void setQueueAutoplay(bool enabled) {
+    musicAutoplay.setEnabled(enabled);
+    _queueStatus = musicAutoplay.status;
+    _notifyQueue();
+  }
+
   MusicQueueState get musicQueue => MusicQueueState(
       entries: List.unmodifiable(_albumQueue),
       index: _queueIndex,
       label: _queueLabel,
       active: _queueActive && _canControlSource,
-      busy: _queueBusy || (_queueActive && _movingTrack),
+      busy: _queueBusy ||
+          (_queueActive && _movingTrack) ||
+          musicAutoplay.loading,
       canUndo: _queueUndo != null,
-      status: _queueStatus,
+      status: musicAutoplay.status.isNotEmpty ? musicAutoplay.status : _queueStatus,
       repeat: _queueRepeat,
       shuffle: _queueShuffle,
       shuffleMode: _queueShuffleMode,
@@ -323,6 +338,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       upNextIds: Set.unmodifiable(_queueNextIds),
       restored: _queueRestored,
       restoreFailed: _queueRestoreFailed,
+      autoplayEnabled: musicAutoplay.enabled,
+      autoplayAvailable: autoplayAvailable,
+      autoplayStatus: musicAutoplay.status,
       position: _queuePositionEntry ==
               (_queueIndex >= 0 && _queueIndex < _albumQueue.length
                   ? _albumQueue[_queueIndex].id
@@ -386,6 +404,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       bool shuffle = false,
       String shuffleMode = 'tracks',
       List<int>? canonical}) {
+    musicAutoplay.reset();
     _albumQueue = entries;
     _queueRepeat = repeat;
     _queueShuffle = shuffle;
@@ -418,6 +437,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   void cycleQueueRepeat() {
     if (musicQueue.busy || _queueRestoreFailed) return;
+    musicAutoplay.cancel();
     _queueRepeat = MusicRepeat
         .values[(_queueRepeat.index + 1) % MusicRepeat.values.length];
     _notifyQueue();
@@ -436,6 +456,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
             _shuffleEligible < 2)) {
       return;
     }
+    musicAutoplay.cancel();
     final chosen = mode ?? _queueShuffleMode;
     if (!['tracks', 'albums'].contains(chosen)) return;
     final enabled = reshuffle || mode != null || !_queueShuffle;
@@ -531,6 +552,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     persistMusicQueue?.call();
     persistMusicQueue = null;
     retryQueueRestore = null;
+    musicAutoplay.reset();
     ++_queueScope;
     _queueRepeat = MusicRepeat.off;
     _queueShuffle = false;
@@ -634,6 +656,45 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _notifyQueue();
   }
 
+  Future<bool> _appendAutoplayRelated(bool Function() current) async {
+    if (_queueIndex < 0 || _queueIndex >= _albumQueue.length) return false;
+    final seedEntry = _albumQueue[_queueIndex];
+    final seed = seedEntry.request;
+    if (seed is! ServerPlaybackRequest) return false;
+    final fetch = relatedSongsForAutoplay;
+    if (fetch == null) {
+      musicAutoplay.status =
+          'Could not load related songs. Try again when connected.';
+      _notifyQueue();
+      return false;
+    }
+    final occurrence = seedEntry.id;
+    final pending = musicAutoplay.resolve(
+      seed: seed,
+      excluded: {for (final entry in _albumQueue) entry.request.identity},
+      fetch: fetch,
+      current: () =>
+          current() &&
+          _queueActive &&
+          _queueIndex >= 0 &&
+          _queueIndex < _albumQueue.length &&
+          _albumQueue[_queueIndex].id == occurrence,
+      online: autoplayOnline?.call() ?? autoplayAvailable,
+    );
+    _notifyQueue();
+    final songs = await pending;
+    _notifyQueue();
+    if (songs == null || songs.isEmpty) return false;
+    final added = [
+      for (final request in songs)
+        MusicQueueEntry(++_queueSerial, request, autoplayRelated: true)
+    ];
+    _albumQueue.addAll(added);
+    _queueCanonical.addAll(added.map((entry) => entry.id));
+    _notifyQueue();
+    return true;
+  }
+
   void moveQueue(int index, int delta) {
     final target = index + delta;
     if (musicQueue.busy ||
@@ -643,6 +704,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         target >= _albumQueue.length) {
       return;
     }
+    musicAutoplay.cancel();
     _rememberQueue();
     _invalidateQueueNext();
     final current = _albumQueue[_queueIndex];
@@ -656,6 +718,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<void> removeQueue(int index) async {
     if (musicQueue.busy || index < 0 || index >= _albumQueue.length) return;
+    musicAutoplay.cancel();
     final old = List<MusicQueueEntry>.of(_albumQueue), oldIndex = _queueIndex;
     final oldNext = Set<int>.of(_queueNextIds), oldLabel = _queueLabel;
     final oldEpoch = _queueNextEpoch;
@@ -695,6 +758,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<void> clearQueue() async {
     if (musicQueue.busy || _albumQueue.isEmpty) return;
+    musicAutoplay.cancel();
     final old = List<MusicQueueEntry>.of(_albumQueue), oldIndex = _queueIndex;
     final oldNext = Set<int>.of(_queueNextIds), oldLabel = _queueLabel;
     final oldEpoch = _queueNextEpoch;
@@ -754,7 +818,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final added = entries
         .map((request) => MusicQueueEntry(++_queueSerial, request))
         .toList();
+    musicAutoplay.cancel();
     if (replace) {
+      musicAutoplay.reset();
       _albumQueue.clear();
       _queueIndex = -1;
       _queueLabel = sourceLabel;
@@ -1032,12 +1098,32 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       if (!_musicWrap &&
           !queueWrap &&
           (target < 0 || target >= _musicEntries.length)) {
-        _controlsEnabled = true;
-        _collectionEnded = completed;
-        _failedMusicDelta = null;
-        _publishMusic();
-        _broadcastState();
-        return;
+        if (completed &&
+            delta > 0 &&
+            _queueActive &&
+            _queueRepeat == MusicRepeat.off) {
+          final appended = await _appendAutoplayRelated(current);
+          if (!current()) return;
+          if (appended) {
+            target = _queueIndex + 1;
+            _musicEntries = _albumQueue.map((e) => e.request).toList();
+            _musicIndex = _queueIndex;
+          } else {
+            _controlsEnabled = true;
+            _collectionEnded = completed;
+            _failedMusicDelta = null;
+            _publishMusic();
+            _broadcastState();
+            return;
+          }
+        } else {
+          _controlsEnabled = true;
+          _collectionEnded = completed;
+          _failedMusicDelta = null;
+          _publishMusic();
+          _broadcastState();
+          return;
+        }
       }
       if (target < 0 || target >= _musicEntries.length) {
         final old = _musicEntries[_musicIndex].identity;

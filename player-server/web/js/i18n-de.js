@@ -251,6 +251,15 @@ export const german = {
   "Playing from: {name}": "Wiedergabe aus: {name}",
   "Shuffle: {mode}": "Zufall: {mode}",
   "Repeat: {mode}": "Wiederholen: {mode}",
+  "Autoplay related music": "Ähnliche Musik automatisch abspielen",
+  "After this queue ends · related songs from your library":
+    "Nach dem Ende dieser Warteschlange · ähnliche Titel aus Ihrer Mediathek",
+  "Autoplay needs a connection.": "Automatische Wiedergabe braucht eine Verbindung.",
+  "Finding related songs…": "Ähnliche Titel werden gesucht…",
+  "No additional related suggestions.": "Keine weiteren ähnlichen Vorschläge.",
+  "Could not load related songs. Try again when connected.":
+    "Ähnliche Titel konnten nicht geladen werden. Versuchen Sie es erneut, wenn eine Verbindung besteht.",
+  "Autoplay · related music": "Automatisch · ähnliche Musik",
   "Playlist actions": "Wiedergabelistenaktionen",
   "Playlist actions ⋮": "Wiedergabelistenaktionen ⋮",
   "Export M3U8…": "M3U8 exportieren…",
