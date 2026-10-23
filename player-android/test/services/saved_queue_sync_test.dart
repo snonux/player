@@ -12,7 +12,9 @@ void main() {
       position: 7.25,
       label: 'Repeated',
       upNext: {},
-      canonical: [1, 2]);
+      canonical: [1, 2],
+      shuffle: true,
+      shuffleMode: 'albums');
   setUp(() => SharedPreferences.setMockInitialValues({}));
   test(
       'ordered repeated occurrences, restart pending, conflict, explicit choices',
@@ -70,6 +72,10 @@ void main() {
     expect(decoded.entries.map((e) => e.id), [1, 2]);
     expect(decoded.index, 1);
     expect(decoded.position, 7.25);
+    expect(decoded.shuffleMode, 'albums');
+    expect(
+        portableQueueSnapshot({...server}..remove('shuffle_mode')).shuffleMode,
+        'tracks');
   });
   test('baseline recovery does not publish; new device keeps other session',
       () async {

@@ -11,6 +11,7 @@ class MusicQueueSnapshot {
       required this.upNext,
       this.repeat = MusicRepeat.off,
       this.shuffle = false,
+      this.shuffleMode = 'tracks',
       this.canonical = const []});
   final List<({int id, int mediaId})> entries;
   final int index;
@@ -19,6 +20,7 @@ class MusicQueueSnapshot {
   final Set<int> upNext;
   final MusicRepeat repeat;
   final bool shuffle;
+  final String shuffleMode;
   final List<int> canonical;
   static String key(String origin, int userId) =>
       'player.queue.$origin.$userId';
@@ -36,6 +38,8 @@ class MusicQueueSnapshot {
         json['label'] is! String ||
         (json['label'] as String).length > 2000 ||
         json['upNext'] is! List ||
+        (json.containsKey('shuffle_mode') &&
+            !['tracks', 'albums'].contains(json['shuffle_mode'])) ||
         (json.containsKey('shuffle') && json['shuffle'] is! bool) ||
         (json.containsKey('repeat') &&
             !MusicRepeat.values.any((mode) => mode.name == json['repeat']))) {
@@ -74,6 +78,7 @@ class MusicQueueSnapshot {
     return MusicQueueSnapshot(
         entries: entries,
         shuffle: json['shuffle'] as bool? ?? false,
+        shuffleMode: json['shuffle_mode'] as String? ?? 'tracks',
         canonical: canonical.cast<int>(),
         index: index,
         position: (json['position'] as num).toDouble(),
@@ -94,6 +99,7 @@ class MusicQueueSnapshot {
         'upNext': upNext.toList(),
         'repeat': repeat.name,
         'shuffle': shuffle,
+        'shuffle_mode': shuffleMode,
         'canonical':
             canonical.isEmpty ? entries.map((e) => e.id).toList() : canonical
       });

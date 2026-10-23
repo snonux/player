@@ -149,6 +149,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   int _completionCycle = 0;
   MusicRepeat _queueRepeat = MusicRepeat.off;
   bool _queueShuffle = false, _queueUndoShuffle = false;
+  String _queueShuffleMode = 'tracks', _queueUndoShuffleMode = 'tracks';
   List<int> _queueCanonical = [], _queueUndoCanonical = [];
   int? _failedMusicDelta;
   Duration? _retryMusicPosition;
@@ -187,6 +188,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       status: _queueStatus,
       repeat: _queueRepeat,
       shuffle: _queueShuffle,
+      shuffleMode: _queueShuffleMode,
       shuffleEligible: _shuffleEligible,
       upNextIds: Set.unmodifiable(_queueNextIds),
       restored: _queueRestored,
@@ -223,6 +225,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       upNext: Set.of(_queueNextIds),
       repeat: _queueRepeat,
       shuffle: _queueShuffle,
+      shuffleMode: _queueShuffleMode,
       canonical: List.of(_queueCanonical));
   void _notifyQueue() {
     unawaited(_refreshLoudness());
@@ -250,10 +253,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       int unavailable = 0,
       MusicRepeat repeat = MusicRepeat.off,
       bool shuffle = false,
+      String shuffleMode = 'tracks',
       List<int>? canonical}) {
     _albumQueue = entries;
     _queueRepeat = repeat;
     _queueShuffle = shuffle;
+    _queueShuffleMode = shuffleMode;
     _queueCanonical = canonical ?? entries.map((e) => e.id).toList();
     _queueIndex = index;
     _queueLabel = label;
@@ -292,18 +297,72 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       .where((e) => !_queueNextIds.contains(e.id))
       .length;
 
-  void shuffleQueue({bool reshuffle = false}) {
+  Future<Map<String, dynamic>> Function(List<int>)? loadQueueAlbums;
+  Future<void> shuffleQueue({bool reshuffle = false, String? mode}) async {
     if (musicQueue.busy ||
         _queueRestoreFailed ||
-        ((!_queueShuffle || reshuffle) && _shuffleEligible < 2)) {
+        ((!_queueShuffle || reshuffle || mode != null) &&
+            _shuffleEligible < 2)) {
       return;
     }
+    final chosen = mode ?? _queueShuffleMode;
+    if (!['tracks', 'albums'].contains(chosen)) return;
+    final enabled = reshuffle || mode != null || !_queueShuffle;
+    Map<String, dynamic> albums = {};
+    if (enabled && chosen == 'albums') {
+      final operation = ++_queueOperation, scope = _queueScope;
+      final selected = _queueIndex;
+      final ids = _albumQueue
+          .map((e) => e.request)
+          .whereType<ServerPlaybackRequest>()
+          .map((r) => r.mediaId)
+          .toSet()
+          .toList();
+      _queueBusy = true;
+      _queueStatus = 'Loading album order…';
+      _queueChanges.add(null);
+      try {
+        if (loadQueueAlbums == null) {
+          throw StateError('Album catalog unavailable');
+        }
+        albums = await loadQueueAlbums!(ids);
+      } catch (_) {
+        if (operation == _queueOperation && scope == _queueScope) {
+          _queueBusy = false;
+          _queueStatus =
+              'Could not shuffle albums. Check your connection and retry.';
+          _queueChanges.add(null);
+        }
+        return;
+      }
+      if (operation != _queueOperation || scope != _queueScope) return;
+      _queueBusy = false;
+      if (selected != _queueIndex) {
+        _queueStatus = 'Track changed; choose Shuffle albums again.';
+        _queueChanges.add(null);
+        return;
+      }
+    }
     _rememberQueue();
-    _queueShuffle = reshuffle || !_queueShuffle;
+    _queueShuffle = reshuffle || mode != null || !_queueShuffle;
+    _queueShuffleMode = mode ?? _queueShuffleMode;
     _albumQueue = orderMusicRemainder(_albumQueue, _queueIndex, _queueCanonical,
-        _queueNextIds, _queueShuffle);
+        _queueNextIds, _queueShuffle && _queueShuffleMode != 'albums');
+    if (_queueShuffle && _queueShuffleMode == 'albums') {
+      final prefix = _albumQueue.take(_queueIndex + 1).toList();
+      final remaining = _albumQueue.skip(_queueIndex + 1).toList();
+      _albumQueue = [
+        ...prefix,
+        ...remaining.where((e) => _queueNextIds.contains(e.id)),
+        ...shuffledMusicAlbums(
+            remaining.where((e) => !_queueNextIds.contains(e.id)).toList(),
+            albums,
+            null,
+            _queueIndex >= 0 ? _albumQueue[_queueIndex] : null)
+      ];
+    }
     _queueStatus =
-        '${_queueShuffle ? 'Upcoming songs shuffled.' : 'Remaining song order restored.'} Undo available.';
+        '${_queueShuffle ? (_queueShuffleMode == 'albums' ? 'Upcoming albums shuffled; album song order preserved.' : 'Upcoming songs shuffled.') : 'Remaining song order restored.'} Undo available.';
     _syncQueueSequence();
   }
 
@@ -344,6 +403,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     ++_queueScope;
     _queueRepeat = MusicRepeat.off;
     _queueShuffle = false;
+    _queueShuffleMode = 'tracks';
     _queueCanonical = [];
     _queueRestored = false;
     _queueRestoreFailed = false;
@@ -430,6 +490,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _queueUndoLabel = _queueLabel;
     _queueUndoNextEpoch = _queueNextEpoch;
     _queueUndoShuffle = _queueShuffle;
+    _queueUndoShuffleMode = _queueShuffleMode;
     _queueUndoCanonical = List.of(_queueCanonical);
   }
 
@@ -467,6 +528,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final old = List<MusicQueueEntry>.of(_albumQueue), oldIndex = _queueIndex;
     final oldNext = Set<int>.of(_queueNextIds), oldLabel = _queueLabel;
     final oldEpoch = _queueNextEpoch;
+    final oldShuffleMode = _queueShuffleMode;
     final oldShuffle = _queueShuffle,
         oldCanonical = List<int>.of(_queueCanonical);
     _invalidateQueueNext();
@@ -487,6 +549,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueUndoLabel = oldLabel;
       _queueUndoNextEpoch = oldEpoch;
       _queueUndoShuffle = oldShuffle;
+      _queueUndoShuffleMode = oldShuffleMode;
       _queueUndoCanonical = oldCanonical;
       _queueStatus =
           'Track removed. Choose a track to play if paused. Undo available.';
@@ -504,6 +567,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final old = List<MusicQueueEntry>.of(_albumQueue), oldIndex = _queueIndex;
     final oldNext = Set<int>.of(_queueNextIds), oldLabel = _queueLabel;
     final oldEpoch = _queueNextEpoch;
+    final oldShuffleMode = _queueShuffleMode;
     final oldShuffle = _queueShuffle,
         oldCanonical = List<int>.of(_queueCanonical);
     _invalidateQueueNext();
@@ -522,6 +586,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueUndoLabel = oldLabel;
       _queueUndoNextEpoch = oldEpoch;
       _queueUndoShuffle = oldShuffle;
+      _queueUndoShuffleMode = oldShuffleMode;
       _queueUndoCanonical = oldCanonical;
       _queueStatus = 'Queue cleared. Undo available.';
     } finally {
@@ -552,6 +617,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final previousNext = Set<int>.of(_queueUndoNextIds);
     final previousLabel = _queueUndoLabel;
     final previousEpoch = _queueUndoNextEpoch;
+    final previousShuffleMode = _queueUndoShuffleMode;
     final previousShuffle = _queueUndoShuffle,
         previousCanonical = List<int>.of(_queueUndoCanonical);
     final added = entries
@@ -562,6 +628,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueIndex = -1;
       _queueLabel = sourceLabel;
       _queueShuffle = shuffled;
+      _queueShuffleMode = 'tracks';
       _queueCanonical = added.map((e) => e.id).toList();
       if (shuffled) added.shuffle();
       _invalidateQueueNext();
@@ -605,6 +672,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueUndoLabel = previousLabel;
       _queueUndoNextEpoch = previousEpoch;
       _queueUndoShuffle = previousShuffle;
+      _queueUndoShuffleMode = previousShuffleMode;
       _queueUndoCanonical = previousCanonical;
     }
     if (action != QueueInsertion.now || _musicState?.error == null) {
@@ -624,6 +692,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final previousNext = Set<int>.of(_queueUndoNextIds),
         previousLabel = _queueUndoLabel;
     final previousEpoch = _queueUndoNextEpoch;
+    final previousShuffleMode = _queueUndoShuffleMode;
     final previousShuffle = _queueUndoShuffle,
         previousCanonical = List<int>.of(_queueUndoCanonical);
     final current = _queueIndex >= 0 && _queueIndex < _albumQueue.length
@@ -641,6 +710,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
               : previousIndex;
       _queueLabel = previousLabel;
       _queueShuffle = previousShuffle;
+      _queueShuffleMode = previousShuffleMode;
       _queueCanonical = previousCanonical;
       _queueNextIds = previousEpoch == _queueNextEpoch ? previousNext : {};
       _queueUndo = null;
@@ -692,6 +762,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
           .toList();
       _queueIndex = index;
       _queueShuffle = false;
+      _queueShuffleMode = 'tracks';
       _queueCanonical = _albumQueue.map((e) => e.id).toList();
       _queueLabel = queueLabel;
       _queueClaim = claimQueue;

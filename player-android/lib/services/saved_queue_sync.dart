@@ -25,6 +25,7 @@ Map<String, dynamic> portableQueue(MusicQueueSnapshot q) => {
       'label': q.label,
       'repeat': q.repeat.name,
       'shuffle': q.shuffle,
+      'shuffle_mode': q.shuffleMode,
       'canonical': q.canonical.isEmpty
           ? q.entries.map((e) => e.id).toList()
           : q.canonical,
@@ -51,6 +52,7 @@ MusicQueueSnapshot portableQueueSnapshot(Map<String, dynamic> q) {
     'label': q['label'],
     'repeat': q['repeat'],
     'shuffle': q['shuffle'],
+    if (q.containsKey('shuffle_mode')) 'shuffle_mode': q['shuffle_mode'],
     'canonical': q['canonical'],
     'upNext': q['up_next'],
   }));

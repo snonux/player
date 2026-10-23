@@ -106,6 +106,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Now Playing'), findsOneWidget);
     expect(find.text('Now'), findsOneWidget);
+    handler.loadQueueAlbums = (_) async => {};
+    await tester.tap(find.byTooltip('Shuffle options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Shuffle albums'));
+    await tester.pumpAndSettle();
+    expect(find.text('Shuffle: Albums'), findsOneWidget);
+    await tester.tap(find.text('Shuffle: Albums'));
+    await tester.pumpAndSettle();
+    expect(find.text('Shuffle: Off'), findsOneWidget);
     await tester.tap(find.byTooltip('Queue actions for Song 1'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Move up'));

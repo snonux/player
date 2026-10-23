@@ -81,7 +81,23 @@ class _MusicQueueSheet extends StatelessWidget {
                             ? null
                             : handler.shuffleQueue,
                         icon: const Icon(Icons.shuffle),
-                        label: Text('Shuffle: ${q.shuffle ? 'On' : 'Off'}'))),
+                        label: Text(
+                            'Shuffle: ${q.shuffle ? (q.shuffleMode == 'albums' ? 'Albums' : 'Tracks') : 'Off'}'))),
+                PopupMenuButton<String>(
+                    tooltip: 'Shuffle options',
+                    enabled:
+                        !q.busy && !q.restoreFailed && q.shuffleEligible >= 2,
+                    onSelected: (mode) => handler.shuffleQueue(mode: mode),
+                    itemBuilder: (_) => const [
+                          PopupMenuItem(
+                              value: 'tracks', child: Text('Shuffle tracks')),
+                          PopupMenuItem(
+                              value: 'albums', child: Text('Shuffle albums')),
+                        ],
+                    child: const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                        child: Text('Shuffle options ▾'))),
                 if (q.shuffle)
                   TextButton(
                       style:
@@ -111,7 +127,7 @@ class _MusicQueueSheet extends StatelessWidget {
               Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
-                      'Only upcoming songs change. Library order stays the same.${q.shuffleEligible < 2 ? ' At least two upcoming songs outside Play next are needed to shuffle.' : ''}')),
+                      'Upcoming songs only; Play next stays first. Albums keep disc/track order.${q.shuffleEligible < 2 ? ' At least two upcoming songs outside Play next are needed to shuffle.' : ''}')),
               if (q.entries.isNotEmpty || q.status.isNotEmpty)
                 Padding(
                     padding: const EdgeInsets.all(12),

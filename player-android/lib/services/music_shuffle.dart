@@ -1,6 +1,7 @@
 import 'dart:math';
 import '../models/media.dart';
 import 'music_queue.dart';
+import 'playback_request.dart';
 
 /// Uniform occurrence shuffle; the optional RNG is a pure algorithm test seam.
 List<T> shuffledCopy<T>(List<T> values, [Random? random]) =>
@@ -77,4 +78,34 @@ class MusicShuffleOptions {
         if (indexes.contains(i)) eligible[i]
     ];
   }
+}
+
+/// Server catalog membership; missing entries remain independent occurrences.
+List<MusicQueueEntry> shuffledMusicAlbums(
+    List<MusicQueueEntry> entries, Map<String, dynamic> albums,
+    [Random? random, MusicQueueEntry? current]) {
+  final groups = <Object, List<MusicQueueEntry>>{};
+  Map? membership(MusicQueueEntry e) => e.request is ServerPlaybackRequest
+      ? albums['${(e.request as ServerPlaybackRequest).mediaId}'] as Map?
+      : null;
+  for (final entry in entries) {
+    final key = membership(entry)?['album_key'] ?? entry;
+    (groups[key] ??= []).add(entry);
+  }
+  for (final group in groups.values) {
+    // Stable ties preserve repeated occurrences of the same song.
+    final rank = {for (var i = 0; i < group.length; i++) group[i].id: i};
+    group.sort((a, b) => ((membership(a)?['order'] as int? ?? 0)
+                .compareTo(membership(b)?['order'] as int? ?? 0)) !=
+            0
+        ? (membership(a)!['order'] as int)
+            .compareTo(membership(b)!['order'] as int)
+        : rank[a.id]!.compareTo(rank[b.id]!));
+  }
+  final key = current == null ? null : membership(current)?['album_key'];
+  final continuation = groups.remove(key) ?? <MusicQueueEntry>[];
+  return [
+    ...continuation,
+    ...shuffledCopy(groups.values.toList(), random).expand((g) => g)
+  ];
 }

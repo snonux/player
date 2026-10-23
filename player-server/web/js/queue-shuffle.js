@@ -7,11 +7,11 @@ export function shuffledCopy(values, random = Math.random) {
   }
   return result;
 }
-export function orderRemainder(entries, index, canonical, pinned, shuffle, random = Math.random) {
+export function orderRemainder(entries, index, canonical, pinned, shuffle, random = Math.random, albums = {}) {
   const remaining = entries.slice(index + 1), next = remaining.filter(e => pinned.has(e.id));
   const rest = remaining.filter(e => !pinned.has(e.id));
   const rank = new Map(canonical.map((id, i) => [id, i]));
-  const ordered = shuffle ? shuffledCopy(rest, random) : rest.sort((a, b) => rank.get(a.id) - rank.get(b.id));
+  const ordered = shuffle === 'albums' ? shuffledAlbums(rest, albums, random, entries[index]) : shuffle ? shuffledCopy(rest, random) : rest.sort((a, b) => rank.get(a.id) - rank.get(b.id));
   return [...entries.slice(0, index + 1), ...next, ...ordered];
 }
 export function parseShuffleOptions({genre = '', from = '', to = '', maximum = ''} = {}) {
@@ -34,4 +34,21 @@ export function selectShuffleSongs(songs, options = {}, random = Math.random) {
   // Sample occurrence indexes, then retain chosen original order as canonical.
   const selected = new Set(shuffledCopy(eligible.map((_, i) => i), random).slice(0, options.maximum));
   return eligible.filter((_, i) => selected.has(i));
+}
+
+// Canonical album identities and ranks come from the permission-aware catalog.
+// Missing entries are separate blocks, never an invented Unknown album.
+export function shuffledAlbums(entries, albums, random = Math.random, current = null) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const album = albums[entry.media.id];
+    const key = album?.album_key || entry;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  }
+  for (const group of groups.values()) group.sort((a, b) => albums[a.media.id]?.order - albums[b.media.id]?.order || 0);
+  const currentKey = albums[current?.media.id]?.album_key;
+  const continuation = groups.get(currentKey) || [];
+  groups.delete(currentKey);
+  return [...continuation, ...shuffledCopy([...groups.values()], random).flat()];
 }

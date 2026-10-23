@@ -93,6 +93,71 @@ void main() {
     expect(
         () => MusicShuffleOptions.parse(from: '10000'), throwsFormatException);
   });
+  test('album blocks keep active continuation, canonical ranks and duplicates',
+      () {
+    final entries =
+        List.generate(8, (i) => MusicQueueEntry(i + 1, request(i + 1)));
+    final albums = <String, dynamic>{
+      '1': {'album_key': 'A', 'order': 0},
+      '2': {'album_key': 'A', 'order': 2},
+      '3': {'album_key': 'B', 'order': 1},
+      '4': {'album_key': 'A', 'order': 1},
+      '5': {'album_key': 'B', 'order': 0},
+      '6': {'album_key': 'C', 'order': 0}
+    };
+    final shuffled = shuffledMusicAlbums(
+        entries.skip(1).toList(), albums, Random(1), entries.first);
+    expect(shuffled.take(2).map((e) => e.id), [4, 2]);
+    final ids = shuffled.map((e) => e.id).toList();
+    expect(ids.indexOf(3), ids.indexOf(5) + 1);
+    expect(ids.toSet(), entries.skip(1).map((e) => e.id).toSet());
+    final duplicate = shuffledMusicAlbums([
+      MusicQueueEntry(20, request(5)),
+      MusicQueueEntry(21, request(3)),
+      MusicQueueEntry(22, request(5))
+    ], albums, Random(2));
+    expect(duplicate.map((e) => e.id), [20, 22, 21]);
+  });
+  test(
+      'album lookup failure preserves mode and source; success Undo and persistence',
+      () async {
+    final player = _Player(), coordinator = PlaybackSessionCoordinator();
+    final h = PlayerAudioHandler(player);
+    await h.insertQueue(
+        entries: [1, 2, 3, 4].map(request).toList(),
+        action: QueueInsertion.now,
+        replace: true,
+        claim: (r) =>
+            coordinator.claim(kind: r.kind, identity: r.identity, stop: h.stop),
+        load: (r, c) async => AudioSource.uri(r.sourceUri));
+    final before = h.musicQueue.entries.map((e) => e.id).toList(),
+        loads = player.loads;
+    h.loadQueueAlbums = (_) async => throw StateError('offline');
+    await h.shuffleQueue(mode: 'albums');
+    expect(h.musicQueue.entries.map((e) => e.id), before);
+    expect(h.musicQueue.shuffle, isFalse);
+    expect(h.musicQueue.busy, isFalse);
+    h.loadQueueAlbums = (_) async => {
+          '1': {'album_key': 'A', 'order': 0},
+          '2': {'album_key': 'B', 'order': 1},
+          '3': {'album_key': 'A', 'order': 1},
+          '4': {'album_key': 'B', 'order': 0}
+        };
+    await h.shuffleQueue(mode: 'albums');
+    expect(
+        h.musicQueue.entries
+            .map((e) => (e.request as ServerPlaybackRequest).mediaId),
+        [1, 3, 4, 2]);
+    expect(player.loads, loads);
+    final snapshot = MusicQueueSnapshot.decode(h.queueSnapshot.encode());
+    expect(snapshot.shuffleMode, 'albums');
+    await h.clearQueue();
+    await h.undoQueue();
+    expect(h.musicQueue.shuffleMode, 'albums');
+    await h.shuffleQueue();
+    expect(h.musicQueue.entries.map((e) => e.id), before);
+    await h.stop();
+  });
   test('pure remainder preserves played prefix and pinned FIFO', () {
     final entries =
         List.generate(7, (i) => MusicQueueEntry(i + 1, request(i % 3)));

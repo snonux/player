@@ -10,17 +10,29 @@ import { currentMediaId, queuePlaybackPosition, selectAndPlay, stopAndClose } fr
 let entries = [], index = -1, label = '', activeID = null, serial = 0;
 let revision = 0, loading = false, undo = null, status = '';
 let nextIDs = new Set(), nextEpoch = 0;
-let repeat = 'off', shuffle = false, canonical = [];
+let albumLoading = false;
+let repeat = 'off', shuffle = false, shuffleMode = 'tracks', canonical = [];
 function canonicalInsert(added, at) {
   const anchor = entries[at - 1]?.id;
   canonical.splice(anchor ? canonical.indexOf(anchor) + 1 : 0, 0, ...added.map(e => e.id));
 }
-export function shuffleQueue({ reshuffle = false } = {}) {
-  if (loading || restoreError || (!shuffle && eligibleShuffleCount() < 2) || (reshuffle && eligibleShuffleCount() < 2)) return;
-  remember();
-  shuffle = reshuffle || !shuffle;
-  entries = orderRemainder(entries, index, canonical, nextIDs, shuffle);
-  status = `${shuffle ? 'Upcoming songs shuffled.' : 'Remaining song order restored.'} Undo available.`;
+export async function shuffleQueue({ reshuffle = false, mode = null } = {}) {
+  if (loading || albumLoading || restoreError || ((!shuffle || reshuffle || mode) && eligibleShuffleCount() < 2)) return;
+  const chosen = mode || shuffleMode;
+  if (!['tracks', 'albums'].includes(chosen)) return;
+  let albums = {};
+  const enabled = reshuffle || mode !== null || !shuffle;
+  if (enabled && chosen === 'albums') {
+    const edits = queueChanges, scope = storageKey;
+    albumLoading = true; status = 'Loading album order…'; document.dispatchEvent(new Event('queue:changed'));
+    try { albums = await API.queueAlbums([...new Set(entries.map(e => e.media.id))]); }
+    catch { if (scope === storageKey) { albumLoading = false; status = 'Could not shuffle albums. Check your connection and retry.'; document.dispatchEvent(new Event('queue:changed')); } return; }
+    if (edits !== queueChanges || scope !== storageKey) { if (scope === storageKey) { albumLoading = false; document.dispatchEvent(new Event('queue:changed')); } return; }
+    albumLoading = false;
+  }
+  remember(); shuffle = enabled; shuffleMode = chosen;
+  entries = orderRemainder(entries, index, canonical, nextIDs, shuffle ? shuffleMode : false, Math.random, albums);
+  status = `${shuffle ? (shuffleMode === 'albums' ? 'Upcoming albums shuffled; album song order preserved.' : 'Upcoming songs shuffled.') : 'Remaining song order restored.'} Undo available.`;
   notify();
 }
 function eligibleShuffleCount() { return entries.slice(index + 1).filter(e => !nextIDs.has(e.id)).length; }
@@ -36,7 +48,7 @@ function capturePosition() {
   if (Number.isFinite(position)) { savedPosition = position; positionEntry = entries[index]?.id; }
 }
 function portableSnapshot() {
- return { entries: entries.map(e => ({ id: e.id, media_id: e.media.id })), current_id: entries[index]?.id || 0, position_seconds: positionEntry === entries[index]?.id ? savedPosition : 0, label, repeat, shuffle, canonical: [...canonical], up_next: [...nextIDs] };
+ return { entries: entries.map(e => ({ id: e.id, media_id: e.media.id })), current_id: entries[index]?.id || 0, position_seconds: positionEntry === entries[index]?.id ? savedPosition : 0, label, repeat, shuffle, shuffle_mode: shuffleMode, canonical: [...canonical], up_next: [...nextIDs] };
 }
 export function savedSessionState() { return { conflict: !!portableSync.state.conflict, message: portableSync.message || '', available: !!portableSync.state.remote?.revision }; }
 export function replaceSavedSession() { portableSync.capture(portableSnapshot()); return portableSync.replace(); }
@@ -65,7 +77,7 @@ async function applySavedSession(remote, operation, edits, intent, scope) {
   savedPosition = selectedSurvived ? remote.position_seconds : 0; positionEntry = entries[index]?.id;
   if (entries[index]?.media.duration > 0) savedPosition = Math.min(savedPosition, entries[index].media.duration);
   serial = Math.max(serial, ...entries.map(e => e.id)); activeID = null; undo = null;
-  label = remote.label; repeat = remote.repeat; shuffle = remote.shuffle;
+  label = remote.label; repeat = remote.repeat; shuffle = remote.shuffle; shuffleMode = remote.shuffle_mode || 'tracks';
   canonical = remote.canonical.filter(id => entries.some(e => e.id === id));
   nextIDs = new Set(remote.up_next.filter(id => entries.some(e => e.id === id)));
   restored = !!entries.length; restoreError = false; loading = false; status = 'Session continued · paused. Resume when you’re ready.';
@@ -80,7 +92,7 @@ function saveQueue() {
     localStorage.setItem(storageKey, JSON.stringify({ version: 1,
       entries: entries.map(entry => ({ id: entry.id, mediaId: entry.media.id })), index,
       position: positionEntry === entries[index]?.id ? savedPosition : 0, label,
-      repeat, shuffle, canonical, upNext: [...nextIDs] }));
+      repeat, shuffle, shuffle_mode: shuffleMode, canonical, upNext: [...nextIDs] }));
       if (!applyingServerQueue && !loading) {
       portableSync.capture(portableSnapshot());
       if (Date.now() - lastSyncAt > 15000) { lastSyncAt = Date.now(); void portableSync.sync(); }
@@ -100,7 +112,7 @@ export async function restoreQueue(userId) {
     saveQueue();
     if (queueState().active) stopAndClose();
     beginPlaybackIntent();
-    entries = []; index = -1; activeID = null; label = ''; undo = null; repeat = 'off'; shuffle = false; canonical = [];
+    entries = []; albumLoading = false; index = -1; activeID = null; label = ''; undo = null; repeat = 'off'; shuffle = false; shuffleMode = 'tracks'; canonical = [];
     restored = false; positionEntry = null; savedPosition = 0; invalidateNext();
   }
   storageKey = key;
@@ -131,7 +143,7 @@ export async function restoreQueue(userId) {
     if (!keptCurrent) index = entries.length ? Math.min(snapshot.index, entries.length - 1) : -1;
     serial = Math.max(serial, ...snapshot.entries.map(entry => entry.id));
     repeat = snapshot.repeat ?? 'off';
-    shuffle = snapshot.shuffle ?? false; canonical = (snapshot.canonical ?? snapshot.entries.map(e => e.id)).filter(id => entries.some(e => e.id === id));
+    shuffle = snapshot.shuffle ?? false; shuffleMode = snapshot.shuffle_mode || 'tracks'; canonical = (snapshot.canonical ?? snapshot.entries.map(e => e.id)).filter(id => entries.some(e => e.id === id));
     label = snapshot.label; activeID = null; undo = null;
     nextIDs = new Set(snapshot.upNext.filter(id => entries.some(entry => entry.id === id)));
     positionEntry = entries[index]?.id; savedPosition = keptCurrent ? snapshot.position : 0;
@@ -162,7 +174,7 @@ export function cycleQueueRepeat() {
 
 export function queueUndoToken() { return undo; }
 export function queueState() {
-  return { entries: entries.map(entry => ({ ...entry, upNext: nextIDs.has(entry.id) })), index, label, active: activeID !== null && String(currentMediaId()) === String(activeID), loading, repeat, shuffle, shuffleEligible: eligibleShuffleCount(), canUndo: !!undo, status, restored, restoreError, position: positionEntry === entries[index]?.id ? savedPosition : 0 };
+  return { entries: entries.map(entry => ({ ...entry, upNext: nextIDs.has(entry.id) })), index, label, active: activeID !== null && String(currentMediaId()) === String(activeID), loading: loading || albumLoading, repeat, shuffle, shuffleMode, shuffleEligible: eligibleShuffleCount(), canUndo: !!undo, status, restored, restoreError, position: positionEntry === entries[index]?.id ? savedPosition : 0 };
 }
 export function deactivateQueue({ keepNext = false } = {}) {
   capturePosition();
@@ -189,7 +201,7 @@ export function initQueue() {
 export async function playAlbumCollection(songs, at = 0, source = '') {
   restoreError = false; restored = false; savedPosition = 0; positionEntry = null;
   entries = songs.filter(song => song.type === 'audio').map(media => ({ id: ++serial, media }));
-  invalidateNext(); shuffle = false; canonical = entries.map(e => e.id);
+  invalidateNext(); shuffle = false; shuffleMode = 'tracks'; canonical = entries.map(e => e.id);
   index = at; label = source || songs[at]?.music?.album || 'Album'; undo = null;
   await jumpQueue(index);
 }
@@ -217,7 +229,7 @@ export async function advanceQueue(delta, { completed = false } = {}) {
   if (target >= 0 && target < entries.length) await jumpQueue(target, completed || delta > 0, false, completed && (repeat === 'one' || target === 0));
   return true;
 }
-function remember() { undo = { entries: [...entries], index, nextIDs: new Set(nextIDs), nextEpoch, label, shuffle, canonical: [...canonical] }; }
+function remember() { undo = { entries: [...entries], index, nextIDs: new Set(nextIDs), nextEpoch, label, shuffle, shuffleMode, canonical: [...canonical] }; }
 export async function insertQueue(songs, action = 'next', {replace = false, source = 'Collection', shuffled = false} = {}) {
   if (loading) return false;
   const added = songs.filter(song => song.type === 'audio').map(media => ({ id: ++serial, media }));
@@ -225,7 +237,7 @@ export async function insertQueue(songs, action = 'next', {replace = false, sour
   restoreError = false;
   remember();
   const previous = undo;
-  if (replace) { entries = []; index = -1; label = source; invalidateNext(); shuffle = shuffled; canonical = []; if (shuffled) { const ordered = [...added]; added.splice(0, added.length, ...shuffledCopy(added)); canonical = ordered.map(e => e.id); } }
+  if (replace) { entries = []; index = -1; label = source; invalidateNext(); shuffle = shuffled; shuffleMode = 'tracks'; canonical = []; if (shuffled) { const ordered = [...added]; added.splice(0, added.length, ...shuffledCopy(added)); canonical = ordered.map(e => e.id); } }
   let at = action === 'append' ? entries.length : Math.max(0, index + 1);
   if (action === 'next') {
     while (at < entries.length && nextIDs.has(entries[at].id)) at++;
@@ -275,7 +287,7 @@ export function undoQueue(expected) {
   if (loading || !undo) return;
   const current = entries[index], previous = undo;
   if (queueState().active && !previous.entries.includes(current)) stopAndClose();
-  entries = previous.entries; label = previous.label; shuffle = previous.shuffle; canonical = previous.canonical;
+  entries = previous.entries; label = previous.label; shuffle = previous.shuffle; shuffleMode = previous.shuffleMode; canonical = previous.canonical;
   nextIDs = previous.nextEpoch === nextEpoch ? previous.nextIDs : new Set();
   index = activeID !== null && entries.includes(current) ? entries.indexOf(current) : previous.index;
   if (queueState().active) nextIDs = new Set(entries.slice(index + 1).filter(entry => nextIDs.has(entry.id)).map(entry => entry.id));

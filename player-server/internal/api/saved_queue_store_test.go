@@ -48,6 +48,9 @@ func TestSavedQueueRoutesPreconditionConflictBothPrefixes(t *testing.T) {
 		return w
 	}
 	for _, prefix := range []string{"/api", "/api/v1"} {
+		if w := request("POST", prefix+"/music/queue-albums", "", `{"media_ids":[]}`, false); w.Code != 401 {
+			t.Fatalf("album queue anonymous %s: %d", prefix, w.Code)
+		}
 		for _, method := range []string{"GET", "PUT"} {
 			if w := request(method, prefix+"/queue", "", "", false); w.Code != 401 {
 				t.Fatalf("anonymous %s %s: %d", method, prefix, w.Code)

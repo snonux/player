@@ -52,6 +52,12 @@ class MusicQueuePersistence {
     final coordinator = _ref.read(playbackSessionCoordinatorProvider);
     bool current() =>
         mutations.generation == generation && handler.queueScope == scope;
+    handler.loadQueueAlbums = (ids) async {
+      if (!current()) throw StateError('Account changed');
+      final albums = await client.musicQueueAlbums(ids);
+      if (!current()) throw StateError('Account changed');
+      return albums;
+    };
     final prefs = await SharedPreferences.getInstance();
     if (!current()) return;
     var validating = true;
@@ -206,6 +212,7 @@ class MusicQueuePersistence {
             label: snapshot.label,
             repeat: snapshot.repeat,
             shuffle: snapshot.shuffle,
+            shuffleMode: snapshot.shuffleMode,
             canonical: snapshot.canonical
                 .where((id) => entries.any((e) => e.id == id))
                 .toList(),

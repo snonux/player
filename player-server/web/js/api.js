@@ -75,6 +75,7 @@ export const API = {
   artists: (params = {}) => api(`/api/music/artists?${new URLSearchParams(params)}`),
   artist: key => api(`/api/music/artists/${encodeURIComponent(key)}`),
   relatedMusic: (kind, key) => api(`/api/music/related/${kind}/${encodeURIComponent(key)}`),
+  queueAlbums: media_ids => api('/api/music/queue-albums', {method: 'POST', body: {media_ids}}),
   albums: (params = {}) => api(`/api/music/albums?${new URLSearchParams(params)}`),
   album: key => api(`/api/music/albums/${encodeURIComponent(key)}`),
   sets: () => api('/api/sets'),

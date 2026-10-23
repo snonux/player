@@ -23,6 +23,7 @@ class MusicQueueState {
       required this.status,
       this.repeat = MusicRepeat.off,
       this.shuffle = false,
+      this.shuffleMode = 'tracks',
       this.shuffleEligible = 0,
       this.upNextIds = const {},
       this.restored = false,
@@ -37,5 +38,6 @@ class MusicQueueState {
   final Set<int> upNextIds;
   final MusicRepeat repeat;
   final bool shuffle;
+  final String shuffleMode;
   final int shuffleEligible;
 }

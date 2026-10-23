@@ -77,6 +77,39 @@ func TestMusicAlbumsRealPermissions(t *testing.T) {
 	if facetResponse.Code != 200 || strings.Contains(facetResponse.Body.String(), "Restricted only") || !strings.Contains(facetResponse.Body.String(), "Visible genre") {
 		t.Fatalf("facet options ACL: %s", facetResponse.Body.String())
 	}
+	// Queue ordering exposes only requested, permitted canonical membership.
+	queueRequest := func(body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/api/music/queue-albums", strings.NewReader(body))
+		r = r.WithContext(context.WithValue(r.Context(), sessionCtxKey, &model.Session{UserID: user}))
+		w := httptest.NewRecorder()
+		server.handleMusicQueueAlbums(w, r)
+		return w
+	}
+	queueResult := queueRequest(`{"media_ids":[` + strconv.FormatInt(ids[0], 10) + `,` + strconv.FormatInt(ids[1], 10) + `]}`)
+	var memberships map[string]struct {
+		Key   string `json:"album_key"`
+		Order int    `json:"order"`
+	}
+	if queueResult.Code != 200 {
+		t.Fatalf("queue membership: %d %s", queueResult.Code, queueResult.Body.String())
+	}
+	if err := json.Unmarshal(queueResult.Body.Bytes(), &memberships); err != nil {
+		t.Fatal(err)
+	}
+	if len(memberships) != 1 || memberships[strconv.FormatInt(ids[0], 10)].Key == "" || memberships[strconv.FormatInt(ids[0], 10)].Order != 0 {
+		t.Fatalf("queue ACL: %+v", memberships)
+	}
+	if w := queueRequest(`{"media_ids":[]}`); strings.TrimSpace(w.Body.String()) != "{}" {
+		t.Fatalf("unrequested IDs: %s", w.Body.String())
+	}
+	for _, body := range []string{`{}`, `{"media_ids":null}`, `{"media_ids":[0]}`, `{"media_ids":[-1]}`, `{"media_ids":[1.5]}`, `{"media_ids":[9007199254740992]}`, `bad`} {
+		if w := queueRequest(body); w.Code != 400 {
+			t.Fatalf("invalid IDs accepted: %s", body)
+		}
+	}
+	if w := queueRequest(`{"media_ids":[` + strings.Repeat("1,", 10000) + `1]}`); w.Code != 400 {
+		t.Fatal("oversized occurrence set accepted")
+	}
 	list := request("", "")
 	if list.Code != 200 {
 		t.Fatalf("list %d %s", list.Code, list.Body.String())

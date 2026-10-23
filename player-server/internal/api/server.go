@@ -384,6 +384,7 @@ func (s *Server) routesMedia() {
 	s.handleBoth(http.MethodPost, "/api/music/enrichment/{kind}/{entity_key}", s.requireSession(s.handleMusicEnrichment))
 	s.handleBoth(http.MethodGet, "/api/music/facets", s.requireSession(s.handleMusicFacets))
 	s.handleBoth(http.MethodGet, "/api/music/search", s.requireSession(s.handleMusicSearch))
+	s.handleBoth(http.MethodPost, "/api/music/queue-albums", s.requireSession(s.handleMusicQueueAlbums))
 	s.handleBoth(http.MethodGet, "/api/music/albums", s.requireSession(s.handleMusicAlbums))
 	s.handleBoth(http.MethodGet, "/api/music/albums/{album_key}", s.requireSession(s.handleMusicAlbums))
 	s.handleBoth(http.MethodGet, "/api/media", s.requireSession(s.handleListMedia))

@@ -14,3 +14,6 @@ for (const repeat of [null, false, 'invalid', 0]) assert.throws(()=>readQueueSna
 const shuffled = {...snapshot,shuffle:true,canonical:[2,1]};
 assert.deepEqual(readQueueSnapshot(JSON.stringify(shuffled)),shuffled);
 for (const invalid of [{shuffle:'yes'},{shuffle:true},{canonical:[1]},{canonical:[1,1]},{canonical:[1,99]},{canonical:null}]) assert.throws(()=>readQueueSnapshot(JSON.stringify({...snapshot,...invalid})));
+
+assert.equal(readQueueSnapshot(JSON.stringify({...shuffled,shuffle_mode:'albums'})).shuffle_mode,'albums');
+for (const shuffle_mode of [null, false, 'unknown', 3]) assert.throws(()=>readQueueSnapshot(JSON.stringify({...shuffled,shuffle_mode})));

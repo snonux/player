@@ -10,6 +10,7 @@ export function readQueueSnapshot(raw) {
       !Number.isFinite(value.position) || value.position < 0 || typeof value.label !== 'string' ||
       value.label.length > 2000 || !Array.isArray(value.upNext)) throw new Error('Invalid queue');
   if (value.shuffle !== undefined && typeof value.shuffle !== 'boolean') throw new Error('Invalid shuffle');
+  if (value.shuffle_mode !== undefined && !['tracks', 'albums'].includes(value.shuffle_mode)) throw new Error('Invalid shuffle mode');
   const ids = new Set();
   for (const entry of value.entries) {
     if (!Number.isSafeInteger(entry.id) || entry.id <= 0 || ids.has(entry.id) ||

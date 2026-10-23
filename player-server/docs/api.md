@@ -2836,3 +2836,19 @@ errors retain normal server errors. Responses use `Cache-Control: no-store`.
 Unset disables the section. This is an explicit JSON agent contract, not direct
 compatibility with arbitrary external provider APIs. See [M10 configuration,
 limits and deterministic local fixture](../../docs/music-m10-implementation.md).
+
+
+### Queue album order
+
+`POST /api/music/queue-albums` (also `/api/v1/music/queue-albums`) accepts
+`{"media_ids":[1,2]}`: at most 10,000 positive safe integer media IDs within
+200,000 bytes. The response maps requested accessible music song IDs to
+`{"album_key":"al_…","order":0}`. Membership and zero-based disc/track rank
+reuse the permission-aware catalog, including compilations and folder albums.
+Unrequested, unavailable and noncatalog IDs are omitted. Clients keep these as
+independent queue occurrences. This endpoint does not edit or start playback.
+
+Portable saved queues optionally include `shuffle_mode: "tracks" | "albums"`;
+legacy or absent values mean tracks. `shuffle` remains the enabled boolean.
+The saved occurrence order is authoritative on restore; clients do not reshuffle
+or fetch the album map until the user explicitly shuffles again.

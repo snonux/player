@@ -50,7 +50,7 @@ func PutSavedQueue(ctx context.Context, store SavedQueueStore, userID, revision 
 }
 
 func validateSavedQueue(q model.SavedQueue, revision int64) error {
-	if revision < 0 || revision >= 9007199254740991 || len(q.Entries) > 10000 || len(q.MutationID) == 0 || len(q.MutationID) > 100 || !utf8.ValidString(q.MutationID) || len(q.Label) > 2000 || !utf8.ValidString(q.Label) || math.IsNaN(q.Position) || math.IsInf(q.Position, 0) || q.Position < 0 || q.Position > 9000000000000 || (q.Repeat != "off" && q.Repeat != "all" && q.Repeat != "one") {
+	if (q.ShuffleMode != "" && q.ShuffleMode != "tracks" && q.ShuffleMode != "albums") || revision < 0 || revision >= 9007199254740991 || len(q.Entries) > 10000 || len(q.MutationID) == 0 || len(q.MutationID) > 100 || !utf8.ValidString(q.MutationID) || len(q.Label) > 2000 || !utf8.ValidString(q.Label) || math.IsNaN(q.Position) || math.IsInf(q.Position, 0) || q.Position < 0 || q.Position > 9000000000000 || (q.Repeat != "off" && q.Repeat != "all" && q.Repeat != "one") {
 		return ErrInvalidQueue
 	}
 	ids := map[int64]bool{}
