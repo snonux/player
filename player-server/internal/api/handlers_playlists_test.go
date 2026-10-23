@@ -37,7 +37,7 @@ func TestPlaylistAPIValidationOwnerAndSavedState(t *testing.T) {
 		s.handlePlaylists(w, r)
 		return w
 	}
-	for _, body := range []string{`{`, `{"name":" "}`, `{"name":"ok","visibility":"public"}`, `{"name":"ok","owner_id":1}`, `{"name":"ok","unknown":true}`, `{"name":"ok","comment":` + "\"" + strings.Repeat("a", 2001) + "\"}"} {
+	for _, body := range []string{`{"name":"queue","media_ids":[]}`, `{"name":"queue","visibility":"shared","media_ids":[1]}`, `{`, `{"name":" "}`, `{"name":"ok","visibility":"public"}`, `{"name":"ok","owner_id":1}`, `{"name":"ok","unknown":true}`, `{"name":"ok","comment":` + "\"" + strings.Repeat("a", 2001) + "\"}"} {
 		if w := request("POST", "", body, user); w.Code != 400 {
 			t.Fatalf("bad request %d %s", w.Code, w.Body.String())
 		}

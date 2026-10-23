@@ -2873,3 +2873,24 @@ clients use `revision` to invalidate replaced images. Status responses are
 `no-store`. Playlist list/detail payloads include optional `artwork_revision`
 without loading image BLOBs. Playlist deletion removes its custom art. Artwork
 is independent of source files/tags and optional external enrichment images.
+
+### Save a queue as a playlist
+
+`POST /api/v1/playlists` (also `/api/playlists`) optionally accepts
+`media_ids` with 1–10000 current, permitted Music song IDs. For example,
+`{"name":"Night drive","comment":"","visibility":"private","media_ids":[7,3,7]}`
+creates one private playlist owned by the authenticated account, retaining the
+supplied order and every repeated occurrence with separate entry IDs. Visibility
+must be omitted or `private`; sharing can be changed after saving. The response
+is the ordinary playlist detail with status 201. Without `media_ids`, creation
+still makes an empty playlist.
+
+Validation precedes one document-and-membership transaction: an empty/oversized
+selection or nonprivate visibility returns 400, and any unavailable, deleted,
+inaccessible or nonmusic ID returns 409 without creating a partial document.
+`media_ids` is rejected on playlist update/album-add requests. Subsequent detail
+reads omit songs that later become unavailable using the normal playlist access
+rules. Saving never changes the playing queue, current occurrence or position.
+Clients capture one snapshot when opening the naming dialog; connection errors
+retain that snapshot and name. If a response is lost after creation, check the
+playlist list before retrying to avoid creating a second copy.

@@ -25,17 +25,22 @@ func (s *Server) handlePlaylists(w http.ResponseWriter, r *http.Request) {
 		err = svc.Delete(r.Context(), user, id)
 	default:
 		var body struct {
+			MediaIDs   []int64 `json:"media_ids"`
 			Visibility *string `json:"visibility"`
 			OwnerID    *int64  `json:"owner_id"`
 			Name       string  `json:"name"`
 			Comment    string  `json:"comment"`
 			AlbumKey   string  `json:"album_key"`
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 32768)
+		r.Body = http.MaxBytesReader(w, r.Body, 262144)
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&body); err != nil {
 			writeError(w, 400, "Invalid playlist request.")
+			return
+		}
+		if body.MediaIDs != nil && (r.Method != http.MethodPost || id != "") {
+			writeError(w, 400, "Queue songs can only be supplied when creating a playlist.")
 			return
 		}
 		if r.Method == http.MethodPost && id != "" {
@@ -45,7 +50,11 @@ func (s *Server) handlePlaylists(w http.ResponseWriter, r *http.Request) {
 				writeError(w, 400, "Ownership can be changed after creating a playlist.")
 				return
 			}
-			result, err = svc.CreateDetails(r.Context(), user, body.Name, body.Comment, body.Visibility)
+			if body.MediaIDs != nil {
+				result, err = svc.CreateFromQueue(r.Context(), user, body.Name, body.Comment, body.Visibility, body.MediaIDs)
+			} else {
+				result, err = svc.CreateDetails(r.Context(), user, body.Name, body.Comment, body.Visibility)
+			}
 		} else {
 			result, err = svc.UpdateDetails(r.Context(), user, id, body.Name, body.Comment, body.Visibility, body.OwnerID)
 		}

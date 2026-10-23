@@ -380,3 +380,6 @@ label {
 .music-enrichment .album-cover { width: 10rem; height: 10rem; object-fit: contain; }
 .music-enrichment a { color: var(--accent); }
 .music-enrichment .text-secondary { color: var(--text-secondary); }
+
+/* The naming dialog stays above the narrow Now Playing sheet. */
+#playlist-modal.queue-playlist-modal { z-index: 301; }

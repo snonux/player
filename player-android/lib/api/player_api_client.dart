@@ -84,6 +84,19 @@ class PlayerApiClient implements ProgressSyncClient {
       (await _dio.get<Map<String, dynamic>>(
               '/api/v1/playlists/${Uri.encodeComponent(id)}'))
           .data!;
+
+  /// Saves a private ordered queue snapshot, retaining duplicate occurrences.
+  Future<Map<String, dynamic>> createPlaylistFromQueue(
+          String name, List<int> mediaIds, int credentialEpoch) async =>
+      (await _dio.post<Map<String, dynamic>>('/api/v1/playlists',
+              data: {
+                'name': name,
+                'comment': '',
+                'visibility': 'private',
+                'media_ids': mediaIds
+              },
+              options: Options(extra: {'credentialEpoch': credentialEpoch})))
+          .data!;
   Future<Map<String, dynamic>> createPlaylist(
           String name, String comment) async =>
       (await _dio.post<Map<String, dynamic>>('/api/v1/playlists',

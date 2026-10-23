@@ -1,3 +1,4 @@
+import 'queue_playlist_dialog.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -257,6 +258,7 @@ class _MusicQueueSheet extends StatelessWidget {
                   child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Wrap(spacing: 12, children: [
+                        SaveQueuePlaylistButton(queue: q),
                         TextButton(
                             onPressed: q.busy || q.entries.isEmpty
                                 ? null
