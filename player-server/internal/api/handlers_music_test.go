@@ -121,6 +121,25 @@ func TestMusicAlbumsRealPermissions(t *testing.T) {
 	if len(albums) != 1 || albums[0].SongCount != 1 || albums[0].Duration != 10 || albums[0].CoverMediaID != ids[0] {
 		t.Fatalf("ACL aggregate leaked: %+v", albums)
 	}
+	for _, collection := range []string{"recently_added", "random"} {
+		response := request("", "?collection="+collection)
+		var discovered []service.Album
+		if err := json.Unmarshal(response.Body.Bytes(), &discovered); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != 200 || len(discovered) != 1 || discovered[0].Key != albums[0].Key || !discovered[0].AddedAt.Equal(now) {
+			t.Fatalf("discovery ACL/date %s: %s", collection, response.Body.String())
+		}
+	}
+	for _, collection := range []string{"recently_played", "most_played", "favorites", "top_rated"} {
+		response := request("", "?collection="+collection)
+		if response.Code != 200 || strings.TrimSpace(response.Body.String()) != "[]" {
+			t.Fatalf("discovery empty %s: %s", collection, response.Body.String())
+		}
+	}
+	if response := request("", "?collection=unknown"); response.Code != 400 {
+		t.Fatalf("invalid collection: %d", response.Code)
+	}
 	if len(albums[0].Discs) != 0 {
 		t.Fatal("summary embeds discs")
 	}

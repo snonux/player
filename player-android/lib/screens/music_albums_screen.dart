@@ -1,3 +1,6 @@
+import 'dart:math';
+import '../services/music_discovery.dart';
+import '../widgets/music_discovery_panel.dart';
 import '../widgets/music_enrichment_section.dart';
 import 'create_share_dialog.dart';
 import '../widgets/music_download_dialog.dart';
@@ -36,6 +39,10 @@ class MusicAlbumsScreen extends ConsumerStatefulWidget {
 }
 
 class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
+  bool _discover = false;
+  String? _collection;
+  List<String> _collectionOrder = [];
+  int _randomSeed = DateTime.now().microsecondsSinceEpoch;
   bool _favoritesOnly = false;
   bool _ratedOnly = false, _highestRated = false;
   Widget _rating(String kind, Map<String, dynamic> entity) => MusicRatingButton(
@@ -92,6 +99,9 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.albumKey != widget.albumKey ||
         oldWidget.artistKey != widget.artistKey) {
+      _discover = false;
+      _collection = null;
+      _collectionOrder = [];
       _load();
     }
   }
@@ -176,12 +186,28 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         _error = null;
         _albums = [];
         _favoritesOnly = false;
+        _ratedOnly = false;
+        _highestRated = false;
+        _discover = false;
+        _collection = null;
+        _collectionOrder = [];
+        _randomSeed = DateTime.now().microsecondsSinceEpoch;
         Future.microtask(_load);
       }
     });
     return PopScope(
-        canPop: !_selecting,
+        canPop: !_selecting && !_discover && _collection == null,
         onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && !_selecting && (_discover || _collection != null)) {
+            setState(() {
+              if (_collection != null) {
+                _collection = null;
+                _discover = true;
+              } else {
+                _discover = false;
+              }
+            });
+          }
           if (!didPop && _selecting) {
             setState(() {
               _selecting = false;
@@ -210,9 +236,13 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
               ],
               title: Text(widget.albumKey != null
                   ? (_album?['title'] as String? ?? 'Album')
-                  : widget.artistKey != null
-                      ? 'Albums by ${widget.artistName ?? 'artist'}'
-                      : 'Music · Albums')),
+                  : _discover
+                      ? 'Discover albums'
+                      : _collection != null
+                          ? albumCollections[_collection]![0]
+                          : widget.artistKey != null
+                              ? 'Albums by ${widget.artistName ?? 'artist'}'
+                              : 'Music · Albums')),
           body: _loading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
@@ -229,7 +259,12 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                           ])))
                   : widget.albumKey != null
                       ? _detail()
-                      : MusicLayoutPanel(kind: 'albums', builder: _catalog),
+                      : _discover
+                          ? _catalog(MusicLayout('albums'))
+                          : MusicLayoutPanel(
+                              kind: 'albums',
+                              fixedOrder: _collection != null,
+                              builder: _catalog),
         ));
   }
 
@@ -258,31 +293,83 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
   }
 
   Widget _catalog(MusicLayout layout) {
-    final albums = ratingFiltered(
+    final source = ratingFiltered(
         layout.sorted((_albums ?? [])
             .where((a) => !_favoritesOnly || a['is_favorite'] == true)
             .toList()),
         _ratedOnly,
         _highestRated);
+    final collections = {
+      for (final key in albumCollections.keys)
+        key: discoverAlbums(source, key, random: Random(_randomSeed))
+    };
+    final albums = _collection == null ? source : collections[_collection]!;
+    if (_collection == 'random' && _collectionOrder.isNotEmpty) {
+      final ranks = {
+        for (var i = 0; i < _collectionOrder.length; i++) _collectionOrder[i]: i
+      };
+      albums.sort((a, b) => (ranks[a['album_key']] ?? ranks.length)
+          .compareTo(ranks[b['album_key']] ?? ranks.length));
+    }
+    if (_discover && widget.artistKey == null) {
+      return MusicDiscoveryPanel(
+          key: ValueKey('discovery-$_generation'),
+          collections: collections,
+          filtered: _facets.isNotEmpty || _favoritesOnly || _ratedOnly,
+          onRefresh: () {
+            _randomSeed = DateTime.now().microsecondsSinceEpoch;
+            return _load();
+          },
+          onOpenAlbum: _openAlbum,
+          onBrowse: () => setState(() {
+                _discover = false;
+                _collection = null;
+              }),
+          onViewAll: (key, items) => setState(() {
+                _discover = false;
+                _collection = key;
+                _collectionOrder =
+                    items.map((a) => a['album_key'] as String).toList();
+              }));
+    }
     if (albums.isEmpty) {
-      return Center(
-          child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text(_favoritesOnly
-                    ? 'No favorite albums. Show all albums to favorite one.'
-                    : _ratedOnly
-                        ? 'No rated albums. Turn off Rated only to rate one.'
-                        : 'Nothing matches these filters. Clear filters or browse Library for more music.'),
-                TextButton(
-                    onPressed: () => context.pop(),
-                    child: const Text('Back to Library'))
-              ])));
+      return Column(children: [
+        _discoveryHeader(albums),
+        Expanded(
+            child: Center(
+                child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Text(_collection != null
+                          ? albumCollections[_collection]![2]
+                          : _favoritesOnly
+                              ? 'No favorite albums. Show all albums to favorite one.'
+                              : _ratedOnly
+                                  ? 'No rated albums. Turn off Rated only to rate one.'
+                                  : 'Nothing matches these filters. Clear filters or browse Library for more music.'),
+                      TextButton(
+                          onPressed: () {
+                            if (_collection != null) {
+                              setState(() {
+                                _collection = null;
+                                _discover = true;
+                              });
+                            } else {
+                              context.pop();
+                            }
+                          },
+                          child: Text(_collection != null
+                              ? 'Back to discovery'
+                              : 'Back to Library'))
+                    ]))))
+      ]);
     }
     return MusicCollectionCatalog(
-        key: ValueKey('albums-${widget.artistKey ?? "all"}-$_generation'),
+        key: ValueKey(
+            'albums-${widget.artistKey ?? "all"}-$_collection-$_generation'),
         items: albums,
-        header: _facets.isEmpty
+        header: _discoveryHeader(albums),
+        listHeader: _facets.isEmpty
             ? null
             : Padding(
                 padding: const EdgeInsets.all(16),
@@ -342,6 +429,43 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                                       const Text('From folder'),
                                   ])),
                         ]))));
+  }
+
+  Widget _discoveryHeader(List<Map<String, dynamic>> albums) {
+    if (widget.artistKey != null) return const SizedBox.shrink();
+    return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Wrap(children: [
+            TextButton.icon(
+                onPressed: () => setState(() {
+                      _discover = true;
+                      _collection = null;
+                    }),
+                icon: const Icon(Icons.explore_outlined),
+                label: const Text('Discover albums')),
+            if (_collection != null)
+              TextButton(
+                  onPressed: () => setState(() {
+                        _collection = null;
+                        _collectionOrder = [];
+                      }),
+                  child: const Text('View all albums')),
+          ]),
+          if (_collection != null) ...[
+            Text(albumCollections[_collection]![1]),
+            MusicCollectionActions(
+                key: ValueKey('collection-$_collection-$_generation'),
+                playOnly: true,
+                collections: [
+                  for (final album in albums)
+                    MusicCollection('album', album['album_key'] as String)
+                ],
+                playLabel: 'Play all ${albums.length} albums',
+                sourceLabel: albumCollections[_collection]![0],
+                enabled: albums.isNotEmpty),
+          ],
+        ]));
   }
 
   Widget _detail() {

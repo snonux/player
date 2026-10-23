@@ -8,12 +8,14 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"codeberg.org/snonux/player/internal/model"
 )
 
 // Album is a caller-visible aggregate over existing media identities.
 type Album struct {
+	AddedAt time.Time `json:"added_at"`
 	model.ListeningStats
 	Rating       int                      `json:"rating"`
 	IsFavorite   bool                     `json:"is_favorite"`
@@ -88,6 +90,9 @@ func MusicAlbums(ctx context.Context, source CatalogSource, userID int64) ([]Alb
 		album.SongCredits = map[int64][]ArtistCredit{}
 		people := map[string]*ArtistCredit{}
 		for _, song := range album.Songs {
+			if song.CreatedAt.After(album.AddedAt) {
+				album.AddedAt = song.CreatedAt
+			}
 			album.Duration += song.Duration
 			album.ListeningStats.Add(song.ListeningStats)
 			credits := MusicCredits(song)

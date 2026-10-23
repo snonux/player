@@ -93,8 +93,12 @@ class MusicLayout {
 /// Device-local preferences remain separate for each primary server and account.
 class MusicLayoutPanel extends ConsumerStatefulWidget {
   const MusicLayoutPanel(
-      {super.key, required this.kind, required this.builder});
+      {super.key,
+      required this.kind,
+      required this.builder,
+      this.fixedOrder = false});
   final String kind;
+  final bool fixedOrder;
   final Widget Function(MusicLayout layout) builder;
   @override
   ConsumerState<MusicLayoutPanel> createState() => _MusicLayoutPanelState();
@@ -198,27 +202,31 @@ class _MusicLayoutPanelState extends ConsumerState<MusicLayoutPanel> {
               spacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                DropdownButton<String>(
-                    value: layout.sort,
-                    hint: const Text('Sort by'),
-                    items: {'title': 'Title', ...musicColumns[widget.kind]!}
-                        .entries
-                        .map((e) => DropdownMenuItem(
-                            value: e.key, child: Text('Sort: ${e.value}')))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) _update(() => layout.sort = value);
-                    }),
-                TextButton.icon(
-                    style:
-                        TextButton.styleFrom(minimumSize: const Size(48, 48)),
-                    onPressed: () =>
-                        _update(() => layout.descending = !layout.descending),
-                    icon: Icon(layout.descending
-                        ? Icons.arrow_downward
-                        : Icons.arrow_upward),
-                    label:
-                        Text(layout.descending ? 'Descending' : 'Ascending')),
+                if (widget.fixedOrder)
+                  const Text('Collection order')
+                else
+                  DropdownButton<String>(
+                      value: layout.sort,
+                      hint: const Text('Sort by'),
+                      items: {'title': 'Title', ...musicColumns[widget.kind]!}
+                          .entries
+                          .map((e) => DropdownMenuItem(
+                              value: e.key, child: Text('Sort: ${e.value}')))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) _update(() => layout.sort = value);
+                      }),
+                if (!widget.fixedOrder)
+                  TextButton.icon(
+                      style:
+                          TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                      onPressed: () =>
+                          _update(() => layout.descending = !layout.descending),
+                      icon: Icon(layout.descending
+                          ? Icons.arrow_downward
+                          : Icons.arrow_upward),
+                      label:
+                          Text(layout.descending ? 'Descending' : 'Ascending')),
                 if (widget.kind == 'albums')
                   TextButton.icon(
                       style:

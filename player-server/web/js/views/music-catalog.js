@@ -1,3 +1,4 @@
+import { albumCollections, mountAlbumDiscovery } from '../music-discovery.js';
 import { mountMusicArtwork } from '../music-artwork.js';
 import { mountMusicEnrichment } from '../music-enrichment.js';
 import { mountRelatedMusic } from '../music-related.js';
@@ -25,7 +26,7 @@ let selectedAlbum = '';
 let revision = 0;
 const positions = new Map();
 const history = [];
-const viewKey = view => JSON.stringify([view?.artists || false,view?.artist || '',view?.album || '',view?.role || 'artists',view?.playlists || false,view?.playlist || '',view?.search || false,view?.query || '',view?.artistQuery || '',view?.albumQuery || '',view?.facets || {},view?.favorites || false,view?.rated || false,view?.ratingSort || '']);
+const viewKey = view => JSON.stringify([view?.artists || false,view?.artist || '',view?.album || '',view?.role || 'artists',view?.playlists || false,view?.playlist || '',view?.search || false,view?.query || '',view?.artistQuery || '',view?.albumQuery || '',view?.facets || {},view?.favorites || false,view?.rated || false,view?.ratingSort || '',view?.collection || '']);
 function remember() {
  if (state.music?.search) { state.music.selected={...document.querySelector('#media-grid .selected')?.dataset}; state.music.scroll=window.scrollY; }
  if (!state.music) return;
@@ -34,6 +35,7 @@ function remember() {
 }
 function descend(next) { remember(); history.push({...state.music}); state.music=next; reload(); }
 export function openArtists() { openAlbums('', '', true); }
+function openDiscoveryCollection(collection, items) { descend({...state.music,collection,collectionKeys:items.map(a=>a.album_key)}); }
 function openArtist(key) { descend({artists:true,artist:key,album:'',role:state.music?.role || 'artists'}); }
 export function initMusicCatalog(load) {
  reload = load;
@@ -74,6 +76,7 @@ export function backMusic() {
  if (history.length) state.music=history.pop();
  else if (state.music.playlist) state.music.playlist='';
  else if (state.music.album) state.music.album = '';
+ else if (state.music.collection) { delete state.music.collection; delete state.music.collectionKeys; }
  else if (state.music.artist) { state.music.artist = ''; state.music.name = ''; }
  else { state.music = null; }
  reload();
@@ -103,10 +106,12 @@ export async function renderMusic(grid, isCurrent) {
   if (view.search) { await renderMusicSearch(grid,view,current,{openAlbum,openArtist,back:backMusic,reload});await mountMusicFacets(grid,view,current,reload);return; }
   if (view.playlists) { await renderPlaylists(grid,view,current,positions.get(viewKey(view)));return; }
   if (view.artists && !view.album) { await renderArtists(grid, view, current);await mountMusicFacets(grid,view,current,reload); return; }
-  let data = view.album ? await API.album(view.album) : await API.albums({...ratingParams(view),favorite:view.favorites || false,...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {})});
+  let data = view.album ? await API.album(view.album) : await API.albums({...ratingParams(view),collection:view.collection || '',favorite:view.favorites || false,...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {})});
   if (!current()) return;
   const layoutPreferences=readMusicLayout('albums');
-  if(!view.album && !view.ratingSort) data=sortMusic(data,layoutPreferences,'albums');
+  if(!view.album && !view.ratingSort && !view.collection) data=sortMusic(data,layoutPreferences,'albums');
+  if(!view.album && view.collection==='random' && !view.collectionKeys) { state.music.collectionKeys=data.map(a=>a.album_key);view.collectionKeys=state.music.collectionKeys; }
+  if(!view.album && view.collection==='random' && view.collectionKeys) { const ranks=new Map(view.collectionKeys.map((key,i)=>[key,i]));data.sort((a,b)=>(ranks.get(a.album_key) ?? Infinity)-(ranks.get(b.album_key) ?? Infinity)); }
   if (view.album) {
    state.media = data.songs || [];
    const layout = albumDiscLayout(data);
@@ -130,11 +135,17 @@ export async function renderMusic(grid, isCurrent) {
    });
    grid.querySelectorAll('[data-song-info]').forEach(button => button.onclick = () => { selectByElement(button.closest('.media-row')); document.dispatchEvent(new Event('music:song-info')); });
   } else {
-   count.textContent = view.artist ? `Albums by ${view.name || 'artist'}` : `Music · ${data.length} albums${hasFacets(view)?' matching filters':''}`;
-   grid.innerHTML = `<div class="grid-full"><button class="btn btn-ghost" data-music-back>← ${view.artist ? 'Back to albums' : 'Back to Sets'}</button>${view.artist ? `<h1>Albums by ${esc(view.name || 'artist')}</h1>` : ''}</div>` + (data.length ? data.map(album => `<div class="${layoutPreferences.view==='table'?'media-row':'media-card'} album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${layoutPreferences.view==='grid'?cover(album):''}<div class="card-body">${favoriteButton('album',album.album_key,album)} ${ratingControl('album',album.album_key,album)}<div class="title" title="${esc(album.title)}">${esc(album.title)}</div>${layoutPreferences.columns.map(column=>`<span class="music-column text-muted text-sm" data-column="${column}"><span class="music-column-label">${musicColumns.albums[column]}: </span>${esc(musicColumnText(album,column,'albums'))}</span>`).join('')}${hasFacets(view) ? `<span class="text-muted text-sm">${album.song_count} matching songs</span>` : ''}${listeningDetails(album)}${album.from_folder ? '<span class="text-muted text-xs">From folder</span>' : ''}</div></div>`).join('') : `<p class="grid-full">${view.favorites?'No favorite albums. Show all albums to favorite one.':'Nothing matches these filters. Clear filters or browse Sets for more music.'}</p>`);
+   count.textContent = view.collection ? `Music · ${albumCollections[view.collection]?.[0] || 'Albums'} · ${data.length} albums` : view.artist ? `Albums by ${view.name || 'artist'}` : `Music · ${data.length} albums${hasFacets(view)?' matching filters':''}`;
+   grid.innerHTML = `<div class="grid-full"><button class="btn btn-ghost" data-music-back>← ${view.collection || view.artist ? 'Back to albums' : 'Back to Sets'}</button>${view.collection ? `<h1>${albumCollections[view.collection]?.[0] || 'Albums'}</h1><p class="text-muted">${albumCollections[view.collection]?.[1] || ''}</p>` : ''}${view.artist ? `<h1>Albums by ${esc(view.name || 'artist')}</h1>` : ''}</div>` + (data.length ? data.map(album => `<div class="${layoutPreferences.view==='table'?'media-row':'media-card'} album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${layoutPreferences.view==='grid'?cover(album):''}<div class="card-body">${favoriteButton('album',album.album_key,album)} ${ratingControl('album',album.album_key,album)}<div class="title" title="${esc(album.title)}">${esc(album.title)}</div>${layoutPreferences.columns.map(column=>`<span class="music-column text-muted text-sm" data-column="${column}"><span class="music-column-label">${musicColumns.albums[column]}: </span>${esc(musicColumnText(album,column,'albums'))}</span>`).join('')}${hasFacets(view) ? `<span class="text-muted text-sm">${album.song_count} matching songs</span>` : ''}${listeningDetails(album)}${album.from_folder ? '<span class="text-muted text-xs">From folder</span>' : ''}</div></div>`).join('') : `<p class="grid-full">${view.collection?albumCollections[view.collection]?.[2]:view.favorites?'No favorite albums. Show all albums to favorite one.':'Nothing matches these filters. Clear filters or browse Sets for more music.'}</p>`);
    grid.classList.toggle('music-table',layoutPreferences.view==='table');
    grid.querySelector('.grid-full').insertAdjacentHTML('beforeend',musicLayoutToolbar('albums',layoutPreferences));
    grid.querySelectorAll('[data-album]').forEach(card => card.onclick = () => openAlbum(card.dataset.album));
+   if(view.collection) {
+    const actions=document.createElement('div');actions.innerHTML=collectionButtons('Play collection');grid.querySelector('.grid-full').append(actions);
+    bindCollectionActions(actions,()=>data.map(a=>({kind:'album',key:a.album_key})),current,albumCollections[view.collection][0]);
+    actions.querySelectorAll('button').forEach(button=>button.disabled=!data.length);
+   }
+   if(!view.collection && !view.artist && !hasFacets(view) && !view.favorites && !view.rated) mountAlbumDiscovery(grid.querySelector('.grid-full'),data,current,openDiscoveryCollection,openAlbum,state.music);
    bindCollectionCatalog(grid,data,'album','album_key','title',current);
   }
   bindFavorites(grid,current);bindRatings(grid,current);
@@ -146,7 +157,7 @@ export async function renderMusic(grid, isCurrent) {
   if (target) { selectByElement(target); focusSelectedCard(); } else grid.querySelector('[data-music-back]')?.focus();
   if (saved) window.scrollTo(0,saved.scroll);
   await mountMusicFacets(grid,view,current,reload);
-  if(!view.album) bindMusicLayout(grid,'albums',layoutPreferences,reload,remember);
+  if(!view.album) { bindMusicLayout(grid,'albums',layoutPreferences,reload,remember);if(view.collection) grid.querySelectorAll('[data-layout-sort], [data-layout-direction], [data-rating-order]').forEach(control=>{control.disabled=true;control.title='This collection uses its own order.';}); }
  } catch (e) {
   if (!current()) return;
   grid.innerHTML = `<div class="grid-full" role="alert"><p>${view.search ? 'Could not search music' : 'Could not load'} ${view.search ? '' : view.artists && !view.album ? 'artists' : view.playlists ? 'playlists' : 'albums'}: ${esc(e.message || 'Connection unavailable. Check your connection.')}</p><button class="btn" data-retry>Retry</button><button class="btn btn-ghost" data-music-back>← Back</button></div>`;

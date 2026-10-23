@@ -24,10 +24,11 @@ class MusicCollectionActions extends ConsumerStatefulWidget {
       required this.collections,
       required this.playLabel,
       this.enabled = true,
+      this.playOnly = false,
       this.sourceLabel = 'Selected collections'});
   final List<MusicCollection> collections;
   final String playLabel, sourceLabel;
-  final bool enabled;
+  final bool enabled, playOnly;
   @override
   ConsumerState<MusicCollectionActions> createState() => _ActionsState();
 }
@@ -175,62 +176,65 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                     : null,
                 icon: const Icon(Icons.play_arrow),
                 label: Text(widget.playLabel)),
-            OutlinedButton.icon(
-                onPressed: enabled
-                    ? () =>
-                        _run(QueueInsertion.now, replace: true, shuffled: true)
-                    : null,
-                style:
-                    OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
-                icon: const Icon(Icons.shuffle),
-                label: const Text('Shuffle')),
-            OutlinedButton.icon(
-                onPressed: enabled ? _download : null,
-                icon: const Icon(Icons.download_outlined),
-                label: const Text('Keep offline')),
-            OutlinedButton.icon(
-                onPressed: enabled ? () => _download(share: true) : null,
-                icon: const Icon(Icons.share_outlined),
-                label: const Text('Share…')),
-            // Keep the native popup semantic target within its own control;
-            // otherwise the custom-child tap semantics can merge into Wrap.
-            Semantics(
-                container: true,
-                child: PopupMenuButton<String>(
-                    tooltip: 'Queue actions',
-                    enabled: enabled,
-                    onSelected: (action) {
-                      if (action == 'options') {
-                        showDialog<void>(
-                            context: context,
-                            builder: (_) => MusicShuffleOptionsDialog(
-                                run: (options, current, report) => _run(
-                                    QueueInsertion.now,
-                                    replace: true,
-                                    shuffled: true,
-                                    options: options,
-                                    dialogCurrent: current,
-                                    report: report)));
-                      } else {
-                        _run(QueueInsertion.values.byName(action));
-                      }
-                    },
-                    itemBuilder: (_) => [
-                          for (final action in [
-                            QueueInsertion.next,
-                            QueueInsertion.append
-                          ])
-                            PopupMenuItem(
-                                value: action.name,
-                                child: Text(queueActionLabel(action))),
-                          const PopupMenuItem(
-                              value: 'options', child: Text('Shuffle options…'))
-                        ],
-                    child: ConstrainedBox(
-                        constraints: const BoxConstraints(minHeight: 48),
-                        child: const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Text('Queue actions ▾'))))),
+            if (!widget.playOnly) ...[
+              OutlinedButton.icon(
+                  onPressed: enabled
+                      ? () => _run(QueueInsertion.now,
+                          replace: true, shuffled: true)
+                      : null,
+                  style:
+                      OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+                  icon: const Icon(Icons.shuffle),
+                  label: const Text('Shuffle')),
+              OutlinedButton.icon(
+                  onPressed: enabled ? _download : null,
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('Keep offline')),
+              OutlinedButton.icon(
+                  onPressed: enabled ? () => _download(share: true) : null,
+                  icon: const Icon(Icons.share_outlined),
+                  label: const Text('Share…')),
+              // Keep the native popup semantic target within its own control;
+              // otherwise the custom-child tap semantics can merge into Wrap.
+              Semantics(
+                  container: true,
+                  child: PopupMenuButton<String>(
+                      tooltip: 'Queue actions',
+                      enabled: enabled,
+                      onSelected: (action) {
+                        if (action == 'options') {
+                          showDialog<void>(
+                              context: context,
+                              builder: (_) => MusicShuffleOptionsDialog(
+                                  run: (options, current, report) => _run(
+                                      QueueInsertion.now,
+                                      replace: true,
+                                      shuffled: true,
+                                      options: options,
+                                      dialogCurrent: current,
+                                      report: report)));
+                        } else {
+                          _run(QueueInsertion.values.byName(action));
+                        }
+                      },
+                      itemBuilder: (_) => [
+                            for (final action in [
+                              QueueInsertion.next,
+                              QueueInsertion.append
+                            ])
+                              PopupMenuItem(
+                                  value: action.name,
+                                  child: Text(queueActionLabel(action))),
+                            const PopupMenuItem(
+                                value: 'options',
+                                child: Text('Shuffle options…'))
+                          ],
+                      child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 48),
+                          child: const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Text('Queue actions ▾'))))),
+            ],
           ]),
       if (_message != null)
         Padding(

@@ -3051,3 +3051,18 @@ five minutes per song; busy or still-preparing work can return 503 for retry,
 and no partial archive is served. Android keeps the chosen profile, response
 MIME type and source filename with each new offline copy; older copies retain
 unknown quality. Changing the preference does not replace existing copies.
+
+### Album discovery collections
+
+`GET /api/music/albums` and `/api/v1/music/albums` accept optional `collection`:
+`recently_added`, `recently_played`, `most_played`, `random`, `favorites`, or
+`top_rated`; an unknown value returns 400 and an empty collection returns `[]`.
+Existing filters still apply; album-detail routes keep their detail response.
+Album payloads add `added_at`, the latest creation date among their currently
+visible music files. Play-based collections use the account's qualified personal
+counts and latest play date; favorites and ratings use its album heart and stars.
+No-play and unrated albums are excluded from their corresponding collections.
+Ties use normalized title and canonical key. Random shuffles every accessible
+album once. ACL filtering and personal-field hydration precede collection
+selection. Client previews show a subset while Play/View all use the complete
+ordered snapshot; ordinary album queue resolution rechecks current access.

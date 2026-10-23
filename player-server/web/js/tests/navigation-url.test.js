@@ -47,3 +47,13 @@ for (const music of [{playlists:true,playlist:''},{playlists:true,playlist:'pl_a
  assert.equal(decoded.playlist,music.playlist);
  assert.deepEqual(readLibraryURL(encoded.slice(1)).sets,[]);
 }
+
+for(const collection of ['recently_added','recently_played','most_played','random','favorites','top_rated']) {
+ const encoded=libraryURL({...state,music:{album:'',collection}});
+ assert.equal(readLibraryURL(encoded.slice(1)).music.collection,collection);
+ assert.equal(readLibraryURL(`?music=album&id=al_a&mcollection=${collection}`).music.album,'al_a');
+ assert.equal(readLibraryURL(`?music=album&id=al_a&mcollection=${collection}`).music.collection,collection);
+ for(const route of ['artists','artist','playlists','playlist','search']) assert.equal(readLibraryURL(`?music=${route}&mcollection=${collection}`).music.collection,undefined);
+}
+assert.equal(readLibraryURL('?music=albums&mcollection=unknown').music.collection,undefined);
+assert.equal(readLibraryURL('?music=album&id=al_a&mfrom=artists&mcollection=random').music.collection,undefined);

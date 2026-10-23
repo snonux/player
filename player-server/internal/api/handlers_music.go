@@ -73,7 +73,12 @@ func (s *Server) handleMusicAlbums(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Album is unavailable or you no longer have permission.")
 		return
 	}
-	writeJSON(w, http.StatusOK, ratedAlbums(result, r))
+	result, err = service.DiscoverAlbums(ratedAlbums(result, r), r.URL.Query().Get("collection"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleMusicArtists(w http.ResponseWriter, r *http.Request) {
