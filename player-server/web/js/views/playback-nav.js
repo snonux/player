@@ -20,11 +20,31 @@ import {
 
 let isShuffleCallback = () => false;
 let playRevision = 0;
-let skipImages = false;
 export function initPlaybackNav({ isShuffle } = {}) {
   isShuffleCallback = isShuffle || (() => false);
   document.addEventListener('navigation:restore', () => { playRevision++; });
   document.addEventListener('library:navigating', () => { playRevision++; });
+}
+
+// Sets browse: when the sequence started from audio, skip images (B3 / §15).
+function skipsImagesFrom(media) {
+  return media?.type === 'audio';
+}
+
+function cardMedia(card) {
+  return state.media.find((m) => String(m.id) === String(card.dataset.id));
+}
+
+function filterPlayableMedia(media, skipImages) {
+  return skipImages ? media.filter((m) => m.type !== 'image') : media;
+}
+
+function filterPlayableCards(cards, skipImages) {
+  if (!skipImages) return cards;
+  return cards.filter((card) => {
+    const media = cardMedia(card);
+    return media && media.type !== 'image';
+  });
 }
 
 async function playItem(media, index) {
@@ -99,8 +119,8 @@ export async function navigatePlayable(delta, options = {}) {
   const intent = currentPlaybackIntent();
   if (await advanceQueue(delta, options)) return;
   if (!isPlaybackIntent(intent)) return;
-  skipImages = currentMediaInfo()?.type === 'audio';
-  const cards = visiblePlayableCards().filter((card) => !skipImages || state.media.find((m) => String(m.id) === card.dataset.id)?.type !== 'image');
+  const skipImages = skipsImagesFrom(currentMediaInfo());
+  const cards = filterPlayableCards(visiblePlayableCards(), skipImages);
   const active = options.forcePlay || isPlaybackActive();
   const base = selectedPlayableIndex(cards, active);
 
@@ -108,6 +128,8 @@ export async function navigatePlayable(delta, options = {}) {
     const atForwardEdge = delta > 0 && base === cards.length - 1;
     const atBackwardEdge = delta < 0 && base === 0;
     if (!((atForwardEdge || atBackwardEdge) && canTraverseBrowseFolders())) {
+      // Single-page wrap stays among playable kinds; at the last audio item
+      // with nowhere else to go this replays the first audio, never an image.
       const nextIdx = base >= 0
         ? (base + delta + cards.length) % cards.length
         : (delta > 0 ? 0 : cards.length - 1);
@@ -118,7 +140,7 @@ export async function navigatePlayable(delta, options = {}) {
     }
   }
 
-  const crossFolderTarget = await findCrossFolderPlayable(delta, active);
+  const crossFolderTarget = await findCrossFolderPlayable(delta, active, skipImages);
   if (!crossFolderTarget) return;
   await openPlayableTarget(crossFolderTarget, active);
 }
@@ -127,13 +149,13 @@ function canTraverseBrowseFolders() {
   return !!state.selectedSetId && state.selectedSetIds.length === 1 && !isShuffleCallback() && !hasActiveFilters();
 }
 
-async function findCrossFolderPlayable(delta, preferCurrent) {
+async function findCrossFolderPlayable(delta, preferCurrent, skipImages) {
   if (!canTraverseBrowseFolders()) return null;
   const current = currentPlaybackCandidate(preferCurrent);
   if (!current) return null;
   const currentPath = current.browse_path ?? state.folderPath ?? '';
   const currentData = await browsePath(currentPath);
-  const media = browsePlayableMedia(currentData, currentPath);
+  const media = browsePlayableMedia(currentData, currentPath, skipImages);
   const idx = media.findIndex((m) => String(m.id) === String(current.id));
 
   if (idx >= 0) {
@@ -144,8 +166,8 @@ async function findCrossFolderPlayable(delta, preferCurrent) {
   }
 
   return delta > 0
-    ? findAfterFolder(currentPath)
-    : findBeforeFolder(currentPath);
+    ? findAfterFolder(currentPath, skipImages)
+    : findBeforeFolder(currentPath, skipImages);
 }
 
 function currentPlaybackCandidate(preferCurrent) {
@@ -159,72 +181,72 @@ function currentPlaybackCandidate(preferCurrent) {
   return playing;
 }
 
-async function findAfterFolder(path) {
-  if (!path) return firstPlayableInFolder('');
+async function findAfterFolder(path, skipImages) {
+  if (!path) return firstPlayableInFolder('', skipImages);
   let childPath = normalizePath(path);
   while (childPath) {
     const parent = parentPath(childPath);
     const name = baseName(childPath);
     const data = await browsePath(parent);
-    const items = browseItems(data, parent);
+    const items = browseItems(data, parent, skipImages);
     const idx = items.findIndex((item) => item.type === 'folder' && item.name === name);
     for (const item of items.slice(idx + 1)) {
       const target = item.type === 'media'
         ? { path: parent, media: item.media }
-        : await firstPlayableInFolder(joinPath(parent, item.name));
+        : await firstPlayableInFolder(joinPath(parent, item.name), skipImages);
       if (target) return target;
     }
     childPath = parent;
   }
-  return firstPlayableInFolder('');
+  return firstPlayableInFolder('', skipImages);
 }
 
-async function findBeforeFolder(path) {
-  if (!path) return lastPlayableInFolder('');
+async function findBeforeFolder(path, skipImages) {
+  if (!path) return lastPlayableInFolder('', skipImages);
   let childPath = normalizePath(path);
   while (childPath) {
     const parent = parentPath(childPath);
     const name = baseName(childPath);
     const data = await browsePath(parent);
-    const items = browseItems(data, parent);
+    const items = browseItems(data, parent, skipImages);
     const idx = items.findIndex((item) => item.type === 'folder' && item.name === name);
     for (const item of items.slice(0, Math.max(0, idx)).reverse()) {
       const target = item.type === 'media'
         ? { path: parent, media: item.media }
-        : await lastPlayableInFolder(joinPath(parent, item.name));
+        : await lastPlayableInFolder(joinPath(parent, item.name), skipImages);
       if (target) return target;
     }
     childPath = parent;
   }
-  return lastPlayableInFolder('');
+  return lastPlayableInFolder('', skipImages);
 }
 
-async function firstPlayableInFolder(path) {
+async function firstPlayableInFolder(path, skipImages) {
   const data = await browsePath(path);
   for (const folder of data.folders || []) {
-    const target = await firstPlayableInFolder(joinPath(path, folder.name));
+    const target = await firstPlayableInFolder(joinPath(path, folder.name), skipImages);
     if (target) return target;
   }
-  const media = browsePlayableMedia(data, path);
+  const media = browsePlayableMedia(data, path, skipImages);
   if (media.length) return { path: data.current_path || path, media: media[0] };
   return null;
 }
 
-async function lastPlayableInFolder(path) {
+async function lastPlayableInFolder(path, skipImages) {
   const data = await browsePath(path);
-  const media = browsePlayableMedia(data, path);
+  const media = browsePlayableMedia(data, path, skipImages);
   if (media.length) return { path: data.current_path || path, media: media[media.length - 1] };
   const folders = data.folders || [];
   for (const folder of folders.slice().reverse()) {
-    const target = await lastPlayableInFolder(joinPath(path, folder.name));
+    const target = await lastPlayableInFolder(joinPath(path, folder.name), skipImages);
     if (target) return target;
   }
   return null;
 }
 
-function browseItems(data, path) {
+function browseItems(data, path, skipImages) {
   const folders = (data.folders || []).map((folder) => ({ type: 'folder', name: folder.name }));
-  const media = browsePlayableMedia(data, path)
+  const media = browsePlayableMedia(data, path, skipImages)
     .map((m) => ({ type: 'media', media: m }));
   return folders.concat(media);
 }
@@ -274,7 +296,9 @@ export function seekByKeyboard(direction, repeated) {
   return seekRelative(direction * step);
 }
 
-function browsePlayableMedia(data, path) {
-  return mediaWithBrowsePath(data.media || [], data.current_path || path)
-    .filter((m) => !skipImages || m.type !== 'image');
+function browsePlayableMedia(data, path, skipImages) {
+  return filterPlayableMedia(
+    mediaWithBrowsePath(data.media || [], data.current_path || path),
+    skipImages,
+  );
 }
