@@ -55,4 +55,4 @@ async function flush() {
     if (key() && read(key()).length) retryTimer = setTimeout(flush, 5000);
   }
 }
-window.addEventListener('online', () => void flush());
+(globalThis.window ?? globalThis).addEventListener?.('online', () => void flush());

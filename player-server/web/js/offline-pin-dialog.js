@@ -60,6 +60,7 @@ export function showOfflinePin(collection, title, opener = document.activeElemen
 // Collection selection owners call update after changing their selection. The
 // durable state stays on this collection control as well as in Settings.
 export function bindOfflinePinButton(button, collections, current, title) {
+ if (!button) return async () => {};
  let revision=0;
  async function update() {
   const version=++revision, selected=collections();
