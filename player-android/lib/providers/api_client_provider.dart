@@ -1,3 +1,5 @@
+import '../services/server_endpoint_router.dart';
+import 'server_endpoint_provider.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -43,7 +45,7 @@ final credentialMutationQueueProvider =
 final _dioClientProvider = Provider<DioClient>((ref) {
   final container = ref.container;
   final storage = ref.watch(tokenStorageProvider);
-  return DioClient(
+  final client = DioClient(
     baseUrl: ref.watch(playerBaseUrlProvider),
     storage: storage,
     mutationQueue: ref.watch(credentialMutationQueueProvider),
@@ -77,6 +79,9 @@ final _dioClientProvider = Provider<DioClient>((ref) {
     },
     loginRoute: '/login',
   );
+  client.dio.httpClientAdapter =
+      EndpointHttpAdapter(ref.watch(serverEndpointRouterProvider));
+  return client;
 });
 
 final apiClientProvider = Provider<PlayerApiClient>((ref) {

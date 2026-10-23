@@ -32,6 +32,9 @@ func New(db *sql.DB) (*SQLite, error) {
 	if err := initializeSchema(db); err != nil {
 		return nil, fmt.Errorf("initialize schema: %w", err)
 	}
+	if err := initializeServerIdentity(db); err != nil {
+		return nil, err
+	}
 	return &SQLite{db: db, clock: clock.RealClock{}}, nil
 }
 

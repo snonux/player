@@ -1,3 +1,4 @@
+import '../providers/server_endpoint_provider.dart';
 import '../widgets/music_queue_sheet.dart';
 import '../widgets/music_info_dialog.dart';
 import '../api/dio_player_api_client.dart';
@@ -615,6 +616,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
 
   void _attachMusicSequence(_PlaybackAttempt attempt) {
     final handler = attempt.handler;
+    final endpointRouter = ref.read(serverEndpointRouterProvider);
     final storage = ref.read(tokenStorageProvider);
     final jar = ref.read(cookieJarProvider);
     final mutations = ref.read(credentialMutationQueueProvider);
@@ -653,7 +655,9 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               cookieJar: jar,
               mutations: mutations);
           if (!current()) return null;
-          return AudioSource.uri(request.sourceUri,
+          final transportUri = await endpointRouter.mediaUri(request.sourceUri);
+          if (!current()) return null;
+          return AudioSource.uri(transportUri,
               headers: headers.isEmpty ? null : headers);
         });
     _watchMusicState(handler, lease);
@@ -760,10 +764,16 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     Map<String, String> headers,
   ) async {
     try {
+      final transportUri = attempt.request is ServerPlaybackRequest
+          ? await ref
+              .read(serverEndpointRouterProvider)
+              .mediaUri(attempt.request.sourceUri)
+          : attempt.request.sourceUri;
+      if (!_isCurrent(attempt)) return false;
       await attempt.handler.loadSourceForSession(
         // A nonnull map, even empty, enables just_audio's HTTP proxy. Content
         // URIs must reach Android's document provider directly.
-        AudioSource.uri(attempt.request.sourceUri,
+        AudioSource.uri(transportUri,
             headers: headers.isEmpty ? null : headers),
         attempt.sourceGeneration,
       );

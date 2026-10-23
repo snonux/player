@@ -14,11 +14,13 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : AudioServiceFragmentActivity() {
     private lateinit var documentChannel: MethodChannel
     private var pendingPicker: MethodChannel.Result? = null
+    private var serverWifi: ServerWifi? = null
     private var audioVisuals: AudioVisuals? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         audioVisuals = AudioVisuals(this, flutterEngine.dartExecutor.binaryMessenger)
+        serverWifi = ServerWifi(this, flutterEngine.dartExecutor.binaryMessenger)
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, CastDiscovery.CHANNEL)
             .setStreamHandler(CastDiscovery(applicationContext))
         documentChannel = MethodChannel(
@@ -83,6 +85,7 @@ class MainActivity : AudioServiceFragmentActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         audioVisuals?.onPermissionResult(requestCode)
+        serverWifi?.onPermissionResult(requestCode)
     }
 
     override fun onStop() {
@@ -91,6 +94,8 @@ class MainActivity : AudioServiceFragmentActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        serverWifi?.close()
+        serverWifi = null
         audioVisuals?.close()
         audioVisuals = null
         super.cleanUpFlutterEngine(flutterEngine)

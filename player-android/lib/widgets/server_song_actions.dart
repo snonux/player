@@ -1,3 +1,4 @@
+import '../providers/server_endpoint_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
@@ -33,6 +34,7 @@ Future<void> insertServerSongs(BuildContext context, WidgetRef ref,
         context, const SnackBar(content: Text('Loading track… Please wait.')));
     return;
   }
+  final router = ref.read(serverEndpointRouterProvider);
   final client = ref.read(apiClientProvider);
   final progress = ref.read(progressQueueProvider);
   final baseUrl = ref.read(playerBaseUrlProvider);
@@ -95,7 +97,9 @@ Future<void> insertServerSongs(BuildContext context, WidgetRef ref,
               cookieJar: jar,
               mutations: mutations);
           if (!wanted()) return null;
-          return AudioSource.uri(request.sourceUri,
+          final uri = await router.mediaUri(request.sourceUri);
+          if (!wanted()) return null;
+          return AudioSource.uri(uri,
               headers: headers.isEmpty ? null : headers);
         });
     if (!context.mounted || !added || generation != mutations.generation) {

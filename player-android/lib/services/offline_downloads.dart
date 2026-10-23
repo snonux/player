@@ -47,6 +47,7 @@ class OfflineDownloads extends ChangeNotifier {
   Future<OfflineMedia> download({
     required Media media,
     required String origin,
+    String? trustedTransportOrigin,
     required int userId,
     required Uri uri,
     required Map<String, String> headers,
@@ -54,7 +55,7 @@ class OfflineDownloads extends ChangeNotifier {
     Future<void> Function(OfflineDownloadJob job)? prepare,
   }) async {
     if (active != null) throw StateError('Wait for the current download.');
-    if (uri.origin != origin ||
+    if ((uri.origin != origin && uri.origin != trustedTransportOrigin) ||
         !{'http', 'https'}.contains(uri.scheme) ||
         uri.userInfo.isNotEmpty ||
         userId <= 0 ||

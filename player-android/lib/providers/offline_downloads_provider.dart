@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'server_endpoint_provider.dart';
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -60,25 +62,36 @@ Future<void> keepMediaOffline(WidgetRef ref, Media media) async {
     cookieJar: ref.read(cookieJarProvider),
     mutations: mutations,
   );
-  await downloads.download(
-    media: media,
-    origin: origin,
-    userId: user.id,
-    uri: uri,
-    headers: headers,
-    authorized: () =>
-        mutations.credentialsEnabled &&
-        mutations.generation == generation &&
-        mutations.credentialOrigin == origin,
-    prepare: !media.transcoded
-        ? null
-        : (job) async {
-            final preparation = preparer.prepare(uri,
-                probe: client.probePlayback,
-                stillWanted: () =>
-                    !job.cancelled && mutations.generation == generation);
-            job.abort = preparation.cancel;
-            if (!await preparation.ready) throw OfflineDownloadCancelled();
-          },
-  );
+  final endpointRouter = ref.read(serverEndpointRouterProvider);
+  final transportUri = await endpointRouter.resolve(uri);
+  try {
+    await downloads.download(
+      media: media,
+      origin: origin,
+      userId: user.id,
+      uri: transportUri,
+      trustedTransportOrigin: transportUri.origin,
+      headers: headers,
+      authorized: () =>
+          mutations.credentialsEnabled &&
+          mutations.generation == generation &&
+          mutations.credentialOrigin == origin,
+      prepare: !media.transcoded
+          ? null
+          : (job) async {
+              final preparation = preparer.prepare(uri,
+                  probe: client.probePlayback,
+                  stillWanted: () =>
+                      !job.cancelled && mutations.generation == generation);
+              job.abort = preparation.cancel;
+              if (!await preparation.ready) throw OfflineDownloadCancelled();
+            },
+    );
+  } on SocketException {
+    endpointRouter.failed(transportUri);
+    rethrow;
+  } on TimeoutException {
+    endpointRouter.failed(transportUri);
+    rethrow;
+  }
 }

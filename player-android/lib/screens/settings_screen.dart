@@ -1,3 +1,4 @@
+import '../widgets/server_endpoint_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -400,6 +401,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text('Servers', style: Theme.of(context).textTheme.titleMedium),
+          const ServerEndpointSettings(),
           if (!widget.serverOnly) _savedServers(),
           const SizedBox(height: 12),
           TextField(

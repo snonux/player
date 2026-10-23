@@ -2572,3 +2572,21 @@ continue returning the full authorized collection; opening or playing an album
 therefore includes its full songs. Search with empty text and active facets
 returns matching songs/albums/artists. Search song queues contain only matching
 songs. Existing generic file filters and public share routes are unaffected.
+
+
+### Server address identity (M53)
+
+Public `GET /api/server-identity` and `GET /api/v1/server-identity` return
+`{"server_id":"<64 lowercase hex characters>"}` with `Cache-Control: no-store`.
+No credentials are required. The installation ID persists in the database
+across restart; different databases generate different IDs. Database backups
+and clones retain their ID. Storage failures return 500; stores without this
+capability return 503.
+
+Android uses this credential-free probe to test explicitly paired primary and
+local addresses before routing account traffic. A different ID blocks routing.
+This public ID detects accidental misconfiguration; it is not cryptographic
+authentication or an encryption guarantee. Users must trust both origins;
+plain HTTP exposes login details and media to the network. Wi-Fi names are
+optional routing hints and never authorize an endpoint. Browser clients remain
+on their page origin and use the normal session/authentication behavior.

@@ -243,6 +243,8 @@ func apiV1Path(path string) string {
 // straight /api/v1/<rest> shape that apiV1Path() generates, so they are
 // registered explicitly here instead of via a "both" helper.
 func (s *Server) routesPublic() {
+	s.handlePublicFunc("/api/server-identity", publicMethod(http.MethodGet, s.handleServerIdentity))
+	s.handlePublicFunc("/api/v1/server-identity", publicMethod(http.MethodGet, s.handleServerIdentity))
 	s.handlePublicFunc("/api/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
 	s.handlePublicFunc("/api/v1/auth/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
 	s.handlePublicFunc("/api/login", publicMethod(http.MethodPost, s.handleLogin))

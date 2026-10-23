@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'server_endpoint_provider.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,8 +34,13 @@ final mediaArtworkLoaderProvider =
         mutations: mutations);
     if (!current() || headers.isEmpty) return null;
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+    final endpointRouter = ref.read(serverEndpointRouterProvider);
+    Uri? routed;
     try {
-      final call = await client.getUrl(uri).timeout(const Duration(seconds: 5));
+      routed = await endpointRouter.resolve(uri);
+      if (!current()) return null;
+      final call =
+          await client.getUrl(routed).timeout(const Duration(seconds: 5));
       call.followRedirects = false;
       headers.forEach(call.headers.set);
       final response = await call.close().timeout(const Duration(seconds: 5));
@@ -77,6 +84,12 @@ final mediaArtworkLoaderProvider =
         } on FileSystemException {/* already removed */}
       }
       return file.uri;
+    } on SocketException {
+      if (routed != null) endpointRouter.failed(routed);
+      return null;
+    } on TimeoutException {
+      if (routed != null) endpointRouter.failed(routed);
+      return null;
     } catch (_) {
       return null;
     } finally {

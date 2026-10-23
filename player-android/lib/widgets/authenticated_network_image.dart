@@ -1,3 +1,4 @@
+import '../providers/server_endpoint_provider.dart';
 import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -83,14 +84,17 @@ class AuthenticatedNetworkImage extends ConsumerWidget {
       data: (value) => value == null
           ? errorWidget(context, imageUrl,
               StateError('Image origin does not match server'))
-          : _image(value),
+          : ref.watch(routedServerUriProvider(uri)).when(
+              loading: () => placeholder(context, imageUrl),
+              error: (error, _) => errorWidget(context, imageUrl, error),
+              data: (routed) => _image(value, routed.toString())),
     );
   }
 
-  Widget _image(Map<String, String> headers) {
+  Widget _image(Map<String, String> headers, String transportUrl) {
     if (isSvgSource(fileName: sourceName, url: imageUrl)) {
       return NetworkSvgImage(
-        imageUrl: imageUrl,
+        imageUrl: transportUrl,
         headers: headers,
         fit: fit,
         width: width,
@@ -100,7 +104,7 @@ class AuthenticatedNetworkImage extends ConsumerWidget {
       );
     }
     return CachedNetworkImage(
-      imageUrl: imageUrl,
+      imageUrl: transportUrl,
       cacheKey: authenticatedImageCacheKey(imageUrl, headers),
       httpHeaders: headers,
       fit: fit,
@@ -110,7 +114,7 @@ class AuthenticatedNetworkImage extends ConsumerWidget {
       errorWidget: (context, _, error) => bitmapErrorOrSvg(
         context,
         error: error,
-        imageUrl: imageUrl,
+        imageUrl: transportUrl,
         headers: headers,
         fit: fit,
         width: width,

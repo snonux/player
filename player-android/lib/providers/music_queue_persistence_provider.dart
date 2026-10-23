@@ -1,3 +1,4 @@
+import 'server_endpoint_provider.dart';
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,6 +42,7 @@ class MusicQueuePersistence {
     _boundKey = key;
     _boundScope = scope;
     _boundGeneration = generation;
+    final endpointRouter = _ref.read(serverEndpointRouterProvider);
     final client = _ref.read(apiClientProvider);
     final progress = _ref.read(progressQueueProvider);
     final storage = _ref.read(tokenStorageProvider);
@@ -194,7 +196,9 @@ class MusicQueuePersistence {
                   cookieJar: jar,
                   mutations: mutations);
               if (!valid()) return null;
-              return AudioSource.uri(request.sourceUri,
+              final uri = await endpointRouter.mediaUri(request.sourceUri);
+              if (!valid()) return null;
+              return AudioSource.uri(uri,
                   headers: headers.isEmpty ? null : headers);
             });
       } catch (_) {

@@ -1,3 +1,4 @@
+import '../providers/server_endpoint_provider.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -331,12 +332,18 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final request = attempt.request;
     VideoPlayerController? controller;
     try {
+      final sourceUri = request is ServerPlaybackRequest
+          ? await ref
+              .read(serverEndpointRouterProvider)
+              .mediaUri(request.sourceUri)
+          : request.sourceUri;
+      if (!_isCurrent(attempt)) return;
       controller = request is OfflinePlaybackRequest
           ? VideoPlayerController.file(File.fromUri(request.sourceUri))
           : request is LocalPlaybackRequest
               ? VideoPlayerController.contentUri(request.sourceUri)
               : VideoPlayerController.networkUrl(
-                  request.sourceUri,
+                  sourceUri,
                   httpHeaders: headers,
                 );
       // Track the controller while initialization is pending so a library
