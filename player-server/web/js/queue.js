@@ -1,4 +1,5 @@
-import { beginPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
+import { SavedQueueSync, savedQueueRequest } from './queue-sync.js';
+import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { queueStorageKey, readQueueSnapshot } from './queue-storage.js';
 import { orderRemainder, shuffledCopy } from './queue-shuffle.js';
 import { API } from './api.js';
@@ -24,11 +25,52 @@ export function shuffleQueue({ reshuffle = false } = {}) {
 function eligibleShuffleCount() { return entries.slice(index + 1).filter(e => !nextIDs.has(e.id)).length; }
 function invalidateNext() { nextIDs.clear(); nextEpoch++; }
 let storageKey = null, savedPosition = 0, positionEntry = null, restoreError = false, restored = false;
-const notify = () => { saveQueue(); document.dispatchEvent(new Event('queue:changed')); };
+let applyingServerQueue = false, queueChanges = 0;
+const portableSync = new SavedQueueSync({ storage: { getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) }, request: savedQueueRequest, changed: () => document.dispatchEvent(new Event('queue:changed')) });
+let lastSyncAt = 0;
+const notify = () => { queueChanges++; saveQueue(); document.dispatchEvent(new Event('queue:changed')); };
 function capturePosition() {
   if (!queueState().active || loading) return;
   const position = queuePlaybackPosition();
   if (Number.isFinite(position)) { savedPosition = position; positionEntry = entries[index]?.id; }
+}
+function portableSnapshot() {
+ return { entries: entries.map(e => ({ id: e.id, media_id: e.media.id })), current_id: entries[index]?.id || 0, position_seconds: positionEntry === entries[index]?.id ? savedPosition : 0, label, repeat, shuffle, canonical: [...canonical], up_next: [...nextIDs] };
+}
+export function savedSessionState() { return { conflict: !!portableSync.state.conflict, message: portableSync.message || '', available: !!portableSync.state.remote?.revision }; }
+export function replaceSavedSession() { portableSync.capture(portableSnapshot()); return portableSync.replace(); }
+export function keepOtherSession() { portableSync.keepOther(); }
+export async function continueSavedSession() {
+ const operation = revision, edits = queueChanges, intent = currentPlaybackIntent(), scope = storageKey;
+ const remote = await portableSync.refresh();
+ if (!remote || scope !== storageKey || operation !== revision || edits !== queueChanges || !isPlaybackIntent(intent)) return;
+ await applySavedSession(remote, operation, edits, intent, scope);
+}
+async function applySavedSession(remote, operation, edits, intent, scope) {
+ const media = new Map();
+ try {
+  for (const id of new Set(remote.entries.map(e => e.media_id))) {
+   try { const detail = await API.mediaDetail(id); if (detail?.media?.type === 'audio') media.set(id, detail.media); }
+   catch(error) { if (![403,404,410].includes(error.status)) throw error; }
+   if (operation !== revision || edits !== queueChanges || scope !== storageKey || !isPlaybackIntent(intent)) return;
+  }
+  applyingServerQueue = true;
+  if (currentMediaId() !== null) stopAndClose();
+  beginPlaybackIntent(); revision++;
+  entries = remote.entries.filter(e => media.has(e.media_id)).map(e => ({id:e.id, media:media.get(e.media_id)}));
+  index = entries.findIndex(e => e.id === remote.current_id);
+  const selectedSurvived = index >= 0;
+  if (!selectedSurvived) index = entries.length ? 0 : -1;
+  savedPosition = selectedSurvived ? remote.position_seconds : 0; positionEntry = entries[index]?.id;
+  if (entries[index]?.media.duration > 0) savedPosition = Math.min(savedPosition, entries[index].media.duration);
+  serial = Math.max(serial, ...entries.map(e => e.id)); activeID = null; undo = null;
+  label = remote.label; repeat = remote.repeat; shuffle = remote.shuffle;
+  canonical = remote.canonical.filter(id => entries.some(e => e.id === id));
+  nextIDs = new Set(remote.up_next.filter(id => entries.some(e => e.id === id)));
+  restored = !!entries.length; restoreError = false; loading = false; status = 'Session continued · paused. Resume when you’re ready.';
+  portableSync.adopt(remote, portableSnapshot()); notify();
+ } catch { status = 'Can’t continue session. Check your connection and retry.'; document.dispatchEvent(new Event('queue:changed')); }
+ finally { applyingServerQueue = false; }
 }
 function saveQueue() {
   if (!storageKey || restoreError) return;
@@ -38,6 +80,10 @@ function saveQueue() {
       entries: entries.map(entry => ({ id: entry.id, mediaId: entry.media.id })), index,
       position: positionEntry === entries[index]?.id ? savedPosition : 0, label,
       repeat, shuffle, canonical, upNext: [...nextIDs] }));
+      if (!applyingServerQueue && !loading) {
+      portableSync.capture(portableSnapshot());
+      if (Date.now() - lastSyncAt > 15000) { lastSyncAt = Date.now(); void portableSync.sync(); }
+    }
   } catch {
     const message = 'Queue could not be saved on this device.';
     if (status !== message) { status = message; document.dispatchEvent(new Event('queue:changed')); }
@@ -57,6 +103,8 @@ export async function restoreQueue(userId) {
     restored = false; positionEntry = null; savedPosition = 0; invalidateNext();
   }
   storageKey = key;
+  portableSync.bind(`${key}.server`);
+  void portableSync.sync();
   const operation = ++revision;
   restoreError = true; loading = true; status = 'Restoring queue…'; notify();
   let snapshot;
@@ -66,7 +114,7 @@ export async function restoreQueue(userId) {
     try { localStorage.removeItem(storageKey); } catch {}
     repeat = 'off'; restoreError = false; loading = false; status = 'Saved queue was unreadable. Add songs to start again.'; notify(); return;
   }
-  if (!snapshot) { restoreError = false; loading = false; status = ''; notify(); return; }
+  if (!snapshot) { portableSync.state.local = JSON.stringify(portableSnapshot()); restoreError = false; loading = false; status = ''; notify(); return; }
   try {
     // Deduplicate requests, never occurrences. A transient error keeps the original snapshot.
     const media = new Map();
@@ -89,6 +137,7 @@ export async function restoreQueue(userId) {
     const duration = entries[index]?.media.duration;
     if (duration > 0) savedPosition = Math.min(savedPosition, duration);
     restored = entries.length > 0; loading = false; restoreError = false;
+    portableSync.state.local = JSON.stringify(portableSnapshot());
     const dropped = snapshot.entries.length - entries.length;
     status = entries.length ? 'Queue restored · paused. Resume when you’re ready.' : 'Queue is empty.';
     if (dropped) status += ` ${dropped} ${dropped === 1 ? 'song is' : 'songs are'} no longer available.`;
@@ -125,8 +174,9 @@ export function initQueue() {
   const audio = document.getElementById('media-audio');
   for (const event of ['pause', 'seeked']) audio?.addEventListener(event, () => { capturePosition(); saveQueue(); });
   window.setInterval?.(() => { if (queueState().active) saveQueue(); }, 1000);
-  window.addEventListener('pagehide', saveQueue);
-  document.addEventListener('visibilitychange', saveQueue);
+  window.addEventListener('online', () => void portableSync.sync());
+  window.addEventListener('pagehide', () => { saveQueue(); void portableSync.sync(); });
+  document.addEventListener('visibilitychange', () => { saveQueue(); void portableSync.sync(); });
   document.addEventListener('player:media-opened', e => {
     if (e.detail.restored || String(e.detail.media.id) !== String(activeID)) {
       deactivateQueue({ keepNext: e.detail.restored && restored && String(e.detail.media.id) === String(entries[index]?.media.id) });

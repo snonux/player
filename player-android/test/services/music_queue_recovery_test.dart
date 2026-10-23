@@ -14,6 +14,7 @@ import 'package:player_android/providers/music_queue_persistence_provider.dart';
 import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/music_queue.dart';
 import 'package:player_android/services/music_queue_snapshot.dart';
+import 'package:player_android/services/saved_queue_sync.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 
@@ -270,6 +271,81 @@ void main() {
     await handler.stop();
     expect(player.plays, greaterThan(0));
   });
+  for (final edit in ['repeat', 'reorder']) {
+    test(
+        'portable restore preserves $edit edit during delayed preference flush',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _Client(), player = _Player();
+      final handler = PlayerAudioHandler(player);
+      final started = Completer<void>(), release = Completer<void>();
+      var delay = true;
+      final container = ProviderContainer(overrides: [
+        audioHandlerProvider.overrideWithValue(handler),
+        playerBaseUrlProvider.overrideWithValue(Uri.parse('http://one')),
+        apiClientProvider.overrideWithValue(client),
+        cookieJarProvider.overrideWithValue(CookieJar()),
+        musicQueuePersistenceProvider.overrideWith((ref) =>
+            MusicQueuePersistence(ref, writeSnapshot: (prefs, key, raw) async {
+              if (delay) {
+                delay = false;
+                started.complete();
+                await release.future;
+              }
+              return prefs.setString(key, raw);
+            })),
+      ]);
+      var server = {
+        ...portableQueue(snapshot),
+        'revision': 5,
+        'mutation_id': 'remote'
+      };
+      final account = SavedQueueAccount(
+          scope: 'portable-$edit',
+          current: () => true,
+          read: () async => Map.of(server),
+          write: (body, revision) async {
+            expect(revision, server['revision']);
+            server = {...body, 'revision': revision + 1};
+            return (conflict: false, queue: Map.of(server));
+          });
+      final sync = SavedQueueSync();
+      await sync.capture(account, snapshot, baseline: true);
+      final stamp = sync.editStamp(account.scope);
+      final persistence = container.read(musicQueuePersistenceProvider);
+      await persistence.initialize(1);
+      await settle();
+      final restoring = persistence.restorePortable(snapshot);
+      await started.future;
+      expect(handler.musicQueue.entries.length, 3);
+      expect(player.plays, 0);
+      if (edit == 'repeat') {
+        handler.cycleQueueRepeat();
+      } else {
+        handler.moveQueue(0, 1);
+      }
+      final changed = handler.queueSnapshot;
+      await sync.capture(account, changed);
+      expect(await sync.pending(account), 1);
+      release.complete();
+      final restored = await restoring;
+      expect(restored, isNotNull);
+      expect(restored!.snapshot.encode(), snapshot.encode());
+      expect(restored.unchanged, false);
+      await sync.adopt(account, server, restored.snapshot,
+          expectedEditStamp: stamp, unchanged: restored.unchanged);
+      final restarted = SavedQueueSync();
+      expect(await restarted.pending(account), 1);
+      await restarted.sync(account);
+      expect(server['repeat'], changed.repeat.name);
+      expect((server['entries'] as List).map((e) => (e as Map)['id']),
+          changed.entries.map((e) => e.id));
+      expect(server['revision'], 6);
+      handler.clearRetainedQueue();
+      await handler.stop();
+      container.dispose();
+    });
+  }
   for (final scenario in [
     'normal',
     'denied',

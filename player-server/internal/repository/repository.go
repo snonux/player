@@ -10,6 +10,7 @@ import (
 
 // Store is the composite interface for all repositories.
 type Store interface {
+	SavedQueueRepo
 	PlaylistRepo
 	FinishProgress(ctx context.Context, progress *model.PlaybackProgress) error
 	ResetProgress(ctx context.Context, userID, mediaID int64) error

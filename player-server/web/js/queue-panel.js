@@ -1,4 +1,4 @@
-import { queueState, jumpQueue, moveQueue, removeQueue, clearQueue, undoQueue, resumeQueue, retryQueueRestore, cycleQueueRepeat, shuffleQueue } from './queue.js';
+import { queueState, jumpQueue, moveQueue, removeQueue, clearQueue, undoQueue, resumeQueue, retryQueueRestore, cycleQueueRepeat, shuffleQueue, savedSessionState, continueSavedSession, replaceSavedSession, keepOtherSession } from './queue.js';
 import { mediaTitle, musicSubtitle } from './music.js';
 import { escapeHtml as esc } from './utils.js';
 
@@ -38,6 +38,12 @@ export function initQueuePanel() {
     if (!action) return;
     const at = Number(action.closest('[data-queue-index]')?.dataset.queueIndex ?? selected);
     switch (action.dataset.queueAction) {
+      case 'continue-session':
+        if (queueState().entries.length && !window.confirm('Replace this queue with the saved session? Playback will stay paused.')) return;
+        await continueSavedSession(); break;
+      case 'replace-session':
+        if (window.confirm('Replace the saved session with this queue? The other client keeps its current playback.')) await replaceSavedSession(); break;
+      case 'keep-other': keepOtherSession(); break;
       case 'shuffle': case 'reshuffle': shuffleQueue({reshuffle: action.dataset.queueAction === 'reshuffle'}); panel.querySelector(`[data-queue-action="${action.dataset.queueAction}"]`)?.focus(); return;
       case 'repeat': cycleQueueRepeat(); panel.querySelector('[data-queue-action="repeat"]')?.focus(); return;
       case 'resume': await resumeQueue(); break;
@@ -63,7 +69,7 @@ export function initQueuePanel() {
   document.addEventListener('queue:changed', () => {
     if (!panel.classList.contains('open')) return;
     const focused = isQueueFocused(), toolbarAction = document.activeElement?.dataset.queueAction;
-    render(); if (['repeat', 'shuffle', 'reshuffle'].includes(toolbarAction)) panel.querySelector(`[data-queue-action="${toolbarAction}"]`)?.focus(); else if (focused) focusRow();
+    render(); if (['repeat', 'shuffle', 'reshuffle', 'continue-session', 'replace-session', 'keep-other'].includes(toolbarAction)) panel.querySelector(`[data-queue-action="${toolbarAction}"]`)?.focus(); else if (focused) focusRow();
   });
   window.addEventListener('resize', syncMode);
   document.addEventListener('queue:open', () => { if (!panel.classList.contains('open')) toggleQueue(); else focusRow(); });
@@ -90,6 +96,7 @@ function openRowMenu() {
   panel.appendChild(menu); menu.showPopover(); menu.querySelector('button:not(:disabled)')?.focus();
 }
 export function queueKey(e) {
+  if (e.target.closest('[data-queue-action]') && ['Enter', ' '].includes(e.key)) return false;
   if (e.target.closest('[popover]')) return false;
   const length = queueState().entries.length;
   switch (e.key) {
@@ -108,10 +115,10 @@ export function queueKey(e) {
   e.preventDefault(); render(); if (panel.classList.contains('open')) focusRow(); return true;
 }
 function render() {
-  const q = queueState();
+  const q = queueState(), session = savedSessionState();
   selected = Math.max(0, Math.min(selected, q.entries.length - 1));
   const start = Math.floor(Math.max(0, selected) / pageSize) * pageSize;
-  panel.innerHTML = `<section class="queue-content"><div class="modal-header"><h2 id="queue-title">Now Playing</h2><button class="icon-btn" data-queue-action="close" aria-label="Close queue">✕</button></div><p>${esc(q.label ? `Playing from: ${q.label}` : 'Music queue')}</p><div class="queue-actions"><button class="btn${q.shuffle ? ' btn-primary' : ''}" data-queue-action="shuffle" aria-pressed="${q.shuffle}" aria-describedby="queue-shuffle-hint" ${q.loading || q.restoreError || (!q.shuffle && q.shuffleEligible < 2) ? 'disabled' : ''}>Shuffle: ${q.shuffle ? 'On' : 'Off'}</button>${q.shuffle ? `<button class="btn" data-queue-action="reshuffle" aria-describedby="queue-shuffle-hint" ${q.loading || q.restoreError || q.shuffleEligible < 2 ? 'disabled' : ''}>Reshuffle remaining</button>` : ''}<button class="btn${q.repeat === 'off' ? '' : ' btn-primary'}" data-queue-action="repeat" aria-pressed="${q.repeat !== 'off'}" title="Cycle queue repeat (Y)" ${q.loading || q.restoreError ? 'disabled' : ''}><span aria-hidden="true">${q.repeat === 'one' ? '🔂' : '🔁'}</span> Repeat: ${q.repeat[0].toUpperCase() + q.repeat.slice(1)}</button></div><p id="queue-shuffle-hint" class="text-sm">Only upcoming songs change. Library order stays the same.${q.shuffleEligible < 2 ? ' At least two upcoming songs outside Play next are needed to shuffle.' : ''}</p><p class="text-sm">j/k select · Enter play · K/J move · Delete remove</p><p role="status">${esc(q.status || (q.active ? 'Current track marked Now' : 'Queue paused. Choose a track to play.'))}</p>${q.restored ? `<p>Paused at ${Math.floor(q.position / 60)}:${String(Math.floor(q.position % 60)).padStart(2, '0')}</p><button class="btn btn-primary" data-queue-action="resume" ${q.loading ? 'disabled' : ''}>Resume queue</button>` : ''}${q.restoreError ? `<button class="btn" data-queue-action="retry" ${q.loading ? 'disabled' : ''}>Retry restore</button>` : ''}<ol class="queue-list" role="list" start="${start + 1}">${q.entries.slice(start, start + pageSize).map((entry, offset) => {
+  panel.innerHTML = `<section class="queue-content"><div class="modal-header"><h2 id="queue-title">Now Playing</h2><button class="icon-btn" data-queue-action="close" aria-label="Close queue">✕</button></div><p>${esc(q.label ? `Playing from: ${q.label}` : 'Music queue')}</p><div class="queue-actions"><button class="btn${q.shuffle ? ' btn-primary' : ''}" data-queue-action="shuffle" aria-pressed="${q.shuffle}" aria-describedby="queue-shuffle-hint" ${q.loading || q.restoreError || (!q.shuffle && q.shuffleEligible < 2) ? 'disabled' : ''}>Shuffle: ${q.shuffle ? 'On' : 'Off'}</button>${q.shuffle ? `<button class="btn" data-queue-action="reshuffle" aria-describedby="queue-shuffle-hint" ${q.loading || q.restoreError || q.shuffleEligible < 2 ? 'disabled' : ''}>Reshuffle remaining</button>` : ''}<button class="btn${q.repeat === 'off' ? '' : ' btn-primary'}" data-queue-action="repeat" aria-pressed="${q.repeat !== 'off'}" title="Cycle queue repeat (Y)" ${q.loading || q.restoreError ? 'disabled' : ''}><span aria-hidden="true">${q.repeat === 'one' ? '🔂' : '🔁'}</span> Repeat: ${q.repeat[0].toUpperCase() + q.repeat.slice(1)}</button></div><p id="queue-shuffle-hint" class="text-sm">Only upcoming songs change. Library order stays the same.${q.shuffleEligible < 2 ? ' At least two upcoming songs outside Play next are needed to shuffle.' : ''}</p><p class="text-sm">j/k select · Enter play · K/J move · Delete remove</p><p role="status">${esc(q.status || (q.active ? 'Current track marked Now' : 'Queue paused. Choose a track to play.'))}</p>${q.restored ? `<p>Paused at ${Math.floor(q.position / 60)}:${String(Math.floor(q.position % 60)).padStart(2, '0')}</p><button class="btn btn-primary" data-queue-action="resume" ${q.loading ? 'disabled' : ''}>Resume queue</button>` : ''}${q.restoreError ? `<button class="btn" data-queue-action="retry" ${q.loading ? 'disabled' : ''}>Retry restore</button>` : ''}<div class="queue-actions"><button class="btn" data-queue-action="continue-session" ${q.loading ? 'disabled' : ''}>Continue session</button><button class="btn" data-queue-action="replace-session" ${q.loading ? 'disabled' : ''}>Replace saved session</button>${session.conflict ? '<button class="btn" data-queue-action="keep-other">Keep other session</button>' : ''}</div><p class="text-sm" role="status">${esc(session.message)}</p><ol class="queue-list" role="list" start="${start + 1}">${q.entries.slice(start, start + pageSize).map((entry, offset) => {
     const i = start + offset, title = esc(mediaTitle(entry.media));
     return `<li tabindex="-1" data-queue-index="${i}" data-entry-id="${entry.id}" class="queue-row${i === q.index ? ' queue-current' : ''}${i === selected ? ' queue-selected' : ''}" ${i === q.index && q.active ? 'aria-current="true"' : ''}><span>${i + 1}${entry.upNext ? ' · Up next (you added)' : ''}${i === q.index ? q.active ? ' · Now' : ' · Selected' : ''}</span><button class="btn btn-ghost queue-track" data-queue-action="play" ${q.loading ? 'disabled' : ''} aria-label="Play ${title}">${title}<small>${esc(musicSubtitle(entry.media))}</small></button><div class="queue-actions"><button class="btn btn-ghost" data-queue-action="menu" aria-label="Actions for ${title}">⋮</button><button class="btn btn-ghost" data-queue-action="up" aria-label="Move ${title} up" ${q.loading || i === 0 ? 'disabled' : ''}>↑</button><button class="btn btn-ghost" data-queue-action="down" aria-label="Move ${title} down" ${q.loading || i === q.entries.length - 1 ? 'disabled' : ''}>↓</button><button class="btn btn-ghost" data-queue-action="remove" aria-label="Remove ${title}" ${q.loading ? 'disabled' : ''}>Remove</button></div></li>`;
   }).join('')}</ol>${q.entries.length ? '' : '<p>Queue is empty. Add songs or play an album to start.</p>'}<div class="queue-footer">${q.entries.length > pageSize ? `<span>Showing ${start + 1}–${Math.min(start + pageSize, q.entries.length)} of ${q.entries.length}</span><button class="btn" data-queue-action="previous" ${start === 0 ? 'disabled' : ''}>Previous page</button><button class="btn" data-queue-action="next" ${start + pageSize >= q.entries.length ? 'disabled' : ''}>Next page</button><button class="btn" data-queue-action="now">Jump to now</button>` : ''}<button class="btn" data-queue-action="clear" ${!q.entries.length || q.loading ? 'disabled' : ''}>Clear queue</button><button class="btn" data-queue-action="undo" ${!q.canUndo || q.loading ? 'disabled' : ''}>Undo</button></div></section>`;

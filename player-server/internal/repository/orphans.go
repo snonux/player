@@ -20,6 +20,7 @@ type ownedRows struct {
 // connection did (see connection.go). DeleteUser removes them explicitly and
 // removeOrphanRows cleans up what earlier deletes left behind.
 var userOwned = []ownedRows{
+	{"saved_queues", "user_id"},
 	{"playlists", "user_id"},
 	{"sessions", "user_id"},
 	{"api_tokens", "user_id"},

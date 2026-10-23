@@ -10,6 +10,7 @@ import '../services/podcast_sync.dart';
 import '../services/podcast_sync_store.dart';
 import '../services/progress_queue.dart';
 import 'api_client_provider.dart';
+import 'saved_queue_provider.dart';
 import 'auth_state_provider.dart';
 import 'offline_downloads_provider.dart';
 import 'offline_playback_sync_provider.dart';
@@ -45,7 +46,12 @@ GlobalSyncAccount? captureSyncAccount(Ref ref) {
   final downloads = ref.read(offlineDownloadRepositoryProvider);
   final queue = ref.read(progressQueueProvider);
   final offline = ref.read(offlinePlaybackSyncProvider);
+  final savedQueueAccount = captureSavedQueueAccount(ref);
+  final savedQueues = ref.read(savedQueueSyncProvider);
   return GlobalSyncAccount(
+    syncQueue: savedQueueAccount == null
+        ? null
+        : () => savedQueues.sync(savedQueueAccount),
     podcast: PodcastSyncAccount(
         scope: podcastAccountScope(origin, userId),
         current: current,
@@ -70,7 +76,9 @@ GlobalSyncAccount? captureSyncAccount(Ref ref) {
     },
     pendingOther: () async {
       final items = await downloads.syncItems(origin, userId);
-      var count = 0;
+      var count = savedQueueAccount == null
+          ? 0
+          : await savedQueues.pending(savedQueueAccount);
       for (final item in items) {
         if (item['gone_ms'] != null) continue;
         final payload = await downloads.syncPayload(item['key'] as String);

@@ -9,8 +9,11 @@ import '../api/player_api_client.dart';
 import '../models/media.dart';
 import '../services/music_queue.dart';
 import '../services/music_queue_snapshot.dart';
+import '../services/saved_queue_sync.dart';
 import '../services/playback_request.dart';
 import 'api_client_provider.dart';
+import 'global_sync_provider.dart';
+import 'saved_queue_provider.dart';
 import 'audio_handler_provider.dart';
 import 'playback_preparer_provider.dart';
 import 'playback_session_provider.dart';
@@ -22,11 +25,16 @@ final musicQueuePersistenceProvider =
 /// Rebuilds sources only after explicit unlock; no credentials or media URLs
 /// are written to disk. Retained functions capture the account credential epoch.
 class MusicQueuePersistence {
-  MusicQueuePersistence(this._ref);
+  MusicQueuePersistence(this._ref, {this.writeSnapshot});
+  final Future<bool> Function(SharedPreferences, String, String)? writeSnapshot;
   final Ref _ref;
   Future<void> _writes = Future.value();
   String? _boundKey;
   int? _boundScope, _boundGeneration;
+  Future<PortableQueueRestore?> Function(MusicQueueSnapshot)? _portableRestore;
+  Future<PortableQueueRestore?> restorePortable(
+          MusicQueueSnapshot snapshot) async =>
+      await _portableRestore?.call(snapshot);
 
   Future<void> initialize(int userId) async {
     final handler = _ref.read(audioHandlerProvider);
@@ -55,7 +63,10 @@ class MusicQueuePersistence {
     if (!current()) return;
     var validating = true;
     final recovery = handler.queueRecoveryGeneration;
+    var restoring = false;
+    var lastQueueSyncMs = 0;
     void persist() {
+      final baseline = restoring;
       final snapshot = handler.queueSnapshot;
       if (!current() ||
           handler.musicQueue.restoreFailed ||
@@ -66,8 +77,23 @@ class MusicQueuePersistence {
       }
       _writes = _writes.then((_) async {
         try {
-          if (!await prefs.setString(key, snapshot.encode())) {
+          if (!current()) return;
+          if (!await (writeSnapshot?.call(prefs, key, snapshot.encode()) ??
+              prefs.setString(key, snapshot.encode()))) {
             if (current()) handler.queueStorageFailed();
+          }
+          final account = captureSavedQueueAccount(_ref);
+          if (account != null && current()) {
+            await _ref
+                .read(savedQueueSyncProvider)
+                .capture(account, snapshot, baseline: baseline);
+            final now = DateTime.now().millisecondsSinceEpoch;
+            if (current() &&
+                !baseline &&
+                (!handler.player.playing || now - lastQueueSyncMs >= 15000)) {
+              lastQueueSyncMs = now;
+              _ref.read(globalSyncCoordinatorProvider).trigger();
+            }
           }
         } catch (_) {
           if (current()) handler.queueStorageFailed();
@@ -76,19 +102,31 @@ class MusicQueuePersistence {
     }
 
     handler.persistMusicQueue = persist;
-    Future<void> restore() async {
-      if (!current()) return;
-      validating = true;
+    Future<PortableQueueRestore?> restore(
+        [MusicQueueSnapshot? portable]) async {
+      if (!current()) return null;
+      if (portable == null) validating = true;
       final attempt = handler.queueRecoveryGeneration;
-      bool wanted() => current() && handler.queueRecoveryGeneration == attempt;
-      handler.queueRestoreStatus('Restoring queue…', busy: true);
-      MusicQueueSnapshot? snapshot;
+      var intentGeneration = coordinator.generation;
+      final originalQueue = portableQueueStructure(handler.queueSnapshot);
+      bool wanted() =>
+          current() &&
+          handler.queueRecoveryGeneration == attempt &&
+          coordinator.generation == intentGeneration &&
+          (portable == null ||
+              portableQueueStructure(handler.queueSnapshot) == originalQueue);
+      if (portable == null) {
+        handler.queueRestoreStatus('Restoring queue…', busy: true);
+      }
+      MusicQueueSnapshot? snapshot = portable;
       try {
         await _writes;
-        final raw = prefs.getString(key);
-        if (raw != null) snapshot = MusicQueueSnapshot.decode(raw);
+        if (portable == null) {
+          final raw = prefs.getString(key);
+          if (raw != null) snapshot = MusicQueueSnapshot.decode(raw);
+        }
       } catch (_) {
-        if (!wanted()) return;
+        if (!wanted()) return null;
         try {
           await prefs.remove(key);
         } catch (_) {}
@@ -96,14 +134,14 @@ class MusicQueuePersistence {
         handler.queueRestoreStatus(
             'Saved queue was unreadable. Add songs to start again.');
         handler.persistMusicQueue = persist;
-        return;
+        return null;
       }
-      if (!wanted()) return;
+      if (!wanted()) return null;
       if (snapshot == null) {
         validating = false;
         handler.queueRestoreStatus('');
         handler.persistMusicQueue = persist;
-        return;
+        return null;
       }
       try {
         final media = <int, Media>{};
@@ -116,7 +154,7 @@ class MusicQueuePersistence {
           } on DioException catch (error) {
             if (![403, 404, 410].contains(error.response?.statusCode)) rethrow;
           }
-          if (!wanted()) return;
+          if (!wanted()) return null;
         }
         final entries = snapshot.entries
             .where((e) => media.containsKey(e.mediaId))
@@ -155,9 +193,20 @@ class MusicQueuePersistence {
                   .duration;
           if (duration > 0) position = position.clamp(0, duration);
         }
-        if (!wanted()) return;
+        if (!wanted()) return null;
+        if (portable != null) {
+          restoring = true;
+          intentGeneration =
+              coordinator.generation + (coordinator.activeKind == null ? 0 : 1);
+          await coordinator.stopCurrent();
+          if (!wanted()) {
+            restoring = false;
+            return null;
+          }
+        }
         handler.persistMusicQueue = persist;
         validating = false;
+        restoring = true;
         handler.restoreMusicQueue(
             entries: entries,
             index: index,
@@ -202,16 +251,33 @@ class MusicQueuePersistence {
               return AudioSource.uri(uri,
                   headers: headers.isEmpty ? null : headers);
             });
+        final applied = handler.queueSnapshot;
+        restoring = false;
+        await _writes;
+        if (!current() ||
+            coordinator.generation != intentGeneration ||
+            handler.queueRecoveryGeneration != attempt) {
+          return null;
+        }
+        return (
+          snapshot: applied,
+          unchanged: handler.queueSnapshot.encode() == applied.encode()
+        );
       } catch (_) {
-        if (wanted()) {
+        restoring = false;
+        if (wanted() && portable == null) {
           handler.queueRestoreStatus(
               'Can’t restore queue. Check your connection and retry.',
               failed: true);
         }
       }
+      return null;
     }
 
-    handler.retryQueueRestore = restore;
+    _portableRestore = (snapshot) => restore(snapshot);
+    handler.retryQueueRestore = () async {
+      await restore();
+    };
     unawaited(restore());
   }
 }

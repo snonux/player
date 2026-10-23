@@ -114,12 +114,29 @@ Playing** (Q) and choose **Resume queue**. Recovery stays paused until you choos
 to play. Repeated songs retain their separate places. A library link you open
 keeps its own selected item while the saved queue remains available.
 
-The queue belongs to this browser and server/account; it does not synchronize
-to other devices. Songs you can no longer access are removed during recovery.
+Local recovery belongs to this browser and server/account. Use **Continue
+session** for the separate server session described below. Songs you can no
+longer access are removed during recovery.
 A connection failure retains the saved queue and offers **Retry restore** after
 sign-in. **Clear queue** remains cleared after reload; Undo is available during
 the current session. Private browsing or clearing browser storage removes local
 recovery data.
+
+## Continue a saved session
+
+In **Now Playing**, choose **Continue session** to load the session last saved
+by this account in another browser or the Android app. Confirm **Replace** if
+this browser already has a queue, or keep the current queue. The saved order,
+selected occurrence and position load paused; **Resume queue** starts playback.
+Repeat, shuffle and Play next markers travel with the session. Media access is
+checked again; unavailable songs are removed with a quiet notice.
+
+Queue edits and position changes are saved quietly. Offline changes remain on
+this device and retry on reconnect. If another client has saved a newer
+session, choose **Replace saved session** to use this queue, or **Keep other
+session** to leave that saved session and current local playback alone. A late
+sync response never changes live playback. Server sessions are isolated by
+account; local recovery remains available independently.
 
 ## Repeat a music queue
 

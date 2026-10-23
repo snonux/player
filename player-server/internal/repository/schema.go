@@ -289,6 +289,9 @@ func initializeSchema(db *sql.DB) error {
 	if err := repairPodcastIdentities(db); err != nil {
 		return fmt.Errorf("repair podcast identities: %w", err)
 	}
+	if err := initializeSavedQueues(db); err != nil {
+		return fmt.Errorf("initialize saved queues: %w", err)
+	}
 	// Last, when every table has its final shape.
 	if err := normalizeStoredTimes(db); err != nil {
 		return fmt.Errorf("normalize stored times: %w", err)

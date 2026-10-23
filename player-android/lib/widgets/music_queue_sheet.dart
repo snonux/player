@@ -7,6 +7,7 @@ import '../services/music_queue.dart';
 import '../services/playback_request.dart';
 import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
+import 'saved_queue_controls.dart';
 
 /// Shared entry point on the player and library screens; no new player route.
 class MusicQueueButton extends ConsumerWidget {
@@ -58,6 +59,7 @@ class _MusicQueueSheet extends StatelessWidget {
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.close))
                   ])),
+              const SavedQueueControls(),
               if (q.label.isNotEmpty)
                 Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),

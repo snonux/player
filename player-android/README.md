@@ -351,8 +351,25 @@ a restart; Undo applies during the current session.
 Recovery rechecks access to the saved songs. Removed or forbidden songs are
 dropped with a quiet notice; connection failures keep the saved session and
 offer **Retry restore**. This is local music queue recovery, separate from
-per-file resume and podcast synchronization. It does not synchronize a queue
-between devices. Clearing app storage removes these local sessions.
+per-file resume and podcast synchronization. Use **Continue session** for the
+separate server session below. Clearing app storage removes local sessions.
+
+## Continue a saved session
+
+Open **Now Playing queue** and tap **Continue session** to retrieve this
+account's session from the server, including one saved in Chrome or Firefox.
+Confirm **Replace** if there is already a queue, or choose **Keep this queue**.
+The order, repeated song occurrences, current position, repeat, shuffle and
+Play next markers load paused. Tap **Resume queue** when ready to play.
+Unavailable songs are removed after fresh access checks; Back closes the sheet.
+
+Edits and position changes join the existing quiet global synchronization.
+Offline pending changes survive restart for the same server/account. If another
+client saved a newer session, choose **Replace saved session** to save this
+queue, or **Keep other session** to retain the other saved session while this
+device keeps its own playback and local recovery. Background and late sync
+responses never replace live playback. Sign in again after an authentication
+failure to resume synchronization.
 
 ## Repeat a music queue
 

@@ -407,6 +407,8 @@ func (s *Server) routesNotes() {
 // routesProgress wires the progress API routes.
 func (s *Server) routesProgress() {
 	s.handleBoth(http.MethodPost, "/api/media/{id}/playback-sync", s.requireSession(s.handlePlaybackSync))
+	s.handleBoth(http.MethodGet, "/api/queue", s.requireSession(s.handleGetSavedQueue))
+	s.handleBoth(http.MethodPut, "/api/queue", s.requireSession(s.handlePutSavedQueue))
 	s.handleBoth(http.MethodPost, "/api/progress", s.requireSession(s.handleProgress))
 	s.handleBoth(http.MethodPost, "/api/progress/batch", s.requireSession(s.handleBatchProgress))
 	s.handleBoth(http.MethodPost, "/api/progress/status", s.requireSession(s.handleProgressStatus))

@@ -2628,3 +2628,32 @@ The file contains no credentials, signed streaming links, absolute host paths
 or access grants. The destination tool needs the corresponding local files;
 this is not an unauthenticated streaming playlist. Filesystem import/roundtrip
 is a separate M31 feature.
+
+## Saved Music session
+
+`GET /api/v1/queue` and `PUT /api/v1/queue` (legacy `/api/queue`) require the
+normal session cookie or Bearer token. Each account has one portable Music
+session. GET returns revision `0` and an empty queue before the first save.
+Both methods return `ETag: "<revision>"` and `Cache-Control: no-store`.
+
+PUT requires `If-Match: "<observed revision>"`; missing/malformed conditions
+return 400. A concurrent/stale write returns 409 with the current complete
+snapshot and ETag, without changing it. A retry carrying the last stored
+`mutation_id` is acknowledged without advancing its revision again.
+
+```json
+{"revision":1,"mutation_id":"client-generated-unique-edit-id","entries":[{"id":1,"media_id":42},{"id":2,"media_id":42}],"current_id":2,"position_seconds":7.25,"label":"Album","repeat":"off","shuffle":false,"canonical":[1,2],"up_next":[]}
+```
+
+PUT sends this shape; response `revision` is server-controlled. Maximum 10,000
+entries; occurrence and media IDs are positive JSON-safe integers. Occurrence
+IDs are unique even when media repeats. Current ID must identify an occurrence,
+or be 0 for an empty session (whose position must also be 0). Canonical order
+is a permutation of occurrence IDs; Up next is a unique subset. Repeat is
+`off`, `all` or `one`; position is finite, nonnegative seconds. Labels are
+UTF-8 and at most 2,000 bytes, mutation IDs 1–100 bytes. Every saved entry must
+be accessible, undeleted audio; ordinary media permission errors apply.
+Clients must revalidate available media before applying a saved queue. Remote
+sync never grants playback ownership: Continue is explicit and loads paused;
+Resume is the separate play action. Local-only playback and per-file/podcast
+progress remain independent.
