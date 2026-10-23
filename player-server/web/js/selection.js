@@ -18,8 +18,11 @@ export function initSelection() {
 // not focusable themselves; their primary open button is.
 export function focusSelectedCard() {
   const el = currentElement();
-  const target = el?.querySelector('.set-open, .folder-open, .media-open') || el;
-  target?.focus();
+  const nested = typeof el?.querySelector === 'function'
+    ? el.querySelector('.set-open, .folder-open, .media-open')
+    : null;
+  const target = nested || el;
+  target?.focus?.();
   return Boolean(target);
 }
 

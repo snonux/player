@@ -22,7 +22,9 @@ const api={albums:async()=>[{album_key:'a'}],album:async()=>({songs:[{id:7,file_
  addToPlaylists:body=>{requests.push(body);return pending?Promise.resolve():new Promise((resolve,reject)=>{rejectSave=reject;});}};
 const source=(await readFile(new URL('../views/music-playlists.js',import.meta.url),'utf8'))
  .replace(/^import .*;\n/gm,'').replace(/export /g,'');
-const context={API:api,testDialog:()=>({modal:{querySelector:()=>body},alive:()=>open,close:()=>{open=false;}}),
+const html=(strings,...values)=>String.raw({raw:strings},...values);
+const context={API:api,html,t:s=>s,ui:s=>s,plural:()=>'',uiCount:()=>'',
+ testDialog:()=>({modal:{querySelector:()=>body},alive:()=>open,close:()=>{open=false;}}),
  esc:String,mediaTitle:song=>song.file_name,matchesSong:()=>true,toast:()=>{},console};
 runInNewContext(source+'\ndialog=testDialog; globalThis.picker=addSongs;',context);
 await context.picker({playlist_id:'pl_main'},()=>true);
