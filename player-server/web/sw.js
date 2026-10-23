@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v71';
+const CACHE = 'kiss-v72';
 const ASSETS = [
   '/',
   '/index.html',
@@ -83,6 +83,7 @@ const ASSETS = [
   '/js/song-notifications.js',
   '/js/playback-cache.js',
   '/js/stream-quality.js',
+  '/js/network-policy.js',
   '/js/notes.js',
   '/js/admin.js',
   '/js/dom.js',

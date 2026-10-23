@@ -10,7 +10,7 @@ assert.equal(qualityPlaybackUrl({...media,type:'video'}),'/api/media/7/compat');
 const listeners={}; let focused=false;
 const select={options:[],replaceChildren(){this.options=[];},appendChild(o){this.options.push(o);},addEventListener(){}};
 const status={}; const button={addEventListener(){}};
-const panel={addEventListener(k,fn){listeners[k]=fn;},querySelector(selector){return selector==='select'?select:selector==='[role="status"]'?status:selector==='button'?button:{focus(){focused=true;}};}};
+const panel={addEventListener(k,fn){listeners[k]=fn;},querySelector(selector){return selector==='select[aria-label="Stream quality"]'?select:selector==='[data-network]'?null:selector==='[role="status"]'?status:selector==='button'?button:{focus(){focused=true;}};}};
 globalThis.document={createElement(tag){return tag==='details'?panel:{};}};
 globalThis.fetch=async()=>({ok:true,json:async()=>[]});
 initStreamQuality({querySelector(){return {appendChild(){}};}});

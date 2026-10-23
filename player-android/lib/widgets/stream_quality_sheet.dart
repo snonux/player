@@ -24,10 +24,11 @@ class _QualitySheetState extends State<_QualitySheet> {
   bool saving = false;
   String get server => widget.client.rawDio.options.baseUrl;
   late String selected;
+  String network = 'wifi';
   @override
   void initState() {
     super.initState();
-    selected = StreamQuality.selected(server);
+    selected = StreamQuality.forNetwork(server, network);
     load();
   }
 
@@ -59,7 +60,7 @@ class _QualitySheetState extends State<_QualitySheet> {
       saving = true;
     });
     try {
-      await StreamQuality.save(server, value);
+      await StreamQuality.save(server, value, network: network);
       if (mounted) {
         setState(() {
           selected = value;
@@ -100,6 +101,28 @@ class _QualitySheetState extends State<_QualitySheet> {
                       style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
+                      initialValue: network,
+                      decoration: const InputDecoration(
+                          labelText: 'Network settings to edit'),
+                      items: const [
+                        DropdownMenuItem(value: 'wifi', child: Text('Wi-Fi')),
+                        DropdownMenuItem(
+                            value: 'mobile', child: Text('Mobile / unknown'))
+                      ],
+                      onChanged: saving
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setState(() {
+                                  network = value;
+                                  selected =
+                                      StreamQuality.forNetwork(server, network);
+                                });
+                              }
+                            }),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                      key: ValueKey('$network:$selected'),
                       initialValue: selected,
                       isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Quality'),
@@ -112,7 +135,7 @@ class _QualitySheetState extends State<_QualitySheet> {
                       onChanged: saving ? null : choose),
                   const SizedBox(height: 16),
                   const Text(
-                      'Saved for this server on this device. Applies next time you open a track. Original may fail if the device cannot decode it. Local files, offline downloads, shared links and Cast keep their own playback policy.'),
+                      'Separate Wi-Fi and Mobile quality, saved for this server on this device. Music network in Settings chooses which applies. Applies next time you open a track. Original may fail if the device cannot decode it. Local files, offline downloads, shared links and Cast keep their own playback policy.'),
                   const SizedBox(height: 16),
                   Text(status, semanticsLabel: status),
                   TextButton(

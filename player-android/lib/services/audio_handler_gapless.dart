@@ -24,6 +24,12 @@ class _NativeGaplessState {
 /// Decoder preparation stays inside the audio owner; routes never own a
 /// second player or make per-track source replacements at a natural boundary.
 extension GaplessAudioHandler on PlayerAudioHandler {
+  /// Rechecks a prepared successor without replacing the current source.
+  void refreshGaplessPolicy() {
+    _gapless.invalidate();
+    _refreshGapless();
+  }
+
   Future<void> setGaplessEnabled(bool value) async {
     _gapless.preferenceRevision++;
     _gapless.enabled = value;

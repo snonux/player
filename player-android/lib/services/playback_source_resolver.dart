@@ -2,6 +2,7 @@ import 'package:dio/dio.dart' show CancelToken;
 
 import '../api/player_api_client.dart';
 import 'playback_request.dart';
+import 'stream_quality.dart';
 
 /// Picks the playback URL for a server request that was built from a media
 /// ID alone (podcast episodes, routes opened without a route extra).
@@ -60,14 +61,23 @@ Future<Uri> currentServerAudioUri(
   PlaybackRequest request,
   PlayerApiClient client, {
   Duration timeout = const Duration(seconds: 10),
+  String? quality,
 }) async {
   if (request is! ServerPlaybackRequest) return request.sourceUri;
+  final selected = quality ?? StreamQuality.selected(request.serverOrigin);
   final cancelToken = CancelToken();
   try {
     final media = await client
         .getMedia(request.mediaId, cancelToken: cancelToken)
         .timeout(timeout);
-    return Uri.parse(client.playbackUrl(media));
+    if (media.type != 'audio' || selected == 'auto') {
+      return Uri.parse(media.transcoded
+          ? client.compatUrl(media.id)
+          : client.streamUrl(media.id));
+    }
+    if (selected == 'original') return Uri.parse(client.streamUrl(media.id));
+    return Uri.parse(client.compatUrl(media.id))
+        .replace(queryParameters: {'profile': selected});
   } finally {
     cancelToken.cancel();
   }

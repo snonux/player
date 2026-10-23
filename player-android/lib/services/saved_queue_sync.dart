@@ -1,3 +1,4 @@
+import 'network_policy.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
@@ -131,10 +132,19 @@ class SavedQueueSync extends ChangeNotifier {
   }
 
   Future<void> sync(SavedQueueAccount account) async {
+    await MusicNetworkPolicy.initialize();
+    if (!account.current()) return;
+    if (!MusicNetworkPolicy.syncAllowed) {
+      message =
+          'Saved music session sync waits for Wi-Fi. Changes stay on this device.';
+      notifyListeners();
+      return;
+    }
     final state = await _load(account.scope);
     if (!account.current()) return;
     try {
       if (state['revision'] == null) {
+        if (!MusicNetworkPolicy.syncAllowed) return;
         final remote = await account.read();
         if (!account.current()) return;
         state['remote'] = remote;
@@ -153,6 +163,7 @@ class SavedQueueSync extends ChangeNotifier {
       }
       final pending = state['pending'];
       if (pending != null && state['conflict'] != true) {
+        if (!MusicNetworkPolicy.syncAllowed) return;
         final result = await account.write(
             Map<String, dynamic>.from(pending as Map),
             state['revision'] as int);
@@ -187,6 +198,14 @@ class SavedQueueSync extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> refresh(SavedQueueAccount account) async {
+    await MusicNetworkPolicy.initialize();
+    if (!account.current()) return null;
+    if (!MusicNetworkPolicy.syncAllowed) {
+      message =
+          'Continue session waits for Wi-Fi. Change Music network settings or retry on Wi-Fi.';
+      notifyListeners();
+      return null;
+    }
     final remote = await account.read();
     if (!account.current()) return null;
     final state = await _load(account.scope);

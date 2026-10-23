@@ -207,6 +207,7 @@ export function initQueue() {
   document.addEventListener('player:position', () => { capturePosition(); saveQueue(); });
   window.setInterval?.(() => { if (queueState().active) saveQueue(); }, 1000);
   window.addEventListener('online', () => void portableSync.sync());
+  document.addEventListener('music-network:changed', () => void portableSync.sync());
   window.addEventListener('pagehide', () => { saveQueue(); void portableSync.sync(); });
   document.addEventListener('visibilitychange', () => { saveQueue(); void portableSync.sync(); });
   document.addEventListener('player:media-opened', e => {

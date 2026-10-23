@@ -1,3 +1,4 @@
+import '../services/network_policy.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:just_audio/just_audio.dart' show PlayerException;
 
@@ -30,6 +31,7 @@ String playbackErrorMessage(
   required String title,
   required PlaybackSourceKind source,
 }) {
+  if (error is MusicNetworkRestricted) return MusicNetworkRestricted.message;
   if (error is PlaybackPreparationException) {
     return _preparationErrorMessage(error, title, source);
   }

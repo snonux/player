@@ -1,3 +1,4 @@
+import { initNetworkSettings, assertMusicStreamingAllowed, musicPrefetchAllowed, MusicNetworkRestricted } from './network-policy.js';
 import { mediaPlaybackUrl } from './streamSource.js';
 
 const prefix = 'player-playback-v1-';
@@ -74,6 +75,8 @@ async function fill(media, url, name, signal) {
   });
 }
 export async function cacheSong(media, url = mediaPlaybackUrl(media), { prefetch = false } = {}) {
+  assertMusicStreamingAllowed(media);
+  if (prefetch && !musicPrefetchAllowed()) return;
   const name = scope();
   if (!name || !globalThis.caches || media?.type !== 'audio' || !cachePreferences().budget) return;
   if (transfer) { if (prefetch) return; cancelCacheTransfer(); }
@@ -84,14 +87,15 @@ export async function cacheSong(media, url = mediaPlaybackUrl(media), { prefetch
     if (!job.controller.signal.aborted && scope() === name) cacheStatus = 'Could not cache this song. Check browser storage and connection. Streaming remains available.';
     throw error;
   }
-  finally { if (transfer === job) { transfer = null; changed(); if (!prefetch && !job.controller.signal.aborted && cachePreferences().prefetch) { const next=upcomingSong?.(); if(next) void cacheSong(next,undefined,{prefetch:true}).catch(()=>{}); } } }
+  finally { if (transfer === job) { transfer = null; changed(); if (!prefetch && !job.controller.signal.aborted && cachePreferences().prefetch && musicPrefetchAllowed()) { const next=upcomingSong?.(); if(next) void cacheSong(next,undefined,{prefetch:true}).catch(()=>{}); } } }
 }
 // HEAD always revalidates access and rendition identity online. Only a transport
 // failure may reuse a copy; an HTTP denial never becomes offline permission.
 export function playbackCacheEnabled(media) { return !!scope() && !!globalThis.caches && media?.type === "audio" && cachePreferences().budget > 0; }
 export async function playbackCacheSource(media, url, signal) {
-  try { return await resolveCacheSource(media,url,signal); }
-  catch(error) { if (signal?.aborted) throw error; cacheStatus = 'Playback cache is unavailable. Streaming remains available; check browser storage.'; changed(); return url; }
+  assertMusicStreamingAllowed(media);
+  try { const source = await resolveCacheSource(media,url,signal); assertMusicStreamingAllowed(media); return source; }
+  catch(error) { if (signal?.aborted || error instanceof MusicNetworkRestricted) throw error; assertMusicStreamingAllowed(media); cacheStatus = 'Playback cache is unavailable. Streaming remains available; check browser storage.'; changed(); return url; }
 }
 async function resolveCacheSource(media, url, signal) {
   const name = scope();
@@ -127,6 +131,8 @@ export function initPlaybackCache(nextSong) {
   upcomingSong = nextSong;
   const host = document.getElementById('settings-modal')?.querySelector('.modal');
   if (!host) return;
+  initNetworkSettings(host);
+  document.addEventListener('music-network:changed',cancelCacheTransfer);
   const panel = document.createElement('section'); panel.innerHTML = '<h4>Playback cache</h4><p class="text-muted text-sm">Disposable song copies for replay while signed in to this account. Kept downloads are separate. Your browser chooses storage and may reclaim it.</p><div class="appearance-controls"><label>Cache budget <select data-budget aria-label="Playback cache budget"><option value="0">Off</option><option value="128">128 MB</option><option value="512">512 MB</option><option value="1024">1 GB</option></select></label><label>Buffering <select data-buffer aria-label="Playback buffering"><option value="stream">Start streaming immediately</option><option value="complete">Cache whole song before playing</option></select></label><label><input data-prefetch type="checkbox"> Prefetch next queued song</label></div><p data-usage role="status"></p><button type="button" class="btn btn-ghost" data-cancel>Cancel transfer</button> <button type="button" class="btn btn-ghost" data-clear>Clear cache</button><details><summary>Cached songs</summary><ul data-items></ul></details>';
   host.appendChild(panel);
   let message = '';
@@ -147,7 +153,7 @@ export function initPlaybackCache(nextSong) {
   panel.querySelector('[data-cancel]').addEventListener('click',cancelCacheTransfer);
   panel.querySelector('[data-clear]').addEventListener('click',async()=>{ cancelCacheTransfer(); try { const name=scope(); if(name) await exclusive(async()=>{await caches.delete(name);localStorage.removeItem(indexKey(name));});message='Cache cleared. Kept downloads and current playback remain available.'; } catch {message='Cache could not be cleared. Try again.';} render(); });
   document.addEventListener('playback-cache:changed',render);
-  document.addEventListener('queue:changed',()=>{ if(cachePreferences().prefetch && !transfer) { const media=nextSong?.(); if(media) void cacheSong(media,undefined,{prefetch:true}).catch(()=>{}); } });
+  document.addEventListener('queue:changed',()=>{ if(cachePreferences().prefetch && musicPrefetchAllowed() && !transfer) { const media=nextSong?.(); if(media) void cacheSong(media,undefined,{prefetch:true}).catch(()=>{}); } });
   window.addEventListener('pagehide',releasePlaybackCache);
   window.addEventListener('storage',event=>{ if (event.key === preferencesKey) cancelCacheTransfer(); if (event.key === preferencesKey || event.key?.startsWith(prefix)) render(); }); render();
 }

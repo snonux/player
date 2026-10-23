@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import { initAudioVisuals } from '../audioVisuals.js';
-import { initGapless } from '../gapless.js';
 
 // Run the real graph, settings controls, controller and scheduler against a
 // deterministic audio clock. No browser audio output is claimed by this test.
@@ -30,9 +28,13 @@ document.querySelector = () => null;
 globalThis.document = document;
 globalThis.location = { href: 'http://fixture/', origin: 'http://fixture' };
 globalThis.localStorage = { getItem: key => ({ 'player-gapless': 'true', 'player-audio-visual': 'off',
+  'player-music-network': JSON.stringify({mode:'wifi'}),
   'player-loudness-v1': JSON.stringify({ mode: 'track', preamp: 0 }) })[key] ?? null, setItem() {} };
 globalThis.MutationObserver = class { observe() {} };
 globalThis.cancelAnimationFrame = () => {};
+globalThis.window = new EventTarget();
+const { initAudioVisuals } = await import('../audioVisuals.js');
+const { initGapless } = await import('../gapless.js');
 
 class AudioContext extends EventTarget {
   constructor() { super(); this.currentTime = 10; this.state = 'running'; this.gains = []; this.decoded = 0; }

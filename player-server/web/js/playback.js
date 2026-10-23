@@ -1,3 +1,4 @@
+import { musicStreamingBlocked, MusicNetworkRestricted, networkPolicyMessage } from './network-policy.js';
 import { stopRenderer } from './renderer.js';
 import { listeningOccurrenceID, saveListeningProgress } from './listening-progress.js';
 let listeningOccurrence = '';
@@ -834,9 +835,10 @@ function showCoverArt(e, thumbnailUrl) {
 // stays empty and the "preparing" status is shown until the server has the
 // rendition, so a 503 never reaches the element as a bogus decode error.
 function startSource(m, media, url, resumeFrom) {
+  const networkBlocked = currentSource?.library && media.type === 'audio' && musicStreamingBlocked();
   const useCache = currentSource?.library && playbackCacheEnabled(media);
   const tryGapless = m === els().audio && currentSource?.library && gapless?.wants(media);
-  if (!tryGapless && !useCache && !/\/compat(?:\?|$)/.test(url)) {
+  if (!networkBlocked && !tryGapless && !useCache && !/\/compat(?:\?|$)/.test(url)) {
     attachSource(m, url, resumeFrom);
     return;
   }
@@ -848,10 +850,12 @@ function startSource(m, media, url, resumeFrom) {
   pendingSource = pending;
   setPlayerStatus(preparingText(media, ''));
   (async () => {
+    if (networkBlocked) throw new MusicNetworkRestricted(networkPolicyMessage);
     if (tryGapless) {
       const engine = await gapless.prepare(media, url, resumeFrom, pending.controller.signal);
       if (pendingSource !== pending || pending.controller.signal.aborted) { engine?.dispose(); return; }
       if (engine) {
+        if (currentSource?.library && musicStreamingBlocked()) { engine.dispose(); throw new MusicNetworkRestricted(networkPolicyMessage); }
         pendingSource = null;
         audioTransport.use(engine);
         setPlayerStatus('');
@@ -873,7 +877,7 @@ function startSource(m, media, url, resumeFrom) {
       void cacheSong(media, url).catch(() => {});
     }
   })().catch(error => finishPendingSource(pending, m, media, url, resumeFrom,
-      { state: 'failed', reason: error.name === 'AbortError' ? 'playback stopped' : error.message }));
+      { state: 'failed', networkRestricted: error instanceof MusicNetworkRestricted, reason: error.name === 'AbortError' ? 'playback stopped' : error.message }));
 }
 
 function attachSource(m, url, resumeFrom) {
@@ -888,8 +892,14 @@ function attachSource(m, url, resumeFrom) {
 // or superseded by another item must not touch the element any more.
 function finishPendingSource(pending, m, media, url, resumeFrom, result) {
   if (pendingSource !== pending) return;
+  if (result.state === 'ready' && currentSource?.library && media.type === 'audio' && musicStreamingBlocked()) { result = {state:'failed',networkRestricted:true,reason:networkPolicyMessage}; }
   pendingSource = null;
   setPlayerStatus('');
+  if (result.networkRestricted) {
+    clearPausedReturnHint(); m.pause(); isPlaying=false; stopProgressTimer(); updateUI(false);
+    setPlayerStatus(`${result.reason} Press Play to retry after changing the network setting.`);
+    return;
+  }
   if (result.state !== 'ready') {
     failPlayback(media, result.reason);
     // An expired session ends library playback like every other API call
@@ -1097,7 +1107,7 @@ function adoptGaplessBoundary(token, media, outgoingDuration) {
   enqueueProgress(currentMedia.id, outgoingDuration, true);
   listeningOccurrence = listeningOccurrenceID();
   currentMedia = result.media; currentMediaIndex = result.index;
-  currentSource = { url: mediaPlaybackUrl(media), resumeFrom: 0, library: true };
+  currentSource = { url: audioTransport.currentSrc, resumeFrom: 0, library: true };
   currentThumbnailUrl = media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
   sourceEpoch++; completingEpoch = null;
   personal?.setMedia(media); sleepTimer?.setMedia(media);

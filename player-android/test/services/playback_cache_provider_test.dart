@@ -1,3 +1,4 @@
+import 'package:player_android/services/network_policy.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -60,10 +61,12 @@ void main() {
     'head-denial',
     'api-denial',
     'cache-hit-prefetch',
-    'complete-buffer-prefetch'
+    'complete-buffer-prefetch',
+    'network-restricted'
   ]) {
     test('production cache loader: $scenario', () async {
-      SharedPreferences.setMockInitialValues({});
+      // Cache-prefetch scenarios run with an explicit Wi-Fi policy.
+      SharedPreferences.setMockInitialValues({'music-network-mode': 'wifi'});
       final directory =
           await Directory.systemTemp.createTemp('cache-provider-');
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -118,7 +121,16 @@ void main() {
         }
         gets.clear();
         final load = container.read(cachedAudioLoaderProvider);
-        if (scenario == 'lookup-write-failure') {
+        if (scenario == 'network-restricted') {
+          await MusicNetworkPolicy.initialize();
+          await MusicNetworkPolicy.save('mode', 'mobile');
+          await MusicNetworkPolicy.save('stream-wifi', true);
+          client.failure = const SocketException('offline');
+          await expectLater(load(song(1), () => true),
+              throwsA(isA<MusicNetworkRestricted>()));
+          expect(gets, isEmpty,
+              reason: 'a cached copy never bypasses the Wi-Fi restriction');
+        } else if (scenario == 'lookup-write-failure') {
           await Directory('${directory.path}/index.tmp').create();
           final source = await load(song(1), () => true) as UriAudioSource;
           expect(source.uri.scheme, 'http',
@@ -173,6 +185,8 @@ void main() {
               reason: 'next song prefetched from $scenario');
         }
       } finally {
+        await MusicNetworkPolicy.save('stream-wifi', false);
+        await MusicNetworkPolicy.save('mode', 'wifi');
         cache.cancel();
         for (var i = 0; i < 100 && cache.busy; i++) {
           await Future<void>.delayed(const Duration(milliseconds: 10));

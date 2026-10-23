@@ -1,3 +1,4 @@
+import { musicSessionSyncAllowed } from './network-policy.js';
 // Portable sessions contain identifiers only. All responses are storage-only;
 // applying a session is a separate, explicit action owned by the queue UI.
 export class SavedQueueSync {
@@ -29,6 +30,7 @@ export class SavedQueueSync {
   }
   async sync() {
     if (!this.key || this.running) return this.running;
+    if (!musicSessionSyncAllowed()) { this.message = 'Saved music session sync waits for Wi-Fi. Changes stay on this device.'; this.changed(); return; }
     const epoch = this.epoch, key = this.key;
     const current = () => this.epoch === epoch && this.key === key;
     this.running = (async () => {
@@ -64,6 +66,7 @@ export class SavedQueueSync {
     return this.running;
   }
   async refresh() {
+    if (!musicSessionSyncAllowed()) { this.message = 'Continue session waits for Wi-Fi. Change Music network settings or retry on Wi-Fi.'; this.changed(); return null; }
     const epoch = this.epoch;
     try {
       const remote = await this.request('GET');
@@ -101,6 +104,7 @@ export class SavedQueueSync {
 }
 
 export async function savedQueueRequest(method, body, revision) {
+  if (!musicSessionSyncAllowed()) throw new Error('Saved music session sync waits for Wi-Fi.');
   const response = await fetch('/api/v1/queue', { method, credentials: 'include',
     headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json', 'If-Match': `"${revision}"` } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}) });

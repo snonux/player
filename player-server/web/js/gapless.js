@@ -1,3 +1,4 @@
+import { assertMusicStreamingAllowed, musicPrefetchAllowed } from './network-policy.js';
 import { currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { mediaPlaybackUrl, waitForCompatStream } from './streamSource.js';
 import { decodeGaplessSong, GaplessTransport, GAPLESS_MAX_PCM_BYTES, pcmBytes } from './gapless-transport.js';
@@ -42,11 +43,13 @@ export function initGapless({ audio, player, graph, next, available, boundary, f
     return owner.decodedGraph();
   }
   async function decode(media, url, signal, remaining) {
+    assertMusicStreamingAllowed(media);
     if (!eligible(media)) throw Error('Next song needs normal streaming (song length or spoken audio)');
     if (/\/compat(?:\?|$)/.test(url)) {
       const result = await waitForCompatStream(url, { signal });
       if (result.state !== 'ready') throw Error(result.reason || 'Preparation cancelled');
     }
+    assertMusicStreamingAllowed(media);
     return decodeGaplessSong((await readyGraph()).context, url, { signal, remaining });
   }
   async function prepare(media, url, position, signal) {
@@ -78,6 +81,7 @@ export function initGapless({ audio, player, graph, next, available, boundary, f
   async function refresh() {
     const engine = audio.decoded;
     if (!engine) return;
+    if (!musicPrefetchAllowed()) { nextController?.abort(); engine.cancelNext(); preparedToken=null; message('Next-song preparation paused by Music network settings.'); return; }
     const wanted = next(), intent = currentPlaybackIntent();
     if (wanted?.token === preparedToken) return;
     nextController?.abort(); engine.cancelNext(); preparedToken = wanted?.token || null;
@@ -104,6 +108,7 @@ export function initGapless({ audio, player, graph, next, available, boundary, f
     if (event.target === summary && ['Enter', ' '].includes(event.key)) event.stopPropagation();
     if (event.key === 'Escape' && panel.open) { event.preventDefault(); event.stopPropagation(); panel.open = false; summary.focus(); }
   });
+  document.addEventListener('music-network:changed', () => { nextController?.abort(); audio.decoded?.cancelNext(); preparedToken=null; void refresh(); });
   document.addEventListener('queue:changed', () => { void refresh(); });
   document.addEventListener('loudness:changed', () => {
     const engine = audio.decoded;

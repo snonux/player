@@ -16,6 +16,7 @@ class _Client extends PlayerApiClient {
   _Client() : super(dio: Dio(BaseOptions(baseUrl: 'https://player.test')));
 
   Media? media;
+  Future<Media>? delayed;
   int lookups = 0;
 
   /// When set, [getMedia] never answers (a hung connection).
@@ -27,6 +28,7 @@ class _Client extends PlayerApiClient {
   Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async {
     lastToken = cancelToken;
     lookups++;
+    if (delayed != null) return delayed!;
     if (hang) return Completer<Media>().future;
     final found = media;
     if (found == null) throw StateError('lookup failed');
@@ -67,6 +69,19 @@ void main() {
     expect(request.startPosition, 12);
     client.media = null;
     await expectLater(currentServerAudioUri(request, client), throwsStateError);
+  });
+
+  test('quality is captured before the asynchronous media lookup', () async {
+    SharedPreferences.setMockInitialValues({});
+    await StreamQuality.initialize();
+    final lookup = Completer<Media>();
+    final client = _Client()..delayed = lookup.future;
+    await StreamQuality.save('https://player.test', 'opus96');
+    final opening = currentServerAudioUri(_request(), client);
+    await StreamQuality.save('https://player.test', 'original');
+    lookup.complete(
+        Media.fromJson({'id': 7, 'type': 'audio', 'transcoded': false}));
+    expect((await opening).queryParameters['profile'], 'opus96');
   });
 
   group('native video source', () {

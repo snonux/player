@@ -1,3 +1,5 @@
+import '../services/audio_handler.dart';
+import '../services/network_policy.dart';
 import '../services/playback_cache_access.dart';
 import '../api/player_api_client.dart';
 import 'dart:async';
@@ -16,6 +18,8 @@ import 'server_endpoint_provider.dart';
 
 final playbackCacheProvider = ChangeNotifierProvider<PlaybackCache>((ref) {
   final cache = PlaybackCache();
+  MusicNetworkPolicy.changes.addListener(cache.cancel);
+  ref.onDispose(() => MusicNetworkPolicy.changes.removeListener(cache.cancel));
   ref.listen(authStateProvider, (_, __) => cache.release());
   ref.listen(playerBaseUrlProvider, (_, __) => cache.release());
   return cache;
@@ -35,6 +39,9 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
   final generation = mutations.generation;
   final preparer = ref.read(playbackPreparerProvider);
   final handler = ref.read(audioHandlerProvider);
+  MusicNetworkPolicy.changes.addListener(handler.refreshGaplessPolicy);
+  ref.onDispose(() =>
+      MusicNetworkPolicy.changes.removeListener(handler.refreshGaplessPolicy));
   // Decoder preparation must not cancel current downloads, change cache
   // protection, or publish a different playing URI. ExoPlayer will buffer
   // this authenticated source itself as the second concatenating child.
@@ -44,8 +51,13 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
         generation == mutations.generation &&
         mutations.credentialsEnabled &&
         request is ServerPlaybackRequest &&
+        MusicNetworkPolicy.prefetchAllowed &&
         mutations.credentialOrigin == request.serverOrigin;
-    if (!wanted() || request is! ServerPlaybackRequest) return null;
+    if (!wanted() ||
+        request is! ServerPlaybackRequest ||
+        !MusicNetworkPolicy.prefetchAllowed) {
+      return null;
+    }
     final canonical = await currentServerAudioUri(request, client);
     if (!wanted()) return null;
     final headers = await accountRequestHeaders(
@@ -62,7 +74,7 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
       if (!ready || !wanted()) return null;
     }
     final transport = await router.mediaUri(canonical);
-    if (!wanted()) return null;
+    if (!wanted() || !MusicNetworkPolicy.prefetchAllowed) return null;
     return AudioSource.uri(transport,
         headers: headers.isEmpty ? null : headers);
   };
@@ -82,14 +94,18 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
         mutations.credentialsEnabled &&
         mutations.credentialOrigin == request.serverOrigin;
     if (!wanted()) return null;
+    await MusicNetworkPolicy.initialize();
+    if (prefetch && !MusicNetworkPolicy.prefetchAllowed) return null;
+    MusicNetworkPolicy.assertStreamingAllowed();
+    final quality = StreamQuality.selected(request.serverOrigin);
     var cacheReady = request.userId > 0;
     try {
       if (cacheReady) await cache.initialize();
     } catch (_) {
       cacheReady = false;
     }
-    final key = cache.key(request.serverOrigin, request.userId, request.mediaId,
-        StreamQuality.selected(request.serverOrigin));
+    final key = cache.key(
+        request.serverOrigin, request.userId, request.mediaId, quality);
     if (!prefetch) cache.cancel();
     Uri? saved;
     try {
@@ -98,7 +114,13 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
       cacheReady = false;
     }
     Future<void> prefetchNext() async {
-      if (!wanted() || prefetch || !cacheReady || !cache.prefetch) return;
+      if (!wanted() ||
+          prefetch ||
+          !cacheReady ||
+          !cache.prefetch ||
+          !MusicNetworkPolicy.prefetchAllowed) {
+        return;
+      }
       final queue = handler.musicQueue;
       if (queue.index + 1 < queue.entries.length) {
         await load(queue.entries[queue.index + 1].request, wanted,
@@ -109,8 +131,10 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
     Uri canonical, transport;
     Map<String, String> headers;
     try {
-      canonical = await currentServerAudioUri(request, client);
+      canonical =
+          await currentServerAudioUri(request, client, quality: quality);
       if (!wanted()) return null;
+      MusicNetworkPolicy.assertStreamingAllowed();
       headers = await accountRequestHeaders(
           uri: canonical,
           baseUrl: Uri.parse(request.serverOrigin),
@@ -134,9 +158,11 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
         if (!ready) throw StateError('Playback preparation stopped.');
       }
     } catch (error) {
+      MusicNetworkPolicy.assertStreamingAllowed();
       if (cacheAccessDenied(error)) await cache.invalidate(key);
       final network = cacheTransportFailure(error);
       if (network && saved != null && wanted()) {
+        MusicNetworkPolicy.assertStreamingAllowed();
         unawaited(prefetchNext().catchError((Object _) {}));
         return AudioSource.uri(saved);
       }
@@ -150,7 +176,10 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
         title: request.title,
         origin: request.serverOrigin,
         userId: request.userId,
-        authorized: wanted);
+        authorized: () =>
+            wanted() &&
+            !MusicNetworkPolicy.streamBlocked &&
+            (!prefetch || MusicNetworkPolicy.prefetchAllowed));
     if (cacheReady && saved == null && cache.completeBuffer && !prefetch) {
       try {
         await fill();
@@ -164,6 +193,7 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
     } else {
       unawaited(prefetchNext().catchError((Object _) {}));
     }
+    MusicNetworkPolicy.assertStreamingAllowed();
     return AudioSource.uri(saved ?? transport,
         headers: saved != null || headers.isEmpty ? null : headers);
   }

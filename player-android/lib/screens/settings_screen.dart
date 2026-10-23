@@ -1,3 +1,4 @@
+import '../widgets/network_settings.dart';
 import '../widgets/download_quality_picker.dart';
 import '../widgets/listening_history_settings.dart';
 import '../providers/api_client_provider.dart';
@@ -334,6 +335,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const HeadsetSettings(),
                 const SizedBox(height: 24),
                 const NavigationSettings(),
+                const MusicNetworkSettings(),
                 const PlaybackCacheSettings(),
                 ListTile(
                   contentPadding: EdgeInsets.zero,

@@ -1506,6 +1506,33 @@ try {
   player.stopAndClose();
 } catch (err) { failures.push(`Live radio integration threw: ${err?.stack || err}`); }
 
+// Library network restrictions use the actual pending-source retry path.
+try {
+  const oldStorage = globalThis.localStorage;
+  try {
+    let policy={mode:'mobile',streamWifiOnly:true};
+    globalThis.localStorage={getItem:key=>key==='player-music-network'?JSON.stringify(policy):null};
+    for (const media of [{id:1701,type:'audio',file_name:'direct.mp3'},wmaAudio]) {
+      setup();
+      player.selectAndPlay(media,0);
+      await settle();
+      assertEqual(audio().getAttribute('src'),null,'blocked library source never attaches');
+      assertEqual(requests.filter(request=>/\/(stream|compat)(?:\?|$)/.test(request.url)).length,0,'blocked direct and converted sources make no media request');
+      assert(statusText().includes('Library audio streaming waits for Wi-Fi'),'policy has persistent visible status');
+      assertEqual(failureReports,0,'policy does not invoke generic playback-failure fallback');
+      policy.mode='wifi';
+      player.togglePlay();await settle();
+      assert(!!audio().getAttribute('src'),'Play retries the same source after allowing Wi-Fi');
+      policy.mode='mobile';
+      player.stopAndClose();
+    }
+    setup();
+    await player.playLiveRadio({type:'audio',file_name:'Station',live_radio:true,radio_station_id:7},'/api/radio/7/stream','');
+    assertEqual(audio().src,'/api/radio/7/stream','live radio retains its documented separate policy');
+    player.stopAndClose();
+  } finally {globalThis.localStorage=oldStorage;}
+} catch (err) { failures.push(`Library audio network restriction threw: ${err?.stack || err}`); }
+
 if (failures.length) {
   console.error('FAILURES:');
   failures.forEach((m) => console.error('  - ' + m));
