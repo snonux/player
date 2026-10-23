@@ -34,6 +34,7 @@ import { mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from './strea
 import { toast } from './utils.js';
 import { initSeekPreview } from './seekPreview.js';
 import { initAudioVisuals } from './audioVisuals.js';
+import { initPlaybackSpeed } from './playback-speed.js';
 import { initCompactControls } from './compactControls.js';
 import { initKeyboardAccess } from './keyboard-access.js';
 import { initLyrics, seekLyric } from './lyrics.js';
@@ -79,6 +80,7 @@ let audioVisuals = null;
 let lyrics = null;
 let personal = null;
 let osSession = null;
+let playbackSpeed = null;
 let currentThumbnailUrl = '';
 let pausedReturnHint = false;
 
@@ -152,6 +154,9 @@ export function initPlayer(options = {}) {
     }
     return !isDetached() && seekLyric(e.audio, seconds);
   } });
+  playbackSpeed = initPlaybackSpeed({ ...e, ownsSource: () => !isDetached(), remoteStep: delta => {
+    postToDetach({ type: 'detach-command', action: 'speed-step', delta }); return true;
+  } });
   initCompactControls(e.player);
   initKeyboardAccess();
   osSession = createMediaSession({ session: globalThis.navigator?.mediaSession, Metadata: globalThis.MediaMetadata,
@@ -172,6 +177,7 @@ export function initPlayer(options = {}) {
     releaseLocalSession: () => osSession?.clear(),
     onPausedReattach: showPausedReturnHint,
     requestPlay,
+    setPlaybackSpeed,
     triggerPrevious,
     triggerNext,
     triggerNavigate,
@@ -217,10 +223,12 @@ function bindCast(e) {
     onRemotePlaying: (playing) => updateUI(playing),
     onRemoteEnded: () => triggerNext({ forcePlay: true, completed: true }),
     onCastStarted: (device) => {
+      playbackSpeed?.setCasting(true);
       updateUI(true);
       setPlayerStatus(`Playing on ${device}`);
     },
     onCastEnded: (mediaId, seconds) => {
+      playbackSpeed?.setCasting(false);
       setPlayerStatus('');
       updateUI(false);
       const m = currentMediaElement();
@@ -501,6 +509,7 @@ export function stopAndClose() {
   if (isCasting()) stopCasting();
   if (reportProgress) document.dispatchEvent?.(new Event('player:closed'));
   audioVisuals?.setMedia(null);
+  playbackSpeed?.setMedia(null);
   lyrics?.setMedia(null);
   resetSeekPreview();
   cancelPendingSource();
@@ -549,6 +558,9 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
   personal?.setMedia(media);
   currentMediaIndex = index ?? -1;
   if (isDetached()) {
+    // The hidden opener still routes rate shortcuts by the popup's media kind.
+    // setMedia leaves the local element untouched while the popup owns it.
+    playbackSpeed?.setMedia(media);
     isPlaying = true;
     stopProgressTimer();
     sendDetachedLoad(media, resumeFrom, true);
@@ -633,6 +645,8 @@ function showMedia(media, source, thumbnailUrl) {
     currentSource = source;
     showAudioVideo(e, media, source.url, thumbnailUrl, source.resumeFrom);
   }
+  playbackSpeed?.setMedia(media);
+  playbackSpeed?.setCasting(isCasting());
   audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
   lyrics?.setMedia(media, source.url);
   updateMinimizedTitle();
@@ -729,6 +743,7 @@ function startSource(m, media, url, resumeFrom) {
 function attachSource(m, url, resumeFrom) {
   m.src = url;
   m.load();
+  playbackSpeed?.apply();
   seekWhenMetadataReady(m, resumeFrom);
 }
 
@@ -1180,6 +1195,12 @@ export function isImageMode() {
   return currentMedia?.type === 'image';
 }
 
+export function currentPlaybackSpeed() { return playbackSpeed?.get() ?? 1; }
+
+export function setPlaybackSpeed(rate) { playbackSpeed?.set(rate); }
+
+export function stepPlaybackSpeed(delta) { return playbackSpeed?.step(delta) ?? false; }
+
 function localPlaybackState() {
   const m = currentMediaElement();
   return {
@@ -1192,6 +1213,7 @@ function localPlaybackState() {
     playing: (!!m && !m.paused) || !!pendingSource?.autoplay,
     volume: m?.volume ?? 1,
     muted: !!m?.muted,
+    playbackRate: playbackSpeed?.get() ?? 1,
   };
 }
 

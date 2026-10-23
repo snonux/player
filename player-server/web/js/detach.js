@@ -126,6 +126,7 @@ function reattachDetached({ closePopup = true } = {}) {
   if (state?.media) {
     deps.setCurrentMediaState?.(state.media, Number.isInteger(state.index) ? state.index : undefined);
     deps.loadMedia?.(state.media, state.currentTime || 0);
+    deps.setPlaybackSpeed?.(state.playbackRate ?? 1);
     const m = deps.currentMediaElement?.();
     if (m) {
       if (typeof state.volume === 'number') m.volume = state.volume;
@@ -160,6 +161,7 @@ function mergeDetachedState(previous, next) {
 
 function detachedLoadMessage(media, resumeFrom = 0, play = true) {
   const local = deps.localPlaybackState?.() || {};
+  const remote = readDetachedWindowState(detachWindow) || detachedPlaybackState;
   return {
     type: 'detach-load',
     media,
@@ -171,6 +173,7 @@ function detachedLoadMessage(media, resumeFrom = 0, play = true) {
     play,
     volume: detachedPlaybackState?.volume ?? local.volume,
     muted: detachedPlaybackState?.muted ?? local.muted,
+    playbackRate: remote?.playbackRate ?? local.playbackRate ?? 1,
   };
 }
 

@@ -1,5 +1,5 @@
 import { API } from './api.js';
-import { hasPendingPlay, initPlayer, loadMediaDirect, requestPlay, togglePlay } from './player.js';
+import { hasPendingPlay, initPlayer, loadMediaDirect, requestPlay, togglePlay, currentPlaybackSpeed, setPlaybackSpeed, stepPlaybackSpeed } from './player.js';
 import { initModalFocus } from './modal-focus.js';
 import { initNotes } from './notes.js';
 import { closeAllModals } from './dom.js';
@@ -34,6 +34,7 @@ btnNext?.addEventListener('click', () => post({ type: 'detach-next' }));
 window.__playerDetachCurrentState = currentState;
 
 [video, audio].forEach((el) => {
+  el?.addEventListener('ratechange', sendState);
   el?.addEventListener('play', () => {
     sourceCycle++;
     sendState();
@@ -170,6 +171,7 @@ function loadDetachedMedia(payload) {
   const resumeFrom = Number(payload.resumeFrom || 0);
   lastKnownPosition = resumeFrom;
   loadMediaDirect(currentMedia, payload.streamUrl, payload.thumbnailUrl, resumeFrom);
+  setPlaybackSpeed(payload.playbackRate ?? 1);
 
   const el = mediaElement();
   if (!el) {
@@ -189,7 +191,10 @@ function loadDetachedMedia(payload) {
 
 function handleCommand(payload) {
   const action = payload?.action;
-  if (action === 'toggle-play') {
+  if (action === 'speed-step') {
+    stepPlaybackSpeed(Number(payload.delta) < 0 ? -1 : 1);
+    sendState();
+  } else if (action === 'toggle-play') {
     togglePlayback();
   } else if (action === 'pause') {
     const el = mediaElement();
@@ -332,6 +337,7 @@ function currentState() {
     playing: currentMedia?.type === 'image' || (!!el && !el.paused) || hasPendingPlay(),
     volume: el?.volume ?? 1,
     muted: !!el?.muted,
+    playbackRate: currentPlaybackSpeed(),
   };
 }
 

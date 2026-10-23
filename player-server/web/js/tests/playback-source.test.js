@@ -1311,6 +1311,40 @@ try {
   assertEqual(state.music, null, 'intentional search returns to Sets results');
 } catch (err) { failures.push(`Music search navigation threw: ${err?.stack || err}`); }
 
+// The hidden opener still accepts speed shortcuts after changing the popup's
+// media kind. It must send commands to the owner, never mutate stale audio.
+try {
+  setup();
+  const controls = fakeElement('controls');
+  elements.player.querySelector = selector => selector === '.controls' ? controls : null;
+  let receive;
+  const oldListener = window.addEventListener;
+  window.addEventListener = (_type, handler) => { receive = handler; };
+  player.initPlayer();
+  player.selectAndPlay(plainVideo, 0);
+  const messages = [];
+  const popup = { closed: false, postMessage: message => messages.push(message), close() { this.closed = true; } };
+  window.open = () => popup;
+  player.toggleDetach();
+  receive({ origin: window.location.origin, source: popup, data: { type: 'detach-ready' } });
+  const staleRate = audio().playbackRate;
+  const song = { id: 1099, type: 'audio', file_name: 'detached.mp3' };
+  player.selectAndPlay(song, 1);
+  assertEqual(player.stepPlaybackSpeed(1), true, 'video to audio refreshes opener speed shortcut applicability');
+  assertEqual(messages.at(-1)?.action, 'speed-step', 'audio speed shortcut forwards to owning popup');
+  assertEqual(audio().playbackRate, staleRate, 'detached selection leaves paused local rate untouched');
+  player.selectAndPlay(plainVideo, 0);
+  const messageCount = messages.length;
+  assertEqual(player.stepPlaybackSpeed(-1), false, 'audio to video disables opener speed shortcut');
+  assertEqual(messages.length, messageCount, 'video receives no audio speed command');
+  player.selectAndPlay(song, 1);
+  assertEqual(player.stepPlaybackSpeed(-1), true, 'second video to audio switch re-enables speed shortcut');
+  assertEqual(audio().playbackRate, staleRate, 'repeated detached transitions never mutate local audio');
+  player.stopAndClose();
+  window.addEventListener = oldListener;
+  delete window.open;
+} catch (err) { failures.push(`Detached speed media transition threw: ${err?.stack || err}`); }
+
 if (failures.length) {
   console.error('FAILURES:');
   failures.forEach((m) => console.error('  - ' + m));

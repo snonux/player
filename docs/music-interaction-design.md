@@ -1046,3 +1046,35 @@ otherwise.
    mode; everything else resumes as today.
 7. **Artist splitting (§10.1):** structured tags only, no `feat.` splitting
    in v1.
+
+
+### M23 implementation layout and states (fk3, 2026-10-23)
+
+Before coding: reuse the current player options, with `Speed [1× Normal ▾]`
+beside Visuals and Lyrics. On small floating windows it moves into **More
+player controls** with those existing controls; detached and public share
+players keep the same labeled native select in their wrapping control row.
+The choices match Android: 0.5×, 1× Normal, 1.25×, 1.5×, 2×. Choosing 1× resets
+normal playback. Native select arrows/typing remain native; Tab and the existing
+`o` control hints reach it, Escape closes the compact options and restores its
+opener. `<` and `>` step through the choices outside editable controls/dialogs.
+
+State transitions: no item/image/video → hide Speed; audio selected (including
+preparing, paused, failed/retry or an unavailable server) → show remembered
+rate, apply it when the local source loads without starting playback; track
+change → retain rate; popup handoff/return → transfer rate with playback state;
+Cast active → disabled select and visible “Speed unavailable while casting”;
+Cast ends → restore local preference. Rate changes affect the owning audio
+element only; they do not alter position bookmarks, progress units or the
+receiver's playback rate. One origin-local preference intentionally covers
+music, podcasts and audiobooks, avoiding a hidden category switch; Android's
+existing speed selector and lifetime stay unchanged. Blocked storage keeps the
+choice in memory for the window and transfers it to/from the popup.
+
+Use existing theme tokens, native focus outline and wrapping layout in both
+themes; no extra dialog, network request, permission or loading state is needed.
+Integrated acceptance still must inspect light/dark and narrow layouts, native
+select focus/typing, progression at each rate in installed Chrome and Firefox,
+track/retry/popup/share boundaries, the unsupported Cast state and unchanged
+Android touch/Back/speed controls. Implementation-phase Node checks are not
+runtime or visual acceptance.

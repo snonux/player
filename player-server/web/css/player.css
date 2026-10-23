@@ -32,7 +32,7 @@
 .player-inline-options .player-options-header { display: none; }
 .player-options.player-inline-options > .btn { width: auto; }
 .player-options.player-inline-options .volume-control { flex: 1 1 8rem; width: auto; }
-.player-options.player-inline-options .audio-visual-control { flex: 1 1 12rem; width: auto; }
+.player-options.player-inline-options .audio-visual-control, .playback-speed-control { flex: 1 1 12rem; width: auto; }
 .player .stage {
   flex: 1 1 auto;
   position: relative;
@@ -229,7 +229,7 @@
 .player-options-header h3 { margin: 0; font-size: 1rem; }
 .player-options > .btn { width: 100%; }
 .player-options .volume-control,
-.player-options .audio-visual-control { width: 100%; grid-column: 1 / -1; }
+.player-options .audio-visual-control, .playback-speed-control { width: 100%; grid-column: 1 / -1; }
 .player-options .volume-slider { flex: 1; }
 .player-options button:focus-visible {
   outline: 2px solid var(--accent);
@@ -465,7 +465,7 @@
   height: 100%;
   pointer-events: none;
 }
-.audio-visual-control {
+.audio-visual-control, .playback-speed-control {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -473,7 +473,7 @@
   font-size: 0.8rem;
   color: var(--text-secondary);
 }
-.audio-visual-control select {
+.audio-visual-control select, .playback-speed-control select {
   flex: 1;
   min-width: 0;
   background: var(--bg-elevated);
@@ -484,7 +484,7 @@
 }
 .audio-visual-status { flex: 0 0 100%; font-size: 0.8rem; }
 .audio-visual-status:empty { display: none; }
-.audio-visual-control select:focus-visible {
+.audio-visual-control select:focus-visible, .playback-speed-control select:focus-visible {
   outline: 2px solid var(--accent);
 }
 
@@ -545,3 +545,8 @@
 .player.minimized .player-music-identity { display: none; }
 .player-mini-art { width: 36px; height: 36px; object-fit: cover; flex: 0 0 36px; border-radius: 4px; }
 .player-mini-art[hidden] { display: none; }
+
+.playback-speed-control select { min-height: 2rem; }
+.playback-speed-control select:disabled { opacity: 0.65; }
+.playback-speed-status { flex: 0 0 100%; font-size: 0.8rem; }
+.playback-speed-status:empty { display: none; }
