@@ -11,7 +11,18 @@ import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/music_playlists_screen.dart';
 
 class _Client extends PlayerApiClient {
-  _Client() : super(dio: Dio());
+  _Client() : super(dio: Dio()) {
+    rawDio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.path.contains('/music/artwork/')) {
+        handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {'has_artwork': false, 'can_edit': true, 'revision': ''}));
+      } else {
+        handler.next(options);
+      }
+    }));
+  }
   bool fail = false;
   int saves = 0, deletes = 0, adds = 0, exports = 0;
   Completer<String>? pendingExport;

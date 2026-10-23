@@ -36,7 +36,7 @@ type PlaylistRepo interface {
 
 // ListPlaylists returns owned/shared documents and all documents for administrators.
 func (s *SQLite) ListPlaylists(ctx context.Context, user int64) ([]model.Playlist, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.name,p.comment,p.user_id,u.username,p.visibility,(p.user_id=? OR a.is_admin),a.is_admin FROM playlists p JOIN users u ON u.id=p.user_id JOIN users a ON a.id=? WHERE p.user_id=? OR p.visibility='shared' OR a.is_admin ORDER BY p.name COLLATE NOCASE,p.id`, user, user, user)
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.name,p.comment,p.user_id,u.username,p.visibility,(p.user_id=? OR a.is_admin),a.is_admin,COALESCE((SELECT revision FROM music_artwork WHERE kind='playlist' AND entity_key=p.id),'') FROM playlists p JOIN users u ON u.id=p.user_id JOIN users a ON a.id=? WHERE p.user_id=? OR p.visibility='shared' OR a.is_admin ORDER BY p.name COLLATE NOCASE,p.id`, user, user, user)
 	if err != nil {
 		return nil, fmt.Errorf("list playlists: %w", err)
 	}
@@ -44,7 +44,7 @@ func (s *SQLite) ListPlaylists(ctx context.Context, user int64) ([]model.Playlis
 	result := []model.Playlist{}
 	for rows.Next() {
 		var p model.Playlist
-		if err := rows.Scan(&p.ID, &p.Name, &p.Comment, &p.OwnerID, &p.OwnerName, &p.Visibility, &p.CanEdit, &p.CanTransfer); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Comment, &p.OwnerID, &p.OwnerName, &p.Visibility, &p.CanEdit, &p.CanTransfer, &p.ArtworkRevision); err != nil {
 			return nil, err
 		}
 		result = append(result, p)
@@ -56,7 +56,7 @@ func (s *SQLite) ListPlaylists(ctx context.Context, user int64) ([]model.Playlis
 func (s *SQLite) GetPlaylist(ctx context.Context, user int64, id string) (*model.Playlist, error) {
 	p := model.Playlist{Entries: []model.PlaylistEntry{}}
 	var source string
-	err := s.db.QueryRowContext(ctx, `SELECT p.id,p.name,p.comment,p.user_id,u.username,p.visibility,(p.user_id=? OR a.is_admin),a.is_admin,p.source FROM playlists p JOIN users u ON u.id=p.user_id JOIN users a ON a.id=? WHERE p.id=? AND (p.user_id=? OR p.visibility='shared' OR a.is_admin)`, user, user, id, user).Scan(&p.ID, &p.Name, &p.Comment, &p.OwnerID, &p.OwnerName, &p.Visibility, &p.CanEdit, &p.CanTransfer, &source)
+	err := s.db.QueryRowContext(ctx, `SELECT p.id,p.name,p.comment,p.user_id,u.username,p.visibility,(p.user_id=? OR a.is_admin),a.is_admin,p.source,COALESCE((SELECT revision FROM music_artwork WHERE kind='playlist' AND entity_key=p.id),'') FROM playlists p JOIN users u ON u.id=p.user_id JOIN users a ON a.id=? WHERE p.id=? AND (p.user_id=? OR p.visibility='shared' OR a.is_admin)`, user, user, id, user).Scan(&p.ID, &p.Name, &p.Comment, &p.OwnerID, &p.OwnerName, &p.Visibility, &p.CanEdit, &p.CanTransfer, &source, &p.ArtworkRevision)
 	if source != "" {
 		p.Source = new(model.PlaylistSource)
 		if err := json.Unmarshal([]byte(source), p.Source); err != nil {

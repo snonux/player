@@ -2,16 +2,17 @@ package model
 
 // Playlist is an account-owned document; metadata aggregates are derived per viewer.
 type Playlist struct {
-	Source      *PlaylistSource `json:"source,omitempty"`
-	OwnerID     int64           `json:"owner_id"`
-	OwnerName   string          `json:"owner_name"`
-	Visibility  string          `json:"visibility"`
-	CanEdit     bool            `json:"can_edit"`
-	CanTransfer bool            `json:"can_transfer"`
-	ID          string          `json:"playlist_id"`
-	Name        string          `json:"name"`
-	Comment     string          `json:"comment"`
-	Entries     []PlaylistEntry `json:"entries,omitempty"`
+	ArtworkRevision string          `json:"artwork_revision,omitempty"`
+	Source          *PlaylistSource `json:"source,omitempty"`
+	OwnerID         int64           `json:"owner_id"`
+	OwnerName       string          `json:"owner_name"`
+	Visibility      string          `json:"visibility"`
+	CanEdit         bool            `json:"can_edit"`
+	CanTransfer     bool            `json:"can_transfer"`
+	ID              string          `json:"playlist_id"`
+	Name            string          `json:"name"`
+	Comment         string          `json:"comment"`
+	Entries         []PlaylistEntry `json:"entries,omitempty"`
 }
 
 // PlaylistEntry preserves occurrence identity and order, including duplicate songs.

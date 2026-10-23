@@ -1,3 +1,5 @@
+import '../api/music_artwork_api.dart';
+import '../widgets/music_artwork_section.dart';
 import '../widgets/music_favorite_button.dart';
 import '../providers/current_user_provider.dart';
 import '../widgets/playlist_import_dialog.dart';
@@ -61,6 +63,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
   }
 
   final _artwork = <int, Future<Uint8List>>{};
+  final _customArtwork = <String, Future<Uint8List>>{};
 
   @override
   void initState() {
@@ -85,6 +88,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       _error = null;
     });
     _artwork.clear();
+    _customArtwork.clear();
     try {
       final api = ref.read(apiClientProvider);
       final id = widget.playlistId;
@@ -125,6 +129,24 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
   }
 
   Widget _cover(Map<String, dynamic> p, double size) {
+    final revision = p['artwork_revision'] as String?;
+    if (revision != null && revision.isNotEmpty) {
+      final fallback = {...p}..remove('artwork_revision');
+      return SizedBox(
+          width: size,
+          height: size,
+          child: FutureBuilder<Uint8List>(
+              future: _customArtwork.putIfAbsent(
+                  '${p['playlist_id']}-$revision',
+                  () => ref.read(apiClientProvider).musicArtworkImage(
+                      'playlist', p['playlist_id'] as String, revision)),
+              builder: (_, snapshot) => snapshot.hasData
+                  ? Image.memory(snapshot.data!,
+                      fit: BoxFit.cover,
+                      semanticLabel: 'Artwork for ${p['name']}',
+                      errorBuilder: (_, __, ___) => _cover(fallback, size))
+                  : _cover(fallback, size)));
+    }
     final id = p['cover_media_id'] as int?;
     final placeholder = ColoredBox(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -265,7 +287,12 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
 
     return ListView(padding: const EdgeInsets.all(16), children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _cover(p, 112),
+        SizedBox(
+            width: 160,
+            child: MusicArtworkSection(
+                kind: 'playlist',
+                entityKey: widget.playlistId!,
+                fallback: _cover({...p}..remove('artwork_revision'), 112))),
         const SizedBox(width: 16),
         Expanded(
             child:
@@ -465,6 +492,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       setState(() {
         _playlist = result;
         _artwork.clear();
+        _customArtwork.clear();
       });
       return result;
     } catch (e) {

@@ -380,6 +380,10 @@ func (s *Server) routesMedia() {
 	}
 	s.handleBoth(http.MethodPost, "/api/music/downloads", s.requireSession(s.handleMusicDownloads))
 	s.handleBoth(http.MethodGet, "/api/music/related/{kind}/{entity_key}", s.requireSession(s.handleMusicRelated))
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+		s.handleBoth(method, "/api/music/artwork/{kind}/{entity_key}", s.requireSession(s.handleMusicArtwork))
+	}
+	s.handleBoth(http.MethodGet, "/api/music/artwork/{kind}/{entity_key}/image", s.requireSession(s.handleMusicArtwork))
 	s.handleBoth(http.MethodGet, "/api/music/enrichment/{kind}/{entity_key}", s.requireSession(s.handleMusicEnrichment))
 	s.handleBoth(http.MethodPost, "/api/music/enrichment/{kind}/{entity_key}", s.requireSession(s.handleMusicEnrichment))
 	s.handleBoth(http.MethodGet, "/api/music/facets", s.requireSession(s.handleMusicFacets))

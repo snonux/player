@@ -2852,3 +2852,24 @@ Portable saved queues optionally include `shuffle_mode: "tracks" | "albums"`;
 legacy or absent values mean tracks. `shuffle` remains the enabled boolean.
 The saved occurrence order is authoritative on restore; clients do not reshuffle
 or fetch the album map until the user explicitly shuffles again.
+
+### Custom artist and playlist artwork
+
+Both `/api` and `/api/v1` provide:
+
+- `GET /music/artwork/{kind}/{entity_key}`: `{has_artwork,can_edit,revision}`.
+- `PUT /music/artwork/{kind}/{entity_key}`: raw JPEG, PNG or GIF bytes, up to
+  5 MiB, 4096 pixels per side and 8 million pixels. Fully decoded, normalized
+  to PNG (GIF first frame), stripped of metadata; invalid input returns 400.
+- `DELETE /music/artwork/{kind}/{entity_key}`: remove custom art and restore
+  ordinary cover fallback. PUT/DELETE return the status object above.
+- `GET /music/artwork/{kind}/{entity_key}/image`: normalized PNG or 404.
+
+`kind` is `artist` or `playlist`. All requests require a current authenticated
+session and current entity access. Global artist writes require administrator;
+playlist writes use existing owner/admin `can_edit`. Shared viewers may read.
+Protected image responses require revalidation and support content digest ETags;
+clients use `revision` to invalidate replaced images. Status responses are
+`no-store`. Playlist list/detail payloads include optional `artwork_revision`
+without loading image BLOBs. Playlist deletion removes its custom art. Artwork
+is independent of source files/tags and optional external enrichment images.

@@ -1,3 +1,4 @@
+import { mountMusicArtwork } from '../music-artwork.js';
 import { favoriteButton, bindFavorites, favoriteFilter } from '../music-favorites.js';
 import { collectionButtons, bindCollectionActions, bindCollectionCatalog } from '../collection-actions.js';
 import { API } from '../api.js';
@@ -13,7 +14,7 @@ let open = () => {};
 let back = () => {};
 let generation = 0;
 export function initPlaylists(load, navigate, goBack) { reload=load;open=navigate;back=goBack; }
-const cover = p => p.cover_media_id ? `<img class="album-cover" src="/api/media/${p.cover_media_id}/thumbnail" alt="Artwork for ${esc(p.name)}">` : '<div class="album-cover album-placeholder" role="img" aria-label="No playlist artwork">♫</div>';
+const cover = p => p.artwork_revision ? `<img class="album-cover" src="/api/music/artwork/playlist/${encodeURIComponent(p.playlist_id)}/image?revision=${encodeURIComponent(p.artwork_revision)}" alt="Artwork for ${esc(p.name)}" data-custom-playlist-art data-cover-fallback="${p.cover_media_id || ''}">` : p.cover_media_id ? `<img class="album-cover" src="/api/media/${p.cover_media_id}/thumbnail" alt="Artwork for ${esc(p.name)}">` : '<div class="album-cover album-placeholder" role="img" aria-label="No playlist artwork">♫</div>';
 const accessLabel = p => `${p.visibility === 'shared' ? 'Shared with server' : 'Private'} · Owner: ${p.owner_name || ''}${p.can_edit === false ? ' · Read only' : ''}${p.source ? ' · Following source' : ''}`;
 const totals = p => `${p.song_count} songs · ${fmtDur(p.duration)}`;
 export async function renderPlaylists(grid, view, current, saved) {
@@ -33,6 +34,7 @@ export async function renderPlaylists(grid, view, current, saved) {
  }else{
   renderPlaylistDetail(grid,p,active);
  }
+ bindArtworkFallbacks(grid);
  bindFavorites(grid,active);
  if(!detail)favoriteFilter(grid,view,reload);
  grid.querySelector('[data-back]').onclick=back;
@@ -75,13 +77,14 @@ function matchesSong(song,query){return [mediaTitle(song),song.file_name,song.mu
 function renderPlaylistDetail(grid,initial,current){
  let p=initial, busy=false;
  let undo=null;
- grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover>${cover(p)}</div><div><h1>${esc(p.name)}</h1><p>${esc(accessLabel(p))}</p><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p>${p.source?`<div class="playlist-comment"><p>Following ${esc(p.source.path)} · ${p.source.base==='library'?'Library root':'Playlist folder'} paths</p><p role="status">${p.source.status==='ready'?`${p.source.unavailable} unavailable · ${p.source.rejected} unsafe entries skipped`:"Source unavailable. Last imported songs retained."}</p>${p.owner_id===state.user?.id?'<button class="btn" data-sync>Sync now</button>':''}<button class="btn" data-detach>Stop following…</button><p>Stop following to add, remove or move songs.</p></div>`:''}<div class="playlist-actions">${favoriteButton('playlist',p.playlist_id,p)}${collectionButtons('Play playlist')}<button class="btn btn-ghost" data-playlist-actions aria-label="Playlist actions">Playlist actions ⋮</button><button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
+ grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover></div><div><h1>${esc(p.name)}</h1><p>${esc(accessLabel(p))}</p><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p>${p.source?`<div class="playlist-comment"><p>Following ${esc(p.source.path)} · ${p.source.base==='library'?'Library root':'Playlist folder'} paths</p><p role="status">${p.source.status==='ready'?`${p.source.unavailable} unavailable · ${p.source.rejected} unsafe entries skipped`:"Source unavailable. Last imported songs retained."}</p>${p.owner_id===state.user?.id?'<button class="btn" data-sync>Sync now</button>':''}<button class="btn" data-detach>Stop following…</button><p>Stop following to add, remove or move songs.</p></div>`:''}<div class="playlist-actions">${favoriteButton('playlist',p.playlist_id,p)}${collectionButtons('Play playlist')}<button class="btn btn-ghost" data-playlist-actions aria-label="Playlist actions">Playlist actions ⋮</button><button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
+ mountMusicArtwork(grid.querySelector('[data-playlist-cover]'),'playlist',p.playlist_id,current,cover({...p,artwork_revision:''}));
  const rows=grid.querySelector('[data-rows]'),find=grid.querySelector('[data-find]');
  const draw=(focusID=null)=>{
   state.media=p.songs;
   const visible=p.songs.map((song,index)=>({song,index,entry:p.entries[index]})).filter(({song})=>matchesSong(song,find.value));
   grid.querySelector('[data-totals]').textContent=totals(p);
-  grid.querySelector('[data-playlist-cover]').innerHTML=cover(p);
+
   grid.querySelectorAll('[data-collection-play], [data-collection-menu]').forEach(button=>button.disabled=!p.songs.length);
   grid.querySelector('[data-count]').textContent=`Showing ${visible.length} of ${p.songs.length} songs`;
   rows.innerHTML=visible.length?visible.map(({song,index,entry})=>`<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" data-entry="${esc(entry.entry_id)}" aria-label="Play ${esc(mediaTitle(song))}"><span class="text-muted music-number">${index+1}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(song.music?.artist||'Unknown artist')} · ${esc(song.music?.album||'')}</span></span><span>${fmtDur(song.duration)}</span><span hidden>${(p.can_edit===false||p.source?[]:[['up','Move up'],['down','Move down'],['remove','Remove from playlist']]).map(([action,label])=>`<button data-action="playlist-${action}" ${busy||(action==='up'&&index===0)||(action==='down'&&index===p.songs.length-1)?'disabled':''}>${label}</button>`).join('')}</span><button class="btn btn-ghost" data-song-menu aria-label="Song actions for ${esc(mediaTitle(song))}">⋮</button></div>`).join(''):`<p>${p.songs.length?'No matching songs. Clear the search to see all songs.':'This playlist is empty.'}</p>`;
@@ -183,4 +186,11 @@ function changeSource(p,detach,current){
  if(detach&&!window.confirm('Stop following this source? Current songs remain and can be edited.'))return;
  const {modal,close,alive}=dialog(detach?'Stop following':'Sync playlist','<p role="status">Updating source…</p>');
  const run=async()=>{try{const result=await API.syncPlaylistSource(p.playlist_id,detach);if(!alive()||!current())return;close();toast(result.source?.status==='unavailable'?'Source unavailable. Last imported songs retained.':detach?'Stopped following source.':'Playlist synchronized.',result.source?.status==='unavailable'?'error':'success');reload();}catch(e){if(alive()&&current()){modal.querySelector('.modal-body').innerHTML='<p role="alert"></p><button class="btn" data-retry>Retry</button>';modal.querySelector('[role=alert]').textContent=e.message||'Could not update source.';modal.querySelector('[data-retry]').onclick=run;}}};run();
+}
+
+function bindArtworkFallbacks(grid) {
+ grid.querySelectorAll('[data-custom-playlist-art]').forEach(image=>image.addEventListener('error',()=>{
+  if(image.dataset.coverFallback)image.src=`/api/media/${image.dataset.coverFallback}/thumbnail`;
+  else { const placeholder=document.createElement('div');placeholder.className='album-cover album-placeholder';placeholder.setAttribute('role','img');placeholder.setAttribute('aria-label','Artwork unavailable');placeholder.textContent='♫';image.replaceWith(placeholder); }
+ },{once:true}));
 }

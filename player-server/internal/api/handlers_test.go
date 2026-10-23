@@ -1932,6 +1932,7 @@ func addSessionCookieStore(t *testing.T, sm auth.SessionManager, userID int64) *
 
 // mockPingStore wraps a Store and adds Ping capability.
 type mockPingStore struct {
+	repository.MockMusicArtworkRepo
 	repository.MockMusicEnrichmentRepo
 	store repository.Store
 	err   error

@@ -1,3 +1,4 @@
+import '../widgets/music_artwork_section.dart';
 import '../widgets/music_related_section.dart';
 import '../widgets/music_enrichment_section.dart';
 import '../widgets/music_listening_details.dart';
@@ -270,6 +271,7 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
             padding: const EdgeInsets.all(16),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              MusicArtworkSection(kind: 'artist', entityKey: widget.artistKey!),
               Text(artist['name'] as String,
                   style: Theme.of(context).textTheme.titleLarge),
               Text(creditRoleLabels(artist['roles'])),

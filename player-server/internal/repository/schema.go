@@ -107,6 +107,16 @@ CREATE TABLE IF NOT EXISTS music_listening_sessions (
  PRIMARY KEY(user_id,session_id,media_id)
 );
 
+CREATE TABLE IF NOT EXISTS music_artwork (
+ kind TEXT NOT NULL CHECK(kind IN ('artist','playlist')),
+ entity_key TEXT NOT NULL,
+ data BLOB NOT NULL,
+ revision TEXT NOT NULL,
+ PRIMARY KEY(kind,entity_key)
+);
+CREATE TRIGGER IF NOT EXISTS playlist_artwork_delete AFTER DELETE ON playlists BEGIN
+ DELETE FROM music_artwork WHERE kind='playlist' AND entity_key=old.id;
+END;
 CREATE TABLE IF NOT EXISTS music_enrichment (
     provider TEXT NOT NULL,
     kind TEXT NOT NULL CHECK(kind IN ('artist','album')),

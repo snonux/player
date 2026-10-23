@@ -8,7 +8,18 @@ import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/music_artists_screen.dart';
 
 class _Client extends PlayerApiClient {
-  _Client() : super(dio: Dio());
+  _Client() : super(dio: Dio()) {
+    rawDio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.path.contains('/music/artwork/')) {
+        handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {'has_artwork': false, 'can_edit': true, 'revision': ''}));
+      } else {
+        handler.next(options);
+      }
+    }));
+  }
   final roles = <String>[];
   bool fail = false;
   Completer<List<Map<String, dynamic>>>? pending;
