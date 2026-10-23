@@ -20,12 +20,12 @@
     <div class="spacer"></div>
     <button id="sidebar-toggle" class="icon-btn" title="Sets" aria-label="Toggle sets sidebar">☰</button>
     <button id="shuffle-toggle" class="icon-btn" title="Shuffle library listing (r)" aria-label="Toggle library listing shuffle">🔀︎</button>
-    <button class="btn btn-ghost btn-sm" data-queue-toggle title="Now Playing queue (Q)" aria-controls="queue-panel">Queue</button>
+    <button class="btn btn-ghost btn-sm" data-queue-toggle title="Now Playing queue (Q)" aria-controls="queue-panel" data-i18n="Queue">Queue</button>
     <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
     <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
     <button id="trash-toggle" class="icon-btn" title="Trash" aria-label="Open trash">🗑</button>
     <button id="admin-toggle" class="icon-btn hidden" title="Admin panel" aria-label="Admin settings">⚙</button>
-    <button id="settings-toggle" class="btn btn-ghost btn-sm" aria-controls="settings-modal">Settings</button>
+    <button id="settings-toggle" class="btn btn-ghost btn-sm" aria-controls="settings-modal" data-i18n="Settings">Settings</button>
     <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
   </div>
 </header>
@@ -63,11 +63,11 @@
     <h2>Sets</h2>
     <button id="menu-close" class="icon-btn btn-sm" title="Close">✕</button>
   </div>
-  <div class="sidebar-header"><h2>Music</h2></div>
-  <button id="all-music-views" class="btn btn-ghost">All music views</button>
-  <button id="music-albums" class="btn btn-ghost">Albums</button>
-  <button id="music-playlists" class="btn btn-ghost">Playlists</button>
-  <button id="music-artists" class="btn btn-ghost">Artists</button>
+  <div class="sidebar-header"><h2 data-i18n="Music">Music</h2></div>
+  <button id="all-music-views" class="btn btn-ghost" data-i18n="All music views">All music views</button>
+  <button id="music-albums" class="btn btn-ghost" data-i18n="Albums">Albums</button>
+  <button id="music-playlists" class="btn btn-ghost" data-i18n="Playlists">Playlists</button>
+  <button id="music-artists" class="btn btn-ghost" data-i18n="Artists">Artists</button>
   <button id="internet-radio" class="btn btn-ghost">Internet radio</button>
   <div id="set-list"></div>
 </nav>
@@ -115,28 +115,33 @@
  <label>Artwork URL (optional)<input name="artwork_url" type="url" maxlength="4096"></label>
  <label class="radio-local"><input name="local_network" type="checkbox">Allow local-network station</label>
  <p class="text-muted">Permit private or loopback stream and artwork hosts. Live audio is relayed through Player; station URLs never receive your Player credentials.</p>
- <p id="radio-editor-status" role="alert"></p><button class="btn" type="submit">Save</button>
+ <p id="radio-editor-status" role="alert"></p><button class="btn" type="submit" data-i18n="Save">Save</button>
  </form></div>
 </div>
 
 <div id="settings-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
   <div class="modal">
-    <div class="modal-header"><h3 id="settings-title">Settings</h3><div class="spacer"></div><button id="settings-close" class="icon-btn" aria-label="Close settings">✕</button></div>
-    <h4>Navigation</h4>
+    <div class="modal-header"><h3 id="settings-title" data-i18n="Settings">Settings</h3><div class="spacer"></div><button id="settings-close" class="icon-btn" aria-label="Close settings">✕</button></div>
+    <label class="language-setting"><span data-i18n="Language">Language</span>
+      <select id="language-select" aria-label="Language" data-i18n-aria-label='{&quot;key&quot;:&quot;Language&quot;}'><option value="system" data-i18n="Device language">Device language</option><option value="en" lang="en" data-i18n="English">English</option><option value="de" lang="de" data-i18n="Deutsch">Deutsch</option></select>
+    </label>
+    <p class="text-muted text-sm" data-i18n="Saved on this device for all accounts.">Saved on this device for all accounts.</p>
+    <p id="language-status" role="status" aria-live="polite"></p>
+    <h4 data-i18n="Navigation">Navigation</h4>
     <p class="text-muted text-sm">Saved on this device for all accounts. Hiding shortcuts does not restrict access. Explicit links keep their destination.</p>
     <div class="appearance-controls">
-      <label>Initial collection <select id="navigation-landing"><option value="library">Library</option><option value="albums">Albums</option><option value="artists">Artists</option><option value="playlists">Playlists</option></select></label>
+      <label>Initial collection <select id="navigation-landing"><option value="library" data-i18n="Library">Library</option><option value="albums" data-i18n="Albums">Albums</option><option value="artists" data-i18n="Artists">Artists</option><option value="playlists" data-i18n="Playlists">Playlists</option></select></label>
       <label><input id="navigation-albums" type="checkbox"> Show Albums shortcut</label>
       <label><input id="navigation-artists" type="checkbox"> Show Artists shortcut</label>
       <label><input id="navigation-playlists" type="checkbox"> Show Playlists shortcut</label>
     </div>
-    <button id="navigation-reset" class="btn btn-ghost">Reset navigation</button>
+    <button id="navigation-reset" class="btn btn-ghost" data-i18n="Reset navigation">Reset navigation</button>
     <p id="navigation-status" role="status"></p>
-    <h4>All music views</h4>
+    <h4 data-i18n="All music views">All music views</h4>
     <div class="appearance-controls">
-      <button id="all-music-albums" class="btn btn-ghost">Open Albums</button>
-      <button id="all-music-artists" class="btn btn-ghost">Open Artists</button>
-      <button id="all-music-playlists" class="btn btn-ghost">Open Playlists</button>
+      <button id="all-music-albums" class="btn btn-ghost" data-i18n="Open Albums">Open Albums</button>
+      <button id="all-music-artists" class="btn btn-ghost" data-i18n="Open Artists">Open Artists</button>
+      <button id="all-music-playlists" class="btn btn-ghost" data-i18n="Open Playlists">Open Playlists</button>
     </div>
     <h4>Notifications</h4>
     <p class="text-muted text-sm">Optional song announcements when the player window is in the background. Enabling asks for browser permission. Track names may appear on your desktop or lock screen.</p>
@@ -186,9 +191,9 @@
       <button id="btn-next" class="icon-btn" aria-label="Next">⏭</button>
       <button id="btn-save-position" class="btn btn-sm hidden" type="button" aria-controls="bookmarks-modal">Save position</button>
       <button id="btn-bookmarks" class="btn btn-sm hidden" type="button" aria-controls="bookmarks-modal">Bookmarks</button>
-      <button class="btn btn-sm" data-queue-toggle title="Now Playing queue (Q)">Queue</button>
+      <button class="btn btn-sm" data-queue-toggle title="Now Playing queue (Q)" data-i18n="Queue">Queue</button>
       <button id="btn-player-notes" class="btn btn-sm" type="button" aria-controls="notes-modal">Notes</button>
-      <button id="btn-player-favorite" class="btn btn-sm" type="button" aria-label="Toggle favorite">Favorite</button>
+      <button id="btn-player-favorite" class="btn btn-sm" type="button" aria-label="Toggle favorite" data-i18n="Favorite">Favorite</button>
       <button id="btn-zoom-out" class="icon-btn image-only" aria-label="Zoom out">−</button>
       <button id="btn-zoom-in" class="icon-btn image-only" aria-label="Zoom in">+</button>
       <button id="btn-slideshow" class="icon-btn image-only" aria-label="Start slideshow">⏵</button>
@@ -274,7 +279,7 @@
         <div class="help-row"><span><kbd>Y</kbd></span><span>Queue repeat: Off → All → One. Sets browse playback is unchanged.</span></div>
         <div class="help-row"><span><kbd>&lt;</kbd> / <kbd>&gt;</kbd></span><span>Slower / faster audio; Speed → 1× Normal resets. Unavailable while casting.</span></div>
         <div class="help-row"><span><kbd>Q</kbd></span><span>Open / close Now Playing queue. Queue: j/k select, Enter play, K/J move, Delete remove (Undo).</span></div>
-        <div class="help-row"><span><kbd>Space</kbd> <kbd>p</kbd></span><span>Play / pause</span></div>
+        <div class="help-row"><span><kbd>Space</kbd> <kbd>p</kbd></span><span data-i18n="Play / pause">Play / pause</span></div>
         <div class="help-row"><span><kbd>N</kbd> <kbd>P</kbd></span><span>Next / previous track</span></div>
         <div class="help-row"><span><kbd>R</kbd></span><span>Play random track</span></div>
         <div class="help-row"><span><kbd>M</kbd></span><span>Rescan media library</span></div>
@@ -338,8 +343,8 @@
     </div>
     <textarea id="notes-textarea" rows="6" placeholder="Add your notes…"></textarea>
     <div class="flex justify-end gap-2 mt-1">
-      <button id="notes-delete" class="btn btn-danger btn-sm">Delete</button>
-      <button id="notes-save" class="btn btn-primary btn-sm">Save</button>
+      <button id="notes-delete" class="btn btn-danger btn-sm" data-i18n="Delete">Delete</button>
+      <button id="notes-save" class="btn btn-primary btn-sm" data-i18n="Save">Save</button>
     </div>
   </div>
 </div>

@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,8 +86,9 @@ class MusicLayout {
       });
   }
 
-  String subtitle(Map<String, dynamic> item) => columns
-      .map((column) => '${musicColumns[kind]![column]}: ${text(item, column)}')
+  String subtitle(Map<String, dynamic> item, [BuildContext? context]) => columns
+      .map((column) =>
+          '${context?.tr(musicColumns[kind]![column]!) ?? musicColumns[kind]![column]}: ${text(item, column)}')
       .join(' · ');
 }
 
@@ -135,8 +137,8 @@ class _MusicLayoutPanelState extends ConsumerState<MusicLayoutPanel> {
         }
       } catch (_) {
         if (mounted && _scope == scope) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Could not remember music layout.')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(context.tr('Could not remember music layout.'))));
         }
       }
     });
@@ -149,13 +151,13 @@ class _MusicLayoutPanelState extends ConsumerState<MusicLayoutPanel> {
         context: context,
         builder: (context) => StatefulBuilder(
             builder: (context, update) => AlertDialog(
-                  title: const Text('Music columns'),
+                  title: Text(context.tr('Music columns')),
                   content: SingleChildScrollView(
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    const Text('Title is always shown'),
+                    Text(context.tr('Title is always shown')),
                     for (final entry in musicColumns[widget.kind]!.entries)
                       CheckboxListTile(
-                          title: Text(entry.value),
+                          title: Text(context.tr(entry.value)),
                           value: selected.contains(entry.key),
                           onChanged: (checked) => update(() {
                                 if (checked == true) {
@@ -168,10 +170,10 @@ class _MusicLayoutPanelState extends ConsumerState<MusicLayoutPanel> {
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel')),
+                        child: Text(context.tr('Cancel'))),
                     FilledButton(
                         onPressed: () => Navigator.pop(context, selected),
-                        child: const Text('Apply'))
+                        child: Text(context.tr('Apply')))
                   ],
                 )));
     if (mounted && scope == _scope && result != null) {
@@ -191,9 +193,9 @@ class _MusicLayoutPanelState extends ConsumerState<MusicLayoutPanel> {
     }
     final layout = _layout;
     if (layout == null) {
-      return const Center(
+      return Center(
           child: CircularProgressIndicator(
-              semanticsLabel: 'Loading music layout'));
+              semanticsLabel: context.tr('Loading music layout')));
     }
     return Column(children: [
       Padding(
@@ -203,15 +205,20 @@ class _MusicLayoutPanelState extends ConsumerState<MusicLayoutPanel> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (widget.fixedOrder)
-                  const Text('Collection order')
+                  Text(context.tr('Collection order'))
                 else
                   DropdownButton<String>(
                       value: layout.sort,
-                      hint: const Text('Sort by'),
-                      items: {'title': 'Title', ...musicColumns[widget.kind]!}
+                      hint: Text(context.tr('Sort by')),
+                      items: {
+                        'title': context.tr('Title'),
+                        ...musicColumns[widget.kind]!
+                      }
                           .entries
                           .map((e) => DropdownMenuItem(
-                              value: e.key, child: Text('Sort: ${e.value}')))
+                              value: e.key,
+                              child: Text(
+                                  '${context.tr('Sort')}: ${context.tr(e.value)}')))
                           .toList(),
                       onChanged: (value) {
                         if (value != null) _update(() => layout.sort = value);
@@ -225,8 +232,9 @@ class _MusicLayoutPanelState extends ConsumerState<MusicLayoutPanel> {
                       icon: Icon(layout.descending
                           ? Icons.arrow_downward
                           : Icons.arrow_upward),
-                      label:
-                          Text(layout.descending ? 'Descending' : 'Ascending')),
+                      label: Text(layout.descending
+                          ? context.tr('Descending')
+                          : context.tr('Ascending'))),
                 if (widget.kind == 'albums')
                   TextButton.icon(
                       style:
@@ -235,12 +243,14 @@ class _MusicLayoutPanelState extends ConsumerState<MusicLayoutPanel> {
                           _update(() => layout.table = !layout.table),
                       icon: Icon(
                           layout.table ? Icons.view_module : Icons.table_rows),
-                      label: Text(layout.table ? 'View: Table' : 'View: Grid')),
+                      label: Text(layout.table
+                          ? context.tr('View: Table')
+                          : context.tr('View: Grid'))),
                 TextButton(
                     style:
                         TextButton.styleFrom(minimumSize: const Size(48, 48)),
                     onPressed: _columns,
-                    child: const Text('Columns')),
+                    child: Text(context.tr('Columns'))),
               ])),
       Expanded(child: widget.builder(layout)),
     ]);

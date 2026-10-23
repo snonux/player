@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import '../providers/navigation_preferences_provider.dart';
 import '../widgets/navigation_settings.dart';
 import '../widgets/music_mini_player.dart';
@@ -185,7 +186,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
         child: SafeArea(
           child: ListView(
             children: [
-              const ListTile(title: Text('Library')),
+              ListTile(title: Text(context.tr('Library'))),
               ListTile(
                 key: const Key('server_switch_to_local'),
                 leading: const Icon(Icons.phone_android),
@@ -208,20 +209,28 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                   AppRoutes.continueWatching
                 ),
                 (Icons.radio, 'Internet radio', AppRoutes.radio),
-                (Icons.album_outlined, 'Music · Albums', AppRoutes.musicAlbums),
+                (
+                  Icons.album_outlined,
+                  context.tr('Music · Albums'),
+                  AppRoutes.musicAlbums
+                ),
                 (
                   Icons.queue_music,
-                  'Music · Playlists',
+                  context.tr('Music · Playlists'),
                   AppRoutes.musicPlaylists
                 ),
                 (
                   Icons.people_outline,
-                  'Music · Artists',
+                  context.tr('Music · Artists'),
                   AppRoutes.musicArtists
                 ),
                 (Icons.podcasts, 'Podcasts', AppRoutes.podcasts),
                 (Icons.share_outlined, 'My Shares', AppRoutes.shares),
-                (Icons.settings_outlined, 'Settings', AppRoutes.settings),
+                (
+                  Icons.settings_outlined,
+                  context.tr('Settings'),
+                  AppRoutes.settings
+                ),
               ].where((destination) => !MusicCollection.values.any((section) =>
                   section.route == destination.$3 &&
                   hiddenMusicSections.contains(section))))
@@ -244,14 +253,14 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
   /// Builds the app bar with the server switch and Settings actions.
   AppBar _buildAppBar(BuildContext context) {
     return AppBar(
-      title: const Text('Library'),
+      title: Text(context.tr('Library')),
       actions: [
         const MusicQueueButton(),
         const ServerSwitchButton(),
         IconButton(
           key: const Key('home_settings_button'),
           icon: const Icon(Icons.settings_outlined),
-          tooltip: 'Settings',
+          tooltip: context.tr('Settings'),
           // Navigate to the settings screen when the icon is tapped.
           onPressed: () => context.push(AppRoutes.settings),
         ),
@@ -626,7 +635,7 @@ class _ErrorView extends StatelessWidget {
               key: const Key('sets_retry'),
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: Text(context.tr('Retry')),
             ),
           ],
         ),

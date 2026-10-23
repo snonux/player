@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import '../services/progress_queue.dart';
 import '../providers/playback_cache_provider.dart';
 import '../widgets/stream_quality_sheet.dart';
@@ -663,7 +664,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     final lease = attempt.lease;
     final coordinator = ref.read(playbackSessionCoordinatorProvider);
     handler.startMusicSequence(
-        queueLabel: widget.sequence.firstOrNull?.music?.album ?? 'Album',
+        queueLabel:
+            widget.sequence.firstOrNull?.music?.album ?? context.tr('Album'),
         sequenceLease: lease,
         claimQueue: (request) => coordinator.claim(
             kind: request.kind,
@@ -996,7 +998,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               !_isLoading &&
               _error == null)
             IconButton(
-                tooltip: 'Info',
+                tooltip: context.tr('Info'),
                 icon: const Icon(Icons.info_outline),
                 onPressed: _showMusicInfo),
           buildCastButton(ready: !_isLoading && _error == null),
@@ -1130,7 +1132,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             ElevatedButton(
               key: const Key('audio_player_retry'),
               onPressed: _onRetry,
-              child: const Text('Retry'),
+              child: Text(context.tr('Retry')),
             ),
           ],
         ),
@@ -1358,7 +1360,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               onPressed: () =>
                   music ? handler.skipToPrevious() : _skip(-_kSkipDuration),
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              tooltip: music ? 'Previous track' : 'Skip back 15 seconds',
+              tooltip:
+                  music ? context.tr('Previous track') : 'Skip back 15 seconds',
             ),
             const SizedBox(width: 16),
             // Play / Pause — delegate to handler so the notification updates.
@@ -1385,7 +1388,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   handler.play();
                 }
               },
-              tooltip: isPlaying ? 'Pause' : 'Play',
+              tooltip: isPlaying ? context.tr('Pause') : context.tr('Play'),
             ),
             const SizedBox(width: 16),
             // Skip forward 15 s
@@ -1399,7 +1402,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               onPressed: () =>
                   music ? handler.skipToNext() : _skip(_kSkipDuration),
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              tooltip: music ? 'Next track' : 'Skip forward 15 seconds',
+              tooltip:
+                  music ? context.tr('Next track') : 'Skip forward 15 seconds',
             ),
           ],
         );

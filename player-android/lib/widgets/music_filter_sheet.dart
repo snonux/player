@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -115,7 +116,7 @@ class _MusicFilterBarState extends ConsumerState<MusicFilterBar> {
             if (_filter.isNotEmpty)
               TextButton(
                   onPressed: () => _apply({}),
-                  child: const Text('Clear filters')),
+                  child: Text(context.tr('Clear filters'))),
           ])),
     ]);
   }
@@ -156,14 +157,15 @@ class _MusicFilterSheetState extends ConsumerState<_MusicFilterSheet> {
       child: SizedBox(
           height: MediaQuery.sizeOf(context).height * .75,
           child: Column(children: [
-            Text('Music filters',
+            Text(context.tr('Music filters'),
                 style: Theme.of(context).textTheme.titleLarge),
             Expanded(
                 child: _failed
                     ? Column(children: [
                         const Text(
                             'Could not load filters. Check your connection.'),
-                        TextButton(onPressed: _load, child: const Text('Retry'))
+                        TextButton(
+                            onPressed: _load, child: Text(context.tr('Retry')))
                       ])
                     : _options == null
                         ? const Center(child: CircularProgressIndicator())
@@ -180,11 +182,11 @@ class _MusicFilterSheetState extends ConsumerState<_MusicFilterSheet> {
             Row(mainAxisAlignment: MainAxisAlignment.end, children: [
               TextButton(
                   onPressed: () => setState(() => _draft = {}),
-                  child: const Text('Clear')),
+                  child: Text(context.tr('Clear'))),
               const SizedBox(width: 16),
               FilledButton(
                   onPressed: () => Navigator.pop(context, _draft),
-                  child: const Text('Apply'))
+                  child: Text(context.tr('Apply')))
             ]),
           ])));
   Widget _field(String key, String label) {
@@ -210,7 +212,7 @@ class _MusicFilterSheetState extends ConsumerState<_MusicFilterSheet> {
           for (final value in choices)
             DropdownMenuItem(
                 value: value,
-                child: Text(musicFacetValue(key, value),
+                child: Text(context.tr(musicFacetValue(key, value)),
                     overflow: TextOverflow.ellipsis))
         ],
         onChanged: (value) => setState(() {

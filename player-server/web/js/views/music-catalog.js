@@ -1,3 +1,4 @@
+import { t, html, plural, ui, uiCount } from '../i18n.js';
 import { albumCollections, personalCollections, discoverAlbums, mountAlbumDiscovery } from '../music-discovery.js';
 import { mountMusicArtwork } from '../music-artwork.js';
 import { mountMusicEnrichment } from '../music-enrichment.js';
@@ -85,9 +86,9 @@ export function backMusic() {
 export async function openSongAlbum(id) {
  try {
   const albums = await API.albums({media_id:id});
-  if (!albums.length) { toast('No album for this item.', 'info'); return; }
+  if (!albums.length) { toast(t('No album for this item.'), 'info'); return; }
   openAlbums(); openAlbum(albums[0].album_key);
- } catch (e) { toast(e.message || 'Could not open album.', 'error'); }
+ } catch (e) { toast(e.message || t('Could not open album.'), 'error'); }
 }
 export async function renderMusic(grid, isCurrent) {
  const operation = ++revision;
@@ -96,10 +97,10 @@ export async function renderMusic(grid, isCurrent) {
  state.media = [];
  document.getElementById('breadcrumb-bar')?.classList.add('hidden');
  const count = document.getElementById('result-count');
- count.textContent = view.search ? 'Music · Search' : view.playlists ? 'Music · Playlists' : view.artists && !view.album ? 'Music · Artists' : 'Music · Albums';
+ count.innerHTML = ui(view.search ? 'Music · Search' : view.playlists ? 'Music · Playlists' : view.artists && !view.album ? 'Music · Artists' : 'Music · Albums');
  grid.classList.toggle('music-detail', Boolean(view.album));
  grid.classList.remove('music-table');
- grid.innerHTML = `<p class="grid-full" role="status">Loading ${view.search ? 'search results' : view.playlists ? 'playlists' : view.artists && !view.album ? 'artists' : 'albums'}…</p>`;
+ grid.innerHTML = html`<p class="grid-full" role="status">${ui(view.search ? 'Loading search results…' : view.playlists ? 'Loading playlists…' : view.artists && !view.album ? 'Loading artists…' : 'Loading albums…')}</p>`;
  try {
   await mountMusicFacets(grid,view,current,reload,true);
   if(!current())return;
@@ -116,15 +117,15 @@ export async function renderMusic(grid, isCurrent) {
   if (view.album) {
    state.media = data.songs || [];
    const layout = albumDiscLayout(data);
-   count.textContent = `Music · Albums · ${data.title}`;
-   grid.innerHTML = `<div class="grid-full music-heading"><button class="btn btn-ghost" data-music-back>← Back to albums</button><div class="album-header">${cover(data)}<div><h1>${esc(data.title)}</h1>${creditLinks(data.credits, "album_artist", data.artist)}<p class="text-muted">${data.year || ''}${data.from_folder ? ' · From folder' : ''}</p><p>${data.song_count} songs · ${fmtDur(data.duration)}</p>${listeningDetails(data)}${favoriteButton('album',data.album_key,data)} ${ratingControl('album',data.album_key,data)}${collectionButtons('Play album')}<div class="music-selection"><span data-selection-count>0 selected</span><button class="btn" data-selection-actions disabled>Selected song actions</button><button class="btn btn-ghost" data-selection-clear>Clear selection</button></div></div></div></div>` + state.media.map((song,index) => `${layout.grouped && layout.heads.has(song.id) ? discHeading(layout.heads.get(song.id)) : ''}<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" aria-label="Play ${esc(mediaTitle(song))}"><input type="checkbox" data-song-check="${song.id}" aria-label="Select ${esc(mediaTitle(song))}"><span class="text-muted music-number">${esc(albumSongNumber(song,layout.multi))}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${creditLinks(data.song_credits?.[song.id], "track_artist", song.music?.artist || "Unknown artist")}</span>${listeningDetails(song)}</span><span>${fmtDur(song.duration)}</span>${ratingControl('song',song.id,song)}${songActionButtons(song)}<button class="btn btn-ghost" data-song-menu aria-label="Actions for ${esc(mediaTitle(song))}">⋮</button><button hidden data-action="song-info" data-song-info="${song.id}" aria-label="Info for ${esc(mediaTitle(song))}">Info</button></div>`).join('');
+   count.innerHTML = `${ui('Music · Albums')} · ${esc(data.title)}`;
+   grid.innerHTML = html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-music-back>← ${ui('Back to albums')}</button><div class="album-header">${cover(data)}<div><h1>${esc(data.title)}</h1>${creditLinks(data.credits, "album_artist", data.artist)}<p class="text-muted">${data.year || ''}${data.from_folder ? ' · From folder' : ''}</p><p>${uiCount(data.song_count, '{count} song', '{count} songs')} · ${fmtDur(data.duration)}</p>${listeningDetails(data)}${favoriteButton('album',data.album_key,data)} ${ratingControl('album',data.album_key,data)}${collectionButtons('Play album')}<div class="music-selection"><span data-selection-count>0 selected</span><button class="btn" data-selection-actions disabled>Selected song actions</button><button class="btn btn-ghost" data-selection-clear>Clear selection</button></div></div></div></div>` + state.media.map((song,index) => html`${layout.grouped && layout.heads.has(song.id) ? discHeading(layout.heads.get(song.id)) : ''}<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" aria-label="Play ${esc(mediaTitle(song))}"><input type="checkbox" data-song-check="${song.id}" aria-label="Select ${esc(mediaTitle(song))}"><span class="text-muted music-number">${esc(albumSongNumber(song,layout.multi))}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${creditLinks(data.song_credits?.[song.id], "track_artist", song.music?.artist || t("Unknown artist"))}</span>${listeningDetails(song)}</span><span>${fmtDur(song.duration)}</span>${ratingControl('song',song.id,song)}${songActionButtons(song)}<button class="btn btn-ghost" data-song-menu aria-label="Actions for ${esc(mediaTitle(song))}">⋮</button><button hidden data-action="song-info" data-song-info="${song.id}" aria-label="Info for ${esc(mediaTitle(song))}">Info</button></div>`).join('');
    mountMusicEnrichment(grid.querySelector('.music-heading'),'album',view.album,current);
    mountRelatedMusic(grid,'album',view.album,current,item=>openAlbum(item.key));
    bindSongActions(grid);
-   grid.querySelectorAll('.music-disc img').forEach(img=>img.addEventListener('error',()=>{ const replacement=document.createElement('div'); replacement.className='album-cover album-placeholder'; replacement.setAttribute('role','img'); replacement.setAttribute('aria-label','No disc artwork'); replacement.textContent='♫'; img.replaceWith(replacement); },{once:true}));
+   grid.querySelectorAll('.music-disc img').forEach(img=>img.addEventListener('error',()=>{ const replacement=document.createElement('div'); replacement.className='album-cover album-placeholder'; replacement.setAttribute('role','img'); replacement.setAttribute('aria-label',t('No disc artwork')); replacement.textContent='♫'; img.replaceWith(replacement); },{once:true}));
    grid.querySelectorAll('[data-song-menu]').forEach(button => button.onclick = () => openSongActions(button.closest('.media-row')));
    const checkedSongs = () => { const ids = [...grid.querySelectorAll('[data-song-check]:checked')].map(input => Number(input.dataset.songCheck)); return state.media.filter(song => ids.includes(song.id)); };
-   const updateSelection = () => { const count = checkedSongs().length; grid.querySelector('[data-selection-count]').textContent = `${count} selected`; grid.querySelector('[data-selection-actions]').disabled = !count; };
+   const updateSelection = () => { const count = checkedSongs().length; grid.querySelector('[data-selection-count]').innerHTML = ui('{count} selected', {count}); grid.querySelector('[data-selection-actions]').disabled = !count; };
    grid.querySelectorAll('[data-song-check]').forEach(input => input.onchange = updateSelection);
    grid.querySelector('[data-selection-clear]').onclick = () => { grid.querySelectorAll('[data-song-check]').forEach(input => input.checked = false); updateSelection(); };
    grid.querySelector('[data-selection-actions]').onclick = e => selectionActions(e.currentTarget, checkedSongs());
@@ -136,8 +137,8 @@ export async function renderMusic(grid, isCurrent) {
    });
    grid.querySelectorAll('[data-song-info]').forEach(button => button.onclick = () => { selectByElement(button.closest('.media-row')); document.dispatchEvent(new Event('music:song-info')); });
   } else {
-   count.textContent = view.collection ? `Music · ${albumCollections[view.collection]?.[0] || 'Albums'} · ${data.length} albums` : view.artist ? `Albums by ${view.name || 'artist'}` : `Music · ${data.length} albums${hasFacets(view)?' matching filters':''}`;
-   grid.innerHTML = `<div class="grid-full"><button class="btn btn-ghost" data-music-back>← ${view.collection || view.artist ? 'Back to albums' : 'Back to Sets'}</button>${view.collection ? `<h1>${albumCollections[view.collection]?.[0] || 'Albums'}</h1><p class="text-muted">${albumCollections[view.collection]?.[1] || ''}</p>` : ''}${view.artist ? `<h1>Albums by ${esc(view.name || 'artist')}</h1>` : ''}</div>` + (data.length ? data.map(album => `<div class="${layoutPreferences.view==='table'?'media-row':'media-card'} album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${layoutPreferences.view==='grid'?cover(album):''}<div class="card-body">${favoriteButton('album',album.album_key,album)} ${ratingControl('album',album.album_key,album)}<div class="title" title="${esc(album.title)}">${esc(album.title)}</div>${layoutPreferences.columns.map(column=>`<span class="music-column text-muted text-sm" data-column="${column}"><span class="music-column-label">${musicColumns.albums[column]}: </span>${esc(musicColumnText(album,column,'albums'))}</span>`).join('')}${hasFacets(view) ? `<span class="text-muted text-sm">${album.song_count} matching songs</span>` : ''}${listeningDetails(album)}${album.from_folder ? '<span class="text-muted text-xs">From folder</span>' : ''}</div></div>`).join('') : `<p class="grid-full">${view.collection?albumCollections[view.collection]?.[2]:view.favorites?'No favorite albums. Show all albums to favorite one.':'Nothing matches these filters. Clear filters or browse Sets for more music.'}</p>`);
+   count.innerHTML = view.collection ? `${ui('Music')} · ${esc(t(albumCollections[view.collection]?.[0] || 'Albums'))} · ${uiCount(data.length, '{count} album', '{count} albums')}` : view.artist ? ui('Albums by {name}', {name: view.name || t('Artist')}) : `${ui('Music')} · ${uiCount(data.length, '{count} album', '{count} albums')}`;
+   grid.innerHTML = html`<div class="grid-full"><button class="btn btn-ghost" data-music-back>← ${view.collection || view.artist ? ui('Back to albums') : ui('Back to Sets')}</button>${view.collection ? html`<h1>${albumCollections[view.collection]?.[0] || t('Albums')}</h1><p class="text-muted">${albumCollections[view.collection]?.[1] || ''}</p>` : ''}${view.artist ? html`<h1>Albums by ${esc(view.name || 'artist')}</h1>` : ''}</div>` + (data.length ? data.map(album => html`<div class="${layoutPreferences.view==='table'?'media-row':'media-card'} album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${layoutPreferences.view==='grid'?cover(album):''}<div class="card-body">${favoriteButton('album',album.album_key,album)} ${ratingControl('album',album.album_key,album)}<div class="title" title="${esc(album.title)}">${esc(album.title)}</div>${layoutPreferences.columns.map(column=>html`<span class="music-column text-muted text-sm" data-column="${column}"><span class="music-column-label">${ui(musicColumns.albums[column])}: </span>${esc(musicColumnText(album,column,'albums'))}</span>`).join('')}${hasFacets(view) ? html`<span class="text-muted text-sm">${album.song_count} matching songs</span>` : ''}${listeningDetails(album)}${album.from_folder ? html`<span class="text-muted text-xs">From folder</span>` : ''}</div></div>`).join('') : html`<p class="grid-full">${view.collection?albumCollections[view.collection]?.[2]:view.favorites?ui('No favorite albums. Show all albums to favorite one.'):ui('Nothing matches these filters. Clear filters or browse Sets for more music.')}</p>`);
    grid.classList.toggle('music-table',layoutPreferences.view==='table');
    grid.querySelector('.grid-full').insertAdjacentHTML('beforeend',musicLayoutToolbar('albums',layoutPreferences));
    grid.querySelectorAll('[data-album]').forEach(card => card.onclick = () => openAlbum(card.dataset.album));
@@ -161,29 +162,29 @@ export async function renderMusic(grid, isCurrent) {
   if(!view.album) { bindMusicLayout(grid,'albums',layoutPreferences,reload,remember);if(view.collection) grid.querySelectorAll('[data-layout-sort], [data-layout-direction], [data-rating-order]').forEach(control=>{control.disabled=true;control.title='This collection uses its own order.';}); }
  } catch (e) {
   if (!current()) return;
-  grid.innerHTML = `<div class="grid-full" role="alert"><p>${view.search ? 'Could not search music' : 'Could not load'} ${view.search ? '' : view.artists && !view.album ? 'artists' : view.playlists ? 'playlists' : 'albums'}: ${esc(e.message || 'Connection unavailable. Check your connection.')}</p><button class="btn" data-retry>Retry</button><button class="btn btn-ghost" data-music-back>← Back</button></div>`;
+  grid.innerHTML = html`<div class="grid-full" role="alert"><p>${view.search ? t('Could not search music') : t('Could not load')} ${view.search ? '' : view.artists && !view.album ? 'artists' : view.playlists ? 'playlists' : 'albums'}: ${esc(e.message || t('Connection unavailable. Check your connection.'))}</p><button class="btn" data-retry>Retry</button><button class="btn btn-ghost" data-music-back>← Back</button></div>`;
   await mountMusicFacets(grid,view,current,reload);
   grid.querySelector('[data-retry]').onclick = reload;
   grid.querySelector('[data-music-back]').onclick = backMusic;
  }
 }
 function cover(album) {
- return album.cover_media_id ? `<img class="album-cover" src="/api/media/${album.cover_media_id}/thumbnail" alt="Artwork for ${esc(album.title)}">` : '<div class="album-cover album-placeholder" role="img" aria-label="No album artwork">♫</div>';
+ return album.cover_media_id ? html`<img class="album-cover" src="/api/media/${album.cover_media_id}/thumbnail" alt="Artwork for ${esc(album.title)}">` : html`<div class="album-cover album-placeholder" role="img" aria-label="No album artwork">♫</div>`;
 }
 
 function creditLinks(credits, role, fallback) {
  const people=(credits || []).filter(person=>person.roles.includes(role));
- return people.length ? people.map(person=>`<button class="btn btn-ghost credit-link" data-artist="${esc(person.artist_key)}" aria-label="${esc(artistRoles[role])}: ${esc(person.name)}">${esc(person.name)}</button>`).join(' ') : esc(fallback);
+ return people.length ? people.map(person=>html`<button class="btn btn-ghost credit-link" data-artist="${esc(person.artist_key)}" aria-label="${esc(artistRoles[role])}: ${esc(person.name)}">${esc(person.name)}</button>`).join(' ') : esc(fallback);
 }
 function bindCredits(grid) { grid.querySelectorAll('[data-artist]').forEach(button=>button.onclick=()=>{ const row=button.closest('.media-row'); if(row) selectByElement(row); openArtist(button.dataset.artist); }); }
 async function renderArtists(grid, view, current) {
  const detail=Boolean(view.artist);
  const data=detail ? await API.artist(view.artist) : await API.artists({...ratingParams(view),favorite:view.favorites || false,...facetParams(view.facets),role:view.facets?.role || view.role || 'artists'});
  if (!current()) return;
- document.getElementById('result-count').textContent=detail ? `Music · Artists · ${data.name}` : `Music · ${data.length} artists`;
+ document.getElementById('result-count').innerHTML=detail ? `${ui('Music · Artists')} · ${esc(data.name)}` : `${ui('Music')} · ${uiCount(data.length, '{count} artist', '{count} artists')}`;
  const labels=roles=>roles.map(role=>artistRoles[role]).join(' · ');
- const heading=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-music-back>← ${detail?'Back':'Back to Sets'}</button><h1>${detail?esc(data.name):'Artists'}</h1>${detail ? `${favoriteButton('artist',data.artist_key,data)} ${ratingControl('artist',data.artist_key,data)}<p>${esc(labels(data.roles))}</p><p>${data.album_count} albums · ${data.song_count} songs</p>${listeningDetails(data)}` : `<label>Role <select aria-label="Role">${Object.entries(artistRoles).map(([key,label])=>`<option value="${key}" ${key===(view.role || 'artists')?'selected':''}>${esc(label)}</option>`).join('')}</select></label>`}</div>`;
- grid.innerHTML=heading+(detail ? data.albums.map(album=>`<div class="media-card album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${cover(album)}<div class="card-body"><div class="title">${esc(album.title)}</div><div class="text-muted">${esc(album.artist)}</div><div class="text-muted" title="${esc(labels(album.roles))}">${esc(labels(album.roles))}</div>${listeningDetails(album)}</div></div>`).join('') : data.length ? data.map(person=>`<div class="media-card album-card" role="button" tabindex="0" data-artist-card="${esc(person.artist_key)}" aria-label="Open artist ${esc(person.name)}"><div class="card-body">${favoriteButton('artist',person.artist_key,person)} ${ratingControl('artist',person.artist_key,person)}<div class="title" title="${esc(person.name)}">${esc(person.name)}</div><div class="text-muted" title="${esc(labels(person.roles))}">${esc(labels(person.roles))}</div><div class="text-muted">${person.album_count} albums · ${person.song_count} ${hasFacets(view)?'matching songs':'songs'}</div>${listeningDetails(person)}</div></div>`).join('') : `<p class="grid-full">${view.favorites?'No favorite artists. Show all artists to favorite one.':'No artists available for this role. Choose another role or ask an administrator to rescan music tags.'}</p>`);
+ const heading=musicArtistHeading(data,view);
+ grid.innerHTML=heading+(detail ? data.albums.map(album=>html`<div class="media-card album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${cover(album)}<div class="card-body"><div class="title">${esc(album.title)}</div><div class="text-muted">${esc(album.artist)}</div><div class="text-muted" title="${esc(labels(album.roles))}">${esc(labels(album.roles))}</div>${listeningDetails(album)}</div></div>`).join('') : data.length ? data.map(person=>html`<div class="media-card album-card" role="button" tabindex="0" data-artist-card="${esc(person.artist_key)}" aria-label="Open artist ${esc(person.name)}"><div class="card-body">${favoriteButton('artist',person.artist_key,person)} ${ratingControl('artist',person.artist_key,person)}<div class="title" title="${esc(person.name)}">${esc(person.name)}</div><div class="text-muted" title="${esc(labels(person.roles))}">${esc(labels(person.roles))}</div><div class="text-muted">${uiCount(person.album_count, '{count} album', '{count} albums')} · ${person.song_count} ${hasFacets(view)?'matching songs':'songs'}</div>${listeningDetails(person)}</div></div>`).join('') : html`<p class="grid-full">${view.favorites?ui('No favorite artists. Show all artists to favorite one.'):ui('No artists available for this role. Choose another role or ask an administrator to rescan music tags.')}</p>`);
  bindFavorites(grid,current);bindRatings(grid,current);
  if(!detail){favoriteFilter(grid,view,reload);ratingFilters(grid,view,reload);}
  grid.querySelector('[data-music-back]').onclick=backMusic;
@@ -212,5 +213,11 @@ async function renderArtists(grid, view, current) {
 
 function discHeading(disc) {
  const title=discTitle(disc);
- return `<section class="music-disc" aria-label="${esc(title)}">${cover({title,cover_media_id:disc.cover_media_id})}<h2>${esc(title)}</h2></section>`;
+ return html`<section class="music-disc" aria-label="${esc(title)}">${cover({title,cover_media_id:disc.cover_media_id})}<h2>${esc(title)}</h2></section>`;
+}
+
+export function musicArtistHeading(data, view) {
+ const detail=Boolean(view.artist);
+ const labels=roles=>roles.map(role=>t(artistRoles[role])).join(' · ');
+ return html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-music-back>← ${detail?ui('Back'):ui('Back to Sets')}</button><h1>${detail?esc(data.name):ui('Artists')}</h1>${detail ? html`${favoriteButton('artist',data.artist_key,data)} ${ratingControl('artist',data.artist_key,data)}<p>${esc(labels(data.roles))}</p><p>${uiCount(data.album_count, '{count} album', '{count} albums')} · ${uiCount(data.song_count, '{count} song', '{count} songs')}</p>${listeningDetails(data)}` : html`<label>Role <select aria-label="Role">${Object.entries(artistRoles).map(([key,label])=>html`<option value="${key}" data-i18n="${esc(label)}" ${key===(view.role || 'artists')?'selected':''}>${t(label)}</option>`).join('')}</select></label>`}</div>`;
 }

@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import 'dart:math';
 import '../services/music_discovery.dart';
 import '../widgets/music_discovery_panel.dart';
@@ -69,7 +70,9 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
       entity: entity,
       onChanged: () => setState(() {}));
   Widget _favoritesFilter() => IconButton(
-      tooltip: _favoritesOnly ? 'Show all albums' : 'Favorites only',
+      tooltip: _favoritesOnly
+          ? context.tr('Show all albums')
+          : context.tr('Favorites only'),
       isSelected: _favoritesOnly,
       icon: const Icon(Icons.favorite_border),
       selectedIcon: const Icon(Icons.favorite),
@@ -235,14 +238,14 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 const MusicQueueButton()
               ],
               title: Text(widget.albumKey != null
-                  ? (_album?['title'] as String? ?? 'Album')
+                  ? (_album?['title'] as String? ?? context.tr('Album'))
                   : _discover
-                      ? 'Discover albums'
+                      ? context.tr('Discover albums')
                       : _collection != null
                           ? albumCollections[_collection]![0]
                           : widget.artistKey != null
                               ? 'Albums by ${widget.artistName ?? 'artist'}'
-                              : 'Music · Albums')),
+                              : context.tr('Music · Albums'))),
           body: _loading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
@@ -251,11 +254,14 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                           padding: const EdgeInsets.all(24),
                           child:
                               Column(mainAxisSize: MainAxisSize.min, children: [
-                            Text('Could not load albums. $_error',
+                            Text(
+                                context.tr('Could not load albums. {error}',
+                                    {'error': _error}),
                                 textAlign: TextAlign.center),
                             const SizedBox(height: 16),
                             FilledButton(
-                                onPressed: _load, child: const Text('Retry'))
+                                onPressed: _load,
+                                child: Text(context.tr('Retry')))
                           ])))
                   : widget.albumKey != null
                       ? _detail()
@@ -344,9 +350,11 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                       Text(_collection != null
                           ? albumCollections[_collection]![2]
                           : _favoritesOnly
-                              ? 'No favorite albums. Show all albums to favorite one.'
+                              ? context.tr(
+                                  'No favorite albums. Show all albums to favorite one.')
                               : _ratedOnly
-                                  ? 'No rated albums. Turn off Rated only to rate one.'
+                                  ? context.tr(
+                                      'No rated albums. Turn off Rated only to rate one.')
                                   : 'Nothing matches these filters. Clear filters or browse Library for more music.'),
                       TextButton(
                           onPressed: () {
@@ -387,7 +395,8 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 title: Text(album['title'] as String,
                     maxLines: 2, overflow: TextOverflow.ellipsis),
                 subtitle: Text([
-                  if (layout.columns.isNotEmpty) layout.subtitle(album),
+                  if (layout.columns.isNotEmpty)
+                    layout.subtitle(album, context),
                   musicListeningText(album)
                 ].join('\n')),
                 trailing: _personal('album', album),
@@ -423,11 +432,11 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                                         style: Theme.of(context)
                                             .textTheme
                                             .titleSmall),
-                                    Text(layout.subtitle(album),
+                                    Text(layout.subtitle(album, context),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis),
                                     if (album['from_folder'] == true)
-                                      const Text('From folder'),
+                                      Text(context.tr('From folder')),
                                   ])),
                         ]))));
   }
@@ -444,14 +453,14 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                       _collection = null;
                     }),
                 icon: const Icon(Icons.explore_outlined),
-                label: const Text('Discover albums')),
+                label: Text(context.tr('Discover albums'))),
             if (_collection != null)
               TextButton(
                   onPressed: () => setState(() {
                         _collection = null;
                         _collectionOrder = [];
                       }),
-                  child: const Text('View all albums')),
+                  child: Text(context.tr('View all albums'))),
           ]),
           if (_collection != null) ...[
             Text(albumCollections[_collection]![1]),
@@ -499,9 +508,10 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 ? showCreateShareDialog(context,
                     client: ref.read(apiClientProvider),
                     mediaIds: items.map((song) => song.id).toList(),
-                    collectionTitle: label == 'Selected song actions'
-                        ? 'Selected songs'
-                        : 'Music selection')
+                    collectionTitle:
+                        label == context.tr('Selected song actions')
+                            ? context.tr('Selected songs')
+                            : 'Music selection')
                 : action == 'download'
                     ? showMusicDownloadDialog(context, ref, items)
                     : insertServerSongs(context, ref, items,
@@ -510,10 +520,12 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                   for (final action in QueueInsertion.values)
                     PopupMenuItem(
                         value: action.name,
-                        child: Text(queueActionLabel(action))),
-                  const PopupMenuItem(
-                      value: 'download', child: Text('Keep offline')),
-                  const PopupMenuItem(value: 'share', child: Text('Share…'))
+                        child: Text(context.tr(queueActionLabel(action)))),
+                  PopupMenuItem(
+                      value: 'download',
+                      child: Text(context.tr('Keep offline'))),
+                  PopupMenuItem(
+                      value: 'share', child: Text(context.tr('Share…')))
                 ]);
     return ListView(padding: const EdgeInsets.all(16), children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -527,9 +539,9 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
           _creditLinks(
               album['credits'], 'album_artist', album['artist'] as String),
           if (album['year'] != null) Text('${album['year']}'),
-          if (album['from_folder'] == true) const Text('From folder'),
+          if (album['from_folder'] == true) Text(context.tr('From folder')),
           Text(
-              '${album['song_count']} songs · ${_duration((album['duration'] as num).toDouble())}'),
+              '${context.musicL10n.count(album['song_count'] as int, '{count} song', '{count} songs')} · ${_duration((album['duration'] as num).toDouble())}'),
           MusicListeningDetails(album)
         ]))
       ]),
@@ -537,7 +549,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
       MusicCollectionActions(
           key: ValueKey('album-${widget.albumKey}-$_generation'),
           collections: [MusicCollection('album', widget.albumKey!)],
-          playLabel: 'Play album',
+          playLabel: context.tr('Play album'),
           sourceLabel: album['title'] as String,
           enabled: songs.isNotEmpty),
       MusicEnrichmentSection(kind: 'album', entityKey: widget.albumKey!),
@@ -547,10 +559,12 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                   _selecting = !_selecting;
                   if (!_selecting) _selected.clear();
                 }),
-            child: Text(_selecting ? 'Cancel selection' : 'Select songs')),
+            child: Text(_selecting
+                ? context.tr('Cancel selection')
+                : context.tr('Select songs'))),
         if (_selecting) ...[
-          Text('${_selected.length} selected'),
-          actions(selectedSongs, 'Selected song actions')
+          Text(context.tr('{count} selected', {'count': _selected.length})),
+          actions(selectedSongs, context.tr('Selected song actions'))
         ],
       ]),
       const SizedBox(height: 16),
@@ -562,7 +576,8 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
             leading: _selecting
                 ? Checkbox(
                     value: _selected.contains(songs[i].id),
-                    semanticLabel: 'Select ${songs[i].displayTitle}',
+                    semanticLabel: context
+                        .tr('Select {name}', {'name': songs[i].displayTitle}),
                     onChanged: (checked) => setState(() {
                           if (checked == true) {
                             _selected.add(songs[i].id);
@@ -575,8 +590,10 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 maxLines: 2, overflow: TextOverflow.ellipsis),
             subtitle:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _creditLinks((album['song_credits'] as Map?)?['${songs[i].id}'],
-                  'track_artist', songs[i].music?.artist ?? 'Unknown artist'),
+              _creditLinks(
+                  (album['song_credits'] as Map?)?['${songs[i].id}'],
+                  'track_artist',
+                  songs[i].music?.artist ?? context.tr('Unknown artist')),
               MusicListeningDetails(songs[i].toJson()),
             ]),
             onTap: () {
@@ -598,7 +615,8 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                       .firstWhere((song) => song['id'] == songs[i].id)),
               Text(_duration(songs[i].duration)),
               PopupMenuButton<String>(
-                tooltip: 'Actions for ${songs[i].displayTitle}',
+                tooltip: context
+                    .tr('Actions for {name}', {'name': songs[i].displayTitle}),
                 onSelected: (value) {
                   if (value == 'details') {
                     context.push(AppRoutes.mediaDetailPath(songs[i].id));
@@ -611,7 +629,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                   for (final action in QueueInsertion.values)
                     PopupMenuItem(
                         value: action.name,
-                        child: Text(queueActionLabel(action))),
+                        child: Text(context.tr(queueActionLabel(action)))),
                   const PopupMenuItem(
                       value: 'details', child: Text('Song details')),
                 ],
@@ -673,7 +691,7 @@ class _AlbumPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ColoredBox(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: const Center(
+      child: Center(
           child: Icon(Icons.album_outlined,
-              size: 48, semanticLabel: 'No album artwork')));
+              size: 48, semanticLabel: context.tr('No album artwork'))));
 }

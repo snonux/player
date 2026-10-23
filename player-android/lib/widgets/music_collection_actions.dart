@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import '../services/music_action_intent.dart';
 import 'music_download_dialog.dart';
 import '../screens/create_share_dialog.dart';
@@ -67,7 +68,7 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
         (dialogCurrent?.call() ?? (ModalRoute.of(context)?.isCurrent ?? true));
     setState(() {
       _busy = true;
-      _message = 'Loading songs…';
+      _message = context.tr('Loading songs…');
       report?.call(_message!);
     });
     try {
@@ -78,8 +79,9 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
         songs = (options ?? const MusicShuffleOptions()).select(songs);
       }
       if (songs.isEmpty) {
-        setState(() => _message =
-            shuffled ? 'No songs match these options.' : 'No songs available.');
+        setState(() => _message = shuffled
+            ? context.tr('No songs match these options.')
+            : context.tr('No songs available.'));
         report?.call(_message!);
         return false;
       }
@@ -94,8 +96,8 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
       }
     } catch (_) {
       if (current()) {
-        setState(() => _message =
-            'Could not load songs. Check your connection and access, then try again.');
+        setState(() => _message = context.tr(
+            'Could not load songs. Check your connection and access, then try again.'));
         report?.call(_message!);
       }
     } finally {
@@ -121,14 +123,14 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
         (ModalRoute.of(context)?.isCurrent ?? true);
     setState(() {
       _busy = true;
-      _message = 'Loading songs…';
+      _message = context.tr('Loading songs…');
     });
     try {
       final songs = await resolveMusicCollections(
           ref.read(apiClientProvider), widget.collections, current);
       if (mounted && current()) {
         if (songs.isEmpty) {
-          setState(() => _message = 'No songs available.');
+          setState(() => _message = context.tr('No songs available.'));
         } else {
           setState(() => _message = null);
           if (share) {
@@ -143,8 +145,8 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
       }
     } catch (_) {
       if (current()) {
-        setState(() => _message =
-            'Could not load songs. Check your connection and access, then retry.');
+        setState(() => _message = context.tr(
+            'Could not load songs. Check your connection and access, then retry.'));
       }
     } finally {
       if (mounted) {
@@ -180,21 +182,21 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                   style:
                       OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
                   icon: const Icon(Icons.shuffle),
-                  label: const Text('Shuffle')),
+                  label: Text(context.tr('Shuffle'))),
               OutlinedButton.icon(
                   onPressed: enabled ? _download : null,
                   icon: const Icon(Icons.download_outlined),
-                  label: const Text('Keep offline')),
+                  label: Text(context.tr('Keep offline'))),
               OutlinedButton.icon(
                   onPressed: enabled ? () => _download(share: true) : null,
                   icon: const Icon(Icons.share_outlined),
-                  label: const Text('Share…')),
+                  label: Text(context.tr('Share…'))),
               // Keep the native popup semantic target within its own control;
               // otherwise the custom-child tap semantics can merge into Wrap.
               Semantics(
                   container: true,
                   child: PopupMenuButton<String>(
-                      tooltip: 'Queue actions',
+                      tooltip: context.tr('Queue actions'),
                       enabled: enabled,
                       onSelected: (action) {
                         if (action == 'options') {
@@ -219,10 +221,11 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                             ])
                               PopupMenuItem(
                                   value: action.name,
-                                  child: Text(queueActionLabel(action))),
-                            const PopupMenuItem(
+                                  child: Text(
+                                      context.tr(queueActionLabel(action)))),
+                            PopupMenuItem(
                                 value: 'options',
-                                child: Text('Shuffle options…'))
+                                child: Text(context.tr('Shuffle options…')))
                           ],
                       child: ConstrainedBox(
                           constraints: const BoxConstraints(minHeight: 48),
@@ -312,10 +315,10 @@ class _CatalogState extends State<MusicCollectionCatalog> {
                             ? _cancel
                             : () => setState(() => _selecting = true),
                         child: Text(_selecting
-                            ? 'Cancel selection'
+                            ? context.tr('Cancel selection')
                             : 'Select $plural')),
                     if (_selecting) ...[
-                      Text('${_selected.length} selected'),
+                      Text(context.tr('{count} selected', {'count': _selected.length})),
                       MusicCollectionActions(
                           collections: [
                             for (final collection in widget.items)
@@ -324,14 +327,14 @@ class _CatalogState extends State<MusicCollectionCatalog> {
                                 MusicCollection(widget.kind,
                                     collection[widget.keyName] as String)
                           ],
-                          playLabel: 'Play selected',
+                          playLabel: context.tr('Play selected'),
                           sourceLabel: 'Selected $plural'),
                     ],
                   ])),
           if (widget.items.isEmpty)
             Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text(widget.emptyMessage)),
+                child: Text(context.tr(widget.emptyMessage))),
           Expanded(
               child: RefreshIndicator(
                   onRefresh: widget.onRefresh,

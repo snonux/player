@@ -1,3 +1,4 @@
+import { t, html, plural, ui } from './i18n.js';
 import { shareMusicCollection } from './collection-share.js';
 import { downloadMusic } from './music-downloads.js';
 import { API } from './api.js';
@@ -11,9 +12,9 @@ import { escapeHtml as esc, toast } from './utils.js';
 
 let context = null, collectionIntent = 0;
 export function collectionButtons(label) {
- return `<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${esc(label)}</button><button class="btn" data-collection-shuffle>Shuffle</button><button class="btn" data-collection-menu>Queue actions ▾</button><button class="btn" data-collection-download>Download…</button><button class="btn" data-collection-share>Share…</button><span role="status" data-collection-status></span></span>`;
+ return html`<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${ui(label)}</button><button class="btn" data-collection-shuffle>Shuffle</button><button class="btn" data-collection-menu>Queue actions ▾</button><button class="btn" data-collection-download>Download…</button><button class="btn" data-collection-share>Share…</button><span role="status" data-collection-status></span></span>`;
 }
-export function bindCollectionActions(root, collections, current, sourceLabel = 'Selected collections') {
+export function bindCollectionActions(root, collections, current, sourceLabel = t('Selected collections')) {
  const owner = {root, collections, current, sourceLabel, busy:false, generation:0};
  context = owner;
  root.querySelector('[data-collection-play]').onclick = () => run(owner, 'replace');
@@ -26,28 +27,28 @@ export function bindCollectionActions(root, collections, current, sourceLabel = 
 function menu(button, owner) {
  const popover = document.createElement('div');
  popover.className = 'shortcut-picker'; popover.setAttribute('popover', 'auto');
- popover.setAttribute('role', 'group'); popover.setAttribute('aria-label', 'Collection queue actions');
- popover.innerHTML = '<button class="btn btn-ghost" data-action="next">Play next</button><button class="btn btn-ghost" data-action="append">Add to queue</button><button class="btn btn-ghost" data-action="options">Shuffle options…</button>';
+ popover.setAttribute('role', 'group'); popover.setAttribute('aria-label', t('Collection queue actions'));
+ popover.innerHTML = html`<button class="btn btn-ghost" data-action="next">Play next</button><button class="btn btn-ghost" data-action="append">Add to queue</button><button class="btn btn-ghost" data-action="options">Shuffle options…</button>`;
  popover.querySelectorAll('button').forEach(item => item.onclick = () => { popover.hidePopover(); if (item.dataset.action === 'options') shuffleOptions(owner, button); else void run(owner,item.dataset.action); });
  popover.addEventListener('toggle', event => { if (event.newState === 'closed') { popover.remove(); if(button.isConnected)button.focus(); } });
  document.body.append(popover); popover.showPopover(); popover.querySelector('button').focus();
 }
 async function run(owner, action, targets, settings = {}) {
  if (owner.busy || !owner.current() || !owner.root.isConnected) return;
- if (!['download','share'].includes(action) && queueState().loading) { toast('Loading track… Please wait.', 'info'); return; }
+ if (!['download','share'].includes(action) && queueState().loading) { toast(t('Loading track… Please wait.'), 'info'); return; }
  const collections = targets || owner.collections();
- if (!collections.length) { toast('Select a collection first.', 'info'); return; }
+ if (!collections.length) { toast(t('Select a collection first.'), 'info'); return; }
  const intent = currentPlaybackIntent(), user = state.user, generation = owner.generation, request = ++collectionIntent;
  const current = () => owner.root.isConnected && owner.current() && request === collectionIntent && generation === owner.generation && state.user === user && (['download','share'].includes(action) || isPlaybackIntent(intent)) && (!settings.alive || settings.alive());
  owner.busy = true;
  const status = settings.status || owner.root.querySelector('[data-collection-status]');
  const buttons = [...owner.root.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download], [data-collection-share]')];
- buttons.forEach(button => button.disabled = true); status.textContent = 'Loading songs…';
+ buttons.forEach(button => button.disabled = true); status.textContent = t('Loading songs…');
  try {
   let songs = await resolveCollections(API, collections, current);
   if (action === 'shuffle') songs = selectShuffleSongs(songs, settings.options);
   if (!current()) return;
-  if (!songs.length) { status.textContent = action === 'shuffle' ? 'No songs match these options.' : 'No songs available.'; return; }
+  if (!songs.length) { status.textContent = action === 'shuffle' ? t('No songs match these options.') : t('No songs available.'); return; }
   if (action === 'share') { shareMusicCollection(songs, owner.sourceLabel, owner.root.querySelector('[data-collection-share]')); status.textContent = ''; return true; }
   if (action === 'download') { downloadMusic(songs, owner.root.querySelector('[data-collection-download]')); status.textContent = ''; return true; }
   if (await insertQueue(songs, ['replace', 'shuffle'].includes(action) ? 'now' : action, {replace:['replace', 'shuffle'].includes(action), shuffled:action === 'shuffle', source:owner.sourceLabel})) {
@@ -56,7 +57,7 @@ async function run(owner, action, targets, settings = {}) {
    if (token) toast(status.textContent, 'info', {label:'Undo', run:() => undoQueue(token)});
    return true;
   }
- } catch(error) { if (current()) status.textContent = `Could not load songs. ${error.message || 'Check your connection and try again.'}`; }
+ } catch(error) { if (current()) status.textContent = `Could not load songs. ${error.message || t('Check your connection and try again.')}`; }
  finally {
   // A canceled dialog may already have started a newer transaction.
   if (generation === owner.generation) {
@@ -84,7 +85,7 @@ export function cancelCollectionSelection() {
 export function bindCollectionCatalog(grid, items, kind, keyName, nameName, current) {
  const heading = grid.querySelector('.grid-full');
  const toolbar = document.createElement('div'); toolbar.className = 'playlist-actions';
- toolbar.innerHTML = `<button class="btn" data-select-collections>Select ${kind === 'playlist' ? 'playlists' : kind === 'artist' ? 'artists' : 'albums'}</button><span data-batch hidden><span data-batch-count>0 selected</span> ${collectionButtons('Play selected')}</span>`;
+ toolbar.innerHTML = html`<button class="btn" data-select-collections>Select ${kind === 'playlist' ? 'playlists' : kind === 'artist' ? 'artists' : 'albums'}</button><span data-batch hidden><span data-batch-count>0 selected</span> ${collectionButtons('Play selected')}</span>`;
  // Shortcut operations also need visible loading/error feedback outside selection mode.
  toolbar.append(toolbar.querySelector('[data-collection-status]'));
  heading.append(toolbar);
@@ -116,7 +117,7 @@ export function bindCollectionCatalog(grid, items, kind, keyName, nameName, curr
  };
  const setSelecting = value => {
   owner.selecting=value; toolbar.querySelector('[data-batch]').hidden=!value;
-  toggle.textContent=value?'Cancel selection':`Select ${kind === 'playlist' ? 'playlists' : kind === 'artist' ? 'artists' : 'albums'}`;
+  toggle.textContent=value?t('Cancel selection'):`Select ${kind === 'playlist' ? 'playlists' : kind === 'artist' ? 'artists' : 'albums'}`;
   cards.forEach(card=>{const check=card.querySelector('input');check.hidden=!value;if(!value)check.checked=false;});
   update();
  };
@@ -128,7 +129,7 @@ export function bindCollectionCatalog(grid, items, kind, keyName, nameName, curr
 
 function shuffleOptions(owner, opener) {
  const modal = document.getElementById('shuffle-options-modal');
- modal.innerHTML = `<section class="modal" role="dialog" aria-modal="true" aria-labelledby="shuffle-options-title"><div class="modal-header"><h2 id="shuffle-options-title">Shuffle options</h2><button class="icon-btn" data-cancel aria-label="Close shuffle options">✕</button></div><form class="modal-body">${[['genre','Genre'],['from','From year'],['to','To year'],['maximum','Maximum songs']].map(([name,label]) => `<label>${label} (optional)<input name="${name}" aria-label="${label} (optional)" ${name === 'genre' ? '' : 'inputmode="numeric"'}></label>`).join('')}<p>Blank includes every song. Applies to this collection only.</p><p role="status" data-shuffle-status></p><div class="playlist-actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn btn-primary">Shuffle</button></div></form></section>`;
+ modal.innerHTML = html`<section class="modal" role="dialog" aria-modal="true" aria-labelledby="shuffle-options-title"><div class="modal-header"><h2 id="shuffle-options-title">Shuffle options</h2><button class="icon-btn" data-cancel aria-label="Close shuffle options">✕</button></div><form class="modal-body">${[['genre',t('Genre')],['from',t('From year')],['to',t('To year')],['maximum',t('Maximum songs')]].map(([name,label]) => html`<label>${label} (optional)<input name="${name}" aria-label="${label} (optional)" ${name === 'genre' ? '' : 'inputmode="numeric"'}></label>`).join('')}<p>Blank includes every song. Applies to this collection only.</p><p role="status" data-shuffle-status></p><div class="playlist-actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn btn-primary">Shuffle</button></div></form></section>`;
  const panel = modal.firstElementChild;
  const alive = () => modal.classList.contains('open') && modal.firstElementChild === panel;
  const close = () => {

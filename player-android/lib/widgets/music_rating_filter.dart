@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import 'package:flutter/material.dart';
 
 /// Secondary rating filters keep hearts and metadata filters independent.
@@ -19,7 +20,7 @@ class MusicRatingFilter extends StatelessWidget {
             CheckedPopupMenuItem(
                 value: 'rated',
                 checked: rated,
-                child: const Text('Rated only')),
+                child: Text(context.tr('Rated only'))),
             CheckedPopupMenuItem(
                 value: 'highest',
                 checked: highest,

@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import 'package:flutter/material.dart';
 import '../services/music_shuffle.dart';
 
@@ -50,7 +51,7 @@ class _OptionsState extends State<MusicShuffleOptionsDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-          title: const Text('Shuffle options'),
+          title: Text(context.tr('Shuffle options')),
           content: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
             for (var i = 0; i < _fields.length; i++)
@@ -75,8 +76,9 @@ class _OptionsState extends State<MusicShuffleOptionsDialog> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel')),
+                child: Text(context.tr('Cancel'))),
             FilledButton(
-                onPressed: _busy ? null : _submit, child: const Text('Shuffle'))
+                onPressed: _busy ? null : _submit,
+                child: Text(context.tr('Shuffle')))
           ]);
 }

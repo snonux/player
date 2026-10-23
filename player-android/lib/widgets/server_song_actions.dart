@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import '../services/music_action_intent.dart';
 import '../services/progress_queue.dart';
 import '../providers/playback_cache_provider.dart';
@@ -40,8 +41,8 @@ Future<ServerSongInsertionResult> insertServerSongs(BuildContext context,
   final intent = actionIntent ?? beginMusicActionIntent();
   final handler = ref.read(audioHandlerProvider);
   if (handler.musicQueue.busy) {
-    _showQueueSnackBar(
-        context, const SnackBar(content: Text('Loading track… Please wait.')));
+    _showQueueSnackBar(context,
+        SnackBar(content: Text(context.tr('Loading track… Please wait.'))));
     return const ServerSongInsertionResult(ServerSongInsertionOutcome.busy);
   }
   final client = ref.read(apiClientProvider);
@@ -120,7 +121,7 @@ Future<ServerSongInsertionResult> insertServerSongs(BuildContext context,
             content: Text(
                 'Added ${songs.length} ${songs.length == 1 ? 'song' : 'songs'}'),
             action: SnackBarAction(
-                label: 'Undo',
+                label: context.tr('Undo'),
                 onPressed: () => handler.undoQueue(expected: token))));
     return accepted;
   } catch (_) {
@@ -129,9 +130,9 @@ Future<ServerSongInsertionResult> insertServerSongs(BuildContext context,
         isMusicActionIntent(intent)) {
       _showQueueSnackBar(
           context,
-          const SnackBar(
-              content: Text(
-                  'Could not play track. Check your connection and try again.')));
+          SnackBar(
+              content: Text(context.tr(
+                  'Could not play track. Check your connection and try again.'))));
     }
     return const ServerSongInsertionResult(ServerSongInsertionOutcome.failed);
   }

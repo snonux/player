@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import '../widgets/music_artwork_section.dart';
 import '../widgets/music_top_songs_section.dart';
 import '../widgets/music_related_section.dart';
@@ -27,8 +28,11 @@ const artistRoles = {
   'composer': 'Composer',
   'performer': 'Performer',
 };
-String creditRoleLabels(dynamic roles) =>
-    (roles as List? ?? []).map((role) => artistRoles[role] ?? role).join(' · ');
+String creditRoleLabels(dynamic roles, [BuildContext? context]) =>
+    (roles as List? ?? [])
+        .map((role) =>
+            context?.tr(artistRoles[role] ?? role) ?? artistRoles[role] ?? role)
+        .join(' · ');
 
 /// A catalog of explicitly tagged credits over the permitted music library.
 class MusicArtistsScreen extends ConsumerStatefulWidget {
@@ -65,7 +69,9 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
       entity: entity,
       onChanged: () => setState(() {}));
   Widget _favoritesFilter() => IconButton(
-      tooltip: _favoritesOnly ? 'Show all artists' : 'Favorites only',
+      tooltip: _favoritesOnly
+          ? context.tr('Show all artists')
+          : context.tr('Favorites only'),
       isSelected: _favoritesOnly,
       icon: const Icon(Icons.favorite_border),
       selectedIcon: const Icon(Icons.favorite),
@@ -175,8 +181,8 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
               ? MusicFilterBar(onChanged: _filtersChanged)
               : null,
           title: Text(widget.artistKey == null
-              ? 'Music · Artists'
-              : _artist?['name'] as String? ?? 'Artist'),
+              ? context.tr('Music · Artists')
+              : _artist?['name'] as String? ?? context.tr('Artist')),
           actions: [
             if (widget.artistKey == null) ...[
               _favoritesFilter(),
@@ -197,11 +203,13 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
                   child: Padding(
                       padding: const EdgeInsets.all(24),
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Text('Could not load artists. $_error',
+                        Text(
+                            context.tr('Could not load artists. {error}',
+                                {'error': _error}),
                             textAlign: TextAlign.center),
                         const SizedBox(height: 16),
                         FilledButton(
-                            onPressed: _load, child: const Text('Retry')),
+                            onPressed: _load, child: Text(context.tr('Retry'))),
                       ])))
               : widget.artistKey != null
                   ? _detail()
@@ -212,10 +220,11 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
   Widget _catalog() => MusicCollectionCatalog(
       key: ValueKey('artists-$_role-$_generation'),
       emptyMessage: _favoritesOnly
-          ? 'No favorite artists. Show all artists to favorite one.'
+          ? context.tr('No favorite artists. Show all artists to favorite one.')
           : _ratedOnly
               ? 'No rated artists. Turn off Rated only to rate one.'
-              : 'No artists available for this role. Choose another role or ask an administrator to rescan music tags.',
+              : context.tr(
+                  'No artists available for this role. Choose another role or ask an administrator to rescan music tags.'),
       items: ratingFiltered(
           _people
               .where((a) => !_favoritesOnly || a['is_favorite'] == true)
@@ -233,11 +242,12 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
               ? Text('Role: ${artistRoles[_facets['role']] ?? _facets['role']}')
               : DropdownButtonFormField<String>(
                   initialValue: _role,
-                  decoration: const InputDecoration(labelText: 'Role'),
+                  decoration: InputDecoration(labelText: context.tr('Role')),
                   isExpanded: true,
                   items: [
                     for (final role in artistRoles.entries)
-                      DropdownMenuItem(value: role.key, child: Text(role.value))
+                      DropdownMenuItem(
+                          value: role.key, child: Text(context.tr(role.value)))
                   ],
                   onChanged: (value) {
                     if (value != null) {
@@ -250,7 +260,7 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
           leading: checkbox,
           title: Text(person['name'] as String),
           subtitle: Text(
-              '${creditRoleLabels(person['roles'])}\n${person['album_count']} albums · ${person['song_count']} ${_facets.isEmpty ? 'songs' : 'matching songs'}\n${musicListeningText(person)}'),
+              '${creditRoleLabels(person['roles'], context)}\n${person['album_count']} albums · ${person['song_count']} ${_facets.isEmpty ? 'songs' : 'matching songs'}\n${musicListeningText(person)}'),
           isThreeLine: true,
           trailing: _personal('artist', person),
           onTap: toggle ?? () => _openArtist(person['artist_key'] as String)));
@@ -275,13 +285,13 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
               MusicArtworkSection(kind: 'artist', entityKey: widget.artistKey!),
               Text(artist['name'] as String,
                   style: Theme.of(context).textTheme.titleLarge),
-              Text(creditRoleLabels(artist['roles'])),
+              Text(creditRoleLabels(artist['roles'], context)),
               Text(
                   '${artist['album_count']} albums · ${artist['song_count']} songs'),
               MusicListeningDetails(artist),
               MusicCollectionActions(
                   collections: [MusicCollection('artist', widget.artistKey!)],
-                  playLabel: 'Play artist',
+                  playLabel: context.tr('Play artist'),
                   sourceLabel: artist['name'] as String,
                   enabled: albums.isNotEmpty),
               MusicEnrichmentSection(
@@ -295,7 +305,7 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
                 leading: checkbox ?? const Icon(Icons.album_outlined),
                 title: Text(album['title'] as String),
                 subtitle: Text(
-                    '${album['artist']}\n${creditRoleLabels(album['roles'])}'),
+                    '${album['artist']}\n${creditRoleLabels(album['roles'], context)}'),
                 isThreeLine: true,
                 trailing: const Icon(Icons.chevron_right),
                 onTap: toggle ??

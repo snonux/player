@@ -1,3 +1,6 @@
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'providers/language_provider.dart';
+import 'l10n/music_localizations.dart';
 import 'services/playback_request.dart';
 import 'services/stream_quality.dart';
 import 'services/headset_preferences.dart';
@@ -201,6 +204,17 @@ class PlayerAndroidApp extends ConsumerWidget {
     return MaterialApp.router(
       scaffoldMessengerKey: appMessengerKey,
       title: 'Player',
+      locale: ref.watch(languageProvider).valueOrNull?.choice == 'system' ||
+              ref.watch(languageProvider).valueOrNull == null
+          ? null
+          : Locale(ref.watch(languageProvider).valueOrNull!.choice),
+      supportedLocales: MusicLocalizations.supportedLocales,
+      localizationsDelegates: const [
+        MusicLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       routerConfig: router,
       // Material 3 is enabled in both ThemeData instances; see theme_provider.dart.
       theme: _lightThemes[accent],

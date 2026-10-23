@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
@@ -42,11 +43,11 @@ class MusicMiniPlayer extends ConsumerWidget {
                         request: cast.request))),
               )),
               IconButton(
-                  tooltip: playing ? 'Pause' : 'Play',
+                  tooltip: playing ? context.tr('Pause') : context.tr('Play'),
                   onPressed: () => playing ? remote.pause() : remote.play(),
                   icon: Icon(playing ? Icons.pause : Icons.play_arrow)),
               IconButton(
-                  tooltip: 'Next track',
+                  tooltip: context.tr('Next track'),
                   onPressed:
                       remote.hasNext ? () => remote.moveRendererQueue(1) : null,
                   icon: const Icon(Icons.skip_next)),
@@ -120,8 +121,8 @@ class MusicMiniPlayer extends ConsumerWidget {
                   stream: handler.playbackState,
                   builder: (context, _) => IconButton(
                       tooltip: handler.playbackState.value.playing
-                          ? 'Pause'
-                          : 'Play',
+                          ? context.tr('Pause')
+                          : context.tr('Play'),
                       onPressed: state.loading
                           ? null
                           : () => handler.playbackState.value.playing
@@ -131,7 +132,7 @@ class MusicMiniPlayer extends ConsumerWidget {
                           ? Icons.pause
                           : Icons.play_arrow))),
               IconButton(
-                  tooltip: 'Next track',
+                  tooltip: context.tr('Next track'),
                   onPressed: state.loading ? null : handler.skipToNext,
                   icon: const Icon(Icons.skip_next)),
             ])));

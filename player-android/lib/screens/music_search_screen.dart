@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import '../widgets/music_listening_details.dart';
 import '../widgets/music_rating_button.dart';
 import '../widgets/music_rating_filter.dart';
@@ -163,8 +164,9 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
             title: TextField(
               controller: _text,
               autofocus: true,
-              decoration: const InputDecoration(
-                  hintText: 'Search music', border: InputBorder.none),
+              decoration: InputDecoration(
+                  hintText: context.tr('Search music'),
+                  border: InputBorder.none),
               textInputAction: TextInputAction.search,
               onChanged: _changed,
               onSubmitted: (_) {
@@ -185,7 +187,7 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
                     if (changed || _results == null) _load();
                   }),
               IconButton(
-                  tooltip: 'Clear search',
+                  tooltip: context.tr('Clear search'),
                   onPressed: _clear,
                   icon: const Icon(Icons.clear)),
               const MusicQueueButton()
@@ -199,7 +201,7 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
                   Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: FilterChip(
-                        label: Text(group),
+                        label: Text(context.tr(group)),
                         selected: _group == group,
                         onSelected: (_) => setState(() {
                           _group = group;
@@ -223,11 +225,13 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Text('Could not search music. $_error',
                     textAlign: TextAlign.center),
-                FilledButton(onPressed: _load, child: const Text('Retry')),
+                FilledButton(
+                    onPressed: _load, child: Text(context.tr('Retry'))),
               ])));
     }
     if (_results == null) {
-      return const Center(child: Text('Search songs, albums and artists.'));
+      return Center(
+          child: Text(context.tr('Search songs, albums and artists.')));
     }
     final songMaps = ratingFiltered(
         layout.sorted(
@@ -254,14 +258,15 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
     }
 
     if (_group == 'All' || _group == 'Songs') {
-      heading('Songs', songs.length);
+      heading(context.tr('Songs'), songs.length);
       for (var i = 0; i < songs.length; i++) {
         final song = songs[i];
         children.add(ListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(song.displayTitle),
           subtitle: Text([
-            if (layout.columns.isNotEmpty) layout.subtitle(song.toJson()),
+            if (layout.columns.isNotEmpty)
+              layout.subtitle(song.toJson(), context),
             musicListeningText(song.toJson())
           ].join('\n')),
           onTap: () => _play(songs, i),
@@ -275,14 +280,14 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
                       for (final action in QueueInsertion.values)
                         PopupMenuItem(
                             value: action,
-                            child: Text(queueActionLabel(action)))
+                            child: Text(context.tr(queueActionLabel(action))))
                     ])
           ]),
         ));
       }
     }
     if (_group == 'All' || _group == 'Albums') {
-      heading('Albums', albums.length);
+      heading(context.tr('Albums'), albums.length);
       for (final album in albums) {
         children.add(ListTile(
           contentPadding: EdgeInsets.zero,
@@ -299,7 +304,7 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
       }
     }
     if (_group == 'All' || _group == 'Artists') {
-      heading('Artists', artists.length);
+      heading(context.tr('Artists'), artists.length);
       for (final artist in artists) {
         children.add(ListTile(
           contentPadding: EdgeInsets.zero,
@@ -326,8 +331,9 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
       children.insert(
           0,
           Column(children: [
-            const Text('Nothing matches these filters'),
-            TextButton(onPressed: _clear, child: const Text('Clear filters'))
+            Text(context.tr('Nothing matches these filters')),
+            TextButton(
+                onPressed: _clear, child: Text(context.tr('Clear filters')))
           ]));
     }
     return ListView(

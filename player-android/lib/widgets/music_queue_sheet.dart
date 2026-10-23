@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import 'queue_playlist_dialog.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/material.dart';
@@ -15,7 +16,7 @@ class MusicQueueButton extends ConsumerWidget {
   const MusicQueueButton({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) => IconButton(
-      tooltip: 'Now Playing queue',
+      tooltip: context.tr('Now Playing queue'),
       icon: const Icon(Icons.queue_music),
       onPressed: () => showModalBottomSheet<void>(
           context: context,
@@ -33,9 +34,9 @@ class _MusicQueueSheet extends StatelessWidget {
       await action();
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Could not play track. Check your connection and try again.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(context.tr(
+                'Could not play track. Check your connection and try again.'))));
       }
     }
   }
@@ -52,10 +53,10 @@ class _MusicQueueSheet extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: Row(children: [
                     Expanded(
-                        child: Text('Now Playing',
+                        child: Text(context.tr('Now Playing'),
                             style: Theme.of(context).textTheme.titleLarge)),
                     IconButton(
-                        tooltip: 'Close queue',
+                        tooltip: context.tr('Close queue'),
                         color: Theme.of(context).colorScheme.onSurface,
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.close))
@@ -64,7 +65,8 @@ class _MusicQueueSheet extends StatelessWidget {
               if (q.label.isNotEmpty)
                 Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text('Playing from: ${q.label}')),
+                    child: Text(
+                        context.tr('Playing from: {name}', {'name': q.label}))),
               Wrap(alignment: WrapAlignment.center, children: [
                 Semantics(
                     selected: q.shuffle,
@@ -82,23 +84,30 @@ class _MusicQueueSheet extends StatelessWidget {
                             ? null
                             : handler.shuffleQueue,
                         icon: const Icon(Icons.shuffle),
-                        label: Text(
-                            'Shuffle: ${q.shuffle ? (q.shuffleMode == 'albums' ? 'Albums' : 'Tracks') : 'Off'}'))),
+                        label: Text(context.tr('Shuffle: {mode}', {
+                          'mode': context.tr(q.shuffle
+                              ? (q.shuffleMode == 'albums'
+                                  ? context.tr('Albums')
+                                  : context.tr('Tracks'))
+                              : context.tr('Off'))
+                        })))),
                 PopupMenuButton<String>(
-                    tooltip: 'Shuffle options',
+                    tooltip: context.tr('Shuffle options'),
                     enabled:
                         !q.busy && !q.restoreFailed && q.shuffleEligible >= 2,
                     onSelected: (mode) => handler.shuffleQueue(mode: mode),
-                    itemBuilder: (_) => const [
+                    itemBuilder: (_) => [
                           PopupMenuItem(
-                              value: 'tracks', child: Text('Shuffle tracks')),
+                              value: 'tracks',
+                              child: Text(context.tr('Shuffle tracks'))),
                           PopupMenuItem(
-                              value: 'albums', child: Text('Shuffle albums')),
+                              value: 'albums',
+                              child: Text(context.tr('Shuffle albums'))),
                         ],
-                    child: const Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                        child: Text('Shuffle options ▾'))),
+                    child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 16),
+                        child: Text(context.tr('Shuffle options ▾')))),
                 if (q.shuffle)
                   TextButton(
                       style:
@@ -107,7 +116,7 @@ class _MusicQueueSheet extends StatelessWidget {
                           q.busy || q.restoreFailed || q.shuffleEligible < 2
                               ? null
                               : () => handler.shuffleQueue(reshuffle: true),
-                      child: const Text('Reshuffle remaining')),
+                      child: Text(context.tr('Reshuffle remaining'))),
                 Semantics(
                     selected: q.repeat != MusicRepeat.off,
                     child: TextButton.icon(
@@ -122,8 +131,10 @@ class _MusicQueueSheet extends StatelessWidget {
                         icon: Icon(q.repeat == MusicRepeat.one
                             ? Icons.repeat_one
                             : Icons.repeat),
-                        label: Text(
-                            'Repeat: ${q.repeat.name[0].toUpperCase()}${q.repeat.name.substring(1)}'))),
+                        label: Text(context.tr('Repeat: {mode}', {
+                          'mode': context.tr(q.repeat.name[0].toUpperCase() +
+                              q.repeat.name.substring(1))
+                        })))),
               ]),
               Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -134,12 +145,13 @@ class _MusicQueueSheet extends StatelessWidget {
                     padding: const EdgeInsets.all(12),
                     child: Text(
                         q.busy
-                            ? 'Loading track…'
+                            ? context.tr('Loading track…')
                             : q.status.isNotEmpty
                                 ? q.status
                                 : q.active
-                                    ? 'Current track marked Now'
-                                    : 'Queue paused. Choose a track to play.',
+                                    ? context.tr('Current track marked Now')
+                                    : context.tr(
+                                        'Queue paused. Choose a track to play.'),
                         semanticsLabel: q.status)),
               if (q.restored) ...[
                 Text(
@@ -148,12 +160,12 @@ class _MusicQueueSheet extends StatelessWidget {
                     onPressed: q.busy
                         ? null
                         : () => _run(context, handler.resumeQueue),
-                    child: const Text('Resume queue')),
+                    child: Text(context.tr('Resume queue'))),
               ],
               if (q.restoreFailed)
                 TextButton(
                     onPressed: q.busy ? null : handler.retryQueueRestore,
-                    child: const Text('Retry restore')),
+                    child: Text(context.tr('Retry restore'))),
               if (q.index >= 0 &&
                   q.entries[q.index].request is ServerPlaybackRequest)
                 TextButton(
@@ -163,14 +175,14 @@ class _MusicQueueSheet extends StatelessWidget {
                       Navigator.pop(context);
                       context.push(AppRoutes.mediaDetailPath(request.mediaId));
                     },
-                    child: const Text('Open current item')),
+                    child: Text(context.tr('Open current item'))),
               Expanded(
                   child: q.entries.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Padding(
-                              padding: EdgeInsets.all(24),
-                              child: Text(
-                                  'Queue is empty. Add songs or play an album to start.')))
+                              padding: const EdgeInsets.all(24),
+                              child: Text(context.tr(
+                                  'Queue is empty. Add songs or play an album to start.'))))
                       : ListView.builder(
                           itemCount: q.entries.length,
                           itemBuilder: (context, index) {
@@ -187,14 +199,17 @@ class _MusicQueueSheet extends StatelessWidget {
                                     ? {}
                                     : {
                                         if (index > 0)
-                                          const CustomSemanticsAction(
-                                              label: 'Move up'): () => move(-1),
+                                          CustomSemanticsAction(
+                                                  label: context.tr('Move up')):
+                                              () => move(-1),
                                         if (index + 1 < q.entries.length)
-                                          const CustomSemanticsAction(
-                                                  label: 'Move down'):
+                                          CustomSemanticsAction(
+                                                  label:
+                                                      context.tr('Move down')):
                                               () => move(1),
-                                        const CustomSemanticsAction(
-                                            label: 'Remove'): remove,
+                                        CustomSemanticsAction(
+                                                label: context.tr('Remove')):
+                                            remove,
                                       },
                                 child: ListTile(
                                     selected: q.active && index == q.index,
@@ -208,7 +223,8 @@ class _MusicQueueSheet extends StatelessWidget {
                                                 ? 'Now'
                                                 : 'Selected · paused'
                                             : q.upNextIds.contains(entry.id)
-                                                ? 'Up next (you added)'
+                                                ? context
+                                                    .tr('Up next (you added)')
                                                 : entry.request.sourceName,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis),
@@ -235,22 +251,25 @@ class _MusicQueueSheet extends StatelessWidget {
                                           }
                                         },
                                         itemBuilder: (_) => [
-                                              const PopupMenuItem(
+                                              PopupMenuItem(
                                                   value: 'play',
-                                                  child: Text('Play now')),
+                                                  child: Text(
+                                                      context.tr('Play now'))),
                                               PopupMenuItem(
                                                   value: 'up',
                                                   enabled: index > 0,
-                                                  child: const Text('Move up')),
+                                                  child: Text(
+                                                      context.tr('Move up'))),
                                               PopupMenuItem(
                                                   value: 'down',
                                                   enabled: index + 1 <
                                                       q.entries.length,
-                                                  child:
-                                                      const Text('Move down')),
-                                              const PopupMenuItem(
+                                                  child: Text(
+                                                      context.tr('Move down'))),
+                                              PopupMenuItem(
                                                   value: 'remove',
-                                                  child: Text('Remove')),
+                                                  child: Text(
+                                                      context.tr('Remove'))),
                                             ])));
                           })),
               SafeArea(
@@ -263,11 +282,11 @@ class _MusicQueueSheet extends StatelessWidget {
                             onPressed: q.busy || q.entries.isEmpty
                                 ? null
                                 : () => _run(context, handler.clearQueue),
-                            child: const Text('Clear queue')),
+                            child: Text(context.tr('Clear queue'))),
                         TextButton(
                             onPressed:
                                 q.busy || !q.canUndo ? null : handler.undoQueue,
-                            child: const Text('Undo')),
+                            child: Text(context.tr('Undo'))),
                       ])))
             ]);
           }));

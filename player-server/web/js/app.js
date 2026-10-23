@@ -1,3 +1,4 @@
+import { initLanguage } from './i18n.js';
 import { initRadio } from './radio.js';
 import { stopRenderer } from './renderer.js';
 import { setListeningProgressAccount } from './listening-progress.js';
@@ -120,6 +121,7 @@ function main() {
   else if (page === 'bootstrap') initBootstrap();
   else initApp();
   initThemes();
+  initLanguage();
 }
 
 function initLogin() {

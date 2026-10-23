@@ -1,3 +1,5 @@
+import '../l10n/music_localizations.dart';
+import '../widgets/language_settings.dart';
 import '../widgets/network_settings.dart';
 import '../widgets/download_quality_picker.dart';
 import '../widgets/listening_history_settings.dart';
@@ -195,7 +197,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final username = currentUser?.username ?? '—';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: Text(context.tr('Settings'))),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -233,6 +235,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 const _ThemeToggle(),
+                const LanguageSettings(),
                 const PresentationSettings(),
                 const SizedBox(height: 24),
                 const HeadsetSettings(),
@@ -330,6 +333,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const SizedBox(height: 12),
 
                 const _ThemeToggle(),
+                const LanguageSettings(),
                 const PresentationSettings(),
                 const SizedBox(height: 24),
                 const HeadsetSettings(),

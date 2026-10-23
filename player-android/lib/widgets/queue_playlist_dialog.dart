@@ -1,3 +1,4 @@
+import '../l10n/music_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,7 +20,7 @@ class SaveQueuePlaylistButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) => TextButton.icon(
       style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
       icon: const Icon(Icons.playlist_add),
-      label: const Text('Save as playlist'),
+      label: Text(context.tr('Save as playlist')),
       onPressed: queue.busy || queue.restoreFailed || queue.entries.isEmpty
           ? null
           : () async {
@@ -98,7 +99,7 @@ class _QueuePlaylistDialogState extends State<QueuePlaylistDialog> {
     }
     final name = _name.text.trim();
     if (name.runes.isEmpty || name.runes.length > 200) {
-      setState(() => _error = 'Name must be 1–200 characters.');
+      setState(() => _error = context.tr('Name must be 1–200 characters.'));
       return;
     }
     setState(() {
@@ -120,8 +121,8 @@ class _QueuePlaylistDialogState extends State<QueuePlaylistDialog> {
           Navigator.pop(context);
           return;
         }
-        setState(
-            () => _error = 'Could not save playlist. ${setsErrorMessage(e)}');
+        setState(() => _error = context.tr('Could not save playlist. {error}',
+            {'error': setsErrorMessage(e)}));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -130,7 +131,7 @@ class _QueuePlaylistDialogState extends State<QueuePlaylistDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-          title: const Text('Save queue as playlist'),
+          title: Text(context.tr('Save queue as playlist')),
           content: SizedBox(
               width: 440,
               child: SingleChildScrollView(
@@ -139,8 +140,8 @@ class _QueuePlaylistDialogState extends State<QueuePlaylistDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: _saved != null
                           ? [
-                              const Text(
-                                  'Private playlist saved. Your queue keeps playing.')
+                              Text(context.tr(
+                                  'Private playlist saved. Your queue keeps playing.'))
                             ]
                           : [
                               TextField(
@@ -149,14 +150,14 @@ class _QueuePlaylistDialogState extends State<QueuePlaylistDialog> {
                                   enabled: !_busy,
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _save(),
-                                  decoration:
-                                      const InputDecoration(labelText: 'Name')),
+                                  decoration: InputDecoration(
+                                      labelText: context.tr('Name'))),
                               const SizedBox(height: 16),
                               Text(
                                   '${widget.mediaIds.length} songs · Private playlist. Keeps this order and repeated songs.'),
-                              const Text(
-                                  'Your queue keeps playing. If a request loses its connection, check Playlists before retrying to avoid a second copy.'),
-                              if (_busy) const Text('Saving playlist…'),
+                              Text(context.tr(
+                                  'Your queue keeps playing. If a request loses its connection, check Playlists before retrying to avoid a second copy.')),
+                              if (_busy) Text(context.tr('Saving playlist…')),
                               if (_error != null)
                                 Semantics(
                                     liveRegion: true,
@@ -169,7 +170,9 @@ class _QueuePlaylistDialogState extends State<QueuePlaylistDialog> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: Text(_saved == null ? 'Cancel' : 'Close')),
+                child: Text(_saved == null
+                    ? context.tr('Cancel')
+                    : context.tr('Close'))),
             if (_saved != null)
               FilledButton(
                   onPressed: () {
@@ -179,10 +182,10 @@ class _QueuePlaylistDialogState extends State<QueuePlaylistDialog> {
                       Navigator.pop(context);
                     }
                   },
-                  child: const Text('Open playlist'))
+                  child: Text(context.tr('Open playlist')))
             else
               FilledButton(
                   onPressed: _busy ? null : _save,
-                  child: const Text('Save playlist')),
+                  child: Text(context.tr('Save playlist'))),
           ]);
 }

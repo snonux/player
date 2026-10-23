@@ -1,3 +1,4 @@
+import { t, html, plural } from './i18n.js';
 import { API } from './api.js';
 import { state } from './state.js';
 import { openPlaylist } from './views/music-catalog.js';
@@ -9,7 +10,7 @@ export function saveQueueAsPlaylist(entries, returnFocus, openSaved) {
   const modal = document.getElementById('playlist-modal');
   const parent = modal.parentElement;
   if (document.fullscreenElement) document.fullscreenElement.appendChild(modal);
-  modal.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="queue-save-title"><div class="modal-header"><h2 id="queue-save-title">Save queue as playlist</h2></div><div class="modal-body"><form><label>Name<input name="name" aria-label="Playlist name" required autofocus></label><p>${ids.length} songs · Private playlist. Keeps this order and repeated songs.</p><p>Your queue keeps playing. If a request loses its connection, check Playlists before retrying to avoid a second copy.</p><p role="alert" data-error></p><p role="status" data-status></p><div class="playlist-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save playlist</button></div></form></div></div>`;
+  modal.innerHTML = html`<div class="modal" role="dialog" aria-modal="true" aria-labelledby="queue-save-title"><div class="modal-header"><h2 id="queue-save-title">Save queue as playlist</h2></div><div class="modal-body"><form><label>Name<input name="name" aria-label="Playlist name" required autofocus></label><p>${ids.length} songs · Private playlist. Keeps this order and repeated songs.</p><p>Your queue keeps playing. If a request loses its connection, check Playlists before retrying to avoid a second copy.</p><p role="alert" data-error></p><p role="status" data-status></p><div class="playlist-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save playlist</button></div></form></div></div>`;
   const own = modal.firstElementChild;
   const alive = () => modal.classList.contains('open') && modal.firstElementChild === own;
   const current = () => state.user === user;
@@ -26,13 +27,13 @@ export function saveQueueAsPlaylist(entries, returnFocus, openSaved) {
     if (!current()) { close(); return; }
     const name = modal.querySelector('[name=name]').value.trim();
     const error = modal.querySelector('[data-error]'), status = modal.querySelector('[data-status]');
-    if ([...name].length < 1 || [...name].length > 200) { error.textContent = 'Name must be 1–200 characters.'; return; }
+    if ([...name].length < 1 || [...name].length > 200) { error.textContent = t('Name must be 1–200 characters.'); return; }
     const button = modal.querySelector('[type=submit]');
-    busy = true; button.disabled = true; error.textContent = ''; status.textContent = 'Saving playlist…';
+    busy = true; button.disabled = true; error.textContent = ''; status.textContent = t('Saving playlist…');
     try {
       const saved = await API.createPlaylist({name, comment: '', visibility: 'private', media_ids: ids});
       if (!alive() || !current()) return;
-      modal.querySelector('form').innerHTML = '<p role="status">Private playlist saved. Your queue keeps playing.</p><div class="playlist-actions"><button class="btn" type="button" data-close>Close</button><a class="btn btn-primary" data-open>Open playlist</a></div>';
+      modal.querySelector('form').innerHTML = html`<p role="status">Private playlist saved. Your queue keeps playing.</p><div class="playlist-actions"><button class="btn" type="button" data-close>Close</button><a class="btn btn-primary" data-open>Open playlist</a></div>`;
       modal.querySelector('[data-close]').onclick = close;
       const link = modal.querySelector('[data-open]');
       link.href = `/?music=playlist&id=${encodeURIComponent(saved.playlist_id)}`;
