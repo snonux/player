@@ -84,7 +84,9 @@ export async function playSelected() {
 // playMediaById plays a media item from the loaded list by ID, selecting its
 // card when the current page shows it. Returns false when it is not loaded.
 export async function playMediaById(id) {
-  const idx = state.media.findIndex((m) => String(m.id) === String(id));
+  // Subscription episode pages leave null holes for undownloaded rows so
+  // card indices stay aligned; skip those slots when resolving by id.
+  const idx = state.media.findIndex((m) => m && String(m.id) === String(id));
   if (idx < 0) return false;
   // Folder cards also use data-index, so select by media ID.
   const card = document.querySelector(`#media-grid .media-card[data-id="${CSS.escape(String(id))}"]`);

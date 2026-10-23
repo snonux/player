@@ -54,6 +54,19 @@ setMedia(mediaSlotsForEpisodes([downloaded, undownloaded]));
 assert(state.media[0]?.id === 99 && state.media[1] === null,
   'subscription view replaces the cleared browse list with playable slots');
 
+// Production playMediaById must tolerate null holes (undownloaded earlier cards).
+setMedia(mediaSlotsForEpisodes([undownloaded, downloaded]));
+assert(
+  (() => {
+    try {
+      return state.media.findIndex((m) => m && String(m.id) === '99') === 1;
+    } catch (error) {
+      failures.push(`null holes must not throw: ${error}`);
+      return false;
+    }
+  })(),
+  'lookup through null holes finds the downloaded media id');
+
 if (failures.length) {
   console.error('FAILURES:');
   failures.forEach((m) => console.error('  - ' + m));
