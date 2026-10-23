@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../app_routes.dart';
+import 'standalone_podcasts_screen.dart';
 import '../models/local_media.dart';
 import '../providers/local_library_provider.dart';
 import '../providers/personal_media_provider.dart';
@@ -31,6 +32,13 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
       appBar: AppBar(
         title: const Text('On this device'),
         actions: [
+          IconButton(
+            tooltip: 'Podcasts on this device',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => const StandalonePodcastsScreen(),
+            )),
+            icon: const Icon(Icons.podcasts),
+          ),
           IconButton(
             tooltip: 'Downloads',
             onPressed: () => context.push(AppRoutes.offlineDownloads),

@@ -1,0 +1,382 @@
+import 'dart:convert';
+import 'dart:math';
+import 'package:sqflite/sqflite.dart';
+import 'podcast_identity.dart';
+import 'podcast_feed_fetcher.dart';
+
+String podcastAccountScope(String origin, int userId) =>
+    'account:${Uri.parse(origin).origin}#$userId';
+String podcastEditId() {
+  final random = Random.secure();
+  return List.generate(
+      16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+}
+
+/// Own database: existing device files and server downloads need no migration.
+class PodcastRepository {
+  PodcastRepository(
+      {this.databasePath = 'podcasts.db', PodcastFeedFetcher? fetcher})
+      : fetcher = fetcher ?? PodcastFeedFetcher();
+  final String databasePath;
+  final PodcastFeedFetcher fetcher;
+  Future<Database>? _opening;
+  Future<Database> get database => _opening ??=
+          openDatabase(databasePath, version: 1, onCreate: (db, _) async {
+        await db.execute(
+            'CREATE TABLE podcast_scopes(scope TEXT PRIMARY KEY, epoch TEXT NOT NULL DEFAULT "", cursor INTEGER NOT NULL DEFAULT 0, last_full_success_ms INTEGER, last_attempt_ms INTEGER, last_error_kind TEXT, associated_from_local INTEGER NOT NULL DEFAULT 0)');
+        await db.execute(
+            'CREATE TABLE podcast_subscriptions(scope TEXT NOT NULL, feed_key TEXT NOT NULL, subscribed INTEGER NOT NULL, subscription_ms INTEGER NOT NULL, title TEXT NOT NULL DEFAULT "", fetch_url TEXT NOT NULL DEFAULT "", urls TEXT NOT NULL DEFAULT "[]", pending_edit_id TEXT, PRIMARY KEY(scope,feed_key))');
+        await db.execute(
+            'CREATE TABLE podcast_episode_state(scope TEXT NOT NULL, feed_key TEXT NOT NULL, episode_key TEXT NOT NULL, position_seconds REAL NOT NULL DEFAULT 0, position_ms INTEGER NOT NULL DEFAULT 0, position_pending_edit_id TEXT, completed INTEGER NOT NULL DEFAULT 0, completion_source TEXT NOT NULL DEFAULT "", completion_ms INTEGER NOT NULL DEFAULT 0, completion_pending_edit_id TEXT, enclosure_url TEXT NOT NULL DEFAULT "", PRIMARY KEY(scope,feed_key,episode_key))');
+        await db.execute(
+            'CREATE TABLE podcast_feeds(feed_key TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT "", description TEXT NOT NULL DEFAULT "", image_url TEXT NOT NULL DEFAULT "", fetch_url TEXT NOT NULL, etag TEXT NOT NULL DEFAULT "", last_modified TEXT NOT NULL DEFAULT "", last_checked_ms INTEGER, last_error TEXT, aliases TEXT NOT NULL DEFAULT "[]")');
+        await db.execute(
+            'CREATE TABLE podcast_episodes(feed_key TEXT NOT NULL, episode_key TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, enclosure_url TEXT NOT NULL, enclosure_key TEXT NOT NULL, published_at INTEGER NOT NULL, duration_seconds INTEGER NOT NULL, aliases TEXT NOT NULL DEFAULT "[]", PRIMARY KEY(feed_key,episode_key))');
+        await db.execute(
+            'CREATE TABLE podcast_sync_rejections(id INTEGER PRIMARY KEY AUTOINCREMENT, scope TEXT NOT NULL, edit_id TEXT NOT NULL, reason TEXT NOT NULL)');
+      });
+  Future<void> close() async {
+    if (_opening != null) await (await _opening!).close();
+    _opening = null;
+  }
+
+  Future<List<Map<String, Object?>>> subscriptions(String scope) async =>
+      (await database).rawQuery(
+          'SELECT s.*, f.description,f.image_url,f.last_error,f.last_checked_ms FROM podcast_subscriptions s LEFT JOIN podcast_feeds f USING(feed_key) WHERE s.scope=? AND s.subscribed=1 ORDER BY s.title COLLATE NOCASE',
+          [scope]);
+  Future<List<Map<String, Object?>>> episodes(String feedKey) async =>
+      (await database).query('podcast_episodes',
+          where: 'feed_key=?',
+          whereArgs: [feedKey],
+          orderBy: 'published_at DESC,episode_key');
+  Future<String> resolveFeed(DatabaseExecutor db, String key) async {
+    final feeds = await db.query('podcast_feeds');
+    for (final f in feeds) {
+      if (f['feed_key'] == key ||
+          (jsonDecode(f['aliases'] as String) as List).contains(key)) {
+        return f['feed_key'] as String;
+      }
+    }
+    return key;
+  }
+
+  Future<String> subscribe(String scope, String url) async {
+    final minted = podcastFeedKey(url);
+    final db = await database;
+    final key = await db.transaction((tx) async {
+      final key = await resolveFeed(tx, minted);
+      await tx.insert(
+          'podcast_feeds', {'feed_key': key, 'fetch_url': _fetchUrl(url)},
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+      await _subscription(tx, scope, key, true, url: _fetchUrl(url));
+      return key;
+    });
+    await refresh(key);
+    return key;
+  }
+
+  String _fetchUrl(String raw) {
+    final trimmed = podcastTrim(raw);
+    if (RegExp(r'^https?://', caseSensitive: false).hasMatch(trimmed)) {
+      return trimmed;
+    }
+    var inner = trimmed.substring(trimmed.indexOf(':') + 1);
+    if (inner.startsWith('//')) inner = inner.substring(2);
+    return RegExp(r'^https?://', caseSensitive: false).hasMatch(inner)
+        ? inner
+        : 'http://$inner';
+  }
+
+  Future<void> unsubscribe(String scope, String key) async => (await database)
+      .transaction((tx) => _subscription(tx, scope, key, false));
+  Future<void> _subscription(
+      DatabaseExecutor tx, String scope, String key, bool subscribed,
+      {String? url}) async {
+    await tx.insert('podcast_scopes', {'scope': scope},
+        conflictAlgorithm: ConflictAlgorithm.ignore);
+    final old = await tx.query('podcast_subscriptions',
+        where: 'scope=? AND feed_key=?', whereArgs: [scope, key]);
+    final previous = old.firstOrNull;
+    await tx.insert(
+        'podcast_subscriptions',
+        {
+          'scope': scope,
+          'feed_key': key,
+          'subscribed': subscribed ? 1 : 0,
+          'subscription_ms': max(DateTime.now().millisecondsSinceEpoch,
+              (previous?['subscription_ms'] as int? ?? 0) + 1),
+          'title': previous?['title'] ?? url ?? key,
+          'fetch_url': url ?? previous?['fetch_url'] ?? '',
+          'urls': previous?['urls'] ?? jsonEncode([if (url != null) url]),
+          'pending_edit_id': podcastEditId()
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> refresh(String key) async {
+    final db = await database;
+    final rows =
+        await db.query('podcast_feeds', where: 'feed_key=?', whereArgs: [key]);
+    if (rows.isEmpty) return;
+    final old = rows.single;
+    try {
+      final feed = await fetcher.fetch(old['fetch_url'] as String,
+          etag: old['etag'] as String,
+          lastModified: old['last_modified'] as String);
+      await db.transaction((tx) async {
+        for (final url in feed.aliasUrls) {
+          final target = await resolveFeed(tx, podcastFeedKey(url));
+          if (target != key &&
+              (await tx.query('podcast_feeds',
+                      where: 'feed_key=?', whereArgs: [target]))
+                  .isNotEmpty) {
+            await _mergeFeeds(tx, key, target);
+            key = target;
+          }
+        }
+        final currentFeed = (await tx
+                .query('podcast_feeds', where: 'feed_key=?', whereArgs: [key]))
+            .single;
+        final aliasKeys = (jsonDecode(currentFeed['aliases'] as String) as List)
+            .cast<String>()
+            .toSet();
+        for (final url in feed.aliasUrls) {
+          final alias = podcastFeedKey(url);
+          if (alias != key && aliasKeys.length < 16) aliasKeys.add(alias);
+        }
+        await tx.update(
+            'podcast_feeds',
+            {
+              'fetch_url': feed.fetchUrl,
+              'aliases': jsonEncode(aliasKeys.toList()),
+              'last_checked_ms': DateTime.now().millisecondsSinceEpoch,
+              'last_error': null,
+              if (!feed.notModified) ...{
+                'title': feed.title,
+                'description': feed.description,
+                'image_url': feed.imageUrl,
+                'etag': feed.etag,
+                'last_modified': feed.lastModified
+              }
+            },
+            where: 'feed_key=?',
+            whereArgs: [key]);
+        if (feed.notModified) return;
+        await tx.update('podcast_subscriptions',
+            {'title': feed.title, 'fetch_url': feed.fetchUrl},
+            where: 'feed_key=?', whereArgs: [key]);
+        final existing = await tx
+            .query('podcast_episodes', where: 'feed_key=?', whereArgs: [key]);
+        final known = existing
+            .map((e) => PodcastKnownEpisode(
+                e['episode_key'] as String,
+                e['enclosure_key'] as String,
+                (jsonDecode(e['aliases'] as String) as List).cast<String>()))
+            .toList();
+        final matches = podcastMatchEpisodes(
+            known, feed.episodes.map((e) => e.identity).toList());
+        for (var i = 0; i < matches.length; i++) {
+          final match = matches[i];
+          if (match.key.isEmpty) continue;
+          final e = feed.episodes[i];
+          final previous = known.where((k) => k.key == match.key).firstOrNull;
+          await tx.insert(
+              'podcast_episodes',
+              {
+                'feed_key': key,
+                'episode_key': match.key,
+                'title': e.title,
+                'description': e.description,
+                'enclosure_url': e.identity.enclosureUrl,
+                'enclosure_key': podcastEnclosureKey(e.identity.enclosureUrl),
+                'published_at': e.publishedAt,
+                'duration_seconds': e.durationSeconds,
+                'aliases': jsonEncode([
+                  ...?previous?.aliases,
+                  if (match.alias.isNotEmpty) match.alias
+                ])
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      });
+    } catch (error) {
+      await db.update(
+          'podcast_feeds',
+          {
+            'last_error':
+                'Feed refresh unavailable. Cached episodes remain available.',
+            'last_checked_ms': DateTime.now().millisecondsSinceEpoch
+          },
+          where: 'feed_key=?',
+          whereArgs: [key]);
+      rethrow;
+    }
+  }
+
+  Future<void> _mergeFeeds(
+      DatabaseExecutor tx, String source, String target) async {
+    final sourceFeed = (await tx
+            .query('podcast_feeds', where: 'feed_key=?', whereArgs: [source]))
+        .single;
+    final targetFeed = (await tx
+            .query('podcast_feeds', where: 'feed_key=?', whereArgs: [target]))
+        .single;
+    final aliases = <String>{
+      ...(jsonDecode(targetFeed['aliases'] as String) as List).cast<String>(),
+      source,
+      ...(jsonDecode(sourceFeed['aliases'] as String) as List).cast<String>()
+    }.toList();
+    await tx.update('podcast_feeds', {'aliases': jsonEncode(aliases)},
+        where: 'feed_key=?', whereArgs: [target]);
+    for (final row in await tx.query('podcast_subscriptions',
+        where: 'feed_key=?', whereArgs: [source])) {
+      final old = await tx.query('podcast_subscriptions',
+          where: 'scope=? AND feed_key=?', whereArgs: [row['scope'], target]);
+      final winner = old.isEmpty ||
+              (row['subscription_ms'] as int) >
+                  (old.single['subscription_ms'] as int)
+          ? row
+          : old.single;
+      await tx.insert('podcast_subscriptions',
+          {...winner, 'feed_key': target, 'pending_edit_id': podcastEditId()},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    final targetEpisodes = await tx
+        .query('podcast_episodes', where: 'feed_key=?', whereArgs: [target]);
+    final known = targetEpisodes
+        .map((e) => PodcastKnownEpisode(
+            e['episode_key'] as String,
+            e['enclosure_key'] as String,
+            (jsonDecode(e['aliases'] as String) as List).cast<String>()))
+        .toList();
+    for (final row in await tx
+        .query('podcast_episodes', where: 'feed_key=?', whereArgs: [source])) {
+      final episodeKey = podcastResolveEpisode(known,
+              row['episode_key'] as String, row['enclosure_url'] as String) ??
+          row['episode_key'] as String;
+      final existing = await tx.query('podcast_episodes',
+          where: 'feed_key=? AND episode_key=?',
+          whereArgs: [target, episodeKey]);
+      if (existing.isEmpty) {
+        await tx.insert('podcast_episodes',
+            {...row, 'feed_key': target, 'episode_key': episodeKey});
+      } else {
+        // Acquisition is capped during ingest; merging established identities
+        // must retain every alias or old URLs/GUIDs can split history again.
+        final episodeAliases = <String>{
+          ...(jsonDecode(existing.single['aliases'] as String) as List)
+              .cast<String>(),
+          ...(jsonDecode(row['aliases'] as String) as List).cast<String>(),
+          if (row['episode_key'] != episodeKey) row['episode_key'] as String,
+        }..remove(episodeKey);
+        await tx.update('podcast_episodes',
+            {'aliases': jsonEncode(episodeAliases.toList())},
+            where: 'feed_key=? AND episode_key=?',
+            whereArgs: [target, episodeKey]);
+      }
+    }
+    final mergedEpisodes = await tx
+        .query('podcast_episodes', where: 'feed_key=?', whereArgs: [target]);
+    final mergedKnown = mergedEpisodes
+        .map((e) => PodcastKnownEpisode(
+            e['episode_key'] as String,
+            e['enclosure_key'] as String,
+            (jsonDecode(e['aliases'] as String) as List).cast<String>()))
+        .toList();
+    for (final row in await tx.query('podcast_episode_state',
+        where: 'feed_key=?', whereArgs: [source])) {
+      final episodeKey = podcastResolveEpisode(mergedKnown,
+              row['episode_key'] as String, row['enclosure_url'] as String) ??
+          row['episode_key'] as String;
+      await _mergeState(tx, row, row['scope'] as String, target, episodeKey,
+          repushWinner: true);
+    }
+    await tx.delete('podcast_subscriptions',
+        where: 'feed_key=?', whereArgs: [source]);
+    await tx.delete('podcast_episode_state',
+        where: 'feed_key=?', whereArgs: [source]);
+    await tx
+        .delete('podcast_episodes', where: 'feed_key=?', whereArgs: [source]);
+    await tx.delete('podcast_feeds', where: 'feed_key=?', whereArgs: [source]);
+  }
+
+  Future<void> _mergeState(DatabaseExecutor tx, Map<String, Object?> row,
+      String scope, String feedKey, String episodeKey,
+      {bool repushWinner = false}) async {
+    final old = await tx.query('podcast_episode_state',
+        where: 'scope=? AND feed_key=? AND episode_key=?',
+        whereArgs: [scope, feedKey, episodeKey]);
+    final merged = <String, Object?>{
+      ...row,
+      if (old.isNotEmpty) ...old.single,
+      'scope': scope,
+      'feed_key': feedKey,
+      'episode_key': episodeKey
+    };
+    for (final register in ['position', 'completion']) {
+      if ((row['${register}_ms'] as int) >
+          (old.firstOrNull?['${register}_ms'] as int? ?? 0)) {
+        for (final field in register == 'position'
+            ? ['position_seconds', 'position_ms']
+            : ['completed', 'completion_source', 'completion_ms']) {
+          merged[field] = row[field];
+        }
+        merged['${register}_pending_edit_id'] = podcastEditId();
+      } else if (repushWinner &&
+          row['${register}_pending_edit_id'] != null &&
+          merged['${register}_pending_edit_id'] == null) {
+        merged['${register}_pending_edit_id'] = podcastEditId();
+      }
+    }
+    await tx.insert('podcast_episode_state', merged,
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Explicit consent only. Original clocks survive; account ties win.
+  Future<void> associateLocal(String accountScope) async {
+    if (!accountScope.startsWith('account:')) {
+      throw ArgumentError('An account scope is required');
+    }
+    await (await database).transaction((tx) async {
+      await tx.insert('podcast_scopes', {'scope': accountScope},
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+      for (final row in await tx.query('podcast_subscriptions',
+          where: 'scope=?', whereArgs: ['local'])) {
+        final key = await resolveFeed(tx, row['feed_key'] as String);
+        final old = await tx.query('podcast_subscriptions',
+            where: 'scope=? AND feed_key=?', whereArgs: [accountScope, key]);
+        if (old.isEmpty ||
+            (row['subscription_ms'] as int) >
+                (old.single['subscription_ms'] as int)) {
+          await tx.insert(
+              'podcast_subscriptions',
+              {
+                ...row,
+                'scope': accountScope,
+                'feed_key': key,
+                'pending_edit_id': podcastEditId()
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+      for (final row in await tx.query('podcast_episode_state',
+          where: 'scope=?', whereArgs: ['local'])) {
+        final key = await resolveFeed(tx, row['feed_key'] as String);
+        final episodes = await tx
+            .query('podcast_episodes', where: 'feed_key=?', whereArgs: [key]);
+        final known = episodes
+            .map((e) => PodcastKnownEpisode(
+                e['episode_key'] as String,
+                e['enclosure_key'] as String,
+                (jsonDecode(e['aliases'] as String) as List).cast<String>()))
+            .toList();
+        final episodeKey = podcastResolveEpisode(known,
+                row['episode_key'] as String, row['enclosure_url'] as String) ??
+            row['episode_key'] as String;
+        await _mergeState(tx, row, accountScope, key, episodeKey);
+      }
+      await tx.update('podcast_scopes', {'associated_from_local': 1},
+          where: 'scope=?', whereArgs: [accountScope]);
+    });
+  }
+}
