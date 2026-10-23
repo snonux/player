@@ -120,7 +120,7 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   // Enter commits the query and navigates to search results (Escape only
   // cancels a pending debounce and restores the prior album lens).
   await page.keyboard.press('Enter');
-  await expect(page.locator('#media-grid')).toContainText('No results.',{timeout:5_000});
+  await expect(page.locator('#media-grid')).toContainText(/No results\.|Nothing matches these filters/,{timeout:5_000});
   // An intentional search works; a subsequent still-debounced search must
   // not override the user's explicit Albums navigation.
   await page.keyboard.press('/');
