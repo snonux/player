@@ -568,3 +568,8 @@
 [data-fit="cover"] .player .cover-art { object-fit: cover; }
 [data-shape="square"] .player .cover-art { border-radius: 0; }
 [data-shape="circle"] .player .cover-art { border-radius: 0; clip-path: circle(closest-side); }
+
+.equalizer-control input[type="range"] { width: min(12rem, 50vw); }
+.equalizer-control input[type="checkbox"] { width: auto; }
+.equalizer-control output { min-width: 3.5rem; }
+.equalizer-control details > label { display: flex; }

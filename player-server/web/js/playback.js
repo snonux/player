@@ -234,11 +234,13 @@ function bindCast(e) {
     onRemoteEnded: () => triggerNext({ forcePlay: true, completed: true }),
     onCastStarted: (device) => {
       playbackSpeed?.setCasting(true);
+      audioVisuals?.setCasting(true);
       updateUI(true);
       setPlayerStatus(`Playing on ${device}`);
     },
     onCastEnded: (mediaId, seconds) => {
       playbackSpeed?.setCasting(false);
+      audioVisuals?.setCasting(false);
       setPlayerStatus('');
       updateUI(false);
       const m = currentMediaElement();
@@ -661,6 +663,7 @@ function showMedia(media, source, thumbnailUrl) {
   }
   playbackSpeed?.setMedia(media);
   playbackSpeed?.setCasting(isCasting());
+  audioVisuals?.setCasting(isCasting());
   audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
   lyrics?.setMedia(media, source.url);
   updateMinimizedTitle();

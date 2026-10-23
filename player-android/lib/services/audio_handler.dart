@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
+import 'equalizer.dart';
 import 'audio_progress_session.dart';
 import 'sleep_timer.dart';
 import 'music_sequence.dart';
@@ -43,7 +44,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// platform channels (Dependency Inversion Principle).
   PlayerAudioHandler(AudioPlayer player, {LoudnessEffect? loudnessEnhancer})
       : _player = player,
-        loudness = ReplayGainController(player, loudnessEnhancer) {
+        loudness = ReplayGainController(player, loudnessEnhancer),
+        equalizer = EqualizerController(player) {
+    unawaited(equalizer.restore());
     // Propagate just_audio's playback state into the audio_service stream so
     // the notification, lock screen, and Wear OS clients see live updates.
     // just_audio adds a failure (for example `PlatformException(0, Source
@@ -77,6 +80,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   final AudioPlayer _player;
   final ReplayGainController loudness;
+  final EqualizerController equalizer;
 
   Future<void> _refreshLoudness() => loudness.setTrack(_metadataRequest?.music,
       albumContext: _queueActive &&

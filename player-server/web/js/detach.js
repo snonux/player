@@ -186,6 +186,7 @@ function detachedLoadMessage(media, resumeFrom = 0, play = true) {
     muted: detachedPlaybackState?.muted ?? local.muted,
     playbackRate: remote?.playbackRate ?? local.playbackRate ?? 1,
     loudness: { settings: remote?.loudness?.settings ?? local.loudness?.settings,
+      equalizer: remote?.loudness?.equalizer ?? local.loudness?.equalizer,
       albumContext: local.loudness?.albumContext === true },
     sleepDeadline: remote ? remote.sleepDeadline : local.sleepDeadline,
   };

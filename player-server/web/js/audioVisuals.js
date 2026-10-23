@@ -1,3 +1,4 @@
+import { createEqualizerControls, effectiveBands, frequencies } from './equalizer.js';
 import { createLoudnessControls, replayGain, sameAlbum } from './replay-gain.js';
 import { queueState } from './queue.js';
 
@@ -58,6 +59,11 @@ export function initAudioVisuals({ audio, player, coverArt }) {
   let routed = false;
   let gainNode = null;
   let remoteAlbumContext = null;
+  let filters = null;
+  let casting = false;
+  const equalizer = createEqualizerControls(controls, () => {
+    updateGain(); prepare(); sync(); document.dispatchEvent(new Event('loudness:changed'));
+  });
   const loudness = createLoudnessControls(controls, () => {
     updateGain(); prepare(); sync(); document.dispatchEvent(new Event('loudness:changed'));
   });
@@ -76,12 +82,15 @@ export function initAudioVisuals({ audio, player, coverArt }) {
   }
   function updateGain() {
     const result = replayGain(media?.music, loudness.settings, albumContext());
+    if (filters) effectiveBands(equalizer.settings).forEach((gain, i) => filters[i].gain.setValueAtTime(gain, context.currentTime));
+    equalizer.update(media, casting ? 'Equalizer applies to local playback only. Cast uses receiver effects.' : !equalizer.settings.enabled ? 'Equalizer bypassed.' : unavailable ? 'Equalizer unavailable in this browser.' : failure ||
+      (context?.state === 'running' && routed ? 'Equalizer active. Boost headroom reserved.' : 'Start playback to allow equalizer processing.'));
     if (gainNode) gainNode.gain.setValueAtTime(result.multiplier, context.currentTime);
     loudness.update(media, loudness.settings.mode === 'off' ? result.message :
       unavailable ? 'Loudness processing unavailable in this browser.' : failure ||
       (context?.state === 'running' && routed ? result.message : 'Start playback to allow loudness processing.'));
   }
-  function processingWanted() { return wanted() || (media?.type === 'audio' && loudness.settings.mode !== 'off' && !unavailable && !failure); }
+  function processingWanted() { return wanted() || (media?.type === 'audio' && (loudness.settings.mode !== 'off' || equalizer.settings.enabled) && !unavailable && !failure); }
   function wanted() {
     return media?.type === 'audio' && !book && mode !== 'off' && !unavailable && !failure;
   }
@@ -165,7 +174,14 @@ export function initAudioVisuals({ audio, player, coverArt }) {
         if (!routed) {
           gainNode.connect(context.destination);
           source ||= context.createMediaElementSource(audio);
-          source.connect(gainNode);
+          filters ||= frequencies.map(frequency => {
+            const filter = context.createBiquadFilter();
+            filter.type = 'peaking'; filter.frequency.value = frequency; filter.Q.value = 0.7;
+            return filter;
+          });
+          filters.forEach((filter, i) => filter.connect(filters[i + 1] || gainNode));
+          source.connect(filters[0]);
+          updateGain();
           routed = true;
         }
         if (wanted() && !analyser) {
@@ -265,13 +281,15 @@ export function initAudioVisuals({ audio, player, coverArt }) {
       sync();
     },
     prepare,
-    loudnessState: () => ({ settings: { ...loudness.settings }, albumContext: albumContext() }),
+    loudnessState: () => ({ settings: { ...loudness.settings }, equalizer: equalizer.settings, albumContext: albumContext() }),
     setLoudnessState(value, { remoteContext = false } = {}) {
       if (!value) return;
       remoteAlbumContext = remoteContext ? value.albumContext === true : null;
+      if (value.equalizer) equalizer.set(value.equalizer, { announce: false });
       if (value.settings) loudness.set(value.settings, { announce: false });
       updateGain(); prepare(); sync();
     },
+    setCasting(value) { casting = value === true; updateGain(); },
     setLoudnessContext(value) { remoteAlbumContext = value === true; updateGain(); sync(); },
   };
 }

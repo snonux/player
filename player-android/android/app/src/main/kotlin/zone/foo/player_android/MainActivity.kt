@@ -26,6 +26,9 @@ class MainActivity : AudioServiceFragmentActivity() {
         if (!flutterEngine.plugins.has(NativeLoudness::class.java)) {
             flutterEngine.plugins.add(NativeLoudness())
         }
+        if (!flutterEngine.plugins.has(NativeEqualizer::class.java)) {
+            flutterEngine.plugins.add(NativeEqualizer())
+        }
         screenAwakeChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
             "zone.foo.player_android/screen_awake").also { channel ->
             channel.setMethodCallHandler { call, result ->

@@ -1,3 +1,4 @@
+import '../widgets/equalizer_sheet.dart';
 import '../widgets/loudness_sheet.dart';
 import '../providers/server_endpoint_provider.dart';
 import '../widgets/music_queue_sheet.dart';
@@ -1139,6 +1140,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   onPressed: () => showLoudnessSheet(context, handler.loudness),
                   icon: const Icon(Icons.volume_up),
                   label: const Text('Loudness'),
+                ),
+                TextButton.icon(
+                  onPressed: () =>
+                      showEqualizerSheet(context, handler.equalizer),
+                  icon: const Icon(Icons.equalizer),
+                  label: const Text('Equalizer'),
                 ),
                 if (_activeRequest?.kind != PlaybackSourceKind.local)
                   _buildLyrics(handler),
