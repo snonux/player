@@ -74,7 +74,7 @@ class _FakeApiClient extends PlayerApiClient {
 
   @override
   Future<List<Map<String, dynamic>>> musicAlbums(
-          {String? artist, int? mediaId}) async =>
+          {String? artist, int? mediaId, List<int>? libraryIds}) async =>
       [];
 
   /// When non-null, [listSets] returns this list.

@@ -720,17 +720,18 @@ class _FavoriteIconButton extends StatelessWidget {
         key: Key('media_card_favorite_$mediaId'),
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Icon(
-          isFavorite ? Icons.favorite : Icons.favorite_border,
-          size: 20,
-          color: isFavorite ? Colors.redAccent : Colors.white70,
-          excludeFromSemantics: true,
-          shadows: const [
-            Shadow(
-              color: Colors.black54,
-              blurRadius: 4,
-            ),
-          ],
+        child: ExcludeSemantics(
+          child: Icon(
+            isFavorite ? Icons.favorite : Icons.favorite_border,
+            size: 20,
+            color: isFavorite ? Colors.redAccent : Colors.white70,
+            shadows: const [
+              Shadow(
+                color: Colors.black54,
+                blurRadius: 4,
+              ),
+            ],
+          ),
         ),
       ),
     );

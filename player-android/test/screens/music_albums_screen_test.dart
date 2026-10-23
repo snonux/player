@@ -21,7 +21,7 @@ class _Client extends PlayerApiClient {
   int albumCalls = 0;
   @override
   Future<List<Map<String, dynamic>>> musicAlbums(
-          {String? artist, int? mediaId}) async =>
+          {String? artist, int? mediaId, List<int>? libraryIds}) async =>
       [
         {'album_key': 'first', 'title': 'First album', 'artist': 'A'},
         {'album_key': 'second', 'title': 'Second album', 'artist': 'A'},

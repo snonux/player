@@ -27,7 +27,7 @@ class Api extends PlayerApiClient {
   List<Map<String, dynamic>> songs = [song(7), song(3), song(7)];
   @override
   Future<List<Map<String, dynamic>>> musicAlbums(
-      {String? artist, int? mediaId}) async {
+      {String? artist, int? mediaId, List<int>? libraryIds}) async {
     calls++;
     if (fail) throw StateError('private detail');
     if (wait != null) await wait!.future;

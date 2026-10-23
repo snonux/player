@@ -62,7 +62,7 @@ class _Api extends PlayerApiClient {
   _Api() : super(dio: Dio());
   @override
   Future<List<Map<String, dynamic>>> musicAlbums(
-          {String? artist, int? mediaId}) async =>
+          {String? artist, int? mediaId, List<int>? libraryIds}) async =>
       [
         {'album_key': 'al_1', 'title': 'Album', 'artist': 'Artist'}
       ];
