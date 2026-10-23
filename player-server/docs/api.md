@@ -1122,6 +1122,34 @@ at the base URL the sender uses (for example the same LAN address).
 
 ---
 
+### Server jukebox (optional A02a)
+
+When `JUKEBOX_ENABLED=true`, authenticated `GET /api/config` (and `/api/v1/config`)
+may include `jukebox: {enabled, can_control, name, device_id}`. Only administrators
+get `can_control: true`. Ordinary client streaming is unchanged when the feature
+is off or the caller is not an admin.
+
+`GET /api/jukebox` (also `/api/v1/jukebox`) returns engine status: queue media IDs,
+index, transport state, position/duration, volume (0–100), selected output device,
+and available host outputs. `404` when disabled.
+
+`POST /api/jukebox/control` (also `/api/v1/jukebox/control`) accepts:
+
+```json
+{"session_id":"0123456789abcdef0123456789abcdef","revision":1,"action":"load","media_id":42,"position":12.5}
+```
+
+Actions: `load`, `play`, `pause`, `seek`, `stop`, `status`, `volume`, `set_device`,
+`set_queue`, `append`, `clear`. Session/revision semantics match DLNA control.
+`volume` uses `volume` 0–100; `set_device` uses `output_id` from the status device
+list. Media paths are confined to `MEDIA_ROOT` after ACL checks. Non-admins receive
+`403`. A conflicting session receives `409`. Host/backend failures receive `502`.
+
+UI placement: **Play on… › This server's speakers**. Real MPV host-audio acceptance
+is required before feature completion; unit tests use an injected fake adapter.
+
+---
+
 ### DLNA / UPnP output
 
 `GET /api/renderers` (also `/api/v1/renderers`) searches the **server's LAN**

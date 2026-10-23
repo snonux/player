@@ -26,9 +26,28 @@ class RendererDiscovery implements CastDiscovery {
 
     Future<void> search() async {
       try {
+        final api = client();
+        final found = <CastDevice>[];
+        try {
+          final config = await api.rawDio.get<Map<String, dynamic>>('/api/v1/config');
+          final jukebox = config.data?['jukebox'];
+          if (jukebox is Map &&
+              jukebox['enabled'] == true &&
+              jukebox['can_control'] == true) {
+            found.add(CastDevice(
+              id: (jukebox['device_id'] as String?) ?? 'server-speakers',
+              name: (jukebox['name'] as String?) ?? "This server's speakers",
+              host: '',
+              port: 0,
+              model: 'Server speakers · host audio',
+              isRenderer: true,
+              isJukebox: true,
+            ));
+          }
+        } catch (_) {}
         final response =
-            await client().rawDio.get<List<dynamic>>('/api/v1/renderers');
-        renderers = (response.data ?? []).map((item) {
+            await api.rawDio.get<List<dynamic>>('/api/v1/renderers');
+        found.addAll((response.data ?? []).map((item) {
           final data = item as Map<String, dynamic>;
           return CastDevice(
               id: data['id'] as String,
@@ -37,7 +56,8 @@ class RendererDiscovery implements CastDiscovery {
               port: 0,
               model: 'DLNA / UPnP · server network',
               isRenderer: true);
-        }).toList();
+        }));
+        renderers = found;
         publish();
       } catch (error, stack) {
         if (!cancelled && google.isEmpty) output.addError(error, stack);
@@ -96,8 +116,11 @@ class RendererSession implements RemotePlaybackSession {
   Duration get position => _status.position;
 
   Future<Map<String, dynamic>> _command(String action,
-      {int? mediaId, Duration? at}) async {
-    final response = await api.rawDio.post<dynamic>('/api/v1/renderers/control',
+      {int? mediaId, Duration? at, int? volume, String? outputId}) async {
+    final path = device.isJukebox
+        ? '/api/v1/jukebox/control'
+        : '/api/v1/renderers/control';
+    final response = await api.rawDio.post<dynamic>(path,
         options: action == 'stop'
             ? Options(
                 validateStatus: (status) => status != null && status < 600,
@@ -105,12 +128,14 @@ class RendererSession implements RemotePlaybackSession {
                 sendTimeout: const Duration(seconds: 6))
             : null,
         data: {
-          'device_id': device.id,
+          if (!device.isJukebox) 'device_id': device.id,
           'session_id': _sessionID,
           'revision': _revision,
           'action': action,
           if (mediaId != null) 'media_id': mediaId,
           if (at != null) 'position': at.inMilliseconds / 1000,
+          if (volume != null) 'volume': volume,
+          if (outputId != null) 'output_id': outputId,
         });
     if ((response.statusCode ?? 500) >= 400) {
       throw const CastException(

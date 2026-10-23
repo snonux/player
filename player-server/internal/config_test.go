@@ -70,6 +70,8 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 		{"PLAYER_CORS_ORIGINS", " http://localhost:5173,https://player.example.com ,, "},
 		{"PLUGIN_DIR", "/tmp/player-plugins"},
 		{"SUBSONIC_ENABLED", "true"},
+		{"JUKEBOX_ENABLED", "true"},
+		{"JUKEBOX_MPV_PATH", "/usr/bin/mpv"},
 	})
 
 	cfg, err := LoadConfig()
@@ -81,6 +83,12 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 	}
 	if !cfg.SubsonicEnabled {
 		t.Error("SubsonicEnabled: expected true")
+	}
+	if !cfg.JukeboxEnabled {
+		t.Error("JukeboxEnabled: expected true")
+	}
+	if cfg.JukeboxMPVPath != "/usr/bin/mpv" {
+		t.Errorf("JukeboxMPVPath: got %q", cfg.JukeboxMPVPath)
 	}
 	if cfg.Port != 9090 {
 		t.Errorf("Port: expected 9090, got %d", cfg.Port)
@@ -246,6 +254,7 @@ func clearEnv() {
 		"MUSIC_ENRICHMENT_URL",
 		"PLUGIN_DIR",
 		"SUBSONIC_ENABLED",
+		"JUKEBOX_ENABLED", "JUKEBOX_MPV_PATH",
 	} {
 		os.Unsetenv(k)
 	}

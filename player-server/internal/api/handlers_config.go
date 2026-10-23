@@ -25,6 +25,15 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"auth":            s.authModeInfo(),
 		"subsonic":        s.subsonicStatusInfo(),
 	}
+	if s.jukeboxSvc != nil && s.jukeboxSvc.Enabled() {
+		_, isAdmin := s.jukeboxCaller(r)
+		body["jukebox"] = map[string]any{
+			"enabled":     true,
+			"can_control": isAdmin,
+			"name":        "This server's speakers",
+			"device_id":   "server-speakers",
+		}
+	}
 	writeJSON(w, http.StatusOK, body)
 }
 

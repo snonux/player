@@ -64,6 +64,7 @@ const ASSETS = [
   '/js/streamSource.js',
   '/js/cast.js',
   '/js/renderer.js',
+  '/js/jukebox.js',
   '/js/radio.js',
   '/js/imageViewer.js',
   '/js/detach.js',

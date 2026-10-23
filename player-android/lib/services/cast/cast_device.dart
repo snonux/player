@@ -13,6 +13,7 @@ class CastDevice {
     required this.port,
     this.model,
     this.isRenderer = false,
+    this.isJukebox = false,
   });
 
   final String id;
@@ -23,6 +24,9 @@ class CastDevice {
   final int port;
   final String? model;
   final bool isRenderer;
+
+  /// Optional A02a server-host speakers (admin-enabled jukebox).
+  final bool isJukebox;
 
   @override
   bool operator ==(Object other) =>

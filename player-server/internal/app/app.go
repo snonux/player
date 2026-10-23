@@ -20,6 +20,7 @@ import (
 	"github.com/snonux/player/internal/api"
 	"github.com/snonux/player/internal/auth"
 	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/jukebox"
 	"github.com/snonux/player/internal/plugin"
 	"github.com/snonux/player/internal/probe"
 	"github.com/snonux/player/internal/repository"
@@ -45,6 +46,7 @@ type Deps struct {
 	AdminSvc        service.AdminService
 	PluginSvc       service.PluginService
 	PluginMgr       *plugin.Manager
+	JukeboxSvc      service.JukeboxService
 	ProgressSvc     service.ProgressService
 	AuthSvc         service.AuthService
 	PodcastSvc      service.PodcastEpisodeService
@@ -138,6 +140,18 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		pluginMgr, _ = plugin.NewManager(plugin.Options{})
 	}
 
+	var jukeboxAdapter jukebox.Adapter
+	if cfg.JukeboxEnabled {
+		mpv, err := jukebox.NewMPV(cfg.JukeboxMPVPath)
+		if err != nil {
+			logger.Warn("jukebox enabled but mpv unavailable; controls will fail until mpv is installed", "err", err)
+		} else {
+			jukeboxAdapter = mpv
+		}
+	}
+	jukeboxEngine := service.NewJukeboxEngine(cfg.JukeboxEnabled, cfg.MediaRoot, jukeboxAdapter, mediaSvc)
+	jukeboxSvc := service.NewJukeboxService(jukeboxEngine)
+
 	deps := &Deps{
 		trashLock:       trashLock,
 		Store:           store,
@@ -150,6 +164,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		AdminSvc:        adminSvc,
 		PluginMgr:       pluginMgr,
 		PluginSvc:       service.NewPluginService(pluginMgr),
+		JukeboxSvc:      jukeboxSvc,
 		ProgressSvc:     service.NewProgressService(store, clk),
 		AuthSvc:         service.NewAuthService(store, clk, hasher, sm, tm),
 		PodcastSvc:      podcastSvc,
@@ -382,6 +397,7 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 			},
 			Admin:       deps.AdminSvc,
 			Plugins:     deps.PluginSvc,
+			Jukebox:     deps.JukeboxSvc,
 			Auth:        deps.AuthSvc,
 			Podcast:     deps.PodcastSvc,
 			PodcastSync: deps.PodcastSyncSvc,
@@ -420,6 +436,9 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 	defer stopTranscoding(deps)
 	if deps.PluginMgr != nil {
 		defer func() { _ = deps.PluginMgr.Close(context.Background()) }()
+	}
+	if deps.JukeboxSvc != nil {
+		defer func() { _ = deps.JukeboxSvc.Close(context.Background()) }()
 	}
 	checkTranscoding(deps, runner)
 	checkThumbnailCache(deps)

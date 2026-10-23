@@ -58,7 +58,12 @@ type Config struct {
 	// SubsonicEnabled turns on the optional Subsonic/OpenSubsonic /rest
 	// compatibility surface (A01a). Default false; Player custom APIs stay intact.
 	SubsonicEnabled bool
-	Port            int
+	// JukeboxEnabled turns on optional A02a server-host audio (admin control).
+	// Default false; ordinary client streaming never requires it.
+	JukeboxEnabled bool
+	// JukeboxMPVPath is the mpv binary for the server-audio adapter. Empty uses "mpv".
+	JukeboxMPVPath string
+	Port           int
 	MediaRoot              string
 	DBPath                 string
 	MaxUploadSizeMB        int
@@ -233,6 +238,19 @@ func loadSubsonicEnabled(cfg *Config) error {
 	return nil
 }
 
+// loadJukeboxSettings reads JUKEBOX_ENABLED and JUKEBOX_MPV_PATH.
+func loadJukeboxSettings(cfg *Config) error {
+	if v := os.Getenv("JUKEBOX_ENABLED"); v != "" {
+		b, err := strconv.ParseBool(strings.TrimSpace(v))
+		if err != nil {
+			return fmt.Errorf("invalid JUKEBOX_ENABLED: %w", err)
+		}
+		cfg.JukeboxEnabled = b
+	}
+	envString("JUKEBOX_MPV_PATH", func(s string) { cfg.JukeboxMPVPath = s })
+	return nil
+}
+
 // loadCORSSettings reads comma-separated CORS origins from the environment.
 func loadCORSSettings(cfg *Config) {
 	if v := os.Getenv("PLAYER_CORS_ORIGINS"); v != "" {
@@ -280,6 +298,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if err := loadSubsonicEnabled(cfg); err != nil {
+		return nil, err
+	}
+
+	if err := loadJukeboxSettings(cfg); err != nil {
 		return nil, err
 	}
 

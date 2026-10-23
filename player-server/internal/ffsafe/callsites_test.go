@@ -55,6 +55,7 @@ var hardeningFuncs = []string{"InputArgs", "SourceArgs", "ImageInputArgs"}
 // reason. An entry that no longer matches anything fails the test.
 var commandAllowlist = map[string]string{
 	"internal/ffsafe/ffsafetest/ffsafetest.go:Generate": "test support: writes fixtures from ffmpeg's synthetic sources, reads no user media",
+	"internal/jukebox/mpv.go:startProcess":              "optional A02a server-audio: starts one idle mpv; Engine confines media paths before loadfile",
 }
 
 const (

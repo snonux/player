@@ -59,6 +59,7 @@ type Server struct {
 	authSvc       service.AuthService
 	adminSvc      service.AdminService
 	pluginSvc     service.PluginService
+	jukeboxSvc    service.JukeboxService
 	podcastSvc    service.PodcastEpisodeService
 	podcastSync   service.PodcastSyncService
 	// subsonicSvc adapts the music catalog for optional /rest clients (A01a).
@@ -83,6 +84,8 @@ type ServerServices struct {
 	Admin   service.AdminService
 	// Plugins is the optional A08 WASM extension boundary (admin only).
 	Plugins service.PluginService
+	// Jukebox is the optional A02a server-audio engine (admin-controlled).
+	Jukebox service.JukeboxService
 	Podcast service.PodcastEpisodeService
 	// PodcastSync serves the account podcast synchronization endpoint.
 	PodcastSync service.PodcastSyncService
@@ -171,6 +174,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		authSvc:       deps.Services.Auth,
 		adminSvc:      deps.Services.Admin,
 		pluginSvc:     deps.Services.Plugins,
+		jukeboxSvc:    deps.Services.Jukebox,
 		podcastSvc:    deps.Services.Podcast,
 		podcastSync:   deps.Services.PodcastSync,
 		subsonicSvc:   subsonicSvc,
@@ -495,6 +499,7 @@ func (s *Server) routes() {
 	s.routesSharePublic()
 	s.routesCast()
 	s.routesRenderer()
+	s.routesJukebox()
 	s.routesStatic()
 	s.routesHTML()
 	s.routesAuth()

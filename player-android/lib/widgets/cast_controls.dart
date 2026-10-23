@@ -117,7 +117,11 @@ class _CastDevicePickerState extends State<_CastDevicePicker> {
               for (final device in devices)
                 ListTile(
                   key: Key('cast_device_${device.id}'),
-                  leading: Icon(device.isRenderer ? Icons.speaker : Icons.tv),
+                  leading: Icon(device.isJukebox
+                      ? Icons.speaker_group
+                      : device.isRenderer
+                          ? Icons.speaker
+                          : Icons.tv),
                   title: Text(device.name),
                   subtitle: device.model == null ? null : Text(device.model!),
                   onTap: () => Navigator.of(context).pop(device),

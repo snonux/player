@@ -1,6 +1,9 @@
 // Server-mediated LAN output works in Chrome and Firefox without browser SDKs.
 import { API } from './api.js';
 import { saveListeningProgress, listeningOccurrenceID } from './listening-progress.js';
+import { initJukebox, jukeboxAvailable, jukeboxLabel } from './jukebox.js';
+
+const SERVER_SPEAKERS_ID = 'server-speakers';
 
 let deps = {};
 let device = null;
@@ -23,15 +26,39 @@ let lastStoppedDeviceID = null;
 let retainedStop = null;
 let stopPending = false;
 
+function isServerSpeakers(selected = device) {
+  return selected?.id === SERVER_SPEAKERS_ID;
+}
+
 async function request(path, body) {
   if (body) body = { ...body, session_id: outputSession, revision: body.revision ?? revision };
-  const response = await fetch(`/api/renderers${path}`, {
+  const useJukebox = isServerSpeakers() || (body && body.device_id === SERVER_SPEAKERS_ID);
+  const url = useJukebox
+    ? (path === '' || path === undefined ? '/api/jukebox' : '/api/jukebox/control')
+    : `/api/renderers${path}`;
+  const payload = useJukebox && body
+    ? {
+        session_id: body.session_id,
+        revision: body.revision,
+        action: body.action,
+        media_id: body.media_id,
+        position: body.position,
+        volume: body.volume,
+        output_id: body.output_id,
+      }
+    : body;
+  const response = await fetch(url, {
     signal: AbortSignal.timeout(path ? 15000 : 10000),
-    credentials: 'include', method: body ? 'POST' : 'GET',
+    credentials: 'include', method: payload ? 'POST' : 'GET',
     headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
+    body: payload ? JSON.stringify(payload) : undefined,
   });
-  if (!response.ok) throw new Error('Speaker unavailable. Check the server network and try again.');
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || (useJukebox
+      ? 'Server speakers unavailable. Check host audio output and admin permission.'
+      : 'Speaker unavailable. Check the server network and try again.'));
+  }
   return response.json();
 }
 
@@ -42,6 +69,7 @@ export const rendererDuration = () => duration;
 export function initRenderer(options, doc = document) {
   deps = options;
   outputSession ||= listeningOccurrenceID();
+  initJukebox(options).catch(() => {});
   if (!options.button?.after) return;
   if (!doc.querySelector('link[data-renderer-style]')) {
     const style = doc.createElement('link'); style.rel = 'stylesheet'; style.href = '/css/renderer.css'; style.dataset.rendererStyle = ''; doc.head.append(style);
@@ -86,11 +114,17 @@ async function showPicker(opener) {
   async function searchDevices() {
     search.disabled = true; note.textContent = 'Looking for speakers on the server network…'; list.replaceChildren();
     try {
+      await initJukebox(deps);
       const devices = await request('');
       if (!dialog.open) return;
-      note.textContent = devices.length ? 'Choose a DLNA / UPnP speaker.' : 'No speakers found. The speaker and Player server must be on the same network.';
-      for (const found of devices) {
+      const rows = Array.isArray(devices) ? devices.slice() : [];
+      if (jukeboxAvailable()) rows.unshift({ id: SERVER_SPEAKERS_ID, name: jukeboxLabel() });
+      note.textContent = rows.length
+        ? "Choose an output. This server's speakers appear for administrators when enabled."
+        : 'No speakers found. The speaker and Player server must be on the same network.';
+      for (const found of rows) {
         const button = document.createElement('button'); button.className = 'btn'; button.textContent = found.name;
+        if (found.id === SERVER_SPEAKERS_ID) button.setAttribute('aria-label', "Play on this server's speakers");
         button.onclick = async () => {
           const media = deps.getCurrentMedia?.();
           if (!media || media.type !== 'audio') { note.textContent = 'Choose a server audio track first.'; return; }
