@@ -76,15 +76,90 @@ void main() {
   });
 
   Future<OfflineMedia> download(
-          {Media? item, int user = 7, bool Function()? authorized, Uri? uri}) =>
+          {Media? item,
+          int user = 7,
+          bool Function()? authorized,
+          Uri? uri,
+          bool batchMember = false}) =>
       downloads.download(
         media: item ?? media(),
+        batchMember: batchMember,
         origin: origin,
         userId: user,
         uri: uri ?? Uri.parse('$origin/api/v1/media/11/stream'),
         headers: {'Authorization': 'Bearer test-secret'},
         authorized: authorized ?? () => true,
       );
+
+  test('bulk saves unique IDs, retains successes and reports failures',
+      () async {
+    final saved = <int>[];
+    await downloads.downloadBatch(
+        [media(id: 1), media(id: 1), media(id: 2), media(id: 3)], (song) async {
+      if (song.id == 2) throw const HttpException('unavailable');
+      saved.add(song.id);
+    }, () => true);
+    expect(saved, [1, 3]);
+    expect(downloads.batch!.completed, 2);
+    expect(downloads.batch!.failed.map((s) => s.id), [2]);
+    expect(downloads.batch!.running, false);
+  });
+
+  test('bulk actual files survive partial failure and retry skips saved copies',
+      () async {
+    respond = (request) async {
+      if (request.uri.path.endsWith('/12/stream')) {
+        request.response.statusCode = 403;
+      } else {
+        request.response.headers.contentType = ContentType('audio', 'wav');
+        request.response.contentLength = 4;
+        request.response.add([1, 2, 3, 4]);
+      }
+      await request.response.close();
+    };
+    final songs = [media(id: 11), media(id: 12), media(id: 13), media(id: 11)];
+    Future<void> save(Media song) async {
+      await download(
+          item: song,
+          uri: Uri.parse('$origin/api/v1/media/${song.id}/stream'),
+          batchMember: true);
+    }
+
+    await downloads.downloadBatch(songs, save, () => true);
+    expect((await repository.list()).length, 2);
+    expect(downloads.batch!.failed.single.id, 12);
+    expect(downloads.batch!.completed, 2);
+    requests.clear();
+    respond = (request) async {
+      request.response.headers.contentType = ContentType('audio', 'wav');
+      request.response.contentLength = 4;
+      request.response.add([1, 2, 3, 4]);
+      await request.response.close();
+    };
+    await downloads.downloadBatch(songs, save, () => true);
+    expect((await repository.list()).length, 3);
+    expect(downloads.batch!.failed, isEmpty);
+    expect(requests, ['GET /api/v1/media/12/stream']);
+  });
+
+  test('bulk cancel stops pending work; account change prevents next song',
+      () async {
+    final saved = <int>[];
+    await downloads.downloadBatch([media(id: 1), media(id: 2)], (song) async {
+      saved.add(song.id);
+      downloads.cancel();
+    }, () => true);
+    expect(saved, [1]);
+    expect(downloads.batch!.cancelled, true);
+    var authorized = true;
+    saved.clear();
+    await downloads.downloadBatch([media(id: 1), media(id: 2)], (song) async {
+      saved.add(song.id);
+      authorized = false;
+    }, () => authorized);
+    expect(saved, [1]);
+    expect(downloads.batch!.cancelled, true);
+  });
 
   test(
       'download retains tagged title, complete music and source context after reopen',

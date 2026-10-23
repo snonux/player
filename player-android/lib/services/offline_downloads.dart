@@ -25,6 +25,17 @@ class OfflineDownloadJob {
   }
 }
 
+/// Aggregate state for one manually requested collection, separate from cache.
+class OfflineDownloadBatch {
+  OfflineDownloadBatch(this.songs, this.authorized);
+  final List<Media> songs;
+  final bool Function() authorized;
+  final List<Media> failed = [];
+  int completed = 0;
+  bool cancelled = false;
+  bool running = true;
+}
+
 /// One foreground download at a time. Bytes are written with backpressure,
 /// never accumulated into a whole-file buffer. No remote mutation API exists.
 class OfflineDownloads extends ChangeNotifier {
@@ -34,6 +45,7 @@ class OfflineDownloads extends ChangeNotifier {
   final PlaybackSessionCoordinator playback;
   OfflineDownloadJob? active;
   String? error;
+  OfflineDownloadBatch? batch;
   int _libraryRevision = 0;
   int get libraryRevision => _libraryRevision;
   bool _disposed = false;
@@ -42,10 +54,51 @@ class OfflineDownloads extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  void cancel() => active?.cancel();
+  void cancel() {
+    if (batch?.running == true) batch!.cancelled = true;
+    active?.cancel();
+    _changed();
+  }
+
+  /// Saves sequentially with the existing atomic file manager. Duplicate IDs
+  /// are saved once; finished files survive cancellation or later failures.
+  Future<void> downloadBatch(
+      List<Media> songs,
+      Future<void> Function(Media song) save,
+      bool Function() authorized) async {
+    if (active != null || batch?.running == true) {
+      throw StateError('Wait for the current download or cancel it first.');
+    }
+    final seen = <int>{};
+    final pending =
+        songs.where((s) => s.type == 'audio' && seen.add(s.id)).toList();
+    final job = OfflineDownloadBatch(pending, authorized);
+    batch = job;
+    _changed();
+    try {
+      for (final song in pending) {
+        if (job.cancelled || !authorized() || _disposed) break;
+        try {
+          await save(song);
+          job.completed++;
+        } on OfflineDownloadCancelled {
+          job.cancelled = true;
+          break;
+        } catch (_) {
+          job.failed.add(song);
+        }
+        _changed();
+      }
+    } finally {
+      if (!authorized() || _disposed) job.cancelled = true;
+      job.running = false;
+      _changed();
+    }
+  }
 
   Future<OfflineMedia> download({
     required Media media,
+    bool batchMember = false,
     required String origin,
     String? trustedTransportOrigin,
     required int userId,
@@ -54,7 +107,9 @@ class OfflineDownloads extends ChangeNotifier {
     required bool Function() authorized,
     Future<void> Function(OfflineDownloadJob job)? prepare,
   }) async {
-    if (active != null) throw StateError('Wait for the current download.');
+    if (active != null || (batch?.running == true && !batchMember)) {
+      throw StateError('Wait for the current download.');
+    }
     if ((uri.origin != origin && uri.origin != trustedTransportOrigin) ||
         !{'http', 'https'}.contains(uri.scheme) ||
         uri.userInfo.isNotEmpty ||

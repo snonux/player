@@ -812,6 +812,60 @@ async function testCollectionReplaceUndoAndOccurrenceOrder() {
   assert(!queue.queueState().active,'replacement Undo stays paused');
 }
 
+async function testSelectedDownloadPopoverKeepsDialogFocus() {
+  setup();
+  const {selectionActions}=await import('../queue-actions.js');
+  const oldCreate=document.createElement,oldBody=document.body,oldQuery=document.querySelector;
+  const opener={isConnected:true,focus(){document.activeElement=this;}},close={focus(){document.activeElement=this;}},start={},progress={},status={};
+  let toggle,hasModal=false,created=0;
+  const item={dataset:{insert:'download'},focus(){document.activeElement=this;}};
+  const menu={querySelectorAll:()=>[item],querySelector:()=>item,hidePopover(){},showPopover(){},remove(){},setAttribute(){},addEventListener(type,handler){if(type==='toggle')toggle=handler;}};
+  const modal={querySelector:selector=>({'[data-close]':close,'[data-start]':start,'[data-status]':status,progress})[selector],remove(){hasModal=false;}};
+  document.createElement=()=>created++===0?menu:modal;
+  document.body={append(element){if(element===modal)hasModal=true;}};
+  document.querySelector=selector=>selector==='.modal-overlay.open' && hasModal?modal:null;
+  try {
+    selectionActions(opener,[{id:1,type:'audio'}]);
+    item.onclick();
+    assert(document.activeElement===close,'download dialog initially owns focus');
+    toggle({newState:'closed'});
+    assert(document.activeElement===close,'delayed popover close must not steal modal focus');
+    close.onclick();
+    assert(document.activeElement===opener,'closing download restores selection action opener');
+  } finally {document.createElement=oldCreate;document.body=oldBody;document.querySelector=oldQuery;}
+}
+
+async function testCollectionDownloadsSurvivePlaybackAndRespectAccountNavigation() {
+  setup();
+  const {bindCollectionActions} = await import('../collection-actions.js');
+  const {state} = await import('../state.js');
+  const {beginPlaybackIntent} = await import('../playback-intent.js');
+  const oldAlbum=API.album, oldCreate=document.createElement, oldBody=document.body;
+  const play={},shuffle={},menu={},status={},download={isConnected:true,focus(){}};
+  const buttons=[play,shuffle,menu,download];
+  const root={isConnected:true,querySelector:selector=>({'[data-collection-play]':play,'[data-collection-shuffle]':shuffle,'[data-collection-menu]':menu,'[data-collection-download]':download,'[data-collection-status]':status})[selector],querySelectorAll:()=>buttons};
+  let complete,opened=0,current=true;
+  const close={focus(){},isConnected:true},start={},progress={},modalStatus={};
+  document.createElement=()=>({querySelector:selector=>({'[data-close]':close,'[data-start]':start,'[data-status]':modalStatus,progress})[selector],remove(){}});
+  document.body={append(){opened++;}};
+  API.album=()=>new Promise(resolve=>complete=resolve);
+  try {
+    state.user={id:7};
+    bindCollectionActions(root,()=>[{kind:'album',key:'a'}],()=>current,'Test album');
+    const pending=download.onclick();
+    beginPlaybackIntent();
+    complete({songs:[{id:1,type:'audio'}]});await pending;
+    assertEqual(opened,1,'track skip/auto-advance must not cancel pending collection download');
+    close.onclick?.();
+    const accountPending=download.onclick();state.user={id:8};
+    complete({songs:[{id:2,type:'audio'}]});await accountPending;
+    assertEqual(opened,1,'account change cancels pending download');
+    const navigationPending=download.onclick();current=false;
+    complete({songs:[{id:3,type:'audio'}]});await navigationPending;
+    assertEqual(opened,1,'navigation cancels pending download');
+  } finally {API.album=oldAlbum;document.createElement=oldCreate;document.body=oldBody;}
+}
+
 async function testCollectionDuplicateSubmitAndSupersession() {
   setup();
   const {bindCollectionActions,queueCollectionSelected} = await import('../collection-actions.js');
@@ -1116,8 +1170,8 @@ async function testCanceledCollectionSelectionReleasesOnlyItsOwnBusyState() {
   const {state}=await import('../state.js');state.user={id:44};
   const oldCreate=document.createElement,oldAlbum=API.album;
   const controls=new Map();
-  for(const key of ['data-select-collections','data-collection-play','data-collection-shuffle','data-collection-menu','data-collection-status','data-batch','data-batch-count']) controls.set(`[${key}]`,{focus(){},isConnected:true});
-  const toolbar={isConnected:true,querySelector:s=>controls.get(s),querySelectorAll:()=>['data-collection-play','data-collection-shuffle','data-collection-menu'].map(k=>controls.get(`[${k}]`)),append(){}};
+  for(const key of ['data-select-collections','data-collection-play','data-collection-shuffle','data-collection-menu','data-collection-download','data-collection-status','data-batch','data-batch-count']) controls.set(`[${key}]`,{focus(){},isConnected:true});
+  const toolbar={isConnected:true,querySelector:s=>controls.get(s),querySelectorAll:()=>['data-collection-play','data-collection-shuffle','data-collection-menu','data-collection-download'].map(k=>controls.get(`[${k}]`)),append(){}};
   let check,created=0;
   const card=fakeElement();card.dataset={};card.prepend=value=>{check=value;};card.querySelector=s=>s==='input'?check:{append(){}};
   const grid={querySelector:()=>({append(){}}),querySelectorAll:()=>[card]};
@@ -1293,6 +1347,8 @@ for (const test of [
   testRepeatCompletionEpochAndGenuineReplay,
   testCollectionReplaceUndoAndOccurrenceOrder,
   testCollectionDuplicateSubmitAndSupersession,
+  testCollectionDownloadsSurvivePlaybackAndRespectAccountNavigation,
+  testSelectedDownloadPopoverKeepsDialogFocus,
   testRecoveredResumeRetainsFutureFIFO,
   testPersistedQueueRecovery,
   testUndoCannotResurrectInvalidatedFIFO,

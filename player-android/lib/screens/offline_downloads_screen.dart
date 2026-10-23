@@ -1,3 +1,4 @@
+import '../widgets/music_download_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -40,6 +41,23 @@ class _OfflineDownloadsScreenState
             padding: EdgeInsets.all(16),
             child: Text(
                 'Play saved files without signing in or connecting. Deleting an offline copy keeps the server file.')),
+        if (downloads.batch case final batch?)
+          ListTile(
+            title: Text(
+                'Music downloads · ${batch.completed} of ${batch.songs.length} saved'),
+            subtitle: Text(
+                '${batch.failed.length} failed${batch.cancelled ? ' · Canceled' : batch.running ? ' · Keep Player open' : ' · Finished'}'),
+            trailing: batch.running
+                ? TextButton(
+                    onPressed: downloads.cancel,
+                    child: const Text('Cancel all'))
+                : TextButton(
+                    onPressed: batch.authorized()
+                        ? () =>
+                            showMusicDownloadDialog(context, ref, batch.songs)
+                        : null,
+                    child: const Text('Retry selection')),
+          ),
         if (job != null)
           ListTile(
             title: Text(job.title),

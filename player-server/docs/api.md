@@ -2781,3 +2781,33 @@ catalog. Missing metadata and synthetic artist names never establish similarity.
 A readable source without matches returns `[]`, an inaccessible/missing source
 returns 404, invalid kinds return 400, and library read failures retain the normal
 server error response. Clients show Retry without discarding primary details.
+
+### Bulk original music downloads
+
+`POST /api/music/downloads` · `POST /api/v1/music/downloads` accepts
+`{"media_ids":[1,2,3]}` for the signed-in account. Clients expand albums,
+playlists or selections through their normal accessible collection endpoints.
+The server rechecks each song's access, rejects non-audio items and removes
+repeated IDs, preserving first occurrence order. One request accepts at most
+500 IDs and produces at most 512 MiB, including ZIP overhead. Invalid inputs
+return 400; oversize archives return 413. Select smaller groups for larger
+collections.
+
+The response is an `application/zip` attachment, `Player-music.zip`, containing
+original bytes named `<media-id>-<basename>`, with `X-Download-Count` and
+`Content-Length`. Originals use the same confined source opener as individual
+downloads. A temporary archive is completed before serving: access, source,
+read or preparation failures return an error without a partial successful ZIP.
+Connection interruption during transfer must be retried; browser clients save
+only a complete response. Canceling closes the request and removes temporary
+archive data. No server download history or credentials are persisted.
+
+Web Download actions save an archive to the browser's downloads folder. Extract
+it for offline playback in a compatible local player; this does not populate
+the browser's playback cache. Native Keep offline actions instead save unique
+songs sequentially using the existing account-isolated offline repository,
+originals for supported formats and compatibility copies when required.
+Completed native files survive cancel/failure; retry skips already saved files.
+Batches are manual foreground work: keep the tab/app open. They resume through
+retry, with no background scheduling, automatic collection syncing or partial
+byte resumption.

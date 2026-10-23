@@ -1,3 +1,4 @@
+import '../widgets/music_download_dialog.dart';
 import '../widgets/music_related_section.dart';
 import '../widgets/music_listening_details.dart';
 import '../widgets/music_rating_button.dart';
@@ -363,16 +364,21 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
     };
     final selectedSongs =
         songs.where((song) => _selected.contains(song.id)).toList();
-    PopupMenuButton<QueueInsertion> actions(List<Media> items, String label) =>
-        PopupMenuButton<QueueInsertion>(
+    PopupMenuButton<String> actions(List<Media> items, String label) =>
+        PopupMenuButton<String>(
             tooltip: label,
             enabled: items.isNotEmpty,
-            onSelected: (action) =>
-                insertServerSongs(context, ref, items, action),
+            onSelected: (action) => action == 'download'
+                ? showMusicDownloadDialog(context, ref, items)
+                : insertServerSongs(
+                    context, ref, items, QueueInsertion.values.byName(action)),
             itemBuilder: (_) => [
                   for (final action in QueueInsertion.values)
                     PopupMenuItem(
-                        value: action, child: Text(queueActionLabel(action)))
+                        value: action.name,
+                        child: Text(queueActionLabel(action))),
+                  const PopupMenuItem(
+                      value: 'download', child: Text('Keep offline'))
                 ]);
     return ListView(padding: const EdgeInsets.all(16), children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

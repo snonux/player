@@ -45,53 +45,64 @@ final offlineMediaProvider =
 });
 
 /// Captures credentials only for the selected account and never persists them.
-Future<void> keepMediaOffline(WidgetRef ref, Media media) async {
+Future<void> keepMediaOffline(WidgetRef ref, Media media) =>
+    mediaOfflineSaver(ref)(media);
+
+/// Capture dependencies once so a batch can outlive its initiating screen.
+Future<void> Function(Media) mediaOfflineSaver(WidgetRef ref,
+    {bool batchMember = false}) {
   final user = ref.read(authStateProvider).valueOrNull?.user;
   if (user == null) throw StateError('Sign in before downloading.');
   final origin = ref.read(playerBaseUrlProvider).origin;
   final mutations = ref.read(credentialMutationQueueProvider);
   final generation = mutations.generation;
   final client = ref.read(apiClientProvider);
-  final uri = Uri.parse(client.offlineDownloadUrl(media));
   final downloads = ref.read(offlineDownloadsProvider);
   final preparer = ref.read(playbackPreparerProvider);
-  final headers = await accountRequestHeaders(
-    uri: uri,
-    baseUrl: Uri.parse(origin),
-    storage: ref.read(tokenStorageProvider),
-    cookieJar: ref.read(cookieJarProvider),
-    mutations: mutations,
-  );
+  final storage = ref.read(tokenStorageProvider);
+  final cookieJar = ref.read(cookieJarProvider);
   final endpointRouter = ref.read(serverEndpointRouterProvider);
-  final transportUri = await endpointRouter.resolve(uri);
-  try {
-    await downloads.download(
-      media: media,
-      origin: origin,
-      userId: user.id,
-      uri: transportUri,
-      trustedTransportOrigin: transportUri.origin,
-      headers: headers,
-      authorized: () =>
-          mutations.credentialsEnabled &&
-          mutations.generation == generation &&
-          mutations.credentialOrigin == origin,
-      prepare: !media.transcoded
-          ? null
-          : (job) async {
-              final preparation = preparer.prepare(uri,
-                  probe: client.probePlayback,
-                  stillWanted: () =>
-                      !job.cancelled && mutations.generation == generation);
-              job.abort = preparation.cancel;
-              if (!await preparation.ready) throw OfflineDownloadCancelled();
-            },
+  return (media) async {
+    final uri = Uri.parse(client.offlineDownloadUrl(media));
+    final headers = await accountRequestHeaders(
+      uri: uri,
+      baseUrl: Uri.parse(origin),
+      storage: storage,
+      cookieJar: cookieJar,
+      mutations: mutations,
     );
-  } on SocketException {
-    endpointRouter.failed(transportUri);
-    rethrow;
-  } on TimeoutException {
-    endpointRouter.failed(transportUri);
-    rethrow;
-  }
+    final transportUri = await endpointRouter.resolve(uri);
+    try {
+      await downloads.download(
+        media: media,
+        batchMember: batchMember,
+        origin: origin,
+        userId: user.id,
+        uri: transportUri,
+        trustedTransportOrigin: transportUri.origin,
+        headers: headers,
+        authorized: () =>
+            (!batchMember || downloads.batch?.cancelled != true) &&
+            mutations.credentialsEnabled &&
+            mutations.generation == generation &&
+            mutations.credentialOrigin == origin,
+        prepare: !media.transcoded
+            ? null
+            : (job) async {
+                final preparation = preparer.prepare(uri,
+                    probe: client.probePlayback,
+                    stillWanted: () =>
+                        !job.cancelled && mutations.generation == generation);
+                job.abort = preparation.cancel;
+                if (!await preparation.ready) throw OfflineDownloadCancelled();
+              },
+      );
+    } on SocketException {
+      endpointRouter.failed(transportUri);
+      rethrow;
+    } on TimeoutException {
+      endpointRouter.failed(transportUri);
+      rethrow;
+    }
+  };
 }

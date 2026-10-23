@@ -1,3 +1,4 @@
+import 'music_download_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -111,6 +112,46 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
     return false;
   }
 
+  Future<void> _download() async {
+    if (_busy || !widget.enabled || widget.collections.isEmpty) return;
+    final mutations = ref.read(credentialMutationQueueProvider);
+    final epoch = mutations.generation;
+    final departure = _departureGeneration;
+    bool current() =>
+        mounted &&
+        epoch == mutations.generation &&
+        departure == _departureGeneration &&
+        (ModalRoute.of(context)?.isCurrent ?? true);
+    setState(() {
+      _busy = true;
+      _message = 'Loading songs…';
+    });
+    try {
+      final songs = await resolveMusicCollections(
+          ref.read(apiClientProvider), widget.collections, current);
+      if (mounted && current()) {
+        if (songs.isEmpty) {
+          setState(() => _message = 'No songs available.');
+        } else {
+          setState(() => _message = null);
+          await showMusicDownloadDialog(context, ref, songs);
+        }
+      }
+    } catch (_) {
+      if (current()) {
+        setState(() => _message =
+            'Could not load songs. Check your connection and access, then retry.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          if (_message == 'Loading songs…') _message = null;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final enabled = widget.enabled && widget.collections.isNotEmpty && !_busy;
@@ -135,6 +176,10 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                     OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
                 icon: const Icon(Icons.shuffle),
                 label: const Text('Shuffle')),
+            OutlinedButton.icon(
+                onPressed: enabled ? _download : null,
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Keep offline')),
             // Keep the native popup semantic target within its own control;
             // otherwise the custom-child tap semantics can merge into Wrap.
             Semantics(
