@@ -1,3 +1,4 @@
+import { announceSong, suspendSongAnnouncement } from './song-notifications.js';
 import { playbackCacheSource, playbackCacheEnabled, cacheSong, releasePlaybackCache } from './playback-cache.js';
 import { initStreamQuality } from './stream-quality.js';
 import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
@@ -233,7 +234,13 @@ function bindCast(e) {
       showPosition(e, seconds, duration || effectiveDuration());
       lyrics?.update();
     },
-    onRemotePlaying: (playing) => updateUI(playing),
+    onRemotePlaying: (playing) => {
+      updateUI(playing);
+      if (playing && !isDetached()) {
+        const id = currentMedia?.id;
+        announceSong(currentMedia, () => isCasting() && !isDetached() && currentMedia?.id === id && isPlaying);
+      }
+    },
     onRemoteEnded: () => triggerNext({ forcePlay: true, completed: true }),
     onCastStarted: (device) => {
       playbackSpeed?.setCasting(true);
@@ -333,7 +340,11 @@ function bindMediaEvents(e, m) {
   m.addEventListener('seeking', () => { sourceEpoch++; });
   m.addEventListener('play', () => { sourceEpoch++; completingEpoch = null; updateUI(true); isPlaying = true; startProgressTimer(); });
   m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
-  m.addEventListener('playing', () => { if (m === currentMediaElement()) clearPausedReturnHint(); });
+  m.addEventListener('playing', () => {
+    if (m !== currentMediaElement()) return;
+    clearPausedReturnHint();
+    if (!isDetached() && !m.paused && !m.error) announceSong(currentMedia, () => !isDetached() && !m.paused && !m.error && m === currentMediaElement());
+  });
   m.addEventListener('error', () => handleElementError(m));
 }
 
@@ -515,6 +526,7 @@ export function seekRelative(seconds) {
 }
 
 export function stopAndClose() {
+  suspendSongAnnouncement();
   sleepTimer?.cancel();
   clearPausedReturnHint();
   osSession?.clear();
@@ -644,6 +656,7 @@ function loadMedia(media, resumeFrom = 0) {
 // library marks session-authenticated library playback in the main window
 // (as opposed to share and popup URLs); see finishPendingSource.
 function showMedia(media, source, thumbnailUrl) {
+  suspendSongAnnouncement();
   releasePlaybackCache();
   clearPausedReturnHint();
   currentThumbnailUrl = thumbnailUrl;

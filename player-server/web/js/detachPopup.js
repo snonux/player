@@ -1,3 +1,4 @@
+import { initSongNotifications } from './song-notifications.js';
 import { API } from './api.js';
 import { hasPendingPlay, initPlayer, loadMediaDirect, requestPlay, togglePlay, currentPlaybackSpeed, setPlaybackSpeed, stepPlaybackSpeed, currentPlaybackLoudness, setPlaybackLoudness, setPlaybackLoudnessContext, currentSleepDeadline, setSleepDeadline, pausePlayback } from './player.js';
 import { initModalFocus } from './modal-focus.js';
@@ -26,6 +27,7 @@ initPlayer({ onPlaybackFailed: sendState, personalActions: true,
   onSessionNext: () => post({ type: 'detach-next', play: true }) });
 initNotes((status, message) => toast(status === 'error' ? message || 'Could not update note.' : status === 'deleted' ? 'Note deleted' : 'Note saved', status === 'error' ? 'error' : 'info'));
 initModalFocus();
+API.config().then(cfg => initSongNotifications(cfg?.user_id)).catch(() => {});
 
 const video = document.getElementById('media-video');
 const audio = document.getElementById('media-audio');

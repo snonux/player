@@ -1,3 +1,4 @@
+import { initSongNotifications, clearSongNotifications } from './song-notifications.js';
 import { initPlaybackCache, releasePlaybackCache, setPlaybackCacheAccount } from './playback-cache.js';
 import { initNavigationPreferences, readNavigationPreferences, coldLanding } from './navigation-preferences.js';
 import { nextMusicSearch, musicQuery, captureSearchView, restoreSearchView, hasSearchView, forgetSearchView } from './music-search.js';
@@ -281,6 +282,7 @@ async function initApp() {
       API.sets(),
     ]);
     setPlaybackCacheAccount(cfg?.user_id);
+    initSongNotifications(cfg?.user_id);
     setMediaPageSize(cfg?.media_page_size);
     state.sets = (sets || []).slice().sort((a, b) => a.name.localeCompare(b.name));
     API.users().then(() => {
@@ -572,6 +574,7 @@ function initChrome() {
 
   document.getElementById('logout-btn')?.addEventListener('click', async () => {
     try {
+      clearSongNotifications();
       releasePlaybackCache();
       await API.logout();
       location.href = '/login.html';
