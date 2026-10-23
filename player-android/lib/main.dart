@@ -1,6 +1,7 @@
 import 'services/stream_quality.dart';
 import 'services/headset_preferences.dart';
 import 'providers/headset_preferences_provider.dart';
+import 'providers/android_auto_provider.dart';
 import 'services/playback_widget_observer.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
@@ -125,6 +126,8 @@ void main() async {
   container.listen(playerBaseUrlProvider, (_, __) => playbackWidgets.refresh());
 
   handler.artworkLoader = container.read(mediaArtworkLoaderProvider);
+  handler.autoCatalog = container.read(androidAutoCatalogProvider);
+  handler.refreshAutoChildren();
   container.read(globalSyncCoordinatorProvider);
 
   runApp(

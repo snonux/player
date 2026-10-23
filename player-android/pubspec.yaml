@@ -40,6 +40,8 @@ dependencies:
   # audio_service: runs audio in the background as a foreground service,
   # integrates with Android media notifications and lock-screen controls.
   audio_service: ^0.18.15
+  # MediaBrowser subscriptions use the same reactive stream type as audio_service.
+  rxdart: ^0.28.0
   # sqflite: SQLite plugin for Flutter; used by ProgressQueue to persist pending
   # progress updates locally so they survive process restarts while offline.
   sqflite: ^2.4.1

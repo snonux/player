@@ -17,6 +17,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- Prevents the CPU from sleeping while audio is actively playing. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <queries>
+        <!-- Allows production-certificate validation on Android 11+. -->
+        <package android:name="com.google.android.projection.gearhead" />
+    </queries>
 
     <application
         android:label="Player"
@@ -61,6 +65,9 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Generic MediaBrowser integration; no Google runtime dependency. -->
+        <meta-data android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
         <!-- Disable Impeller on the x86_64 emulator: its OpenGL ES driver
              does not support GL_EXT_shader_framebuffer_fetch, causing Impeller
              to fail compiling blend-mode shaders.  Skia renders correctly. -->
@@ -75,8 +82,11 @@
              service type.  Class names match audio_service 0.18.x internals. -->
         <service
             android:name="com.ryanheise.audioservice.AudioService"
-            android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <!-- The only public browse endpoint validates callers and forwards the
+             existing audio_service session token, never a second player. -->
+        <service android:name=".AutoBrowseService" android:exported="true">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>

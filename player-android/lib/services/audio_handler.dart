@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'equalizer.dart';
@@ -17,6 +18,7 @@ import 'replay_gain.dart';
 import 'loudness_effect.dart';
 import 'headset_policy.dart';
 import 'headset_preferences.dart';
+import 'android_auto_catalog.dart';
 
 part 'audio_handler_gapless.dart';
 
@@ -93,6 +95,86 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   final EqualizerController equalizer;
   final HeadsetPreferences headsetPreferences;
   int _transportRevision = 0;
+
+  /// Captured before external catalog resolution so a later Pause wins.
+  int get transportRevision => _transportRevision;
+
+  AndroidAutoCatalog? autoCatalog;
+  // Retain two streams rather than one subject per album/page visited.
+  final _autoLibraryChanges = BehaviorSubject.seeded(<String, dynamic>{});
+  final _autoQueueChanges = BehaviorSubject.seeded(<String, dynamic>{});
+
+  /// Invalidates subscribed host views after account or queue changes.
+  void refreshAutoChildren({bool queueOnly = false}) {
+    if (!queueOnly) _autoLibraryChanges.add(<String, dynamic>{});
+    _autoQueueChanges.add(<String, dynamic>{});
+  }
+
+  @override
+  ValueStream<Map<String, dynamic>> subscribeToChildren(String parentMediaId) =>
+      autoCatalog?.isQueueParent(parentMediaId) == true
+          ? _autoQueueChanges
+          : _autoLibraryChanges;
+
+  /// Updates the host window and active index even for paused queue edits.
+  void publishAutoQueue(List<MediaItem> items, String title) {
+    queue.add(items);
+    queueTitle.add(title);
+    _broadcastState();
+  }
+
+  @override
+  Future<List<MediaItem>> getChildren(String parentMediaId,
+          [Map<String, dynamic>? options]) async =>
+      await autoCatalog?.children(parentMediaId) ?? [];
+
+  @override
+  Future<List<MediaItem>> search(String query,
+          [Map<String, dynamic>? extras]) async =>
+      await autoCatalog?.search(query) ?? [];
+
+  Future<void> _runAutoAction(
+      Future<void> Function(AndroidAutoCatalog) action) async {
+    try {
+      final catalog = autoCatalog;
+      if (catalog == null) throw StateError('Music is initializing');
+      await action(catalog);
+    } catch (_) {
+      // A failed new selection must not mark an existing audible source as
+      // stopped or as a decoder failure. Hosts receive a concise action error.
+      playbackState.add(playbackState.value.copyWith(
+          errorCode: 1,
+          errorMessage:
+              'Could not play music. Open Player on your phone, then retry.'));
+    }
+  }
+
+  @override
+  Future<void> playFromMediaId(String mediaId,
+          [Map<String, dynamic>? extras]) =>
+      _runAutoAction((catalog) => catalog.play(mediaId));
+
+  @override
+  Future<void> playFromSearch(String query, [Map<String, dynamic>? extras]) =>
+      _runAutoAction((catalog) => catalog.playSearch(query));
+
+  @override
+  Future<void> skipToQueueItem(int index) async {
+    final published = queue.value;
+    if (index < 0 || index >= published.length) return;
+    await playFromMediaId(published[index].id);
+  }
+
+  int? get _autoQueueIndex {
+    if (!_queueActive || _queueIndex < 0 || _queueIndex >= _albumQueue.length) {
+      return null;
+    }
+    final occurrence = _albumQueue[_queueIndex].id;
+    final index = queue.value
+        .indexWhere((item) => item.extras?['queueOccurrence'] == occurrence);
+    return index < 0 ? null : index;
+  }
+
   late final HeadsetPolicy headset = HeadsetPolicy(
     preferences: headsetPreferences,
     isPlaying: () => _player.playing,
@@ -1424,6 +1506,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
           MediaAction.seek,
           MediaAction.seekForward,
           MediaAction.seekBackward,
+          MediaAction.playFromMediaId,
+          MediaAction.playFromSearch,
+          MediaAction.skipToQueueItem,
         },
         androidCompactActionIndices: const [0, 1, 3], // prev, play/pause, next
         processingState: processingState,
@@ -1431,6 +1516,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         updatePosition: _player.position,
         bufferedPosition: _player.bufferedPosition,
         speed: _player.speed,
+        queueIndex: _autoQueueIndex,
       ),
     );
   }
