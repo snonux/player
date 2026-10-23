@@ -76,6 +76,85 @@ class AudioTraceTest(unittest.TestCase):
         self.assertAlmostEqual(levels['1000'], -24, delta=0.5)
         self.assertLess(levels['3000'], -60)
 
+    def test_eq_bands_equal_under_drift_and_phase_jumps(self):
+        """Flat three-tone probe stays flat despite emulator-like defects."""
+        rate = 44100
+        level = -27.54
+        bands = (100, 1000, 8000)
+        # 500 ppm clock drift plus abrupt phase jumps every 0.5 s mimic the
+        # QEMU wav capture that once made exact-bin Goertzel report 12 dB spread.
+        samples = self._mix_tones({f: level for f in bands}, rate, seconds=3.0,
+                                  drift_ppm=500, phase_jump_s=(0.5, 1.0, 1.5, 2.0, 2.5))
+        measured = audio_trace.analyze_samples(samples, rate, bands=list(bands))
+        levels = measured['segments'][0]['bands_dbfs']
+        values = list(levels.values())
+        self.assertEqual(len(values), 3)
+        spread = max(values) - min(values)
+        self.assertLess(spread, 1.5, f'spread {spread} dB for equal bands: {levels}')
+        for freq in bands:
+            self.assertAlmostEqual(levels[str(freq)], level, delta=1.0)
+
+    def test_eq_bands_unequal_still_detected_under_drift(self):
+        """A deliberately uneven middle band must still exceed flatness tolerance."""
+        rate = 44100
+        bands = (100, 1000, 8000)
+        samples = self._mix_tones({100: -27.54, 1000: -39.54, 8000: -27.54},
+                                  rate, seconds=3.0, drift_ppm=500,
+                                  phase_jump_s=(0.5, 1.0, 1.5, 2.0, 2.5))
+        measured = audio_trace.analyze_samples(samples, rate, bands=list(bands))
+        levels = measured['segments'][0]['bands_dbfs']
+        spread = max(levels.values()) - min(levels.values())
+        self.assertGreaterEqual(spread, 10.0, f'unequal bands must not look flat: {levels}')
+        self.assertAlmostEqual(levels['1000'] - levels['100'], -12.0, delta=1.5)
+
+    def test_eq_bands_on_retained_emulator_capture(self):
+        """Real pj3 recovery capture: flat Three Tones under calibrated measurement."""
+        wav = Path('/home/paul/tmp/pj3-evidence/run/android/recovery-eq.wav')
+        if not wav.is_file():
+            self.skipTest(f'retained emulator EQ capture missing: {wav}')
+        rate, samples = audio_trace.read_wav(wav)
+        measured = audio_trace.analyze_samples(samples, rate, bands=[100, 1000, 8000])
+        self.assertGreaterEqual(measured['audible_s'], 6.0)
+        levels = measured['segments'][0]['bands_dbfs']
+        values = list(levels.values())
+        self.assertEqual(len(values), 3)
+        spread = max(values) - min(values)
+        # Same LEVEL_TOLERANCE_DB as music_e2e / web baseline; do not loosen.
+        self.assertLess(spread, 1.5, f'spread {spread} dB on real capture: {levels}')
+        # Exact-bin long-window Goertzel on this file once reported ~12.5 dB.
+        window = self._measure_window(samples, rate)
+        exact = [audio_trace.goertzel_db(window, rate, f) for f in (100, 1000, 8000)]
+        self.assertGreaterEqual(max(exact) - min(exact), 10.0,
+                                'fixture must still exhibit the old exact-bin defect')
+
+    @staticmethod
+    def _mix_tones(levels, rate, seconds=3.0, drift_ppm=0.0, phase_jump_s=()):
+        n = int(seconds * rate)
+        out = [0.0] * n
+        scale = 1.0 + drift_ppm / 1e6
+        jumps = {int(rate * t) for t in phase_jump_s}
+        for frequency, level_db in levels.items():
+            amplitude = 10 ** (level_db / 20)
+            phase = 0.0
+            for i in range(n):
+                if i in jumps:
+                    phase += 1.3
+                out[i] += amplitude * math.sin(2 * math.pi * frequency * scale * i / rate + phase)
+        return out
+
+    @staticmethod
+    def _measure_window(samples, rate):
+        levels = audio_trace.frame_levels(samples, rate)
+        runs = audio_trace.find_segments(levels)
+        first, end = runs[0]
+        size = rate * audio_trace.FRAME_MS // 1000
+        start, stop = first * size, end * size
+        edge = rate * audio_trace.EDGE_MS // 1000
+        body = samples[start + edge:stop - edge] or samples[start:stop]
+        middle = len(body) // 2
+        half = int(min(len(body), rate * audio_trace.MEASURE_MAX_S) // 2)
+        return body[middle - half:middle + half]
+
     def test_short_gaps_are_measured_to_the_sample(self):
         rate = 48000
         for gap_ms in (1.5, 5, 12, 20, 50):

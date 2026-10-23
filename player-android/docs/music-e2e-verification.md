@@ -183,8 +183,11 @@ check waits up to 15 seconds for authoritative server progress after Back.
   stream starts and stops with a few ms of silence (2.6–8.6 ms seen; ignored
   within 50 ms of the stream's ends) and the emulator's output carries
   clicks inside a continuous tone, so click detection is recorded as a gap
-  on Android. Android cannot change tracks automatically yet, so gapless
-  across tracks is recorded as a gap there too.
+  on Android. EQ band levels use short-frame peak Goertzel (±0.2% search)
+  so emulator phase/clock drift does not invent a false spread; the flatness
+  tolerance stays 1.5 dB and unequal-band fixtures must still fail it.
+  Android cannot change tracks automatically yet, so gapless across tracks
+  is recorded as a gap there too.
 - Neither path is "heard": no test listens to speakers. Absolute levels
   depend on volume settings; compare levels within one capture setup.
 

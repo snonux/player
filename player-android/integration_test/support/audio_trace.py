@@ -13,7 +13,7 @@ What it reports:
   and peak level in dBFS (gain checks, M24), the tone frequency
   (zero-crossing estimate, to identify *which* fixture track was audible) and
   optional Goertzel band levels (equalizer checks against the three-tone
-  probe, M25);
+  probe, M25; short-frame peak search tolerates emulator phase/clock drift);
 - gaps: every run of near-zero samples of at least MIN_GAP_MS inside the
   audible span, measured to the sample, plus quiet (but not silent) stretches
   between segments - the basis for gapless checks (M21). Frames alone would
@@ -64,6 +64,15 @@ MIN_GAP_MS = 1.0
 DISCONTINUITY_RATIO = 0.1
 # Discontinuity samples closer than this are one event.
 EVENT_MERGE_MS = 3.0
+# EQ band levels: a long coherent Goertzel window cancels at the exact bin
+# when emulator capture has phase jumps or slight clock drift (energy lands
+# ~0.5 Hz off). Short frames with a narrow peak search recover the component
+# level so flat probes stay within LEVEL_TOLERANCE_DB without relaxing it.
+BAND_FRAME_MS = 250
+BAND_HOP_MS = 250
+BAND_FREQ_SPAN_RATIO = 0.002  # ±0.2% covers typical emulator drift
+BAND_FREQ_SPAN_MIN_HZ = 2.0
+BAND_FREQ_STEP_HZ = 0.5
 
 
 def read_wav(path):
@@ -135,6 +144,37 @@ def goertzel_db(samples, rate, frequency):
     return to_db(2 * math.sqrt(max(power, 0.0)) / n)
 
 
+def peak_goertzel_db(samples, rate, frequency,
+                     span_hz=None, step_hz=BAND_FREQ_STEP_HZ):
+    """Peak Goertzel level within a narrow span around frequency."""
+    if span_hz is None:
+        span_hz = max(BAND_FREQ_SPAN_MIN_HZ, abs(frequency) * BAND_FREQ_SPAN_RATIO)
+    best = FLOOR_DB
+    freq = frequency - span_hz
+    end = frequency + span_hz
+    while freq <= end + 1e-12:
+        best = max(best, goertzel_db(samples, rate, freq))
+        freq += step_hz
+    return best
+
+
+def band_level_db(samples, rate, frequency,
+                  frame_ms=BAND_FRAME_MS, hop_ms=BAND_HOP_MS):
+    """Median peak-Goertzel level of one band across short frames.
+
+    Short frames avoid long-window phase cancellation; the peak search
+    tolerates small capture clock drift without widening EQ tolerances.
+    """
+    flen = max(1, int(rate * frame_ms / 1000))
+    hop = max(1, int(rate * hop_ms / 1000))
+    if len(samples) < flen:
+        return peak_goertzel_db(samples, rate, frequency)
+    levels = [peak_goertzel_db(samples[i:i + flen], rate, frequency)
+              for i in range(0, len(samples) - flen + 1, hop)]
+    levels.sort()
+    return levels[len(levels) // 2]
+
+
 def describe_segment(samples, rate, run, bands, frame_ms=FRAME_MS):
     first, end = run
     size = rate * frame_ms // 1000
@@ -154,7 +194,8 @@ def describe_segment(samples, rate, run, bands, frame_ms=FRAME_MS):
         'tone_hz': round(tone, 1) if tone else None,
     }
     if bands:
-        result['bands_dbfs'] = {str(f): round(goertzel_db(window, rate, f), 2) for f in bands}
+        result['bands_dbfs'] = {str(f): round(band_level_db(window, rate, f), 2)
+                                for f in bands}
     return result
 
 

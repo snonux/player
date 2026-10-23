@@ -139,11 +139,14 @@ responsive device reached verified 15/15. Diagnostics are in
 `audio-volume-{failed-attempt,recovery}.txt` and
 `audio-volume-command-logcat.txt`. Focused source/title/duration checks passed for
 both gain files and their measured difference was 17.99 dB against 18 dB expected.
-EQ still failed its strict exact-frequency comparison (12.51 dB spread) despite
-correct title and 6.61 audible seconds. Source/capture neighborhood spectra in
-`eq-spectrum-diagnosis.json` show shifted captured peaks and exact-bin
-cancellation; this is diagnostic evidence, not a replacement passing oracle.
-Follow-up task **6o3** records the remaining baseline EQ/capture investigation.
+EQ initially failed a strict exact-frequency Goertzel comparison (12.51 dB
+spread) despite correct title and 6.61 audible seconds. Source/capture
+neighborhood spectra in `eq-spectrum-diagnosis.json` show shifted captured
+peaks and exact-bin cancellation from emulator timing/phase drift. Task
+**6o3** fixed measurement in `audio_trace.py` (short-frame peak Goertzel;
+tolerance unchanged); synthetic equal/unequal and the retained
+`recovery-eq.wav` assert the calibration. Full native EQ re-run remains for
+integrated verification.
 Emulator click measurement (seven discontinuities beyond known gaps) and absent
 automatic track advance remain explicit gaps. All three known gap calibrations
 passed at 5.01, 20.02 and 50.05 ms. Baseline touch/audio, 48dp targets, Back,
