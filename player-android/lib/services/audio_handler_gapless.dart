@@ -218,6 +218,7 @@ extension GaplessAudioHandler on PlayerAudioHandler {
     _musicChanged?.call(target.request);
     startProgress(
         savePosition: target.request.savePosition!,
+        saveListeningPosition: target.request.saveListeningPosition,
         markFinished: target.request.markFinished!);
     _gapless.invalidate();
     // Discard completed native children so a long queue does not retain an

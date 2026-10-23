@@ -341,6 +341,9 @@ func initializeSchema(db *sql.DB) error {
 	if err := initializeSavedQueues(db); err != nil {
 		return fmt.Errorf("initialize saved queues: %w", err)
 	}
+	if err := initializeMusicHistory(db); err != nil {
+		return err
+	}
 	// Last, when every table has its final shape.
 	if err := normalizeStoredTimes(db); err != nil {
 		return fmt.Errorf("normalize stored times: %w", err)

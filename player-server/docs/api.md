@@ -2951,3 +2951,45 @@ Original download and compatibility-rendition behavior matches single-file
 shares. Collection shares appear in My Shares and use the existing owner/admin
 revoke endpoint, even when every source becomes unavailable. Legacy single-file
 links retain their existing response shapes and source-deletion lifecycle.
+
+### Listening history
+
+`GET /api/music/history` and `/api/v1/music/history` return this signed-in
+account's newly qualified music plays, newest play time first. History starts
+with qualifications after this feature is installed; existing personal counters
+are not backfilled. A play requires the existing 60 counted listening seconds;
+seeks earn at most 12 seconds per observation. Distinct replay occurrences are
+separate events. Podcast episodes, audiobooks, public shares and device-only
+files are excluded. Current media permissions and trash status are checked before
+pagination; session identifiers and other users' history are never returned.
+Responses have `Cache-Control: no-store`.
+
+```json
+{"settings":{"recording":true,"retention_days":365},"events":[{"id":12,"media_id":7,"played_at":"2026-10-23T12:00:00Z","title":"Song","artist":"Artist"}],"next_before_id":12,"next_before_ms":1792756800000}
+```
+
+Pages contain up to 50 events. Pass both returned `before_id` and `before_ms`
+for the next page; equal timestamps use event ID as a stable tiebreaker.
+`PUT` on the same route requires `recording` (boolean) and `retention_days`
+(`30`, `90`, `365`, or `0` for forever). The default is recording enabled,
+one year. Shortening retention permanently erases older history; increasing it
+cannot restore erased events. `DELETE` clears this account's history (204).
+Clear and recording transitions preserve a monotonic cutoff, so delayed offline
+plays from before clear or the paused interval cannot appear afterward.
+Retention pruning runs on qualification, history reads/settings changes, and
+startup. Personal qualification/counter and retry-identity records remain;
+history controls do not erase counters or resume positions. Account/media
+deletion removes the associated records through the existing ownership cleanup.
+
+Progress saves and batch rows accept optional `listening_session_id`, a
+16–80-character ASCII alphanumeric/underscore/hyphen identifier generated once
+per playback occurrence and preserved on retries. This affects personal music
+qualification only; legacy global counters retain their existing contract.
+Explicit occurrence samples can qualify even when a newer resume edit exists.
+Clients must send enough sequential position samples to meet the threshold;
+resending a single final position does not synthesize a play. Batch bodies may
+include `expected_user_id`; a mismatch returns 409 before any writes, protecting
+persisted browser samples after an account switch. Old clients without occurrence
+IDs retain their original per-authentication-session qualification behavior.
+Android downloaded music keeps the existing durable `playback-sync.music_plays`
+IDs, so it is not also qualified through streamed-progress IDs.

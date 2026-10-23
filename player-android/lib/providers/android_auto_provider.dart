@@ -1,3 +1,4 @@
+import '../services/progress_queue.dart';
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -110,6 +111,8 @@ final androidAutoCatalogProvider = Provider<AndroidAutoCatalog>((ref) {
                 startPosition: song.duration <= 1200 ? 0 : null,
                 readPosition: () => a.api.getMediaProgress(song.id),
                 savePosition: (seconds) => progress.enqueue(song.id, seconds),
+                saveListeningPosition: (seconds, occurrence) => progress
+                    .enqueueListeningPosition(song.id, seconds, occurrence),
                 markFinished: () => progress.enqueueFinished(song.id)))
             .toList();
         if (!current() ||

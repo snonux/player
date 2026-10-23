@@ -383,3 +383,7 @@ label {
 
 /* The naming dialog stays above the narrow Now Playing sheet. */
 #playlist-modal.queue-playlist-modal { z-index: 301; }
+
+.listening-history { overflow-wrap: anywhere; }
+.listening-history ol { padding-inline-start: 1.5rem; }
+.listening-history li { margin-block: .5rem; }

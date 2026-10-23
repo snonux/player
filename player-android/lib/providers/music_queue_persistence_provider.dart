@@ -1,3 +1,4 @@
+import '../services/progress_queue.dart';
 import 'playback_cache_provider.dart';
 import 'dart:async';
 import 'package:dio/dio.dart';
@@ -177,6 +178,8 @@ class MusicQueuePersistence {
                   startPosition: song.duration <= 1200 ? 0 : null,
                   readPosition: () => client.getMediaProgress(song.id),
                   savePosition: (seconds) => progress.enqueue(song.id, seconds),
+                  saveListeningPosition: (seconds, occurrence) => progress
+                      .enqueueListeningPosition(song.id, seconds, occurrence),
                   markFinished: () => progress.enqueueFinished(song.id)));
         }).toList();
         final selected =

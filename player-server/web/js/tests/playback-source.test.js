@@ -1338,7 +1338,42 @@ async function testSearchSongsAndFilesKeepSeparatePlaybackOwnership() {
  } finally {document.querySelectorAll=originalQuery;API.mediaDetail=originalDetail;state.music=null;queue.deactivateQueue();}
 }
 
+async function testVisiblePlayAfterFinalQueueCompletionGetsFreshListeningIdentity() {
+  setup({onNext: options => queue.advanceQueue(1, options)});
+  const {setListeningProgressAccount} = await import('../listening-progress.js');
+  const originalStorage = globalThis.localStorage;
+  const originalBatch = API.progressBatch, originalStatus = API.progressStatus;
+  const values = new Map(), samples = [];
+  globalThis.localStorage = {getItem: key => values.get(key) ?? null, setItem: (key,value) => values.set(key,value), removeItem: key => values.delete(key)};
+  API.progressBatch = async rows => {samples.push(...rows);};
+  API.progressStatus = async () => {};
+  try {
+    setListeningProgressAccount(50);
+    await queue.playAlbumCollection([{id:612,type:'audio',file_name:'replay.mp3',duration:120}],0);
+    while (queue.queueState().repeat !== 'off') queue.cycleQueueRepeat();
+    audio().currentTime = 120; audio().paused = true; audio().ended = true;
+    audio().dispatch('ended');
+    await settle();
+    assertEqual(queue.queueState().index,0,'Repeat Off stays on final occurrence after completion');
+    assertEqual(audio().paused,true,'final occurrence is stopped before visible Play replay');
+    const completed = samples.find(row => row.media_id === 612)?.listening_session_id;
+    assert(!!completed,'completed play saved its occurrence identity');
+    elements['btn-play'].dispatch('click');
+    assertEqual(audio().paused,false,'visible Play starts ended-source replay');
+    audio().ended = false; audio().currentTime = 6;
+    player.stopAndClose();
+    await settle();
+    const replay = samples.filter(row => row.media_id === 612).at(-1)?.listening_session_id;
+    assert(!!replay && replay !== completed,'visible Play creates a fresh listening identity after final completion');
+  } finally {
+    setListeningProgressAccount(null);
+    API.progressBatch = originalBatch; API.progressStatus = originalStatus;
+    globalThis.localStorage = originalStorage;
+  }
+}
+
 for (const test of [
+  testVisiblePlayAfterFinalQueueCompletionGetsFreshListeningIdentity,
   testSearchSongsAndFilesKeepSeparatePlaybackOwnership,
   testCanceledCollectionSelectionReleasesOnlyItsOwnBusyState,
   testShuffleOptionsEscapeRestoresOpenerAndCancelsPending,

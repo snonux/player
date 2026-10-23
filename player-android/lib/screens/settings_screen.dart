@@ -1,3 +1,5 @@
+import '../widgets/listening_history_settings.dart';
+import '../providers/api_client_provider.dart';
 import '../widgets/playback_cache_settings.dart';
 import '../widgets/headset_settings.dart';
 import '../widgets/navigation_settings.dart';
@@ -332,6 +334,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const SizedBox(height: 24),
                 const NavigationSettings(),
                 const PlaybackCacheSettings(),
+                ListeningHistorySettings(
+                    key: ValueKey(
+                        'history:${ref.watch(playerBaseUrlProvider).origin}:${currentUser?.id}')),
 
                 const SizedBox(height: 32),
                 const Divider(),

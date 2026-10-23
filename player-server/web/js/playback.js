@@ -1,3 +1,5 @@
+import { listeningOccurrenceID, saveListeningProgress } from './listening-progress.js';
+let listeningOccurrence = '';
 import { announceSong, suspendSongAnnouncement } from './song-notifications.js';
 import { createAudioTransport } from './audio-transport.js';
 import { initGapless } from './gapless.js';
@@ -236,6 +238,7 @@ function bindCast(e) {
   initCast({
     button: e.btnCast,
     getCurrentMedia: () => (isDetached() ? null : currentMedia),
+    getListeningOccurrence: () => listeningOccurrence,
     localPosition: () => currentMediaElement()?.currentTime || 0,
     pauseLocal: () => {
       cancelPendingSource();
@@ -496,7 +499,7 @@ export function togglePlay() {
     retrySource(m);
     return;
   }
-  if (m.paused) playElement(m);
+  if (m.paused) requestPlay();
   else m.pause();
 }
 
@@ -600,6 +603,7 @@ export function stopAndClose() {
 
 export function selectAndPlay(media, index, resumeFrom = 0) {
   saveCurrentProgress();
+  listeningOccurrence = listeningOccurrenceID();
   document.dispatchEvent?.(new CustomEvent('player:media-opened', { detail: { media } }));
   currentMedia = media;
   personal?.setMedia(media);
@@ -639,6 +643,7 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
 
 // Deep links restore the same authenticated library item without autoplay.
 export function selectMedia(media, index = -1, resumeFrom = 0) {
+  listeningOccurrence = listeningOccurrenceID();
   document.dispatchEvent?.(new CustomEvent('player:media-opened', { detail: { media, restored: true } }));
   currentMedia = media;
   currentMediaIndex = index;
@@ -988,7 +993,10 @@ export function requestPlay() {
     return;
   }
   const m = currentMediaElement();
-  if (m) playElement(m);
+  if (m) {
+    if (m.ended) listeningOccurrence = listeningOccurrenceID();
+    playElement(m);
+  }
 }
 
 // setPendingPlay records whether playback starts once the stream being
@@ -1020,6 +1028,7 @@ function adoptGaplessBoundary(token, media, outgoingDuration) {
   const result = commitPreparedQueueNext(token);
   if (!result || !currentMedia || isDetached() || isCasting()) return false;
   enqueueProgress(currentMedia.id, outgoingDuration, true);
+  listeningOccurrence = listeningOccurrenceID();
   currentMedia = result.media; currentMediaIndex = result.index;
   currentSource = { url: mediaPlaybackUrl(media), resumeFrom: 0, library: true };
   currentThumbnailUrl = media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
@@ -1204,8 +1213,11 @@ function saveCurrentProgress({ finished = false } = {}) {
 // Keep completion after every earlier position write. The track replacement
 // must not reopen the item with another final-position write after "finished".
 function enqueueProgress(id, position, finished = false) {
+  const occurrence = listeningOccurrence;
+  const saved = saveListeningProgress(id, position, occurrence, new Date().toISOString());
+  void saved.catch(() => {});
   progressWrites = progressWrites.catch(() => {}).then(async () => {
-    await API.progress(id, position);
+    await saved;
     if (finished) await API.progressStatus(id, 'finished');
   }).catch(() => {});
   return progressWrites;

@@ -53,6 +53,10 @@ async function api(path, options = {}) {
 }
 
 export const API = {
+  progressBatch: (updates,user) => api('/api/progress/batch',{method:'POST',body:{updates,expected_user_id:user}}),
+  listeningHistory: (params={},user) => api(`/api/music/history?${new URLSearchParams({...params,expected_user_id:user || 0})}`),
+  configureListeningHistory: (settings,user) => api(`/api/music/history?expected_user_id=${user || 0}`,{method:'PUT',body:settings}),
+  clearListeningHistory: user => api(`/api/music/history?expected_user_id=${user || 0}`,{method:'DELETE'}),
   musicEnrichment: (kind,key,refresh=false) => api(`/api/music/enrichment/${kind}/${encodeURIComponent(key)}`,{method:refresh?'POST':'GET'}),
   login: (username, password) => api('/api/login', { method: 'POST', body: { username, password } }),
   logout: () => api('/api/logout', { method: 'POST' }),

@@ -16,7 +16,7 @@ const _kColOrigin = 'origin';
 const _kColUserId = 'user_id';
 
 // Database schema version. Bump when columns change so onUpgrade fires.
-const _kDbVersion = 2;
+const _kDbVersion = 3;
 
 // Database filename stored in the default sqflite databases path.
 const _kDbName = 'progress_queue.db';
@@ -61,6 +61,21 @@ abstract class ProgressSyncClient {
 /// concrete [ProgressQueue] class (Dependency Inversion).  Alternative
 /// implementations (in-memory, no-op) are substitutable without breaking
 /// callers (Liskov Substitution).
+abstract interface class ListeningProgressQueue {
+  Future<void> enqueueListening(int mediaId, double seconds, String occurrence);
+}
+
+extension ListeningProgressEnqueue on ProgressQueueBase {
+  Future<void> enqueueListeningPosition(
+      int mediaId, double seconds, String occurrence) {
+    final queue = this;
+    return queue is ListeningProgressQueue
+        ? (queue as ListeningProgressQueue)
+            .enqueueListening(mediaId, seconds, occurrence)
+        : enqueue(mediaId, seconds);
+  }
+}
+
 abstract class ProgressQueueBase {
   /// Opens the backing store for [scope] and subscribes to connectivity.
   ///
@@ -121,9 +136,11 @@ class ProgressUpdate {
     this.finished = false,
     required this.queuedAt,
     this.rowId,
+    this.listeningSessionID,
   });
 
   final int mediaId;
+  final String? listeningSessionID;
   final double positionSeconds;
   final bool finished;
 
@@ -144,6 +161,8 @@ class ProgressUpdate {
       'media_id': mediaId,
       'position_seconds': positionSeconds,
       'observed_at': queuedAt,
+      if (listeningSessionID != null)
+        'listening_session_id': listeningSessionID,
     };
   }
 }
@@ -176,7 +195,7 @@ class ProgressUpdate {
 ///   - Concurrent flush is prevented with [_isFlushing]; a second connectivity
 ///     event while a flush is in progress is silently ignored — the flush will
 ///     drain all rows anyway.
-class ProgressQueue implements ProgressQueueBase {
+class ProgressQueue implements ProgressQueueBase, ListeningProgressQueue {
   /// Creates the queue.
   ///
   /// [apiClient] must implement [ProgressSyncClient]; in production this is
@@ -370,11 +389,17 @@ class ProgressQueue implements ProgressQueueBase {
       _enqueue(mediaId, positionSeconds, finished: false);
 
   @override
+  Future<void> enqueueListening(
+          int mediaId, double seconds, String occurrence) =>
+      _enqueue(mediaId, seconds,
+          finished: false, listeningSessionID: occurrence);
+
+  @override
   Future<void> enqueueFinished(int mediaId) =>
       _enqueue(mediaId, 0, finished: true);
 
   Future<void> _enqueue(int mediaId, double positionSeconds,
-      {required bool finished}) async {
+      {required bool finished, String? listeningSessionID}) async {
     if (_suspended) {
       if (finished) throw StateError('Progress queue is suspended');
       return;
@@ -405,6 +430,7 @@ class ProgressQueue implements ProgressQueueBase {
         _kColPositionSeconds: positionSeconds,
         _kColFinished: finished ? 1 : 0,
         _kColQueuedAt: now,
+        'listening_session_id': listeningSessionID,
         _kColOrigin: scope.origin,
         _kColUserId: scope.userId,
       });
@@ -675,6 +701,9 @@ class ProgressQueue implements ProgressQueueBase {
         if (oldVersion < 2) {
           await db.execute('DROP TABLE $_kTable');
           await _createSchema(db);
+        } else if (oldVersion < 3) {
+          await db.execute(
+              'ALTER TABLE $_kTable ADD COLUMN listening_session_id TEXT');
         }
       },
     );
@@ -690,7 +719,8 @@ class ProgressQueue implements ProgressQueueBase {
         $_kColFinished       INTEGER NOT NULL DEFAULT 0,
         $_kColQueuedAt       TEXT    NOT NULL,
         $_kColOrigin         TEXT    NOT NULL,
-        $_kColUserId         INTEGER NOT NULL
+        $_kColUserId         INTEGER NOT NULL,
+        listening_session_id TEXT
       )
     ''');
   }
@@ -699,6 +729,7 @@ class ProgressQueue implements ProgressQueueBase {
   ProgressUpdate _rowToUpdate(Map<String, dynamic> row) {
     return ProgressUpdate(
       rowId: row[_kColId] as int,
+      listeningSessionID: row['listening_session_id'] as String?,
       mediaId: row[_kColMediaId] as int,
       positionSeconds: (row[_kColPositionSeconds] as num).toDouble(),
       finished: (row[_kColFinished] as int) != 0,

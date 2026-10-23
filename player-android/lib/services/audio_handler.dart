@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
@@ -1063,6 +1064,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       setMediaRequest(request);
       startProgress(
           savePosition: request.savePosition!,
+          saveListeningPosition: request.saveListeningPosition,
           markFinished: request.markFinished!);
       _musicPosition = Duration(milliseconds: (position * 1000).round());
       _retryMusicPosition = null;
@@ -1207,18 +1209,34 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Starts tracking the loaded item. Call after the source and resume seek
   /// complete. The callbacks capture account-scoped API/queue dependencies
   /// without making the media handler depend on HTTP or local persistence.
+  String? _listeningOccurrenceID;
+
+  /// Active personal listening identity, reusable across output handoffs.
+  String? get listeningOccurrenceID =>
+      _progress == null ? null : _listeningOccurrenceID;
+
   void startProgress({
     required Future<void> Function(double) savePosition,
     required Future<void> Function() markFinished,
+    SaveListeningPosition? saveListeningPosition,
+    String? listeningOccurrenceID,
   }) {
     if (_progress != null) {
       throw StateError('End the current audio progress session first');
     }
+    final random = Random.secure();
+    final occurrence = listeningOccurrenceID ??
+        List.generate(16,
+                (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'))
+            .join();
+    _listeningOccurrenceID = occurrence;
     _progress = AudioProgressSession(
       position: () => _player.position,
       duration: () => _player.duration,
       playing: () => _player.playing,
-      savePosition: savePosition,
+      savePosition: saveListeningPosition == null
+          ? savePosition
+          : (seconds) => saveListeningPosition(seconds, occurrence),
       markFinished: markFinished,
     );
   }
@@ -1287,6 +1305,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         final request = _musicEntries[_musicIndex];
         startProgress(
             savePosition: request.savePosition!,
+            saveListeningPosition: request.saveListeningPosition,
             markFinished: request.markFinished!);
       }
       if (!sleepTimer.allowsPlayback(sleepIntent) ||

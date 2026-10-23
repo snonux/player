@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"time"
 
@@ -18,6 +19,8 @@ type progressService struct {
 	helper *accessHelper
 	clock  clock.Clock
 }
+
+var listeningSessionPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{16,80}$`)
 
 // NewProgressService creates a concrete ProgressService.
 func NewProgressService(store repository.ProgressServiceStore, clk clock.Clock) *progressService {
@@ -61,6 +64,9 @@ func (s *progressService) BatchUpdateProgress(ctx context.Context, sessionID str
 	normalized := make([]ProgressUpdate, len(updates))
 	now := s.clock.Now()
 	for i, update := range updates {
+		if update.ListeningSessionID != "" && !listeningSessionPattern.MatchString(update.ListeningSessionID) {
+			return &apiError{msg: "Invalid listening_session_id.", status: 400}
+		}
 		if update.MediaID == 0 {
 			return fmt.Errorf("updates[%d].media_id required", i)
 		}
@@ -91,6 +97,7 @@ func (s *progressService) BatchUpdateProgress(ctx context.Context, sessionID str
 				update.MediaID,
 				update.PositionSeconds,
 				update.ObservedAt,
+				update.ListeningSessionID,
 			); err != nil {
 				return fmt.Errorf("apply progress media_id %d: %w", update.MediaID, err)
 			}
@@ -114,7 +121,16 @@ func (s *progressService) applyProgress(
 	userID, mediaID int64,
 	position float64,
 	observedAt time.Time,
+	listeningIDs ...string,
 ) error {
+	explicitListening := len(listeningIDs) > 0 && listeningIDs[0] != ""
+	if explicitListening {
+		if personal, ok := store.(repository.MusicProgressStore); ok {
+			if err := personal.ApplyMusicProgress(ctx, userID, "play:"+listeningIDs[0], mediaID, position, position, observedAt); err != nil {
+				return fmt.Errorf("personal music progress: %w", err)
+			}
+		}
+	}
 	existing, err := store.GetProgress(ctx, userID, mediaID)
 	if err != nil {
 		return fmt.Errorf("get progress: %w", err)
@@ -144,7 +160,7 @@ func (s *progressService) applyProgress(
 	}); err != nil {
 		return fmt.Errorf("upsert progress: %w", err)
 	}
-	if personal, ok := store.(repository.MusicProgressStore); ok {
+	if personal, ok := store.(repository.MusicProgressStore); ok && !explicitListening {
 		initial := float64(0)
 		if existing != nil && !existing.Finished {
 			initial = existing.PositionSeconds

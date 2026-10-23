@@ -1,3 +1,4 @@
+import '../services/progress_queue.dart';
 import '../providers/playback_cache_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,6 +56,8 @@ Future<void> insertServerSongs(BuildContext context, WidgetRef ref,
           startPosition: song.duration <= 1200 ? 0 : null,
           readPosition: () => client.getMediaProgress(song.id),
           savePosition: (seconds) => progress.enqueue(song.id, seconds),
+          saveListeningPosition: (seconds, occurrence) =>
+              progress.enqueueListeningPosition(song.id, seconds, occurrence),
           markFinished: () => progress.enqueueFinished(song.id)))
       .toList();
   try {

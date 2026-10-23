@@ -44,6 +44,7 @@ Future<PlaybackRequest> resolveServerPlaybackSource(
         startPosition: request.startPosition,
         readPosition: request.readPosition,
         savePosition: request.savePosition,
+        saveListeningPosition: request.saveListeningPosition,
         markFinished: request.markFinished);
   } catch (_) {
     // After a timeout the request is still pending; nobody waits for it.

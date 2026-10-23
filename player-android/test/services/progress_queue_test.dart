@@ -320,7 +320,7 @@ Future<Database> _openTestDb(String path) async {
   return databaseFactoryFfi.openDatabase(
     path,
     options: OpenDatabaseOptions(
-      version: 2,
+      version: 3,
       onCreate: (db, _) => db.execute('''
         CREATE TABLE progress_queue (
           id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -329,7 +329,8 @@ Future<Database> _openTestDb(String path) async {
           finished         INTEGER NOT NULL DEFAULT 0,
           queued_at        TEXT    NOT NULL,
           origin           TEXT    NOT NULL,
-          user_id          INTEGER NOT NULL
+          user_id          INTEGER NOT NULL,
+          listening_session_id TEXT
         )
       '''),
     ),
@@ -726,6 +727,27 @@ void main() {
   // --------------------------------------------------------------------------
   // 1. enqueue stores to the database (no flush while offline)
   // --------------------------------------------------------------------------
+
+  test('offline replay samples preserve separate retry-stable occurrence IDs',
+      () async {
+    final (:queue, :client, :conn) = await _makeQueue();
+    for (final occurrence in ['first-occurrence-1', 'second-occurrence-1']) {
+      for (var i = 0; i <= 6; i++) {
+        await queue.enqueueListeningPosition(7, i * 10.0, occurrence);
+      }
+    }
+    expect(client.calls, isEmpty);
+    conn.emitStatus([ConnectivityResult.wifi]);
+    await _pump();
+    final rows = client.calls.expand((batch) => batch).toList();
+    expect(rows, hasLength(14));
+    expect(rows.take(7).map((r) => r['listening_session_id']).toSet(),
+        {'first-occurrence-1'});
+    expect(rows.skip(7).map((r) => r['listening_session_id']).toSet(),
+        {'second-occurrence-1'});
+    await queue.dispose();
+    conn.close();
+  });
 
   group('enqueue stores to DB', () {
     test('does not call the API when device is offline', () async {

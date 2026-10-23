@@ -368,9 +368,10 @@ type ProgressService interface {
 
 // ProgressUpdate is one observed playback position from a client.
 type ProgressUpdate struct {
-	MediaID         int64
-	PositionSeconds float64
-	ObservedAt      time.Time
+	ListeningSessionID string
+	MediaID            int64
+	PositionSeconds    float64
+	ObservedAt         time.Time
 }
 
 // MediaStreamer prepares authorized file results for HTTP streaming.

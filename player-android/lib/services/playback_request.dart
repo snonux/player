@@ -5,6 +5,8 @@ enum PlaybackSourceKind { server, local, publicShare }
 
 typedef ReadPlaybackPosition = Future<double?> Function();
 typedef SavePlaybackPosition = Future<void> Function(double seconds);
+typedef SaveListeningPosition = Future<void> Function(
+    double seconds, String occurrence);
 typedef MarkPlaybackFinished = Future<void> Function();
 
 /// A source selected for the shared audio/video controls.
@@ -25,6 +27,7 @@ sealed class PlaybackRequest {
     this.startPosition,
     this.readPosition,
     this.savePosition,
+    this.saveListeningPosition,
     this.markFinished,
   });
 
@@ -43,6 +46,7 @@ sealed class PlaybackRequest {
   final double? startPosition;
   final ReadPlaybackPosition? readPosition;
   final SavePlaybackPosition? savePosition;
+  final SaveListeningPosition? saveListeningPosition;
   final MarkPlaybackFinished? markFinished;
 
   PlaybackSourceKind get kind;
@@ -64,6 +68,7 @@ final class ServerPlaybackRequest extends PlaybackRequest {
     super.startPosition,
     super.readPosition,
     super.savePosition,
+    super.saveListeningPosition,
     super.markFinished,
   }) : super(identity: 'server:$serverOrigin:$userId:$mediaId');
 
@@ -87,6 +92,7 @@ final class ServerPlaybackRequest extends PlaybackRequest {
         startPosition: startPosition,
         readPosition: readPosition,
         savePosition: savePosition,
+        saveListeningPosition: saveListeningPosition,
         markFinished: markFinished,
       );
 

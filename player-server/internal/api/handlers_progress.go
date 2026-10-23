@@ -13,8 +13,9 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		MediaID  int64   `json:"media_id"`
-		Position float64 `json:"position_seconds"`
+		ListeningSessionID string  `json:"listening_session_id"`
+		MediaID            int64   `json:"media_id"`
+		Position           float64 `json:"position_seconds"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		badRequest(w, "invalid body")
@@ -27,6 +28,14 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 	sessionID := sessionIDFromContext(r)
 	if sessionID == "" {
 		badRequest(w, "session required")
+		return
+	}
+	if req.ListeningSessionID != "" {
+		if err := s.media.Progress.BatchUpdateProgress(r.Context(), sessionID, userIDFromContext(r), []service.ProgressUpdate{{MediaID: req.MediaID, PositionSeconds: req.Position, ListeningSessionID: req.ListeningSessionID}}); err != nil {
+			handleError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
 	err := s.media.Progress.UpdateProgress(
@@ -48,10 +57,12 @@ func (s *Server) handleBatchProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Updates []struct {
-			MediaID         int64     `json:"media_id"`
-			PositionSeconds float64   `json:"position_seconds"`
-			ObservedAt      time.Time `json:"observed_at"`
+		ExpectedUserID int64 `json:"expected_user_id"`
+		Updates        []struct {
+			ListeningSessionID string    `json:"listening_session_id"`
+			MediaID            int64     `json:"media_id"`
+			PositionSeconds    float64   `json:"position_seconds"`
+			ObservedAt         time.Time `json:"observed_at"`
 		} `json:"updates"`
 	}
 	if err := readJSON(r, &req); err != nil {
@@ -59,6 +70,10 @@ func (s *Server) handleBatchProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.ExpectedUserID != 0 && req.ExpectedUserID != userIDFromContext(r) {
+		writeError(w, http.StatusConflict, "Playback belongs to another account. Sign in again.")
+		return
+	}
 	updates := make([]service.ProgressUpdate, len(req.Updates))
 	for i, update := range req.Updates {
 		if update.MediaID == 0 {
@@ -66,9 +81,10 @@ func (s *Server) handleBatchProgress(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		updates[i] = service.ProgressUpdate{
-			MediaID:         update.MediaID,
-			PositionSeconds: update.PositionSeconds,
-			ObservedAt:      update.ObservedAt,
+			ListeningSessionID: update.ListeningSessionID,
+			MediaID:            update.MediaID,
+			PositionSeconds:    update.PositionSeconds,
+			ObservedAt:         update.ObservedAt,
 		}
 	}
 

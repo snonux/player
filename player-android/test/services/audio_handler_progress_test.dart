@@ -83,6 +83,37 @@ class _Player extends AudioPlayer {
 }
 
 void main() {
+  testWidgets(
+      'listening identity survives handoff but a replay gets a new identity',
+      (tester) async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    final ids = <String>[];
+    void start({String? existing}) => handler.startProgress(
+          savePosition: (_) async =>
+              fail('Legacy callback duplicated explicit listening'),
+          saveListeningPosition: (seconds, id) async => ids.add(id),
+          listeningOccurrenceID: existing,
+          markFinished: () async {},
+        );
+    start();
+    final first = handler.listeningOccurrenceID!;
+    await handler.saveProgress();
+    await handler.endProgress();
+    expect(handler.listeningOccurrenceID, isNull);
+    start(existing: first);
+    await handler.saveProgress();
+    await handler.endProgress();
+    start();
+    final replay = handler.listeningOccurrenceID!;
+    await handler.saveProgress();
+    await handler.endProgress();
+    expect(ids, [first, first, replay]);
+    expect(replay, isNot(first));
+    await player.changes.close();
+    await player.processing.close();
+  });
+
   testWidgets('lifecycle saves a partial tick while background audio continues',
       (tester) async {
     final player = _Player();

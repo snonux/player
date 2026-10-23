@@ -1,3 +1,4 @@
+import '../services/progress_queue.dart';
 import '../providers/playback_cache_provider.dart';
 import '../widgets/stream_quality_sheet.dart';
 import '../widgets/equalizer_sheet.dart';
@@ -466,6 +467,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     if (request.savePosition != null && request.markFinished != null) {
       handler.startProgress(
         savePosition: request.savePosition!,
+        saveListeningPosition: request.saveListeningPosition,
         markFinished: request.markFinished!,
       );
     }
@@ -580,6 +582,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             widget.albumCollection && media.duration <= 1200 ? 0 : null,
         readPosition: () => client.getMediaProgress(media.id),
         savePosition: (seconds) => progress.enqueue(media.id, seconds),
+        saveListeningPosition: (seconds, occurrence) =>
+            progress.enqueueListeningPosition(media.id, seconds, occurrence),
         markFinished: () => progress.enqueueFinished(media.id));
     bool included(Media media) =>
         (widget.albumCollection || media.setId == setId) &&
@@ -621,6 +625,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         startPosition: request.startPosition,
         readPosition: request.readPosition,
         savePosition: request.savePosition,
+        saveListeningPosition: request.saveListeningPosition,
         markFinished: request.markFinished);
   }
 
@@ -709,6 +714,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
           ? () => client.getMediaProgress(mediaId)
           : null,
       savePosition: (seconds) => queue.enqueue(mediaId, seconds),
+      saveListeningPosition: (seconds, occurrence) =>
+          queue.enqueueListeningPosition(mediaId, seconds, occurrence),
       markFinished: () => queue.enqueueFinished(mediaId),
     );
   }
