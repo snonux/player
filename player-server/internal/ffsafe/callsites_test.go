@@ -48,7 +48,7 @@ import (
 
 // hardeningFuncs are the functions of this package that build input
 // arguments.
-var hardeningFuncs = []string{"InputArgs", "SourceArgs", "ImageInputArgs"}
+var hardeningFuncs = []string{"InputArgs", "SourceArgs", "ImageInputArgs", "PipeInputArgs"}
 
 // commandAllowlist names the functions ("<file path below player-server>:
 // <function>") that may create a process without ffsafe arguments, with the
