@@ -55,6 +55,7 @@ type SetPermission struct {
 
 // Media represents a single media file within a set.
 type Media struct {
+	Rating          int            `json:"rating"`
 	Music           *MusicMetadata `json:"music,omitempty"`
 	ID              int64          `json:"id"`
 	SetID           int64          `json:"set_id"`

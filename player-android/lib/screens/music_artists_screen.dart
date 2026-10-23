@@ -1,3 +1,5 @@
+import '../widgets/music_rating_button.dart';
+import '../widgets/music_rating_filter.dart';
 import '../widgets/music_favorite_button.dart';
 import '../widgets/music_filter_sheet.dart';
 import '../widgets/music_search_button.dart';
@@ -33,6 +35,24 @@ class MusicArtistsScreen extends ConsumerStatefulWidget {
 
 class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
   bool _favoritesOnly = false;
+  bool _ratedOnly = false, _highestRated = false;
+  Widget _rating(String kind, Map<String, dynamic> entity) => MusicRatingButton(
+      key: ValueKey(
+          'rating-$kind-${entity[kind == 'song' ? 'id' : '${kind}_key']}'),
+      kind: kind,
+      entity: entity,
+      onChanged: () => setState(() {}));
+  Widget _ratingFilter() => MusicRatingFilter(
+      rated: _ratedOnly,
+      highest: _highestRated,
+      onChanged: (rated, highest) => setState(() {
+            _ratedOnly = rated;
+            _highestRated = highest;
+          }));
+  Widget _personal(String kind, Map<String, dynamic> entity) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [_heart(kind, entity), _rating(kind, entity)]);
+
   Widget _heart(String kind, Map<String, dynamic> entity) => MusicFavoriteButton(
       key: ValueKey(
           '$kind-${entity[kind == 'playlist' ? 'playlist_id' : '${kind}_key']}'),
@@ -153,12 +173,15 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
               ? 'Music · Artists'
               : _artist?['name'] as String? ?? 'Artist'),
           actions: [
-            if (widget.artistKey == null) _favoritesFilter(),
+            if (widget.artistKey == null) ...[
+              _favoritesFilter(),
+              _ratingFilter()
+            ],
             if (widget.artistKey != null &&
                 _artist != null &&
                 !_loading &&
                 _error == null)
-              _heart('artist', _artist!),
+              _personal('artist', _artist!),
             const MusicSearchButton(),
             const MusicQueueButton()
           ]),
@@ -185,10 +208,15 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
       key: ValueKey('artists-$_role-$_generation'),
       emptyMessage: _favoritesOnly
           ? 'No favorite artists. Show all artists to favorite one.'
-          : 'No artists available for this role. Choose another role or ask an administrator to rescan music tags.',
-      items: _people
-          .where((a) => !_favoritesOnly || a['is_favorite'] == true)
-          .toList(),
+          : _ratedOnly
+              ? 'No rated artists. Turn off Rated only to rate one.'
+              : 'No artists available for this role. Choose another role or ask an administrator to rescan music tags.',
+      items: ratingFiltered(
+          _people
+              .where((a) => !_favoritesOnly || a['is_favorite'] == true)
+              .toList(),
+          _ratedOnly,
+          _highestRated),
       kind: 'artist',
       keyName: 'artist_key',
       nameName: 'name',
@@ -219,7 +247,7 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
           subtitle: Text(
               '${creditRoleLabels(person['roles'])}\n${person['album_count']} albums · ${person['song_count']} ${_facets.isEmpty ? 'songs' : 'matching songs'}'),
           isThreeLine: true,
-          trailing: _heart('artist', person),
+          trailing: _personal('artist', person),
           onTap: toggle ?? () => _openArtist(person['artist_key'] as String)));
   Widget _detail() {
     final artist = _artist!;

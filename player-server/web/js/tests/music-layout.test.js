@@ -9,7 +9,7 @@ assert.deepEqual(sortMusic(data,{...ascending,descending:true},'albums').map(ite
 assert.deepEqual(data.map(item=>item.album_key),['a','b','c'],'browse sorting cannot mutate collection order');
 const songs=[{id:2,file_name:'fallback',duration:9,music:{artist:'B'}},{id:1,file_name:'file',duration:2,music:{title:'Tagged',artist:'A'}}];
 assert.deepEqual(sortMusic(songs,normalizeMusicLayout({sort:'artist'},'songs'),'songs').map(item=>item.id),[1,2]);
-assert.deepEqual(normalizeMusicLayout({sort:'rating',columns:['artist','unsupported'],view:'bad'},'songs'),{sort:'title',descending:false,columns:['artist'],view:'grid'});
+assert.deepEqual(normalizeMusicLayout({sort:'rating',columns:['artist','unsupported'],view:'bad'},'songs'),{sort:'rating',descending:false,columns:['artist'],view:'grid'});
 const storage=new Map();
 globalThis.location={origin:'https://one.example'};
 globalThis.localStorage={getItem:key=>storage.get(key) ?? null};

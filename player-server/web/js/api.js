@@ -62,6 +62,7 @@ export const API = {
   syncPlaylistSource: (id,detach=false) => api(`/api/playlists/${encodeURIComponent(id)}/source`,{method:detach?'DELETE':'POST'}),
   exportPlaylist: id => api(`/api/playlists/${encodeURIComponent(id)}/export.m3u`),
   playlists: (params={}) => api(`/api/playlists?${new URLSearchParams(params)}`),
+  musicRating: (kind,key,rating) => api(`/api/music/ratings/${kind}/${encodeURIComponent(key)}`,{method:'PUT',body:{rating}}),
   musicFavorite: (kind,key,value) => api(`/api/music/favorites/${kind}/${encodeURIComponent(key)}`,{method:value?'PUT':'DELETE'}),
   playlist: id => api(`/api/playlists/${encodeURIComponent(id)}`),
   createPlaylist: body => api('/api/playlists', {method:'POST',body}),

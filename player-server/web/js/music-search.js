@@ -1,3 +1,4 @@
+import { ratingControl, bindRatings, ratingFilters, ratingParams } from './music-ratings.js';
 import { readMusicLayout, sortMusic, musicColumns, musicColumnText, musicLayoutToolbar, bindMusicLayout } from './music-layout.js';
 import { facetParams, hasFacets } from './music-facets.js';
 import { state } from './state.js';
@@ -57,24 +58,24 @@ export async function renderMusicSearch(grid, view, current, {openAlbum, openArt
  const query=view.query || '', artist=view.artistQuery || '', album=view.albumQuery || '';
  const header=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-search-back>← Back</button><h1>Search results</h1><p>${esc([query,artist && `Artist: ${artist}`,album && `Album: ${album}`].filter(Boolean).join(' · '))}</p></div>`;
  const wire=()=>{grid.querySelector('[data-search-back]')?.addEventListener('click',back);};
- if(!query && !artist && !album && !hasFacets(view)) {grid.innerHTML=header+'<p class="grid-full" role="status">Search songs, albums and artists.</p>';wire();return;}
- const [data, media]=await Promise.all([API.musicSearch({q:query,artist,album,...facetParams(view.facets)}), query && !artist && !album && !hasFacets(view) ? searchFiles(query,current) : []]);
+ if(!query && !artist && !album && !hasFacets(view) && !view.rated && !view.ratingSort) {grid.innerHTML=header+'<p class="grid-full" role="status">Search songs, albums and artists.</p>';wire();return;}
+ const [data, media]=await Promise.all([API.musicSearch({...ratingParams(view),q:query,artist,album,...facetParams(view.facets)}), query && !artist && !album && !hasFacets(view) && !view.rated ? searchFiles(query,current) : []]);
  if(!current()) return;
  const layout=readMusicLayout('songs');
- const songs=sortMusic(data.songs || [],layout,'songs'), ids=new Set(songs.map(song=>song.id));
+ const songs=view.ratingSort ? data.songs || [] : sortMusic(data.songs || [],layout,'songs'), ids=new Set(songs.map(song=>song.id));
  const needle=query.toLocaleLowerCase();
  const files=(Array.isArray(media)?media:media?.media || []).filter(item=>!ids.has(item.id) && [item.file_name,item.rel_path].some(text=>(text || '').toLocaleLowerCase().includes(needle)));
  state.searchSongs=songs;state.searchFiles=files;state.media=[...songs,...files];
  const group=(label,items,rows)=>`<h2 class="grid-full">${label} (${items.length})</h2>${rows}`;
- const songRows=songs.map((song,index)=>`<div class="media-row" tabindex="0" role="group" data-id="${song.id}" data-index="${index}" data-search-kind="song" aria-label="Play ${esc(mediaTitle(song))}"><span class="music-song"><button class="btn btn-ghost song-open">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(layout.columns.filter(column=>column!=='duration').map(column=>`${musicColumns.songs[column]}: ${musicColumnText(song,column,'songs')}`).join(' · '))}</span></span>${layout.columns.includes('duration')?`<span>${fmtDur(song.duration)}</span>`:''}${songActionButtons(song)}<button class="btn btn-ghost" data-song-menu aria-label="Actions for ${esc(mediaTitle(song))}">⋮</button></div>`).join('');
- const albumRows=data.albums.map(item=>`<div class="media-row" role="button" tabindex="0" data-album="${esc(item.album_key)}" aria-label="Open album ${esc(item.title)} by ${esc(item.artist)}"><span>${esc(item.title)}<span class="text-muted text-sm"> · ${esc(item.artist)}${item.year ? ` · ${item.year}`:''}</span></span></div>`).join('');
- const artistRows=data.artists.map(item=>`<div class="media-row" role="button" tabindex="0" data-artist-card="${esc(item.artist_key)}" aria-label="Open artist ${esc(item.name)}"><span>${esc(item.name)}<span class="text-muted text-sm"> · ${item.album_count} albums · ${item.song_count} songs</span></span></div>`).join('');
+ const songRows=songs.map((song,index)=>`<div class="media-row" tabindex="0" role="group" data-id="${song.id}" data-index="${index}" data-search-kind="song" aria-label="Play ${esc(mediaTitle(song))}"><span class="music-song"><button class="btn btn-ghost song-open">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(layout.columns.filter(column=>column!=='duration').map(column=>`${musicColumns.songs[column]}: ${musicColumnText(song,column,'songs')}`).join(' · '))}</span></span>${layout.columns.includes('duration')?`<span>${fmtDur(song.duration)}</span>`:''}${ratingControl('song',song.id,song)}${songActionButtons(song)}<button class="btn btn-ghost" data-song-menu aria-label="Actions for ${esc(mediaTitle(song))}">⋮</button></div>`).join('');
+ const albumRows=data.albums.map(item=>`<div class="media-row" role="button" tabindex="0" data-album="${esc(item.album_key)}" aria-label="Open album ${esc(item.title)} by ${esc(item.artist)}"><span>${ratingControl('album',item.album_key,item)}${esc(item.title)}<span class="text-muted text-sm"> · ${esc(item.artist)}${item.year ? ` · ${item.year}`:''}</span></span></div>`).join('');
+ const artistRows=data.artists.map(item=>`<div class="media-row" role="button" tabindex="0" data-artist-card="${esc(item.artist_key)}" aria-label="Open artist ${esc(item.name)}"><span>${ratingControl('artist',item.artist_key,item)}${esc(item.name)}<span class="text-muted text-sm"> · ${item.album_count} albums · ${item.song_count} songs</span></span></div>`).join('');
  const fileRows=files.map((item,index)=>`<div class="media-row" role="group" tabindex="0" data-id="${item.id}" data-index="${songs.length+index}" data-search-kind="file" aria-label="Open file ${esc(item.file_name)}"><span class="music-song"><button class="btn btn-ghost song-open" data-action="search-file-open" aria-label="Open file ${esc(item.file_name)}">${esc(item.file_name)}</button><span class="text-muted text-sm">${esc(item.rel_path)}</span></span></div>`).join('');
  const total=songs.length+data.albums.length+data.artists.length+files.length;
  grid.innerHTML=header+(total ? '' : '<p class="grid-full" role="status">Nothing matches these filters. <button class="btn" data-clear-search>Clear filters</button></p>')+musicLayoutToolbar('songs',layout)+group('Songs',songs,songRows)+group('Albums',data.albums,albumRows)+group('Artists',data.artists,artistRows)+group('Files',files,fileRows);
  grid.classList.add('music-detail');
  document.getElementById('result-count').textContent=`Search · ${total} results`;
- wire();bindSongActions(grid);
+ wire();bindSongActions(grid);bindRatings(grid,current);ratingFilters(grid,view,reload);
  grid.querySelector('[data-clear-search]')?.addEventListener('click',()=>{state.music={search:true,query:''}; const input=document.getElementById('search-input');if(input){input.value='';input.focus();}reload();});
  grid.querySelectorAll('[data-album]').forEach(row=>row.onclick=()=>openAlbum(row.dataset.album));
  grid.querySelectorAll('[data-artist-card]').forEach(row=>row.onclick=()=>openArtist(row.dataset.artistCard));

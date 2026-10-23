@@ -20,6 +20,7 @@ type ownedRows struct {
 // connection did (see connection.go). DeleteUser removes them explicitly and
 // removeOrphanRows cleans up what earlier deletes left behind.
 var userOwned = []ownedRows{
+	{"music_ratings", "user_id"},
 	{"music_entity_favorites", "user_id"},
 	{"saved_queues", "user_id"},
 	{"playlists", "user_id"},
@@ -40,6 +41,7 @@ var userOwned = []ownedRows{
 
 // mediaOwned are the rows that belong to a media item.
 var mediaOwned = []ownedRows{
+	{"music_ratings", "media_id"},
 	{"playlist_entries", "media_id"},
 	{"favorites", "media_id"},
 	{"playback_progress", "media_id"},
@@ -104,7 +106,7 @@ func deleteOrphans(tx *sql.Tx, owned []ownedRows, parent string) (int64, error) 
 	for _, o := range owned {
 		// Table and column names come from the fixed lists above.
 		res, err := tx.Exec(fmt.Sprintf(
-			`DELETE FROM %s WHERE %s NOT IN (SELECT id FROM %s)`, o.table, o.column, parent))
+			`DELETE FROM %s WHERE %s IS NOT NULL AND %s NOT IN (SELECT id FROM %s)`, o.table, o.column, o.column, parent))
 		if err != nil {
 			return 0, fmt.Errorf("%s.%s: %w", o.table, o.column, err)
 		}

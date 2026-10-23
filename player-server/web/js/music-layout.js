@@ -2,8 +2,8 @@ import { state } from './state.js';
 import { escapeHtml as esc, fmtDur, toast } from './utils.js';
 
 export const musicColumns = {
- albums: {artist:'Artist',year:'Year',song_count:'Songs',duration:'Duration'},
- songs: {artist:'Artist',album:'Album',year:'Year',duration:'Duration'},
+ albums: {rating:'Rating',artist:'Artist',year:'Year',song_count:'Songs',duration:'Duration'},
+ songs: {rating:'Rating',artist:'Artist',album:'Album',year:'Year',duration:'Duration'},
 };
 let pendingFocus = '';
 function key(kind) { return `player.music-layout.v1:${location.origin}:${state.user?.id}:${kind}`; }
@@ -19,7 +19,7 @@ export function readMusicLayout(kind) {
  catch { return normalizeMusicLayout(null,kind); }
 }
 function value(item, column, kind) {
- if(kind==='albums') return item[column];
+ if(kind==='albums' || column==='rating') return item[column];
  return column==='title' ? item.music?.title || item.file_name : column==='duration' ? item.duration : item.music?.[column];
 }
 export function sortMusic(items, layout, kind) {

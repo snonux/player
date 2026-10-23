@@ -2724,3 +2724,19 @@ can choose Auto or another profile. Omitting `profile` retains the existing
 compatibility-only conversion behavior. `/stream` retains original streaming.
 Downloads, public share and Cast compatibility endpoints retain their existing
 policy; the quality parameter is only supported on authenticated media compat.
+
+### Personal music ratings
+
+`PUT /api/v1/music/ratings/{kind}/{entity_key}` (also `/api/music/...`) sets
+`{"rating": 0..5}` for the current account. Kind is `song`, `album` or `artist`;
+songs use the canonical decimal media ID, albums/artists use their catalog key.
+Zero clears stars. Hearts remain independent. Current music read permission is
+required; missing/inaccessible entities return 404. Invalid/missing values return
+400. Writes are idempotent and authenticated through the usual Bearer/cookie path.
+
+Album/artist lists and detail responses and music search songs include `rating`
+(0 means unrated); album songs and artist albums include the same saved values.
+Music album/artist/search lists accept `rated=true` and `sort=rating` (highest
+first). Search applies the filter and order independently to songs/albums/artists;
+ratings never change album track/disc playback order. Stars persist across restarts,
+are account scoped and follow current permissions, with song/user deletion cleanup.

@@ -31,7 +31,7 @@ void main() {
     ];
     expect(layout.sorted(songs).map((s) => s['id']), [1, 2]);
     expect(MusicLayout('songs', layout.toJson()).columns, ['year']);
-    expect(MusicLayout('songs', {'sort': 'rating'}).sort, 'title');
+    expect(MusicLayout('songs', {'sort': 'rating'}).sort, 'rating');
     expect(MusicLayout('songs', {'columns': []}).columns, isEmpty);
   });
 }

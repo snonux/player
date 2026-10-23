@@ -46,6 +46,7 @@ func NewMockStore() *MockStore {
 // Each embedded struct provides default no-op / zero-value behavior;
 // callers override individual func fields to inject test behavior.
 type MockStore struct {
+	MockMusicRatingRepo
 	MockMusicFavoriteRepo
 	SavedQueueRepo
 	FinishProgressFunc      func(ctx context.Context, progress *model.PlaybackProgress) error

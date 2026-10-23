@@ -85,5 +85,14 @@ try {
  assert.equal(count(),before+1,'bubbling action cannot play twice');
  row.onclick({pointerType:'mouse',target:{closest:()=>null}});
  assert.equal(count(),before+2,'existing pointer row activation still works');
+ let fileLookups=0;
+ API.media=async()=>{fileLookups++;return [{id:19,type:'audio',file_name:'source_001.flac',rel_path:'Music/source_001.flac'}];};
+ const ratedGrid={innerHTML:'',classList:{add(){}},querySelector:()=>null,querySelectorAll:()=>[]};
+ await renderMusicSearch(ratedGrid,{query:'source_001',rated:true},()=>true,{back(){},reload(){}});
+ assert.equal(fileLookups,0,'Rated only never loads unfiltered Files fallback');
+ assert.deepEqual(state.searchFiles,[]);assert.deepEqual(state.media,[]);
+ assert.doesNotMatch(ratedGrid.innerHTML,/data-search-kind="file"/,'cleared or unrated matching music cannot reappear as Files');
+ assert.match(ratedGrid.innerHTML,/Nothing matches these filters/);
+
 } finally {API.musicSearch=oldSearch;API.media=oldMedia;document.getElementById=oldGet;document.querySelectorAll=oldRows;}
 console.log('Pending IME debounce and explicit Files touch activation checks passed.');

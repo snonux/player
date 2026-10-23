@@ -1,3 +1,5 @@
+import '../widgets/music_rating_button.dart';
+import '../widgets/music_rating_filter.dart';
 import '../widgets/music_favorite_button.dart';
 import '../widgets/music_layout_panel.dart';
 import '../widgets/music_filter_sheet.dart';
@@ -30,6 +32,24 @@ class MusicAlbumsScreen extends ConsumerStatefulWidget {
 
 class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
   bool _favoritesOnly = false;
+  bool _ratedOnly = false, _highestRated = false;
+  Widget _rating(String kind, Map<String, dynamic> entity) => MusicRatingButton(
+      key: ValueKey(
+          'rating-$kind-${entity[kind == 'song' ? 'id' : '${kind}_key']}'),
+      kind: kind,
+      entity: entity,
+      onChanged: () => setState(() {}));
+  Widget _ratingFilter() => MusicRatingFilter(
+      rated: _ratedOnly,
+      highest: _highestRated,
+      onChanged: (rated, highest) => setState(() {
+            _ratedOnly = rated;
+            _highestRated = highest;
+          }));
+  Widget _personal(String kind, Map<String, dynamic> entity) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [_heart(kind, entity), _rating(kind, entity)]);
+
   Widget _heart(String kind, Map<String, dynamic> entity) => MusicFavoriteButton(
       key: ValueKey(
           '$kind-${entity[kind == 'playlist' ? 'playlist_id' : '${kind}_key']}'),
@@ -171,12 +191,15 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                   ? MusicFilterBar(onChanged: _filtersChanged)
                   : null,
               actions: [
-                if (widget.albumKey == null) _favoritesFilter(),
+                if (widget.albumKey == null) ...[
+                  _favoritesFilter(),
+                  _ratingFilter()
+                ],
                 if (widget.albumKey != null &&
                     _album != null &&
                     !_loading &&
                     _error == null)
-                  _heart('album', _album!),
+                  _personal('album', _album!),
                 const MusicSearchButton(),
                 const MusicQueueButton()
               ],
@@ -230,9 +253,12 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
   }
 
   Widget _catalog(MusicLayout layout) {
-    final albums = layout.sorted((_albums ?? [])
-        .where((a) => !_favoritesOnly || a['is_favorite'] == true)
-        .toList());
+    final albums = ratingFiltered(
+        layout.sorted((_albums ?? [])
+            .where((a) => !_favoritesOnly || a['is_favorite'] == true)
+            .toList()),
+        _ratedOnly,
+        _highestRated);
     if (albums.isEmpty) {
       return Center(
           child: Padding(
@@ -240,7 +266,9 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Text(_favoritesOnly
                     ? 'No favorite albums. Show all albums to favorite one.'
-                    : 'Nothing matches these filters. Clear filters or browse Library for more music.'),
+                    : _ratedOnly
+                        ? 'No rated albums. Turn off Rated only to rate one.'
+                        : 'Nothing matches these filters. Clear filters or browse Library for more music.'),
                 TextButton(
                     onPressed: () => context.pop(),
                     child: const Text('Back to Library'))
@@ -268,7 +296,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 subtitle: layout.columns.isEmpty
                     ? null
                     : Text(layout.subtitle(album)),
-                trailing: _heart('album', album),
+                trailing: _personal('album', album),
                 onTap: toggle ?? () => _openAlbum(album['album_key'] as String),
               )
             : Card(
@@ -288,7 +316,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                             _cover(album),
                             Align(
                                 alignment: Alignment.topRight,
-                                child: _heart('album', album))
+                                child: _personal('album', album))
                           ])),
                           Padding(
                               padding: const EdgeInsets.all(8),
@@ -415,6 +443,11 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
               }
             },
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              _rating(
+                  'song',
+                  (album['songs'] as List)
+                      .cast<Map<String, dynamic>>()
+                      .firstWhere((song) => song['id'] == songs[i].id)),
               Text(_duration(songs[i].duration)),
               PopupMenuButton<String>(
                 tooltip: 'Actions for ${songs[i].displayTitle}',

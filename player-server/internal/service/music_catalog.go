@@ -14,6 +14,7 @@ import (
 
 // Album is a caller-visible aggregate over existing media identities.
 type Album struct {
+	Rating       int                      `json:"rating"`
 	IsFavorite   bool                     `json:"is_favorite"`
 	Discs        []AlbumDisc              `json:"discs,omitempty"`
 	Credits      []ArtistCredit           `json:"credits,omitempty"`

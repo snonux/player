@@ -1,3 +1,5 @@
+import '../widgets/music_rating_button.dart';
+import '../widgets/music_rating_filter.dart';
 import '../widgets/music_layout_panel.dart';
 import '../widgets/music_filter_sheet.dart';
 import 'dart:async';
@@ -46,6 +48,13 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
     _load();
   }
 
+  bool _ratedOnly = false, _highestRated = false;
+  Widget _rating(String kind, Map<String, dynamic> entity) => MusicRatingButton(
+      key: ValueKey(
+          'rating-$kind-${entity[kind == 'song' ? 'id' : '${kind}_key']}'),
+      kind: kind,
+      entity: entity,
+      onChanged: () => setState(() {}));
   bool _loading = false;
   String? _error;
   String _group = 'All';
@@ -85,7 +94,10 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
         if (query.containsKey(key)) key: query.remove(key)!
     };
     final generation = ++_generation;
-    if (query.values.every((value) => value.isEmpty) && facets.isEmpty) {
+    if (query.values.every((value) => value.isEmpty) &&
+        facets.isEmpty &&
+        !_ratedOnly &&
+        !_highestRated) {
       setState(() {
         _results = null;
         _error = null;
@@ -100,13 +112,17 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
     });
     try {
       final client = ref.read(apiClientProvider);
-      final data = facets.isEmpty
+      final data = facets.isEmpty && !_ratedOnly && !_highestRated
           ? await client.musicSearch(
               query: query['q']!,
               artist: query['artist']!,
               album: query['album']!)
-          : Map<String, dynamic>.from(await client
-              .filteredMusic('search', facets, query: query) as Map);
+          : Map<String, dynamic>.from(await client.filteredMusic(
+              'search', facets, query: {
+              ...query,
+              if (_ratedOnly) 'rated': 'true',
+              if (_highestRated) 'sort': 'rating'
+            }) as Map);
       if (!mounted || generation != _generation) return;
       setState(() {
         _results = data;
@@ -156,6 +172,17 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
               },
             ),
             actions: [
+              MusicRatingFilter(
+                  rated: _ratedOnly,
+                  highest: _highestRated,
+                  onChanged: (rated, highest) {
+                    final changed = rated != _ratedOnly;
+                    setState(() {
+                      _ratedOnly = rated;
+                      _highestRated = highest;
+                    });
+                    if (changed || _results == null) _load();
+                  }),
               IconButton(
                   tooltip: 'Clear search',
                   onPressed: _clear,
@@ -201,15 +228,20 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
     if (_results == null) {
       return const Center(child: Text('Search songs, albums and artists.'));
     }
-    final songs = layout
-        .sorted(
-            (_results!['songs'] as List? ?? []).cast<Map<String, dynamic>>())
-        .map(Media.fromJson)
-        .toList();
-    final albums =
-        (_results!['albums'] as List? ?? []).cast<Map<String, dynamic>>();
-    final artists =
-        (_results!['artists'] as List? ?? []).cast<Map<String, dynamic>>();
+    final songMaps = ratingFiltered(
+        layout.sorted(
+            (_results!['songs'] as List? ?? []).cast<Map<String, dynamic>>()),
+        _ratedOnly,
+        _highestRated);
+    final songs = songMaps.map(Media.fromJson).toList();
+    final albums = ratingFiltered(
+        (_results!['albums'] as List? ?? []).cast<Map<String, dynamic>>(),
+        _ratedOnly,
+        _highestRated);
+    final artists = ratingFiltered(
+        (_results!['artists'] as List? ?? []).cast<Map<String, dynamic>>(),
+        _ratedOnly,
+        _highestRated);
     final children = <Widget>[];
     void heading(String group, int count) {
       children.add(Semantics(
@@ -231,15 +263,19 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
               ? null
               : Text(layout.subtitle(song.toJson())),
           onTap: () => _play(songs, i),
-          trailing: PopupMenuButton<QueueInsertion>(
-              tooltip: 'Actions for ${song.displayTitle}',
-              onSelected: (action) =>
-                  insertServerSongs(context, ref, [song], action),
-              itemBuilder: (_) => [
-                    for (final action in QueueInsertion.values)
-                      PopupMenuItem(
-                          value: action, child: Text(queueActionLabel(action)))
-                  ]),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            _rating('song', songMaps[i]),
+            PopupMenuButton<QueueInsertion>(
+                tooltip: 'Actions for ${song.displayTitle}',
+                onSelected: (action) =>
+                    insertServerSongs(context, ref, [song], action),
+                itemBuilder: (_) => [
+                      for (final action in QueueInsertion.values)
+                        PopupMenuItem(
+                            value: action,
+                            child: Text(queueActionLabel(action)))
+                    ])
+          ]),
         ));
       }
     }
@@ -251,7 +287,7 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
           leading: const Icon(Icons.album_outlined),
           title: Text(album['title'] as String),
           subtitle: Text(album['artist'] as String),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: _rating('album', album),
           onTap: () {
             FocusScope.of(context).unfocus();
             context.push(
@@ -269,7 +305,7 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
           title: Text(artist['name'] as String),
           subtitle: Text(
               '${artist['album_count']} albums · ${artist['song_count']} songs'),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: _rating('artist', artist),
           onTap: () {
             FocusScope.of(context).unfocus();
             context.push(

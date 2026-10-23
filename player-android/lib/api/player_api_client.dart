@@ -43,6 +43,13 @@ class PlayerApiClient implements ProgressSyncClient {
   // The configured Dio instance with auth/401 interceptors already applied.
   final Dio _dio;
 
+  /// Saves 0–5 personal music stars; zero clears without changing hearts.
+  Future<void> setMusicRating(String kind, String key, int rating) async {
+    await _dio.put<void>(
+        '/api/v1/music/ratings/$kind/${Uri.encodeComponent(key)}',
+        data: {'rating': rating});
+  }
+
   /// Saves an entity heart idempotently, without changing song hearts.
   Future<void> setMusicFavorite(String kind, String key, bool favorite) async {
     await _dio.request<void>(
@@ -344,7 +351,9 @@ class PlayerApiClient implements ProgressSyncClient {
   /// Lists bounded audio rendition profiles advertised by this server.
   Future<List<Map<String, dynamic>>> streamProfiles() async {
     final response = await rawDio.get<List<dynamic>>('/api/v1/stream-profiles');
-    return response.data!.map((p) => Map<String, dynamic>.from(p as Map)).toList();
+    return response.data!
+        .map((p) => Map<String, dynamic>.from(p as Map))
+        .toList();
   }
 
   /// Asks whether the playback [url] can be played right now.

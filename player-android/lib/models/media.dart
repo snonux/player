@@ -2,6 +2,7 @@ import 'json_helpers.dart';
 import 'music_metadata.dart';
 
 class Media {
+  final int rating;
   final int id, setId, bitrate, fileSizeBytes, width, height, playCount;
   final String relPath,
       fileName,
@@ -55,6 +56,7 @@ class Media {
       required this.thumbnailPath,
       required this.playCount,
       this.music,
+      this.rating = 0,
       this.favorite = false,
       this.transcoded = false,
       this.tags = const [],
@@ -81,6 +83,7 @@ class Media {
       height: json['height'] as int? ?? 0,
       thumbnailPath: json['thumbnail_path'] as String? ?? '',
       playCount: json['play_count'] as int? ?? 0,
+      rating: json['rating'] as int? ?? 0,
       favorite: json['favorite'] as bool? ?? false,
       transcoded: json['transcoded'] as bool? ??
           false, // Safe tag deserialization: keep only elements that are already Strings,
@@ -108,6 +111,7 @@ class Media {
         'height': height,
         'thumbnail_path': thumbnailPath,
         'play_count': playCount,
+        'rating': rating,
         'favorite': favorite,
         'transcoded': transcoded,
         'tags': tags,

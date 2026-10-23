@@ -7,12 +7,14 @@ import '../providers/auth_state_provider.dart';
 
 const musicColumns = {
   'albums': {
+    'rating': 'Rating',
     'artist': 'Artist',
     'year': 'Year',
     'song_count': 'Songs',
     'duration': 'Duration'
   },
   'songs': {
+    'rating': 'Rating',
     'artist': 'Artist',
     'album': 'Album',
     'year': 'Year',
@@ -47,7 +49,7 @@ class MusicLayout {
         'columns': columns
       };
   dynamic value(Map<String, dynamic> item, String column) {
-    if (kind == 'albums') return item[column];
+    if (kind == 'albums' || column == 'rating') return item[column];
     final music = item['music'] as Map? ?? {};
     return column == 'duration'
         ? item[column]

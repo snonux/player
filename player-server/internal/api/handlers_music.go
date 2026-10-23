@@ -22,6 +22,10 @@ func (s *Server) handleMusicAlbums(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
+	if _, err := s.rateMusic(r.Context(), userIDFromContext(r), albums); err != nil {
+		handleError(w, err)
+		return
+	}
 	key, artist := r.PathValue("album_key"), r.URL.Query().Get("artist")
 	if key == "" {
 		filter, filterErr := service.ParseMusicFilter(r.URL.Query())
@@ -69,7 +73,7 @@ func (s *Server) handleMusicAlbums(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Album is unavailable or you no longer have permission.")
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, ratedAlbums(result, r))
 }
 
 func (s *Server) handleMusicArtists(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +97,11 @@ func (s *Server) handleMusicArtists(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
+	artistStars, err := s.rateMusic(r.Context(), userIDFromContext(r), albums)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 	result := make([]service.Artist, 0)
 	key := r.PathValue("artist_key")
 	if key == "" {
@@ -110,6 +119,7 @@ func (s *Server) handleMusicArtists(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, person := range service.MusicArtists(albums) {
 		person.IsFavorite = favorites[person.Key]
+		person.Rating = artistStars[person.Key]
 		if key == "" && r.URL.Query().Get("favorite") == "true" && !person.IsFavorite {
 			continue
 		}
@@ -145,7 +155,7 @@ func (s *Server) handleMusicArtists(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Artist is unavailable or you no longer have permission.")
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, ratedArtists(result, r))
 }
 
 func (s *Server) handleMusicSearch(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +167,11 @@ func (s *Server) handleMusicSearch(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
+	artistStars, err := s.rateMusic(r.Context(), userIDFromContext(r), albums)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 	query := r.URL.Query()
 	filter, filterErr := service.ParseMusicFilter(query)
 	if filterErr != nil {
@@ -164,7 +179,7 @@ func (s *Server) handleMusicSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	albums = service.FilterMusic(albums, filter)
-	if len(filter) > 0 && query.Get("q") == "" && query.Get("artist") == "" && query.Get("album") == "" {
+	if (len(filter) > 0 || query.Get("rated") == "true" || query.Get("sort") == "rating") && query.Get("q") == "" && query.Get("artist") == "" && query.Get("album") == "" {
 		result := service.MusicSearchResult{Songs: []model.Media{}, Albums: []service.Album{}, Artists: service.MusicArtists(albums)}
 		for _, album := range albums {
 			result.Songs = append(result.Songs, album.Songs...)
@@ -176,10 +191,10 @@ func (s *Server) handleMusicSearch(w http.ResponseWriter, r *http.Request) {
 		for i := range result.Artists {
 			result.Artists[i].Albums = nil
 		}
-		writeJSON(w, http.StatusOK, result)
+		writeJSON(w, http.StatusOK, rateSearch(result, artistStars, r))
 		return
 	}
-	writeJSON(w, http.StatusOK, service.SearchMusic(albums, query.Get("q"), query.Get("artist"), query.Get("album")))
+	writeJSON(w, http.StatusOK, rateSearch(service.SearchMusic(albums, query.Get("q"), query.Get("artist"), query.Get("album")), artistStars, r))
 }
 
 func (s *Server) handleMusicFacets(w http.ResponseWriter, r *http.Request) {
