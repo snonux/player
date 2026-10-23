@@ -107,7 +107,11 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   // The song entry follows the actual Sets info dialog and returns to this lens.
   await openFolder(page,fixture.setIds.Music,folder);
   const first=track(fixture,`Music/${folder}/01 - First Light.mp3`);
-  await page.locator(`#media-grid [data-id="${first.id}"]`).focus();await page.keyboard.press('i');
+  const songCard=page.locator(`#media-grid [data-id="${first.id}"]`);
+  const openControl=songCard.locator('.media-open');
+  if(await openControl.count()) await openControl.focus();
+  else await songCard.focus();
+  await page.keyboard.press('i');
   await expect(page.getByRole('button',{name:'Open album',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Open album',exact:true}).click();
   await expect(page.getByRole('heading',{name:albumName,exact:true})).toBeVisible();
