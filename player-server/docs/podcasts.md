@@ -83,10 +83,18 @@ episode state. It touches no files and grants no permissions.
 
 ### Episode Management
 
-Episodes are stored in `podcast_episodes` and rendered in the browse grid for podcast sets:
-- **Undownloaded** episodes show a **Download to server** button (calls `POST /api/podcasts/episodes/{id}/download`).
-- **Downloaded** episodes become regular `media` rows and appear as normal media cards.
-- Users can mark episodes as listened/unlistened via the checkmark button.
+The web UI lists subscriptions by `feed_key`: a folder per subscribed podcast
+and a virtual **All podcast episodes** view (`GET /api/podcasts/episodes`).
+Both default to **Uncompleted** (started included) and offer **Completed** /
+**All**, with server-side pagination. Every episode — downloaded or not —
+stays in these views with **Mark completed** / **Mark uncompleted** (via
+`POST /api/podcasts/sync` completion edits) and clear download / resume
+state. `server_copy.media_id` is present only when a readable server copy
+exists; download still uses `POST /api/podcasts/episodes/{id}/download`.
+
+The shared podcast set browse grid still shows undownloaded episode cards
+and downloaded media as ordinary cards; prefer the subscription views for
+completion filters and feed identity.
 
 ### Background Feed Checker
 
@@ -100,6 +108,7 @@ A background goroutine (`CheckFeeds`) refreshes subscribed feeds every hour (con
 | `POST` | `/api/podcasts` | Subscribe to a new feed (admin) |
 | `POST` | `/api/podcasts/sync` | Synchronize the caller's subscriptions and episode state |
 | `DELETE` | `/api/podcasts/{id}` | Remove a feed's server copies (admin); the feed too when nobody subscribes |
-| `GET` | `/api/podcasts/{id}/episodes` | List episodes with the caller's episode state |
+| `GET` | `/api/podcasts/episodes` | Subscribed / all-episodes view (`feed_key`, completion filter, page) |
+| `GET` | `/api/podcasts/{id}/episodes` | List episodes by set id (legacy) |
 | `POST` | `/api/podcasts/episodes/{id}/download` | Server-side download |
-| `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle completion |
+| `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle completion (legacy; prefer sync) |

@@ -56,7 +56,7 @@ export function openAlbums(artist = '', name = '', artists = false, playlists = 
  cancelPendingSearch();
  history.length=0; positions.clear();
  state.music = playlists ? {playlists:true,playlist:''} : artists ? {artists:true,artist:'',album:'',role:'artists'} : { artist, name, album: '' };
- state.virtualSet = ''; state.selectedSetId = null; state.selectedSetIds = []; state.folderPath = '';
+ state.virtualSet = ''; state.podcastFeedKey = ''; state.selectedSetId = null; state.selectedSetIds = []; state.folderPath = '';
  document.getElementById('sidebar')?.classList.remove('open');
  document.querySelector('.page')?.classList.remove('has-sidebar');
  updateSetRowsUI();

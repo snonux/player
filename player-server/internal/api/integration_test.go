@@ -626,6 +626,7 @@ func TestIntegration_Unauthenticated(t *testing.T) {
 		// Podcasts
 		{http.MethodGet, "/api/v1/podcasts"},
 		{http.MethodPost, "/api/v1/podcasts"},
+		{http.MethodGet, "/api/v1/podcasts/episodes"},
 		{http.MethodGet, "/api/v1/podcasts/1/episodes"},
 		{http.MethodPost, "/api/v1/podcasts/episodes/1/download"},
 		{http.MethodPost, "/api/v1/podcasts/episodes/1/complete"},
@@ -1065,6 +1066,11 @@ func (m *integrationPodcastService) UnsubscribeFeed(_ context.Context, _ int64, 
 
 // ListEpisodes returns an empty episode list.
 func (m *integrationPodcastService) ListEpisodes(_ context.Context, _, _ int64, _, _ int) ([]model.PodcastEpisodeWithStatus, error) {
+	return nil, nil
+}
+
+// ListSubscribedEpisodes returns an empty subscription view.
+func (m *integrationPodcastService) ListSubscribedEpisodes(_ context.Context, _ int64, _ repository.PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error) {
 	return nil, nil
 }
 

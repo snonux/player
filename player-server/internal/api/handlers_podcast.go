@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
 )
 
@@ -101,6 +102,41 @@ func (s *Server) handleListEpisodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, jsonArray(episodes))
+}
+
+// handleListSubscribedEpisodes serves GET /api/podcasts/episodes and the
+// /api/v1 twin (contract §6.3): one page of the caller's subscribed feeds,
+// optionally limited to feed_key, filtered by completion. The static
+// "episodes" path is registered beside /podcasts/{id}/episodes so a set id
+// never shadows it.
+func (s *Server) handleListSubscribedEpisodes(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.podcastSvc) {
+		return
+	}
+
+	q := repository.PodcastEpisodeQuery{
+		FeedKey: r.URL.Query().Get("feed_key"),
+		Filter:  r.URL.Query().Get("filter"),
+	}
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil {
+		q.Limit = v
+	}
+	if v, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil {
+		q.Offset = v
+	}
+
+	views, err := s.podcastSvc.ListSubscribedEpisodes(r.Context(), userIDFromContext(r), q)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidEpisodeView) {
+			badRequest(w, "invalid episode view")
+			return
+		}
+		s.logger.Error("list subscribed episodes", "err", err)
+		handleError(w, fmt.Errorf("failed to list subscribed episodes: %w", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, jsonArray(views))
 }
 
 func (s *Server) handleDownloadEpisode(w http.ResponseWriter, r *http.Request) {

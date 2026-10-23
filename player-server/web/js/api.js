@@ -170,10 +170,22 @@ export const API = {
     const params = new URLSearchParams({ limit, offset });
     return api(`/api/podcasts/${setId}/episodes?${params}`);
   },
+  // Subscribed / all-episodes views (contract §6.3): feed_key identity,
+  // completion filter, server pagination.
+  subscribedEpisodes: ({ feedKey = '', filter = 'uncompleted', limit = 100, offset = 0 } = {}) => {
+    const params = new URLSearchParams({
+      filter: filter || 'uncompleted',
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (feedKey) params.set('feed_key', feedKey);
+    return api(`/api/podcasts/episodes?${params}`);
+  },
   subscribePodcast: (feedUrl, setName) => api('/api/podcasts', { method: 'POST', body: { feed_url: feedUrl, set_name: setName } }),
   // Admin only: deletes the feed's server copies for everyone, and the
   // catalog feed once nobody is subscribed. Not an unsubscribe.
   removePodcastFromServer: (feedId) => api(`/api/podcasts/${feedId}`, { method: 'DELETE' }),
+  syncPodcast: (body) => api('/api/podcasts/sync', { method: 'POST', body }),
   syncPodcastSubscriptions: (subscriptions) => api('/api/podcasts/sync', { method: 'POST', body: { subscriptions } }),
   downloadEpisode: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/download`, { method: 'POST' }),
   toggleEpisodeComplete: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/complete`, { method: 'POST' }),

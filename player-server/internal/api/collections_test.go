@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"codeberg.org/snonux/player/internal/model"
+	"codeberg.org/snonux/player/internal/repository"
 	"codeberg.org/snonux/player/internal/service"
 )
 
@@ -45,6 +46,7 @@ func TestEmptyCollectionResponses(t *testing.T) {
 		{"in progress", server.handleInProgress, nil},
 		{"podcasts", server.handleListPodcasts, nil},
 		{"episodes", server.handleListEpisodes, nil},
+		{"subscribed episodes", server.handleListSubscribedEpisodes, nil},
 		{"browse", server.handleBrowseSet, []string{"folders", "media"}},
 		{"detail", server.handleGetMedia, []string{"tags"}},
 		{"permissions", server.handleListPermissions, []string{"sets", "users", "permissions"}},
@@ -84,5 +86,9 @@ type nilPodcasts struct{ service.PodcastEpisodeService }
 func (nilPodcasts) ListFeeds(context.Context, int64) ([]model.PodcastFeed, error) { return nil, nil }
 
 func (nilPodcasts) ListEpisodes(context.Context, int64, int64, int, int) ([]model.PodcastEpisodeWithStatus, error) {
+	return nil, nil
+}
+
+func (nilPodcasts) ListSubscribedEpisodes(context.Context, int64, repository.PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error) {
 	return nil, nil
 }

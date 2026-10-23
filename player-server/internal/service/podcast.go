@@ -35,6 +35,9 @@ type PodcastEpisodeService interface {
 	EditFeed(ctx context.Context, feedID int64, feedURL string, checkInterval int, userID int64) error
 	UnsubscribeFeed(ctx context.Context, feedID int64, userID int64) error
 	ListEpisodes(ctx context.Context, setID, userID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error)
+	// ListSubscribedEpisodes is the §6.3 subscription / all-episodes view
+	// (per feed_key or every subscribed feed, with completion filters).
+	ListSubscribedEpisodes(ctx context.Context, userID int64, q repository.PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error)
 	DownloadEpisode(ctx context.Context, episodeID, userID int64) (*model.Media, error)
 	ToggleEpisodeComplete(ctx context.Context, episodeID, userID int64) error
 	CheckFeeds(ctx context.Context) error

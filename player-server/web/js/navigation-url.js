@@ -17,10 +17,16 @@ export function readLibraryURL(search) {
   const folder = params.get('folder') || '';
   const safeFolder = !folder.split('/').some(part => part === '.' || part === '..') && !folder.startsWith('/') && !folder.includes('\\') && !folder.includes('\0');
   const filters = Object.fromEntries(filterKeys.map(key => [key, key === 'favorites' ? !music && params.get(key) === '1' : music ? '' : params.get(key) || '']));
+  const view = params.get('view') || '';
+  const podcastView = !music && view === 'podcasts';
+  const pfilter = params.get('pfilter') || '';
+  const podcastFilter = ['uncompleted', 'completed', 'all'].includes(pfilter) ? pfilter : 'uncompleted';
   return {
     music,
     sets, folder: safeFolder && sets.length === 1 ? folder : '', filters,
-    virtual: !music && params.get('view') === 'in-progress' ? 'in-progress' : '',
+    virtual: !music && view === 'in-progress' ? 'in-progress' : podcastView ? 'podcasts' : '',
+    podcastFeedKey: podcastView ? (params.get('feed_key') || '') : '',
+    podcastFilter: podcastView ? podcastFilter : 'uncompleted',
     page: !music && /^\d+$/.test(params.get('page') || '') && Number.isSafeInteger(Number(params.get('page'))) ? Number(params.get('page')) : undefined,
     media: positiveID(params.get('media')),
     shuffle: params.get('shuffle') === '1',
@@ -35,6 +41,10 @@ export function libraryURL(state, media = null, shuffle = false) {
   if(state.music?.search) { if(state.music.query) params.set('mq',state.music.query); if(state.music.artistQuery) params.set('mq_artist',state.music.artistQuery); if(state.music.albumQuery) params.set('mq_album',state.music.albumQuery); }
   if (!state.music) {
   if (state.virtualSet) params.set('view', state.virtualSet);
+  if (state.virtualSet === 'podcasts') {
+    if (state.podcastFeedKey) params.set('feed_key', state.podcastFeedKey);
+    if (state.podcastFilter && state.podcastFilter !== 'uncompleted') params.set('pfilter', state.podcastFilter);
+  }
   if (state.selectedSetIds.length) params.set('set', state.selectedSetIds.join(','));
   if (state.folderPath && state.selectedSetIds.length === 1) params.set('folder', state.folderPath);
   for (const key of filterKeys) if (state.filters[key]) params.set(key, key === 'favorites' ? '1' : state.filters[key]);

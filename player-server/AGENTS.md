@@ -294,10 +294,17 @@ Admin opens the **Podcasts** button in the admin panel (or calls `POST /api/podc
 
 ### Episode Management
 
-Episodes are stored in `podcast_episodes` and rendered in the browse grid under the shared podcast set:
+The web sidebar lists **All podcast episodes** and one row per subscribed feed
+(`feed_key`). Those views call `GET /api/podcasts/episodes` with completion
+filters (`uncompleted` default, `completed`, `all`) and pagination; downloaded
+episodes stay as podcast cards via `server_copy`. Mark completed/uncompleted
+writes a sync completion edit (`web/js/podcast-episode-state.js`).
+
+The shared podcast set browse grid still shows undownloaded episode cards and
+downloaded media as ordinary cards:
 - **Undownloaded** episodes show a **Download to server** button (calls `POST /api/podcasts/episodes/{id}/download`).
-- **Downloaded** episodes become regular `media` rows and appear as normal media cards.
-- Users can mark episodes as listened/unlistened via the checkmark button.
+- **Downloaded** episodes become regular `media` rows in set browse.
+- Users can mark episodes completed/uncompleted via the checkmark button.
 
 ### Background Feed Checker
 
@@ -311,7 +318,8 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 | `POST` | `/api/podcasts` | Subscribe to a new feed (admin); also writes the admin's subscription register |
 | `POST` | `/api/podcasts/sync` | Synchronize the caller's subscription and episode registers (any user); advertised as `podcast_sync` in `/api/config` |
 | `DELETE` | `/api/podcasts/{id}` | Remove a feed's server copies; the feed itself only when nobody is subscribed (admin) |
-| `GET` | `/api/podcasts/{id}/episodes` | List episodes with the caller's episode state |
+| `GET` | `/api/podcasts/episodes` | Subscribed / all-episodes views (`feed_key`, `filter`, page; contract §6.3) |
+| `GET` | `/api/podcasts/{id}/episodes` | List episodes by set id (legacy) |
 | `POST` | `/api/podcasts/episodes/{id}/download` | Server-side download |
 | `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle the caller's completion register (manual edit at server time) |
 

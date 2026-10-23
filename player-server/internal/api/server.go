@@ -500,6 +500,9 @@ func (s *Server) routesPodcast() {
 	// never taken for a feed id.
 	s.handleBoth(http.MethodPost, "/api/podcasts/sync", s.requireSession(s.handlePodcastSync))
 	s.handleBoth(http.MethodDelete, "/api/podcasts/{id}", s.requireAdmin(s.handleUnsubscribePodcast))
+	// Static /episodes is the §6.3 subscription view; keep it before
+	// /{id}/episodes so "episodes" is never parsed as a set id.
+	s.handleBoth(http.MethodGet, "/api/podcasts/episodes", s.requireSession(s.handleListSubscribedEpisodes))
 	s.handleBoth(http.MethodGet, "/api/podcasts/{id}/episodes", s.requireSession(s.handleListEpisodes))
 	s.handleBoth(http.MethodPost, "/api/podcasts/episodes/{episode_id}/download", s.requireSession(s.handleDownloadEpisode))
 	s.handleBoth(http.MethodPost, "/api/podcasts/episodes/{episode_id}/complete", s.requireSession(s.handleToggleComplete))

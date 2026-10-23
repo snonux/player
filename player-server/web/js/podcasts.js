@@ -28,6 +28,7 @@ export function initPodcasts() {
       urlInput.value = '';
       refreshPodcasts();
       refreshSets();
+      document.dispatchEvent(new CustomEvent('library:changed'));
     } catch (err) {
       toast(err.message || 'Subscribe failed', 'error');
     }
@@ -94,6 +95,7 @@ async function feedAction(action, feed, button) {
     await setSubscribed(feed, subscribe);
     toast(subscribe ? 'Subscribed' : 'Unsubscribed');
     await refreshPodcasts();
+    document.dispatchEvent(new CustomEvent('library:changed'));
   } catch (err) {
     restoreButton(button);
     toast(err.message || (subscribe ? 'Subscribe failed' : 'Unsubscribe failed'), 'error');
@@ -183,7 +185,7 @@ function renderEpisodeCard(card, ep) {
       await API.toggleEpisodeComplete(ep.id);
       ep.is_completed = !ep.is_completed;
       updateCompleteButton(completeBtn, ep.is_completed);
-      toast(ep.is_completed ? 'Marked listened' : 'Marked unlistened');
+      toast(ep.is_completed ? 'Marked completed' : 'Marked uncompleted');
     } catch (err) {
       toast(err.message || 'Toggle failed', 'error');
     }
@@ -212,7 +214,7 @@ async function downloadEpisode(card, ep, buttons, play) {
 }
 
 function updateCompleteButton(button, completed) {
-  const label = completed ? 'Mark as unlistened' : 'Mark as listened';
+  const label = completed ? 'Mark uncompleted' : 'Mark completed';
   button.classList.toggle('active', completed);
   button.title = label;
   button.setAttribute('aria-label', label);
@@ -226,7 +228,7 @@ function renderEpisodeHtml(ep) {
   const downloadButton = ep.is_downloaded
     ? '<span class="text-xs text-muted">Downloaded</span>'
     : '<button class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download episode" aria-label="Download episode">↓</button>';
-  const completeLabel = completed ? 'Mark as unlistened' : 'Mark as listened';
+  const completeLabel = completed ? 'Mark uncompleted' : 'Mark completed';
   return `
     <div class="thumb-wrap">
       <span class="placeholder">🎙️</span>

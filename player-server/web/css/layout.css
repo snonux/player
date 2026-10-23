@@ -805,6 +805,48 @@ body {
   min-width: 5.5rem;
 }
 
+.podcast-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.25rem 0 0.75rem;
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.podcast-nav-list .btn,
+#podcast-all-episodes {
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+}
+
+.podcast-view-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.podcast-view-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.podcast-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.podcast-filter-btn.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .podcast-feed-row {
   display: flex;
   align-items: center;

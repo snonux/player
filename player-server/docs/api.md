@@ -2161,9 +2161,60 @@ atomically, so a concurrent subscribe keeps its catalog metadata.
 
 ---
 
+### `GET /api/podcasts/episodes` · `GET /api/v1/podcasts/episodes`
+
+List episodes of the caller's **subscribed** feeds (contract §6.3): one page
+of catalog episodes joined with the caller's completion and position
+registers, newest first by `published_at` then `episode_key`. Identity is
+`feed_key` / `episode_key`, not the shared podcast set id. Omit `feed_key`
+for the virtual **All podcast episodes** view; set it (canonical key or an
+alias) for one subscription folder. Default filter is `uncompleted`
+(started episodes included).
+
+**Query parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `feed_key` | Limit to one subscribed feed (optional) |
+| `filter` | `uncompleted` (default), `completed`, or `all` |
+| `limit` | Page size (default 100, max 500) |
+| `offset` | Page offset (default 0) |
+
+**Response `200`:**
+
+```json
+[
+  {
+    "id": 10,
+    "feed_key": "feed:example.com/feed.rss",
+    "episode_key": "guid:episode-guid-001",
+    "feed_title": "My Podcast",
+    "title": "Episode 1: Introduction",
+    "description": "The first episode.",
+    "published_at": "2026-01-05T00:00:00Z",
+    "duration_seconds": 3600.0,
+    "episode_url": "https://example.com/ep1.mp3",
+    "completed": false,
+    "completion_source": "",
+    "position_seconds": 120.5,
+    "server_copy": {"media_id": 42}
+  }
+]
+```
+
+`id` is the catalog row id for download/complete routes that still take it;
+it is never an identity. `server_copy` is `null` when there is no readable
+non-deleted server media row. Downloaded and undownloaded episodes both
+appear here so the web podcast views keep podcast actions.
+
+**Status codes:** `200`, `400` (unknown filter or bad page), `401`, `500`
+
+---
+
 ### `GET /api/podcasts/{id}/episodes` · `GET /api/v1/podcasts/{id}/episodes`
 
 List episodes for a podcast feed. `{id}` is the **set ID** (not the feed ID).
+Prefer `GET /api/podcasts/episodes?feed_key=…` for subscription folders.
 
 **Query parameters:**
 
@@ -2295,7 +2346,8 @@ toggle undoes itself); new clients write completion edits through
 | `POST` | `podcasts` | admin | Subscribe to feed |
 | `POST` | `podcasts/sync` | session | Synchronize my podcast subscriptions and episode state |
 | `DELETE` | `podcasts/{id}` | admin | Remove feed copies (and the feed when unsubscribed by all) |
-| `GET` | `podcasts/{id}/episodes` | session | List episodes |
+| `GET` | `podcasts/episodes` | session | Subscribed / all-episodes view (§6.3) |
+| `GET` | `podcasts/{id}/episodes` | session | List episodes by set id (legacy) |
 | `POST` | `podcasts/episodes/{episode_id}/download` | session | Download episode |
 | `POST` | `podcasts/episodes/{episode_id}/complete` | session | Toggle completion |
 | `GET` | `admin/users` | admin | List users |

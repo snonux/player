@@ -105,6 +105,31 @@ export async function loadMedia(options = {}) {
       setMedia(list);
       const page = renderGrid(list, 'No in-progress media.', options.mediaId);
       resultCount.textContent = resultText(list.length, page);
+    } else if (state.virtualSet === 'podcasts') {
+      breadcrumb?.classList.add('hidden');
+      syncMediaPage(`virtual:podcasts:${state.podcastFeedKey || ''}:${state.podcastFilter || 'uncompleted'}`, options.page);
+      setMedia([]);
+      const { renderPodcastVirtualView } = await import('../podcast-views.js');
+      if (revision !== loadRevision) return;
+      const page = await renderPodcastVirtualView(grid, {
+        revision,
+        alive: () => revision === loadRevision,
+        pageSize: mediaPageSize,
+      });
+      if (revision !== loadRevision) return;
+      if (page) {
+        const shown = page.items?.length || 0;
+        if (!shown) resultCount.textContent = '0 items';
+        else if (page.hasPrev || page.hasNext) {
+          resultCount.textContent = page.hasNext
+            ? `${page.start + 1}–${page.end}+ items`
+            : `${page.start + 1}–${page.end} items`;
+        } else {
+          resultCount.textContent = `${shown} items`;
+        }
+      } else {
+        resultCount.textContent = '';
+      }
     } else if (!singleSetId && !setIds && !callbacks.isShuffle?.() && !hasActiveFilters()) {
       breadcrumb?.classList.add('hidden');
       setMedia([]);
@@ -212,6 +237,7 @@ export function navigateBack() {
   if (!state.folderPath) {
     if (state.virtualSet) {
       state.virtualSet = '';
+      state.podcastFeedKey = '';
       state.mediaPage = 0;
       callbacks.onVirtualSetCleared?.();
       loadMedia();

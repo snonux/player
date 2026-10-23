@@ -54,6 +54,7 @@ import { initAdmin } from './admin.js';
 import { initTrash, moveToTrash } from './trash.js';
 import { initModalFocus } from './modal-focus.js';
 import { initPodcasts } from './podcasts.js';
+import { initPodcastViews, updatePodcastSidebarUI, clearPodcastView } from './podcast-views.js';
 import { state, setAuthenticatedUser } from './state.js';
 import { initPWA } from './pwa.js';
 import { closeAllModals } from './dom.js';
@@ -211,6 +212,8 @@ async function initApp() {
       if(music) {state.music=nextMusicSearch(state.music,music);loadMedia();return;}
       state.music = null;
       state.virtualSet = '';
+      clearPodcastView();
+      state.podcastFeedKey = '';
       syncChromeVirtualSets();
       applySearchSet(parsed);
       delete parsed.set;
@@ -240,6 +243,7 @@ async function initApp() {
       forgetSearchView();
       state.music = null;
       state.virtualSet = '';
+      state.podcastFeedKey = '';
       syncChromeVirtualSets();
       loadMedia();
     },
@@ -260,6 +264,14 @@ async function initApp() {
     toggleFavorite,
     moveToTrash,
     onVirtualSetCleared: syncChromeVirtualSets,
+  });
+  initPodcastViews({
+    onLoadMedia: () => {
+      forgetSearchView();
+      syncChromeVirtualSets();
+      loadMedia();
+    },
+    playMediaById,
   });
   initKeyboard({
     ...keyboardHandlers(),
@@ -537,11 +549,13 @@ function openSet(id) {
   state.music = null;
   if (!Number.isFinite(id)) return;
   state.virtualSet = '';
+  state.podcastFeedKey = '';
   state.selectedSetId = id;
   state.selectedSetIds = [id];
   state.folderPath = '';
   state.mediaPage = 0;
   updateSetRowsUI();
+  syncChromeVirtualSets();
   loadMedia();
 }
 
@@ -560,6 +574,7 @@ async function markAsNotStartedAndRefresh(id) {
 function openInProgress() {
   state.music = null;
   state.virtualSet = state.virtualSet === 'in-progress' ? '' : 'in-progress';
+  state.podcastFeedKey = '';
   state.selectedSetId = null;
   state.selectedSetIds = [];
   state.folderPath = '';
@@ -571,6 +586,7 @@ function openInProgress() {
 
 function syncChromeVirtualSets() {
   document.getElementById('in-progress-toggle')?.classList.toggle('active', state.virtualSet === 'in-progress');
+  updatePodcastSidebarUI();
 }
 
 function initChrome() {
