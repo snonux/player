@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v75';
+const CACHE = 'kiss-v76';
 const ASSETS = [
   '/',
   '/index.html',
@@ -16,6 +16,9 @@ const ASSETS = [
   '/js/app.js',
   '/js/i18n.js',
   '/js/i18n-de.js',
+  '/js/offline-pins.js',
+  '/js/offline-pin-dialog.js',
+  '/js/offline-pin-library.js',
   '/js/state.js',
   '/js/api.js',
   '/js/keyboard.js',
@@ -118,7 +121,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE && !k.startsWith('player-playback-v1-')).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => k !== CACHE && !k.startsWith('player-playback-v1-') && !k.startsWith('player-offline-v1-')).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });

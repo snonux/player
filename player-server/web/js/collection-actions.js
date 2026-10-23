@@ -1,3 +1,4 @@
+import { bindOfflinePinButton } from './offline-pin-dialog.js';
 import { t, html, plural, ui } from './i18n.js';
 import { shareMusicCollection } from './collection-share.js';
 import { downloadMusic } from './music-downloads.js';
@@ -12,7 +13,7 @@ import { escapeHtml as esc, toast } from './utils.js';
 
 let context = null, collectionIntent = 0;
 export function collectionButtons(label) {
- return html`<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${ui(label)}</button><button class="btn" data-collection-shuffle>Shuffle</button><button class="btn" data-collection-menu>Queue actions ▾</button><button class="btn" data-collection-download>Download…</button><button class="btn" data-collection-share>Share…</button><span role="status" data-collection-status></span></span>`;
+ return html`<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${ui(label)}</button><button class="btn" data-collection-shuffle>Shuffle</button><button class="btn" data-collection-menu>Queue actions ▾</button><button class="btn" data-collection-download>Download…</button><button class="btn" data-collection-pin>Pin offline…</button><button class="btn" data-collection-share>Share…</button><span role="status" data-collection-status></span></span>`;
 }
 export function bindCollectionActions(root, collections, current, sourceLabel = t('Selected collections')) {
  const owner = {root, collections, current, sourceLabel, busy:false, generation:0};
@@ -22,6 +23,7 @@ export function bindCollectionActions(root, collections, current, sourceLabel = 
  root.querySelector('[data-collection-share]').onclick = () => run(owner, 'share');
  root.querySelector('[data-collection-download]').onclick = () => run(owner, 'download');
  root.querySelector('[data-collection-menu]').onclick = event => menu(event.currentTarget, owner);
+ owner.pinUpdate = bindOfflinePinButton(root.querySelector('[data-collection-pin]'), collections, current, sourceLabel);
  return owner;
 }
 function menu(button, owner) {
@@ -112,6 +114,7 @@ export function bindCollectionCatalog(grid, items, kind, keyName, nameName, curr
  const toggle = toolbar.querySelector('[data-select-collections]');
  const update = () => {
   const count = selected().length;
+  owner.pinUpdate?.();
   toolbar.querySelector('[data-batch-count]').textContent = `${count} selected`;
   if (!owner.busy) toolbar.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download], [data-collection-share]').forEach(button => button.disabled=!count);
  };

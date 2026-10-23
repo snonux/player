@@ -835,9 +835,9 @@ function showCoverArt(e, thumbnailUrl) {
 // stays empty and the "preparing" status is shown until the server has the
 // rendition, so a 503 never reaches the element as a bogus decode error.
 function startSource(m, media, url, resumeFrom) {
-  const networkBlocked = currentSource?.library && media.type === 'audio' && musicStreamingBlocked();
+  const networkBlocked = currentSource?.library && media.type === 'audio' && !media.offlinePinURL && musicStreamingBlocked();
   const useCache = currentSource?.library && playbackCacheEnabled(media);
-  const tryGapless = m === els().audio && currentSource?.library && gapless?.wants(media);
+  const tryGapless = m === els().audio && currentSource?.library && !media.offlinePinURL && gapless?.wants(media);
   if (!networkBlocked && !tryGapless && !useCache && !/\/compat(?:\?|$)/.test(url)) {
     attachSource(m, url, resumeFrom);
     return;
@@ -892,7 +892,7 @@ function attachSource(m, url, resumeFrom) {
 // or superseded by another item must not touch the element any more.
 function finishPendingSource(pending, m, media, url, resumeFrom, result) {
   if (pendingSource !== pending) return;
-  if (result.state === 'ready' && currentSource?.library && media.type === 'audio' && musicStreamingBlocked()) { result = {state:'failed',networkRestricted:true,reason:networkPolicyMessage}; }
+  if (result.state === 'ready' && currentSource?.library && media.type === 'audio' && !media.offlinePinURL && musicStreamingBlocked()) { result = {state:'failed',networkRestricted:true,reason:networkPolicyMessage}; }
   pendingSource = null;
   setPlayerStatus('');
   if (result.networkRestricted) {

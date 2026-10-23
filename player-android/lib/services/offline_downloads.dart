@@ -147,8 +147,17 @@ class OfflineDownloads extends ChangeNotifier {
       check();
       final existing = await repository.get(key);
       if (existing != null) {
-        await repository.playbackRequest(key);
-        return existing;
+        final savedFile = repository.file(key);
+        if (await savedFile.exists() &&
+            await savedFile.length() == existing.sizeBytes) {
+          check();
+          return existing;
+        }
+        // A missing/truncated copy must be repairable without affecting intact
+        // manual downloads. Stop any owner before replacing this local file.
+        await playback.stopLocalSource(savedFile.uri.toString());
+        check();
+        await repository.remove(key);
       }
       if (prepare != null) await prepare(job);
       check();

@@ -92,7 +92,7 @@ void main() {
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
     expect(find.text('Saved offline snapshot'), findsNothing);
-    await tester.tap(find.byTooltip('Delete offline copy'));
+    await tester.tap(find.byTooltip('Remove download'));
     await tester.pumpAndSettle();
     expect(find.textContaining('The server file stays available.'),
         findsOneWidget);
@@ -102,11 +102,11 @@ void main() {
 
     // Failure to stop the native player leaves the copy available for retry.
     playback.refuseStop = true;
-    await tester.tap(find.byTooltip('Delete offline copy'));
+    await tester.tap(find.byTooltip('Remove download'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Delete offline copy'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Remove download'));
     await tester.pumpAndSettle();
-    expect(find.text('Could not delete the offline copy. Please try again.'),
+    expect(find.text('Could not remove the download. Please try again.'),
         findsOneWidget);
     expect(repository.file(key).existsSync(), isTrue);
 
@@ -119,9 +119,9 @@ void main() {
         stop: () async {
           stopped = true;
         });
-    await tester.tap(find.byTooltip('Delete offline copy'));
+    await tester.tap(find.byTooltip('Remove download'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Delete offline copy'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Remove download'));
     // Advance both Flutter's fake clock and the real SQLite/filesystem work.
     for (var i = 0; i < 100; i++) {
       await tester.pump(const Duration(milliseconds: 10));

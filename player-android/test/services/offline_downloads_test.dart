@@ -317,6 +317,22 @@ void main() {
     expect(await repository.list(), hasLength(1));
   });
 
+  for (final missing in [true, false]) {
+    test('repairs ${missing ? 'missing' : 'truncated'} completed download',
+        () async {
+      final first = await download();
+      if (missing) {
+        await repository.file(first.key).delete();
+      } else {
+        await repository.file(first.key).writeAsBytes([1]);
+      }
+      final repaired = await download();
+      expect(repaired.key, first.key);
+      expect(await repository.file(first.key).readAsBytes(), [1, 2, 3, 4]);
+      expect(requests.length, 2);
+    });
+  }
+
   test('duplicate completed download reuses existing file without network',
       () async {
     final first = await download();

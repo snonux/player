@@ -1,3 +1,4 @@
+import { offlinePinnedDetail, offlinePinnedResponse } from './offline-pins.js';
 import { initNetworkSettings, assertMusicStreamingAllowed, musicPrefetchAllowed, MusicNetworkRestricted } from './network-policy.js';
 import { mediaPlaybackUrl } from './streamSource.js';
 
@@ -33,6 +34,7 @@ export async function cachedMediaDetail(id, load) {
   try { return await load(); }
   catch (error) {
     if (!(error instanceof TypeError) || !scope() || !globalThis.caches) throw error;
+    const pinned = await offlinePinnedDetail(id); if (pinned) return pinned;
     const name = scope(), rows = index(name);
     const row = Object.values(rows).find(r => String(r.media.id) === String(id));
     if (!row || !(await (await caches.open(name)).match(row.url))) throw error;
@@ -75,6 +77,7 @@ async function fill(media, url, name, signal) {
   });
 }
 export async function cacheSong(media, url = mediaPlaybackUrl(media), { prefetch = false } = {}) {
+  if (media?.offlinePinURL) return;
   assertMusicStreamingAllowed(media);
   if (prefetch && !musicPrefetchAllowed()) return;
   const name = scope();
@@ -91,10 +94,33 @@ export async function cacheSong(media, url = mediaPlaybackUrl(media), { prefetch
 }
 // HEAD always revalidates access and rendition identity online. Only a transport
 // failure may reuse a copy; an HTTP denial never becomes offline permission.
-export function playbackCacheEnabled(media) { return !!scope() && !!globalThis.caches && media?.type === "audio" && cachePreferences().budget > 0; }
+export function playbackCacheEnabled(media) { return media?.type === "audio" && (!!media.offlinePinURL || (!!scope() && !!globalThis.caches)); }
 export async function playbackCacheSource(media, url, signal) {
+  // Explicit downloaded playback has its own local policy. It must never turn
+  // into an audio network request if the bytes disappear or access is refused.
+  if (media?.offlinePinURL) {
+    const pinScope = scope();
+    if (new URL(media.offlinePinURL, location.origin).href !== new URL(url, location.origin).href ||
+        mediaPlaybackUrl(media) !== new URL(url, location.origin).href) throw Error('Invalid saved download source.');
+    const pinned = await offlinePinnedResponse(url, signal);
+    if (!pinned) throw Error('Saved download unavailable. Retry pinning or choose online playback.');
+    const blob = await pinned.blob();
+    if (signal?.aborted || scope() !== pinScope) throw new DOMException('Cancelled','AbortError');
+    liveURL = URL.createObjectURL(blob); return liveURL;
+  }
   assertMusicStreamingAllowed(media);
-  try { const source = await resolveCacheSource(media,url,signal); assertMusicStreamingAllowed(media); return source; }
+  const pinScope = scope();
+  try {
+    const pinned = await offlinePinnedResponse(url,signal);
+    if (pinned) {
+      const blob = await pinned.blob();
+      if (signal?.aborted || scope() !== pinScope) throw new DOMException('Cancelled','AbortError');
+      assertMusicStreamingAllowed(media);
+      liveURL = URL.createObjectURL(blob); return liveURL;
+    }
+    const source = await resolveCacheSource(media,url,signal);
+    assertMusicStreamingAllowed(media); return source;
+  }
   catch(error) { if (signal?.aborted || error instanceof MusicNetworkRestricted) throw error; assertMusicStreamingAllowed(media); cacheStatus = 'Playback cache is unavailable. Streaming remains available; check browser storage.'; changed(); return url; }
 }
 async function resolveCacheSource(media, url, signal) {

@@ -1,3 +1,4 @@
+import 'music_pin_button.dart';
 import '../l10n/music_localizations.dart';
 import '../services/music_action_intent.dart';
 import 'music_download_dialog.dart';
@@ -187,6 +188,13 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                   onPressed: enabled ? _download : null,
                   icon: const Icon(Icons.download_outlined),
                   label: Text(context.tr('Keep offline'))),
+              if (widget.collections.length == 1 &&
+                  const ['album', 'playlist']
+                      .contains(widget.collections.single.kind))
+                MusicPinButton(
+                    enabled: enabled,
+                    collection: widget.collections.single,
+                    title: widget.sourceLabel),
               OutlinedButton.icon(
                   onPressed: enabled ? () => _download(share: true) : null,
                   icon: const Icon(Icons.share_outlined),
@@ -318,7 +326,8 @@ class _CatalogState extends State<MusicCollectionCatalog> {
                             ? context.tr('Cancel selection')
                             : 'Select $plural')),
                     if (_selecting) ...[
-                      Text(context.tr('{count} selected', {'count': _selected.length})),
+                      Text(context
+                          .tr('{count} selected', {'count': _selected.length})),
                       MusicCollectionActions(
                           collections: [
                             for (final collection in widget.items)

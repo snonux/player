@@ -44,6 +44,19 @@ const TERMINAL_REASONS = {
 // mediaPlaybackUrl returns the URL to play for a library item. The choice
 // relies only on the server's "transcoded" hint, never on the file extension.
 export function mediaPlaybackUrl(media) {
+  // Only explicit Play downloaded entries select a saved rendition. Never
+  // accept a foreign origin, arbitrary path or unrecognized profile here.
+  if (media.offlinePinURL) {
+    try {
+      const saved = new URL(media.offlinePinURL, location.origin);
+      const expected = `/api/media/${media.id}/`;
+      const profile = saved.searchParams.get('profile');
+      if (saved.origin === location.origin && !saved.username && !saved.password && !saved.hash &&
+          [expected + 'stream', expected + 'compat', expected + 'download'].includes(saved.pathname) &&
+          (!saved.search || (saved.pathname.endsWith('/compat') &&
+            ['aac128','aac256','mp3192','opus96'].includes(profile) && [...saved.searchParams].length === 1))) return saved.href;
+    } catch { /* Invalid saved URLs use ordinary playback policy. */ }
+  }
   return qualityPlaybackUrl(media);
 }
 

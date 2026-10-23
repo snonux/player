@@ -1,3 +1,4 @@
+import '../widgets/music_pin_button.dart';
 import '../widgets/music_download_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,7 +41,8 @@ class _OfflineDownloadsScreenState
         const Padding(
             padding: EdgeInsets.all(16),
             child: Text(
-                'Play saved files without signing in or connecting. Deleting an offline copy keeps the server file.')),
+                'Play saved files without signing in or connecting. Removing a download keeps the server file.')),
+        const OfflinePinnedCollections(),
         if (downloads.batch case final batch?)
           ListTile(
             title: Text(
@@ -163,7 +165,7 @@ class _OfflineDownloadsScreenState
                               store: offlinePersonalStore(ref, item.key),
                               revision: _personalRevision),
                         IconButton(
-                            tooltip: 'Delete offline copy',
+                            tooltip: 'Remove download',
                             onPressed: _removing.contains(item.key)
                                 ? null
                                 : () => _remove(item),
@@ -185,16 +187,16 @@ class _OfflineDownloadsScreenState
     final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-              title: const Text('Delete offline copy?'),
+              title: const Text('Remove download?'),
               content: Text(
-                  'Delete “${item.title}” from this device? The server file stays available.'),
+                  'Remove “${item.title}” from this device? The server file stays available.'),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(context, false),
                     child: const Text('Cancel')),
                 FilledButton(
                     onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Delete offline copy')),
+                    child: const Text('Remove download')),
               ],
             ));
     if (confirmed != true || !mounted) return;
@@ -205,7 +207,7 @@ class _OfflineDownloadsScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content:
-                Text('Could not delete the offline copy. Please try again.')));
+                Text('Could not remove the download. Please try again.')));
       }
     } finally {
       if (mounted) setState(() => _removing.remove(item.key));

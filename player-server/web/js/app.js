@@ -1,4 +1,5 @@
 import { initLanguage } from './i18n.js';
+import { initOfflinePinLibrary } from './offline-pin-library.js';
 import { initRadio } from './radio.js';
 import { stopRenderer } from './renderer.js';
 import { setListeningProgressAccount } from './listening-progress.js';
@@ -194,6 +195,7 @@ async function initApp() {
   initNavigationPreferences(openCollection);
   initListeningHistory();
   initPlaybackCache(() => { const q = queueState(); return q.entries[q.index + 1]?.media; });
+  initOfflinePinLibrary();
   document.addEventListener('music:song-info', toggleMediaInfo);
   document.addEventListener('music:open-song-album', e => openSongAlbum(e.detail));
   initSearch({
