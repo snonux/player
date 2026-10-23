@@ -96,6 +96,13 @@ CREATE TABLE IF NOT EXISTS media_tags (
     PRIMARY KEY (media_id, tag_id)
 );
 
+CREATE TABLE IF NOT EXISTS music_entity_favorites (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK(kind IN ('album','artist','playlist')),
+    entity_key TEXT NOT NULL,
+    PRIMARY KEY (user_id, kind, entity_key)
+);
+
 CREATE TABLE IF NOT EXISTS favorites (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,

@@ -1,3 +1,4 @@
+import '../widgets/music_favorite_button.dart';
 import '../providers/current_user_provider.dart';
 import '../widgets/playlist_import_dialog.dart';
 import '../services/playlist_export.dart';
@@ -28,6 +29,20 @@ class MusicPlaylistsScreen extends ConsumerStatefulWidget {
 }
 
 class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
+  bool _favoritesOnly = false;
+  Widget _heart(String kind, Map<String, dynamic> entity) => MusicFavoriteButton(
+      key: ValueKey(
+          '$kind-${entity[kind == 'playlist' ? 'playlist_id' : '${kind}_key']}'),
+      kind: kind,
+      entity: entity,
+      onChanged: () => setState(() {}));
+  Widget _favoritesFilter() => IconButton(
+      tooltip: _favoritesOnly ? 'Show all playlists' : 'Favorites only',
+      isSelected: _favoritesOnly,
+      icon: const Icon(Icons.favorite_border),
+      selectedIcon: const Icon(Icons.favorite),
+      onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly));
+
   List<Map<String, dynamic>> _list = [];
   Map<String, dynamic>? _playlist;
   bool _loading = true;
@@ -149,6 +164,12 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
               ? 'Music · Playlists'
               : _playlist?['name'] as String? ?? 'Playlist'),
           actions: [
+            if (widget.playlistId == null) _favoritesFilter(),
+            if (widget.playlistId != null &&
+                _playlist != null &&
+                !_loading &&
+                _error == null)
+              _heart('playlist', _playlist!),
             const MusicSearchButton(),
             const MusicQueueButton(),
             if (widget.playlistId != null &&
@@ -187,7 +208,12 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
 
   Widget _catalog() => MusicCollectionCatalog(
       key: ValueKey('playlists-$_generation'),
-      items: _list,
+      emptyMessage: _favoritesOnly
+          ? 'No favorite playlists. Show all playlists to favorite one.'
+          : 'No playlists yet. Create a playlist to save music for later.',
+      items: _list
+          .where((a) => !_favoritesOnly || a['is_favorite'] == true)
+          .toList(),
       kind: 'playlist',
       keyName: 'playlist_id',
       nameName: 'name',
@@ -204,17 +230,13 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                 onPressed: _import,
                 icon: const Icon(Icons.playlist_add),
                 label: const Text('Import M3U…')),
-            if (_list.isEmpty)
-              const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Text(
-                      'No playlists yet. Create a playlist to save music for later.')),
           ])),
       itemBuilder: (p, checkbox, toggle) => ListTile(
           leading: checkbox ?? _cover(p, 56),
           title: Text(p['name'] as String,
               maxLines: 2, overflow: TextOverflow.ellipsis),
           subtitle: Text('${_totals(p)}\n${_accessLabel(p)}'),
+          trailing: _heart('playlist', p),
           onTap: toggle ??
               () async {
                 await context.push(

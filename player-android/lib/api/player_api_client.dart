@@ -42,6 +42,13 @@ class PlayerApiClient implements ProgressSyncClient {
   // The configured Dio instance with auth/401 interceptors already applied.
   final Dio _dio;
 
+  /// Saves an entity heart idempotently, without changing song hearts.
+  Future<void> setMusicFavorite(String kind, String key, bool favorite) async {
+    await _dio.request<void>(
+        '/api/v1/music/favorites/$kind/${Uri.encodeComponent(key)}',
+        options: Options(method: favorite ? 'PUT' : 'DELETE'));
+  }
+
   /// Exports accessible saved occurrences as UTF-8, media-root-relative M3U8.
   Future<String> exportPlaylist(String id) async => (await _dio.get<String>(
           '/api/v1/playlists/${Uri.encodeComponent(id)}/export.m3u',

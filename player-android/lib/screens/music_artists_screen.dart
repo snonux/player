@@ -1,3 +1,4 @@
+import '../widgets/music_favorite_button.dart';
 import '../widgets/music_filter_sheet.dart';
 import '../widgets/music_search_button.dart';
 import '../widgets/music_mini_player.dart';
@@ -31,6 +32,20 @@ class MusicArtistsScreen extends ConsumerStatefulWidget {
 }
 
 class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
+  bool _favoritesOnly = false;
+  Widget _heart(String kind, Map<String, dynamic> entity) => MusicFavoriteButton(
+      key: ValueKey(
+          '$kind-${entity[kind == 'playlist' ? 'playlist_id' : '${kind}_key']}'),
+      kind: kind,
+      entity: entity,
+      onChanged: () => setState(() {}));
+  Widget _favoritesFilter() => IconButton(
+      tooltip: _favoritesOnly ? 'Show all artists' : 'Favorites only',
+      isSelected: _favoritesOnly,
+      icon: const Icon(Icons.favorite_border),
+      selectedIcon: const Icon(Icons.favorite),
+      onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly));
+
   String _role = 'artists';
   bool _loading = true;
   String? _error;
@@ -70,8 +85,8 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
       _loading = true;
       _error = null;
     });
+    final client = ref.read(apiClientProvider);
     try {
-      final client = ref.read(apiClientProvider);
       final key = widget.artistKey;
       final data = key == null
           ? (_facets.isEmpty
@@ -80,7 +95,11 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
                       query: {'role': _role})) as List)
                   .cast<Map<String, dynamic>>())
           : await client.musicArtist(key);
-      if (!mounted || generation != _generation) return;
+      if (!mounted ||
+          generation != _generation ||
+          ref.read(apiClientProvider) != client) {
+        return;
+      }
       setState(() {
         if (key == null) {
           _people = data as List<Map<String, dynamic>>;
@@ -90,7 +109,11 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted || generation != _generation) return;
+      if (!mounted ||
+          generation != _generation ||
+          ref.read(apiClientProvider) != client) {
+        return;
+      }
       setState(() {
         _error =
             e is DioException && [403, 404].contains(e.response?.statusCode)
@@ -101,40 +124,71 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
     }
   }
 
+  Future<void> _openArtist(String key) async {
+    await context
+        .push('${AppRoutes.musicArtists}?artist=${Uri.encodeComponent(key)}');
+    if (mounted) await _load();
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-        bottomNavigationBar: const MusicMiniPlayer(),
-        appBar: AppBar(
-            bottom: widget.artistKey == null
-                ? MusicFilterBar(onChanged: _filtersChanged)
-                : null,
-            title: Text(widget.artistKey == null
-                ? 'Music · Artists'
-                : _artist?['name'] as String? ?? 'Artist'),
-            actions: const [MusicSearchButton(), MusicQueueButton()]),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? Center(
-                    child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child:
-                            Column(mainAxisSize: MainAxisSize.min, children: [
-                          Text('Could not load artists. $_error',
-                              textAlign: TextAlign.center),
-                          const SizedBox(height: 16),
-                          FilledButton(
-                              onPressed: _load, child: const Text('Retry')),
-                        ])))
-                : widget.artistKey != null
-                    ? _detail()
-                    : _catalog(),
-      );
+  Widget build(BuildContext context) {
+    ref.listen(apiClientProvider, (previous, next) {
+      if (previous != next) {
+        _generation++;
+        _artist = null;
+        _loading = true;
+        _error = null;
+        _people = [];
+        _favoritesOnly = false;
+        Future.microtask(_load);
+      }
+    });
+    return Scaffold(
+      bottomNavigationBar: const MusicMiniPlayer(),
+      appBar: AppBar(
+          bottom: widget.artistKey == null
+              ? MusicFilterBar(onChanged: _filtersChanged)
+              : null,
+          title: Text(widget.artistKey == null
+              ? 'Music · Artists'
+              : _artist?['name'] as String? ?? 'Artist'),
+          actions: [
+            if (widget.artistKey == null) _favoritesFilter(),
+            if (widget.artistKey != null &&
+                _artist != null &&
+                !_loading &&
+                _error == null)
+              _heart('artist', _artist!),
+            const MusicSearchButton(),
+            const MusicQueueButton()
+          ]),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Text('Could not load artists. $_error',
+                            textAlign: TextAlign.center),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                            onPressed: _load, child: const Text('Retry')),
+                      ])))
+              : widget.artistKey != null
+                  ? _detail()
+                  : _catalog(),
+    );
+  }
+
   Widget _catalog() => MusicCollectionCatalog(
       key: ValueKey('artists-$_role-$_generation'),
-      emptyMessage:
-          'No artists available for this role. Choose another role or ask an administrator to rescan music tags.',
-      items: _people,
+      emptyMessage: _favoritesOnly
+          ? 'No favorite artists. Show all artists to favorite one.'
+          : 'No artists available for this role. Choose another role or ask an administrator to rescan music tags.',
+      items: _people
+          .where((a) => !_favoritesOnly || a['is_favorite'] == true)
+          .toList(),
       kind: 'artist',
       keyName: 'artist_key',
       nameName: 'name',
@@ -165,10 +219,8 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
           subtitle: Text(
               '${creditRoleLabels(person['roles'])}\n${person['album_count']} albums · ${person['song_count']} ${_facets.isEmpty ? 'songs' : 'matching songs'}'),
           isThreeLine: true,
-          trailing: const Icon(Icons.chevron_right),
-          onTap: toggle ??
-              () => context.push(
-                  '${AppRoutes.musicArtists}?artist=${Uri.encodeComponent(person['artist_key'] as String)}')));
+          trailing: _heart('artist', person),
+          onTap: toggle ?? () => _openArtist(person['artist_key'] as String)));
   Widget _detail() {
     final artist = _artist!;
     final albums =

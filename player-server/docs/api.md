@@ -2692,3 +2692,20 @@ a later successful refresh recovers. Equal membership preserves occurrence IDs.
 Following disables membership writes (409); metadata/sharing remain manual.
 Administrator ownership transfer detaches the source atomically. Source changes
 are detected at these refresh points, not by a continuous filesystem watcher.
+
+### Music entity favorites (M34)
+
+`PUT /api/v1/music/favorites/{kind}/{entity_key}` favorites an album, artist or
+playlist; `DELETE` unfavorites it. `kind` is `album`, `artist` or `playlist`.
+Both have the normal `/api/` alias, require authentication and return
+`{"is_favorite":true}` or `{"is_favorite":false}`. Operations are idempotent.
+The entity must be currently readable: inaccessible/missing entities return 404,
+including private foreign playlists; an unknown kind returns 400. Shared playlist
+readers can save their own heart without permission to edit the playlist.
+
+Album, artist and playlist catalog/detail responses add `is_favorite` for the
+signed-in account. Their list endpoints accept `favorite=true` to return only
+currently readable favorites, preserving existing catalog filters. Entity hearts
+are independent of existing song/file hearts. Saved keys for hidden entities are
+never returned through a separate favorites index. Offline clients retain the
+previous heart and may retry after reconnecting; no offline write queue is added.

@@ -17,6 +17,11 @@ func (s *Server) handleMusicAlbums(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
+	favorites, err := s.musicFavorites(r.Context(), userIDFromContext(r), "album")
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 	key, artist := r.PathValue("album_key"), r.URL.Query().Get("artist")
 	if key == "" {
 		filter, filterErr := service.ParseMusicFilter(r.URL.Query())
@@ -29,6 +34,10 @@ func (s *Server) handleMusicAlbums(w http.ResponseWriter, r *http.Request) {
 	mediaID, _ := strconv.ParseInt(r.URL.Query().Get("media_id"), 10, 64)
 	result := make([]service.Album, 0, len(albums))
 	for _, album := range albums {
+		album.IsFavorite = favorites[album.Key]
+		if key == "" && r.URL.Query().Get("favorite") == "true" && !album.IsFavorite {
+			continue
+		}
 		if key != "" && album.Key != key {
 			continue
 		}
@@ -94,9 +103,26 @@ func (s *Server) handleMusicArtists(w http.ResponseWriter, r *http.Request) {
 		}
 		albums = service.FilterMusic(albums, filter)
 	}
+	favorites, err := s.musicFavorites(r.Context(), userIDFromContext(r), "artist")
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 	for _, person := range service.MusicArtists(albums) {
+		person.IsFavorite = favorites[person.Key]
+		if key == "" && r.URL.Query().Get("favorite") == "true" && !person.IsFavorite {
+			continue
+		}
 		if key != "" {
 			if person.Key == key {
+				albumFavorites, err := s.musicFavorites(r.Context(), userIDFromContext(r), "album")
+				if err != nil {
+					handleError(w, err)
+					return
+				}
+				for i := range person.Albums {
+					person.Albums[i].IsFavorite = albumFavorites[person.Albums[i].Key]
+				}
 				writeJSON(w, http.StatusOK, person)
 				return
 			}

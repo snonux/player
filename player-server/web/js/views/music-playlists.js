@@ -1,3 +1,4 @@
+import { favoriteButton, bindFavorites, favoriteFilter } from '../music-favorites.js';
 import { collectionButtons, bindCollectionActions, bindCollectionCatalog } from '../collection-actions.js';
 import { API } from '../api.js';
 import { state } from '../state.js';
@@ -19,12 +20,12 @@ export async function renderPlaylists(grid, view, current, saved) {
  const own=++generation;
  const active=()=>own===generation&&current();
  const detail=Boolean(view.playlist);
- const p=detail?await API.playlist(view.playlist):await API.playlists();
+ const p=detail?await API.playlist(view.playlist):await API.playlists({favorite:view.favorites || false});
  if (!active()) return;
  const count=document.getElementById('result-count');count.textContent=detail?`Music · Playlists · ${p.name}`:'Music · Playlists';
  grid.classList.toggle('music-detail',detail);
  if(!detail){
-  grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to Sets</button><h1>Playlists</h1><button class="btn btn-primary" data-create>Create playlist</button><button class="btn" data-import>Import M3U…</button></div>`+(p.length?p.map(item=>`<div class="media-card album-card" role="button" tabindex="0" data-playlist="${esc(item.playlist_id)}" aria-label="Open playlist ${esc(item.name)}">${cover(item)}<div class="card-body"><div class="title" title="${esc(item.name)}">${esc(item.name)}</div><p>${totals(item)}</p><p>${esc(accessLabel(item))}</p></div></div>`).join(''):'<p class="grid-full">No playlists yet. Create a playlist to save music for later.</p>');
+  grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to Sets</button><h1>Playlists</h1><button class="btn btn-primary" data-create>Create playlist</button><button class="btn" data-import>Import M3U…</button></div>`+(p.length?p.map(item=>`<div class="media-card album-card" role="button" tabindex="0" data-playlist="${esc(item.playlist_id)}" aria-label="Open playlist ${esc(item.name)}">${cover(item)}<div class="card-body">${favoriteButton('playlist',item.playlist_id,item)}<div class="title" title="${esc(item.name)}">${esc(item.name)}</div><p>${totals(item)}</p><p>${esc(accessLabel(item))}</p></div></div>`).join(''):`<p class="grid-full">${view.favorites?'No favorite playlists. Show all playlists to favorite one.':'No playlists yet. Create a playlist to save music for later.'}</p>`);
   grid.querySelector('[data-create]').onclick=()=>editPlaylist(null,active);
   grid.querySelector('[data-import]').onclick=()=>importPlaylist(active);
   grid.querySelectorAll('[data-playlist]').forEach(card=>card.onclick=()=>open(card.dataset.playlist));
@@ -32,6 +33,8 @@ export async function renderPlaylists(grid, view, current, saved) {
  }else{
   renderPlaylistDetail(grid,p,active);
  }
+ bindFavorites(grid,active);
+ if(!detail)favoriteFilter(grid,view,reload);
  grid.querySelector('[data-back]').onclick=back;
  const target=(saved?.playlist ? grid.querySelector(`[data-playlist="${CSS.escape(saved.playlist)}"]`) : null)||grid.querySelector('[data-playlist],.media-row');if(target){selectByElement(target);focusSelectedCard();if(saved)window.scrollTo(0,saved.scroll);}else grid.querySelector(detail?'[data-add]:not([hidden]),[data-find]':'[data-create]')?.focus();
 }
@@ -72,7 +75,7 @@ function matchesSong(song,query){return [mediaTitle(song),song.file_name,song.mu
 function renderPlaylistDetail(grid,initial,current){
  let p=initial, busy=false;
  let undo=null;
- grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover>${cover(p)}</div><div><h1>${esc(p.name)}</h1><p>${esc(accessLabel(p))}</p><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p>${p.source?`<div class="playlist-comment"><p>Following ${esc(p.source.path)} · ${p.source.base==='library'?'Library root':'Playlist folder'} paths</p><p role="status">${p.source.status==='ready'?`${p.source.unavailable} unavailable · ${p.source.rejected} unsafe entries skipped`:"Source unavailable. Last imported songs retained."}</p>${p.owner_id===state.user?.id?'<button class="btn" data-sync>Sync now</button>':''}<button class="btn" data-detach>Stop following…</button><p>Stop following to add, remove or move songs.</p></div>`:''}<div class="playlist-actions">${collectionButtons('Play playlist')}<button class="btn btn-ghost" data-playlist-actions aria-label="Playlist actions">Playlist actions ⋮</button><button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
+ grid.innerHTML=`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to playlists</button><div class="album-header"><div data-playlist-cover>${cover(p)}</div><div><h1>${esc(p.name)}</h1><p>${esc(accessLabel(p))}</p><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p>${p.source?`<div class="playlist-comment"><p>Following ${esc(p.source.path)} · ${p.source.base==='library'?'Library root':'Playlist folder'} paths</p><p role="status">${p.source.status==='ready'?`${p.source.unavailable} unavailable · ${p.source.rejected} unsafe entries skipped`:"Source unavailable. Last imported songs retained."}</p>${p.owner_id===state.user?.id?'<button class="btn" data-sync>Sync now</button>':''}<button class="btn" data-detach>Stop following…</button><p>Stop following to add, remove or move songs.</p></div>`:''}<div class="playlist-actions">${favoriteButton('playlist',p.playlist_id,p)}${collectionButtons('Play playlist')}<button class="btn btn-ghost" data-playlist-actions aria-label="Playlist actions">Playlist actions ⋮</button><button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
  const rows=grid.querySelector('[data-rows]'),find=grid.querySelector('[data-find]');
  const draw=(focusID=null)=>{
   state.media=p.songs;

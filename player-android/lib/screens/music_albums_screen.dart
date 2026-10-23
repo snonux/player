@@ -1,3 +1,4 @@
+import '../widgets/music_favorite_button.dart';
 import '../widgets/music_layout_panel.dart';
 import '../widgets/music_filter_sheet.dart';
 import '../widgets/music_search_button.dart';
@@ -28,6 +29,20 @@ class MusicAlbumsScreen extends ConsumerStatefulWidget {
 }
 
 class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
+  bool _favoritesOnly = false;
+  Widget _heart(String kind, Map<String, dynamic> entity) => MusicFavoriteButton(
+      key: ValueKey(
+          '$kind-${entity[kind == 'playlist' ? 'playlist_id' : '${kind}_key']}'),
+      kind: kind,
+      entity: entity,
+      onChanged: () => setState(() {}));
+  Widget _favoritesFilter() => IconButton(
+      tooltip: _favoritesOnly ? 'Show all albums' : 'Favorites only',
+      isSelected: _favoritesOnly,
+      icon: const Icon(Icons.favorite_border),
+      selectedIcon: const Icon(Icons.favorite),
+      onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly));
+
   List<Map<String, dynamic>>? _albums;
   Map<String, dynamic>? _album;
   String? _error;
@@ -66,11 +81,15 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
     _selecting = false;
     final generation = ++_generation;
     final key = widget.albumKey;
+    final client = ref.read(apiClientProvider);
     try {
-      final client = ref.read(apiClientProvider);
       if (key != null) {
         final album = await client.musicAlbum(key);
-        if (!mounted || generation != _generation) return;
+        if (!mounted ||
+            generation != _generation ||
+            ref.read(apiClientProvider) != client) {
+          return;
+        }
         setState(() {
           _album = album;
           _loading = false;
@@ -82,7 +101,11 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 if (widget.artistKey != null) 'artist': widget.artistKey!
               })) as List)
                 .cast<Map<String, dynamic>>();
-        if (!mounted || generation != _generation) return;
+        if (!mounted ||
+            generation != _generation ||
+            ref.read(apiClientProvider) != client) {
+          return;
+        }
         setState(() {
           _albums = albums;
           _loading = false;
@@ -101,6 +124,12 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
     }
   }
 
+  Future<void> _openAlbum(String key) async {
+    await context
+        .push('${AppRoutes.musicAlbums}?album=${Uri.encodeComponent(key)}');
+    if (mounted) await _load();
+  }
+
   void _play(List<Media> songs, int index) {
     final song = songs[index], client = ref.read(apiClientProvider);
     context.push(AppRoutes.audioPlayerPath('${song.id}'), extra: {
@@ -114,6 +143,17 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(apiClientProvider, (previous, next) {
+      if (previous != next) {
+        _generation++;
+        _album = null;
+        _loading = true;
+        _error = null;
+        _albums = [];
+        _favoritesOnly = false;
+        Future.microtask(_load);
+      }
+    });
     return PopScope(
         canPop: !_selecting,
         onPopInvokedWithResult: (didPop, _) {
@@ -130,7 +170,16 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
               bottom: widget.albumKey == null
                   ? MusicFilterBar(onChanged: _filtersChanged)
                   : null,
-              actions: const [MusicSearchButton(), MusicQueueButton()],
+              actions: [
+                if (widget.albumKey == null) _favoritesFilter(),
+                if (widget.albumKey != null &&
+                    _album != null &&
+                    !_loading &&
+                    _error == null)
+                  _heart('album', _album!),
+                const MusicSearchButton(),
+                const MusicQueueButton()
+              ],
               title: Text(widget.albumKey != null
                   ? (_album?['title'] as String? ?? 'Album')
                   : widget.artistKey != null
@@ -181,14 +230,17 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
   }
 
   Widget _catalog(MusicLayout layout) {
-    final albums = layout.sorted(_albums ?? []);
+    final albums = layout.sorted((_albums ?? [])
+        .where((a) => !_favoritesOnly || a['is_favorite'] == true)
+        .toList());
     if (albums.isEmpty) {
       return Center(
           child: Padding(
               padding: const EdgeInsets.all(24),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                const Text(
-                    'Nothing matches these filters. Clear filters or browse Library for more music.'),
+                Text(_favoritesOnly
+                    ? 'No favorite albums. Show all albums to favorite one.'
+                    : 'Nothing matches these filters. Clear filters or browse Library for more music.'),
                 TextButton(
                     onPressed: () => context.pop(),
                     child: const Text('Back to Library'))
@@ -216,17 +268,14 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 subtitle: layout.columns.isEmpty
                     ? null
                     : Text(layout.subtitle(album)),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: toggle ??
-                    () => context.push(
-                        '${AppRoutes.musicAlbums}?album=${Uri.encodeComponent(album['album_key'] as String)}'),
+                trailing: _heart('album', album),
+                onTap: toggle ?? () => _openAlbum(album['album_key'] as String),
               )
             : Card(
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
                     onTap: toggle ??
-                        () => context.push(
-                            '${AppRoutes.musicAlbums}?album=${Uri.encodeComponent(album['album_key'] as String)}'),
+                        () => _openAlbum(album['album_key'] as String),
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -234,7 +283,13 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                             Align(
                                 alignment: Alignment.centerLeft,
                                 child: checkbox),
-                          Expanded(child: _cover(album)),
+                          Expanded(
+                              child: Stack(fit: StackFit.expand, children: [
+                            _cover(album),
+                            Align(
+                                alignment: Alignment.topRight,
+                                child: _heart('album', album))
+                          ])),
                           Padding(
                               padding: const EdgeInsets.all(8),
                               child: Column(

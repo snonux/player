@@ -14,6 +14,7 @@ import (
 
 // PlaylistView contains only currently accessible music and derived aggregates.
 type PlaylistView struct {
+	IsFavorite bool `json:"is_favorite"`
 	model.Playlist
 	Songs        []model.Media `json:"songs"`
 	SongCount    int           `json:"song_count"`

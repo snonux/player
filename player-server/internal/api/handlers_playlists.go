@@ -1,6 +1,7 @@
 package api
 
 import (
+	"codeberg.org/snonux/player/internal/service"
 	"encoding/json"
 	"net/http"
 )
@@ -56,6 +57,24 @@ func (s *Server) handlePlaylists(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodDelete {
 		w.WriteHeader(http.StatusNoContent)
 		return
+	}
+	favorites, err := s.musicFavorites(r.Context(), user, "playlist")
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	switch value := result.(type) {
+	case []service.PlaylistView:
+		filtered := make([]service.PlaylistView, 0, len(value))
+		for _, p := range value {
+			p.IsFavorite = favorites[p.ID]
+			if r.URL.Query().Get("favorite") != "true" || p.IsFavorite {
+				filtered = append(filtered, p)
+			}
+		}
+		result = filtered
+	case *service.PlaylistView:
+		value.IsFavorite = favorites[value.ID]
 	}
 	status := http.StatusOK
 	if r.Method == http.MethodPost && id == "" {
