@@ -1,3 +1,4 @@
+import { mountMusicMix } from './music-mix.js';
 import { API } from './api.js';
 import { escapeHtml as esc } from './utils.js';
 import { resolveCollections } from './collection-resolver.js';
@@ -7,6 +8,7 @@ import { state } from './state.js';
 
 // Independent native buttons leave catalog selection and its keyboard scope intact.
 export function mountRelatedMusic(host, kind, key, current, open) {
+ mountMusicMix(host, kind, key, current);
  const section=document.createElement('section');
  section.className='grid-full music-related'; section.setAttribute('aria-label','More like this');
  host.append(section);

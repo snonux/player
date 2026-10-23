@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+globalThis.window={addEventListener(){}};
+const { mountRelatedMusic } = await import('../music-related.js');
+const { queueState } = await import('../queue.js');
 import { API } from '../api.js';
-import { mountRelatedMusic } from '../music-related.js';
-import { queueState } from '../queue.js';
 import { currentPlaybackIntent } from '../playback-intent.js';
 import { state } from '../state.js';
 
@@ -13,7 +14,8 @@ const section={isConnected:true,innerHTML:'',setAttribute(){},
  querySelectorAll(selector){return selector==='[data-related-play]'?buttons:[];},
  querySelector(selector){return statuses[Number(selector.match(/"(\d+)"/)[1])];}
 };
-globalThis.document={createElement:()=>section,dispatchEvent(){},getElementById:()=>null};
+let created=0;
+globalThis.document={createElement:()=>++created===1?{isConnected:true,setAttribute(){},querySelector(){return {value:'0'};}}:section,dispatchEvent(){},getElementById:()=>null};
 state.user={id:1};
 API.relatedMusic=async()=>['a','b'].map(key=>({kind:'album',key,title:key,basis:['Genre: Jazz']}));
 let resolveA,resolveB;

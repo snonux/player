@@ -160,6 +160,14 @@ class PlayerApiClient implements ProgressSyncClient {
       ))
           .data!;
 
+  Future<Map<String, dynamic>> musicMix(String kind, String key,
+          {int minRating = 0}) async =>
+      (await _dio.get<Map<String, dynamic>>(
+        '/api/v1/music/mix/$kind/${Uri.encodeComponent(key)}',
+        queryParameters: {'min_rating': minRating},
+      ))
+          .data!;
+
   Future<List<Map<String, dynamic>>> relatedMusic(
           String kind, String key) async =>
       ((await _dio.get<List<dynamic>>(

@@ -2838,6 +2838,31 @@ A readable source without matches returns `[]`, an inaccessible/missing source
 returns 404, invalid kinds return 400, and library read failures retain the normal
 server error response. Clients show Retry without discarding primary details.
 
+### Artist radio and Instant Mix (M42)
+
+Authenticated `GET /api/v1/music/mix/{kind}/{entity_key}` (also `/api/music/...`)
+returns `{kind,key,title,context,min_rating,songs:[Media]}`. Kind is `song`,
+`album` or `artist`; keys use the same canonical media/catalog identities as
+related music. Optional `min_rating` is one integer from 0 through 5 (default 0,
+including unrated songs). Invalid kinds or rating parameters return 400.
+
+The server first resolves the account's currently readable catalog, then loads
+its personal song ratings. Matching uses shared normalized local genres and
+explicit artist credits. Album seeds aggregate their songs' tags; artist seeds
+use genres on credited songs and their own credit identity. Synthetic unknown
+or compilation artist names cannot establish a match. No external provider or
+acoustic analysis is required; this is a finite library queue, separate from
+internet radio streams.
+
+The seed song comes first if it has meaningful tags and passes the rating
+constraint. Other matches rank by the number of shared values, then ascending
+canonical media ID. Songs are distinct by media ID. Rating filtering happens
+before ranking and the final 50-song limit. An accessible source with no matches
+returns 200 with `songs:[]`; an unavailable or forbidden source returns 404.
+Catalog/rating read failures retain normal server error responses. No endpoint
+call changes a queue. Clients replace their queue only after a complete,
+current-account response and preserve it on lookup failure or no matches.
+
 ### Bulk original music downloads
 
 `POST /api/music/downloads` · `POST /api/v1/music/downloads` accepts

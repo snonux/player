@@ -80,6 +80,7 @@ export const API = {
   musicSearch: params => api(`/api/music/search?${new URLSearchParams(params)}`),
   artists: (params = {}) => api(`/api/music/artists?${new URLSearchParams(params)}`),
   artist: key => api(`/api/music/artists/${encodeURIComponent(key)}`),
+  musicMix: (kind, key, minRating = 0) => api(`/api/music/mix/${kind}/${encodeURIComponent(key)}?min_rating=${minRating}`),
   relatedMusic: (kind, key) => api(`/api/music/related/${kind}/${encodeURIComponent(key)}`),
   queueAlbums: media_ids => api('/api/music/queue-albums', {method: 'POST', body: {media_ids}}),
   albums: (params = {}) => api(`/api/music/albums?${new URLSearchParams(params)}`),

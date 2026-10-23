@@ -1,3 +1,4 @@
+import 'music_mix_actions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -85,6 +86,10 @@ class _MusicRelatedSectionState extends ConsumerState<MusicRelatedSection> {
     return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          MusicMixActions(
+              key: ValueKey('${widget.kind}:${widget.entityKey}'),
+              kind: widget.kind,
+              entityKey: widget.entityKey),
           Semantics(
               header: true,
               child: Text('More like this',

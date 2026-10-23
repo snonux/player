@@ -1,3 +1,4 @@
+import '../services/music_action_intent.dart';
 import 'music_download_dialog.dart';
 import '../screens/create_share_dialog.dart';
 import 'package:flutter/material.dart';
@@ -10,12 +11,6 @@ import '../services/music_queue.dart';
 import '../services/music_shuffle.dart';
 import 'music_shuffle_options_dialog.dart';
 import 'server_song_actions.dart';
-
-class _ResolutionOwner {
-  int generation = 0;
-}
-
-final _resolutionOwnerProvider = Provider((ref) => _ResolutionOwner());
 
 /// Whole collections resolve atomically before using the normal queue owner.
 class MusicCollectionActions extends ConsumerStatefulWidget {
@@ -61,12 +56,11 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
     final coordinator = ref.read(playbackSessionCoordinatorProvider);
     final source = coordinator.generation;
     final api = ref.read(apiClientProvider);
-    final owner = ref.read(_resolutionOwnerProvider);
-    final operation = ++owner.generation;
+    final operation = beginMusicActionIntent();
     final departure = _departureGeneration;
     bool current() =>
         mounted &&
-        operation == owner.generation &&
+        isMusicActionIntent(operation) &&
         departure == _departureGeneration &&
         epoch == mutations.generation &&
         source == coordinator.generation &&
@@ -92,6 +86,7 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
       await insertServerSongs(context, ref, songs, action,
           replace: replace,
           shuffled: shuffled,
+          actionIntent: operation,
           sourceLabel: widget.sourceLabel);
       if (mounted && epoch == mutations.generation) {
         setState(() => _message = null);
