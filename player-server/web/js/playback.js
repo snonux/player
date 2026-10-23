@@ -36,7 +36,7 @@ import { initSeekPreview } from './seekPreview.js';
 import { initAudioVisuals } from './audioVisuals.js';
 import { initCompactControls } from './compactControls.js';
 import { initKeyboardAccess } from './keyboard-access.js';
-import { initLyrics } from './lyrics.js';
+import { initLyrics, seekLyric } from './lyrics.js';
 import { initPlaybackPersonal } from './playback-personal.js';
 import { castItem, castPosition, castDuration, castSeek, castTogglePlay, initCast, isCasting, stopCasting } from './cast.js';
 
@@ -143,7 +143,15 @@ export function initPlayer(options = {}) {
   });
 
   audioVisuals = initAudioVisuals(e);
-  lyrics = initLyrics(e);
+  lyrics = initLyrics({ ...e, getPosition: () => isCasting() ? castPosition() : e.audio.currentTime, onSeek: seconds => {
+    if (isCasting()) {
+      const duration = castDuration() || effectiveDuration();
+      if (!Number.isFinite(seconds) || seconds < 0 || !Number.isFinite(duration) || duration <= 0 || seconds > duration) return false;
+      castSeek(seconds);
+      return true;
+    }
+    return !isDetached() && seekLyric(e.audio, seconds);
+  } });
   initCompactControls(e.player);
   initKeyboardAccess();
   osSession = createMediaSession({ session: globalThis.navigator?.mediaSession, Metadata: globalThis.MediaMetadata,
@@ -202,7 +210,10 @@ function bindCast(e) {
       stopProgressTimer();
       osSession?.clear();
     },
-    onRemoteTime: (seconds, duration) => showPosition(e, seconds, duration || effectiveDuration()),
+    onRemoteTime: (seconds, duration) => {
+      showPosition(e, seconds, duration || effectiveDuration());
+      lyrics?.update();
+    },
     onRemotePlaying: (playing) => updateUI(playing),
     onRemoteEnded: () => triggerNext({ forcePlay: true, completed: true }),
     onCastStarted: (device) => {

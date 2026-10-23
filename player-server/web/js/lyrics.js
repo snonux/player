@@ -36,7 +36,20 @@ export function currentLyricIndex(lines, seconds) {
   return low - 1;
 }
 
-export function initLyrics({ audio, player }) {
+// Metadata must belong to a usable loaded source before a local seek. Lyrics
+// may arrive before audio metadata or contain timestamps beyond the recording.
+export function seekLyric(audio, seconds) {
+  if (!audio?.getAttribute('src') || audio.error || audio.readyState < 1 ||
+      !Number.isFinite(seconds) || seconds < 0 ||
+      !Number.isFinite(audio.duration) || audio.duration <= 0 || seconds > audio.duration) return false;
+  try {
+    audio.currentTime = seconds;
+    return true;
+  } catch { return false; }
+}
+
+export function initLyrics({ audio, player, getPosition = () => audio.currentTime,
+  onSeek = seconds => seekLyric(audio, seconds) }) {
   const stage = player?.querySelector('.stage');
   const controls = player?.querySelector('.controls');
   if (!audio || !stage || !controls) return null;
@@ -57,6 +70,13 @@ export function initLyrics({ audio, player }) {
   let data = { synced: false, lines: [] };
   let request = null;
   let index = -1;
+  let reading = false;
+  function follow() {
+    if (!data.synced) return;
+    const active = panel.children[index];
+    if (active) panel.scrollTop = active.offsetTop - panel.clientHeight / 2 + active.clientHeight / 2;
+    else panel.scrollTop = 0;
+  }
   function visibility() {
     button.classList.toggle('hidden', !data.lines.length);
     panel.classList.toggle('hidden', !wanted || !data.lines.length);
@@ -65,23 +85,37 @@ export function initLyrics({ audio, player }) {
   }
   function update() {
     if (!data.synced) return;
-    const next = currentLyricIndex(data.lines, audio.currentTime);
+    const next = currentLyricIndex(data.lines, getPosition());
     if (index === next) return;
     if (index >= 0) panel.children[index]?.removeAttribute('aria-current');
     index = next;
     const active = panel.children[index];
     if (active) {
       active.setAttribute('aria-current', 'true');
-      if (wanted) panel.scrollTop = active.offsetTop - panel.clientHeight / 2 + active.clientHeight / 2;
-    } else panel.scrollTop = 0;
+    }
+    if (wanted && !reading && !panel.contains(document.activeElement)) follow();
   }
   button.addEventListener('click', () => {
     wanted = !wanted;
+    reading = false;
     visibility();
     index = -1;
     // Remove a previous highlight before recomputing after a hidden seek.
     for (const line of panel.children) line.removeAttribute('aria-current');
     update();
+  });
+  // Auto-follow never moves a reader's focus or fights wheel/touch scrolling.
+  // Leave the region or activate a line/toggle to return to following playback.
+  for (const event of ['wheel', 'touchstart']) panel.addEventListener(event, () => { reading = true; }, { passive: true });
+  panel.addEventListener('focusout', event => {
+    if (panel.contains(event.relatedTarget)) return;
+    reading = false;
+    if (wanted) follow();
+  });
+  panel.addEventListener('pointerleave', () => {
+    if (panel.contains(document.activeElement)) return;
+    reading = false;
+    if (wanted) follow();
   });
   // Reading keys belong to this scroll region. Stop the library's document
   // shortcuts while preserving native arrow/page/home/end scrolling; playback
@@ -89,8 +123,10 @@ export function initLyrics({ audio, player }) {
   panel.addEventListener('keydown', (event) => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
+      reading = true;
       event.stopPropagation();
     } else if (event.key === 'j' || event.key === 'k') {
+      reading = true;
       event.preventDefault();
       event.stopPropagation();
       const step = panel.firstElementChild?.clientHeight || 24;
@@ -99,11 +135,17 @@ export function initLyrics({ audio, player }) {
   });
   for (const event of ['timeupdate', 'seeking', 'seeked', 'loadedmetadata']) audio.addEventListener(event, update);
   return {
+    update,
     setMedia(media, streamUrl) {
+      const hadFocus = panel.contains(document.activeElement);
       request?.abort();
       request = null;
       data = { synced: false, lines: [] };
       index = -1;
+      reading = false;
+      panel.removeAttribute('aria-description');
+      // A removed lyric button must not strand focus on the page body.
+      if (hadFocus) controls.querySelector('button:not(.lyrics-toggle):not(:disabled)')?.focus();
       panel.replaceChildren();
       panel.scrollTop = 0;
       visibility();
@@ -116,10 +158,30 @@ export function initLyrics({ audio, player }) {
         .then(result => {
           if (request !== controller) return;
           data = normalizeLyrics(result);
+          panel.setAttribute('aria-description', data.synced
+            ? 'Select a line to seek. Tab to a line and press Enter.'
+            : 'Read lyrics with arrows, Page Up or Down, Home or End, or j and k.');
           const fragment = document.createDocumentFragment();
           for (const line of data.lines) {
-            const row = document.createElement('p');
+            const row = document.createElement(data.synced ? 'button' : 'p');
             row.textContent = line.text;
+            if (data.synced) {
+              row.type = 'button';
+              row.className = 'lyric-seek';
+              const minutes = Math.floor(line.start / 60);
+              const seconds = String(Math.floor(line.start % 60)).padStart(2, '0');
+              const label = `Seek to ${minutes}:${seconds}: ${line.text || 'Instrumental'}`;
+              row.setAttribute('aria-label', label);
+              row.title = label;
+              row.addEventListener('click', () => {
+                // A retained/detached old node cannot seek a replacement track.
+                if (request !== controller || !panel.contains(row)) return;
+                if (onSeek(line.start) !== true) return;
+                reading = false;
+                update();
+                follow();
+              });
+            }
             fragment.appendChild(row);
           }
           panel.replaceChildren(fragment);

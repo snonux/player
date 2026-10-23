@@ -24,6 +24,15 @@ shortcuts stay inactive while the dialog is open. Notes and Favorite are also
 available in the authenticated player, including images; public shares keep
 personal actions private.
 
+Lyrics: timed lines are buttons. Tab to a line and press Enter to seek to its
+timestamp without changing play/pause; click or tap does the same. In library
+and detached playback, Space/p remain playback controls. Public shares retain
+native button Space activation (seek) and their visible playback controls.
+Arrows, Page Up/Down, Home/End and j/k scroll lyrics
+without changing the library selection. Auto-follow preserves focused lines
+and pauses during manual reading; leave the lyrics region or select a line to
+resume it. Plain lyrics remain text.
+
 Escape closes an open dialog first. Otherwise it exits fullscreen; another
 press returns to the thumbnail grid, keeping the selected card focused.
 Audio/video keeps playing in the minimized player; closing an image view
