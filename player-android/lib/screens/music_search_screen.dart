@@ -1,3 +1,4 @@
+import '../widgets/music_layout_panel.dart';
 import '../widgets/music_filter_sheet.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -178,11 +179,11 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
                         }),
                       )),
               ])),
-          Expanded(child: _body()),
+          Expanded(child: MusicLayoutPanel(kind: 'songs', builder: _body)),
         ]),
       );
 
-  Widget _body() {
+  Widget _body(MusicLayout layout) {
     if (_loading) {
       return const Center(
           child: CircularProgressIndicator(semanticsLabel: 'Searching music'));
@@ -200,8 +201,9 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
     if (_results == null) {
       return const Center(child: Text('Search songs, albums and artists.'));
     }
-    final songs = (_results!['songs'] as List? ?? [])
-        .cast<Map<String, dynamic>>()
+    final songs = layout
+        .sorted(
+            (_results!['songs'] as List? ?? []).cast<Map<String, dynamic>>())
         .map(Media.fromJson)
         .toList();
     final albums =
@@ -225,10 +227,9 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
         children.add(ListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(song.displayTitle),
-          subtitle: Text([song.music?.artist, song.music?.album]
-              .whereType<String>()
-              .where((value) => value.isNotEmpty)
-              .join(' · ')),
+          subtitle: layout.columns.isEmpty
+              ? null
+              : Text(layout.subtitle(song.toJson())),
           onTap: () => _play(songs, i),
           trailing: PopupMenuButton<QueueInsertion>(
               tooltip: 'Actions for ${song.displayTitle}',

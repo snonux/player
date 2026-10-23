@@ -413,3 +413,14 @@ See [the M54 verification record](../docs/music-m54-implementation.md) and
 [the native runner](test/e2e-live/README.md#rich-music-system-session-m54) for
 commands, accepted phases and retained failures. Physical Cast receivers and
 headsets were not exercised for this change.
+
+## Music layouts and sorting
+
+In **Music · Albums**, choose a sort, **Ascending/Descending**, **View Grid/Table**
+and **Columns** above the catalog. Table uses readable native rows with the same
+open, selection and queue actions. Title stays visible; artist, year, song count
+and duration are optional. Music search songs have their own sort and columns
+for title, artist, album, year and duration. Choices are remembered on this device
+for each primary server address and account; clearing app storage resets them.
+Unknown metadata sorts last in either direction. Rating, last-played and
+star-date sorting will need their corresponding metadata.

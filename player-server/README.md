@@ -178,3 +178,14 @@ See [the M54 verification record](../docs/music-m54-implementation.md) and
 [the browser runner](test/e2e-web/README.md#rich-music-os-controls-m54) for accepted
 phases, retained failures, commands and limits. Physical Cast receivers and
 headsets were not exercised for this change.
+
+## Music layouts and sorting
+
+Albums offers **Sort by**, **Ascending/Descending**, **View Grid/Table** and
+**Columns**. Title stays visible; artist, year, song count and duration are
+optional. Table rows wrap their metadata on narrow screens and keep the same
+open, selection and queue actions as cards. Music search songs have separate
+sort and column choices for title, artist, album, year and duration. Choices are
+remembered in this browser for each server and account; clearing browser storage
+resets them. Unknown metadata sorts last in either direction. Rating,
+last-played and star-date sorting will need their corresponding metadata.

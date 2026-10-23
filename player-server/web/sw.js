@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v40';
+const CACHE = 'kiss-v41';
 const ASSETS = [
   '/',
   '/index.html',
@@ -23,6 +23,7 @@ const ASSETS = [
   '/js/music.js',
   '/js/music-search.js',
   '/js/music-facets.js',
+  '/js/music-layout.js',
   '/js/media-session.js',
   '/js/queue.js',
   '/js/queue-storage.js',

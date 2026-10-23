@@ -1,3 +1,4 @@
+import '../widgets/music_layout_panel.dart';
 import '../widgets/music_filter_sheet.dart';
 import '../widgets/music_search_button.dart';
 import '../widgets/music_mini_player.dart';
@@ -151,7 +152,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                           ])))
                   : widget.albumKey != null
                       ? _detail()
-                      : _catalog(),
+                      : MusicLayoutPanel(kind: 'albums', builder: _catalog),
         ));
   }
 
@@ -179,8 +180,8 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                 }));
   }
 
-  Widget _catalog() {
-    final albums = _albums ?? [];
+  Widget _catalog(MusicLayout layout) {
+    final albums = layout.sorted(_albums ?? []);
     if (albums.isEmpty) {
       return Center(
           child: Padding(
@@ -205,37 +206,53 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         kind: 'album',
         keyName: 'album_key',
         nameName: 'title',
-        grid: true,
+        grid: !layout.table,
         onRefresh: _load,
-        itemBuilder: (album, checkbox, toggle) => Card(
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
+        itemBuilder: (album, checkbox, toggle) => layout.table
+            ? ListTile(
+                leading: checkbox,
+                title: Text(album['title'] as String,
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                subtitle: layout.columns.isEmpty
+                    ? null
+                    : Text(layout.subtitle(album)),
+                trailing: const Icon(Icons.chevron_right),
                 onTap: toggle ??
                     () => context.push(
                         '${AppRoutes.musicAlbums}?album=${Uri.encodeComponent(album['album_key'] as String)}'),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (checkbox != null)
-                        Align(alignment: Alignment.centerLeft, child: checkbox),
-                      Expanded(child: _cover(album)),
-                      Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(album['title'] as String,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style:
-                                        Theme.of(context).textTheme.titleSmall),
-                                Text(album['artist'] as String,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis),
-                                if (album['from_folder'] == true)
-                                  const Text('From folder'),
-                              ])),
-                    ]))));
+              )
+            : Card(
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                    onTap: toggle ??
+                        () => context.push(
+                            '${AppRoutes.musicAlbums}?album=${Uri.encodeComponent(album['album_key'] as String)}'),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (checkbox != null)
+                            Align(
+                                alignment: Alignment.centerLeft,
+                                child: checkbox),
+                          Expanded(child: _cover(album)),
+                          Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(album['title'] as String,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall),
+                                    Text(layout.subtitle(album),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis),
+                                    if (album['from_folder'] == true)
+                                      const Text('From folder'),
+                                  ])),
+                        ]))));
   }
 
   Widget _detail() {

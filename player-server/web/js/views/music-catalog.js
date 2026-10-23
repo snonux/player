@@ -1,3 +1,4 @@
+import { readMusicLayout, sortMusic, musicColumns, musicColumnText, musicLayoutToolbar, bindMusicLayout } from '../music-layout.js';
 import { mountMusicFacets, facetParams, hasFacets } from '../music-facets.js';
 import { renderMusicSearch } from '../music-search.js';
 import { collectionButtons, bindCollectionActions, bindCollectionCatalog, cancelCollectionSelection } from '../collection-actions.js';
@@ -84,6 +85,7 @@ export async function renderMusic(grid, isCurrent) {
  const count = document.getElementById('result-count');
  count.textContent = view.search ? 'Music · Search' : view.playlists ? 'Music · Playlists' : view.artists && !view.album ? 'Music · Artists' : 'Music · Albums';
  grid.classList.toggle('music-detail', Boolean(view.album));
+ grid.classList.remove('music-table');
  grid.innerHTML = `<p class="grid-full" role="status">Loading ${view.search ? 'search results' : view.playlists ? 'playlists' : view.artists && !view.album ? 'artists' : 'albums'}…</p>`;
  try {
   await mountMusicFacets(grid,view,current,reload,true);
@@ -91,8 +93,10 @@ export async function renderMusic(grid, isCurrent) {
   if (view.search) { await renderMusicSearch(grid,view,current,{openAlbum,openArtist,back:backMusic,reload});await mountMusicFacets(grid,view,current,reload);return; }
   if (view.playlists) { await renderPlaylists(grid,view,current,positions.get(viewKey(view)));return; }
   if (view.artists && !view.album) { await renderArtists(grid, view, current);await mountMusicFacets(grid,view,current,reload); return; }
-  const data = view.album ? await API.album(view.album) : await API.albums({...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {})});
+  let data = view.album ? await API.album(view.album) : await API.albums({...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {})});
   if (!current()) return;
+  const layoutPreferences=readMusicLayout('albums');
+  if(!view.album) data=sortMusic(data,layoutPreferences,'albums');
   if (view.album) {
    state.media = data.songs || [];
    const layout = albumDiscLayout(data);
@@ -115,7 +119,9 @@ export async function renderMusic(grid, isCurrent) {
    grid.querySelectorAll('[data-song-info]').forEach(button => button.onclick = () => { selectByElement(button.closest('.media-row')); document.dispatchEvent(new Event('music:song-info')); });
   } else {
    count.textContent = view.artist ? `Albums by ${view.name || 'artist'}` : `Music · ${data.length} albums${hasFacets(view)?' matching filters':''}`;
-   grid.innerHTML = `<div class="grid-full"><button class="btn btn-ghost" data-music-back>← ${view.artist ? 'Back to albums' : 'Back to Sets'}</button>${view.artist ? `<h1>Albums by ${esc(view.name || 'artist')}</h1>` : ''}</div>` + (data.length ? data.map(album => `<div class="media-card album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${cover(album)}<div class="card-body"><div class="title" title="${esc(album.title)}">${esc(album.title)}</div><div class="text-muted text-sm">${esc(album.artist)}${album.year ? ` · ${album.year}` : ''}</div>${hasFacets(view) ? `<span class="text-muted text-sm">${album.song_count} matching songs</span>` : ''}${album.from_folder ? '<span class="text-muted text-xs">From folder</span>' : ''}</div></div>`).join('') : '<p class="grid-full">Nothing matches these filters. Clear filters or browse Sets for more music.</p>');
+   grid.innerHTML = `<div class="grid-full"><button class="btn btn-ghost" data-music-back>← ${view.artist ? 'Back to albums' : 'Back to Sets'}</button>${view.artist ? `<h1>Albums by ${esc(view.name || 'artist')}</h1>` : ''}</div>` + (data.length ? data.map(album => `<div class="${layoutPreferences.view==='table'?'media-row':'media-card'} album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${layoutPreferences.view==='grid'?cover(album):''}<div class="card-body"><div class="title" title="${esc(album.title)}">${esc(album.title)}</div>${layoutPreferences.columns.map(column=>`<span class="music-column text-muted text-sm" data-column="${column}"><span class="music-column-label">${musicColumns.albums[column]}: </span>${esc(musicColumnText(album,column,'albums'))}</span>`).join('')}${hasFacets(view) ? `<span class="text-muted text-sm">${album.song_count} matching songs</span>` : ''}${album.from_folder ? '<span class="text-muted text-xs">From folder</span>' : ''}</div></div>`).join('') : '<p class="grid-full">Nothing matches these filters. Clear filters or browse Sets for more music.</p>');
+   grid.classList.toggle('music-table',layoutPreferences.view==='table');
+   grid.querySelector('.grid-full').insertAdjacentHTML('beforeend',musicLayoutToolbar('albums',layoutPreferences));
    grid.querySelectorAll('[data-album]').forEach(card => card.onclick = () => openAlbum(card.dataset.album));
    bindCollectionCatalog(grid,data,'album','album_key','title',current);
   }
@@ -126,6 +132,7 @@ export async function renderMusic(grid, isCurrent) {
   if (target) { selectByElement(target); focusSelectedCard(); } else grid.querySelector('[data-music-back]')?.focus();
   if (saved) window.scrollTo(0,saved.scroll);
   await mountMusicFacets(grid,view,current,reload);
+  if(!view.album) bindMusicLayout(grid,'albums',layoutPreferences,reload,remember);
  } catch (e) {
   if (!current()) return;
   grid.innerHTML = `<div class="grid-full" role="alert"><p>${view.search ? 'Could not search music' : 'Could not load'} ${view.search ? '' : view.artists && !view.album ? 'artists' : view.playlists ? 'playlists' : 'albums'}: ${esc(e.message || 'Connection unavailable. Check your connection.')}</p><button class="btn" data-retry>Retry</button><button class="btn btn-ghost" data-music-back>← Back</button></div>`;

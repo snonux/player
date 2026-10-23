@@ -343,3 +343,23 @@ label {
 .music-facet-controls summary { cursor: pointer; }
 .music-facet-chips { margin-top: .5rem; }
 .music-facet-chips button { max-width: 100%; overflow-wrap: anywhere; }
+
+/* Music layouts keep the existing selection, collection actions and theme. */
+.music-layout-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-block: 12px; }
+.music-layout-controls label { display: inline-flex; align-items: center; gap: 8px; }
+.music-layout-controls select { background: var(--bg-surface); color: var(--text-primary); padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.music-layout-controls details { position: relative; }
+.music-layout-controls summary { cursor: pointer; }
+.music-column-options { position: absolute; z-index: 5; min-width: 180px; padding: 12px; background: var(--bg-surface); border: 1px solid var(--border); box-shadow: var(--shadow-md); }
+.music-column-options label { display: flex; min-height: 40px; }
+.music-column { display: block; overflow-wrap: anywhere; }
+#media-grid.music-table { display: flex; flex-direction: column; }
+.music-table .album-card { width: 100%; min-height: 56px; }
+.music-table .album-card .card-body { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.music-table .album-card .title { flex: 2 1 180px; min-width: 0; }
+.music-table .music-column { flex: 1 1 90px; }
+@media (max-width: 600px) {
+ .music-table .album-card .card-body { display: block; }
+ .music-table .music-column { display: inline; margin-right: 12px; }
+ .music-column-options { right: 0; }
+}
