@@ -1,3 +1,4 @@
+import 'services/stream_quality.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -38,6 +39,7 @@ import 'widgets/keyboard_access.dart';
 void main() async {
   // Ensure platform channels are ready before calling AudioService.init.
   WidgetsFlutterBinding.ensureInitialized();
+  await StreamQuality.initialize();
 
   // Register the PlayerAudioHandler as the singleton media session handler.
   // AudioService.init<T> returns the exact T from the builder.  We pass it

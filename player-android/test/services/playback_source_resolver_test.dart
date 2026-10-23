@@ -1,3 +1,5 @@
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:player_android/services/stream_quality.dart';
 // Unit tests for resolveServerPlaybackSource: a player opened with only a
 // media ID asks the server whether to play the compatibility stream.
 
@@ -42,6 +44,31 @@ ServerPlaybackRequest _request() => ServerPlaybackRequest(
     );
 
 void main() {
+  test('existing queue snapshot resolves latest quality on each opening',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    await StreamQuality.initialize();
+    final client = _Client()
+      ..media = Media.fromJson({'id': 7, 'type': 'audio', 'transcoded': true});
+    final request = _request();
+    await StreamQuality.save('https://player.test', 'original');
+    expect((await currentServerAudioUri(request, client)).path,
+        '/api/v1/media/7/stream');
+    await StreamQuality.save('https://player.test', 'opus96');
+    final selected = await currentServerAudioUri(request, client);
+    expect(selected.path, '/api/v1/media/7/compat');
+    expect(selected.queryParameters['profile'], 'opus96');
+    await StreamQuality.save('https://player.test', 'auto');
+    expect((await currentServerAudioUri(request, client)).queryParameters,
+        isEmpty);
+    expect((await currentServerAudioUri(request, client)).path,
+        '/api/v1/media/7/compat');
+    expect(request.sourceUri.path, '/api/v1/media/7/stream');
+    expect(request.startPosition, 12);
+    client.media = null;
+    await expectLater(currentServerAudioUri(request, client), throwsStateError);
+  });
+
   group('native video source', () {
     test(
         'uses ranged original bytes and preserves server identity and progress',

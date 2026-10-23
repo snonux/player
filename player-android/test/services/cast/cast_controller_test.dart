@@ -165,15 +165,29 @@ void main() {
 
   test('server items cast through a ticket URL, compat when needed', () async {
     final dio = Dio(BaseOptions(baseUrl: 'https://player.test'));
-    DioAdapter(dio: dio).onPost(
-      '/api/v1/media/5/cast',
-      (server) => server.reply(200, {
-        'ticket': 'TICKET',
-        'expires_at': '2026-10-16T23:00:00Z',
-        'stream_content_type': 'audio/flac',
-        'compat_content_type': 'audio/mp4',
-      }),
-    );
+    void configure(bool requiresCompat) {
+      final adapter = DioAdapter(dio: dio);
+      adapter.onPost(
+        '/api/v1/media/5/cast',
+        (server) => server.reply(200, {
+          'ticket': 'TICKET',
+          'expires_at': '2026-10-16T23:00:00Z',
+          'stream_content_type': 'audio/flac',
+          'compat_content_type': 'audio/mp4',
+        }),
+      );
+      adapter.onGet(
+          '/api/v1/media/5',
+          (server) => server.reply(200, {
+                'media': {
+                  'id': 5,
+                  'type': 'audio',
+                  'transcoded': requiresCompat
+                }
+              }));
+    }
+
+    configure(false);
     final resolve = serverCastMediaResolver(() => DioPlayerApiClient(dio: dio));
     final h = _Harness();
 
@@ -183,6 +197,10 @@ void main() {
     expect(original.imageUrl.toString(),
         'https://player.test/cast/TICKET/thumbnail');
 
+    // A source snapshot and a changed default must never decide receiver policy.
+    configure(true);
+    final originalSnapshot = await resolve(h.request(), isVideo: false);
+    expect(originalSnapshot.url.path, '/cast/TICKET/compat');
     final compat = await resolve(
       h.request().withSourceUri(
           Uri.parse('https://player.test/api/v1/media/5/compat')),
@@ -191,6 +209,12 @@ void main() {
     expect(compat.url.toString(), 'https://player.test/cast/TICKET/compat');
     expect(compat.contentType, 'audio/mp4');
 
+    configure(false);
+    final chosenProfile = await resolve(
+        h.request().withSourceUri(Uri.parse(
+            'https://player.test/api/v1/media/5/compat?profile=opus96')),
+        isVideo: false);
+    expect(chosenProfile.url.path, '/cast/TICKET/stream');
     final share = await resolve(
       PublicSharePlaybackRequest(
         shareToken: 'abc',

@@ -1,3 +1,4 @@
+import '../services/stream_quality.dart';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -331,8 +332,20 @@ class PlayerApiClient implements ProgressSyncClient {
 
   /// Returns the URL a player should open for [media]: the compatibility
   /// stream when the server marked it `transcoded`, the original otherwise.
-  String playbackUrl(Media media) =>
-      media.transcoded ? compatUrl(media.id) : streamUrl(media.id);
+  String playbackUrl(Media media) {
+    final quality = StreamQuality.selected(rawDio.options.baseUrl);
+    if (media.type != 'audio' || quality == 'auto') {
+      return media.transcoded ? compatUrl(media.id) : streamUrl(media.id);
+    }
+    if (quality == 'original') return streamUrl(media.id);
+    return '${compatUrl(media.id)}?profile=${Uri.encodeQueryComponent(quality)}';
+  }
+
+  /// Lists bounded audio rendition profiles advertised by this server.
+  Future<List<Map<String, dynamic>>> streamProfiles() async {
+    final response = await rawDio.get<List<dynamic>>('/api/v1/stream-profiles');
+    return response.data!.map((p) => Map<String, dynamic>.from(p as Map)).toList();
+  }
 
   /// Asks whether the playback [url] can be played right now.
   ///

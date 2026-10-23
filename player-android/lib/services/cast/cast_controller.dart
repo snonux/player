@@ -316,7 +316,7 @@ CastMediaResolver serverCastMediaResolver(PlayerApiClient Function() client) =>
       if (request is ServerPlaybackRequest) {
         final api = client();
         final ticket = await api.createCastTicket(request.mediaId);
-        final compat = isCompatStreamUrl(request.sourceUri);
+        final compat = (await api.getMedia(request.mediaId)).transcoded;
         return CastMedia(
           url: Uri.parse(api.castStreamUrl(ticket, compat: compat)),
           contentType:

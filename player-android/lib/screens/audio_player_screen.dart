@@ -1,3 +1,4 @@
+import '../widgets/stream_quality_sheet.dart';
 import '../widgets/equalizer_sheet.dart';
 import '../widgets/loudness_sheet.dart';
 import '../providers/server_endpoint_provider.dart';
@@ -647,22 +648,24 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         expand: _expandMusic!,
         changed: lease.updateSource,
         load: (request, current) async {
-          if (isCompatStreamUrl(request.sourceUri)) {
+          final sourceUri = await currentServerAudioUri(request, client);
+          if (!current()) return null;
+          if (isCompatStreamUrl(sourceUri)) {
             final ready = await preparer
-                .prepare(request.sourceUri,
+                .prepare(sourceUri,
                     probe: client.probePlayback, stillWanted: current)
                 .ready;
             if (!current()) return null;
             if (!ready) throw StateError('Playback preparation stopped');
           }
           final headers = await accountRequestHeaders(
-              uri: request.sourceUri,
+              uri: sourceUri,
               baseUrl: baseUrl,
               storage: storage,
               cookieJar: jar,
               mutations: mutations);
           if (!current()) return null;
-          final transportUri = await endpointRouter.mediaUri(request.sourceUri);
+          final transportUri = await endpointRouter.mediaUri(sourceUri);
           if (!current()) return null;
           return AudioSource.uri(transportUri,
               headers: headers.isEmpty ? null : headers);
@@ -1147,6 +1150,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   icon: const Icon(Icons.equalizer),
                   label: const Text('Equalizer'),
                 ),
+                if (_activeRequest?.kind == PlaybackSourceKind.server)
+                  TextButton.icon(
+                    onPressed: () => showStreamQualitySheet(
+                        context, ref.read(apiClientProvider)),
+                    icon: const Icon(Icons.tune),
+                    label: const Text('Quality'),
+                  ),
                 if (_activeRequest?.kind != PlaybackSourceKind.local)
                   _buildLyrics(handler),
               ],

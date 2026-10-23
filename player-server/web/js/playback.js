@@ -1,3 +1,4 @@
+import { initStreamQuality } from './stream-quality.js';
 import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { mediaTitle, musicSubtitle } from './music.js';
 import { createMediaSession } from './media-session.js';
@@ -148,6 +149,7 @@ export function initPlayer(options = {}) {
   });
 
   audioVisuals = initAudioVisuals(e);
+ initStreamQuality(e.player);
   lyrics = initLyrics({ ...e, getPosition: () => isCasting() ? castPosition() : e.audio.currentTime, onSeek: seconds => {
     if (isCasting()) {
       const duration = castDuration() || effectiveDuration();
@@ -740,7 +742,7 @@ function showCoverArt(e, thumbnailUrl) {
 // stays empty and the "preparing" status is shown until the server has the
 // rendition, so a 503 never reaches the element as a bogus decode error.
 function startSource(m, media, url, resumeFrom) {
-  if (!media.transcoded) {
+  if (!/\/compat(?:\?|$)/.test(url)) {
     attachSource(m, url, resumeFrom);
     return;
   }
@@ -1206,7 +1208,7 @@ async function castWhenPlayable(media, resumeFrom) {
   const sleepIntent = currentPlaybackIntent();
   if (media.transcoded) {
     setPlayerStatus(preparingText(media, ''));
-    const result = await waitForCompatStream(mediaPlaybackUrl(media));
+    const result = await waitForCompatStream(`/api/media/${media.id}/compat`);
     setPlayerStatus('');
     if (currentMedia?.id !== media.id) return;
     if (result.state !== 'ready') {

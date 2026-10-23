@@ -109,6 +109,9 @@ func (f *FFmpegRunner) Transcode(ctx context.Context, job Job) error {
 
 	src := f.probe(ctx, job.Source.Path)
 	p := planFor(job.Source.Kind, src)
+	if job.Source.Kind.selectedAudio() {
+		p.copyAudio = false
+	}
 	// A copied video stream is as large as it is in the source, so when the
 	// source is larger than the cap a copy would only write up to the cap
 	// and be thrown away. Re-encode the video instead: that may well fit.
@@ -219,16 +222,31 @@ func (f *FFmpegRunner) args(p plan, input []string, out string, maxBytes int64) 
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-threads", threads}
 	args = append(args, input...)
 	args = append(args, "-sn", "-dn")
-	if p.kind == KindAudio {
+	if p.kind == KindAudio || p.kind.selectedAudio() {
 		args = append(args, "-map", "0:a:0", "-vn")
 	} else {
 		args = append(args, "-map", "0:v:0?", "-map", "0:a:0?")
 		args = append(args, videoCodecArgs(p.copyVideo, threads)...)
 	}
-	args = append(args, audioCodecArgs(p.copyAudio)...)
+	audio := audioCodecArgs(p.copyAudio)
+	switch p.kind {
+	case KindAAC256:
+		audio = []string{"-c:a", "aac", "-b:a", "256k", "-ac", "2"}
+	case KindMP3192:
+		audio = []string{"-c:a", "libmp3lame", "-b:a", "192k", "-ac", "2"}
+	case KindOpus96:
+		audio = []string{"-c:a", "libopus", "-b:a", "96k", "-ac", "2"}
+	}
+	args = append(args, audio...)
 	args = append(args, "-max_muxing_queue_size", "1024")
 	if maxBytes > 0 {
 		args = append(args, "-fs", strconv.FormatInt(maxBytes, 10))
+	}
+	if p.kind == KindMP3192 {
+		return append(args, "-f", "mp3", "file:"+out)
+	}
+	if p.kind == KindOpus96 {
+		return append(args, "-f", "ogg", "file:"+out)
 	}
 	return append(args, "-movflags", "+faststart", "-f", "mp4", "file:"+out)
 }

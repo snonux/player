@@ -384,6 +384,7 @@ func (s *Server) routesMedia() {
 	s.handleBoth(http.MethodGet, "/api/media", s.requireSession(s.handleListMedia))
 	s.handleBoth(http.MethodGet, "/api/media/{id}", s.requireSession(s.handleGetMedia))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/stream", s.requireSession(s.handleStream))
+	s.handleBoth(http.MethodGet, "/api/stream-profiles", s.requireSession(s.handleStreamProfiles))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/compat", s.requireSession(s.handleCompatStream))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/download", s.requireSession(s.handleDownload))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/thumbnail", s.requireSession(s.handleThumbnail))

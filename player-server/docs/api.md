@@ -2709,3 +2709,18 @@ currently readable favorites, preserving existing catalog filters. Entity hearts
 are independent of existing song/file hearts. Saved keys for hidden entities are
 never returned through a separate favorites index. Offline clients retain the
 previous heart and may retry after reconnecting; no offline write queue is added.
+
+### Selectable music streaming quality
+
+Authenticated `GET /api/v1/stream-profiles` (also `/api/stream-profiles`)
+returns an array of `{id,label,codec,bitrate_kbps}` audio profiles. The server
+currently offers AAC 128/256, MP3 192 and Opus 96 kbps stereo encodes.
+`GET|HEAD /api/v1/media/{id}/compat?profile=ID` requests that exact profile for
+an accessible audio file, including files that can play directly. Unknown IDs
+return 400; non-audio requests return 415. Existing readiness (503/Retry-After),
+resource limits, auth/ACL and Range/ETag semantics apply. Each profile has its
+own cache identity. Missing encoder support fails explicitly (500); clients
+can choose Auto or another profile. Omitting `profile` retains the existing
+compatibility-only conversion behavior. `/stream` retains original streaming.
+Downloads, public share and Cast compatibility endpoints retain their existing
+policy; the quality parameter is only supported on authenticated media compat.

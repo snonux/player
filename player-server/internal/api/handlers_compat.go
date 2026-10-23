@@ -52,7 +52,21 @@ func (s *Server) handleCompatStream(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	rendition, err := s.media.Compat.CompatStream(r.Context(), id, userIDFromContext(r))
+	var rendition *transcode.Rendition
+	if profile := r.URL.Query().Get("profile"); profile != "" {
+		quality, ok := s.media.Compat.(service.QualityStreamService)
+		if !ok {
+			writeError(w, http.StatusServiceUnavailable, "stream quality unavailable")
+			return
+		}
+		if _, ok := transcode.AudioProfileKind(profile); !ok {
+			badRequest(w, "unsupported audio profile")
+			return
+		}
+		rendition, err = quality.QualityStream(r.Context(), id, userIDFromContext(r), profile)
+	} else {
+		rendition, err = s.media.Compat.CompatStream(r.Context(), id, userIDFromContext(r))
+	}
 	if err != nil {
 		s.writeCompatError(w, r, err)
 		return
@@ -199,4 +213,9 @@ func (s *Server) serveRendition(w http.ResponseWriter, r *http.Request, renditio
 	w.Header().Set("ETag", fmt.Sprintf("%q", rendition.ETag))
 	s.logger.Info("api compat stream", "rendition", filepath.Base(rendition.Path), "range", r.Header.Get("Range"))
 	http.ServeContent(w, r, "", time.Time{}, f)
+}
+
+// handleStreamProfiles lists this server's bounded audio rendition choices.
+func (s *Server) handleStreamProfiles(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, transcode.AudioProfiles())
 }

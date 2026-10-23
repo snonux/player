@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,8 +73,8 @@ const (
 // ever deletes names matching these patterns, so unrelated files in the
 // directory are never touched.
 var (
-	renditionRe = regexp.MustCompile(`^m\d+-\d+-\d+-v\d+\.(mp4|m4a)$`)
-	tmpRe       = regexp.MustCompile(`^m\d+-\d+-\d+-v\d+\.(mp4|m4a)\.\d+\.tmp$`)
+	renditionRe = regexp.MustCompile(`^m\d+-\d+-\d+-v\d+(q\d+)?\.(mp4|m4a|mp3|ogg)$`)
+	tmpRe       = regexp.MustCompile(`^m\d+-\d+-\d+-v\d+(q\d+)?\.(mp4|m4a|mp3|ogg)\.\d+\.tmp$`)
 )
 
 // Options configures a Cache. Zero values fall back to the Default*
@@ -328,7 +329,11 @@ func statSource(src Source) (sourceState, error) {
 	}
 	// The mtime is formatted unsigned so pre-1970 timestamps cannot put a
 	// minus sign into the name and break the name patterns.
-	name := fmt.Sprintf("%s%d-%d-%s%s", mediaPrefix(src.MediaID), info.Size(), uint64(info.ModTime().UnixNano()), profileVersion, src.Kind.ext())
+	version := profileVersion
+	if src.Kind.selectedAudio() {
+		version += fmt.Sprintf("q%d", src.Kind)
+	}
+	name := fmt.Sprintf("%s%d-%d-%s%s", mediaPrefix(src.MediaID), info.Size(), uint64(info.ModTime().UnixNano()), version, src.Kind.ext())
 	return sourceState{name: name, size: info.Size(), modTime: info.ModTime()}, nil
 }
 
@@ -584,7 +589,7 @@ func (c *Cache) cleanupAfter(ctx context.Context, src Source) {
 		return
 	}
 	err = c.removeFiles(func(name string) bool {
-		return hasMediaPrefix(name, src.MediaID) && renditionRe.MatchString(name) && name != cur.name
+		return hasMediaPrefix(name, src.MediaID) && renditionRe.MatchString(name) && !strings.HasPrefix(name, strings.Join(strings.SplitN(cur.name, "-", 4)[:3], "-")+"-")
 	})
 	if err != nil {
 		c.logger.Warn("transcode cache remove stale", "media_id", src.MediaID, "err", err)

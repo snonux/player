@@ -52,6 +52,26 @@ Future<PlaybackRequest> resolveServerPlaybackSource(
   }
 }
 
+/// Resolves quality when an existing queue entry is actually opened, so saved
+/// URL snapshots do not pin a preference from queue creation. Lookup failures
+/// remain visible rather than silently playing a different quality.
+Future<Uri> currentServerAudioUri(
+  PlaybackRequest request,
+  PlayerApiClient client, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  if (request is! ServerPlaybackRequest) return request.sourceUri;
+  final cancelToken = CancelToken();
+  try {
+    final media = await client
+        .getMedia(request.mediaId, cancelToken: cancelToken)
+        .timeout(timeout);
+    return Uri.parse(client.playbackUrl(media));
+  } finally {
+    cancelToken.cancel();
+  }
+}
+
 /// Android can demux MPEG-TS itself, including files named .mp4. The server's
 /// /stream endpoint remuxes those for browsers; older servers produce an MP4
 /// with missing AAC initialization data that ExoPlayer cannot open. /download

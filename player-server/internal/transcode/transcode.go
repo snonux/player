@@ -20,6 +20,11 @@ const (
 	KindVideo Kind = iota
 	// KindAudio produces AAC audio in an MP4 (M4A) container.
 	KindAudio
+	// KindAAC128 and following kinds are explicitly selected music encodes.
+	KindAAC128
+	KindAAC256
+	KindMP3192
+	KindOpus96
 )
 
 // profileVersion is part of every rendition file name. Bump it whenever the
@@ -104,7 +109,13 @@ type Runner interface {
 
 // ext returns the rendition file extension for the kind.
 func (k Kind) ext() string {
-	if k == KindAudio {
+	if k == KindMP3192 {
+		return ".mp3"
+	}
+	if k == KindOpus96 {
+		return ".ogg"
+	}
+	if k == KindAudio || k.selectedAudio() {
 		return ".m4a"
 	}
 	return ".mp4"
@@ -112,7 +123,13 @@ func (k Kind) ext() string {
 
 // contentType returns the HTTP Content-Type for the kind's rendition.
 func (k Kind) contentType() string {
-	if k == KindAudio {
+	if k == KindMP3192 {
+		return "audio/mpeg"
+	}
+	if k == KindOpus96 {
+		return "audio/ogg"
+	}
+	if k == KindAudio || k.selectedAudio() {
 		return "audio/mp4"
 	}
 	return "video/mp4"

@@ -1,3 +1,4 @@
+import '../services/playback_source_resolver.dart';
 import 'server_endpoint_provider.dart';
 import 'dart:async';
 import 'package:dio/dio.dart';
@@ -231,22 +232,24 @@ class MusicQueuePersistence {
             load: (request, wanted) async {
               bool valid() => current() && wanted();
               if (!valid()) return null;
-              if (isCompatStreamUrl(request.sourceUri)) {
+              final sourceUri = await currentServerAudioUri(request, client);
+              if (!valid()) return null;
+              if (isCompatStreamUrl(sourceUri)) {
                 final ready = await preparer
-                    .prepare(request.sourceUri,
+                    .prepare(sourceUri,
                         probe: client.probePlayback, stillWanted: valid)
                     .ready;
                 if (!valid()) return null;
                 if (!ready) throw StateError('Playback preparation stopped');
               }
               final headers = await accountRequestHeaders(
-                  uri: request.sourceUri,
+                  uri: sourceUri,
                   baseUrl: origin,
                   storage: storage,
                   cookieJar: jar,
                   mutations: mutations);
               if (!valid()) return null;
-              final uri = await endpointRouter.mediaUri(request.sourceUri);
+              final uri = await endpointRouter.mediaUri(sourceUri);
               if (!valid()) return null;
               return AudioSource.uri(uri,
                   headers: headers.isEmpty ? null : headers);

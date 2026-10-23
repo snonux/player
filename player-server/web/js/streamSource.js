@@ -1,3 +1,4 @@
+import { qualityPlaybackUrl } from './stream-quality.js';
 // Picks the URL a media item is played from and waits for the server's
 // compatibility stream (a transcoded MP4/M4A rendition of formats browsers
 // cannot decode) to become ready.
@@ -43,7 +44,7 @@ const TERMINAL_REASONS = {
 // mediaPlaybackUrl returns the URL to play for a library item. The choice
 // relies only on the server's "transcoded" hint, never on the file extension.
 export function mediaPlaybackUrl(media) {
-  return `/api/media/${media.id}/${media.transcoded ? 'compat' : 'stream'}`;
+  return qualityPlaybackUrl(media);
 }
 
 // mediaErrorReason turns a MediaError (from a media element's `error` event)
