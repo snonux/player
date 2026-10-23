@@ -49,7 +49,7 @@ import { initAdmin } from './admin.js';
 import { initTrash, moveToTrash } from './trash.js';
 import { initModalFocus } from './modal-focus.js';
 import { initPodcasts } from './podcasts.js';
-import { state } from './state.js';
+import { state, setAuthenticatedUser } from './state.js';
 import { initPWA } from './pwa.js';
 import { closeAllModals } from './dom.js';
 import { toast } from './utils.js';
@@ -106,6 +106,8 @@ import {
 } from './views/shares.js';
 import { cancelTagsLoad, initTags, openTagsForElement, openTagsForSelected } from './views/tags.js';
 import { initUpload, showUpload } from './views/upload.js';
+
+let loggingOut = false;
 
 const pageMap = { '/index.html': 'spa', '/login.html': 'login', '/bootstrap.html': 'bootstrap' };
 
@@ -287,6 +289,8 @@ async function initApp() {
       API.config().catch(() => null),
       API.sets(),
     ]);
+    if (loggingOut) return;
+    setAuthenticatedUser(cfg?.user_id);
     setPlaybackCacheAccount(cfg?.user_id);
     setListeningProgressAccount(cfg?.user_id);
     initSongNotifications(cfg?.user_id);
@@ -580,6 +584,8 @@ function initChrome() {
   });
 
   document.getElementById('logout-btn')?.addEventListener('click', async () => {
+    loggingOut = true;
+    setAuthenticatedUser(null);
     try {
       try { await stopRenderer(); } catch {}
       setListeningProgressAccount(null);

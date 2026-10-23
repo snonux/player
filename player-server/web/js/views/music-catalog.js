@@ -1,4 +1,4 @@
-import { albumCollections, mountAlbumDiscovery } from '../music-discovery.js';
+import { albumCollections, personalCollections, discoverAlbums, mountAlbumDiscovery } from '../music-discovery.js';
 import { mountMusicArtwork } from '../music-artwork.js';
 import { mountMusicEnrichment } from '../music-enrichment.js';
 import { mountRelatedMusic } from '../music-related.js';
@@ -106,12 +106,13 @@ export async function renderMusic(grid, isCurrent) {
   if (view.search) { await renderMusicSearch(grid,view,current,{openAlbum,openArtist,back:backMusic,reload});await mountMusicFacets(grid,view,current,reload);return; }
   if (view.playlists) { await renderPlaylists(grid,view,current,positions.get(viewKey(view)));return; }
   if (view.artists && !view.album) { await renderArtists(grid, view, current);await mountMusicFacets(grid,view,current,reload); return; }
-  let data = view.album ? await API.album(view.album) : await API.albums({...ratingParams(view),collection:view.collection || '',favorite:view.favorites || false,...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {})});
+  let data = view.album ? await API.album(view.album) : await API.albums({...ratingParams(view),collection:personalCollections.includes(view.collection)?'':view.collection || '',favorite:view.favorites || false,...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {})});
   if (!current()) return;
+  if(!view.album && personalCollections.includes(view.collection)) data=discoverAlbums(data,view.collection);
   const layoutPreferences=readMusicLayout('albums');
   if(!view.album && !view.ratingSort && !view.collection) data=sortMusic(data,layoutPreferences,'albums');
-  if(!view.album && view.collection==='random' && !view.collectionKeys) { state.music.collectionKeys=data.map(a=>a.album_key);view.collectionKeys=state.music.collectionKeys; }
-  if(!view.album && view.collection==='random' && view.collectionKeys) { const ranks=new Map(view.collectionKeys.map((key,i)=>[key,i]));data.sort((a,b)=>(ranks.get(a.album_key) ?? Infinity)-(ranks.get(b.album_key) ?? Infinity)); }
+  if(!view.album && ['random','liked_mix'].includes(view.collection) && !view.collectionKeys) { state.music.collectionKeys=data.map(a=>a.album_key);view.collectionKeys=state.music.collectionKeys; }
+  if(!view.album && ['random','liked_mix'].includes(view.collection) && view.collectionKeys) { const ranks=new Map(view.collectionKeys.map((key,i)=>[key,i]));data.sort((a,b)=>(ranks.get(a.album_key) ?? Infinity)-(ranks.get(b.album_key) ?? Infinity)); }
   if (view.album) {
    state.media = data.songs || [];
    const layout = albumDiscLayout(data);
@@ -145,7 +146,7 @@ export async function renderMusic(grid, isCurrent) {
     bindCollectionActions(actions,()=>data.map(a=>({kind:'album',key:a.album_key})),current,albumCollections[view.collection][0]);
     actions.querySelectorAll('button').forEach(button=>button.disabled=!data.length);
    }
-   if(!view.collection && !view.artist && !hasFacets(view) && !view.favorites && !view.rated) mountAlbumDiscovery(grid.querySelector('.grid-full'),data,current,openDiscoveryCollection,openAlbum,state.music);
+   if(!view.collection && !view.artist && !hasFacets(view) && !view.favorites && !view.rated) mountAlbumDiscovery(grid.querySelector('.grid-full'),data,current,openDiscoveryCollection,openAlbum,state.music,openPlaylist);
    bindCollectionCatalog(grid,data,'album','album_key','title',current);
   }
   bindFavorites(grid,current);bindRatings(grid,current);

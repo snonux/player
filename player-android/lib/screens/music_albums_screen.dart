@@ -304,7 +304,8 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         key: discoverAlbums(source, key, random: Random(_randomSeed))
     };
     final albums = _collection == null ? source : collections[_collection]!;
-    if (_collection == 'random' && _collectionOrder.isNotEmpty) {
+    if (['random', 'liked_mix'].contains(_collection) &&
+        _collectionOrder.isNotEmpty) {
       final ranks = {
         for (var i = 0; i < _collectionOrder.length; i++) _collectionOrder[i]: i
       };

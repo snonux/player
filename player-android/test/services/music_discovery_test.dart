@@ -45,6 +45,8 @@ void main() {
       'recently_played': ['b', 'a'],
       'most_played': ['a', 'b'],
       'favorites': ['b'],
+      'liked_mix': ['b'],
+      'rediscover': ['a', 'b'],
       'top_rated': ['b', 'a']
     };
     for (final entry in expected.entries) {

@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+globalThis.window={addEventListener(){}};
+const {normalizeHome}=await import('../music-home.js');
+const keys=['recently_added','favorites','pinned'];
+const saved=normalizeHome({order:['favorites','gone','favorites'],hidden:['gone','favorites'],pins:['pl_1','pl_1',4,'', 'x'.repeat(200)]},keys);
+assert.deepEqual(saved,{order:['favorites','recently_added','pinned'],hidden:['favorites'],pins:['pl_1']});
+assert.deepEqual(normalizeHome(JSON.parse(JSON.stringify(saved)),keys),saved,'persisted settings round trip');
+assert.deepEqual(normalizeHome(null,keys),{order:keys,hidden:[],pins:[]},'readable defaults restore all collections and clear pins');
+assert.deepEqual(normalizeHome({order:'broken',hidden:{},pins:{}},keys),normalizeHome(null,keys));
+console.log('Music home preference normalization, upgrade defaults and opaque ID-only persistence passed.');

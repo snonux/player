@@ -32,6 +32,16 @@ const albumCollections = {
     'Albums ranked by your own star ratings.',
     'Rate an album to add it here.'
   ],
+  'liked_mix': [
+    'Liked-album mix',
+    'A shuffled selection of albums you have favorited. Plays whole albums.',
+    'Favorite an album to start your personal mix.'
+  ],
+  'rediscover': [
+    'Rediscover older plays',
+    'Previously played albums, oldest latest qualified play first. Uses your local listening data, not an anniversary.',
+    'Play music to build your personal listening history.'
+  ],
 };
 
 List<Map<String, dynamic>> discoverAlbums(
@@ -39,18 +49,23 @@ List<Map<String, dynamic>> discoverAlbums(
     {Random? random}) {
   final items = albums
       .where((a) => switch (collection) {
-            'recently_played' => a['last_played_at'] != null,
+            'recently_played' || 'rediscover' => a['last_played_at'] != null,
             'most_played' => (a['personal_play_count'] as num? ?? 0) > 0,
-            'favorites' => a['is_favorite'] == true,
+            'favorites' || 'liked_mix' => a['is_favorite'] == true,
             'top_rated' => (a['rating'] as num? ?? 0) > 0,
             _ => true,
           })
       .toList();
-  if (collection == 'random') return items..shuffle(random);
+  if (collection == 'random' || collection == 'liked_mix') {
+    return items..shuffle(random);
+  }
   int value(Map<String, dynamic> album) => switch (collection) {
         'recently_added' =>
           DateTime.tryParse('${album['added_at']}')?.millisecondsSinceEpoch ??
               0,
+        'rediscover' => -(DateTime.tryParse('${album['last_played_at']}')
+                ?.millisecondsSinceEpoch ??
+            0),
         'recently_played' => DateTime.tryParse('${album['last_played_at']}')
                 ?.millisecondsSinceEpoch ??
             0,

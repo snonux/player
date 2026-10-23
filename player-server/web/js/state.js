@@ -25,3 +25,8 @@ export const state = {
 
 export function getState() { return state; }
 export function setMedia(list) { state.media = list; }
+
+// Authenticated identity comes only from the server config, never local preferences.
+export function setAuthenticatedUser(id) {
+  state.user = Number.isSafeInteger(id) && id > 0 ? { id } : null;
+}

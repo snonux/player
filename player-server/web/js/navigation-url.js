@@ -1,4 +1,4 @@
-const albumCollectionNames=['recently_added','recently_played','most_played','random','favorites','top_rated'];
+const albumCollectionNames=['recently_added','recently_played','most_played','random','favorites','top_rated','liked_mix','rediscover'];
 const musicFacetURL={genre:'mgenre',year:'myear',role:'mrole',release_type:'mrelease_type',compilation:'mcompilation',mood:'mmood',grouping:'mgrouping',label:'mlabel'};
 // Library links carry IDs and view state, never credentials or stream URLs.
 const filterKeys = ['type', 'search', 'favorites', 'tags', 'sort', 'minDuration', 'maxDuration', 'minFileSize', 'maxFileSize'];
