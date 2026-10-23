@@ -153,6 +153,13 @@ export const API = {
   setPermissions: (body) => api('/api/admin/permissions', { method: 'POST', body }),
   delPermissions: (body) => api('/api/admin/permissions', { method: 'DELETE', body }),
   rescan: () => api('/api/admin/rescan', { method: 'POST' }),
+  plugins: () => api('/api/admin/plugins'),
+  enablePlugin: (id) => api(`/api/admin/plugins/${encodeURIComponent(id)}/enable`, { method: 'POST' }),
+  disablePlugin: (id) => api(`/api/admin/plugins/${encodeURIComponent(id)}/disable`, { method: 'POST' }),
+  invokePlugin: (id, capability) => api(`/api/admin/plugins/${encodeURIComponent(id)}/invoke`, {
+    method: 'POST',
+    body: { capability },
+  }),
   podcasts: () => api('/api/podcasts'),
   podcastEpisodes: (setId, pagination, legacyOffset) => {
     let limit = 50;

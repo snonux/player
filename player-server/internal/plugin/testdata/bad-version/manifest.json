@@ -1,0 +1,9 @@
+{
+  "id": "bad-version",
+  "name": "Bad Version",
+  "version": "9.9.9",
+  "api_version": 99,
+  "capabilities": ["probe"],
+  "entry": "plugin.wasm",
+  "description": "Rejected by api_version contract."
+}

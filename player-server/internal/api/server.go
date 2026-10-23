@@ -58,6 +58,7 @@ type Server struct {
 	media         MediaServices
 	authSvc       service.AuthService
 	adminSvc      service.AdminService
+	pluginSvc     service.PluginService
 	podcastSvc    service.PodcastEpisodeService
 	podcastSync   service.PodcastSyncService
 	streamer      service.MediaStreamer
@@ -78,6 +79,8 @@ type ServerServices struct {
 	Media   MediaServices
 	Auth    service.AuthService
 	Admin   service.AdminService
+	// Plugins is the optional A08 WASM extension boundary (admin only).
+	Plugins service.PluginService
 	Podcast service.PodcastEpisodeService
 	// PodcastSync serves the account podcast synchronization endpoint.
 	PodcastSync service.PodcastSyncService
@@ -161,6 +164,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		media:         deps.Services.Media,
 		authSvc:       deps.Services.Auth,
 		adminSvc:      deps.Services.Admin,
+		pluginSvc:     deps.Services.Plugins,
 		podcastSvc:    deps.Services.Podcast,
 		podcastSync:   deps.Services.PodcastSync,
 		streamer:      deps.MediaStreamer,
@@ -472,6 +476,11 @@ func (s *Server) routesAdmin() {
 	s.handleBoth(http.MethodGet, "/api/admin/permissions", s.requireAdmin(s.handleListPermissions))
 	s.handleBoth(http.MethodPost, "/api/admin/permissions", s.requireAdmin(s.handleGrantPermission))
 	s.handleBoth(http.MethodDelete, "/api/admin/permissions", s.requireAdmin(s.handleRevokePermission))
+	s.handleBoth(http.MethodGet, "/api/admin/plugins", s.requireAdmin(s.handleListPlugins))
+	s.handleBoth(http.MethodGet, "/api/admin/plugins/{id}", s.requireAdmin(s.handleGetPlugin))
+	s.handleBoth(http.MethodPost, "/api/admin/plugins/{id}/enable", s.requireAdmin(s.handleEnablePlugin))
+	s.handleBoth(http.MethodPost, "/api/admin/plugins/{id}/disable", s.requireAdmin(s.handleDisablePlugin))
+	s.handleBoth(http.MethodPost, "/api/admin/plugins/{id}/invoke", s.requireAdmin(s.handleInvokePlugin))
 }
 
 func (s *Server) routes() {

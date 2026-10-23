@@ -68,11 +68,15 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 		{"LOG_LEVEL", "debug"},
 		{"SECURE_COOKIES", "false"},
 		{"PLAYER_CORS_ORIGINS", " http://localhost:5173,https://player.example.com ,, "},
+		{"PLUGIN_DIR", "/tmp/player-plugins"},
 	})
 
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.PluginDir != "/tmp/player-plugins" {
+		t.Errorf("PluginDir: expected %q, got %q", "/tmp/player-plugins", cfg.PluginDir)
 	}
 	if cfg.Port != 9090 {
 		t.Errorf("Port: expected 9090, got %d", cfg.Port)

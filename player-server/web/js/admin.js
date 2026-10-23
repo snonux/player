@@ -40,6 +40,16 @@ export function initAdmin() {
     if (open) await refreshTrash();
   });
 
+  const pluginsBtn = document.getElementById('admin-plugins-toggle');
+  pluginsBtn?.addEventListener('click', async () => {
+    const section = document.getElementById('admin-plugins-section');
+    const open = section?.classList.contains('hidden');
+    section?.classList.toggle('hidden', !open);
+    pluginsBtn.setAttribute('aria-expanded', String(Boolean(open)));
+    pluginsBtn.textContent = open ? 'Hide plugins' : 'Plugins';
+    if (open) await refreshPlugins();
+  });
+
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
@@ -193,6 +203,86 @@ async function refreshTrash() {
   try {
     renderTrash(await API.trash());
   } catch (err) { toast(err.message || 'Failed to load trash', 'error'); }
+}
+
+async function refreshPlugins() {
+  const status = document.getElementById('admin-plugins-status');
+  const el = document.getElementById('admin-plugins');
+  if (status) status.textContent = 'Loading plugins…';
+  try {
+    const items = await API.plugins();
+    renderPlugins(items);
+    if (status) {
+      status.textContent = items.length
+        ? `${items.length} plugin${items.length === 1 ? '' : 's'} on this server.`
+        : 'No plugins installed.';
+    }
+  } catch (err) {
+    if (status) status.textContent = '';
+    if (el) el.innerHTML = `<p class="text-muted text-xs">Could not load plugins: ${escapeHtml(err.message || 'error')}</p>`;
+    toast(err.message || 'Failed to load plugins', 'error');
+  }
+}
+
+function renderPlugins(items) {
+  const el = document.getElementById('admin-plugins');
+  if (!el) return;
+  if (!Array.isArray(items) || !items.length) {
+    el.innerHTML = '<p class="text-muted text-xs">Place a plugin folder under the server plugin directory to get started.</p>';
+    return;
+  }
+  el.innerHTML = `<ul class="admin-list">
+    ${items.map((p) => pluginRowHtml(p)).join('')}
+  </ul>`;
+  el.querySelectorAll('[data-plugin-action]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const action = btn.dataset.pluginAction;
+      if (action === 'disable' && !confirm(`Disable plugin "${id}"? Music playback is unaffected.`)) {
+        return;
+      }
+      btn.disabled = true;
+      try {
+        if (action === 'enable') {
+          await API.enablePlugin(id);
+          toast('Plugin enabled');
+        } else if (action === 'disable') {
+          await API.disablePlugin(id);
+          toast('Plugin disabled');
+        } else if (action === 'probe') {
+          const res = await API.invokePlugin(id, 'probe');
+          toast(`Probe result: ${res.result}`);
+        }
+        await refreshPlugins();
+      } catch (err) {
+        toast(err.message || 'Plugin action failed', 'error');
+        await refreshPlugins();
+      } finally {
+        btn.disabled = false;
+        if (document.activeElement === document.body) btn.focus();
+      }
+    });
+  });
+}
+
+function pluginRowHtml(p) {
+  const status = escapeHtml(p.status || 'disabled');
+  const caps = (p.capabilities || []).map((c) => escapeHtml(c)).join(', ') || '—';
+  const err = p.error ? `<span class="text-muted text-75"> — ${escapeHtml(p.error)}</span>` : '';
+  const enable = p.enabled
+    ? `<button type="button" class="btn btn-danger btn-sm" data-plugin-action="disable" data-id="${escapeHtml(p.id)}" aria-label="Disable ${escapeHtml(p.name)}">Disable</button>`
+    : `<button type="button" class="btn btn-primary btn-sm" data-plugin-action="enable" data-id="${escapeHtml(p.id)}" aria-label="Enable ${escapeHtml(p.name)}">Enable</button>`;
+  const probe = p.enabled && (p.capabilities || []).includes('probe') && p.status === 'active'
+    ? `<button type="button" class="btn btn-sm" data-plugin-action="probe" data-id="${escapeHtml(p.id)}" aria-label="Run probe on ${escapeHtml(p.name)}">Run probe</button>`
+    : '';
+  return `<li>
+    <span>
+      <strong>${escapeHtml(p.name || p.id)}</strong>
+      <span class="text-muted text-75"> v${escapeHtml(p.version || '?')} · ${status}${err}</span>
+      <br><span class="text-muted text-75">Capabilities: ${caps}</span>
+    </span>
+    <span class="flex gap-1">${enable}${probe}</span>
+  </li>`;
 }
 
 function renderTrash(data) {

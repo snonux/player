@@ -20,6 +20,7 @@ import (
 	"github.com/snonux/player/internal/api"
 	"github.com/snonux/player/internal/auth"
 	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/plugin"
 	"github.com/snonux/player/internal/probe"
 	"github.com/snonux/player/internal/repository"
 	"github.com/snonux/player/internal/scanner"
@@ -42,6 +43,8 @@ type Deps struct {
 	MediaSvc        service.MediaService
 	Playlists       *service.PlaylistService
 	AdminSvc        service.AdminService
+	PluginSvc       service.PluginService
+	PluginMgr       *plugin.Manager
 	ProgressSvc     service.ProgressService
 	AuthSvc         service.AuthService
 	PodcastSvc      service.PodcastEpisodeService
@@ -129,6 +132,12 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger).
 		WithThumbnailLayout(thumbLayout)
 
+	pluginMgr, err := plugin.NewManager(plugin.Options{Dir: cfg.PluginDir})
+	if err != nil {
+		logger.Warn("plugin manager unavailable", "err", err, "plugin_dir", cfg.PluginDir)
+		pluginMgr, _ = plugin.NewManager(plugin.Options{})
+	}
+
 	deps := &Deps{
 		trashLock:       trashLock,
 		Store:           store,
@@ -139,6 +148,8 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		MediaSvc:        mediaSvc,
 		Playlists:       playlists,
 		AdminSvc:        adminSvc,
+		PluginMgr:       pluginMgr,
+		PluginSvc:       service.NewPluginService(pluginMgr),
 		ProgressSvc:     service.NewProgressService(store, clk),
 		AuthSvc:         service.NewAuthService(store, clk, hasher, sm, tm),
 		PodcastSvc:      podcastSvc,
@@ -370,6 +381,7 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 				Compat:        deps.CompatSvc,
 			},
 			Admin:       deps.AdminSvc,
+			Plugins:     deps.PluginSvc,
 			Auth:        deps.AuthSvc,
 			Podcast:     deps.PodcastSvc,
 			PodcastSync: deps.PodcastSyncSvc,
@@ -406,6 +418,9 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 	deps := WireWithRunner(cfg, store, logger, appCtx, runner)
 	defer deps.GCWorker.Stop()
 	defer stopTranscoding(deps)
+	if deps.PluginMgr != nil {
+		defer func() { _ = deps.PluginMgr.Close(context.Background()) }()
+	}
 	checkTranscoding(deps, runner)
 	checkThumbnailCache(deps)
 	StartBackgroundWorkers(deps)

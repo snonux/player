@@ -1889,6 +1889,81 @@ Trigger a library rescan. The scan runs asynchronously. Poll
 
 ---
 
+### `GET /api/admin/plugins` · `GET /api/v1/admin/plugins`
+
+List installed optional WASM plugins under `PLUGIN_DIR`. Music playback never
+requires plugins; an empty or unset directory returns `[]`.
+
+**Response `200`:**
+
+```json
+[
+  {
+    "id": "ok-plugin",
+    "name": "OK Probe",
+    "version": "1.0.0",
+    "api_version": 1,
+    "capabilities": ["probe"],
+    "description": "Minimal probe fixture",
+    "enabled": false,
+    "status": "disabled",
+    "error": ""
+  }
+]
+```
+
+`status` is `disabled`, `active`, or `error`. Invalid manifests appear with
+`status: "error"` and an `error` message.
+
+**Status codes:** `200`, `401`, `403`, `501`, `500`
+
+---
+
+### `GET /api/admin/plugins/{id}` · `GET /api/v1/admin/plugins/{id}`
+
+Return one plugin's status.
+
+**Status codes:** `200`, `401`, `403`, `404`, `501`, `500`
+
+---
+
+### `POST /api/admin/plugins/{id}/enable` · `POST /api/v1/admin/plugins/{id}/enable`
+
+Load the plugin WASM (bounded memory/time) and mark it enabled. Rejects
+unsupported `api_version`, missing exports, and resource-limit failures.
+
+**Status codes:** `200`, `400`, `401`, `403`, `404`, `501`, `500`
+
+---
+
+### `POST /api/admin/plugins/{id}/disable` · `POST /api/v1/admin/plugins/{id}/disable`
+
+Unload the module and mark it disabled. Core library/playback is unaffected.
+
+**Status codes:** `200`, `401`, `403`, `404`, `501`, `500`
+
+---
+
+### `POST /api/admin/plugins/{id}/invoke` · `POST /api/v1/admin/plugins/{id}/invoke`
+
+Invoke a declared capability on an enabled plugin.
+
+**Request body:**
+
+```json
+{ "capability": "probe" }
+```
+
+**Response `200`:**
+
+```json
+{ "id": "ok-plugin", "capability": "probe", "result": 42 }
+```
+
+**Status codes:** `200`, `400`, `401`, `403`, `404`, `409` (disabled), `501`, `500`
+
+---
+
 ### `GET /api/admin/scan-progress` · `GET /api/v1/admin/scan-progress`
 
 Return the current or most recent scan state.

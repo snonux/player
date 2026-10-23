@@ -1,0 +1,9 @@
+{
+  "id": "loop-plugin",
+  "name": "Loop Probe",
+  "version": "1.0.0",
+  "api_version": 1,
+  "capabilities": ["probe"],
+  "entry": "plugin.wasm",
+  "description": "Infinite loop fixture to exercise call timeout."
+}

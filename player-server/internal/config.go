@@ -50,7 +50,11 @@ const (
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
 	// MusicEnrichmentURL is an optional operator-configured external metadata agent.
-	MusicEnrichmentURL     string
+	MusicEnrichmentURL string
+	// PluginDir is an optional directory of installed WASM plugins
+	// (each subdirectory has manifest.json + entry wasm). Empty disables
+	// discovery; music playback never requires plugins.
+	PluginDir              string
 	Port                   int
 	MediaRoot              string
 	DBPath                 string
@@ -182,6 +186,7 @@ func loadNumericSettings(cfg *Config) error {
 // been read. The thumbnail cache has no default (see Config).
 func loadStringSettings(cfg *Config) {
 	envString("MUSIC_ENRICHMENT_URL", func(s string) { cfg.MusicEnrichmentURL = s })
+	envString("PLUGIN_DIR", func(s string) { cfg.PluginDir = s })
 	envString("MEDIA_ROOT", func(s string) { cfg.MediaRoot = s })
 	envString("DB_PATH", func(s string) { cfg.DBPath = s })
 	cfg.TranscodeCacheDir = cfg.DBPath + DefaultTranscodeCacheDirSuffix
