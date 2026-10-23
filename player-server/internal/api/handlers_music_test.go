@@ -221,7 +221,7 @@ func TestMusicArtistsRealPermissions(t *testing.T) {
 		if i == 1 {
 			composer = "Hidden Composer"
 		}
-		_, err = store.CreateMedia(ctx, &model.Media{SetID: sets[i], FileName: "song.flac", RelPath: "song.flac", AbsPath: "/not-read/" + name, Type: model.MediaTypeAudio, CreatedAt: now, Music: &model.MusicMetadata{Album: "Shared", Artist: "Track Artist", AlbumArtist: "Album Artist", Composers: []string{composer}, Performers: []string{"Player"}}})
+		_, err = store.CreateMedia(ctx, &model.Media{SetID: sets[i], FileName: "song.flac", RelPath: "song.flac", AbsPath: "/not-read/" + name, Type: model.MediaTypeAudio, PlayCount: i + 1, CreatedAt: now, Music: &model.MusicMetadata{Album: "Shared", Artist: "Track Artist", AlbumArtist: "Album Artist", Composers: []string{composer}, Performers: []string{"Player"}}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -284,6 +284,20 @@ func TestMusicArtistsRealPermissions(t *testing.T) {
 	}
 	if w := request("", "?role=invalid"); w.Code != 400 {
 		t.Fatalf("unknown role %d", w.Code)
+	}
+	// The same credited performer exists in both sets: rank only visible media,
+	// even though the hidden song has a higher global play count.
+	performers := read("performer")
+	var ranked service.Artist
+	rankedResponse := request(performers[0].Key, "")
+	if err := json.Unmarshal(rankedResponse.Body.Bytes(), &ranked); err != nil {
+		t.Fatal(err)
+	}
+	if rankedResponse.Code != 200 || ranked.TopSongs == nil || ranked.TopSongs.Source != "global" || len(ranked.TopSongs.Songs) != 1 || ranked.TopSongs.Songs[0].SetID != sets[0] {
+		t.Fatalf("top songs ACL: %s", rankedResponse.Body.String())
+	}
+	if performers[0].TopSongs != nil {
+		t.Fatal("list summaries must omit detail ranking")
 	}
 	grant(sets[1])
 	people := read("composer")

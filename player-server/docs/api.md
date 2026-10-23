@@ -2469,6 +2469,18 @@ choosing a role in the list does not hide their other release roles in detail.
 Missing and inaccessible artist keys return the same 404 response. Counts,
 release links and artwork are derived only after normal set permissions.
 
+Artist detail also adds `top_songs: {source, songs}`. `source` is `personal`
+when any visible credited song has qualified personal plays; only those
+played songs are returned, ordered by descending `personal_play_count`.
+Otherwise `global` ranks visible credited songs with positive `play_count`
+(the existing server-wide counter). With no counts, `source` is `none` and
+`songs` is `[]`. This local fallback does not use an external popularity
+provider. Results contain at most ten distinct canonical media objects,
+including composer/performer credits consistently with Play artist. Equal
+counts sort by normalized title (filename fallback), then media ID. Ranking,
+source selection and truncation happen after ACL filtering. Artist list
+summaries omit `top_songs`. Playback uses the existing client queue/session.
+
 Audio `music` adds optional structured `composers` and `performers` arrays from
 embedded composer/performer tags. Actual repeated FLAC/Vorbis/Opus comments
 remain separate names; punctuation in scalar values is never split. Rescan

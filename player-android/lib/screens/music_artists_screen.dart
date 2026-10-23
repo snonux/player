@@ -1,4 +1,5 @@
 import '../widgets/music_artwork_section.dart';
+import '../widgets/music_top_songs_section.dart';
 import '../widgets/music_related_section.dart';
 import '../widgets/music_enrichment_section.dart';
 import '../widgets/music_listening_details.dart';
@@ -267,7 +268,7 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
         nameName: 'title',
         onRefresh: _load,
         scrollController: _scroll,
-        header: Padding(
+        listHeader: Padding(
             padding: const EdgeInsets.all(16),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -285,6 +286,9 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
                   enabled: albums.isNotEmpty),
               MusicEnrichmentSection(
                   kind: 'artist', entityKey: widget.artistKey!),
+              MusicTopSongsSection(
+                  ranking: artist['top_songs'] as Map<String, dynamic>?,
+                  artist: artist['name'] as String),
             ])),
         itemBuilder: (album, checkbox, toggle) => Card(
             child: ListTile(

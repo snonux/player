@@ -22,7 +22,12 @@ class _Client extends PlayerApiClient {
   }
   final roles = <String>[];
   bool fail = false;
+  Map<String, dynamic>? topSongs;
   Completer<List<Map<String, dynamic>>>? pending;
+  @override
+  Future<List<Map<String, dynamic>>> relatedMusic(
+          String kind, String key) async =>
+      [];
   @override
   Future<List<Map<String, dynamic>>> musicArtists(
       {String role = 'artists'}) async {
@@ -49,6 +54,7 @@ class _Client extends PlayerApiClient {
         'roles': ['composer'],
         'album_count': 1,
         'song_count': 2,
+        if (topSongs != null) 'top_songs': topSongs,
         'albums': [
           {
             'album_key': 'al_a',
@@ -98,7 +104,39 @@ void main() {
       (tester) async {
     await mount(tester, _Client(), key: 'ar_composer');
     expect(find.text('Composer; 東京 / A'), findsNWidgets(2));
+    await tester.scrollUntilVisible(find.text('Compilation'), 200,
+        scrollable: find.byType(Scrollable).first);
     expect(find.text('Compilation'), findsOneWidget);
     expect(find.text('Various Artists\nComposer'), findsOneWidget);
+  });
+  testWidgets('ten ranked long titles scroll on short artist detail',
+      (tester) async {
+    final client = _Client()
+      ..topSongs = {
+        'source': 'global',
+        'songs': [
+          for (var i = 1; i <= 10; i++)
+            {
+              'id': i,
+              'type': 'audio',
+              'file_name': 'song$i.mp3',
+              'play_count': 11 - i,
+              'music': {
+                'title': 'Long song $i ${'title ' * 20}',
+                'album': 'Compilation'
+              }
+            }
+        ]
+      };
+    await mount(tester, client, key: 'ar_composer');
+    expect(tester.takeException(), isNull);
+    expect(find.text('Top songs'), findsOneWidget);
+    expect(find.textContaining('server-wide plays (no personal plays yet)'),
+        findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Compilation'), 300,
+        scrollable: find.byType(Scrollable).first, maxScrolls: 30);
+    await tester.pumpAndSettle();
+    expect(find.text('Various Artists\nComposer'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

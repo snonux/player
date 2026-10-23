@@ -1,6 +1,7 @@
 import { mountMusicArtwork } from '../music-artwork.js';
 import { mountMusicEnrichment } from '../music-enrichment.js';
 import { mountRelatedMusic } from '../music-related.js';
+import { mountArtistTopSongs } from '../music-top-songs.js';
 import { listeningDetails } from '../music-listening.js';
 import { ratingControl, bindRatings, ratingFilters, ratingParams } from '../music-ratings.js';
 import { favoriteButton, bindFavorites, favoriteFilter } from '../music-favorites.js';
@@ -183,6 +184,10 @@ async function renderArtists(grid, view, current) {
  }
  if(detail) mountMusicArtwork(grid.querySelector('.music-heading'),'artist',view.artist,current,data.albums?.find(a=>a.cover_media_id)?cover(data.albums.find(a=>a.cover_media_id)):'');
  if(detail) mountMusicEnrichment(grid.querySelector('.music-heading'),'artist',view.artist,current);
+ if(detail) {
+  const top=mountArtistTopSongs(grid,data.top_songs,data.name,current);
+  grid.querySelector('.music-heading').after(top);
+ }
  if(detail) mountRelatedMusic(grid,'artist',view.artist,current,item=>openArtist(item.key));
  bindCollectionCatalog(grid,detail?data.albums:data,detail?'album':'artist',detail?'album_key':'artist_key',detail?'title':'name',current);
  const select=grid.querySelector('select[aria-label="Role"]');

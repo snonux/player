@@ -17,8 +17,9 @@ type ArtistCredit struct {
 // Artist is a permission-filtered catalog of credited releases and songs.
 type Artist struct {
 	model.ListeningStats
-	Rating     int  `json:"rating"`
-	IsFavorite bool `json:"is_favorite"`
+	TopSongs   *ArtistTopSongs `json:"top_songs,omitempty"`
+	Rating     int             `json:"rating"`
+	IsFavorite bool            `json:"is_favorite"`
 	ArtistCredit
 	AlbumCount int           `json:"album_count"`
 	SongCount  int           `json:"song_count"`

@@ -250,6 +250,7 @@ class MusicCollectionCatalog extends StatefulWidget {
       required this.nameName,
       required this.itemBuilder,
       this.header,
+      this.listHeader,
       this.footer,
       this.grid = false,
       required this.onRefresh,
@@ -259,7 +260,7 @@ class MusicCollectionCatalog extends StatefulWidget {
   final String kind, keyName, nameName, emptyMessage;
   final Widget Function(
       Map<String, dynamic>, Widget? checkbox, VoidCallback? toggle) itemBuilder;
-  final Widget? header, footer;
+  final Widget? header, listHeader, footer;
   final bool grid;
   final ScrollController? scrollController;
   final Future<void> Function() onRefresh;
@@ -353,11 +354,18 @@ class _CatalogState extends State<MusicCollectionCatalog> {
                           controller: widget.scrollController,
                           padding: const EdgeInsets.all(16),
                           itemCount: widget.items.length +
+                              (widget.listHeader == null ? 0 : 1) +
                               (widget.footer == null ? 0 : 1),
-                          itemBuilder: (_, index) =>
-                              index == widget.items.length
-                                  ? widget.footer!
-                                  : item(index)))),
+                          itemBuilder: (_, index) {
+                            if (widget.listHeader != null && index == 0) {
+                              return widget.listHeader!;
+                            }
+                            final at =
+                                index - (widget.listHeader == null ? 0 : 1);
+                            return at == widget.items.length
+                                ? widget.footer!
+                                : item(at);
+                          }))),
         ]));
   }
 }

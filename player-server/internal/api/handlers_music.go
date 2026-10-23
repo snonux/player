@@ -133,6 +133,8 @@ func (s *Server) handleMusicArtists(w http.ResponseWriter, r *http.Request) {
 				for i := range person.Albums {
 					person.Albums[i].IsFavorite = albumFavorites[person.Albums[i].Key]
 				}
+				top := service.MusicArtistTopSongs(albums, person.Key)
+				person.TopSongs = &top
 				writeJSON(w, http.StatusOK, person)
 				return
 			}
