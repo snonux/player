@@ -2914,3 +2914,28 @@ lists or inaccessible/nonmusic songs return 404, source-following or changed
 noneditable targets return 409. Bad limits/policy return 400.
 Legacy per-playlist song edits, album adds and queue-to-new-playlist creation keep
 their occurrence-preserving behavior.
+
+### Public music collection shares
+
+`POST /api/v1/shares/collections` (also `/api/shares/collections`) accepts
+`{ "title":"Album title", "media_ids":[7,3,7], "expires_at":"...", "max_uses":1 }`.
+Title is 1–200 characters and IDs contain 1–1000 currently accessible audio
+occurrences. Expiry and maximum viewings use ordinary share defaults/validation;
+success is 201 with the normal share object plus `collection_title` and ordered
+`media_ids`. Any unavailable/inaccessible/non-audio source rejects creation.
+Clients resolve album, artist, playlist or selection order before creating it.
+This is a fixed snapshot retaining repeated occurrences, not a live playlist.
+
+Existing `/s/{token}` HTML/JSON, viewing-cookie and JSON `view` credential rules
+apply once for the entire collection. JSON adds `collection_title` and ordered
+`items`, each containing the ordinary public display metadata and token-scoped
+URLs under `/s/{token}/items/{zero_based_index}/stream|compat|thumbnail|download`.
+Every item URL is credentialed in JSON and checks expiry/revocation, bounds and
+current creator access. Public IDs are collection-local occurrence numbers;
+source/library IDs and paths are excluded. Unavailable sources retain a generic
+`unavailable:true` placeholder without title/artwork/content URLs; remaining
+occurrences still play. A deleted first source does not delete a collection link.
+Original download and compatibility-rendition behavior matches single-file
+shares. Collection shares appear in My Shares and use the existing owner/admin
+revoke endpoint, even when every source becomes unavailable. Legacy single-file
+links retain their existing response shapes and source-deletion lifecycle.

@@ -1,3 +1,4 @@
+import { shareMusicCollection } from './collection-share.js';
 import { downloadMusic } from './music-downloads.js';
 import { API } from './api.js';
 import { parseShuffleOptions, selectShuffleSongs } from './queue-shuffle.js';
@@ -10,13 +11,14 @@ import { escapeHtml as esc, toast } from './utils.js';
 
 let context = null, collectionIntent = 0;
 export function collectionButtons(label) {
- return `<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${esc(label)}</button><button class="btn" data-collection-shuffle>Shuffle</button><button class="btn" data-collection-menu>Queue actions ▾</button><button class="btn" data-collection-download>Download…</button><span role="status" data-collection-status></span></span>`;
+ return `<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${esc(label)}</button><button class="btn" data-collection-shuffle>Shuffle</button><button class="btn" data-collection-menu>Queue actions ▾</button><button class="btn" data-collection-download>Download…</button><button class="btn" data-collection-share>Share…</button><span role="status" data-collection-status></span></span>`;
 }
 export function bindCollectionActions(root, collections, current, sourceLabel = 'Selected collections') {
  const owner = {root, collections, current, sourceLabel, busy:false, generation:0};
  context = owner;
  root.querySelector('[data-collection-play]').onclick = () => run(owner, 'replace');
  root.querySelector('[data-collection-shuffle]').onclick = () => run(owner, 'shuffle');
+ root.querySelector('[data-collection-share]').onclick = () => run(owner, 'share');
  root.querySelector('[data-collection-download]').onclick = () => run(owner, 'download');
  root.querySelector('[data-collection-menu]').onclick = event => menu(event.currentTarget, owner);
  return owner;
@@ -32,20 +34,21 @@ function menu(button, owner) {
 }
 async function run(owner, action, targets, settings = {}) {
  if (owner.busy || !owner.current() || !owner.root.isConnected) return;
- if (action !== 'download' && queueState().loading) { toast('Loading track… Please wait.', 'info'); return; }
+ if (!['download','share'].includes(action) && queueState().loading) { toast('Loading track… Please wait.', 'info'); return; }
  const collections = targets || owner.collections();
  if (!collections.length) { toast('Select a collection first.', 'info'); return; }
  const intent = currentPlaybackIntent(), user = state.user, generation = owner.generation, request = ++collectionIntent;
- const current = () => owner.root.isConnected && owner.current() && request === collectionIntent && generation === owner.generation && state.user === user && (action === 'download' || isPlaybackIntent(intent)) && (!settings.alive || settings.alive());
+ const current = () => owner.root.isConnected && owner.current() && request === collectionIntent && generation === owner.generation && state.user === user && (['download','share'].includes(action) || isPlaybackIntent(intent)) && (!settings.alive || settings.alive());
  owner.busy = true;
  const status = settings.status || owner.root.querySelector('[data-collection-status]');
- const buttons = [...owner.root.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download]')];
+ const buttons = [...owner.root.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download], [data-collection-share]')];
  buttons.forEach(button => button.disabled = true); status.textContent = 'Loading songs…';
  try {
   let songs = await resolveCollections(API, collections, current);
   if (action === 'shuffle') songs = selectShuffleSongs(songs, settings.options);
   if (!current()) return;
   if (!songs.length) { status.textContent = action === 'shuffle' ? 'No songs match these options.' : 'No songs available.'; return; }
+  if (action === 'share') { shareMusicCollection(songs, owner.sourceLabel, owner.root.querySelector('[data-collection-share]')); status.textContent = ''; return true; }
   if (action === 'download') { downloadMusic(songs, owner.root.querySelector('[data-collection-download]')); status.textContent = ''; return true; }
   if (await insertQueue(songs, ['replace', 'shuffle'].includes(action) ? 'now' : action, {replace:['replace', 'shuffle'].includes(action), shuffled:action === 'shuffle', source:owner.sourceLabel})) {
    const token = queueUndoToken();
@@ -109,7 +112,7 @@ export function bindCollectionCatalog(grid, items, kind, keyName, nameName, curr
  const update = () => {
   const count = selected().length;
   toolbar.querySelector('[data-batch-count]').textContent = `${count} selected`;
-  if (!owner.busy) toolbar.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download]').forEach(button => button.disabled=!count);
+  if (!owner.busy) toolbar.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download], [data-collection-share]').forEach(button => button.disabled=!count);
  };
  const setSelecting = value => {
   owner.selecting=value; toolbar.querySelector('[data-batch]').hidden=!value;
@@ -134,7 +137,7 @@ function shuffleOptions(owner, opener) {
    // Cancel ownership immediately; late completion cannot unlock a newer action.
    owner.generation++; owner.busy = false;
    if (owner.root.isConnected) {
-    owner.root.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download]').forEach(button => button.disabled = !owner.collections().length);
+    owner.root.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download], [data-collection-share]').forEach(button => button.disabled = !owner.collections().length);
    }
   }
   if (opener?.isConnected) opener.focus();

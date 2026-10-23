@@ -15,6 +15,7 @@ import (
 // CompatStreamService returns a client-compatible rendition (H.264/AAC MP4
 // for video, AAC M4A for audio) of media the clients cannot decode natively.
 type CompatStreamService interface {
+	SharedItemCompatStream(context.Context, ShareAccess) (*transcode.Rendition, error)
 	// CompatStream returns the rendition of a media item for an authorized
 	// user. It returns ErrTranscodePending while the rendition is still
 	// being produced.
@@ -51,6 +52,7 @@ type RenditionProvider interface {
 // viewing (counting a use if the client has none) once content is actually
 // delivered. It is implemented by shareService.
 type SharedMediaAccess interface {
+	ResolveSharedItem(context.Context, ShareAccess) (*model.Media, error)
 	ResolveSharedMedia(ctx context.Context, token string, credentials ...string) (*model.Media, error)
 	EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error)
 }
@@ -214,4 +216,13 @@ func pathWithinRoot(root, path string) bool {
 	}
 	prefix := filepath.Clean(root) + string(filepath.Separator)
 	return strings.HasPrefix(filepath.Clean(path), prefix)
+}
+
+// SharedItemCompatStream applies the same anonymous requester budget to a snapshot occurrence.
+func (s *compatStreamService) SharedItemCompatStream(ctx context.Context, access ShareAccess) (*transcode.Rendition, error) {
+	media, err := s.shares.ResolveSharedItem(ctx, access)
+	if err != nil {
+		return nil, err
+	}
+	return s.rendition(ctx, media, shareRequester)
 }

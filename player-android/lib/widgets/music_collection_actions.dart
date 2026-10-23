@@ -1,4 +1,5 @@
 import 'music_download_dialog.dart';
+import '../screens/create_share_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -112,7 +113,7 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
     return false;
   }
 
-  Future<void> _download() async {
+  Future<void> _download({bool share = false}) async {
     if (_busy || !widget.enabled || widget.collections.isEmpty) return;
     final mutations = ref.read(credentialMutationQueueProvider);
     final epoch = mutations.generation;
@@ -134,7 +135,14 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
           setState(() => _message = 'No songs available.');
         } else {
           setState(() => _message = null);
-          await showMusicDownloadDialog(context, ref, songs);
+          if (share) {
+            await showCreateShareDialog(context,
+                client: ref.read(apiClientProvider),
+                mediaIds: songs.map((song) => song.id).toList(),
+                collectionTitle: widget.sourceLabel);
+          } else {
+            await showMusicDownloadDialog(context, ref, songs);
+          }
         }
       }
     } catch (_) {
@@ -180,6 +188,10 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                 onPressed: enabled ? _download : null,
                 icon: const Icon(Icons.download_outlined),
                 label: const Text('Keep offline')),
+            OutlinedButton.icon(
+                onPressed: enabled ? () => _download(share: true) : null,
+                icon: const Icon(Icons.share_outlined),
+                label: const Text('Share…')),
             // Keep the native popup semantic target within its own control;
             // otherwise the custom-child tap semantics can merge into Wrap.
             Semantics(

@@ -159,9 +159,12 @@ type SharedMediaView struct {
 
 // GetSharedMediaResult wraps media metadata needed to render a share page.
 type GetSharedMediaResult struct {
-	Media     *SharedMediaView `json:"media"`
-	HasThumb  bool             `json:"has_thumb"`
-	StreamURL string           `json:"stream_url"`
+	Unavailable     bool                   `json:"unavailable,omitempty"`
+	CollectionTitle string                 `json:"collection_title,omitempty"`
+	Items           []GetSharedMediaResult `json:"items,omitempty"`
+	Media           *SharedMediaView       `json:"media"`
+	HasThumb        bool                   `json:"has_thumb"`
+	StreamURL       string                 `json:"stream_url"`
 	// PlaybackURL is the URL the share viewer should play: StreamURL, or the
 	// compatibility rendition when Transcoded is true.
 	PlaybackURL string `json:"playback_url"`
@@ -197,6 +200,11 @@ func (r GetSharedMediaResult) WithViewCredential() GetSharedMediaResult {
 	r.PlaybackURL = withShareView(r.PlaybackURL, credential)
 	r.DownloadURL = withShareView(r.DownloadURL, credential)
 	r.ThumbURL = withShareView(r.ThumbURL, credential)
+	r.Items = append([]GetSharedMediaResult(nil), r.Items...)
+	for i := range r.Items {
+		r.Items[i].Viewing = r.Viewing
+		r.Items[i] = r.Items[i].WithViewCredential()
+	}
 	return r
 }
 
@@ -213,7 +221,13 @@ type ShareInfo struct {
 }
 
 // MediaShareService handles creation, validation and revocation of share links.
+// ErrInvalidCollection indicates invalid collection share settings.
+var ErrInvalidCollection = &apiError{msg: "invalid collection share", status: http.StatusBadRequest}
+
 type MediaShareService interface {
+	GetSharedItemThumbnail(context.Context, ShareAccess) (*FileResult, error)
+	CreateCollectionShare(context.Context, int64, string, []int64, time.Time, *int) (*model.Share, error)
+	ResolveSharedItem(context.Context, ShareAccess) (*model.Media, error)
 	GetSharedLyrics(ctx context.Context, token string, credentials ...string) (*Lyrics, error)
 	// CreateShare creates a public share link for a media item.
 	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error)

@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"codeberg.org/snonux/player/internal/service"
 )
@@ -26,7 +27,17 @@ func preparePublicShare(w http.ResponseWriter) {
 // credentials the client presented, and whether it is a probe. HEAD delivers
 // no content, so it never opens a viewing and never costs a share use.
 func shareAccess(r *http.Request) service.ShareAccess {
+	item := 0
+	if raw := r.PathValue("item"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 || strconv.Itoa(parsed) != raw {
+			item = -1
+		} else {
+			item = parsed
+		}
+	}
 	return service.ShareAccess{
+		Item:        item,
 		Token:       r.PathValue("token"),
 		Credentials: shareCredentials(r),
 		Probe:       r.Method == http.MethodHead,

@@ -95,7 +95,13 @@ func (s *Server) handleShareCompatStream(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	access := shareAccess(r)
-	rendition, err := s.media.Compat.SharedCompatStream(r.Context(), access.Token, access.Credentials...)
+	var rendition *transcode.Rendition
+	var err error
+	if r.PathValue("item") != "" {
+		rendition, err = s.media.Compat.SharedItemCompatStream(r.Context(), access)
+	} else {
+		rendition, err = s.media.Compat.SharedCompatStream(r.Context(), access.Token, access.Credentials...)
+	}
 	if err != nil {
 		s.writeCompatError(w, r, err)
 		return

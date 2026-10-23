@@ -163,7 +163,7 @@ func (s *shareService) ResolveSharedMedia(ctx context.Context, token string, cre
 // a share whose media exists. A probe opens no viewing; it is told about the
 // one its credential stands for, if any.
 func (s *shareService) resolveForContent(ctx context.Context, access ShareAccess) (*model.Media, ShareViewing, error) {
-	media, err := s.ResolveSharedMedia(ctx, access.Token, access.Credentials...)
+	media, err := s.ResolveSharedItem(ctx, access)
 	if err != nil {
 		return nil, ShareViewing{}, err
 	}
@@ -199,6 +199,13 @@ func (s *shareService) StreamSharedMedia(ctx context.Context, access ShareAccess
 // a viewing; a client that already has one keeps it and is not charged
 // again.
 func (s *shareService) GetSharedMedia(ctx context.Context, access ShareAccess) (*GetSharedMediaResult, error) {
+	share, err := s.usableShare(ctx, access.Token, access.Credentials...)
+	if err != nil {
+		return nil, err
+	}
+	if len(share.MediaIDs) > 0 {
+		return s.getSharedCollection(ctx, access, share)
+	}
 	media, viewing, err := s.resolveForContent(ctx, access)
 	if err != nil {
 		return nil, err
@@ -278,10 +285,16 @@ func (s *shareService) ListMyShares(ctx context.Context, userID int64) ([]ShareI
 		if err != nil {
 			return nil, fmt.Errorf("get media: %w", err)
 		}
-		fileName := ""
+		fileName := sh.CollectionTitle
 		mediaType := model.MediaTypeVideo
+		if sh.CollectionTitle != "" {
+			mediaType = model.MediaTypeAudio
+		}
 		if media != nil {
 			fileName = media.FileName
+			if sh.CollectionTitle != "" {
+				fileName = sh.CollectionTitle
+			}
 			mediaType = media.Type
 		}
 		result = append(result, ShareInfo{

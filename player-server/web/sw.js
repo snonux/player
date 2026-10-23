@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v64';
+const CACHE = 'kiss-v65';
 const ASSETS = [
   '/',
   '/index.html',
@@ -68,6 +68,8 @@ const ASSETS = [
   '/js/music-enrichment.js',
   '/js/music-artwork.js',
   '/js/music-downloads.js',
+  '/js/collection-share.js',
+  '/js/share-collection-player.js',
   '/js/queue-playlist.js',
   '/js/song-notifications.js',
   '/js/playback-cache.js',

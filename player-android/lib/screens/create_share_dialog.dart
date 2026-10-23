@@ -24,7 +24,9 @@ DateTime shareExpiryAfterDate(DateTime date) =>
 /// needed at the call site (Dependency Inversion Principle).
 Future<String?> showCreateShareDialog(
   BuildContext context, {
-  required int mediaId,
+  int mediaId = 0,
+  List<int>? mediaIds,
+  String? collectionTitle,
   required PlayerApiClient client,
 }) {
   return showDialog<String>(
@@ -33,7 +35,11 @@ Future<String?> showCreateShareDialog(
     // barrierDismissible: false only during submit (handled inside the dialog
     // with the loading flag; here we allow tap-outside to cancel).
     barrierDismissible: true,
-    builder: (_) => _CreateShareDialog(mediaId: mediaId, client: client),
+    builder: (_) => _CreateShareDialog(
+        mediaId: mediaId,
+        client: client,
+        mediaIds: mediaIds == null ? null : List<int>.of(mediaIds),
+        collectionTitle: collectionTitle),
   );
 }
 
@@ -57,9 +63,13 @@ class _CreateShareDialog extends StatefulWidget {
   const _CreateShareDialog({
     required this.mediaId,
     required this.client,
+    this.mediaIds,
+    this.collectionTitle,
   });
 
   final int mediaId;
+  final List<int>? mediaIds;
+  final String? collectionTitle;
   final PlayerApiClient client;
 
   @override
@@ -131,11 +141,15 @@ class _CreateShareDialogState extends State<_CreateShareDialog> {
     });
 
     try {
-      final share = await widget.client.createShare(
-        widget.mediaId,
-        expiresAt: shareExpiryAfterDate(_expiresAt),
-        maxUses: maxUses,
-      );
+      final share = widget.mediaIds != null
+          ? await widget.client.createCollectionShare(
+              widget.mediaIds!, widget.collectionTitle ?? 'Selected songs',
+              expiresAt: shareExpiryAfterDate(_expiresAt), maxUses: maxUses)
+          : await widget.client.createShare(
+              widget.mediaId,
+              expiresAt: shareExpiryAfterDate(_expiresAt),
+              maxUses: maxUses,
+            );
 
       // Delegate URL construction to the client (Dependency Inversion Principle):
       // the dialog never accesses Dio internals or hard-codes path segments.
@@ -193,8 +207,10 @@ class _CreateShareDialogState extends State<_CreateShareDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       key: const Key('create_share_dialog'),
-      title: const Text('Create Share Link'),
-      content: _buildContent(context),
+      title: Text(widget.collectionTitle == null
+          ? 'Create Share Link'
+          : 'Share ${widget.collectionTitle}'),
+      content: SingleChildScrollView(child: _buildContent(context)),
       actions: _buildActions(context),
     );
   }
@@ -205,6 +221,11 @@ class _CreateShareDialogState extends State<_CreateShareDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.mediaIds != null) ...[
+          Text(
+              '${widget.mediaIds!.length} songs · Fixed snapshot in this order. Anyone with the link can play and download. Manage or revoke it in My Shares.'),
+          const SizedBox(height: 16)
+        ],
         _ExpiryRow(expiresAt: _expiresAt, onPickDate: _pickDate),
         const SizedBox(height: 16),
         _MaxUsesField(controller: _maxUsesController),

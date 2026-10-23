@@ -61,6 +61,12 @@
   }
 
   /* Shown instead of the player when the share cannot be viewed. */
+  .playlist-actions { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; margin-block: 1rem; }
+  .share-track-list { text-align: left; padding-left: 1.5rem; }
+  .share-track-list li { margin: .5rem 0; overflow-wrap: anywhere; }
+  .share-track-list button { white-space: normal; text-align: left; }
+  .share-track-list [aria-current="true"] { color: var(--accent); }
+  audio[controls] { width: 100%; }
   .share-status {
     margin: 1rem 0 0;
     color: var(--text-primary);
@@ -111,6 +117,7 @@
 <footer class="toast" id="toast" role="status" aria-live="polite"></footer>
 
 <script type="module">
+  import { showShareCollection } from '/js/share-collection-player.js';
   import { mediaTitle } from '/js/music.js';
   import { initPlayer, loadMediaDirect } from '/js/player.js';
   import { SHARE_DISPLAY_FAILED_MESSAGE, openShareViewing } from '/js/shareViewing.js';
@@ -136,10 +143,9 @@
   // resolves with { state, message, keepPlayer }; state is "open", "gone" or
   // "failed".
   async function showShare() {
-    initPlayer();
     const data = JSON.parse(document.getElementById('share-meta').textContent);
     if (!data || !data.media) throw new Error('share metadata is missing');
-    const name = mediaTitle({ ...data.media, file_name: decodedFileName(data.media.file_name) });
+    const name = data.collection_title || mediaTitle({ ...data.media, file_name: decodedFileName(data.media.file_name) });
     document.getElementById('share-title').textContent = name;
     document.title = `${name} — Shared Media`;
 
@@ -152,6 +158,9 @@
     // consumes nothing. See shareViewing.js.
     const viewing = await openShareViewing(location.pathname);
     if (viewing.state !== 'open') return viewing;
+
+    if (data.items?.length) { showShareCollection(data); return {state:'open'}; }
+    initPlayer();
 
     // First, and apart from the player: whatever happens to the player
     // below, the visitor can still fetch the file the use was spent on.

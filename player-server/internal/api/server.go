@@ -273,6 +273,10 @@ func (s *Server) routesSharePublic() {
 	// The share page opens its viewing with this POST; see the handler for
 	// why it is not part of the page GET.
 	s.shareRoute(http.MethodPost, "/s/{token}/view", s.handleShareOpenViewing)
+	s.shareRoute(http.MethodGet, "/s/{token}/items/{item}/stream", s.handleShareStream)
+	s.shareRoute(http.MethodGet, "/s/{token}/items/{item}/compat", s.handleShareCompatStream)
+	s.shareRoute(http.MethodGet, "/s/{token}/items/{item}/thumbnail", s.handleShareThumbnail)
+	s.shareRoute(http.MethodGet, "/s/{token}/items/{item}/download", s.handleShareDownload)
 	s.shareRoute(http.MethodGet, "/s/{token}/stream", s.handleShareStream)
 	s.shareRoute(http.MethodGet, "/s/{token}/compat", s.handleShareCompatStream)
 	s.shareRoute(http.MethodGet, "/s/{token}/thumbnail", s.handleShareThumbnail)
@@ -436,6 +440,7 @@ func (s *Server) routesProgress() {
 
 // routesShares wires the share-management API routes.
 func (s *Server) routesShares() {
+	s.handleBoth(http.MethodPost, "/api/shares/collections", s.requireSession(s.handleCreateCollectionShare))
 	s.handleBoth(http.MethodDelete, "/api/shares/{token}", s.requireSession(s.handleRevokeShare))
 	s.handleBoth(http.MethodGet, "/api/shares", s.requireSession(s.handleMyShares))
 }

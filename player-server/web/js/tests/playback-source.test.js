@@ -841,9 +841,9 @@ async function testCollectionDownloadsSurvivePlaybackAndRespectAccountNavigation
   const {state} = await import('../state.js');
   const {beginPlaybackIntent} = await import('../playback-intent.js');
   const oldAlbum=API.album, oldCreate=document.createElement, oldBody=document.body;
-  const play={},shuffle={},menu={},status={},download={isConnected:true,focus(){}};
-  const buttons=[play,shuffle,menu,download];
-  const root={isConnected:true,querySelector:selector=>({'[data-collection-play]':play,'[data-collection-shuffle]':shuffle,'[data-collection-menu]':menu,'[data-collection-download]':download,'[data-collection-status]':status})[selector],querySelectorAll:()=>buttons};
+  const play={},shuffle={},menu={},status={},download={isConnected:true,focus(){}},share={isConnected:true,focus(){}};
+  const buttons=[play,shuffle,menu,download,share];
+  const root={isConnected:true,querySelector:selector=>({'[data-collection-play]':play,'[data-collection-shuffle]':shuffle,'[data-collection-menu]':menu,'[data-collection-download]':download,'[data-collection-share]':share,'[data-collection-status]':status})[selector],querySelectorAll:()=>buttons};
   let complete,opened=0,current=true;
   const close={focus(){},isConnected:true},start={},progress={},modalStatus={};
   document.createElement=()=>({querySelector:selector=>({'[data-close]':close,'[data-start]':start,'[data-status]':modalStatus,progress})[selector],remove(){}});
@@ -852,6 +852,7 @@ async function testCollectionDownloadsSurvivePlaybackAndRespectAccountNavigation
   try {
     state.user={id:7};
     bindCollectionActions(root,()=>[{kind:'album',key:'a'}],()=>current,'Test album');
+    assert(typeof share.onclick==='function' && share.onclick!==download.onclick,'Share and Download bind independent controls');
     const pending=download.onclick();
     beginPlaybackIntent();
     complete({songs:[{id:1,type:'audio'}]});await pending;
@@ -1170,8 +1171,8 @@ async function testCanceledCollectionSelectionReleasesOnlyItsOwnBusyState() {
   const {state}=await import('../state.js');state.user={id:44};
   const oldCreate=document.createElement,oldAlbum=API.album;
   const controls=new Map();
-  for(const key of ['data-select-collections','data-collection-play','data-collection-shuffle','data-collection-menu','data-collection-download','data-collection-status','data-batch','data-batch-count']) controls.set(`[${key}]`,{focus(){},isConnected:true});
-  const toolbar={isConnected:true,querySelector:s=>controls.get(s),querySelectorAll:()=>['data-collection-play','data-collection-shuffle','data-collection-menu','data-collection-download'].map(k=>controls.get(`[${k}]`)),append(){}};
+  for(const key of ['data-select-collections','data-collection-play','data-collection-shuffle','data-collection-menu','data-collection-download','data-collection-share','data-collection-status','data-batch','data-batch-count']) controls.set(`[${key}]`,{focus(){},isConnected:true});
+  const toolbar={isConnected:true,querySelector:s=>controls.get(s),querySelectorAll:()=>['data-collection-play','data-collection-shuffle','data-collection-menu','data-collection-download','data-collection-share'].map(k=>controls.get(`[${k}]`)),append(){}};
   let check,created=0;
   const card=fakeElement();card.dataset={};card.prepend=value=>{check=value;};card.querySelector=s=>s==='input'?check:{append(){}};
   const grid={querySelector:()=>({append(){}}),querySelectorAll:()=>[card]};

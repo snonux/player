@@ -60,6 +60,16 @@ class _FakeApiClient extends PlayerApiClient {
 
   /// Captured arguments from the last [createShare] call.
   int? capturedMediaId;
+  List<int>? capturedMediaIds;
+  String? capturedTitle;
+  @override
+  Future<Share> createCollectionShare(List<int> ids, String title,
+      {DateTime? expiresAt, int? maxUses}) async {
+    capturedMediaIds = List.of(ids);
+    capturedTitle = title;
+    return createShare(0, expiresAt: expiresAt, maxUses: maxUses);
+  }
+
   DateTime? capturedExpiresAt;
   int? capturedMaxUses;
 
@@ -88,7 +98,8 @@ class _FakeApiClient extends PlayerApiClient {
   Media? mediaResult;
 
   @override
-  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async => mediaResult!;
+  Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) async =>
+      mediaResult!;
 
   @override
   Future<bool> toggleFavorite(int mediaId) async => false;
@@ -151,6 +162,7 @@ Future<_FakeApiClient> _pumpDialog(
   WidgetTester tester, {
   Share? shareResult,
   Object? shareError,
+  List<int>? mediaIds,
 }) async {
   final fakeClient = _FakeApiClient()
     ..shareResult = shareResult
@@ -166,6 +178,8 @@ Future<_FakeApiClient> _pumpDialog(
               showCreateShareDialog(
                 context,
                 mediaId: 42,
+                mediaIds: mediaIds,
+                collectionTitle: mediaIds == null ? null : 'Night Transit',
                 client: fakeClient,
               );
             });
@@ -218,6 +232,24 @@ Future<void> _pumpMediaDetailScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets(
+      'collection share captures ordered occurrences before selection changes',
+      (tester) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform, (call) async => null);
+    final ids = [7, 3, 7];
+    final client =
+        await _pumpDialog(tester, shareResult: _kShare, mediaIds: ids);
+    ids.clear();
+    expect(find.text('Share Night Transit'), findsOneWidget);
+    expect(find.textContaining('3 songs · Fixed snapshot'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('create_share_submit')));
+    await tester.pumpAndSettle();
+    expect(client.capturedMediaIds, [7, 3, 7]);
+    expect(client.capturedTitle, 'Night Transit');
+    expect(client.createShareCallCount, 1);
+  });
+
   test('selected expiry date remains valid until the next local midnight', () {
     final today = DateTime.now();
     final expiry = shareExpiryAfterDate(today);
@@ -415,10 +447,10 @@ void main() {
       expect(find.textContaining('whole number'), findsOneWidget);
     });
 
-    testWidgets('rejects zero max uses before calling the API',
-        (tester) async {
+    testWidgets('rejects zero max uses before calling the API', (tester) async {
       final fakeClient = await _pumpDialog(tester, shareResult: _kShare);
-      await tester.enterText(find.byKey(const Key('create_share_max_uses')), '0');
+      await tester.enterText(
+          find.byKey(const Key('create_share_max_uses')), '0');
       await tester.tap(find.byKey(const Key('create_share_submit')));
       await tester.pumpAndSettle();
 

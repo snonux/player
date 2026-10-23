@@ -70,6 +70,8 @@ type ShareViewing struct {
 
 // ShareAccess describes one request to a public share.
 type ShareAccess struct {
+	// Item is a zero-based occurrence index within a collection snapshot.
+	Item int
 	// Token is the share token from the URL path.
 	Token string
 	// Credentials are the viewing credentials the client presented, in

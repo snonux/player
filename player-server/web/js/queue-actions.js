@@ -1,3 +1,4 @@
+import { shareMusicCollection } from './collection-share.js';
 import { downloadMusic } from './music-downloads.js';
 import { queueCollectionSelected } from './collection-actions.js';
 import { insertQueue, undoQueue, queueState, queueUndoToken } from './queue.js';
@@ -34,8 +35,8 @@ export function openSongActions(row) { document.dispatchEvent(new CustomEvent('m
 export function selectionActions(button, songs) {
   const menu = document.createElement('div'); menu.className = 'shortcut-picker';
   menu.setAttribute('popover','auto'); menu.setAttribute('role','group'); menu.setAttribute('aria-label','Selected song actions');
-  menu.innerHTML = [['now','Play now'],['next','Play next'],['append','Add to queue'],['download','Download…']].map(([action,label]) => `<button class="btn btn-ghost" data-insert="${action}">${esc(label)}</button>`).join('');
-  menu.querySelectorAll('button').forEach(item => item.onclick = () => { menu.hidePopover(); if(item.dataset.insert==='download')downloadMusic(songs,button);else void queueSongs(item.dataset.insert,songs); });
+  menu.innerHTML = [['now','Play now'],['next','Play next'],['append','Add to queue'],['download','Download…'],['share','Share…']].map(([action,label]) => `<button class="btn btn-ghost" data-insert="${action}">${esc(label)}</button>`).join('');
+  menu.querySelectorAll('button').forEach(item => item.onclick = () => { menu.hidePopover(); if(item.dataset.insert==='share')shareMusicCollection(songs,'Selected songs',button);else if(item.dataset.insert==='download')downloadMusic(songs,button);else void queueSongs(item.dataset.insert,songs); });
   menu.addEventListener('toggle', e => { if (e.newState === 'closed') { menu.remove(); if (!document.querySelector('.modal-overlay.open')) button.focus(); } });
   document.body.append(menu); menu.showPopover(); menu.querySelector('button').focus();
 }

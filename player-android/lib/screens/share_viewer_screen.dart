@@ -1,3 +1,4 @@
+import '../widgets/public_share_collection.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -134,6 +135,8 @@ class ShareViewerScreen extends ConsumerStatefulWidget {
 class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
   // Null during the initial load; non-null after a successful fetch.
   SharePageMetadata? _page;
+  List<PublicShareItem> _items = [];
+  String _collectionTitle = '';
 
   // Non-null when the last fetch attempt failed.
   String? _error;
@@ -168,9 +171,17 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
       final client = ref.read(publicApiClientProvider);
       final json = await client.getSharedMediaPage(widget.token);
       final page = SharePageMetadata.fromJson(json);
+      final data = jsonDecode(json) as Map<String, dynamic>;
+      final items = (data['items'] as List? ?? [])
+          .map((item) =>
+              PublicShareItem.fromJson(Map<String, dynamic>.from(item as Map)))
+          .toList();
       if (!mounted) return;
       setState(() {
         _page = page;
+        _items = items;
+        _collectionTitle =
+            data['collection_title'] as String? ?? 'Shared collection';
         _isLoading = false;
       });
     } catch (e) {
@@ -262,6 +273,10 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
       return const SizedBox.shrink();
     }
 
+    if (_items.isNotEmpty) {
+      return PublicShareCollection(
+          token: widget.token, title: _collectionTitle, items: _items);
+    }
     return _MetadataView(page: _page!, onPlay: _play);
   }
 }

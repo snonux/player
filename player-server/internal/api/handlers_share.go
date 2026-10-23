@@ -205,7 +205,13 @@ func (s *Server) handleShareThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	access := shareAccess(r)
-	fr, err := s.media.Share.GetSharedThumbnail(r.Context(), access.Token, access.Credentials...)
+	var fr *service.FileResult
+	var err error
+	if r.PathValue("item") != "" {
+		fr, err = s.media.Share.GetSharedItemThumbnail(r.Context(), access)
+	} else {
+		fr, err = s.media.Share.GetSharedThumbnail(r.Context(), access.Token, access.Credentials...)
+	}
 	if err != nil {
 		s.writeShareError(w, r, err)
 		return

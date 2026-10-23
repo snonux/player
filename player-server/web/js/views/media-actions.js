@@ -1,3 +1,6 @@
+import { queueCollectionSelected } from '../collection-actions.js';
+import { shareMusicCollection } from '../collection-share.js';
+import { state } from '../state.js';
 import { API, NO_NOTE } from '../api.js';
 import { currentElement } from '../selection.js';
 import { currentMediaId } from '../player.js';
@@ -17,6 +20,9 @@ function selectedCardMediaId() {
 }
 
 export async function shareSelected() {
+  const checked = [...document.querySelectorAll('#media-grid [data-song-check]:checked')].map(input => input.dataset.songCheck);
+  if (checked.length) { shareMusicCollection(state.media.filter(song => checked.includes(String(song.id))), 'Selected songs'); return; }
+  if (queueCollectionSelected('share')) return;
   const id = selectedCardMediaId();
   if (!id) return;
   try {

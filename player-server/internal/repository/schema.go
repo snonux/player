@@ -314,6 +314,9 @@ func initializeSchema(db *sql.DB) error {
 	if err := runMigrations(db); err != nil {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
+	if err := migrateCollectionShares(db); err != nil {
+		return fmt.Errorf("migrate collection shares: %w", err)
+	}
 	if err := migratePlaybackProgress(db); err != nil {
 		return fmt.Errorf("migrate playback progress: %w", err)
 	}
@@ -358,6 +361,8 @@ type migration struct {
 }
 
 var migrations = []migration{
+	{name: "share_collection_title", sql: `ALTER TABLE shares ADD COLUMN collection_title TEXT NOT NULL DEFAULT '';`},
+	{name: "share_collection_ids", sql: `ALTER TABLE shares ADD COLUMN media_ids TEXT NOT NULL DEFAULT '[]';`},
 	{name: "playlist_source", sql: `ALTER TABLE playlists ADD COLUMN source TEXT NOT NULL DEFAULT '';`},
 	{name: "playlist_visibility", sql: `ALTER TABLE playlists ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('private','shared'));`},
 	{name: "media_music", sql: `ALTER TABLE media ADD COLUMN music TEXT;`},

@@ -1,4 +1,5 @@
 import '../widgets/music_enrichment_section.dart';
+import 'create_share_dialog.dart';
 import '../widgets/music_download_dialog.dart';
 import '../widgets/music_related_section.dart';
 import '../widgets/music_listening_details.dart';
@@ -369,17 +370,25 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         PopupMenuButton<String>(
             tooltip: label,
             enabled: items.isNotEmpty,
-            onSelected: (action) => action == 'download'
-                ? showMusicDownloadDialog(context, ref, items)
-                : insertServerSongs(
-                    context, ref, items, QueueInsertion.values.byName(action)),
+            onSelected: (action) => action == 'share'
+                ? showCreateShareDialog(context,
+                    client: ref.read(apiClientProvider),
+                    mediaIds: items.map((song) => song.id).toList(),
+                    collectionTitle: label == 'Selected song actions'
+                        ? 'Selected songs'
+                        : 'Music selection')
+                : action == 'download'
+                    ? showMusicDownloadDialog(context, ref, items)
+                    : insertServerSongs(context, ref, items,
+                        QueueInsertion.values.byName(action)),
             itemBuilder: (_) => [
                   for (final action in QueueInsertion.values)
                     PopupMenuItem(
                         value: action.name,
                         child: Text(queueActionLabel(action))),
                   const PopupMenuItem(
-                      value: 'download', child: Text('Keep offline'))
+                      value: 'download', child: Text('Keep offline')),
+                  const PopupMenuItem(value: 'share', child: Text('Share…'))
                 ]);
     return ListView(padding: const EdgeInsets.all(16), children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -476,6 +476,10 @@ class PlayerApiClient implements ProgressSyncClient {
   // Shares
   // ---------------------------------------------------------------------------
 
+  Future<Share> createCollectionShare(List<int> mediaIds, String title,
+          {DateTime? expiresAt, int? maxUses}) =>
+      throw UnimplementedError();
+
   Future<Share> createShare(
     int mediaId, {
     DateTime? expiresAt,

@@ -104,13 +104,15 @@ type Session struct {
 
 // Share is a time-bounded public link to a media item.
 type Share struct {
-	Token     string    `json:"token"`
-	MediaID   int64     `json:"media_id"`
-	CreatedBy int64     `json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-	MaxUses   *int      `json:"max_uses"`
-	UsedCount int       `json:"used_count"`
+	CollectionTitle string    `json:"collection_title,omitempty"`
+	MediaIDs        []int64   `json:"media_ids,omitempty"`
+	Token           string    `json:"token"`
+	MediaID         int64     `json:"media_id"`
+	CreatedBy       int64     `json:"created_by"`
+	CreatedAt       time.Time `json:"created_at"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	MaxUses         *int      `json:"max_uses"`
+	UsedCount       int       `json:"used_count"`
 }
 
 // Note is a per-user, per-media text note.

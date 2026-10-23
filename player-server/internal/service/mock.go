@@ -552,3 +552,17 @@ func (m *MockMediaService) GetSharedLyrics(ctx context.Context, token string, cr
 	}
 	return nil, errors.New("not implemented")
 }
+
+func (m *MockMediaService) CreateCollectionShare(context.Context, int64, string, []int64, time.Time, *int) (*model.Share, error) {
+	return nil, ErrNotFound
+}
+func (m *MockMediaService) ResolveSharedItem(ctx context.Context, access ShareAccess) (*model.Media, error) {
+	return nil, ErrNotFound
+}
+
+func (m *MockMediaService) GetSharedItemThumbnail(context.Context, ShareAccess) (*FileResult, error) {
+	return nil, ErrNotFound
+}
+func (m *MockCompatStreamService) SharedItemCompatStream(context.Context, ShareAccess) (*transcode.Rendition, error) {
+	return nil, ErrNotFound
+}

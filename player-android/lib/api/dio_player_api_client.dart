@@ -534,6 +534,19 @@ class DioPlayerApiClient extends PlayerApiClient
   ///
   /// Returns the newly created [Share] on success.
   @override
+  Future<Share> createCollectionShare(List<int> mediaIds, String title,
+      {DateTime? expiresAt, int? maxUses}) async {
+    final response = await rawDio
+        .post<Map<String, dynamic>>('$_kApiV1/shares/collections', data: {
+      'media_ids': mediaIds,
+      'title': title,
+      if (expiresAt != null) 'expires_at': expiresAt.toUtc().toIso8601String(),
+      if (maxUses != null) 'max_uses': maxUses
+    });
+    return Share.fromJson(response.data!);
+  }
+
+  @override
   Future<Share> createShare(
     int mediaId, {
     DateTime? expiresAt,

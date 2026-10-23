@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -21,9 +22,17 @@ const (
 
 // CreateShare inserts a new share link.
 func (s *SQLite) CreateShare(ctx context.Context, share *model.Share) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO shares (token, media_id, created_by, created_at, expires_at, max_uses, used_count) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		share.Token, share.MediaID, share.CreatedBy, share.CreatedAt, share.ExpiresAt, sqlNullInt(share.MaxUses), share.UsedCount,
+	ids, err := json.Marshal(share.MediaIDs)
+	if err != nil {
+		return fmt.Errorf("encode share collection: %w", err)
+	}
+	var mediaID any = share.MediaID
+	if len(share.MediaIDs) > 0 {
+		mediaID = nil
+	}
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO shares (token, media_id, created_by, created_at, expires_at, max_uses, used_count, collection_title, media_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		share.Token, mediaID, share.CreatedBy, share.CreatedAt, share.ExpiresAt, sqlNullInt(share.MaxUses), share.UsedCount, share.CollectionTitle, string(ids),
 	)
 	if err != nil {
 		return fmt.Errorf("insert share: %w", err)
@@ -34,10 +43,16 @@ func (s *SQLite) CreateShare(ctx context.Context, share *model.Share) error {
 func scanShare(row sqlScanner) (*model.Share, error) {
 	var sh model.Share
 	var maxUses sql.NullInt64
-	if err := row.Scan(&sh.Token, &sh.MediaID, &sh.CreatedBy, &sh.CreatedAt, &sh.ExpiresAt, &maxUses, &sh.UsedCount); err == sql.ErrNoRows {
+	var ids string
+	var mediaID sql.NullInt64
+	if err := row.Scan(&sh.Token, &mediaID, &sh.CreatedBy, &sh.CreatedAt, &sh.ExpiresAt, &maxUses, &sh.UsedCount, &sh.CollectionTitle, &ids); err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
 		return nil, err
+	}
+	sh.MediaID = mediaID.Int64
+	if err := json.Unmarshal([]byte(ids), &sh.MediaIDs); err != nil {
+		return nil, fmt.Errorf("decode share collection: %w", err)
 	}
 	if maxUses.Valid {
 		n := int(maxUses.Int64)
@@ -49,14 +64,14 @@ func scanShare(row sqlScanner) (*model.Share, error) {
 // GetShareByToken retrieves a share by its token.
 func (s *SQLite) GetShareByToken(ctx context.Context, token string) (*model.Share, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT token, media_id, created_by, created_at, expires_at, max_uses, used_count FROM shares WHERE token = ?`, token)
+		`SELECT token, media_id, created_by, created_at, expires_at, max_uses, used_count, collection_title, media_ids FROM shares WHERE token = ?`, token)
 	return scanShare(row)
 }
 
 // ListSharesByMedia returns shares for a media item.
 func (s *SQLite) ListSharesByMedia(ctx context.Context, mediaID int64) ([]model.Share, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT token, media_id, created_by, created_at, expires_at, max_uses, used_count FROM shares WHERE media_id = ? ORDER BY created_at DESC`, mediaID)
+		`SELECT token, media_id, created_by, created_at, expires_at, max_uses, used_count, collection_title, media_ids FROM shares WHERE media_id = ? ORDER BY created_at DESC`, mediaID)
 	if err != nil {
 		return nil, fmt.Errorf("list shares: %w", err)
 	}
@@ -75,7 +90,7 @@ func (s *SQLite) ListSharesByMedia(ctx context.Context, mediaID int64) ([]model.
 // ListSharesByUser returns all shares created by a specific user.
 func (s *SQLite) ListSharesByUser(ctx context.Context, userID int64) ([]model.Share, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT token, media_id, created_by, created_at, expires_at, max_uses, used_count FROM shares WHERE created_by = ? ORDER BY created_at DESC`, userID)
+		`SELECT token, media_id, created_by, created_at, expires_at, max_uses, used_count, collection_title, media_ids FROM shares WHERE created_by = ? ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list shares by user: %w", err)
 	}
