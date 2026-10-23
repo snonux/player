@@ -1,15 +1,11 @@
-import '../providers/server_endpoint_provider.dart';
+import '../providers/playback_cache_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart';
 
-import '../api/dio_client.dart';
-import '../api/player_api_client.dart';
 import '../models/media.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/audio_handler_provider.dart';
 import '../providers/auth_state_provider.dart';
-import '../providers/playback_preparer_provider.dart';
 import '../providers/playback_session_provider.dart';
 import '../providers/progress_queue_provider.dart';
 import '../services/music_queue.dart';
@@ -34,16 +30,12 @@ Future<void> insertServerSongs(BuildContext context, WidgetRef ref,
         context, const SnackBar(content: Text('Loading track… Please wait.')));
     return;
   }
-  final router = ref.read(serverEndpointRouterProvider);
   final client = ref.read(apiClientProvider);
   final progress = ref.read(progressQueueProvider);
   final baseUrl = ref.read(playerBaseUrlProvider);
   final user = ref.read(authStateProvider).valueOrNull?.user;
-  final storage = ref.read(tokenStorageProvider);
-  final jar = ref.read(cookieJarProvider);
   final mutations = ref.read(credentialMutationQueueProvider);
   final generation = mutations.generation;
-  final preparer = ref.read(playbackPreparerProvider);
   final coordinator = ref.read(playbackSessionCoordinatorProvider);
   if (user == null) return;
   final entries = songs
@@ -80,29 +72,7 @@ Future<void> insertServerSongs(BuildContext context, WidgetRef ref,
               sourceUri: request.sourceUri.toString(),
               stop: handler.stop);
         },
-        load: (request, current) async {
-          bool wanted() => current() && generation == mutations.generation;
-          if (!wanted()) return null;
-          if (isCompatStreamUrl(request.sourceUri)) {
-            final ready = await preparer
-                .prepare(request.sourceUri,
-                    probe: client.probePlayback, stillWanted: wanted)
-                .ready;
-            if (!wanted()) return null;
-            if (!ready) throw StateError('Playback preparation stopped');
-          }
-          final headers = await accountRequestHeaders(
-              uri: request.sourceUri,
-              baseUrl: baseUrl,
-              storage: storage,
-              cookieJar: jar,
-              mutations: mutations);
-          if (!wanted()) return null;
-          final uri = await router.mediaUri(request.sourceUri);
-          if (!wanted()) return null;
-          return AudioSource.uri(uri,
-              headers: headers.isEmpty ? null : headers);
-        });
+        load: ref.read(cachedAudioLoaderProvider));
     if (!context.mounted || !added || generation != mutations.generation) {
       return;
     }

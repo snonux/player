@@ -452,3 +452,20 @@ available, unavailable and rejected entries before importing once or following
 changes. Following refreshes on server rescans and owner playlist opens; detail
 provides Sync now and Stop following. Stop following retains songs and enables
 manual membership editing. This does not import device-local playlists.
+
+## Automatic playback cache
+
+Settings → Playback cache manages disposable streamed-song copies separately
+from Keep offline. Choose a budget, whole-song buffering or immediate streaming,
+and optional next-song queue prefetch. Usage and cached titles belong to the
+selected server/account. Clear cache leaves kept downloads intact and retains
+any playing cached file until playback releases it. Cancel transfer discards
+partial bytes. Android's app external directory is optional when available;
+stop playback/transfers before switching locations. Browser Settings provides
+the same caching/buffering controls using browser-managed storage.
+
+Replay uses the same unlocked account and quality variant. Online access and
+file identity are checked before cache reuse; server denials never become
+offline permission. Existing queue items can replay cached audio on a network
+failure. Browsing uncached library metadata and cold-start sign-in still need
+the server. These disposable copies do not replace durable Downloads.

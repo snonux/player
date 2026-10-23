@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+const values=new Map(), stores=new Map();
+globalThis.localStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+globalThis.location={origin:'http://player.test'};
+globalThis.document={dispatchEvent:()=>{}};
+Object.defineProperty(globalThis,'navigator',{value:{},configurable:true});
+globalThis.caches={open:async name=>{if(!stores.has(name))stores.set(name,new Map()); const rows=stores.get(name);return {match:async url=>rows.get(url)?.clone(),put:async(url,res)=>{const body=await res.arrayBuffer();rows.set(url,new Response(body,{headers:res.headers}));},delete:async url=>rows.delete(url)};},delete:async name=>stores.delete(name)};
+const {setPlaybackCacheAccount,cacheSong,playbackCacheSource,cachedMediaDetail,releasePlaybackCache}=await import('../playback-cache.js');
+const media={id:7,type:'audio',file_name:'Seven.mp3'}, url='http://player.test/api/media/7/stream';
+const bytes=()=>new Response(new Uint8Array([1,2,3]),{headers:{'content-type':'audio/mpeg','content-length':'3',etag:'one'}});
+setPlaybackCacheAccount(1); globalThis.fetch=async()=>bytes(); await cacheSong(media,url);
+assert.equal(stores.get('player-playback-v1-1').size,1);
+globalThis.fetch=async()=>{throw new TypeError('offline');};
+assert.match(await playbackCacheSource(media,url),/^blob:/);
+assert.equal((await cachedMediaDetail(7,()=>Promise.reject(new TypeError('offline')))).media.id,7);
+for(const status of [401,403,404,410]) {
+  globalThis.fetch=async()=>new Response(null,{status});
+  assert.equal(await playbackCacheSource(media,url),url,`HTTP ${status} must not use blob`);
+  await assert.rejects(cachedMediaDetail(7,()=>Promise.reject(Object.assign(new Error('denied'),{status}))));
+  globalThis.fetch=async()=>bytes(); await cacheSong(media,url);
+}
+await assert.rejects(cachedMediaDetail(7,()=>Promise.reject(new Error('Unauthorized'))));
+setPlaybackCacheAccount(2);globalThis.fetch=async()=>{throw new TypeError('offline');};
+assert.equal(await playbackCacheSource(media,url),url,'another account cannot replay the bytes');
+await assert.rejects(cachedMediaDetail(7,()=>Promise.reject(new TypeError('offline'))));
+setPlaybackCacheAccount(1);globalThis.fetch=async()=>new Response(null,{headers:{etag:'changed'}});
+assert.equal(await playbackCacheSource(media,url),url,'changed rendition must not reuse old bytes');
+assert.equal(stores.get('player-playback-v1-1').size,0);
+globalThis.fetch=async()=>new Response(new Uint8Array([1]),{headers:{'content-type':'audio/mpeg','content-length':'134217729'}});
+await assert.rejects(cacheSong(media,url));assert.equal(stores.get('player-playback-v1-1').size,0,'oversized response not cached');
+releasePlaybackCache();
+console.log('playback cache: offline replay, account/quality URL isolation, HTTP denial, ETag and budget checks passed');
+const storageOpen=caches.open;caches.open=async()=>{throw Error('storage denied');};
+assert.equal(await playbackCacheSource(media,url),url,'unavailable CacheStorage must preserve streaming');caches.open=storageOpen;
+values.set('player-playback-v1-1:index',JSON.stringify({bad:{},worse:{media:null}}));
+assert.equal(await playbackCacheSource(media,url),url,'malformed index does not break streaming');
+values.set('player-playback-v1-1:index','[]');
+assert.equal(await playbackCacheSource(media,url),url,'array index is rejected');
+// Service-worker upgrades retain account cache copies while pruning old shells.
+const {readFile}=await import('node:fs/promises');
+const {runInNewContext}=await import('node:vm');
+const source=await readFile(new URL('../../sw.js',import.meta.url),'utf8');
+const current=/const CACHE = '([^']+)'/.exec(source)[1], events={}, deleted=[];
+runInNewContext(source,{self:{addEventListener:(type,fn)=>events[type]=fn,clients:{claim:async()=>{}}},caches:{keys:async()=>['kiss-old',current,'player-playback-v1-1'],delete:async name=>deleted.push(name)}});
+let activation;events.activate({waitUntil:p=>activation=p});await activation;
+assert.deepEqual(deleted,['kiss-old']);
+console.log('service worker activation retains playback cache and prunes old shell');

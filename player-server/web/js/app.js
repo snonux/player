@@ -1,3 +1,4 @@
+import { initPlaybackCache, releasePlaybackCache, setPlaybackCacheAccount } from './playback-cache.js';
 import { initNavigationPreferences, readNavigationPreferences, coldLanding } from './navigation-preferences.js';
 import { nextMusicSearch, musicQuery, captureSearchView, restoreSearchView, hasSearchView, forgetSearchView } from './music-search.js';
 import { cancelCollectionSelection } from './collection-actions.js';
@@ -182,6 +183,7 @@ async function initApp() {
   });
   const openCollection = name => openAlbums('', '', name === 'artists', name === 'playlists');
   initNavigationPreferences(openCollection);
+  initPlaybackCache(() => { const q = queueState(); return q.entries[q.index + 1]?.media; });
   document.addEventListener('music:song-info', toggleMediaInfo);
   document.addEventListener('music:open-song-album', e => openSongAlbum(e.detail));
   initSearch({
@@ -278,6 +280,7 @@ async function initApp() {
       API.config().catch(() => null),
       API.sets(),
     ]);
+    setPlaybackCacheAccount(cfg?.user_id);
     setMediaPageSize(cfg?.media_page_size);
     state.sets = (sets || []).slice().sort((a, b) => a.name.localeCompare(b.name));
     API.users().then(() => {
@@ -569,6 +572,7 @@ function initChrome() {
 
   document.getElementById('logout-btn')?.addEventListener('click', async () => {
     try {
+      releasePlaybackCache();
       await API.logout();
       location.href = '/login.html';
     } catch {}

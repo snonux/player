@@ -1,3 +1,4 @@
+import { playbackCacheSource, playbackCacheEnabled, cacheSong, releasePlaybackCache } from './playback-cache.js';
 import { initStreamQuality } from './stream-quality.js';
 import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { mediaTitle, musicSubtitle } from './music.js';
@@ -643,6 +644,7 @@ function loadMedia(media, resumeFrom = 0) {
 // library marks session-authenticated library playback in the main window
 // (as opposed to share and popup URLs); see finishPendingSource.
 function showMedia(media, source, thumbnailUrl) {
+  releasePlaybackCache();
   clearPausedReturnHint();
   currentThumbnailUrl = thumbnailUrl;
   sourceEpoch++;
@@ -742,7 +744,8 @@ function showCoverArt(e, thumbnailUrl) {
 // stays empty and the "preparing" status is shown until the server has the
 // rendition, so a 503 never reaches the element as a bogus decode error.
 function startSource(m, media, url, resumeFrom) {
-  if (!/\/compat(?:\?|$)/.test(url)) {
+  const useCache = currentSource?.library && playbackCacheEnabled(media);
+  if (!useCache && !/\/compat(?:\?|$)/.test(url)) {
     attachSource(m, url, resumeFrom);
     return;
   }
@@ -753,10 +756,26 @@ function startSource(m, media, url, resumeFrom) {
   const pending = { controller: new AbortController(), autoplay: false, announced: false };
   pendingSource = pending;
   setPlayerStatus(preparingText(media, ''));
-  waitForCompatStream(url, {
-    signal: pending.controller.signal,
-    onPreparing: (status) => announcePreparing(pending, media, status),
-  }).then((result) => finishPendingSource(pending, m, media, url, resumeFrom, result));
+  if (!useCache) {
+    waitForCompatStream(url, {
+      signal: pending.controller.signal,
+      onPreparing: status => announcePreparing(pending, media, status),
+    }).then(result => finishPendingSource(pending, m, media, url, resumeFrom, result));
+    return;
+  }
+  (async () => {
+    let selected = url;
+    if (useCache) selected = await playbackCacheSource(media, url, pending.controller.signal);
+    const result = /\/compat(?:\?|$)/.test(selected)
+      ? await waitForCompatStream(selected, { signal: pending.controller.signal,
+          onPreparing: status => announcePreparing(pending, media, status) })
+      : { state: 'ready' };
+    finishPendingSource(pending, m, media, selected, resumeFrom, result);
+    if (useCache && result.state === 'ready' && !selected.startsWith('blob:') && !pending.controller.signal.aborted) {
+      void cacheSong(media, url).catch(() => {});
+    }
+  })().catch(error => finishPendingSource(pending, m, media, url, resumeFrom,
+      { state: 'failed', reason: error.name === 'AbortError' ? 'playback stopped' : error.message }));
 }
 
 function attachSource(m, url, resumeFrom) {

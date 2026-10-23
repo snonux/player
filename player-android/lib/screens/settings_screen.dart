@@ -1,3 +1,4 @@
+import '../widgets/playback_cache_settings.dart';
 import '../widgets/navigation_settings.dart';
 import '../widgets/server_endpoint_settings.dart';
 import 'package:flutter/material.dart';
@@ -325,6 +326,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const PresentationSettings(),
                 const SizedBox(height: 24),
                 const NavigationSettings(),
+                const PlaybackCacheSettings(),
 
                 const SizedBox(height: 32),
                 const Divider(),

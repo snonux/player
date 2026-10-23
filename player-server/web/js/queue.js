@@ -1,3 +1,4 @@
+import { cachedMediaDetail } from './playback-cache.js';
 import { SavedQueueSync, savedQueueRequest } from './queue-sync.js';
 import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { queueStorageKey, readQueueSnapshot } from './queue-storage.js';
@@ -50,7 +51,7 @@ async function applySavedSession(remote, operation, edits, intent, scope) {
  const media = new Map();
  try {
   for (const id of new Set(remote.entries.map(e => e.media_id))) {
-   try { const detail = await API.mediaDetail(id); if (detail?.media?.type === 'audio') media.set(id, detail.media); }
+   try { const detail = await cachedMediaDetail(id, () => API.mediaDetail(id)); if (detail?.media?.type === 'audio') media.set(id, detail.media); }
    catch(error) { if (![403,404,410].includes(error.status)) throw error; }
    if (operation !== revision || edits !== queueChanges || scope !== storageKey || !isPlaybackIntent(intent)) return;
   }
@@ -119,7 +120,7 @@ export async function restoreQueue(userId) {
     // Deduplicate requests, never occurrences. A transient error keeps the original snapshot.
     const media = new Map();
     for (const id of new Set(snapshot.entries.map(entry => entry.mediaId))) {
-      try { const detail = await API.mediaDetail(id); media.set(id, detail?.media?.type === 'audio' ? detail.media : null); }
+      try { const detail = await cachedMediaDetail(id, () => API.mediaDetail(id)); media.set(id, detail?.media?.type === 'audio' ? detail.media : null); }
       catch (error) { if ([403, 404, 410].includes(error.status)) media.set(id, null); else throw error; }
       if (operation !== revision) return;
     }

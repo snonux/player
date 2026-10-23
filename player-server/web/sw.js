@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v54';
+const CACHE = 'kiss-v55';
 const ASSETS = [
   '/',
   '/index.html',
@@ -60,6 +60,7 @@ const ASSETS = [
   '/js/music-favorites.js',
   '/js/music-ratings.js',
   '/js/music-listening.js',
+  '/js/playback-cache.js',
   '/js/stream-quality.js',
   '/js/notes.js',
   '/js/admin.js',
@@ -91,7 +92,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => k !== CACHE && !k.startsWith('player-playback-v1-')).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });

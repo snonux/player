@@ -1,7 +1,7 @@
+import '../providers/playback_cache_provider.dart';
 import '../widgets/stream_quality_sheet.dart';
 import '../widgets/equalizer_sheet.dart';
 import '../widgets/loudness_sheet.dart';
-import '../providers/server_endpoint_provider.dart';
 import '../widgets/music_queue_sheet.dart';
 import '../widgets/music_info_dialog.dart';
 import '../api/dio_player_api_client.dart';
@@ -17,7 +17,6 @@ import 'package:just_audio/just_audio.dart';
 import '../api/dio_client.dart';
 import '../models/models.dart';
 import '../services/music_sequence.dart';
-import '../providers/playback_preparer_provider.dart';
 import '../api/player_api_client.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/audio_handler_provider.dart';
@@ -308,7 +307,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
 
     final headers = await _readHeaders(attempt);
     if (headers == null || !_isCurrent(attempt)) return;
-    if (!await _streamIsPlayable(attempt)) return;
+    if (attempt.request is! ServerPlaybackRequest &&
+        !await _streamIsPlayable(attempt)) {
+      return;
+    }
     if (!await _loadAndResume(attempt, headers)) return;
     _startLoadedSource(attempt);
   }
@@ -624,15 +626,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
 
   void _attachMusicSequence(_PlaybackAttempt attempt) {
     final handler = attempt.handler;
-    final endpointRouter = ref.read(serverEndpointRouterProvider);
-    final storage = ref.read(tokenStorageProvider);
-    final jar = ref.read(cookieJarProvider);
-    final mutations = ref.read(credentialMutationQueueProvider);
-    final client = ref.read(apiClientProvider);
-    final preparer = ref.read(playbackPreparerProvider);
     final lease = attempt.lease;
-    final baseUrl =
-        Uri.parse((attempt.request as ServerPlaybackRequest).serverOrigin);
     final coordinator = ref.read(playbackSessionCoordinatorProvider);
     handler.startMusicSequence(
         queueLabel: widget.sequence.firstOrNull?.music?.album ?? 'Album',
@@ -647,29 +641,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         index: _musicStartIndex,
         expand: _expandMusic!,
         changed: lease.updateSource,
-        load: (request, current) async {
-          final sourceUri = await currentServerAudioUri(request, client);
-          if (!current()) return null;
-          if (isCompatStreamUrl(sourceUri)) {
-            final ready = await preparer
-                .prepare(sourceUri,
-                    probe: client.probePlayback, stillWanted: current)
-                .ready;
-            if (!current()) return null;
-            if (!ready) throw StateError('Playback preparation stopped');
-          }
-          final headers = await accountRequestHeaders(
-              uri: sourceUri,
-              baseUrl: baseUrl,
-              storage: storage,
-              cookieJar: jar,
-              mutations: mutations);
-          if (!current()) return null;
-          final transportUri = await endpointRouter.mediaUri(sourceUri);
-          if (!current()) return null;
-          return AudioSource.uri(transportUri,
-              headers: headers.isEmpty ? null : headers);
-        });
+        load: ref.read(cachedAudioLoaderProvider));
     _watchMusicState(handler, lease);
   }
 
@@ -774,19 +746,14 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     Map<String, String> headers,
   ) async {
     try {
-      final transportUri = attempt.request is ServerPlaybackRequest
-          ? await ref
-              .read(serverEndpointRouterProvider)
-              .mediaUri(attempt.request.sourceUri)
-          : attempt.request.sourceUri;
-      if (!_isCurrent(attempt)) return false;
-      await attempt.handler.loadSourceForSession(
-        // A nonnull map, even empty, enables just_audio's HTTP proxy. Content
-        // URIs must reach Android's document provider directly.
-        AudioSource.uri(transportUri,
-            headers: headers.isEmpty ? null : headers),
-        attempt.sourceGeneration,
-      );
+      final source = attempt.request is ServerPlaybackRequest
+          ? await ref.read(cachedAudioLoaderProvider)(
+              attempt.request, () => _isCurrent(attempt))
+          : AudioSource.uri(attempt.request.sourceUri,
+              headers: headers.isEmpty ? null : headers);
+      if (source == null || !_isCurrent(attempt)) return false;
+      await attempt.handler
+          .loadSourceForSession(source, attempt.sourceGeneration);
       return true;
     } catch (error) {
       if (_isCurrent(attempt)) {

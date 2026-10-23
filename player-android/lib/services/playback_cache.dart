@@ -1,0 +1,361 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite/sqflite.dart';
+
+/// Disposable, complete song copies. Kept downloads use a separate repository.
+class PlaybackCache extends ChangeNotifier {
+  PlaybackCache({Directory? directory}) : _directory = directory;
+  Directory? _directory;
+  SharedPreferences? _preferences;
+  final Map<String, Map<String, dynamic>> _rows = {};
+  Future<void>? _opening;
+  Future<void> _tail = Future.value();
+  HttpClient? _client;
+  String? _activeKey;
+  final Set<String> _protectedKeys = {};
+  final Set<String> _invalidated = {};
+  int _epoch = 0;
+  bool _disposed = false;
+  String status = '';
+  bool get busy => _activeKey != null;
+  int get budget => _preferences?.getInt('playback-cache-budget') ?? 128;
+  bool get prefetch =>
+      _preferences?.getBool('playback-cache-prefetch') ?? false;
+  bool get completeBuffer =>
+      _preferences?.getBool('playback-cache-buffer') ?? false;
+  bool get external =>
+      _preferences?.getBool('playback-cache-external') ?? false;
+  Iterable<Map<String, dynamic>> get items => _rows.values;
+  int get bytes => _rows.values.fold(0, (n, r) => n + (r['size'] as int));
+  void _changed() {
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<void> initialize() => _opening ??= _open().catchError((Object e) {
+        _opening = null;
+        throw e;
+      });
+  Future<void> _open() async {
+    _preferences ??= await SharedPreferences.getInstance();
+    if (_directory == null) {
+      String? path;
+      if (external) {
+        path =
+            await const MethodChannel('zone.foo.player_android/playback_cache')
+                .invokeMethod<String>('externalDirectory');
+        if (path == null) {
+          throw StateError(
+              'App external storage is unavailable. Choose internal storage.');
+        }
+      }
+      _directory = Directory(path == null
+          ? '${await getDatabasesPath()}/playback-cache'
+          : '$path/playback-cache');
+    }
+    await _directory!.create(recursive: true);
+    final index = File('${_directory!.path}/index.json');
+    if (await index.exists()) {
+      final data = jsonDecode(await index.readAsString());
+      if (data is Map) {
+        for (final e in data.entries) {
+          if (RegExp(r'^[a-f0-9]{64}$').hasMatch(e.key.toString()) &&
+              e.value is Map) {
+            final row = Map<String, dynamic>.from(e.value);
+            if (row['title'] is String &&
+                row['used'] is int &&
+                row['size'] is int &&
+                (row['size'] as int) > 0 &&
+                row['origin'] is String &&
+                row['user'] is int &&
+                await _file(e.key).exists() &&
+                await _file(e.key).length() == row['size']) {
+              _rows[e.key] = row;
+            }
+          }
+        }
+      }
+    }
+    await for (final entry in _directory!.list(followLinks: false)) {
+      final name = entry.uri.pathSegments.last;
+      if (entry is File &&
+          (name.endsWith('.part') ||
+              (name.endsWith('.audio') &&
+                  !_rows.containsKey(name.split('.').first)))) {
+        await entry.delete();
+      }
+    }
+    await _prune();
+    _changed();
+  }
+
+  String key(String origin, int user, int media, String variant) => sha256
+      .convert(utf8.encode(jsonEncode([origin, user, media, variant])))
+      .toString();
+  File _file(String key, {bool partial = false}) =>
+      File('${_directory!.path}/$key.${partial ? 'part' : 'audio'}');
+  Future<T> _write<T>(Future<T> Function() fn) async {
+    final before = _tail, done = Completer<void>();
+    _tail = done.future;
+    await before;
+    try {
+      return await fn();
+    } finally {
+      done.complete();
+    }
+  }
+
+  Future<void> _save() async {
+    final f = File('${_directory!.path}/index.tmp');
+    await f.writeAsString(jsonEncode(_rows), flush: true);
+    await f.rename('${_directory!.path}/index.json');
+  }
+
+  Future<void> _prune() async {
+    var total = bytes;
+    final entries = _rows.entries.toList()
+      ..sort(
+          (a, b) => (a.value['used'] as int).compareTo(b.value['used'] as int));
+    for (final e in entries) {
+      if (total <= budget * 1048576) break;
+      if (_protectedKeys.contains(e.key)) continue;
+      await _file(e.key).delete();
+      total -= e.value['size'] as int;
+      _rows.remove(e.key);
+    }
+    await _save();
+  }
+
+  Future<Uri?> lookup(String key, {bool protect = true}) async {
+    await initialize();
+    if (budget == 0) return null;
+    return _write(() async {
+      if (_invalidated.contains(key)) return null;
+      final row = _rows[key];
+      if (row == null || !await _file(key).exists()) return null;
+      row['used'] = DateTime.now().millisecondsSinceEpoch;
+      if (protect) _protectedKeys.add(key);
+      await _save();
+      return _file(key).uri;
+    });
+  }
+
+  /// Revocation removes reuse permission before any fallible disk operation.
+  /// A playing file may retain its bytes; subsequent opens cannot find it.
+  Future<void> invalidate(String key) async {
+    _invalidated.add(key);
+    _rows.remove(key);
+    try {
+      await _write(() async {
+        if (!_protectedKeys.contains(key) && await _file(key).exists()) {
+          await _file(key).delete();
+        }
+        await _save();
+      });
+    } catch (_) {
+      // Remove the older permission snapshot if replacing it failed. Playing
+      // file handles stay intact; startup discards these unindexed copies.
+      try {
+        final index = File('${_directory!.path}/index.json');
+        if (await index.exists()) await index.delete();
+      } catch (_) {/* Read-only storage stays invalidated in memory. */}
+      status =
+          'A cached copy was invalidated. Storage cleanup will retry after restart.';
+    }
+    _changed();
+  }
+
+  Future<void> remove(String key) async {
+    await initialize();
+    await _write(() async {
+      if (_protectedKeys.contains(key)) return;
+      if (await _file(key).exists()) await _file(key).delete();
+      _rows.remove(key);
+      await _save();
+    });
+    _changed();
+  }
+
+  void cancel() {
+    ++_epoch;
+    _client?.close(force: true);
+    status = 'Transfer cancelled.';
+    _changed();
+  }
+
+  void playingUri(Uri? uri) {
+    _protectedKeys
+        .removeWhere((key) => _directory == null || _file(key).uri != uri);
+  }
+
+  void release() {
+    _protectedKeys.clear();
+    cancel();
+  }
+
+  Future<void> configure(
+      {int? megabytes, bool? next, bool? buffer, bool? useExternal}) async {
+    try {
+      await initialize();
+    } catch (_) {
+      if (useExternal != false || _protectedKeys.isNotEmpty || busy) rethrow;
+      _preferences ??= await SharedPreferences.getInstance();
+      await _preferences!.setBool('playback-cache-external', false);
+      _directory = null;
+      _opening = null;
+      _rows.clear();
+      await initialize();
+    }
+    cancel();
+    if (megabytes != null) {
+      if (![0, 128, 512, 1024].contains(megabytes)) {
+        throw ArgumentError('Invalid budget');
+      }
+      await _preferences!.setInt('playback-cache-budget', megabytes);
+    }
+    if (next != null) {
+      await _preferences!.setBool('playback-cache-prefetch', next);
+    }
+    if (buffer != null) {
+      await _preferences!.setBool('playback-cache-buffer', buffer);
+    }
+    if (useExternal != null && useExternal != external) {
+      if (_protectedKeys.isNotEmpty || busy) {
+        throw StateError(
+            'Stop playback and transfers before changing storage.');
+      }
+      if (useExternal) {
+        final path =
+            await const MethodChannel('zone.foo.player_android/playback_cache')
+                .invokeMethod<String>('externalDirectory');
+        if (path == null) {
+          throw StateError('App external storage is unavailable.');
+        }
+      }
+      await clear();
+      await _preferences!.setBool('playback-cache-external', useExternal);
+      _directory = null;
+      _opening = null;
+      _rows.clear();
+      await initialize();
+    }
+    await _write(_prune);
+    status = 'Cache settings saved.';
+    _changed();
+  }
+
+  Future<void> clear() async {
+    await initialize();
+    cancel();
+    await _write(() async {
+      for (final key in _rows.keys.toList()) {
+        if (_protectedKeys.contains(key)) continue;
+        if (await _file(key).exists()) await _file(key).delete();
+        _rows.remove(key);
+      }
+      await _save();
+    });
+    status = _protectedKeys.isEmpty
+        ? 'Cache cleared. Kept downloads remain available.'
+        : 'Cache cleared except the playing song. Kept downloads remain available.';
+    _changed();
+  }
+
+  Future<void> download(
+      {required String key,
+      required Uri uri,
+      required Map<String, String> headers,
+      required String title,
+      required String origin,
+      required int userId,
+      required bool Function() authorized}) async {
+    await initialize();
+    if (budget == 0 || !authorized() || _rows.containsKey(key)) return;
+    if (busy) return;
+    final epoch = ++_epoch;
+    _activeKey = key;
+    status = 'Caching $title…';
+    _changed();
+    RandomAccessFile? output;
+    HttpClient? client;
+    bool wanted() => epoch == _epoch && authorized() && !_disposed;
+    try {
+      client = HttpClient()
+        ..autoUncompress = false
+        ..connectionTimeout = const Duration(seconds: 15);
+      _client = client;
+      final request = await client.getUrl(uri);
+      request.followRedirects = false;
+      headers.forEach(request.headers.set);
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
+      if (response.statusCode != 200 ||
+          !(response.headers.contentType?.mimeType.startsWith('audio/') ??
+              false)) {
+        throw const HttpException('Server did not return complete audio.');
+      }
+      final declared = response.contentLength;
+      if (declared > budget * 1048576) {
+        throw StateError('Song exceeds the cache budget.');
+      }
+      output = await _file(key, partial: true).open(mode: FileMode.write);
+      var received = 0;
+      await for (final chunk in response.timeout(const Duration(seconds: 30))) {
+        if (!wanted()) throw StateError('Transfer cancelled.');
+        received += chunk.length;
+        if (received > budget * 1048576) {
+          throw StateError('Song exceeds the cache budget.');
+        }
+        await output.writeFrom(chunk);
+      }
+      if (!wanted() ||
+          received == 0 ||
+          (declared >= 0 && received != declared)) {
+        throw StateError('Incomplete cache copy.');
+      }
+      await output.flush();
+      await output.close();
+      output = null;
+      await _write(() async {
+        if (!wanted()) return;
+        await _file(key, partial: true).rename(_file(key).path);
+        _invalidated.remove(key);
+        _rows[key] = {
+          'title': title,
+          'size': received,
+          'used': DateTime.now().millisecondsSinceEpoch,
+          'origin': origin,
+          'user': userId,
+          'etag': response.headers.value('etag') ?? ''
+        };
+        await _prune();
+      });
+      status = 'Song cached.';
+    } catch (_) {
+      if (wanted()) {
+        status =
+            'Could not cache song. Streaming and kept downloads remain available.';
+      }
+    } finally {
+      client?.close(force: true);
+      if (identical(_client, client)) _client = null;
+      await output?.close();
+      final part = _file(key, partial: true);
+      if (await part.exists()) await part.delete();
+      _activeKey = null;
+      _changed();
+    }
+  }
+
+  String? etag(String key) => _rows[key]?['etag'] as String?;
+  @override
+  void dispose() {
+    _disposed = true;
+    cancel();
+    super.dispose();
+  }
+}

@@ -208,3 +208,18 @@ sort and column choices for title, artist, album, year and duration. Choices are
 remembered in this browser for each server and account; clearing browser storage
 resets them. Unknown metadata sorts last in either direction. Rating,
 last-played and star-date sorting will need their corresponding metadata.
+
+## Automatic playback cache
+
+Settings → Playback cache controls disposable song copies for the current
+account in this browser. Choose a budget, immediate streaming or whole-song
+buffering, and optional next-song queue prefetch. Usage and cached titles are
+shown, with Cancel transfer and Clear cache. Browser storage may be reclaimed;
+its location is managed by Chrome or Firefox. Native Android also offers its
+app external storage directory when available. Kept downloads remain separate.
+
+Complete cached quality variants can replay from an existing queue after a
+network failure while the account is signed in. Online replay rechecks access
+and file identity; HTTP denials never authorize cached playback. Library
+browsing and signing in after reload still need the server. Copying a streaming
+song uses a separate bounded request and may consume additional bandwidth.

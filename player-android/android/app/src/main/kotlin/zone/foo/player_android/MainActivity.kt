@@ -39,6 +39,11 @@ class MainActivity : AudioServiceFragmentActivity() {
                 } else result.notImplemented()
             }
         }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
+            "zone.foo.player_android/playback_cache").setMethodCallHandler { call, result ->
+            if (call.method == "externalDirectory") result.success(getExternalFilesDir(null)?.absolutePath)
+            else result.notImplemented()
+        }
         audioVisuals = AudioVisuals(this, flutterEngine.dartExecutor.binaryMessenger)
         playlistExport = PlaylistExport(this, flutterEngine.dartExecutor.binaryMessenger)
         serverWifi = ServerWifi(this, flutterEngine.dartExecutor.binaryMessenger)
