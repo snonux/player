@@ -1609,6 +1609,31 @@ List all share links created by the authenticated user.
 
 ---
 
+### `PATCH /api/shares/{token}` · `PATCH /api/v1/shares/{token}`
+
+Edit an existing single-file or music collection link. The creator or an admin
+may supply `description` (plain text, at most 1000 Unicode characters; empty
+clears it) and/or `expires_at` (RFC 3339 timestamp). Omitted fields retain their
+stored values. Null values, unknown fields and empty updates return `400`.
+A changed expiry must be in the future; a description-only update preserves the
+exact expiry even for an already expired link. An unchanged supplied expiry is
+also preserved. Extending an expired link permits new viewings only if its
+existing viewing limit still allows them and the source is available.
+
+**Response `200`:** The updated `Share` object. The existing token/URL, creator,
+source snapshot, creation time, `max_uses` and `used_count` remain unchanged.
+Nonempty `description` is included in share objects, My Shares and public share
+metadata, and displayed as plain text by guest clients. Editing does not open a
+viewing, reset uses or renew existing viewing credentials. Shortening expiry
+takes effect immediately on all content requests, including active viewings;
+extending expiry does not extend an already-issued credential's expiry.
+Existing source access, download, revocation and viewing rules remain in effect.
+
+**Status codes:** `200`, `400`, `401`, `403` (foreign non-admin), `404` (missing or
+revoked), `500`.
+
+---
+
 ### `DELETE /api/shares/{token}` · `DELETE /api/v1/shares/{token}`
 
 Revoke a share link. The creator or an admin can revoke it, including after its
@@ -2262,6 +2287,7 @@ toggle undoes itself); new clients write completion edits through
 | `POST` | `progress/status` | session | Mark finished/not-started |
 | `GET` | `in-progress` | session | List in-progress media |
 | `GET` | `shares` | session | List my shares |
+| `PATCH` | `shares/{token}` | session | Edit share description/expiry |
 | `DELETE` | `shares/{token}` | session | Revoke share |
 | `GET` | `podcasts` | session | List podcast feeds |
 | `POST` | `podcasts` | admin | Subscribe to feed |

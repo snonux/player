@@ -701,10 +701,21 @@ class DioPlayerApiClient extends PlayerApiClient
         .toList();
   }
 
-  /// Revokes a share link by its [token].
-  ///
-  /// DELETE /api/v1/shares/{token} — only the creator can revoke their share.
-  /// Returns immediately; callers should remove the share from any local cache.
+  /// Edits the existing link without resetting its token or viewing limits.
+  @override
+  Future<Share> updateShare(String token,
+      {required String description, DateTime? expiresAt}) async {
+    final response = await rawDio.patch<Map<String, dynamic>>(
+      '/api/v1/shares/${Uri.encodeComponent(token)}',
+      data: {
+        'description': description,
+        if (expiresAt != null)
+          'expires_at': expiresAt.toUtc().toIso8601String(),
+      },
+    );
+    return Share.fromJson(response.data!);
+  }
+
   @override
   Future<void> revokeShare(String token) async {
     await rawDio.delete<void>('$_kApiV1/shares/$token');

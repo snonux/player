@@ -500,6 +500,10 @@ class PlayerApiClient implements ProgressSyncClient {
 
   Future<List<Share>> listMyShares() => throw UnimplementedError();
 
+  Future<Share> updateShare(String token,
+          {required String description, DateTime? expiresAt}) =>
+      throw UnimplementedError();
+
   Future<void> revokeShare(String token) => throw UnimplementedError();
 
   // ---------------------------------------------------------------------------

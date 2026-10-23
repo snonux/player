@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
+import '../l10n/music_localizations.dart';
+import 'edit_share_dialog.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
 
@@ -151,6 +153,30 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
     }
   }
 
+  Future<void> _edit(Share share) async {
+    final client = ref.read(apiClientProvider);
+    final updated = await showDialog<Share>(
+        context: context,
+        builder: (_) => EditShareDialog(share: share, client: client));
+    if (!mounted ||
+        updated == null ||
+        !identical(client, ref.read(apiClientProvider))) {
+      return;
+    }
+    setState(() {
+      final index =
+          _shares?.indexWhere((item) => item.token == share.token) ?? -1;
+      if (index >= 0) {
+        _shares![index] = Share.fromJson({
+          ...share.toJson(),
+          ...updated.toJson(),
+          'file_name': share.fileName,
+          'media_type': share.mediaType,
+        });
+      }
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -188,6 +214,7 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
           : _ShareList(
               shares: _shares!,
               onCopyLink: _copyLink,
+              onEdit: _edit,
               onRevoke: _revoke,
               showEndOfList: _loaded,
             ),
@@ -211,12 +238,14 @@ class _ShareList extends StatelessWidget {
   const _ShareList({
     required this.shares,
     required this.onCopyLink,
+    required this.onEdit,
     required this.onRevoke,
     required this.showEndOfList,
   });
 
   final List<Share> shares;
   final void Function(Share share) onCopyLink;
+  final Future<void> Function(Share share) onEdit;
   final Future<void> Function(Share share, int index) onRevoke;
 
   /// When true a footer with "All shares loaded" is shown below the last row.
@@ -256,6 +285,7 @@ class _ShareList extends StatelessWidget {
           share: share,
           index: index,
           onCopyLink: onCopyLink,
+          onEdit: onEdit,
           onRevoke: onRevoke,
         );
       },
@@ -273,12 +303,14 @@ class _ShareTile extends StatelessWidget {
     required this.share,
     required this.index,
     required this.onCopyLink,
+    required this.onEdit,
     required this.onRevoke,
   });
 
   final Share share;
   final int index;
   final void Function(Share share) onCopyLink;
+  final Future<void> Function(Share share) onEdit;
   final Future<void> Function(Share share, int index) onRevoke;
 
   @override
@@ -296,10 +328,20 @@ class _ShareTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text('$expiry · $uses'),
+      subtitle: Text(
+          '${share.description.isEmpty ? '' : '${share.description}\n'}$expiry · $uses',
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis),
+      onTap: () => onEdit(share),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          IconButton(
+            key: Key('share_edit_${share.token}'),
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: context.tr('Edit share'),
+            onPressed: () => onEdit(share),
+          ),
           // Copy-link: writes the share URL to the clipboard.
           IconButton(
             key: Key('share_copy_${share.token}'),

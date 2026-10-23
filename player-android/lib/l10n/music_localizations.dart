@@ -512,4 +512,11 @@ const _german = <String, String>{
   "Use YYYY-MM-DD.": "Verwende JJJJ-MM-TT.",
   "Choose a date.": "Wähle ein Datum.",
   "Choose date (UTC)": "Datum wählen (UTC)",
+  "Edit share": "Freigabe bearbeiten",
+  "Link expires (local time)": "Link läuft ab (Ortszeit)",
+  "Change expiry": "Ablaufzeit ändern",
+  "The link and viewing limits stay the same.": "Der Link und die Aufruflimits bleiben erhalten.",
+  "Description must be at most 1000 characters.": "Die Beschreibung darf höchstens 1000 Zeichen lang sein.",
+  "Choose a future expiry.": "Wähle eine Ablaufzeit in der Zukunft.",
+  "Could not save share. Check your connection and edit permission, then retry.": "Die Freigabe konnte nicht gespeichert werden. Prüfe Verbindung und Bearbeitungsrechte und versuche es erneut.",
 };

@@ -117,6 +117,7 @@ export const API = {
   deleteBookmark: (id, bookmarkId) => api(`/api/media/${id}/bookmarks/${bookmarkId}`, { method: 'DELETE' }),
   share: (id) => api(`/api/media/${id}/shares`, { method: 'POST' }),
   myShares: () => api('/api/shares'),
+  updateShare: (token, patch) => api(`/api/shares/${encodeURIComponent(token)}`, { method: 'PATCH', body: patch }),
   revokeShare: (token) => api(`/api/shares/${token}`, { method: 'DELETE' }),
   tags: () => api('/api/tags'),
   download: (id) => api(`/api/media/${id}/download`),

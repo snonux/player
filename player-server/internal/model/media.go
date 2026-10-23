@@ -104,6 +104,7 @@ type Session struct {
 
 // Share is a time-bounded public link to a media item.
 type Share struct {
+	Description     string    `json:"description,omitempty"`
 	CollectionTitle string    `json:"collection_title,omitempty"`
 	MediaIDs        []int64   `json:"media_ids,omitempty"`
 	Token           string    `json:"token"`

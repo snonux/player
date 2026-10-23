@@ -952,6 +952,7 @@ func (m *MockSessionRepo) DeleteExpiredSessions(ctx context.Context, now time.Ti
 
 // MockShareRepo is a fake ShareRepo.
 type MockShareRepo struct {
+	UpdateShareFunc         func(context.Context, string, *string, *time.Time) (bool, error)
 	CreateShareFunc         func(ctx context.Context, share *model.Share) error
 	GetShareByTokenFunc     func(ctx context.Context, token string) (*model.Share, error)
 	ListSharesByMediaFunc   func(ctx context.Context, mediaID int64) ([]model.Share, error)
@@ -1313,4 +1314,17 @@ func (m *MockMediaRepo) UpdateMediaMusic(ctx context.Context, id int64, music *m
 		return m.UpdateMediaMusicFunc(ctx, id, music, fileSizeBytes)
 	}
 	return nil
+}
+
+// UpdateShare implements ShareRepo.
+func (m *MockStore) UpdateShare(ctx context.Context, token string, description *string, expiresAt *time.Time) (bool, error) {
+	return m.ShareRepo.UpdateShare(ctx, token, description, expiresAt)
+}
+
+// UpdateShare calls UpdateShareFunc when configured.
+func (m *MockShareRepo) UpdateShare(ctx context.Context, token string, description *string, expiresAt *time.Time) (bool, error) {
+	if m.UpdateShareFunc != nil {
+		return m.UpdateShareFunc(ctx, token, description, expiresAt)
+	}
+	return true, nil
 }

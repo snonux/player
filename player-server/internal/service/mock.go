@@ -27,6 +27,7 @@ var (
 
 // MockMediaService is a fake MediaService for testing.
 type MockMediaService struct {
+	UpdateShareFunc         func(context.Context, string, int64, *string, *time.Time) (*model.Share, error)
 	ListBookmarksFunc       func(context.Context, int64, int64) ([]model.Bookmark, error)
 	CreateBookmarkFunc      func(context.Context, int64, int64, float64, string) (*model.Bookmark, error)
 	DeleteBookmarkFunc      func(context.Context, int64, int64, int64) error
@@ -565,4 +566,12 @@ func (m *MockMediaService) GetSharedItemThumbnail(context.Context, ShareAccess) 
 }
 func (m *MockCompatStreamService) SharedItemCompatStream(context.Context, ShareAccess) (*transcode.Rendition, error) {
 	return nil, ErrNotFound
+}
+
+// UpdateShare calls UpdateShareFunc when configured.
+func (m *MockMediaService) UpdateShare(ctx context.Context, token string, userID int64, description *string, expiresAt *time.Time) (*model.Share, error) {
+	if m.UpdateShareFunc != nil {
+		return m.UpdateShareFunc(ctx, token, userID, description, expiresAt)
+	}
+	return nil, errors.New("not implemented")
 }

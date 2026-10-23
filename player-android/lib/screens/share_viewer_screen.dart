@@ -42,9 +42,11 @@ class SharePageMetadata {
     required this.downloadUrl,
     this.view = '',
     this.sourceName = '',
+    this.description = '',
   });
 
   final String fileName;
+  final String description;
   final String sourceName;
   final String type;
 
@@ -87,6 +89,7 @@ class SharePageMetadata {
 
     return SharePageMetadata(
       fileName: Media.fromJson(media).displayTitle,
+      description: map['description'] as String? ?? '',
       sourceName: media['file_name'] as String? ?? '',
       type: (media['type'] as String?) ?? 'video',
       duration: (media['duration'] as num?)?.toDouble(),
@@ -275,7 +278,10 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
 
     if (_items.isNotEmpty) {
       return PublicShareCollection(
-          token: widget.token, title: _collectionTitle, items: _items);
+          token: widget.token,
+          title: _collectionTitle,
+          items: _items,
+          description: _page!.description);
     }
     return _MetadataView(page: _page!, onPlay: _play);
   }
@@ -309,6 +315,7 @@ class _MetadataView extends StatelessWidget {
           _ThumbnailWidget(page: page),
           const SizedBox(height: 16),
 
+          if (page.description.isNotEmpty) Text(page.description),
           // File name — primary text element of the card.
           Text(
             page.fileName,

@@ -100,6 +100,7 @@ func (s *shareService) getSharedCollection(ctx context.Context, access ShareAcce
 	result := items[0]
 	result.Items = items
 	result.CollectionTitle = share.CollectionTitle
+	result.Description = share.Description
 	result.Viewing = viewing
 	return &result, nil
 }

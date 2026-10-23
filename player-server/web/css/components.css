@@ -387,3 +387,6 @@ label {
 .listening-history { overflow-wrap: anywhere; }
 .listening-history ol { padding-inline-start: 1.5rem; }
 .listening-history li { margin-block: .5rem; }
+
+/* Share descriptions retain author line breaks and fit narrow guest pages. */
+.share-description { white-space: pre-wrap; overflow-wrap: anywhere; }

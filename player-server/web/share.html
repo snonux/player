@@ -78,6 +78,7 @@
 <div class="page-wrap">
   <div class="container">
     <h1 id="share-title">Shared Media</h1>
+    <p id="share-description" class="share-description" hidden></p>
     <p id="share-status" class="share-status hidden" role="alert"></p>
     <noscript><p class="share-status">This page needs JavaScript to play the shared file.</p></noscript>
     <aside id="player" class="player open" aria-label="Player">
@@ -147,6 +148,9 @@
     if (!data || !data.media) throw new Error('share metadata is missing');
     const name = data.collection_title || mediaTitle({ ...data.media, file_name: decodedFileName(data.media.file_name) });
     document.getElementById('share-title').textContent = name;
+    const description = document.getElementById('share-description');
+    description.textContent = data.description || '';
+    description.hidden = !data.description;
     document.title = `${name} — Shared Media`;
 
     // Loading this page cost nothing (link previewers load it too). The

@@ -31,8 +31,10 @@ class PublicShareCollection extends ConsumerStatefulWidget {
       required this.token,
       required this.title,
       required this.items,
+      this.description = '',
       this.player});
   final String token, title;
+  final String description;
   final AudioPlayer? player;
   final List<PublicShareItem> items;
   @override
@@ -233,6 +235,7 @@ class _CollectionState extends ConsumerState<PublicShareCollection> {
   Widget build(BuildContext context) {
     return ListView(padding: const EdgeInsets.all(16), children: [
       Text(widget.title, style: Theme.of(context).textTheme.headlineSmall),
+      if (widget.description.isNotEmpty) Text(widget.description),
       Text('${widget.items.length} songs · Shared collection'),
       if (_message != null)
         Padding(

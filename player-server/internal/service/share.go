@@ -228,6 +228,7 @@ func (s *shareService) GetSharedMedia(ctx context.Context, access ShareAccess) (
 	}
 
 	return &GetSharedMediaResult{
+		Description: share.Description,
 		Media:       sharedMediaView(media),
 		HasThumb:    hasThumb,
 		StreamURL:   streamURL,
@@ -298,14 +299,15 @@ func (s *shareService) ListMyShares(ctx context.Context, userID int64) ([]ShareI
 			mediaType = media.Type
 		}
 		result = append(result, ShareInfo{
-			Token:     sh.Token,
-			MediaID:   sh.MediaID,
-			FileName:  fileName,
-			MediaType: mediaType,
-			CreatedAt: sh.CreatedAt,
-			ExpiresAt: sh.ExpiresAt,
-			MaxUses:   sh.MaxUses,
-			UsedCount: sh.UsedCount,
+			Description: sh.Description,
+			Token:       sh.Token,
+			MediaID:     sh.MediaID,
+			FileName:    fileName,
+			MediaType:   mediaType,
+			CreatedAt:   sh.CreatedAt,
+			ExpiresAt:   sh.ExpiresAt,
+			MaxUses:     sh.MaxUses,
+			UsedCount:   sh.UsedCount,
 		})
 	}
 	return result, nil

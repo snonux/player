@@ -454,6 +454,7 @@ func (s *Server) routesProgress() {
 func (s *Server) routesShares() {
 	s.handleBoth(http.MethodPost, "/api/shares/collections", s.requireSession(s.handleCreateCollectionShare))
 	s.handleBoth(http.MethodDelete, "/api/shares/{token}", s.requireSession(s.handleRevokeShare))
+	s.handleBoth(http.MethodPatch, "/api/shares/{token}", s.requireSession(s.handleUpdateShare))
 	s.handleBoth(http.MethodGet, "/api/shares", s.requireSession(s.handleMyShares))
 }
 

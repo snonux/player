@@ -52,7 +52,7 @@ func TestShareCollectionMigrationPreservesLegacy(t *testing.T) {
 	if got == nil || got.MediaID != mid || got.CreatedBy != uid || got.UsedCount != 2 || got.MaxUses == nil || *got.MaxUses != max || !got.ExpiresAt.Equal(legacy.ExpiresAt) || !got.CreatedAt.Equal(now) {
 		t.Fatalf("legacy changed: %+v", got)
 	}
-	coll := &model.Share{Token: "collection", CreatedBy: uid, CreatedAt: now, ExpiresAt: now.Add(time.Hour), CollectionTitle: "Album", MediaIDs: []int64{mid, mid}}
+	coll := &model.Share{Token: "collection", CreatedBy: uid, CreatedAt: now, ExpiresAt: now.Add(time.Hour), CollectionTitle: "Album", Description: "Description stays", MediaIDs: []int64{mid, mid}}
 	if err := store.CreateShare(ctx, coll); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestShareCollectionMigrationPreservesLegacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err = store.GetShareByToken(ctx, coll.Token)
-	if err != nil || got == nil || len(got.MediaIDs) != 2 {
+	if err != nil || got == nil || len(got.MediaIDs) != 2 || got.Description != "Description stays" {
 		t.Fatalf("collection anchored: %+v %v", got, err)
 	}
 	got, err = store.GetShareByToken(ctx, legacy.Token)

@@ -159,6 +159,7 @@ type SharedMediaView struct {
 
 // GetSharedMediaResult wraps media metadata needed to render a share page.
 type GetSharedMediaResult struct {
+	Description     string                 `json:"description,omitempty"`
 	Unavailable     bool                   `json:"unavailable,omitempty"`
 	CollectionTitle string                 `json:"collection_title,omitempty"`
 	Items           []GetSharedMediaResult `json:"items,omitempty"`
@@ -210,14 +211,15 @@ func (r GetSharedMediaResult) WithViewCredential() GetSharedMediaResult {
 
 // ShareInfo augments a share with its associated media metadata.
 type ShareInfo struct {
-	Token     string          `json:"token"`
-	MediaID   int64           `json:"media_id"`
-	FileName  string          `json:"file_name"`
-	MediaType model.MediaType `json:"media_type"`
-	CreatedAt time.Time       `json:"created_at"`
-	ExpiresAt time.Time       `json:"expires_at"`
-	MaxUses   *int            `json:"max_uses,omitempty"`
-	UsedCount int             `json:"used_count"`
+	Description string          `json:"description,omitempty"`
+	Token       string          `json:"token"`
+	MediaID     int64           `json:"media_id"`
+	FileName    string          `json:"file_name"`
+	MediaType   model.MediaType `json:"media_type"`
+	CreatedAt   time.Time       `json:"created_at"`
+	ExpiresAt   time.Time       `json:"expires_at"`
+	MaxUses     *int            `json:"max_uses,omitempty"`
+	UsedCount   int             `json:"used_count"`
 }
 
 // MediaShareService handles creation, validation and revocation of share links.
@@ -225,6 +227,8 @@ type ShareInfo struct {
 var ErrInvalidCollection = &apiError{msg: "invalid collection share", status: http.StatusBadRequest}
 
 type MediaShareService interface {
+	// UpdateShare edits the existing link without resetting its token or viewings.
+	UpdateShare(context.Context, string, int64, *string, *time.Time) (*model.Share, error)
 	GetSharedItemThumbnail(context.Context, ShareAccess) (*FileResult, error)
 	CreateCollectionShare(context.Context, int64, string, []int64, time.Time, *int) (*model.Share, error)
 	ResolveSharedItem(context.Context, ShareAccess) (*model.Media, error)
