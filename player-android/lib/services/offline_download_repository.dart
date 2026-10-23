@@ -269,6 +269,8 @@ class OfflineDownloadRepository {
         }));
     return OfflinePlaybackRequest(
       downloadKey: key,
+      serverOrigin: item.origin,
+      userId: item.userId,
       title: item.title,
       artist: item.music?.artist ?? '',
       album: item.music?.album ?? '',

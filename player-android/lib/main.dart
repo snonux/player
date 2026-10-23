@@ -1,4 +1,5 @@
 import 'services/stream_quality.dart';
+import 'services/playback_widget_observer.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -100,6 +101,18 @@ void main() async {
           );
     }
   }
+
+  final playbackWidgets = PlaybackWidgetObserver(handler, allowMetadata: () {
+    return playbackWidgetMetadataAllowed(handler.currentMetadataRequest,
+        origin: container.read(playerBaseUrlProvider).origin,
+        userId: container.read(authStateProvider).valueOrNull?.user?.id,
+        credentialsEnabled:
+            container.read(credentialMutationQueueProvider).credentialsEnabled);
+  });
+  // Auth and selected-server changes explicitly invalidate launcher identity,
+  // even when no subsequent audio event arrives. Local playback stays usable.
+  container.listen(authStateProvider, (_, __) => playbackWidgets.refresh());
+  container.listen(playerBaseUrlProvider, (_, __) => playbackWidgets.refresh());
 
   handler.artworkLoader = container.read(mediaArtworkLoaderProvider);
   container.read(globalSyncCoordinatorProvider);

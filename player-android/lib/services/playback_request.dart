@@ -123,6 +123,8 @@ final class LocalPlaybackRequest extends PlaybackRequest {
 final class OfflinePlaybackRequest extends PlaybackRequest {
   const OfflinePlaybackRequest({
     required this.downloadKey,
+    this.serverOrigin,
+    this.userId,
     required super.sourceUri,
     required super.title,
     super.sourceName,
@@ -136,6 +138,11 @@ final class OfflinePlaybackRequest extends PlaybackRequest {
   }) : super(identity: 'offline:$downloadKey');
 
   final String downloadKey;
+
+  /// Download ownership for external identity surfaces. Older/test callers
+  /// without an owner remain playable locally but external metadata fails shut.
+  final String? serverOrigin;
+  final int? userId;
 
   @override
   PlaybackSourceKind get kind => PlaybackSourceKind.local;

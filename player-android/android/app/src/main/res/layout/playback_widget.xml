@@ -1,0 +1,31 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="12dp" android:gravity="center_vertical"
+    android:background="@drawable/widget_background">
+    <LinearLayout android:id="@+id/widget_identity" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1" android:gravity="center_vertical"
+        android:background="?android:attr/selectableItemBackground" android:paddingBottom="4dp">
+        <ImageView android:id="@+id/widget_art" android:layout_width="52dp" android:layout_height="52dp"
+            android:layout_marginEnd="12dp" android:scaleType="centerCrop" android:importantForAccessibility="no"
+            android:src="@drawable/ic_widget_music" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/app_name_widget" android:textSize="16sp" android:textStyle="bold"
+                android:textColor="@color/widget_text" android:maxLines="1" android:ellipsize="end" />
+            <TextView android:id="@+id/widget_subtitle" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/widget_empty" android:textSize="13sp" android:textColor="@color/widget_secondary"
+                android:maxLines="2" android:ellipsize="end" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center">
+        <ImageButton android:id="@+id/widget_previous" android:layout_width="48dp" android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackground" android:src="@drawable/ic_widget_previous"
+            android:contentDescription="@string/widget_previous" android:padding="12dp" />
+        <ImageButton android:id="@+id/widget_toggle" android:layout_width="48dp" android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackground" android:src="@drawable/ic_widget_play"
+            android:contentDescription="@string/widget_play" android:padding="12dp" />
+        <ImageButton android:id="@+id/widget_next" android:layout_width="48dp" android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackground" android:src="@drawable/ic_widget_next"
+            android:contentDescription="@string/widget_next" android:padding="12dp" />
+    </LinearLayout>
+</LinearLayout>

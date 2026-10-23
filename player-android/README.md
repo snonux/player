@@ -469,3 +469,30 @@ file identity are checked before cache reuse; server denials never become
 offline permission. Existing queue items can replay cached audio on a network
 failure. Browsing uncached library metadata and cold-start sign-in still need
 the server. These disposable copies do not replace durable Downloads.
+
+## Home-screen playback widget
+
+Long-press an empty area of the Android home screen, choose **Widgets → Player →
+Player playback**, then place the widget. Resize it to fit: narrow widths keep
+readable track text and transport controls; wider widths add artwork. Tap the
+track text or artwork to open Player. Previous, Play/Pause and Next use the same
+active playback handler as notification controls; unavailable actions are dimmed.
+No widget permission or separate account setup is required.
+
+The widget follows active playback in the background, with title, artist,
+album and available cover. Loading and failed playback have explicit labels;
+**Open Player to retry** uses the app's existing Retry control. No active source
+shows **Open Player to choose music**. Choosing music or resuming a saved queue
+requires the app after a cold process start; the widget never silently restores
+credentials or autoplays an old queue. Android launchers can retain the last
+rendered view after abrupt process termination until their next update or tap.
+Widget identity and artwork are kept in memory only and clear on normal session,
+account and engine changes. Account-owned downloaded songs also hide from the
+widget while their original account is locked or another account is selected;
+device documents and public shares stay independent of sign-in. Artwork uses private cached files, with no network
+requests from the launcher. This integration is Android-only; browser playback
+continues to use its existing controls.
+
+Implementation checks pass; launcher placement/resizing, light/dark rendering,
+TalkBack, actual background controls and account/restart boundaries await the
+integrated native acceptance run. See [M56 implementation notes](../docs/music-m56-implementation.md).

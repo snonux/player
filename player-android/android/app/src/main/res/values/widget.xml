@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name_widget">Player</string>
+    <string name="widget_name">Player playback</string>
+    <string name="widget_description">Current track, artwork and playback controls. Open Player to choose music.</string>
+    <string name="widget_empty">Open Player to choose music</string>
+    <string name="widget_loading">Loading…</string>
+    <string name="widget_error">Open Player to retry</string>
+    <string name="widget_previous">Previous track</string>
+    <string name="widget_next">Next track</string>
+    <string name="widget_play">Play</string>
+    <string name="widget_pause">Pause</string>
+    <color name="widget_surface">#F5F7FA</color>
+    <color name="widget_text">#111827</color>
+    <color name="widget_secondary">#4B5563</color>
+</resources>

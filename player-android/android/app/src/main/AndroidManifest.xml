@@ -81,6 +81,11 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+        <receiver android:name=".PlaybackWidgetProvider" android:exported="false"
+            android:label="@string/widget_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/playback_widget_info" />
+        </receiver>
         <!-- Receives hardware media button events (headset play/pause, etc.)
              and forwards them to audio_service. -->
         <receiver
