@@ -131,6 +131,14 @@ class PlayerApiClient implements ProgressSyncClient {
         data: {'album_key': albumKey});
   }
 
+  Future<List<Map<String, dynamic>>> relatedMusic(
+          String kind, String key) async =>
+      ((await _dio.get<List<dynamic>>(
+                      '/api/v1/music/related/$kind/${Uri.encodeComponent(key)}'))
+                  .data ??
+              [])
+          .cast<Map<String, dynamic>>();
+
   Future<Map<String, dynamic>> musicFacets() async =>
       (await _dio.get<Map<String, dynamic>>('/api/v1/music/facets')).data!;
 

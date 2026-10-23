@@ -363,3 +363,12 @@ label {
  .music-table .music-column { display: inline; margin-right: 12px; }
  .music-column-options { right: 0; }
 }
+
+/* Local related music uses native buttons outside the catalog selection scope. */
+.music-related { margin-block: 1rem; }
+.music-related h2 { font-size: 1.1rem; }
+.music-related-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 1rem; }
+.music-related article { padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-surface); min-width: 0; overflow-wrap: anywhere; }
+.music-related .album-cover { width: 5rem; height: 5rem; border-radius: var(--radius-sm); }
+.music-related h3 { font-size: 1rem; margin-block: .5rem; }
+.music-related [role="status"] { display: block; }

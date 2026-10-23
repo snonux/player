@@ -2763,3 +2763,21 @@ saved final position. Response `accepted_music_plays` lists acknowledged IDs.
 Events are idempotent per account/media/ID and merge in the resume/bookmark
 transaction; stale resume clocks do not discard genuine listening events.
 Podcast and M4B events are acknowledged without adding music statistics.
+
+### Related local music (M41)
+
+Authenticated `GET /api/v1/music/related/{kind}/{entity_key}` (also `/api/music/...`)
+returns up to 12 same-kind suggestions. Kind is `song`, `album` or `artist`; keys
+are canonical decimal media IDs or catalog album/artist keys. Each entry contains
+`{kind,key,title,basis:[string],cover_media_id?,song?}`. Song entries include the
+caller-visible media object. `basis` explains shared local tags; it does not claim
+acoustic analysis or use an external provider.
+
+Songs/albums match normalized genres or explicitly credited people; artists match
+genres on credited songs. More shared values rank first, then title/key for stable
+ordering. Results are distinct and exclude the source. All input metadata and
+explanations come from the authenticated account's currently readable music
+catalog. Missing metadata and synthetic artist names never establish similarity.
+A readable source without matches returns `[]`, an inaccessible/missing source
+returns 404, invalid kinds return 400, and library read failures retain the normal
+server error response. Clients show Retry without discarding primary details.

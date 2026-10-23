@@ -1,3 +1,4 @@
+import { mountRelatedMusic } from '../music-related.js';
 import { mediaTitle, musicRows, musicDetailGroups } from '../music.js';
 import { API } from '../api.js';
 import { fmtDateTime, fmtSize } from '../dom.js';
@@ -5,6 +6,7 @@ import { escapeHtml, fmtDur, toast } from '../utils.js';
 import { selectedMediaId } from './media-actions.js';
 
 let callbacks = {};
+let infoGeneration = 0;
 
 export function initMediaInfo(options = {}) {
   callbacks = options;
@@ -47,6 +49,7 @@ export function initMediaInfo(options = {}) {
 }
 
 export function closeMediaInfo() {
+  infoGeneration++;
   document.getElementById('media-info-modal')?.classList.remove('open');
 }
 
@@ -81,6 +84,7 @@ async function openMediaInfo(id) {
   const modal = document.getElementById('media-info-modal');
   const body = document.getElementById('media-info-body');
   if (!modal || !body) return;
+  const generation = ++infoGeneration;
   body.innerHTML = '<p class="text-muted text-sm">Loading...</p>';
   modal.classList.add('open');
   if (document.fullscreenElement && modal.parentNode !== document.fullscreenElement) {
@@ -90,13 +94,16 @@ async function openMediaInfo(id) {
     || document.querySelector('#media-info-modal .modal'))?.focus({ preventScroll: true });
   try {
     const detail = await API.mediaDetail(id);
+    if (generation !== infoGeneration || !isMediaInfoOpen()) return;
     body.innerHTML = renderMediaInfo(detail);
     if (detail?.media?.type === 'audio') {
       const button = document.createElement('button'); button.className='btn btn-ghost'; button.textContent='Open album';
       button.onclick = () => { closeMediaInfo(); document.dispatchEvent(new CustomEvent('music:open-song-album',{detail:id})); };
       body.prepend(button);
+      mountRelatedMusic(body,'song',String(id),()=>generation===infoGeneration && isMediaInfoOpen(),item=>openMediaInfo(item.key));
     }
   } catch (err) {
+    if (generation !== infoGeneration || !isMediaInfoOpen()) return;
     body.innerHTML = `<p class="error-message">${escapeHtml(err.message || 'Failed to load media info')}</p>`;
   }
 }

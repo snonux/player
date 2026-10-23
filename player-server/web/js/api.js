@@ -73,6 +73,7 @@ export const API = {
   musicSearch: params => api(`/api/music/search?${new URLSearchParams(params)}`),
   artists: (params = {}) => api(`/api/music/artists?${new URLSearchParams(params)}`),
   artist: key => api(`/api/music/artists/${encodeURIComponent(key)}`),
+  relatedMusic: (kind, key) => api(`/api/music/related/${kind}/${encodeURIComponent(key)}`),
   albums: (params = {}) => api(`/api/music/albums?${new URLSearchParams(params)}`),
   album: key => api(`/api/music/albums/${encodeURIComponent(key)}`),
   sets: () => api('/api/sets'),

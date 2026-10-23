@@ -1,3 +1,4 @@
+import '../widgets/music_related_section.dart';
 import '../widgets/music_listening_details.dart';
 import '../widgets/music_rating_button.dart';
 import '../widgets/music_rating_filter.dart';
@@ -475,6 +476,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
               )
             ])),
       ],
+      MusicRelatedSection(kind: 'album', entityKey: widget.albumKey!),
     ]);
   }
 

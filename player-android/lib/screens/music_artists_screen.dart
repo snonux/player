@@ -1,3 +1,4 @@
+import '../widgets/music_related_section.dart';
 import '../widgets/music_listening_details.dart';
 import '../widgets/music_rating_button.dart';
 import '../widgets/music_rating_filter.dart';
@@ -256,6 +257,8 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
         (artist['albums'] as List? ?? []).cast<Map<String, dynamic>>();
     return MusicCollectionCatalog(
         key: ValueKey('artist-${widget.artistKey}-$_generation'),
+        footer:
+            MusicRelatedSection(kind: 'artist', entityKey: widget.artistKey!),
         items: albums,
         kind: 'album',
         keyName: 'album_key',

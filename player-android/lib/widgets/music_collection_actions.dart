@@ -193,6 +193,7 @@ class MusicCollectionCatalog extends StatefulWidget {
       required this.nameName,
       required this.itemBuilder,
       this.header,
+      this.footer,
       this.grid = false,
       required this.onRefresh,
       this.emptyMessage = 'No collections available.',
@@ -201,7 +202,7 @@ class MusicCollectionCatalog extends StatefulWidget {
   final String kind, keyName, nameName, emptyMessage;
   final Widget Function(
       Map<String, dynamic>, Widget? checkbox, VoidCallback? toggle) itemBuilder;
-  final Widget? header;
+  final Widget? header, footer;
   final bool grid;
   final ScrollController? scrollController;
   final Future<void> Function() onRefresh;
@@ -294,8 +295,12 @@ class _CatalogState extends State<MusicCollectionCatalog> {
                       : ListView.builder(
                           controller: widget.scrollController,
                           padding: const EdgeInsets.all(16),
-                          itemCount: widget.items.length,
-                          itemBuilder: (_, index) => item(index)))),
+                          itemCount: widget.items.length +
+                              (widget.footer == null ? 0 : 1),
+                          itemBuilder: (_, index) =>
+                              index == widget.items.length
+                                  ? widget.footer!
+                                  : item(index)))),
         ]));
   }
 }

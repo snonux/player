@@ -1,3 +1,4 @@
+import '../widgets/music_related_section.dart';
 import '../services/music_queue.dart';
 import '../widgets/music_metadata_details.dart';
 import '../widgets/server_song_actions.dart';
@@ -544,6 +545,8 @@ class _MediaDetailContent extends StatelessWidget {
               client: client,
             ),
 
+            if (media.type == 'audio')
+              MusicRelatedSection(kind: 'song', entityKey: '${media.id}'),
             const SizedBox(height: 24),
           ],
         ),
