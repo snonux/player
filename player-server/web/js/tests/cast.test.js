@@ -51,10 +51,13 @@ function fakeSdk() {
     remotePlayer,
     controller,
     ended: 0,
+    latePauses: 0,
+    deferredLoad: null,
     startSession() {
       session = {
         getCastDevice: () => ({ friendlyName: 'Den TV' }),
-        loadMedia: async (request) => { loads.push(request); },
+        loadMedia: async (request) => { loads.push(request); await sdk.deferredLoad; },
+        getMediaSession: () => ({ pause: (_request, done) => { sdk.latePauses++; done(); } }),
       };
       contextListeners.SESSION_STATE_CHANGED?.({ sessionState: 'SESSION_STARTED' });
     },
@@ -104,6 +107,7 @@ function fakeSdk() {
       DEFAULT_MEDIA_RECEIVER_APP_ID: 'CC1AD845',
       MediaInfo,
       LoadRequest,
+      PauseRequest: function PauseRequest() {},
       StreamType: { BUFFERED: 'BUFFERED' },
       GenericMediaMetadata: Metadata('generic'),
       MusicTrackMediaMetadata: Metadata('music'),
@@ -210,6 +214,22 @@ async function testSession() {
 
   sdk.remotePlayer.currentTime = 60;
   sdk.emit('CURRENT_TIME_CHANGED');
+  // Expiry pauses an in-flight LOAD, unless a newer explicit Play supersedes it.
+  for (const manualPlay of [false, true]) {
+    let resolveLoad;
+    sdk.deferredLoad = new Promise(resolve => { resolveLoad = resolve; });
+    const loading = cast.castItem(media, 60);
+    await tick(); await tick();
+    const before = sdk.latePauses;
+    cast.pauseCastPlayback();
+    if (manualPlay) { sdk.remotePlayer.isPaused = true; cast.castTogglePlay(); }
+    resolveLoad();
+    await loading;
+    assertEqual(sdk.latePauses - before, manualPlay ? 0 : 1,
+      manualPlay ? 'manual Play supersedes expiry on deferred LOAD' : 'expiry still pauses deferred LOAD without manual Play');
+    sdk.deferredLoad = null;
+    sdk.remotePlayer.isPaused = false;
+  }
   cast.stopCasting();
   assertEqual(JSON.stringify(events.at(-1)), JSON.stringify(['handback', 7, 60]), 'hand-back at the remote position');
   assert(!cast.isCasting(), 'no longer casting');
@@ -219,7 +239,7 @@ async function testSession() {
   // A second session that plays the item to its end.
   sdk.startSession();
   await tick(); await tick();
-  assertEqual(sdk.loads.length, 2, 'second session loads again');
+  assertEqual(sdk.loads.length, 4, 'second session loads again');
   sdk.remotePlayer.isMediaLoaded = false;
   sdk.remotePlayer.playerState = 'IDLE';
   sdk.emit('PLAYER_STATE_CHANGED');

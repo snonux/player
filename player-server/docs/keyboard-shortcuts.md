@@ -106,3 +106,5 @@ checked album songs, or the selected audio file with Play next;
 Song actions (`a` / ⋮) also offer explicit Play now, which inserts and starts
 the songs while preserving the remaining queue. Existing album Play/Enter/tap
 still replaces the queue with the album. Each duplicate is a separate entry.
+
+`Z` focuses Sleep duration in player options (outside typing and dialogs).

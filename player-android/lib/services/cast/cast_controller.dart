@@ -6,6 +6,7 @@ import '../../api/player_api_client.dart';
 import '../playback_request.dart';
 import '../playback_session_coordinator.dart';
 import 'cast_device.dart';
+import '../sleep_timer.dart';
 import 'cast_session.dart';
 
 /// Builds what the receiver plays for a request. Separate from
@@ -101,6 +102,7 @@ class CastEnded {
 /// another item (or signing out) stops the cast.
 class CastController extends ChangeNotifier {
   CastController({
+    this.sleepTimer,
     required PlaybackSessionCoordinator coordinator,
     required CastMediaResolver resolveMedia,
     CastSessionStarter? startSession,
@@ -109,6 +111,7 @@ class CastController extends ChangeNotifier {
         _resolveMedia = resolveMedia,
         _startSession = startSession ?? ((device) => CastSession.start(device));
 
+  final SleepTimer? sleepTimer;
   final PlaybackSessionCoordinator _coordinator;
   final CastMediaResolver _resolveMedia;
   final CastSessionStarter _startSession;
@@ -156,6 +159,7 @@ class CastController extends ChangeNotifier {
       throw const CastStartException(CastFailure.notCastable);
     }
     if (_starting) return;
+    final sleepRevision = sleepTimer?.beginPlaybackIntent();
     _starting = true;
     notifyListeners();
     try {
@@ -173,7 +177,20 @@ class CastController extends ChangeNotifier {
         throw const CastStartException(CastFailure.deviceUnreachable);
       }
       try {
+        // Resolve/connect can outlive expiry. Never issue an autoplay LOAD
+        // once that deadline has already expired.
+        sleepTimer?.check();
+        if (sleepRevision != null &&
+            !sleepTimer!.allowsPlayback(sleepRevision)) {
+          await session.stop();
+          return;
+        }
         await session.load(media, position: position);
+        sleepTimer?.check();
+        if (sleepTimer?.expired == true &&
+            sleepTimer?.revision != sleepRevision) {
+          await session.pause();
+        }
       } catch (_) {
         await session.stop();
         throw const CastStartException(CastFailure.loadFailed);
@@ -224,7 +241,10 @@ class CastController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> play() async => _session?.play();
+  Future<void> play() async {
+    sleepTimer?.resume();
+    await _session?.play();
+  }
 
   Future<void> pause() async => _session?.pause();
 

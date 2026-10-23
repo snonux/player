@@ -1,11 +1,16 @@
 import { API } from './api.js';
-import { hasPendingPlay, initPlayer, loadMediaDirect, requestPlay, togglePlay, currentPlaybackSpeed, setPlaybackSpeed, stepPlaybackSpeed, currentPlaybackLoudness, setPlaybackLoudness, setPlaybackLoudnessContext } from './player.js';
+import { hasPendingPlay, initPlayer, loadMediaDirect, requestPlay, togglePlay, currentPlaybackSpeed, setPlaybackSpeed, stepPlaybackSpeed, currentPlaybackLoudness, setPlaybackLoudness, setPlaybackLoudnessContext, currentSleepDeadline, setSleepDeadline, pausePlayback } from './player.js';
 import { initModalFocus } from './modal-focus.js';
 import { initNotes } from './notes.js';
 import { closeAllModals } from './dom.js';
 import { toast } from './utils.js';
 
 const openerOrigin = window.location.origin;
+document.addEventListener('player:sleep-expired', () => {
+  sourceCycle++;
+  post({ type: 'detach-sleep-expired' });
+  sendState();
+});
 let currentMedia = null;
 let currentIndex = -1;
 let progressInterval = null;
@@ -178,6 +183,7 @@ function loadDetachedMedia(payload) {
   setPlaybackLoudness(payload.loudness, { remoteContext: true });
   loadMediaDirect(currentMedia, payload.streamUrl, payload.thumbnailUrl, resumeFrom);
   setPlaybackSpeed(payload.playbackRate ?? 1);
+  setSleepDeadline(payload.sleepDeadline);
 
   const el = mediaElement();
   if (!el) {
@@ -190,7 +196,7 @@ function loadDetachedMedia(payload) {
   seekWhenReady(el, resumeFrom);
   // requestPlay (playback.js) also covers a compat stream that is still being
   // prepared: playback then starts as soon as the element gets its source.
-  if (payload.play) requestPlay();
+  if (payload.play && !(payload.sleepDeadline && payload.sleepDeadline <= performance.timeOrigin + performance.now())) requestPlay();
   else showPlayPrompt();
   sendState();
 }
@@ -205,7 +211,7 @@ function handleCommand(payload) {
   } else if (action === 'pause') {
     const el = mediaElement();
     if (!el) return;
-    el.pause();
+    pausePlayback();
   } else if (action === 'play') {
     requestPlay();
   } else if (action === 'seek-relative') {
@@ -345,6 +351,7 @@ function currentState() {
     muted: !!el?.muted,
     playbackRate: currentPlaybackSpeed(),
     loudness: currentPlaybackLoudness(),
+    sleepDeadline: currentSleepDeadline(),
   };
 }
 

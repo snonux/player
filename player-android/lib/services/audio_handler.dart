@@ -4,6 +4,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'audio_progress_session.dart';
+import 'sleep_timer.dart';
 import 'music_sequence.dart';
 import 'music_queue.dart';
 import 'music_shuffle.dart';
@@ -81,6 +82,17 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       albumContext: _queueActive &&
           !_queueShuffle &&
           sameLoudnessAlbum(_albumQueue.map((entry) => entry.request.music)));
+  Future<void> Function()? pauseSleepRemote;
+  int _sourceSleepIntent = 0;
+  late final SleepTimer sleepTimer = SleepTimer(onExpire: () async {
+    // Set the latch synchronously before any I/O: delayed automatic loads
+    // cannot turn playback back on after expiry.
+    final localPause = _player.pause();
+    final remotePause = pauseSleepRemote?.call();
+    await localPause;
+    await remotePause;
+    await _progress?.record(force: true);
+  });
   Future<Uri?> Function(PlaybackRequest request, bool Function() current)?
       artworkLoader;
   int _metadataEpoch = 0;
@@ -359,6 +371,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<void> jumpQueue(int index, {bool preserveNext = false}) async {
     if (musicQueue.busy || index < 0 || index >= _albumQueue.length) return;
+    final sleepIntent = sleepTimer.beginPlaybackIntent();
     final retainedNext = preserveNext ? Set<int>.of(_queueNextIds) : <int>{};
     if (!preserveNext) _invalidateQueueNext();
     final entry = _albumQueue[index], claim = _queueClaim, load = _queueLoader;
@@ -377,7 +390,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
             !_albumQueue.contains(entry)) {
           return;
         }
-        beginSourceSession(ownsSource: () => lease.isCurrent);
+        beginSourceSession(
+            ownsSource: () => lease.isCurrent, sleepIntent: sleepIntent);
         _musicEntries = _albumQueue.map((e) => e.request).toList();
         _musicIndex = index;
         _musicWrap = false;
@@ -391,7 +405,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       }
       if (preserveNext) _queueNextIds = retainedNext;
       _queueRestored = false;
-      await _moveTrack(index - _musicIndex, resumePosition: resumePosition);
+      await _moveTrack(index - _musicIndex,
+          resumePosition: resumePosition, playbackIntent: sleepIntent);
       if (operation != _queueOperation) return;
       _queueStatus = _musicState?.error == null
           ? ''
@@ -741,9 +756,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (identical(_completingProgress, progress)) return;
     _completingProgress = progress;
     final generation = _sourceGeneration, cycle = _completionCycle;
+    final sleepIntent = _sourceSleepIntent;
     try {
       await progress.record(force: true, completed: true);
-      if (cycle != _completionCycle ||
+      if (!sleepTimer.allowsPlayback(sleepIntent) ||
+          cycle != _completionCycle ||
           generation != _sourceGeneration ||
           !identical(progress, _progress) ||
           !_canControlSource) {
@@ -756,7 +773,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> _moveTrack(int delta,
-      {Duration? resumePosition, bool completed = false}) async {
+      {Duration? resumePosition,
+      bool completed = false,
+      int? playbackIntent}) async {
     if (_movingTrack || !_canControlSource || _musicIndex < 0) return;
     final repeatOne =
         _queueActive && completed && _queueRepeat == MusicRepeat.one;
@@ -774,6 +793,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         (target < 0 || target >= _musicEntries.length)) {
       return;
     }
+    final sleepIntent = playbackIntent ??
+        (completed ? _sourceSleepIntent : sleepTimer.beginPlaybackIntent());
     if (delta < 0) _invalidateQueueNext();
     _collectionEnded = false;
     _failedMusicDelta = delta;
@@ -849,7 +870,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _musicChanged?.call(request);
       activateSourceSession(generation);
       _publishMusic();
-      unawaited(play());
+      _sourceSleepIntent = sleepIntent;
+      unawaited(play(automatic: true));
     } catch (error) {
       if (current()) {
         _controlsEnabled = true;
@@ -889,7 +911,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   AudioPlayer get player => _player;
 
   /// Invalidates pending source work from the previous audio session.
-  int beginSourceSession({bool Function()? ownsSource}) {
+  int beginSourceSession({bool Function()? ownsSource, int? sleepIntent}) {
+    _sourceSleepIntent = sleepIntent ?? sleepTimer.beginPlaybackIntent();
     clearMediaItem();
     ++_queueRecoveryGeneration;
     if (_queueBusy && _albumQueue.isEmpty) _queueStatus = '';
@@ -999,7 +1022,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// being thrown: callers (the screen, the notification, a headset button)
   /// do not await the outcome, so a thrown error would go unhandled.
   @override
-  Future<void> play() async {
+  Future<void> play({bool automatic = false}) async {
+    sleepTimer.check();
+    final sleepIntent =
+        automatic ? _sourceSleepIntent : sleepTimer.beginPlaybackIntent();
+    if (!sleepTimer.allowsPlayback(sleepIntent)) return;
+    if (!automatic) _sourceSleepIntent = sleepIntent;
     if (!_canControlSource) return;
     final generation = _sourceGeneration;
     await _refreshLoudness();
@@ -1024,6 +1052,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
             savePosition: request.savePosition!,
             markFinished: request.markFinished!);
       }
+      if (!sleepTimer.allowsPlayback(sleepIntent)) return;
       await _player.play();
     } catch (error) {
       _onPlaybackError(error);

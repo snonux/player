@@ -26,6 +26,9 @@ let context = null;
 let remotePlayer = null;
 let remoteController = null;
 let castMediaId = null;
+let pauseRevision = 0;
+let manualRevision = 0;
+let loadRevision = 0;
 let progressTimer = null;
 // Latest receiver position in seconds: saved as progress and handed back to
 // the local player when the session ends.
@@ -168,10 +171,19 @@ function castCurrent() {
 export async function castItem(media, resumeFrom = 0) {
   const session = context?.getCurrentSession();
   if (!session) return false;
+  const revision = pauseRevision;
+  const manual = manualRevision;
+  const load = ++loadRevision;
   try {
     const ticket = await API.castTicket(media.id);
+    if ((revision !== pauseRevision && manual === manualRevision) || load !== loadRevision || context?.getCurrentSession() !== session) return false;
     const fields = castLoadFields(media, ticket, window.location.origin);
     await loadOnReceiver(session, fields, resumeFrom);
+    if (load !== loadRevision || context?.getCurrentSession() !== session) return false;
+    if (revision !== pauseRevision && manual === manualRevision) {
+      session.getMediaSession?.()?.pause(new window.chrome.cast.media.PauseRequest(), () => {}, () => {});
+      return false;
+    }
     castMediaId = media.id;
     lastRemoteTime = resumeFrom;
     startProgressTimer();
@@ -198,7 +210,13 @@ function loadOnReceiver(session, fields, resumeFrom) {
   return session.loadMedia(request);
 }
 
+export function pauseCastPlayback() {
+  pauseRevision++;
+  if (remotePlayer && !remotePlayer.isPaused) remoteController?.playOrPause();
+}
+
 export function castTogglePlay() {
+  manualRevision++;
   remoteController?.playOrPause();
 }
 

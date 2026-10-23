@@ -19,6 +19,8 @@ export function initDetach(options = {}) {
       if (ev.source !== detachWindow) return;
       detachedPlaybackState = mergeDetachedState(detachedPlaybackState, ev.data.state);
       deps.setPlaybackLoudness?.(detachedPlaybackState?.loudness);
+    } else if (ev.data.type === 'detach-sleep-expired' && ev.source === detachWindow) {
+      deps.onSleepExpired?.();
     } else if (ev.data.type === 'detach-prev') {
       deps.triggerPrevious?.({ forcePlay: ev.data.play ?? true });
     } else if (ev.data.type === 'detach-next') {
@@ -135,13 +137,14 @@ function reattachDetached({ closePopup = true } = {}) {
     deps.setPlaybackLoudness?.(state.loudness);
     deps.loadMedia?.(state.media, state.currentTime || 0);
     deps.setPlaybackSpeed?.(state.playbackRate ?? 1);
+    deps.setSleepDeadline?.(state.sleepDeadline);
     const m = deps.currentMediaElement?.();
     if (m) {
       if (typeof state.volume === 'number') m.volume = state.volume;
       m.muted = !!state.muted;
     }
     // requestPlay also covers a compat stream that is not ready yet.
-    if (state.playing) deps.requestPlay?.();
+    if (state.playing && !(state.sleepDeadline && state.sleepDeadline <= performance.timeOrigin + performance.now())) deps.requestPlay?.();
     else if (state.media.type !== 'image') deps.onPausedReattach?.();
   }
 }
@@ -184,6 +187,7 @@ function detachedLoadMessage(media, resumeFrom = 0, play = true) {
     playbackRate: remote?.playbackRate ?? local.playbackRate ?? 1,
     loudness: { settings: remote?.loudness?.settings ?? local.loudness?.settings,
       albumContext: local.loudness?.albumContext === true },
+    sleepDeadline: remote ? remote.sleepDeadline : local.sleepDeadline,
   };
 }
 

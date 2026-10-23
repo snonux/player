@@ -1,4 +1,4 @@
-import { currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
+import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { mediaTitle, musicSubtitle } from './music.js';
 import { createMediaSession } from './media-session.js';
 import { API, redirectToLogin } from './api.js';
@@ -34,12 +34,13 @@ import { mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from './strea
 import { toast } from './utils.js';
 import { initSeekPreview } from './seekPreview.js';
 import { initAudioVisuals } from './audioVisuals.js';
+import { initSleepTimer } from './sleep-timer.js';
 import { initPlaybackSpeed } from './playback-speed.js';
 import { initCompactControls } from './compactControls.js';
 import { initKeyboardAccess } from './keyboard-access.js';
 import { initLyrics, seekLyric } from './lyrics.js';
 import { initPlaybackPersonal } from './playback-personal.js';
-import { castItem, castPosition, castDuration, castSeek, castTogglePlay, initCast, isCasting, stopCasting } from './cast.js';
+import { castItem, castPosition, castDuration, castSeek, castTogglePlay, pauseCastPlayback, initCast, isCasting, stopCasting } from './cast.js';
 
 export {
   cycleCropPosition,
@@ -81,6 +82,7 @@ let lyrics = null;
 let personal = null;
 let osSession = null;
 let playbackSpeed = null;
+let sleepTimer = null;
 let currentThumbnailUrl = '';
 let pausedReturnHint = false;
 
@@ -94,6 +96,7 @@ function currentMediaElement() {
 function setCurrentMediaState(media, index) {
   currentMedia = media;
   personal?.setMedia(media);
+  sleepTimer?.setMedia(media);
   if (Number.isInteger(index)) currentMediaIndex = index;
 }
 
@@ -157,6 +160,7 @@ export function initPlayer(options = {}) {
   playbackSpeed = initPlaybackSpeed({ ...e, ownsSource: () => !isDetached(), remoteStep: delta => {
     postToDetach({ type: 'detach-command', action: 'speed-step', delta }); return true;
   } });
+  sleepTimer = initSleepTimer({ player: e.player, ownsSource: () => !isDetached(), expire: expireSleepTimer });
   initCompactControls(e.player);
   initKeyboardAccess();
   osSession = createMediaSession({ session: globalThis.navigator?.mediaSession, Metadata: globalThis.MediaMetadata,
@@ -179,6 +183,8 @@ export function initPlayer(options = {}) {
     requestPlay,
     setPlaybackSpeed,
     setPlaybackLoudness,
+    setSleepDeadline,
+    onSleepExpired: () => beginPlaybackIntent(),
     triggerPrevious,
     triggerNext,
     triggerNavigate,
@@ -504,6 +510,7 @@ export function seekRelative(seconds) {
 }
 
 export function stopAndClose() {
+  sleepTimer?.cancel();
   clearPausedReturnHint();
   osSession?.clear();
   sourceEpoch++;
@@ -514,6 +521,7 @@ export function stopAndClose() {
   if (reportProgress) document.dispatchEvent?.(new Event('player:closed'));
   audioVisuals?.setMedia(null);
   playbackSpeed?.setMedia(null);
+  sleepTimer?.setMedia(null);
   lyrics?.setMedia(null);
   resetSeekPreview();
   cancelPendingSource();
@@ -560,6 +568,7 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
   document.dispatchEvent?.(new CustomEvent('player:media-opened', { detail: { media } }));
   currentMedia = media;
   personal?.setMedia(media);
+  sleepTimer?.setMedia(media);
   currentMediaIndex = index ?? -1;
   if (isDetached()) {
     // The hidden opener still routes rate shortcuts by the popup's media kind.
@@ -635,6 +644,7 @@ function showMedia(media, source, thumbnailUrl) {
   sourceEpoch++;
   osSession?.clear();
   personal?.setMedia(media);
+  sleepTimer?.setMedia(media);
   resetSeekPreview();
   // Whatever was still being prepared belongs to the previous item.
   cancelPendingSource();
@@ -876,6 +886,19 @@ function playFromSystem() {
   if (m.paused || m.ended) requestPlay();
 }
 
+export function pausePlayback() { pauseFromSystem(); }
+
+function expireSleepTimer() {
+  beginPlaybackIntent();
+  pauseFromSystem();
+  pauseCastPlayback();
+  setPlayerStatus('Sleep timer ended · paused');
+  document.dispatchEvent?.(new Event('player:sleep-expired'));
+}
+
+export function currentSleepDeadline() { return sleepTimer?.deadline() ?? null; }
+export function setSleepDeadline(value) { sleepTimer?.restore(value); sleepTimer?.tick(); }
+
 function pauseFromSystem() {
   if (pendingSource) setPendingPlay(false);
   currentMediaElement()?.pause();
@@ -937,6 +960,7 @@ function seekWhenMetadataReady(m, seconds) {
 }
 
 function updateUI(playing) {
+  if (playing && document.getElementById('player-status')?.textContent === 'Sleep timer ended · paused') setPlayerStatus('');
   osSession?.refresh();
   const e = els();
   isPlaying = playing;
@@ -1176,6 +1200,7 @@ export function currentMediaInfo() { return currentMedia; }
 // castWhenPlayable casts media once the server can stream it: at once for
 // an original stream, after the compat probe for a transcoded item.
 async function castWhenPlayable(media, resumeFrom) {
+  const sleepIntent = currentPlaybackIntent();
   if (media.transcoded) {
     setPlayerStatus(preparingText(media, ''));
     const result = await waitForCompatStream(mediaPlaybackUrl(media));
@@ -1186,7 +1211,7 @@ async function castWhenPlayable(media, resumeFrom) {
       return;
     }
   }
-  if (currentMedia?.id === media.id && isCasting()) await castItem(media, resumeFrom);
+  if (isPlaybackIntent(sleepIntent) && currentMedia?.id === media.id && isCasting()) await castItem(media, resumeFrom);
 }
 
 export function isPlaybackActive() {
@@ -1223,6 +1248,7 @@ function localPlaybackState() {
     muted: !!m?.muted,
     playbackRate: playbackSpeed?.get() ?? 1,
     loudness: currentPlaybackLoudness(),
+    sleepDeadline: currentSleepDeadline(),
   };
 }
 

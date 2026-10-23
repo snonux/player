@@ -32,6 +32,7 @@ import '../widgets/lyrics_panel.dart';
 import '../widgets/audio_cover_art.dart';
 import '../widgets/audio_visuals.dart';
 import '../widgets/cast_controls.dart';
+import '../widgets/sleep_timer_control.dart';
 import '../widgets/playback_loading_view.dart';
 import '../widgets/personal_media_actions.dart';
 import 'cast_screen_mixin.dart';
@@ -263,6 +264,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       });
       return;
     }
+    final sleepIntent =
+        ref.read(audioHandlerProvider).sleepTimer.beginPlaybackIntent();
     ref.read(audioHandlerProvider).clearMediaItem();
     final generation = _initGeneration;
     unawaited(_musicSubscription?.cancel());
@@ -294,8 +297,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       lease: lease,
       generation: generation,
       handler: handler,
-      sourceGeneration:
-          handler.beginSourceSession(ownsSource: () => lease.isCurrent),
+      sourceGeneration: handler.beginSourceSession(
+          ownsSource: () => lease.isCurrent, sleepIntent: sleepIntent),
       stopGeneration: handler.stopGeneration,
     );
     _activeSourceGeneration = attempt.sourceGeneration;
@@ -468,7 +471,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     if (_isCurrent(attempt) &&
         handler.activateSourceSession(attempt.sourceGeneration) &&
         !startPaused) {
-      unawaited(handler.play());
+      unawaited(handler.play(automatic: true));
     }
   }
 
@@ -949,7 +952,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                 ? 'Shared Audio'
                 : 'Audio – ${widget.mediaId}')),
       ),
-      body: casting ? CastPlaybackView(onStop: stopCasting) : _buildBody(),
+      body: Column(children: [
+        SleepTimerControl(timer: ref.read(audioHandlerProvider).sleepTimer),
+        Expanded(
+            child:
+                casting ? CastPlaybackView(onStop: stopCasting) : _buildBody()),
+      ]),
     );
   }
 

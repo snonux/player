@@ -197,6 +197,48 @@ void main() {
     });
   }
 
+  test('Previous at first queue track keeps natural completion advancing',
+      () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    final coordinator = PlaybackSessionCoordinator();
+    PlaybackRequest song(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    await handler.insertQueue(
+        entries: [song(1), song(2)],
+        action: QueueInsertion.now,
+        claim: (request) => coordinator.claim(
+            kind: request.kind, identity: request.identity, stop: handler.stop),
+        load: (request, current) async => AudioSource.uri(request.sourceUri));
+    expect(handler.musicQueue.index, 0);
+    expect(handler.sleepTimer.remaining, isNull);
+    final revision = handler.sleepTimer.revision;
+    final loads = player.loads;
+    await handler.skipToPrevious();
+    expect(handler.musicQueue.index, 0);
+    expect(handler.sleepTimer.revision, revision,
+        reason: 'a transport boundary no-op must retain the source intent');
+    expect(player.loads, loads);
+    player.elapsed = const Duration(seconds: 10);
+    player.processing.add(ProcessingState.completed);
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    expect(handler.musicQueue.index, 1);
+    expect(player.loads, loads + 1);
+    expect(player.running, isTrue);
+    await handler.stop();
+    await player.events.close();
+    await player.processing.close();
+    await player.positions.close();
+    handler.sleepTimer.dispose();
+  });
+
   test('deferred completion rejects same-source seek and replacement epoch',
       () async {
     final player = _Player();
