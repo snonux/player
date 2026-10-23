@@ -339,6 +339,7 @@ void main() {
       );
 
       // Edit the URL field.
+      await tester.ensureVisible(find.byKey(const Key('settings_base_url')));
       await tester.tap(find.byKey(const Key('settings_base_url')));
       await tester.pump();
       await tester.enterText(
@@ -363,6 +364,7 @@ void main() {
         (tester) async {
       final result = await _pumpSettingsScreen(tester);
 
+      await tester.ensureVisible(find.byKey(const Key('settings_base_url')));
       await tester.tap(find.byKey(const Key('settings_base_url')));
       await tester.pump();
       await tester.enterText(

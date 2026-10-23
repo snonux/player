@@ -1,6 +1,9 @@
 import 'services/stream_quality.dart';
+import 'services/headset_preferences.dart';
+import 'providers/headset_preferences_provider.dart';
 import 'services/playback_widget_observer.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
@@ -46,11 +49,16 @@ void main() async {
   // AudioService.init<T> returns the exact T from the builder.  We pass it
   // directly into ProviderScope so [audioHandlerProvider] is resolved without
   // any global mutable state.
-  final audioPlayer = AudioPlayer();
+  // HeadsetPolicy handles noisy and focus events together. Session activation
+  // remains with just_audio so denied audio focus cannot start playback.
+  final headphonePreferences = HeadsetPreferences();
+  await headphonePreferences.restore();
+  final audioPlayer = AudioPlayer(handleInterruptions: false);
   final loudnessEnhancer = SessionLoudnessEffect(audioPlayer);
   final handler = await AudioService.init<PlayerAudioHandler>(
-    builder: () =>
-        PlayerAudioHandler(audioPlayer, loudnessEnhancer: loudnessEnhancer),
+    builder: () => PlayerAudioHandler(audioPlayer,
+        loudnessEnhancer: loudnessEnhancer,
+        headsetPreferences: headphonePreferences),
     config: const AudioServiceConfig(
       // Notification channel name shown in Android Settings → App info.
       androidNotificationChannelName: 'Player Audio',
@@ -71,6 +79,7 @@ void main() async {
   );
 
   await handler.loudness.restore();
+  handler.headset.attach(await AudioSession.instance);
 
   // Flush the active source at lifecycle boundaries while audio keeps playing.
   WidgetsBinding.instance.addObserver(
@@ -82,6 +91,7 @@ void main() async {
   final container = ProviderContainer(
     overrides: [
       audioHandlerProvider.overrideWithValue(handler),
+      headsetPreferencesProvider.overrideWithValue(headphonePreferences),
       serverProgressQueueLifecycleProvider.overrideWithValue(true),
     ],
   );

@@ -15,6 +15,8 @@ import 'playback_session_coordinator.dart';
 import 'playback_request.dart';
 import 'replay_gain.dart';
 import 'loudness_effect.dart';
+import 'headset_policy.dart';
+import 'headset_preferences.dart';
 
 part 'audio_handler_gapless.dart';
 
@@ -45,8 +47,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   ///
   /// The player is injected so that tests can supply a mock without any
   /// platform channels (Dependency Inversion Principle).
-  PlayerAudioHandler(AudioPlayer player, {LoudnessEffect? loudnessEnhancer})
-      : _player = player,
+  PlayerAudioHandler(AudioPlayer player,
+      {LoudnessEffect? loudnessEnhancer,
+      HeadsetPreferences? headsetPreferences})
+      : headsetPreferences = headsetPreferences ?? HeadsetPreferences(),
+        _player = player,
         loudness = ReplayGainController(player, loudnessEnhancer),
         equalizer = EqualizerController(player) {
     unawaited(equalizer.restore());
@@ -86,6 +91,23 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player;
   final ReplayGainController loudness;
   final EqualizerController equalizer;
+  final HeadsetPreferences headsetPreferences;
+  int _transportRevision = 0;
+  late final HeadsetPolicy headset = HeadsetPolicy(
+    preferences: headsetPreferences,
+    isPlaying: () => _player.playing,
+    canResume: () {
+      sleepTimer.check();
+      return _canControlSource &&
+          !sleepTimer.expired &&
+          _player.processingState == ProcessingState.ready &&
+          _musicState?.error == null;
+    },
+    pausePlayback: () => pause(automatic: true),
+    resumePlayback: () => play(automatic: true),
+    volume: () => _player.volume,
+    setVolume: _player.setVolume,
+  );
   final _gapless = _NativeGaplessState();
   Future<AudioSource?> Function(PlaybackRequest, bool Function())?
       prepareGaplessSource;
@@ -99,6 +121,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> Function()? pauseSleepRemote;
   int _sourceSleepIntent = 0;
   late final SleepTimer sleepTimer = SleepTimer(onExpire: () async {
+    headset.suspend();
+    _transportRevision++;
     // Set the latch synchronously before any I/O: delayed automatic loads
     // cannot turn playback back on after expiry.
     final localPause = _player.pause();
@@ -879,6 +903,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         (target < 0 || target >= _musicEntries.length)) {
       return;
     }
+    // A deliberate Next/Previous/queue selection is a new playback intent.
+    // Completion keeps the current policy, and later pause/noisy/focus events
+    // invalidate this transition even while its source loader is pending.
+    if (!completed) headset.userPlaybackIntent();
+    final transport = ++_transportRevision;
     final sleepIntent = playbackIntent ??
         (completed ? _sourceSleepIntent : sleepTimer.beginPlaybackIntent());
     if (delta < 0) _invalidateQueueNext();
@@ -967,6 +996,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       sleepTimer.check();
       if (current() &&
           _canControlSource &&
+          transport == _transportRevision &&
+          headset.allowsAutomaticPlayback &&
           sleepTimer.allowsPlayback(sleepIntent)) {
         ++_completionCycle;
         unawaited(_player.play().catchError(_onPlaybackError));
@@ -1011,6 +1042,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Invalidates pending source work from the previous audio session.
   int beginSourceSession({bool Function()? ownsSource, int? sleepIntent}) {
+    headset.userPlaybackIntent();
+    _transportRevision++;
     _gapless.invalidate();
     _gapless.playlist = null;
     _gapless.transportIntent++;
@@ -1137,6 +1170,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// do not await the outcome, so a thrown error would go unhandled.
   @override
   Future<void> play({bool automatic = false}) async {
+    if (!automatic) headset.userPlaybackIntent();
+    if (automatic && !headset.allowsAutomaticPlayback) return;
+    final transport = ++_transportRevision;
     _gapless.transportIntent++;
     sleepTimer.check();
     final sleepIntent =
@@ -1146,7 +1182,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (!_canControlSource) return;
     final generation = _sourceGeneration;
     await _refreshLoudness();
-    if (generation != _sourceGeneration || !_canControlSource) return;
+    if (generation != _sourceGeneration ||
+        !_canControlSource ||
+        transport != _transportRevision) {
+      return;
+    }
     ++_completionCycle;
     // The visible Retry owns failed album transitions. Native Play must not
     // resume the previous source while the failed target is shown.
@@ -1167,7 +1207,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
             savePosition: request.savePosition!,
             markFinished: request.markFinished!);
       }
-      if (!sleepTimer.allowsPlayback(sleepIntent)) return;
+      if (!sleepTimer.allowsPlayback(sleepIntent) ||
+          transport != _transportRevision) {
+        return;
+      }
       await _player.play();
     } catch (error) {
       _onPlaybackError(error);
@@ -1175,7 +1218,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
-  Future<void> pause() async {
+  Future<void> pause({bool automatic = false}) async {
+    if (!automatic) headset.suspend();
+    _transportRevision++;
     _gapless.transportIntent++;
     await _player.pause();
     await _progress?.record(force: true);
@@ -1188,6 +1233,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
+    headset.suspend();
+    _transportRevision++;
     _gapless.invalidate();
     _gapless.playlist = null;
     _gapless.transportIntent++;

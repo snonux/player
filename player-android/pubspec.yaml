@@ -36,6 +36,7 @@ dependencies:
   # just_audio: cross-platform audio playback with gapless playlists, stream
   # support, and fine-grained playback controls.
   just_audio: ^0.9.42
+  audio_session: ^0.1.25
   # audio_service: runs audio in the background as a foreground service,
   # integrates with Android media notifications and lock-screen controls.
   audio_service: ^0.18.15

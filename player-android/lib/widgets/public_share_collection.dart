@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/media.dart';
+import '../providers/headset_preferences_provider.dart';
+import '../services/headset_policy.dart';
 import '../providers/playback_session_provider.dart';
 import '../providers/public_api_client_provider.dart';
 import '../services/playback_preparer.dart';
@@ -28,15 +30,20 @@ class PublicShareCollection extends ConsumerStatefulWidget {
       {super.key,
       required this.token,
       required this.title,
-      required this.items});
+      required this.items,
+      this.player});
   final String token, title;
+  final AudioPlayer? player;
   final List<PublicShareItem> items;
   @override
   ConsumerState<PublicShareCollection> createState() => _CollectionState();
 }
 
 class _CollectionState extends ConsumerState<PublicShareCollection> {
-  final _player = AudioPlayer();
+  late final _player = widget.player ?? AudioPlayer(handleInterruptions: false);
+  late final HeadsetPolicy _headset;
+  late final Future<void> _headsetReady;
+  int _transport = 0;
   StreamSubscription<PlayerState>? _states;
   StreamSubscription<PlaybackEvent>? _events;
   PlaybackSessionLease? _lease;
@@ -48,6 +55,23 @@ class _CollectionState extends ConsumerState<PublicShareCollection> {
   @override
   void initState() {
     super.initState();
+    _headset = HeadsetPolicy(
+      preferences: ref.read(headsetPreferencesProvider),
+      isPlaying: () => _player.playing,
+      canResume: () =>
+          mounted &&
+          _lease?.isCurrent == true &&
+          !_busy &&
+          _message == null &&
+          _player.processingState == ProcessingState.ready,
+      pausePlayback: () => _pause(automatic: true),
+      resumePlayback: () => _play(automatic: true),
+      volume: () => _player.volume,
+      setVolume: _player.setVolume,
+    );
+    _headsetReady = ref.read(headsetAudioSessionProvider).then((session) {
+      if (mounted) _headset.attach(session);
+    });
     _events = _player.playbackEventStream.listen((_) {},
         onError: (Object _, StackTrace __) {
       if (mounted) {
@@ -65,7 +89,7 @@ class _CollectionState extends ConsumerState<PublicShareCollection> {
           _lease?.isCurrent == true) {
         final next = _adjacent(1);
         if (next >= 0) {
-          unawaited(_select(next));
+          unawaited(_select(next, automatic: true));
         }
       }
     });
@@ -80,8 +104,12 @@ class _CollectionState extends ConsumerState<PublicShareCollection> {
     return -1;
   }
 
-  Future<void> _select(int index) async {
+  Future<void> _select(int index, {bool automatic = false}) async {
+    if (automatic && !_headset.allowsAutomaticPlayback) return;
     if (_busy || index < 0 || widget.items[index].unavailable) return;
+    _headset.cancelResume();
+    if (!automatic) _headset.userPlaybackIntent();
+    ++_transport;
     final operation = ++_generation;
     _preparation?.cancel();
     setState(() {
@@ -90,6 +118,8 @@ class _CollectionState extends ConsumerState<PublicShareCollection> {
       _message = 'Loading song…';
     });
     try {
+      await _headsetReady;
+      if (!mounted || operation != _generation) return;
       final client = ref.read(publicApiClientProvider);
       final path = Uri.parse(widget.items[index].path);
       // Never pass an arbitrary server-supplied URL to the native player.
@@ -112,7 +142,12 @@ class _CollectionState extends ConsumerState<PublicShareCollection> {
           sourceUri: uri.toString(),
           stop: () async {
             final externallyStopped = _lease != null;
-            if (externallyStopped) ++_generation;
+            _headset.cancelResume();
+            if (externallyStopped) {
+              _headset.suspend();
+              ++_transport;
+              ++_generation;
+            }
             _lease = null;
             _preparation?.cancel();
             await _player.stop();
@@ -137,11 +172,7 @@ class _CollectionState extends ConsumerState<PublicShareCollection> {
         _busy = false;
         _message = null;
       });
-      unawaited(_player.play().catchError((Object _) {
-        if (current()) {
-          setState(() => _message = 'Could not play song. Select it to retry.');
-        }
-      }));
+      unawaited(_play(automatic: true));
     } catch (_) {
       if (mounted && operation == _generation) {
         setState(() {
@@ -153,9 +184,42 @@ class _CollectionState extends ConsumerState<PublicShareCollection> {
     }
   }
 
+  Future<void> _pause({bool automatic = false}) async {
+    if (!automatic) _headset.suspend();
+    ++_transport;
+    await _player.pause();
+  }
+
+  Future<void> _play({bool automatic = false}) async {
+    if (!automatic) _headset.userPlaybackIntent();
+    final transport = ++_transport;
+    final generation = _generation;
+    bool current() =>
+        mounted &&
+        _lease?.isCurrent == true &&
+        generation == _generation &&
+        transport == _transport &&
+        _headset.allowsAutomaticPlayback;
+    if (!current()) return;
+    try {
+      if (_player.processingState == ProcessingState.completed) {
+        await _player.seek(Duration.zero);
+      }
+      if (!current()) return;
+      await _player.play();
+    } catch (_) {
+      if (current()) {
+        setState(() => _message = 'Could not play song. Select it to retry.');
+      }
+    }
+  }
+
   @override
   void dispose() {
     ++_generation;
+    ++_transport;
+    _headset.suspend();
+    _headset.dispose();
     _preparation?.cancel();
     unawaited(_states?.cancel());
     unawaited(_events?.cancel());
@@ -192,18 +256,9 @@ class _CollectionState extends ConsumerState<PublicShareCollection> {
                           widget.items.indexWhere((item) => !item.unavailable);
                       if (first >= 0) await _select(first);
                     } else if (_player.playing) {
-                      await _player.pause();
+                      await _pause();
                     } else {
-                      if (_player.processingState ==
-                          ProcessingState.completed) {
-                        await _player.seek(Duration.zero);
-                      }
-                      unawaited(_player.play().catchError((Object _) {
-                        if (mounted) {
-                          setState(() => _message =
-                              'Could not play song. Select it to retry.');
-                        }
-                      }));
+                      unawaited(_play());
                     }
                   },
             icon: Icon(_player.playing ? Icons.pause : Icons.play_arrow),

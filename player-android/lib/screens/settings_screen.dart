@@ -1,4 +1,5 @@
 import '../widgets/playback_cache_settings.dart';
+import '../widgets/headset_settings.dart';
 import '../widgets/navigation_settings.dart';
 import '../widgets/server_endpoint_settings.dart';
 import 'package:flutter/material.dart';
@@ -229,6 +230,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const SizedBox(height: 12),
                 const _ThemeToggle(),
                 const PresentationSettings(),
+                const SizedBox(height: 24),
+                const HeadsetSettings(),
                 const SizedBox(height: 32),
                 if (settingsAsync.valueOrNull?.configurationError != null)
                   Text(
@@ -324,6 +327,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                 const _ThemeToggle(),
                 const PresentationSettings(),
+                const SizedBox(height: 24),
+                const HeadsetSettings(),
                 const SizedBox(height: 24),
                 const NavigationSettings(),
                 const PlaybackCacheSettings(),
