@@ -633,12 +633,26 @@ clients can paginate consistently, and `podcast_sync` (`1`): the server
 implements `POST /api/v1/podcasts/sync` with subscription and episode
 registers. A client that does not find `podcast_sync` (an older server) runs
 podcasts standalone for that account, keeps media sync working and shows no
-podcast sync error.
+podcast sync error. When present, `subsonic` describes the optional
+Subsonic/OpenSubsonic `/rest` surface (`enabled`, `base_path`, versions). It
+never includes credentials.
 
 **Response `200`:**
 
 ```json
-{ "media_page_size": 100, "podcast_sync": 1, "user_id": 1 }
+{
+  "media_page_size": 100,
+  "podcast_sync": 1,
+  "user_id": 1,
+  "subsonic": {
+    "enabled": false,
+    "base_path": "/rest",
+    "api_version": "1.16.1",
+    "open_subsonic": true,
+    "server_type": "Player",
+    "server_version": "0.8.2"
+  }
+}
 ```
 
 `user_id` is the authenticated account ID, for locally scoped queue recovery.
@@ -646,6 +660,38 @@ It is returned by both prefixes and does not expose credentials or another
 account’s queue. Clients without this field leave local queue recovery disabled.
 
 **Status codes:** `200`, `401`
+
+---
+
+## Subsonic / OpenSubsonic (optional A01a)
+
+When `SUBSONIC_ENABLED=true`, Player exposes a compatibility surface under
+`/rest/{action}` and `/rest/{action}.view` (GET and POST). Custom Player APIs
+are unchanged. Advertise status via `GET /api/config` → `subsonic`.
+
+**Auth (never log secrets):**
+
+| Method | Parameters | Notes |
+| --- | --- | --- |
+| Password | `u`, `p` (plain or `enc:` hex) | Player account password |
+| API key | `apiKey` | Player Bearer API token |
+| API key as password | `u`, `p=<token>` | OpenSubsonic-compatible |
+| MD5 token | `u`, `t`, `s` | **Not supported** (error 41); bcrypt-only storage |
+
+Also require `c` (client name) and `v` (protocol version). Format: `f=json` or
+XML (default).
+
+**A01a actions:** `ping`, `getLicense`, `getOpenSubsonicExtensions` (public),
+`getMusicFolders`, `getIndexes`, `getArtists`, `getArtist`, `getAlbum`,
+`getSong`, `search2`, `search3`. Music folders are the caller’s permitted
+non-podcast sets; browse/search reuse music catalog ACLs. Streaming and later
+Subsonic features are out of this slice.
+
+```bash
+# Enable on the server, then:
+curl -s 'http://localhost:8080/rest/ping.view?u=alice&p=secret&v=1.16.1&c=curl&f=json'
+curl -s 'http://localhost:8080/rest/search3.view?apiKey=pt_xxx&v=1.16.1&c=curl&f=json&query=Harbour'
+```
 
 ---
 

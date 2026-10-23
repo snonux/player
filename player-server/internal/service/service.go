@@ -330,6 +330,9 @@ type AuthService interface {
 	Bootstrap(ctx context.Context, username, password string) (*AuthResult, error)
 	// Login authenticates a user and creates a session.
 	Login(ctx context.Context, username, password string) (*AuthResult, error)
+	// VerifyPassword authenticates username/password without creating a session.
+	// Used by optional Subsonic/OpenSubsonic clients (A01a).
+	VerifyPassword(ctx context.Context, username, password string) (*model.User, error)
 	// CreateAPIToken creates a hashed API token and returns the one-time plaintext value.
 	CreateAPIToken(ctx context.Context, userID int64, name string, expiresAt *time.Time) (*CreateAPITokenResult, error)
 	// ListAPITokens returns API tokens owned by a user.

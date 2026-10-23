@@ -69,6 +69,7 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 		{"SECURE_COOKIES", "false"},
 		{"PLAYER_CORS_ORIGINS", " http://localhost:5173,https://player.example.com ,, "},
 		{"PLUGIN_DIR", "/tmp/player-plugins"},
+		{"SUBSONIC_ENABLED", "true"},
 	})
 
 	cfg, err := LoadConfig()
@@ -77,6 +78,9 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 	}
 	if cfg.PluginDir != "/tmp/player-plugins" {
 		t.Errorf("PluginDir: expected %q, got %q", "/tmp/player-plugins", cfg.PluginDir)
+	}
+	if !cfg.SubsonicEnabled {
+		t.Error("SubsonicEnabled: expected true")
 	}
 	if cfg.Port != 9090 {
 		t.Errorf("Port: expected 9090, got %d", cfg.Port)
@@ -241,6 +245,7 @@ func clearEnv() {
 		"PROXY_AUTH_TRUSTED_SOURCES", "PROXY_AUTH_USER_HEADER", "PROXY_AUTH_LOGOUT_URL",
 		"MUSIC_ENRICHMENT_URL",
 		"PLUGIN_DIR",
+		"SUBSONIC_ENABLED",
 	} {
 		os.Unsetenv(k)
 	}

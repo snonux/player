@@ -23,8 +23,29 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"user_id":         userIDFromContext(r),
 		"podcast_sync":    podcastSyncVersion,
 		"auth":            s.authModeInfo(),
+		"subsonic":        s.subsonicStatusInfo(),
 	}
 	writeJSON(w, http.StatusOK, body)
+}
+
+// subsonicStatusInfo is the enable/status surface for external Subsonic clients.
+// Credentials are never included.
+func (s *Server) subsonicStatusInfo() map[string]any {
+	enabled := s.cfg != nil && s.cfg.SubsonicEnabled
+	info := map[string]any{
+		"enabled":        enabled,
+		"base_path":      "/rest",
+		"api_version":    "1.16.1",
+		"open_subsonic":  true,
+		"server_type":    "Player",
+		"server_version": internal.Version,
+	}
+	if enabled {
+		info["extensions"] = []string{"apiKeyAuthentication", "formPost"}
+		info["auth"] = []string{"password", "enc_password", "apiKey"}
+		info["note"] = "Connect DSub/Tempo (or other Subsonic clients) to this server URL. Prefer apiKey (Player API token) or username+password; MD5 token auth is not supported with bcrypt passwords. Revoke access via Settings › API Tokens or by changing the account password."
+	}
+	return info
 }
 
 // authModeInfo describes configured sign-in modes for clients and the admin UI.

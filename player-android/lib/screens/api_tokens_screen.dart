@@ -342,11 +342,60 @@ class _ApiTokensScreenState extends ConsumerState<ApiTokensScreen> {
       return _ErrorView(message: _error!, onRetry: _load);
     }
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: _tokens == null || _tokens!.isEmpty
-          ? const _EmptyView()
-          : _TokenList(tokens: _tokens!, onRevoke: _revokeToken),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SubsonicClientsNote(),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: _tokens == null || _tokens!.isEmpty
+                ? const _EmptyView()
+                : _TokenList(tokens: _tokens!, onRevoke: _revokeToken),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Connection instructions for optional Subsonic/OpenSubsonic clients (A01a).
+///
+/// Credentials are never shown; revoke via the token list or by changing the
+/// account password. Status/enablement comes from the server `/api/config`
+/// `subsonic` object when operators set `SUBSONIC_ENABLED=true`.
+class _SubsonicClientsNote extends StatelessWidget {
+  const _SubsonicClientsNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Subsonic clients',
+              key: const Key('api_tokens_subsonic_title'),
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'When the server has Subsonic enabled, point DSub, Tempo, or another '
+              'Subsonic client at this Player URL (path /rest). Prefer a token from '
+              'this screen as the apiKey (or as the password with your username). '
+              'Revoke a token here to disconnect that client. Passwords are never shown.',
+              key: const Key('api_tokens_subsonic_note'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

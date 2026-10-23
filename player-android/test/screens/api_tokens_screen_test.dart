@@ -743,6 +743,9 @@ void main() {
       expect(find.byKey(const Key('api_tokens_empty')), findsOneWidget);
       expect(find.byKey(const Key('api_tokens_list')), findsNothing);
       expect(find.byKey(const Key('api_tokens_loading')), findsNothing);
+      expect(find.byKey(const Key('api_tokens_subsonic_title')), findsOneWidget);
+      expect(find.byKey(const Key('api_tokens_subsonic_note')), findsOneWidget);
+      expect(find.textContaining('Subsonic clients'), findsOneWidget);
     });
   });
 

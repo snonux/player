@@ -61,6 +61,8 @@ type Server struct {
 	pluginSvc     service.PluginService
 	podcastSvc    service.PodcastEpisodeService
 	podcastSync   service.PodcastSyncService
+	// subsonicSvc adapts the music catalog for optional /rest clients (A01a).
+	subsonicSvc   *service.SubsonicService
 	streamer      service.MediaStreamer
 	staticFS      http.FileSystem
 	shareRenderer *web.SharePageRenderer
@@ -145,6 +147,10 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 	if deps.Services.Media.Presence == nil && deps.Store != nil && deps.Services.Media.Browse != nil {
 		deps.Services.Media.Presence = service.NewMusicPresenceService(deps.Store, deps.Services.Media.Browse, deps.Clock)
 	}
+	var subsonicSvc *service.SubsonicService
+	if deps.Config.SubsonicEnabled && deps.Services.Media.Browse != nil {
+		subsonicSvc = service.NewSubsonicService(deps.Services.Media.Browse)
+	}
 	if deps.CastTickets == nil {
 		signer, err := auth.NewCastTicketSigner(deps.Clock)
 		if err != nil {
@@ -167,6 +173,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		pluginSvc:     deps.Services.Plugins,
 		podcastSvc:    deps.Services.Podcast,
 		podcastSync:   deps.Services.PodcastSync,
+		subsonicSvc:   subsonicSvc,
 		streamer:      deps.MediaStreamer,
 		staticFS:      deps.StaticFS,
 		shareRenderer: web.NewSharePageRenderer(deps.StaticFS),
@@ -492,6 +499,7 @@ func (s *Server) routes() {
 	s.routesHTML()
 	s.routesAuth()
 	s.routesConfig()
+	s.routesSubsonic()
 	s.routesSets()
 	s.routesMedia()
 	s.routesRadio()
@@ -500,6 +508,15 @@ func (s *Server) routes() {
 	s.routesShares()
 	s.routesAdmin()
 	s.routesPodcast()
+}
+
+// routesSubsonic wires the optional Subsonic/OpenSubsonic /rest surface (A01a).
+// Routes are always registered so disabled servers return a protocol error
+// instead of falling through to session auth. Auth is enforced per request.
+func (s *Server) routesSubsonic() {
+	s.mw.RegisterPublicPrefix("/rest/")
+	s.mux.HandleFunc("GET /rest/{action}", s.handleSubsonic)
+	s.mux.HandleFunc("POST /rest/{action}", s.handleSubsonic)
 }
 
 // routesPodcast wires the podcast API routes.

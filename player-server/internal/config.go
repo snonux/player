@@ -54,8 +54,11 @@ type Config struct {
 	// PluginDir is an optional directory of installed WASM plugins
 	// (each subdirectory has manifest.json + entry wasm). Empty disables
 	// discovery; music playback never requires plugins.
-	PluginDir              string
-	Port                   int
+	PluginDir string
+	// SubsonicEnabled turns on the optional Subsonic/OpenSubsonic /rest
+	// compatibility surface (A01a). Default false; Player custom APIs stay intact.
+	SubsonicEnabled bool
+	Port            int
 	MediaRoot              string
 	DBPath                 string
 	MaxUploadSizeMB        int
@@ -218,6 +221,18 @@ func loadSecureCookies(cfg *Config) error {
 	return nil
 }
 
+// loadSubsonicEnabled reads SUBSONIC_ENABLED from the environment.
+func loadSubsonicEnabled(cfg *Config) error {
+	if v := os.Getenv("SUBSONIC_ENABLED"); v != "" {
+		b, err := strconv.ParseBool(strings.TrimSpace(v))
+		if err != nil {
+			return fmt.Errorf("invalid SUBSONIC_ENABLED: %w", err)
+		}
+		cfg.SubsonicEnabled = b
+	}
+	return nil
+}
+
 // loadCORSSettings reads comma-separated CORS origins from the environment.
 func loadCORSSettings(cfg *Config) {
 	if v := os.Getenv("PLAYER_CORS_ORIGINS"); v != "" {
@@ -261,6 +276,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if err := loadSecureCookies(cfg); err != nil {
+		return nil, err
+	}
+
+	if err := loadSubsonicEnabled(cfg); err != nil {
 		return nil, err
 	}
 

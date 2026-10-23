@@ -72,26 +72,33 @@ async function refreshAdmin() {
     const [users, perms, cfg] = await Promise.all([API.users(), API.permissions(), API.config()]);
     renderUsers(users);
     renderPermissions(perms);
-    renderAuthHelp(cfg?.auth);
+    renderAuthHelp(cfg?.auth, cfg?.subsonic);
   } catch (err) { toast(err.message, 'error'); }
 }
 
-function renderAuthHelp(auth) {
+function renderAuthHelp(auth, subsonic) {
   const el = document.getElementById('admin-auth-help');
   if (!el) return;
   if (!auth) {
     el.textContent = 'Authentication settings are unavailable.';
     return;
   }
+  let text;
   if (!auth.proxy) {
-    el.textContent = 'Sign-in modes: password and Bearer API tokens. Reverse-proxy authentication is off (set PROXY_AUTH_TRUSTED_SOURCES to enable). Create Player usernames that match IdP users before enabling proxy mapping.';
-    return;
+    text = 'Sign-in modes: password and Bearer API tokens. Reverse-proxy authentication is off (set PROXY_AUTH_TRUSTED_SOURCES to enable). Create Player usernames that match IdP users before enabling proxy mapping.';
+  } else {
+    const header = auth.proxy_auth?.user_header || 'Remote-User';
+    const logout = auth.proxy_auth?.logout_url
+      ? ` Logout redirects to ${auth.proxy_auth.logout_url}.`
+      : ' No PROXY_AUTH_LOGOUT_URL configured — proxy sessions may return immediately after logout.';
+    text = `Reverse-proxy authentication is on. Trusted proxies may set ${header} to a Player username (exact match; accounts are not auto-created). Password and Bearer token sign-in still work. Untrusted clients cannot spoof ${header}.${logout}`;
   }
-  const header = auth.proxy_auth?.user_header || 'Remote-User';
-  const logout = auth.proxy_auth?.logout_url
-    ? ` Logout redirects to ${auth.proxy_auth.logout_url}.`
-    : ' No PROXY_AUTH_LOGOUT_URL configured — proxy sessions may return immediately after logout.';
-  el.textContent = `Reverse-proxy authentication is on. Trusted proxies may set ${header} to a Player username (exact match; accounts are not auto-created). Password and Bearer token sign-in still work. Untrusted clients cannot spoof ${header}.${logout}`;
+  if (subsonic?.enabled) {
+    text += ` Subsonic/OpenSubsonic is on at ${subsonic.base_path || '/rest'} (API ${subsonic.api_version || '1.16.1'}). External clients use username+password or an API token as apiKey; revoke tokens in Settings › API Tokens. Credentials are never shown here.`;
+  } else {
+    text += ' Subsonic compatibility is off (set SUBSONIC_ENABLED=true to enable /rest for DSub/Tempo).';
+  }
+  el.textContent = text;
 }
 
 function renderUsers(users) {

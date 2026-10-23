@@ -77,6 +77,21 @@ func (s *authService) Bootstrap(ctx context.Context, username, password string) 
 
 // Login authenticates a user and creates a session.
 func (s *authService) Login(ctx context.Context, username, password string) (*AuthResult, error) {
+	user, err := s.VerifyPassword(ctx, username, password)
+	if err != nil {
+		return nil, err
+	}
+
+	sessID, err := s.sm.CreateSession(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("create session: %w", err)
+	}
+
+	return &AuthResult{User: user, SessionID: sessID}, nil
+}
+
+// VerifyPassword authenticates username/password without creating a session.
+func (s *authService) VerifyPassword(ctx context.Context, username, password string) (*model.User, error) {
 	user, err := s.store.GetUserByUsername(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
@@ -87,13 +102,7 @@ func (s *authService) Login(ctx context.Context, username, password string) (*Au
 	if err := s.hasher.Compare(user.PasswordHash, password); err != nil {
 		return nil, ErrInvalidCredentials
 	}
-
-	sessID, err := s.sm.CreateSession(ctx, user.ID)
-	if err != nil {
-		return nil, fmt.Errorf("create session: %w", err)
-	}
-
-	return &AuthResult{User: user, SessionID: sessID}, nil
+	return user, nil
 }
 
 // CreateAPIToken creates a hashed API token and returns the one-time plaintext value.

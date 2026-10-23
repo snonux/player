@@ -250,6 +250,7 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 | `PROXY_AUTH_TRUSTED_SOURCES` | unset (disabled) | comma-separated CIDRs and optional `@` | Enables reverse-proxy authentication for peers in these ranges (`@` = UNIX socket). Empty keeps password/Bearer-only auth. |
 | `PROXY_AUTH_USER_HEADER` | `Remote-User` when proxy auth is on | non-empty header name | Header trusted proxies set to the Player username (exact `users.username` match; no auto-create). Requires `PROXY_AUTH_TRUSTED_SOURCES`. |
 | `PROXY_AUTH_LOGOUT_URL` | unset | absolute URL | When set with proxy auth, `POST /api/logout` returns `{"logout_url"}` for IdP logout. Requires `PROXY_AUTH_TRUSTED_SOURCES`. |
+| `SUBSONIC_ENABLED` | `false` | `true` / `false` | Optional Subsonic/OpenSubsonic `/rest` compatibility (A01a auth + library browse/search). Off by default; Player `/api` routes stay intact. |
 
 **Reverse-proxy auth:** only the immediate peer (`RemoteAddr`) is checked — never `X-Forwarded-For`. The proxy must strip client-supplied user headers and set the configured header only after authentication. Untrusted clients forging the header are ignored. See `docs/api.md` (Authentication §3).
 

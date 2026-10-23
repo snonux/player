@@ -374,11 +374,12 @@ func (m *MockAdminService) RevokePermission(ctx context.Context, setID, userID i
 
 // MockAuthService is a fake AuthService for testing.
 type MockAuthService struct {
-	BootstrapFunc          func(ctx context.Context, username, password string) (*AuthResult, error)
-	LoginFunc              func(ctx context.Context, username, password string) (*AuthResult, error)
-	CreateAPITokenFunc     func(ctx context.Context, userID int64, name string, expiresAt *time.Time) (*CreateAPITokenResult, error)
-	ListAPITokensFunc      func(ctx context.Context, userID int64) ([]model.APIToken, error)
-	RevokeAPITokenFunc     func(ctx context.Context, userID, tokenID int64) error
+	BootstrapFunc             func(ctx context.Context, username, password string) (*AuthResult, error)
+	LoginFunc                 func(ctx context.Context, username, password string) (*AuthResult, error)
+	VerifyPasswordFunc        func(ctx context.Context, username, password string) (*model.User, error)
+	CreateAPITokenFunc        func(ctx context.Context, userID int64, name string, expiresAt *time.Time) (*CreateAPITokenResult, error)
+	ListAPITokensFunc         func(ctx context.Context, userID int64) ([]model.APIToken, error)
+	RevokeAPITokenFunc        func(ctx context.Context, userID, tokenID int64) error
 	AuthenticateBearerFunc    func(ctx context.Context, plaintext string) (*model.Session, error)
 	AuthenticateProxyUserFunc func(ctx context.Context, username string) (*model.Session, error)
 	CountUsersFunc            func(ctx context.Context) (int, error)
@@ -397,6 +398,14 @@ func (m *MockAuthService) Bootstrap(ctx context.Context, username, password stri
 func (m *MockAuthService) Login(ctx context.Context, username, password string) (*AuthResult, error) {
 	if m.LoginFunc != nil {
 		return m.LoginFunc(ctx, username, password)
+	}
+	return nil, nil
+}
+
+// VerifyPassword calls VerifyPasswordFunc or returns nil.
+func (m *MockAuthService) VerifyPassword(ctx context.Context, username, password string) (*model.User, error) {
+	if m.VerifyPasswordFunc != nil {
+		return m.VerifyPasswordFunc(ctx, username, password)
 	}
 	return nil, nil
 }
