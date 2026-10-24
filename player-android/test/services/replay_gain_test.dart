@@ -9,6 +9,8 @@ import 'package:player_android/services/replay_gain.dart';
 
 class _Player extends AudioPlayer {
   double level = 0.6;
+  bool active = true;
+  int transportCalls = 0;
   int? session;
   final sessions = StreamController<int?>.broadcast(sync: true);
   @override
@@ -20,6 +22,26 @@ class _Player extends AudioPlayer {
   @override
   Future<void> setVolume(double value) async {
     level = value;
+  }
+
+  @override
+  bool get playing => active;
+  @override
+  Future<void> play() async {
+    transportCalls++;
+    active = true;
+  }
+
+  @override
+  Future<void> pause() async {
+    transportCalls++;
+    active = false;
+  }
+
+  @override
+  Future<void> stop() async {
+    transportCalls++;
+    active = false;
   }
 }
 
@@ -259,5 +281,43 @@ void main() {
     expect(controller.status, contains('unavailable'));
     expect(player.level, 0.6);
     expect(effect.enabled, false);
+  });
+  test(
+      'older Android reports fixed positive gain capability and keeps playback',
+      () async {
+    const channel = MethodChannel('test/loudness-old-android');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if ((call.arguments as Map)['gainMb'] > 0) {
+        throw PlatformException(
+            code: 'loudness_unsupported_android',
+            message: 'arbitrary native details must not enter the UI');
+      }
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    final player = _Player()..session = 11;
+    final effect = SessionLoudnessEffect(player, channel: channel);
+    final controller = ReplayGainController(player, effect);
+    addTearDown(player.sessions.close);
+    addTearDown(effect.close);
+    await controller.setTrack(
+        MusicMetadata.fromJson(
+            {'replaygain_track_gain_db': 3, 'replaygain_track_peak': 0.5}),
+        albumContext: false);
+    await controller.update(const LoudnessSettings(mode: LoudnessMode.track));
+    expect(controller.status,
+        'Positive loudness gain requires Android 9 or later. Attenuation remains available.');
+    expect(player.level, 0.6);
+    expect(effect.enabled, false);
+    expect(player.playing, true);
+    expect(player.transportCalls, 0);
+    await controller.setTrack(music, albumContext: false);
+    expect(player.level, closeTo(0.6 * 0.39810717, 0.000001));
+    expect(controller.status, startsWith('Track tags'));
+    expect(player.playing, true);
+    expect(player.transportCalls, 0);
   });
 }

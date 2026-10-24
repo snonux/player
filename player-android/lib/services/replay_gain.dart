@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'loudness_effect.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -157,7 +158,7 @@ class ReplayGainController extends ChangeNotifier {
           await enhancer!.setEnabled(true);
         }
         status = result.message;
-      } catch (_) {
+      } catch (error) {
         // Keep playback available with unity normalization on effect failure.
         try {
           await enhancer?.setEnabled(false);
@@ -166,8 +167,10 @@ class ReplayGainController extends ChangeNotifier {
           await player.setVolume(base);
           _attenuation = 1;
         } catch (_) {}
-        status =
-            'Loudness processing unavailable. Try changing the mode again.';
+        status = error is PlatformException &&
+                error.code == 'loudness_unsupported_android'
+            ? 'Positive loudness gain requires Android 9 or later. Attenuation remains available.'
+            : 'Loudness processing unavailable. Try changing the mode again.';
       }
       notifyListeners();
     });
