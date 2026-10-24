@@ -227,6 +227,23 @@ Results, screenshots and WAV captures go to the fixture's evidence
 directory. The full three-platform runbook is
 `player-android/docs/music-e2e-verification.md`.
 
+### F01 timed lyric seeking
+
+Run the real timed-lyric journey in installed Chrome and Firefox against the
+same disposable fixture:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-lyrics.test.ts --workers=1
+```
+
+It starts the tagged timed-lyric source, seeks with a focused line and a
+pointer click, checks the current-line state, repeats a loaded-line seek while
+offline, then verifies the Unicode plain-lyric source remains readable without
+seek buttons. Screenshots and evidence stay with the fixture. Android timed-tap
+acceptance remains a separate emulator requirement.
+
 For M12 track navigation, natural completion, audible source/progress and
 failure/Retry journeys on both installed browsers:
 
