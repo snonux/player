@@ -825,3 +825,27 @@ and an actually unavailable Opus encoder. It must receive a genuine server500;
 an intercepted synthetic500 does not establish encoder failure. Restore the
 ordinary server configuration afterwards. Retain failed attempts separately;
 test-results is temporary and can be replaced by subsequent Playwright runs.
+
+# M53 paired server addresses
+
+Paired addresses and optional SSID routing are Android profile settings under
+the U01 contract. Browsers retain their page origin. Run the shared browser
+journey against the disposable fixture and a separately hosted alias of that
+same server (use a different hostname, since cookies are not isolated by port):
+
+```sh
+PLAYER_MUSIC_FIXTURE=/absolute/fixture \
+PLAYER_M53_ALTERNATE=http://localhost:18773 \
+PLAYER_M53_EVIDENCE=/absolute/evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null \
+npx playwright test --config playwright.music.config.ts \
+  tests/music-endpoints.test.ts --workers=1
+```
+
+The test checks actual playback/output, canonical account and request origins,
+alternate-origin login isolation, keyboard typing/focus/playback, real browser
+offline Retry/recovery and narrow light/dark layouts in both installed browsers.
+The alias must serve the fixture backend; another fixture is a different server.
+No cross-origin browser routing or CORS configuration is needed for this scope.
+Native pairing/security/SSID/offline acceptance and retained evidence are in
+[`music-m53-implementation.md`](../../../docs/music-m53-implementation.md).

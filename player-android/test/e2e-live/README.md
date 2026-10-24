@@ -827,3 +827,23 @@ scenario requires the normal APK containing the recovery fix; the earlier
 installed APK's absent Quality control is retained as failed evidence. Restore
 the server's real encoder/cache configuration after this check, then restore the
 original app endpoint/account/queue through ordinary UI and public APIs.
+
+# M53 paired local/remote addresses
+
+Use the normal installed APK, existing owned fixture/account and rooted emulator
+without clearing data. Settings → Servers → Advanced connection settings pairs
+an optional local URL with the selected primary profile. Put recording proxy
+aliases in front of the same backend, preserving HEAD Content-Length and Range.
+Inspect the credential-free identity probe before accepting account traffic.
+
+The 2026-10-24 native acceptance used `adrv`, `app_ui`,
+`music_loudness_e2e.Run` and `music_e2e.EmulatorAudio` for actual touch/Back,
+read-only scoped state and real QEMU WAV output. The owned external harness,
+sanitized traces, scenario windows, permission dialogs, source/output evidence
+and cleanup snapshot are retained under `/home/paul/tmp/qj3-evidence`; no new
+native runner clears or installs anything. See
+[`music-m53-implementation.md`](../../../docs/music-m53-implementation.md)
+for the platform matrix, exact browser invocation, endpoint failure/security,
+SSID deny/approximate/precise/Location-off checks, canonical download/cache keys
+and original queue/profile restoration. Browser controls retain their page
+origin under U01; native pairing does not create a separate saved account.
