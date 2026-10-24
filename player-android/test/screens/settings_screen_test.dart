@@ -35,6 +35,7 @@ import 'package:player_android/screens/settings_screen.dart';
 import 'package:player_android/screens/home_screen.dart';
 import 'package:player_android/screens/api_tokens_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../support/idle_playback.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -172,6 +173,7 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        ...idlePlaybackOverrides(),
         // Avoid OS keychain / SharedPreferences in tests.
         tokenStorageProvider.overrideWithValue(fakeStorage),
         settingsProvider.overrideWith(() => fakeSettings),
@@ -230,6 +232,7 @@ void main() {
     final storage = _FakeTokenStorage().._token = 'test-token';
     await tester.pumpWidget(ProviderScope(
       overrides: [
+        ...idlePlaybackOverrides(),
         tokenStorageProvider.overrideWithValue(storage),
         credentialMutationQueueProvider.overrideWithValue(
             CredentialMutationQueue(credentialsEnabled: true)),
@@ -300,6 +303,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            ...idlePlaybackOverrides(),
             tokenStorageProvider.overrideWithValue(fakeStorage),
             settingsProvider.overrideWith(() => fakeSettings),
           ],
@@ -457,6 +461,7 @@ void main() {
       ]);
       await tester.pumpWidget(ProviderScope(
         overrides: [
+          ...idlePlaybackOverrides(),
           authStateProvider.overrideWith(_FailedServerLogoutNotifier.new),
           settingsProvider.overrideWith(
               () => _FakeSettingsNotifier('https://player.example')),
@@ -533,6 +538,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            ...idlePlaybackOverrides(),
             tokenStorageProvider.overrideWithValue(fakeStorage),
             settingsProvider.overrideWith(() => fakeSettings),
           ],

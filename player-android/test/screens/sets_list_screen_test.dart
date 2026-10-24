@@ -37,6 +37,7 @@ import 'package:player_android/utils/error_mappers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/thumbnail_gestures.dart';
+import '../support/idle_playback.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -178,6 +179,7 @@ Future<void> _pumpSetsListScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        ...idlePlaybackOverrides(),
         // Avoid OS keychain in tests.
         tokenStorageProvider.overrideWithValue(storage),
         credentialMutationQueueProvider.overrideWithValue(
@@ -199,6 +201,7 @@ Future<void> _pumpSetsListScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets('pinch resizes actual set covers and reset restores their size',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -231,6 +234,7 @@ void main() {
       final navigation = _DelayedNavigation();
       final auth = _DelayedAuth();
       final container = ProviderContainer(overrides: [
+        ...idlePlaybackOverrides(),
         apiClientProvider.overrideWithValue(_FakeApiClient()..setsResult = []),
         tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
         credentialMutationQueueProvider.overrideWithValue(
@@ -306,6 +310,7 @@ void main() {
     ]);
     addTearDown(router.dispose);
     await tester.pumpWidget(ProviderScope(overrides: [
+      ...idlePlaybackOverrides(),
       apiClientProvider.overrideWithValue(client),
       tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
       credentialMutationQueueProvider
@@ -351,6 +356,7 @@ void main() {
     ]);
     addTearDown(router.dispose);
     await tester.pumpWidget(ProviderScope(overrides: [
+      ...idlePlaybackOverrides(),
       apiClientProvider.overrideWithValue(client),
       tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
       credentialMutationQueueProvider
@@ -361,6 +367,9 @@ void main() {
     for (final entry in destinations.entries) {
       await tester.tap(find.byTooltip('Open navigation menu'));
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text(entry.key), 200,
+          scrollable: find.descendant(
+              of: find.byType(Drawer), matching: find.byType(Scrollable)));
       await tester.tap(find.descendant(
           of: find.byType(Drawer), matching: find.text(entry.key)));
       await tester.pumpAndSettle();

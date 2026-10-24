@@ -32,6 +32,7 @@ import 'package:player_android/screens/folder_browser_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/thumbnail_gestures.dart';
+import '../support/idle_playback.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -259,6 +260,7 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        ...idlePlaybackOverrides(),
         tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
         apiClientProvider.overrideWithValue(fakeClient),
       ],
@@ -274,6 +276,7 @@ Future<void> _pumpScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets(
       'folder and media previews resize without clipping and keep row taps',
       (tester) async {
