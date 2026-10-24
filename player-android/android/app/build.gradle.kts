@@ -99,3 +99,9 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // AutoBrowseService uses these APIs directly. audio_service's internal
+    // implementation dependency is not exposed on the app compile classpath.
+    implementation("androidx.media:media:1.7.0")
+}
