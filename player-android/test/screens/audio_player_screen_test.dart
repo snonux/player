@@ -52,6 +52,8 @@ import 'package:player_android/models/media.dart';
 import 'package:player_android/models/media_set.dart';
 import 'package:player_android/models/media_bookmark.dart';
 import 'package:player_android/providers/api_client_provider.dart';
+import 'package:player_android/providers/auth_state_provider.dart';
+import 'package:player_android/providers/settings_provider.dart';
 import 'package:player_android/providers/local_library_provider.dart';
 import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/playback_preparer_provider.dart';
@@ -69,6 +71,7 @@ import 'package:player_android/services/progress_queue.dart';
 import 'package:player_android/services/playback_preparer.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/music_queue.dart';
+import 'package:player_android/services/network_policy.dart';
 import 'package:player_android/widgets/music_mini_player.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 import 'package:player_android/services/cast/cast_controller.dart';
@@ -76,6 +79,7 @@ import 'package:player_android/services/cast/cast_device.dart';
 import 'package:player_android/services/cast/cast_session.dart';
 
 import '../services/cast/fake_cast_receiver.dart';
+import '../support/server_endpoint.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -97,12 +101,33 @@ class _FakeTokenStorage implements TokenStorage {
   Future<void> deleteToken() async {}
 }
 
+class _Authenticated extends AuthStateNotifier {
+  @override
+  Future<AuthState> build() async => const AuthState.authenticated();
+}
+
 /// Controllable [PlayerApiClient] stub for [AudioPlayerScreen] tests.
 ///
-/// Only the progress methods and [streamUrl] are implemented; all other
-/// methods throw [UnimplementedError] to catch unexpected usage immediately.
+/// Supplies catalog metadata, stream URLs, preparation probes and progress
+/// callbacks without a server or native transport.
 class _FakeApiClient extends PlayerApiClient {
   _FakeApiClient() : super(dio: Dio());
+
+  final media = <int, Media>{};
+
+  @override
+  Future<Media> getMedia(int id, {CancelToken? cancelToken}) async =>
+      media[id] ??
+      Media.fromJson({
+        'id': id,
+        'type': 'audio',
+        'file_name': 'Audio – $id',
+        'transcoded': probeAnswers.isNotEmpty,
+      });
+
+  @override
+  String compatUrl(int mediaId) =>
+      'http://localhost:8080/api/v1/media/$mediaId/compat';
 
   /// Records how many times [getMediaProgress] was called.
   final bookmarks = <MediaBookmark>[];
@@ -266,6 +291,9 @@ class _FakePlayerAudioHandler extends PlayerAudioHandler {
 }
 
 class _PlayableAudioPlayer extends AudioPlayer {
+  @override
+  Future<void> setVolume(double volume) async {}
+
   Completer<Duration?>? pendingLoad;
   bool failNextLoad = false;
 
@@ -374,6 +402,14 @@ class _PlayableHandler extends PlayerAudioHandler {
 /// setAudioSource) waits for a platform response that never arrives in the
 /// headless test environment, causing pumpAndSettle to time out.
 void _setupAudioSessionMock() {
+  SharedPreferences.setMockInitialValues({});
+  const connectivity = MethodChannel('dev.fluttercommunity.plus/connectivity');
+  const connectivityEvents =
+      MethodChannel('dev.fluttercommunity.plus/connectivity_status');
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(connectivity, (_) async => ['wifi']);
+  messenger.setMockMethodCallHandler(connectivityEvents, (_) async => null);
   const audioSessionChannel = MethodChannel('com.ryanheise.audio_session');
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
@@ -381,6 +417,13 @@ void _setupAudioSessionMock() {
 
 /// Removes the audio_session mock handler after each test.
 void _teardownAudioSessionMock() {
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity'), null);
+  messenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity_status'),
+      null);
   const audioSessionChannel = MethodChannel('com.ryanheise.audio_session');
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(audioSessionChannel, null);
@@ -389,8 +432,8 @@ void _teardownAudioSessionMock() {
 /// Pumps [AudioPlayerScreen] for [mediaId] inside a [ProviderScope] with
 /// overridden providers, backed by a minimal [GoRouter] for navigation.
 ///
-/// Returns after the first frame; does NOT pump further so the loading state
-/// is visible for assertions.
+/// Playable fixtures drain startup work without advancing the fake clock.
+/// The default handler intentionally keeps its native source load pending.
 Future<void> _pumpScreen(
   WidgetTester tester,
   _FakeApiClient fakeClient, {
@@ -415,6 +458,11 @@ Future<void> _pumpScreen(
   CastDiscovery? castDiscovery,
 }) async {
   final handler = handlerOverride ?? fakeHandler ?? _FakePlayerAudioHandler();
+  fakeClient.media.addEntries(sequence.map((item) => MapEntry(item.id, item)));
+  final origin = request is ServerPlaybackRequest
+      ? request.serverOrigin
+      : (serverBaseUrl ?? Uri.parse(kPlayerBaseUrl)).origin;
+  final credentials = CredentialMutationQueue()..enable(0, origin: origin);
 
   final router = GoRouter(
     initialLocation: '/audio/$mediaId',
@@ -440,12 +488,12 @@ Future<void> _pumpScreen(
       overrides: [
         if (localDatabase != null)
           localLibraryDatabaseProvider.overrideWithValue(localDatabase),
-        if (serverBaseUrl != null) ...[
+        unpairedServerEndpointOverride(),
+        authStateProvider.overrideWith(_Authenticated.new),
+        cookieJarProvider.overrideWith((ref) => CookieJar()),
+        credentialMutationQueueProvider.overrideWithValue(credentials),
+        if (serverBaseUrl != null)
           playerBaseUrlProvider.overrideWithValue(serverBaseUrl),
-          credentialMutationQueueProvider.overrideWithValue(
-            CredentialMutationQueue(credentialsEnabled: true),
-          ),
-        ],
         if (coordinator != null)
           playbackSessionCoordinatorProvider.overrideWithValue(coordinator),
         if (castController != null)
@@ -482,6 +530,23 @@ Future<void> _pumpScreen(
       ),
     ),
   );
+  // Network policy is initialized outside the widget test's fake clock. Let
+  // its completed startup future resume source loading before asserting UI.
+  await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+  if (handler is _PlayableHandler) {
+    for (var i = 0;
+        i < 20 &&
+            find
+                .byKey(const Key('audio_player_loading'))
+                .evaluate()
+                .isNotEmpty &&
+            find.byKey(_kPreparingLabel).evaluate().isEmpty;
+        i++) {
+      await tester.pump();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    }
+    await tester.pump();
+  }
 }
 
 const _kCompatUrl = 'http://localhost:8080/api/v1/media/42/compat';
@@ -492,11 +557,22 @@ const _kTranscoding = PlaybackProbe(
 );
 const _kReady = PlaybackProbe(statusCode: 200);
 
+Future<void> _flushPlaybackStartup(WidgetTester tester) async {
+  for (var i = 0; i < 4; i++) {
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+  }
+  await tester.pump();
+}
+
 /// A playable handler whose player is cleaned up when the test ends.
-(_PlayableAudioPlayer, _PlayableHandler) _usePlayableHandler() {
+(_PlayableAudioPlayer, _PlayableHandler) _usePlayableHandler(
+    WidgetTester tester) {
   final player = _PlayableAudioPlayer();
   final handler = _PlayableHandler(player);
   addTearDown(() async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await handler.stop();
     await handler.endProgress();
     await player.playingChanges.close();
     await player.playbackEvents.close();
@@ -513,10 +589,16 @@ String _errorText(WidgetTester tester) => tester
 // ---------------------------------------------------------------------------
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async {
+    _setupAudioSessionMock();
+    await MusicNetworkPolicy.initialize();
+    _teardownAudioSessionMock();
+  });
   testWidgets(
       'renderer mini reopens current queue occurrence without local source claim',
       (tester) async {
-    final (player, handler) = _usePlayableHandler();
+    final (player, handler) = _usePlayableHandler(tester);
     final coordinator = PlaybackSessionCoordinator();
     ServerPlaybackRequest request(int id) => ServerPlaybackRequest(
         mediaId: id,
@@ -601,7 +683,7 @@ void main() {
   testWidgets(
       'mini player attaches active lease without source load or position reset',
       (tester) async {
-    final (player, handler) = _usePlayableHandler();
+    final (player, handler) = _usePlayableHandler(tester);
     final coordinator = PlaybackSessionCoordinator();
     final request = ServerPlaybackRequest(
         mediaId: 1,
@@ -653,7 +735,7 @@ void main() {
   testWidgets(
       'mini attachment seeds loading and error snapshots and rejects stopped lease',
       (tester) async {
-    final (player, handler) = _usePlayableHandler();
+    final (player, handler) = _usePlayableHandler(tester);
     final coordinator = PlaybackSessionCoordinator();
     PlaybackRequest request(int id) => ServerPlaybackRequest(
         mediaId: id,
@@ -731,7 +813,7 @@ void main() {
   testWidgets(
       'server lyrics use the current media and line taps seek its session',
       (tester) async {
-    final (player, handler) = _usePlayableHandler();
+    final (player, handler) = _usePlayableHandler(tester);
     final client = _FakeApiClient()
       ..lyricsResult = () async => Lyrics.fromJson({
             'synced': true,
@@ -742,7 +824,9 @@ void main() {
     await _pumpScreen(tester, client,
         handlerOverride: handler,
         mediaUrl: 'http://localhost:8080/api/v1/media/42/stream');
-    await tester.pump();
+    for (var i = 0; i < 20 && !player.isPlaying; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
     await tester.pump();
     expect(player.isPlaying, isTrue);
     await tester.ensureVisible(find.byKey(const Key('audio_player_lyrics')));
@@ -762,7 +846,7 @@ void main() {
   testWidgets(
       'public lyrics use the public client and original viewing credential',
       (tester) async {
-    final (player, handler) = _usePlayableHandler();
+    final (player, handler) = _usePlayableHandler(tester);
     final client = _FakeApiClient();
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -968,6 +1052,8 @@ void main() {
     await handler.play(); // Notification Play cannot restart a stopped source.
     expect(player.isPlaying, isFalse);
     await tester.pump();
+    await tester
+        .ensureVisible(find.byKey(const Key('audio_player_play_pause')));
     await tester.tap(find.byKey(const Key('audio_player_play_pause')));
     for (var attempt = 0; attempt < 100 && !player.isPlaying; attempt++) {
       await tester.pump();
@@ -981,6 +1067,8 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
     await tester.pump();
     expect(saved, contains(19));
+    await tester
+        .ensureVisible(find.byKey(const Key('audio_player_skip_forward')));
     await tester.tap(find.byKey(const Key('audio_player_skip_forward')));
     await tester.pump();
     expect(player.elapsed, const Duration(seconds: 34));
@@ -1025,6 +1113,8 @@ void main() {
             stop: () async {}));
     await tester.pump();
     expect(player.isPlaying, isFalse);
+    await tester
+        .ensureVisible(find.byKey(const Key('audio_player_play_pause')));
     await tester.tap(find.byKey(const Key('audio_player_play_pause')));
     await tester.ensureVisible(find.byKey(const Key('audio_player_speed_1_5')));
     await tester.tap(find.byKey(const Key('audio_player_speed_1_5')));
@@ -1418,7 +1508,7 @@ void main() {
   testWidgets(
       'music runtime failure retries B at B position and filtered edges stay inside displayed results',
       (tester) async {
-    final (player, handler) = _usePlayableHandler();
+    final (player, handler) = _usePlayableHandler(tester);
     addTearDown(handler.stop);
     final client = _FakeApiClient()..progressResult = 2;
     final songs = [1, 2]
@@ -1452,7 +1542,7 @@ void main() {
     expect(handler.musicState?.error, isStateError);
     player.elapsed = Duration.zero;
     await tester.tap(find.byKey(const Key('audio_player_retry')));
-    await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    await _flushPlaybackStartup(tester);
     for (var i = 0; i < 5; i++) {
       await tester.pump();
     }
@@ -1472,7 +1562,7 @@ void main() {
   testWidgets(
       'playlist later duplicate maps selected occurrence through nonmusic filtering',
       (tester) async {
-    final (_, handler) = _usePlayableHandler();
+    final (_, handler) = _usePlayableHandler(tester);
     addTearDown(handler.stop);
     final client = _FakeApiClient();
     final songs = [0, 1, 2, 1, 2]
@@ -1519,7 +1609,7 @@ void main() {
     testWidgets(
         'playlist invalid or mismatched occurrence $selectedIndex preserves identity fallback',
         (tester) async {
-      final (_, handler) = _usePlayableHandler();
+      final (_, handler) = _usePlayableHandler(tester);
       addTearDown(handler.stop);
       final client = _FakeApiClient();
       final songs = [1, 2, 1]
@@ -1552,7 +1642,7 @@ void main() {
   testWidgets(
       'retained queue resume adopts fresh lease and shows actual current song',
       (tester) async {
-    final (_, handler) = _usePlayableHandler();
+    final (_, handler) = _usePlayableHandler(tester);
     addTearDown(handler.stop);
     final client = _FakeApiClient();
     final songs = [1, 2]
@@ -1617,6 +1707,11 @@ void main() {
       overrides: [
         tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
         apiClientProvider.overrideWithValue(_FakeApiClient()),
+        authStateProvider.overrideWith(_Authenticated.new),
+        cookieJarProvider.overrideWith((ref) => CookieJar()),
+        unpairedServerEndpointOverride(),
+        credentialMutationQueueProvider.overrideWithValue(
+            CredentialMutationQueue()..enable(0, origin: kPlayerBaseUrl)),
         audioHandlerProvider.overrideWithValue(handler),
         progressQueueProvider.overrideWithValue(queue),
       ],
@@ -1624,6 +1719,7 @@ void main() {
     ));
     await tester.tap(find.text('Open audio'));
     await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
     await tester.pump();
     await tester.pump();
     expect(player.isPlaying, isTrue);
@@ -1636,6 +1732,8 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
     await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
     expect(queue.updates, contains((42, 24.0)));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(handler.stop);
     await handler.endProgress();
     await player.playingChanges.close();
   });
@@ -1714,8 +1812,7 @@ void main() {
     player.pendingLoad = Completer<Duration?>();
     await tester.tap(find.byKey(const Key('audio_player_retry')));
     await tester.tap(find.byKey(const Key('audio_player_retry')));
-    await tester.pump();
-    await tester.pump();
+    await _flushPlaybackStartup(tester);
     // The first retry may already be loading when the second tap arrives.
     expect(player.sourceRequests, inInclusiveRange(2, 3));
 
@@ -1746,7 +1843,7 @@ void main() {
 
     testWidgets('shows the preparing state while 503, then plays and resumes',
         (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       final queue = _FakeProgressQueue();
       final client = _FakeApiClient()
         ..progressResult = 30
@@ -1789,7 +1886,7 @@ void main() {
 
     testWidgets('the original stream is played without a probe',
         (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       // probeAnswers is empty: a probe would throw and fail playback.
       final client = _FakeApiClient();
       await _pumpScreen(tester, client, handlerOverride: handler);
@@ -1804,7 +1901,7 @@ void main() {
     });
 
     testWidgets('503 until the cap ends in a readable error', (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       final client = _FakeApiClient()..probeAnswers.add(_kTranscoding);
       var now = DateTime(2026);
       await _pumpScreen(
@@ -1839,7 +1936,7 @@ void main() {
     });
 
     testWidgets('500 is terminal; Retry probes again', (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       final client = _FakeApiClient()
         ..probeAnswers.addAll(const [PlaybackProbe(statusCode: 500), _kReady]);
       await _pumpScreen(tester, client,
@@ -1857,8 +1954,7 @@ void main() {
 
       // The user retries from the player screen without leaving it.
       await tester.tap(find.byKey(const Key('audio_player_retry')));
-      await tester.pump();
-      await tester.pump();
+      await _flushPlaybackStartup(tester);
       expect(client.probedUrls, hasLength(2));
       expect(player.sourceRequests, 1);
       expect(handler.playCalls, 1);
@@ -1868,7 +1964,7 @@ void main() {
 
     testWidgets('leaving the screen while preparing stops the retries',
         (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       final coordinator = PlaybackSessionCoordinator();
       final client = _FakeApiClient()..probeAnswers.add(_kTranscoding);
       await _pumpScreen(tester, client,
@@ -1892,7 +1988,7 @@ void main() {
 
     testWidgets('another item taking the player ends the preparing state',
         (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       final coordinator = PlaybackSessionCoordinator();
       final client = _FakeApiClient()..probeAnswers.add(_kTranscoding);
       await _pumpScreen(tester, client,
@@ -1927,7 +2023,7 @@ void main() {
 
     testWidgets('a dead share link is named as such, and its token not logged',
         (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       final publicClient = _FakeApiClient()
         ..probeAnswers.add(const PlaybackProbe(statusCode: 410));
       final logs = <String>[];
@@ -1968,7 +2064,7 @@ void main() {
 
     testWidgets('a public share is probed with the anonymous client',
         (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       final accountClient = _FakeApiClient();
       final publicClient = _FakeApiClient()..probeAnswers.add(_kReady);
       const url = 'http://test.local/s/tok7/compat';
@@ -2005,7 +2101,7 @@ void main() {
 
     testWidgets('a source the device cannot decode shows a readable error',
         (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       // just_audio throws this from setAudioSource; its text is the raw
       // "(0) Source error" the screen used to show.
       player.loadError = PlayerException(0, 'Source error');
@@ -2026,7 +2122,7 @@ void main() {
 
     testWidgets('a local file that fails to decode shows the same error',
         (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       player.loadError = PlayerException(0, 'Source error');
       await _pumpScreen(
         tester,
@@ -2057,7 +2153,7 @@ void main() {
     testWidgets(
         'a failure reported after loading shows the error; Retry resumes there',
         (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       final queue = _FakeProgressQueue();
       // Saved progress from an earlier session: playback starts at 10 s.
       final client = _FakeApiClient()..progressResult = 10;
@@ -2120,7 +2216,7 @@ void main() {
       WidgetTester tester,
       List<int> seconds,
     ) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       final client = _FakeApiClient()..progressResult = 10;
       await _pumpScreen(tester, client,
           handlerOverride: handler, mediaTitle: 'song.mp3');
@@ -2164,7 +2260,7 @@ void main() {
 
     testWidgets('any failure after loading is reported as a source failure',
         (tester) async {
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       await _pumpScreen(tester, _FakeApiClient(),
           handlerOverride: handler, mediaTitle: 'song.mp3');
       await tester.pump();
@@ -2378,7 +2474,7 @@ void main() {
         await tester.pump();
       }
 
-      final (player, handler) = _usePlayableHandler();
+      final (player, handler) = _usePlayableHandler(tester);
       final coordinator = PlaybackSessionCoordinator();
       final queue = _FakeProgressQueue();
       FakeCastReceiver? receiver;
@@ -2438,7 +2534,7 @@ void main() {
 
     testWidgets('no cast button for a file stored on the phone',
         (tester) async {
-      final (_, handler) = _usePlayableHandler();
+      final (_, handler) = _usePlayableHandler(tester);
       await _pumpScreen(
         tester,
         _FakeApiClient(),
