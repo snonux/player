@@ -567,6 +567,84 @@ into the three Night Transit encoder source specifications before generation;
 the manifest uses the same specifications. The native runner independently
 ffprobes all three actual files and compares server durations and manifest before
 playing. A 45-second manifest alone does not pass this preflight.
+
+## ReplayGain/loudness (M24)
+
+`music_loudness_e2e.py` uses an already signed-in disposable fixture and the
+normal installed APK on a rooted API34 emulator with actual QEMU WAV output.
+It never clears app data, installs an APK, writes preferences, or restarts the
+emulator/server. Root owns startup and installation. Feature settings use native
+touch controls; scoped preferences are read only as a saved-state oracle.
+
+```sh
+python3 -u player-android/test/e2e-live/music_loudness_e2e.py FIXTURE \
+  --scenario attenuation --evidence EVIDENCE/attenuation --emulator-wav QEMU_WAV
+python3 -u player-android/test/e2e-live/music_loudness_e2e.py FIXTURE \
+  --scenario modes --evidence EVIDENCE/modes --emulator-wav QEMU_WAV
+python3 -u player-android/test/e2e-live/music_loudness_e2e.py FIXTURE \
+  --scenario boundaries --evidence EVIDENCE/boundaries --emulator-wav QEMU_WAV \
+  --restore-settings EVIDENCE/attenuation/initial-loudness.json
+```
+
+The short attenuation phase proves actual Loud Off/Track output first. Modes
+measures both tagged tones with Off/Track/Album/Automatic, preamp ±6 dB,
+Album +12 dB preamp limited by the known peak, and untagged +12/-12 dB. The
+clipping oracle checks measured gain, sine crest and near-full-scale sample
+fraction; a saturated 16-bit WAV cannot pass merely because its peak is ≤0 dBFS.
+From the repository root, `python3 -m unittest discover -s
+player-android/test/e2e-live -p test_music_loudness_e2e.py` checks its negative
+oracles without a device and does not constitute native acceptance.
+
+Boundaries opens Gain Check through actual typed Music Search, measures ordered
+album Automatic and source changes, then positive Quiet Track gain through Home
+and cold session recreation with explicit unlock/Resume. It captures light/dark
+advanced sheets and Back, restores the original loudness values through UI and
+leaves the admin Library paused. `--restore-queue ORIGINAL_QUEUE_JSON` additionally
+restores a previously recorded scoped queue through the public CAS API and native
+Continue/Replace; it never writes local queue preferences. All original failed
+attempts, screenshots, touch bounds, WAVs, analysis and results remain external.
+The attenuation phase records `initial-queue.json` before changing sources; pass
+that file to restoration when it contains a pre-existing queue. `--resume-album`
+continues an already established paused Gain Check album only after checking its
+exact fixture-derived media order/current occurrence, avoiding repeated setup.
+
+Positive gain uses Android 9+ DynamicsProcessing with only linear input gain;
+the metadata peak already limits the requested boost. Android 7/8 remain supported
+for ordinary playback and attenuation; a positive request shows the explicit
+Android 9 capability message and retains unity playback. That older-API boundary
+has controller/channel regression coverage, not an API24–27 device claim.
+
+The 2026-10-24 API34 x86_64 run used the normal 0.8.2/versionCode4022 APK from
+product fix `369243f`, with actual speaker volume verified 15/15. Final measured
+RMS levels in dBFS were:
+
+| Source | Off | Track | Album | Automatic outside album queue |
+| --- | ---: | ---: | ---: | ---: |
+| Loud | -6.02 | -15.02 | -6.52 | -15.02 |
+| Quiet | -24.02 | -15.04 | -24.52 | -15.04 |
+
+Preamp +6/-6 changed Loud Track output by +6.17/-5.87 dB. Album +12 preamp
+was limited to a measured -3.15 dBFS RMS/0 dBFS peak, with 3.15 dB sine crest
+and 2.98% near-full-scale samples. Untagged +12 matched Off at -15.02 dBFS;
+untagged -12 measured -27.01. Ordered-album Automatic retained 17.86 dB between
+Loud and Quiet. Positive Quiet Track gain measured -15.04 before Home, during
+background playback and after force-stop, explicit unlock and saved Resume.
+Original Off/0/0 and the exact three-occurrence queue/current/4.69-second offset
+were restored through ordinary controls and CAS/Continue, leaving Library paused.
+
+Evidence is under `/home/paul/tmp/player-native-loudness-evidence`: final modes
+are `modes-final-369243f`; boundaries are `boundaries-continuation-369243f`.
+The original failed high-level boost WAVs remain in `modes-attempt1` and
+`clip-recheck`: Android LoudnessEnhancer produced -9.04 dBFS where -3.02 was
+required. The same-source/settings fixed capture in `clip-after-369243f`
+measured -3.00 dBFS. This justified replacing that nonlinear compressor with
+[DynamicsProcessing input gain](https://developer.android.com/reference/android/media/audiofx/DynamicsProcessing),
+using disabled EQ/compressor/limiter stages. Earlier boundary attempts retain
+catalog/detail scroll and mini-player route assumptions; the accepted continuation
+uses the actual typed search/album playback already established by attempt4.
+Physical devices, API24–27 execution and Cast receivers were not exercised here;
+the sheet explicitly limits normalization to local playback.
+
 # Rich release metadata (M05)
 
 `music_release_e2e.py` requires the disposable music fixture started with
