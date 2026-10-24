@@ -789,3 +789,41 @@ chosen external evidence directory. Warmed cache sources are validated by real
 HEAD requests; media-session state and persisted progression prove playback.
 These checks do not measure audible output or PCM. Finally run the browser M17
 boundary suite against the native core `results.json` for reverse transfer.
+
+## M50 selectable streaming quality
+
+`music_quality_e2e.py` requires an already signed-in disposable fixture, current
+normal APK, rooted emulator and real QEMU WAV output. It never clears app data,
+installs an APK or writes preferences. Root owns runtime setup and restoration.
+Open Three Tones from the fixture's EQ Probe folder through ordinary native
+controls first, and leave its full player paused. Then, from the repo root:
+
+```sh
+python3 -u player-android/test/e2e-live/music_quality_e2e.py FIXTURE \
+  --profile aac128 --evidence EVIDENCE/native-aac128 \
+  --emulator-wav QEMU_WAV
+```
+
+Repeat for `original`, `aac256`, `mp3192` and `opus96`. The runner chooses both
+network defaults through touch, then uses actual Next/Previous to reopen the
+existing queue. Its owned transparent proxy on18772 records sanitized actual
+source/range/status data; only this fixture's reverse mapping changes and is
+restored in `finally`. QEMU PCM, current title, settled Pause position, a real
+midpoint seek to six seconds and subsequent output establish playback. The
+live OS session's sparse position anchor is never treated as a running clock.
+
+Add `--boundaries` to run light/dark/Back, actual reverse removal, failed profile
+list with usable Auto, buffered offline output and reconnect/reload recovery.
+Use a separate evidence directory per invocation and retain failed attempts.
+The nominal encoder rate is a target; use actual ffprobe data when reporting
+codec/container/bitrate. Cross-component results belong in
+`docs/music-m50-implementation.md`.
+
+With the owned genuine missing-encoder fixture, open Harbour with Opus selected
+and wait for its actual conversion error. `--encoder-recovery --profile original`
+(or `auto`) chooses through the error's Quality sheet, taps Retry, and verifies
+the actual original response, PCM and a further audible midpoint seek. This
+scenario requires the normal APK containing the recovery fix; the earlier
+installed APK's absent Quality control is retained as failed evidence. Restore
+the server's real encoder/cache configuration after this check, then restore the
+original app endpoint/account/queue through ordinary UI and public APIs.

@@ -1,0 +1,186 @@
+import { expect, test } from '@playwright/test';
+import { writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { Evidence, loadFixture, track } from './helpers/music-fixture';
+import { installAudioTap } from './helpers/audio-tap';
+import { keyboardLogin, openFolder, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+
+test('M50 actual quality responses, playback, next-open transition and seek', async ({ page, browser }, info) => {
+  const f = loadFixture();
+  const e = new Evidence(f.evidenceDir, info.project.name, { browser: browser.version(), build: f.buildRevision, checkout: f.checkout, origin: f.origin });
+  const song = track(f, 'Music/EQ Probe/Three Tones.flac');
+  const results: unknown[] = [];
+  await page.addInitScript(installAudioTap);
+  await keyboardLogin(page, f.user);
+  await openFolder(page, f.setIds.Music, 'EQ Probe');
+  await playCard(page, song.title, song.id);
+  const panel = page.locator('details').filter({ has: page.getByLabel('Stream quality', { exact: true }) });
+  await panel.locator('summary').click();
+  await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
+  const quality = panel.locator('select[aria-label="Stream quality"]');
+  await expect(quality.locator('option')).toHaveCount(6);
+  const profiles = await (await page.request.get('/api/v1/stream-profiles')).json();
+  expect(profiles.map((p: any) => p.id)).toEqual(['aac128', 'aac256', 'mp3192', 'opus96']);
+  for (const [profile, codec] of [['original', 'flac'], ['aac128', 'aac'], ['aac256', 'aac'], ['mp3192', 'mp3'], ['opus96', 'opus']]) {
+    const before = await page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentSrc);
+    await quality.selectOption(profile);
+    expect(await page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentSrc)).toBe(before);
+    // Reopen through the visible card: preferences deliberately apply next open.
+    await page.locator('#btn-minimize').click();
+    await playCard(page, song.title, song.id);
+    await page.getByRole('button', { name: 'Restore player', exact: true }).click();
+    await expectPlaying(page, song.id);
+    const src = await page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentSrc);
+    const endpoint = `/api/media/${song.id}/${profile === 'original' ? 'stream' : `compat?profile=${profile}`}`;
+    if (!src.startsWith('blob:')) expect(src).toContain(endpoint);
+    const response = await page.request.get(endpoint);
+    expect(response.status()).toBe(200);
+    const bytes = await response.body();
+    if (src.startsWith('blob:')) {
+      const actual = await page.evaluate(async url => Array.from(new Uint8Array(await (await fetch(url)).arrayBuffer())), src);
+      expect(Buffer.from(actual).equals(bytes), 'actual playback blob equals chosen rendition bytes').toBe(true);
+    }
+    const file = e.path(`${profile}.bin`);
+    writeFileSync(file, bytes);
+    const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', file], { encoding: 'utf8' }));
+    expect(probe.streams[0].codec_name).toBe(codec);
+    const ranged = await page.request.get(endpoint, { headers: { Range: 'bytes=100-299' } });
+    expect(ranged.status()).toBe(206);
+    expect((await ranged.body()).equals(bytes.subarray(100, 300))).toBe(true);
+    const rail = page.locator('#progress-track');
+    const box = (await rail.boundingBox())!;
+    await rail.click({ position: { x: box.width * .4, y: box.height / 2 } });
+    await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(4);
+    const out = await captureOutput(page, 1200, e.path(`${profile}.wav`), [100, 1000, 8000]);
+    assertValidCapture(out);
+    expect(mainSegment(out.analysis)!.duration_s).toBeGreaterThan(.5);
+    await page.screenshot({ path: e.path(`${profile}.png`) });
+    results.push({ profile, src, headers: response.headers(), range: ranged.headers(), probe, audio: out.analysis });
+    writeFileSync(e.path('quality-results.json'), JSON.stringify(results, null, 2));
+  }
+  expect((await page.request.get(`/api/v1/media/${song.id}/compat?profile=unsupported`)).status()).toBe(400);
+  await quality.focus();
+  await page.keyboard.press('Home');
+  await expect(quality).toBeFocused();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Escape');
+  await expect(panel.locator('summary')).toBeFocused();
+  await page.keyboard.press('p');
+  await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.paused)).toBe(true);
+  await page.keyboard.press('p');
+  await expectPlaying(page, song.id);
+  e.record({ feature: 'M50', scenario: 'Original and all four profile actual response codecs/Range/play/seek/output; next-open transition; rejected unknown profile; select focus/Escape', result: 'pass', data: { results } });
+});
+
+test('M50 actual unavailable encoder fails visibly and Original recovers', async ({ page, browser }, info) => {
+  test.skip(process.env.PLAYER_M50_ENCODER_FAILURE !== '1', 'Requires explicitly owned fixture with actual unavailable Opus encoder');
+  const f = loadFixture();
+  const e = new Evidence(f.evidenceDir, info.project.name, { browser: browser.version(), build: f.buildRevision });
+  const probe = track(f, 'Music/EQ Probe/Three Tones.flac');
+  const song = track(f, 'Music/Aurora Lane - Night Transit (2021)/03 - Harbour.flac');
+  const responses: unknown[] = [];
+  page.on('response', response => {
+    if (response.url().includes(`/media/${song.id}/compat`)) responses.push({ path: new URL(response.url()).pathname, status: response.status() });
+  });
+  await page.addInitScript(installAudioTap);
+  await keyboardLogin(page, f.user);
+  await openFolder(page, f.setIds.Music, 'EQ Probe');
+  await playCard(page, probe.title, probe.id);
+  const panel = page.locator('details').filter({ has: page.locator('select[aria-label="Stream quality"]') });
+  await panel.locator('summary').click();
+  await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
+  await panel.locator('select[aria-label="Stream quality"]').selectOption('opus96');
+  await openFolder(page, f.setIds.Music, 'Aurora Lane - Night Transit (2021)');
+  const card = page.locator('.media-card').filter({ has: page.getByRole('button', { name: song.title, exact: true }) });
+  await card.hover();
+  await card.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect.poll(() => responses.some((r: any) => r.status === 500)).toBe(true);
+  await expect(page.getByRole('status').filter({ hasText: 'Cannot play Harbour:' })).toBeVisible();
+  await panel.locator('summary').click();
+  await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
+  await panel.locator('select[aria-label="Stream quality"]').selectOption('original');
+  await page.screenshot({ path: e.path('encoder-failure.png') });
+  await page.locator('#btn-minimize').click();
+  await playCard(page, song.title, song.id);
+  await page.getByRole('button', { name: 'Restore player', exact: true }).click();
+  const out = await captureOutput(page, 1200, e.path('encoder-original-recovery.wav'));
+  assertValidCapture(out);
+  expect(mainSegment(out.analysis)!.duration_s).toBeGreaterThan(.5);
+  e.record({ feature: 'M50', scenario: 'Real unavailable Opus encoder500, visible failure, change Original and reopen yields audible recovery', result: 'pass', data: { responses, audio: out.analysis } });
+});
+
+test('M50 saved device default, themes, narrow controls and profile-list transport recovery', async ({ page, browser }, info) => {
+  const f = loadFixture();
+  const e = new Evidence(f.evidenceDir, info.project.name, { browser: browser.version(), build: f.buildRevision });
+  const song = track(f, 'Music/EQ Probe/Three Tones.flac');
+  await keyboardLogin(page, f.user);
+  await openFolder(page, f.setIds.Music, 'EQ Probe');
+  await playCard(page, song.title, song.id);
+  const panel = page.locator('details').filter({ has: page.getByLabel('Stream quality', { exact: true }) });
+  await panel.locator('summary').click();
+  await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
+  await panel.locator('select[aria-label="Stream quality"]').selectOption('mp3192');
+  await page.reload();
+  await page.getByRole('button', { name: song.title, exact: true }).waitFor();
+  await page.locator('#btn-minimize').click();
+  await playCard(page, song.title, song.id);
+  await page.getByRole('button', { name: 'Restore player', exact: true }).click();
+  await panel.locator('summary').click();
+  await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
+  await expect(panel.locator('select[aria-label="Stream quality"]')).toHaveValue('mp3192');
+  const bad = '**/api/stream-profiles';
+  await page.route(bad, route => route.abort('internetdisconnected'));
+  await panel.getByRole('button', { name: 'Reload profiles', exact: true }).click();
+  await expect(panel.getByRole('status')).toContainText('Server profiles unavailable');
+  await panel.locator('select[aria-label="Stream quality"]').selectOption('original');
+  await expect(panel.getByRole('status')).toContainText('Saved');
+  await page.unroute(bad);
+  await panel.getByRole('button', { name: 'Reload profiles', exact: true }).click();
+  await expect(panel.getByRole('status')).toContainText('ready');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'More player controls', exact: true }).click();
+  await page.screenshot({ path: e.path('quality-narrow-dark.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+  await page.getByRole('button', { name: 'More player controls', exact: true }).click();
+  await page.screenshot({ path: e.path('quality-narrow-light.png'), fullPage: true });
+  await expect(panel.locator('select[aria-label="Stream quality"]')).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByRole('button', { name: 'Log out', exact: true }).click();
+  await keyboardLogin(page, f.admin);
+  await openFolder(page, f.setIds.Music, 'EQ Probe');
+  await playCard(page, song.title, song.id);
+  await panel.locator('summary').click();
+  await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
+  await expect(panel.locator('select[aria-label="Stream quality"]')).toHaveValue('original');
+  e.record({ feature: 'M50', scenario: 'Saved browser default survives reload/account change; actual failed profile-list transport with Original/reload recovery; narrow light/dark controls', result: 'pass' });
+});
+
+test('M50 current buffered source survives offline quality edits', async ({ page, context, browser }, info) => {
+  const f = loadFixture();
+  const e = new Evidence(f.evidenceDir, info.project.name, { browser: browser.version(), build: f.buildRevision });
+  const song = track(f, 'Music/EQ Probe/Three Tones.flac');
+  await page.addInitScript(installAudioTap);
+  await keyboardLogin(page, f.user);
+  await openFolder(page, f.setIds.Music, 'EQ Probe');
+  await playCard(page, song.title, song.id);
+  const panel = page.locator('details').filter({ has: page.locator('select[aria-label="Stream quality"]') });
+  await panel.locator('summary').click();
+  await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
+  await expect(panel.getByRole('status')).toContainText('ready');
+  const before = await page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentSrc);
+  await context.setOffline(true);
+  try {
+    await panel.locator('select[aria-label="Stream quality"]').selectOption('opus96');
+    expect(await page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentSrc)).toBe(before);
+    await expectPlaying(page, song.id);
+    const out = await captureOutput(page, 1200, e.path('buffered-offline-quality-edit.wav'), [100, 1000, 8000]);
+    assertValidCapture(out);
+    expect(mainSegment(out.analysis)!.duration_s).toBeGreaterThan(.5);
+    await panel.getByRole('button', { name: 'Reload profiles', exact: true }).click();
+    await expect(panel.getByRole('status')).toContainText('unavailable');
+    await panel.locator('select[aria-label="Stream quality"]').selectOption('original');
+    e.record({ feature: 'M50', scenario: 'Actual browser offline; current source unchanged/audible through quality edit; profile-list failure and usable Original', result: 'pass', data: { src: before, audio: out.analysis } });
+  } finally {
+    await context.setOffline(false);
+  }
+});

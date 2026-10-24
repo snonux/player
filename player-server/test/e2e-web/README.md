@@ -800,3 +800,28 @@ remote session. Run browser and native scenarios sequentially: they intentionall
 share the admin session. Evidence stays outside the repository. These M17 checks
 use authoritative queue state plus actual media source/progress; they do not
 claim sound-output measurement.
+
+## M50 selectable streaming quality
+
+Use a newly owned `music_fixture.py up` fixture with a fresh database. The
+normal server exposes all four selected profiles; do not substitute a fixture
+that only offers compatibility AAC. Run installed Chrome and Firefox serially:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/absolute/fixture PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx playwright test --config playwright.music.config.ts music-quality.test.ts --workers 1
+```
+
+The normal tests exercise Original, AAC128/256, MP3192 and Opus96 through the
+visible quality controls, compare actual playback blobs with response bytes,
+ffprobe codecs/containers/actual bitrates, exact Range bytes, seek, real output,
+keyboard focus/Pause/Resume, next-open transitions, defaults across reload/account
+changes, narrow light/dark controls and actual offline/profile-list failures.
+Nominal encoder bitrate is a target; measured VBR and muxed bitrates can differ.
+
+The unavailable-encoder test is skipped unless `PLAYER_M50_ENCODER_FAILURE=1`.
+That scenario requires an explicitly owned disposable server with a cold cache
+and an actually unavailable Opus encoder. It must receive a genuine server500;
+an intercepted synthetic500 does not establish encoder failure. Restore the
+ordinary server configuration afterwards. Retain failed attempts separately;
+test-results is temporary and can be replaced by subsequent Playwright runs.
