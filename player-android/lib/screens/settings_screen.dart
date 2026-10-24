@@ -23,6 +23,7 @@ import '../providers/first_run_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/presentation_settings.dart';
 import '../library_navigation.dart';
+import 'server_plugins_screen.dart';
 
 /// Settings screen: editable server base URL, current username, and logout.
 ///
@@ -541,6 +542,17 @@ class _AdminSection extends ConsumerWidget {
         const SizedBox(height: 12),
 
         // Manage Users tile — navigates to /admin/users.
+        ListTile(
+          key: const Key('settings_server_plugins'),
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.extension_outlined),
+          title: const Text('Server plugins'),
+          subtitle: const Text('Advanced: optional server extensions'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => const ServerPluginsScreen())),
+        ),
+
         ListTile(
           key: const Key('settings_manage_users'),
           contentPadding: EdgeInsets.zero,

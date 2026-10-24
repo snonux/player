@@ -305,13 +305,14 @@ function renderPlugins(items) {
 }
 
 function pluginRowHtml(p) {
-  const status = escapeHtml(p.status || 'disabled');
+  const status = escapeHtml(p.enabled && p.status === 'disabled'
+    ? 'enabled (ready for probe)' : (p.status || 'disabled'));
   const caps = (p.capabilities || []).map((c) => escapeHtml(c)).join(', ') || '—';
   const err = p.error ? `<span class="text-muted text-75"> — ${escapeHtml(p.error)}</span>` : '';
   const enable = p.enabled
     ? `<button type="button" class="btn btn-danger btn-sm" data-plugin-action="disable" data-id="${escapeHtml(p.id)}" aria-label="Disable ${escapeHtml(p.name)}">Disable</button>`
     : `<button type="button" class="btn btn-primary btn-sm" data-plugin-action="enable" data-id="${escapeHtml(p.id)}" aria-label="Enable ${escapeHtml(p.name)}">Enable</button>`;
-  const probe = p.enabled && (p.capabilities || []).includes('probe') && p.status === 'active'
+  const probe = p.enabled && (p.capabilities || []).includes('probe')
     ? `<button type="button" class="btn btn-sm" data-plugin-action="probe" data-id="${escapeHtml(p.id)}" aria-label="Run probe on ${escapeHtml(p.name)}">Run probe</button>`
     : '';
   return `<li>
