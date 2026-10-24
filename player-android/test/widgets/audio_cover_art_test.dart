@@ -7,6 +7,7 @@ import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
+import 'package:player_android/providers/server_endpoint_provider.dart';
 import 'package:player_android/models/user.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/widgets/audio_cover_art.dart';
@@ -66,6 +67,10 @@ Widget _art(PlaybackRequest request,
         cookieJarProvider.overrideWithValue(CookieJar()),
         credentialMutationQueueProvider.overrideWithValue(
             CredentialMutationQueue(credentialsEnabled: true)),
+        // Artwork routing is covered with endpoint-router tests. Keep this
+        // widget test about image credentials and rendering, rather than
+        // starting the router's platform connectivity subscription.
+        routedServerUriProvider.overrideWith((_, uri) async => uri),
       ],
       child: MaterialApp(home: Scaffold(body: AudioCoverArt(request: request))),
     );

@@ -487,6 +487,25 @@ retry. All task runtimes were subsequently stopped after identity checks; both
 fixtures and all evidence were preserved. Physical Cast and headset checks were
 not run and are not implied by these local OS control checks.
 
+## M68 appearance presentation (Chrome and Firefox)
+
+With the disposable Music fixture running, execute the focused appearance journey
+in each installed browser:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-presentation.test.ts --workers=1
+```
+
+The journey starts an actual fixture track, turns visuals off, changes every
+dark/light accent combination and artwork shape/display option, verifies focus
+return after Settings closes, restart persistence, and an offline local-preference
+change. It saves narrow-screen screenshots and the platform result under the
+fixture evidence directory. The fixture track intentionally has no track artwork,
+so the test also checks that the existing missing-art fallback remains honest;
+native artwork and keep-awake acceptance require the Android emulator run.
+
 ### M18 playback shuffle
 
 `tests/music-shuffle.test.ts` uses the existing isolated music configuration:
