@@ -32,6 +32,9 @@ import 'package:player_android/services/progress_queue.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../support/idle_playback.dart';
+import '../support/server_endpoint.dart';
+
 class _MemoryTokenStorage implements TokenStorage {
   String? token;
   bool failNextRead = false;
@@ -217,6 +220,16 @@ class _DelayedMintApiClient extends PlayerApiClient {
   Future<void> revokeAPIToken(int tokenId, {String? bearerToken}) async {
     revokedId = tokenId;
     revokedBearer = bearerToken;
+  }
+}
+
+class _ImmediateResumeQueue extends _PausingResumeQueue {
+  final scopes = <ProgressScope>[];
+
+  @override
+  Future<void> resume(ProgressScope scope) async {
+    scopes.add(scope);
+    suspended = false;
   }
 }
 
@@ -604,8 +617,10 @@ void main() {
       () async {
     final storage = _MemoryTokenStorage();
     final adapter = _BlockingRevocationAdapter();
+    final progress = _ImmediateResumeQueue();
     late DioClient testClient;
     final container = ProviderContainer(overrides: [
+      progressQueueProvider.overrideWithValue(progress),
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
@@ -648,6 +663,9 @@ void main() {
     final cookies = await testClient.cookieJar
         .loadForRequest(Uri.parse('https://player.example'));
     expect(cookies.single.value, 'temporary-session-2');
+    expect(progress.scopes.single,
+        ProgressScope(origin: 'https://player.example', userId: secondUser.id));
+    expect(progress.suspended, isFalse);
   });
 
   test('secure-storage read failure cannot skip local logout', () async {
@@ -778,8 +796,10 @@ void main() {
   test('login invoked after logout keeps its new credential', () async {
     final storage = _MemoryTokenStorage();
     final api = _DelayedMintApiClient();
+    final progress = _ImmediateResumeQueue();
     api.release.complete({'id': 8, 'token': 'pt-new-login'});
     final container = ProviderContainer(overrides: [
+      progressQueueProvider.overrideWithValue(progress),
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
       tokenStorageProvider.overrideWithValue(storage),
       apiClientProvider.overrideWithValue(api),
@@ -792,6 +812,8 @@ void main() {
     final login = container.read(authStateProvider.notifier).login(user);
     await Future.wait([logout, login]);
     expect(storage.token, 'pt-new-login');
+    expect(progress.scopes.single.userId, user.id);
+    expect(progress.suspended, isFalse);
     expect(
         container.read(authStateProvider).valueOrNull?.isAuthenticated, isTrue);
   });
@@ -1165,6 +1187,8 @@ void main() {
       queue = CredentialMutationQueue();
       adapter = _DelayedUnauthorizedAdapter();
       container = ProviderContainer(overrides: [
+        ...idlePlaybackOverrides(),
+        unpairedServerEndpointOverride(),
         serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
         tokenStorageProvider.overrideWithValue(storage),
         credentialMutationQueueProvider.overrideWithValue(queue),

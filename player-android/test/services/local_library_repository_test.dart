@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../support/server_endpoint.dart';
+
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/models/local_media.dart';
 import 'package:player_android/providers/api_client_provider.dart';
@@ -361,6 +363,7 @@ void main() {
     });
     final library = LocalLibraryDatabase(databasePath: inMemoryDatabasePath);
     final container = ProviderContainer(overrides: [
+      unpairedServerEndpointOverride(),
       localLibraryDatabaseProvider.overrideWithValue(library),
       tokenStorageProvider.overrideWithValue(_NoTokenStorage()),
     ]);
