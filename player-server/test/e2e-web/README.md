@@ -285,6 +285,19 @@ dynamics, Automatic falls back to track mode outside an album queue, and the
 advanced preamp/no-tag settings prove clipping-safe behavior. Native
 ReplayGain acceptance still requires the dedicated emulator/audio capture.
 
+### B3 Sets audio/image sequencing
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-audio-image-skip.test.ts --workers=1
+```
+
+This short regression starts the last audio file in a real album folder with
+cover art, triggers its natural end, and proves auto-advance plus
+`Shift+Previous`/`Shift+Next` keep the audio player active rather than opening
+the image viewer.
+
 For M12 track navigation, natural completion, audible source/progress and
 failure/Retry journeys on both installed browsers:
 
