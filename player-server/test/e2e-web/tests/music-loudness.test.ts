@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { assertValidCapture, captureOutput, keyboardLogin, mainSegment, openFolder, playCard } from './helpers/music-ui';
+import { assertValidCapture, audioState, captureOutput, keyboardLogin, mainSegment, openFolder, playCard } from './helpers/music-ui';
 
 const FEATURE = 'M24 ReplayGain loudness';
 const GAIN_FOLDER = 'Gain Check';
@@ -30,15 +30,26 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(installAudioTap);
 });
 
-async function level(page: Parameters<typeof captureOutput>[0], name: string, artifacts: string[]) {
+async function measure(page: Parameters<typeof captureOutput>[0], name: string, artifacts: string[]) {
+  // The multi-mode journey outlasts a 12-second fixture. Seek through the real
+  // timeline before each capture so later settings cannot measure its successor.
+  const timeline = page.locator('#progress-track');
+  const bounds = (await timeline.boundingBox())!;
+  await timeline.click({ position: { x: bounds.width * .02, y: bounds.height / 2 } });
+  await expect.poll(async () => (await audioState(page)).time).toBeLessThan(1);
   // One second contains 1,000 cycles of the fixture's 1 kHz tone, enough for
   // the shared analyser while keeping this multi-mode browser journey short.
   const output = await captureOutput(page, 1_200, evidence.path(name));
   assertValidCapture(output);
   artifacts.push(output.wav);
-  const value = mainSegment(output.analysis)?.rms_dbfs;
-  expect(value, `measured level for ${name}`).toBeDefined();
-  return value!;
+  const segment = mainSegment(output.analysis);
+  expect(segment, `audible output for ${name}`).toBeDefined();
+  expect(segment!.duration_s, `sustained output for ${name}`).toBeGreaterThan(.5);
+  return segment!;
+}
+
+async function level(page: Parameters<typeof captureOutput>[0], name: string, artifacts: string[]) {
+  return (await measure(page, name, artifacts)).rms_dbfs;
 }
 
 /** Keep the floating player from covering cards near the bottom of the grid. */
@@ -55,7 +66,7 @@ test('M24: loudness settings normalize tagged music and keep untagged music clip
     const loud = track(fixture, 'Music/Gain Check/Loud.flac');
     const quiet = track(fixture, 'Music/Gain Check/Quiet.flac');
     const untagged = track(fixture, 'Music/Gain Check/No Gain Tags.mp3');
-    await keyboardLogin(page, fixture.admin);
+    await keyboardLogin(page, fixture.user);
     await openFolder(page, fixture.setIds.Music, GAIN_FOLDER);
     await playCard(page, loud.title, loud.id);
 
@@ -63,6 +74,13 @@ test('M24: loudness settings normalize tagged music and keep untagged music clip
     const control = page.locator('.loudness-control').filter({ has: mode });
     const status = control.locator('[role="status"]');
     await expect(mode).toBeVisible();
+    await mode.selectOption('off');
+    const loudOff = await level(page, 'm24-off-loud.wav', artifacts);
+    await playAnotherCard(page, quiet.title, quiet.id);
+    const quietOff = await level(page, 'm24-off-quiet.wav', artifacts);
+    expect(Math.abs(loudOff - quietOff - (loud.level_dbfs - quiet.level_dbfs)), 'Off preserves the known source levels')
+      .toBeLessThan(LEVEL_TOLERANCE_DB);
+    await playAnotherCard(page, loud.title, loud.id);
     await mode.selectOption('track');
     await expect(status).toContainText('Track tags');
     const loudTrack = await level(page, 'm24-track-loud.wav', artifacts);
@@ -72,6 +90,8 @@ test('M24: loudness settings normalize tagged music and keep untagged music clip
     const quietTrack = await level(page, 'm24-track-quiet.wav', artifacts);
     const normalizedDifference = loudTrack - quietTrack;
     expect(Math.abs(normalizedDifference), 'track tags normalize Loud and Quiet').toBeLessThan(LEVEL_TOLERANCE_DB);
+    expect(Math.abs(loudTrack - loudOff + 9), 'Loud track tag attenuates the output by 9 dB').toBeLessThan(LEVEL_TOLERANCE_DB);
+    expect(Math.abs(quietTrack - quietOff - 9), 'Quiet track tag boosts the output by 9 dB').toBeLessThan(LEVEL_TOLERANCE_DB);
 
     await mode.selectOption('album');
     await expect(status).toContainText('Album tags');
@@ -94,10 +114,34 @@ test('M24: loudness settings normalize tagged music and keep untagged music clip
     const advanced = control.locator('details');
     await advanced.locator('summary').press('Enter');
     const preamp = control.getByLabel('Loudness preamp in decibels');
+    await preamp.fill('6');
+    await preamp.press('Tab');
+    const preampPlus = await level(page, 'm24-preamp-plus6.wav', artifacts);
+    expect(Math.abs(preampPlus - loudTrack - 6), 'positive preamp changes actual tagged output by +6 dB')
+      .toBeLessThan(LEVEL_TOLERANCE_DB);
+    await preamp.fill('-6');
+    await preamp.press('Tab');
+    const preampMinus = await level(page, 'm24-preamp-minus6.wav', artifacts);
+    expect(Math.abs(preampMinus - loudTrack + 6), 'negative preamp changes actual tagged output by -6 dB')
+      .toBeLessThan(LEVEL_TOLERANCE_DB);
+
+    // Album gain -0.5 + preamp12 requests +11.5 dB on a -3 dBFS peak.
+    // Safe output can rise only 3.5 dB from the album baseline. A flattened,
+    // clipped sine has a different peak/RMS ratio even if its peak is capped.
+    await mode.selectOption('album');
     await preamp.fill('12');
     await preamp.press('Tab');
     await expect(status).toContainText('Gain limited to avoid clipping');
     data.clipping_status = await status.textContent();
+    const clipped = await measure(page, 'm24-peak-limited.wav', artifacts);
+    expect(Math.abs(clipped.rms_dbfs - loudAlbum - 3.5), 'known peak limits actual output before clipping')
+      .toBeLessThan(LEVEL_TOLERANCE_DB);
+    expect(clipped.peak_dbfs).toBeGreaterThan(-.5);
+    expect(clipped.peak_dbfs).toBeLessThanOrEqual(0);
+    expect(clipped.peak_dbfs - clipped.rms_dbfs, 'limited output retains the sine crest factor').toBeGreaterThan(2.5);
+    expect(clipped.peak_dbfs - clipped.rms_dbfs).toBeLessThan(3.5);
+    data.preamp_dbfs = { plus6: preampPlus, minus6: preampMinus };
+    data.peak_limited_output = clipped;
 
     await mode.selectOption('track');
     await playAnotherCard(page, untagged.title, untagged.id);
@@ -110,7 +154,7 @@ test('M24: loudness settings normalize tagged music and keep untagged music clip
     const untaggedOff = await level(page, 'm24-untagged-off.wav', artifacts);
     expect(Math.abs(untaggedSafe - untaggedOff), 'untagged audio is never positively boosted').toBeLessThan(LEVEL_TOLERANCE_DB);
 
-    data.levels_dbfs = { loud_track: loudTrack, quiet_track: quietTrack, loud_album: loudAlbum, quiet_album: quietAlbum,
+    data.levels_dbfs = { loud_off: loudOff, quiet_off: quietOff, loud_track: loudTrack, quiet_track: quietTrack, loud_album: loudAlbum, quiet_album: quietAlbum,
       loud_automatic: loudAutomatic,
       untagged_safe: untaggedSafe, untagged_off: untaggedOff };
     data.track_difference_db = normalizedDifference;

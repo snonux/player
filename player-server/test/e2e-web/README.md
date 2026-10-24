@@ -280,10 +280,16 @@ PLAYER_MUSIC_FIXTURE=/path/to/fixture \
 ```
 
 The fixture's tagged *Gain Check* tones are measured after the actual Web
-Audio gain node: track mode normalizes them, album mode preserves their album
-dynamics, Automatic falls back to track mode outside an album queue, and the
-advanced preamp/no-tag settings prove clipping-safe behavior. Native
-ReplayGain acceptance still requires the dedicated emulator/audio capture.
+Audio gain node: Off preserves their 18 dB level difference, Track applies the
+known -9/+9 dB tags, Album preserves their dynamics, and Automatic falls back
+to Track outside an album queue. Actual preamp output changes by +6/-6 dB.
+Album gain plus 12 dB preamp exceeds the known peak: the output must limit to
+0 dBFS peak, retain its sine crest factor, and rise only 3.5 dB from the album
+baseline. Untagged positive gain must leave output equal to Off. Each capture
+seeks through the real timeline first so the short fixture cannot finish
+during the multi-mode journey. Browser and native checks use separate fixture
+accounts. Native ReplayGain acceptance uses the dedicated emulator/WAV runner
+in `../../../player-android/test/e2e-live/README.md`.
 
 ### B3 Sets audio/image sequencing
 
