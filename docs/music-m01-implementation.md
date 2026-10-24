@@ -145,8 +145,14 @@ neighborhood spectra in `eq-spectrum-diagnosis.json` show shifted captured
 peaks and exact-bin cancellation from emulator timing/phase drift. Task
 **6o3** fixed measurement in `audio_trace.py` (short-frame peak Goertzel;
 tolerance unchanged); synthetic equal/unequal and the retained
-`recovery-eq.wav` assert the calibration. Full native EQ re-run remains for
-integrated verification.
+`recovery-eq.wav` assert the calibration. Integrated **6o3** acceptance on
+2026-10-24 reuses the fresh **gk3** actual Three Tones captures: Chrome 144
+and Firefox 156 flat spread 0.00 dB, native API 34 spread 0.80 dB; deliberate
+middle cuts remain unequal (11.38/11.38/11.10 dB spread). Raw source/output
+reanalysis is retained at `/home/paul/tmp/6o3-final/reanalysis.json`; all 15
+calibration tests passed without skips. The original pj3 FAIL remains recorded;
+its exact-bin reanalysis still produces 12.51 dB spread. See the Android music
+verification notes for capture limits.
 Emulator click measurement (seven discontinuities beyond known gaps) and absent
 automatic track advance remain explicit gaps. All three known gap calibrations
 passed at 5.01, 20.02 and 50.05 ms. Baseline touch/audio, 48dp targets, Back,

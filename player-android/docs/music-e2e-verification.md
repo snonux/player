@@ -191,6 +191,32 @@ check waits up to 15 seconds for authoritative server progress after Back.
 - Neither path is "heard": no test listens to speakers. Absolute levels
   depend on volume settings; compare levels within one capture setup.
 
+Task **6o3** calibration acceptance (2026-10-24) reuses actual **gk3** captures
+at `/home/paul/tmp/gk3-eq-20261024`: installed Chrome 144.0.7559.132 and Firefox
+156 destination output, plus native API 34 x86_64 QEMU output from the normal
+0.8.2/4022 APK (source `369243f`). The native verifier asserts the Three Tones
+session title and sustained output; browser metadata identifies
+`Music/EQ Probe/Three Tones.flac`. Offline raw-WAV reanalysis at
+`/home/paul/tmp/6o3-final/reanalysis.json` confirms the decoded source bands
+100/1000/8000 Hz are all -27.54 dBFS. Chrome/Firefox flat output matches that
+source; native flat is -27.54/-27.55/-28.34 dBFS (0.80 dB spread). Deliberate
+910 Hz cuts yield 11.38 dB spread in each browser and 11.10 dB natively, with
+1 kHz changes of -11.73/-11.73/-11.87 dB respectively. Each fails the unchanged
+1.5 dB flatness assertion; bypass and Reset restore flat output within it.
+
+All 15 `AudioTraceTest` tests passed without skips (log:
+`/home/paul/tmp/player-native-loudness-evidence/eq-analyzer-preflight.log`),
+including equal tones with 500 ppm drift/phase jumps, a deliberately 12 dB
+weaker middle source band that must remain unequal, and the retained pj3
+capture. That original failed run remains a FAIL: its exact-bin measurement
+still shows 12.51 dB spread, while the calibrated reanalysis shows 0.80 dB.
+The measurement uses median 250 ms peak-Goertzel frames, searching
+±max(2 Hz, 0.2% of frequency); no tolerance or detector floor changed. This
+verifies the captured digital output on these browser/emulator versions;
+physical speaker output and other device DSP responses remain unverified.
+Native 8 kHz attenuation of 0.80 dB is retained, not normalized away. This
+calibration does not establish click-free or gapless playback.
+
 Earlier calibration baseline (fixture run `20261021T062222Z`, server 0.8.2
 built from `6f2a69a` with uncommitted changes in the tree, Chrome
 144.0.7559.132, Firefox 156.0, API 34 emulator with APK 0.8.2/4022):
