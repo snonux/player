@@ -1,8 +1,9 @@
 # M25 equalizer implementation
 
 Task gk3 uses the implemented nj3 interaction design, oj3 playback foundation
-and 1k3 transport. This slice is IMPLEMENTED/REVIEWED - AWAITING INTEGRATED VERIFICATION.
-One expert review found no blockers; integrated acceptance remains required.
+and 1k3 transport. Implementation commit `fa41d52` received expert R1 approval
+with no blockers. Actual Chrome, Firefox and native Android acceptance ran on
+2026-10-24 against the disposable integrated fixture.
 
 ## Controls and states
 
@@ -52,25 +53,57 @@ releases the effect and reports unavailable. No media source is replaced.
 
 ## Verification stage
 
-Cheap Node checks cover bounded settings, presets/headroom, production graph
-composition and bypass, one source/context across replacement, and detached
-state transfer with blocked storage. Native targeted tests cover safe settings,
-session reattachment, bypass/reset, ordered persistence and unavailable retry.
-Scoped analyzer (`flutter analyze --no-pub` on the five affected Dart files)
-passes with no issues; `flutter test --no-pub test/services/equalizer_test.dart
-test/services/audio_handler_errors_test.dart
-test/services/audio_handler_progress_test.dart` passes 12 tests. Existing
-music_sequence_test.dart has three failures at lines 320, 699 and 1139
-(`player.running` remains false after retry/jump). Removing all EQ handler
-integration reproduced exactly the same three failures (28 pass/3 fail);
-restoring it retains the same failures (combined initial run 40 pass/3 fail).
-These inherited sequence failures remain for integrated verification; they are
-not a passing regression gate. These are coherence checks, not evidence of
-actual audible platform behavior.
+The real-output runners are `music-equalizer.test.ts` and
+`music_equalizer_e2e.py`; component E2E READMEs give repeatable commands.
+Evidence is outside git at `/home/paul/tmp/gk3-eq-20261024`. The live server
+reports `463eb32-dirty`, serves current filesystem web modules, and remains
+the same disposable instance at `http://127.0.0.1:18766`. Native is the normal
+0.8.2 release APK (versionCode 4022, source `369243f`) on Android 14/API 34
+x86_64 `Player_FDroid_Test_API34`.
 
-Deferred: full suites, final server/APK builds, Chrome/Firefox and emulator
-interaction/spectrum captures, light/dark/narrow screenshot review, actual
-unsupported-device handling, restart/offline and keyboard/touch/Back journeys.
-The integrated phase must measure changed frequency levels during real audio,
-then bypass/reset and verify ReplayGain/speed/queue/sleep/detached and output
-routing regressions. Task remains pending until required platform acceptance.
+Installed Google Chrome 144.0.7559.132 and Mozilla Firefox 156 both pass the
+real destination-output journey (2 tests, 51.6 seconds). Flat 100/1000/8000 Hz
+bands each measure -27.54 dBFS. Setting the 910 Hz slider to -12 through its
+native Home key changes the 1 kHz component by -11.73 dB while neighboring
+probe tones change by less than 0.4 dB. Bass boost and Voice favor their named
+frequency regions; bypass and Reset recover flat output within the unchanged
+1.5 dB tolerance. The same Voice output returns after page reload, and buffered
+offline Bass output matches online. Escape restores summary focus; preset and
+range controls retain native behavior. Light/narrow and dark/wide screenshots
+were inspected, with the narrow controls opened through More player controls.
+
+Actual QEMU output from native Three Tones has flat bands
+-27.54/-27.55/-28.34 dBFS (spread 0.80 dB). The custom 910 Hz cut measures
+-28.32/-39.42/-29.04 dBFS; Bass measures -28.66/-35.80/-39.64 and Voice
+-35.43/-28.59/-32.78. The native response differs from the browser's filters
+as documented. A touch selected Voice while the actual Three Tones session
+reported PLAYING before and after; captured output proves the live update.
+Bypass preserves the curve and recovers flat output; Reset clears/disables it.
+Home/background output, Retry, light/dark sheets, Back, buffered offline
+playback, and persisted Voice on a recreated audio session after cold unlock
+and explicit source reopening also pass. No server/emulator restart or app-data
+clear was needed.
+
+The external-panel negative case temporarily disabled only the unused
+`com.android.musicfx` package. Android reported no activity resolving
+`android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL`, while Player's
+embedded EQ still produced the changed Voice output. Its exact package enabled
+state and the temporarily removed adb reverse mapping were restored in
+`finally`. This verifies no dependency on an external panel; it does not claim
+that this supported emulator is an unsupported DSP device. Allocation-failure
+and retry logic also retain their existing targeted unit coverage.
+
+The first cold-start verifier attempt incorrectly assumed Resume queue would
+replace the separately retained music queue with the transient file probe.
+That failed source assertion is retained in `native-panel-recovery.log`;
+`native-recovery.log` exercises the corrected explicit source reopening.
+No product change was required. The original EQ setting and saved queue,
+including its starting occurrence and offset, are restored at cleanup.
+
+Previously reviewed Node graph/settings/detached tests and the integrated full
+Go race/coverage, web JS, Flutter analyzer, 1674 Flutter host tests and release
+APK build/install gates are reused: this acceptance slice changes only runners
+and documentation. The earlier three sequence-test failures were repaired
+before these integrated checks; they are no longer a current gap. Shared
+ReplayGain, speed and saved-queue acceptance was completed separately in ll3,
+fk3 and 2k3. Cast receiver DSP remains outside local equalizer scope.

@@ -1,5 +1,30 @@
 # Android live end-to-end run
 
+`music_equalizer_e2e.py` verifies M25 on an already signed-in disposable
+fixture and normal installed app, using a running emulator with QEMU WAV
+output. It never clears app data or restarts the server/emulator. Run it
+from the repository root:
+
+```sh
+python3 -u player-android/test/e2e-live/music_equalizer_e2e.py /path/to/fixture \
+  --evidence /tmp/player-eq/android --emulator-wav /path/to/emulator-output.wav
+```
+
+Use a fresh evidence directory and a fixture admin with a saved queue. The
+runner saves its original queue and EQ setting, then verifies real flat,
+custom, preset, bypass/reset, live preset change, background, buffered offline
+and cold-unlock/source-reopen output. It restores the original queue and
+settings through the public API/native controls. It temporarily disables only
+the emulator's `com.android.musicfx` panel package to prove embedded EQ works
+with no external panel resolver, restoring the exact package enabled state
+in `finally`. The owned adb reverse mapping is similarly restored after
+the offline check. It does not remove DSP libraries or simulate an unsupported
+hardware effect. `--boundaries`, `--panel-recovery` and `--recovery` resume
+individual stages with that same directory; pass `--restore-queue` with the
+original queue snapshot for staged cleanup. Keep all WAVs/screenshots outside
+git. Device effects vary, so the native preset oracle checks relative frequency
+balance while bypass/reset comparisons retain the 1.5 dB tolerance.
+
 `android_e2e.py` drives the installed Player app on an Android emulator
 through `adb` and `uiautomator` and checks it against a deployed server. It
 is the Android counterpart of the web suite in

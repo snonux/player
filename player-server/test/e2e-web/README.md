@@ -1,5 +1,20 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For the music equalizer's actual output journey, use the disposable music
+fixture and installed Chrome/Firefox:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_EQ_EVIDENCE=/tmp/player-eq \
+  PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx playwright test -c playwright.music.config.ts music-equalizer.test.ts --workers=1
+```
+
+The journey captures the real destination signal for flat, custom mid cut,
+both presets, bypass/reset, buffered offline playback and reload persistence.
+It also exercises native slider keys, Escape focus and narrow/light/dark
+controls. WAVs and measured bands stay outside the repository. The null sink
+must already exist; it prevents the probe tones reaching host speakers.
+
 This directory contains a Playwright (TypeScript) smoke suite that exercises
 the Player web UI end-to-end against a running server.
 
