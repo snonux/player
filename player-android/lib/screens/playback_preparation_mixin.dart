@@ -63,9 +63,20 @@ mixin PlaybackPreparationMixin<T extends ConsumerStatefulWidget>
           probe: client.probePlayback,
           stillWanted: current,
         );
+    trackPlaybackPreparation(preparation);
+    return preparation.ready;
+  }
+
+  /// Attaches a wait started by a source loader after canonical URL resolution.
+  /// Screen disposal and session takeover cancel its probe or delay too.
+  void trackPlaybackPreparation(PlaybackPreparation preparation) {
+    if (!mounted) {
+      preparation.cancel();
+      return;
+    }
+    playbackWait.cancel();
     playbackWait._preparation = preparation;
     setState(() => _preparing = true);
-    return preparation.ready;
   }
 
   /// Ends a pending wait and clears the label. Call inside the `setState`

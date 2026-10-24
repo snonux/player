@@ -8,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 import '../api/dio_client.dart';
 import '../services/playback_cache.dart';
 import '../services/playback_request.dart';
+import '../services/playback_preparer.dart';
 import '../services/playback_source_resolver.dart';
 import '../services/stream_quality.dart';
 import 'api_client_provider.dart';
@@ -35,7 +36,8 @@ final playbackCacheProvider = ChangeNotifierProvider<PlaybackCache>((ref) {
 });
 
 typedef CachedAudioLoader = Future<AudioSource?> Function(
-    PlaybackRequest, bool Function());
+    PlaybackRequest, bool Function(),
+    {void Function(PlaybackPreparation)? onPreparing});
 
 /// Captures account dependencies for queue callbacks that outlive their screen.
 final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
@@ -88,7 +90,8 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
         headers: headers.isEmpty ? null : headers);
   };
   Future<AudioSource?> load(PlaybackRequest request, bool Function() current,
-      {bool prefetch = false}) async {
+      {bool prefetch = false,
+      void Function(PlaybackPreparation)? onPreparing}) async {
     if (request is! ServerPlaybackRequest) {
       return AudioSource.uri(request.sourceUri);
     }
@@ -155,11 +158,11 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
       }
 
       if (saved == null && isCompatStreamUrl(canonical)) {
-        final ready = await preparer
-            .prepare(canonical,
-                probe: client.probePlayback, stillWanted: wanted)
-            .ready;
-        if (!ready) throw StateError('Playback preparation stopped.');
+        final preparation = preparer.prepare(canonical,
+            probe: client.probePlayback, stillWanted: wanted);
+        onPreparing?.call(preparation);
+        final ready = await preparation.ready;
+        if (!ready) return null;
       }
     } catch (error) {
       MusicNetworkPolicy.assertStreamingAllowed();
@@ -205,5 +208,6 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
         headers: saved != null || headers.isEmpty ? null : headers);
   }
 
-  return (request, current) => load(request, current);
+  return (request, current, {onPreparing}) =>
+      load(request, current, onPreparing: onPreparing);
 });

@@ -641,8 +641,9 @@ void main() {
           tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
           cookieJarProvider.overrideWith((ref) => CookieJar()),
           progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
-          cachedAudioLoaderProvider.overrideWith((ref) =>
-              (request, current) async => AudioSource.uri(request.sourceUri)),
+          cachedAudioLoaderProvider.overrideWith((ref) => (request, current,
+                  {onPreparing}) async =>
+              AudioSource.uri(request.sourceUri)),
         ],
         child: const MaterialApp(
             home: Scaffold(bottomNavigationBar: MusicMiniPlayer()))));
@@ -1882,6 +1883,23 @@ void main() {
       await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
       expect(queue.updates, [(42, 40.0)]);
       await tester.runAsync(handler.endProgress);
+    });
+
+    testWidgets('fresh canonical rendition publishes its preparation state',
+        (tester) async {
+      final (player, handler) = _usePlayableHandler(tester);
+      final client = _FakeApiClient()..probeAnswers.add(_kTranscoding);
+      await _pumpScreen(tester, client,
+          handlerOverride: handler, mediaUrl: client.streamUrl(42));
+      expect(find.byKey(_kPreparingLabel), findsOneWidget);
+      expect(client.probedUrls, [Uri.parse(_kCompatUrl)]);
+      expect(player.sourceRequests, 0);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _flushPlaybackStartup(tester);
+      await tester.pump(const Duration(seconds: 30));
+      expect(client.probedUrls, hasLength(1));
+      expect(handler.playCalls, 0);
     });
 
     testWidgets('the original stream is played without a probe',

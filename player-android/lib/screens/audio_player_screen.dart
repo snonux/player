@@ -796,10 +796,20 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     try {
       final source = attempt.request is ServerPlaybackRequest
           ? await ref.read(cachedAudioLoaderProvider)(
-              attempt.request, () => _isCurrent(attempt))
+              attempt.request, () => _isCurrent(attempt),
+              onPreparing: (preparation) {
+              if (!_isCurrent(attempt)) {
+                preparation.cancel();
+                return;
+              }
+              trackPlaybackPreparation(preparation);
+            })
           : AudioSource.uri(attempt.request.sourceUri,
               headers: headers.isEmpty ? null : headers);
-      if (source == null || !_isCurrent(attempt)) return false;
+      if (source == null || !_isCurrent(attempt)) {
+        _showMessage(kPlaybackStoppedMessage, attempt.generation);
+        return false;
+      }
       await attempt.handler
           .loadSourceForSession(source, attempt.sourceGeneration);
       return true;
