@@ -258,6 +258,19 @@ the saved choice after reload, then switches back to English. Its screenshots
 and result stay in the fixture evidence directory; Android locale acceptance
 requires a fresh emulator APK.
 
+### B9 artwork duration/size badge contrast
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-artwork-badge.test.ts --workers=1
+```
+
+This opens an actual audio card and checks the visible duration/size chip in
+both saved themes. It composites the translucent chip over black artwork (the
+worst case for its white scrim) and requires at least 4.5:1 text contrast;
+screenshots and per-browser evidence remain in the fixture directory.
+
 For M12 track navigation, natural completion, audible source/progress and
 failure/Retry journeys on both installed browsers:
 
