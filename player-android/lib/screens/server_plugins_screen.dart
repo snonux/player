@@ -49,7 +49,7 @@ class _PluginListState extends State<_PluginList> {
   bool _forbidden = false;
   String? _error;
   String? _result;
-  BuildContext? _dialogContext;
+  DialogRoute<bool>? _confirmation;
 
   bool get _current => mounted && widget.api.currentEpoch() == widget.epoch;
 
@@ -61,10 +61,12 @@ class _PluginListState extends State<_PluginList> {
 
   @override
   void dispose() {
-    final dialog = _dialogContext;
-    if (dialog != null) {
+    final confirmation = _confirmation;
+    if (confirmation != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (dialog.mounted) Navigator.of(dialog).pop();
+        if (confirmation.isActive) {
+          confirmation.navigator?.removeRoute(confirmation);
+        }
       });
     }
     super.dispose();
@@ -115,12 +117,11 @@ class _PluginListState extends State<_PluginList> {
   }
 
   Future<void> _enable(ServerPlugin plugin) async {
-    if (!_current || _busy || _dialogContext != null) return;
+    if (!_current || _busy || _confirmation?.isActive == true) return;
     final enable = !plugin.enabled;
-    final accepted = await showDialog<bool>(
+    final confirmation = DialogRoute<bool>(
         context: context,
         builder: (context) {
-          _dialogContext = context;
           return AlertDialog(
               scrollable: true,
               title: Text('${enable ? 'Enable' : 'Disable'} ${plugin.name}?'),
@@ -136,7 +137,14 @@ class _PluginListState extends State<_PluginList> {
                     child: Text(enable ? 'Enable' : 'Disable')),
               ]);
         });
-    _dialogContext = null;
+    _confirmation = confirmation;
+    bool? accepted;
+    try {
+      accepted = await Navigator.of(context, rootNavigator: true)
+          .push<bool>(confirmation);
+    } finally {
+      if (_confirmation == confirmation) _confirmation = null;
+    }
     if (!_current || accepted != true) return;
     await _act(() async {
       await widget.api.setEnabled(plugin.id, enable, widget.epoch);

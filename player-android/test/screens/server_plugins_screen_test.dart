@@ -174,6 +174,28 @@ void main() {
     expect(find.textContaining('Self-check passed'), findsOneWidget);
   });
 
+  testWidgets(
+      'late closing rebuild after Android Back allows a new confirmation',
+      (tester) async {
+    await open(tester);
+    await press(tester, 'Enable');
+    expect(find.text('Enable Probe plugin?'), findsOneWidget);
+    final closingRoute =
+        ModalRoute.of(tester.element(find.byType(AlertDialog)))!;
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    // Android can rebuild the closing route after its result has completed.
+    // Reproduce that ordering while its exit animation still retains the page.
+    closingRoute.changedExternalState();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    await press(tester, 'Enable');
+    expect(find.text('Enable Probe plugin?'), findsOneWidget);
+    expect(transport.requests.where((r) => r.method == 'POST'), isEmpty);
+    await press(tester, 'Cancel');
+  });
+
   testWidgets('403 clears plugin rows and actions', (tester) async {
     await open(tester);
     transport.listStatus = 403;
