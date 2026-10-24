@@ -283,6 +283,8 @@ The fixture's tagged *Gain Check* tones are measured after the actual Web
 Audio gain node: Off preserves their 18 dB level difference, Track applies the
 known -9/+9 dB tags, Album preserves their dynamics, and Automatic falls back
 to Track outside an album queue. Actual preamp output changes by +6/-6 dB.
+An ordered album journey measures Automatic's 18 dB album dynamics and checks
+that choosing Track explicitly overrides that context on the same source.
 Album gain plus 12 dB preamp exceeds the known peak: the output must limit to
 0 dBFS peak, retain its sine crest factor, and rise only 3.5 dB from the album
 baseline. Untagged positive gain must leave output equal to Off. Each capture

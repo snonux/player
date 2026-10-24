@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { assertValidCapture, audioState, captureOutput, keyboardLogin, mainSegment, openFolder, playCard } from './helpers/music-ui';
+import { assertValidCapture, audioState, captureOutput, expectPlaying, keyboardLogin, mainSegment, openFolder, openSidebarMusic, playCard } from './helpers/music-ui';
 
 const FEATURE = 'M24 ReplayGain loudness';
 const GAIN_FOLDER = 'Gain Check';
@@ -24,6 +24,41 @@ test.beforeAll(async ({ browser }, info) => {
     origin: fixture.origin,
     run_id: fixture.runId,
   });
+});
+
+test('M24: Automatic preserves ordered album dynamics and explicit Track overrides it', async ({ page }) => {
+  const artifacts: string[] = [];
+  try {
+    const loud = track(fixture, 'Music/Gain Check/Loud.flac');
+    const quiet = track(fixture, 'Music/Gain Check/Quiet.flac');
+    await keyboardLogin(page, fixture.user);
+    await openSidebarMusic(page, 'Albums');
+    await page.getByRole('button', { name: 'Open album Gain Check by Level Lab', exact: true }).click();
+    await page.getByRole('button', { name: '▶ Play album', exact: true }).click();
+    await expectPlaying(page, loud.id);
+    const mode = page.getByLabel('Loudness', { exact: true });
+    const status = page.locator('.loudness-control').filter({ has: mode }).locator('[role="status"]');
+    await mode.selectOption('automatic');
+    await expect(status).toContainText('Album tags');
+    const loudAuto = await level(page, 'm24-automatic-album-loud.wav', artifacts);
+    await page.getByRole('button', { name: 'Next track', exact: true }).click();
+    await expectPlaying(page, quiet.id);
+    await expect(status).toContainText('Album tags');
+    const quietAuto = await level(page, 'm24-automatic-album-quiet.wav', artifacts);
+    expect(Math.abs(loudAuto - quietAuto - (loud.level_dbfs - quiet.level_dbfs)), 'Automatic preserves ordered album dynamics')
+      .toBeLessThan(LEVEL_TOLERANCE_DB);
+    await mode.selectOption('track');
+    await expect(status).toContainText('Track tags');
+    const quietTrack = await level(page, 'm24-explicit-track-in-album.wav', artifacts);
+    expect(Math.abs(quietTrack - quietAuto - 9.5), 'explicit Track overrides album-context Automatic')
+      .toBeLessThan(LEVEL_TOLERANCE_DB);
+    await mode.selectOption('off');
+    evidence.record({ feature: FEATURE, scenario: 'Automatic album context and explicit Track override measured through real ordered playback',
+      result: 'pass', data: { loud_auto_dbfs: loudAuto, quiet_auto_dbfs: quietAuto, quiet_track_dbfs: quietTrack }, artifacts });
+  } catch (error) {
+    evidence.record({ feature: FEATURE, scenario: 'Automatic ordered album output', result: 'fail', detail: String(error), artifacts });
+    throw error;
+  }
 });
 
 test.beforeEach(async ({ page }) => {
