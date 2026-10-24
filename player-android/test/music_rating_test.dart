@@ -9,6 +9,9 @@ import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/widgets/music_rating_button.dart';
 import 'package:player_android/widgets/music_rating_filter.dart';
 
+import 'support/idle_playback.dart';
+import 'support/server_endpoint.dart';
+
 class _RatingsClient extends PlayerApiClient {
   _RatingsClient() : super(dio: Dio());
   bool fail = false;
@@ -89,9 +92,11 @@ void main() {
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final client = _RatingsClient();
-    await tester.pumpWidget(ProviderScope(
-        overrides: [apiClientProvider.overrideWithValue(client)],
-        child: const MaterialApp(home: MusicSearchScreen())));
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...idlePlaybackOverrides(),
+      unpairedServerEndpointOverride(),
+      apiClientProvider.overrideWithValue(client),
+    ], child: const MaterialApp(home: MusicSearchScreen())));
     await tester.pumpAndSettle();
     expect(find.text('Search songs, albums and artists.'), findsOneWidget);
     Future<void> filter(String label) async {

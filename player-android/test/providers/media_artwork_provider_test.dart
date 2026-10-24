@@ -11,6 +11,8 @@ import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/media_artwork_provider.dart';
 import 'package:player_android/services/playback_request.dart';
 
+import '../support/server_endpoint.dart';
+
 class _Tokens implements TokenStorage {
   @override
   Future<String?> readToken() async => 'private-test-token';
@@ -59,6 +61,7 @@ void main() {
       await request.response.close();
     });
     final container = ProviderContainer(overrides: [
+      unpairedServerEndpointOverride(),
       playerBaseUrlProvider.overrideWithValue(Uri.parse(origin)),
       authStateProvider.overrideWith(_Auth.new),
       tokenStorageProvider.overrideWithValue(_Tokens()),

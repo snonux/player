@@ -12,6 +12,7 @@ import 'package:player_android/widgets/network_svg_image.dart';
 import '../support/fake_http.dart';
 import '../support/real_image_loading.dart';
 import '../support/svg_test_support.dart';
+import '../support/server_endpoint.dart';
 
 class _TokenStorage implements TokenStorage {
   _TokenStorage(this.token);
@@ -42,6 +43,7 @@ Widget image(String url, {String? sourceName}) => MaterialApp(
 /// Scope with a signed-in account; [fetcher] serves SVG downloads.
 Widget signedIn(Widget child, {RecordingSvgFetcher? fetcher}) => ProviderScope(
       overrides: [
+        unpairedServerEndpointOverride(),
         playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
         tokenStorageProvider.overrideWithValue(_TokenStorage('pt-restored')),
         cookieJarProvider.overrideWithValue(CookieJar()),
@@ -55,6 +57,15 @@ Widget signedIn(Widget child, {RecordingSvgFetcher? fetcher}) => ProviderScope(
 
 final _error = find.text('image unavailable');
 final _picture = find.byType(SvgImageBox);
+
+Future<void> _waitForBitmap(WidgetTester tester) async {
+  for (var frame = 0;
+      frame < 20 && find.byType(CachedNetworkImage).evaluate().isEmpty;
+      frame++) {
+    await tester.pump(const Duration(milliseconds: 10));
+  }
+  expect(find.byType(CachedNetworkImage), findsOneWidget);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -76,6 +87,7 @@ void _credentialTests() {
         Uri.parse(imageUrl), [Cookie('session', 'session-value')]);
     await tester.pumpWidget(ProviderScope(
       overrides: [
+        unpairedServerEndpointOverride(),
         playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
         tokenStorageProvider.overrideWithValue(_TokenStorage('pt-restored')),
         cookieJarProvider.overrideWithValue(jar),
@@ -85,7 +97,7 @@ void _credentialTests() {
       child: image(imageUrl),
     ));
     expect(find.text('loading'), findsOneWidget);
-    await tester.pump();
+    await _waitForBitmap(tester);
     final cached =
         tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
     expect(cached.httpHeaders?['Authorization'], 'Bearer pt-restored');
@@ -96,13 +108,14 @@ void _credentialTests() {
       (tester) async {
     await tester.pumpWidget(ProviderScope(
       overrides: [
+        unpairedServerEndpointOverride(),
         playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
         tokenStorageProvider.overrideWithValue(_TokenStorage(null)),
         cookieJarProvider.overrideWithValue(CookieJar()),
       ],
       child: image(imageUrl),
     ));
-    await tester.pump();
+    await _waitForBitmap(tester);
     final cached =
         tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
     expect(cached.httpHeaders?.containsKey('Authorization'), isFalse);
@@ -114,6 +127,7 @@ void _originTests() {
       (tester) async {
     await tester.pumpWidget(ProviderScope(
       overrides: [
+        unpairedServerEndpointOverride(),
         playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
         tokenStorageProvider.overrideWithValue(_TokenStorage('pt-restored')),
         cookieJarProvider.overrideWithValue(CookieJar()),
@@ -131,6 +145,7 @@ void _cacheKeyTests() {
       (tester) async {
     final storage = _TokenStorage('pt-account-a');
     final container = ProviderContainer(overrides: [
+      unpairedServerEndpointOverride(),
       playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
       tokenStorageProvider.overrideWithValue(storage),
       cookieJarProvider.overrideWithValue(CookieJar()),
@@ -141,7 +156,7 @@ void _cacheKeyTests() {
     Future<String?> pumpImage() async {
       await tester.pumpWidget(UncontrolledProviderScope(
           container: container, child: image(imageUrl)));
-      await tester.pump();
+      await _waitForBitmap(tester);
       return tester
           .widget<CachedNetworkImage>(find.byType(CachedNetworkImage))
           .cacheKey;
@@ -171,6 +186,7 @@ void _credentialGateTests() {
       ..beginAuthChange();
     await tester.pumpWidget(ProviderScope(
       overrides: [
+        unpairedServerEndpointOverride(),
         playerBaseUrlProvider.overrideWithValue(Uri.parse(baseUrl)),
         tokenStorageProvider.overrideWithValue(_TokenStorage('pt-stale')),
         cookieJarProvider.overrideWithValue(jar),
@@ -178,7 +194,7 @@ void _credentialGateTests() {
       ],
       child: image(imageUrl),
     ));
-    await tester.pump();
+    await _waitForBitmap(tester);
     final cached =
         tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
     expect(cached.httpHeaders, isEmpty);

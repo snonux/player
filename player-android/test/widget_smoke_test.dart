@@ -19,6 +19,10 @@ import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/main.dart';
 import 'package:player_android/providers/api_client_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/idle_playback.dart';
+import 'support/server_endpoint.dart';
 
 // ---------------------------------------------------------------------------
 // Minimal fakes to avoid platform-specific code in smoke tests.
@@ -49,10 +53,14 @@ class _FakeApiClient extends PlayerApiClient {
 
 void main() {
   group('PlayerAndroidApp', () {
-    testWidgets('boots without crashing inside a ProviderScope', (tester) async {
+    testWidgets('boots without crashing inside a ProviderScope',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            ...idlePlaybackOverrides(),
+            unpairedServerEndpointOverride(),
             // Simulate a logged-in session so the router does not try to
             // hit the network for the firstRunProvider check.
             tokenStorageProvider.overrideWithValue(_LoggedInTokenStorage()),

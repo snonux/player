@@ -17,6 +17,10 @@ import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/music_queue.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../support/idle_playback.dart';
+import '../support/server_endpoint.dart';
 
 class _Api extends PlayerApiClient {
   _Api() : super(dio: Dio());
@@ -132,6 +136,7 @@ class _ObservedHandler extends PlayerAudioHandler {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   for (final cancel in ['none', 'Cancel', 'Back', 'no-match']) {
     testWidgets(
         'Shuffle options actual menu submits or cancels deferred resolver $cancel',
@@ -140,6 +145,7 @@ void main() {
       final handler = _ObservedHandler(player);
       await tester.pumpWidget(ProviderScope(
           overrides: [
+            unpairedServerEndpointOverride(),
             apiClientProvider.overrideWithValue(api),
             audioHandlerProvider.overrideWithValue(handler),
             authStateProvider.overrideWith(_Auth.new),
@@ -244,7 +250,11 @@ void main() {
     final semantics = tester.ensureSemantics();
     try {
       await tester.pumpWidget(ProviderScope(
-          overrides: [apiClientProvider.overrideWithValue(_Api())],
+          overrides: [
+            ...idlePlaybackOverrides(),
+            unpairedServerEndpointOverride(),
+            apiClientProvider.overrideWithValue(_Api()),
+          ],
           child: const MaterialApp(
               home: MusicPlaylistsScreen(playlistId: 'playlist'))));
       await tester.pumpAndSettle();
@@ -273,13 +283,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Play next'), findsOneWidget);
       expect(find.text('Add to queue'), findsOneWidget);
-      expect(find.text('Repeated songs are added again.'), findsNothing);
+      expect(find.text('Skip repeated songs'), findsNothing);
       final pop = tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       await pop;
       await tester.tap(find.text('Add songs'));
       await tester.pumpAndSettle();
-      expect(find.text('Repeated songs are added again.'), findsOneWidget);
+      final duplicates = find.ancestor(
+          of: find.text('Skip repeated songs'),
+          matching: find.byType(CheckboxListTile));
+      expect(duplicates, findsOneWidget);
+      expect(tester.widget<CheckboxListTile>(duplicates).value, isTrue);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       semantics.dispose();
@@ -304,6 +318,7 @@ void main() {
     try {
       await tester.pumpWidget(ProviderScope(
           overrides: [
+            unpairedServerEndpointOverride(),
             apiClientProvider.overrideWithValue(api),
             audioHandlerProvider.overrideWithValue(handler),
             authStateProvider.overrideWith(_Auth.new),
@@ -319,11 +334,15 @@ void main() {
       await tester.tap(find.text('Play artist'));
       await tester.pumpAndSettle();
       expect(find.text('Loading songs…'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Album'), 200,
+          scrollable: find.byType(Scrollable).first);
       await tester.tap(find.text('Album'));
       await tester.pumpAndSettle();
       expect(find.text('Album route'), findsOneWidget);
       router.pop();
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Play artist'), -200,
+          scrollable: find.byType(Scrollable).first);
       expect(find.text('Play artist'), findsOneWidget);
       api.album.complete({
         'songs': [
