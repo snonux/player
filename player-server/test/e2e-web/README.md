@@ -697,25 +697,44 @@ combination/Clear, URL reload, tag editing/focus, light/dark/narrow and actual
 offline recovery. See [F03 contract and native runner](../../../docs/music-f03-implementation.md).
 Do not run the helper on production or reuse an already augmented namespace.
 
-### Playback speed (fk3): integrated verification pending
+### Playback speed (fk3): integrated verification
 
 Cheap component-local check: `node --experimental-default-type=module web/js/tests/playback-speed.test.js`
 from `player-server/`. It checks control/state contracts with fakes and does
 not verify audible progression or browser layouts.
 
-For the integrated run, use the existing disposable music fixture. In installed
-Chrome and Firefox, play music, open **More player controls** in a narrow window,
-Tab to **Playback speed**, and select each Android-equivalent rate. Measure media
-position advance over elapsed time, then choose **1× Normal**. Check `<`/`>` and
-that select typing/arrows stay native; Escape returns focus to More controls.
-Repeat after changing tracks, a failed-source Retry, podcast playback and refresh;
-check light/dark at narrow and desktop sizes. Pop out, change speed, change
-tracks and close the popup: rate and paused/playing state must survive both
-handoffs. Open a public share and use its Speed control. With a compatible Cast
-receiver, confirm Speed is disabled with its explanation, then restored locally
-when casting ends. On Android, use the existing five speed buttons, reset to 1×
-and check touch/Back remain usable. Record progression and layout/focus evidence
-by platform; none of those runtime checks ran during this implementation slice.
+Run against the existing disposable music fixture:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/tmp/player-music-fixture \
+  npx playwright test -c playwright.music.config.ts music-playback-speed.test.ts
+```
+
+Integrated acceptance on 2026-10-24 used installed Chrome 144 and Firefox 156.
+The core journey measured real 2× audio progression, `<` stepping to 1.5×,
+1× reset and reload persistence. The additional journey selected all five
+Android-equivalent rates and checked the audio element, transferred 2× to a
+popup, changed it to 1.25× and closed the popup through its real `beforeunload`
+handoff, then restored the minimized player and reset 1×. It also checked
+anonymous-share speed/reset, narrow light/dark layouts and Escape restoring
+focus to **More player controls**. Screenshots and JSON evidence remain outside
+the repository under `/home/paul/tmp/player-integrated-verify-evidence/`.
+
+Native Android acceptance used version 0.8.2 (Android version code 4022) on API 34: touch
+all five existing buttons and verify actual OS media-session rates; seek to
+zero, touch Play/Pause at 2×, then reset 1× and use Back to Library. The settled
+paused endpoint advanced 4.690 media seconds in 2.495 wall seconds (1.88×,
+including control overhead). The emulator had no audio output, so this is
+position/session proof, not PCM capture. Native screenshots, state and the
+reproducible command script are under
+`/home/paul/tmp/player-native-retry-evidence/fk3-native/` and
+`/home/paul/tmp/player-native-retry-evidence/fk3_native_speed.py`.
+
+Cast intentionally does not support speed; the disabled control and explanation
+are covered by the focused module checks. No physical receiver was used for
+this local speed acceptance. Retry, spoken-audio preference and detached track
+switching remain covered by the implementation's focused module regressions;
+they were not additional real-device journeys in this run.
 
 ### M17 saved server sessions
 
