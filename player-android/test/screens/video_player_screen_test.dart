@@ -48,6 +48,9 @@ import 'package:player_android/services/playback_preparer.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../support/idle_playback.dart';
+import '../support/server_endpoint.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -317,6 +320,8 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        ...idlePlaybackOverrides(),
+        unpairedServerEndpointOverride(),
         if (coordinator != null)
           playbackSessionCoordinatorProvider.overrideWithValue(coordinator),
         if (preparer != null)
@@ -478,6 +483,7 @@ Future<List<String>> _failPlayingVideo(
 // ---------------------------------------------------------------------------
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets('native creation failure releases local source and shows error',
       (tester) async {
     final previousPlatform = VideoPlayerPlatform.instance;
@@ -1252,6 +1258,8 @@ void main() {
       addTearDown(url.dispose);
       await tester.pumpWidget(ProviderScope(
         overrides: [
+          ...idlePlaybackOverrides(),
+          unpairedServerEndpointOverride(),
           tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
           apiClientProvider.overrideWithValue(_FakeApiClient()),
           progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
@@ -1405,6 +1413,8 @@ void main() {
       debugPrint = (String? message, {int? wrapWidth}) => logs.add('$message');
       await tester.pumpWidget(ProviderScope(
         overrides: [
+          ...idlePlaybackOverrides(),
+          unpairedServerEndpointOverride(),
           apiClientProvider.overrideWithValue(_FakeApiClient()),
           publicApiClientProvider.overrideWithValue(publicClient),
           progressQueueProvider.overrideWithValue(_FakeProgressQueue()),

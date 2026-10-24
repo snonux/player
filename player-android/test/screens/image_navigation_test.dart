@@ -10,11 +10,14 @@ import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/app_routes.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:player_android/screens/image_viewer_screen.dart';
 import 'package:player_android/screens/audio_player_screen.dart';
 import 'package:player_android/screens/media_detail_screen.dart';
 import 'package:player_android/screens/media_grid_screen.dart';
 import 'package:player_android/widgets/authenticated_network_image.dart';
+import '../support/idle_playback.dart';
+import '../support/server_endpoint.dart';
 
 const _image = Media(
   id: 9,
@@ -96,6 +99,7 @@ class _Client extends PlayerApiClient {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets('grid to detail to full image uses authenticated stream',
       (tester) async {
     final client = _Client();
@@ -131,6 +135,8 @@ void main() {
 
     await tester.pumpWidget(ProviderScope(
       overrides: [
+        ...idlePlaybackOverrides(),
+        unpairedServerEndpointOverride(),
         apiClientProvider.overrideWithValue(client),
         playerBaseUrlProvider
             .overrideWithValue(Uri.parse('https://player.example')),
@@ -168,6 +174,11 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Unexpected audio route'), findsNothing);
+    for (var frame = 0;
+        frame < 20 && find.byType(CachedNetworkImage).evaluate().isEmpty;
+        frame++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
     final image = tester.widget<CachedNetworkImage>(
       find.byType(CachedNetworkImage),
     );

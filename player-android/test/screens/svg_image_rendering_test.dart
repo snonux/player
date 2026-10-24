@@ -24,6 +24,7 @@ import 'package:player_android/app_routes.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/public_api_client_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:player_android/screens/folder_browser_screen.dart';
 import 'package:player_android/screens/home_screen.dart';
 import 'package:player_android/screens/image_viewer_screen.dart';
@@ -36,6 +37,8 @@ import 'package:player_android/widgets/network_svg_image.dart';
 import '../support/fake_http.dart';
 import '../support/real_image_loading.dart';
 import '../support/svg_test_support.dart';
+import '../support/idle_playback.dart';
+import '../support/server_endpoint.dart';
 
 const _base = 'https://player.example';
 const _shareStream = '$_base/s/tok/stream';
@@ -162,6 +165,8 @@ Widget _library(
       // A new scope per screen, so no provider state leaks between them.
       key: UniqueKey(),
       overrides: [
+        ...idlePlaybackOverrides(),
+        unpairedServerEndpointOverride(),
         apiClientProvider
             .overrideWithValue(_Client(media: media, withFolder: withFolder)),
         playerBaseUrlProvider.overrideWithValue(Uri.parse(_base)),
@@ -178,7 +183,10 @@ Widget _library(
 /// The public share image viewer; [title] is the file name, when known.
 Widget _publicViewer(RecordingSvgFetcher fetcher, {String? title}) =>
     ProviderScope(
-      overrides: [svgFetcherProvider.overrideWithValue(fetcher.fetcher)],
+      overrides: [
+        unpairedServerEndpointOverride(),
+        svgFetcherProvider.overrideWithValue(fetcher.fetcher),
+      ],
       child: MaterialApp(
         home: ImageViewerScreen(
           mediaId: '0',
@@ -200,6 +208,7 @@ Finder get _pictureBoundary =>
     find.ancestor(of: _picture, matching: find.byType(RepaintBoundary));
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   group('image viewer, SVG', _viewerSvgTests);
   group('public image viewer, SVG', _publicViewerSvgTests);
   group('image viewer, bitmaps', _viewerBitmapTests);
