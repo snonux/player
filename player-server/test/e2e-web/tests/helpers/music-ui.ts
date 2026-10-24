@@ -56,9 +56,15 @@ export async function selectByKeys(page: Page, name: string, maxSteps = 30): Pro
 
 /** Wait until the element plays the given media id and its time advances. */
 export async function expectPlaying(page: Page, mediaId: number): Promise<AudioState> {
-  // Playback cache may feed a blob: object URL instead of /media/{id}/stream.
-  await expect.poll(async () => (await audioState(page)).src, { timeout: 20_000 })
-    .toMatch(new RegExp(`(/media/${mediaId}/(stream|compat)|^blob:)`));
+  // A cached blob URL cannot identify a song. Check the player's actual media
+  // identity too, so a previous cached song cannot satisfy a natural advance.
+  await expect.poll(() => page.evaluate(async expectedId => {
+    const modulePath = '/js/playback.js';
+    const { currentMediaId } = await import(modulePath);
+    const audio = document.getElementById('media-audio') as HTMLAudioElement;
+    return currentMediaId() === expectedId &&
+      new RegExp(`(/media/${expectedId}/(stream|compat)|^blob:)`).test(audio.currentSrc);
+  }, mediaId), { timeout: 20_000 }).toBe(true);
   const before = (await audioState(page)).time;
   await expect.poll(async () => (await audioState(page)).time, { timeout: 10_000 }).toBeGreaterThan(before + 0.5);
   const state = await audioState(page);
