@@ -102,7 +102,7 @@ test('a failed transcode shows the error toast, and pressing play retries', asyn
 
   await loadDirect(page, { id: 987654, type: 'audio', file_name: 'song.wma', duration: 5, transcoded: true }, COMPAT_URL);
 
-  await expect(page.locator('#toast')).toHaveText('Cannot play song.wma: the server could not convert this file');
+  await expect(page.locator('#toast')).toHaveText('Cannot play song: the server could not convert this file');
   await expect(page.locator('#toast')).toHaveClass(/error/);
   await expect(page.locator('#btn-play')).toHaveText('▶');
   await expect(page.locator('#player-status')).toBeHidden();
