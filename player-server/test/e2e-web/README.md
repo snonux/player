@@ -18,6 +18,26 @@ must already exist; it prevents the probe tones reaching host speakers.
 This directory contains a Playwright (TypeScript) smoke suite that exercises
 the Player web UI end-to-end against a running server.
 
+The A03a format journey reuses the disposable music fixture. Supply a JSON
+array of indexed media objects (`id`, `file_name`) for the additive **A03a
+Formats** folder, with TTML, YAML, ELRC, SRT, Malformed Fallback, Priority,
+YAML Plain and Unavailable MP3 tracks. Timed cases share line starts at 0, 2
+and 8 seconds; the full fixture definitions and retained setup command are
+recorded in the [A03a implementation notes](../../../docs/music-a03a-implementation.md).
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture \
+PLAYER_LYRIC_FORMAT_CASES=/tmp/a03a/indexed.json \
+PLAYER_LYRIC_FORMAT_EVIDENCE=/tmp/a03a \
+PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx playwright test -c playwright.music.config.ts music-lyric-formats --workers=1
+```
+
+This checks actual playback identity/time, keyboard and pointer line seeking,
+paused and loaded-offline seek, plain/unavailable results and light/dark
+contrast at a narrow viewport in installed Chrome and Firefox. It does not
+replace the native Android journey.
+
 ## Prerequisites
 
 | Requirement | Version |

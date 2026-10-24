@@ -1,8 +1,8 @@
 # Additional lyric formats (A03a / vj3)
 
-Implementation stage; integrated verification pending. Prerequisites nj3 (U01)
-and oj3 (V01) are accepted. Implementation-first workflow defers browser/native
-acceptance, full suites and final builds.
+Reviewed implementation `c5dbe68`; integrated platform acceptance passed.
+Prerequisites nj3 (U01) and oj3 (V01) are accepted. The original two review
+rounds are complete; acceptance does not restart that budget.
 
 ## Interaction and data design (recorded before implementation)
 
@@ -82,3 +82,104 @@ Integrated acceptance must play equivalent format fixtures on installed Chrome,
 Firefox and native Android, checking actual timing/line seek/plain fallback,
 malformed candidates, long text, keyboard/touch/Back, and light/dark/narrow
 presentation. No platform acceptance is claimed by server parser tests.
+
+### Integrated browser acceptance (2026-10-24)
+
+Retained fixture/evidence: `/home/paul/tmp/vj3-evidence/`. The additive files
+are under the owned normal backend's `Music/A03a Formats` folder on port
+18771; no shared server restart or database edit. `cases.json` contains exact
+sidecar bytes; `indexed.json` maps the eight cases to media IDs 48–55.
+`/home/paul/tmp/vj3-setup.py` records generation/rescan. All MP3s copy the
+same 12-second 523.25 Hz source with distinct titles. Timed lines start at
+0, 2 and 8 seconds, including Unicode and a wrapping final line.
+
+Cases: TTML (explicit 25 fps, inferred 50 ticks = 2 seconds), Lyricsfile
+YAML 1.0 (250 ms positive offset), Enhanced LRC word markers and SRT markup;
+YAML explicit plain text; malformed TTML/YAML-alias plus empty ELRC falling
+through to LRC; TTML winning over valid YAML/text/embedded; and malformed
+structured sidecars with no embedded lyrics producing unavailable. Literal
+`[bad] nope` remains compatible plain LRC/ELRC text, so it is not used as a
+malformed structured candidate.
+
+Installed Chrome 144.0.7559.132 and Firefox 156 passed all eight cases with
+the shared browser verifier (`final-browsers.log`: 24.0s / 51.4s). Each timed
+case proves actual stream identity, advancing playback, Enter seeking with
+retained focus, `p` pause, pointer seeking while paused, current-line state,
+and loaded lyrics seeking offline. Plain YAML has no line action; unavailable
+lyrics leave audio playing. Each case has narrow 390×844 light/dark screenshots.
+Settings Escape restores focus. Rendered current and inactive lyric text both
+meet 4.5:1 contrast against the panel in light/dark. The acceptance fix pairs
+the panel's existing theme text/accent with `--bg-surface`; previously light
+theme inactive text was nearly invisible against the permanent black stage.
+The normal server is 0.8.2 / `c7b6aea-dirty`; browser assets came from the
+current checkout, with that CSS fix committed separately as `86cb296`.
+Independent real API acceptance (`parent-api-results.json`) records 30 passing
+checks across both route aliases, exact timing/text, priority/fallback and
+authentication/access boundaries. `mage webTest` passes (`web-test.log`).
+
+Run from `player-server/test/e2e-web`:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/home/paul/tmp/player-quality-fixture \
+PLAYER_LYRIC_FORMAT_CASES=/home/paul/tmp/vj3-evidence/indexed.json \
+PLAYER_LYRIC_FORMAT_EVIDENCE=/home/paul/tmp/vj3-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx playwright test -c playwright.music.config.ts music-lyric-formats \
+  --project=chrome --project=firefox --workers=1
+```
+
+The browser assertions use actual media element state rather than claiming
+that a parser unit test proves playback.
+
+### Integrated native acceptance (2026-10-24)
+
+The same eight cases pass in the installed normal release APK on the owned
+API 34 / Android 14 x86_64 emulator (`native-platform.log`, `android/results.json`).
+APK 0.8.2 / code 4022, source `bd478ab`, installed SHA-256
+`c783857aa3e8f4058ff1f80c703d170bd2ec36b13a28c48ac0d7d2e485ce7a7c`;
+physical size 1080×2220, density 440 (phone layout). No test APK, data clear,
+preference-file write, emulator restart or server restart was used.
+
+Every timed case, including priority and malformed fallback, proves native
+touch seeking to 2, 8 and 2 seconds while paused, the selected/current lyric
+state, then actual playback from the earlier line and real QEMU WAV output
+at 523.2–525.3 Hz (expected 523.25 Hz) for 2.46–2.66 seconds. Settled paused positions and
+fresh UI dumps are used; sparse playing MediaSession positions are not treated
+as exact timing. The long final line wraps visibly in the current-line banner.
+Back returns to the Library after every case. Plain YAML has no seek action
+and a tap leaves the paused position unchanged; malformed-only input shows
+the concise **No lyrics available.** result while playback remains available.
+
+Retained native runner command, from the repository root:
+
+```sh
+PYTHONPATH=player-android/test/e2e-live:player-android/integration_test/support \
+  python3 -u /home/paul/tmp/vj3-evidence/native.py
+```
+
+The runner uses the supported **Play now → Open player → Lyrics** controls
+with the disposable admin account. A persistent queue Undo snackbar on this
+accessibility-enabled emulator is dismissed with its native downward swipe
+before opening the bottom Lyrics button. Earlier setup/driver attempts remain
+in the evidence directory; the final eight-case run passes cleanly. Existing
+F01 native offline/buffered-seek evidence is reused for the unchanged line
+client; this run does not claim new uncached streaming works offline.
+
+Native TTML was also captured under System light and dark (`system-light.png`,
+`system-dark.png`); its established black player and readable lyric panel are
+retained in both. OS night mode was restored to its original **yes**. The
+retained `restore.py` uses public queue CAS and explicit native **Continue
+session → Replace**, then switches/unlocks the original 18766 admin account.
+All four saved local queues compare exactly with the pre-run JSON, including
+18771 at media 38 / 2.687s and the original repeated-song 18766 queue at 4.69s.
+System theme, Teal/Circle/Fit/keep-awake, visuals Off and loudness Off remain
+unchanged; transport is NONE with no audio. Only the original reverse mapping
+18766 remains. Proof: `restoration.log`, `android/restoration.json`,
+`restored-preferences.json` and `final-reverse.txt`.
+
+No format-specific platform acceptance gap remains. Shared full Go race/coverage
+and server-build results from `c7b6aea`, plus clean Flutter analysis, all 1685
+tests and the `bd478ab` APK build, are reused because their production code is
+unchanged. The CSS-only fix passed the full web JavaScript suite and actual
+browser checks without requiring another server or Android build. No release,
+version change, push or deployment.
