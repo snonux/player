@@ -299,7 +299,8 @@ class _CatalogState extends State<MusicCollectionCatalog> {
           _selecting
               ? Checkbox(
                   value: _selected.contains(key),
-                  semanticLabel: 'Select ${collection[widget.nameName]}',
+                  semanticLabel: context.tr(
+                      'Select {name}', {'name': collection[widget.nameName]}),
                   onChanged: (_) => toggle())
               : null,
           _selecting ? toggle : null);
@@ -324,7 +325,7 @@ class _CatalogState extends State<MusicCollectionCatalog> {
                             : () => setState(() => _selecting = true),
                         child: Text(_selecting
                             ? context.tr('Cancel selection')
-                            : 'Select $plural')),
+                            : context.tr('Select $plural'))),
                     if (_selecting) ...[
                       Text(context
                           .tr('{count} selected', {'count': _selected.length})),
@@ -337,7 +338,7 @@ class _CatalogState extends State<MusicCollectionCatalog> {
                                     collection[widget.keyName] as String)
                           ],
                           playLabel: context.tr('Play selected'),
-                          sourceLabel: 'Selected $plural'),
+                          sourceLabel: context.tr('Selected $plural')),
                     ],
                   ])),
           if (widget.items.isEmpty)

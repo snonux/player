@@ -298,6 +298,12 @@ const _german = <String, String>{
   "{count} results": "{count} Ergebnisse",
   "Play {name}": "{name} abspielen",
   "Select {name}": "{name} auswählen",
+  "Select albums": "Alben auswählen",
+  "Select artists": "Interpreten auswählen",
+  "Select playlists": "Wiedergabelisten auswählen",
+  "Selected albums": "Ausgewählte Alben",
+  "Selected artists": "Ausgewählte Interpreten",
+  "Selected playlists": "Ausgewählte Wiedergabelisten",
   "Actions for {name}": "Aktionen für {name}",
   "Info for {name}": "Informationen zu {name}",
   "Artwork for {name}": "Cover für {name}",
@@ -310,10 +316,10 @@ const _german = <String, String>{
   "Autoplay related music": "Ähnliche Musik automatisch abspielen",
   "After this queue ends · related songs from your library":
       "Nach dem Ende dieser Warteschlange · ähnliche Titel aus Ihrer Mediathek",
-  "Autoplay needs a connection.": "Automatische Wiedergabe braucht eine Verbindung.",
+  "Autoplay needs a connection.":
+      "Automatische Wiedergabe braucht eine Verbindung.",
   "Finding related songs…": "Ähnliche Titel werden gesucht…",
-  "No additional related suggestions.":
-      "Keine weiteren ähnlichen Vorschläge.",
+  "No additional related suggestions.": "Keine weiteren ähnlichen Vorschläge.",
   "Could not load related songs. Try again when connected.":
       "Ähnliche Titel konnten nicht geladen werden. Versuchen Sie es erneut, wenn eine Verbindung besteht.",
   "Autoplay · related music": "Automatisch · ähnliche Musik",

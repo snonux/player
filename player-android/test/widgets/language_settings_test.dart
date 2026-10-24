@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/l10n/music_localizations.dart';
 import 'package:player_android/providers/language_provider.dart';
 import 'package:player_android/widgets/language_settings.dart';
+import 'package:player_android/widgets/music_collection_actions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LanguageHarness extends ConsumerWidget {
@@ -36,6 +37,48 @@ class LanguageHarness extends ConsumerWidget {
 }
 
 void main() {
+  for (final kind in ['album', 'artist', 'playlist']) {
+    testWidgets('German $kind catalog selection preserves metadata semantics',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      const metadata = 'Select Deutsch Play';
+      final labels = {
+        'album': 'Alben auswählen',
+        'artist': 'Interpreten auswählen',
+        'playlist': 'Wiedergabelisten auswählen',
+      };
+      await tester.pumpWidget(ProviderScope(
+          child: MaterialApp(
+              locale: const Locale('de'),
+              supportedLocales: MusicLocalizations.supportedLocales,
+              localizationsDelegates: const [
+                MusicLocalizations.delegate,
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              home: Scaffold(
+                  body: MusicCollectionCatalog(
+                      items: const [
+                    {'id': 'one', 'name': metadata}
+                  ],
+                      kind: kind,
+                      keyName: 'id',
+                      nameName: 'name',
+                      onRefresh: () async {},
+                      itemBuilder: (item, checkbox, toggle) => ListTile(
+                          title: Text(item['name'] as String),
+                          leading: checkbox,
+                          onTap: toggle))))));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(labels[kind]!));
+      await tester.pumpAndSettle();
+      expect(find.text(metadata), findsOneWidget);
+      expect(find.bySemanticsLabel('$metadata auswählen'), findsOneWidget);
+      expect(find.text('Auswahl abbrechen'), findsOneWidget);
+      semantics.dispose();
+    });
+  }
   test('locale resolution and English fallback preserve interpolation', () {
     expect(normalizeLanguage('invalid'), 'system');
     expect(resolveMusicLocale('system', const Locale('de', 'DE')),
