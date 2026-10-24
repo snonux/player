@@ -1,8 +1,9 @@
 # Appearance preferences (sj3 / M68)
 
-Implementation stage; actual Chrome, Firefox and native Android acceptance is
-still pending the integrated verification phase. U01 (`nj3`) and fixture/runners
-(`oj3`) are the implemented prerequisites.
+Local browser and Android verification passed. U01 (`nj3`) and fixture/runners
+(`oj3`) are the implemented prerequisites. Actual Cast receiver behavior remains
+unverified because no compatible receiver is available; the user requested an
+additional subagent review instead. No receiver acceptance is claimed.
 
 Web header: **Settings** → standard focused dialog → **Appearance**. Native:
 existing Settings → Appearance, for both device and server destinations. Existing
@@ -68,7 +69,7 @@ harness failures above were independently reproduced by the parent at baseline
 `0f489b7`; the retained baseline log is `/home/paul/tmp/sj3-artwork-baseline.log`.
 They remain deferred to integrated verification, with no retry or acceptance claim.
 
-Stage: **IMPLEMENTED/REVIEWED - AWAITING INTEGRATED VERIFICATION**. Both
+Implementation checkpoint (2026-10-23): **AWAITING INTEGRATED VERIFICATION**. Both
 bounded expert rounds completed. Controlled dropdowns now restore the saved
 choice after a rejected write; the negative widget test checks all three
 choices and the next successful save. Three native preference/widget tests,
@@ -76,3 +77,93 @@ scoped analysis and Node preference/contrast checks pass. The old artwork
 harness fails identically on pre-appearance commit 0f489b7; that baseline gap
 and native/window/visual acceptance remain for integrated verification. Full
 suites and final builds remain deferred until backlog implementation is done.
+
+Integrated verification, 2026-10-24:
+
+- Installed Chrome and Firefox passed the committed
+  `music-presentation.test.ts` journey: narrow Settings, actual playback,
+  dark/light and all three accents, Off/missing-art fallback, shape/fit styles,
+  Escape focus, restart and offline preferences. Evidence:
+  `/home/paul/tmp/player-integrated-verify-evidence`.
+- Native API34 x86_64 release 0.8.2/code4022 retained Teal/Circle/Fit/keep-awake
+  after a cold restart. Actual local playing, Home while still playing, return
+  and Pause changed the effective window flag to true/false/true/false.
+  Evidence: `/home/paul/tmp/player-native-retry-evidence`.
+- On the normal APK from source `e489731`, actual native touch changed
+  Blue/Teal/Plum in light Settings during an isolated 180-second artwork source.
+  Both playback state observations were PLAYING for every change; read-only
+  preferences and player/Settings screenshots confirm saved selections. Evidence:
+  `/home/paul/tmp/sj3-native-evidence/theme-matrix.json`. The original 18766
+  queue was preserved by using the disposable 18771 admin account.
+- Screenshot inspection found light-mode Sleep timer text inheriting light
+  accent colors on the player's permanent black background. Actual Blue/Teal/
+  Plum text contrast was 3.87/3.86/3.08:1. These screenshots are failed contrast
+  evidence. Fix `bd478ab` applies the existing selected-accent dark theme only
+  to the black player. Three production-screen regressions verify actual Sleep
+  timer button contrast ≥4.5:1 for every accent while the surrounding app remains
+  light. On the final installed APK, original screenshot pixels confirm Blue/
+  Teal/Plum text contrast against black of 7.81/11.78/9.87:1.
+- The user confirmed that no compatible Cast receiver is available and requested
+  an additional subagent review. That review found a finished receiver status
+  waiting for a progress network request before notifying listeners, leaving
+  remote keep-awake state stale. The controller fix and regression checks do
+  not establish actual receiver acceptance. Real Cast playing/pause/end,
+  background/resume and preference-disable window behavior remain unverified.
+- Source `bd478ab` passes full Flutter analysis and all 1685 tests with two test
+  workers. The unchanged 2000 ms SVG timing assertion failed at 2172 ms in the
+  earlier broader worker pool and passed in this final run; both logs are kept
+  under `/home/paul/tmp/player-appearance-gates`. Normal pub-enabled release APK
+  build passed and installed without clearing data: version 0.8.2/code4022,
+  SHA256 `c783857aa3e8f4058ff1f80c703d170bd2ec36b13a28c48ac0d7d2e485ce7a7c`.
+- Final native API34 x86_64 checks passed all six light/dark × accent changes
+  while PLAYING and their saved state. A real 640×320 test-pattern cover verifies
+  all six Rounded/Square/Circle × Fill/Fit combinations, changed through native
+  controls during playback. Five actual visualizer modes displayed after the
+  normal audio permission prompt; each has 3.35–4.43 seconds of captured audible
+  QEMU output. Off returns to artwork. Evidence:
+  `/home/paul/tmp/sj3-native-final-evidence/{theme-matrix-light.json,theme-matrix-dark.json,artwork-matrix.json,visuals.json,native-player-contrast.json}`.
+- Final local window checks passed enabled foreground → disabled during playback
+  → reenabled → Home → resumed → Pause: effective KEEP_SCREEN_ON was
+  true/false/true/false/true/false. The playing session position is a sparse
+  18314 ms anchor, not a running clock; the settled Pause is 23710 ms and real
+  PCM was captured throughout. See `keep-awake.json` in the same directory.
+- Additional installed Chrome 144.0.7559.132 and Firefox 156.0 checks passed
+  actual non-square artwork, shape/fit rendering, all six theme/accent palettes
+  and all five visualizer modes using the existing compact player/More controls.
+  Both browsers supplied actual nonzero analyser samples (frequency peak246,
+  waveform deviation17) during playback of the real local 440 Hz source.
+  Evidence: `/home/paul/tmp/sj3-browser-evidence/{chrome.json,firefox.json}` and
+  original screenshots. A steady tone may legitimately produce identical
+  frequency-geometry frames; sample data, not frame noise, is the signal oracle.
+- Cleanup restored the original System/Teal/Circle/Fit/keep-awake preferences,
+  denied audio permission and sole 18766 adb reverse mapping. Public CAS and
+  native Continue/Replace restored the isolated 18771 queue and 2.687-second
+  offset. The original 18766 admin Library has playback stopped; server and
+  read-only native queue snapshots still match occurrences `(3,3),(1,3),(2,5)`,
+  current2/index2/4.69 seconds. See `restored-original-queue.json`,
+  `restored-18771-state.json` and `restored-preferences.json` in the native
+  evidence directory. No app data or saved login was cleared.
+
+The external native harness is `/home/paul/tmp/sj3-native-acceptance.py`; it never
+clears data, installs an APK or writes preferences. Early idle/selector attempts
+are retained as failures and are excluded from passing scenario records.
+Reproduction commands from the repository root (external evidence/media only):
+
+```sh
+M68_EVIDENCE=/home/paul/tmp/sj3-native-final-evidence python3 -u /home/paul/tmp/sj3-native-acceptance.py matrix
+M68_EVIDENCE=/home/paul/tmp/sj3-native-final-evidence python3 -u /home/paul/tmp/sj3-native-acceptance.py artwork
+M68_EVIDENCE=/home/paul/tmp/sj3-native-final-evidence python3 -u /home/paul/tmp/sj3-native-acceptance.py visuals
+M68_EVIDENCE=/home/paul/tmp/sj3-native-final-evidence python3 -u /home/paul/tmp/sj3-native-acceptance.py awake
+node /home/paul/tmp/sj3-browser-acceptance.cjs
+```
+
+The native runner requires the existing signed-in disposable fixture and its
+paused source; `pattern` adds the owned 180-second real source and non-square art.
+The browser harness is `/home/paul/tmp/sj3-browser-acceptance.cjs`. Failed external
+attempts retain their logs: initial desktop options collapsed the floating stage,
+so artwork checks use the normal compact player, and the first animation oracle
+incorrectly required changing geometry for a steady tone. Original PNGs are
+unaltered. A chat image viewer intermittently omitted white regions that remain
+present and opaque in the original PNG pixels; this was not a product failure.
+Actual Cast boundaries remain unverified. The task entry became unavailable
+during verification; no task completion or replacement entry was recorded.
