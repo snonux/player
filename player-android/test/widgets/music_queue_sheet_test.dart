@@ -134,6 +134,8 @@ void main() {
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(handler.musicQueue.entries.length, 3);
+    await tester.scrollUntilVisible(find.text('Clear queue'), 180,
+        scrollable: find.byType(Scrollable).first);
     await tester.runAsync(() async {
       await tester.tap(find.text('Clear queue'));
       await Future<void>.delayed(const Duration(milliseconds: 30));
@@ -141,6 +143,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Queue is empty. Add songs or play an album to start.'),
         findsOneWidget);
+    await tester.ensureVisible(find.text('Undo'));
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(find.text('Selected · paused'), findsOneWidget);
@@ -151,6 +154,89 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.runAsync(handler.stop);
   });
+  for (final (size, scale) in [
+    (const Size(393, 400), 2.0),
+    (const Size(800, 360), 1.0),
+  ]) {
+    testWidgets('short queue sheet scrolls controls and rows at $size / $scale',
+        (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final handler = PlayerAudioHandler(_QueuePlayer());
+      var loads = 0;
+      handler.restoreMusicQueue(
+          entries: [
+            for (var i = 0; i < 20; i++)
+              MusicQueueEntry(
+                  i,
+                  ServerPlaybackRequest(
+                      mediaId: i,
+                      serverOrigin: 'http://one',
+                      userId: 1,
+                      title: 'Saved item $i',
+                      sourceUri: Uri.parse('http://one/$i')))
+          ],
+          index: 0,
+          label: 'Saved album',
+          position: 7.25,
+          upNext: {},
+          claim: (_) async => null,
+          load: (_, __) async {
+            loads++;
+            return null;
+          });
+      await tester.pumpWidget(ProviderScope(
+          overrides: [audioHandlerProvider.overrideWithValue(handler)],
+          child: MaterialApp(
+              builder: (context, child) => MediaQuery(
+                  data: MediaQuery.of(context)
+                      .copyWith(textScaler: TextScaler.linear(scale)),
+                  child: child!),
+              home: Scaffold(
+                  appBar: AppBar(actions: const [MusicQueueButton()])))));
+      await tester.tap(find.byTooltip('Now Playing queue'));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved item 19'), findsNothing,
+          reason: 'offscreen queue rows remain lazy');
+      await tester.ensureVisible(find.text('Resume queue'));
+      await tester.pumpAndSettle();
+      expect(
+          tester
+              .getSize(find.widgetWithText(FilledButton, 'Resume queue'))
+              .height,
+          greaterThanOrEqualTo(48));
+      await tester.scrollUntilVisible(find.text('Saved item 19'), 250,
+          scrollable: find.byType(Scrollable).first);
+      await tester.scrollUntilVisible(find.text('Clear queue'), 180,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Clear queue'));
+      await tester.pumpAndSettle();
+      expect(handler.musicQueue.entries, isEmpty);
+      await tester.ensureVisible(find.text('Undo'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(handler.musicQueue.entries, hasLength(20));
+      await tester.scrollUntilVisible(find.byTooltip('Close queue'), -250,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      expect(loads, 0, reason: 'scrolling and Undo must not resume playback');
+      expect(handler.musicQueue.active, isFalse);
+      expect(tester.takeException(), isNull);
+      expect(find.byTooltip('Close queue').hitTestable(), findsOneWidget);
+      await tester.tap(find.byTooltip('Close queue'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.text('Now Playing'), findsNothing);
+      expect(handler.musicQueue.entries, hasLength(20));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(handler.stop);
+    });
+  }
+
   testWidgets('scope clear removes named album context from the empty sheet',
       (tester) async {
     final handler = PlayerAudioHandler(_QueuePlayer());

@@ -52,255 +52,256 @@ class _MusicQueueSheet extends StatelessWidget {
           stream: handler.queueChanges,
           builder: (context, _) {
             final q = handler.musicQueue;
-            return Column(children: [
-              Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(children: [
-                    Expanded(
-                        child: Text(context.tr('Now Playing'),
-                            style: Theme.of(context).textTheme.titleLarge)),
-                    IconButton(
-                        tooltip: context.tr('Close queue'),
-                        color: Theme.of(context).colorScheme.onSurface,
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close))
-                  ])),
-              if (!offlineOnly) const SavedQueueControls(),
-              if (q.label.isNotEmpty)
+            return CustomScrollView(slivers: [
+              SliverToBoxAdapter(
+                  child: Column(children: [
+                Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(children: [
+                      Expanded(
+                          child: Text(context.tr('Now Playing'),
+                              style: Theme.of(context).textTheme.titleLarge)),
+                      IconButton(
+                          tooltip: context.tr('Close queue'),
+                          color: Theme.of(context).colorScheme.onSurface,
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close))
+                    ])),
+                if (!offlineOnly) const SavedQueueControls(),
+                if (q.label.isNotEmpty)
+                  Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(context
+                          .tr('Playing from: {name}', {'name': q.label}))),
+                Wrap(alignment: WrapAlignment.center, children: [
+                  Semantics(
+                      selected: q.shuffle,
+                      child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                              foregroundColor: q.shuffle
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant),
+                          onPressed: q.busy ||
+                                  q.restoreFailed ||
+                                  (!q.shuffle && q.shuffleEligible < 2)
+                              ? null
+                              : handler.shuffleQueue,
+                          icon: const Icon(Icons.shuffle),
+                          label: Text(context.tr('Shuffle: {mode}', {
+                            'mode': context.tr(q.shuffle
+                                ? (q.shuffleMode == 'albums'
+                                    ? context.tr('Albums')
+                                    : context.tr('Tracks'))
+                                : context.tr('Off'))
+                          })))),
+                  PopupMenuButton<String>(
+                      tooltip: context.tr('Shuffle options'),
+                      enabled:
+                          !q.busy && !q.restoreFailed && q.shuffleEligible >= 2,
+                      onSelected: (mode) => handler.shuffleQueue(mode: mode),
+                      itemBuilder: (_) => [
+                            PopupMenuItem(
+                                value: 'tracks',
+                                child: Text(context.tr('Shuffle tracks'))),
+                            if (!offlineOnly)
+                              PopupMenuItem(
+                                  value: 'albums',
+                                  child: Text(context.tr('Shuffle albums'))),
+                          ],
+                      child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 16),
+                          child: Text(context.tr('Shuffle options ▾')))),
+                  if (q.shuffle)
+                    TextButton(
+                        style: TextButton.styleFrom(
+                            minimumSize: const Size(48, 48)),
+                        onPressed:
+                            q.busy || q.restoreFailed || q.shuffleEligible < 2
+                                ? null
+                                : () => handler.shuffleQueue(reshuffle: true),
+                        child: Text(context.tr('Reshuffle remaining'))),
+                  Semantics(
+                      selected: q.repeat != MusicRepeat.off,
+                      child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                              foregroundColor: q.repeat == MusicRepeat.off
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant
+                                  : Theme.of(context).colorScheme.primary),
+                          onPressed: q.busy || q.restoreFailed
+                              ? null
+                              : handler.cycleQueueRepeat,
+                          icon: Icon(q.repeat == MusicRepeat.one
+                              ? Icons.repeat_one
+                              : Icons.repeat),
+                          label: Text(context.tr('Repeat: {mode}', {
+                            'mode': context.tr(q.repeat.name[0].toUpperCase() +
+                                q.repeat.name.substring(1))
+                          })))),
+                ]),
+                MusicAutoplayControl(
+                    enabled: q.autoplayEnabled,
+                    available: !offlineOnly && q.autoplayAvailable,
+                    status: q.autoplayStatus,
+                    onChanged: handler.setQueueAutoplay),
                 Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                        context.tr('Playing from: {name}', {'name': q.label}))),
-              Wrap(alignment: WrapAlignment.center, children: [
-                Semantics(
-                    selected: q.shuffle,
-                    child: TextButton.icon(
-                        style: TextButton.styleFrom(
-                            minimumSize: const Size(48, 48),
-                            foregroundColor: q.shuffle
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant),
-                        onPressed: q.busy ||
-                                q.restoreFailed ||
-                                (!q.shuffle && q.shuffleEligible < 2)
-                            ? null
-                            : handler.shuffleQueue,
-                        icon: const Icon(Icons.shuffle),
-                        label: Text(context.tr('Shuffle: {mode}', {
-                          'mode': context.tr(q.shuffle
-                              ? (q.shuffleMode == 'albums'
-                                  ? context.tr('Albums')
-                                  : context.tr('Tracks'))
-                              : context.tr('Off'))
-                        })))),
-                PopupMenuButton<String>(
-                    tooltip: context.tr('Shuffle options'),
-                    enabled:
-                        !q.busy && !q.restoreFailed && q.shuffleEligible >= 2,
-                    onSelected: (mode) => handler.shuffleQueue(mode: mode),
-                    itemBuilder: (_) => [
-                          PopupMenuItem(
-                              value: 'tracks',
-                              child: Text(context.tr('Shuffle tracks'))),
-                          if (!offlineOnly)
-                            PopupMenuItem(
-                                value: 'albums',
-                                child: Text(context.tr('Shuffle albums'))),
-                        ],
-                    child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 16),
-                        child: Text(context.tr('Shuffle options ▾')))),
-                if (q.shuffle)
-                  TextButton(
-                      style:
-                          TextButton.styleFrom(minimumSize: const Size(48, 48)),
-                      onPressed:
-                          q.busy || q.restoreFailed || q.shuffleEligible < 2
-                              ? null
-                              : () => handler.shuffleQueue(reshuffle: true),
-                      child: Text(context.tr('Reshuffle remaining'))),
-                Semantics(
-                    selected: q.repeat != MusicRepeat.off,
-                    child: TextButton.icon(
-                        style: TextButton.styleFrom(
-                            minimumSize: const Size(48, 48),
-                            foregroundColor: q.repeat == MusicRepeat.off
-                                ? Theme.of(context).colorScheme.onSurfaceVariant
-                                : Theme.of(context).colorScheme.primary),
-                        onPressed: q.busy || q.restoreFailed
-                            ? null
-                            : handler.cycleQueueRepeat,
-                        icon: Icon(q.repeat == MusicRepeat.one
-                            ? Icons.repeat_one
-                            : Icons.repeat),
-                        label: Text(context.tr('Repeat: {mode}', {
-                          'mode': context.tr(q.repeat.name[0].toUpperCase() +
-                              q.repeat.name.substring(1))
-                        })))),
-              ]),
-              MusicAutoplayControl(
-                  enabled: q.autoplayEnabled,
-                  available: !offlineOnly && q.autoplayAvailable,
-                  status: q.autoplayStatus,
-                  onChanged: handler.setQueueAutoplay),
-              Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                      'Upcoming songs only; Play next stays first. Albums keep disc/track order.${q.shuffleEligible < 2 ? ' At least two upcoming songs outside Play next are needed to shuffle.' : ''}')),
-              if (q.entries.isNotEmpty || q.status.isNotEmpty)
-                Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(
-                        q.busy
-                            ? context.tr('Loading track…')
-                            : q.status.isNotEmpty
-                                ? q.status
-                                : q.active
-                                    ? context.tr('Current track marked Now')
-                                    : context.tr(
-                                        'Queue paused. Choose a track to play.'),
-                        semanticsLabel: q.status)),
-              if (q.restored) ...[
-                Text(
-                    'Paused at ${Duration(seconds: q.position.floor()).inMinutes}:${(q.position.floor() % 60).toString().padLeft(2, '0')}'),
-                FilledButton(
-                    onPressed: q.busy
-                        ? null
-                        : () => _run(context, handler.resumeQueue),
-                    child: Text(context.tr('Resume queue'))),
-              ],
-              if (q.restoreFailed)
-                TextButton(
-                    onPressed: q.busy ? null : handler.retryQueueRestore,
-                    child: Text(context.tr('Retry restore'))),
-              if (q.index >= 0 &&
-                  q.entries[q.index].request is ServerPlaybackRequest)
-                TextButton(
-                    onPressed: () {
-                      final request =
-                          q.entries[q.index].request as ServerPlaybackRequest;
-                      Navigator.pop(context);
-                      context.push(AppRoutes.mediaDetailPath(request.mediaId));
-                    },
-                    child: Text(context.tr('Open current item'))),
-              Expanded(
-                  child: q.entries.isEmpty
-                      ? Center(
-                          child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Text(context.tr(
-                                  'Queue is empty. Add songs or play an album to start.'))))
-                      : ListView.builder(
-                          itemCount: q.entries.length,
-                          itemBuilder: (context, index) {
-                            final entry = q.entries[index],
-                                title = entry.request.title;
-                            void move(int delta) =>
-                                handler.moveQueue(index, delta);
-                            void remove() =>
-                                _run(context, () => handler.removeQueue(index));
-                            return Semantics(
-                                key: ValueKey(entry.id),
-                                selected: index == q.index,
-                                customSemanticsActions: q.busy
-                                    ? {}
-                                    : {
-                                        if (index > 0)
-                                          CustomSemanticsAction(
-                                                  label: context.tr('Move up')):
-                                              () => move(-1),
-                                        if (index + 1 < q.entries.length)
-                                          CustomSemanticsAction(
-                                                  label:
-                                                      context.tr('Move down')):
-                                              () => move(1),
-                                        CustomSemanticsAction(
-                                                label: context.tr('Remove')):
-                                            remove,
-                                      },
-                                child: ListTile(
-                                    selected: q.active && index == q.index,
-                                    leading: Text('${index + 1}'),
-                                    title: Text(title,
-                                        maxLines: 3,
-                                        overflow: TextOverflow.ellipsis),
-                                    subtitle: Text(
-                                        index == q.index
-                                            ? q.active
-                                                ? 'Now'
-                                                : 'Selected · paused'
-                                            : entry.autoplayRelated
-                                                ? context.tr(
-                                                    'Autoplay · related music')
-                                                : q.upNextIds.contains(entry.id)
-                                                    ? context.tr(
-                                                        'Up next (you added)')
-                                                    : entry.request.sourceName,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis),
-                                    onTap: q.busy
-                                        ? null
-                                        : () => _run(context,
-                                            () => handler.jumpQueue(index)),
-                                    trailing: PopupMenuButton<String>(
-                                        tooltip: 'Queue actions for $title',
-                                        enabled: !q.busy,
-                                        onSelected: (action) {
-                                          switch (action) {
-                                            case 'play':
-                                              _run(
-                                                  context,
-                                                  () =>
-                                                      handler.jumpQueue(index));
-                                            case 'up':
-                                              move(-1);
-                                            case 'down':
-                                              move(1);
-                                            case 'remove':
-                                              remove();
-                                          }
-                                        },
-                                        itemBuilder: (_) => [
-                                              PopupMenuItem(
-                                                  value: 'play',
-                                                  child: Text(
-                                                      context.tr('Play now'))),
-                                              PopupMenuItem(
-                                                  value: 'up',
-                                                  enabled: index > 0,
-                                                  child: Text(
-                                                      context.tr('Move up'))),
-                                              PopupMenuItem(
-                                                  value: 'down',
-                                                  enabled: index + 1 <
-                                                      q.entries.length,
-                                                  child: Text(
-                                                      context.tr('Move down'))),
-                                              PopupMenuItem(
-                                                  value: 'remove',
-                                                  child: Text(
-                                                      context.tr('Remove'))),
-                                            ])));
-                          })),
-              SafeArea(
-                  top: false,
-                  child: Padding(
+                        'Upcoming songs only; Play next stays first. Albums keep disc/track order.${q.shuffleEligible < 2 ? ' At least two upcoming songs outside Play next are needed to shuffle.' : ''}')),
+                if (q.entries.isNotEmpty || q.status.isNotEmpty)
+                  Padding(
                       padding: const EdgeInsets.all(12),
-                      child: Wrap(spacing: 12, children: [
-                        if (!offlineOnly) SaveQueuePlaylistButton(queue: q),
-                        TextButton(
-                            onPressed: q.busy || q.entries.isEmpty
-                                ? null
-                                : () => _run(context, handler.clearQueue),
-                            child: Text(context.tr('Clear queue'))),
-                        TextButton(
-                            onPressed:
-                                q.busy || !q.canUndo ? null : handler.undoQueue,
-                            child: Text(context.tr('Undo'))),
-                      ])))
+                      child: Text(
+                          q.busy
+                              ? context.tr('Loading track…')
+                              : q.status.isNotEmpty
+                                  ? q.status
+                                  : q.active
+                                      ? context.tr('Current track marked Now')
+                                      : context.tr(
+                                          'Queue paused. Choose a track to play.'),
+                          semanticsLabel: q.status)),
+                if (q.restored) ...[
+                  Text(
+                      'Paused at ${Duration(seconds: q.position.floor()).inMinutes}:${(q.position.floor() % 60).toString().padLeft(2, '0')}'),
+                  FilledButton(
+                      onPressed: q.busy
+                          ? null
+                          : () => _run(context, handler.resumeQueue),
+                      child: Text(context.tr('Resume queue'))),
+                ],
+                if (q.restoreFailed)
+                  TextButton(
+                      onPressed: q.busy ? null : handler.retryQueueRestore,
+                      child: Text(context.tr('Retry restore'))),
+                if (q.index >= 0 &&
+                    q.entries[q.index].request is ServerPlaybackRequest)
+                  TextButton(
+                      onPressed: () {
+                        final request =
+                            q.entries[q.index].request as ServerPlaybackRequest;
+                        Navigator.pop(context);
+                        context
+                            .push(AppRoutes.mediaDetailPath(request.mediaId));
+                      },
+                      child: Text(context.tr('Open current item'))),
+              ])),
+              if (q.entries.isEmpty)
+                SliverToBoxAdapter(
+                    child: Center(
+                        child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(context.tr(
+                                'Queue is empty. Add songs or play an album to start.')))))
+              else
+                SliverList.builder(
+                    itemCount: q.entries.length,
+                    itemBuilder: (context, index) {
+                      final entry = q.entries[index],
+                          title = entry.request.title;
+                      void move(int delta) => handler.moveQueue(index, delta);
+                      void remove() =>
+                          _run(context, () => handler.removeQueue(index));
+                      return Semantics(
+                          key: ValueKey(entry.id),
+                          selected: index == q.index,
+                          customSemanticsActions: q.busy
+                              ? {}
+                              : {
+                                  if (index > 0)
+                                    CustomSemanticsAction(
+                                            label: context.tr('Move up')):
+                                        () => move(-1),
+                                  if (index + 1 < q.entries.length)
+                                    CustomSemanticsAction(
+                                            label: context.tr('Move down')):
+                                        () => move(1),
+                                  CustomSemanticsAction(
+                                      label: context.tr('Remove')): remove,
+                                },
+                          child: ListTile(
+                              selected: q.active && index == q.index,
+                              leading: Text('${index + 1}'),
+                              title: Text(title,
+                                  maxLines: 3, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(
+                                  index == q.index
+                                      ? q.active
+                                          ? 'Now'
+                                          : 'Selected · paused'
+                                      : entry.autoplayRelated
+                                          ? context
+                                              .tr('Autoplay · related music')
+                                          : q.upNextIds.contains(entry.id)
+                                              ? context
+                                                  .tr('Up next (you added)')
+                                              : entry.request.sourceName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis),
+                              onTap: q.busy
+                                  ? null
+                                  : () => _run(
+                                      context, () => handler.jumpQueue(index)),
+                              trailing: PopupMenuButton<String>(
+                                  tooltip: 'Queue actions for $title',
+                                  enabled: !q.busy,
+                                  onSelected: (action) {
+                                    switch (action) {
+                                      case 'play':
+                                        _run(context,
+                                            () => handler.jumpQueue(index));
+                                      case 'up':
+                                        move(-1);
+                                      case 'down':
+                                        move(1);
+                                      case 'remove':
+                                        remove();
+                                    }
+                                  },
+                                  itemBuilder: (_) => [
+                                        PopupMenuItem(
+                                            value: 'play',
+                                            child:
+                                                Text(context.tr('Play now'))),
+                                        PopupMenuItem(
+                                            value: 'up',
+                                            enabled: index > 0,
+                                            child: Text(context.tr('Move up'))),
+                                        PopupMenuItem(
+                                            value: 'down',
+                                            enabled:
+                                                index + 1 < q.entries.length,
+                                            child:
+                                                Text(context.tr('Move down'))),
+                                        PopupMenuItem(
+                                            value: 'remove',
+                                            child: Text(context.tr('Remove'))),
+                                      ])));
+                    }),
+              SliverToBoxAdapter(
+                  child: SafeArea(
+                      top: false,
+                      child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Wrap(spacing: 12, children: [
+                            if (!offlineOnly) SaveQueuePlaylistButton(queue: q),
+                            TextButton(
+                                onPressed: q.busy || q.entries.isEmpty
+                                    ? null
+                                    : () => _run(context, handler.clearQueue),
+                                child: Text(context.tr('Clear queue'))),
+                            TextButton(
+                                onPressed: q.busy || !q.canUndo
+                                    ? null
+                                    : handler.undoQueue,
+                                child: Text(context.tr('Undo'))),
+                          ]))))
             ]);
           }));
 }
