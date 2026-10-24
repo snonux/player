@@ -168,7 +168,9 @@ def reset_progress(client, media_id):
 
 def find_visible(pattern):
     """Scroll to a labeled control/detail; text rows need no card-size threshold."""
-    for move in (None, True, True, False, False, False):
+    # Music details now include mix/recommendation sections before Play Audio.
+    # The primary action can be several screens below the original metadata.
+    for move in [None] + [True] * 10 + [False] * 10:
         if move is not None:
             app_ui.swipe(up=move)
         node = adrv.find(pattern)

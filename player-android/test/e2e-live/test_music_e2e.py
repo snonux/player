@@ -21,6 +21,21 @@ class MediaTitleTest(unittest.TestCase):
         self.assertEqual(music_e2e.app_ui.media_title({'type':'audio', 'file_name':'.mp3'}), '.mp3')
 
 
+class DetailControlNavigationTest(unittest.TestCase):
+    def test_primary_play_below_recommendations_is_reachable(self):
+        target = {'b': [44, 1800, 1036, 1932]}
+        depth = 0
+
+        def swipe(up):
+            nonlocal depth
+            depth += 1 if up else -1
+
+        with patch.object(music_e2e.app_ui, 'swipe', side_effect=swipe), \
+                patch.object(music_e2e.adrv, 'find',
+                             side_effect=lambda _: target if depth >= 5 else None):
+            self.assertEqual(music_e2e.find_visible('^Play Audio$'), target)
+
+
 class FlattenedFolderNavigationTest(unittest.TestCase):
     def test_missing_single_file_folder_requires_visible_target(self):
         target = {'b': [0, 200, 900, 500]}
