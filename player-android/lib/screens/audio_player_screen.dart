@@ -2,6 +2,7 @@ import '../l10n/music_localizations.dart';
 import '../services/progress_queue.dart';
 import '../providers/playback_cache_provider.dart';
 import '../widgets/stream_quality_sheet.dart';
+import '../services/stream_quality.dart';
 import '../widgets/equalizer_sheet.dart';
 import '../widgets/loudness_sheet.dart';
 import '../widgets/music_queue_sheet.dart';
@@ -146,6 +147,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
 
   // True while the player is being set up; shows a full-screen spinner.
   bool _isLoading = true;
+  bool _refreshQualityOnRetry = false;
+  ServerPlaybackRequest? _qualityRetryRequest;
 
   // Current playback speed; updated by the speed selector.
   double _playbackSpeed = 1.0;
@@ -198,6 +201,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       _initGeneration++;
       // A changed widget may be a different item: its position is unknown.
       _lastKnownPosition = null;
+      _qualityRetryRequest = null;
+      _refreshQualityOnRetry = false;
       setState(() {
         cancelPlaybackPreparation();
         _error = null;
@@ -297,7 +302,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     _stopWatchingPlayback();
     final PlaybackRequest request;
     try {
-      request = await _resolveRequest();
+      request = await _resolveRequest(generation);
     } catch (error) {
       if (mounted && generation == _initGeneration) {
         _showError(error, _effectiveRequest(), generation);
@@ -567,14 +572,15 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   /// Builds the request, looking up the playback URL when the route supplied
   /// only a media ID (no typed request and no URL in the route extra), as the
   /// podcast episode list does.
-  Future<PlaybackRequest> _resolveRequest() async {
+  Future<PlaybackRequest> _resolveRequest(int generation) async {
     var request = _effectiveRequest();
     if (_remoteReturnRequest != null) {
       _musicEntries = _remoteReturnQueue;
       _musicStartIndex = _remoteReturnIndex;
       final entries = _musicEntries;
       _expandMusic = () async => entries;
-      return _remoteReturnRequest!;
+      return _refreshRetryQuality(_remoteReturnRequest!, generation,
+          remoteReturn: true);
     }
     _musicEntries = const [];
     _musicStartIndex = 0;
@@ -583,6 +589,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       request = await resolveServerPlaybackSource(
           request, ref.read(apiClientProvider));
     }
+    request = await _refreshRetryQuality(request, generation);
     if (request is! ServerPlaybackRequest || widget.sequence.isEmpty) {
       return request;
     }
@@ -659,6 +666,25 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         markFinished: request.markFinished);
   }
 
+  Future<PlaybackRequest> _refreshRetryQuality(
+      PlaybackRequest request, int generation,
+      {bool remoteReturn = false}) async {
+    if (!_refreshQualityOnRetry || request is! ServerPlaybackRequest) {
+      return request;
+    }
+    final uri =
+        await currentServerAudioUri(request, ref.read(apiClientProvider));
+    if (!mounted || generation != _initGeneration) return request;
+    final refreshed = request.withSourceUri(uri);
+    if (remoteReturn) {
+      _remoteReturnRequest = refreshed;
+    } else {
+      _qualityRetryRequest = refreshed;
+    }
+    _refreshQualityOnRetry = false;
+    return refreshed;
+  }
+
   void _attachMusicSequence(_PlaybackAttempt attempt) {
     final handler = attempt.handler;
     final lease = attempt.lease;
@@ -724,7 +750,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   }
 
   PlaybackRequest _effectiveRequest() {
-    final request = _remoteReturnRequest ?? widget.request;
+    final request =
+        _remoteReturnRequest ?? _qualityRetryRequest ?? widget.request;
     if (request != null) return request;
     final title = widget.mediaTitle ??
         (widget.isPublicShare ? 'Shared Audio' : 'Audio – ${widget.mediaId}');
@@ -940,10 +967,11 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
 
   /// Tears down the current player source and re-runs [_initPlayer].
   ///
-  /// Extracted to keep [_buildErrorView] below 30 lines (style guideline).
+  /// Shared by error recovery and returning from remote playback.
   void _onRetry() {
     final handler = ref.read(audioHandlerProvider);
     if (handler.musicState?.error != null && _sessionLease?.isCurrent == true) {
+      _refreshQualityOnRetry = false;
       unawaited(handler.retryMusicTrack());
       return;
     }
@@ -955,6 +983,21 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       _playbackSpeed = 1.0;
     });
     _initPlayer();
+  }
+
+  Future<void> _showErrorQuality() async {
+    final request = _activeRequest;
+    if (request is! ServerPlaybackRequest) return;
+    final generation = _initGeneration;
+    final previous = StreamQuality.selected(request.serverOrigin);
+    await showStreamQualitySheet(context, ref.read(apiClientProvider));
+    if (!mounted ||
+        generation != _initGeneration ||
+        _activeRequest?.identity != request.identity) {
+      return;
+    }
+    _refreshQualityOnRetry = _refreshQualityOnRetry ||
+        StreamQuality.selected(request.serverOrigin) != previous;
   }
 
   /// Skips playback by [delta]; clamps to [Duration.zero] and total duration.
@@ -1125,7 +1168,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   Widget _buildErrorView(String message) {
     return Center(
       key: const Key('audio_player_error'),
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1144,6 +1187,19 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               onPressed: _onRetry,
               child: Text(context.tr('Retry')),
             ),
+            if (_activeRequest?.kind == PlaybackSourceKind.server) ...[
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: _showErrorQuality,
+                icon: const Icon(Icons.tune),
+                label: const Text('Quality'),
+              ),
+              const Text(
+                'Choose another quality, then Retry.',
+                style: TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ],
         ),
       ),

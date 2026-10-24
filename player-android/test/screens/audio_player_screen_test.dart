@@ -72,6 +72,7 @@ import 'package:player_android/services/playback_preparer.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/music_queue.dart';
 import 'package:player_android/services/network_policy.dart';
+import 'package:player_android/services/stream_quality.dart';
 import 'package:player_android/widgets/music_mini_player.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 import 'package:player_android/services/cast/cast_controller.dart';
@@ -114,6 +115,11 @@ class _FakeApiClient extends PlayerApiClient {
   _FakeApiClient() : super(dio: Dio());
 
   final media = <int, Media>{};
+
+  @override
+  Future<List<Map<String, dynamic>>> streamProfiles() async => [
+        {'id': 'opus96', 'label': 'Data saver · Opus 96 kbps'}
+      ];
 
   @override
   Future<Media> getMedia(int id, {CancelToken? cancelToken}) async =>
@@ -598,7 +604,19 @@ void main() {
   testWidgets(
       'renderer mini reopens current queue occurrence without local source claim',
       (tester) async {
+    await tester.runAsync(() async {
+      await StreamQuality.initialize();
+      await MusicNetworkPolicy.save('mode', 'wifi');
+      await StreamQuality.save('http://local', 'opus96');
+    });
+    addTearDown(() async {
+      await StreamQuality.save('http://local', 'auto');
+      await StreamQuality.save('http://local', 'auto', network: 'wifi');
+      await MusicNetworkPolicy.save('mode', 'auto');
+    });
     final (player, handler) = _usePlayableHandler(tester);
+    final client = _FakeApiClient();
+    client.rawDio.options.baseUrl = 'http://local';
     final coordinator = PlaybackSessionCoordinator();
     ServerPlaybackRequest request(int id) => ServerPlaybackRequest(
         mediaId: id,
@@ -634,7 +652,7 @@ void main() {
           audioHandlerProvider.overrideWithValue(handler),
           playbackSessionCoordinatorProvider.overrideWithValue(coordinator),
           castControllerProvider.overrideWith((ref) => controller),
-          apiClientProvider.overrideWithValue(_FakeApiClient()),
+          apiClientProvider.overrideWithValue(client),
           playerBaseUrlProvider.overrideWithValue(Uri.parse('http://local')),
           credentialMutationQueueProvider.overrideWithValue(
               CredentialMutationQueue(credentialsEnabled: true)),
@@ -665,11 +683,25 @@ void main() {
     for (var i = 0; i < 5; i++) {
       await tester.pump();
     }
+    player.failNextLoad = true;
     await tester.runAsync(controller.stop);
     for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(player.sourceRequests, 1);
+    expect(find.byKey(const Key('audio_player_error')), findsOneWidget);
+    await tester.tap(find.text('Quality'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Original (no conversion)').last);
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.text('Stream quality'))).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('audio_player_retry')));
+    await _flushPlaybackStartup(tester);
+    expect(player.sourceRequests, 2);
+    expect((player.loadedSource as UriAudioSource).uri,
+        Uri.parse(client.streamUrl(1)));
     expect(player.elapsed.inSeconds, greaterThanOrEqualTo(37));
     expect(player.isPlaying, isFalse);
     expect(handler.musicQueue.index, 2);
@@ -1980,6 +2012,94 @@ void main() {
       await tester.runAsync(handler.endProgress);
     });
 
+    testWidgets(
+        'failed server profile Quality recovery retains Original across Retry failures',
+        (tester) async {
+      const origin = 'http://localhost:8080';
+      await tester.runAsync(() async {
+        await StreamQuality.initialize();
+        await MusicNetworkPolicy.save('mode', 'wifi');
+        await StreamQuality.save(origin, 'opus96');
+      });
+      addTearDown(() async {
+        await StreamQuality.save(origin, 'auto');
+        await StreamQuality.save(origin, 'auto', network: 'wifi');
+        await MusicNetworkPolicy.save('mode', 'auto');
+      });
+      final (player, handler) = _usePlayableHandler(tester);
+      final client = _FakeApiClient()
+        ..probeAnswers.add(const PlaybackProbe(statusCode: 500));
+      client.rawDio.options.baseUrl = origin;
+      client.media[42] = Media.fromJson({
+        'id': 42,
+        'type': 'audio',
+        'file_name': 'song.flac',
+        'transcoded': false
+      });
+      await _pumpScreen(tester, client,
+          handlerOverride: handler,
+          request: ServerPlaybackRequest(
+              mediaId: 42,
+              serverOrigin: origin,
+              userId: 1,
+              sourceUri:
+                  Uri.parse('$origin/api/v1/media/42/compat?profile=opus96'),
+              title: 'song.flac',
+              savePosition: (_) async {},
+              markFinished: () async {}));
+      await _flushPlaybackStartup(tester);
+      expect(find.byKey(const Key('audio_player_error')), findsOneWidget);
+      await tester.tap(find.text('Quality'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Original (no conversion)').last);
+      await tester.pumpAndSettle();
+      Navigator.of(tester.element(find.text('Stream quality'))).pop();
+      await tester.pumpAndSettle();
+      player.failNextLoad = true;
+      await tester.tap(find.byKey(const Key('audio_player_retry')));
+      await _flushPlaybackStartup(tester);
+      expect(find.byKey(const Key('audio_player_error')), findsOneWidget);
+      expect((player.loadedSource as UriAudioSource).uri,
+          Uri.parse('$origin/api/v1/media/42/stream'));
+      await tester.tap(find.byKey(const Key('audio_player_retry')));
+      await _flushPlaybackStartup(tester);
+      expect(find.byKey(const Key('audio_player_error')), findsNothing);
+      expect((player.loadedSource as UriAudioSource).uri,
+          Uri.parse('$origin/api/v1/media/42/stream'));
+      expect(client.probedUrls, hasLength(1));
+      expect(player.sourceRequests, 2);
+      expect(handler.playCalls, 1);
+      await tester.runAsync(handler.endProgress);
+    });
+
+    testWidgets(
+        'server error Retry and Quality stay reachable in short viewport',
+        (tester) async {
+      tester.view.physicalSize = const Size(800, 300);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final (_, handler) = _usePlayableHandler(tester);
+      final client = _FakeApiClient()
+        ..probeAnswers.add(const PlaybackProbe(statusCode: 500));
+      await _pumpScreen(tester, client,
+          handlerOverride: handler,
+          mediaUrl: _kCompatUrl,
+          mediaTitle: 'song with a long unavailable profile name.wma');
+      await tester.pump();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final retry = find.byKey(const Key('audio_player_retry'));
+      await tester.ensureVisible(retry);
+      expect(retry.hitTestable(), findsOneWidget);
+      final quality = find.text('Quality');
+      await tester.ensureVisible(quality);
+      expect(quality.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('leaving the screen while preparing stops the retries',
         (tester) async {
       final (player, handler) = _usePlayableHandler(tester);
@@ -2066,6 +2186,7 @@ void main() {
       await tester.pump();
       await tester.pump();
       debugPrint = originalDebugPrint;
+      expect(find.text('Quality'), findsNothing);
 
       expect(
         _errorText(tester),
@@ -2155,6 +2276,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump();
+      expect(find.text('Quality'), findsNothing);
 
       // Local files are never probed (no server), whatever their URI.
       expect(
