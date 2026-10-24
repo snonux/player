@@ -76,6 +76,8 @@ test('M16 repeated reordered queue reload exact short-song offset paused Resume 
   await page.locator('#btn-play').click();
   const saved=await stored(page);expect(saved.index).toBe(snapshot.index);expect(saved.position).toBeGreaterThan(snapshot.position);
   const other=track(f,'Music/Aurora Lane - Night Transit (2021)/03 - Harbour.flac');
+  // A completed saved position must not turn a cold paused preview into Next.
+  expect((await page.request.post(`/api/v1/media/${other.id}/progress`,{data:{position_seconds:other.duration_s}})).ok()).toBe(true);
   await page.goto('/?media='+other.id);
   await expect.poll(async()=> (await audioState(page)).src).toContain(`/media/${other.id}/`);
   expect((await audioState(page)).paused).toBe(true);
@@ -100,6 +102,8 @@ test('M16 revalidation permission drop transient network failure Retry and corru
  let pid='';const artifacts:string[]=[];
  try {
   const seeded=await seedAndPlay(page);pid=seeded.id;
+  const cfg=await(await page.request.get('/api/v1/config')).json();
+  const queueKey=await page.evaluate(uid=>`player.queue.${location.origin}.${uid}`,cfg.user_id);
   // Fault injection is explicitly transport abortion, not a claimed full offline server run.
   await page.route('**/api/media/*',route=>route.abort('failed'));
   await page.reload();await page.keyboard.press('Q');await expect(panel(page).getByRole('button',{name:'Retry restore'})).toBeVisible();
@@ -108,7 +112,8 @@ test('M16 revalidation permission drop transient network failure Retry and corru
   await context.setOffline(true);
   await panel(page).getByRole('button',{name:'Retry restore'}).click();
   await expect(panel(page)).toContainText('Check your connection and retry');
-  const offlineSnapshot=await page.evaluate(()=>Object.entries(localStorage).find(([key])=>key.startsWith('player.queue.'))?.[1]);
+  const offlineSnapshot=await page.evaluate(key=>localStorage.getItem(key),queueKey);
+  expect(offlineSnapshot).not.toBeNull();
   expect(JSON.parse(offlineSnapshot!).entries).toEqual(seeded.snapshot.entries);
   expect((await audioState(page)).paused).toBe(true);
   await context.setOffline(false);
@@ -120,8 +125,7 @@ test('M16 revalidation permission drop transient network failure Retry and corru
   expect((await admin.delete('/api/v1/admin/permissions',{data:{set_id:f.setIds.Music,user_id:uid}})).ok()).toBe(true);
   try {await page.reload();await page.keyboard.press('Q');await expect(panel(page)).toContainText('3 songs are no longer available');expect((await state(page)).entries).toHaveLength(0);}
   finally {await admin.post('/api/v1/admin/permissions',{data:{set_id:f.setIds.Music,user_id:uid,role:'viewer'}});await admin.dispose();}
-  const cfg=await(await page.request.get('/api/config')).json();
-  await page.addInitScript(uid=>localStorage.setItem(`player.queue.${location.origin}.${uid}`,'broken JSON'),cfg.user_id);
+  await page.addInitScript(key=>localStorage.setItem(key,'broken JSON'),queueKey);
   await page.reload();await page.keyboard.press('Q');await expect(panel(page)).toContainText('unreadable');
   const screenshot=e.path('m16-corrupt.png');await page.screenshot({path:screenshot,animations:'disabled'});artifacts.push(screenshot);
   e.record({feature:'M16',scenario:'real permission drops; initial transport fault then actual offline Retry preserves snapshot and silence; online Retry and corrupt recovery',result:'pass',artifacts});

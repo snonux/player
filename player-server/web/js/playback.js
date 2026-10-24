@@ -356,6 +356,10 @@ function bindVolume(e) {
 
 // bindMediaEvents wires one <video>/<audio> element to the transport UI.
 function bindMediaEvents(e, m) {
+  // Firefox can emit ended after a paused seek to the saved end position.
+  // Only a source that actually played may complete or advance the queue.
+  let playedSinceLoad = false;
+  m.addEventListener('loadstart', () => { playedSinceLoad = false; });
   m.addEventListener('timeupdate', () => {
     osSession?.refresh();
     const dur = effectiveDuration();
@@ -375,7 +379,8 @@ function bindMediaEvents(e, m) {
     m.addEventListener(event, () => updateBufferedRanges(m));
   });
   m.addEventListener('ended', async () => {
-    if (m !== currentMediaElement() || !m.ended) return;
+    if (m !== currentMediaElement() || !m.ended || !playedSinceLoad) return;
+    playedSinceLoad = false;
     if (currentMedia?.live_radio) { updateUI(false); setPlayerStatus('Station disconnected · press Play to reconnect.'); return; }
     const epoch = sourceEpoch, intent = currentPlaybackIntent();
     if (completingEpoch === epoch) return;
@@ -391,10 +396,11 @@ function bindMediaEvents(e, m) {
   });
   m.addEventListener('seeking', () => { sourceEpoch++; });
   for (const event of ['pause', 'seeked']) m.addEventListener(event, () => document.dispatchEvent(new Event('player:position')));
-  m.addEventListener('play', () => { sourceEpoch++; completingEpoch = null; updateUI(true); isPlaying = true; startProgressTimer(); });
-  m.addEventListener('pause', () => { updateUI(false); isPlaying = false; stopProgressTimer(); });
+  m.addEventListener('play', () => { playedSinceLoad = true; sourceEpoch++; completingEpoch = null; updateUI(true); isPlaying = true; startProgressTimer(); });
+  m.addEventListener('pause', () => { if (!m.ended) playedSinceLoad = false; updateUI(false); isPlaying = false; stopProgressTimer(); });
   m.addEventListener('playing', () => {
     if (m !== currentMediaElement()) return;
+    if (!m.paused) playedSinceLoad = true;
     clearPausedReturnHint();
     if (!isDetached() && !m.paused && !m.error) announceSong(currentMedia, () => !isDetached() && !m.paused && !m.error && m === currentMediaElement());
   });

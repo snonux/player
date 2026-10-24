@@ -56,9 +56,9 @@ function fakeMedia(id) {
     get: () => el.getAttribute('src') || '',
     set: (value) => el.setAttribute('src', value),
   });
-  el.load = () => { el.loads += 1; el.readyState = 0; el.currentTime = 0; el.paused = true; el.error = null; };
-  el.pause = () => { el.paused = true; };
-  el.play = () => { el.playCalls += 1; el.paused = false; return Promise.resolve(); };
+  el.load = () => { el.loads += 1; el.readyState = 0; el.currentTime = 0; el.paused = true; el.ended = false; el.error = null; el.dispatch('loadstart'); };
+  el.pause = () => { el.paused = true; el.dispatch('pause'); };
+  el.play = () => { el.playCalls += 1; el.paused = false; el.dispatch('play'); return Promise.resolve(); };
   return el;
 }
 
@@ -932,6 +932,49 @@ async function testQueueRepeatModesAndEdits() {
   mode('off');
 }
 
+async function testPausedEndDoesNotCompleteOrAdvance() {
+  for (const type of ['audio', 'video']) {
+    const media = { id: type === 'audio' ? 9601 : 9602, type, duration: 12 };
+    let advances = 0, finished = 0;
+    setup({ onNext: () => advances++ });
+    const originalProgress = API.progress, originalStatus = API.progressStatus;
+    API.progress = async () => {};
+    API.progressStatus = async (id) => { if (id === media.id) finished++; };
+    try {
+      player.selectMedia(media, 0);
+      await settle();
+      const element = type === 'audio' ? audio() : video();
+      element.currentTime = 12; element.ended = true;
+      element.dispatch('seeked'); element.dispatch('ended');
+      await settle();
+      assertEqual(advances, 0, `${type}: cold paused seek to end does not advance`);
+      assertEqual(finished, 0, `${type}: cold paused seek does not mark finished`);
+      assertEqual(player.currentMediaId(), media.id, `${type}: cold seek retains identity`);
+
+      element.ended = false; element.currentTime = 1;
+      player.requestPlay(); await settle();
+      player.pausePlayback();
+      element.currentTime = 12; element.ended = true;
+      element.dispatch('seeked'); element.dispatch('ended');
+      await settle();
+      assertEqual(advances, 0, `${type}: paused seek after playing does not advance`);
+      assertEqual(finished, 0, `${type}: paused seek after playing does not finish`);
+
+      element.ended = false; element.currentTime = 0;
+      player.requestPlay(); await settle();
+      // Native completion pauses the element before dispatching ended.
+      element.currentTime = 12; element.ended = true; element.paused = true;
+      element.dispatch('pause'); element.dispatch('ended');
+      await settle();
+      assertEqual(advances, 1, `${type}: genuine playback completion advances once`);
+      assertEqual(finished, 1, `${type}: genuine completion marks finished`);
+      element.dispatch('ended'); await settle();
+      assertEqual(advances, 1, `${type}: duplicate ended cannot advance twice`);
+      player.stopAndClose();
+    } finally { API.progress = originalProgress; API.progressStatus = originalStatus; }
+  }
+}
+
 async function testRepeatCompletionEpochAndGenuineReplay() {
   let advances=0, release;
   setup({onNext:()=>advances++});
@@ -1380,6 +1423,7 @@ for (const test of [
   testPlaybackShufflePreservesOccurrenceAndCanonicalIntent,
   testSenderNaturalCompletionRetainsRepeatOneOccurrence,
   testQueueRepeatModesAndEdits,
+  testPausedEndDoesNotCompleteOrAdvance,
   testRepeatCompletionEpochAndGenuineReplay,
   testCollectionReplaceUndoAndOccurrenceOrder,
   testCollectionDuplicateSubmitAndSupersession,
