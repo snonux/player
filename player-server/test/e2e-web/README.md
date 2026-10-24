@@ -271,6 +271,20 @@ both saved themes. It composites the translucent chip over black artwork (the
 worst case for its white scrim) and requires at least 4.5:1 text contrast;
 screenshots and per-browser evidence remain in the fixture directory.
 
+### M24 ReplayGain loudness controls
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-loudness.test.ts --workers=1
+```
+
+The fixture's tagged *Gain Check* tones are measured after the actual Web
+Audio gain node: track mode normalizes them, album mode preserves their album
+dynamics, Automatic falls back to track mode outside an album queue, and the
+advanced preamp/no-tag settings prove clipping-safe behavior. Native
+ReplayGain acceptance still requires the dedicated emulator/audio capture.
+
 For M12 track navigation, natural completion, audible source/progress and
 failure/Retry journeys on both installed browsers:
 
