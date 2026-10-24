@@ -8,6 +8,10 @@ import 'package:player_android/models/media.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/music_search_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../support/idle_playback.dart';
+import '../support/server_endpoint.dart';
 
 class _Client extends PlayerApiClient {
   _Client() : super(dio: Dio());
@@ -58,10 +62,13 @@ class _Client extends PlayerApiClient {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   Future<void> mount(WidgetTester tester, _Client client) async {
-    await tester.pumpWidget(ProviderScope(
-        overrides: [apiClientProvider.overrideWithValue(client)],
-        child: const MaterialApp(home: MusicSearchScreen())));
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...idlePlaybackOverrides(),
+      unpairedServerEndpointOverride(),
+      apiClientProvider.overrideWithValue(client),
+    ], child: const MaterialApp(home: MusicSearchScreen())));
     await tester.pumpAndSettle();
   }
 
@@ -165,9 +172,11 @@ void main() {
                   child: Text('Album ${state.uri.queryParameters['album']}')))),
     ]);
     addTearDown(router.dispose);
-    await tester.pumpWidget(ProviderScope(
-        overrides: [apiClientProvider.overrideWithValue(client)],
-        child: MaterialApp.router(routerConfig: router)));
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...idlePlaybackOverrides(),
+      unpairedServerEndpointOverride(),
+      apiClientProvider.overrideWithValue(client),
+    ], child: MaterialApp.router(routerConfig: router)));
     await tester.pumpAndSettle();
     await search(tester, 'Café');
     await tester.tap(find.text('Song 12'));

@@ -6,6 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/music_artists_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../support/idle_playback.dart';
+import '../support/server_endpoint.dart';
 
 class _Client extends PlayerApiClient {
   _Client() : super(dio: Dio()) {
@@ -67,10 +71,13 @@ class _Client extends PlayerApiClient {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   Future<void> mount(WidgetTester tester, _Client client, {String? key}) async {
-    await tester.pumpWidget(ProviderScope(
-        overrides: [apiClientProvider.overrideWithValue(client)],
-        child: MaterialApp(home: MusicArtistsScreen(artistKey: key))));
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...idlePlaybackOverrides(),
+      unpairedServerEndpointOverride(),
+      apiClientProvider.overrideWithValue(client),
+    ], child: MaterialApp(home: MusicArtistsScreen(artistKey: key))));
     await tester.pumpAndSettle();
   }
 
@@ -81,11 +88,14 @@ void main() {
     await mount(tester, client);
     expect(find.text('A & B; C/D'), findsOneWidget);
     expect(find.text('Artists (track and album)'), findsOneWidget);
+    final initialRequests = List<String>.of(client.roles);
+    expect(initialRequests, isNotEmpty);
+    expect(initialRequests, everyElement('artists'));
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Composer').last);
     await tester.pumpAndSettle();
-    expect(client.roles, ['artists', 'composer']);
+    expect(client.roles, [...initialRequests, 'composer']);
     expect(find.textContaining('No artists available for this role.'),
         findsOneWidget);
     expect(find.text('A & B; C/D'), findsNothing);

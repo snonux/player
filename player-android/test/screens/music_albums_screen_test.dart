@@ -13,9 +13,15 @@ import 'package:go_router/go_router.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/music_albums_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../support/idle_playback.dart';
+import '../support/server_endpoint.dart';
 
 class _Client extends PlayerApiClient {
   _Client() : super(dio: Dio());
+  @override
+  Future<List<Map<String, dynamic>>> musicLibraries() async => [];
   bool fail = false;
   Completer<Map<String, dynamic>>? pending;
   int albumCalls = 0;
@@ -118,6 +124,24 @@ class _IdlePlayer extends AudioPlayer {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+  Future<void> reveal(WidgetTester tester, Finder target) async {
+    final scrollable = find.byType(Scrollable).first;
+    for (var i = 0; i < 20 && target.evaluate().isEmpty; i++) {
+      final position = tester.state<ScrollableState>(scrollable).position;
+      if (position.pixels <= position.minScrollExtent) break;
+      await tester.drag(scrollable, const Offset(0, 300));
+      await tester.pumpAndSettle();
+    }
+    if (target.evaluate().isEmpty) {
+      await tester.scrollUntilVisible(target, 200,
+          scrollable: find.byType(Scrollable).first);
+    } else {
+      await tester.ensureVisible(target);
+    }
+    await tester.pumpAndSettle();
+  }
+
   testWidgets(
       'collection selection uses catalog order, enqueues once and Back cancels selection',
       (tester) async {
@@ -280,11 +304,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Select songs'));
     await tester.pumpAndSettle();
+    await reveal(tester, find.bySemanticsLabel('Select Second by track'));
     await tester.tap(find.bySemanticsLabel('Select Second by track'));
     await tester.pump();
+    await reveal(tester, find.bySemanticsLabel('Select First by track'));
     await tester.tap(find.bySemanticsLabel('Select First by track'));
     await tester.pump();
+    await reveal(tester, find.text('2 selected'));
     expect(find.text('2 selected'), findsOneWidget);
+    await reveal(tester, find.byTooltip('Selected song actions'));
     await tester.tap(find.byTooltip('Selected song actions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Play next'));
@@ -337,10 +365,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Select songs'));
     await tester.pumpAndSettle();
+    await reveal(tester, find.bySemanticsLabel('Select First by track'));
     await tester.tap(find.bySemanticsLabel('Select First by track'));
+    await reveal(tester, find.bySemanticsLabel('Select Second by track'));
     await tester.pump();
     await tester.tap(find.bySemanticsLabel('Select Second by track'));
     await tester.pump();
+    await reveal(tester, find.byTooltip('Selected song actions'));
     await tester.tap(find.byTooltip('Selected song actions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Play next'));
@@ -348,6 +379,7 @@ void main() {
     expect(find.text('Added 2 songs'), findsOneWidget);
     await tester.tap(find.text('Cancel selection'));
     await tester.pumpAndSettle();
+    await reveal(tester, find.byTooltip('Actions for First by track'));
     await tester.tap(find.byTooltip('Actions for First by track'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add to queue'));
@@ -380,13 +412,16 @@ void main() {
             return const Scaffold(body: Text('Player opened'));
           })
     ]);
-    await tester.pumpWidget(ProviderScope(
-        overrides: [apiClientProvider.overrideWithValue(client)],
-        child: MaterialApp.router(routerConfig: router)));
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...idlePlaybackOverrides(),
+      unpairedServerEndpointOverride(),
+      apiClientProvider.overrideWithValue(client),
+    ], child: MaterialApp.router(routerConfig: router)));
     await tester.pumpAndSettle();
     expect(find.text('2 songs · 0:24'), findsOneWidget);
     expect(find.text('First by track'), findsOneWidget);
     expect(find.text('1-1'), findsOneWidget);
+    await reveal(tester, find.text('2-1'));
     expect(find.text('2-1'), findsOneWidget);
     expect(find.text('Disc 2 — Encore'), findsOneWidget);
     await tester.tap(find.text('Second by track'));
@@ -401,9 +436,11 @@ void main() {
   testWidgets('request failure has visible Retry that recovers',
       (tester) async {
     final client = _Client()..fail = true;
-    await tester.pumpWidget(ProviderScope(
-        overrides: [apiClientProvider.overrideWithValue(client)],
-        child: const MaterialApp(home: MusicAlbumsScreen(albumKey: 'al_a'))));
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...idlePlaybackOverrides(),
+      unpairedServerEndpointOverride(),
+      apiClientProvider.overrideWithValue(client),
+    ], child: const MaterialApp(home: MusicAlbumsScreen(albumKey: 'al_a'))));
     await tester.pumpAndSettle();
     expect(find.text('Retry'), findsOneWidget);
     client.fail = false;
