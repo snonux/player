@@ -38,6 +38,9 @@ import 'package:player_android/utils/error_mappers.dart';
 import 'package:player_android/widgets/public_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../support/idle_playback.dart';
+import '../support/server_endpoint.dart';
+
 class _Unauthenticated extends AuthStateNotifier {
   @override
   Future<AuthState> build() async => const AuthState.unauthenticated();
@@ -172,6 +175,8 @@ Future<VideoPlayerScreen> _playShareThroughRouter(
   SharedPreferences.setMockInitialValues({});
   final base = Uri.parse(client.base);
   final container = ProviderContainer(overrides: [
+    ...idlePlaybackOverrides(),
+    unpairedServerEndpointOverride(),
     authStateProvider.overrideWith(_Unauthenticated.new),
     firstRunProvider.overrideWith((ref) async => false),
     publicApiClientProvider.overrideWithValue(client),
