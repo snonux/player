@@ -43,9 +43,12 @@ test('F01: timed lines seek by keyboard and pointer without breaking plain lyric
     await middle.focus();
     await page.keyboard.press('Enter');
     await expect.poll(async () => (await audioState(page)).time).toBeGreaterThanOrEqual(4);
+    expect((await audioState(page)).time).toBeLessThan(6);
     await expect(middle).toHaveAttribute('aria-current', 'true');
+    await expect(middle).toBeFocused();
     await last.click();
     await expect.poll(async () => (await audioState(page)).time).toBeGreaterThanOrEqual(8);
+    expect((await audioState(page)).time).toBeLessThan(10);
     await expect(last).toHaveAttribute('aria-current', 'true');
     const timedShot = evidence.path('f01-timed-seek-narrow.png');
     await page.screenshot({ path: timedShot });
@@ -57,6 +60,8 @@ test('F01: timed lines seek by keyboard and pointer without breaking plain lyric
     await page.context().setOffline(true);
     await middle.click();
     await expect.poll(async () => (await audioState(page)).time).toBeGreaterThanOrEqual(4);
+    expect((await audioState(page)).time).toBeLessThan(6);
+    await expect(middle).toHaveAttribute('aria-current', 'true');
     expect((await audioState(page)).src).toBe(sourceBeforeOffline);
     await page.context().setOffline(false);
 
