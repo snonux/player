@@ -244,6 +244,20 @@ offline, then verifies the Unicode plain-lyric source remains readable without
 seek buttons. Screenshots and evidence stay with the fixture. Android timed-tap
 acceptance remains a separate emulator requirement.
 
+### M67 translated music UI
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-language.test.ts --workers=1
+```
+
+This narrow-screen journey starts real playback, changes the Settings language
+to German, checks live labels/document language and retained playback, restores
+the saved choice after reload, then switches back to English. Its screenshots
+and result stay in the fixture evidence directory; Android locale acceptance
+requires a fresh emulator APK.
+
 For M12 track navigation, natural completion, audible source/progress and
 failure/Retry journeys on both installed browsers:
 
