@@ -293,29 +293,61 @@ void main() {
       'v2 migration preserves legacy progress and queues bookmarks with their original creation time',
       () async {
     final media = item();
-    await repo.add(media);
-    final db = await repo.database;
-    await db.update('downloads', {'position_seconds': 19.5},
-        where: 'key=?', whereArgs: [media.key]);
+    // Freeze the actual v2 schema (before 510c46c), rather than relabeling
+    // today's database and accidentally retaining columns from later versions.
+    final db = await openDatabase('${dir.path}/index.db',
+        version: 2,
+        onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
+        onCreate: (db, _) async {
+          await db.execute('''CREATE TABLE downloads (
+            key TEXT PRIMARY KEY, instance_id TEXT NOT NULL,
+            origin TEXT NOT NULL, user_id INTEGER NOT NULL,
+            media_id INTEGER NOT NULL, title TEXT NOT NULL, type TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL, added_at INTEGER NOT NULL,
+            position_seconds REAL NOT NULL DEFAULT 0,
+            finished INTEGER NOT NULL DEFAULT 0
+          )''');
+          await db.execute('''CREATE TABLE personal_media (
+            owner_id TEXT PRIMARY KEY, content TEXT,
+            favorite INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (owner_id) REFERENCES downloads(key) ON DELETE CASCADE
+          )''');
+          await db.execute('''CREATE TABLE personal_bookmarks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL,
+            position_seconds REAL NOT NULL, label TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (owner_id) REFERENCES downloads(key) ON DELETE CASCADE
+          )''');
+          await db.execute('CREATE INDEX personal_bookmark_owner '
+              'ON personal_bookmarks(owner_id, position_seconds, id)');
+        });
+    await db.insert('downloads', {
+      'key': media.key,
+      'instance_id': 'legacy-instance',
+      'origin': media.origin,
+      'user_id': media.userId,
+      'media_id': media.mediaId,
+      'title': media.title,
+      'type': media.type,
+      'size_bytes': media.sizeBytes,
+      'added_at': media.addedAt.millisecondsSinceEpoch,
+      'position_seconds': 19.5,
+    });
     await db.insert('personal_bookmarks', {
       'owner_id': media.key,
       'position_seconds': 7.5,
       'label': 'legacy',
       'created_at': now.millisecondsSinceEpoch
     });
-    await db.execute('DROP TABLE sync_bookmarks');
-    await db.execute('DROP TABLE sync_items');
-    // Model the actual v2 columns, before embedded music/source snapshots.
-    await db.execute('ALTER TABLE downloads DROP COLUMN music');
-    await db.execute('ALTER TABLE downloads DROP COLUMN source_name');
-    await db.setVersion(2);
-    await repo.close();
+    await db.close();
     repo = OfflineDownloadRepository(
         directory: dir, now: () => now.add(const Duration(days: 1)));
     final migrated = await repo.get(media.key);
     expect(migrated?.positionSeconds, 19.5);
     expect(migrated?.music, isNull);
     expect(migrated?.sourceName, isEmpty);
+    expect(migrated?.downloadProfile, isEmpty);
+    expect(migrated?.contentType, isEmpty);
     final payload = await repo.syncPayload(media.key);
     expect(payload['progress'], isNull);
     final bookmark = (payload['bookmarks'] as List).single as Map;
