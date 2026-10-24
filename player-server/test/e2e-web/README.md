@@ -271,7 +271,13 @@ This narrow-screen journey starts real playback, changes the Settings language
 to German, checks live labels/document language and retained playback, restores
 the saved choice after reload, then switches back to English. Its screenshots
 and result stay in the fixture evidence directory; Android locale acceptance
-requires a fresh emulator APK.
+requires a fresh emulator APK. The companion playlist journey uses the viewer
+account and a second real Settings tab to switch mounted create/edit dialogs,
+retain typed drafts and focus, save by keyboard and verify verbatim authoritative
+state with 0/1/2 German song totals. It captures narrow light/dark layouts,
+overrides `navigator.language` with unsupported French, and injects a scoped
+browser storage exception to check the visible session-only warning. These
+controlled browser boundaries do not claim Android storage-failure execution.
 
 ### B9 artwork duration/size badge contrast
 
