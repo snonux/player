@@ -716,3 +716,45 @@ receiver, confirm Speed is disabled with its explanation, then restored locally
 when casting ends. On Android, use the existing five speed buttons, reset to 1×
 and check touch/Back remain usable. Record progression and layout/focus evidence
 by platform; none of those runtime checks ran during this implementation slice.
+
+### M17 saved server sessions
+
+Against a disposable music fixture, run the core browser journey first:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/absolute/fixture PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-saved-session.test.ts
+```
+
+Both installed browsers create an actual repeated-track playlist, reorder and
+seek through controls, save explicitly, and continue in a second signed-in
+context. Assertions cover exact occurrence/current/offset, paused adoption,
+actual Resume source/progress, offline competing saves, Keep/Replace, delayed
+real responses during newer playback, focus/typing and desktop/narrow themes.
+The destination refreshes its known server revision after the source goes
+offline, before making the competing edit; preceding Resume/Pause progress
+mutations must not become an accidental extra conflict in fixture setup.
+
+Next run the native M17 journey documented in
+`../../../player-android/test/e2e-live/README.md`. It leaves a native saved
+session for the reverse-transfer browser check. Prepare a separate viewer saved
+queue with occurrence IDs `101,102,103`, an available first and last track, and
+a temporarily accessible Restricted middle/current track at 5.25 seconds.
+Revoke the temporary Restricted grant before testing; preserve the original
+queue for later fixture cleanup. This makes permission revalidation use actual
+server permissions. Then run:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/absolute/fixture \
+PLAYER_NATIVE_SESSION=/absolute/native-core-evidence/results.json \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-saved-session-boundaries.test.ts
+```
+
+This verifies Android's saved occurrences/current/offset in both browsers and
+filters the viewer's revoked current item without autoplay or rewriting the
+remote session. Run browser and native scenarios sequentially: they intentionally
+share the admin session. Evidence stays outside the repository. These M17 checks
+use authoritative queue state plus actual media source/progress; they do not
+claim sound-output measurement.

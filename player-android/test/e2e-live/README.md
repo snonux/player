@@ -647,3 +647,42 @@ filter summaries cannot turn a grid gesture into toolbar or keyboard input.
 Results/screenshots use the fixture evidence directory; teardown clears app data
 and removes its reverse mapping. The shared emulator stays running. Fixture
 setup and persistence semantics are in [the F03 contract](../../../docs/music-f03-implementation.md).
+
+### M17 saved server sessions
+
+`music_saved_session_e2e.py` uses an already running rooted disposable emulator,
+an installed current APK and the existing fixture admin login. It does not clear
+app data or reinstall the app. First run the browser core M17 journey in the
+server E2E README; its final admin session has three occurrences (two repeated
+First Light entries and Long Road Home) and a paused seek offset.
+
+```sh
+python3 -u music_saved_session_e2e.py /absolute/fixture \
+  --evidence /absolute/evidence/m17-native-core
+python3 -u music_saved_session_e2e.py /absolute/fixture \
+  --scenario acl --evidence /absolute/evidence/m17-native-acl
+python3 -u music_saved_session_e2e.py /absolute/fixture \
+  --scenario restart --evidence /absolute/evidence/m17-native-restart
+```
+
+Core covers Continue confirmation/Back, exact browser-to-native duplicate/current/
+offset adoption while paused, actual Resume touch/source/advancing position,
+native Pause, failed transport and competing revision choices, delayed Continue
+during newer touch playback, and native Replace for browser continuation. A
+transparent proxy temporarily routes the existing adb reverse through free
+localhost port18770 (`--proxy-port` overrides it); HEAD/range metadata is preserved.
+Queue transport failures and delayed responses are real HTTP boundaries. Reverse
+mapping and the original system night mode are restored in `finally`.
+
+ACL requires the viewer queue prepared as described in the server E2E README:
+occurrences101/102/103, revoked middle/current Restricted media. It signs in
+through native controls, verifies remaining101/103 with offset zero and no
+autoplay/server overwrite, then returns to admin. Restart force-stops only the
+owned app, unlocks the saved admin login with its fixture password, and verifies
+identical paused queue/current/offset. It leaves the emulator/server running.
+Scoped queue preferences are read only; complete preferences and credentials
+never enter artifacts. Results, screenshots and sanitized HTTP traces go to the
+chosen external evidence directory. Warmed cache sources are validated by real
+HEAD requests; media-session state and persisted progression prove playback.
+These checks do not measure audible output or PCM. Finally run the browser M17
+boundary suite against the native core `results.json` for reverse transfer.
