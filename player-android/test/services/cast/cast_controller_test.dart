@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http_mock_adapter/http_mock_adapter.dart';
@@ -9,8 +11,23 @@ import 'package:player_android/services/playback_session_coordinator.dart';
 
 import 'fake_cast_receiver.dart';
 
+class _DelayedCloseReceiver extends FakeCastReceiver {
+  _DelayedCloseReceiver(this.closeGate);
+
+  final Future<void> closeGate;
+
+  @override
+  Future<void> close() async {
+    await closeGate;
+    await super.close();
+  }
+}
+
 class _Harness {
-  _Harness({bool failLoad = false, bool failResolve = false}) {
+  _Harness(
+      {bool failLoad = false,
+      bool failResolve = false,
+      Future<void>? closeGate}) {
     controller = CastController(
       coordinator: coordinator,
       progressInterval: const Duration(milliseconds: 20),
@@ -24,8 +41,9 @@ class _Harness {
         );
       },
       startSession: (device) => CastSession.start(device,
-          connect: (_) async =>
-              receiver = FakeCastReceiver(failLoad: failLoad)),
+          connect: (_) async => receiver = closeGate == null
+              ? FakeCastReceiver(failLoad: failLoad)
+              : _DelayedCloseReceiver(closeGate)),
     );
   }
 
@@ -36,7 +54,9 @@ class _Harness {
   final saved = <double>[];
   var finished = 0;
 
-  ServerPlaybackRequest request({int mediaId = 5}) => ServerPlaybackRequest(
+  ServerPlaybackRequest request(
+          {int mediaId = 5, Future<void> Function()? markFinished}) =>
+      ServerPlaybackRequest(
         mediaId: mediaId,
         serverOrigin: 'https://player.test',
         userId: 1,
@@ -44,7 +64,7 @@ class _Harness {
             Uri.parse('https://player.test/api/v1/media/$mediaId/stream'),
         title: 'Song $mediaId',
         savePosition: (seconds) async => saved.add(seconds),
-        markFinished: () async => finished++,
+        markFinished: markFinished ?? () async => finished++,
       );
 
   Future<void> cast(PlaybackRequest request, {Duration? at}) =>
@@ -104,6 +124,60 @@ void main() {
     expect(h.finished, 1);
     expect(h.controller.active, isNull);
   });
+
+  test('observers see finished playback before completion persistence resolves',
+      () async {
+    final completion = Completer<void>();
+    final h = _Harness();
+    final ended = h.controller.ended.first;
+    await h.cast(h.request(markFinished: () => completion.future));
+    expect(h.controller.active!.status.playerState, CastPlayerState.playing);
+    final idleObserved = Completer<void>();
+    h.controller.addListener(() {
+      if (h.controller.active?.status.playerState != CastPlayerState.playing &&
+          !idleObserved.isCompleted) {
+        idleObserved.complete();
+      }
+    });
+
+    h.receiver!.pushMediaStatus('IDLE', idleReason: 'FINISHED');
+    await idleObserved.future.timeout(const Duration(seconds: 1));
+    expect(completion.isCompleted, isFalse);
+    expect(h.controller.active!.status.playerState, CastPlayerState.idle);
+
+    completion.complete();
+    await ended;
+  });
+
+  for (final receiverError in [false, true]) {
+    test(
+        'observers see ${receiverError ? 'error' : 'stop'} before transport closes',
+        () async {
+      final closeGate = Completer<void>();
+      final h = _Harness(closeGate: closeGate.future);
+      final ended = h.controller.ended.first;
+      await h.cast(h.request());
+      final inactiveObserved = Completer<void>();
+      h.controller.addListener(() {
+        if (h.controller.active == null && !inactiveObserved.isCompleted) {
+          inactiveObserved.complete();
+        }
+      });
+
+      final stopping = receiverError ? null : h.controller.stop();
+      if (receiverError) {
+        h.receiver!.pushMediaStatus('IDLE', idleReason: 'ERROR');
+      }
+      await inactiveObserved.future.timeout(const Duration(seconds: 1));
+      expect(closeGate.isCompleted, isFalse);
+      expect(h.controller.active, isNull);
+
+      closeGate.complete();
+      await stopping;
+      final event = await ended;
+      expect(event.failure, receiverError ? CastFailure.loadFailed : null);
+    });
+  }
 
   test('local playback of another item stops the cast', () async {
     final h = _Harness();

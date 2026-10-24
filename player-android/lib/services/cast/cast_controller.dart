@@ -301,6 +301,9 @@ class CastController extends ChangeNotifier {
         _finished = true;
         unawaited(
             _finish(_request ?? request, session, _occurrence, _startRevision));
+        // Completion persistence can wait for network sync. Observers must
+        // see the receiver's idle state immediately (including screen awake).
+        notifyListeners();
         return;
       }
       if (status.failed) {
@@ -446,8 +449,11 @@ class CastController extends ChangeNotifier {
     _lease = null;
     _progressTimer?.cancel();
     _progressTimer = null;
-    await _statusSubscription?.cancel();
+    final statusSubscription = _statusSubscription;
     _statusSubscription = null;
+    // Release presentation state before asynchronous transport cleanup.
+    notifyListeners();
+    await statusSubscription?.cancel();
     try {
       await session.stop();
     } catch (_) {

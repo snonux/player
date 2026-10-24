@@ -25,6 +25,8 @@ import '../api/player_api_client.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/audio_handler_provider.dart';
 import '../providers/cast_provider.dart';
+import '../providers/presentation_provider.dart';
+import '../providers/theme_provider.dart';
 import '../providers/progress_queue_provider.dart';
 import '../providers/public_api_client_provider.dart';
 import '../providers/playback_session_provider.dart';
@@ -1042,40 +1044,48 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   @override
   Widget build(BuildContext context) {
     final casting = isCastingRequest;
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        actions: [
-          if (!widget.isPublicShare && !casting) const MusicQueueButton(),
-          if (_activeRequest is ServerPlaybackRequest &&
-              !_isLoading &&
-              _error == null)
-            IconButton(
-                tooltip: context.tr('Info'),
-                icon: const Icon(Icons.info_outline),
-                onPressed: _showMusicInfo),
-          buildCastButton(ready: !_isLoading && _error == null),
-          if (_activeRequest != null &&
-              !_isLoading &&
-              _error == null &&
-              !casting &&
-              !widget.isPublicShare)
-            _buildPersonalActions(),
-        ],
+    final accent = ref.watch(presentationProvider).valueOrNull?.accent ??
+        PlayerAccent.blue;
+    // Playback retains its black surface in either app theme. Its controls
+    // therefore need the dark palette, including the user's selected accent.
+    return Theme(
+      data: buildDarkTheme(accent),
+      child: Scaffold(
         backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(_activeRequest?.title ??
-            widget.mediaTitle ??
-            (widget.isPublicShare
-                ? 'Shared Audio'
-                : 'Audio – ${widget.mediaId}')),
+        appBar: AppBar(
+          actions: [
+            if (!widget.isPublicShare && !casting) const MusicQueueButton(),
+            if (_activeRequest is ServerPlaybackRequest &&
+                !_isLoading &&
+                _error == null)
+              IconButton(
+                  tooltip: context.tr('Info'),
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: _showMusicInfo),
+            buildCastButton(ready: !_isLoading && _error == null),
+            if (_activeRequest != null &&
+                !_isLoading &&
+                _error == null &&
+                !casting &&
+                !widget.isPublicShare)
+              _buildPersonalActions(),
+          ],
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          title: Text(_activeRequest?.title ??
+              widget.mediaTitle ??
+              (widget.isPublicShare
+                  ? 'Shared Audio'
+                  : 'Audio – ${widget.mediaId}')),
+        ),
+        body: Column(children: [
+          SleepTimerControl(timer: ref.read(audioHandlerProvider).sleepTimer),
+          Expanded(
+              child: casting
+                  ? CastPlaybackView(onStop: stopCasting)
+                  : _buildBody()),
+        ]),
       ),
-      body: Column(children: [
-        SleepTimerControl(timer: ref.read(audioHandlerProvider).sleepTimer),
-        Expanded(
-            child:
-                casting ? CastPlaybackView(onStop: stopCasting) : _buildBody()),
-      ]),
     );
   }
 

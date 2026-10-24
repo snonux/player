@@ -60,6 +60,8 @@ import 'package:player_android/providers/playback_preparer_provider.dart';
 import 'package:player_android/providers/public_api_client_provider.dart';
 import 'package:player_android/providers/playback_session_provider.dart';
 import 'package:player_android/providers/cast_provider.dart';
+import 'package:player_android/providers/presentation_provider.dart';
+import 'package:player_android/providers/theme_provider.dart';
 import 'package:player_android/providers/playback_cache_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/screens/audio_player_screen.dart';
@@ -462,6 +464,7 @@ Future<void> _pumpScreen(
   LocalLibraryDatabase? localDatabase,
   CastController? castController,
   CastDiscovery? castDiscovery,
+  ThemeData? theme,
 }) async {
   final handler = handlerOverride ?? fakeHandler ?? _FakePlayerAudioHandler();
   fakeClient.media.addEntries(sequence.map((item) => MapEntry(item.id, item)));
@@ -527,6 +530,7 @@ Future<void> _pumpScreen(
         }),
       ],
       child: MaterialApp.router(
+        theme: theme,
         routerConfig: router,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context)
@@ -601,6 +605,37 @@ void main() {
     await MusicNetworkPolicy.initialize();
     _teardownAudioSessionMock();
   });
+  for (final accent in PlayerAccent.values) {
+    testWidgets(
+        'audio player uses dark surface contrast for ${accent.name} in light mode',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'player_presentation': '{"accent":"${accent.name}"}',
+      });
+      await _pumpScreen(tester, _FakeApiClient(),
+          theme: buildLightTheme(accent));
+      await tester.pump();
+      await tester.pump();
+
+      final buttonFinder = find.ancestor(
+          of: find.text('Sleep timer'), matching: find.byType(TextButton));
+      expect(buttonFinder, findsOneWidget);
+      final buttonContext = tester.element(buttonFinder);
+      final button = tester.widget<TextButton>(buttonFinder);
+      final foreground =
+          button.defaultStyleOf(buttonContext).foregroundColor!.resolve({})!;
+      expect(Theme.of(buttonContext).brightness, Brightness.dark);
+      expect(foreground, buildDarkTheme(accent).colorScheme.primary);
+      final contrast = (foreground.computeLuminance() + .05) /
+          (Colors.black.computeLuminance() + .05);
+      expect(contrast, greaterThanOrEqualTo(4.5));
+      expect(
+          Theme.of(tester.element(find.byType(AudioPlayerScreen))).brightness,
+          Brightness.light,
+          reason: 'the player does not change the app theme');
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
   testWidgets(
       'renderer mini reopens current queue occurrence without local source claim',
       (tester) async {
