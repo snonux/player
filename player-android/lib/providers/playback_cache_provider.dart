@@ -176,20 +176,29 @@ final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
       rethrow;
     }
     if (!wanted()) return null;
-    Future<void> fill() => cache.download(
-        key: key,
-        uri: transport,
-        headers: headers,
-        title: request.title,
-        mediaId: request.mediaId,
-        music: request.music,
-        sourceName: request.sourceName,
-        origin: request.serverOrigin,
-        userId: request.userId,
-        authorized: () =>
-            wanted() &&
-            !MusicNetworkPolicy.streamBlocked &&
-            (!prefetch || MusicNetworkPolicy.prefetchAllowed));
+    Future<void> fill() async {
+      var automationMusicEligible = false;
+      try {
+        automationMusicEligible =
+            (await client.musicAlbums(mediaId: request.mediaId)).isNotEmpty;
+      } catch (_) {/* Catalog failure cannot block ordinary playback/cache. */}
+      return cache.download(
+          key: key,
+          uri: transport,
+          headers: headers,
+          title: request.title,
+          mediaId: request.mediaId,
+          music: request.music,
+          automationMusicEligible: automationMusicEligible,
+          sourceName: request.sourceName,
+          origin: request.serverOrigin,
+          userId: request.userId,
+          authorized: () =>
+              wanted() &&
+              !MusicNetworkPolicy.streamBlocked &&
+              (!prefetch || MusicNetworkPolicy.prefetchAllowed));
+    }
+
     if (cacheReady && saved == null && cache.completeBuffer && !prefetch) {
       try {
         await fill();

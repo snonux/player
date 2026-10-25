@@ -19,6 +19,7 @@ class OfflineMedia {
     required this.sizeBytes,
     required this.addedAt,
     this.music,
+    this.automationMusicEligible = false,
     this.sourceName = '',
     this.downloadProfile = '',
     this.contentType = '',
@@ -37,6 +38,10 @@ class OfflineMedia {
   String get downloadQualityLabel =>
       offlineDownloadQualityLabel(downloadProfile);
   final MusicMetadata? music;
+
+  /// Membership in the authenticated music catalog when this copy was saved.
+  /// Legacy copies remain playable manually but fail closed for automation.
+  final bool automationMusicEligible;
   final String type;
   final int sizeBytes;
   final DateTime addedAt;

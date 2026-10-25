@@ -99,6 +99,7 @@ class OfflineDownloads extends ChangeNotifier {
 
   Future<OfflineMedia> download({
     required Media media,
+    bool? automationMusicEligible,
     String downloadProfile = '',
     String? expectedContentType,
     String? sourceName,
@@ -151,6 +152,11 @@ class OfflineDownloads extends ChangeNotifier {
         if (await savedFile.exists() &&
             await savedFile.length() == existing.sizeBytes) {
           check();
+          if (automationMusicEligible != null) {
+            await repository.setAutomationMusicEligibility(
+                key, origin, userId, automationMusicEligible);
+            return (await repository.get(key))!;
+          }
           return existing;
         }
         // A missing/truncated copy must be repairable without affecting intact
@@ -233,6 +239,7 @@ class OfflineDownloads extends ChangeNotifier {
         mediaId: media.id,
         title: media.displayTitle,
         music: media.music,
+        automationMusicEligible: automationMusicEligible ?? false,
         sourceName: sourceName ?? media.relPath,
         downloadProfile: downloadProfile,
         contentType: mime ?? '',

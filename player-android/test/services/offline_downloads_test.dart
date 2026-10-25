@@ -125,9 +125,12 @@ void main() {
       headers: {'Authorization': 'Bearer test-secret'},
       authorized: () => true,
       downloadProfile: 'original',
+      automationMusicEligible: true,
       originalBytes: true,
     );
     expect(retained.downloadProfile, 'opus96');
+    expect(retained.automationMusicEligible, isTrue);
+    expect((await repository.get(saved.key))!.automationMusicEligible, isTrue);
     expect(requests.length, 1);
   });
 

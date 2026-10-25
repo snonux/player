@@ -129,6 +129,8 @@ final class LocalPlaybackRequest extends PlaybackRequest {
 final class OfflinePlaybackRequest extends PlaybackRequest {
   const OfflinePlaybackRequest({
     required this.downloadKey,
+    this.automationMusicEligible = false,
+    this.beginListening,
     this.serverOrigin,
     this.userId,
     required super.sourceUri,
@@ -144,6 +146,10 @@ final class OfflinePlaybackRequest extends PlaybackRequest {
   }) : super(identity: 'offline:$downloadKey');
 
   final String downloadKey;
+  final bool automationMusicEligible;
+
+  /// Begins a fresh local listening occurrence only when a source is loaded.
+  final Future<void> Function()? beginListening;
 
   /// Download ownership for external identity surfaces. Older/test callers
   /// without an owner remain playable locally but external metadata fails shut.

@@ -4,6 +4,20 @@ Android audio/video player for device files and the Player server.
 
 The installed app version and build number appear at the bottom of **Settings**.
 
+**Settings → Music automation** explains the Android-only Tasker / Locale
+integration. In a compatible automation app add **Player music**, select
+**Start queued music**, **Shuffle and start queued music**, **Use offline music
+only**, or **Allow online music**, then save. Each action belongs to the account
+selected in Player when it was configured. Open Player and unlock that account
+after restarting before running an action. Playback actions use its existing music
+queue and refuse other active sources. Offline-only affects future automation
+starts and requires every queued song in Downloads or Playback cache. It does
+not change the app's other network settings. Settings shows the latest result and
+lets you revoke saved actions. Older saved copies can be validated by allowing
+online music and running Start once while connected; audio stays on the device.
+Actual host/emulator verification is pending;
+see [M57 implementation notes](../docs/music-m57-implementation.md).
+
 **Admin › Rescan Library** shows manual and automatic scan progress, queued work,
 failures, Cancel scan, and expandable Scan settings with effective server values.
 Set `SCAN_WATCH_SECONDS` and/or `SCAN_INTERVAL_MINUTES` in the server deployment

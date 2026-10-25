@@ -118,6 +118,7 @@ class PlaybackCache extends ChangeNotifier {
           sizeBytes: row['size'] as int,
           addedAt: DateTime.fromMillisecondsSinceEpoch(row['used'] as int),
           sourceName: row['source_name'] as String? ?? '',
+          automationMusicEligible: row['automation_music'] == true,
           music: row['music'] is Map
               ? MusicMetadata.fromJson(
                   Map<String, dynamic>.from(row['music'] as Map))
@@ -150,6 +151,7 @@ class PlaybackCache extends ChangeNotifier {
         : null;
     return OfflinePlaybackRequest(
         downloadKey: 'cache:$key',
+        automationMusicEligible: row['automation_music'] == true,
         serverOrigin: origin,
         userId: user,
         sourceUri: uri,
@@ -163,6 +165,19 @@ class PlaybackCache extends ChangeNotifier {
   String key(String origin, int user, int media, String variant) => sha256
       .convert(utf8.encode(jsonEncode([origin, user, media, variant])))
       .toString();
+  Future<void> setAutomationMusicEligibility(
+      String key, String origin, int user, bool eligible) async {
+    await initialize();
+    await _write(() async {
+      final row = _rows[key];
+      if (row == null || row['origin'] != origin || row['user'] != user) {
+        throw StateError('Cached account changed.');
+      }
+      row['automation_music'] = eligible;
+      await _save();
+    });
+  }
+
   File _file(String key, {bool partial = false}) =>
       File('${_directory!.path}/$key.${partial ? 'part' : 'audio'}');
   Future<T> _write<T>(Future<T> Function() fn) async {
@@ -339,6 +354,7 @@ class PlaybackCache extends ChangeNotifier {
       required String title,
       int? mediaId,
       MusicMetadata? music,
+      bool automationMusicEligible = false,
       String sourceName = '',
       required String origin,
       required int userId,
@@ -399,6 +415,7 @@ class PlaybackCache extends ChangeNotifier {
           if (mediaId != null) 'media_id': mediaId,
           if (music != null) 'music': music.toJson(),
           'source_name': sourceName,
+          'automation_music': automationMusicEligible,
           'size': received,
           'used': DateTime.now().millisecondsSinceEpoch,
           'origin': origin,

@@ -51,6 +51,18 @@ void main() {
           await cache.offlineRequest(key, 'https://canonical.test', 1);
       expect(offline.sourceUri.scheme, 'file');
       expect(offline.artist, 'Saved Artist');
+      expect(offline.automationMusicEligible, isFalse);
+      await expectLater(
+          cache.setAutomationMusicEligibility(
+              key, 'https://canonical.test', 2, true),
+          throwsStateError);
+      await cache.setAutomationMusicEligibility(
+          key, 'https://canonical.test', 1, true);
+      expect(
+          (await cache.offlineRequest(key, 'https://canonical.test', 1))
+              .automationMusicEligible,
+          isTrue);
+      expect(await File.fromUri(offline.sourceUri).readAsBytes(), [1, 2, 3]);
       await expectLater(cache.offlineRequest(key, 'https://canonical.test', 2),
           throwsStateError);
       await expectLater(

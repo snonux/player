@@ -10,6 +10,7 @@ import 'services/playback_widget_observer.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
+import 'providers/music_automation_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -147,6 +148,7 @@ void main() async {
 
   handler.artworkLoader = container.read(mediaArtworkLoaderProvider);
   handler.autoCatalog = container.read(androidAutoCatalogProvider);
+  container.read(musicAutomationProvider);
   handler.refreshAutoChildren();
   container.read(globalSyncCoordinatorProvider);
 

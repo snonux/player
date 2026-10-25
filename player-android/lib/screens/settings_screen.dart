@@ -6,6 +6,7 @@ import '../widgets/listening_history_settings.dart';
 import '../providers/api_client_provider.dart';
 import '../widgets/playback_cache_settings.dart';
 import '../widgets/headset_settings.dart';
+import '../widgets/music_automation_settings.dart';
 import '../widgets/navigation_settings.dart';
 import '../widgets/server_endpoint_settings.dart';
 import 'package:flutter/material.dart';
@@ -240,6 +241,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const PresentationSettings(),
                 const SizedBox(height: 24),
                 const HeadsetSettings(),
+                const MusicAutomationSettings(),
                 const SizedBox(height: 32),
                 if (settingsAsync.valueOrNull?.configurationError != null)
                   Text(
@@ -338,6 +340,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const PresentationSettings(),
                 const SizedBox(height: 24),
                 const HeadsetSettings(),
+                const MusicAutomationSettings(),
                 const SizedBox(height: 24),
                 const NavigationSettings(),
                 const MusicNetworkSettings(),

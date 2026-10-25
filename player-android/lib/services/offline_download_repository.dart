@@ -34,9 +34,13 @@ class OfflineDownloadRepository {
     _directory ??= Directory('${await getDatabasesPath()}/offline-downloads');
     await directory.create(recursive: true);
     final db = await openDatabase('${directory.path}/index.db',
-        version: 7,
+        version: 8,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
         onUpgrade: (db, oldVersion, _) async {
+          if (oldVersion < 8) {
+            await db.execute(
+                'ALTER TABLE downloads ADD COLUMN automation_music INTEGER NOT NULL DEFAULT 0');
+          }
           if (oldVersion < 7) {
             await db.execute(
                 "ALTER TABLE downloads ADD COLUMN download_profile TEXT NOT NULL DEFAULT ''");
@@ -72,7 +76,8 @@ class OfflineDownloadRepository {
         size_bytes INTEGER NOT NULL, added_at INTEGER NOT NULL,
         position_seconds REAL NOT NULL DEFAULT 0,
         finished INTEGER NOT NULL DEFAULT 0, music TEXT, source_name TEXT NOT NULL DEFAULT '',
-        download_profile TEXT NOT NULL DEFAULT '', content_type TEXT NOT NULL DEFAULT ''
+        download_profile TEXT NOT NULL DEFAULT '', content_type TEXT NOT NULL DEFAULT '',
+        automation_music INTEGER NOT NULL DEFAULT 0
       )''');
           await _createPersonalSchema(db);
           await _createSyncSchema(db);
@@ -181,6 +186,7 @@ class OfflineDownloadRepository {
               'media_id': item.mediaId,
               'title': item.title,
               'source_name': item.sourceName,
+              'automation_music': item.automationMusicEligible ? 1 : 0,
               'download_profile': item.downloadProfile,
               'content_type': item.contentType,
               'music':
@@ -252,8 +258,8 @@ class OfflineDownloadRepository {
         }));
   }
 
-  Future<OfflinePlaybackRequest> playbackRequest(String key) async {
-    await beforePlayback?.call(key);
+  /// Disk/metadata validation only: no resume/listening state is changed.
+  Future<OfflineMedia> validatePlaybackCopy(String key) async {
     final item = await get(key);
     if (item == null ||
         !await file(key).exists() ||
@@ -261,23 +267,46 @@ class OfflineDownloadRepository {
       throw StateError(
           'Offline copy is missing or incomplete. Delete it and download again.');
     }
-    final db = await database;
-    final session =
-        (await db.rawQuery('SELECT lower(hex(randomblob(16))) AS id'))
-            .single['id'] as String;
-    await _write((db) => db.transaction((tx) async {
-          await tx.delete('sync_music_plays',
-              where: 'owner_id=? AND accumulated_seconds<60', whereArgs: [key]);
-          await tx.insert('sync_music_plays', {
-            'id': session,
-            'owner_id': key,
-            'last_position': item.finished ? 0 : item.positionSeconds,
-            'accumulated_seconds': 0,
-            'observed_ms': 0
-          });
-        }));
+    return item;
+  }
+
+  Future<void> setAutomationMusicEligibility(
+          String key, String origin, int userId, bool eligible) =>
+      _write((db) async {
+        await db.update('downloads', {'automation_music': eligible ? 1 : 0},
+            where: 'key=? AND origin=? AND user_id=?',
+            whereArgs: [key, origin, userId]);
+      });
+
+  Future<OfflinePlaybackRequest> playbackRequest(String key,
+      {bool startListeningSession = true}) async {
+    final item = await validatePlaybackCopy(key);
+    String? session;
+    Future<void> beginListening() async {
+      await beforePlayback?.call(key);
+      final latest = await validatePlaybackCopy(key);
+      final db = await database;
+      session = (await db.rawQuery('SELECT lower(hex(randomblob(16))) AS id'))
+          .single['id'] as String;
+      await _write((db) => db.transaction((tx) async {
+            await tx.delete('sync_music_plays',
+                where: 'owner_id=? AND accumulated_seconds<60',
+                whereArgs: [key]);
+            await tx.insert('sync_music_plays', {
+              'id': session,
+              'owner_id': key,
+              'last_position': latest.finished ? 0 : latest.positionSeconds,
+              'accumulated_seconds': 0,
+              'observed_ms': 0
+            });
+          }));
+    }
+
+    if (startListeningSession) await beginListening();
     return OfflinePlaybackRequest(
       downloadKey: key,
+      automationMusicEligible: item.automationMusicEligible,
+      beginListening: beginListening,
       serverOrigin: item.origin,
       userId: item.userId,
       title: item.title,
@@ -545,6 +574,7 @@ class OfflineDownloadRepository {
         mediaId: row['media_id'] as int,
         title: row['title'] as String,
         sourceName: row['source_name'] as String? ?? '',
+        automationMusicEligible: row['automation_music'] == 1,
         downloadProfile: row['download_profile'] as String? ?? '',
         contentType: row['content_type'] as String? ?? '',
         music: row['music'] is String

@@ -87,9 +87,19 @@ Future<void> Function(Media) mediaOfflineSaver(WidgetRef ref,
       mutations: mutations,
     );
     final transportUri = await endpointRouter.resolve(uri);
+    bool? automationMusicEligible;
+    if (media.type == 'audio') {
+      try {
+        automationMusicEligible =
+            (await client.musicAlbums(mediaId: media.id)).isNotEmpty;
+      } catch (_) {
+        /* Manual downloads remain available without catalog support. */
+      }
+    }
     try {
       await downloads.download(
         media: media,
+        automationMusicEligible: automationMusicEligible,
         downloadProfile: selected,
         expectedContentType: DownloadQuality.contentType(selected),
         sourceName: sourceName,
