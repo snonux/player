@@ -209,10 +209,10 @@ def main(argv=None):
     parser.add_argument('--emulator-wav', required=True)
     parser.add_argument('--host-alias', action='store_true')
     args = parser.parse_args(argv)
-    state = json.loads((Path(args.fixture_dir) / 'state.json').read_text())
+    fixture_state = json.loads((Path(args.fixture_dir) / 'state.json').read_text())
     run = None
     try:
-        baseline.prepare_device(args, state['port'])
+        baseline.prepare_device(args, fixture_state['port'])
         run = Run(args)
         assert app_ui.connect_and_login(run.base, run.auth['user']['username'],
                                         run.auth['user']['password'],
@@ -228,7 +228,7 @@ def main(argv=None):
             raise
     finally:
         if run:
-            baseline.teardown(run, state['port'])
+            baseline.teardown(run, fixture_state['port'])
     return 1 if not run or run.failures else 0
 
 
