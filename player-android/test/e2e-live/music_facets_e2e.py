@@ -42,12 +42,33 @@ def sheet_region(nodes):
     return width // 2, top, bottom
 
 
-def visible(pattern, clickable=False):
+def chip_row_region(nodes):
+    """Bound horizontal reveal to the current applied-chip row."""
+    assert matching_nodes(nodes, r'^Filters \(\d+\)$'), 'No applied filter toolbar'
+    assert not matching_nodes(nodes, '^Music filters$'), 'Sheet is open'
+    chips = matching_nodes(nodes, r'^(Genre|Year / decade|Role|Release type|Compilation|Mood|Grouping|Label): ')
+    assert chips, 'No visible applied chips'
+    left = min(node['b'][0] for node in chips) + 8
+    right = max(node['b'][2] for node in chips) - 8
+    top = max(node['b'][1] for node in chips)
+    bottom = min(node['b'][3] for node in chips)
+    assert right - left > 80 and bottom > top, ('Invalid chip row', chips)
+    # A clipped final chip can end at the physical display edge, where Android
+    # interprets a leftward drag as Back instead of scrolling this row.
+    right -= max(24, (right - left) // 8)
+    return right, left, (top + bottom) // 2
+
+
+def visible(pattern, clickable=False, within_sheet=False):
     deadline = time.monotonic() + 25
     swipes = 0
     while time.monotonic() < deadline:
         nodes = adrv.nodes()
         candidates = matching_nodes(nodes, pattern, clickable)
+        if within_sheet:
+            _, top, bottom = sheet_region(nodes)
+            candidates = [node for node in candidates
+                          if top + 24 <= (node['b'][1] + node['b'][3]) // 2 <= bottom - 24]
         if candidates:
             if clickable:
                 assert len(candidates) == 1, ('Ambiguous control', pattern, candidates)
@@ -56,6 +77,10 @@ def visible(pattern, clickable=False):
             x, top, bottom = sheet_region(nodes)
             inset = (bottom - top) // 5
             adrv.adb('shell', 'input', 'swipe', str(x), str(bottom-inset), str(x), str(top+inset), '350')
+            swipes += 1
+        elif pattern == '^Clear filters$' and swipes < 4:
+            right, left, y = chip_row_region(nodes)
+            adrv.adb('shell', 'input', 'swipe', str(right), str(y), str(left), str(y), '350')
             swipes += 1
         time.sleep(.3)
     raise AssertionError((pattern, app_ui.labels()))
@@ -83,7 +108,8 @@ def sheet():
 def choose(label, value):
     # The labelled DropdownButton is selected from real current semantics;
     # no empty hint or remembered coordinate substitutes for its field.
-    node = visible(r'(?:^| / )' + re.escape(label) + r'(?: /|$)', clickable=True)
+    node = visible(r'(?:^| / )' + re.escape(label) + r'(?: /|$)', clickable=True,
+                   within_sheet=True)
     adrv.tap_node(node)
     tap('^' + re.escape(value) + '$')
 
@@ -141,7 +167,13 @@ def state(run):
     visible(r'^1 matching albums · 1 matching songs$')
     run.record('cold restart and actual account switch preserve only own filters', True,
                artifacts=[run.shot('m08-restored')])
-    tap('^Clear filters$')
+    label(run)
+
+
+def label(run):
+    albums()
+    if adrv.find('^Clear filters$'):
+        tap('^Clear filters$')
     sheet()
     choose('Label', 'Label A; B')
     apply()
@@ -201,11 +233,44 @@ def errors(run):
     tap('^Clear filters$')
 
 
+def detail(run):
+    albums()
+    if adrv.find('^Clear filters$'):
+        tap('^Clear filters$')
+    sheet()
+    choose('Genre', 'Ambient')
+    choose('Year / decade', '2021')
+    apply()
+    visible(r'^1 matching albums · 1 matching songs$')
+    artifacts = []
+    for theme, mode in [('light', 'no'), ('dark', 'yes')]:
+        adrv.adb('shell', 'cmd', 'uimode', 'night', mode)
+        time.sleep(2)
+        visible(r'^1 matching albums · 1 matching songs$')
+        artifacts.append(run.shot('m08-filtered-catalog-' + theme))
+        sheet()
+        visible('Genre', clickable=True, within_sheet=True)
+        artifacts.append(run.shot('m08-filter-sheet-' + theme))
+        app_ui.back()
+    tap(r'(^| / )Night Transit($| / )')
+    visible('^Play album$')
+    visible(r'(?:^| / )3 songs ·')
+    visible('First Light')
+    artifacts.append(run.shot('m08-full-authorized-album-dark'))
+    app_ui.back()
+    visible(r'^1 matching albums · 1 matching songs$')
+    visible('Genre: Ambient')
+    visible('Year / decade: 2021')
+    run.record('filtered album opens all three authorized songs and Back restores facets; light/dark narrow catalog and sheet',
+               True, artifacts=artifacts)
+    tap('^Clear filters$')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('fixture_dir')
     parser.add_argument('--apk')
-    parser.add_argument('--scenario', choices=['all', 'core', 'state', 'errors'], default='all')
+    parser.add_argument('--scenario', choices=['all', 'core', 'state', 'errors', 'detail', 'label'], default='all')
     parser.add_argument('--emulator-wav', required=True)
     parser.add_argument('--host-alias', action='store_true')
     args = parser.parse_args(argv)
@@ -217,9 +282,12 @@ def main(argv=None):
         assert app_ui.connect_and_login(run.base, run.auth['user']['username'],
                                         run.auth['user']['password'],
                                         lambda name, ok, detail='': run.record(name, ok, detail), run.shot)
-        for name, step in [('core', core), ('state', state), ('errors', errors)]:
-            if args.scenario in ('all', name):
-                step(run)
+        if args.scenario == 'label':
+            label(run)
+        else:
+            for name, step in [('core', core), ('state', state), ('errors', errors), ('detail', detail)]:
+                if args.scenario in ('all', name):
+                    step(run)
     except Exception:
         if run:
             run.record('facet journey', False, traceback.format_exc(),

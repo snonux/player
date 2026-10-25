@@ -34,8 +34,8 @@ class SheetRegionTest(unittest.TestCase):
 
 class ScenarioDispatchTest(unittest.TestCase):
     def test_state_and_default_dispatch_call_scenarios_without_device_io(self):
-        for scenario, expected in [(None, ['core', 'state', 'errors']),
-                                   ('state', ['state'])]:
+        for scenario, expected in [(None, ['core', 'state', 'errors', 'detail']),
+                                   ('state', ['state']), ('detail', ['detail']), ('label', ['label'])]:
             with self.subTest(scenario=scenario), TemporaryDirectory() as directory:
                 (Path(directory) / 'state.json').write_text(json.dumps({'port': 18816}))
                 run = Mock(failures=0, base='unused', auth={'user': {'username': 'u', 'password': 'p'}})
@@ -46,7 +46,9 @@ class ScenarioDispatchTest(unittest.TestCase):
                      patch.object(facets.app_ui, 'connect_and_login', return_value=True), \
                      patch.object(facets, 'core', side_effect=lambda _: calls.append('core')), \
                      patch.object(facets, 'state', side_effect=lambda _: calls.append('state')), \
-                     patch.object(facets, 'errors', side_effect=lambda _: calls.append('errors')):
+                     patch.object(facets, 'errors', side_effect=lambda _: calls.append('errors')), \
+                     patch.object(facets, 'detail', side_effect=lambda _: calls.append('detail')), \
+                     patch.object(facets, 'label', side_effect=lambda _: calls.append('label')):
                     args = [directory, '--emulator-wav', 'unused.wav']
                     if scenario:
                         args += ['--scenario', scenario]
@@ -54,6 +56,49 @@ class ScenarioDispatchTest(unittest.TestCase):
                     self.assertEqual(calls, expected)
                     run.record.assert_not_called()
                     teardown.assert_called_once_with(run, 18816)
+
+
+class ChipRevealTest(unittest.TestCase):
+    def test_horizontal_gesture_uses_current_chip_bounds(self):
+        nodes = [node('Filters (3)', [0, 100, 200, 150], True),
+                 node('Genre: Ambient', [8, 160, 220, 220]),
+                 node('Role: Composer', [230, 160, 430, 220])]
+        self.assertEqual(facets.chip_row_region(nodes), (372, 16, 190))
+        with patch.object(facets.adrv, 'nodes', side_effect=[nodes, [node('Clear filters', [10, 160, 150, 220], True)]]), \
+             patch.object(facets.adrv, 'adb') as adb, \
+             patch.object(facets.time, 'sleep'):
+            self.assertEqual(facets.visible('^Clear filters$', clickable=True)['text'], 'Clear filters')
+            adb.assert_called_once_with('shell', 'input', 'swipe', '372', '190', '16', '190', '350')
+
+    def test_missing_toolbar_sheet_and_invalid_chip_bounds_fail_closed(self):
+        toolbar = node('Filters (1)', [0, 100, 200, 150], True)
+        chip = node('Genre: Ambient', [8, 160, 220, 220])
+        for nodes in [[chip], [toolbar], [toolbar, chip, node('Music filters', [0, 400, 200, 450])],
+                      [toolbar, node('Genre: Ambient', [8, 160, 30, 220])]]:
+            with self.subTest(nodes=nodes), self.assertRaises(AssertionError):
+                facets.chip_row_region(nodes)
+
+
+class SheetFieldRevealTest(unittest.TestCase):
+    def test_field_touching_heading_boundary_keeps_safe_native_tap_center(self):
+        first = node('Genre / Any', [20, 350, 480, 500], True)
+        nodes = [node('Music filters', [0, 300, 500, 350]),
+                 node('Apply', [300, 1100, 500, 1150], True), first]
+        with patch.object(facets.adrv, 'nodes', return_value=nodes), \
+             patch.object(facets.adrv, 'adb') as adb:
+            self.assertIs(facets.visible('Genre', clickable=True, within_sheet=True), first)
+            adb.assert_not_called()
+
+    def test_semantic_field_below_footer_is_scrolled_before_tap(self):
+        bounds = [node('Music filters', [0, 300, 500, 350]),
+                  node('Apply', [300, 1100, 500, 1150], True)]
+        clipped = node('Label / Any', [20, 1080, 480, 1200], True)
+        revealed = node('Label / Any', [20, 850, 480, 980], True)
+        with patch.object(facets.adrv, 'nodes', side_effect=[bounds + [clipped], bounds + [revealed]]), \
+             patch.object(facets.adrv, 'adb') as adb, \
+             patch.object(facets.time, 'sleep'):
+            self.assertIs(facets.visible('Label', clickable=True, within_sheet=True), revealed)
+            adb.assert_called_once_with('shell', 'input', 'swipe', '250', '946', '250', '504', '350')
 
 
 if __name__ == '__main__':
