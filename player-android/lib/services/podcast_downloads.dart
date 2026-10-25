@@ -292,7 +292,8 @@ class PodcastDownloads extends ChangeNotifier {
   }
 
   Future<PodcastPlaybackRequest> playbackRequest(
-      String scope, String feed, Map<String, Object?> episode) async {
+      String scope, String feed, Map<String, Object?> episode,
+      {bool fromBeginning = false}) async {
     final key = episode['episode_key'] as String;
     final row = await copy(feed, key);
     if (row?['state'] != 'available') {
@@ -315,6 +316,7 @@ class PodcastDownloads extends ChangeNotifier {
       sourceName: 'Podcast on this device',
       sourceUri: _file(row!['id'] as String).uri,
       readPosition: () async {
+        if (fromBeginning) return 0;
         final db = await repository.database;
         final current = await _identity(feed, key);
         final resolvedFeed =

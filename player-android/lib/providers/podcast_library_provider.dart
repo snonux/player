@@ -39,5 +39,19 @@ final podcastScopeProvider = FutureProvider<String>((ref) async {
 final podcastSubscriptionsProvider =
     FutureProvider<List<Map<String, Object?>>>((ref) async {
   final scope = await ref.watch(podcastScopeProvider.future);
-  return ref.watch(podcastRepositoryProvider).subscriptions(scope);
+  return (await ref.watch(podcastRepositoryProvider).subscriptions(scope))
+      .map((row) => {...row, 'browse_scope': scope})
+      .toList();
+});
+
+final podcastEpisodePageProvider =
+    FutureProvider.family<List<Map<String, Object?>>, (String?, String, int)>(
+        (ref, query) async {
+  final scope = await ref.watch(podcastScopeProvider.future);
+  // Sync and feed refresh invalidate subscriptions; refresh listening rows too.
+  await ref.watch(podcastSubscriptionsProvider.future);
+  return (await ref.watch(podcastRepositoryProvider).browseEpisodes(scope,
+          feed: query.$1, filter: query.$2, offset: query.$3, limit: 41))
+      .map((row) => {...row, 'browse_scope': scope})
+      .toList();
 });

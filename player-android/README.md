@@ -83,6 +83,30 @@ for the exact platform checks and automated coverage.
 Folder scanning, playlists, local tags, and syncing local
 history across devices are outside this feature.
 
+## Podcasts on this device
+
+Open **Podcasts** from the server menu or **Podcasts on this device** from
+the local library. Subscribe using a publisher feed URL and use **Refresh feeds**
+or a podcast's **Refresh feed** menu to fetch metadata directly. Subscription
+folders and **All podcast episodes** work without login or a reachable server.
+Episode lists show newest first, with Previous/Next page controls and
+**Uncompleted** (including started episodes), **Completed**, and **All** filters.
+The combined view names each podcast.
+
+**Mark completed / Mark uncompleted** saves locally and queues synchronization
+for the selected account, retaining the saved position. Download audio directly
+from its publisher, then choose **Play / Resume** or **Play from beginning**.
+**Delete downloaded file** removes only this device's audio; subscription,
+completion, position and pending sync edits remain. **Unsubscribe (keep
+history)** is separate. Existing server episode copies remain ordinary server
+media and previously kept offline copies remain in Downloads.
+
+Implementation checks cover local storage and widgets. Installed Android,
+Chrome/Firefox and two-client acceptance remain pending; see
+[podcast browsing implementation](../docs/podcast-browsing-implementation.md).
+Bounded playback synchronization and exact natural-end handling are the next
+podcast lifecycle slice.
+
 ## Keep server files offline
 
 Open a server file's details and tap **Keep offline**. Audio, video and images

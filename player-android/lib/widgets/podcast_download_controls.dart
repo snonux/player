@@ -5,9 +5,15 @@ import '../screens/audio_player_screen.dart';
 
 class PodcastDownloadControls extends ConsumerStatefulWidget {
   const PodcastDownloadControls(
-      {super.key, required this.feed, required this.episode});
+      {super.key,
+      required this.feed,
+      required this.episode,
+      this.onPlaybackReturn,
+      this.scope});
   final String feed;
   final Map<String, Object?> episode;
+  final VoidCallback? onPlaybackReturn;
+  final String? scope;
   @override
   ConsumerState<PodcastDownloadControls> createState() =>
       PodcastDownloadControlsState();
@@ -33,6 +39,22 @@ class PodcastDownloadControlsState
       if (mounted) setState(() => busy = false);
     }
   }
+
+  Future<void> play({bool fromBeginning = false}) => run(() async {
+        final String scope =
+            widget.scope ?? (await ref.read(podcastScopeProvider.future));
+        final request = await ref
+            .read(podcastDownloadsProvider)
+            .playbackRequest(scope, widget.feed, widget.episode,
+                fromBeginning: fromBeginning);
+        if (!mounted) return;
+        await Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => AudioPlayerScreen(
+                mediaId: request.identity,
+                mediaTitle: request.title,
+                request: request)));
+        if (mounted) widget.onPlaybackReturn?.call();
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -65,31 +87,25 @@ class PodcastDownloadControlsState
                         label: const Text('Cancel download'))
                   else if (state == 'available') ...[
                     FilledButton.icon(
-                        onPressed: busy
-                            ? null
-                            : () => run(() async {
-                                  final scope = await ref
-                                      .read(podcastScopeProvider.future);
-                                  final request =
-                                      await downloads.playbackRequest(
-                                          scope, widget.feed, widget.episode);
-                                  if (!context.mounted) return;
-                                  await Navigator.of(context).push(
-                                      MaterialPageRoute<void>(
-                                          builder: (_) => AudioPlayerScreen(
-                                              mediaId: request.identity,
-                                              mediaTitle: request.title,
-                                              request: request)));
-                                }),
+                        onPressed: busy ? null : () => play(),
                         icon: const Icon(Icons.play_arrow),
-                        label: const Text('Play')),
+                        label: Text(
+                            (widget.episode['position_seconds'] as num? ?? 0) >
+                                    0
+                                ? 'Resume'
+                                : 'Play')),
+                    TextButton.icon(
+                        onPressed:
+                            busy ? null : () => play(fromBeginning: true),
+                        icon: const Icon(Icons.replay),
+                        label: const Text('Play from beginning')),
                     TextButton.icon(
                         onPressed: busy
                             ? null
                             : () =>
                                 run(() => downloads.remove(widget.feed, key)),
                         icon: const Icon(Icons.delete_outline),
-                        label: const Text('Remove download')),
+                        label: const Text('Delete downloaded file')),
                   ] else
                     TextButton.icon(
                         onPressed: busy ||

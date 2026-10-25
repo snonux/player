@@ -52,8 +52,7 @@ abstract final class AppRoutes {
   /// Full-size image viewer for an authenticated media item.
   static const imageViewer = '/image/:mediaId';
 
-  /// Route that lists all podcast feeds (sets where isPodcast is true).
-  /// Opens [PodcastListScreen] and supports the SubscribeDialog FAB.
+  /// Device subscriptions, available independently of server login.
   static const podcasts = '/podcasts';
 
   /// Route that shows the Continue Watching screen (in-progress media items).
@@ -119,11 +118,8 @@ abstract final class AppRoutes {
   /// Returns the concrete path for the notes editor of a given [mediaId].
   static String notesPath(String mediaId) => '/notes/$mediaId';
 
-  /// Route that lists episodes for a single podcast set.
-  ///
-  /// The ':setId' path segment is the numeric podcast set identifier.
-  /// Opens [PodcastEpisodesScreen] where the user can see episode titles,
-  /// played state, and playback progress.
+  /// Legacy numeric server-set link. Opens the standalone subscription picker;
+  /// a server set ID cannot identify a device subscription.
   static const podcastEpisodes = '/podcasts/:setId/episodes';
 
   /// Returns the concrete path for the podcast-episodes screen of [setId].

@@ -91,6 +91,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isPublicSetupRoute =
           location == AppRoutes.server || location == AppRoutes.settings;
       final isLocalRoute = location == AppRoutes.localLibrary ||
+          location == AppRoutes.podcasts ||
+          state.fullPath == AppRoutes.podcastEpisodes ||
           state.fullPath == AppRoutes.localPlayer ||
           location == AppRoutes.offlineDownloads ||
           state.fullPath == AppRoutes.offlinePlayer;
@@ -324,16 +326,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SettingsScreen(serverOnly: true),
       ),
       GoRoute(
-        // Podcast list screen — shows all sets with isPodcast == true.
-        // A FAB inside the screen opens the SubscribeDialog.
+        // Device subscriptions are available without server authentication.
         path: AppRoutes.podcasts,
         builder: (context, state) => const PodcastListScreen(),
       ),
       GoRoute(
-        // Podcast episodes screen — shows all episodes for a podcast set.
-        // The ':setId' path segment is the numeric podcast set identifier.
-        // The optional 'name' query parameter provides the feed title for the
-        // app bar without an extra API round-trip.
+        // Old numeric links open the standalone subscription picker.
         path: AppRoutes.podcastEpisodes,
         builder: (context, state) {
           final raw = state.pathParameters['setId']!;

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/podcast_library_provider.dart';
 import '../services/podcast_identity.dart';
 import '../widgets/podcast_download_controls.dart';
+import '../providers/global_sync_provider.dart';
 
 class StandalonePodcastsScreen extends ConsumerStatefulWidget {
   const StandalonePodcastsScreen({super.key});
@@ -74,6 +75,7 @@ class _StandalonePodcastsScreenState
   @override
   Widget build(BuildContext context) {
     final feeds = ref.watch(podcastSubscriptionsProvider);
+    final scope = ref.watch(podcastScopeProvider).valueOrNull;
     return Scaffold(
         appBar: AppBar(title: const Text('Podcasts on this device'), actions: [
           IconButton(
@@ -86,13 +88,15 @@ class _StandalonePodcastsScreenState
                   ? null
                   : () => run(() async {
                         final repository = ref.read(podcastRepositoryProvider);
+                        final refreshScope =
+                            await ref.read(podcastScopeProvider.future);
                         final subscriptions =
-                            await ref.read(podcastSubscriptionsProvider.future);
+                            await repository.subscriptions(refreshScope);
                         var failed = 0;
                         for (final feed in subscriptions) {
                           try {
-                            await repository
-                                .refresh(feed['feed_key'] as String);
+                            await repository.refreshSubscription(
+                                refreshScope, feed['feed_key'] as String);
                           } catch (_) {
                             failed++;
                           }
@@ -108,6 +112,11 @@ class _StandalonePodcastsScreenState
           if (busy) const LinearProgressIndicator(),
           if (error != null)
             Padding(padding: const EdgeInsets.all(16), child: Text(error!)),
+          ListTile(
+              leading: const Icon(Icons.folder_copy_outlined),
+              title: const Text('All podcast episodes'),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const LocalPodcastEpisodesScreen()))),
           Expanded(
               child: feeds.when(
                   loading: () =>
@@ -117,101 +126,232 @@ class _StandalonePodcastsScreenState
                           onPressed: () =>
                               ref.invalidate(podcastSubscriptionsProvider),
                           child: const Text('Retry opening podcasts'))),
-                  data: (items) => items.isEmpty
-                      ? Center(
-                          child: FilledButton.icon(
-                              onPressed: busy ? null : subscribe,
-                              icon: const Icon(Icons.podcasts),
-                              label: const Text('Subscribe to podcast')))
-                      : ListView(children: [
-                          for (final feed in items)
-                            ListTile(
-                                leading: const Icon(Icons.podcasts),
-                                title: Text(feed['title'] as String),
-                                subtitle: Text(feed['last_error'] as String? ??
-                                    feed['fetch_url'] as String),
-                                onTap: () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                        builder: (_) => _CachedEpisodesScreen(
-                                            feedKey: feed['feed_key'] as String,
-                                            title: feed['title'] as String))),
-                                trailing: PopupMenuButton<String>(
-                                    tooltip: 'Manage podcast',
-                                    onSelected: (action) => run(() async {
-                                          final repository = ref
-                                              .read(podcastRepositoryProvider);
-                                          if (action == 'refresh') {
-                                            await repository.refresh(
-                                                feed['feed_key'] as String);
-                                          } else {
-                                            await repository.unsubscribe(
-                                                await ref.read(
-                                                    podcastScopeProvider
-                                                        .future),
-                                                feed['feed_key'] as String);
-                                          }
-                                        }),
-                                    itemBuilder: (_) => const [
-                                          PopupMenuItem(
-                                              value: 'refresh',
-                                              child: Text('Refresh feed')),
-                                          PopupMenuItem(
-                                              value: 'unsubscribe',
-                                              child: Text(
-                                                  'Unsubscribe (keep history)'))
-                                        ]))
-                        ])))
+                  data: (items) => items
+                          .any((item) => item['browse_scope'] != scope)
+                      ? const Center(child: CircularProgressIndicator())
+                      : items.isEmpty
+                          ? Center(
+                              child: FilledButton.icon(
+                                  onPressed: busy ? null : subscribe,
+                                  icon: const Icon(Icons.podcasts),
+                                  label: const Text('Subscribe to podcast')))
+                          : ListView(children: [
+                              for (final feed in items)
+                                ListTile(
+                                    leading: const Icon(Icons.podcasts),
+                                    title: Text(feed['title'] as String),
+                                    subtitle: Text(
+                                        feed['last_error'] as String? ??
+                                            feed['fetch_url'] as String),
+                                    onTap: () => Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                LocalPodcastEpisodesScreen(
+                                                    feedKey: feed['feed_key']
+                                                        as String,
+                                                    title: feed['title']
+                                                        as String))),
+                                    trailing: PopupMenuButton<String>(
+                                        tooltip: 'Manage podcast',
+                                        onSelected: (action) => run(() async {
+                                              final repository = ref.read(
+                                                  podcastRepositoryProvider);
+                                              if (action == 'refresh') {
+                                                await repository
+                                                    .refreshSubscription(
+                                                        feed['browse_scope']
+                                                            as String,
+                                                        feed['feed_key']
+                                                            as String);
+                                              } else {
+                                                await repository.unsubscribe(
+                                                    feed['browse_scope']
+                                                        as String,
+                                                    feed['feed_key'] as String);
+                                              }
+                                            }),
+                                        itemBuilder: (_) => const [
+                                              PopupMenuItem(
+                                                  value: 'refresh',
+                                                  child: Text('Refresh feed')),
+                                              PopupMenuItem(
+                                                  value: 'unsubscribe',
+                                                  child: Text(
+                                                      'Unsubscribe (keep history)'))
+                                            ]))
+                            ])))
         ]));
   }
 }
 
-class _CachedEpisodesScreen extends ConsumerStatefulWidget {
-  const _CachedEpisodesScreen({required this.feedKey, required this.title});
-  final String feedKey, title;
+class LocalPodcastEpisodesScreen extends ConsumerStatefulWidget {
+  const LocalPodcastEpisodesScreen(
+      {super.key, this.feedKey, this.title = 'All podcast episodes'});
+  final String? feedKey;
+  final String title;
   @override
-  ConsumerState<_CachedEpisodesScreen> createState() =>
-      _CachedEpisodesScreenState();
+  ConsumerState<LocalPodcastEpisodesScreen> createState() =>
+      _LocalPodcastEpisodesScreenState();
 }
 
-class _CachedEpisodesScreenState extends ConsumerState<_CachedEpisodesScreen> {
-  late Future<List<Map<String, Object?>>> episodes;
+class _LocalPodcastEpisodesScreenState
+    extends ConsumerState<LocalPodcastEpisodesScreen> {
+  String filter = 'uncompleted';
+  int offset = 0;
+  String? error;
+  final scroll = ScrollController();
+  final pending = <String>{};
   @override
-  void initState() {
-    super.initState();
-    episodes = ref.read(podcastRepositoryProvider).episodes(widget.feedKey);
+  void dispose() {
+    scroll.dispose();
+    super.dispose();
+  }
+
+  void reload() => ref.invalidate(podcastEpisodePageProvider);
+
+  Future<void> complete(Map<String, Object?> episode, String scope) async {
+    final key = '${episode['scope_feed_key']}:${episode['scope_episode_key']}';
+    setState(() {
+      pending.add(key);
+      error = null;
+    });
+    try {
+      await ref.read(podcastSyncStoreProvider).saveEpisode(
+          scope,
+          episode['scope_feed_key'] as String,
+          episode['scope_episode_key'] as String,
+          completed: episode['completed'] != 1,
+          enclosureUrl: episode['enclosure_url'] as String);
+      reload();
+    } catch (_) {
+      if (mounted) setState(() => error = 'Could not save completion. Retry.');
+    } finally {
+      if (mounted) setState(() => pending.remove(key));
+    }
+  }
+
+  void page(int next) {
+    setState(() => offset = next);
+    if (scroll.hasClients) scroll.jumpTo(0);
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
-      body: FutureBuilder<List<Map<String, Object?>>>(
-          future: episodes,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return const Center(
-                  child: Text('Could not open cached episodes.'));
-            }
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.data!.isEmpty) {
-              return const Center(
-                  child: Text(
-                      'No cached episodes yet. Refresh the feed when online.'));
-            }
-            return ListView(children: [
-              for (final episode in snapshot.data!)
-                ListTile(
-                    leading: const Icon(Icons.headphones),
-                    title: Text(episode['title'] as String),
-                    subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(episode['description'] as String,
-                              maxLines: 3, overflow: TextOverflow.ellipsis),
-                          PodcastDownloadControls(
-                              feed: widget.feedKey, episode: episode),
-                        ]))
-            ]);
-          }));
+  Widget build(BuildContext context) {
+    final scope = ref.watch(podcastScopeProvider).valueOrNull;
+    ref.listen(podcastScopeProvider, (previous, next) {
+      if (previous?.valueOrNull != next.valueOrNull) {
+        setState(() {
+          offset = 0;
+          error = null;
+        });
+        if (scroll.hasClients) scroll.jumpTo(0);
+      }
+    });
+    final episodes =
+        ref.watch(podcastEpisodePageProvider((widget.feedKey, filter, offset)));
+    return Scaffold(
+        appBar: AppBar(title: Text(widget.title), actions: [
+          IconButton(
+              tooltip: 'Reload episodes',
+              onPressed: reload,
+              icon: const Icon(Icons.refresh))
+        ]),
+        body: Column(children: [
+          Padding(
+              padding: const EdgeInsets.all(8),
+              child: Wrap(spacing: 8, children: [
+                for (final option in ['uncompleted', 'completed', 'all'])
+                  ChoiceChip(
+                      label: Text(
+                          '${option[0].toUpperCase()}${option.substring(1)}'),
+                      selected: filter == option,
+                      onSelected: (_) {
+                        setState(() => filter = option);
+                        page(0);
+                      })
+              ])),
+          if (error != null) Text(error!),
+          Expanded(
+              child: episodes.when(
+                  skipLoadingOnReload: true,
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (_, __) => Center(
+                      child: TextButton(
+                          onPressed: reload,
+                          child: const Text('Retry opening episodes'))),
+                  data: (rows) => rows
+                          .any((row) => row['browse_scope'] != scope)
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView(controller: scroll, children: [
+                          if (rows.isEmpty)
+                            const Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Text(
+                                    'No episodes in this filter. Refresh the feed to fetch episodes.')),
+                          for (final e in rows.take(40))
+                            ListTile(
+                                key:
+                                    ValueKey((e['feed_key'], e['episode_key'])),
+                                title: Text(e['title'] as String),
+                                subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (widget.feedKey == null)
+                                        Text(e['podcast_title'] as String),
+                                      Text(e['description'] as String,
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis),
+                                      Text(e['completed'] == 1
+                                          ? 'Completed'
+                                          : (e['position_seconds'] as num) > 0
+                                              ? 'In progress'
+                                              : 'Unplayed'),
+                                      if ((e['position_seconds'] as num) > 0)
+                                        Text(
+                                            'Saved position: ${Duration(seconds: (e['position_seconds'] as num).round())}'),
+                                      if ((e['duration_seconds'] as num) > 0)
+                                        LinearProgressIndicator(
+                                            value: ((e['position_seconds']
+                                                        as num) /
+                                                    (e['duration_seconds']
+                                                        as num))
+                                                .clamp(0.0, 1.0)),
+                                      TextButton.icon(
+                                          onPressed: scope == null ||
+                                                  pending.contains(
+                                                      '${e['scope_feed_key']}:${e['scope_episode_key']}')
+                                              ? null
+                                              : () => complete(e, scope),
+                                          icon: Icon(e['completed'] == 1
+                                              ? Icons.undo
+                                              : Icons.check),
+                                          label: Text(e['completed'] == 1
+                                              ? 'Mark uncompleted'
+                                              : 'Mark completed')),
+                                      PodcastDownloadControls(
+                                          feed: e['feed_key'] as String,
+                                          scope: e['browse_scope'] as String,
+                                          episode: e,
+                                          onPlaybackReturn: reload),
+                                    ])),
+                          Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                TextButton(
+                                    onPressed: offset == 0
+                                        ? null
+                                        : () => page(offset - 40),
+                                    child: const Text('Previous page')),
+                                Text('Page ${offset ~/ 40 + 1}'),
+                                TextButton(
+                                    onPressed: rows.length <= 40
+                                        ? null
+                                        : () => page(offset + 40),
+                                    child: const Text('Next page')),
+                              ])
+                        ])))
+        ]));
+  }
 }

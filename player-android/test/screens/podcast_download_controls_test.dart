@@ -12,7 +12,15 @@ import 'package:player_android/services/playback_session_coordinator.dart';
 const episode = <String, Object?>{
   'episode_key': 'guid:one',
   'title': 'Episode one',
-  'description': 'Description'
+  'description': 'Description',
+  'feed_key': 'feed:example/feed',
+  'scope_feed_key': 'feed:example/feed',
+  'scope_episode_key': 'guid:one',
+  'completed': 0,
+  'position_seconds': 0.0,
+  'duration_seconds': 0,
+  'enclosure_url': '',
+  'podcast_title': 'Podcast'
 };
 
 class _Repository extends PodcastRepository {
@@ -26,6 +34,13 @@ class _Repository extends PodcastRepository {
       ];
   @override
   Future<List<Map<String, Object?>>> episodes(String feedKey) async =>
+      [episode];
+  @override
+  Future<List<Map<String, Object?>>> browseEpisodes(String scope,
+          {String? feed,
+          String filter = 'uncompleted',
+          int offset = 0,
+          int limit = 40}) async =>
       [episode];
 }
 
@@ -98,7 +113,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Available on this device'), findsOneWidget);
     expect(find.text('Play'), findsOneWidget);
-    await tester.tap(find.text('Remove download'));
+    await tester.tap(find.text('Delete downloaded file'));
     await tester.pumpAndSettle();
     expect(find.text('Download'), findsOneWidget);
     expect(find.text('Episode one'), findsOneWidget);

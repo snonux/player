@@ -25,8 +25,9 @@ zh3 owns consent prompts, network synchronization and sync feedback.
 
 The provider selects local scope while browsing device files; server scope
 remembers the last signed-in account identity for signed-out edits. It stores
-no credential in podcast storage. Existing server podcast screens and APIs
-remain available.
+no credential in podcast storage. The native Podcasts destination uses this
+device library, including saved numeric podcast links. Server APIs and ordinary
+server media browsing remain available for existing copies.
 
 Open a cached podcast's episode list to **Download** publisher audio directly
 onto this device (yh3). Pending/downloading copies offer **Cancel download**;
@@ -38,8 +39,12 @@ or login. Publisher access, supported audio formats and device storage are still
 required. Downloads continue while browsing in the running app; process death
 requires an explicit retry rather than falsely presenting a partial file.
 
-The combined episode view/manual completion controls (1i3) and full bounded
-pre-play/end reconciliation (2i3) remain subsequent work. Basic local playback
+The virtual **All podcast episodes** view and each podcast folder offer
+**Uncompleted / Completed / All** filters, newest-first pages, saved progress,
+and manual completion controls regardless of download availability (1i3).
+Completion changes retain position and pending sync edits; **Play from
+beginning** starts at zero without clearing history. Full bounded pre-play/end
+reconciliation (2i3) remains subsequent work. Basic local playback
 callbacks already use the existing scoped podcast registers, with a distinct
 local source that never invokes authenticated music or lyric APIs.
 

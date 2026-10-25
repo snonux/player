@@ -123,6 +123,12 @@ void main() {
     final other = await downloads.playbackRequest(
         'account:https://unreachable.invalid#2', feed, episode);
     expect(await other.readPosition!(), 45);
+    final beginning = await downloads.playbackRequest(
+        'account:https://unreachable.invalid#2', feed, episode,
+        fromBeginning: true);
+    expect(await beginning.readPosition!(), 0);
+    expect(await (await repository.database).query('podcast_episode_state'),
+        before);
     await downloads.remove(feed, key);
     expect(await File.fromUri(request.sourceUri).exists(), false);
     expect((await downloads.copy(feed, key))!['state'], 'missing');

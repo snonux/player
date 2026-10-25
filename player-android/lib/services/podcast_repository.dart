@@ -72,6 +72,160 @@ class PodcastRepository {
           where: 'feed_key=?',
           whereArgs: [feedKey],
           orderBy: 'published_at DESC,episode_key');
+
+  /// Account aliases join registers to device metadata without re-keying copies.
+  Future<List<Map<String, Object?>>> browseEpisodes(String scope,
+      {String? feed,
+      String filter = 'uncompleted',
+      int offset = 0,
+      int limit = 40}) async {
+    if (offset < 0 ||
+        limit < 1 ||
+        limit > 200 ||
+        !['uncompleted', 'completed', 'all'].contains(filter)) {
+      throw ArgumentError('Invalid podcast page');
+    }
+    final db = await database;
+    return db.transaction((tx) async {
+      final aliases = await tx.query('podcast_account_aliases',
+          where: 'scope=?', whereArgs: [scope]);
+      final aliasTargets = {
+        for (final a in aliases)
+          (a['kind'], a['feed_key'], a['source']): a['target'] as String
+      };
+      String resolve(String kind, String feed, String key) {
+        final seen = <String>{};
+        while (seen.add(key)) {
+          final target = aliasTargets[(kind, feed, key)];
+          if (target == null) return key;
+          key = target;
+        }
+        throw StateError('Cyclic podcast alias');
+      }
+
+      final subscriptions = {
+        for (final s in await tx.query('podcast_subscriptions',
+            where: 'scope=? AND subscribed=1', whereArgs: [scope]))
+          s['feed_key'] as String: s
+      };
+      final selected = feed == null ? null : resolve('feed', '', feed);
+      final states = {
+        for (final s in await tx.query('podcast_episode_state',
+            where: 'scope=?', whereArgs: [scope]))
+          (s['feed_key'], s['episode_key']): s
+      };
+      final catalog = {
+        for (final f in await tx.query('podcast_feeds')) f['feed_key']: f
+      };
+      final copies = await tx.query('podcast_downloads');
+      int rank(Object? state) => switch (state) {
+            'available' => 4,
+            'pending' || 'downloading' => 3,
+            'failed' => 2,
+            'missing' => 1,
+            _ => 0,
+          };
+      final copyRanks = <(Object?, Object?), int>{};
+      for (final copy in copies) {
+        final key = (copy['feed_key'], copy['episode_key']);
+        copyRanks[key] = max(copyRanks[key] ?? 0, rank(copy['state']));
+      }
+      int copyRank(Map<String, Object?> e) =>
+          copyRanks[(e['feed_key'], e['episode_key'])] ?? 0;
+      final rows = <(String, String), Map<String, Object?>>{};
+      for (final e in await tx.query('podcast_episodes',
+          orderBy: 'published_at DESC,feed_key,episode_key')) {
+        final deviceFeed = e['feed_key'] as String;
+        final metadata = catalog[deviceFeed];
+        final candidates = <String>[
+          deviceFeed,
+          ...((jsonDecode(metadata?['aliases'] as String? ?? '[]')) as List)
+              .cast<String>()
+        ];
+        final scopedFeed = candidates
+            .map((key) => resolve('feed', '', key))
+            .where(subscriptions.containsKey)
+            .firstOrNull;
+        if (scopedFeed == null || selected != null && selected != scopedFeed) {
+          continue;
+        }
+        final episodeKeys = [
+          e['episode_key'] as String,
+          ...(jsonDecode(e['aliases'] as String) as List).cast<String>()
+        ];
+        final mapped = episodeKeys
+            .map((key) => resolve('episode', scopedFeed, key))
+            .toList();
+        final key = mapped
+                .where((key) => states.containsKey((scopedFeed, key)))
+                .firstOrNull ??
+            mapped.where((key) => !episodeKeys.contains(key)).firstOrNull ??
+            mapped.first;
+        final state = states[(scopedFeed, key)] ?? const <String, Object?>{};
+        final completed = state['completed'] == 1;
+        if (filter == 'completed' && !completed ||
+            filter == 'uncompleted' && completed) {
+          continue;
+        }
+        final previous = rows[(scopedFeed, key)];
+        if (previous == null || copyRank(e) > copyRank(previous)) {
+          rows[(scopedFeed, key)] = {
+            ...e, ...state,
+            // Download APIs always receive device keys.
+            'feed_key': deviceFeed, 'episode_key': e['episode_key'],
+            'scope_feed_key': scopedFeed, 'scope_episode_key': key,
+            'podcast_title': subscriptions[scopedFeed]!['title'],
+            'completed': completed ? 1 : 0,
+            'position_seconds': state['position_seconds'] ?? 0.0,
+            'enclosure_url': e['enclosure_url'],
+          };
+        }
+      }
+      final ordered = rows.values.toList()
+        ..sort((a, b) {
+          final published =
+              (b['published_at'] as int).compareTo(a['published_at'] as int);
+          if (published != 0) return published;
+          final feedOrder = (a['scope_feed_key'] as String)
+              .compareTo(b['scope_feed_key'] as String);
+          return feedOrder != 0
+              ? feedOrder
+              : (a['scope_episode_key'] as String)
+                  .compareTo(b['scope_episode_key'] as String);
+        });
+      return ordered.skip(offset).take(limit).toList();
+    });
+  }
+
+  /// A pulled subscription may have no publisher metadata on this device yet.
+  Future<void> refreshSubscription(String scope, String key) async {
+    final db = await database;
+    var deviceKey = key;
+    for (final f in await db.query('podcast_feeds')) {
+      final keys = [
+        f['feed_key'] as String,
+        ...(jsonDecode(f['aliases'] as String) as List).cast<String>()
+      ];
+      for (final candidate in keys) {
+        if (await resolveAccountKey(db, scope, 'feed', '', candidate) == key) {
+          deviceKey = f['feed_key'] as String;
+          await refresh(deviceKey);
+          return;
+        }
+      }
+    }
+    final subscription = (await db.query('podcast_subscriptions',
+            where: 'scope=? AND feed_key=? AND subscribed=1',
+            whereArgs: [scope, key]))
+        .firstOrNull;
+    if (subscription == null) return;
+    final url = subscription['fetch_url'] as String;
+    podcastFeedKey(url);
+    await db.insert('podcast_feeds', {'feed_key': deviceKey, 'fetch_url': url},
+        conflictAlgorithm: ConflictAlgorithm.ignore);
+    await refresh(deviceKey);
+  }
+
   Future<String> resolveFeed(DatabaseExecutor db, String key) async {
     final feeds = await db.query('podcast_feeds');
     for (final f in feeds) {
