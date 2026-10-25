@@ -8,7 +8,7 @@ let account = null, generation = 0, lastSuccess = null, lastError = null, lastFa
 let epochRecovery = null;
 const keyOf = ep => `${ep.feed_key}\0${ep.episode_key}`;
 const changed = () => globalThis.document?.dispatchEvent(new Event('podcast:state-changed'));
-const accountChannel = globalThis.window && globalThis.BroadcastChannel ? new BroadcastChannel('player-podcast-account') : null;
+const accountChannel = globalThis.window?.BroadcastChannel ? new window.BroadcastChannel('player-podcast-account') : null;
 if (accountChannel) accountChannel.onmessage = event => setPodcastAccount(event.data?.account);
 
 export function setPodcastAccount(id) {

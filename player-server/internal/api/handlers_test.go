@@ -2232,6 +2232,9 @@ func (m *mockPingStore) CreateEpisode(ctx context.Context, episode *model.Podcas
 func (m *mockPingStore) GetEpisodeByID(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
 	return m.store.GetEpisodeByID(ctx, id)
 }
+func (m *mockPingStore) GetMediaEpisodeState(ctx context.Context, userID, mediaID int64) (*model.PodcastEpisodeState, error) {
+	return m.store.GetMediaEpisodeState(ctx, userID, mediaID)
+}
 func (m *mockPingStore) GetEpisodeByGUID(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error) {
 	return m.store.GetEpisodeByGUID(ctx, feedID, guid)
 }
