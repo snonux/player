@@ -236,6 +236,8 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 | `MAX_UPLOAD_SIZE_MB` | `100` | ≥ 1 | Max upload size per file (MB) |
 | `SESSION_TIMEOUT_HOURS` | `24` | ≥ 1 | Cookie / session expiry |
 | `GC_INTERVAL_MINUTES` | `30` | ≥ 1 | Garbage collector tick interval |
+| `SCAN_WATCH_SECONDS` | `0` (off) | 0 or 10–86400 | Poll source metadata for changes; automatic inventory scan on change |
+| `SCAN_INTERVAL_MINUTES` | `0` (off) | 0–10080 | Scheduled automatic inventory scan interval |
 | `SHARE_DEFAULT_EXPIRY_DAYS` | `7` | ≥ 1 | Default share link lifetime |
 | `MEDIA_PAGE_SIZE` | `100` | ≥ 1 | Items displayed per thumbnail grid page |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` | Log verbosity |

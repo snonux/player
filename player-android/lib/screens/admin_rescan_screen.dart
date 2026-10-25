@@ -41,6 +41,8 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
   // True while the trigger request is in flight.
   bool _isTriggering = false;
 
+  bool _fetching = false;
+
   // Active polling timer; cancelled in dispose and whenever the scan finishes.
   Timer? _pollTimer;
 
@@ -73,7 +75,8 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
   /// If the scan is running, a poll timer is started (or kept running).
   /// If the scan is idle/complete, any active poll timer is cancelled.
   Future<void> _fetchStatus() async {
-    if (!mounted) return;
+    if (!mounted || _fetching) return;
+    _fetching = true;
     final generation = ++_generation;
 
     try {
@@ -86,7 +89,9 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
         _error = null;
       });
 
-      _updatePolling(status.isRunning);
+      _updatePolling(status.isRunning ||
+          status.watchSeconds > 0 ||
+          status.intervalMinutes > 0);
     } catch (e) {
       if (!mounted || generation != _generation) return;
       setState(() => _error = adminRescanErrorMessage(e));
@@ -94,6 +99,8 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
       // can retry manually via the refresh button.
       _pollTimer?.cancel();
       _pollTimer = null;
+    } finally {
+      _fetching = false;
     }
   }
 
@@ -139,6 +146,22 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
     }
   }
 
+  Future<void> _cancelScan() async {
+    if (_isTriggering) return;
+    setState(() {
+      _isTriggering = true;
+      _error = null;
+    });
+    try {
+      await ref.read(apiClientProvider).cancelScan();
+      if (mounted) await _fetchStatus();
+    } catch (e) {
+      if (mounted) setState(() => _error = adminRescanErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _isTriggering = false);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -168,8 +191,7 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
 
   /// Builds the screen body: status card + trigger button.
   Widget _buildBody(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
       children: [
         _StatusCard(status: _status, error: _error),
         const SizedBox(height: 32),
@@ -177,6 +199,42 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
           isRunning: _status?.isRunning ?? false,
           isTriggering: _isTriggering,
           onTap: _triggerRescan,
+        ),
+        if (_status?.isRunning ?? false) ...[
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            key: const Key('admin_scan_cancel'),
+            onPressed: _isTriggering || _status?.state == 'cancelling'
+                ? null
+                : _cancelScan,
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: Text(_status?.state == 'cancelling'
+                ? 'Cancelling scan…'
+                : 'Cancel scan'),
+          ),
+        ],
+        if (_status?.pending ?? false) const Text('One follow-up scan queued.'),
+        if (_status?.watchError.isNotEmpty ?? false)
+          Text(_status!.watchError,
+              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        const SizedBox(height: 16),
+        ExpansionTile(
+          title: const Text('Scan settings'),
+          childrenPadding: const EdgeInsets.all(16),
+          children: [
+            Text(_status == null
+                ? 'Loading effective settings…'
+                : 'Watch: ${_status!.watchSeconds > 0 ? 'polling every ${_status!.watchSeconds} seconds' : 'Off'}. '
+                    'Schedule: ${_status!.intervalMinutes > 0 ? 'every ${_status!.intervalMinutes} minutes' : 'Off'}.'),
+            const SizedBox(height: 12),
+            const SelectableText('Configure on the server, then restart:\n'
+                'SCAN_WATCH_SECONDS=30\nSCAN_INTERVAL_MINUTES=60\n'
+                'Both default to 0 (off). Watch supports 10–86400 seconds; schedule supports 1–10080 minutes. '
+                'Manage roots in Libraries. Polling checks file names, size and modification time; '
+                'same-size edits with unchanged time need a manual rescan. '
+                'Automatic scans retain absent records; manual rescans use the existing deletion policy. '
+                'Generated caches are ignored. Back leaves scans running; Cancel scan stops active and queued work.'),
+          ],
         ),
       ],
     );
@@ -200,6 +258,12 @@ class _ScanStatus {
     required this.filesTotal,
     required this.filesDone,
     this.lastError,
+    this.state = '',
+    this.trigger = '',
+    this.pending = false,
+    this.watchSeconds = 0,
+    this.intervalMinutes = 0,
+    this.watchError = '',
   });
 
   /// Parses the raw progress map returned by the server.
@@ -212,6 +276,12 @@ class _ScanStatus {
       filesTotal: map['files_total'] as int? ?? 0,
       filesDone: map['files_done'] as int? ?? 0,
       lastError: map['last_error'] as String?,
+      state: map['state'] as String? ?? '',
+      trigger: map['trigger'] as String? ?? '',
+      pending: map['pending'] as bool? ?? false,
+      watchSeconds: map['watch_seconds'] as int? ?? 0,
+      intervalMinutes: map['interval_minutes'] as int? ?? 0,
+      watchError: map['watch_error'] as String? ?? '',
     );
   }
 
@@ -222,6 +292,9 @@ class _ScanStatus {
   final int filesTotal;
   final int filesDone;
   final String? lastError;
+  final String state, trigger, watchError;
+  final bool pending;
+  final int watchSeconds, intervalMinutes;
 }
 
 // ---------------------------------------------------------------------------
@@ -294,7 +367,9 @@ class _RunningContent extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Text(
-              'Scan running…',
+              status.state == 'cancelling'
+                  ? 'Cancelling scan…'
+                  : 'Scan running…',
               key: const Key('admin_rescan_running_label'),
               style: Theme.of(context).textTheme.titleSmall,
             ),
@@ -307,6 +382,7 @@ class _RunningContent extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ],
+        if (status.trigger.isNotEmpty) Text('Started by: ${status.trigger}'),
         if (status.setsTotal > 0) ...[
           const SizedBox(height: 6),
           Text('Sets: ${status.setsDone} / ${status.setsTotal}'),
@@ -345,7 +421,14 @@ class _IdleContent extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Text(
-              hasScanned ? 'Scan complete' : 'Idle — no scan running',
+              status.state == 'cancelled'
+                  ? 'Scan cancelled'
+                  : status.state == 'failed' ||
+                          (status.lastError?.isNotEmpty ?? false)
+                      ? 'Scan failed'
+                      : hasScanned
+                          ? 'Scan complete'
+                          : 'Idle — no scan running',
               key: const Key('admin_rescan_idle_label'),
               style: Theme.of(context).textTheme.titleSmall,
             ),
@@ -358,7 +441,9 @@ class _IdleContent extends StatelessWidget {
         if (status.lastError != null && status.lastError!.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(
-            'Last error: ${status.lastError}',
+            status.state == 'cancelled'
+                ? 'Rescan when ready.'
+                : 'Check library root access and server logs, then trigger rescan.',
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         ],
@@ -418,7 +503,8 @@ class _TriggerButton extends StatelessWidget {
           ? const SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.white),
             )
           : const Icon(Icons.sync_outlined),
       label: Text(isRunning ? 'Scan in progress…' : 'Trigger Rescan'),

@@ -434,6 +434,7 @@ func TestAdminService_TriggerRescan_ConcurrentCalls(t *testing.T) {
 		},
 	}
 	svc := NewAdminService(&repository.MockStore{}, newMockClock(), &fakeHasher{fixed: "hash"}, sc, "/media", ctx)
+	t.Cleanup(svc.StopScans)
 
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
@@ -444,13 +445,12 @@ func TestAdminService_TriggerRescan_ConcurrentCalls(t *testing.T) {
 	}
 	wg.Wait()
 
-	timeout := time.After(time.Second)
-	for !svc.ScanProgress(ctx).Running {
-		select {
-		case <-started:
-		case <-timeout:
-			t.Fatal("timeout waiting for a running scan")
-		}
+	// Running is published synchronously, before the worker is scheduled.
+	// Wait for the actual scanner call before asserting the call count.
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for a running scan")
 	}
 
 	mu.Lock()

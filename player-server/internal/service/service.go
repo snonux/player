@@ -310,6 +310,8 @@ type AdminService interface {
 	ListTrash(ctx context.Context) ([]model.Media, error)
 	// TriggerRescan starts a media library scan.
 	TriggerRescan(ctx context.Context) error
+	// CancelScan cancels active and queued scan work.
+	CancelScan(ctx context.Context) error
 	// ScanProgress returns the current or last scan state.
 	ScanProgress(ctx context.Context) model.ScanProgress
 	// ListUsers returns all application users.

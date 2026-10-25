@@ -291,6 +291,7 @@ func (m *MockMediaService) DeleteNote(ctx context.Context, mediaID, userID int64
 type MockAdminService struct {
 	ListTrashFunc        func(ctx context.Context) ([]model.Media, error)
 	TriggerRescanFunc    func(ctx context.Context) error
+	CancelScanFunc       func(ctx context.Context) error
 	ScanProgressFunc     func(ctx context.Context) model.ScanProgress
 	ListUsersFunc        func(ctx context.Context) ([]model.User, error)
 	CreateUserFunc       func(ctx context.Context, username, password string, isAdmin bool) (*model.User, error)
@@ -312,6 +313,14 @@ func (m *MockAdminService) ListTrash(ctx context.Context) ([]model.Media, error)
 func (m *MockAdminService) TriggerRescan(ctx context.Context) error {
 	if m.TriggerRescanFunc != nil {
 		return m.TriggerRescanFunc(ctx)
+	}
+	return nil
+}
+
+// CancelScan calls CancelScanFunc or returns nil.
+func (m *MockAdminService) CancelScan(ctx context.Context) error {
+	if m.CancelScanFunc != nil {
+		return m.CancelScanFunc(ctx)
 	}
 	return nil
 }

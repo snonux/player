@@ -50,9 +50,10 @@ type FSScanner struct {
 	// remover deletes thumbnails the migration made obsolete and stale
 	// temporary thumbnail files. It is separate from fs because nothing
 	// else in a scan may delete files.
-	remover fileRemover
-	logger  *slog.Logger
-	workers int
+	remover      fileRemover
+	logger       *slog.Logger
+	workers      int
+	ignoredPaths []string
 	// layout says where thumbnails are created (see WithThumbnailLayout).
 	// It must be the layout of thumbMkr: the scanner does not create
 	// thumbnails, but it decides which stored ones are out of place.
@@ -109,6 +110,20 @@ func (s *FSScanner) WithAfterScan(fn func(context.Context) error) *FSScanner {
 	return s
 }
 
+// WithIgnoredPaths excludes generated caches from all discovery and observation.
+// Configure before the first scan. Paths are absolute and component-confined.
+func (s *FSScanner) WithIgnoredPaths(paths ...string) *FSScanner {
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(path); err == nil {
+			s.ignoredPaths = append(s.ignoredPaths, abs)
+		}
+	}
+	return s
+}
+
 // WithThumbnailLayout tells the scanner where thumbnails are created, which
 // it needs to recognise stored thumbnails that are out of place or missing.
 // Pass the layout the scanner's thumb.Maker was given; without this call
@@ -145,6 +160,16 @@ func (s *FSScanner) log() *slog.Logger {
 // The cancelled scan stops quickly, then the new one starts from a fresh
 // snapshot.
 func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanProgress) error {
+	return s.scan(ctx, root, progress, false)
+}
+
+// ScanInventory adds and refreshes files without orphan/trash reconciliation.
+// Automatic work must not interpret a temporarily disconnected root as deletion.
+func (s *FSScanner) ScanInventory(ctx context.Context, root string, progress *model.ScanProgress) error {
+	return s.scan(ctx, root, progress, true)
+}
+
+func (s *FSScanner) scan(ctx context.Context, root string, progress *model.ScanProgress, inventory bool) error {
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -163,7 +188,7 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 			return fmt.Errorf("read media root %q: %w", r.path, err)
 		}
 		for _, entry := range entries {
-			if isSetDir(entry) {
+			if isSetDir(entry) && !ignoredPath(filepath.Join(r.path, entry.Name()), s.ignoredPaths) {
 				setCount++
 			}
 		}
@@ -173,18 +198,18 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 	}
 	s.log().Info("scanner scan started", "roots", len(roots), "sets", setCount)
 
-	ledger := &identityLedger{}
+	ledger := &identityLedger{inventory: inventory}
 	for _, r := range roots {
 		entries, err := s.fs.ReadDir(r.path)
 		if err != nil {
 			return fmt.Errorf("read media root %q: %w", r.path, err)
 		}
 		for _, entry := range entries {
-			if !isSetDir(entry) {
+			if !isSetDir(entry) || ignoredPath(filepath.Join(r.path, entry.Name()), s.ignoredPaths) {
 				continue
 			}
 			setPath := filepath.Join(r.path, entry.Name())
-			if err := s.scanSet(ctx, r.id, r.path, setPath, progress, ledger); err != nil {
+			if err := s.scanSetMode(ctx, r.id, r.path, setPath, progress, ledger, inventory); err != nil {
 				return err
 			}
 			if progress != nil {
@@ -192,6 +217,9 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 			}
 		}
 		s.log().Info("scanner library finished", "library_id", r.id, "root", r.path)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := s.reconcileMusicIdentity(ctx, ledger, progress); err != nil {
 		return err
@@ -236,14 +264,14 @@ func (s *FSScanner) scanRoots(ctx context.Context, fallback string) ([]scanRoot,
 	return []scanRoot{{id: 0, path: fallback}}, nil
 }
 
-// isSetDir reports whether a media root entry is scanned as a set: every
-// directory except one named .thumbnails. That name is reserved for
+// isSetDir reports whether a media root entry is scanned as a set: visible
+// directories only, matching nested discovery. .thumbnails is reserved for
 // generated thumbnails. The server itself never creates one directly in
 // the media root (uploads go into a set), but if one is there, indexing it
 // as a set would turn its files into media whose thumbnail is the file
 // itself, living in a directory the rest of the code treats as disposable.
 func isSetDir(entry os.DirEntry) bool {
-	return entry.IsDir() && entry.Name() != thumb.DirName
+	return entry.IsDir() && !strings.HasPrefix(entry.Name(), ".")
 }
 
 // fileExists reports whether path can be stat'ed.
@@ -347,7 +375,7 @@ func (s *FSScanner) reconcileOrphans(ctx context.Context, existing map[string]mo
 			continue
 		}
 		if ledger != nil {
-			ledger.noteSoftDeleted(media)
+			ledger.noteMissing(media)
 		}
 		s.log().Info("scanner soft-deleted orphan", "set", setName, "rel_path", relPath, "id", media.ID)
 	}
@@ -428,14 +456,17 @@ func (s *FSScanner) updateAudioThumbnails(ctx context.Context, mediaList []model
 
 // setScan carries the state of one set's scan between its phases.
 type setScan struct {
-	id   int64
-	name string
-	path string
+	inventory bool
+	ctx       context.Context
+	id        int64
+	name      string
+	path      string
 	// existing holds the set's rows as of the start of the scan, keyed by
 	// relPath; soft-deleted rows are included.
 	existing    map[string]model.Media
 	coverImages map[string]string
 	files       []string
+	seenRel     map[string]struct{}
 	skipped     map[string]error
 	// stale holds the relPaths of the rows that get a thumbnail generated
 	// in this scan, and why (see staleThumbnails).
@@ -448,6 +479,10 @@ type setScan struct {
 // persists the new files, and finally audio tracks pick up cover images
 // that appeared since they were indexed.
 func (s *FSScanner) scanSet(ctx context.Context, libraryID int64, root, setPath string, progress *model.ScanProgress, ledger *identityLedger) error {
+	return s.scanSetMode(ctx, libraryID, root, setPath, progress, ledger, false)
+}
+
+func (s *FSScanner) scanSetMode(ctx context.Context, libraryID int64, root, setPath string, progress *model.ScanProgress, ledger *identityLedger, inventory bool) error {
 	setID, setName, err := s.ensureSet(ctx, libraryID, root, setPath)
 	if err != nil {
 		return err
@@ -461,13 +496,39 @@ func (s *FSScanner) scanSet(ctx context.Context, libraryID int64, root, setPath 
 	if err != nil {
 		return err
 	}
-	sc := &setScan{id: setID, name: setName, path: setPath, existing: existing, ledger: ledger}
+	sc := &setScan{id: setID, name: setName, path: setPath, existing: existing, ledger: ledger, ctx: ctx, inventory: inventory}
 	if err := s.discoverSet(ctx, sc, progress); err != nil {
 		return fmt.Errorf("scan set %q: %w", setName, err)
 	}
 	newFiles, err := s.probeAndStore(ctx, sc, progress)
 	if err != nil {
 		return fmt.Errorf("scan set %q: %w", setName, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !inventory {
+		s.reconcileOrphans(ctx, sc.existing, sc.seenRel, sc.skipped, sc.path, sc.name, sc.ledger)
+	} else {
+		for rel, row := range sc.existing {
+			if _, seen := sc.seenRel[rel]; seen && row.DeletedAt == nil && row.Music != nil && row.Music.InventoryPending {
+				sc.ledger.noteCreated(row.ID)
+			}
+		}
+		// Only genuinely absent sources from a fully processed set may enter
+		// existing move matching. Unmatched rows remain active and untouched.
+		for rel, row := range sc.existing {
+			if _, seen := sc.seenRel[rel]; seen || row.DeletedAt != nil {
+				continue
+			}
+			path := filepath.Join(sc.path, filepath.FromSlash(rel))
+			if belowSkippedDirectory(path, sc.skipped) || ignoredPath(path, s.ignoredPaths) {
+				continue
+			}
+			if _, err := s.fs.Stat(path); errors.Is(err, fs.ErrNotExist) {
+				sc.ledger.noteMissing(row)
+			}
+		}
 	}
 
 	s.refreshAudioThumbnails(ctx, setID, sc.coverImages, setPath, sc.skipped)
@@ -502,6 +563,7 @@ func (s *FSScanner) refreshAudioThumbnails(ctx context.Context, setID int64, cov
 // made are noted in sc.stale for probeAndStore to generate.
 func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *model.ScanProgress) error {
 	disc := newFileDiscoverer(s.fs)
+	disc.ctx, disc.ignored = sc.ctx, s.ignoredPaths
 	sc.coverImages = disc.gatherCoverImages(sc.path)
 	files, skipped, err := disc.Discover(sc.path)
 	if err != nil {
@@ -521,7 +583,10 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 			seenRel[filepath.ToSlash(rel)] = struct{}{}
 		}
 	}
-	s.reconcileOrphans(ctx, sc.existing, seenRel, skipped, sc.path, sc.name, sc.ledger)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	sc.seenRel = seenRel
 
 	s.sweepStaleTemporaries(sc.path, files)
 	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path, s.fileExists, s.layout)
@@ -551,8 +616,8 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 // goroutine persists the results, because SQLite does not take concurrent
 // writes. The first error cancels the rest.
 func (s *FSScanner) probeAndStore(ctx context.Context, sc *setScan, progress *model.ScanProgress) (int32, error) {
-	workers := max(s.workers, 1)
-	pathChan := make(chan string, len(sc.files))
+	workers := min(max(s.workers, 1), 4)
+	pathChan := make(chan string, workers*2)
 	resultChan := make(chan fileResult, workers)
 
 	scanCtx, cancel := context.WithCancel(ctx)
@@ -606,6 +671,7 @@ func (s *FSScanner) startProbeWorkers(
 	sendErr func(error),
 ) *sync.WaitGroup {
 	pw := newProbeWorker(s.prober, s.thumbMkr, s.fs, s.clock, s.log(), sc.stale)
+	pw.inventory = sc.inventory
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
 		wg.Add(1)

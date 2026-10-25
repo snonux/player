@@ -20,6 +20,9 @@
 .btn:hover { background: var(--bg-surface-hover); }
 .btn:active { transform: translateY(1px); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#admin-scan-options summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#admin-scan-options summary { cursor: pointer; padding: .5rem 0; }
+#admin-scan-status, #admin-scan-options p { overflow-wrap: anywhere; }
 
 .btn-primary {
   background: var(--accent);

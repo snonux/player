@@ -1107,6 +1107,11 @@ class DioPlayerApiClient extends PlayerApiClient
     await rawDio.post<void>('$_kApiV1/admin/rescan');
   }
 
+  @override
+  Future<void> cancelScan() async {
+    await rawDio.post<void>('$_kApiV1/admin/scan-cancel');
+  }
+
   /// Returns the current or most recent scan progress state.
   ///
   /// GET /api/v1/admin/scan-progress — requires admin.

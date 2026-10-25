@@ -74,6 +74,18 @@ class _FakeApiClient extends PlayerApiClient {
   /// Number of times [triggerRescan] has been called.
   int triggerRescanCallCount = 0;
 
+  int cancelScanCallCount = 0;
+
+  @override
+  Future<void> cancelScan() async {
+    cancelScanCallCount++;
+    progressResult = {
+      ...progressResult!,
+      ..._kIdleProgress,
+      'state': 'cancelled'
+    };
+  }
+
   @override
   Future<void> triggerRescan() async {
     triggerRescanCallCount++;
@@ -157,6 +169,33 @@ Future<void> _pumpRescanScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets(
+      'automatic scan can be cancelled and settings show effective values',
+      (tester) async {
+    final client = _FakeApiClient()
+      ..progressResult = {
+        ..._kRunningProgress,
+        'trigger': 'watch',
+        'watch_seconds': 30,
+        'interval_minutes': 60,
+        'pending': true
+      };
+    await _pumpRescanScreen(tester, client);
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Started by: watch'), findsOneWidget);
+    expect(find.text('One follow-up scan queued.'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('admin_scan_cancel')));
+    await tester.pump();
+    expect(client.cancelScanCallCount, 1);
+    expect(find.text('Scan cancelled'), findsOneWidget);
+    await tester.ensureVisible(find.text('Scan settings'));
+    await tester.tap(find.text('Scan settings'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Configure on the server'), findsOneWidget);
+    expect(find.textContaining('polling every 30 seconds'), findsOneWidget);
+    expect(find.textContaining('every 60 minutes'), findsOneWidget);
+  });
   // --------------------------------------------------------------------------
   // Loading state
   // --------------------------------------------------------------------------
@@ -197,7 +236,8 @@ void main() {
 
       // The trigger button key is on a FilledButton.icon widget — locate the
       // FilledButton by key directly using its widget type.
-      final btn = tester.widgetList<FilledButton>(find.byType(FilledButton)).first;
+      final btn =
+          tester.widgetList<FilledButton>(find.byType(FilledButton)).first;
       expect(btn.onPressed, isNotNull);
     });
 
@@ -273,11 +313,13 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       // Button should now be disabled (scan is running).
-      final btn = tester.widgetList<FilledButton>(find.byType(FilledButton)).first;
+      final btn =
+          tester.widgetList<FilledButton>(find.byType(FilledButton)).first;
       expect(btn.onPressed, isNull);
     });
 
-    testWidgets('shows error snackbar when triggerRescan throws', (tester) async {
+    testWidgets('shows error snackbar when triggerRescan throws',
+        (tester) async {
       final fakeClient = _FakeApiClient()
         ..progressResult = _kIdleProgress
         ..triggerError = DioException(
@@ -303,8 +345,7 @@ void main() {
     testWidgets('poll timer fires and updates status from running to complete',
         (tester) async {
       // Start with a running scan so the polling timer begins.
-      final fakeClient = _FakeApiClient()
-        ..progressResult = _kRunningProgress;
+      final fakeClient = _FakeApiClient()..progressResult = _kRunningProgress;
 
       await _pumpRescanScreen(tester, fakeClient);
       // Allow the initial fetch to complete without pumpAndSettle (the timer
@@ -313,7 +354,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       final callCountAfterInit = fakeClient.getScanProgressCallCount;
-      expect(find.byKey(const Key('admin_rescan_running_label')), findsOneWidget);
+      expect(
+          find.byKey(const Key('admin_rescan_running_label')), findsOneWidget);
 
       // Switch the fake to return "complete" so the next poll stops the timer.
       fakeClient.progressResult = _kCompleteProgress;
@@ -343,8 +385,7 @@ void main() {
   group('scan complete state', () {
     testWidgets('shows Scan complete label when files have been scanned',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..progressResult = _kCompleteProgress;
+      final fakeClient = _FakeApiClient()..progressResult = _kCompleteProgress;
 
       await _pumpRescanScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -359,7 +400,8 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('error state', () {
-    testWidgets('shows error message when getScanProgress throws', (tester) async {
+    testWidgets('shows error message when getScanProgress throws',
+        (tester) async {
       final fakeClient = _FakeApiClient()
         ..progressError = DioException(
           requestOptions: RequestOptions(path: '/api/v1/admin/scan-progress'),

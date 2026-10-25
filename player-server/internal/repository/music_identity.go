@@ -24,6 +24,12 @@ func (s *SQLite) ReplaceMusicIdentityConflicts(ctx context.Context, conflicts []
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM music_identity_conflicts WHERE resolved_at IS NULL`); err != nil {
 		return fmt.Errorf("clear unresolved identity conflicts: %w", err)
 	}
+	return s.RecordMusicIdentityConflicts(ctx, conflicts)
+}
+
+// RecordMusicIdentityConflicts appends inventory conflicts without clearing
+// unrelated unresolved choices. Repeated inventory observations are idempotent.
+func (s *SQLite) RecordMusicIdentityConflicts(ctx context.Context, conflicts []model.MusicIdentityConflict) error {
 	for _, c := range conflicts {
 		ids := c.CandidateMediaIDs
 		if ids == "" {
@@ -35,8 +41,9 @@ func (s *SQLite) ReplaceMusicIdentityConflicts(ctx context.Context, conflicts []
 		}
 		if _, err := s.db.ExecContext(ctx,
 			`INSERT INTO music_identity_conflicts (library_id, missing_media_id, candidate_media_ids, missing_path, reason, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
-			c.LibraryID, c.MissingMediaID, ids, c.MissingPath, c.Reason, c.CreatedAt,
+			 SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (
+			 SELECT 1 FROM music_identity_conflicts WHERE resolved_at IS NULL AND library_id = ? AND missing_media_id = ? AND candidate_media_ids = ?)`,
+			c.LibraryID, c.MissingMediaID, ids, c.MissingPath, c.Reason, c.CreatedAt, c.LibraryID, c.MissingMediaID, ids,
 		); err != nil {
 			return fmt.Errorf("insert identity conflict: %w", err)
 		}
@@ -52,7 +59,7 @@ func (s *SQLite) ListMusicIdentityConflicts(ctx context.Context) ([]model.MusicI
 	if err != nil {
 		return nil, fmt.Errorf("list identity conflicts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []model.MusicIdentityConflict
 	for rows.Next() {
 		var c model.MusicIdentityConflict
@@ -68,16 +75,25 @@ func (s *SQLite) ListMusicIdentityConflicts(ctx context.Context) ([]model.MusicI
 		if resolution.Valid {
 			c.Resolution = resolution.String
 		}
-		var ids []int64
-		_ = json.Unmarshal([]byte(c.CandidateMediaIDs), &ids)
-		for _, id := range ids {
-			if m, err := s.GetMediaByID(ctx, id); err == nil && m != nil {
-				c.CandidatePaths = append(c.CandidatePaths, m.RelPath)
-			}
-		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Release the sole SQLite connection before looking up candidate media.
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		var ids []int64
+		_ = json.Unmarshal([]byte(out[i].CandidateMediaIDs), &ids)
+		for _, id := range ids {
+			if m, err := s.GetMediaByID(ctx, id); err == nil && m != nil {
+				out[i].CandidatePaths = append(out[i].CandidatePaths, m.RelPath)
+			}
+		}
+	}
+	return out, nil
 }
 
 // GetMusicIdentityConflict returns one conflict by id (resolved or not).

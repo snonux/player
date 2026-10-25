@@ -4,6 +4,14 @@ Android audio/video player for device files and the Player server.
 
 The installed app version and build number appear at the bottom of **Settings**.
 
+**Admin › Rescan Library** shows manual and automatic scan progress, queued work,
+failures, Cancel scan, and expandable Scan settings with effective server values.
+Set `SCAN_WATCH_SECONDS` and/or `SCAN_INTERVAL_MINUTES` in the server deployment
+environment and restart to enable automation; both default off. Automatic scans
+add/refresh files and retain absent records. Manual Rescan keeps the server's
+existing deletion policy. Back leaves a scan running; Cancel clears active and
+queued work. Refresh retries a failed connection or status request.
+
 ## Music visualizations
 
 The audio player offers **Music visuals**: Spectrum, Waveform, Radial, Mirror,

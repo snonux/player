@@ -14,6 +14,12 @@ type ScanProgress struct {
 	IdentityMoved     int    `json:"identity_moved,omitempty"`
 	IdentityConflicts int    `json:"identity_conflicts,omitempty"`
 	LastError         string `json:"last_error,omitempty"`
+	State             string `json:"state,omitempty"`
+	Trigger           string `json:"trigger,omitempty"`
+	Pending           bool   `json:"pending"`
+	WatchSeconds      int    `json:"watch_seconds"`
+	IntervalMinutes   int    `json:"interval_minutes"`
+	WatchError        string `json:"watch_error,omitempty"`
 }
 
 // Start marks a scan running and resets counters for the given set count.
@@ -98,5 +104,11 @@ func (p *ScanProgress) Copy() ScanProgress {
 		IdentityMoved:     p.IdentityMoved,
 		IdentityConflicts: p.IdentityConflicts,
 		LastError:         p.LastError,
+		State:             p.State,
+		Trigger:           p.Trigger,
+		Pending:           p.Pending,
+		WatchSeconds:      p.WatchSeconds,
+		IntervalMinutes:   p.IntervalMinutes,
+		WatchError:        p.WatchError,
 	}
 }

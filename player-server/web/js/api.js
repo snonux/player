@@ -147,6 +147,7 @@ export const API = {
   deleteMedia: (id) => api(`/api/media/${id}`, { method: 'DELETE' }),
   users: () => api('/api/admin/users'),
   scanProgress: () => api('/api/admin/scan-progress'),
+  cancelScan: () => api('/api/admin/scan-cancel', { method: 'POST' }),
   createUser: (body) => api('/api/admin/users', { method: 'POST', body }),
   deleteUser: (id) => api(`/api/admin/users/${id}`, { method: 'DELETE' }),
   permissions: () => api('/api/admin/permissions'),

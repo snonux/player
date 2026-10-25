@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/snonux/player/internal/clock"
 	"github.com/snonux/player/internal/mediatype"
@@ -37,11 +39,12 @@ type fileResult struct {
 // each reading from pathChan and writing probed fileResults to resultChan.
 // All filesystem probing and thumbnail generation happens here; no DB writes.
 type probeWorker struct {
-	prober   probe.Prober
-	thumbMkr thumb.Maker
-	fs       FS
-	clock    clock.Clock
-	logger   *slog.Logger
+	inventory bool
+	prober    probe.Prober
+	thumbMkr  thumb.Maker
+	fs        FS
+	clock     clock.Clock
+	logger    *slog.Logger
 	// stale holds the relPaths of indexed rows that get a thumbnail
 	// generated, and why (see staleThumbnails). Read-only once the
 	// workers run.
@@ -127,6 +130,16 @@ func (pw *probeWorker) probeFile(
 	row, alreadyExists := existing[relPath]
 	pw.logger.Debug("scanner file checked", "set", setName, "path", relPath, "existing", alreadyExists)
 	if alreadyExists && row.Type == model.MediaTypeAudio {
+		before, err := pw.fs.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("stat audio source %q: %w", path, err)
+		}
+		if pw.inventory && row.Music != nil && row.Music.SourceMTime != "" &&
+			row.FileSizeBytes == before.Size() && row.Music.SourceMTime == sourceMTime(before) {
+			// Cover discovery/refresh still runs separately. Thumbnail repair
+			// and unconditional tag re-probing remain explicit manual operations.
+			return nil, nil
+		}
 		meta, err := pw.prober.Probe(ctx, path)
 		if err != nil {
 			pw.logger.Warn("scanner preserving music tags after probe failure", "path", path, "err", err)
@@ -136,7 +149,10 @@ func (pw *probeWorker) probeFile(
 		if err != nil {
 			return nil, fmt.Errorf("stat refreshed audio %q: %w", path, err)
 		}
+		pending := row.Music != nil && row.Music.InventoryPending
 		row.Music = meta.Music
+		stampMusicSource(&row, before, info)
+		row.Music.InventoryPending = pending
 		row.FileSizeBytes = info.Size()
 		result := &fileResult{media: &row, path: path, musicRefresh: true}
 		if row.ThumbnailPath != "" {
@@ -176,7 +192,28 @@ func (pw *probeWorker) probeFile(
 	mediaType := mediatype.TypeForExt(path)
 	thumbnailPath := pw.buildThumbnailPath(ctx, path, setPath, mediaType, coverImages, meta)
 	media := pw.newMedia(setID, relPath, path, mediaType, meta, thumbnailPath)
+	if mediaType == model.MediaTypeAudio {
+		after, err := pw.fs.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("stat probed source %q: %w", path, err)
+		}
+		stampMusicSource(media, info, after)
+	}
 	return &fileResult{media: media, path: path}, nil
+}
+
+func sourceMTime(info os.FileInfo) string {
+	return info.ModTime().UTC().Format(time.RFC3339Nano)
+}
+
+func stampMusicSource(row *model.Media, before, after os.FileInfo) {
+	if row.Music == nil {
+		row.Music = &model.MusicMetadata{}
+	}
+	row.Music.SourceMTime = ""
+	if before.Size() == after.Size() && before.ModTime().Equal(after.ModTime()) {
+		row.Music.SourceMTime = sourceMTime(after)
+	}
 }
 
 // newMedia assembles the media record of a newly found file from its probed

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
+	"github.com/snonux/player/internal/model"
+
 	"github.com/snonux/player/internal/repository"
 )
 
@@ -58,6 +60,12 @@ func (sw *scanWriter) run(
 		if result.refresh {
 			sw.thumbs.apply(ctx, result)
 			continue
+		}
+		if sw.ledger != nil && sw.ledger.inventory && result.media.Type == model.MediaTypeAudio {
+			if result.media.Music == nil {
+				result.media.Music = &model.MusicMetadata{}
+			}
+			result.media.Music.InventoryPending = true
 		}
 		id, err := sw.store.CreateMedia(ctx, result.media)
 		if err != nil {

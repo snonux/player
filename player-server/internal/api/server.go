@@ -493,6 +493,7 @@ func (s *Server) routesAdmin() {
 	s.handleBoth(http.MethodGet, "/api/trash", s.requireSession(s.handleUserTrash))
 	s.handleBoth(http.MethodGet, "/api/admin/trash", s.requireAdmin(s.handleListTrash))
 	s.handleBoth(http.MethodPost, "/api/admin/rescan", s.requireAdmin(s.handleRescan))
+	s.handleBoth(http.MethodPost, "/api/admin/scan-cancel", s.requireAdmin(s.handleScanCancel))
 	s.handleBoth(http.MethodGet, "/api/admin/scan-progress", s.requireAdmin(s.handleScanProgress))
 	s.handleBoth(http.MethodGet, "/api/admin/users", s.requireAdmin(s.handleListUsers))
 	s.handleBoth(http.MethodPost, "/api/admin/users", s.requireAdmin(s.handleCreateUser))

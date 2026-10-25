@@ -1,7 +1,7 @@
 import { API } from './api.js';
 import { fmtDateTime } from './dom.js';
 import { escapeHtml, toast } from './utils.js';
-import { triggerRescan } from './views/admin-status.js';
+import { triggerRescan, refreshScanProgress } from './views/admin-status.js';
 
 export function initAdmin() {
   const btn = document.getElementById('admin-toggle');
@@ -27,6 +27,11 @@ export function initAdmin() {
       // Disabling the focused button dropped focus to <body>; give it back.
       if (document.activeElement === document.body) rescanBtn.focus();
     }
+  });
+
+  document.getElementById('admin-scan-cancel')?.addEventListener('click', async () => {
+    try { await API.cancelScan(); await refreshScanProgress(); }
+    catch (err) { toast(err.message || 'Could not cancel scan', 'error'); }
   });
 
   // Trash has its own section so the user list stays visible; the button

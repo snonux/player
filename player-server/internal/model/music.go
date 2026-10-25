@@ -4,6 +4,12 @@ package model
 // Empty fields represent missing tags; integer zero means unknown. Nullable
 // audio numbers distinguish missing values from valid zero gain and peak tags.
 type MusicMetadata struct {
+	// SourceMTime is a scanner checkpoint, not an embedded tag. Together with
+	// media.file_size_bytes it permits automatic scans to skip unchanged audio.
+	SourceMTime string `json:"source_mtime,omitempty"`
+	// InventoryPending identifies an insertion not yet finalized by a complete
+	// inventory, so an interrupted rename can be matched safely on retry.
+	InventoryPending      bool          `json:"inventory_pending,omitempty"`
 	BPM                   *float64      `json:"bpm,omitempty"`
 	ReplayGainTrackGainDB *float64      `json:"replaygain_track_gain_db,omitempty"`
 	ReplayGainAlbumGainDB *float64      `json:"replaygain_album_gain_db,omitempty"`

@@ -9,18 +9,19 @@ import (
 	"github.com/snonux/player/internal/repository"
 )
 
-// identityLedger collects soft-deletes and inserts from one Scan for music
-// identity reconciliation. Matching is scoped by library_id.
+// identityLedger collects missing sources and inserts from one Scan for music
+// identity reconciliation. Inventory never trashes unmatched missing rows.
 type identityLedger struct {
-	softDeleted []model.Media
-	createdIDs  []int64
+	missing    []model.Media
+	createdIDs []int64
+	inventory  bool
 }
 
-func (l *identityLedger) noteSoftDeleted(m model.Media) {
+func (l *identityLedger) noteMissing(m model.Media) {
 	if m.Type != model.MediaTypeAudio {
 		return
 	}
-	l.softDeleted = append(l.softDeleted, m)
+	l.missing = append(l.missing, m)
 }
 
 func (l *identityLedger) noteCreated(id int64) {
@@ -37,7 +38,8 @@ type IdentityConflictStore interface {
 // reconcileMusicIdentity merges clear moved/renamed audio within each library
 // and records ambiguous conflicts. It is a no-op when the ledger is empty.
 func (s *FSScanner) reconcileMusicIdentity(ctx context.Context, ledger *identityLedger, progress *model.ScanProgress) error {
-	if ledger == nil || (len(ledger.softDeleted) == 0 && len(ledger.createdIDs) == 0) {
+	if ledger == nil || (len(ledger.missing) == 0 && len(ledger.createdIDs) == 0) ||
+		(ledger.inventory && len(ledger.createdIDs) == 0) {
 		return nil
 	}
 	sets, err := s.store.ListSets(ctx)
@@ -65,7 +67,7 @@ func (s *FSScanner) reconcileMusicIdentity(ctx context.Context, ledger *identity
 	}
 
 	missingByLib := map[int64][]model.Media{}
-	for _, m := range ledger.softDeleted {
+	for _, m := range ledger.missing {
 		if podcast[m.SetID] {
 			continue
 		}
@@ -101,7 +103,24 @@ func (s *FSScanner) reconcileMusicIdentity(ctx context.Context, ledger *identity
 					"candidates", len(pair.Candidates))
 				continue
 			}
-			if err := MergeMovedAudio(ctx, s.store, pair.Missing, pair.New); err != nil {
+			if ledger.inventory || (pair.New.Music != nil && pair.New.Music.InventoryPending) {
+				merger, ok := s.store.(interface {
+					MergeInventoryAudio(context.Context, int64, model.Media) (bool, error)
+				})
+				merged := false
+				if ok {
+					var err error
+					merged, err = merger.MergeInventoryAudio(ctx, pair.Missing.ID, pair.New)
+					if err != nil {
+						return err
+					}
+				}
+				if !merged {
+					raw, _ := json.Marshal([]int64{pair.New.ID})
+					conflicts = append(conflicts, model.MusicIdentityConflict{LibraryID: libID, MissingMediaID: pair.Missing.ID, CandidateMediaIDs: string(raw), MissingPath: pair.Missing.RelPath, CandidatePaths: []string{pair.New.RelPath}, Reason: "destination has saved state or cannot be safely merged; kept separate", CreatedAt: now})
+					continue
+				}
+			} else if err := MergeMovedAudio(ctx, s.store, pair.Missing, pair.New); err != nil {
 				return err
 			}
 			moved++
@@ -113,9 +132,35 @@ func (s *FSScanner) reconcileMusicIdentity(ctx context.Context, ledger *identity
 	if progress != nil {
 		progress.SetIdentityStats(moved, len(conflicts))
 	}
-	if store, ok := s.store.(IdentityConflictStore); ok {
+	if ledger.inventory {
+		// Inventory must not replace/clear unrelated unresolved conflicts.
+		if store, ok := s.store.(interface {
+			RecordMusicIdentityConflicts(context.Context, []model.MusicIdentityConflict) error
+		}); ok {
+			if err := store.RecordMusicIdentityConflicts(ctx, conflicts); err != nil {
+				return fmt.Errorf("record inventory conflicts: %w", err)
+			}
+		}
+	} else if store, ok := s.store.(IdentityConflictStore); ok {
 		if err := store.ReplaceMusicIdentityConflicts(ctx, conflicts); err != nil {
 			return fmt.Errorf("store identity conflicts: %w", err)
+		}
+	}
+	// Only a completely successful inventory finalizes insertion provenance.
+	// Failure/cancellation before this point leaves it durable for a fresh retry.
+	if ledger.inventory {
+		for _, id := range ledger.createdIDs {
+			row, err := s.store.GetMediaByID(ctx, id)
+			if err != nil {
+				return err
+			}
+			if row == nil || row.Music == nil || !row.Music.InventoryPending {
+				continue
+			}
+			row.Music.InventoryPending = false
+			if err := s.store.UpdateMediaMusic(ctx, id, row.Music, row.FileSizeBytes); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

@@ -41,6 +41,17 @@ func (s *Server) handleScanProgress(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.adminSvc.ScanProgress(r.Context()))
 }
 
+func (s *Server) handleScanCancel(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.adminSvc) {
+		return
+	}
+	if err := s.adminSvc.CancelScan(r.Context()); err != nil {
+		handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.adminSvc) {
 		return

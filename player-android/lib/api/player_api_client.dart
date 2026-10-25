@@ -205,8 +205,7 @@ class PlayerApiClient implements ProgressSyncClient {
           .data!;
 
   Future<List<Map<String, dynamic>>> musicLibraries() async {
-    final response =
-        await _dio.get<List<dynamic>>('/api/v1/music/libraries');
+    final response = await _dio.get<List<dynamic>>('/api/v1/music/libraries');
     return (response.data ?? []).cast<Map<String, dynamic>>();
   }
 
@@ -631,6 +630,8 @@ class PlayerApiClient implements ProgressSyncClient {
   // ---------------------------------------------------------------------------
 
   Future<void> triggerRescan() => throw UnimplementedError();
+
+  Future<void> cancelScan() => throw UnimplementedError();
 
   Future<Map<String, dynamic>> getScanProgress() => throw UnimplementedError();
 

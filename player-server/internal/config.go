@@ -49,6 +49,10 @@ const (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
+	// ScanWatchSeconds enables source-metadata polling; zero disables it.
+	ScanWatchSeconds int
+	// ScanIntervalMinutes enables periodic full rescans; zero disables it.
+	ScanIntervalMinutes int
 	// MusicEnrichmentURL is an optional operator-configured external metadata agent.
 	MusicEnrichmentURL string
 	// PluginDir is an optional directory of installed WASM plugins
@@ -62,8 +66,8 @@ type Config struct {
 	// Default false; ordinary client streaming never requires it.
 	JukeboxEnabled bool
 	// JukeboxMPVPath is the mpv binary for the server-audio adapter. Empty uses "mpv".
-	JukeboxMPVPath string
-	Port           int
+	JukeboxMPVPath         string
+	Port                   int
 	MediaRoot              string
 	DBPath                 string
 	MaxUploadSizeMB        int
@@ -182,6 +186,23 @@ func loadNumericSettings(cfg *Config) error {
 	}
 	for _, p := range positive {
 		if err := envInt(p.name, atLeastOne, p.set); err != nil {
+			return err
+		}
+	}
+	for _, p := range []struct {
+		name string
+		max  int
+		set  func(int)
+	}{
+		{"SCAN_WATCH_SECONDS", 86400, func(n int) { cfg.ScanWatchSeconds = n }},
+		{"SCAN_INTERVAL_MINUTES", 10080, func(n int) { cfg.ScanIntervalMinutes = n }},
+	} {
+		if err := envInt(p.name, func(n int) error {
+			if n < 0 || n > p.max || (p.name == "SCAN_WATCH_SECONDS" && n > 0 && n < 10) {
+				return fmt.Errorf("must be 0 (off) or in supported range up to %d", p.max)
+			}
+			return nil
+		}, p.set); err != nil {
 			return err
 		}
 	}

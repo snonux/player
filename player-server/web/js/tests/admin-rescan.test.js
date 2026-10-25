@@ -13,6 +13,9 @@ function assert(cond, msg) {
 
 const indicator = mockElement();
 const indicatorText = mockElement();
+const adminStatus = mockElement();
+const adminSettings = mockElement();
+const cancelScan = { disabled: true };
 const toastEl = {
   className: '',
   textContent: '',
@@ -27,6 +30,9 @@ globalThis.document = {
     if (id === 'scan-indicator') return indicator;
     if (id === 'scan-indicator-text') return indicatorText;
     if (id === 'toast') return toastEl;
+    if (id === 'admin-scan-status') return adminStatus;
+    if (id === 'admin-scan-settings') return adminSettings;
+    if (id === 'admin-scan-cancel') return cancelScan;
     return null;
   },
 };
@@ -118,6 +124,19 @@ function testRenderIdleProgressHidesIndicator() {
   assert(indicator.classList.hidden === true, 'idle progress should hide the indicator');
 }
 
+function testAutomaticScanStates() {
+  renderScanProgress({ running: true, trigger: 'watch', pending: true, watch_seconds: 30, interval_minutes: 60, files_done: 2, files_total: 4 });
+  assert(!cancelScan.disabled, 'active automatic scan can be cancelled');
+  assert(adminStatus.textContent.includes('watch') && adminStatus.textContent.includes('follow-up'), 'automatic origin and bounded queue visible');
+  assert(adminSettings.textContent.includes('30 seconds') && adminSettings.textContent.includes('60 minutes'), 'effective automation settings visible');
+  renderScanProgress({ running: false, state: 'failed', last_error: 'private path and ffprobe output', watch_error: 'Check root access' });
+  assert(adminStatus.textContent.includes('Check library root access'), 'scan failure has actionable retry advice');
+  assert(!adminStatus.textContent.includes('private path'), 'scan failure does not expose internal details');
+  assert(cancelScan.disabled, 'idle cancel disabled');
+  renderScanProgress({ running: false, state: 'cancelled' });
+  assert(adminStatus.textContent.includes('cancelled'), 'cancelled scan is not described as complete');
+}
+
 function testScanIndicatorOutsideHeader() {
   const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
   const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
@@ -163,6 +182,7 @@ console.log('Running admin rescan frontend tests...');
 testKeyboardRescanHandler();
 testRenderRunningProgress();
 testRenderIdleProgressHidesIndicator();
+testAutomaticScanStates();
 testScanIndicatorOutsideHeader();
 testScanIndicatorAboveModalOverlay();
 await testTriggerRescanRefreshesProgress();

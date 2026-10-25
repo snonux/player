@@ -64,6 +64,7 @@ type Deps struct {
 	// deleting thumbnails uses: beside the media, or THUMBNAIL_CACHE_DIR.
 	Thumbnails thumb.Layout
 	Scanner    scanner.Scanner
+	Scans      service.ScanLifecycle
 	GCWorker   *service.GCWorker
 	Logger     *slog.Logger
 	AppCtx     context.Context
@@ -137,8 +138,12 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 
 	playlists := service.NewPlaylistService(store, mediaSvc).WithImportRoot(cfg.MediaRoot)
 	fsScanner := scanner.NewFSScannerWithMaker(store, prober, thumbMaker, clk, cfg.MediaRoot, logger).
-		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock).WithAfterScan(playlists.SyncSources)
+		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock).WithAfterScan(playlists.SyncSources).
+		WithIgnoredPaths(cfg.ThumbnailCacheDir, cfg.TranscodeCacheDir)
 	adminSvc := service.NewAdminServiceWithLogger(store, clk, hasher, fsScanner, cfg.MediaRoot, appCtx, logger)
+	adminSvc.WithScanAutomation(cfg.ScanWatchSeconds, cfg.ScanIntervalMinutes, func(ctx context.Context) (string, error) {
+		return fsScanner.SourceSignature(ctx, cfg.MediaRoot)
+	})
 
 	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger).
 		WithThumbnailLayout(thumbLayout)
@@ -183,6 +188,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		PodcastSyncSvc:  service.NewPodcastSyncService(store, clk, cfg.PodcastCheckMinutes),
 		PlaybackHintSvc: service.NewPlaybackHintsService(helper),
 		Scanner:         fsScanner,
+		Scans:           adminSvc,
 		Logger:          logger,
 		AppCtx:          appCtx,
 		Thumbnails:      thumbLayout,
@@ -278,6 +284,9 @@ func checkTranscoding(deps *Deps, runner *transcode.FFmpegRunner) {
 // deps.GCWorker.Stop().
 func StartBackgroundWorkers(deps *Deps) {
 	deps.GCWorker.Start()
+	if deps.Scans != nil {
+		deps.Scans.StartScanAutomation()
+	}
 
 	// Start podcast feed background checker. It runs on a fixed ticker and
 	// exits when the application context is cancelled.
@@ -453,6 +462,7 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 
 	runner := transcode.NewFFmpegRunner(cfg.TranscodeMaxJobs)
 	deps := WireWithRunner(cfg, store, logger, appCtx, runner)
+	defer deps.Scans.StopScans()
 	defer deps.GCWorker.Stop()
 	defer stopTranscoding(deps)
 	if deps.PluginMgr != nil {
@@ -474,7 +484,11 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 	// waiting compat requests (they answer 503) and kills ffmpeg; then
 	// drain the HTTP server; then stopTranscoding waits a bounded time for
 	// the job goroutines; finally the deferred store.Close runs in any case.
-	return runServer(server, cfg, logger, sigCh, deps.Transcodes.Close)
+	return runServer(server, cfg, logger, sigCh, func() {
+		deps.Transcodes.Close()
+		appCancel()
+		deps.Scans.StopScans()
+	})
 }
 
 // transcodeStopTimeout bounds how long shutdown waits for transcode jobs

@@ -2006,6 +2006,61 @@ preserved across in-library moves/renames/retags; see
 Trigger a library rescan. The scan runs asynchronously. Poll
 `GET /api/admin/scan-progress` to track progress.
 
+Manual requests cancel active work and coalesce into one replacement; watch and
+scheduled requests queue at most one follow-up without cancelling the active job.
+No two jobs overlap. Manual scans retain the existing orphan soft-delete policy.
+Automatic scans add/refresh records and retain unmatched missing records, without
+applying orphan deletion or clearing unrelated identity conflicts. They reuse
+existing unique move matching for genuinely absent audio from successfully
+discovered sets and files created in the same inventory. Unique matches preserve
+song ID, playlist occurrences and saved history; ambiguous matches leave records
+separate and append an admin identity choice. This does not implement the separately
+planned missing-record retention/repair/purge feature (hl3).
+
+Inventory insertions persist `music.inventory_pending` until a complete successful
+inventory finalizes matching, allowing cancelled/failed runs to recover destination
+candidates on retry without treating unrelated stable rows as new. Destinations
+with saved user state are retained separately with an explicit identity conflict;
+automatic matching never discards that state. Entire top-level set renames remain
+outside the existing successfully-discovered-set matching boundary.
+
+`SCAN_WATCH_SECONDS=30` enables metadata polling (0 off; 10–86400 seconds).
+`SCAN_INTERVAL_MINUTES=60` enables periodic scans (0 off; 1–10080 minutes).
+Both default off. Configure the deployment environment and restart. All registered
+library roots are included. Polling starts with a baseline, ignores hidden files,
+generated artwork and configured caches, and compares source names/size/mtime,
+including lyrics and M3U sidecars. Same-size edits with unchanged modification time
+require a manual rescan. Automatic scans persist `music.source_mtime` as a source
+checkpoint alongside the existing source size and skip unchanged audio probing;
+new or changed audio still updates the existing music catalog. Manual scans
+always re-probe audio. Checkpoints are saved only when source stats agree before
+and after probing; changes during a probe are retried on the next inventory.
+Polling costs a metadata walk, not native
+filesystem notifications. At most four probes and eight queued paths run per scan;
+discovery and existing-row snapshots still scale with the largest set.
+Configured symlink roots are resolved for observation; nested symlinks remain
+excluded from the polling signature.
+
+### `GET /api/admin/scan-progress` · `GET /api/v1/admin/scan-progress`
+
+Admin-only progress; existing `running`, `current_set`, set/file counters,
+`identity_moved`, `identity_conflicts`, and `last_error` remain. Additive fields:
+`state` (`running`, `cancelling`, `complete`, `cancelled`, `failed`, or empty before
+the first scan), `trigger` (`manual`, `watch`, `schedule`), `pending` (one follow-up),
+`watch_seconds`, `interval_minutes` (effective settings), and `watch_error` (safe
+inspection failure/retry advice). File totals grow as sets are discovered; they
+are not a promise of a known global percentage. Status and setup live in Admin
+on both web and native clients; normal listening has only the quiet indicator.
+
+### `POST /api/admin/scan-cancel` · `POST /api/v1/admin/scan-cancel`
+
+Admin-only, idempotent. Clears the follow-up slot and cancels the active scan;
+returns `200 {"status":"ok"}`. Status remains cancelling until the worker exits.
+A later source change, schedule tick, or manual request can start another scan.
+Leaving an admin screen does not cancel server work. Shutdown prevents new jobs,
+cancels observer/scans and joins them before closing the database. An OS filesystem
+call blocked on a failed network mount may delay cancellation.
+
 **Response `200`:**
 
 ```json

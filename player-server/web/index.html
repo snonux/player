@@ -410,14 +410,21 @@
         <div id="admin-permissions"></div>
       </section>
     </div>
-    <div class="flex gap-2 mt-3">
+    <div class="flex gap-2 flex-wrap mt-3">
       <button id="admin-rescan" class="btn btn-primary btn-sm">Trigger rescan</button>
+      <button id="admin-scan-cancel" class="btn btn-sm" disabled>Cancel scan</button>
       <button id="admin-trash" class="btn btn-danger btn-sm" aria-expanded="false" aria-controls="admin-trash-section">View trash</button>
       <button id="admin-podcasts" class="btn btn-primary btn-sm">Podcasts</button>
       <button id="admin-plugins-toggle" class="btn btn-primary btn-sm" aria-expanded="false" aria-controls="admin-plugins-section">Plugins</button>
       <button id="admin-libraries-toggle" class="btn btn-primary btn-sm" aria-expanded="false" aria-controls="admin-libraries-section">Libraries</button>
       <button id="admin-identity-toggle" class="btn btn-primary btn-sm" aria-expanded="false" aria-controls="admin-identity-section">Music identity</button>
     </div>
+    <p id="admin-scan-status" class="text-xs mt-2" role="status" aria-live="polite">Loading scan status…</p>
+    <details id="admin-scan-options" class="mt-2">
+      <summary tabindex="0">Scan settings</summary>
+      <p id="admin-scan-settings" class="text-xs">Loading effective settings…</p>
+      <p class="text-muted text-xs">Configure on the server, then restart: SCAN_WATCH_SECONDS=30 enables source polling (0 disables; 10–86400 seconds). SCAN_INTERVAL_MINUTES=60 schedules scans (0 disables; 1–10080 minutes). Both default off. Roots are managed in Libraries. Polling checks file names, size and modification time; a same-size edit with unchanged time needs a manual rescan. Automatic scans retain absent records; manual rescans use the existing deletion policy. Generated caches are ignored.</p>
+    </details>
     <section id="admin-auth-section" class="mt-3" aria-labelledby="admin-auth-title">
       <h4 id="admin-auth-title" class="my-1 text-90">Sign-in</h4>
       <p id="admin-auth-help" class="text-muted text-xs">Loading authentication settings…</p>

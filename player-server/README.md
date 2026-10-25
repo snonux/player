@@ -48,6 +48,7 @@ Features
 - **Podcast feed manager** — add feeds via URL, automatic background refresh with conditional GET
 - **File upload** — upload media directly to a set from the browser
 - **Library scanner** — `ffprobe`-backed metadata extraction and automatic thumbnail generation
+- **Automatic inventory scans** — optional `SCAN_WATCH_SECONDS=30` source polling and `SCAN_INTERVAL_MINUTES=60` scheduled scans (both off by default). Configure on the server and restart; Admin shows effective settings, progress/errors and Cancel scan. Automatic scans add/refresh files and retain absent records; manual Rescan keeps its existing deletion policy. See [API and limits](docs/api.md#post-apiadminrescan--post-apiv1adminrescan).
 - **PWA** — installable as a Progressive Web App (`manifest.json` + service worker)
 - **Detached player** — pop out the player into its own window for multitasking
 

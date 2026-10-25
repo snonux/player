@@ -31,7 +31,9 @@ func isAppleDoubleSidecar(name string) bool {
 // cover image locations. It is responsible solely for filesystem traversal —
 // it does not probe, store, or generate thumbnails.
 type fileDiscoverer struct {
-	fs FS
+	fs      FS
+	ctx     context.Context
+	ignored []string
 }
 
 // newFileDiscoverer creates a fileDiscoverer backed by the given filesystem abstraction.
@@ -47,6 +49,15 @@ func (d *fileDiscoverer) Discover(setPath string) ([]string, map[string]error, e
 	var files []string
 	skipped := make(map[string]error)
 	walkErr := d.fs.WalkDir(setPath, func(path string, entry fs.DirEntry, err error) error {
+		if d.ctx != nil && d.ctx.Err() != nil {
+			return d.ctx.Err()
+		}
+		if ignoredPath(path, d.ignored) {
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return err
@@ -92,6 +103,15 @@ func (d *fileDiscoverer) Discover(setPath string) ([]string, map[string]error, e
 func (d *fileDiscoverer) gatherCoverImages(setPath string) map[string]string {
 	coverImages := make(map[string]string)
 	_ = d.fs.WalkDir(setPath, func(path string, entry fs.DirEntry, err error) error {
+		if d.ctx != nil && d.ctx.Err() != nil {
+			return d.ctx.Err()
+		}
+		if ignoredPath(path, d.ignored) {
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if err != nil || entry.IsDir() || !mediatype.IsCoverImageExt(path) {
 			// Skip hidden subdirectories, but tolerate walk errors silently
 			// since missing cover images are non-fatal.
