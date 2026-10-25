@@ -533,12 +533,44 @@ class PodcastRepository {
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  /// Whether the separate local library has registers not yet associated here.
+  Future<bool> canAssociateLocal(String accountScope) async {
+    final db = await database;
+    return db.transaction((tx) async {
+      final accounts = await tx.query('podcast_scopes',
+          columns: ['associated_from_local'],
+          where: 'scope=?',
+          whereArgs: [accountScope]);
+      if (accounts.isNotEmpty &&
+          accounts.single['associated_from_local'] == 1) {
+        return false;
+      }
+      for (final table in ['podcast_subscriptions', 'podcast_episode_state']) {
+        if ((await tx.query(table,
+                columns: ['scope'],
+                where: 'scope=?',
+                whereArgs: ['local'],
+                limit: 1))
+            .isNotEmpty) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+
   /// Explicit consent only. Original clocks survive; account ties win.
-  Future<void> associateLocal(String accountScope) async {
+  Future<void> associateLocal(String accountScope,
+      {bool Function()? current}) async {
     if (!accountScope.startsWith('account:')) {
       throw ArgumentError('An account scope is required');
     }
     await (await database).transaction((tx) async {
+      void checkAccount() {
+        if (current != null && !current()) throw StateError('Account changed');
+      }
+
+      checkAccount();
       await tx.insert('podcast_scopes', {'scope': accountScope},
           conflictAlgorithm: ConflictAlgorithm.ignore);
       for (final row in await tx.query('podcast_subscriptions',
@@ -582,6 +614,7 @@ class PodcastRepository {
       }
       await tx.update('podcast_scopes', {'associated_from_local': 1},
           where: 'scope=?', whereArgs: [accountScope]);
+      checkAccount();
     });
     onSyncNeeded?.call();
   }

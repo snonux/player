@@ -17,11 +17,21 @@ Last-Modified validators. No operation requests a server audio download.
 Its local scope starts empty, leaving existing data intact. Subscription
 registers retain unsubscribe tombstones and random pending edit IDs in the
 same transaction. Account scopes use `account:<origin>#<user_id>`; device
-catalog metadata is shared across scopes. Account association is an explicit
-repository operation which preserves original clocks and local scope, merges
-position/completion separately, and retains newer account edits. Signing in
-does not associate local state automatically. The later reconciliation task
-zh3 owns consent prompts, network synchronization and sync feedback.
+catalog metadata is shared across scopes. Account association preserves
+original clocks and local scope, merges position/completion separately, and
+retains newer account edits. Signing in
+does not associate local state automatically. Once the selected, unlocked
+account advertises podcast synchronization, an existing separate device library
+offers **Sync this device's podcasts with user@server?** Choose **Sync** to copy
+its subscriptions and history into that account, or **Keep separate** (or Back)
+to leave both libraries separate. The automatic question is shown once per
+account. **Settings → Sync this device's podcasts** repeats a declined or
+dismissed question. Already associated accounts are not merged again.
+Copies on this device remain shared availability, never synchronized audio.
+Changing server/account while consent or the merge is pending prevents the old
+account's consent from copying data; the merge rolls back if its credential
+generation changes before commit. Offline, locked and older-server accounts
+remain usable without this optional prompt.
 
 The provider selects local scope while browsing device files; server scope
 remembers the last signed-in account identity for signed-out edits. It stores

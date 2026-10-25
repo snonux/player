@@ -24,6 +24,38 @@ class FixtureFetcher extends PodcastFeedFetcher {
 void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+  test('association readiness and account change roll back the entire copy',
+      () async {
+    final repository = PodcastRepository(
+        databasePath: inMemoryDatabasePath, fetcher: FixtureFetcher());
+    const account = 'account:https://server.example#7';
+    try {
+      expect(await repository.canAssociateLocal(account), isFalse);
+      await repository.subscribe('local', 'https://example.com/feed');
+      expect(await repository.canAssociateLocal(account), isTrue);
+      final db = await repository.database;
+      final local = await db.query('podcast_subscriptions');
+      var checks = 0;
+      await expectLater(
+          repository.associateLocal(account, current: () => ++checks == 1),
+          throwsStateError);
+      expect(checks, 2);
+      expect(await db.query('podcast_subscriptions'), local);
+      expect(
+          await db
+              .query('podcast_scopes', where: 'scope=?', whereArgs: [account]),
+          isEmpty);
+      expect(await repository.canAssociateLocal(account), isTrue);
+      await repository.associateLocal(account, current: () => true);
+      expect(await repository.canAssociateLocal(account), isFalse);
+      expect(
+          await db.query('podcast_subscriptions',
+              where: 'scope=?', whereArgs: ['local']),
+          local);
+    } finally {
+      await repository.close();
+    }
+  });
   test('publisher redirect policy, validators and Atom', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final origin = 'http://127.0.0.1:${server.port}';
