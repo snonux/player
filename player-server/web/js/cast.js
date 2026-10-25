@@ -1,5 +1,7 @@
 import { initRenderer, rendererActive, rendererLoad, rendererPause, rendererToggle, rendererSeek, rendererPosition, rendererDuration, stopRenderer } from './renderer.js';
 import { listeningOccurrenceID, saveListeningProgress } from './listening-progress.js';
+import { preparePodcastPlayback } from './podcast-playback.js';
+import { saveEpisodePosition, podcastStartPosition, podcastSyncStatus } from './podcast-episode-state.js';
 import { mediaTitle } from './music.js';
 // Casting to a Chromecast (or another Google Cast receiver) with Google's Cast
 // Web Sender SDK. The SDK only exists in Chrome and Chromium-based browsers
@@ -28,6 +30,7 @@ let context = null;
 let remotePlayer = null;
 let remoteController = null;
 let castMediaId = null;
+let castEpisode = null, castLease;
 let pauseRevision = 0;
 let manualRevision = 0;
 let loadRevision = 0;
@@ -184,6 +187,9 @@ export async function castItem(media, resumeFrom = 0) {
   const load = ++loadRevision;
   const occurrence = deps.getListeningOccurrence?.() || listeningOccurrenceID();
   try {
+    const prepared = podcastSyncStatus().account ? await preparePodcastPlayback(media, resumeFrom) : {};
+    if (prepared.cancelled || load !== loadRevision) return false;
+    if (prepared.episode) resumeFrom = podcastStartPosition(prepared.position, media.duration, media.podcast_from_beginning);
     const ticket = await API.castTicket(media.id);
     if ((revision !== pauseRevision && manual === manualRevision) || load !== loadRevision || context?.getCurrentSession() !== session) return false;
     const fields = castLoadFields(media, ticket, window.location.origin);
@@ -194,6 +200,8 @@ export async function castItem(media, resumeFrom = 0) {
       return false;
     }
     castMediaId = media.id;
+    castEpisode = prepared.episode;
+    castLease = prepared.lease;
     castOccurrence = occurrence;
     lastRemoteTime = resumeFrom;
     startProgressTimer();
@@ -280,6 +288,15 @@ function stopProgressTimer() {
 
 function reportProgress(finished) {
   if (castMediaId === null) return;
+  if (castEpisode) {
+    // Receiver end is not HTML ended. Keep positions without inventing a
+    // manual/automatic podcast completion from Cast state transitions.
+    if (!finished && remotePlayer && !remotePlayer.isPaused && lastRemoteTime > 0) {
+      const ms = saveEpisodePosition(castEpisode, lastRemoteTime, { lease: castLease });
+      if (ms) void saveListeningProgress(castMediaId, lastRemoteTime, castOccurrence, new Date(ms).toISOString()).catch(() => {});
+    }
+    return;
+  }
   if (finished) {
     API.progressStatus(castMediaId, 'finished').catch(() => {});
     return;

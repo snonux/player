@@ -1,4 +1,5 @@
-import { completionEdit, pendingCompletionEdit, setEpisodeCompleted } from '../podcast-episode-state.js';
+import { completionEdit, pendingCompletionEdit, setEpisodeCompleted, setPodcastAccount } from '../podcast-episode-state.js';
+setPodcastAccount(1);
 
 const failures = [];
 function assert(cond, msg) {

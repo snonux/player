@@ -11,6 +11,7 @@ import (
 // PodcastCatalogRepo, PodcastEpisodeStateRepo and PodcastEpisodeViewRepo. Unset funcs return zero
 // values and no error.
 type MockPodcastSyncRepo struct {
+	GetMediaEpisodeStateFunc         func(ctx context.Context, userID, mediaID int64) (*model.PodcastEpisodeState, error)
 	SyncPodcastFunc                  func(ctx context.Context, userID int64, in model.PodcastSyncBatch) (*model.PodcastSyncResponse, error)
 	SetPodcastSubscriptionFunc       func(ctx context.Context, userID int64, feed *model.PodcastFeed, subscribed bool, now time.Time) error
 	PodcastSubscriptionStatesFunc    func(ctx context.Context, userID int64) (map[string]bool, error)
@@ -22,6 +23,14 @@ type MockPodcastSyncRepo struct {
 	MoveFeedFunc                     func(ctx context.Context, feedID int64, target string) (FeedMove, error)
 	ToggleEpisodeCompletionFunc      func(ctx context.Context, userID, episodeID int64, now time.Time) (bool, error)
 	ListSubscribedEpisodesFunc       func(ctx context.Context, userID int64, q PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error)
+}
+
+// GetMediaEpisodeState implements PodcastEpisodeStateRepo.
+func (m *MockStore) GetMediaEpisodeState(ctx context.Context, userID, mediaID int64) (*model.PodcastEpisodeState, error) {
+	if f := m.PodcastSyncRepo.GetMediaEpisodeStateFunc; f != nil {
+		return f(ctx, userID, mediaID)
+	}
+	return nil, nil
 }
 
 // SyncPodcast implements PodcastSyncRepo.

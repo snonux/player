@@ -14,6 +14,16 @@ import { API } from './api.js';
 
 const pending = new Map(); // feed_key -> pending edit
 
+export function resetPodcastSubscriptions() { pending.clear(); }
+
+export function pendingPodcastSubscriptions() { return [...pending.values()]; }
+
+export async function retryPodcastSubscriptions() {
+  for (const edit of pendingPodcastSubscriptions()) {
+    await setSubscribed({ ...edit, feed_url: edit.fetch_url }, edit.subscribed);
+  }
+}
+
 // randomEditId returns 22 base64url characters (128 random bits).
 export function randomEditId() {
   const bytes = new Uint8Array(16);
@@ -56,6 +66,9 @@ export async function setSubscribed(feed, subscribed) {
   }
   if (rejected) throw new Error(`Subscription change rejected (${rejected.reason})`);
   if (!(res?.acked || []).includes(edit.edit_id)) throw new Error('Subscription change not confirmed');
+  const canonical = (res.resolved || []).find(r => r.kind === 'feed' && r.from === feed.feed_key)?.to || feed.feed_key;
+  const current = (res.subscriptions || []).find(r => r.feed_key === canonical);
+  if (current && current.subscribed !== subscribed) throw new Error('A newer subscription change was kept. Refresh to see it.');
   return res;
 }
 

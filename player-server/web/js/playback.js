@@ -3,6 +3,8 @@ import { libraryPresenceSnapshot } from './playback-presence.js';
 import { musicStreamingBlocked, MusicNetworkRestricted, networkPolicyMessage } from './network-policy.js';
 import { stopRenderer } from './renderer.js';
 import { listeningOccurrenceID, saveListeningProgress } from './listening-progress.js';
+import { saveEpisodePosition, podcastStartPosition, podcastSyncStatus } from './podcast-episode-state.js';
+import { preparePodcastPlayback, podcastNaturalEnd } from './podcast-playback.js';
 let listeningOccurrence = '';
 import { announceSong, suspendSongAnnouncement } from './song-notifications.js';
 import { createAudioTransport } from './audio-transport.js';
@@ -179,6 +181,9 @@ const els = () => ({
 });
 
 export function initPlayer(options = {}) {
+  document.addEventListener('podcast:account-changed', () => {
+    if (currentMedia?.podcast_episode && currentMedia.podcast_lease != null) { cancelPendingSource(); currentMediaElement()?.pause(); }
+  });
   nextHandler = typeof options.onNext === 'function' ? options.onNext : null;
   previousHandler = typeof options.onPrevious === 'function' ? options.onPrevious : null;
   failureHandler = typeof options.onPlaybackFailed === 'function' ? options.onPlaybackFailed : null;
@@ -192,7 +197,10 @@ export function initPlayer(options = {}) {
   audioTransport = createAudioTransport(e.audio);
   audioVisuals = initAudioVisuals({ ...e, audio: audioTransport, nativeAudio: e.audio });
   gapless = initGapless({ audio: audioTransport, player: e.player, graph: () => audioVisuals,
-    next: preparedQueueNext, available: () => queueState().active && !isDetached() && !isCasting() && reportProgress,
+    next: () => {
+      const next = preparedQueueNext();
+      return next && (next.media?.is_podcast || next.media?.podcast_episode || state.sets.some(set => set.id === next.media?.set_id && set.is_podcast)) ? null : next;
+    }, available: () => queueState().active && !isDetached() && !isCasting() && reportProgress,
     boundary: adoptGaplessBoundary, fallback: returnToStreaming });
  if (!offlineMusicMode()) initStreamQuality(e.player);
   lyrics = initLyrics({ ...e, audio: audioTransport, getPosition: () => isCasting() ? castPosition() : audioTransport.currentTime, onSeek: seconds => {
@@ -359,7 +367,8 @@ function bindMediaEvents(e, m) {
   // Firefox can emit ended after a paused seek to the saved end position.
   // Only a source that actually played may complete or advance the queue.
   let playedSinceLoad = false;
-  m.addEventListener('loadstart', () => { playedSinceLoad = false; });
+  let playbackTarget = 0, advancing = false;
+  m.addEventListener('loadstart', () => { playedSinceLoad = false; advancing = false; playbackTarget = 0; });
   m.addEventListener('timeupdate', () => {
     osSession?.refresh();
     const dur = effectiveDuration();
@@ -380,6 +389,8 @@ function bindMediaEvents(e, m) {
   });
   m.addEventListener('ended', async () => {
     if (m !== currentMediaElement() || !m.ended || !playedSinceLoad) return;
+    if (currentMedia?.podcast_episode && !podcastNaturalEnd({ played: playedSinceLoad, seeking: m.seeking,
+      advancing, error: m.error, position: m.currentTime, target: playbackTarget })) return;
     playedSinceLoad = false;
     if (currentMedia?.live_radio) { updateUI(false); setPlayerStatus('Station disconnected · press Play to reconnect.'); return; }
     const epoch = sourceEpoch, intent = currentPlaybackIntent();
@@ -394,10 +405,10 @@ function bindMediaEvents(e, m) {
       triggerNext({ forcePlay: true, completed: true });
     }
   });
-  m.addEventListener('seeking', () => { sourceEpoch++; });
+  m.addEventListener('seeking', () => { sourceEpoch++; playbackTarget = m.currentTime; });
   for (const event of ['pause', 'seeked']) m.addEventListener(event, () => document.dispatchEvent(new Event('player:position')));
-  m.addEventListener('play', () => { playedSinceLoad = true; sourceEpoch++; completingEpoch = null; updateUI(true); isPlaying = true; startProgressTimer(); });
-  m.addEventListener('pause', () => { if (!m.ended) playedSinceLoad = false; updateUI(false); isPlaying = false; stopProgressTimer(); });
+  m.addEventListener('play', () => { playedSinceLoad = true; advancing = true; sourceEpoch++; completingEpoch = null; updateUI(true); isPlaying = true; startProgressTimer(); });
+  m.addEventListener('pause', () => { if (!m.ended) { saveCurrentProgress(); playedSinceLoad = false; advancing = false; } updateUI(false); isPlaying = false; stopProgressTimer(); });
   m.addEventListener('playing', () => {
     if (m !== currentMediaElement()) return;
     if (!m.paused) playedSinceLoad = true;
@@ -714,12 +725,12 @@ export function selectMedia(media, index = -1, resumeFrom = 0) {
 // popup and the public share page, which do not report playback progress.
 // streamUrl must be the server's playback URL (the compat stream when
 // media.transcoded is true).
-export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0) {
+export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0, { authenticated = false } = {}) {
   cancelLiveRequest();
   currentMedia = media;
   currentMediaIndex = -1;
   reportProgress = false;
-  showMedia(media, { url: streamUrl, resumeFrom, library: false }, thumbnailUrl);
+  showMedia(media, { url: streamUrl, resumeFrom, library: false, authenticated }, thumbnailUrl);
   // A direct load does not play by itself: show the play prompt until the
   // caller (popup) or the user (share page) asks for playback.
   if (media.type !== 'image') updateUI(false);
@@ -843,6 +854,10 @@ function showCoverArt(e, thumbnailUrl) {
 // stays empty and the "preparing" status is shown until the server has the
 // rendition, so a 503 never reaches the element as a bogus decode error.
 function startSource(m, media, url, resumeFrom) {
+  if ((media.podcast_account !== undefined && media.podcast_account !== podcastSyncStatus().account && currentSource?.library) ||
+      (media.podcast_lease != null && media.podcast_lease !== podcastSyncStatus().generation)) {
+    failPlayback(media, 'Account changed. Select the episode again.'); return;
+  }
   if (offlineMusicMode() && !media.offlinePinURL) {
     failPlayback(media, 'Saved download unavailable. Reconnect to download it again.');
     return;
@@ -850,7 +865,10 @@ function startSource(m, media, url, resumeFrom) {
   const networkBlocked = currentSource?.library && media.type === 'audio' && !media.offlinePinURL && musicStreamingBlocked();
   const useCache = currentSource?.library && playbackCacheEnabled(media);
   const tryGapless = m === els().audio && currentSource?.library && !media.offlinePinURL && gapless?.wants(media);
-  if (!networkBlocked && !tryGapless && !useCache && !/\/compat(?:\?|$)/.test(url)) {
+  const prepared = media.podcast_prepared;
+  delete media.podcast_prepared;
+  const reconcile = !prepared && (currentSource?.library || currentSource?.authenticated) && podcastSyncStatus().account && !offlineMusicMode();
+  if (!reconcile && !networkBlocked && !tryGapless && !useCache && !/\/compat(?:\?|$)/.test(url)) {
     attachSource(m, url, resumeFrom);
     return;
   }
@@ -862,8 +880,18 @@ function startSource(m, media, url, resumeFrom) {
   pendingSource = pending;
   setPlayerStatus(preparingText(media, ''));
   (async () => {
+    if (reconcile) {
+      const prepared = await preparePodcastPlayback(media, resumeFrom);
+      if (pendingSource !== pending || pending.controller.signal.aborted) return;
+      if (prepared.cancelled) { pendingSource = null; failPlayback(media, 'Account changed. Select the episode again.'); return; }
+      media.podcast_episode = prepared.episode;
+      media.podcast_account = prepared.account;
+      media.podcast_lease = prepared.lease;
+      media.podcast_classified = prepared.classified;
+      resumeFrom = media.podcast_from_beginning ? 0 : prepared.position;
+    }
     if (networkBlocked) throw new MusicNetworkRestricted(networkPolicyMessage);
-    if (tryGapless) {
+    if (tryGapless && !media.podcast_episode && media.podcast_classified !== false && !media.is_podcast && !state.sets.some(set => set.id === media.set_id && set.is_podcast)) {
       const engine = await gapless.prepare(media, url, resumeFrom, pending.controller.signal);
       if (pendingSource !== pending || pending.controller.signal.aborted) { engine?.dispose(); return; }
       if (engine) {
@@ -881,7 +909,7 @@ function startSource(m, media, url, resumeFrom) {
     }
     let selected = url;
     let lyricBacking=null;
-    if (useCache) selected = await playbackCacheSource(media, url, pending.controller.signal, backing=>{lyricBacking=backing;});
+    if (useCache && !media.podcast_episode) selected = await playbackCacheSource(media, url, pending.controller.signal, backing=>{lyricBacking=backing;});
     const result = /\/compat(?:\?|$)/.test(selected)
       ? await waitForCompatStream(selected, { signal: pending.controller.signal,
           onPreparing: status => announcePreparing(pending, media, status) })
@@ -889,7 +917,7 @@ function startSource(m, media, url, resumeFrom) {
     const current=pendingSource===pending && !pending.controller.signal.aborted;
     finishPendingSource(pending, m, media, selected, resumeFrom, result);
     if(current && useCache && result.state==='ready' && m.getAttribute('src')===selected) lyrics?.setMedia(media,url,{backing:lyricBacking,saved:selected.startsWith('blob:')});
-    if (useCache && result.state === 'ready' && !selected.startsWith('blob:') && !pending.controller.signal.aborted) {
+    if (useCache && !media.podcast_episode && result.state === 'ready' && !selected.startsWith('blob:') && !pending.controller.signal.aborted) {
       void cacheSong(media, url).catch(() => {});
     }
   })().catch(error => finishPendingSource(pending, m, media, url, resumeFrom,
@@ -901,7 +929,7 @@ function attachSource(m, url, resumeFrom) {
   m.src = url;
   m.load();
   playbackSpeed?.apply();
-  seekWhenMetadataReady(m, resumeFrom);
+  seekWhenMetadataReady(m, resumeFrom, true);
 }
 
 // finishPendingSource runs when the probe settles. A probe that was cancelled
@@ -937,6 +965,7 @@ function retrySource(m) {
   if (!currentSource || !currentMedia) return;
   // Read before startSource resets the element: keep the reached position.
   const resumeFrom = m.currentTime > 0 ? m.currentTime : currentSource.resumeFrom;
+  currentMedia.podcast_from_beginning = false;
   startSource(m, currentMedia, currentSource.url, resumeFrom);
   updateUI(true);
   requestPlay();
@@ -1147,13 +1176,15 @@ function returnToStreaming(reason) {
   if (playing) playElement(audioTransport);
 }
 
-function seekWhenMetadataReady(m, seconds) {
+function seekWhenMetadataReady(m, seconds, initial = false) {
   if (currentMedia?.live_radio) return;
   const target = Number(seconds || 0);
   if (!m || !isFinite(target) || target <= 0) return;
   const seek = () => {
     try {
-      m.currentTime = target;
+      m.currentTime = initial && currentMedia?.podcast_episode
+        ? podcastStartPosition(target, m.duration || currentMedia.duration, currentMedia.podcast_from_beginning)
+        : target;
     } catch {}
   };
   if (m.readyState >= HTMLMediaElement.HAVE_METADATA) seek();
@@ -1273,7 +1304,7 @@ export function exitFullscreenIfNeeded() {
 
 function startProgressTimer() {
   stopProgressTimer();
-  if (!reportProgress) return;
+  if (!reportProgress && !(currentSource?.authenticated && currentMedia?.podcast_episode)) return;
   progressInterval = setInterval(() => {
     const m = currentMediaElement();
     if (m && currentMedia && !m.paused) {
@@ -1298,7 +1329,7 @@ function highlightPlayingCard() {
 // final seconds of short songs and manual track skips.
 function saveCurrentProgress({ finished = false } = {}) {
   const element = currentMediaElement();
-  if (!reportProgress || isCasting() || isDetached() || !currentMedia || !element ||
+  if ((!reportProgress && !(currentSource?.authenticated && currentMedia?.podcast_episode)) || isCasting() || isDetached() || !currentMedia || !element ||
       (!finished && element.ended) || !(element.currentTime > 0)) {
     return progressWrites;
   }
@@ -1308,12 +1339,18 @@ function saveCurrentProgress({ finished = false } = {}) {
 // Keep completion after every earlier position write. The track replacement
 // must not reopen the item with another final-position write after "finished".
 function enqueueProgress(id, position, finished = false) {
+  if (currentMedia?.id === id && currentMedia.podcast_episode) {
+    const ms = saveEpisodePosition(currentMedia.podcast_episode, position, { finished, lease: currentMedia.podcast_lease });
+    if (ms && (reportProgress || currentSource?.authenticated)) void saveListeningProgress(id, position, listeningOccurrence, new Date(ms).toISOString()).catch(() => {});
+    return Promise.resolve();
+  }
+  const classified = currentMedia?.id === id && currentMedia.podcast_classified;
   const occurrence = listeningOccurrence;
   const saved = saveListeningProgress(id, position, occurrence, new Date().toISOString());
   void saved.catch(() => {});
   progressWrites = progressWrites.catch(() => {}).then(async () => {
     await saved;
-    if (finished) await API.progressStatus(id, 'finished');
+    if (finished && classified !== false) await API.progressStatus(id, 'finished');
   }).catch(() => {});
   return progressWrites;
 }

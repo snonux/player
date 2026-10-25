@@ -58,6 +58,29 @@ so the request can be retried; other copies are still attempted.
 
 ### Listening state
 
+Web playback attempts scoped reconciliation for at most three seconds before
+starting, then uses its in-tab state when synchronization is unavailable.
+Late responses update storage without jumping playback. Once loaded, the
+player's actual duration decides whether a saved position within five seconds
+of the end starts from zero. **Play from beginning** is separate from manual
+completion; replaying keeps completion unchanged. Natural HTML end writes the
+end position and automatic completion together, without waiting for the server
+before advancing. Seek, pause, stop and errors only save positions. Cast keeps
+podcast positions but does not infer completion from receiver state changes.
+
+The subscription folders and All podcast episodes view update their progress
+and completion filters. Failed web edits stay in memory in the current account's
+tab and offer **Retry**; reloading loses unsent edits. Synchronizing never
+downloads audio. **Download to server** and **Download and play** explicitly do.
+
+**Delete downloaded file** uses the existing owner/admin media Trash action.
+It affects every server listener, preserves the episode, subscriptions and
+listening registers, and does not affect Android copies. The source stays in
+Trash for seven days and can be restored there; expiry removes the file and
+its media-scoped notes, bookmarks, favorites and shares. A cleanup failure
+retains the trashed row for the existing GC retry. Unsubscribe and the admin
+Remove from server action remain separate operations.
+
 Each user's position and completion of every episode is per-account episode
 state, synchronized between clients and kept even when the server never
 downloaded the episode. It is the only listening history of an episode:

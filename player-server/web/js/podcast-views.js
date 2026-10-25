@@ -5,7 +5,7 @@
 import { API } from './api.js';
 import { state, setMedia } from './state.js';
 import { escapeHtml, fmtDur, toast } from './utils.js';
-import { setEpisodeCompleted } from './podcast-episode-state.js';
+import { setEpisodeCompleted, episodeSnapshot, podcastSyncStatus, retryPodcastEpisodeEdits } from './podcast-episode-state.js';
 import { clearSelection, selectByElement } from './selection.js';
 import { dismissSidebarAfterNav } from './views/help.js';
 
@@ -13,7 +13,7 @@ import { dismissSidebarAfterNav } from './views/help.js';
 // playSelected. Subscription views clear the browse list, so Play must put
 // downloaded copies (or a fresh download) into state.media by card index.
 export function episodePlayableMedia(ep, downloaded = null) {
-  if (downloaded?.id) return downloaded;
+  if (downloaded?.id) return { ...downloaded, podcast_episode: episodeSnapshot(ep) };
   const id = ep?.server_copy?.media_id;
   if (!id) return null;
   return {
@@ -21,6 +21,7 @@ export function episodePlayableMedia(ep, downloaded = null) {
     type: 'audio',
     title: ep.title || '',
     is_podcast: true,
+    podcast_episode: episodeSnapshot(ep),
   };
 }
 
@@ -48,6 +49,8 @@ let loadMediaCallback = () => {};
 let playMediaById = async () => false;
 let pageSize = 100;
 let sidebarFeeds = [];
+let visibleEpisodes = [];
+let stateUpdateTimer;
 
 export function initPodcastViews({ onLoadMedia, playMediaById: playFn, pageSize: size } = {}) {
   loadMediaCallback = onLoadMedia || (() => {});
@@ -57,6 +60,12 @@ export function initPodcastViews({ onLoadMedia, playMediaById: playFn, pageSize:
   refreshPodcastSidebar().catch(() => {});
   document.addEventListener('library:changed', () => {
     refreshPodcastSidebar().catch(() => {});
+  });
+  document.addEventListener('podcast:state-changed', () => {
+    // Let the ended handler select its next card before completion removes
+    // the outgoing card from the current filter.
+    clearTimeout(stateUpdateTimer);
+    stateUpdateTimer = setTimeout(updateVisibleEpisodeState, 0);
   });
 }
 
@@ -154,6 +163,7 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
   setPodcastViewPageSize(size);
   breadcrumbHidden(true);
   const filter = state.podcastFilter || 'uncompleted';
+  const generation = podcastSyncStatus().generation;
   const feedKey = state.podcastFeedKey || '';
   const page = Math.max(0, state.mediaPage | 0);
   const offset = page * pageSize;
@@ -170,6 +180,7 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
     return null;
   }
   if (alive && !alive()) return null;
+  if (podcastSyncStatus().generation !== generation) return null;
   if (revision !== undefined && typeof alive === 'function' && !alive()) return null;
 
   const hasNext = episodes.length >= pageSize;
@@ -198,7 +209,9 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
   setMedia(mediaSlotsForEpisodes(episodes));
 
   const before = grid.querySelector('[data-page-pager="bottom"]');
+  visibleEpisodes = [];
   episodes.forEach((ep, index) => {
+    ep.podcast_generation = podcastSyncStatus().generation;
     const card = document.createElement('div');
     card.className = 'media-card episode-card';
     card.dataset.episodeId = String(ep.id);
@@ -209,6 +222,7 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
     if (mediaId) card.dataset.id = String(mediaId);
     card.tabIndex = -1;
     renderViewEpisodeCard(card, ep, { showFeed: !feedKey });
+    visibleEpisodes.push({ card, ep });
     if (before) grid.insertBefore(card, before);
     else grid.appendChild(card);
   });
@@ -217,6 +231,7 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
   bindPager(grid, pageInfo);
   clearSelection();
   updatePodcastSidebarUI();
+  updatePendingHint();
   return pageInfo;
 }
 
@@ -229,6 +244,7 @@ function filterBarHtml(title, filter) {
   return `<div class="podcast-view-toolbar grid-full" role="region" aria-label="Podcast episodes">
     <h2 class="podcast-view-title">${escapeHtml(title)}</h2>
     <div class="podcast-filter-bar" role="group" aria-label="Completion filter">${buttons}</div>
+    <p id="podcast-pending-hint" class="text-muted text-sm" role="status"></p>
   </div>`;
 }
 
@@ -262,14 +278,25 @@ function bindPager(grid, pageInfo) {
 }
 
 function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
+  const focusedAction = card.contains(document.activeElement) ? document.activeElement?.dataset.action : null;
   card.innerHTML = episodeCardHtml(ep, { showFeed });
   const playBtn = card.querySelector('[data-action="play"]');
   const downloadBtn = card.querySelector('[data-action="download-episode"]');
   const completeBtn = card.querySelector('[data-action="complete"]');
+  const beginningBtn = card.querySelector('[data-action="play-beginning"]');
+  const deleteBtn = card.querySelector('[data-action="delete-download"]');
 
   playBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
     playEpisode(card, ep, [playBtn, downloadBtn].filter(Boolean));
+  });
+  beginningBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    playEpisode(card, ep, [playBtn, beginningBtn, downloadBtn].filter(Boolean), true);
+  });
+  deleteBtn?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await deleteEpisodeDownload(card, ep, deleteBtn);
   });
   downloadBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -279,6 +306,7 @@ function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
     e.stopPropagation();
     await markCompletion(card, ep, !ep.completed);
   });
+  if (focusedAction) (card.querySelector(`[data-action="${focusedAction}"]`) || playBtn)?.focus();
 }
 
 function episodeCardHtml(ep, { showFeed } = {}) {
@@ -312,15 +340,17 @@ function episodeCardHtml(ep, { showFeed } = {}) {
       <div class="title">${escapeHtml(ep.title || 'Untitled')}</div>
       ${feedLine}
       <div class="subtitle">${escapeHtml(ep.description || '')}</div>
+      <button type="button" class="btn btn-sm" data-action="play-beginning">Play from beginning</button>
+      ${downloaded ? '<button type="button" class="btn btn-sm" data-action="delete-download">Delete downloaded file</button>' : ''}
     </div>`;
 }
 
-async function playEpisode(card, ep, buttons) {
+async function playEpisode(card, ep, buttons, fromBeginning = false) {
   const index = parseInt(card.dataset.index, 10);
   let media = Number.isInteger(index) ? state.media[index] : null;
   if (media?.id) {
     card.dataset.id = String(media.id);
-    if (!(await playMediaById(media.id))) toast('Select the episode to play', 'info');
+    if (!(await playMediaById(media.id, { fromBeginning }))) toast('Select the episode to play', 'info');
     return;
   }
   const mediaId = ep.server_copy?.media_id;
@@ -334,7 +364,7 @@ async function playEpisode(card, ep, buttons) {
     }
     rememberEpisodeMedia(index, media);
     card.dataset.id = String(media.id);
-    if (!(await playMediaById(media.id))) toast('Select the episode to play', 'info');
+    if (!(await playMediaById(media.id, { fromBeginning }))) toast('Select the episode to play', 'info');
     return;
   }
   buttons.forEach((b) => { b.disabled = true; });
@@ -342,11 +372,11 @@ async function playEpisode(card, ep, buttons) {
   try {
     media = await API.downloadEpisode(ep.id);
     ep.server_copy = { media_id: media.id };
-    rememberEpisodeMedia(index, media);
+    rememberEpisodeMedia(index, episodePlayableMedia(ep, media));
     card.dataset.id = String(media.id);
     toast('Episode downloaded');
     renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
-    if (!(await playMediaById(media.id))) toast('Episode downloaded; select it to play', 'info');
+    if (!(await playMediaById(media.id, { fromBeginning }))) toast('Episode downloaded; select it to play', 'info');
   } catch (err) {
     buttons.forEach((b) => { b.disabled = false; });
     toast(err.message || 'Download failed', 'error');
@@ -359,7 +389,7 @@ async function downloadEpisodeOnly(card, ep, buttons) {
   try {
     const media = await API.downloadEpisode(ep.id);
     ep.server_copy = { media_id: media.id };
-    rememberEpisodeMedia(index, media);
+    rememberEpisodeMedia(index, episodePlayableMedia(ep, media));
     card.dataset.id = String(media.id);
     toast('Episode downloaded');
     renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
@@ -373,11 +403,11 @@ async function markCompletion(card, ep, completed) {
   const btn = card.querySelector('[data-action="complete"]');
   if (btn) btn.disabled = true;
   try {
-    await setEpisodeCompleted(ep, completed);
-    ep.completed = completed;
-    toast(completed ? 'Marked completed' : 'Marked uncompleted');
+    const result = await setEpisodeCompleted(ep, completed);
+    ep.completed = result?.completion?.completed ?? ep.completed;
+    toast(ep.completed === completed ? (completed ? 'Marked completed' : 'Marked uncompleted') : 'A newer completion change was kept');
     const filter = state.podcastFilter || 'uncompleted';
-    const leaves = (filter === 'uncompleted' && completed) || (filter === 'completed' && !completed);
+    const leaves = (filter === 'uncompleted' && ep.completed) || (filter === 'completed' && !ep.completed);
     if (leaves) {
       focusAfterRemoval(card);
       card.remove();
@@ -389,6 +419,63 @@ async function markCompletion(card, ep, completed) {
     if (btn) btn.disabled = false;
     toast(err.message || 'Update failed', 'error');
   }
+}
+
+async function deleteEpisodeDownload(card, ep, button) {
+  const id = ep.server_copy?.media_id;
+  if (!id || !confirm(`Delete the downloaded file for "${ep.title || 'this episode'}" from the shared server? Other server listeners lose access to this copy. It moves to Trash for seven days, then its file and everyone's media-scoped notes, bookmarks, favorites and shares are removed. Episode history and subscriptions stay, as do copies on Android devices. Owners and admins can restore it from Trash before expiry.`)) return;
+  button.disabled = true;
+  try {
+    try { await API.deleteMedia(id); }
+    catch (error) {
+      // A lost acknowledgement can leave the copy already in Trash. Read its
+      // availability before deciding whether the destructive request failed.
+      try { await API.mediaDetail(id); } catch (readError) {
+        if (readError.status === 404) { error = null; }
+      }
+      if (error) throw error;
+    }
+    ep.server_copy = null;
+    delete card.dataset.id;
+    const index = Number(card.dataset.index);
+    if (Number.isInteger(index)) { const list = state.media.slice(); list[index] = null; setMedia(list); }
+    renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
+    toast('Server copy is no longer available in podcast views');
+  } catch (err) {
+    button.disabled = false;
+    button.focus();
+    toast(err.message || 'Delete failed. Try again.', 'error');
+  }
+}
+
+function updateVisibleEpisodeState() {
+  if (!isPodcastVirtualView()) return;
+  for (const { card, ep } of visibleEpisodes) {
+    if (!card.isConnected) continue;
+    if (ep.podcast_generation !== podcastSyncStatus().generation) { card.remove(); continue; }
+    const snapshot = episodeSnapshot(ep);
+    const completed = snapshot.completion?.completed ?? ep.completed;
+    ep.position_seconds = snapshot.position?.seconds ?? ep.position_seconds;
+    ep.completed = completed;
+    const filter = state.podcastFilter || 'uncompleted';
+    if ((filter === 'uncompleted' && completed) || (filter === 'completed' && !completed)) {
+      if (card.contains(document.activeElement) || card.classList.contains('selected')) focusAfterRemoval(card);
+      card.remove();
+    } else renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
+  }
+  updatePendingHint();
+}
+
+function updatePendingHint() {
+  const hint = document.getElementById('podcast-pending-hint');
+  if (!hint) return;
+  const status = podcastSyncStatus();
+  hint.textContent = status.lastError ? (status.pending ? 'Podcast sync could not finish · changes pending in this tab. ' : 'Podcast sync could not finish. ') : status.pending ? 'Saving podcast changes… ' : '';
+  if (!status.lastError) return;
+  const retry = document.createElement('button');
+  retry.type = 'button'; retry.className = 'btn btn-sm'; retry.textContent = 'Retry';
+  retry.addEventListener('click', () => { void retryPodcastEpisodeEdits().catch(() => {}); });
+  hint.appendChild(retry);
 }
 
 function focusAfterRemoval(card) {

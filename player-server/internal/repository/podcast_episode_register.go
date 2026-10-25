@@ -18,6 +18,9 @@ import (
 // PodcastEpisodeStateRepo writes per-account episode registers outside the
 // sync API.
 type PodcastEpisodeStateRepo interface {
+	// GetMediaEpisodeState returns the linked episode identity and caller's
+	// registers, or nil for ordinary media. Access is checked by the service.
+	GetMediaEpisodeState(ctx context.Context, userID, mediaID int64) (*model.PodcastEpisodeState, error)
 	// ToggleEpisodeCompletion flips the user's completion register of a
 	// catalog episode by a manual edit at server time (the legacy toggle)
 	// and returns the new value. It wraps sql.ErrNoRows when the episode
@@ -26,6 +29,22 @@ type PodcastEpisodeStateRepo interface {
 }
 
 var _ PodcastEpisodeStateRepo = (*SQLite)(nil)
+
+// GetMediaEpisodeState implements PodcastEpisodeStateRepo.
+func (s *SQLite) GetMediaEpisodeState(ctx context.Context, userID, mediaID int64) (*model.PodcastEpisodeState, error) {
+	k, linked, err := linkedEpisode(ctx, s.db, userID, mediaID)
+	if err != nil || !linked {
+		return nil, err
+	}
+	state, err := getEpisodeState(ctx, s.db, userID, k.feedKey, k.episodeKey)
+	if err != nil {
+		return nil, err
+	}
+	if state == nil {
+		state = &model.PodcastEpisodeState{FeedKey: k.feedKey, EpisodeKey: k.episodeKey}
+	}
+	return state, nil
+}
 
 // sqlTx is what register writes need from a transaction: they read the
 // linked server copies with a multi-row query besides single-row reads

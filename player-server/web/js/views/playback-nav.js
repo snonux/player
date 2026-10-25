@@ -2,6 +2,7 @@ import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from '..
 import { playAlbumCollection, advanceQueue, deactivateQueue } from '../queue.js';
 export { playAlbumCollection } from '../queue.js';
 import { API } from '../api.js';
+import { preparePodcastPlayback } from '../podcast-playback.js';
 import { state } from '../state.js';
 import { currentElement, selectByElement } from '../selection.js';
 import {
@@ -32,11 +33,11 @@ function skipsImagesFrom(media) {
 }
 
 function cardMedia(card) {
-  return state.media.find((m) => String(m.id) === String(card.dataset.id));
+  return state.media.find((m) => m && String(m.id) === String(card.dataset.id));
 }
 
 function filterPlayableMedia(media, skipImages) {
-  return skipImages ? media.filter((m) => m.type !== 'image') : media;
+  return media.filter((m) => m && (!skipImages || m.type !== 'image'));
 }
 
 function filterPlayableCards(cards, skipImages) {
@@ -47,17 +48,16 @@ function filterPlayableCards(cards, skipImages) {
   });
 }
 
-async function playItem(media, index) {
+async function playItem(media, index, options = {}) {
   deactivateQueue();
   const revision = ++playRevision;
   const intent = beginPlaybackIntent();
-  let position = 0;
-  try {
-    const progress = (await API.mediaDetail(media.id))?.progress;
-    position = progress?.finished ? 0 : (progress?.position_seconds ?? 0);
-  } catch {}
+  const prepared = await preparePodcastPlayback(media, 0);
   if (revision !== playRevision || !isPlaybackIntent(intent)) return false;
-  selectAndPlay(media, index, position);
+  if (prepared.cancelled) return false;
+  selectAndPlay({ ...media, podcast_episode: prepared.episode, podcast_account: prepared.account, podcast_lease: prepared.lease,
+    podcast_classified: prepared.classified, podcast_prepared: true,
+    podcast_from_beginning: Boolean(options.fromBeginning) }, index, options.fromBeginning ? 0 : prepared.position);
   return true;
 }
 
@@ -83,7 +83,7 @@ export async function playSelected() {
 
 // playMediaById plays a media item from the loaded list by ID, selecting its
 // card when the current page shows it. Returns false when it is not loaded.
-export async function playMediaById(id) {
+export async function playMediaById(id, options = {}) {
   // Subscription episode pages leave null holes for undownloaded rows so
   // card indices stay aligned; skip those slots when resolving by id.
   const idx = state.media.findIndex((m) => m && String(m.id) === String(id));
@@ -91,7 +91,7 @@ export async function playMediaById(id) {
   // Folder cards also use data-index, so select by media ID.
   const card = document.querySelector(`#media-grid .media-card[data-id="${CSS.escape(String(id))}"]`);
   if (card) selectByElement(card);
-  return playItem(state.media[idx], idx);
+  return playItem(state.media[idx], idx, options);
 }
 
 export async function playRandom() {
@@ -177,7 +177,7 @@ function currentPlaybackCandidate(preferCurrent) {
   if (preferCurrent && playing) return playing;
   const selected = currentElement();
   if (selected?.dataset?.id) {
-    const selectedMedia = state.media.find((m) => String(m.id) === selected.dataset.id);
+    const selectedMedia = state.media.find((m) => m && String(m.id) === selected.dataset.id);
     if (selectedMedia) return selectedMedia;
   }
   return playing;

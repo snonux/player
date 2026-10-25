@@ -5,6 +5,9 @@ import { initModalFocus } from './modal-focus.js';
 import { initNotes } from './notes.js';
 import { closeAllModals } from './dom.js';
 import { toast } from './utils.js';
+import { setPodcastAccount } from './podcast-episode-state.js';
+import { setListeningProgressAccount } from './listening-progress.js';
+import { prepareDetachedPlayback } from './podcast-detached.js';
 
 const openerOrigin = window.location.origin;
 document.addEventListener('player:sleep-expired', () => {
@@ -23,11 +26,11 @@ let progressWrites = Promise.resolve();
 // A failed load fires no pause event when nothing was playing yet (compat
 // stream still preparing), so the main window is told explicitly.
 initPlayer({ onPlaybackFailed: sendState, personalActions: true,
+  onNext: () => { if (currentMedia?.podcast_episode) post({ type: 'detach-next', completed: true }); },
   onSessionPrevious: () => post({ type: 'detach-prev', play: true }),
   onSessionNext: () => post({ type: 'detach-next', play: true }) });
 initNotes((status, message) => toast(status === 'error' ? message || 'Could not update note.' : status === 'deleted' ? 'Note deleted' : 'Note saved', status === 'error' ? 'error' : 'info'));
 initModalFocus();
-API.config().then(cfg => initSongNotifications(cfg?.user_id)).catch(() => {});
 
 const video = document.getElementById('media-video');
 const audio = document.getElementById('media-audio');
@@ -67,6 +70,7 @@ document.addEventListener('loudness:changed', sendState);
   });
   el?.addEventListener('ended', async () => {
     if (el !== mediaElement() || !el.ended || !currentMedia) return;
+    if (currentMedia.podcast_episode) return; // central HTML ended guard owns podcast completion/advance
     const cycle = sourceCycle;
     if (completingCycle === cycle) return;
     completingCycle = cycle;
@@ -174,16 +178,20 @@ window.addEventListener('beforeunload', () => {
 
 post({ type: 'detach-ready' });
 
-function loadDetachedMedia(payload) {
-  sourceCycle++;
-  currentMedia = payload.media || null;
+async function loadDetachedMedia(payload) {
+  const cycle = ++sourceCycle;
+  if (!payload.media) return;
+  const prepared = await prepareDetachedPlayback(payload, { accountReady: API.config(), onAccount: cfg => {
+    initSongNotifications(cfg.user_id); setPodcastAccount(cfg.user_id); setListeningProgressAccount(cfg.user_id);
+  } });
+  if (cycle !== sourceCycle || prepared.cancelled) return;
+  currentMedia = prepared.media;
   currentIndex = Number.isInteger(payload.index) ? payload.index : -1;
   if (!currentMedia) return;
-
-  const resumeFrom = Number(payload.resumeFrom || 0);
+  const resumeFrom = prepared.position;
   lastKnownPosition = resumeFrom;
   setPlaybackLoudness(payload.loudness, { remoteContext: true });
-  loadMediaDirect(currentMedia, payload.streamUrl, payload.thumbnailUrl, resumeFrom);
+  loadMediaDirect(currentMedia, payload.streamUrl, payload.thumbnailUrl, resumeFrom, { authenticated: prepared.authenticated });
   setPlaybackSpeed(payload.playbackRate ?? 1);
   setSleepDeadline(payload.sleepDeadline);
 
@@ -195,7 +203,7 @@ function loadDetachedMedia(payload) {
   if (typeof payload.volume === 'number') el.volume = payload.volume;
   el.muted = !!payload.muted;
 
-  seekWhenReady(el, resumeFrom);
+  // Source startup owns podcast reconciliation and the loaded-duration rule.
   // requestPlay (playback.js) also covers a compat stream that is still being
   // prepared: playback then starts as soon as the element gets its source.
   if (payload.play && !(payload.sleepDeadline && payload.sleepDeadline <= performance.timeOrigin + performance.now())) requestPlay();
@@ -320,9 +328,10 @@ function startProgress() {
 }
 
 function enqueueProgress(id, seconds, finished = false) {
+  if (currentMedia?.podcast_episode || currentMedia?.podcast_lease === null) return Promise.resolve();
   progressWrites = progressWrites.catch(() => {}).then(async () => {
     await API.progress(id, seconds);
-    if (finished) await API.progressStatus(id, 'finished');
+    if (finished && currentMedia?.podcast_classified !== false) await API.progressStatus(id, 'finished');
   }).catch(() => {});
   return progressWrites;
 }

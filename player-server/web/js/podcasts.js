@@ -4,6 +4,7 @@ import { state } from './state.js';
 import { escapeHtml, fmtDur, toast } from './utils.js';
 import { renderSets } from './views/sets.js';
 import { setSubscribed } from './podcast-subscriptions.js';
+import { setEpisodeCompleted } from './podcast-episode-state.js';
 
 export function initPodcasts() {
   const modal = document.getElementById('podcast-modal');
@@ -182,10 +183,11 @@ function renderEpisodeCard(card, ep) {
   completeBtn?.addEventListener('click', async (e) => {
     e.stopPropagation();
     try {
-      await API.toggleEpisodeComplete(ep.id);
-      ep.is_completed = !ep.is_completed;
+      const requested = !ep.is_completed;
+      const result = await setEpisodeCompleted(ep, requested);
+      ep.is_completed = result?.completion?.completed ?? ep.is_completed;
       updateCompleteButton(completeBtn, ep.is_completed);
-      toast(ep.is_completed ? 'Marked completed' : 'Marked uncompleted');
+      toast(ep.is_completed === requested ? (ep.is_completed ? 'Marked completed' : 'Marked uncompleted') : 'A newer completion change was kept');
     } catch (err) {
       toast(err.message || 'Toggle failed', 'error');
     }

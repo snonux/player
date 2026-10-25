@@ -6,6 +6,7 @@ import { mountMusicPresence } from './music-presence.js';
 import { initRadio } from './radio.js';
 import { stopRenderer } from './renderer.js';
 import { setListeningProgressAccount } from './listening-progress.js';
+import { setPodcastAccount } from './podcast-episode-state.js';
 import { initListeningHistory } from './listening-history.js';
 import { initSongNotifications, clearSongNotifications } from './song-notifications.js';
 import { initPlaybackCache, releasePlaybackCache, setPlaybackCacheAccount } from './playback-cache.js';
@@ -357,6 +358,7 @@ async function initApp() {
     if (state.user && presenceHost) closeMusicPresence = mountMusicPresence(presenceHost);
     setPlaybackCacheAccount(cfg?.user_id);
     setListeningProgressAccount(cfg?.user_id);
+    setPodcastAccount(cfg?.user_id);
     initSongNotifications(cfg?.user_id);
     setMediaPageSize(cfg?.media_page_size);
     state.sets = (sets || []).slice().sort((a, b) => a.name.localeCompare(b.name));
@@ -659,6 +661,7 @@ function initChrome() {
     try {
       try { await stopRenderer(); } catch {}
       setListeningProgressAccount(null);
+      setPodcastAccount(null);
       clearSongNotifications();
       releasePlaybackCache();
       const result = await API.logout();

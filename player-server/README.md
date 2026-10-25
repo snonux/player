@@ -29,6 +29,11 @@ Features
 - **Audio / Audiobooks** — cover art display, progress tracking (resumes where you left off)
 - **Casting** — in Chrome (HTTPS or localhost), the player's cast button plays the current audio or video item on a Chromecast or other Google Cast device; play/pause, seeking and track changes then control the cast device, and stopping continues locally where it left off. The cast device fetches the media through a short-lived signed link, so it must reach the server at the page's address. Details: [docs/api.md](docs/api.md)
 - **Podcasts** — subscribe to RSS/Atom feeds, download episodes to the server, mark listened/unlistened
+  and resume shared episode positions. Subscription folders and All podcast
+  episodes offer completion filters, Play from beginning and owner/admin
+  Delete downloaded file (shared server Trash; episode history and Android
+  copies stay). Web playback reconciles for up to three seconds and marks
+  completion only at natural HTML end. See [Podcast Support](docs/podcasts.md).
 
 ### Organization
 

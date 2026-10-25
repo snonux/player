@@ -193,13 +193,21 @@ func (s *browseService) GetMediaDetail(ctx context.Context, mediaID, userID int6
 	if err != nil {
 		return nil, fmt.Errorf("get progress: %w", err)
 	}
+	var episode *model.PodcastEpisodeState
+	if reader, ok := s.store.(repository.PodcastEpisodeStateRepo); ok {
+		episode, err = reader.GetMediaEpisodeState(ctx, userID, mediaID)
+		if err != nil {
+			return nil, fmt.Errorf("get podcast episode state: %w", err)
+		}
+	}
 
 	return &MediaDetail{
-		Media:    media,
-		Tags:     tags,
-		Favorite: fav,
-		Note:     note,
-		Progress: progress,
+		PodcastEpisode: episode,
+		Media:          media,
+		Tags:           tags,
+		Favorite:       fav,
+		Note:           note,
+		Progress:       progress,
 	}, nil
 }
 

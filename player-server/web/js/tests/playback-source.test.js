@@ -1142,6 +1142,7 @@ async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
   setup();
   const listeners={}, messages=[], writes=[];
   const oldListener=window.addEventListener, original=API.progress, status=API.progressStatus;
+  const oldConfig=API.config, oldDetail=API.mediaDetail;
   const oldCreate=document.createElement, oldStorage=globalThis.localStorage, oldObserver=globalThis.MutationObserver, oldCancel=globalThis.cancelAnimationFrame;
   const stage=elements.player.querySelector('.stage'), controls=fakeElement(), loudnessPanels=[];
   elements.player.querySelector=selector=>selector==='.stage'?stage:selector==='.controls'?controls:null;
@@ -1164,6 +1165,8 @@ async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
   let release;
   API.progress=async(id,position)=>{writes.push(`position:${id}:${position}`);};
   API.progressStatus=async(id,value)=>{writes.push(`${value}:${id}`);};
+  API.config=async()=>({user_id:901});
+  API.mediaDetail=async()=>({});
   try {
     await import('../detachPopup.js');
     const gainTags={replaygain_track_gain_db:-8,replaygain_album_gain_db:-4};
@@ -1171,6 +1174,7 @@ async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
     const popupMessage=data=>{for(const fn of listeners.message||[])fn({origin:'http://test',source:window.opener,data});};
     popupMessage({type:'detach-load',media:{id:630,type:'audio',music:gainTags},streamUrl:'/api/media/630/stream',play:false,
       loudness:{settings:{mode:'automatic'},albumContext:true}});
+    await settle();
     let gainState=window.__playerDetachCurrentState().loudness;
     assertEqual(gainState.albumContext,true,'actual popup receives ordered album context despite empty local queue');
     assertEqual(replayGain(gainTags,gainState.settings,gainState.albumContext).db,-4,'actual popup retains main album gain');
@@ -1183,6 +1187,7 @@ async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
     assertEqual(messages.filter(message=>message.type==='detach-state').at(-1).state.loudness.settings.mode,'off','actual popup immediately reports settings edit to opener');
     popupMessage({type:'detach-load',media:{id:632,type:'audio',music:gainTags},streamUrl:'/api/media/632/stream',play:false,
       loudness:{settings:window.__playerDetachCurrentState().loudness.settings,albumContext:true}});
+    await settle();
     gainState=window.__playerDetachCurrentState().loudness;
     assertEqual(gainState.settings.mode,'off','actual next load preserves popup preference');
     assertEqual(gainState.albumContext,true,'next load replaces old shuffled context with authoritative album context');
@@ -1190,19 +1195,21 @@ async function testActualPopupFinishesBeforeAdvanceAndRejectsStaleCycle() {
     for(const fn of listeners.message||[])fn({origin:'http://foreign',source:window.opener,data:{type:'detach-loudness-context',albumContext:false}});
     assertEqual(window.__playerDetachCurrentState().loudness.albumContext,beforeForeign.albumContext,'foreign-origin context cannot change popup mode');
     writes.length=0;messages.length=0;
-    const load=id=>{for(const fn of listeners.message||[]) fn({origin:'http://test',data:{type:'detach-load',media:{id,type:'audio',duration:1301},index:1,streamUrl:`/api/media/${id}/stream`,play:false}});audio().readyState=1;};
-    load(631);audio().currentTime=1301;audio().ended=true;
+    const load=async id=>{for(const fn of listeners.message||[]) fn({origin:'http://test',data:{type:'detach-load',media:{id,type:'audio',duration:1301},index:1,streamUrl:`/api/media/${id}/stream`,play:false}});await settle();audio().readyState=1;};
+    await load(631);audio().currentTime=1301;audio().ended=true;
     audio().dispatch('ended');audio().dispatch('ended');await settle();
     assertEqual(writes.join(','),'position:631:1301,finished:631','actual popup finalizes long-source progress in order exactly once');
     assertEqual(messages.filter(m=>m.type==='detach-next'&&m.completed).length,1,'actual popup advances once after final save');
     writes.length=0;messages.length=0;
-    load(631);audio().currentTime=1301;audio().ended=true;
+    await load(631);audio().currentTime=1301;audio().ended=true;
     API.progress=async(id,position)=>{writes.push(`position:${id}:${position}`);await new Promise(done=>release=done);};
-    audio().dispatch('ended');await settle();load(631); // same media, newer occurrence
+    audio().dispatch('ended');await settle();await load(631); // same media, newer occurrence
     release?.();await settle();
     assertEqual(messages.filter(m=>m.type==='detach-next').length,0,'new same-ID popup load rejects deferred old completion');
   } finally {
-    player.stopAndClose();API.progress=original;API.progressStatus=status;window.addEventListener=oldListener;delete window.opener;
+    player.stopAndClose();API.progress=original;API.progressStatus=status;API.config=oldConfig;API.mediaDetail=oldDetail;window.addEventListener=oldListener;delete window.opener;
+    (await import('../podcast-episode-state.js')).setPodcastAccount(null);
+    (await import('../listening-progress.js')).setListeningProgressAccount(null);
     document.createElement=oldCreate;globalThis.localStorage=oldStorage;globalThis.MutationObserver=oldObserver;globalThis.cancelAnimationFrame=oldCancel;
   }
 }
@@ -1576,6 +1583,102 @@ try {
     player.stopAndClose();
   } finally {globalThis.localStorage=oldStorage;}
 } catch (err) { failures.push(`Library audio network restriction threw: ${err?.stack || err}`); }
+
+// Authenticated podcast playback uses the real source/end wiring. Native
+// terminal properties are already paused=true when pause/ended are delivered.
+try {
+  const { setPodcastAccount, podcastSyncStatus, episodeSnapshot } = await import('../podcast-episode-state.js');
+  let next = 0;
+  setup({ onNext: () => next++ });
+  audio().buffered = { length: 0 };
+  setPodcastAccount(901);
+  const ep = { feed_key: 'feed:source.example.com/rss', episode_key: 'guid:source',
+    position: { seconds: 598, observed_ms: 1000 } };
+  const edits = [];
+  const oldDetail = API.mediaDetail, oldSync = API.syncPodcast, oldProgress = API.progress, oldStatus = API.progressStatus;
+  try {
+    API.mediaDetail = async () => ({ podcast_episode: ep });
+    API.syncPodcast = async body => {
+      edits.push(body);
+      return { acked: (body.episodes || []).flatMap(item => [item.position?.edit_id, item.completion?.edit_id].filter(Boolean)), rejected: [], episodes: [] };
+    };
+    API.progress = async () => {};
+    API.progressStatus = async () => { throw new Error('podcast must not use manual legacy finish'); };
+    const media = { id: 1901, type: 'audio', file_name: 'episode.mp3', duration: 1000 };
+    player.selectAndPlay(media, 0);
+    await settle();
+    audio().duration = 600; audio().readyState = 1; audio().dispatch('loadedmetadata');
+    assertEqual(audio().currentTime, 0, 'loaded duration, rather than publisher duration, restarts terminal position');
+    audio().currentTime = 600; audio().dispatch('seeking');
+    audio().ended = true; audio().paused = true; audio().dispatch('pause'); audio().dispatch('ended');
+    await settle();
+    assertEqual(next, 0, 'seek to end never advances a podcast');
+    assert(!edits.some(body => body.episodes?.[0]?.completion), 'seek to end never completes');
+    player.selectAndPlay({ ...media }, 0);
+    await settle();
+    audio().duration = 600; audio().readyState = 1; audio().dispatch('loadedmetadata');
+    audio().currentTime = 599.95; audio().dispatch('seeking');
+    audio().seeking = false;
+    audio().currentTime = 600; audio().ended = true; audio().paused = true;
+    audio().dispatch('pause'); audio().dispatch('ended');
+    await settle();
+    const end = edits.find(body => body.episodes?.[0]?.completion)?.episodes[0];
+    assertEqual(end?.completion?.source, 'auto', 'natural HTML ended uses auto completion');
+    assertEqual(end?.position?.observed_ms, end?.completion?.observed_ms, 'HTML end atomically saves one clock');
+    assertEqual(next, 1, 'paused terminal native state still advances after forward playback');
+    audio().dispatch('ended'); await settle();
+    assertEqual(next, 1, 'duplicate native end completes once');
+    assertEqual(episodeSnapshot(ep).completion?.completed, true, 'natural end commits local completion');
+    const lease = podcastSyncStatus().generation;
+    setPodcastAccount(902);
+    audio().currentTime = 22; audio().dispatch('pause');
+    assertEqual(podcastSyncStatus().pending, 0, 'old element callback cannot save into new account');
+    assert(lease !== podcastSyncStatus().generation, 'account generation advanced');
+    player.stopAndClose();
+  } finally {
+    API.mediaDetail = oldDetail; API.syncPodcast = oldSync; API.progress = oldProgress; API.progressStatus = oldStatus;
+    setPodcastAccount(null);
+  }
+} catch (err) { failures.push(`Podcast source lifecycle threw: ${err?.stack || err}`); }
+
+// Exercise the actual detach -> reattach -> loadMedia -> startSource flow.
+// A fresh popup's process-local generation can differ from the opener's.
+try {
+  const { setPodcastAccount, podcastSyncStatus } = await import('../podcast-episode-state.js');
+  const oldListener = window.addEventListener, oldOpen = window.open;
+  const oldDetail = API.mediaDetail, oldSync = API.syncPodcast;
+  const callbacks = {};
+  const popup = { closed: false, postMessage() {}, close() { this.closed = true; } };
+  window.addEventListener = (type, fn) => { (callbacks[type] ||= []).push(fn); };
+  window.open = () => { popup.closed = false; return popup; };
+  const ep = { feed_key: 'feed:return.example/rss', episode_key: 'guid:return', position: { seconds: 40, observed_ms: 100 } };
+  try {
+    setPodcastAccount(7); setPodcastAccount(null); setPodcastAccount(8); setPodcastAccount(null); setPodcastAccount(7);
+    API.mediaDetail = async () => ({ podcast_episode: ep });
+    API.syncPodcast = async () => ({ acked: [], rejected: [], episodes: [ep] });
+    setup(); audio().buffered = { length: 0 };
+    player.selectAndPlay({ id: 2001, type: 'audio', file_name: 'return.mp3' }, 0);
+    await settle();
+    player.toggleDetach();
+    const returned = { ...player.currentMediaInfo(), podcast_account: 7, podcast_lease: 1, podcast_prepared: true };
+    for (const fn of callbacks.message || []) fn({ origin: window.location.origin, source: popup,
+      data: { type: 'detach-closing', state: { media: returned, currentTime: 40, positionReady: true, playing: false, index: 0 } } });
+    await settle();
+    assertEqual(audio().src, '/api/media/2001/stream', 'returned popup source attaches through actual source owner');
+    assertEqual(player.currentMediaInfo().podcast_lease, podcastSyncStatus().generation, 'opener captures its own generation on return');
+    assert(player.currentMediaInfo().podcast_lease !== 1, 'popup generation is not reused');
+    assertEqual(failureReports, 0, 'valid same-account return does not fail process-local lease check');
+    player.toggleDetach();
+    for (const fn of callbacks.message || []) fn({ origin: window.location.origin, source: popup,
+      data: { type: 'detach-closing', state: { media: { ...returned, id: 2002, podcast_account: 8 }, currentTime: 99, playing: true } } });
+    await settle();
+    assertEqual(player.currentMediaId(), 2001, 'wrong-account popup cannot replace local source');
+    player.stopAndClose();
+  } finally {
+    API.mediaDetail = oldDetail; API.syncPodcast = oldSync;
+    setPodcastAccount(null); window.addEventListener = oldListener; window.open = oldOpen;
+  }
+} catch (err) { failures.push(`Podcast actual reattach source flow threw: ${err?.stack || err}`); }
 
 if (failures.length) {
   console.error('FAILURES:');

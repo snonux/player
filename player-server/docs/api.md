@@ -916,6 +916,13 @@ curl -s "https://player.example.com/api/v1/media?set_id=1&type=video&limit=20&of
 
 ### `GET /api/media/{id}` · `GET /api/v1/media/{id}`
 
+For an episode-linked server copy, authenticated detail also includes
+`podcast_episode: {feed_key, episode_key, position?, completion?}` using the
+same register shapes as podcast sync. Unset registers are omitted, but the
+identity remains present. Ordinary media omit this field. The existing media
+access check runs before this lookup; public share responses do not expose it.
+Web playback uses this identity even when opened from ordinary library browse.
+
 Return a single media item with related data (tags, favorite state, note,
 and saved progress position).
 

@@ -76,6 +76,14 @@ testEditId();
 await testUnsubscribeSendsTombstone();
 await testRetryReusesEdit();
 await testRejectionAndLegacyKey();
+globalThis.fetch = async (_url, options) => {
+  const edit = JSON.parse(options.body).subscriptions[0];
+  return new Response(JSON.stringify({ acked: [edit.edit_id], rejected: [], subscriptions: [{ feed_key: edit.feed_key, subscribed: !edit.subscribed }] }),
+    { status: 200, headers: { 'content-type': 'application/json' } });
+};
+let superseded = false;
+try { await setSubscribed(feed, true); } catch (error) { superseded = error.message.includes('newer'); }
+assert(superseded, 'acked superseded subscription must not toast requested success');
 if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
