@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/podcast_repository.dart';
+import '../services/podcast_downloads.dart';
+import 'playback_session_provider.dart';
 import 'auth_state_provider.dart';
 import 'api_client_provider.dart';
 import 'settings_provider.dart';
@@ -10,6 +12,12 @@ final podcastRepositoryProvider = Provider<PodcastRepository>((ref) {
   final repository = PodcastRepository();
   ref.onDispose(() => unawaited(repository.close()));
   return repository;
+});
+
+final podcastDownloadsProvider =
+    ChangeNotifierProvider<PodcastDownloads>((ref) {
+  return PodcastDownloads(ref.watch(podcastRepositoryProvider),
+      ref.watch(playbackSessionCoordinatorProvider));
 });
 
 /// Remember only the last account identity, never credentials. Signed-out

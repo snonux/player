@@ -21,10 +21,12 @@ class PodcastRepository {
   final PodcastFeedFetcher fetcher;
   Future<Database>? _opening;
   Future<Database> get database => _opening ??=
-          openDatabase(databasePath, version: 2, onUpgrade: (db, old, _) async {
+          openDatabase(databasePath, version: 3, onUpgrade: (db, old, _) async {
         if (old < 2) await createSyncSchema(db);
+        if (old < 3) await createDownloadSchema(db);
       }, onCreate: (db, _) async {
         await createSyncSchema(db);
+        await createDownloadSchema(db);
         await db.execute(
             'CREATE TABLE podcast_scopes(scope TEXT PRIMARY KEY, epoch TEXT NOT NULL DEFAULT "", cursor INTEGER NOT NULL DEFAULT 0, last_full_success_ms INTEGER, last_attempt_ms INTEGER, last_error_kind TEXT, associated_from_local INTEGER NOT NULL DEFAULT 0)');
         await db.execute(
@@ -39,6 +41,14 @@ class PodcastRepository {
             'CREATE TABLE podcast_sync_rejections(id INTEGER PRIMARY KEY AUTOINCREMENT, scope TEXT NOT NULL, edit_id TEXT NOT NULL, reason TEXT NOT NULL)');
       });
   void Function()? onSyncNeeded;
+  static Future<void> createDownloadSchema(DatabaseExecutor db) async {
+    // No foreign key to a copy: deleting audio must never cascade into history.
+    await db.execute(
+        'CREATE TABLE podcast_downloads(id TEXT PRIMARY KEY, feed_key TEXT NOT NULL, episode_key TEXT NOT NULL, state TEXT NOT NULL, size_bytes INTEGER NOT NULL DEFAULT 0, error TEXT)');
+    await db.execute(
+        'CREATE INDEX podcast_download_identity ON podcast_downloads(feed_key,episode_key)');
+  }
+
   static Future<void> createSyncSchema(DatabaseExecutor db) async {
     await db.execute(
         'CREATE TABLE podcast_account_aliases(scope TEXT NOT NULL, kind TEXT NOT NULL, feed_key TEXT NOT NULL DEFAULT "", source TEXT NOT NULL, target TEXT NOT NULL, PRIMARY KEY(scope,kind,feed_key,source))');
@@ -287,6 +297,10 @@ class PodcastRepository {
       final episodeKey = podcastResolveEpisode(known,
               row['episode_key'] as String, row['enclosure_url'] as String) ??
           row['episode_key'] as String;
+      await tx.update(
+          'podcast_downloads', {'feed_key': target, 'episode_key': episodeKey},
+          where: 'feed_key=? AND episode_key=?',
+          whereArgs: [source, row['episode_key']]);
       final existing = await tx.query('podcast_episodes',
           where: 'feed_key=? AND episode_key=?',
           whereArgs: [target, episodeKey]);

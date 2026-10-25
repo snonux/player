@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/podcast_library_provider.dart';
 import '../services/podcast_identity.dart';
+import '../widgets/podcast_download_controls.dart';
 
 class StandalonePodcastsScreen extends ConsumerStatefulWidget {
   const StandalonePodcastsScreen({super.key});
@@ -203,8 +204,14 @@ class _CachedEpisodesScreenState extends ConsumerState<_CachedEpisodesScreen> {
                 ListTile(
                     leading: const Icon(Icons.headphones),
                     title: Text(episode['title'] as String),
-                    subtitle: Text(episode['description'] as String,
-                        maxLines: 3, overflow: TextOverflow.ellipsis))
+                    subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(episode['description'] as String,
+                              maxLines: 3, overflow: TextOverflow.ellipsis),
+                          PodcastDownloadControls(
+                              feed: widget.feedKey, episode: episode),
+                        ]))
             ]);
           }));
 }

@@ -123,6 +123,23 @@ final class LocalPlaybackRequest extends PlaybackRequest {
   PlaybackSourceKind get kind => PlaybackSourceKind.local;
 }
 
+/// Publisher audio owned by this device; scoped history has no server media ID.
+@immutable
+final class PodcastPlaybackRequest extends PlaybackRequest {
+  const PodcastPlaybackRequest({
+    required super.identity,
+    required super.sourceUri,
+    required super.title,
+    super.sourceName,
+    super.readPosition,
+    super.savePosition,
+    super.markFinished,
+  });
+
+  @override
+  PlaybackSourceKind get kind => PlaybackSourceKind.local;
+}
+
 /// An owned app-private file, with progress kept on the device. Its identity
 /// cannot collide with a document-library ID or another server/account.
 @immutable

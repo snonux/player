@@ -28,9 +28,20 @@ remembers the last signed-in account identity for signed-out edits. It stores
 no credential in podcast storage. Existing server podcast screens and APIs
 remain available.
 
-This implementation intentionally leaves direct audio downloads (yh3), the
-combined episode view/completion controls (1i3), and podcast playback/history
-saves (2i3) to their dependent tasks.
+Open a cached podcast's episode list to **Download** publisher audio directly
+onto this device (yh3). Pending/downloading copies offer **Cancel download**;
+failed or interrupted copies offer **Retry download**. Available copies offer
+**Play** and **Remove download**. Removing a copy stops its playback and removes
+device bytes only; metadata, subscriptions and scoped listening edits remain.
+Download again at any time. Copies survive restart without a Player connection
+or login. Publisher access, supported audio formats and device storage are still
+required. Downloads continue while browsing in the running app; process death
+requires an explicit retry rather than falsely presenting a partial file.
+
+The combined episode view/manual completion controls (1i3) and full bounded
+pre-play/end reconciliation (2i3) remain subsequent work. Basic local playback
+callbacks already use the existing scoped podcast registers, with a distinct
+local source that never invokes authenticated music or lyric APIs.
 
 Cheap checks: shared Go/Dart feed, episode, ingest and resolution vectors;
 SQLite restart/tombstone/cache/account-isolation checks; per-register account
