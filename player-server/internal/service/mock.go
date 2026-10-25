@@ -200,7 +200,7 @@ func (m *MockMediaService) UploadMedia(ctx context.Context, setID, userID int64,
 }
 
 // CreateShare calls CreateShareFunc or returns a not implemented error.
-func (m *MockMediaService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error) {
+func (m *MockMediaService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int, audioQuality ...string) (*model.Share, error) {
 	if m.CreateShareFunc != nil {
 		return m.CreateShareFunc(ctx, userID, mediaID, expiresAt, maxUses)
 	}
@@ -572,7 +572,7 @@ func (m *MockMediaService) GetSharedLyrics(ctx context.Context, token string, cr
 	return nil, errors.New("not implemented")
 }
 
-func (m *MockMediaService) CreateCollectionShare(context.Context, int64, string, []int64, time.Time, *int) (*model.Share, error) {
+func (m *MockMediaService) CreateCollectionShare(context.Context, int64, string, []int64, time.Time, *int, ...string) (*model.Share, error) {
 	return nil, ErrNotFound
 }
 func (m *MockMediaService) ResolveSharedItem(ctx context.Context, access ShareAccess) (*model.Media, error) {
@@ -587,7 +587,7 @@ func (m *MockCompatStreamService) SharedItemCompatStream(context.Context, ShareA
 }
 
 // UpdateShare calls UpdateShareFunc when configured.
-func (m *MockMediaService) UpdateShare(ctx context.Context, token string, userID int64, description *string, expiresAt *time.Time) (*model.Share, error) {
+func (m *MockMediaService) UpdateShare(ctx context.Context, token string, userID int64, description *string, expiresAt *time.Time, audioQuality ...*string) (*model.Share, error) {
 	if m.UpdateShareFunc != nil {
 		return m.UpdateShareFunc(ctx, token, userID, description, expiresAt)
 	}

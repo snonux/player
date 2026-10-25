@@ -1400,6 +1400,33 @@ Share the public URL: `https://player.example.com/s/<token>`
 
 ---
 
+### Share audio quality
+
+Single-file and collection share creation accept `audio_quality`; PATCH accepts
+it independently of description/expiry. Omission on create (and existing rows)
+means `""`: Auto compatibility playback with original downloads. PATCH omission
+preserves the existing policy. Explicit `"original"` serves original audio for
+both playback and download and refuses compatibility conversion. Named M50
+profiles `"aac128"`, `"aac256"`, `"mp3192"` and `"opus96"` force that encoding
+for both playback and downloads. These bitrate labels are nominal targets,
+not hard ceilings on muxed output. Explicit choices are audio-only; unsupported
+IDs and explicit quality on video/images return `400`.
+
+Share objects, My Shares and public metadata include `audio_quality`.
+`playback_url` uses the existing compatibility endpoint for selected encodes;
+`transcoded` is true. Every public stream/download/compat alias, including
+collection occurrence URLs and credentialed URLs, enforces the stored policy
+and ignores caller profile/quality overrides. Downloads use the actual encoded
+MIME and extension. Existing viewing, Range and HEAD rules apply: preparing or
+failed conversion does not spend a new viewing. Encoder failures report an
+error and never fall back to original bytes. Explicit single-file policies and
+all collection items require the creator's current source access. Changed
+policies apply to subsequent requests from existing viewings; clients should
+reopen playback to switch an already loaded source. Empty Auto retains legacy
+single-file access semantics. Video/image shares remain unchanged.
+
+---
+
 ### `GET /api/media/{id}/shares` · `GET /api/v1/media/{id}/shares`
 
 List shares for a specific media item, including links that have reached their
@@ -1724,7 +1751,7 @@ List all share links created by the authenticated user.
 
 Edit an existing single-file or music collection link. The creator or an admin
 may supply `description` (plain text, at most 1000 Unicode characters; empty
-clears it) and/or `expires_at` (RFC 3339 timestamp). Omitted fields retain their
+clears it), `audio_quality` (see Share audio quality), and/or `expires_at` (RFC 3339 timestamp). Omitted fields retain their
 stored values. Null values, unknown fields and empty updates return `400`.
 A changed expiry must be in the future; a description-only update preserves the
 exact expiry even for an already expired link. An unchanged supplied expiry is

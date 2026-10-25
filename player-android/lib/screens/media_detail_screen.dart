@@ -213,6 +213,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     await showCreateShareDialog(
       context,
       mediaId: media.id,
+      isAudio: media.type == 'audio',
       client: client,
     );
     // No post-dialog state update needed: the dialog handles clipboard copy

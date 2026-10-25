@@ -52,6 +52,7 @@ type RenditionProvider interface {
 // viewing (counting a use if the client has none) once content is actually
 // delivered. It is implemented by shareService.
 type SharedMediaAccess interface {
+	SharedAudioQuality(context.Context, ShareAccess) (string, error)
 	ResolveSharedItem(context.Context, ShareAccess) (*model.Media, error)
 	ResolveSharedMedia(ctx context.Context, token string, credentials ...string) (*model.Media, error)
 	EnsureShareViewing(ctx context.Context, token string, credentials ...string) (ShareViewing, error)
@@ -106,11 +107,7 @@ func (s *compatStreamService) CompatStream(ctx context.Context, mediaID, userID 
 // deliver nothing: "still transcoding", "busy", failures, HEAD probes, and a
 // rendition evicted before it could be opened.
 func (s *compatStreamService) SharedCompatStream(ctx context.Context, token string, credentials ...string) (*transcode.Rendition, error) {
-	media, err := s.shares.ResolveSharedMedia(ctx, token, credentials...)
-	if err != nil {
-		return nil, err
-	}
-	return s.rendition(ctx, media, shareRequester)
+	return s.sharedRendition(ctx, ShareAccess{Token: token, Credentials: credentials})
 }
 
 // EnsureShareViewing settles the viewing of a content request to the share
@@ -250,9 +247,5 @@ func pathWithinRoot(root, path string) bool {
 
 // SharedItemCompatStream applies the same anonymous requester budget to a snapshot occurrence.
 func (s *compatStreamService) SharedItemCompatStream(ctx context.Context, access ShareAccess) (*transcode.Rendition, error) {
-	media, err := s.shares.ResolveSharedItem(ctx, access)
-	if err != nil {
-		return nil, err
-	}
-	return s.rendition(ctx, media, shareRequester)
+	return s.sharedRendition(ctx, access)
 }

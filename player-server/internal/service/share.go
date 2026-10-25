@@ -46,24 +46,29 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (s *shareService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error) {
-	_, err := s.helper.verifyAccess(ctx, mediaID, userID)
+func (s *shareService) CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int, audioQuality ...string) (*model.Share, error) {
+	media, err := s.helper.verifyAccess(ctx, mediaID, userID)
 	if err != nil {
 		return nil, err
 	}
 
+	quality := firstShareQuality(audioQuality)
+	if err := validateShareQuality(quality, media.Type); err != nil {
+		return nil, err
+	}
 	token, err := generateToken()
 	if err != nil {
 		return nil, fmt.Errorf("generate token: %w", err)
 	}
 
 	share := &model.Share{
-		Token:     token,
-		MediaID:   mediaID,
-		CreatedBy: userID,
-		CreatedAt: s.clock.Now(),
-		ExpiresAt: expiresAt,
-		MaxUses:   maxUses,
+		AudioQuality: quality,
+		Token:        token,
+		MediaID:      mediaID,
+		CreatedBy:    userID,
+		CreatedAt:    s.clock.Now(),
+		ExpiresAt:    expiresAt,
+		MaxUses:      maxUses,
 	}
 
 	if err := s.store.CreateShare(ctx, share); err != nil {
@@ -155,6 +160,11 @@ func (s *shareService) ResolveSharedMedia(ctx context.Context, token string, cre
 	if media == nil {
 		return nil, ErrMediaNotFound
 	}
+	if share.AudioQuality != "" {
+		if _, err := s.helper.verifyAccess(ctx, media.ID, share.CreatedBy); err != nil {
+			return nil, ErrShareNotFound
+		}
+	}
 	return media, nil
 }
 
@@ -182,6 +192,13 @@ func (s *shareService) resolveForContent(ctx context.Context, access ShareAccess
 // valid viewing credential opens a viewing (one use); the returned viewing
 // then has Opened set and the caller hands its credential to the client.
 func (s *shareService) StreamSharedMedia(ctx context.Context, access ShareAccess) (*FileResult, ShareViewing, error) {
+	quality, err := s.SharedAudioQuality(ctx, access)
+	if err != nil {
+		return nil, ShareViewing{}, err
+	}
+	if quality != "" && quality != "original" {
+		return nil, ShareViewing{}, ErrShareRenditionRequired
+	}
 	media, viewing, err := s.resolveForContent(ctx, access)
 	if err != nil {
 		return nil, ShareViewing{}, err
@@ -227,7 +244,7 @@ func (s *shareService) GetSharedMedia(ctx context.Context, access ShareAccess) (
 		playbackURL = fmt.Sprintf("/s/%s/compat", token)
 	}
 
-	return &GetSharedMediaResult{
+	result := &GetSharedMediaResult{
 		Description: share.Description,
 		Media:       sharedMediaView(media),
 		HasThumb:    hasThumb,
@@ -237,7 +254,9 @@ func (s *shareService) GetSharedMedia(ctx context.Context, access ShareAccess) (
 		DownloadURL: fmt.Sprintf("/s/%s/download", token),
 		ThumbURL:    thumbURL,
 		Viewing:     viewing,
-	}, nil
+	}
+	applyShareQuality(result, share.AudioQuality)
+	return result, nil
 }
 
 // sharedMediaView copies the public subset of a media item.
@@ -299,15 +318,16 @@ func (s *shareService) ListMyShares(ctx context.Context, userID int64) ([]ShareI
 			mediaType = media.Type
 		}
 		result = append(result, ShareInfo{
-			Description: sh.Description,
-			Token:       sh.Token,
-			MediaID:     sh.MediaID,
-			FileName:    fileName,
-			MediaType:   mediaType,
-			CreatedAt:   sh.CreatedAt,
-			ExpiresAt:   sh.ExpiresAt,
-			MaxUses:     sh.MaxUses,
-			UsedCount:   sh.UsedCount,
+			AudioQuality: sh.AudioQuality,
+			Description:  sh.Description,
+			Token:        sh.Token,
+			MediaID:      sh.MediaID,
+			FileName:     fileName,
+			MediaType:    mediaType,
+			CreatedAt:    sh.CreatedAt,
+			ExpiresAt:    sh.ExpiresAt,
+			MaxUses:      sh.MaxUses,
+			UsedCount:    sh.UsedCount,
 		})
 	}
 	return result, nil

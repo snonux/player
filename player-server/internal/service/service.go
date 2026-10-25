@@ -159,6 +159,7 @@ type SharedMediaView struct {
 
 // GetSharedMediaResult wraps media metadata needed to render a share page.
 type GetSharedMediaResult struct {
+	AudioQuality    string                 `json:"audio_quality"`
 	Description     string                 `json:"description,omitempty"`
 	Unavailable     bool                   `json:"unavailable,omitempty"`
 	CollectionTitle string                 `json:"collection_title,omitempty"`
@@ -211,15 +212,16 @@ func (r GetSharedMediaResult) WithViewCredential() GetSharedMediaResult {
 
 // ShareInfo augments a share with its associated media metadata.
 type ShareInfo struct {
-	Description string          `json:"description,omitempty"`
-	Token       string          `json:"token"`
-	MediaID     int64           `json:"media_id"`
-	FileName    string          `json:"file_name"`
-	MediaType   model.MediaType `json:"media_type"`
-	CreatedAt   time.Time       `json:"created_at"`
-	ExpiresAt   time.Time       `json:"expires_at"`
-	MaxUses     *int            `json:"max_uses,omitempty"`
-	UsedCount   int             `json:"used_count"`
+	AudioQuality string          `json:"audio_quality"`
+	Description  string          `json:"description,omitempty"`
+	Token        string          `json:"token"`
+	MediaID      int64           `json:"media_id"`
+	FileName     string          `json:"file_name"`
+	MediaType    model.MediaType `json:"media_type"`
+	CreatedAt    time.Time       `json:"created_at"`
+	ExpiresAt    time.Time       `json:"expires_at"`
+	MaxUses      *int            `json:"max_uses,omitempty"`
+	UsedCount    int             `json:"used_count"`
 }
 
 // MediaShareService handles creation, validation and revocation of share links.
@@ -228,13 +230,13 @@ var ErrInvalidCollection = &apiError{msg: "invalid collection share", status: ht
 
 type MediaShareService interface {
 	// UpdateShare edits the existing link without resetting its token or viewings.
-	UpdateShare(context.Context, string, int64, *string, *time.Time) (*model.Share, error)
+	UpdateShare(context.Context, string, int64, *string, *time.Time, ...*string) (*model.Share, error)
 	GetSharedItemThumbnail(context.Context, ShareAccess) (*FileResult, error)
-	CreateCollectionShare(context.Context, int64, string, []int64, time.Time, *int) (*model.Share, error)
+	CreateCollectionShare(context.Context, int64, string, []int64, time.Time, *int, ...string) (*model.Share, error)
 	ResolveSharedItem(context.Context, ShareAccess) (*model.Media, error)
 	GetSharedLyrics(ctx context.Context, token string, credentials ...string) (*Lyrics, error)
 	// CreateShare creates a public share link for a media item.
-	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int) (*model.Share, error)
+	CreateShare(ctx context.Context, userID, mediaID int64, expiresAt time.Time, maxUses *int, audioQuality ...string) (*model.Share, error)
 	// ListShares returns shares for a media item visible to a user.
 	ListShares(ctx context.Context, mediaID, userID int64) ([]model.Share, error)
 	// RevokeShare removes a share link owned by a user.

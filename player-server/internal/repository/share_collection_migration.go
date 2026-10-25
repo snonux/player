@@ -30,9 +30,10 @@ func migrateCollectionShares(db *sql.DB) error {
  used_count INTEGER NOT NULL DEFAULT 0,
  collection_title TEXT NOT NULL DEFAULT '',
  media_ids TEXT NOT NULL DEFAULT '[]',
- description TEXT NOT NULL DEFAULT ''
+ description TEXT NOT NULL DEFAULT '',
+ audio_quality TEXT NOT NULL DEFAULT ''
  );
- INSERT INTO shares_collection_new SELECT token,media_id,created_by,created_at,expires_at,max_uses,used_count,collection_title,media_ids,description FROM shares;
+ INSERT INTO shares_collection_new SELECT token,media_id,created_by,created_at,expires_at,max_uses,used_count,collection_title,media_ids,description,audio_quality FROM shares;
  DROP TABLE shares;
  ALTER TABLE shares_collection_new RENAME TO shares;`)
 	if err != nil {

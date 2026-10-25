@@ -1,3 +1,4 @@
+import { shareQualityEditor, bindShareQuality } from './share-quality.js';
 import { API } from './api.js';
 import { state } from './state.js';
 import { escapeHtml as esc } from './utils.js';
@@ -19,7 +20,7 @@ export function localShareExpiry(value) {
 export function editShare(container, share, onClose) {
   const user = state.user;
   const initialExpiry = localShareExpiry(share.expires_at);
-  container.innerHTML = html`<form data-share-editor class="py-1"><h3>Edit share</h3><p class="text-sm">${esc(share.file_name || '')}</p><label>Description<textarea name="description" rows="3" aria-label="Description"></textarea></label><label>Link expires (local time)<input type="datetime-local" name="expiry" required aria-label="Link expires (local time)"></label><p class="text-sm text-muted">The link and viewing limits stay the same.</p><p role="status" data-status></p><div class="playlist-actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn btn-primary">Save</button></div></form>`;
+  container.innerHTML = html`<form data-share-editor class="py-1"><h3>Edit share</h3><p class="text-sm">${esc(share.file_name || '')}</p><label>Description<textarea name="description" rows="3" aria-label="Description"></textarea></label><label>Link expires (local time)<input type="datetime-local" name="expiry" required aria-label="Link expires (local time)"></label>${share.media_type === 'audio' ? shareQualityEditor() : ''}<p class="text-sm text-muted">The link and viewing limits stay the same.</p><p role="status" data-status></p><div class="playlist-actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn btn-primary">Save</button></div></form>`;
   const form = container.querySelector('form'), status = form.querySelector('[data-status]');
   const setStatus = key => {
     status.dataset.i18nText = JSON.stringify({ key });
@@ -40,6 +41,7 @@ export function editShare(container, share, onClose) {
     event.preventDefault();
     if (saving) return;
     const patch = { description: form.elements.description.value };
+    if (form.elements.audio_quality) patch.audio_quality = form.elements.audio_quality.value;
     if ([...patch.description].length > 1000) { setStatus('Description must be at most 1000 characters.'); return; }
     if (form.elements.expiry.value !== initialExpiry) {
       const date = new Date(form.elements.expiry.value);
@@ -47,7 +49,7 @@ export function editShare(container, share, onClose) {
       patch.expires_at = date.toISOString();
     }
     saving = true;
-    form.querySelectorAll('button,input,textarea').forEach(control => { control.disabled = true; });
+    form.querySelectorAll('button,input,textarea,select').forEach(control => { control.disabled = true; });
     setStatus('Saving…');
     try {
       if (state.user !== user) throw Error(t('Account changed. Close this dialog and try again.'));
@@ -58,8 +60,9 @@ export function editShare(container, share, onClose) {
       if (!form.isConnected) return;
       setStatus('Could not save share. Check your connection and edit permission, then retry.');
       saving = false;
-      form.querySelectorAll('button,input,textarea').forEach(control => { control.disabled = false; });
+      form.querySelectorAll('button,input,textarea,select').forEach(control => { control.disabled = false; });
     }
   };
+  bindShareQuality(form,share.audio_quality || '');
   form.elements.description.focus();
 }

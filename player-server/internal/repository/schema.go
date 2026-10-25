@@ -389,6 +389,7 @@ type migration struct {
 
 var migrations = []migration{
 	{name: "share_collection_title", sql: `ALTER TABLE shares ADD COLUMN collection_title TEXT NOT NULL DEFAULT '';`},
+	{name: "share_audio_quality", sql: `ALTER TABLE shares ADD COLUMN audio_quality TEXT NOT NULL DEFAULT '';`},
 	{name: "share_description", sql: `ALTER TABLE shares ADD COLUMN description TEXT NOT NULL DEFAULT '';`},
 	{name: "share_collection_ids", sql: `ALTER TABLE shares ADD COLUMN media_ids TEXT NOT NULL DEFAULT '[]';`},
 	{name: "playlist_rules", sql: `ALTER TABLE playlists ADD COLUMN rules TEXT NOT NULL DEFAULT '';`},

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -90,6 +91,10 @@ func (s *Server) handleCompatStream(w http.ResponseWriter, r *http.Request) {
 // delivered. A HEAD probe, or a rendition that was evicted before it could
 // be opened (503), never costs a use.
 func (s *Server) handleShareCompatStream(w http.ResponseWriter, r *http.Request) {
+	s.serveShareRendition(w, r, false)
+}
+
+func (s *Server) serveShareRendition(w http.ResponseWriter, r *http.Request, download bool) {
 	preparePublicShare(w)
 	if !requireService(w, s.media.Compat) {
 		return
@@ -119,6 +124,9 @@ func (s *Server) handleShareCompatStream(w http.ResponseWriter, r *http.Request)
 		}
 		s.handOverShareViewing(w, access.Token, viewing)
 	}
+	if download {
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": "shared-audio" + filepath.Ext(rendition.Path)}))
+	}
 	s.serveRendition(w, r, rendition, f)
 }
 
@@ -145,6 +153,9 @@ func (s *Server) writeCompatError(w http.ResponseWriter, r *http.Request, err er
 		writeCompatRetry(w, compatStatusTranscoding, service.ErrTranscodePending.Error())
 	case errors.Is(err, service.ErrTranscodeBusy):
 		writeCompatRetry(w, compatStatusBusy, service.ErrTranscodeBusy.Error())
+	case errors.Is(err, service.ErrShareEncodingFailed):
+		s.logCompatFailure(r, err)
+		writeError(w, http.StatusInternalServerError, service.ErrShareEncodingFailed.Error())
 	case errors.As(err, &sentinel):
 		writeError(w, sentinel.HTTPStatus(), sentinel.Error())
 	default:

@@ -26,15 +26,14 @@ export async function shareSelected() {
   if (queueCollectionSelected('share')) return;
   const id = selectedCardMediaId();
   if (!id) return;
+  const media = state.media.find(item => String(item.id) === String(id));
+  if (media?.type === 'audio') { shareMusicCollection([media], media.file_name || 'Selected song', document.activeElement, true); return; }
   try {
     const res = await API.share(id);
     const token = res?.token || res?.share?.token;
     if (!token) throw new Error('Share link was not returned');
-    const url = `${location.origin}/s/${token}`;
-    await copyShareLink(url);
-  } catch (err) {
-    toast(err.message || 'Share failed', 'error');
-  }
+    await copyShareLink(`${location.origin}/s/${token}`);
+  } catch (err) { toast(err.message || 'Share failed', 'error'); }
 }
 
 // toggleFavorite flips the favorite flag and shows the state the server

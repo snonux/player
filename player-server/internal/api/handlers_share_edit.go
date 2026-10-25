@@ -23,6 +23,7 @@ func (s *Server) handleUpdateShare(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid request body")
 		return
 	}
+	var quality *string
 	var description *string
 	var expiresAt *time.Time
 	for key, value := range fields {
@@ -31,6 +32,13 @@ func (s *Server) handleUpdateShare(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch key {
+		case "audio_quality":
+			var text string
+			if err := json.Unmarshal(value, &text); err != nil {
+				badRequest(w, "invalid audio quality")
+				return
+			}
+			quality = &text
 		case "description":
 			var text string
 			if err := json.Unmarshal(value, &text); err != nil {
@@ -50,7 +58,7 @@ func (s *Server) handleUpdateShare(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	share, err := s.media.Share.UpdateShare(r.Context(), r.PathValue("token"), userIDFromContext(r), description, expiresAt)
+	share, err := s.media.Share.UpdateShare(r.Context(), r.PathValue("token"), userIDFromContext(r), description, expiresAt, quality)
 	if err != nil {
 		handleError(w, err)
 		return

@@ -535,10 +535,11 @@ class DioPlayerApiClient extends PlayerApiClient
   /// Returns the newly created [Share] on success.
   @override
   Future<Share> createCollectionShare(List<int> mediaIds, String title,
-      {DateTime? expiresAt, int? maxUses}) async {
+      {DateTime? expiresAt, int? maxUses, String audioQuality = ''}) async {
     final response = await rawDio
         .post<Map<String, dynamic>>('$_kApiV1/shares/collections', data: {
       'media_ids': mediaIds,
+      'audio_quality': audioQuality,
       'title': title,
       if (expiresAt != null) 'expires_at': expiresAt.toUtc().toIso8601String(),
       if (maxUses != null) 'max_uses': maxUses
@@ -551,10 +552,12 @@ class DioPlayerApiClient extends PlayerApiClient
     int mediaId, {
     DateTime? expiresAt,
     int? maxUses,
+    String audioQuality = '',
   }) async {
     // Build the optional request body; omit null fields so the server applies
     // its own defaults rather than receiving explicit nulls.
     final body = <String, dynamic>{
+      'audio_quality': audioQuality,
       if (expiresAt != null) 'expires_at': expiresAt.toUtc().toIso8601String(),
       if (maxUses != null) 'max_uses': maxUses,
     };
@@ -704,11 +707,14 @@ class DioPlayerApiClient extends PlayerApiClient
   /// Edits the existing link without resetting its token or viewing limits.
   @override
   Future<Share> updateShare(String token,
-      {required String description, DateTime? expiresAt}) async {
+      {required String description,
+      DateTime? expiresAt,
+      String? audioQuality}) async {
     final response = await rawDio.patch<Map<String, dynamic>>(
       '/api/v1/shares/${Uri.encodeComponent(token)}',
       data: {
         'description': description,
+        if (audioQuality != null) 'audio_quality': audioQuality,
         if (expiresAt != null)
           'expires_at': expiresAt.toUtc().toIso8601String(),
       },

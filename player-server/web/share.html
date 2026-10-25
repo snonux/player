@@ -78,6 +78,7 @@
 <div class="page-wrap">
   <div class="container">
     <h1 id="share-title">Shared Media</h1>
+    <p id="share-quality" class="text-muted" hidden></p>
     <p id="share-description" class="share-description" hidden></p>
     <p id="share-status" class="share-status hidden" role="alert"></p>
     <noscript><p class="share-status">This page needs JavaScript to play the shared file.</p></noscript>
@@ -118,6 +119,7 @@
 <footer class="toast" id="toast" role="status" aria-live="polite"></footer>
 
 <script type="module">
+  import { shareQualityLabel } from '/js/share-quality.js';
   import { showShareCollection } from '/js/share-collection-player.js';
   import { mediaTitle } from '/js/music.js';
   import { initPlayer, loadMediaDirect } from '/js/player.js';
@@ -151,6 +153,9 @@
     const description = document.getElementById('share-description');
     description.textContent = data.description || '';
     description.hidden = !data.description;
+    const quality=document.getElementById('share-quality');
+    quality.hidden=data.media.type !== 'audio';
+    quality.textContent=`Shared audio quality: ${shareQualityLabel(data.audio_quality)}`;
     document.title = `${name} — Shared Media`;
 
     // Loading this page cost nothing (link previewers load it too). The

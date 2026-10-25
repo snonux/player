@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../app_routes.dart';
 import '../models/media.dart';
+import '../widgets/share_quality_picker.dart';
 import '../providers/auth_state_provider.dart';
 import '../providers/public_api_client_provider.dart';
 import '../utils/duration_formatter.dart';
@@ -43,10 +44,12 @@ class SharePageMetadata {
     this.view = '',
     this.sourceName = '',
     this.description = '',
+    this.audioQuality = '',
   });
 
   final String fileName;
   final String description;
+  final String audioQuality;
   final String sourceName;
   final String type;
 
@@ -90,6 +93,7 @@ class SharePageMetadata {
     return SharePageMetadata(
       fileName: Media.fromJson(media).displayTitle,
       description: map['description'] as String? ?? '',
+      audioQuality: map['audio_quality'] as String? ?? '',
       sourceName: media['file_name'] as String? ?? '',
       type: (media['type'] as String?) ?? 'video',
       duration: (media['duration'] as num?)?.toDouble(),
@@ -281,7 +285,8 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
           token: widget.token,
           title: _collectionTitle,
           items: _items,
-          description: _page!.description);
+          description: _page!.description,
+          audioQuality: _page!.audioQuality);
     }
     return _MetadataView(page: _page!, onPlay: _play);
   }
@@ -316,6 +321,9 @@ class _MetadataView extends StatelessWidget {
           const SizedBox(height: 16),
 
           if (page.description.isNotEmpty) Text(page.description),
+          if (page.type == 'audio')
+            Text(
+                'Shared audio quality: ${shareQualityLabel(page.audioQuality)}'),
           // File name — primary text element of the card.
           Text(
             page.fileName,

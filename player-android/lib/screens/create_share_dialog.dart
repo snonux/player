@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../api/player_api_client.dart';
+import '../widgets/share_quality_picker.dart';
 import '../utils/error_mappers.dart';
 
 /// The selected calendar date is inclusive; the API expiry is the next local
@@ -25,6 +26,7 @@ DateTime shareExpiryAfterDate(DateTime date) =>
 Future<String?> showCreateShareDialog(
   BuildContext context, {
   int mediaId = 0,
+  bool isAudio = false,
   List<int>? mediaIds,
   String? collectionTitle,
   required PlayerApiClient client,
@@ -37,6 +39,7 @@ Future<String?> showCreateShareDialog(
     barrierDismissible: true,
     builder: (_) => _CreateShareDialog(
         mediaId: mediaId,
+        isAudio: isAudio,
         client: client,
         mediaIds: mediaIds == null ? null : List<int>.of(mediaIds),
         collectionTitle: collectionTitle),
@@ -62,12 +65,14 @@ Future<String?> showCreateShareDialog(
 class _CreateShareDialog extends StatefulWidget {
   const _CreateShareDialog({
     required this.mediaId,
+    this.isAudio = false,
     required this.client,
     this.mediaIds,
     this.collectionTitle,
   });
 
   final int mediaId;
+  final bool isAudio;
   final List<int>? mediaIds;
   final String? collectionTitle;
   final PlayerApiClient client;
@@ -88,6 +93,7 @@ class _CreateShareDialogState extends State<_CreateShareDialog> {
 
   // Non-null when the last submit attempt failed.
   String? _error;
+  String _audioQuality = '';
 
   @override
   void dispose() {
@@ -144,11 +150,14 @@ class _CreateShareDialogState extends State<_CreateShareDialog> {
       final share = widget.mediaIds != null
           ? await widget.client.createCollectionShare(
               widget.mediaIds!, widget.collectionTitle ?? 'Selected songs',
-              expiresAt: shareExpiryAfterDate(_expiresAt), maxUses: maxUses)
+              expiresAt: shareExpiryAfterDate(_expiresAt),
+              maxUses: maxUses,
+              audioQuality: _audioQuality)
           : await widget.client.createShare(
               widget.mediaId,
               expiresAt: shareExpiryAfterDate(_expiresAt),
               maxUses: maxUses,
+              audioQuality: _audioQuality,
             );
 
       // Delegate URL construction to the client (Dependency Inversion Principle):
@@ -229,6 +238,12 @@ class _CreateShareDialogState extends State<_CreateShareDialog> {
         _ExpiryRow(expiresAt: _expiresAt, onPickDate: _pickDate),
         const SizedBox(height: 16),
         _MaxUsesField(controller: _maxUsesController),
+        if (widget.isAudio || widget.mediaIds != null)
+          ShareQualityPicker(
+              client: widget.client,
+              value: _audioQuality,
+              enabled: !_isSubmitting,
+              onChanged: (value) => setState(() => _audioQuality = value)),
         if (_error != null) ...[
           const SizedBox(height: 12),
           _ErrorText(message: _error!),

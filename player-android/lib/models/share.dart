@@ -8,6 +8,7 @@ import 'json_helpers.dart';
 class Share {
   final String token;
   final String description;
+  final String audioQuality;
   final int mediaId;
   final int createdBy;
   final DateTime? createdAt;
@@ -25,6 +26,7 @@ class Share {
   const Share({
     required this.token,
     this.description = '',
+    this.audioQuality = '',
     required this.mediaId,
     required this.createdBy,
     this.createdAt,
@@ -38,6 +40,7 @@ class Share {
   factory Share.fromJson(Map<String, dynamic> json) => Share(
         token: json['token'] as String? ?? '',
         description: json['description'] as String? ?? '',
+        audioQuality: json['audio_quality'] as String? ?? '',
         mediaId: json['media_id'] as int? ?? 0,
         createdBy: json['created_by'] as int? ?? 0,
         createdAt: dateTimeFromJson(json['created_at']),
@@ -51,6 +54,7 @@ class Share {
   Map<String, dynamic> toJson() => {
         'token': token,
         'description': description,
+        'audio_quality': audioQuality,
         'media_id': mediaId,
         'created_by': createdBy,
         'created_at': dateTimeToJson(createdAt),

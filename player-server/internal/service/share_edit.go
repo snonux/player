@@ -14,7 +14,7 @@ import (
 var ErrInvalidShareEdit = &apiError{msg: "description must be at most 1000 characters and changed expiry must be in the future", status: http.StatusBadRequest}
 
 // UpdateShare edits a link in place with the same owner/admin policy as revocation.
-func (s *shareService) UpdateShare(ctx context.Context, token string, userID int64, description *string, expiresAt *time.Time) (*model.Share, error) {
+func (s *shareService) UpdateShare(ctx context.Context, token string, userID int64, description *string, expiresAt *time.Time, audioQuality ...*string) (*model.Share, error) {
 	share, err := s.store.GetShareByToken(ctx, token)
 	if err != nil {
 		return nil, fmt.Errorf("get share: %w", err)
@@ -31,7 +31,27 @@ func (s *shareService) UpdateShare(ctx context.Context, token string, userID int
 			return nil, ErrForbidden
 		}
 	}
-	if (description == nil && expiresAt == nil) || (description != nil && (!utf8.ValidString(*description) || utf8.RuneCountInString(*description) > 1000)) {
+	var quality *string
+	if len(audioQuality) > 0 {
+		quality = audioQuality[0]
+	}
+	if quality != nil {
+		kind := model.MediaTypeAudio
+		if len(share.MediaIDs) == 0 {
+			media, err := s.store.GetMediaByID(ctx, share.MediaID)
+			if err != nil {
+				return nil, err
+			}
+			if media == nil {
+				return nil, ErrMediaNotFound
+			}
+			kind = media.Type
+		}
+		if err := validateShareQuality(*quality, kind); err != nil {
+			return nil, err
+		}
+	}
+	if (description == nil && expiresAt == nil && quality == nil) || (description != nil && (!utf8.ValidString(*description) || utf8.RuneCountInString(*description) > 1000)) {
 		return nil, ErrInvalidShareEdit
 	}
 	if expiresAt != nil {
@@ -41,7 +61,7 @@ func (s *shareService) UpdateShare(ctx context.Context, token string, userID int
 			return nil, ErrInvalidShareEdit
 		}
 	}
-	updated, err := s.store.UpdateShare(ctx, token, description, expiresAt)
+	updated, err := s.store.UpdateShare(ctx, token, description, expiresAt, quality)
 	if err != nil {
 		return nil, fmt.Errorf("update share: %w", err)
 	}

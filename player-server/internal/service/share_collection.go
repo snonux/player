@@ -11,7 +11,7 @@ import (
 )
 
 // CreateCollectionShare captures ordered occurrences, preserving repeated songs.
-func (s *shareService) CreateCollectionShare(ctx context.Context, userID int64, title string, ids []int64, expiresAt time.Time, maxUses *int) (*model.Share, error) {
+func (s *shareService) CreateCollectionShare(ctx context.Context, userID int64, title string, ids []int64, expiresAt time.Time, maxUses *int, audioQuality ...string) (*model.Share, error) {
 	title = strings.TrimSpace(title)
 	if len(ids) == 0 || len(ids) > 1000 || title == "" || utf8.RuneCountInString(title) > 200 || !expiresAt.After(s.clock.Now()) || (maxUses != nil && *maxUses < 1) {
 		return nil, ErrInvalidCollection
@@ -25,11 +25,15 @@ func (s *shareService) CreateCollectionShare(ctx context.Context, userID int64, 
 			return nil, ErrInvalidCollection
 		}
 	}
+	quality := firstShareQuality(audioQuality)
+	if err := validateShareQuality(quality, model.MediaTypeAudio); err != nil {
+		return nil, err
+	}
 	token, err := generateToken()
 	if err != nil {
 		return nil, fmt.Errorf("generate collection token: %w", err)
 	}
-	share := &model.Share{Token: token, CreatedBy: userID, CreatedAt: s.clock.Now(), ExpiresAt: expiresAt, MaxUses: maxUses, CollectionTitle: title, MediaIDs: append([]int64(nil), ids...)}
+	share := &model.Share{AudioQuality: quality, Token: token, CreatedBy: userID, CreatedAt: s.clock.Now(), ExpiresAt: expiresAt, MaxUses: maxUses, CollectionTitle: title, MediaIDs: append([]int64(nil), ids...)}
 	if err := s.store.CreateShare(ctx, share); err != nil {
 		return nil, fmt.Errorf("create collection share: %w", err)
 	}
@@ -85,6 +89,7 @@ func (s *shareService) getSharedCollection(ctx context.Context, access ShareAcce
 		if item.Transcoded {
 			item.PlaybackURL = base + "/compat"
 		}
+		applyShareQuality(&item, share.AudioQuality)
 		items = append(items, item)
 	}
 	viewing, _, err := s.activeViewing(ctx, access.Token, access.Credentials...)
@@ -99,6 +104,7 @@ func (s *shareService) getSharedCollection(ctx context.Context, access ShareAcce
 	}
 	result := items[0]
 	result.Items = items
+	result.AudioQuality = share.AudioQuality
 	result.CollectionTitle = share.CollectionTitle
 	result.Description = share.Description
 	result.Viewing = viewing

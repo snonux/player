@@ -12,10 +12,11 @@ func (s *Server) handleCreateCollectionShare(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var req struct {
-		Title     string     `json:"title"`
-		MediaIDs  []int64    `json:"media_ids"`
-		ExpiresAt *time.Time `json:"expires_at"`
-		MaxUses   *int       `json:"max_uses"`
+		Title        string     `json:"title"`
+		MediaIDs     []int64    `json:"media_ids"`
+		ExpiresAt    *time.Time `json:"expires_at"`
+		MaxUses      *int       `json:"max_uses"`
+		AudioQuality string     `json:"audio_quality"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10))
 	decoder.DisallowUnknownFields()
@@ -32,7 +33,7 @@ func (s *Server) handleCreateCollectionShare(w http.ResponseWriter, r *http.Requ
 	if req.ExpiresAt != nil {
 		expiry = *req.ExpiresAt
 	}
-	share, err := s.media.Share.CreateCollectionShare(r.Context(), userIDFromContext(r), req.Title, req.MediaIDs, expiry, req.MaxUses)
+	share, err := s.media.Share.CreateCollectionShare(r.Context(), userIDFromContext(r), req.Title, req.MediaIDs, expiry, req.MaxUses, req.AudioQuality)
 	if err != nil {
 		handleError(w, err)
 		return

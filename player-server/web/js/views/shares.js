@@ -1,3 +1,4 @@
+import { shareQualityLabel } from '../share-quality.js';
 import { editShare, mergeShareEdit } from '../share-edit.js';
 import { ui } from '../i18n.js';
 import { API } from '../api.js';
@@ -54,7 +55,7 @@ function renderSharesList(shares) {
     const url = `${location.origin}/s/${sh.token}`;
     return `
       <div class="share-row flex gap-2 align-center py-1 border-b${i === 0 ? ' selected' : ''}" data-index="${i}" tabindex="0">
-        <span class="flex-1 text-sm truncate">${escapeHtml(sh.file_name || 'Unknown')}${sh.description ? `<br><span class="text-muted">${escapeHtml(sh.description)}</span>` : ''}</span>
+        <span class="flex-1 text-sm truncate">${escapeHtml(sh.file_name || 'Unknown')}${sh.media_type === 'audio' ? `<br><span class="text-muted">${escapeHtml(shareQualityLabel(sh.audio_quality))}</span>` : ''}${sh.description ? `<br><span class="text-muted">${escapeHtml(sh.description)}</span>` : ''}</span>
         <span class="text-xs text-muted">${sh.media_type === 'video' ? '🎬' : sh.media_type === 'image' ? '🖼️' : '🎵'} ${expired ? '<span class="text-danger">Expired</span>' : fmtDate(expires)}</span>
         <button class="btn btn-sm" data-edit="${i}">${ui('Edit')}</button>
         <button class="icon-btn btn-sm" title="Copy link" data-copy="${escapeHtml(url)}">&#128203;</button>

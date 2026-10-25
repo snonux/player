@@ -7,14 +7,21 @@ import 'package:player_android/screens/edit_share_dialog.dart';
 
 class EditClient extends PlayerApiClient {
   EditClient() : super(dio: Dio());
-  String? token, description;
+  String? token, description, quality;
+  @override
+  Future<List<Map<String, dynamic>>> streamProfiles() async => [
+        {'id': 'aac128', 'label': 'Balanced · AAC 128 kbps'}
+      ];
   DateTime? expiry;
   bool fail = false;
   @override
   Future<Share> updateShare(String token,
-      {required String description, DateTime? expiresAt}) async {
+      {required String description,
+      DateTime? expiresAt,
+      String? audioQuality}) async {
     this.token = token;
     this.description = description;
+    quality = audioQuality;
     expiry = expiresAt;
     if (fail) throw Exception('offline');
     return Share(
@@ -27,7 +34,8 @@ class EditClient extends PlayerApiClient {
 }
 
 void main() {
-  Future<void> open(WidgetTester tester, EditClient client) async {
+  Future<void> open(WidgetTester tester, EditClient client,
+      {bool audio = false}) async {
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(
             body: Builder(
@@ -42,6 +50,8 @@ void main() {
                         createdBy: 2,
                         usedCount: 1,
                         description: 'Original',
+                        mediaType: audio ? 'audio' : 'video',
+                        audioQuality: audio ? 'opus96' : '',
                         expiresAt: DateTime.utc(2020)),
                   )),
           child: const Text('Open')),
@@ -50,6 +60,25 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets(
+      'saved share quality stays available and an edit submits Original',
+      (tester) async {
+    final client = EditClient();
+    await open(tester, client, audio: true);
+    await tester.tap(find.text('Audio quality'));
+    await tester.pumpAndSettle();
+    expect(find.text('Data saver · Opus 96 kbps'), findsOneWidget);
+    final picker = find.byType(DropdownButtonFormField<String>);
+    await tester.ensureVisible(picker);
+    await tester.tap(picker);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Original (no conversion)').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit_share_save')));
+    await tester.pumpAndSettle();
+    expect(client.quality, 'original');
+    expect(client.expiry, isNull);
+  });
   testWidgets('description-only edit retains exact expired lifetime and token',
       (tester) async {
     final client = EditClient();

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/player_api_client.dart';
 import '../l10n/music_localizations.dart';
 import '../models/share.dart';
+import '../widgets/share_quality_picker.dart';
 
 /// Edits the same link, retaining its exact expiry unless a picker changes it.
 class EditShareDialog extends StatefulWidget {
@@ -19,6 +20,7 @@ class _EditShareDialogState extends State<EditShareDialog> {
   late DateTime? _expiry = widget.share.expiresAt?.toLocal();
   bool _saving = false, _expiryChanged = false;
   String? _error;
+  late String _audioQuality = widget.share.audioQuality;
 
   @override
   void dispose() {
@@ -63,6 +65,8 @@ class _EditShareDialogState extends State<EditShareDialog> {
     try {
       final updated = await widget.client.updateShare(widget.share.token,
           description: _description.text,
+          audioQuality:
+              widget.share.mediaType == 'audio' ? _audioQuality : null,
           expiresAt: _expiryChanged ? _expiry : null);
       if (mounted) Navigator.of(context).pop(updated);
     } catch (_) {
@@ -107,6 +111,13 @@ class _EditShareDialogState extends State<EditShareDialog> {
                 icon: const Icon(Icons.event),
                 label: Text(context.tr('Change expiry')),
               ),
+              if (widget.share.mediaType == 'audio')
+                ShareQualityPicker(
+                    client: widget.client,
+                    value: _audioQuality,
+                    enabled: !_saving,
+                    onChanged: (value) =>
+                        setState(() => _audioQuality = value)),
               Text(context.tr('The link and viewing limits stay the same.')),
               if (_error != null)
                 Semantics(

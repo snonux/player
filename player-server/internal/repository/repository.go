@@ -358,7 +358,7 @@ type SessionRepo interface {
 // ShareRepo manages public share links.
 type ShareRepo interface {
 	// UpdateShare changes only supplied description/expiry fields, returning false if deleted.
-	UpdateShare(context.Context, string, *string, *time.Time) (bool, error)
+	UpdateShare(context.Context, string, *string, *time.Time, ...*string) (bool, error)
 	// CreateShare stores a public share link.
 	CreateShare(ctx context.Context, share *model.Share) error
 	// GetShareByToken returns a share link by token.

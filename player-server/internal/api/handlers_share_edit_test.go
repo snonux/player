@@ -55,6 +55,6 @@ func TestShareEditStrictFields(t *testing.T) {
 }
 
 // UpdateShare keeps the health-check test store aligned with Store.
-func (m *mockPingStore) UpdateShare(ctx context.Context, token string, description *string, expiresAt *time.Time) (bool, error) {
-	return m.store.UpdateShare(ctx, token, description, expiresAt)
+func (m *mockPingStore) UpdateShare(ctx context.Context, token string, description *string, expiresAt *time.Time, audioQuality ...*string) (bool, error) {
+	return m.store.UpdateShare(ctx, token, description, expiresAt, audioQuality...)
 }

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/media.dart';
+import 'share_quality_picker.dart';
 import '../providers/headset_preferences_provider.dart';
 import '../services/headset_policy.dart';
 import '../providers/playback_session_provider.dart';
@@ -32,9 +33,11 @@ class PublicShareCollection extends ConsumerStatefulWidget {
       required this.title,
       required this.items,
       this.description = '',
+      this.audioQuality = '',
       this.player});
   final String token, title;
   final String description;
+  final String audioQuality;
   final AudioPlayer? player;
   final List<PublicShareItem> items;
   @override
@@ -236,6 +239,7 @@ class _CollectionState extends ConsumerState<PublicShareCollection> {
     return ListView(padding: const EdgeInsets.all(16), children: [
       Text(widget.title, style: Theme.of(context).textTheme.headlineSmall),
       if (widget.description.isNotEmpty) Text(widget.description),
+      Text('Shared audio quality: ${shareQualityLabel(widget.audioQuality)}'),
       Text('${widget.items.length} songs · Shared collection'),
       if (_message != null)
         Padding(

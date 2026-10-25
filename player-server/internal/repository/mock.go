@@ -1420,12 +1420,12 @@ func (m *MockMediaRepo) UpdateMediaMusic(ctx context.Context, id int64, music *m
 }
 
 // UpdateShare implements ShareRepo.
-func (m *MockStore) UpdateShare(ctx context.Context, token string, description *string, expiresAt *time.Time) (bool, error) {
-	return m.ShareRepo.UpdateShare(ctx, token, description, expiresAt)
+func (m *MockStore) UpdateShare(ctx context.Context, token string, description *string, expiresAt *time.Time, audioQuality ...*string) (bool, error) {
+	return m.ShareRepo.UpdateShare(ctx, token, description, expiresAt, audioQuality...)
 }
 
 // UpdateShare calls UpdateShareFunc when configured.
-func (m *MockShareRepo) UpdateShare(ctx context.Context, token string, description *string, expiresAt *time.Time) (bool, error) {
+func (m *MockShareRepo) UpdateShare(ctx context.Context, token string, description *string, expiresAt *time.Time, audioQuality ...*string) (bool, error) {
 	if m.UpdateShareFunc != nil {
 		return m.UpdateShareFunc(ctx, token, description, expiresAt)
 	}

@@ -8,7 +8,7 @@ assert.match(localShareExpiry('2030-01-02T03:04:56Z'), /^2030-01-0[12]T\d\d:\d\d
 function container() {
   const elements = {description: {focus() {}, value: ''}, expiry: {value: ''}};
   const cancel = {}, status = {dataset:{}}, controls = [cancel, ...Object.values(elements)];
-  const form = {elements, isConnected: true, querySelector: key => key === '[data-status]' ? status : cancel,
+  const form = {elements, isConnected: true, querySelector: key => key === '[data-status]' ? status : key === '[data-share-quality]' ? null : cancel,
     querySelectorAll: () => controls, addEventListener: (name, handler) => { form[name] = handler; }};
   return {querySelector: () => form, form, status};
 }

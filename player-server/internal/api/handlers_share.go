@@ -13,8 +13,9 @@ import (
 )
 
 type createShareRequest struct {
-	ExpiresAt *time.Time `json:"expires_at"`
-	MaxUses   *int       `json:"max_uses"`
+	ExpiresAt    *time.Time `json:"expires_at"`
+	MaxUses      *int       `json:"max_uses"`
+	AudioQuality string     `json:"audio_quality"`
 }
 
 // ------------------------------------------------------------------
@@ -56,7 +57,7 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "expiry must be in the future and max_uses must be positive")
 		return
 	}
-	share, err := s.media.Share.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt, req.MaxUses)
+	share, err := s.media.Share.CreateShare(r.Context(), userIDFromContext(r), id, expiresAt, req.MaxUses, req.AudioQuality)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -247,6 +248,10 @@ func (s *Server) serveSharedFile(w http.ResponseWriter, r *http.Request, downloa
 	}
 	access := shareAccess(r)
 	fr, viewing, err := s.media.Share.StreamSharedMedia(r.Context(), access)
+	if errors.Is(err, service.ErrShareRenditionRequired) {
+		s.serveShareRendition(w, r, download)
+		return
+	}
 	if err != nil {
 		s.writeShareError(w, r, err)
 		return

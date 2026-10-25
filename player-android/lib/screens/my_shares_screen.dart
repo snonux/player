@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
+import '../widgets/share_quality_picker.dart';
 import '../l10n/music_localizations.dart';
 import 'edit_share_dialog.dart';
 import '../providers/api_client_provider.dart';
@@ -329,7 +330,7 @@ class _ShareTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-          '${share.description.isEmpty ? '' : '${share.description}\n'}$expiry · $uses',
+          '${share.description.isEmpty ? '' : '${share.description}\n'}${share.mediaType == 'audio' ? '${shareQualityLabel(share.audioQuality)}\n' : ''}$expiry · $uses',
           maxLines: 3,
           overflow: TextOverflow.ellipsis),
       onTap: () => onEdit(share),

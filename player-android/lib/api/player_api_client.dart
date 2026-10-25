@@ -493,13 +493,14 @@ class PlayerApiClient implements ProgressSyncClient {
   // ---------------------------------------------------------------------------
 
   Future<Share> createCollectionShare(List<int> mediaIds, String title,
-          {DateTime? expiresAt, int? maxUses}) =>
+          {DateTime? expiresAt, int? maxUses, String audioQuality = ''}) =>
       throw UnimplementedError();
 
   Future<Share> createShare(
     int mediaId, {
     DateTime? expiresAt,
     int? maxUses,
+    String audioQuality = '',
   }) =>
       throw UnimplementedError();
 
@@ -509,7 +510,9 @@ class PlayerApiClient implements ProgressSyncClient {
   Future<List<Share>> listMyShares() => throw UnimplementedError();
 
   Future<Share> updateShare(String token,
-          {required String description, DateTime? expiresAt}) =>
+          {required String description,
+          DateTime? expiresAt,
+          String? audioQuality}) =>
       throw UnimplementedError();
 
   Future<void> revokeShare(String token) => throw UnimplementedError();

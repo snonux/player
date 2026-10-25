@@ -62,12 +62,18 @@ class _FakeApiClient extends PlayerApiClient {
   int? capturedMediaId;
   List<int>? capturedMediaIds;
   String? capturedTitle;
+  String? capturedQuality;
+  @override
+  Future<List<Map<String, dynamic>>> streamProfiles() async => [
+        {'id': 'aac128', 'label': 'Balanced · AAC 128 kbps'}
+      ];
   @override
   Future<Share> createCollectionShare(List<int> ids, String title,
-      {DateTime? expiresAt, int? maxUses}) async {
+      {DateTime? expiresAt, int? maxUses, String audioQuality = ''}) async {
     capturedMediaIds = List.of(ids);
     capturedTitle = title;
-    return createShare(0, expiresAt: expiresAt, maxUses: maxUses);
+    return createShare(0,
+        expiresAt: expiresAt, maxUses: maxUses, audioQuality: audioQuality);
   }
 
   DateTime? capturedExpiresAt;
@@ -81,9 +87,11 @@ class _FakeApiClient extends PlayerApiClient {
     int mediaId, {
     DateTime? expiresAt,
     int? maxUses,
+    String audioQuality = '',
   }) async {
     createShareCallCount++;
     capturedMediaId = mediaId;
+    capturedQuality = audioQuality;
     capturedExpiresAt = expiresAt;
     capturedMaxUses = maxUses;
 
@@ -163,6 +171,7 @@ Future<_FakeApiClient> _pumpDialog(
   Share? shareResult,
   Object? shareError,
   List<int>? mediaIds,
+  bool isAudio = false,
 }) async {
   final fakeClient = _FakeApiClient()
     ..shareResult = shareResult
@@ -179,6 +188,7 @@ Future<_FakeApiClient> _pumpDialog(
                 context,
                 mediaId: 42,
                 mediaIds: mediaIds,
+                isAudio: isAudio,
                 collectionTitle: mediaIds == null ? null : 'Night Transit',
                 client: fakeClient,
               );
@@ -232,6 +242,28 @@ Future<void> _pumpMediaDetailScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
+  testWidgets(
+      'audio share submits the chosen encoding and preserves it on failure',
+      (tester) async {
+    final client = await _pumpDialog(tester,
+        shareError: Exception('offline'), isAudio: true);
+    await tester.tap(find.text('Audio quality'));
+    await tester.pumpAndSettle();
+    final picker = find.byType(DropdownButtonFormField<String>);
+    await tester.ensureVisible(picker);
+    await tester.tap(picker);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Balanced · AAC 128 kbps').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('create_share_submit')));
+    await tester.pumpAndSettle();
+    expect(client.capturedQuality, 'aac128');
+    expect(find.text('Balanced · AAC 128 kbps'), findsOneWidget);
+    expect(find.byKey(const Key('create_share_error')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('create_share_cancel')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('create_share_dialog')), findsNothing);
+  });
   testWidgets(
       'collection share captures ordered occurrences before selection changes',
       (tester) async {
