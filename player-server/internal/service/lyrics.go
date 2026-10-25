@@ -15,12 +15,14 @@ import (
 	"github.com/snonux/player/internal/probe"
 )
 
-// Lyrics contains local text; Start is in seconds and absent for plain lyrics.
+// Lyrics contains readable text; Start is in seconds and absent for plain lyrics.
 type Lyrics struct {
-	Source   string       `json:"source"`
-	Language string       `json:"language,omitempty"`
-	Synced   bool         `json:"synced"`
-	Lines    []LyricsLine `json:"lines"`
+	ProviderEnabled bool         `json:"provider_enabled,omitempty"`
+	ProviderState   string       `json:"provider_state,omitempty"`
+	Source          string       `json:"source"`
+	Language        string       `json:"language,omitempty"`
+	Synced          bool         `json:"synced"`
+	Lines           []LyricsLine `json:"lines"`
 }
 
 // LyricsLine retains readable text even when optional rich metadata is absent.
@@ -46,7 +48,11 @@ func (s *browseService) GetLyrics(ctx context.Context, mediaID, userID int64) (*
 	if err != nil {
 		return nil, err
 	}
-	return localLyrics(ctx, s.mediaRoot, media), nil
+	result := s.loadLyrics(ctx, media, userID, "")
+	if _, err := s.helper.verifyAccess(ctx, mediaID, userID); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (s *shareService) GetSharedLyrics(ctx context.Context, token string, credentials ...string) (*Lyrics, error) {

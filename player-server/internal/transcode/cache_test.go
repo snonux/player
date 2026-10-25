@@ -705,6 +705,40 @@ func TestCache_InvalidatesWhenSourceChanges(t *testing.T) {
 // A source that is still being written (upload, copy) while ffmpeg reads it
 // must not end up as a rendition of the truncated file, and polling clients
 // must not start one ffmpeg run per request while the copy goes on.
+func TestCache_PreservedMtimeReplacementInvalidatesEveryAudioProfile(t *testing.T) {
+	for _, kind := range []Kind{KindAudio, KindAAC128, KindAAC256, KindMP3192, KindOpus96} {
+		t.Run(fmt.Sprint(kind), func(t *testing.T) {
+			runner := &fakeRunner{payload: "old"}
+			c, src, _ := newTestCache(t, runner, Options{})
+			src.Kind = kind
+			first, err := c.Ensure(context.Background(), src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			waitIdle(t, c)
+			info, err := os.Stat(src.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(src.Path, []byte(strings.Repeat("B", int(info.Size()))), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chtimes(src.Path, info.ModTime(), info.ModTime()); err != nil {
+				t.Fatal(err)
+			}
+			runner.payload = "new"
+			second, err := c.Ensure(context.Background(), src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			waitIdle(t, c)
+			if first.Path == second.Path || first.ETag == second.ETag {
+				t.Fatal("replacement reused old rendition/source validator")
+			}
+		})
+	}
+}
+
 func TestCache_SourceChangedDuringTranscode(t *testing.T) {
 	runner := &fakeRunner{payload: "x"}
 	c, src, clk := newTestCache(t, runner, Options{})
@@ -733,6 +767,42 @@ func TestCache_SourceChangedDuringTranscode(t *testing.T) {
 	clk.T = clk.T.Add(failureBackoff + time.Second)
 	if err := ensure(); err != nil {
 		t.Fatalf("retry after backoff: %v", err)
+	}
+}
+
+func TestCache_PreservedMtimeChangeDuringEncodeRejected(t *testing.T) {
+	runner := &fakeRunner{payload: "output"}
+	c, src, _ := newTestCache(t, runner, Options{})
+	runner.hook = func(_ context.Context, source Source) {
+		info, err := os.Stat(source.Path)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if err := os.WriteFile(source.Path, []byte(strings.Repeat("B", int(info.Size()))), 0600); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := os.Chtimes(source.Path, info.ModTime(), info.ModTime()); err != nil {
+			t.Error(err)
+		}
+	}
+	if _, err := c.Ensure(context.Background(), src); !errors.Is(err, ErrSourceChanged) {
+		t.Fatalf("changed during encode: %v", err)
+	}
+	waitIdle(t, c)
+	wantNames(t, c.opts.Dir)
+}
+
+func TestCache_UnverifiedSourceNeverClaimsValidator(t *testing.T) {
+	c, _, _ := newTestCache(t, &fakeRunner{}, Options{Dir: t.TempDir()})
+	name := "m7-3-0-u-v1.m4a"
+	if err := os.WriteFile(filepath.Join(c.opts.Dir, name), []byte("abc"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rendition, ok := c.lookup(name, KindAudio)
+	if !ok || rendition.ETag != "" {
+		t.Fatalf("unverified validator: %+v %v", rendition, ok)
 	}
 }
 

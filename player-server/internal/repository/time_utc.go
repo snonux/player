@@ -41,6 +41,7 @@ const goTimeLayout = "2006-01-02 15:04:05.999999999 -0700 MST"
 // schema belongs here too, or rows a non-UTC writer left in it stay as they
 // are.
 var timeColumns = map[string][]string{
+	"provider_lyrics":           {"fetched_at"},
 	"users":                     {"created_at"},
 	"api_tokens":                {"last_used_at", "expires_at", "created_at"},
 	"sets":                      {"created_at"},

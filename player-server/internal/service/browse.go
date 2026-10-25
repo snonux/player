@@ -30,6 +30,7 @@ type browseService struct {
 	podcastBrowser PodcastBrowser
 	thumbResolver  thumb.Resolver
 	thumbLayout    thumb.Layout
+	lyricsProvider *ProviderLyrics
 }
 
 // PodcastBrowser augments a BrowseResult with podcast-specific folders and episodes.

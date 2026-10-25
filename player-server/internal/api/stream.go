@@ -8,10 +8,8 @@ import (
 	"github.com/snonux/player/internal/service"
 )
 
-// fileETag returns a strong ETag value (without surrounding quotes) for a
-// file of the given size and modification time. Combining size with mtime
-// nanoseconds is enough to detect any in-place rewrite or replacement —
-// callers wrap the result in quotes when emitting the header.
+// fileETag formats the legacy size/mtime cover validator. Media byte validators
+// use fileversion checkpoints captured from opened descriptors instead.
 func fileETag(size int64, modTime time.Time) string {
 	return fmt.Sprintf("%d-%d", size, modTime.UnixNano())
 }
@@ -47,13 +45,19 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 	}
 	w.Header().Set("Content-Type", stream.ContentType)
 	w.Header().Set("Accept-Ranges", "bytes")
-	// Strong ETag derived from size and mtime nanoseconds. http.ServeContent
+	// Production revisions come from the opened descriptor and include change
+	// time/inode, so restored mtime cannot reuse an old validator. ServeContent
 	// reads If-None-Match / If-Match from the request once ETag is set, so
 	// clients (iOS audio player, podcast clients) can revalidate cached
 	// downloads without re-fetching the full body.
-	w.Header().Set("ETag", fmt.Sprintf("%q", fileETag(stream.Size, stream.ModTime)))
+	if stream.Revision != "" {
+		w.Header().Set("ETag", fmt.Sprintf("%q", stream.Revision))
+	} else {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	s.logger.Info("api stream file", "file", stream.FileName, "size", stream.Size, "range", r.Header.Get("Range"))
-	http.ServeContent(w, r, stream.FileName, stream.ModTime, stream.File)
+	// A date-only conditional cannot detect a replacement preserving mtime.
+	http.ServeContent(w, r, stream.FileName, time.Time{}, stream.File)
 }
 
 // serveRemuxed writes a remuxed (format-converted) media stream directly to

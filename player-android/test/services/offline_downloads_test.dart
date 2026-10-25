@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -90,6 +91,79 @@ void main() {
         headers: {'Authorization': 'Bearer test-secret'},
         authorized: authorized ?? () => true,
       );
+
+  test('saved rich lyrics survive metadata updates, restart and account guards',
+      () async {
+    respond = (request) async {
+      request.response.headers.set('etag', 'audio-one');
+      if (request.uri.path.endsWith('/lyrics')) {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({
+          'source': 'provider',
+          'synced': true,
+          'language': 'en',
+          'lines': [
+            {
+              'text': 'Hello world',
+              'start': 0,
+              'voice': 'Lead',
+              'words': [
+                {'text': 'Hello ', 'start': 0},
+                {'text': 'world', 'start': 2}
+              ],
+              'translations': {'fr': 'Bonjour'}
+            }
+          ]
+        }));
+      } else {
+        request.response.headers.contentType = ContentType('audio', 'wav');
+        request.response.contentLength = 4;
+        if (request.method != 'HEAD') request.response.add([1, 2, 3, 4]);
+      }
+      await request.response.close();
+    };
+    final saved = await download();
+    var lyrics = await repository.lyrics(saved.key, origin, 7);
+    expect(lyrics.lines.single.words.length, 2);
+    expect(lyrics.lines.single.translations['fr'], 'Bonjour');
+    expect((await repository.lyrics(saved.key, origin, 8)).lines, isEmpty);
+    expect((await repository.lyrics(saved.key, 'https://other.test', 7)).lines,
+        isEmpty);
+    await repository.setAutomationMusicEligibility(saved.key, origin, 7, true);
+    expect((await repository.get(saved.key))!.sizeBytes, 4);
+    expect((await repository.lyrics(saved.key, origin, 7)).lines.single.voice,
+        'Lead');
+    final count = requests.length;
+    await download();
+    expect(requests.length, count,
+        reason: 'existing audio and lyrics remain intact');
+    expect((await repository.list()).single.automationMusicEligible, isTrue);
+    downloads.dispose();
+    await repository.close();
+    repository = OfflineDownloadRepository(directory: directory);
+    downloads = OfflineDownloads(repository, playback);
+    lyrics = await repository.lyrics(saved.key, origin, 7);
+    expect(lyrics.currentLine(const Duration(seconds: 3)), 0);
+    expect(lyrics.lines.single.currentWord(const Duration(seconds: 3)), 1);
+    await downloads.remove(saved.key);
+    expect((await repository.lyrics(saved.key, origin, 7)).lines, isEmpty);
+  });
+
+  test('failed lyric snapshot never discards complete audio', () async {
+    respond = (request) async {
+      request.response.headers.set('etag', 'audio-one');
+      if (request.uri.path.endsWith('/lyrics')) {
+        request.response.statusCode = 503;
+      } else {
+        request.response.headers.contentType = ContentType('audio', 'wav');
+        request.response.add([1, 2, 3, 4]);
+      }
+      await request.response.close();
+    };
+    final saved = await download();
+    expect(await repository.file(saved.key).readAsBytes(), [1, 2, 3, 4]);
+    expect((await repository.lyrics(saved.key, origin, 7)).lines, isEmpty);
+  });
 
   test(
       'selected rendition persists encoding metadata and preserves an existing copy',

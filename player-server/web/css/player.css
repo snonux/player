@@ -575,6 +575,8 @@
 .equalizer-control details > label { display: flex; }
 
 .lyrics-language { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; color: var(--text-secondary); font-size: 0.85rem; }
+.lyrics-provider-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; grid-column: 1 / -1; }
+.lyrics-provider-controls [role="status"] { flex: 1 1 100%; overflow-wrap: anywhere; }
 .lyrics-language select {
   max-width: 12rem;
   min-height: 44px;

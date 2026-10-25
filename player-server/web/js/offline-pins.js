@@ -2,6 +2,7 @@ import { offlineMusicMode, offlineMusicAccount } from './offline-context.js';
 import { state } from './state.js';
 import { waitForCompatStream } from './streamSource.js';
 import { downloadQuality } from './download-quality.js';
+import { snapshotLyrics } from './saved-lyrics.js';
 
 const prefix = 'player-offline-v1-';
 let tail = Promise.resolve();
@@ -81,8 +82,10 @@ export async function pinMusicCollection(collection, title, songs, { signal, pro
      current(name,signal);
      if (!size || (expected > 0 && expected !== size)) throw Error('Incomplete download. Retry.');
      rows.songs[url] = {url,media,size,profile,contentType,revision:globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,etag:response.headers.get('etag') || ''};
+     Object.assign(rows.songs[url],await snapshotLyrics(media.id,url,rows.songs[url].etag,signal,cache));
+     current(name,signal);
      write(name, rows);
-    } catch(error) { await cache.delete(url); delete rows.songs[url]; throw error; }
+    } catch(error) { await cache.delete(url); if(rows.songs[url]?.lyricsKey)await cache.delete(rows.songs[url].lyricsKey); delete rows.songs[url]; throw error; }
    }
    progress(++completed, songs.length);
   }
@@ -102,7 +105,7 @@ export async function unpinMusicCollection(collection, { remove = false } = {}) 
   write(name,rows);
   const referenced = new Set(Object.values(rows.collections).flatMap(r => r.ownedURLs || r.urls));
   const cache = await caches.open(name);
-  for (const url of row.ownedURLs || row.urls) if (!referenced.has(url)) { await cache.delete(url); delete rows.songs[url]; }
+  for (const url of row.ownedURLs || row.urls) if (!referenced.has(url)) { await cache.delete(url); if(rows.songs[url]?.lyricsKey)await cache.delete(rows.songs[url].lyricsKey); delete rows.songs[url]; }
   write(name,rows);
  });
 }
@@ -134,7 +137,7 @@ export async function offlinePinnedResponse(url, signal) {
     // A delayed HEAD belongs to the copy observed before the request. Never
     // delete its replacement or publish that old manifest over newer mutations.
     if (JSON.stringify(latest.songs[url]) !== JSON.stringify(row)) return;
-    await cache.delete(url); delete latest.songs[url]; write(name,latest);
+    await cache.delete(url); if(latest.songs[url]?.lyricsKey)await cache.delete(latest.songs[url].lyricsKey); delete latest.songs[url]; write(name,latest);
    });
   }
   return null;

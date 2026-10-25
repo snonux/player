@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/snonux/player/internal/fileversion"
 	"github.com/snonux/player/internal/mediatype"
 	"github.com/snonux/player/internal/probe"
 	"github.com/snonux/player/internal/thumb"
@@ -103,6 +104,7 @@ func (s *mediaStreamer) Open(ctx context.Context, file *FileResult, attachment b
 	}
 
 	return &StreamResult{
+		Revision:    fileversion.FromInfo(stat),
 		File:        f,
 		Path:        file.Path,
 		FileName:    file.FileName,

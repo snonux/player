@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import '../models/music_metadata.dart';
+import '../models/lyrics.dart';
 import 'dart:io';
 
 import 'package:sqflite/sqflite.dart';
@@ -14,6 +15,24 @@ import 'personal_media_store.dart';
 /// App-private downloads, independent of document permissions and server state.
 /// Only generated hashes are used as filenames; remote paths never reach disk.
 class OfflineDownloadRepository {
+  static const _metadataColumns = [
+    'key',
+    'origin',
+    'user_id',
+    'media_id',
+    'title',
+    'source_name',
+    'automation_music',
+    'download_profile',
+    'content_type',
+    'music',
+    'type',
+    'size_bytes',
+    'added_at',
+    'position_seconds',
+    'finished',
+    'instance_id'
+  ];
   OfflineDownloadRepository({Directory? directory, DateTime Function()? now})
       : _directory = directory,
         _now = now ?? DateTime.now;
@@ -34,9 +53,12 @@ class OfflineDownloadRepository {
     _directory ??= Directory('${await getDatabasesPath()}/offline-downloads');
     await directory.create(recursive: true);
     final db = await openDatabase('${directory.path}/index.db',
-        version: 8,
+        version: 9,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
         onUpgrade: (db, oldVersion, _) async {
+          if (oldVersion < 9) {
+            await db.execute('ALTER TABLE downloads ADD COLUMN lyrics TEXT');
+          }
           if (oldVersion < 8) {
             await db.execute(
                 'ALTER TABLE downloads ADD COLUMN automation_music INTEGER NOT NULL DEFAULT 0');
@@ -77,7 +99,7 @@ class OfflineDownloadRepository {
         position_seconds REAL NOT NULL DEFAULT 0,
         finished INTEGER NOT NULL DEFAULT 0, music TEXT, source_name TEXT NOT NULL DEFAULT '',
         download_profile TEXT NOT NULL DEFAULT '', content_type TEXT NOT NULL DEFAULT '',
-        automation_music INTEGER NOT NULL DEFAULT 0
+        automation_music INTEGER NOT NULL DEFAULT 0, lyrics TEXT
       )''');
           await _createPersonalSchema(db);
           await _createSyncSchema(db);
@@ -131,7 +153,8 @@ class OfflineDownloadRepository {
 
   Future<Map<String, Object?>> _syncOwner(
       DatabaseExecutor db, String key, Future<Object?> revision) async {
-    final rows = await db.query('downloads', where: 'key=?', whereArgs: [key]);
+    final rows = await db.query('downloads',
+        columns: _metadataColumns, where: 'key=?', whereArgs: [key]);
     if (rows.isEmpty || rows.single['instance_id'] != await revision) {
       throw StateError('This offline copy has been removed or replaced.');
     }
@@ -158,17 +181,18 @@ class OfflineDownloadRepository {
   }
 
   Future<List<OfflineMedia>> list() async =>
-      (await (await database).query('downloads', orderBy: 'added_at DESC'))
+      (await (await database).query('downloads',
+              columns: _metadataColumns, orderBy: 'added_at DESC'))
           .map(_fromRow)
           .toList();
 
   Future<OfflineMedia?> get(String key) async {
-    final rows = await (await database)
-        .query('downloads', where: 'key = ?', whereArgs: [key]);
+    final rows = await (await database).query('downloads',
+        columns: _metadataColumns, where: 'key = ?', whereArgs: [key]);
     return rows.isEmpty ? null : _fromRow(rows.single);
   }
 
-  Future<void> add(OfflineMedia item) =>
+  Future<void> add(OfflineMedia item, {Map<String, dynamic>? lyrics}) =>
       _write((db) => db.transaction((db) async {
             if (item.key !=
                     offlineMediaKey(item.origin, item.userId, item.mediaId) ||
@@ -178,6 +202,7 @@ class OfflineDownloadRepository {
             }
             await db.insert('downloads', {
               'key': item.key,
+              'lyrics': lyrics == null ? null : jsonEncode(lyrics),
               'instance_id':
                   (await db.rawQuery('SELECT lower(hex(randomblob(16))) AS id'))
                       .single['id'],
@@ -224,6 +249,23 @@ class OfflineDownloadRepository {
         await db.delete('downloads', where: 'key = ?', whereArgs: [key]);
         await _pruneSynced(db, key);
       });
+
+  /// Saved lyrics have exactly the same account and lifetime as their audio.
+  Future<Lyrics> lyrics(String key, String origin, int user) async {
+    final rows = await (await database).query('downloads',
+        columns: ['lyrics'],
+        where: 'key=? AND origin=? AND user_id=?',
+        whereArgs: [key, origin, user]);
+    if (rows.isEmpty || rows.single['lyrics'] is! String) return const Lyrics();
+    try {
+      final data = jsonDecode(rows.single['lyrics'] as String);
+      return Lyrics.fromJson(data is Map
+          ? {...data, 'provider_enabled': false, 'saved': true}
+          : null);
+    } catch (_) {
+      return const Lyrics();
+    }
+  }
 
   static Future<void> _pruneSynced(DatabaseExecutor db, String key) async {
     await db.rawDelete('''DELETE FROM sync_items WHERE key=? AND pending=0

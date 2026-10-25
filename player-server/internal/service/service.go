@@ -414,6 +414,8 @@ type FileResult struct {
 
 // StreamResult contains an opened file and metadata needed for HTTP streaming.
 type StreamResult struct {
+	// Revision is captured from the opened descriptor, never a later path stat.
+	Revision    string
 	File        io.ReadSeekCloser
 	Path        string
 	FileName    string

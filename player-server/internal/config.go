@@ -55,6 +55,8 @@ type Config struct {
 	ScanIntervalMinutes int
 	// MusicEnrichmentURL is an optional operator-configured external metadata agent.
 	MusicEnrichmentURL string
+	// LyricsProviderURL selects the optional explicit-lookup JSON agent.
+	LyricsProviderURL string
 	// PluginDir is an optional directory of installed WASM plugins
 	// (each subdirectory has manifest.json + entry wasm). Empty disables
 	// discovery; music playback never requires plugins.
@@ -215,6 +217,7 @@ func loadNumericSettings(cfg *Config) error {
 // been read. The thumbnail cache has no default (see Config).
 func loadStringSettings(cfg *Config) {
 	envString("MUSIC_ENRICHMENT_URL", func(s string) { cfg.MusicEnrichmentURL = s })
+	envString("LYRICS_PROVIDER_URL", func(s string) { cfg.LyricsProviderURL = s })
 	envString("PLUGIN_DIR", func(s string) { cfg.PluginDir = s })
 	envString("MEDIA_ROOT", func(s string) { cfg.MediaRoot = s })
 	envString("DB_PATH", func(s string) { cfg.DBPath = s })

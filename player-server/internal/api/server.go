@@ -447,6 +447,8 @@ func (s *Server) routesMedia() {
 	s.handleBoth(http.MethodGet, "/api/media/{id}/download", s.requireSession(s.handleDownload))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/thumbnail", s.requireSession(s.handleThumbnail))
 	s.handleBoth(http.MethodGet, "/api/media/{id}/lyrics", s.requireSession(s.handleLyrics))
+	s.handleBoth(http.MethodPost, "/api/media/{id}/lyrics", s.requireSession(s.handleChangeLyrics))
+	s.handleBoth(http.MethodDelete, "/api/media/{id}/lyrics", s.requireSession(s.handleChangeLyrics))
 	s.handleBoth(http.MethodPost, "/api/media/{id}/thumbnail", s.requireSession(s.handleRegenThumbnail))
 	s.handleBoth(http.MethodPost, "/api/media/{id}/favorite", s.requireSession(s.handleFavorite))
 	s.handleBoth(http.MethodGet, "/api/tags", s.requireSession(s.handleListTags))

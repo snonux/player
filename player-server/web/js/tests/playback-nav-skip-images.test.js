@@ -36,7 +36,9 @@ function fakeElement(id = '') {
     setAttribute(name, value) { attrs[name] = String(value); },
     getAttribute(name) { return name in attrs ? attrs[name] : null; },
     removeAttribute(name) { delete attrs[name]; },
-    appendChild(child) { el.children.push(child); elements[child.id] = child; },
+    appendChild(child) { if(child.isFragment)el.children.push(...child.children);else el.children.push(child); elements[child.id] = child; },
+    replaceChildren(...children) {el.children=[];el.textContent='';for(const child of children)el.appendChild(child);},
+    contains(child) {return el===child || el.children.some(node=>node.contains?.(child));},
     prepend(child) { el.children.unshift(child); elements[child.id] = child; },
     querySelector: selector => el.children.find(child => selector === `.${child.className}`) || null,
     scrollIntoView() {},
@@ -216,10 +218,32 @@ async function testVideoSequenceStillReachesImages() {
   }
 }
 
+async function testColdOfflineProductionLyricsCaller(){
+ resetDom();
+ const stage=fakeElement('stage'),controls=fakeElement('controls');
+ elements.player.querySelector=selector=>selector==='.stage'?stage:selector==='.controls'?controls:null;
+ document.createDocumentFragment=()=>({...fakeElement('fragment'),isFragment:true});
+ const oldLocation=globalThis.location,oldStorage=globalThis.localStorage,oldCaches=globalThis.caches;
+ globalThis.location={origin:'http://test',pathname:'/',href:'http://test/?offline=music',search:'?offline=music'};
+ const url='http://test/api/media/99/download',lyricsKey=url+'?player_lyrics=1';
+ const song={id:99,type:'audio',file_name:'saved.mp3',duration:12,offlinePinURL:url};
+ globalThis.localStorage={getItem:key=>key==='player-offline-v1-7:index'?JSON.stringify({songs:{[url]:{media:song,url,lyricsKey,etag:'saved-a'}},collections:{}}):null};
+ globalThis.caches={open:async()=>({match:async key=>key===url?new Response(new Uint8Array([1,2,3]),{headers:{etag:'saved-a'}}):key===lyricsKey?new Response(JSON.stringify({synced:true,lines:[{text:'Cold saved line',start:0}]}),{headers:{'x-player-audio-etag':'saved-a'}}):null})};
+ const {selectOfflineMusicAccount}=await import('../offline-context.js');selectOfflineMusicAccount(7);
+ try {
+  player.initPlayer();
+  player.selectMedia(song,0);await settle();
+  const panel=stage.children.find(child=>child.id==='audio-lyrics');
+  const text=node=>(node?.textContent||'')+(node?.children||[]).map(text).join('');
+  assertEqual(text(panel?.children[0]),'Cold saved line','production showMedia retains identity for cold offline lyrics');
+ }finally {player.stopAndClose();globalThis.location=oldLocation;globalThis.localStorage=oldStorage;globalThis.caches=oldCaches;}
+}
+
 for (const test of [
   testNextAfterLastAudioSkipsCoverAndWrapsAmongAudio,
   testCrossFolderNextSkipsCoverAndStopsWithoutImage,
   testVideoSequenceStillReachesImages,
+  testColdOfflineProductionLyricsCaller,
 ]) {
   try {
     await test();

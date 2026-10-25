@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../models/media.dart';
 import '../models/offline_media.dart';
 import 'offline_download_repository.dart';
+import 'lyric_snapshot.dart';
 import 'playback_session_coordinator.dart';
 
 class OfflineDownloadCancelled implements Exception {}
@@ -247,7 +248,16 @@ class OfflineDownloads extends ChangeNotifier {
         sizeBytes: job.received,
         addedAt: DateTime.now().toUtc(),
       );
-      await repository.add(item);
+      final lyrics = media.type == 'audio'
+          ? await fetchLyricSnapshot(
+              audioUri: uri,
+              mediaId: media.id,
+              headers: headers,
+              etag: response.headers.value('etag'),
+              authorized: () => !job.cancelled && authorized() && !_disposed)
+          : null;
+      check();
+      await repository.add(item, lyrics: lyrics);
       check();
       createdFinal = false;
       _libraryRevision++;

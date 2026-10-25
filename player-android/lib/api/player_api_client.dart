@@ -345,6 +345,8 @@ class PlayerApiClient implements ProgressSyncClient {
 
   /// Available server sidecar or embedded lyrics; empty when unavailable.
   Future<Lyrics> getMediaLyrics(int mediaId) => throw UnimplementedError();
+  Future<Lyrics> changeMediaLyrics(int mediaId, {bool remove = false}) =>
+      throw UnimplementedError();
 
   /// [cancelToken] lets a caller that stops waiting also abort the request.
   Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) =>

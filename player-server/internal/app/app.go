@@ -130,6 +130,9 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	browser := service.NewPodcastBrowseService(store, cfg.MediaRoot)
 	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, browser, thumbResolver).
 		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock).WithPathRoots(pathRoots)
+	if lyricStore, ok := store.(repository.ProviderLyricsRepo); ok {
+		mediaSvc.WithLyricsProvider(service.NewProviderLyrics(cfg.LyricsProviderURL, lyricStore))
+	}
 	musicLibs := service.NewMusicLibraryService(store, clk, pathRoots, mediaSvc)
 	if _, err := musicLibs.EnsureDefault(appCtx, cfg.MediaRoot); err != nil {
 		logger.Warn("music library default setup", "err", err)

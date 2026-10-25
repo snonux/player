@@ -1,11 +1,13 @@
 package service
 
 import (
+	"context"
+	"sync"
+
 	"github.com/snonux/player/internal/clock"
 	"github.com/snonux/player/internal/probe"
 	"github.com/snonux/player/internal/repository"
 	"github.com/snonux/player/internal/thumb"
-	"sync"
 )
 
 var (
@@ -29,6 +31,31 @@ type mediaService struct {
 	MediaFavoriteService
 	MediaNoteService
 	MediaBookmarkService
+}
+
+// WithLyricsProvider configures optional, explicit lyric lookup before serving.
+func (s *mediaService) WithLyricsProvider(provider *ProviderLyrics) *mediaService {
+	if bs, ok := s.MediaBrowseService.(*browseService); ok {
+		bs.lyricsProvider = provider
+	}
+	return s
+}
+
+// ChangeLyrics performs an explicitly requested provider cache action.
+func (s *mediaService) ChangeLyrics(ctx context.Context, mediaID, userID int64, action string) (*Lyrics, error) {
+	bs, ok := s.MediaBrowseService.(*browseService)
+	if !ok {
+		return nil, ErrForbidden
+	}
+	media, err := bs.helper.verifyAccess(ctx, mediaID, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := bs.loadLyrics(ctx, media, userID, action)
+	if _, err := bs.helper.verifyAccess(ctx, mediaID, userID); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // WithTrashLock coordinates mutations with the garbage collector. Configure

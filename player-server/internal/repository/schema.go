@@ -142,6 +142,12 @@ CREATE TABLE IF NOT EXISTS music_enrichment (
     payload TEXT NOT NULL,
     PRIMARY KEY(provider,kind,entity_key)
 );
+CREATE TABLE IF NOT EXISTS provider_lyrics (
+ user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+ identity TEXT NOT NULL, payload TEXT NOT NULL, fetched_at DATETIME NOT NULL,
+ PRIMARY KEY(user_id,media_id)
+);
 
 CREATE TABLE IF NOT EXISTS music_ratings (
  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

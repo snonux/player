@@ -1,8 +1,10 @@
 import '../l10n/music_localizations.dart';
 import '../services/progress_queue.dart';
 import '../providers/playback_cache_provider.dart';
+import '../providers/offline_downloads_provider.dart';
 import '../widgets/stream_quality_sheet.dart';
 import '../services/stream_quality.dart';
+import '../services/playback_cache_access.dart';
 import '../widgets/equalizer_sheet.dart';
 import '../widgets/loudness_sheet.dart';
 import '../widgets/music_queue_sheet.dart';
@@ -1314,7 +1316,9 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                     icon: const Icon(Icons.tune),
                     label: const Text('Quality'),
                   ),
-                if (_activeRequest?.kind != PlaybackSourceKind.local)
+                if (_activeRequest is ServerPlaybackRequest ||
+                    _activeRequest is PublicSharePlaybackRequest ||
+                    _activeRequest is OfflinePlaybackRequest)
                   _buildLyrics(handler),
               ],
             ),
@@ -1326,20 +1330,59 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
 
   Widget _buildLyrics(PlayerAudioHandler handler) {
     final request = _activeRequest!;
+    Future<Lyrics> loadSaved(OfflinePlaybackRequest saved) {
+      if (saved.serverOrigin == null || saved.userId == null) {
+        return Future.value(const Lyrics());
+      }
+      if (saved.downloadKey.startsWith('cache:')) {
+        return ref.read(playbackCacheProvider).lyrics(
+            saved.downloadKey.substring(6), saved.serverOrigin!, saved.userId!);
+      }
+      return ref
+          .read(offlineDownloadRepositoryProvider)
+          .lyrics(saved.downloadKey, saved.serverOrigin!, saved.userId!);
+    }
+
+    Future<Lyrics> loadServer(ServerPlaybackRequest server) async {
+      final source = handler.player.sequenceState?.currentSource;
+      if (source is UriAudioSource && source.uri.scheme == 'file') {
+        return ref
+            .read(playbackCacheProvider)
+            .lyricsForSource(source.uri, server.serverOrigin, server.userId);
+      }
+      try {
+        return await ref.read(apiClientProvider).getMediaLyrics(server.mediaId);
+      } catch (error) {
+        if (!cacheTransportFailure(error)) rethrow;
+        return const Lyrics(); // No proven saved backing for network audio.
+      }
+    }
+
     return LyricsPanel(
       key: ValueKey('lyrics:$_initGeneration:${request.identity}'),
       positionStream: handler.player.positionStream,
       position: () => handler.player.position,
       onSeek: _seek,
+      saved: request is OfflinePlaybackRequest,
+      lookup: request is ServerPlaybackRequest
+          ? () => ref.read(apiClientProvider).changeMediaLyrics(request.mediaId)
+          : null,
+      removeProvider: request is ServerPlaybackRequest
+          ? () => ref
+              .read(apiClientProvider)
+              .changeMediaLyrics(request.mediaId, remove: true)
+          : null,
       load: request is ServerPlaybackRequest
-          ? () => ref.read(apiClientProvider).getMediaLyrics(request.mediaId)
-          : () {
-              final share = request as PublicSharePlaybackRequest;
-              return ref.read(publicApiClientProvider).getSharedLyrics(
-                    share.shareToken,
-                    view: share.sourceUri.queryParameters['view'],
-                  );
-            },
+          ? () => loadServer(request)
+          : request is OfflinePlaybackRequest
+              ? () => loadSaved(request)
+              : () {
+                  final share = request as PublicSharePlaybackRequest;
+                  return ref.read(publicApiClientProvider).getSharedLyrics(
+                        share.shareToken,
+                        view: share.sourceUri.queryParameters['view'],
+                      );
+                },
     );
   }
 

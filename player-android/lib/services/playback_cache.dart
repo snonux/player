@@ -1,5 +1,7 @@
 import '../models/offline_media.dart';
 import '../models/music_metadata.dart';
+import '../models/lyrics.dart';
+import 'lyric_snapshot.dart';
 import 'playback_request.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -34,7 +36,8 @@ class PlaybackCache extends ChangeNotifier {
   bool get external =>
       _preferences?.getBool('playback-cache-external') ?? false;
   Iterable<Map<String, dynamic>> get items => _rows.values;
-  int get bytes => _rows.values.fold(0, (n, r) => n + (r['size'] as int));
+  int get bytes => _rows.values.fold(
+      0, (n, r) => n + (r['size'] as int) + (r['lyrics_bytes'] as int? ?? 0));
   void _changed() {
     if (!_disposed) notifyListeners();
   }
@@ -87,7 +90,7 @@ class PlaybackCache extends ChangeNotifier {
       final name = entry.uri.pathSegments.last;
       if (entry is File &&
           (name.endsWith('.part') ||
-              (name.endsWith('.audio') &&
+              ((name.endsWith('.audio') || name.endsWith('.lyrics')) &&
                   !_rows.containsKey(name.split('.').first)))) {
         await entry.delete();
       }
@@ -206,7 +209,9 @@ class PlaybackCache extends ChangeNotifier {
       if (total <= budget * 1048576) break;
       if (_protectedKeys.contains(e.key)) continue;
       await _file(e.key).delete();
-      total -= e.value['size'] as int;
+      await _deleteLyrics(e.key);
+      total -=
+          (e.value['size'] as int) + (e.value['lyrics_bytes'] as int? ?? 0);
       _rows.remove(e.key);
     }
     await _save();
@@ -233,6 +238,7 @@ class PlaybackCache extends ChangeNotifier {
     _rows.remove(key);
     try {
       await _write(() async {
+        await _deleteLyrics(key);
         if (!_protectedKeys.contains(key) && await _file(key).exists()) {
           await _file(key).delete();
         }
@@ -256,6 +262,7 @@ class PlaybackCache extends ChangeNotifier {
     await _write(() async {
       if (_protectedKeys.contains(key)) return;
       if (await _file(key).exists()) await _file(key).delete();
+      await _deleteLyrics(key);
       _rows.remove(key);
       await _save();
     });
@@ -337,6 +344,7 @@ class PlaybackCache extends ChangeNotifier {
       for (final key in _rows.keys.toList()) {
         if (_protectedKeys.contains(key)) continue;
         if (await _file(key).exists()) await _file(key).delete();
+        await _deleteLyrics(key);
         _rows.remove(key);
       }
       await _save();
@@ -406,12 +414,33 @@ class PlaybackCache extends ChangeNotifier {
       await output.flush();
       await output.close();
       output = null;
+      final lyrics = mediaId == null
+          ? null
+          : await fetchLyricSnapshot(
+              audioUri: uri,
+              mediaId: mediaId,
+              headers: headers,
+              etag: response.headers.value('etag'),
+              authorized: wanted);
       await _write(() async {
         if (!wanted()) return;
         await _file(key, partial: true).rename(_file(key).path);
         _invalidated.remove(key);
+        var lyricBytes = 0;
+        if (lyrics != null) {
+          try {
+            final body = jsonEncode(lyrics);
+            await _lyricsFile(key).writeAsString(body, flush: true);
+            lyricBytes = utf8.encode(body).length;
+          } catch (_) {
+            try {
+              await _deleteLyrics(key);
+            } catch (_) {/* Orphan cleanup retries at restart. */}
+          }
+        }
         _rows[key] = {
           'title': title,
+          if (lyricBytes > 0) 'lyrics_bytes': lyricBytes,
           if (mediaId != null) 'media_id': mediaId,
           if (music != null) 'music': music.toJson(),
           'source_name': sourceName,
@@ -442,6 +471,53 @@ class PlaybackCache extends ChangeNotifier {
   }
 
   String? etag(String key) => _rows[key]?['etag'] as String?;
+
+  /// Uses the actual loaded local source, never the current quality preference
+  /// or another same-ID copy. Unproven/network sources have no saved snapshot.
+  Future<Lyrics> lyricsForSource(Uri source, String origin, int user) async {
+    await initialize();
+    if (source.scheme != 'file') return const Lyrics();
+    for (final entry in _rows.entries) {
+      if (entry.value['origin'] == origin &&
+          entry.value['user'] == user &&
+          _file(entry.key).uri == source) {
+        return lyrics(entry.key, origin, user);
+      }
+    }
+    return const Lyrics();
+  }
+
+  Future<Lyrics> lyrics(String key, String origin, int user) async {
+    await initialize();
+    final row = _rows[key];
+    if (row == null ||
+        row['origin'] != origin ||
+        row['user'] != user ||
+        _invalidated.contains(key) ||
+        !await _file(key).exists() ||
+        await _file(key).length() != row['size']) {
+      return const Lyrics();
+    }
+    try {
+      final file = _lyricsFile(key);
+      if (!await file.exists() || await file.length() > 1048576) {
+        return const Lyrics();
+      }
+      final data = jsonDecode(await file.readAsString());
+      return Lyrics.fromJson(data is Map
+          ? {...data, 'provider_enabled': false, 'saved': true}
+          : null);
+    } catch (_) {
+      return const Lyrics();
+    }
+  }
+
+  File _lyricsFile(String key) => File('${_directory!.path}/$key.lyrics');
+  Future<void> _deleteLyrics(String key) async {
+    final file = _lyricsFile(key);
+    if (await file.exists()) await file.delete();
+  }
+
   @override
   void dispose() {
     _disposed = true;

@@ -250,6 +250,14 @@ class DioPlayerApiClient extends PlayerApiClient
     return Lyrics.fromJson(response.data);
   }
 
+  @override
+  Future<Lyrics> changeMediaLyrics(int mediaId, {bool remove = false}) async {
+    final response = remove
+        ? await rawDio.delete<dynamic>('$_kApiV1/media/$mediaId/lyrics')
+        : await rawDio.post<dynamic>('$_kApiV1/media/$mediaId/lyrics');
+    return Lyrics.fromJson(response.data);
+  }
+
   /// Returns a single media item including tags, favorite state, note, and
   /// saved playback progress.
   ///

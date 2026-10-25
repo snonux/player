@@ -767,7 +767,7 @@ function showMedia(media, source, thumbnailUrl) {
   playbackSpeed?.setCasting(isCasting());
   audioVisuals?.setCasting(isCasting());
   audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
-  lyrics?.setMedia(offlineMusicMode() || media.live_radio ? null : media, source.url);
+  lyrics?.setMedia(media.live_radio ? null : media, source.url, {pending:source.library && playbackCacheEnabled(media)});
   if (!source.library && media.type === 'audio' && !media.live_radio) gapless?.message('Normal streaming · shared or detached playback.');
   updateMinimizedTitle();
   updateMusicIdentity(media, thumbnailUrl);
@@ -870,6 +870,7 @@ function startSource(m, media, url, resumeFrom) {
         if (currentSource?.library && musicStreamingBlocked()) { engine.dispose(); throw new MusicNetworkRestricted(networkPolicyMessage); }
         pendingSource = null;
         audioTransport.use(engine);
+        lyrics?.setMedia(media,url);
         setPlayerStatus('');
         audioTransport.dispatchEvent(new Event('loadedmetadata'));
         void gapless.refresh();
@@ -879,12 +880,15 @@ function startSource(m, media, url, resumeFrom) {
       audioVisuals?.releaseDecodedGraph();
     }
     let selected = url;
-    if (useCache) selected = await playbackCacheSource(media, url, pending.controller.signal);
+    let lyricBacking=null;
+    if (useCache) selected = await playbackCacheSource(media, url, pending.controller.signal, backing=>{lyricBacking=backing;});
     const result = /\/compat(?:\?|$)/.test(selected)
       ? await waitForCompatStream(selected, { signal: pending.controller.signal,
           onPreparing: status => announcePreparing(pending, media, status) })
       : { state: 'ready' };
+    const current=pendingSource===pending && !pending.controller.signal.aborted;
     finishPendingSource(pending, m, media, selected, resumeFrom, result);
+    if(current && useCache && result.state==='ready' && m.getAttribute('src')===selected) lyrics?.setMedia(media,url,{backing:lyricBacking,saved:selected.startsWith('blob:')});
     if (useCache && result.state === 'ready' && !selected.startsWith('blob:') && !pending.controller.signal.aborted) {
       void cacheSong(media, url).catch(() => {});
     }
@@ -1125,7 +1129,7 @@ function adoptGaplessBoundary(token, media, outgoingDuration) {
   sourceEpoch++; completingEpoch = null;
   personal?.setMedia(media); sleepTimer?.setMedia(media);
   audioVisuals?.setMedia(media, currentThumbnailUrl, state.sets.find(set => set.id === media.set_id)?.name || '');
-  lyrics?.setMedia(offlineMusicMode() ? null : media, currentSource.url);
+  lyrics?.setMedia(media.live_radio ? null : media, currentSource.url);
   showCoverArt(els(), currentThumbnailUrl);
   updateMusicIdentity(media, currentThumbnailUrl); updateMinimizedTitle(); highlightPlayingCard();
   publishLocalSession(); result.publish();

@@ -2661,7 +2661,7 @@ toggle undoes itself); new clients write completion edits through
 | `GET` | `trash` | session | List trash the user may restore |
 | `GET` | `admin/trash` | admin | List all soft-deleted media |
 
-### Local audio lyrics
+### Audio lyrics
 
 `GET /api/media/{id}/lyrics` (also `/api/v1/media/{id}/lyrics`) uses the
 same session/Bearer authentication and set permissions as media playback.
@@ -2674,14 +2674,14 @@ expiry, revocation and deleted media still take effect immediately.
 {"source":"sidecar","synced":true,"lines":[{"text":"First line","start":0},{"text":"Next line","start":12.5}]}
 ```
 
-`source` is `sidecar` or `embedded`. `start` is seconds from the start of the
+`source` is `sidecar`, `embedded` or explicitly cached `provider`. `start` is seconds from the start of the
 track, and is omitted for plain text. Synced lines are sorted by time; repeated
 LRC timestamps expand to separate lines. LRC `[offset:N]` applies milliseconds
 (positive means earlier), clamped at zero. Metadata headers are omitted. When
 no usable lyrics exist, including for non-audio media, the result is HTTP 200:
 `{"source":"","synced":false,"lines":[]}`.
 
-Only local sources are read, in order: matching filename stem `.ttml`, `.yaml`,
+Local sources are read first, in order: matching filename stem `.ttml`, `.yaml`,
 `.yml`, `.elrc`, `.lrc`, `.srt`, `.txt`, then embedded lyrics through hardened
 ffprobe. The first usable candidate wins; malformed structured candidates fall
 through. Embedded format tags precede stream tags in stream order, with keys
@@ -2698,6 +2698,63 @@ YAML nodes and TTML tokens to 32,768, and structured start times to finite
 to 2 MiB and runtime
 to three seconds. Unreadable, unsafe, oversized and unavailable lyrics return
 the same empty result. Text is returned as data; clients must render it as text.
+
+#### Optional provider lookup and offline retention
+
+`LYRICS_PROVIDER_URL` is off by default. With a valid operator-selected HTTP(S)
+endpoint, authenticated audio responses add `provider_enabled:true` and
+`provider_state` (`unfetched`, `ready`, `empty`, `error`, `busy`, `unavailable`).
+GET never launches external requests. Public shares remain local-only and never
+return an account's provider cache. Local/embedded lyrics always take priority.
+
+`POST /api/media/{id}/lyrics` (also `/api/v1/media/{id}/lyrics`) explicitly sends
+existing title/artist/album/recording MBID tags to the configured JSON agent.
+The caller must have the same authenticated media permission as playback. No
+destination, credential or filesystem path is accepted from the caller. The
+agent receives GET query fields `title`, `artist`, `album`, `recording_mbid`, and
+returns the rich lyric JSON below or 204 for no match. Title and artist are
+required; each tag is limited to 4096 bytes. Responses are limited to 1 MiB,
+redirects are refused, provider HTTP time is limited to eight seconds, and one
+lookup/hash can run at once. The whole hash/lookup budget is ten seconds; source
+hashing is limited to 512 MiB. Larger audio retains ordinary local lyrics and
+playback. Errors are a quiet HTTP 200 lyric state, retaining matching cached data.
+Authentication/ACL failures retain normal 401/403/404 responses.
+
+`DELETE` on the same route removes only the requesting account's server provider
+cache; embedded/sidecar files and completed offline audio snapshots are unchanged.
+Fetching again restores the cache. Cache identity covers source SHA-256, request
+tags and provider configuration; ACL, content and local priority are rechecked
+after lookup. Source-stat/ctime checkpoints memoize at most 128 hashes. Unfetched
+GETs do not hash source audio. SQLite cache entries expire after 30 days and are
+pruned on cache access/write; each account retains at most 128 entries (1 MiB
+each), with user/media deletion cleanup.
+
+Completed in-app browser pins/playback-cache copies and native downloads/cache
+retain optional full lyric snapshots for offline use, including after restart.
+Bodies are lazy, separately stored from lightweight browser/cache indexes;
+native downloaded lyrics use an optional DB column omitted from metadata reads.
+Audio validators bind snapshots to the saved copy. Failed/missing lyrics do not
+invalidate audio. Existing account boundaries, audio removal and cache eviction
+also remove lyrics; cache budgets include body bytes, and audio integrity sizes
+remain audio-only. Existing copies keep their snapshots during metadata-only
+updates. Fetch desired provider lyrics before downloading new audio; existing
+downloads retain their original snapshot. ZIP download stays a media export.
+
+Original audio validators use an opaque stat revision captured from the opened
+descriptor (device/inode/change time/size/mtime, excluding access time). Rendition
+cache keys and before/after encode checks include the same source revision;
+HEAD cannot relabel an old encode with a replacement source's identity. Thus
+same-size replacements preserving mtime invalidate both originals and selected
+encodes before a later lyric snapshot can attach to older downloaded bytes.
+Date-only revalidation is disabled for media; ETag/Range/HEAD remain supported.
+This does not hash source bytes on media GET/HEAD. On platforms without exposed
+device/inode/change time, media remains playable but omits verified ETags, sends
+`Cache-Control: no-store` and fails optional lyric snapshot retention closed.
+Web retrieval also requires the actual chosen cache name, URL/profile and
+served ETag; each lazy body records its audio ETag. It never guesses a snapshot
+from media ID or borrows another copy when selected-copy lyrics are missing.
+Native cache lyric fallback uses the loaded file URI/account, independently of
+later quality-setting changes. Unproven backing sources show unavailable lyrics.
 
 #### Optional rich lyrics
 

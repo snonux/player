@@ -11,9 +11,15 @@ class LyricsPanel extends StatefulWidget {
     required this.positionStream,
     required this.position,
     required this.onSeek,
+    this.lookup,
+    this.removeProvider,
+    this.saved = false,
   });
 
   final Future<Lyrics> Function() load;
+  final Future<Lyrics> Function()? lookup;
+  final Future<Lyrics> Function()? removeProvider;
+  final bool saved;
   final Stream<Duration> positionStream;
   final Duration Function() position;
   final Future<void> Function(Duration) onSeek;
@@ -29,15 +35,18 @@ class _LyricsPanelState extends State<LyricsPanel> {
   Lyrics? _lyrics;
   String _language = '';
 
-  Future<void> _load() async {
+  Future<void> _load([Future<Lyrics> Function()? action]) async {
     setState(() {
       _loading = true;
       _failed = false;
     });
     try {
-      final lyrics = await widget.load();
+      final lyrics = await (action ?? widget.load)();
       if (!mounted) return;
-      setState(() => _lyrics = lyrics);
+      setState(() {
+        _lyrics = lyrics;
+        _language = '';
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() => _failed = true);
@@ -48,6 +57,7 @@ class _LyricsPanelState extends State<LyricsPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final saved = widget.saved || _lyrics?.saved == true;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -64,6 +74,43 @@ class _LyricsPanelState extends State<LyricsPanel> {
           icon: Icon(_open ? Icons.expand_less : Icons.lyrics_outlined),
           label: Text(_open ? 'Hide lyrics' : 'Lyrics'),
         ),
+        if (_open)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(children: [
+              if (_lyrics?.source.isNotEmpty == true ||
+                  saved && _lyrics != null)
+                Text(
+                    saved
+                        ? (_lyrics?.lines.isNotEmpty == true
+                            ? 'Saved lyrics'
+                            : 'No saved lyrics')
+                        : 'Lyrics: ${_lyrics!.source}',
+                    style: const TextStyle(color: Colors.white70)),
+              if (_lyrics?.providerState == 'error' ||
+                  _lyrics?.providerState == 'busy')
+                const Text('Lyric lookup failed. Try again.',
+                    style: TextStyle(color: Colors.white70)),
+              if (_lyrics?.providerState == 'empty')
+                const Text('No provider match.',
+                    style: TextStyle(color: Colors.white70)),
+              if (!saved &&
+                  _lyrics?.providerEnabled == true &&
+                  widget.lookup != null &&
+                  !{'sidecar', 'embedded'}.contains(_lyrics?.source))
+                TextButton(
+                    onPressed: _loading ? null : () => _load(widget.lookup),
+                    child: const Text('Find lyrics online (send track tags)')),
+              if (!saved &&
+                  _lyrics?.providerEnabled == true &&
+                  _lyrics?.source == 'provider' &&
+                  widget.removeProvider != null)
+                TextButton(
+                    onPressed:
+                        _loading ? null : () => _load(widget.removeProvider),
+                    child: const Text('Remove provider lyrics')),
+            ]),
+          ),
         if (_open)
           SizedBox(
             key: const Key('lyrics_panel'),
@@ -90,7 +137,8 @@ class _LyricsPanelState extends State<LyricsPanel> {
           children: [
             const Text('Could not load lyrics.',
                 style: TextStyle(color: Colors.white70)),
-            TextButton(onPressed: _load, child: const Text('Retry lyrics')),
+            TextButton(
+                onPressed: () => _load(), child: const Text('Retry lyrics')),
           ],
         ),
       );

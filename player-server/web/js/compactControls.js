@@ -28,7 +28,7 @@ export function initCompactControls(player) {
   panel.appendChild(header);
   for (const control of player.querySelectorAll(
     '#btn-save-position, #btn-bookmarks, #btn-player-notes, #btn-player-favorite, ' +
-    '.volume-control, .audio-visual-control, .playback-speed-control, .loudness-control, .sleep-timer-control, .lyrics-toggle, .lyrics-language')) {
+    '.volume-control, .audio-visual-control, .playback-speed-control, .loudness-control, .sleep-timer-control, .lyrics-toggle, .lyrics-language, .lyrics-provider-controls')) {
     panel.appendChild(control);
   }
   const more = document.createElement('button');

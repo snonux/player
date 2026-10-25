@@ -14,6 +14,61 @@ final _timed = Lyrics.fromJson({
 });
 
 void main() {
+  testWidgets(
+      'provider actions are explicit and saved lyrics hide online actions',
+      (tester) async {
+    var fetched = 0, removed = 0;
+    final available = Lyrics.fromJson({'provider_enabled': true, 'lines': []});
+    final provider = Lyrics.fromJson({
+      'provider_enabled': true,
+      'source': 'provider',
+      'synced': true,
+      'lines': [
+        {
+          'text': 'Provider line',
+          'start': 0,
+          'translations': {'fr': 'Texte'}
+        }
+      ]
+    });
+    Widget panel({bool saved = false}) => MaterialApp(
+            home: Scaffold(
+                body: LyricsPanel(
+          load: () async => available,
+          lookup: () async {
+            fetched++;
+            return provider;
+          },
+          removeProvider: () async {
+            removed++;
+            return available;
+          },
+          saved: saved,
+          positionStream: const Stream.empty(),
+          position: () => Duration.zero,
+          onSeek: (_) async {},
+        )));
+    await tester.pumpWidget(panel());
+    expect(fetched, 0);
+    await tester.tap(find.text('Lyrics'));
+    await tester.pumpAndSettle();
+    expect(fetched, 0, reason: 'opening lyrics reads cache only');
+    await tester.tap(find.text('Find lyrics online (send track tags)'));
+    await tester.pumpAndSettle();
+    expect(fetched, 1);
+    expect(find.text('Lyrics: provider'), findsOneWidget);
+    await tester.tap(find.text('Remove provider lyrics'));
+    await tester.pumpAndSettle();
+    expect(removed, 1);
+    expect(find.text('No lyrics available.'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(panel(saved: true));
+    await tester.tap(find.text('Lyrics'));
+    await tester.pumpAndSettle();
+    expect(find.text('No saved lyrics'), findsOneWidget);
+    expect(find.text('Find lyrics online (send track tags)'), findsNothing);
+    expect(fetched, 1);
+  });
   testWidgets('loads on tap, highlights positions and seeks a timed line',
       (tester) async {
     final positions = StreamController<Duration>.broadcast();

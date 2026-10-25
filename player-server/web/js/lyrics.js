@@ -1,3 +1,6 @@
+import { savedLyrics } from './saved-lyrics.js';
+import { offlineMusicMode } from './offline-context.js';
+
 // Derive access from the explicit playback URL, including detached/share URLs.
 // Unknown or cross-origin streams never trigger a library request by media ID.
 export function lyricsUrl(streamUrl, base = location.href) {
@@ -116,6 +119,13 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
   languageSelect.setAttribute('aria-label', 'Lyrics language');
   languageControl.appendChild(languageSelect);
   controls.appendChild(languageControl);
+  const providerControls=document.createElement('div');providerControls.className='lyrics-provider-controls hidden';controls.appendChild(providerControls);
+  const availability=document.createElement('span'); availability.className='text-muted text-sm'; availability.setAttribute('role','status'); providerControls.appendChild(availability);
+  const lookup=document.createElement('button');lookup.type='button';lookup.className='btn btn-sm hidden';lookup.textContent='Find lyrics online';lookup.title='Send track tags to the configured lyric provider';lookup.setAttribute('aria-label','Find lyrics online (send track tags)');providerControls.appendChild(lookup);
+  const remove=document.createElement('button');remove.type='button';remove.className='btn btn-sm hidden';remove.textContent='Remove provider lyrics';providerControls.appendChild(remove);
+  let reload=null;
+  lookup.addEventListener('click',()=>reload?.('POST'));
+  remove.addEventListener('click',()=>reload?.('DELETE'));
   let language = '';
   let wordNodes = [];
   let rows = [];
@@ -234,10 +244,11 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
   for (const event of ['timeupdate', 'seeking', 'seeked', 'loadedmetadata']) audio.addEventListener(event, update);
   return {
     update,
-    setMedia(media, streamUrl) {
+    setMedia(media, streamUrl, {pending=false,backing=null,saved=false} = {}) {
       const hadFocus = panel.contains(document.activeElement) || languageControl.contains(document.activeElement);
       request?.abort();
       request = null;
+      reload=null;availability.textContent='';providerControls.classList.toggle('hidden',true);lookup.classList.toggle('hidden',true);remove.classList.toggle('hidden',true);
       data = { synced: false, lines: [] };
       index = -1;
       reading = false;
@@ -250,14 +261,28 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
       panel.replaceChildren();
       panel.scrollTop = 0;
       visibility();
+      if(pending)return;
       const url = media?.type === 'audio' ? lyricsUrl(streamUrl) : null;
-      if (!url) return;
+      const savedSource=saved || !!backing || !!media?.offlinePinURL || offlineMusicMode();
+      if (!url && !savedSource) return;
       const controller = new AbortController();
       request = controller;
-      fetch(url, { signal: controller.signal, credentials: 'same-origin', cache: 'no-store' })
+      const load=(method='GET')=>{
+      lookup.disabled=true;remove.disabled=true;
+      const loading=savedSource ? savedLyrics(media,streamUrl,controller.signal,backing) : fetch(url, {method, signal: controller.signal, credentials: 'same-origin', redirect:'manual', cache: 'no-store' })
         .then(response => response.ok ? response.json() : null)
+        .catch(error=>{if(method==='GET' && error instanceof TypeError)return savedLyrics(media,streamUrl,controller.signal,backing);throw error;});
+      return loading
         .then(result => {
           if (request !== controller) return;
+          rows=[];wordNodes=[];languageSelect.replaceChildren();language='';
+          lookup.disabled=false;remove.disabled=false;
+          const enabled=result?.provider_enabled===true && !savedSource;
+          providerControls.classList.toggle('hidden',!enabled && !result?.source && !savedSource);
+          lookup.classList.toggle('hidden',!enabled || ['sidecar','embedded'].includes(result?.source));
+          remove.classList.toggle('hidden',!enabled || result?.source!=='provider');
+          lookup.textContent=['error','busy'].includes(result?.provider_state)?'Retry lyric lookup':'Find lyrics online';
+          availability.textContent=result?.provider_state==='error'?'Lyric lookup failed. Audio remains available.':result?.provider_state==='busy'?'Lyric lookup busy. Try again.':result?.provider_state==='empty'?'No provider match.':result?.saved?'Saved lyrics':result?.source?`Lyrics: ${result.source}`:savedSource?'No saved lyrics':'';
           data = normalizeLyrics(result);
           panel.setAttribute('aria-description', data.synced
             ? 'Select a line to seek. Tab to a line and press Enter.'
@@ -292,7 +317,10 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
           renderRows();
           visibility();
           update();
-        }).catch(() => {}); // Lyrics never interrupt playback or raise a toast.
+          if(method!=='GET') (enabled && !['sidecar','embedded'].includes(result?.source) ? lookup : button).focus();
+        }).catch(() => {if(request===controller){lookup.disabled=false;remove.disabled=false;availability.textContent='Could not load lyrics. Try again.';}}); // Lyrics never interrupt playback.
+      };
+      reload=load;void load();
     },
   };
 }

@@ -227,7 +227,11 @@ func (s *Server) serveRendition(w http.ResponseWriter, r *http.Request, renditio
 
 	w.Header().Set("Content-Type", rendition.ContentType)
 	w.Header().Set("Accept-Ranges", "bytes")
-	w.Header().Set("ETag", fmt.Sprintf("%q", rendition.ETag))
+	if rendition.ETag != "" {
+		w.Header().Set("ETag", fmt.Sprintf("%q", rendition.ETag))
+	} else {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	s.logger.Info("api compat stream", "rendition", filepath.Base(rendition.Path), "range", r.Header.Get("Range"))
 	http.ServeContent(w, r, "", time.Time{}, f)
 }

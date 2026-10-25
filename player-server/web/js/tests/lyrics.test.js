@@ -158,6 +158,19 @@ try {
   panel.scrollTop = 77;
   panel.emit('pointerleave');
   assert.equal(panel.scrollTop, 77, 'plain lyric scrolling remains intact');
+  const methods=[];
+  response={provider_enabled:true,lines:[]};
+  globalThis.fetch=async(_url,options)=>{methods.push(options.method||'GET');return {ok:true,json:async()=>response};};
+  lyrics.setMedia({type:'audio',id:3},'/api/media/3/stream');await new Promise(setImmediate);
+  const [status,lookup,remove]=controls.children[2].children;
+  assert.equal(lookup.classList.contains('hidden'),false,'configured provider offers explicit lookup');
+  assert.deepEqual(methods,['GET'],'opening/reading lyrics has no provider action');
+  response={provider_enabled:true,source:'provider',synced:true,lines:[{text:'Provider line',start:0}]};
+  lookup.emit('click');await new Promise(setImmediate);
+  assert.deepEqual(methods,['GET','POST']);assert.equal(status.textContent,'Lyrics: provider');
+  assert.equal(document.activeElement,lookup,'lookup retains focus');
+  response={provider_enabled:true,lines:[]};remove.focus();remove.emit('click');await new Promise(setImmediate);
+  assert.deepEqual(methods,['GET','POST','DELETE']);assert.equal(document.activeElement,lookup,'removal restores focus to visible lookup');
 } finally {
   globalThis.document = originalDocument;
   globalThis.fetch = originalFetch;

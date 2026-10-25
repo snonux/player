@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/snonux/player/internal/clock"
+	"github.com/snonux/player/internal/fileversion"
 )
 
 const (
@@ -73,8 +74,8 @@ const (
 // ever deletes names matching these patterns, so unrelated files in the
 // directory are never touched.
 var (
-	renditionRe = regexp.MustCompile(`^m\d+-\d+-\d+-v\d+(q\d+)?\.(mp4|m4a|mp3|ogg)$`)
-	tmpRe       = regexp.MustCompile(`^m\d+-\d+-\d+-v\d+(q\d+)?\.(mp4|m4a|mp3|ogg)\.\d+\.tmp$`)
+	renditionRe = regexp.MustCompile(`^m\d+-\d+-\d+(-r[a-f0-9]{64}|-u)?-v\d+(q\d+)?\.(mp4|m4a|mp3|ogg)$`)
+	tmpRe       = regexp.MustCompile(`^m\d+-\d+-\d+(-r[a-f0-9]{64}|-u)?-v\d+(q\d+)?\.(mp4|m4a|mp3|ogg)\.\d+\.tmp$`)
 )
 
 // Options configures a Cache. Zero values fall back to the Default*
@@ -310,8 +311,9 @@ func (c *Cache) Preflight() error {
 
 // sourceState is what a stat of the source tells the cache.
 type sourceState struct {
-	// name is the rendition file name. It encodes the source's size and
-	// mtime, so replacing or editing the source yields a new name and the
+	sourcePrefix string
+	// name is the rendition file name. It encodes the source's file revision
+	// (including change time), so replacement or editing yields a new name and the
 	// old rendition is no longer served.
 	name    string
 	size    int64
@@ -333,8 +335,14 @@ func statSource(src Source) (sourceState, error) {
 	if src.Kind.selectedAudio() {
 		version += fmt.Sprintf("q%d", src.Kind)
 	}
-	name := fmt.Sprintf("%s%d-%d-%s%s", mediaPrefix(src.MediaID), info.Size(), uint64(info.ModTime().UnixNano()), version, src.Kind.ext())
-	return sourceState{name: name, size: info.Size(), modTime: info.ModTime()}, nil
+	revision := fileversion.FromInfo(info)
+	marker := "r" + revision
+	if revision == "" {
+		marker = "u"
+	}
+	prefix := fmt.Sprintf("%s%d-%d-%s-", mediaPrefix(src.MediaID), info.Size(), uint64(info.ModTime().UnixNano()), marker)
+	name := prefix + version + src.Kind.ext()
+	return sourceState{name: name, sourcePrefix: prefix, size: info.Size(), modTime: info.ModTime()}, nil
 }
 
 // mediaPrefix is the file name prefix shared by all renditions of a media
@@ -360,12 +368,16 @@ func (c *Cache) lookup(name string, kind Kind) (Rendition, bool) {
 	c.mu.Lock()
 	c.lastUse[name] = c.clk.Now()
 	c.mu.Unlock()
+	etag := fmt.Sprintf("%s-%x", name, uint64(info.ModTime().UnixNano()))
+	if strings.Contains(name, "-u-") {
+		etag = ""
+	}
 	return Rendition{
 		Path:        path,
 		ContentType: kind.contentType(),
 		// The mtime is the moment this encode was published and is never
 		// touched afterwards, see Rendition.ETag.
-		ETag: fmt.Sprintf("%s-%x", name, uint64(info.ModTime().UnixNano())),
+		ETag: etag,
 	}, true
 }
 
@@ -581,7 +593,7 @@ func (c *Cache) available() (int64, error) {
 
 // cleanupAfter drops renditions of older versions of the same source.
 // "Older" is decided by looking at the source again: only the rendition
-// matching its current size and mtime is kept, so a job that finishes late
+// matching its current source revision is kept, so a job that finishes late
 // can never delete the output of a newer job.
 func (c *Cache) cleanupAfter(ctx context.Context, src Source) {
 	cur, err := statSource(src)
@@ -589,7 +601,7 @@ func (c *Cache) cleanupAfter(ctx context.Context, src Source) {
 		return
 	}
 	err = c.removeFiles(func(name string) bool {
-		return hasMediaPrefix(name, src.MediaID) && renditionRe.MatchString(name) && !strings.HasPrefix(name, strings.Join(strings.SplitN(cur.name, "-", 4)[:3], "-")+"-")
+		return hasMediaPrefix(name, src.MediaID) && renditionRe.MatchString(name) && !strings.HasPrefix(name, cur.sourcePrefix)
 	})
 	if err != nil {
 		c.logger.Warn("transcode cache remove stale", "media_id", src.MediaID, "err", err)

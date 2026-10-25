@@ -53,7 +53,13 @@ class Lyrics {
       {this.source = '',
       this.synced = false,
       this.lines = const [],
-      this.language = ''});
+      this.language = '',
+      this.providerEnabled = false,
+      this.providerState = '',
+      this.saved = false});
+  final bool saved;
+  final bool providerEnabled;
+  final String providerState;
   final String source;
   final bool synced;
   final List<LyricsLine> lines;
@@ -123,6 +129,11 @@ class Lyrics {
                 lines.length - 1, (i) => lines[i].start! <= lines[i + 1].start!)
             .every((ordered) => ordered);
     return Lyrics(
+        saved: json['saved'] == true,
+        providerEnabled: json['provider_enabled'] == true,
+        providerState: json['provider_state'] is String
+            ? json['provider_state'] as String
+            : '',
         source: json['source'] is String ? json['source'] as String : '',
         language: _language(json['language']) ? json['language'] as String : '',
         synced: synced,

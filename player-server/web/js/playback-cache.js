@@ -3,6 +3,7 @@ import { offlineMusicMode, offlineMusicAccount } from './offline-context.js';
 import { offlinePinnedDetail, offlinePinnedResponse } from './offline-pins.js';
 import { initNetworkSettings, assertMusicStreamingAllowed, musicPrefetchAllowed, MusicNetworkRestricted } from './network-policy.js';
 import { mediaPlaybackUrl } from './streamSource.js';
+import { snapshotLyrics } from './saved-lyrics.js';
 
 const prefix = 'player-playback-v1-';
 const preferencesKey = 'player-playback-cache';
@@ -50,10 +51,10 @@ export async function cachedMediaDetail(id, load) {
 }
 async function prune(name, budget) {
   const cache = await caches.open(name), rows = index(name);
-  let size = Object.values(rows).reduce((sum, r) => sum + r.size, 0);
+  let size = Object.values(rows).reduce((sum, r) => sum + r.size + (r.lyricsSize || 0), 0);
   for (const row of Object.values(rows).sort((a,b) => a.used-b.used)) {
     if (size <= budget) break;
-    await cache.delete(row.url); delete rows[row.url]; size -= row.size;
+    await cache.delete(row.url); if(row.lyricsKey)await cache.delete(row.lyricsKey); delete rows[row.url]; size -= row.size + (row.lyricsSize || 0);
   }
   saveIndex(name, rows);
 }
@@ -78,8 +79,10 @@ async function fill(media, url, name, signal) {
     await cache.put(url, new Response(bounded, { headers: response.headers }));
     if (!valid(name, signal) || !size || (expected > 0 && size !== expected)) { await cache.delete(url); throw Error('Incomplete cache copy.'); }
     const rows = index(name); rows[url] = { url, media, size, used: Date.now(), etag: response.headers.get('etag') || '' };
+    Object.assign(rows[url],await snapshotLyrics(media.id,url,rows[url].etag,signal,cache));
+    if(!valid(name,signal)){await cache.delete(url);if(rows[url].lyricsKey)await cache.delete(rows[url].lyricsKey);throw new DOMException('Cancelled','AbortError');}
     try { saveIndex(name, rows); await prune(name, budget); }
-    catch(error) { await cache.delete(url); const restored=index(name); delete restored[url]; try { saveIndex(name,restored); } catch {} throw error; }
+    catch(error) { await cache.delete(url); if(rows[url]?.lyricsKey)await cache.delete(rows[url].lyricsKey); const restored=index(name); delete restored[url]; try { saveIndex(name,restored); } catch {} throw error; }
     changed();
   });
 }
@@ -102,17 +105,20 @@ export async function cacheSong(media, url = mediaPlaybackUrl(media), { prefetch
 // HEAD always revalidates access and rendition identity online. Only a transport
 // failure may reuse a copy; an HTTP denial never becomes offline permission.
 export function playbackCacheEnabled(media) { return media?.type === "audio" && (!!media.offlinePinURL || (!!scope() && !!globalThis.caches)); }
-export async function playbackCacheSource(media, url, signal) {
+export async function playbackCacheSource(media, url, signal, onSaved = () => {}) {
   // Explicit downloaded playback has its own local policy. It must never turn
   // into an audio network request if the bytes disappear or access is refused.
   if (media?.offlinePinURL) {
     const pinScope = offlineMusicMode() ? offlineMusicAccount() : scope();
     if (new URL(media.offlinePinURL, location.origin).href !== new URL(url, location.origin).href ||
         mediaPlaybackUrl(media) !== new URL(url, location.origin).href) throw Error('Invalid saved download source.');
-    const pinned = await offlinePinnedResponse(url, signal) || (offlineMusicMode() ? await offlineCachedResponse(url,signal) : null);
+    let pinned = await offlinePinnedResponse(url, signal);
+    const fromPin=!!pinned;
+    pinned ||= offlineMusicMode() ? await offlineCachedResponse(url,signal) : null;
     if (!pinned) throw Error('Saved download unavailable. Retry pinning or choose online playback.');
     const blob = await pinned.blob();
     if (signal?.aborted || (offlineMusicMode() ? offlineMusicAccount() : scope()) !== pinScope) throw new DOMException('Cancelled','AbortError');
+    onSaved({name:`player-${fromPin?'offline':'playback'}-v1-${offlineMusicMode()?offlineMusicAccount():account}`,url:new URL(url,location.origin).href,etag:pinned.headers.get('etag') || ''});
     liveURL = URL.createObjectURL(blob); return liveURL;
   }
   assertMusicStreamingAllowed(media);
@@ -123,14 +129,15 @@ export async function playbackCacheSource(media, url, signal) {
       const blob = await pinned.blob();
       if (signal?.aborted || scope() !== pinScope) throw new DOMException('Cancelled','AbortError');
       assertMusicStreamingAllowed(media);
+      onSaved({name:`player-offline-v1-${account}`,url:new URL(url,location.origin).href,etag:pinned.headers.get('etag') || ''});
       liveURL = URL.createObjectURL(blob); return liveURL;
     }
-    const source = await resolveCacheSource(media,url,signal);
+    const source = await resolveCacheSource(media,url,signal,onSaved);
     assertMusicStreamingAllowed(media); return source;
   }
   catch(error) { if (signal?.aborted || error instanceof MusicNetworkRestricted) throw error; assertMusicStreamingAllowed(media); cacheStatus = 'Playback cache is unavailable. Streaming remains available; check browser storage.'; changed(); return url; }
 }
-async function resolveCacheSource(media, url, signal) {
+async function resolveCacheSource(media, url, signal, onSaved) {
   const name = scope();
   if (!name || !globalThis.caches || media.type !== 'audio' || !cachePreferences().budget) return url;
   url = new URL(url, location.origin).href;
@@ -142,11 +149,11 @@ async function resolveCacheSource(media, url, signal) {
     catch (error) { if (!(error instanceof TypeError) || signal?.aborted || scope() !== name) throw error; }
     if (check && !check.ok) {
       if ([401,403,404,410].includes(check.status)) {
-        try { await cache.delete(url); const rows=index(name); delete rows[url]; saveIndex(name,rows); } catch { /* Denial still returns the network URL. */ }
+        try { await cache.delete(url); const rows=index(name); if(rows[url]?.lyricsKey)await cache.delete(rows[url].lyricsKey); delete rows[url]; saveIndex(name,rows); } catch { /* Denial still returns the network URL. */ }
       }
       return url;
     }
-    if (check && row.etag && check.headers.get('etag') !== row.etag) { await cache.delete(url); const rows=index(name); delete rows[url]; saveIndex(name,rows); response = null; }
+    if (check && row.etag && check.headers.get('etag') !== row.etag) { await cache.delete(url); const rows=index(name); if(rows[url]?.lyricsKey)await cache.delete(rows[url].lyricsKey); delete rows[url]; saveIndex(name,rows); response = null; }
   }
   if (!response && cachePreferences().buffer === 'complete') {
     try { await cacheSong(media, url); response = await cache.match(url); } catch { /* Cache failure keeps ordinary streaming available. */ }
@@ -156,6 +163,7 @@ async function resolveCacheSource(media, url, signal) {
     const rows=index(name); if (rows[url]) { rows[url].used=Date.now(); saveIndex(name,rows); }
     const blob = await response.blob();
     if (signal?.aborted || scope() !== name) throw new DOMException('Cancelled', 'AbortError');
+    onSaved({name,url,etag:response.headers.get('etag') || ''});
     liveURL = URL.createObjectURL(blob); return liveURL;
   }
   return url;
@@ -172,7 +180,7 @@ export function initPlaybackCache(nextSong) {
   function render() {
     const p=cachePreferences(), rows=scope() ? Object.values(index(scope())) : [];
     panel.querySelector('[data-budget]').value=p.budget; panel.querySelector('[data-buffer]').value=p.buffer; panel.querySelector('[data-prefetch]').checked=p.prefetch;
-    panel.querySelector('[data-usage]').textContent=message || cacheStatus || `${(rows.reduce((s,r)=>s+r.size,0)/1048576).toFixed(1)} MB · ${rows.length} songs${transfer ? ` · Caching ${transfer.title}…` : ''}${!globalThis.caches ? ' · Cache storage unavailable. Streaming remains available.' : ''}`;
+    panel.querySelector('[data-usage]').textContent=message || cacheStatus || `${(rows.reduce((s,r)=>s+r.size+(r.lyricsSize || 0),0)/1048576).toFixed(1)} MB · ${rows.length} songs${transfer ? ` · Caching ${transfer.title}…` : ''}${!globalThis.caches ? ' · Cache storage unavailable. Streaming remains available.' : ''}`;
     panel.querySelector('[data-cancel]').disabled=!transfer;
     const list=panel.querySelector('[data-items]'); list.replaceChildren();
     for (const row of rows) { const li=document.createElement('li'); li.textContent=`${row.media.music?.title || row.media.file_name || 'Song'} · ${(row.size/1048576).toFixed(1)} MB`; list.appendChild(li); }
