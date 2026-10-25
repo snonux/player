@@ -88,7 +88,7 @@ func TestScanAutomationCoalescesAndCancels(t *testing.T) {
 	s.StopScans()
 	p := s.ScanProgress(ctx)
 	if p.Running || p.Pending || p.State != "cancelled" {
-		t.Fatalf("bad cancelled status %+v", p)
+		t.Fatalf("bad cancelled status: running=%t pending=%t state=%s", p.Running, p.Pending, p.State)
 	}
 	if !errors.Is(s.TriggerRescan(ctx), context.Canceled) {
 		t.Fatal("scan accepted after stop")

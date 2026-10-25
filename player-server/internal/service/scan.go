@@ -87,7 +87,7 @@ func (s *scanService) ScanProgress(ctx context.Context) model.ScanProgress {
 	}
 	p.State, p.Trigger, p.Pending = s.state, s.trigger, s.pending != ""
 	p.WatchSeconds, p.IntervalMinutes, p.WatchError = s.watchSeconds, s.intervalMinutes, s.watchError
-	return p
+	return p.Copy()
 }
 
 // StartScanAutomation starts at most one observer/scheduler on the app lifecycle.
