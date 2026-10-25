@@ -12,6 +12,19 @@ and the catalog/fetch rules below. Platform verification belongs to task
 
 Podcasts are **special sets** (`sets.is_podcast = 1`). They reuse set permissions, browsing, and cover images, while adding feed management and episode tracking.
 
+Global **Sync now / Retry** in the header retries podcast subscriptions and
+episode edits, pulls all podcast pages, flushes queued listening progress and
+synchronizes the saved music session without changing active playback. Status
+shows activity, pending work and the account's last complete success; partial
+failure preserves that clock and the last applied pull page. After 48 hours it
+shows the age; an account that has never completed a run says **Not synced yet**.
+An expired session offers **Sign in** rather than reporting a server outage.
+Podcast pending edits are kept only in the open tab; keep it open until synced.
+The browser also performs quiet full passes while visible and on reconnection;
+it does not promise background execution after the tab closes. Native Android
+uses its existing durable coordinator and a labeled global control. Actual
+Chrome, Firefox and two-device acceptance remains pending for `4i3`/`5i3`.
+
 ### Subscribing
 
 Admin opens the **Podcasts** button in the admin panel (or calls `POST /api/podcasts`):

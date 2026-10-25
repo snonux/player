@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:player_android/services/music_queue_snapshot.dart';
 import 'package:player_android/services/saved_queue_sync.dart';
+import 'package:player_android/services/podcast_sync.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +17,39 @@ void main() {
       shuffle: true,
       shuffleMode: 'albums');
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test(
+      'global queue sync pulls storage and propagates conflict without adopting playback',
+      () async {
+    var server = {...portableQueue(snapshot), 'revision': 0};
+    final account = SavedQueueAccount(
+        scope: 'global',
+        current: () => true,
+        read: () async => Map.of(server),
+        write: (body, revision) async {
+          if (revision != server['revision']) {
+            return (conflict: true, queue: Map.of(server));
+          }
+          server = {...body, 'revision': revision + 1};
+          return (conflict: false, queue: Map.of(server));
+        });
+    final sync = SavedQueueSync();
+    await sync.capture(account, snapshot);
+    await sync.syncForGlobal(account);
+    expect(await sync.pending(account), 0);
+    // A changed remote revision is observed by global pull. The existing
+    // local snapshot is not adopted; a pending local edit requires a choice.
+    server = {...server, 'revision': 9, 'position_seconds': 99};
+    await sync.syncForGlobal(account);
+    expect(await sync.pending(account), 0);
+    await sync.capture(
+        account,
+        portableQueueSnapshot(
+            {...portableQueue(snapshot), 'position_seconds': 12}));
+    await expectLater(sync.syncForGlobal(account),
+        throwsA(isA<SyncDeferred>().having((e) => e.kind, 'kind', 'conflict')));
+    expect(await sync.pending(account), 1);
+    sync.dispose();
+  });
   test(
       'ordered repeated occurrences, restart pending, conflict, explicit choices',
       () async {

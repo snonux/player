@@ -6,6 +6,7 @@ import { mountMusicPresence } from './music-presence.js';
 import { initRadio } from './radio.js';
 import { stopRenderer } from './renderer.js';
 import { setListeningProgressAccount } from './listening-progress.js';
+import { initGlobalSyncControls } from './global-sync-controls.js';
 import { setPodcastAccount } from './podcast-episode-state.js';
 import { initListeningHistory } from './listening-history.js';
 import { initSongNotifications, clearSongNotifications } from './song-notifications.js';
@@ -369,6 +370,7 @@ async function initApp() {
     renderSets();
     const navigation = initNavigation({ isShuffle, setShuffle, syncChrome: syncChromeVirtualSets });
     await restoreQueue(cfg?.user_id);
+    void initGlobalSyncControls()?.syncNow();
     if (queueState().restored) toast('Queue restored, paused. Open Now Playing to resume.', 'info');
     await navigation.restore();
     if (!navigatedDuringStartup && initialCollection !== 'library' && !location.search && !location.hash) openCollection(initialCollection);

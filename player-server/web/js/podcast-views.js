@@ -51,6 +51,7 @@ let pageSize = 100;
 let sidebarFeeds = [];
 let visibleEpisodes = [];
 let stateUpdateTimer;
+let sidebarRefreshRevision = 0;
 
 export function initPodcastViews({ onLoadMedia, playMediaById: playFn, pageSize: size } = {}) {
   loadMediaCallback = onLoadMedia || (() => {});
@@ -60,6 +61,9 @@ export function initPodcastViews({ onLoadMedia, playMediaById: playFn, pageSize:
   refreshPodcastSidebar().catch(() => {});
   document.addEventListener('library:changed', () => {
     refreshPodcastSidebar().catch(() => {});
+  });
+  document.addEventListener('podcast:subscriptions-changed', () => {
+    refreshPodcastSidebar({ background: true }).catch(() => {});
   });
   document.addEventListener('podcast:state-changed', () => {
     // Let the ended handler select its next card before completion removes
@@ -114,12 +118,19 @@ export function setPodcastFilter(filter) {
   loadMediaCallback();
 }
 
-export async function refreshPodcastSidebar() {
+export async function refreshPodcastSidebar({ background = false } = {}) {
   const list = document.getElementById('podcast-nav-list');
   if (!list) return;
+  const revision = ++sidebarRefreshRevision;
+  const generation = podcastSyncStatus().generation;
   try {
-    const podcasts = await API.podcasts() || [];
+    const podcasts = await API.podcasts({ quietAuth: background }) || [];
+    if (revision !== sidebarRefreshRevision || generation !== podcastSyncStatus().generation) return;
     sidebarFeeds = podcasts.filter((p) => p.subscribed);
+    const fingerprint = JSON.stringify(sidebarFeeds);
+    if (list.dataset.syncFingerprint === fingerprint) { updatePodcastSidebarUI(); return; }
+    const focusedKey = list.contains(document.activeElement) ? document.activeElement?.dataset.feedKey : null;
+    list.dataset.syncFingerprint = fingerprint;
     list.innerHTML = sidebarFeeds.length
       ? sidebarFeeds.map((p) => {
         const name = escapeHtml(p.title || p.feed_url || p.feed_key);
@@ -130,7 +141,14 @@ export async function refreshPodcastSidebar() {
       btn.addEventListener('click', () => openPodcastFeed(btn.dataset.feedKey));
     });
     updatePodcastSidebarUI();
+    if (focusedKey) {
+      const target = [...list.querySelectorAll('[data-feed-key]')].find(btn => btn.dataset.feedKey === focusedKey);
+      (target || document.getElementById('podcast-all-episodes'))?.focus();
+    }
   } catch (err) {
+    if (revision !== sidebarRefreshRevision || generation !== podcastSyncStatus().generation) return;
+    if (background && list.dataset.syncFingerprint !== undefined) return;
+    delete list.dataset.syncFingerprint;
     list.innerHTML = `<p class="error-message text-sm">${escapeHtml(err.message || 'Failed to load')}</p>`;
   }
 }

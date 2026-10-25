@@ -7,7 +7,7 @@ globalThis.window = {addEventListener: (event,callback) => events.set(event,call
 globalThis.document = {dispatchEvent: () => {}};
 globalThis.CustomEvent = class {constructor(type,options) {this.type=type;this.detail=options.detail;}};
 const {API} = await import('../api.js');
-const {listeningOccurrenceID,saveListeningProgress,setListeningProgressAccount} = await import('../listening-progress.js');
+const {listeningOccurrenceID,saveListeningProgress,setListeningProgressAccount,flushListeningProgress,listeningProgressStatus} = await import('../listening-progress.js');
 const first = listeningOccurrenceID(), second = listeningOccurrenceID();
 assert.match(first,/^[0-9a-f]{32}$/); assert.notEqual(first,second);
 let online = false;
@@ -18,6 +18,8 @@ await saveListeningProgress(7,0,first);
 await saveListeningProgress(7,10,first);
 await saveListeningProgress(7,0,second);
 assert.equal(JSON.parse(values.get('player-listening-progress-v1:3')).length,3);
+await assert.rejects(flushListeningProgress(), /offline/);
+assert.equal(listeningProgressStatus().pending.length, 3, 'global failure retains durable samples');
 // Account transition never attributes the first account's queued plays to another.
 setListeningProgressAccount(4);online=true;events.get('online')();
 await new Promise(resolve => setImmediate(resolve));

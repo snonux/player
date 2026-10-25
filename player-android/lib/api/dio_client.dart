@@ -369,6 +369,13 @@ class _UnauthorizedInterceptor extends Interceptor {
         err.requestOptions.uri.origin == _origin &&
         (_mutationQueue.credentialOrigin == null ||
             _mutationQueue.credentialOrigin == _origin)) {
+      // Synchronization must retain local playback and pending work. Its caller
+      // reports auth and blocks retry; bearer injection and generation checks
+      // still run normally before dispatch on this same Dio instance.
+      if (err.requestOptions.extra['quietUnauthorized'] == true) {
+        handler.next(err);
+        return;
+      }
       if (err.requestOptions.path.endsWith('/auth/login') ||
           err.requestOptions.path.endsWith('/auth/bootstrap') ||
           err.requestOptions.extra.containsKey('logoutBearer') ||

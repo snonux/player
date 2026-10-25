@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:player_android/services/podcast_repository.dart';
@@ -295,6 +296,81 @@ void main() {
     fail = false;
     await coordinator.syncNow();
     expect(coordinator.state.staleAt(now), false);
+    coordinator.dispose();
+  });
+  test(
+      'global account refresh drops prior status before loading, late run cannot stamp it',
+      () async {
+    const other = 'account:https://other.example#2';
+    await store.status(other);
+    final db = await store.database;
+    await db.update('podcast_scopes', {'last_full_success_ms': 123},
+        where: 'scope=?', whereArgs: [other]);
+    var selected = scope;
+    final held = Completer<Map<String, dynamic>>();
+    final entered = Completer<void>();
+    GlobalSyncAccount capture() {
+      final owner = selected;
+      return GlobalSyncAccount(
+          podcast: PodcastSyncAccount(
+              scope: owner,
+              current: () => owner == selected,
+              supported: () async => true,
+              send: (_) async {
+                entered.complete();
+                return held.future;
+              }),
+          syncMedia: (_) async {},
+          flushProgress: () async {},
+          pendingOther: () async => owner == other ? 4 : 0);
+    }
+
+    final coordinator = GlobalSyncCoordinator(PodcastSync(store), capture);
+    final running = coordinator.syncNow();
+    await entered.future;
+    selected = other;
+    final refreshing = coordinator.refreshStatus();
+    expect(coordinator.state.scope, other);
+    expect(coordinator.state.lastFullSuccessMs, isNull);
+    await refreshing;
+    expect(coordinator.state.lastFullSuccessMs, 123);
+    expect(coordinator.state.pending, 4);
+    held.complete(reply());
+    await running;
+    expect(coordinator.state.scope, other);
+    expect(coordinator.state.lastFullSuccessMs, 123);
+    expect((await store.status(scope))['last_full_success_ms'], isNull);
+    coordinator.dispose();
+  });
+  test(
+      'global queue failure and new edits during success keep truthful pending',
+      () async {
+    var pending = 1, fail = true;
+    final coordinator = GlobalSyncCoordinator(
+        PodcastSync(store),
+        () => GlobalSyncAccount(
+            podcast: PodcastSyncAccount(
+                scope: scope,
+                current: () => true,
+                supported: () async => true,
+                send: (_) async => reply()),
+            syncMedia: (_) async {},
+            flushProgress: () async {},
+            pendingOther: () async => pending,
+            syncQueue: () async {
+              if (fail) throw const SyncDeferred('policy');
+              pending = 2;
+            }),
+        now: () => DateTime.fromMillisecondsSinceEpoch(9000));
+    await coordinator.syncNow();
+    expect(coordinator.state.lastFullSuccessMs, isNull);
+    expect(coordinator.state.errorKind, 'policy');
+    expect(coordinator.state.pending, 1);
+    fail = false;
+    await coordinator.syncNow();
+    expect(coordinator.state.lastFullSuccessMs, 9000);
+    expect(coordinator.state.pending, 2);
+    expect(coordinator.state.errorKind, isNull);
     coordinator.dispose();
   });
 }

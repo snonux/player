@@ -393,3 +393,15 @@ label {
 
 /* Share descriptions retain author line breaks and fit narrow guest pages. */
 .share-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Global sync stays quiet and wraps on touch-sized viewports. */
+.global-sync {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 8px);
+  padding: 4px 16px;
+  color: var(--text-secondary);
+  background: var(--bg-body);
+  font-size: 0.85rem;
+}
+.global-sync [data-sync-status] { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.global-sync .btn { min-height: 44px; flex-shrink: 0; }

@@ -52,6 +52,36 @@ class GlobalSyncCoordinator extends ChangeNotifier {
   bool _explicitAgain = false;
   String? _authBlockedScope;
   int _failures = 0;
+  int _statusGeneration = 0;
+
+  /// Drop the previous account's presentation before reading durable status.
+  Future<void> refreshStatus() async {
+    final active = account();
+    final lease = active?.podcast;
+    final generation = ++_statusGeneration;
+    if (lease == null) {
+      state = const GlobalSyncState();
+      notifyListeners();
+      return;
+    }
+    if (state.scope != lease.scope) {
+      state = GlobalSyncState(scope: lease.scope);
+      notifyListeners();
+    }
+    final meta = await podcasts.store.status(lease.scope);
+    final pending = (await podcasts.store.pending(lease.scope)).length +
+        await active!.pendingOther();
+    if (_disposed || generation != _statusGeneration || !lease.current()) {
+      return;
+    }
+    state = GlobalSyncState(
+        scope: lease.scope,
+        active: state.active,
+        pending: pending,
+        lastFullSuccessMs: meta['last_full_success_ms'] as int?,
+        errorKind: meta['last_error_kind'] as String?);
+    notifyListeners();
+  }
 
   void trigger(
       {bool explicit = false, bool reset = true, bool signedIn = false}) {
@@ -59,10 +89,16 @@ class GlobalSyncCoordinator extends ChangeNotifier {
     if (signedIn) _authBlockedScope = null;
     final active = account();
     if (active == null) {
+      _statusGeneration++;
       _timer?.cancel();
       state = const GlobalSyncState();
       notifyListeners();
       return;
+    }
+    if (state.scope != active.podcast.scope) {
+      state = GlobalSyncState(scope: active.podcast.scope);
+      notifyListeners();
+      unawaited(refreshStatus().catchError((Object _) {}));
     }
     if (_authBlockedScope == active.podcast.scope && !signedIn) return;
     if (reset) {
@@ -86,12 +122,12 @@ class GlobalSyncCoordinator extends ChangeNotifier {
       _explicitAgain = _explicitAgain || explicit;
       return _running!;
     }
+    final lease = account()?.podcast;
     _running = _run(explicit).catchError((Object error) {
       if (_disposed) return;
-      final active = account();
-      if (active == null || !active.podcast.current()) return;
+      if (lease == null || !lease.current()) return;
       state = GlobalSyncState(
-          scope: active.podcast.scope,
+          scope: lease.scope,
           pending: state.pending,
           lastFullSuccessMs: state.lastFullSuccessMs,
           errorKind: syncErrorKind(error));
@@ -114,6 +150,7 @@ class GlobalSyncCoordinator extends ChangeNotifier {
     final active = account();
     if (active == null) return;
     final lease = active.podcast;
+    _statusGeneration++;
     bool current() => !_disposed && lease.current();
     if (!current()) return;
     final store = podcasts.store;

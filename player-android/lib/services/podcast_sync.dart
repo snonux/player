@@ -17,7 +17,13 @@ class PodcastSyncAccount {
   final Future<Map<String, dynamic>> Function(Map<String, dynamic>) send;
 }
 
+class SyncDeferred implements Exception {
+  const SyncDeferred(this.kind);
+  final String kind;
+}
+
 String syncErrorKind(Object error) {
+  if (error is SyncDeferred) return error.kind;
   if (error is DioException) {
     if (error.response?.statusCode == 401) return 'auth';
     if ([404, 405, 501].contains(error.response?.statusCode)) {

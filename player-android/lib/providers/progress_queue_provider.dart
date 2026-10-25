@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/progress_queue.dart';
+import '../api/dio_player_api_client.dart';
 import 'api_client_provider.dart';
 
 /// Enabled by the production composition root. Widget/unit tests keep server
@@ -25,7 +26,14 @@ final serverProgressQueueLifecycleProvider = Provider<bool>((ref) => false);
 /// entire provider to avoid touching the filesystem.
 final progressQueueProvider = Provider<ProgressQueueBase>((ref) {
   final apiClient = ref.watch(apiClientProvider);
+  final syncClient = apiClient is DioPlayerApiClient
+      ? DioPlayerApiClient(
+          dio: apiClient.rawDio,
+          credentialEpoch: () =>
+              ref.read(credentialMutationQueueProvider).generation,
+          quietUnauthorized: true)
+      : apiClient;
   // databaseFactory is null → ProgressQueue.init() opens the on-disk DB.
   // Connectivity() is created lazily inside ProgressQueue; no extra wiring needed.
-  return ProgressQueue(apiClient: apiClient);
+  return ProgressQueue(apiClient: syncClient);
 });

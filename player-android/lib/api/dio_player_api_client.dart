@@ -65,13 +65,18 @@ class DioPlayerApiClient extends PlayerApiClient
   /// In production [dio] should come from [DioClient] which adds bearer-token
   /// injection and 401→login redirect interceptors. In tests, pass a plain or
   /// mock [Dio] to keep tests fast and hermetic.
-  DioPlayerApiClient({required super.dio, int Function()? credentialEpoch})
+  DioPlayerApiClient(
+      {required super.dio,
+      int Function()? credentialEpoch,
+      this.quietUnauthorized = false})
       : _credentialEpoch = credentialEpoch;
 
   final int Function()? _credentialEpoch;
+  final bool quietUnauthorized;
 
   Options get _personalOptions => Options(extra: {
         if (_credentialEpoch != null) 'credentialEpoch': _credentialEpoch(),
+        if (quietUnauthorized) 'quietUnauthorized': true,
       });
 
   // ---------------------------------------------------------------------------
@@ -931,9 +936,7 @@ class DioPlayerApiClient extends PlayerApiClient
     await rawDio.post<void>(
       '$_kApiV1/progress/batch',
       data: {'updates': updates},
-      options: Options(extra: {
-        if (_credentialEpoch != null) 'credentialEpoch': _credentialEpoch(),
-      }),
+      options: _personalOptions,
     );
   }
 

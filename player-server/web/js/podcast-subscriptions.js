@@ -13,13 +13,18 @@
 import { API } from './api.js';
 
 const pending = new Map(); // feed_key -> pending edit
+let generation = 0, lastError = null;
+const changed = () => globalThis.document?.dispatchEvent(new Event('podcast:state-changed'));
 
-export function resetPodcastSubscriptions() { pending.clear(); }
+export function resetPodcastSubscriptions() { generation++; pending.clear(); lastError = null; }
+export function podcastSubscriptionStatus() { return { lastError }; }
 
 export function pendingPodcastSubscriptions() { return [...pending.values()]; }
 
 export async function retryPodcastSubscriptions() {
+  const owner = generation;
   for (const edit of pendingPodcastSubscriptions()) {
+    if (owner !== generation) throw new Error('Account changed');
     await setSubscribed({ ...edit, feed_url: edit.fetch_url }, edit.subscribed);
   }
 }
@@ -52,6 +57,7 @@ export function subscriptionEdit(feed, subscribed, now = Date.now()) {
     observed_ms: Math.max(now, (old?.observed_ms || 0) + 1),
   };
   pending.set(feed.feed_key, edit);
+  changed();
   return edit;
 }
 
@@ -59,17 +65,25 @@ export function subscriptionEdit(feed, subscribed, now = Date.now()) {
 // it. A rejected edit can never succeed: it is dropped and reported.
 export async function setSubscribed(feed, subscribed) {
   const edit = subscriptionEdit(feed, subscribed);
+  const owner = generation;
+  try {
   const res = await API.syncPodcastSubscriptions([edit]);
+  if (owner !== generation) return null;
   const rejected = (res?.rejected || []).find((r) => r.edit_id === edit.edit_id);
   if (pending.get(feed.feed_key) === edit && (rejected || (res?.acked || []).includes(edit.edit_id))) {
     pending.delete(feed.feed_key);
   }
-  if (rejected) throw new Error(`Subscription change rejected (${rejected.reason})`);
+  if (rejected) throw Object.assign(new Error(`Subscription change rejected (${rejected.reason})`), { kind: 'rejected' });
   if (!(res?.acked || []).includes(edit.edit_id)) throw new Error('Subscription change not confirmed');
   const canonical = (res.resolved || []).find(r => r.kind === 'feed' && r.from === feed.feed_key)?.to || feed.feed_key;
   const current = (res.subscriptions || []).find(r => r.feed_key === canonical);
   if (current && current.subscribed !== subscribed) throw new Error('A newer subscription change was kept. Refresh to see it.');
+  lastError = null; changed();
   return res;
+  } catch (error) {
+    if (owner === generation) { lastError = error; changed(); }
+    throw error;
+  }
 }
 
 // pendingEdit exposes the pending edit of a feed key (tests).

@@ -111,6 +111,19 @@ Seek, pause, stop and errors retain position without completing the episode.
 See [podcast lifecycle implementation](../docs/podcast-playback-lifecycle-implementation.md)
 for focused checks and the remaining installed-client verification gaps.
 
+## Synchronize this account
+
+The global **Sync now** control below the app synchronizes podcasts, supported
+offline progress/bookmarks, queued listening progress and the saved music
+session for the unlocked account. Its quiet status shows activity, pending
+changes, **Not synced yet**, or **Last synced 2 days ago** after 48 hours without
+full success. **Retry** keeps playback running; authentication instead asks you
+to sign in again. Session conflicts are resolved in Now Playing. Standalone use
+shows no sync hint. Pending Android edits survive restart; switching accounts
+loads that account's own saved status. Implementation checks pass; installed
+platform acceptance remains pending in
+[4i3 notes](../docs/podcast-global-sync-feedback-implementation.md).
+
 ## Keep server files offline
 
 Open a server file's details and tap **Keep offline**. Audio, video and images

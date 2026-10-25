@@ -32,7 +32,10 @@ SavedQueueAccount? captureSavedQueueAccount(Ref ref) {
         if (!current()) throw StateError('Account changed');
         final response = await client.rawDio.get<Map<String, dynamic>>(
             '/api/v1/queue',
-            options: Options(extra: {'credentialEpoch': generation}));
+            options: Options(extra: {
+              'credentialEpoch': generation,
+              'quietUnauthorized': true
+            }));
         return response.data!;
       },
       write: (body, revision) async {
@@ -41,9 +44,12 @@ SavedQueueAccount? captureSavedQueueAccount(Ref ref) {
           final response = await client.rawDio.put<Map<String, dynamic>>(
               '/api/v1/queue',
               data: body,
-              options: Options(
-                  extra: {'credentialEpoch': generation},
-                  headers: {'If-Match': '"$revision"'}));
+              options: Options(extra: {
+                'credentialEpoch': generation,
+                'quietUnauthorized': true
+              }, headers: {
+                'If-Match': '"$revision"'
+              }));
           return (conflict: false, queue: response.data!);
         } on DioException catch (error) {
           if (error.response?.statusCode != 409) rethrow;

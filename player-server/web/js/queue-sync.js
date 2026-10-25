@@ -30,11 +30,13 @@ export class SavedQueueSync {
   }
   async sync() {
     if (!this.key || this.running) return this.running;
-    if (!musicSessionSyncAllowed()) { this.message = 'Saved music session sync waits for Wi-Fi. Changes stay on this device.'; this.changed(); return; }
+    if (!musicSessionSyncAllowed()) { this.lastError = { kind: 'policy' }; this.message = 'Saved music session sync waits for Wi-Fi. Changes stay on this device.'; this.changed(); return; }
     const epoch = this.epoch, key = this.key;
     const current = () => this.epoch === epoch && this.key === key;
     this.running = (async () => {
       await Promise.resolve();
+      if (!current()) return;
+      this.lastError = null;
       try {
         if (this.state.revision === undefined) {
           const remote = await this.request('GET');
@@ -59,13 +61,28 @@ export class SavedQueueSync {
         this.persist();
       } catch (error) {
         if (!current()) return;
+        this.lastError = error;
         this.message = error.status === 401 ? 'Sign in to sync your session.' : 'Session sync unavailable. Changes stay on this device.';
         this.changed();
       } finally { if (current()) this.running = null; }
     })();
     return this.running;
   }
-  async refresh() {
+  async syncForGlobal() {
+    if (!this.key) throw new Error('Session account is not ready');
+    const epoch = this.epoch, starting = this.state.pending?.mutation_id;
+    if (!musicSessionSyncAllowed()) throw Object.assign(new Error('Session sync waits for Wi-Fi'), { kind: 'policy' });
+    await this.sync();
+    if (epoch !== this.epoch) throw new Error('Account changed');
+    if (this.lastError) throw this.lastError;
+    const remote = await this.refresh({ preserveRevision: true });
+    if (epoch !== this.epoch) throw new Error('Account changed');
+    if (!remote) throw this.lastError || new Error('Saved session unavailable');
+    if (this.state.conflict || (starting && this.state.pending?.mutation_id === starting)) {
+      throw Object.assign(new Error('Choose a saved session in Now Playing'), { kind: 'conflict' });
+    }
+  }
+  async refresh({ preserveRevision = false } = {}) {
     if (!musicSessionSyncAllowed()) { this.message = 'Continue session waits for Wi-Fi. Change Music network settings or retry on Wi-Fi.'; this.changed(); return null; }
     const epoch = this.epoch;
     try {
@@ -73,9 +90,10 @@ export class SavedQueueSync {
       if (epoch !== this.epoch) return null;
       if (this.state.pending && this.state.revision !== undefined && remote.revision !== this.state.revision) this.state.conflict = true;
       this.state.remote = remote;
-      if (!this.state.pending) this.state.revision = remote.revision;
+      if (!this.state.pending && !preserveRevision) this.state.revision = remote.revision;
       this.persist(); return remote;
     } catch (error) {
+      if (epoch === this.epoch) this.lastError = error;
       if (epoch === this.epoch) { this.message = 'Can’t load saved session. Check your connection and retry.'; this.changed(); }
       return null;
     }

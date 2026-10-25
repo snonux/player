@@ -1,4 +1,5 @@
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'widgets/global_sync_status.dart';
 import 'providers/language_provider.dart';
 import 'l10n/music_localizations.dart';
 import 'services/playback_request.dart';
@@ -223,7 +224,9 @@ class PlayerAndroidApp extends ConsumerWidget {
       darkTheme: _darkThemes[accent],
       themeMode: themeMode,
       builder: (context, child) => PlaybackScreenAwake(
-          child: KeyboardAccess(child: child ?? const SizedBox.shrink())),
+          child: KeyboardAccess(
+              child:
+                  GlobalSyncChrome(child: child ?? const SizedBox.shrink()))),
     );
   }
 }

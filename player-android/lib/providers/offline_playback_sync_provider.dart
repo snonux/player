@@ -22,7 +22,9 @@ final offlinePlaybackSyncProvider = Provider<OfflinePlaybackSync>((ref) {
     final currentClient = ref.read(apiClientProvider);
     if (currentClient is! DioPlayerApiClient) return null;
     final client = DioPlayerApiClient(
-        dio: currentClient.rawDio, credentialEpoch: () => epoch);
+        dio: currentClient.rawDio,
+        credentialEpoch: () => epoch,
+        quietUnauthorized: true);
     return OfflineSyncAccount(
         origin: origin,
         userId: userId,

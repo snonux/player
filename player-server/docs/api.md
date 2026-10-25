@@ -2236,6 +2236,16 @@ per identity; inherited merge mappings and retired identities are retained.
 
 ### `POST /api/podcasts/sync` · `POST /api/v1/podcasts/sync`
 
+The web global **Sync now / Retry** combines these paginated podcast calls with
+the existing listening-progress batch and saved-queue endpoints. Its persisted
+per-account full-success time advances only when every supported step completes
+and starting pending edits are acknowledged. Applied pull pages keep their
+cursor on partial failure. Episode-only saves do not advance global success.
+Failed browser podcast edits remain tab-memory only; the native Android
+coordinator retains durable pending edits. Sync requests report authentication
+failures quietly, leaving playback available and offering sign-in. No new API
+route is added for global synchronization.
+
 Synchronize the caller's podcast subscriptions and episode state (position
 and completion). Any signed-in user may call it (cookie or Bearer token); it
 reads and writes only the caller's rows. Body limit 2 MiB (`413` beyond it:

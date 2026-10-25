@@ -135,6 +135,17 @@ sign-in. **Clear queue** remains cleared after reload; Undo is available during
 the current session. Private browsing or clearing browser storage removes local
 recovery data.
 
+## Synchronization
+
+The header's global **Sync now / Retry** synchronizes podcast edits and pulls,
+queued listening progress and the saved music session. Quiet status above the
+library shows activity, pending work and the account's last full success;
+after 48 hours it shows the age. A session pull updates storage while current
+playback continues. Authentication offers **Sign in**. Browser podcast edits
+are tab-memory only: keep the tab open until they sync. Local listening/queue
+storage remains subject to browser storage availability. See
+[4i3 implementation and verification gaps](../docs/podcast-global-sync-feedback-implementation.md).
+
 ## Continue a saved session
 
 In **Now Playing**, choose **Continue session** to load the session last saved

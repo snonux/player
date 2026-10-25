@@ -35,8 +35,10 @@ GlobalSyncAccount? captureSyncAccount(Ref ref) {
   final generation = mutations.generation;
   final api = ref.read(apiClientProvider);
   if (api is! DioPlayerApiClient) return null;
-  final client =
-      DioPlayerApiClient(dio: api.rawDio, credentialEpoch: () => generation);
+  final client = DioPlayerApiClient(
+      dio: api.rawDio,
+      credentialEpoch: () => generation,
+      quietUnauthorized: true);
   bool current() =>
       mutations.credentialsEnabled &&
       mutations.generation == generation &&
@@ -51,7 +53,7 @@ GlobalSyncAccount? captureSyncAccount(Ref ref) {
   return GlobalSyncAccount(
     syncQueue: savedQueueAccount == null
         ? null
-        : () => savedQueues.sync(savedQueueAccount),
+        : () => savedQueues.syncForGlobal(savedQueueAccount),
     podcast: PodcastSyncAccount(
         scope: podcastAccountScope(origin, userId),
         current: current,
@@ -83,7 +85,8 @@ GlobalSyncAccount? captureSyncAccount(Ref ref) {
         if (item['gone_ms'] != null) continue;
         final payload = await downloads.syncPayload(item['key'] as String);
         count += (payload['progress'] == null ? 0 : 1) +
-            (payload['bookmarks'] as List).length;
+            (payload['bookmarks'] as List).length +
+            (payload['music_plays'] as List? ?? const []).length;
       }
       if (queue is ProgressQueue) {
         count += (await queue.pendingIds(scope)).length;

@@ -38,8 +38,8 @@ async function api(path, options = {}) {
       const j = await res.json();
       if (j.error) msg = j.error;
     } catch {}
-    redirectToLogin();
-    throw new Error(msg);
+    if (!options.quietAuth) redirectToLogin();
+    const error = new Error(msg); error.status = 401; throw error;
   }
   if (!res.ok) {
     let msg = res.statusText;
@@ -56,7 +56,7 @@ async function api(path, options = {}) {
 }
 
 export const API = {
-  progressBatch: (updates,user) => api('/api/progress/batch',{method:'POST',body:{updates,expected_user_id:user}}),
+  progressBatch: (updates,user) => api('/api/progress/batch',{method:'POST',quietAuth:true,body:{updates,expected_user_id:user}}),
   listeningHistory: (params={},user) => api(`/api/music/history?${new URLSearchParams({...params,expected_user_id:user || 0})}`),
   configureListeningHistory: (settings,user) => api(`/api/music/history?expected_user_id=${user || 0}`,{method:'PUT',body:settings}),
   clearListeningHistory: user => api(`/api/music/history?expected_user_id=${user || 0}`,{method:'DELETE'}),
@@ -66,6 +66,7 @@ export const API = {
   bootstrap: (username, password) => api('/api/bootstrap', { method: 'POST', body: { username, password } }),
   authStatus: () => api('/api/v1/auth/status'),
   config: () => api('/api/config'),
+  syncConfig: () => api('/api/config', { quietAuth: true }),
   playlistRules: (id,rules) => api(`/api/playlists/${encodeURIComponent(id)}/rules`,{method:'PUT',body:{rules}}),
   playlistMembership: () => api('/api/playlists/membership'),
   addToPlaylists: body => api('/api/playlists/songs',{method:'POST',body}),
@@ -170,7 +171,7 @@ export const API = {
     method: 'POST',
     body: { capability },
   }),
-  podcasts: () => api('/api/podcasts'),
+  podcasts: ({ quietAuth = false } = {}) => api('/api/podcasts', { quietAuth }),
   podcastEpisodes: (setId, pagination, legacyOffset) => {
     let limit = 50;
     let offset = 0;
@@ -203,8 +204,8 @@ export const API = {
   // Admin only: deletes the feed's server copies for everyone, and the
   // catalog feed once nobody is subscribed. Not an unsubscribe.
   removePodcastFromServer: (feedId) => api(`/api/podcasts/${feedId}`, { method: 'DELETE' }),
-  syncPodcast: (body) => api('/api/podcasts/sync', { method: 'POST', body }),
-  syncPodcastSubscriptions: (subscriptions) => api('/api/podcasts/sync', { method: 'POST', body: { subscriptions } }),
+  syncPodcast: (body) => api('/api/podcasts/sync', { method: 'POST', quietAuth: true, body }),
+  syncPodcastSubscriptions: (subscriptions) => api('/api/podcasts/sync', { method: 'POST', quietAuth: true, body: { subscriptions } }),
   downloadEpisode: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/download`, { method: 'POST' }),
   toggleEpisodeComplete: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/complete`, { method: 'POST' }),
 };

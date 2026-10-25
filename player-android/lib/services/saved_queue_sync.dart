@@ -1,4 +1,5 @@
 import 'network_policy.dart';
+import 'podcast_sync.dart' show SyncDeferred;
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
@@ -105,6 +106,30 @@ class SavedQueueSync extends ChangeNotifier {
 
   Future<int> pending(SavedQueueAccount account) async =>
       (await _load(account.scope))['pending'] == null ? 0 : 1;
+
+  /// A quiet per-domain return is not proof of global success. Reconcile
+  /// remote storage only; this never adopts or plays a remote queue.
+  Future<void> syncForGlobal(SavedQueueAccount account) async {
+    await MusicNetworkPolicy.initialize();
+    if (!account.current()) throw StateError('Account changed');
+    if (!MusicNetworkPolicy.syncAllowed) throw const SyncDeferred('policy');
+    final state = await _load(account.scope);
+    final starting = (state['pending'] as Map?)?['mutation_id'];
+    try {
+      await sync(account);
+    } catch (_) {
+      if (state['conflict'] == true) throw const SyncDeferred('conflict');
+      rethrow;
+    }
+    final remote = await refresh(account);
+    if (!account.current()) throw StateError('Account changed');
+    if (remote == null) throw const SyncDeferred('policy');
+    if (state['conflict'] == true ||
+        (starting != null &&
+            (state['pending'] as Map?)?['mutation_id'] == starting)) {
+      throw const SyncDeferred('conflict');
+    }
+  }
 
   Future<void> capture(SavedQueueAccount account, MusicQueueSnapshot snapshot,
       {bool baseline = false}) async {

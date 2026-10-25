@@ -60,6 +60,9 @@ function portableSnapshot() {
  return { entries: entries.map(e => ({ id: e.id, media_id: e.media.id })), current_id: entries[index]?.id || 0, position_seconds: positionEntry === entries[index]?.id ? savedPosition : 0, label, repeat, shuffle, shuffle_mode: shuffleMode, canonical: [...canonical], up_next: [...nextIDs] };
 }
 export function savedSessionState() { return { conflict: !!portableSync.state.conflict, message: portableSync.message || '', available: !!portableSync.state.remote?.revision }; }
+export function savedSessionSyncStatus() { return { pending: portableSync.state.pending?.mutation_id ? [portableSync.state.pending.mutation_id] : [], key: portableSync.key,
+  lastError: portableSync.state.conflict ? { kind: 'conflict' } : portableSync.lastError }; }
+export function syncSavedSession() { return portableSync.syncForGlobal(); }
 export function replaceSavedSession() { portableSync.capture(portableSnapshot()); return portableSync.replace(); }
 export function keepOtherSession() { portableSync.keepOther(); }
 export async function continueSavedSession() {

@@ -28,3 +28,13 @@ let resolve;const late=new SavedQueueSync({storage,request:()=>new Promise(r=>re
 const replay=new SavedQueueSync({storage,request});replay.bind('replay');replay.capture(q);server={...replay.state.pending,revision:4};await replay.sync();assert.equal(replay.state.pending,null);assert.equal(replay.state.conflict,undefined);
 assert.ok(writes>=3);
 console.log('Saved queue conflict, restart, replay and late-account checks passed.');
+const globalQueue = new SavedQueueSync({storage,request});
+globalQueue.bind('global');
+await globalQueue.syncForGlobal();
+assert.equal(globalQueue.state.remote.revision,server.revision, 'global run retrieves remote storage');
+globalQueue.capture({...q,position_seconds:91});
+await assert.rejects(globalQueue.syncForGlobal(),error=>error.kind==='conflict');
+assert.equal(globalQueue.state.pending.position_seconds,91);
+const unavailable=new SavedQueueSync({storage,request:async()=>{throw Object.assign(new Error('auth'),{status:401});}});
+unavailable.bind('unavailable');
+await assert.rejects(unavailable.syncForGlobal(),error=>error.status===401,'quiet domain catch cannot report global success');

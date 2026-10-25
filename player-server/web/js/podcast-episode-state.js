@@ -4,7 +4,8 @@ import { API } from './api.js';
 import { randomEditId, resetPodcastSubscriptions } from './podcast-subscriptions.js';
 
 const rows = new Map();
-let account = null, generation = 0, lastSuccess = null, lastError = null;
+let account = null, generation = 0, lastSuccess = null, lastError = null, lastFailure = null;
+let epochRecovery = null;
 const keyOf = ep => `${ep.feed_key}\0${ep.episode_key}`;
 const changed = () => globalThis.document?.dispatchEvent(new Event('podcast:state-changed'));
 const accountChannel = globalThis.window && globalThis.BroadcastChannel ? new BroadcastChannel('player-podcast-account') : null;
@@ -16,15 +17,81 @@ export function setPodcastAccount(id) {
   account = next;
   generation++;
   rows.clear();
+  epochRecovery = null;
   resetPodcastSubscriptions();
-  lastSuccess = lastError = null;
+  lastSuccess = lastError = lastFailure = null;
   accountChannel?.postMessage({ account });
   globalThis.document?.dispatchEvent(new Event('podcast:account-changed'));
   changed();
 }
 
 export function podcastSyncStatus() {
-  return { account, generation, pending: [...new Set(rows.values())].reduce((n, r) => n + Object.keys(r.pending).length, 0), lastEpisodeSuccess: lastSuccess, lastError };
+  const pendingIds = [...new Set(rows.values())].flatMap(r => Object.values(r.pending).map(edit => edit.edit_id));
+  return { account, generation, pending: pendingIds.length, pendingIds, lastEpisodeSuccess: lastSuccess, lastError, lastFailure };
+}
+
+// Global pull is storage-only. Pending local registers win until acknowledged;
+// aliases merge independently and never reach into live playback.
+export function applyPodcastPull(response, lease = generation, { epochChanged = false } = {}) {
+  if (lease !== generation || !account) return false;
+  let updated = false;
+  if (epochChanged && epochRecovery?.epoch !== response.epoch) {
+    epochRecovery = { epoch: response.epoch, known: [...new Set(rows.values())].map(row => ({ row,
+      position: row.position && { ...row.position }, completion: row.completion && { ...row.completion } })), pulled: new Map() };
+  }
+  for (const mapping of [...(response.resolved || []), ...(response.aliases || [])]) {
+    for (const row of [...new Set(rows.values())]) {
+      if (mapping.kind === 'feed' && row.feed_key === mapping.from) row.feed_key = mapping.to;
+      else if (mapping.kind === 'episode' && row.feed_key === mapping.feed_key && row.episode_key === mapping.from) row.episode_key = mapping.to;
+      else continue;
+      updated = true;
+      const target = rows.get(keyOf(row));
+      if (target && target !== row) {
+        for (const name of ['position', 'completion']) {
+          const hadPending = row.pending[name] || target.pending[name];
+          if ((target[name]?.observed_ms || 0) >= (row[name]?.observed_ms || 0)) {
+            row[name] = target[name];
+            if (target.pending[name]) row.pending[name] = target.pending[name]; else delete row.pending[name];
+          }
+          if (hadPending && row[name] && !row.pending[name]) {
+            row.pending[name] = { ...row[name], edit_id: randomEditId() };
+          }
+        }
+        for (const [key, value] of rows) if (value === target) rows.set(key, row);
+      }
+      rows.set(keyOf(row), row);
+    }
+  }
+  for (const episode of response.episodes || []) {
+    const before = rows.get(keyOf(episode));
+    const encoded = JSON.stringify([before?.position, before?.completion]);
+    const after = rowFor(episode);
+    if (encoded !== JSON.stringify([after.position, after.completion])) updated = true;
+  }
+  if (epochRecovery) for (const episode of response.episodes || []) epochRecovery.pulled.set(keyOf(episode), episode);
+  if (updated) changed();
+  return true;
+}
+
+// Like native epoch recovery, replay known clean values missing from a restored
+// server with their original clocks. Interrupted pulls retain markers in this
+// account's tab memory; there is no new browser history store.
+export function finishPodcastPull(lease = generation) {
+  if (lease !== generation || !account || !epochRecovery) return;
+  const live = new Set(rows.values());
+  for (const original of epochRecovery.known) {
+    const row = original.row;
+    if (!live.has(row)) continue;
+    const remote = epochRecovery.pulled.get(keyOf(row));
+    for (const name of ['position', 'completion']) {
+      if (original[name] && !row.pending[name] &&
+          (remote?.[name]?.observed_ms || 0) < original[name].observed_ms) {
+        row.pending[name] = { ...row[name], edit_id: randomEditId() };
+      }
+    }
+  }
+  epochRecovery = null;
+  changed();
 }
 
 function rowFor(ep) {
@@ -106,7 +173,7 @@ async function sendEpisode(ep) {
         delete row.pending[name];
         if (acked && returned?.[name]) row[name] = { ...returned[name] };
       }
-      if (rejected || (edit && !acked)) problem = new Error(rejected ? `Podcast change rejected (${rejected.reason})` : 'Podcast change not confirmed');
+      if (rejected || (edit && !acked)) problem = Object.assign(new Error(rejected ? `Podcast change rejected (${rejected.reason})` : 'Podcast change not confirmed'), { kind: rejected ? 'rejected' : 'server' });
       if (returned?.[name] && !row.pending[name] && returned[name].observed_ms >= (row[name]?.observed_ms || 0)) row[name] = { ...returned[name] };
     }
     if (returned) {
@@ -124,12 +191,12 @@ async function sendEpisode(ep) {
       row.feed_key = returned.feed_key; row.episode_key = returned.episode_key; rows.set(keyOf(row), row);
     }
     if (problem) throw problem;
-    lastError = null;
+    lastError = lastFailure = null;
     lastSuccess = Date.now();
     changed();
     return episodeSnapshot(row);
   } catch (error) {
-    if (owner === generation) { lastError = error.message; changed(); }
+    if (owner === generation) { lastError = error.message; lastFailure = error; changed(); }
     throw error;
   }
 }
@@ -154,8 +221,12 @@ export function pendingCompletionEdit(feedKey, episodeKey) {
 }
 
 export async function retryPodcastEpisodeEdits() {
+  const owner = generation;
   const unique = [...new Set(rows.values())];
-  for (const row of unique) await syncEpisode(row);
+  for (const row of unique) {
+    if (owner !== generation) throw new Error('Account changed');
+    if (Object.keys(row.pending).length) await syncEpisode(row);
+  }
 }
 
 // One bounded attempt. Its continuation has no player reference.
