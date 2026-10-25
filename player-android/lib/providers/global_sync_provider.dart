@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'automatic_music_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,7 +51,12 @@ GlobalSyncAccount? captureSyncAccount(Ref ref) {
   final offline = ref.read(offlinePlaybackSyncProvider);
   final savedQueueAccount = captureSavedQueueAccount(ref);
   final savedQueues = ref.read(savedQueueSyncProvider);
+  final musicAccount = captureAutomaticMusicAccount(ref);
+  final scheduler = ref.read(automaticMusicSchedulerProvider);
   return GlobalSyncAccount(
+    syncMusic: musicAccount == null
+        ? null
+        : (explicit) => scheduler.sync(musicAccount, explicit: explicit),
     syncQueue: savedQueueAccount == null
         ? null
         : () => savedQueues.syncForGlobal(savedQueueAccount),
@@ -109,6 +115,8 @@ final globalSyncCoordinatorProvider =
     ChangeNotifierProvider<GlobalSyncCoordinator>((ref) {
   final sync = GlobalSyncCoordinator(
       ref.watch(podcastSyncProvider), () => captureSyncAccount(ref));
+  final musicScheduler = ref.watch(automaticMusicSchedulerProvider);
+  musicScheduler.onWake = () => sync.syncNow(explicit: false);
   final repository = ref.watch(podcastRepositoryProvider);
   final downloads = ref.watch(offlineDownloadRepositoryProvider);
   final queue = ref.watch(progressQueueProvider);
@@ -124,6 +132,7 @@ final globalSyncCoordinatorProvider =
       (_, next) =>
           sync.trigger(signedIn: next.valueOrNull?.isAuthenticated == true));
   ref.onDispose(() {
+    musicScheduler.onWake = null;
     unawaited(connectivity.cancel());
     WidgetsBinding.instance.removeObserver(lifecycle);
     repository.onSyncNeeded = null;

@@ -12,7 +12,7 @@ export function globalSyncPresentation(state, now = Date.now()) {
   const parts = [];
   if (state.active) parts.push('Syncing…');
   else if (state.errorKind) parts.push({ auth: 'Sign in again to sync', rejected: 'Some changes could not sync',
-    unsupported: 'Some sync features need a newer server', policy: 'Session sync waits for Wi-Fi',
+    unsupported: 'Some sync features need a newer server', policy: 'Sync waits for Wi-Fi',
     conflict: 'Choose a saved session in Now Playing' }[state.errorKind] || 'Sync unavailable');
   if (state.lastFullSuccessMs == null) parts.push('Not synced yet');
   else if (stale) parts.push(`Last synced ${Math.floor((now - state.lastFullSuccessMs) / 86400000)} days ago`);
@@ -54,19 +54,19 @@ export class GlobalSyncCoordinator {
     const { cursor, epoch, lastFullSuccessMs, errorKind } = this.state;
     this.storage.setItem(this.key, JSON.stringify({ cursor, epoch, lastFullSuccessMs, errorKind }));
   }
-  syncNow() {
+  syncNow({explicit=true}={}) {
     if (!this.state.account) return Promise.resolve();
     if (this.running) return this.running;
     const generation = this.generation, current = () => generation === this.generation;
     const starting = new Set(this.domains.pending().ids);
     this.state.active = true; this.refresh();
-    const run = this.run(current, starting).finally(() => {
+    const run = this.run(current, starting, explicit).finally(() => {
       if (current()) { this.running = null; this.state.active = false; this.refresh(); }
     });
     this.running = run;
     return run;
   }
-  async run(current, starting) {
+  async run(current, starting, explicit) {
     let failure = null;
     const failed = error => { const kind = syncErrorKind(error); if (!failure || kind === 'auth') failure = kind; };
     for (const step of [
@@ -77,6 +77,7 @@ export class GlobalSyncCoordinator {
       }, { epoch: this.state.epoch, since: this.state.cursor }),
       () => this.domains.progress(),
       () => this.domains.queue(),
+      ...(this.domains.music ? [() => this.domains.music(explicit)] : []),
     ]) {
       if (!current()) return;
       try {

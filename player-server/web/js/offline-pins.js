@@ -7,7 +7,7 @@ import { snapshotLyrics } from './saved-lyrics.js';
 const prefix = 'player-offline-v1-';
 let tail = Promise.resolve();
 function scope() { const id = offlineMusicMode() ? offlineMusicAccount() : state.user?.id; return id > 0 ? `${prefix}${id}` : null; }
-function current(name, signal) { if (scope() !== name || signal?.aborted) throw new DOMException('Canceled', 'AbortError'); }
+function current(name, signal, authorized = () => true) { if (scope() !== name || signal?.aborted || !authorized()) throw new DOMException('Canceled', 'AbortError'); }
 function read(name) {
  const value = JSON.parse(localStorage.getItem(`${name}:index`) || '{"collections":{},"songs":{}}');
  if (!value.collections || !value.songs) throw Error('Saved downloads index is unavailable.');
@@ -29,7 +29,7 @@ export async function offlinePinStatus(collection) {
  current(name);
  return { ...row, songs, complete: songs.length === row.urls.length && row.urls.length > 0 };
 }
-export async function pinMusicCollection(collection, title, songs, { signal, profile = downloadQuality(), progress = () => {} } = {}) {
+export async function pinMusicCollection(collection, title, songs, { signal, profile = downloadQuality(), progress = () => {}, automatic = false, authorized = () => true } = {}) {
  if (offlineMusicMode()) throw Error('Reconnect and sign in to pin music.');
  const name = scope();
  if (!name || !globalThis.caches) throw Error('Sign in and allow browser storage before pinning music.');
@@ -39,8 +39,20 @@ export async function pinMusicCollection(collection, title, songs, { signal, pro
  if (!songs.length) throw Error('No songs available.');
  if (!['original','aac128','aac256','mp3192','opus96'].includes(profile)) throw Error('Download quality unavailable. Choose another quality.');
  return exclusive(async () => {
-  current(name, signal);
+  const check = () => current(name, signal, authorized);
+  check();
   const cache = await caches.open(name), rows = read(name);
+  if (automatic) {
+   let retained = 0, required = 0;
+   for (const row of Object.values(rows.songs)) if (row.automatic && await cache.match(row.url)) retained++;
+   for (const song of songs) {
+    let exists = false;
+    for (const row of Object.values(rows.songs)) if (row.media.id === song.id && await cache.match(row.url)) { exists = true; break; }
+    if (!exists) required++;
+   }
+   check();
+   if (retained + required > 200) throw Error('Automatic music reached its 200-copy limit. Remove retired downloads in Saved music collections, then retry.');
+  }
   const urls = [];
   // Existing completed downloads retain their recorded quality, including
   // copies shared by another pinned collection. The choice applies to new files.
@@ -50,25 +62,24 @@ export async function pinMusicCollection(collection, title, songs, { signal, pro
    for (const row of existing) if (await cache.match(row.url)) { retained = row.url; break; }
    urls.push(retained || new URL(`/api/media/${song.id}/${profile === 'original' ? 'download' : `compat?profile=${encodeURIComponent(profile)}`}`, location.origin).href);
   }
-  current(name, signal);
+  check();
   const key = pinCollectionKey(collection);
   // Refresh changes the playable snapshot, but keeps ownership of every copy
   // this collection saved. An interrupted refresh and a later Remove download
   // can therefore still reclaim superseded members without touching overlaps.
   const previous = rows.collections[key];
   const ownedURLs = [...new Set([...(previous?.ownedURLs || previous?.urls || []), ...urls])];
-  rows.collections[key] = { title, urls, ownedURLs, pinned: true };
-  write(name, rows);
+  if (!automatic) { rows.collections[key] = { title, urls, ownedURLs, pinned: true }; write(name, rows); }
   let completed = 0;
   for (let i = 0; i < songs.length; i++) {
-   current(name, signal);
+   check();
    const url = urls[i], media = songs[i];
    if (!rows.songs[url] || !await cache.match(url)) {
     if (/\/compat(?:\?|$)/.test(url)) {
      const result = await waitForCompatStream(url, {signal});
      if (result.state !== 'ready') throw Error(result.reason || 'Download canceled.');
     }
-    current(name, signal);
+    check();
     const response = await fetch(url, {credentials:'same-origin',redirect:'manual',cache:'no-store',signal});
     const contentType = response.headers.get('content-type')?.split(';')[0];
     const mediaType = contentType?.startsWith('audio/') || (profile === 'original' && contentType === 'application/octet-stream' && response.headers.get('content-disposition')?.startsWith('attachment'));
@@ -76,21 +87,63 @@ export async function pinMusicCollection(collection, title, songs, { signal, pro
     const expectedType = {aac128:'audio/mp4',aac256:'audio/mp4',mp3192:'audio/mpeg',opus96:'audio/ogg'}[profile];
     if (expectedType && contentType !== expectedType) throw Error('Server returned a different download format. Choose another quality or retry.');
     const expected = Number(response.headers.get('content-length')); let size = 0;
-    const body = response.body.pipeThrough(new TransformStream({transform(chunk, controller) { current(name,signal); size += chunk.byteLength; controller.enqueue(chunk); }}));
+    const body = response.body.pipeThrough(new TransformStream({transform(chunk, controller) { check(); size += chunk.byteLength; controller.enqueue(chunk); }}));
     try {
      await cache.put(url, new Response(body,{headers:response.headers}));
-     current(name,signal);
+     check();
      if (!size || (expected > 0 && expected !== size)) throw Error('Incomplete download. Retry.');
      rows.songs[url] = {url,media,size,profile,contentType,revision:globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,etag:response.headers.get('etag') || ''};
+     if (automatic) rows.songs[url].automatic = true;
      Object.assign(rows.songs[url],await snapshotLyrics(media.id,url,rows.songs[url].etag,signal,cache));
-     current(name,signal);
+     check();
+     // Completed automatic bytes remain reachable after interruption. This
+     // recovery collection owns only new copies, never borrowed manual files.
+     if (automatic) {
+      const retiredKey = pinCollectionKey({kind:'playlist',key:'@automatic-retained'});
+      const retained = rows.collections[retiredKey] || {title:'Automatic music · retained downloads',urls:[],ownedURLs:[],pinned:false,automatic:true};
+      retained.urls = [...new Set([...retained.urls,url])]; retained.ownedURLs = retained.urls;
+      rows.collections[retiredKey] = retained;
+     }
      write(name, rows);
     } catch(error) { await cache.delete(url); if(rows.songs[url]?.lyricsKey)await cache.delete(rows.songs[url].lyricsKey); delete rows.songs[url]; throw error; }
    }
    progress(++completed, songs.length);
   }
-  current(name, signal);
+  check();
+  if (automatic) return {urls};
   return offlinePinStatus(collection);
+ });
+}
+
+// Publish only after the complete authoritative fetch and every byte save.
+// Retired bytes remain in the recovery collection; no history/player is touched.
+export async function commitAutomaticMusic(snapshots, {signal, authorized = () => true} = {}) {
+ const name=scope(); if(!name)throw Error('Sign in before syncing music.');
+ return exclusive(async()=>{
+  const check=()=>current(name,signal,authorized);check();
+  const rows=read(name),cache=await caches.open(name),resolved=[];
+  for(const snapshot of snapshots) {
+   const key=pinCollectionKey(snapshot.collection),previous=rows.collections[key];
+   if(snapshot.existing && (!previous?.pinned || JSON.stringify(previous.urls)!==JSON.stringify(snapshot.previousURLs))) throw Error('Pinned playlists changed. Retry synchronization.');
+   const urls=[];
+   for(const song of snapshot.songs) {
+    let found;
+    for(const row of Object.values(rows.songs))if(row.media.id===song.id && await cache.match(row.url)){found=row.url;break;}
+    check(); if(!found)throw Error('A saved song is missing. Retry synchronization.');urls.push(found);
+   }
+   resolved.push({key,previous,snapshot,urls});
+  }
+  check();
+  for(const {key,previous,snapshot,urls} of resolved) rows.collections[key]={...previous,title:snapshot.title,urls:[...new Set(urls)],ownedURLs:snapshot.existing?[...new Set([...(previous?.ownedURLs || previous?.urls || []),...urls])]:[...new Set(urls)],pinned:true,...(!snapshot.existing?{automatic:true}:{} )};
+  // Deselected automatic categories retain their bytes but no longer advertise
+  // an active automatic membership. The retained-downloads row stays reachable.
+  const active=new Set(resolved.map(row=>row.key));
+  for(const [key,row]of Object.entries(rows.collections))if(row.automatic && key!==pinCollectionKey({kind:'playlist',key:'@automatic-retained'}) && !active.has(key)){row.urls=[];row.ownedURLs=[];row.pinned=false;}
+  // Recreate recovery ownership after a prior cleanup retained files referenced
+  // by another collection. Such copies may become retired on this commit.
+  const retainedURLs=Object.values(rows.songs).filter(row=>row.automatic).map(row=>row.url);
+  if(retainedURLs.length){const retainedKey=pinCollectionKey({kind:'playlist',key:'@automatic-retained'});rows.collections[retainedKey]={title:'Automatic music · retained downloads',urls:retainedURLs,ownedURLs:retainedURLs,pinned:false,automatic:true};}
+  write(name,rows);
  });
 }
 export async function unpinMusicCollection(collection, { remove = false } = {}) {

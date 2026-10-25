@@ -2,6 +2,7 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Required for all network calls (API, streaming). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Optional SSID routing; location is requested only by Use current Wi-Fi. -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -85,6 +86,8 @@
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
+        <service android:name=".AutomaticMusicJob" android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <!-- audio_service background playback service.
              android:foregroundServiceType="mediaPlayback" is mandatory on
              Android 10+ (API 29+) to grant media-playback foreground service

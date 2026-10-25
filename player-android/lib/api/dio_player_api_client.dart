@@ -347,6 +347,7 @@ class DioPlayerApiClient extends PlayerApiClient
       url,
       cancelToken: cancelToken,
       options: Options(
+        extra: _personalOptions.extra,
         receiveTimeout: _kProbeTimeout,
         validateStatus: (status) => status != 401,
       ),

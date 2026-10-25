@@ -36,6 +36,9 @@ class MainActivity : AudioServiceFragmentActivity() {
         if (!flutterEngine.plugins.has(NativeMusicAutomation::class.java)) {
             flutterEngine.plugins.add(NativeMusicAutomation())
         }
+        if (!flutterEngine.plugins.has(NativeAutomaticMusic::class.java)) {
+            flutterEngine.plugins.add(NativeAutomaticMusic())
+        }
         screenAwakeChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
             "zone.foo.player_android/screen_awake").also { channel ->
             channel.setMethodCallHandler { call, result ->

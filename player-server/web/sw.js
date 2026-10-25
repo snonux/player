@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v82';
+const CACHE = 'kiss-v83';
 const ASSETS = [
   '/',
   '/index.html',
@@ -19,6 +19,7 @@ const ASSETS = [
   '/js/offline-pins.js',
   '/js/offline-pin-dialog.js',
   '/js/offline-pin-library.js',
+  '/js/automatic-offline.js',
   '/js/music-presence.js',
   '/js/music-presence-controller.js',
   '/js/playback-presence.js',

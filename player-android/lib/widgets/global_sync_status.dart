@@ -13,7 +13,7 @@ String globalSyncMessage(GlobalSyncState state, int nowMs) {
       'auth' => 'Sign in again to sync',
       'rejected' => 'Some changes could not sync',
       'unsupported' => 'Some sync features need a newer server',
-      'policy' => 'Session sync waits for Wi-Fi',
+      'policy' => 'Sync waits for Wi-Fi',
       'conflict' => 'Choose a saved session in Now Playing',
       _ => 'Sync unavailable',
     });

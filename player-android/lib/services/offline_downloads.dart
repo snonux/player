@@ -106,6 +106,8 @@ class OfflineDownloads extends ChangeNotifier {
     String? sourceName,
     bool? originalBytes,
     bool batchMember = false,
+    bool automaticMusic = false,
+    void Function(OfflineDownloadJob)? onStarted,
     required String origin,
     String? trustedTransportOrigin,
     required int userId,
@@ -131,6 +133,7 @@ class OfflineDownloads extends ChangeNotifier {
     final job = OfflineDownloadJob(key, media.displayTitle,
         downloadProfile: downloadProfile);
     active = job;
+    onStarted?.call(job);
     error = null;
     _changed();
     HttpClient? client;
@@ -257,7 +260,8 @@ class OfflineDownloads extends ChangeNotifier {
               authorized: () => !job.cancelled && authorized() && !_disposed)
           : null;
       check();
-      await repository.add(item, lyrics: lyrics);
+      await repository.add(item,
+          lyrics: lyrics, automaticMusic: automaticMusic);
       check();
       createdFinal = false;
       _libraryRevision++;

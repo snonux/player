@@ -17,9 +17,9 @@ export function showOfflinePin(collection, title, opener = document.activeElemen
  function render(message) {
   status.textContent=message || (row ? `${row.pinned?'Pinned':'Unpinned'} · ${row.songs.length} of ${row.urls.length} songs downloaded${!row.complete?' · Retry pinning to finish.':''}${row.songs.length ? ` · Saved quality: ${[...new Set(row.songs.map(song=>({original:'Original',aac128:'AAC 128 kbps',aac256:'AAC 256 kbps',mp3192:'MP3 192 kbps',opus96:'Opus 96 kbps'}[song.profile] || 'Existing copy (quality not recorded)') + (song.contentType ? ` (${song.contentType})` : '')))].join(', ')}` : ''}` : 'Not pinned');
   overlay.querySelector('[data-download-quality]').disabled=busy;
-  pin.disabled=busy || !current() || !globalThis.caches;
+  pin.disabled=busy || !current() || !globalThis.caches || Boolean(row?.automatic);
   play.disabled=busy || !row?.complete || !current(); unpin.disabled=busy || !row?.pinned || !current(); remove.disabled=busy || !row || !current();
-  pin.textContent=row ? row.complete && row.pinned ? 'Refresh pin' : 'Retry pinning' : 'Pin offline';
+  pin.textContent=row?.automatic ? 'Managed in Automatic offline music' : row ? row.complete && row.pinned ? 'Refresh pin' : 'Retry pinning' : 'Pin offline';
   close.textContent=busy?'Cancel and close':'Close';
  }
  async function refresh() { row=await offlinePinStatus(collection); if(current())render(); }

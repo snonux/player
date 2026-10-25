@@ -9,12 +9,14 @@ class GlobalSyncAccount {
       required this.syncMedia,
       required this.flushProgress,
       required this.pendingOther,
-      this.syncQueue});
+      this.syncQueue,
+      this.syncMusic});
   final PodcastSyncAccount podcast;
   final Future<void> Function(bool explicit) syncMedia;
   final Future<void> Function() flushProgress;
   final Future<int> Function() pendingOther;
   final Future<void> Function()? syncQueue;
+  final Future<void> Function(bool explicit)? syncMusic;
 }
 
 class GlobalSyncState {
@@ -172,7 +174,8 @@ class GlobalSyncCoordinator extends ChangeNotifier {
     for (final step in [
       () => active.syncMedia(explicit),
       active.flushProgress,
-      if (active.syncQueue != null) active.syncQueue!
+      if (active.syncQueue != null) active.syncQueue!,
+      if (active.syncMusic != null) () => active.syncMusic!(explicit)
     ]) {
       if (!current()) return;
       try {

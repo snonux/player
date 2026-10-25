@@ -192,7 +192,8 @@ class OfflineDownloadRepository {
     return rows.isEmpty ? null : _fromRow(rows.single);
   }
 
-  Future<void> add(OfflineMedia item, {Map<String, dynamic>? lyrics}) =>
+  Future<void> add(OfflineMedia item,
+          {Map<String, dynamic>? lyrics, bool automaticMusic = false}) =>
       _write((db) => db.transaction((db) async {
             if (item.key !=
                     offlineMediaKey(item.origin, item.userId, item.mediaId) ||
@@ -220,6 +221,12 @@ class OfflineDownloadRepository {
               'size_bytes': item.sizeBytes,
               'added_at': item.addedAt.toUtc().millisecondsSinceEpoch,
             });
+            if (automaticMusic) {
+              await db.execute(
+                  'CREATE TABLE IF NOT EXISTS automatic_music_copies (download_key TEXT PRIMARY KEY REFERENCES downloads(key) ON DELETE CASCADE)');
+              await db
+                  .insert('automatic_music_copies', {'download_key': item.key});
+            }
             await db.insert(
                 'sync_items',
                 {

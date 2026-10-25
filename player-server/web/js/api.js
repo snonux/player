@@ -29,6 +29,7 @@ async function api(path, options = {}) {
     headers,
     method: options.method || 'GET',
     body: isForm ? options.body : (options.body ? JSON.stringify(options.body) : undefined),
+    signal: options.signal,
   });
 
   if (res.status === 204) return 'noContentValue' in options ? options.noContentValue : null;
@@ -56,6 +57,7 @@ async function api(path, options = {}) {
 }
 
 export const API = {
+  offlineMusicRead: (path,signal) => api(path,{quietAuth:true,signal}),
   progressBatch: (updates,user) => api('/api/progress/batch',{method:'POST',quietAuth:true,body:{updates,expected_user_id:user}}),
   listeningHistory: (params={},user) => api(`/api/music/history?${new URLSearchParams({...params,expected_user_id:user || 0})}`),
   configureListeningHistory: (settings,user) => api(`/api/music/history?expected_user_id=${user || 0}`,{method:'PUT',body:settings}),
