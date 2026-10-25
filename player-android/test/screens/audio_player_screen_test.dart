@@ -119,6 +119,11 @@ class _FakeApiClient extends PlayerApiClient {
   final media = <int, Media>{};
 
   @override
+  Future<List<Map<String, dynamic>>> musicAlbums(
+          {String? artist, int? mediaId, List<int>? libraryIds}) async =>
+      [];
+
+  @override
   Future<List<Map<String, dynamic>>> streamProfiles() async => [
         {'id': 'opus96', 'label': 'Data saver · Opus 96 kbps'}
       ];
