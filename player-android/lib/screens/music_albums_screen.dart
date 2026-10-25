@@ -389,7 +389,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
     }
     if (albums.isEmpty) {
       return Column(children: [
-        _discoveryHeader(albums),
+        _catalogHeader(albums),
         Expanded(
             child: Center(
                 child: Padding(
@@ -425,13 +425,7 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         key: ValueKey(
             'albums-${widget.artistKey ?? "all"}-$_collection-$_generation'),
         items: albums,
-        header: _discoveryHeader(albums),
-        listHeader: _facets.isEmpty
-            ? null
-            : Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                    '${albums.length} matching albums · ${albums.fold<int>(0, (sum, album) => sum + (album['song_count'] as int? ?? 0))} matching songs')),
+        header: _catalogHeader(albums),
         kind: 'album',
         keyName: 'album_key',
         nameName: 'title',
@@ -488,6 +482,16 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                                   ])),
                         ]))));
   }
+
+  Widget _catalogHeader(List<Map<String, dynamic>> albums) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _discoveryHeader(albums),
+        if (_facets.isNotEmpty)
+          Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                  '${albums.length} matching albums · ${albums.fold<int>(0, (sum, album) => sum + (album['song_count'] as int? ?? 0))} matching songs')),
+      ]);
 
   Widget _discoveryHeader(List<Map<String, dynamic>> albums) {
     if (widget.artistKey != null) return const SizedBox.shrink();

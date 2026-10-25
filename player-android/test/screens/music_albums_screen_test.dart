@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
@@ -13,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/music_albums_screen.dart';
+import 'package:player_android/widgets/music_filter_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/idle_playback.dart';
@@ -25,6 +27,20 @@ class _Client extends PlayerApiClient {
   bool fail = false;
   Completer<Map<String, dynamic>>? pending;
   int albumCalls = 0;
+  List<Map<String, dynamic>> filteredAlbums = [
+    {'album_key': 'first', 'title': 'First album', 'song_count': 2},
+    {'album_key': 'second', 'title': 'Second album', 'song_count': 1},
+  ];
+  Completer<dynamic>? pendingFiltered;
+  bool failFiltered = false;
+  @override
+  Future<dynamic> filteredMusic(String kind, Map<String, String> filters,
+      {Map<String, String> query = const {}}) async {
+    if (pendingFiltered != null) return pendingFiltered!.future;
+    if (failFiltered) throw StateError('offline');
+    return filteredAlbums;
+  }
+
   @override
   Future<List<Map<String, dynamic>>> musicAlbums(
           {String? artist, int? mediaId, List<int>? libraryIds}) async =>
@@ -125,6 +141,64 @@ class _IdlePlayer extends AudioPlayer {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  for (final table in [false, true]) {
+    testWidgets(
+        'facet counts remain visible in ${table ? 'table' : 'grid'} and clear for loading, error and unfiltered results',
+        (tester) async {
+      tester.view.physicalSize = const Size(430, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({
+        'player.music-layout.v1:http://local:7:albums':
+            jsonEncode({'view': table ? 'table' : 'grid'}),
+      });
+      final client = _Client();
+      await tester.pumpWidget(ProviderScope(
+          overrides: [
+            ...idlePlaybackOverrides(),
+            unpairedServerEndpointOverride(),
+            apiClientProvider.overrideWithValue(client),
+            authStateProvider.overrideWith(_Auth.new),
+            playerBaseUrlProvider.overrideWithValue(Uri.parse('http://local')),
+          ],
+          child: MaterialApp(
+              theme: table ? ThemeData.dark() : ThemeData.light(),
+              home: const MusicAlbumsScreen())));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('matching albums'), findsNothing);
+      expect(find.text(table ? 'View: Table' : 'View: Grid'), findsOneWidget);
+      void apply() => tester
+          .widget<MusicFilterBar>(find.byType(MusicFilterBar))
+          .onChanged({'genre': 'Ambient'});
+      apply();
+      await tester.pumpAndSettle();
+      final summary = find.text('2 matching albums · 3 matching songs');
+      expect(summary, findsOneWidget);
+      expect(summary.hitTestable(), findsOneWidget);
+      client.pendingFiltered = Completer<dynamic>();
+      apply();
+      await tester.pump();
+      expect(summary, findsNothing);
+      client.pendingFiltered!.complete([]);
+      client.pendingFiltered = null;
+      await tester.pumpAndSettle();
+      expect(find.text('0 matching albums · 0 matching songs'), findsOneWidget);
+      expect(
+          find.textContaining('Nothing matches these filters'), findsOneWidget);
+      client.failFiltered = true;
+      apply();
+      await tester.pumpAndSettle();
+      expect(find.text('Retry'), findsOneWidget);
+      expect(find.textContaining('matching albums'), findsNothing);
+      client.failFiltered = false;
+      tester.widget<MusicFilterBar>(find.byType(MusicFilterBar)).onChanged({});
+      await tester.pumpAndSettle();
+      expect(find.text('First album'), findsOneWidget);
+      expect(find.textContaining('matching albums'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
   Future<void> reveal(WidgetTester tester, Finder target) async {
     final scrollable = find.byType(Scrollable).first;
     for (var i = 0; i < 20 && target.evaluate().isEmpty; i++) {
