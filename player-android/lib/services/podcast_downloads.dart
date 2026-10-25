@@ -11,13 +11,16 @@ import 'playback_session_coordinator.dart';
 import 'podcast_identity.dart';
 import 'podcast_repository.dart';
 import 'podcast_sync_store.dart';
+import 'podcast_sync.dart';
 
 /// Device copies only. No API client, account transport, or music hooks.
 class PodcastDownloads extends ChangeNotifier {
-  PodcastDownloads(this.repository, this.playback, {Directory? directory})
+  PodcastDownloads(this.repository, this.playback,
+      {Directory? directory, this.captureSyncAccount})
       : _directory = directory;
   final PodcastRepository repository;
   final PlaybackSessionCoordinator playback;
+  final PodcastSyncAccount? Function()? captureSyncAccount;
   Directory? _directory;
   Future<void>? _initializing;
   String? _active;
@@ -300,6 +303,20 @@ class PodcastDownloads extends ChangeNotifier {
       throw StateError('Download this episode first.');
     }
     final store = PodcastSyncStore(repository);
+    final account = captureSyncAccount?.call();
+    Future<void> synchronize() async {
+      if (account == null || account.scope != scope || !account.current()) {
+        return;
+      }
+      try {
+        final current = await _identity(feed, key);
+        await PodcastSync(store)
+            .beforePlayback(account, current.$1, current.$2);
+      } catch (_) {
+        // Reconciliation is optional; detached end sync must stay quiet too.
+      }
+    }
+
     final duration = episode['duration_seconds'] as int;
     Future<void> save({double? seconds, bool? completed}) async {
       final current = await _identity(feed, key);
@@ -310,34 +327,45 @@ class PodcastDownloads extends ChangeNotifier {
           enclosureUrl: episode['enclosure_url'] as String);
     }
 
+    Future<double?> readPosition(Duration? loadedDuration) async {
+      await synchronize();
+      if (fromBeginning) return 0;
+      final db = await repository.database;
+      final current = await _identity(feed, key);
+      final resolvedFeed =
+          await store.resolve(db, scope, 'feed', '', current.$1);
+      final resolvedEpisode =
+          await store.resolve(db, scope, 'episode', resolvedFeed, current.$2);
+      final state = (await db.query('podcast_episode_state',
+              where: 'scope=? AND feed_key=? AND episode_key=?',
+              whereArgs: [scope, resolvedFeed, resolvedEpisode]))
+          .firstOrNull;
+      final seconds = (state?['position_seconds'] as num?)?.toDouble() ?? 0;
+      final total = loadedDuration == null || loadedDuration <= Duration.zero
+          ? duration.toDouble()
+          : loadedDuration.inMilliseconds / 1000;
+      if (total > 0 && seconds >= total - 5) {
+        return 0;
+      }
+      return seconds;
+    }
+
     return PodcastPlaybackRequest(
       identity: 'podcast:$scope:$feed:$key',
       title: episode['title'] as String,
       sourceName: 'Podcast on this device',
       sourceUri: _file(row!['id'] as String).uri,
-      readPosition: () async {
-        if (fromBeginning) return 0;
-        final db = await repository.database;
-        final current = await _identity(feed, key);
-        final resolvedFeed =
-            await store.resolve(db, scope, 'feed', '', current.$1);
-        final resolvedEpisode =
-            await store.resolve(db, scope, 'episode', resolvedFeed, current.$2);
-        final state = (await db.query('podcast_episode_state',
-                where: 'scope=? AND feed_key=? AND episode_key=?',
-                whereArgs: [scope, resolvedFeed, resolvedEpisode]))
-            .firstOrNull;
-        final seconds = (state?['position_seconds'] as num?)?.toDouble() ?? 0;
-        if ((state?['completed'] == 1 &&
-                (state!['completion_ms'] as int) >=
-                    (state['position_ms'] as int)) ||
-            (duration > 0 && seconds >= duration - 5)) {
-          return 0;
-        }
-        return seconds;
-      },
+      synchronize: synchronize,
+      readPosition: () => readPosition(null),
+      readPositionForDuration: readPosition,
       savePosition: (seconds) => save(seconds: seconds),
       markFinished: () => save(completed: true),
+      finishAtPosition: (seconds) async {
+        await save(seconds: seconds, completed: true);
+        // Save first. This network attempt is deliberately detached from the
+        // handler's completion/source transition and retains the original lease.
+        unawaited(synchronize());
+      },
     );
   }
 

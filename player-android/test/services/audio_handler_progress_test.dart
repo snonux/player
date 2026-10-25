@@ -11,10 +11,13 @@ import 'package:player_android/services/playback_session_coordinator.dart';
 class _Player extends AudioPlayer {
   final changes = StreamController<bool>.broadcast();
   final processing = StreamController<ProcessingState>.broadcast();
+  final positions = StreamController<Duration>.broadcast();
+  final events = StreamController<PlaybackEvent>.broadcast();
   Duration? total = const Duration(seconds: 100);
   Duration elapsed = const Duration(seconds: 8);
   bool isPlaying = true;
   bool isStopped = false;
+  ProcessingState state = ProcessingState.ready;
   Completer<Duration?>? pendingSource;
   AudioSource? loadedSource;
   final seeks = <Duration>[];
@@ -43,12 +46,14 @@ class _Player extends AudioPlayer {
   @override
   Stream<bool> get playingStream => changes.stream;
   @override
-  Stream<PlaybackEvent> get playbackEventStream => const Stream.empty();
+  Stream<PlaybackEvent> get playbackEventStream => events.stream;
+  @override
+  Stream<Duration> get positionStream => positions.stream;
   @override
   Stream<ProcessingState> get processingStateStream => processing.stream;
   @override
   ProcessingState get processingState =>
-      isStopped ? ProcessingState.idle : ProcessingState.ready;
+      isStopped ? ProcessingState.idle : state;
 
   @override
   Future<void> pause() async {
@@ -79,10 +84,145 @@ class _Player extends AudioPlayer {
   @override
   Future<void> seek(Duration? position, {int? index}) async {
     seeks.add(position ?? Duration.zero);
+    elapsed = position ?? Duration.zero;
   }
 }
 
 void main() {
+  testWidgets(
+      'podcast natural end before next position tick completes; seek to end does not',
+      (tester) async {
+    final player = _Player()..total = const Duration(hours: 1);
+    final handler = PlayerAudioHandler(player);
+    handler.activateSourceSession(handler.beginSourceSession());
+    final ended = <double>[];
+    void start() => handler.startProgress(
+        savePosition: (_) async {},
+        markFinished: () async => fail('legacy completion'),
+        naturalEndOnly: true,
+        finishAtPosition: (position) async => ended.add(position));
+    start();
+    final total = player.total!;
+    await handler.seek(total - const Duration(milliseconds: 50));
+    // Native terminal event updates position/state before delivering completed.
+    // No positionStream event arrives while ready in this 50 ms segment.
+    player.elapsed = total;
+    player.state = ProcessingState.completed;
+    player.processing.add(player.state);
+    await tester.pump();
+    expect(ended, [3600]);
+    await handler.endProgress();
+
+    player.state = ProcessingState.ready;
+    player.elapsed = const Duration(minutes: 4);
+    start();
+    await handler.seek(total);
+    player.state = ProcessingState.completed;
+    player.processing.add(player.state);
+    await tester.pump();
+    expect(ended, [3600]);
+    await tester.runAsync(handler.stop);
+    await player.changes.close();
+    await player.processing.close();
+    await player.positions.close();
+    await player.events.close();
+  });
+  testWidgets('podcast seeks pauses errors and stops never complete near end',
+      (tester) async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    handler.activateSourceSession(handler.beginSourceSession());
+    final saved = <double>[];
+    var ended = 0;
+    handler.startProgress(
+        savePosition: (p) async => saved.add(p),
+        markFinished: () async => fail('legacy completion'),
+        naturalEndOnly: true,
+        finishAtPosition: (_) async => ended++);
+    player.processing.add(ProcessingState.completed);
+    await tester.pump();
+    expect(ended, 0); // A loaded terminal position has not played naturally.
+    player.elapsed = const Duration(seconds: 96);
+    await tester.pump(const Duration(seconds: 5));
+    expect(ended, 0);
+    await handler.seek(const Duration(seconds: 100));
+    player.processing.add(ProcessingState.completed);
+    await tester.pump();
+    expect(ended, 0);
+    await handler.pause();
+    player.processing.add(ProcessingState.completed);
+    await tester.pump();
+    expect(ended, 0);
+    player.isPlaying = true;
+    await handler.seek(const Duration(seconds: 90));
+    player.positions.add(const Duration(seconds: 91));
+    await tester.pump();
+    player.events.addError(StateError('decoder error'));
+    await tester.pump();
+    player.processing.add(ProcessingState.completed);
+    await tester.pump();
+    expect(ended, 0);
+    await tester.runAsync(handler.stop);
+    expect(saved, contains(96));
+    await player.changes.close();
+    await player.processing.close();
+    await player.positions.close();
+    await player.events.close();
+  });
+
+  testWidgets(
+      'podcast background end records duration once and native replay starts fresh',
+      (tester) async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    handler.activateSourceSession(handler.beginSourceSession());
+    final ended = <double>[];
+    var starts = 0;
+    final saved = <double>[];
+    final request = PodcastPlaybackRequest(
+        identity: 'podcast:local:f:e',
+        sourceUri: Uri.file('/device.audio'),
+        title: 'Episode',
+        synchronize: () async {
+          starts++;
+        },
+        readPositionForDuration: (_) async {
+          starts++;
+          return 0;
+        },
+        savePosition: (p) async => saved.add(p),
+        markFinished: () async {},
+        finishAtPosition: (p) async => ended.add(p));
+    handler.setMediaRequest(request);
+    handler.startProgress(
+        savePosition: request.savePosition!,
+        markFinished: request.markFinished!,
+        naturalEndOnly: request.naturalEndOnly,
+        finishAtPosition: request.finishAtPosition);
+    await tester.pumpWidget(const MaterialApp(home: Text('library')));
+    player.elapsed = const Duration(seconds: 98);
+    player.positions.add(player.elapsed);
+    await tester.pump(const Duration(seconds: 5));
+    expect(ended, isEmpty);
+    player.processing.add(ProcessingState.completed);
+    await tester.pump();
+    expect(ended, [100]);
+    await handler.play();
+    expect(starts, 1);
+    expect(player.seeks.last, Duration.zero);
+    player.elapsed = const Duration(seconds: 12);
+    await handler.saveProgress();
+    expect(saved.last, 12);
+    await handler.pause();
+    await handler.play();
+    expect(starts, 2);
+    expect(player.seeks, [Duration.zero]);
+    await tester.runAsync(handler.stop);
+    await player.changes.close();
+    await player.processing.close();
+    await player.positions.close();
+    await player.events.close();
+  });
   testWidgets(
       'listening identity survives handoff but a replay gets a new identity',
       (tester) async {

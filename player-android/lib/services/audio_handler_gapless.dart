@@ -225,7 +225,9 @@ extension GaplessAudioHandler on PlayerAudioHandler {
     startProgress(
         savePosition: target.request.savePosition!,
         saveListeningPosition: target.request.saveListeningPosition,
-        markFinished: target.request.markFinished!);
+        markFinished: target.request.markFinished!,
+        naturalEndOnly: target.request.naturalEndOnly,
+        finishAtPosition: target.request.finishAtPosition);
     _gapless.invalidate();
     // Discard completed native children so a long queue does not retain an
     // unbounded graph. Suppress the index renumbering event during removal.

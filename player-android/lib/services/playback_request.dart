@@ -49,6 +49,9 @@ sealed class PlaybackRequest {
   final SaveListeningPosition? saveListeningPosition;
   final MarkPlaybackFinished? markFinished;
 
+  bool get naturalEndOnly => false;
+  SavePlaybackPosition? get finishAtPosition => null;
+
   PlaybackSourceKind get kind;
 }
 
@@ -134,7 +137,17 @@ final class PodcastPlaybackRequest extends PlaybackRequest {
     super.readPosition,
     super.savePosition,
     super.markFinished,
+    this.synchronize,
+    this.finishAtPosition,
+    this.readPositionForDuration,
   });
+
+  final Future<void> Function()? synchronize;
+  final Future<double?> Function(Duration?)? readPositionForDuration;
+  @override
+  final SavePlaybackPosition? finishAtPosition;
+  @override
+  bool get naturalEndOnly => true;
 
   @override
   PlaybackSourceKind get kind => PlaybackSourceKind.local;

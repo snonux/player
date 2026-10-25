@@ -224,6 +224,11 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     // Completed setup belongs to the background handler. An abandoned setup
     // must release its source, even when credentials or resume reads are pending.
     final lease = _sessionLease;
+    if (!_isLoading &&
+        lease?.isCurrent == true &&
+        _activeRequest is PodcastPlaybackRequest) {
+      unawaited(_handler?.saveProgress());
+    }
     if (_isLoading &&
         lease?.isCurrent == true &&
         _handler?.musicState == null) {
@@ -450,7 +455,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     }
     _watchPlayback(attempt);
 
-    final resumePosition = await _readResumePosition(attempt.request);
+    final resumePosition = await _readResumePosition(attempt.request,
+        loadedDuration: attempt.handler.player.duration);
     if (!_isCurrent(attempt)) return false;
     if (resumePosition != null && resumePosition > 0) {
       try {
@@ -471,7 +477,16 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   /// older position over the newer progress. Otherwise it is the position
   /// the caller passed, else the saved one; that lookup is optional and a
   /// provider error starts at zero.
-  Future<double?> _readResumePosition(PlaybackRequest request) async {
+  Future<double?> _readResumePosition(PlaybackRequest request,
+      {Duration? loadedDuration}) async {
+    if (request is PodcastPlaybackRequest) {
+      try {
+        return await request.readPositionForDuration?.call(loadedDuration) ??
+            await request.readPosition?.call();
+      } catch (_) {
+        return null;
+      }
+    }
     final lastKnown = _lastKnownPosition;
     if (lastKnown != null) return lastKnown.inMilliseconds / 1000.0;
     final readPosition = request.readPosition;
@@ -501,6 +516,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         saveListeningPosition: request.saveListeningPosition,
         listeningOccurrenceID: _remoteReturnOccurrence,
         markFinished: request.markFinished!,
+        naturalEndOnly: request.naturalEndOnly,
+        finishAtPosition: request.finishAtPosition,
       );
     }
     if (_musicEntries.isNotEmpty) _attachMusicSequence(attempt);

@@ -7,6 +7,7 @@ import 'playback_session_provider.dart';
 import 'auth_state_provider.dart';
 import 'api_client_provider.dart';
 import 'settings_provider.dart';
+import 'global_sync_provider.dart';
 
 final podcastRepositoryProvider = Provider<PodcastRepository>((ref) {
   final repository = PodcastRepository();
@@ -17,7 +18,8 @@ final podcastRepositoryProvider = Provider<PodcastRepository>((ref) {
 final podcastDownloadsProvider =
     ChangeNotifierProvider<PodcastDownloads>((ref) {
   return PodcastDownloads(ref.watch(podcastRepositoryProvider),
-      ref.watch(playbackSessionCoordinatorProvider));
+      ref.watch(playbackSessionCoordinatorProvider),
+      captureSyncAccount: () => captureSyncAccount(ref)?.podcast);
 });
 
 /// Remember only the last account identity, never credentials. Signed-out

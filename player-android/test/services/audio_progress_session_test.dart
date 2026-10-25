@@ -2,6 +2,40 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/services/audio_progress_session.dart';
 
 void main() {
+  testWidgets('podcast near-end ticks and close only save position',
+      (tester) async {
+    final positions = <double>[];
+    final session = AudioProgressSession(
+      position: () => const Duration(seconds: 99),
+      duration: () => const Duration(seconds: 100),
+      playing: () => true,
+      naturalEndOnly: true,
+      savePosition: (p) async => positions.add(p),
+      markFinished: () async => fail('near-end is not completion'),
+      finishAtPosition: (_) async => fail('close is not completion'),
+    );
+    await tester.pump(const Duration(seconds: 5));
+    await session.close(finalPosition: const Duration(seconds: 99));
+    expect(positions, [99]);
+  });
+
+  testWidgets(
+      'podcast natural end is one atomic callback using native duration',
+      (tester) async {
+    final ended = <double>[];
+    final session = AudioProgressSession(
+      position: () => const Duration(seconds: 98),
+      duration: () => const Duration(seconds: 100),
+      playing: () => true,
+      naturalEndOnly: true,
+      savePosition: (_) async => fail('end must not save position separately'),
+      markFinished: () async => fail('end must be paired'),
+      finishAtPosition: (p) async => ended.add(p),
+    );
+    await session.record(force: true, completed: true);
+    await session.close();
+    expect(ended, [100]);
+  });
   testWidgets('unknown-duration completion retries a failed finish write',
       (tester) async {
     var attempts = 0;

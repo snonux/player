@@ -10,6 +10,8 @@ class AudioProgressSession {
     required this.savePosition,
     required this.markFinished,
     this.interval = const Duration(seconds: 5),
+    this.naturalEndOnly = false,
+    this.finishAtPosition,
   }) {
     _timer = Timer.periodic(interval, (_) => unawaited(record()));
   }
@@ -20,6 +22,9 @@ class AudioProgressSession {
   final Future<void> Function(double) savePosition;
   final Future<void> Function() markFinished;
   final Duration interval;
+  final bool naturalEndOnly;
+  final Future<void> Function(double)? finishAtPosition;
+  bool get finished => _finishedEmitted;
 
   late final Timer _timer;
   Future<void> _pending = Future.value();
@@ -42,7 +47,8 @@ class AudioProgressSession {
     if (elapsedMs < 0) return _pending;
 
     final reachedFinish = _completionReceived ||
-        (total != null &&
+        (!naturalEndOnly &&
+            total != null &&
             total.inMilliseconds > 0 &&
             elapsedMs / total.inMilliseconds >= 0.95);
 
@@ -52,6 +58,13 @@ class AudioProgressSession {
       // A later position would reset the server's finished flag, so the
       // durable completion command must be this session's final write.
       if (_finishedEmitted) return;
+      if (reachedFinish && finishAtPosition != null) {
+        try {
+          await finishAtPosition!((total ?? elapsed).inMilliseconds / 1000.0);
+          _finishedEmitted = true;
+        } catch (_) {}
+        return;
+      }
       if (elapsedMs != _lastPositionMs) {
         try {
           await savePosition(elapsedMs / 1000.0);
@@ -76,7 +89,7 @@ class AudioProgressSession {
         force: true,
         completed: completed,
         positionOverride: finalPosition,
-        durationOverride: finalPosition);
+        durationOverride: naturalEndOnly && !completed ? null : finalPosition);
     _closed = true;
     await pending;
     await _pending;

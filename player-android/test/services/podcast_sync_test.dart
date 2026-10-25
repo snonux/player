@@ -50,6 +50,24 @@ void main() {
     await temp.delete(recursive: true);
   });
   test(
+      'atomic end uses one clock newer than both independently edited registers',
+      () async {
+    await store.saveEpisode(scope, feed, episode,
+        seconds: 99, observedMs: 9000);
+    await store.saveEpisode(scope, feed, episode,
+        completed: false, observedMs: 12000);
+    await store.saveEpisode(scope, feed, episode,
+        seconds: 100, completed: true, source: 'auto', observedMs: 1000);
+    final row =
+        (await (await repository.database).query('podcast_episode_state'))
+            .single;
+    expect(row['position_ms'], 12001);
+    expect(row['completion_ms'], 12001);
+    expect(row['position_seconds'], 100);
+    expect(row['completed'], 1);
+    expect(await store.pending(scope), hasLength(2));
+  });
+  test(
       'restart retains edit IDs; clamped ack adopts server, newer edit survives late ack',
       () async {
     await store.saveEpisode(scope, feed, episode,

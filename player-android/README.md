@@ -104,8 +104,12 @@ media and previously kept offline copies remain in Downloads.
 Implementation checks cover local storage and widgets. Installed Android,
 Chrome/Firefox and two-client acceptance remain pending; see
 [podcast browsing implementation](../docs/podcast-browsing-implementation.md).
-Bounded playback synchronization and exact natural-end handling are the next
-podcast lifecycle slice.
+Podcast playback attempts synchronization for at most three seconds before
+starting, then uses saved device state when unavailable. Background playback
+saves progress; natural episode end saves completion before a quiet sync.
+Seek, pause, stop and errors retain position without completing the episode.
+See [podcast lifecycle implementation](../docs/podcast-playback-lifecycle-implementation.md)
+for focused checks and the remaining installed-client verification gaps.
 
 ## Keep server files offline
 

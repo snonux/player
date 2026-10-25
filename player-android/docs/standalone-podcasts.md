@@ -43,10 +43,16 @@ The virtual **All podcast episodes** view and each podcast folder offer
 **Uncompleted / Completed / All** filters, newest-first pages, saved progress,
 and manual completion controls regardless of download availability (1i3).
 Completion changes retain position and pending sync edits; **Play from
-beginning** starts at zero without clearing history. Full bounded pre-play/end
-reconciliation (2i3) remains subsequent work. Basic local playback
-callbacks already use the existing scoped podcast registers, with a distinct
-local source that never invokes authenticated music or lyric APIs.
+beginning** starts at zero without clearing history. Playback attempts scoped
+synchronization for at most three seconds, then starts from reconciled or local
+position. A position within five seconds of the loaded audio's end starts at
+zero; replay keeps completion until a manual change. The shared audio handler
+saves listening/seek/pause/background/stop progress and records completion only
+on natural playback end, with one atomic end-position/completion edit before a
+quiet detached sync. Late replies update storage without seeking live audio.
+The local source never invokes authenticated music or lyric APIs. See the
+[lifecycle notes](../../docs/podcast-playback-lifecycle-implementation.md) for
+implementation-stage checks and integrated verification gaps.
 
 Cheap checks: shared Go/Dart feed, episode, ingest and resolution vectors;
 SQLite restart/tombstone/cache/account-isolation checks; per-register account

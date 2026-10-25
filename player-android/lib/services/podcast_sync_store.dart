@@ -42,6 +42,13 @@ class PodcastSyncStore {
       episode = await resolve(tx, scope, 'episode', feed, episode);
       final old = await _state(tx, scope, feed, episode);
       final now = observedMs ?? DateTime.now().millisecondsSinceEpoch;
+      // A paired edit is one event, even when either register was advanced
+      // by a future clock or an earlier edit in this millisecond.
+      final pairedClock = max(
+          now,
+          max(old['position_ms'] as int? ?? 0,
+                  old['completion_ms'] as int? ?? 0) +
+              1);
       await tx.insert('podcast_scopes', {'scope': scope},
           conflictAlgorithm: ConflictAlgorithm.ignore);
       await tx.insert(
@@ -54,14 +61,17 @@ class PodcastSyncStore {
             if (enclosureUrl.isNotEmpty) 'enclosure_url': enclosureUrl,
             if (seconds != null) ...{
               'position_seconds': seconds,
-              'position_ms': max(now, (old['position_ms'] as int? ?? 0) + 1),
+              'position_ms': completed == null
+                  ? max(now, (old['position_ms'] as int? ?? 0) + 1)
+                  : pairedClock,
               'position_pending_edit_id': podcastEditId()
             },
             if (completed != null) ...{
               'completed': completed ? 1 : 0,
               'completion_source': source,
-              'completion_ms':
-                  max(now, (old['completion_ms'] as int? ?? 0) + 1),
+              'completion_ms': seconds == null
+                  ? max(now, (old['completion_ms'] as int? ?? 0) + 1)
+                  : pairedClock,
               'completion_pending_edit_id': podcastEditId()
             },
           },
