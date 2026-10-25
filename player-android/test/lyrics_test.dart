@@ -64,4 +64,80 @@ void main() {
     expect(unordered.synced, isFalse);
     expect(unordered.currentLine(const Duration(seconds: 3)), -1);
   });
+  test(
+      'rich intervals, translations and voices recompute after forward and back seeks',
+      () {
+    final lyrics = Lyrics.fromJson({
+      'language': 'en',
+      'synced': true,
+      'lines': [
+        {
+          'text': 'Hello world',
+          'start': 1,
+          'end': 5,
+          'voice': 'Lead',
+          'translations': {'fr': 'Bonjour monde'},
+          'words': [
+            {'text': 'Hello ', 'start': 1, 'end': 2},
+            {'text': 'world', 'start': 2, 'end': 5}
+          ]
+        },
+        {'text': 'Harmony', 'start': 1, 'end': 3, 'voice': 'Harmony'},
+        {'text': 'Next', 'start': 6},
+      ],
+    });
+    expect(lyrics.language, 'en');
+    expect(lyrics.languages, ['fr']);
+    expect(lyrics.activeLines(const Duration(milliseconds: 2500)), {0, 1});
+    expect(lyrics.activeLines(const Duration(seconds: 4)), {0});
+    expect(lyrics.activeLines(const Duration(seconds: 5)), isEmpty);
+    expect(lyrics.activeLines(const Duration(seconds: 1)), {0, 1});
+    expect(lyrics.lines[0].currentWord(const Duration(milliseconds: 2500)), 1);
+    expect(lyrics.lines[0].currentWord(const Duration(milliseconds: 1500)), 0);
+    expect(lyrics.lines[0].currentWord(const Duration(seconds: 5)), -1);
+    expect(lyrics.lines[0].displayText('fr'), 'Bonjour monde');
+    expect(lyrics.lines[1].displayText('fr'), 'Harmony');
+  });
+
+  test('invalid optional rich metadata leaves complete readable lines', () {
+    for (final fields in [
+      {
+        'words': [
+          {'text': 'Hello world', 'start': -1}
+        ]
+      },
+      {
+        'words': [
+          {'text': 'wrong text', 'start': 1}
+        ]
+      },
+      {
+        'words': [
+          {'text': 'Hello world', 'start': 1, 'end': 'bad'}
+        ]
+      },
+      {
+        'words': [
+          {'text': 'Hello ', 'start': 3},
+          {'text': 'world', 'start': 2}
+        ]
+      },
+      {
+        'words': 'bad',
+        'end': -1,
+        'voice': [],
+        'translations': {'fr': []}
+      },
+    ]) {
+      final lyrics = Lyrics.fromJson({
+        'synced': true,
+        'lines': [
+          {'text': 'Hello world', 'start': 1, ...fields}
+        ]
+      });
+      expect(lyrics.synced, isTrue);
+      expect(lyrics.lines.single.text, 'Hello world');
+      expect(lyrics.lines.single.words, isEmpty);
+    }
+  });
 }

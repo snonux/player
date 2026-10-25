@@ -41,7 +41,7 @@ class Element {
   children = [];
   attributes = new Map();
   handlers = new Map();
-  classList = { toggle() {} };
+  classList = { values: new Set(), toggle(name, enabled) { if (enabled) this.values.add(name); else this.values.delete(name); }, contains(name) { return this.values.has(name); } };
   scrollTop = 0;
   clientHeight = 40;
   offsetTop = 0;
@@ -61,6 +61,7 @@ class Element {
     this.handlers.get(type).push(handler);
   }
   emit(type, event = {}) { this.handlers.get(type)?.forEach(handler => handler(event)); }
+  querySelector() { return null; }
   focus() { document.activeElement = this; }
 }
 const originalDocument = globalThis.document;
@@ -115,6 +116,39 @@ try {
   assert.equal(panel.scrollTop, 99, 'manual scroll survives transport updates');
   panel.emit('pointerleave');
   assert.equal(panel.scrollTop, 80, 'leaving resumes remote follow');
+  response = { language: 'en', synced: true, lines: [
+    { text: 'Hello world', start: 0, end: 5, voice: 'Lead', translations: { fr: 'Bonjour monde' }, words: [
+      {text: 'Hello ', start: 0, end: 2}, {text: 'world', start: 2, end: 5},
+    ]},
+    { text: 'Harmony', start: 0, end: 3, voice: 'Harmony' },
+  ] };
+  remoteTime = 1;
+  lyrics.setMedia({ type: 'audio' }, '/api/media/3/stream');
+  await new Promise(setImmediate);
+  const languageSelect = controls.children[1].children[0];
+  languageSelect.focus();
+  languageSelect.value = 'fr';
+  languageSelect.emit('change');
+  assert.equal(document.activeElement, languageSelect, 'language changes preserve native selector focus');
+  assert.equal(seeks, 1, 'language changes do not seek or restart playback');
+  assert.equal(panel.children[0].getAttribute('aria-label'), 'Seek to 0:00: Voice: Lead · Bonjour monde');
+  assert.equal(panel.children[1].getAttribute('aria-label'), 'Seek to 0:00: Voice: Harmony · Harmony');
+  assert.equal(panel.children[1].children.at(-1).textContent, ' (Original: en)');
+  assert.equal(panel.children[0].getAttribute('aria-current'), 'true');
+  assert.equal(panel.children[1].getAttribute('aria-current'), 'true');
+  remoteTime = 4; lyrics.update();
+  assert.equal(panel.children[1].getAttribute('aria-current'), undefined);
+  remoteTime = 1; lyrics.update();
+  assert.equal(panel.children[1].getAttribute('aria-current'), 'true');
+  languageSelect.value = ''; languageSelect.emit('change');
+  const wordSpans = panel.children[0].children[1].children;
+  assert.equal(wordSpans[0].classList.contains('lyric-word-current'), true);
+  remoteTime = 4; lyrics.update();
+  assert.equal(wordSpans[0].classList.contains('lyric-word-current'), false);
+  assert.equal(wordSpans[1].classList.contains('lyric-word-current'), true);
+  remoteTime = 1; lyrics.update();
+  assert.equal(wordSpans[0].classList.contains('lyric-word-current'), true);
+  assert.equal(wordSpans[1].classList.contains('lyric-word-current'), false);
   response = { synced: false, lines: [{ text: 'Plain' }] };
   lyrics.setMedia({ type: 'audio' }, '/api/media/2/stream');
   await new Promise(setImmediate);
@@ -130,3 +164,32 @@ try {
   globalThis.location = originalLocation;
 }
 console.log('Lyrics formatting, endpoint, transport seek, focus and reading tests passed.');
+
+const { activeLyricIndices, currentWordIndex, lyricText } = await import('../lyrics.js');
+const rich = normalizeLyrics({ language: 'en', synced: true, lines: [
+  { text: 'Hello world', start: 1, end: 5, voice: 'Lead', translations: { fr: 'Bonjour monde' }, words: [
+    { text: 'Hello ', start: 1, end: 2 }, { text: 'world', start: 2, end: 5 },
+  ] },
+  { text: 'Harmony', start: 1, end: 3, voice: 'Harmony', translations: { toString: 'Own text' } },
+  { text: 'Next', start: 6 },
+] });
+assert.deepEqual(activeLyricIndices(rich.lines, 2.5), [0, 1]);
+assert.deepEqual(activeLyricIndices(rich.lines, 4), [0]);
+assert.deepEqual(activeLyricIndices(rich.lines, 5), []);
+assert.deepEqual(activeLyricIndices(rich.lines, 1), [0, 1], 'backward seeks restore simultaneous voices');
+assert.equal(currentWordIndex(rich.lines[0].words, 2.5, 5), 1);
+assert.equal(currentWordIndex(rich.lines[0].words, 1.5, 5), 0);
+assert.equal(currentWordIndex(rich.lines[0].words, 5, 5), -1);
+assert.equal(lyricText(rich.lines[0], 'fr'), 'Bonjour monde');
+assert.equal(lyricText(rich.lines[1], 'fr'), 'Harmony');
+assert.equal(lyricText(rich.lines[0], 'toString'), 'Hello world', 'inherited names never become translations');
+assert.equal(lyricText(rich.lines[1], 'toString'), 'Own text');
+for (const fields of [
+  { words: [{ text: 'Hello world', start: -1 }] },
+  { words: [{ text: 'wrong text', start: 1 }] },
+  { words: [{ text: 'Hello world', start: 1, end: 'bad' }] },
+  { words: [{ text: 'Hello ', start: 3 }, { text: 'world', start: 2 }] },
+]) {
+  const line = normalizeLyrics({ synced: true, lines: [{ text: 'Hello world', start: 1, ...fields }] }).lines[0];
+  assert.equal(line.text, 'Hello world'); assert.equal(line.words, undefined);
+}

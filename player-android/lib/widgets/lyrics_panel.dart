@@ -27,6 +27,7 @@ class _LyricsPanelState extends State<LyricsPanel> {
   bool _loading = false;
   bool _failed = false;
   Lyrics? _lyrics;
+  String _language = '';
 
   Future<void> _load() async {
     setState(() {
@@ -105,9 +106,33 @@ class _LyricsPanelState extends State<LyricsPanel> {
       stream: widget.positionStream,
       initialData: widget.position(),
       builder: (context, snapshot) {
-        final current = lyrics.currentLine(snapshot.data ?? Duration.zero);
+        final position = snapshot.data ?? Duration.zero;
+        final active = lyrics.activeLines(position);
+        final current = active.isEmpty ? -1 : active.first;
         return Column(
           children: [
+            if (lyrics.languages.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: DropdownButton<String>(
+                  key: const Key('lyrics_language'),
+                  value: _language,
+                  isExpanded: true,
+                  dropdownColor: Colors.grey.shade900,
+                  style: const TextStyle(color: Colors.white),
+                  items: ['', ...lyrics.languages]
+                      .map((code) => DropdownMenuItem(
+                            value: code,
+                            child: Text(code.isEmpty
+                                ? 'Language: Original${lyrics.language.isEmpty ? '' : ' (${lyrics.language})'}'
+                                : 'Language: $code'),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) setState(() => _language = value);
+                  },
+                ),
+              ),
             if (current >= 0)
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 104),
@@ -115,14 +140,10 @@ class _LyricsPanelState extends State<LyricsPanel> {
                   key: ValueKey('current:$current'),
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Text(
-                      'Current: ${lyrics.lines[current].text}',
-                      key: const Key('lyrics_current_line'),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    child: _lineText(lyrics.lines[current], position, true,
+                        prefix:
+                            'Current: ${lyrics.lines[current].voice.isEmpty ? '' : 'Voice: ${lyrics.lines[current].voice} · '}',
+                        currentBanner: true),
                   ),
                 ),
               ),
@@ -133,14 +154,29 @@ class _LyricsPanelState extends State<LyricsPanel> {
               itemBuilder: (context, index) {
                 final line = lyrics.lines[index];
                 return Semantics(
-                  selected: current == index,
+                  selected: active.contains(index),
                   child: ListTile(
                     key: Key('lyrics_line_$index'),
-                    selected: current == index,
+                    selected: active.contains(index),
                     selectedTileColor: Colors.white12,
                     textColor: Colors.white70,
                     selectedColor: Colors.white,
-                    title: Text(line.text),
+                    title: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (line.voice.isNotEmpty)
+                          Text('Voice: ${line.voice}',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
+                        _lineText(line, position, active.contains(index)),
+                        if (_language.isNotEmpty &&
+                            !line.translations.containsKey(_language))
+                          Text(
+                              'Original${lyrics.language.isEmpty ? '' : ': ${lyrics.language}'}',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
+                      ],
+                    ),
                     subtitle: lyrics.synced
                         ? Text('Tap to seek',
                             style: TextStyle(color: Colors.grey.shade400))
@@ -161,6 +197,41 @@ class _LyricsPanelState extends State<LyricsPanel> {
           ],
         );
       },
+    );
+  }
+
+  Widget _lineText(LyricsLine line, Duration position, bool active,
+      {String prefix = '', bool currentBanner = false}) {
+    final key = currentBanner ? const Key('lyrics_current_line') : null;
+    final style = currentBanner
+        ? const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+        : null;
+    final fallback = currentBanner &&
+            _language.isNotEmpty &&
+            !line.translations.containsKey(_language)
+        ? ' (Original${_lyrics!.language.isEmpty ? '' : ': ${_lyrics!.language}'})'
+        : '';
+    if (line.words.isEmpty || line.translations.containsKey(_language)) {
+      return Text('$prefix${line.displayText(_language)}$fallback',
+          key: key, style: style);
+    }
+    final current = active ? line.currentWord(position) : -1;
+    return Text.rich(
+      TextSpan(children: [
+        if (prefix.isNotEmpty) TextSpan(text: prefix),
+        for (var i = 0; i < line.words.length; i++)
+          TextSpan(
+              text: line.words[i].text,
+              style: i == current
+                  ? const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.underline,
+                    )
+                  : null),
+        if (fallback.isNotEmpty) TextSpan(text: fallback),
+      ]),
+      key: key,
+      style: style,
     );
   }
 }

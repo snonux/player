@@ -13,15 +13,58 @@ export function lyricsUrl(streamUrl, base = location.href) {
   } catch { return null; }
 }
 
+const validTime = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1e9;
+const validLanguage = value => typeof value === 'string' && value.length <= 64 && /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(value);
+
 export function normalizeLyrics(data) {
   if (!Array.isArray(data?.lines)) return { synced: false, lines: [] };
-  const lines = data.lines.filter(line => typeof line?.text === 'string')
-    .map(line => ({ text: line.text, start: line.start }));
-  // Mixed or invalid timing stays readable as plain text.
+  const lines = data.lines.filter(line => typeof line?.text === 'string').map(raw => {
+    const line = { text: raw.text, start: raw.start };
+    if (validTime(raw.end) && validTime(raw.start) && raw.end > raw.start) line.end = raw.end;
+    if (typeof raw.voice === 'string' && new TextEncoder().encode(raw.voice).length <= 128 && raw.voice) line.voice = raw.voice;
+    if (raw.translations && typeof raw.translations === 'object' && !Array.isArray(raw.translations)) {
+      const entries = Object.entries(raw.translations);
+      if (entries.length <= 32) line.translations = Object.fromEntries(entries.filter(([language, text]) => validLanguage(language) && typeof text === 'string' && text.trim()));
+    }
+    if (Array.isArray(raw.words) && raw.words.length && raw.words.length <= 32768 && validTime(raw.start) &&
+        raw.words.every((word, i) => typeof word?.text === 'string' && validTime(word.start) && word.start >= raw.start &&
+          (!i || word.start >= raw.words[i-1].start) && (line.end === undefined || word.start < line.end) &&
+          (word.end === undefined || validTime(word.end) && word.end > word.start && (line.end === undefined || word.end <= line.end))) &&
+        raw.words.map(word => word.text).join('') === raw.text) {
+      line.words = raw.words.map(word => ({ text: word.text, start: word.start, end: word.end }));
+    }
+    return line;
+  });
   const synced = data.synced === true && lines.length > 0 && lines.every((line, i) =>
-    typeof line.start === 'number' && Number.isFinite(line.start) && line.start >= 0 &&
-    (i === 0 || line.start >= lines[i - 1].start));
-  return { synced, lines: lines.some(line => line.text.trim()) ? lines : [] };
+    validTime(line.start) && (i === 0 || line.start >= lines[i - 1].start));
+  return { synced, language: validLanguage(data.language) ? data.language : '', lines: lines.some(line => line.text.trim()) ? lines : [] };
+}
+
+function translationText(line, language) {
+  return language && Object.hasOwn(line.translations || {}, language) && typeof line.translations[language] === 'string' ? line.translations[language] : '';
+}
+
+export function lyricText(line, language = '') {
+  return translationText(line, language) || line.text;
+}
+
+// Explicit ends allow overlapping voices; implicit ends use the next distinct cue.
+export function activeLyricIndices(lines, seconds) {
+  if (!Number.isFinite(seconds)) return [];
+  const active = [];
+  let end = Infinity;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (i + 1 < lines.length && lines[i+1].start > lines[i].start) end = lines[i+1].start;
+    if (seconds >= lines[i].start && seconds < (lines[i].end ?? end)) active.push(i);
+  }
+  return active.reverse();
+}
+
+export function currentWordIndex(words, seconds, lineEnd = Infinity) {
+  if (!words || !Number.isFinite(seconds) || seconds >= lineEnd) return -1;
+  // Equal timestamps choose the last word, as with repeated line timestamps.
+  const index = currentLyricIndex(words, seconds);
+  return index >= 0 && seconds < (words[index].end ?? words[index+1]?.start ?? lineEnd) ? index : -1;
 }
 
 export function currentLyricIndex(lines, seconds) {
@@ -66,6 +109,16 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
   panel.tabIndex = 0;
   controls.appendChild(button);
   stage.appendChild(panel);
+  const languageControl = document.createElement('label');
+  languageControl.className = 'lyrics-language hidden';
+  languageControl.textContent = 'Language ';
+  const languageSelect = document.createElement('select');
+  languageSelect.setAttribute('aria-label', 'Lyrics language');
+  languageControl.appendChild(languageSelect);
+  controls.appendChild(languageControl);
+  let language = '';
+  let wordNodes = [];
+  let rows = [];
   let wanted = true;
   let data = { synced: false, lines: [] };
   let request = null;
@@ -79,22 +132,67 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
   }
   function visibility() {
     button.classList.toggle('hidden', !data.lines.length);
+    languageControl.classList.toggle('hidden', !wanted || !data.lines.some(line => Object.keys(line.translations || {}).length));
     panel.classList.toggle('hidden', !wanted || !data.lines.length);
     player.classList.toggle('has-lyrics', wanted && data.lines.length > 0);
     button.setAttribute('aria-pressed', String(wanted));
   }
   function update() {
     if (!data.synced) return;
-    const next = currentLyricIndex(data.lines, getPosition());
-    if (index === next) return;
-    if (index >= 0) panel.children[index]?.removeAttribute('aria-current');
+    const seconds = getPosition();
+    const activeIndices = activeLyricIndices(data.lines, seconds);
+    const activeSet = new Set(activeIndices);
+    const next = activeIndices.at(-1) ?? -1;
+    const moved = index !== next;
     index = next;
-    const active = panel.children[index];
-    if (active) {
-      active.setAttribute('aria-current', 'true');
+    for (let i = 0; i < rows.length; i++) {
+      const active = activeSet.has(i);
+      if (active) rows[i].setAttribute('aria-current', 'true');
+      else rows[i].removeAttribute('aria-current');
+      const translated = translationText(data.lines[i], language);
+      const word = active && !translated ? currentWordIndex(data.lines[i].words, seconds, data.lines[i].end) : -1;
+      wordNodes[i]?.forEach((node, j) => node.classList.toggle('lyric-word-current', j === word));
     }
-    if (wanted && !reading && !panel.contains(document.activeElement)) follow();
+    if (moved && wanted && !reading && !panel.contains(document.activeElement)) follow();
   }
+  function renderRows() {
+    wordNodes = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i], line = data.lines[i];
+      const text = lyricText(line, language);
+      row.replaceChildren();
+      const prefix = line.voice ? `Voice: ${line.voice} · ` : '';
+      if (line.voice) {
+        const voice = document.createElement('span');
+        voice.className = 'lyric-voice'; voice.textContent = `Voice: ${line.voice}`;
+        row.appendChild(voice);
+      }
+      const translated = translationText(line, language);
+      const fallback = language && !translated;
+      const content = document.createElement('span');
+      if (fallback) content.setAttribute('lang', data.language || 'und');
+      else if (language || data.language) content.setAttribute('lang', language || data.language);
+      if (!translated && line.words?.length) {
+        wordNodes[i] = line.words.map(word => {
+          const span = document.createElement('span'); span.textContent = word.text; content.appendChild(span); return span;
+        });
+      } else content.textContent = text;
+      row.appendChild(content);
+      if (fallback) {
+        const note = document.createElement('span'); note.className = 'lyric-language-fallback';
+        note.textContent = ` (Original${data.language ? ': ' + data.language : ''})`; row.appendChild(note);
+      }
+      if (data.synced) {
+        const minutes = Math.floor(line.start / 60);
+        const seconds = String(Math.floor(line.start % 60)).padStart(2, '0');
+        const label = `Seek to ${minutes}:${seconds}: ${prefix}${text || 'Instrumental'}`;
+        row.setAttribute('aria-label', label); row.title = label;
+      }
+    }
+    update();
+  }
+  languageSelect.addEventListener('change', () => { language = languageSelect.value; renderRows(); });
+
   button.addEventListener('click', () => {
     wanted = !wanted;
     reading = false;
@@ -121,7 +219,7 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
   // shortcuts while preserving native arrow/page/home/end scrolling; playback
   // shortcuts (Space/p, horizontal seek, Escape) still reach the player.
   panel.addEventListener('keydown', (event) => {
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.target?.tagName === 'SELECT') return;
     if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
       reading = true;
       event.stopPropagation();
@@ -137,7 +235,7 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
   return {
     update,
     setMedia(media, streamUrl) {
-      const hadFocus = panel.contains(document.activeElement);
+      const hadFocus = panel.contains(document.activeElement) || languageControl.contains(document.activeElement);
       request?.abort();
       request = null;
       data = { synced: false, lines: [] };
@@ -146,6 +244,9 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
       panel.removeAttribute('aria-description');
       // A removed lyric button must not strand focus on the page body.
       if (hadFocus) controls.querySelector('button:not(.lyrics-toggle):not(:disabled)')?.focus();
+      language = '';
+      rows = []; wordNodes = [];
+      languageSelect.replaceChildren();
       panel.replaceChildren();
       panel.scrollTop = 0;
       visibility();
@@ -161,6 +262,13 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
           panel.setAttribute('aria-description', data.synced
             ? 'Select a line to seek. Tab to a line and press Enter.'
             : 'Read lyrics with arrows, Page Up or Down, Home or End, or j and k.');
+          const languages = [...new Set(data.lines.flatMap(line => Object.keys(line.translations || {})))].sort();
+          for (const code of ['', ...languages]) {
+            const option = document.createElement('option'); option.value = code;
+            option.textContent = code || `Original${data.language ? ' (' + data.language + ')' : ''}`;
+            languageSelect.appendChild(option);
+          }
+          languageSelect.value = '';
           const fragment = document.createDocumentFragment();
           for (const line of data.lines) {
             const row = document.createElement(data.synced ? 'button' : 'p');
@@ -168,11 +276,6 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
             if (data.synced) {
               row.type = 'button';
               row.className = 'lyric-seek';
-              const minutes = Math.floor(line.start / 60);
-              const seconds = String(Math.floor(line.start % 60)).padStart(2, '0');
-              const label = `Seek to ${minutes}:${seconds}: ${line.text || 'Instrumental'}`;
-              row.setAttribute('aria-label', label);
-              row.title = label;
               row.addEventListener('click', () => {
                 // A retained/detached old node cannot seek a replacement track.
                 if (request !== controller || !panel.contains(row)) return;
@@ -182,9 +285,11 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
                 follow();
               });
             }
+            rows.push(row);
             fragment.appendChild(row);
           }
           panel.replaceChildren(fragment);
+          renderRows();
           visibility();
           update();
         }).catch(() => {}); // Lyrics never interrupt playback or raise a toast.

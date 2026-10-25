@@ -2605,7 +2605,7 @@ ffprobe. The first usable candidate wins; malformed structured candidates fall
 through. Embedded format tags precede stream tags in stream order, with keys
 sorted lexically within each group. TTML parallel paragraphs and inherited timing,
 Lyricsfile YAML 1.0, Enhanced LRC and SRT project onto the same line contract.
-Word timing is omitted; sequential TTML containers are rejected. YAML
+Sequential TTML containers are rejected. YAML
 `metadata.offset_ms` uses the same positive-earlier convention as LRC.
 No database
 rescan or external lyrics service is needed. The source and sidecars must be
@@ -2616,6 +2616,54 @@ YAML nodes and TTML tokens to 32,768, and structured start times to finite
 to 2 MiB and runtime
 to three seconds. Unreadable, unsafe, oversized and unavailable lyrics return
 the same empty result. Text is returned as data; clients must render it as text.
+
+#### Optional rich lyrics
+
+The same routes add optional `language` (original language code) and per-line
+`end`, `voice`, `words` and `translations`. Old clients can keep reading complete
+`text` and seeking `start`. All timestamps are absolute playback seconds;
+`end` is exclusive. Word text concatenates exactly to the complete line text.
+
+```json
+{"source":"sidecar","synced":true,"language":"en","lines":[{"text":"Hello world","start":1,"end":5,"voice":"Lead","words":[{"text":"Hello ","start":1,"end":2},{"text":"world","start":2,"end":5}],"translations":{"fr":"Bonjour monde"}},{"text":"Harmony","start":1,"end":3,"voice":"Harmony"}]}
+```
+
+Both clients offer **Language** when translations are available, initially
+**Original**. Missing translations retain original text with an Original label.
+Changing language does not seek; translated text uses line timing, since no word
+alignment is assumed. Every active voice cue is emphasized. An absent line end
+uses the next strictly later line start, or stays active for the final cue.
+The last active row supplies the follow anchor/native current banner. Word
+highlighting uses the last reached word with equal starts, stops at its explicit
+end or next word start, and recomputes immediately after forward/backward seeks.
+Words without an end continue to the line boundary. No new word-seek operation.
+
+Supported optional input:
+
+- Lyricsfile YAML 1.0: `metadata.language`, line `voice`, `end_ms`,
+  `translations: {fr: "Bonjour monde"}` and `words` with `text`, `start_ms`,
+  optional `end_ms`. All line/word millisecond times receive the existing
+  positive-earlier `metadata.offset_ms` exactly once.
+- Enhanced LRC: absolute inline `<mm:ss.xxx>` word starts; a final marker
+  supplies the previous word end. `[lang:en]`/`[la:en]` supplies original language.
+  The existing LRC offset applies to words and lines once.
+- TTML: paragraph agent IDs (inherited `agent`) supply voice labels, inherited
+  `xml:lang` supplies language; paragraph/span `begin`/`end` retain inherited
+  parallel-container timing. Alternate-language paragraphs following an original
+  paragraph fold into translations only when start, optional end and voice match.
+  Same-language duplicate cues and different voices stay separate. Inline span
+  text with usable timing supplies words; unsupported/mixed whitespace or word
+  timing falls back to complete line text. Span-specific voices/translations and
+  TTML sequential containers are outside this subset.
+
+Invalid optional richness degrades to readable lines. Words must have finite
+ordered starts within their line and positive bounded optional ends; invalid
+word sequences are omitted. Invalid optional ends/voices/translations/languages
+are ignored. Language codes are 2–8 ASCII letters followed by optional 1–8 ASCII
+alphanumeric subtags (maximum 64 characters); voice labels have at most 128 UTF-8
+bytes, and each line has at most 32 translations. All existing parser limits and
+source/access rules apply; rich metadata/text overhead also counts toward the
+bounded output budget. No external lyric service or new permission is required.
 
 ### Downloaded playback synchronization
 

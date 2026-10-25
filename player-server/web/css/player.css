@@ -32,7 +32,7 @@
 .player-inline-options .player-options-header { display: none; }
 .player-options.player-inline-options > .btn { width: auto; }
 .player-options.player-inline-options .volume-control { flex: 1 1 8rem; width: auto; }
-.player-options.player-inline-options .audio-visual-control, .playback-speed-control { flex: 1 1 12rem; width: auto; }
+.player-options.player-inline-options .audio-visual-control, .playback-speed-control, .player-options.player-inline-options .lyrics-language { flex: 1 1 12rem; width: auto; }
 .player .stage {
   flex: 1 1 auto;
   position: relative;
@@ -229,7 +229,7 @@
 .player-options-header h3 { margin: 0; font-size: 1rem; }
 .player-options > .btn { width: 100%; }
 .player-options .volume-control,
-.player-options .audio-visual-control, .playback-speed-control { width: 100%; grid-column: 1 / -1; }
+.player-options .audio-visual-control, .playback-speed-control, .player-options .lyrics-language { width: 100%; grid-column: 1 / -1; }
 .player-options .volume-slider { flex: 1; }
 .player-options button:focus-visible {
   outline: 2px solid var(--accent);
@@ -573,3 +573,17 @@
 .equalizer-control input[type="checkbox"] { width: auto; }
 .equalizer-control output { min-width: 3.5rem; }
 .equalizer-control details > label { display: flex; }
+
+.lyrics-language { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; color: var(--text-secondary); font-size: 0.85rem; }
+.lyrics-language select {
+  max-width: 12rem;
+  min-height: 44px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.lyrics-language select:focus-visible { outline: 2px solid var(--accent); }
+.lyric-voice { display: block; font-size: 0.8rem; color: var(--text-secondary); }
+.lyric-word-current { font-weight: bold; text-decoration: underline; text-underline-offset: 0.2em; }
+.lyric-language-fallback { font-size: 0.8rem; color: var(--text-secondary); }

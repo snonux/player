@@ -221,4 +221,95 @@ void main() {
     await show('third', () async => _timed);
     expect(find.text('No lyrics available.'), findsNothing);
   });
+  testWidgets(
+      'native language choice retains seek state, overlapping voices and word emphasis',
+      (tester) async {
+    final positions = StreamController<Duration>.broadcast();
+    addTearDown(positions.close);
+    var seeks = 0;
+    final lyrics = Lyrics.fromJson({
+      'language': 'en',
+      'synced': true,
+      'lines': [
+        {
+          'text': 'Hello world',
+          'start': 1,
+          'end': 5,
+          'voice': 'Lead',
+          'translations': {'fr': 'Bonjour monde'},
+          'words': [
+            {'text': 'Hello ', 'start': 1, 'end': 2},
+            {'text': 'world', 'start': 2, 'end': 5}
+          ]
+        },
+        {
+          'text': 'Harmony',
+          'start': 1,
+          'end': 3,
+          'voice': 'Harmony',
+          'words': [
+            {'text': 'Harmony', 'start': 1, 'end': 3}
+          ]
+        },
+      ]
+    });
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: LyricsPanel(
+      load: () async => lyrics,
+      positionStream: positions.stream,
+      position: () => const Duration(seconds: 4),
+      onSeek: (_) async {
+        seeks++;
+      },
+    ))));
+    await tester.tap(find.text('Lyrics'));
+    await tester.pumpAndSettle();
+    Text banner() =>
+        tester.widget<Text>(find.byKey(const Key('lyrics_current_line')));
+    var spans = banner().textSpan! as TextSpan;
+    expect(spans.toPlainText(), 'Current: Voice: Lead · Hello world');
+    expect((spans.children![2] as TextSpan).style!.decoration,
+        TextDecoration.underline);
+    positions.add(const Duration(milliseconds: 1500));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<ListTile>(find.byKey(const Key('lyrics_line_0')))
+            .selected,
+        isTrue);
+    // The second voice can be outside the small list viewport; the current banner remains visible.
+    expect(
+        banner().textSpan!.toPlainText(), 'Current: Voice: Harmony · Harmony');
+    await tester.tap(find.byKey(const Key('lyrics_language')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Language: fr').last);
+    await tester.pumpAndSettle();
+    expect(seeks, 0);
+    expect(find.text('Original: en'), findsOneWidget);
+    expect(banner().textSpan!.toPlainText(),
+        'Current: Voice: Harmony · Harmony (Original: en)');
+    expect(
+        ((banner().textSpan! as TextSpan).children![1] as TextSpan)
+            .style!
+            .decoration,
+        TextDecoration.underline);
+    positions.add(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(banner().data, 'Current: Voice: Lead · Bonjour monde');
+    await tester.tap(find.text('Bonjour monde'));
+    expect(seeks, 1);
+    await tester.tap(find.byKey(const Key('lyrics_language')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Language: Original (en)').last);
+    await tester.pumpAndSettle();
+    positions.add(const Duration(milliseconds: 1500));
+    await tester.pumpAndSettle();
+    positions.add(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    spans = banner().textSpan! as TextSpan;
+    expect((spans.children![2] as TextSpan).style!.decoration,
+        TextDecoration.underline);
+    expect(tester.takeException(), isNull);
+  });
 }

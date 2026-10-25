@@ -30,15 +30,16 @@ type lyricsfileDocument struct {
 	Version  string `yaml:"version"`
 	Metadata struct {
 		Offset       int64 `yaml:"offset_ms"`
+		Language     any   `yaml:"language"`
 		Instrumental bool  `yaml:"instrumental"`
 	} `yaml:"metadata"`
 	Lines []struct {
-		Text  string `yaml:"text"`
-		Start *int64 `yaml:"start_ms"`
-		End   *int64 `yaml:"end_ms"`
-		Words []struct {
-			Text string `yaml:"text"`
-		} `yaml:"words"`
+		Text         string    `yaml:"text"`
+		Start        *int64    `yaml:"start_ms"`
+		End          any       `yaml:"end_ms"`
+		Words        yaml.Node `yaml:"words"`
+		Voice        any       `yaml:"voice"`
+		Translations any       `yaml:"translations"`
 	} `yaml:"lines"`
 	Plain string `yaml:"plain"`
 }
@@ -48,6 +49,9 @@ type ttmlContext struct {
 	timed    bool
 	body     bool
 	preserve bool
+	language string
+	voice    string
+	end      *float64
 }
 
 type ttmlRates struct{ frame, subframe, tick float64 }
@@ -118,7 +122,12 @@ func (b *lyricBuilder) result(source string) *Lyrics {
 			b.lines[i].Start = nil
 		}
 	}
-	return &Lyrics{Source: source, Synced: synced, Lines: b.lines}
+	for i := range b.lines {
+		sanitizeRichLine(&b.lines[i])
+	}
+	result := &Lyrics{Source: source, Synced: synced, Lines: b.lines}
+	boundRichLyrics(result)
+	return result
 }
 
 func validLyricTime(n float64) bool {
@@ -150,16 +159,26 @@ func parseYAMLLyrics(text, source string) *Lyrics {
 		}
 	} else {
 		for _, line := range doc.Lines {
-			if line.Start == nil || *line.Start < 0 || (line.End != nil && *line.End < *line.Start) {
+			if line.Start == nil || *line.Start < 0 {
 				return emptyLyrics()
 			}
 			value := line.Text
-			if len(line.Words) > 0 {
+			var wordEntries []struct {
+				Text  string `yaml:"text"`
+				Start any    `yaml:"start_ms"`
+				End   any    `yaml:"end_ms"`
+			}
+			if err := line.Words.Decode(&wordEntries); err != nil {
+				wordEntries = nil
+			}
+			if len(wordEntries) > 0 {
 				var words strings.Builder
-				for _, word := range line.Words {
+				for _, word := range wordEntries {
 					words.WriteString(word.Text)
 				}
-				value = words.String()
+				if strings.TrimSpace(words.String()) != "" {
+					value = words.String()
+				}
 			}
 			start := float64(*line.Start) / 1000
 			if !validLyricTime(start) {
@@ -167,9 +186,46 @@ func parseYAMLLyrics(text, source string) *Lyrics {
 			}
 			start = max(0, start-float64(doc.Metadata.Offset)/1000)
 			b.add(value, &start)
+			if len(b.lines) > 0 && strings.TrimSpace(value) != "" {
+				rich := &b.lines[len(b.lines)-1]
+				offset := float64(doc.Metadata.Offset) / 1000
+				if n, ok := lyricMilliseconds(line.End, offset); ok {
+					rich.End = &n
+				}
+				rich.Voice, _ = line.Voice.(string)
+				if translations, ok := line.Translations.(map[string]interface{}); ok {
+					rich.Translations = map[string]string{}
+					for language, value := range translations {
+						if text, ok := value.(string); ok {
+							rich.Translations[language] = text
+						}
+					}
+				}
+				for _, word := range wordEntries {
+					n, ok := lyricMilliseconds(word.Start, offset)
+					if !ok {
+						rich.Words = nil
+						break
+					}
+					w := LyricsWord{Text: word.Text, Start: n}
+					if word.End != nil {
+						end, ok := lyricMilliseconds(word.End, offset)
+						if !ok {
+							rich.Words = nil
+							break
+						}
+						w.End = &end
+					}
+					rich.Words = append(rich.Words, w)
+				}
+			}
 		}
 	}
-	return b.result(source)
+	result := b.result(source)
+	if language, ok := doc.Metadata.Language.(string); ok && validLyricLanguage(language) && len(result.Lines) > 0 {
+		result.Language = language
+	}
+	return result
 }
 
 func boundedLyricsYAML(node *yaml.Node, depth int, count *int) bool {
@@ -229,6 +285,9 @@ func parseTTMLLyrics(text, source string) *Lyrics {
 	b := &lyricBuilder{}
 	var line strings.Builder
 	var lineStart *float64
+	var richLine LyricsLine
+	var words []LyricsWord
+	rootLanguage := ""
 	paragraph := 0
 	rootSeen := false
 	tokens := 0
@@ -272,6 +331,10 @@ func parseTTMLLyrics(text, source string) *Lyrics {
 					if attr.Value != "par" {
 						return emptyLyrics()
 					}
+				case "lang":
+					ctx.language = attr.Value
+				case "agent":
+					ctx.voice = attr.Value
 				case "space":
 					ctx.preserve = attr.Value == "preserve"
 				case "begin":
@@ -283,6 +346,25 @@ func parseTTMLLyrics(text, source string) *Lyrics {
 					ctx.timed = true
 				}
 			}
+			// End is relative to the parent time container, like begin, and
+			// cannot extend beyond an inherited ancestor end.
+			parentStart := 0.0
+			if len(stack) > 0 {
+				parentStart = stack[len(stack)-1].start
+			}
+			for _, attr := range t.Attr {
+				if attr.Name.Local == "end" {
+					if n, ok := parseTTMLTime(attr.Value, rates); ok {
+						end := parentStart + n
+						if validLyricTime(end) && end > ctx.start && (ctx.end == nil || end < *ctx.end) {
+							ctx.end = &end
+						}
+					}
+				}
+			}
+			if len(stack) == 0 {
+				rootLanguage = ctx.language
+			}
 			stack = append(stack, ctx)
 			if ctx.body && t.Name.Local == "p" {
 				if paragraph != 0 {
@@ -290,6 +372,8 @@ func parseTTMLLyrics(text, source string) *Lyrics {
 				}
 				paragraph = len(stack)
 				line.Reset()
+				words = nil
+				richLine = LyricsLine{Voice: ctx.voice, End: ctx.end}
 				lineStart = nil
 				if ctx.timed {
 					n := ctx.start
@@ -300,6 +384,14 @@ func parseTTMLLyrics(text, source string) *Lyrics {
 			}
 		case xml.CharData:
 			if paragraph > 0 {
+				ctx := stack[len(stack)-1]
+				if len(stack) > paragraph && ctx.timed {
+					value := string(t)
+					if !ctx.preserve {
+						value = strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(value)
+					}
+					words = append(words, LyricsWord{Text: value, Start: ctx.start, End: ctx.end})
+				}
 				if stack[len(stack)-1].preserve {
 					line.Write(t)
 				} else {
@@ -322,7 +414,20 @@ func parseTTMLLyrics(text, source string) *Lyrics {
 						value = strings.ReplaceAll(value, "  ", " ")
 					}
 				}
-				b.add(value, lineStart)
+				// A paragraph at or beyond an inherited exclusive end has no
+				// active interval. Do not turn it into an unbounded cue by
+				// letting optional-end sanitization discard that ancestor bound.
+				if lineStart == nil || richLine.End == nil || *lineStart < *richLine.End {
+					b.add(value, lineStart)
+					if len(b.lines) > 0 && strings.TrimSpace(value) != "" {
+						rich := &b.lines[len(b.lines)-1]
+						rich.End = richLine.End
+						rich.Voice = richLine.Voice
+						rich.Words = words
+						// Keep paragraph language during folding; removed from wire model.
+						rich.language = stack[len(stack)-1].language
+					}
+				}
 				paragraph = 0
 			}
 			stack = stack[:len(stack)-1]
@@ -331,7 +436,9 @@ func parseTTMLLyrics(text, source string) *Lyrics {
 	if !rootSeen || len(stack) != 0 {
 		return emptyLyrics()
 	}
-	return b.result(source)
+	result := b.result(source)
+	foldLyricTranslations(result, rootLanguage)
+	return result
 }
 
 func (r *ttmlRates) read(attrs []xml.Attr) bool {

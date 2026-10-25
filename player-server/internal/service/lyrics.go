@@ -17,13 +17,28 @@ import (
 
 // Lyrics contains local text; Start is in seconds and absent for plain lyrics.
 type Lyrics struct {
-	Source string       `json:"source"`
-	Synced bool         `json:"synced"`
-	Lines  []LyricsLine `json:"lines"`
+	Source   string       `json:"source"`
+	Language string       `json:"language,omitempty"`
+	Synced   bool         `json:"synced"`
+	Lines    []LyricsLine `json:"lines"`
 }
+
+// LyricsLine retains readable text even when optional rich metadata is absent.
 type LyricsLine struct {
+	Text         string            `json:"text"`
+	Start        *float64          `json:"start,omitempty"`
+	End          *float64          `json:"end,omitempty"`
+	Voice        string            `json:"voice,omitempty"`
+	Words        []LyricsWord      `json:"words,omitempty"`
+	Translations map[string]string `json:"translations,omitempty"`
+	language     string
+}
+
+// LyricsWord is a text fragment with absolute playback timing in seconds.
+type LyricsWord struct {
 	Text  string   `json:"text"`
-	Start *float64 `json:"start,omitempty"`
+	Start float64  `json:"start"`
+	End   *float64 `json:"end,omitempty"`
 }
 
 func (s *browseService) GetLyrics(ctx context.Context, mediaID, userID int64) (*Lyrics, error) {
@@ -154,6 +169,7 @@ func parseLRCLyrics(text, source string) *Lyrics {
 	timestamp := regexp.MustCompile(`^\[(\d{1,5}):([0-5]\d(?:\.\d{1,3})?)\]`)
 	offsetTag := regexp.MustCompile(`(?i)^\[offset:\s*([+-]?\d+)\s*\]$`)
 	metadata := regexp.MustCompile(`(?i)^\[(ar|al|ti|au|by|re|ve|length|offset|lang|la|lr|tool|#):.*\]$`)
+	languageTag := regexp.MustCompile(`(?i)^\[(?:lang|la):\s*([^\]]+)\]$`)
 	var offset float64
 	var plain []LyricsLine
 	outputBytes := 0
@@ -164,6 +180,9 @@ func parseLRCLyrics(text, source string) *Lyrics {
 				offset = float64(n) / 1000
 			}
 			continue
+		}
+		if match := languageTag.FindStringSubmatch(line); match != nil && validLyricLanguage(match[1]) {
+			result.Language = match[1]
 		}
 		if metadata.MatchString(line) {
 			continue
@@ -188,13 +207,14 @@ func parseLRCLyrics(text, source string) *Lyrics {
 				plain = append(plain, LyricsLine{Text: line})
 			}
 		} else {
+			rawWords := parseELRCWords(line, wordTimestamp)
 			line = wordTimestamp.ReplaceAllString(line, "")
 			for _, start := range starts {
 				outputBytes += len(line) + 64
 				if outputBytes > probe.MaxLyricsBytes {
 					return &Lyrics{Lines: []LyricsLine{}}
 				}
-				result.Lines = append(result.Lines, LyricsLine{Text: strings.TrimSpace(line), Start: &start})
+				result.Lines = append(result.Lines, LyricsLine{Text: strings.TrimSpace(line), Start: &start, Words: rawWords})
 			}
 		}
 	}
@@ -202,6 +222,16 @@ func parseLRCLyrics(text, source string) *Lyrics {
 		result.Synced = true
 		for i := range result.Lines {
 			*result.Lines[i].Start = max(0, *result.Lines[i].Start-offset)
+			words := append([]LyricsWord(nil), result.Lines[i].Words...)
+			for j := range words {
+				words[j].Start = max(0, words[j].Start-offset)
+				if words[j].End != nil {
+					n := max(0, *words[j].End-offset)
+					words[j].End = &n
+				}
+			}
+			result.Lines[i].Words = words
+			sanitizeRichLine(&result.Lines[i])
 		}
 		sort.SliceStable(result.Lines, func(i, j int) bool { return *result.Lines[i].Start < *result.Lines[j].Start })
 	} else if len(plain) > 0 {
@@ -209,6 +239,9 @@ func parseLRCLyrics(text, source string) *Lyrics {
 	}
 	if len(result.Lines) > 0 {
 		result.Source = source
+	} else {
+		result.Language = ""
 	}
+	boundRichLyrics(result)
 	return result
 }
