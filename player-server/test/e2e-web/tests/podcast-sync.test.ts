@@ -2,7 +2,7 @@
  * each browser, native B finish, completed in both browsers, uncomplete once,
  * observe-uncompleted on all clients, cleanup and boundaries.
  *
- * PLAYER_PODCAST_STAGE=catalog|resume|completed|uncomplete|observe-uncompleted|cleanup|boundaries
+ * PLAYER_PODCAST_STAGE=catalog|resume|completed|uncomplete|observe-uncompleted|cleanup|boundaries|auth-visual
  * PLAYER_PODCAST_FIXTURE=/marked/path npx playwright test -c playwright.podcasts.config.ts --project=chrome
  * No API edits supply listening/completion proof. GETs are read-only oracles;
  * download, playback, completion, retry and cleanup use actual visible controls.
@@ -15,7 +15,7 @@ import { installAudioTap } from './helpers/audio-tap';
 
 const directory = process.env.PLAYER_PODCAST_FIXTURE!;
 const stage = process.env.PLAYER_PODCAST_STAGE;
-const allowed = ['catalog', 'resume', 'completed', 'uncomplete', 'observe-uncompleted', 'cleanup', 'boundaries', 'feedback', 'unsubscribed', 'conflict'];
+const allowed = ['catalog', 'resume', 'completed', 'uncomplete', 'observe-uncompleted', 'cleanup', 'boundaries', 'feedback', 'unsubscribed', 'conflict', 'auth-visual'];
 if (!allowed.includes(stage || '')) throw new Error('Select one explicit PLAYER_PODCAST_STAGE');
 const state = JSON.parse(readFileSync(join(directory, 'state.json'), 'utf8'));
 const auth = JSON.parse(readFileSync(join(directory, 'auth.json'), 'utf8'));
@@ -27,6 +27,7 @@ async function openEpisodes(p: Page, filter = 'Uncompleted') {
   const all = p.getByRole('button', { name: 'All podcast episodes', exact: true });
   if (!await all.isVisible()) await toggle.click();
   await all.click();
+  await expect(p.locator('.podcast-view-title')).toHaveText('All podcast episodes', { timeout: 15_000 });
   if (filter === 'Uncompleted') {
     await expect(p.getByRole('button', { name: 'Uncompleted', exact: true })).toHaveAttribute('aria-pressed', 'true');
   }
@@ -315,6 +316,65 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         await fresh.screenshot({ path: join(output, 'other-account-never-synced.png') });
         record('configured never-synced and account isolation use actual visible UI');
       } finally { await freshContext.close(); }
+    } else if (stage === 'auth-visual') {
+      // Narrow navigation may leave the sets drawer over the main page.
+      // Close it through its actual control before judging the sync row.
+      const closeMenu = page.locator('#menu-close');
+      if (await closeMenu.isVisible()) await closeMenu.click();
+      const status = page.locator('#global-sync [data-sync-status]');
+      const signIn = page.locator('#global-sync a');
+      const upstream: number[] = [];
+      const anonymous = await browser.newContext({ baseURL: state.origin });
+      await page.route('**/api/podcasts/sync', async route => {
+        const response = await anonymous.request.post('/api/podcasts/sync', {
+          data: { since: 0, epoch: '', episodes: [], subscriptions: [] },
+        });
+        upstream.push(response.status());
+        await route.fulfill({ response });
+      });
+      await page.locator('#global-sync button').click();
+      await expect(status).toContainText('Sign in again to sync');
+      expect(upstream).toContain(401);
+      await expect(status).not.toContainText('Sync unavailable');
+      await expect(signIn).toBeVisible();
+      await expect(page).toHaveURL(url => url.pathname === '/');
+      expect(await page.locator('.modal-overlay.open').count()).toBe(0);
+      record('genuine upstream HTTP 401 gives quiet sign-in hint without navigation or modal', { upstream });
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      for (const theme of ['dark', 'light']) {
+        if (await page.locator('html').getAttribute('data-theme') !== theme) {
+          await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+        }
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        const geometry = await page.locator('#global-sync').evaluate(host => {
+          const link = host.querySelector('a')!;
+          const row = host.getBoundingClientRect(), target = link.getBoundingClientRect();
+          const top = document.elementFromPoint(target.left + target.width / 2, target.top + target.height / 2);
+          return { rowLeft: row.left, rowRight: row.right, linkLeft: target.left,
+            linkRight: target.right, linkHeight: target.height, unobscured: top === link || link.contains(top),
+            viewport: window.innerWidth };
+        });
+        expect(geometry.rowLeft).toBeGreaterThanOrEqual(0);
+        expect(geometry.rowRight).toBeLessThanOrEqual(geometry.viewport + 1);
+        expect(geometry.linkLeft).toBeGreaterThanOrEqual(0);
+        expect(geometry.linkRight).toBeLessThanOrEqual(geometry.viewport + 1);
+        expect(geometry.linkHeight).toBeGreaterThanOrEqual(44);
+        expect(geometry.unobscured).toBe(true);
+        await page.screenshot({ path: join(output, `narrow-${theme}-auth.png`) });
+        record(`narrow ${theme} sync hint and sign-in target remain visible`, geometry);
+      }
+      // Reach the footer action by actual Tab navigation and prove its focus
+      // indicator appears in the compact layout.
+      await page.locator('#thumbnail-smaller').focus();
+      await page.keyboard.press('Shift+Tab');
+      await expect(signIn).toBeFocused();
+      const outline = await signIn.evaluate(link => getComputedStyle(link).outlineStyle);
+      expect(outline).not.toBe('none');
+      await page.screenshot({ path: join(output, 'narrow-footer-keyboard-focus.png') });
+      record('compact sync footer sign-in link is keyboard reachable with visible focus', { outline });
+      await page.unroute('**/api/podcasts/sync');
+      await anonymous.close();
     } else {
       // Hold an actual scoped response after the server produced it. Playback
       // must start using its bounded local fallback; release cannot seek it.
