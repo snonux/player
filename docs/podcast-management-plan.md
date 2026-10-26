@@ -171,9 +171,10 @@ Firefox. Passing journeys so far:
 
 | Platform | Passing stages |
 | --- | --- |
-| Android A | standalone direct publisher download/playback without server audio, explicit account association, observe completed and uncompleted, local delete/redownload, feed-folder and combined-view page 2; account isolation and quiet never-synced feedback; bounded pre-playback sync and late-response stability; controlled 48-hour stale feedback and full retry; genuine sync `401` during audible playback; ordinary music progress through partial failure, process death, and global retry; offline unsubscribe tombstone through restart and reconnect; explicit resubscribe |
+| Android A | standalone direct publisher download/playback without server audio, explicit account association, observe completed and uncompleted, local delete/redownload, feed-folder and combined-view page 2; account isolation and quiet never-synced feedback; bounded pre-playback sync and late-response stability; controlled 48-hour stale feedback and full retry; genuine sync `401` during audible playback; ordinary music progress through partial failure, process death, and global retry; offline unsubscribe tombstone through restart and reconnect; explicit resubscribe; held scoped response across account logout; failed completion sync with audible playback of the next downloaded source |
 | Android B | cross-client audible resume and independent download, natural-end completion, observe completed, manual uncompletion, local delete/redownload; observe A's unsubscribe while retaining its own copy and history; explicit resubscribe without redownload |
-| Chrome and Firefox | subscription catalog, shared-position audible resume, completion and uncompletion visibility, shared-server copy delete/redownload; non-podcast progress on global Retry, partial failure and exact 48-hour/never-synced feedback; bounded pre-playback fallback and late-response stability; conflicting subscription tombstones and observation of A's unsubscribe; genuine sync `401`, quiet sign-in, and narrow light/dark focus and target checks |
+| Chrome and Firefox | subscription catalog, shared-position audible resume, completion and uncompletion visibility, shared-server copy delete/redownload; non-podcast progress on global Retry, partial failure and exact 48-hour/never-synced feedback; bounded pre-playback fallback and late-response stability; conflicting subscription tombstones and observation of A's unsubscribe; genuine sync `401`, quiet sign-in, and narrow light/dark focus and target checks; visible account switch with isolated history and return to the original catalog |
+| Chrome | newer uncompletion and independent listening position survive a delayed older completion reply |
 
 These stages establish the main four-client flow, including separate Android
 files and retained history. They do not yet prove every acceptance boundary.
@@ -201,11 +202,25 @@ and `evidence/native-B/20261026T162245.668774Z-resubscribe/results.json`.
 Browser unsubscribe observations are in
 `evidence/chrome/1793031332420-unsubscribed/results.json` and
 `evidence/firefox/1793031341530-unsubscribed/results.json`.
+The added native A journeys passed on installed build 4026 in
+`evidence/native-A/20261026T165234.060931Z-held-account/results.json` and
+`evidence/native-A/20261026T165650.148850Z-end-outage-next/results.json`.
+Browser account-switch evidence is in
+`evidence/chrome/1793032579815-account-switch/results.json` and
+`evidence/firefox/1793032585166-account-switch/results.json`; the Chrome
+episode-edit conflict passed in
+`evidence/chrome/1793035182274-episode-conflict/results.json`.
 
-Selected-server switching, native account switching during a held response,
-conflicting episode edits, failed end-sync with next-source playback, and
-download cancel/seek/error negative journeys still need evidence. Complete
-those journeys and final integrated gates before closing `5i3`.
+Selected-server switching, native download cancel/seek/error negative journeys,
+and the Firefox episode-edit conflict still need passing device or browser
+evidence. Firefox's conflict harness timed out while intercepting its upstream
+sync response; earlier browser stages do not verify that conflict. The first
+concurrent broad gate run also failed timing-sensitive checks: five Flutter SVG
+rendering-budget tests, one Go stream-job budget test, and the repository race
+suite's ten-minute package timeout. All 65 SVG tests and both named Go tests
+passed when rerun alone. Flutter analysis passed; the full Flutter suite is
+being rerun in isolation. Record the remaining journeys and final gate results
+before closing `5i3`.
 
 No release is requested by this plan. A later release must use the shared
 version/bump workflow, build both components, and update the Android F-Droid
