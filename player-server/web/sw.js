@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v85';
+const CACHE = 'kiss-v86';
 const ASSETS = [
   '/',
   '/index.html',
@@ -151,6 +151,16 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request))
+      .catch(async () => {
+        const exact = await caches.match(e.request);
+        if (exact) return exact;
+        // A saved Offline music link has a query string. Reuse the cached app
+        // shell for an offline navigation even if this exact URL was never
+        // visited online; the query still reaches the page after it loads.
+        if (e.request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
+          return caches.match('/index.html');
+        }
+        return undefined;
+      })
   );
 });

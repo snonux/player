@@ -1,5 +1,23 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M47 saved music collections, create a disposable `music_fixture.py up`
+server and run the focused journey one browser at a time:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M47_ISOLATED=1 \
+PLAYER_M47_EVIDENCE=/tmp/player-m47-web-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-offline-pins.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The test pins an album and an overlapping playlist, verifies original bytes,
+clears a populated disposable cache, then plays saved audio in the app while
+offline. It also checks reload, local Unpin/Remove behavior, narrow theme,
+account isolation, and a real permission denial and retry. Evidence stays
+outside the repository; stop the fixture with `music_fixture.py down`.
+
 For M36 personal listening, start a disposable `music_fixture.py up` server on
 an unused port and run the focused journey in installed Chrome and Firefox,
 one browser at a time:

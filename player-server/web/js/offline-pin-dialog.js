@@ -9,7 +9,7 @@ import { offlinePinStatus, pinMusicCollection, unpinMusicCollection } from './of
 export function showOfflinePin(collection, title, opener = document.activeElement) {
  const account = state.user;
  const overlay=document.createElement('div'); overlay.className='modal-overlay open';
- overlay.innerHTML='<section class="modal" role="dialog" aria-modal="true" aria-labelledby="offline-pin-title"><div class="modal-header"><h2 id="offline-pin-title"></h2></div><div class="modal-body"><p data-status role="status" aria-live="polite">Loading saved collection…</p><p>Pinned downloads are separate from disposable playback cache. Unpin keeps downloaded files. Remove download removes this collection’s copies from this browser, preserving files used by other saved collections. Server music stays available.</p><label>Download quality <select data-download-quality aria-label="Download quality"></select></label><p>Applies to new copies independently of streaming quality. Existing downloads keep their saved quality. Original files may require a compatible browser codec.</p><p data-quality-status role="status"></p><button class="btn" data-quality-reload>Reload download profiles</button><p data-storage>Your browser may reclaim storage. Clearing site data removes these downloads. Keep this tab open while saving.</p><div class="playlist-actions"><button class="btn" data-close>Close</button><button class="btn" data-play>Play downloaded</button><button class="btn" data-unpin>Unpin</button><button class="btn" data-remove>Remove download…</button><button class="btn btn-primary" data-pin>Pin offline</button></div></div></section>';
+ overlay.innerHTML='<section class="modal offline-pin-modal" role="dialog" aria-modal="true" aria-labelledby="offline-pin-title"><div class="modal-header"><h2 id="offline-pin-title" tabindex="-1"></h2></div><div class="modal-body"><p data-status role="status" aria-live="polite">Loading saved collection…</p><p>Unpin keeps downloads. Remove download deletes this browser’s copies that no other saved collection uses. Server music stays available.</p><label>Download quality <select data-download-quality aria-label="Download quality"></select></label><p>New copies use this quality; existing copies keep theirs. Original files need a compatible browser codec.</p><p data-quality-status role="status"></p><button class="btn" data-quality-reload>Reload download profiles</button><p data-storage>Browser storage may be reclaimed or cleared. Keep this tab open while saving.</p><div class="playlist-actions"><button class="btn btn-primary" data-pin>Pin offline</button><button class="btn" data-play>Play downloaded</button><button class="btn" data-unpin>Unpin</button><button class="btn" data-remove>Remove download…</button><button class="btn" data-close>Close</button></div></div></section>';
  overlay.querySelector('h2').textContent=title;
  const status=overlay.querySelector('[data-status]'), pin=overlay.querySelector('[data-pin]'), play=overlay.querySelector('[data-play]'), unpin=overlay.querySelector('[data-unpin]'), remove=overlay.querySelector('[data-remove]'), close=overlay.querySelector('[data-close]');
  let row=null, busy=false, closed=false, controller=null;
@@ -23,12 +23,14 @@ export function showOfflinePin(collection, title, opener = document.activeElemen
   close.textContent=busy?'Cancel and close':'Close';
  }
  async function refresh() { row=await offlinePinStatus(collection); if(current())render(); }
- function finish() { closed=true; controller?.abort(); overlay.remove(); if(opener?.isConnected)opener.focus(); }
+ function finish() { if(closed)return; closed=true; controller?.abort(); overlay.remove(); if(opener?.isConnected)opener.focus(); }
  close.onclick=finish;
  overlay.onkeydown=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();finish();}};
+ overlay.addEventListener('modalbeforeclose',event=>{event.preventDefault();finish();});
  async function run(action) {
   if(busy || !current())return;
   busy=true;controller=new AbortController(); render('Loading songs…');
+  if(document.activeElement===document.body)close.focus();
   const timer=setInterval(()=>{if(!current())controller.abort();},200);
   try { await action(); if(current())await refresh(); }
   catch(error) { if(current()) { try { row=await offlinePinStatus(collection); } catch {} render(error.name==='AbortError'?'Download canceled. Completed files remain available.':`${error.message} Completed files remain available; retry when ready.`); } }
@@ -36,7 +38,12 @@ export function showOfflinePin(collection, title, opener = document.activeElemen
  }
  pin.onclick=()=>{ const profile=overlay.querySelector('[data-download-quality]').value; return run(async()=>{
   if(navigator.storage?.persist) {
-   try { const persistent=await navigator.storage.persist(); if(current())overlay.querySelector('[data-storage]').textContent=persistent?'Persistent storage granted. Clearing site data still removes downloads.':'Persistent storage was not granted. Your browser may reclaim downloads; keep exported backups.'; } catch { /* CacheStorage may still be usable without persistence. */ }
+   try {
+    // Firefox can leave this permission request pending while its prompt is
+    // unanswered. Continue saving; persistence is optional for CacheStorage.
+    const persistent=await Promise.race([navigator.storage.persist(),new Promise(resolve=>setTimeout(()=>resolve(null),1500))]);
+    if(current())overlay.querySelector('[data-storage]').textContent=persistent===true?'Persistent storage granted. Clearing site data still removes downloads.':persistent===false?'Persistent storage was not granted. Your browser may reclaim downloads; keep exported backups.':'Storage permission is pending. Saving now; your browser may reclaim downloads.';
+   } catch { /* CacheStorage may still be usable without persistence. */ }
   }
   const songs=await resolveCollections(API,[collection],current);
   if(!current())return;
@@ -53,7 +60,7 @@ export function showOfflinePin(collection, title, opener = document.activeElemen
   if(await insertQueue(songs,'now',{replace:true,source:`Downloaded ${title}`}))finish();
   else throw Error('Playback is busy. Retry.');
  });
- document.body.append(overlay);initDownloadQuality(overlay);close.focus();render('Loading saved collection…');
+ document.body.append(overlay);initDownloadQuality(overlay);overlay.querySelector('h2').focus();render('Loading saved collection…');
  refresh().catch(()=>{if(current())render('Could not read saved downloads. Check browser storage and retry.');});
 }
 

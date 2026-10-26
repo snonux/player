@@ -918,6 +918,14 @@ body {
 .music-song .credit-link { min-height: 2.75rem; padding: 0; font-size: .85rem; }
 
 .playlist-actions { display: flex; flex-wrap: wrap; gap: var(--gap); margin-block: var(--gap); }
+.offline-pin-modal .playlist-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding-block: 0.5rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+}
 .playlist-comment { white-space: pre-wrap; overflow-wrap: anywhere; }
 .playlist-albums { display: flex; flex-direction: column; gap: var(--gap); max-height: 50vh; overflow: auto; }
 .playlist-albums button { white-space: normal; text-align: left; overflow-wrap: anywhere; }
