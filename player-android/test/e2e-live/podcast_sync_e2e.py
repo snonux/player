@@ -336,12 +336,10 @@ def require_seek_jump(reset, target, title):
                              f'target_state={target.get("state")!r}')
 
 
-def seek_step(previous, current):
-    """Distinguish a touch jump from ordinary one-times-speed progression."""
-    before, after = previous['position_ms'], current['position_ms']
-    elapsed = max(0, current['elapsed_ms'] - previous['elapsed_ms'])
-    return (isinstance(before, int) and isinstance(after, int)
-            and after - before >= 2500 and after - before > elapsed + 1500)
+def require_seek_silence(analysis):
+    if analysis.get('audible_s', 0) > .35:
+        raise AssertionError(f'Podcast remained audible during paused touch seek: '
+                             f'{analysis["audible_s"]}s')
 
 
 def wait_paused_session(title, timeout=4, reader=None, max_position=None):
@@ -367,45 +365,55 @@ def wait_paused_session(title, timeout=4, reader=None, max_position=None):
         time.sleep(.2)
 
 
-def wait_seek_jump(reset, title, timeout=12, reader=None, clock=None):
-    """Accept only a paused target reached by a faster-than-playback step."""
+def wait_seek_jump(reset, title, timeout=20, reader=None, clock=None):
+    """Wait for serialized touch seeks to settle at a stable paused target."""
     reader = reader or session_state
     clock = clock or time.monotonic
     started = clock()
-    previous = {'elapsed_ms': 0, 'position_ms': reset.get('position_ms')}
     samples = []
+    candidate = None
+    candidate_at = None
     while True:
         target = reader()
         sample = {'elapsed_ms': round((clock() - started) * 1000),
                   'position_ms': target.get('position_ms'),
                   'state': target.get('state')}
         samples.append(sample)
-        if target.get('state') != 'PAUSED':
-            raise AssertionError(f'Native playback resumed during touch seek: samples={samples}')
-        try:
-            require_seek_jump(reset, target, title)
-            if seek_step(previous, sample):
-                return target, samples
-        except AssertionError:
-            pass
+        if target.get('state') not in ('PAUSED', 'BUFFERING'):
+            raise AssertionError(f'Native playback started during touch seek: samples={samples}')
+        if target.get('state') == 'PAUSED':
+            try:
+                require_seek_jump(reset, target, title)
+            except AssertionError:
+                candidate = candidate_at = None
+            else:
+                if (candidate is None or abs(target['position_ms'] -
+                                             candidate['position_ms']) > 200):
+                    candidate, candidate_at = target, sample['elapsed_ms']
+                elif sample['elapsed_ms'] - candidate_at >= 700:
+                    return target, samples
+        else:
+            candidate = candidate_at = None
         if sample['elapsed_ms'] >= timeout * 1000:
-            raise AssertionError(f'No paused target-reaching touch jump: '
+            raise AssertionError(f'No stable paused touch-seek destination: '
                                  f'reset={reset.get("position_ms")}, samples={samples}')
-        previous = sample
         time.sleep(.2)
 
 
-def wait_seek_bar(timeout=12, max_percent=None):
+def wait_seek_bar(timeout=12, min_percent=None, max_percent=None):
     """The player route can appear after its media session starts playing."""
     deadline = time.monotonic() + timeout
     while True:
         try:
             nodes = adrv.nodes()
             bar = seek_bar_node(nodes)
-            if max_percent is not None:
+            if min_percent is not None or max_percent is not None:
                 match = re.fullmatch(r'(\d{1,3})%', adrv.label(bar))
-                if not match or int(match.group(1)) > max_percent:
-                    raise AssertionError('Seek thumb has not settled near the start')
+                if (not match or (min_percent is not None
+                                  and int(match.group(1)) < min_percent)
+                        or (max_percent is not None
+                            and int(match.group(1)) > max_percent)):
+                    raise AssertionError('Seek thumb has not settled at the expected position')
             return nodes, bar
         except (AssertionError, RuntimeError) as error:
             if time.monotonic() >= deadline:
@@ -1338,9 +1346,15 @@ class Run:
             reset = wait_paused_session(episode['title'], max_position=1500)
             nodes, bar = wait_seek_bar(max_percent=15)
             start, y, target = seek_track_swipe(nodes, bar)
+            quiet_mark = self.audio.mark()
             checked_adb('shell', 'input', 'swipe', str(start), str(y),
                         str(target), str(y), '300')
             after_seek, seek_samples = wait_seek_jump(reset, episode['title'])
+            wait_seek_bar(min_percent=50, max_percent=75)
+            wait_paused_session(episode['title'])
+            quiet_audio = audio_trace.analyze(self.audio.save(
+                quiet_mark, self.output / 'offline-seek-paused.wav'))
+            require_seek_silence(quiet_audio)
             self.shot('offline-seek-paused')
             mark = self.audio.mark()
             checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PLAY')
@@ -1368,7 +1382,8 @@ class Run:
                         initial_position_ms=initial.get('position_ms'),
                         reset_position_ms=reset['position_ms'],
                         seek_position_ms=after_seek['position_ms'],
-                        seek_samples_ms=seek_samples)
+                        seek_samples=seek_samples,
+                        paused_seek_audio=quiet_audio)
         finally:
             for mapping, original in selected.items():
                 checked_adb('reverse', mapping, original)

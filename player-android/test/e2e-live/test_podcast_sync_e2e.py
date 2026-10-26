@@ -14,7 +14,7 @@ from podcast_sync_e2e import (require_audio, require_resume, register_installati
                               select_row_action, PlayerProxy, PublisherProxy, Run,
                               feed_label_pattern, require_publisher_response,
                               require_download_state, require_seek_jump, seek_bar_node,
-                              seek_step, seek_track_swipe, wait_paused_session,
+                              require_seek_silence, seek_track_swipe, wait_paused_session,
                               wait_seek_bar, wait_seek_jump)
 
 
@@ -177,6 +177,13 @@ class PodcastNativeOracleTests(unittest.TestCase):
                 patch('podcast_sync_e2e.time.sleep'):
             self.assertEqual(wait_seek_bar(timeout=2, max_percent=15),
                              (nodes, good))
+        target_thumb = {**middle, 'desc': '62%'}
+        with patch('podcast_sync_e2e.adrv.nodes',
+                   side_effect=[nodes, [root, target_thumb]]), \
+                patch('podcast_sync_e2e.time.sleep'):
+            self.assertEqual(wait_seek_bar(timeout=2, min_percent=50,
+                                           max_percent=75), ([root, target_thumb],
+                                                            target_thumb))
         with patch('podcast_sync_e2e.adrv.nodes',
                    side_effect=[RuntimeError('route changing'), [], nodes]), \
                 patch('podcast_sync_e2e.time.sleep'):
@@ -191,30 +198,32 @@ class PodcastNativeOracleTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'full-screen geometry'):
             seek_track_swipe([good], good)
 
-    def test_offline_seek_requires_verified_reset_then_large_touch_jump(self):
+    def test_offline_seek_requires_stable_paused_destination_and_silence(self):
         title = 'Beta Episode 002'
         reset = {'title': title, 'position_ms': 240, 'state': 'PAUSED'}
         target = {'title': title, 'position_ms': 7456, 'state': 'PAUSED'}
         require_seek_jump(reset, target, title)
-        self.assertFalse(seek_step({'elapsed_ms': 0, 'position_ms': 294},
-                                   {'elapsed_ms': 1000, 'position_ms': 1000}))
-        self.assertTrue(seek_step({'elapsed_ms': 4000, 'position_ms': 4217},
-                                  {'elapsed_ms': 4200, 'position_ms': 7456}))
-        states = iter([{'title': title, 'position_ms': 4217, 'state': 'PAUSED'}, target])
-        clock = iter([0, 4, 4.2])
+        require_seek_silence({'audible_s': 0})
+        with self.assertRaisesRegex(AssertionError, 'audible'):
+            require_seek_silence({'audible_s': 2.0})
+        states = iter([{'title': title, 'position_ms': 4217, 'state': 'PAUSED'},
+                       {'title': title, 'position_ms': 2434, 'state': 'BUFFERING'},
+                       target, target])
+        clock = iter([0, .1, 1.8, 3.0, 3.8])
         with patch('podcast_sync_e2e.time.sleep'):
             observed, samples = wait_seek_jump(reset, title, reader=lambda: next(states),
                                                clock=lambda: next(clock))
         self.assertEqual(observed, target)
-        self.assertEqual([sample['position_ms'] for sample in samples], [4217, 7456])
+        self.assertEqual([sample['state'] for sample in samples],
+                         ['PAUSED', 'BUFFERING', 'PAUSED', 'PAUSED'])
         gradual = iter([{'title': title, 'position_ms': position, 'state': 'PAUSED'}
                         for position in (746, 912, 5548)])
         clock = iter([0, .5, .7, 5.5])
         with patch('podcast_sync_e2e.time.sleep'):
-            with self.assertRaisesRegex(AssertionError, 'No paused target-reaching touch jump'):
+            with self.assertRaisesRegex(AssertionError, 'No stable paused touch-seek destination'):
                 wait_seek_jump(reset, title, timeout=5, reader=lambda: next(gradual),
                                clock=lambda: next(clock))
-        with self.assertRaisesRegex(AssertionError, 'playback resumed'):
+        with self.assertRaisesRegex(AssertionError, 'playback started'):
             wait_seek_jump(reset, title, timeout=0,
                            reader=lambda: {'title': title, 'position_ms': 746,
                                            'state': 'PLAYING'})
