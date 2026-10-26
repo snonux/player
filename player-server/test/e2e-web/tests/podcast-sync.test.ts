@@ -203,11 +203,6 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       const target = feed.episodes[info.project.name === 'chrome' ? 4 : 5];
       const card = (p: Page) => p.locator('.episode-card').filter({ hasText: target.title });
       const otherContext = await browser.newContext({ baseURL: state.origin });
-      let release: () => void = () => {};
-      const released = new Promise<void>(resolve => { release = resolve; });
-      let signalHeld: () => void = () => {};
-      const held = new Promise<void>(resolve => { signalHeld = resolve; });
-      let heldResponse = false;
       try {
         const other = await otherContext.newPage();
         await keyboardLogin(other, auth.admin);
@@ -232,28 +227,41 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         await card(page).hover();
         await expect(card(page).getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
 
-        await page.route('**/api/podcasts/sync', async route => {
-          // Firefox may need longer than Playwright's 10-second proxy default
-          // while the shared test server is under the Go race suite's load.
-          const response = await route.fetch({ timeout: 30_000 });
-          const body = await response.json();
-          const matching = (body.episodes || []).find((row: any) =>
-            row.feed_key === feed.key && row.episode_key === target.key);
-          if (!heldResponse && matching?.completion?.completed && body.acked?.length) {
-            heldResponse = true;
-            signalHeld();
-            await released;
-          }
-          await route.fulfill({ response });
-        });
+        // Firefox's Playwright route.fetch loses this JSON POST body and times
+        // out. Hold the response where the page's fetch owns the original body,
+        // after the real upstream request has succeeded (as in boundaries).
+        await page.evaluate(({ feedKey, episodeKey }) => {
+          const original = window.fetch;
+          const gate = { held: false, cancelled: false, status: 0, acked: 0,
+            release: () => {}, original };
+          (window as any).__podcastEpisodeConflictGate = gate;
+          window.fetch = async (input, init) => {
+            const response = await original.call(window, input, init);
+            let body: any = null;
+            try { if (typeof init?.body === 'string') body = JSON.parse(init.body); } catch {}
+            const edit = body?.episodes?.find((row: any) =>
+              row.feed_key === feedKey && row.episode_key === episodeKey && row.completion?.completed);
+            if (!gate.cancelled && !gate.held && edit && String(input).includes('/api/podcasts/sync')) {
+              const reply = await response.clone().json();
+              gate.status = response.status;
+              gate.acked = (reply.acked || []).includes(edit.completion.edit_id) ? 1 : 0;
+              gate.held = true;
+              await new Promise<void>(resolve => { gate.release = resolve; });
+            }
+            return response;
+          };
+        }, { feedKey: feed.key, episodeKey: target.key });
         // This card can rerender after the preceding pull. Pointer activation
         // follows the visible replacement control; keyboard focus is covered
         // by the separate completion journey.
         await card(page).getByRole('button', { name: 'Mark completed', exact: true }).click();
-        await Promise.race([
-          held,
-          page.waitForTimeout(35_000).then(() => { throw new Error('Visible completion did not produce a held successful sync response'); }),
-        ]);
+        await expect.poll(() => page.evaluate(() => (window as any).__podcastEpisodeConflictGate.held),
+          { timeout: 15_000 }).toBe(true);
+        const upstream = await page.evaluate(() => {
+          const gate = (window as any).__podcastEpisodeConflictGate;
+          return { status: gate.status, acked: gate.acked };
+        });
+        expect(upstream).toEqual({ status: 200, acked: 1 });
         expect((await history(other, target.key)).completed).toBe(true);
 
         // The second real browser session writes a newer completion edit, then
@@ -273,7 +281,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         const newer = await history(other, target.key);
         expect(newer.completed).toBe(false);
 
-        release();
+        await page.evaluate(() => (window as any).__podcastEpisodeConflictGate.release());
         await card(page).hover();
         await expect(card(page).getByRole('button', { name: 'Mark uncompleted', exact: true })).toBeVisible();
         await fullSync(page);
@@ -287,10 +295,12 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         record('newer browser uncompletion and independent position survive a delayed older completion reply',
           { episode_key: target.key, position_seconds: reconciled.position_seconds });
       } finally {
-        release();
-        // A browser/test timeout can close the page first. Cleanup should not
-        // replace the request failure with an unrelated closed-page error.
-        if (!page.isClosed()) await page.unroute('**/api/podcasts/sync').catch(() => {});
+        if (!page.isClosed()) await page.evaluate(() => {
+          const gate = (window as any).__podcastEpisodeConflictGate;
+          if (!gate) return;
+          gate.cancelled = true; gate.release(); window.fetch = gate.original;
+          delete (window as any).__podcastEpisodeConflictGate;
+        }).catch(() => {});
         await otherContext.close().catch(() => {});
       }
     } else if (stage === 'resume') {
