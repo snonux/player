@@ -31,7 +31,19 @@ def open_search():
     assert adrv.tap('^Open navigation menu$')
     assert adrv.tap('^Music · Albums$'), app_ui.labels()
     assert adrv.wait('^Music · Albums$', timeout=20), app_ui.labels()
+    # Persisted account facets can reopen Music with chips; clear before typing.
+    if adrv.find('^Clear filters$'):
+        assert adrv.tap('^Clear filters$'), app_ui.labels()
+        time.sleep(.5)
     assert adrv.tap('^Search music$'), app_ui.labels()
+    # Empty hint, or Clear search when a prior query/chips still seed results.
+    assert adrv.wait(r'^Search songs, albums and artists\.$|^Clear search$', timeout=15), app_ui.labels()
+    if adrv.find('^Clear filters$'):
+        assert adrv.tap('^Clear filters$'), app_ui.labels()
+        time.sleep(.5)
+    if adrv.find('^Clear search$'):
+        assert adrv.tap('^Clear search$'), app_ui.labels()
+        time.sleep(.5)
     assert adrv.wait(r'^Search songs, albums and artists\.$', timeout=15), app_ui.labels()
 
 

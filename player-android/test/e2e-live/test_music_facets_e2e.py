@@ -33,9 +33,33 @@ class SheetRegionTest(unittest.TestCase):
 
 
 class ScenarioDispatchTest(unittest.TestCase):
+    def test_preserve_device_skips_install_login_and_resets_on_success_and_failure(self):
+        for fail in [False, True]:
+            with self.subTest(fail=fail), TemporaryDirectory() as directory:
+                (Path(directory) / 'state.json').write_text(json.dumps({'port': 18816}))
+                run = Mock(failures=0)
+                def record(*args, **kwargs):
+                    run.failures += 1
+                run.record.side_effect = record
+                with patch.object(facets.baseline, 'prepare_device') as prepare, \
+                     patch.object(facets.baseline, 'teardown') as teardown, \
+                     patch.object(facets, 'Run', return_value=run), \
+                     patch.object(facets.app_ui, 'connect_and_login') as login, \
+                     patch.object(facets.app_ui, 'launch') as launch, \
+                     patch.object(facets.app_ui, 'go_home', return_value=True), \
+                     patch.object(facets, 'extended', side_effect=AssertionError('journey failed') if fail else None) as step:
+                    self.assertEqual(facets.main([directory, '--emulator-wav', 'unused.wav',
+                                                 '--scenario', 'extended', '--preserve-device']), int(fail))
+                    launch.assert_called_once_with()
+                    step.assert_called_once_with(run)
+                    prepare.assert_not_called()
+                    login.assert_not_called()
+                    teardown.assert_not_called()
+
     def test_state_and_default_dispatch_call_scenarios_without_device_io(self):
-        for scenario, expected in [(None, ['core', 'state', 'errors', 'detail']),
-                                   ('state', ['state']), ('detail', ['detail']), ('label', ['label'])]:
+        for scenario, expected in [(None, ['core', 'state', 'errors', 'detail', 'extended', 'navigation']),
+                                   ('state', ['state']), ('detail', ['detail']), ('label', ['label']),
+                                   ('extended', ['extended']), ('navigation', ['navigation'])]:
             with self.subTest(scenario=scenario), TemporaryDirectory() as directory:
                 (Path(directory) / 'state.json').write_text(json.dumps({'port': 18816}))
                 run = Mock(failures=0, base='unused', auth={'user': {'username': 'u', 'password': 'p'}})
@@ -48,7 +72,9 @@ class ScenarioDispatchTest(unittest.TestCase):
                      patch.object(facets, 'state', side_effect=lambda _: calls.append('state')), \
                      patch.object(facets, 'errors', side_effect=lambda _: calls.append('errors')), \
                      patch.object(facets, 'detail', side_effect=lambda _: calls.append('detail')), \
-                     patch.object(facets, 'label', side_effect=lambda _: calls.append('label')):
+                     patch.object(facets, 'label', side_effect=lambda _: calls.append('label')), \
+                     patch.object(facets, 'extended', side_effect=lambda _: calls.append('extended')), \
+                     patch.object(facets, 'navigation', side_effect=lambda _: calls.append('navigation')):
                     args = [directory, '--emulator-wav', 'unused.wav']
                     if scenario:
                         args += ['--scenario', scenario]

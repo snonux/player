@@ -15,6 +15,7 @@ import traceback
 import adrv
 import app_ui
 import music_e2e as baseline
+import music_search_e2e as search_driver
 from music_search_e2e import matching_nodes
 from music_queue_recovery_e2e import login_other, restart
 from fixture_server import Client, PlayerServer, answers, stop_pid
@@ -266,26 +267,149 @@ def detail(run):
     tap('^Clear filters$')
 
 
+def clear_applied_facets():
+    """Remove persisted chips. Clear filters can sit off-screen; Delete is reliable."""
+    if adrv.find('^Clear filters$'):
+        tap('^Clear filters$')
+        time.sleep(.5)
+    for _ in range(8):
+        nodes = matching_nodes(adrv.nodes(), '^Delete$', clickable=True)
+        if not nodes:
+            break
+        adrv.tap_node(nodes[0])
+        time.sleep(.6)
+    assert not matching_nodes(adrv.nodes(), r'^Filters \([1-9]'), app_ui.labels()
+
+
+def apply_fields(fields):
+    """Choose fields in screen order so bounded sheet scrolling stays forward."""
+    sheet()
+    for name, value in fields:
+        choose(name, value)
+    apply()
+
+
+def extended(run):
+    albums()
+    if adrv.find('^Clear filters$'):
+        tap('^Clear filters$')
+    apply_fields([('Genre', 'Ambient'), ('Year / decade', '2021'),
+                  ('Role', 'Track artist'), ('Label', 'Fixture Records')])
+    visible(r'^1 matching albums · 1 matching songs$')
+    visible(r'^Filters \(4\)$')
+    apply_fields([('Release type', 'album')])
+    visible(r'^0 matching albums · 0 matching songs$')
+    visible('Nothing matches these filters')
+    apply_fields([('Release type', 'Any')])
+    visible(r'^1 matching albums · 1 matching songs$')
+    tap(r'(^| / )Night Transit($| / )')
+    visible('^Play album$')
+    visible(r'(?:^| / )3 songs ·')
+    app_ui.back()
+    visible(r'^Filters \(4\)$')
+    visible(r'^1 matching albums · 1 matching songs$')
+    run.record('simultaneous genre/year/role/release label, release-type exclusion and full album Back',
+               True, artifacts=[run.shot('m08-four-facets')])
+    tap('^Clear filters$')
+    apply_fields([('Genre', 'Synthwave'), ('Year / decade', '2010-2019'),
+                  ('Compilation', 'Marked')])
+    visible('Synth Compilation')
+    apply_fields([('Compilation', 'Not marked')])
+    visible(r'^0 matching albums · 0 matching songs$')
+    tap('^Clear filters$')
+    apply_fields([('Year / decade', '2024'), ('Role', 'Track artist'),
+                  ('Release type', 'live'), ('Compilation', 'Not marked'),
+                  ('Mood', 'Reflective'), ('Grouping', 'Suite / One'),
+                  ('Label', 'Label A; B')])
+    # Only the FLAC carries repeated RELEASETYPE=live; the aliases are album.
+    visible(r'^1 matching albums · 1 matching songs$')
+    visible('Release Metadata')
+    visible(r'^Filters \(7\)$')
+    run.record('decade and marked/unmarked compilation; positive rich release type/mood/grouping/label combination',
+               True, artifacts=[run.shot('m08-rich-facets')])
+    tap('^Clear filters$')
+
+
+def navigation(run):
+    assert app_ui.go_home(), app_ui.labels()
+    # Prior failed attempts can leave Music search open with applied chips.
+    if adrv.find('^Clear search$'):
+        tap('^Clear search$')
+        app_ui.back()
+    albums()
+    clear_applied_facets()
+    search_driver.open_search()
+    search_driver.search('Harbour genre:Ambient year:2022')
+    search_driver.visible(r'^Songs \(0\)$')
+    search_driver.visible('Nothing matches these filters')
+    search_driver.search('Harbour genre:Ambient')
+    search_driver.visible(r'^Songs \(1\)$')
+    search_driver.visible('^Harbour(?: /|$)')
+    search_driver.search('Harbour')
+    search_driver.visible(r'^Songs \(1\)$')
+    search_driver.visible('^Harbour(?: /|$)')
+    apply_fields([('Year / decade', '2022')])
+    search_driver.visible(r'^Songs \(0\)$')
+    apply_fields([('Year / decade', '2021')])
+    search_driver.visible(r'^Songs \(1\)$')
+    tap('^Clear filters$')
+    search_driver.visible(r'^Songs \(1\)$')
+    run.record('Search typed year then genre deletion reloads results without stale facets', True,
+               artifacts=[run.shot('m08-search-modifier-deletion')])
+    assert app_ui.go_home(), app_ui.labels()
+    tap('^Open navigation menu$')
+    tap('^Music · Artists$')
+    visible(r'^Filters \(0\)$')
+    apply_fields([('Genre', 'Synthwave'), ('Year / decade', '2019'),
+                  ('Role', 'Composer')])
+    visible('2 matching songs')
+    tap(r'^Composer; 東京 / A(?: /|$)')
+    # Artist detail puts ranked albums below Play/Share chrome; scroll if needed.
+    node = app_ui.find_scrolling(r'(^| / )Synth Compilation')
+    assert node, app_ui.labels()
+    adrv.tap_node(node)
+    visible('^Play album$')
+    app_ui.back()
+    visible(r'^Composer; 東京 / A(?: /|$)')
+    app_ui.back()
+    visible(r'^Filters \(3\)$')
+    visible('2 matching songs')
+    visible(r'^Composer; 東京 / A(?: /|$)')
+    run.record('Artists composer/genre/year facets, matching song counts and detail Back restoration',
+               True, artifacts=[run.shot('m08-artists-restored')])
+    clear_applied_facets()
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('fixture_dir')
     parser.add_argument('--apk')
-    parser.add_argument('--scenario', choices=['all', 'core', 'state', 'errors', 'detail', 'label'], default='all')
+    parser.add_argument('--scenario', choices=['all', 'core', 'state', 'errors', 'detail', 'label', 'extended', 'navigation'], default='all')
     parser.add_argument('--emulator-wav', required=True)
     parser.add_argument('--host-alias', action='store_true')
+    parser.add_argument('--preserve-device', action='store_true',
+                        help='Use an already unlocked fixture-user session and existing connection; skip installation, initial login and all teardown resets')
     args = parser.parse_args(argv)
+    if args.preserve_device and args.apk:
+        parser.error('--preserve-device requires an already installed APK; omit --apk')
     fixture_state = json.loads((Path(args.fixture_dir) / 'state.json').read_text())
     run = None
     try:
-        baseline.prepare_device(args, fixture_state['port'])
+        if not args.preserve_device:
+            baseline.prepare_device(args, fixture_state['port'])
         run = Run(args)
-        assert app_ui.connect_and_login(run.base, run.auth['user']['username'],
-                                        run.auth['user']['password'],
-                                        lambda name, ok, detail='': run.record(name, ok, detail), run.shot)
+        if args.preserve_device:
+            app_ui.launch()
+            assert app_ui.go_home(), 'Preserved device must already be unlocked and signed in to this fixture user'
+        else:
+            assert app_ui.connect_and_login(run.base, run.auth['user']['username'],
+                                            run.auth['user']['password'],
+                                            lambda name, ok, detail='': run.record(name, ok, detail), run.shot)
         if args.scenario == 'label':
             label(run)
         else:
-            for name, step in [('core', core), ('state', state), ('errors', errors), ('detail', detail)]:
+            for name, step in [('core', core), ('state', state), ('errors', errors), ('detail', detail),
+                               ('extended', extended), ('navigation', navigation)]:
                 if args.scenario in ('all', name):
                     step(run)
     except Exception:
@@ -295,7 +419,7 @@ def main(argv=None):
         else:
             raise
     finally:
-        if run:
+        if run and not args.preserve_device:
             baseline.teardown(run, fixture_state['port'])
     return 1 if not run or run.failures else 0
 
