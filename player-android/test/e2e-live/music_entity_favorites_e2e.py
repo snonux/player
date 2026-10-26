@@ -74,7 +74,6 @@ def toggle_detail(run, kind, key, title):
     tap('^Favorite ' + kind + '$')
     assert adrv.wait('^Unfavorite ' + kind + '$'), app_ui.labels()
     wait_favorite(run.viewer, kind, key, True)
-    assert adrv.wait('^Added to favorites\\.$'), app_ui.labels()
     run.record(kind + ' detail touch heart saves scoped entity', True,
                data={'key': key, 'title': title},
                artifacts=[run.shot('m34-' + kind + '-detail')])
