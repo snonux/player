@@ -1,5 +1,23 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M36 personal listening, start a disposable `music_fixture.py up` server on
+an unused port and run the focused journey in installed Chrome and Firefox,
+one browser at a time:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M36_ISOLATED=1 \
+PLAYER_M36_EVIDENCE=/tmp/player-m36-evidence \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-personal-listening.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The test adds an 85-second and an 18-second tagged MP3 only to that disposable
+fixture. It verifies real audio and the 60-second personal threshold, a skipped
+song, album/artist aggregates, separate accounts, keyboard/pointer controls,
+narrow light/dark layouts, reload, real ACL removal and offline Retry. Artifacts
+stay outside the repository. Stop the fixture with `music_fixture.py down`.
+
 For the music equalizer's actual output journey, use the disposable music
 fixture and installed Chrome/Firefox:
 
