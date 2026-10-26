@@ -8,6 +8,8 @@ import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 from contextlib import closing
+from contextlib import contextmanager
+from types import SimpleNamespace
 from podcast_sync_e2e import require_audio, require_resume, register_installation, select_row_action, PlayerProxy, Run, feed_label_pattern
 
 
@@ -145,6 +147,85 @@ class PodcastNativeOracleTests(unittest.TestCase):
             resume)
         with self.assertRaises(AssertionError):
             select_row_action(nodes, 'Beta Episode 001', 'Download')
+
+    def test_held_account_releases_only_after_logout_and_rejects_cross_scope_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = self.run_without_device(directory)
+            run.state.update(origin='http://fixture', accounts={'admin': 1, 'other': 3})
+            run.feed = {'key': 'feed:alpha'}
+            run.root = MagicMock()
+            run.switch_account = MagicMock()
+            trace = [{'path': '/api/v1/podcasts/sync', 'scoped': True, 'status': 200,
+                      'received_ms': 10}]
+            control = SimpleNamespace(held=threading.Event(), release=threading.Event(), trace=trace)
+            control.held.set()
+
+            @contextmanager
+            def proxy(**_):
+                yield control
+
+            run.proxy = proxy
+            def login(kind):
+                self.assertEqual(kind, 'other')
+                self.assertTrue(control.release.is_set())
+                trace[0]['delivered_ms'] = 20
+            run.login.side_effect = login
+            run.snapshot = MagicMock(return_value={
+                'podcast_episode_state': [], 'podcast_subscriptions': []})
+            with patch('podcast_sync_e2e.adrv.find', side_effect=lambda pattern:
+                       pattern == '^Log Out$'), \
+                    patch('podcast_sync_e2e.adrv.wait', return_value=True):
+                run.held_account()
+                run.record.assert_called_with('held scoped response cannot cross native account logout')
+                trace[0].pop('delivered_ms')
+                control.release.clear()
+                run.snapshot.return_value['podcast_episode_state'] = [{
+                    'scope': 'account:http://fixture#3', 'episode_key': 'guid:one'}]
+                with self.assertRaisesRegex(AssertionError, 'other account'):
+                    run.held_account()
+
+    def test_end_outage_next_requires_persisted_completion_next_audio_and_failed_sync(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = self.run_without_device(directory)
+            first = {'key': 'guid:alpha-2', 'title': 'Alpha Episode 002'}
+            second = {'key': 'guid:beta-2', 'title': 'Beta Episode 002'}
+            run.state['feeds'] = [{'episodes': [{}, first]}, {'episodes': [{}, second]}]
+            run.state['audio']['end'] = {'duration_s': 12, 'tone_hz': 882}
+            run.wait_downloaded_row = MagicMock()
+            run.snapshot = MagicMock(side_effect=[
+                {'podcast_downloads': [{'episode_key': first['key'], 'state': 'available'},
+                                       {'episode_key': second['key'], 'state': 'available'}]},
+                {'podcast_episode_state': [{'scope': run.scope, 'episode_key': first['key'],
+                                            'completed': 1, 'completion_source': 'auto'}]},
+            ])
+            control = SimpleNamespace(trace=[])
+
+            @contextmanager
+            def proxy(**_):
+                yield control
+
+            run.proxy = proxy
+            run.audio.save.return_value = run.output / 'not-platform-proof.wav'
+            first_play = {'title': first['title'], 'state': 'PLAYING', 'position_ms': 1000}
+            first_end = {**first_play, 'position_ms': 12000}
+            next_play = {'title': second['title'], 'state': 'PLAYING', 'position_ms': 1000}
+            states = [first_play, *([first_end] * 4), next_play]
+            def state():
+                item = states.pop(0)
+                if len(states) == 3:
+                    control.trace.append({'path': '/api/v1/podcasts/sync',
+                                          'transport_failed': True})
+                return item
+            analysis = {'audible_s': 3, 'segments': [{'duration_s': 3, 'tone_hz': 882}]}
+            with patch('podcast_sync_e2e.session_state', side_effect=state), \
+                    patch('podcast_sync_e2e.time.sleep'), \
+                    patch('podcast_sync_e2e.audio_trace.analyze', return_value=analysis), \
+                    patch('podcast_sync_e2e.app_ui.back'), \
+                    patch('podcast_sync_e2e.checked_adb'):
+                run.end_outage_next()
+            run.record.assert_called_with(
+                'failed native end sync leaves completion durable and next source audible')
+            self.assertEqual(run.row.call_args_list[-1].kwargs['title'], second['title'])
 
 
 class ProxyBoundaryTests(unittest.TestCase):

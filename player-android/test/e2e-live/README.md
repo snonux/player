@@ -847,3 +847,22 @@ for the platform matrix, exact browser invocation, endpoint failure/security,
 SSID deny/approximate/precise/Location-off checks, canonical download/cache keys
 and original queue/profile restoration. Browser controls retain their page
 origin under U01; native pairing does not create a separate saved account.
+
+# Podcast multi-client acceptance
+
+`podcast_sync_e2e.py` uses two already installed, persistent Android clients and
+the external isolated publisher/server fixture. It never installs an APK or
+clears app data. The parent establishes each client's server and publisher
+reverse mappings and supplies `--serial`, `--client A|B`, and one `--stage`.
+Audio stages also need `--emulator-wav` pointing at that emulator's real QEMU
+output. Each run writes a separate result and sanitized evidence directory.
+
+After the main A/B completion and cleanup journey, run `held-account` on A
+while signed into the primary account with Alpha subscribed and downloaded. The
+fixture must include its separate `other` account. This stage holds a real
+upstream scoped reply, signs out before release, checks the other account's UI
+and persisted scope, then restores the primary account. Run `end-outage-next`
+with Alpha and Beta subscribed: it downloads their short episodes directly,
+forces podcast sync transport failure through a real HTTP proxy, verifies local
+natural completion, and requires the next episode to play audibly. Neither
+stage should be claimed as passing until run on the installed APK.

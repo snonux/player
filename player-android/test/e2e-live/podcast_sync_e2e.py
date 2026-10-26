@@ -47,12 +47,14 @@ def feed_label_pattern(title):
 
 class PlayerProxy:
     """Small real-HTTP fault boundary; credentials are relayed, never logged."""
-    def __init__(self, port, *, fail_progress=False, fail_podcasts=False, delay_scope=False, strip_auth=False):
+    def __init__(self, port, *, fail_progress=False, fail_podcasts=False, delay_scope=False,
+                 strip_auth=False, hold_seconds=15):
         self.port = port
         self.fail_progress = fail_progress
         self.fail_podcasts = fail_podcasts
         self.delay_scope = delay_scope
         self.strip_auth = strip_auth
+        self.hold_seconds = hold_seconds
         self.held = threading.Event()
         self.release = threading.Event()
         self.trace = []
@@ -89,7 +91,8 @@ class PlayerProxy:
                     proxy.trace.append(event)
                     if scoped and proxy.delay_scope and not proxy.held.is_set():
                         proxy.held.set()
-                        if not proxy.release.wait(15):
+                        if not proxy.release.wait(proxy.hold_seconds):
+                            event['hold_timed_out'] = True
                             raise TimeoutError('Bounded scoped-response hold expired')
                     event['delivered_ms'] = round(time.monotonic() * 1000)
                     self.send_response(response.status)
@@ -317,6 +320,16 @@ class Run:
         if not required:
             return False
         raise AssertionError('Could not reach native episode action by label')
+
+    def wait_downloaded_row(self, title, timeout=90):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                select_row_action(adrv.nodes(), title, 'Delete downloaded file')
+                return
+            except AssertionError:
+                time.sleep(.5)
+        raise AssertionError(f'Device copy for {title} did not become available')
 
     def no_server_audio(self):
         counts = podcast_media(self.state['database'])
@@ -801,6 +814,130 @@ class Run:
             raise AssertionError('Keep separate copied standalone subscriptions to another account')
         self.record('explicit Keep separate never associates local history with the other account')
 
+    def held_account(self):
+        """A real scoped reply must not populate the account selected after logout."""
+        if 'other' not in self.state['accounts']:
+            raise AssertionError('Held-account check needs the fixture isolation account')
+        self.episodes(filter_name='All')
+        with self.proxy(delay_scope=True, hold_seconds=90) as proxy:
+            self.row('Play from beginning')
+            if not proxy.held.wait(10):
+                raise AssertionError('Podcast playback did not issue a real scoped sync request')
+            scoped = [event for event in proxy.trace if event.get('scoped')]
+            if not scoped or scoped[-1].get('status') != 200 or 'delivered_ms' in scoped[-1]:
+                raise AssertionError('Scoped reply was not held after upstream success')
+            self.root()
+            self.touch('^Settings$')
+            for _ in range(30):
+                if adrv.find('^Log Out$'):
+                    break
+                app_ui.swipe()
+            self.touch('^Log Out$')
+            if not adrv.wait('^Welcome back$'):
+                raise AssertionError('Logout did not revoke the selected account while reply was held')
+            proxy.release.set()
+            self.login('other')
+            if adrv.find(r"^Sync this device's podcasts with "):
+                self.touch('^Keep separate$')
+            deadline = time.monotonic() + 5
+            while 'delivered_ms' not in scoped[-1] and time.monotonic() < deadline:
+                time.sleep(.1)
+            if scoped[-1].get('hold_timed_out') or 'delivered_ms' not in scoped[-1]:
+                raise AssertionError('Held scoped reply did not leave the proxy after logout')
+            self.podcasts()
+            if adrv.find(feed_label_pattern('Acceptance Alpha')):
+                raise AssertionError('Late admin reply exposed its subscription in the other account')
+            other = self.snapshot('other-account-after-held')
+            other_scope = f'account:{self.state["origin"]}#{self.state["accounts"]["other"]}'
+            if any(row['scope'] == other_scope and row['episode_key'] == self.episode['key']
+                   for row in other['podcast_episode_state']):
+                raise AssertionError('Late admin reply wrote episode history into the other account')
+            if any(row['scope'] == other_scope and row['feed_key'] == self.feed['key']
+                   and row['subscribed'] for row in other['podcast_subscriptions']):
+                raise AssertionError('Late admin reply associated a feed with the other account')
+        self.switch_account('admin')
+        self.podcasts()
+        if not adrv.wait(feed_label_pattern('Acceptance Alpha')):
+            raise AssertionError('Original account subscription was not retained after held reply')
+        self.record('held scoped response cannot cross native account logout')
+
+    def end_outage_next(self):
+        """A failed completion sync must not prevent another downloaded source."""
+        if not self.audio.available():
+            raise AssertionError('End-outage check requires real Android audio output')
+        first = self.state['feeds'][0]['episodes'][1]
+        second = self.state['feeds'][1]['episodes'][1]
+        self.episodes(filter_name='All')
+        for episode in (first, second):
+            self.row('Download', title=episode['title'], required=False)
+            self.wait_downloaded_row(episode['title'])
+        downloaded = self.snapshot('end-outage-downloads')
+        available = {row['episode_key'] for row in downloaded['podcast_downloads']
+                     if row['state'] == 'available'}
+        if first['key'] not in available or second['key'] not in available:
+            raise AssertionError('Both publisher copies must finish before the outage journey')
+        self.episodes(filter_name='All')
+        with self.proxy(fail_podcasts=True) as proxy:
+            first_mark = self.audio.mark()
+            self.row('Play from beginning', title=first['title'])
+            deadline = time.monotonic() + 30
+            playing = False
+            terminal_ms = int(self.state['audio']['end']['duration_s'] * 1000)
+            last_terminal = None
+            terminal_stable = 0
+            end_failure_start = None
+            while time.monotonic() < deadline:
+                state = session_state()
+                if state['title'] == first['title'] and state['state'] == 'PLAYING':
+                    playing = True
+                if playing and end_failure_start is None and (state['position_ms'] or 0) >= terminal_ms - 2000:
+                    end_failure_start = len(proxy.trace)
+                if playing and (state['position_ms'] or 0) >= terminal_ms - 500:
+                    if state['state'] in ('PAUSED', 'STOPPED'):
+                        break
+                    if state['state'] == 'PLAYING':
+                        terminal_stable = terminal_stable + 1 if state['position_ms'] == last_terminal else 1
+                        last_terminal = state['position_ms']
+                        if terminal_stable >= 4:
+                            break
+                time.sleep(.25)
+            else:
+                raise AssertionError('First downloaded episode did not reach its natural end')
+            if end_failure_start is None:
+                raise AssertionError('First source had no observed near-end playback window')
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and not any(
+                    event.get('transport_failed') and event['path'].endswith('/podcasts/sync')
+                    for event in proxy.trace[end_failure_start:]):
+                time.sleep(.1)
+            if not any(event.get('transport_failed') and event['path'].endswith('/podcasts/sync')
+                       for event in proxy.trace[end_failure_start:]):
+                raise AssertionError('Natural completion did not attempt sync during the outage')
+            require_audio(audio_trace.analyze(self.audio.save(first_mark, self.output / 'failed-end.wav')),
+                          self.state['audio']['end']['tone_hz'])
+            app_ui.back()
+            completed = self.snapshot('completed-during-outage')
+            states = [row for row in completed['podcast_episode_state']
+                      if row['scope'] == self.scope and row['episode_key'] == first['key']]
+            if len(states) != 1 or not states[0]['completed'] or states[0]['completion_source'] != 'auto':
+                raise AssertionError('Failed end sync lost the local automatic completion')
+            self.episodes(filter_name='All')
+            second_mark = self.audio.mark()
+            self.row('Play from beginning', title=second['title'])
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                state = session_state()
+                if state['state'] == 'PLAYING' and state['title'] == second['title']:
+                    break
+                time.sleep(.2)
+            else:
+                raise AssertionError('Next downloaded episode did not play during sync outage')
+            time.sleep(3)
+            checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
+            require_audio(audio_trace.analyze(self.audio.save(second_mark, self.output / 'next-source.wav')),
+                          self.state['audio']['end']['tone_hz'])
+            self.record('failed native end sync leaves completion durable and next source audible')
+
     def unsubscribe(self):
         before = self.snapshot('before-unsubscribe')
         server_copies = podcast_media(self.state['database'])
@@ -936,7 +1073,8 @@ def main(argv=None):
     parser.add_argument('--stage', choices=['standalone', 'associate', 'resume', 'finish',
         'observe-completed', 'uncomplete', 'observe-uncompleted', 'cleanup',
         'preplay', 'browse', 'feedback', 'globalprogress', 'isolation',
-        'unsubscribe', 'observe-unsubscribed', 'resubscribe', 'auth'], required=True)
+        'held-account', 'end-outage-next', 'unsubscribe', 'observe-unsubscribed',
+        'resubscribe', 'auth'], required=True)
     parser.add_argument('--emulator-wav', type=Path)
     args = parser.parse_args(argv)
     if args.stage in ('standalone', 'associate') and args.client != 'A':
@@ -947,6 +1085,10 @@ def main(argv=None):
     try:
         if args.stage == 'auth':
             run.auth_boundary()
+        elif args.stage == 'held-account':
+            run.held_account()
+        elif args.stage == 'end-outage-next':
+            run.end_outage_next()
         elif args.stage == 'observe-unsubscribed':
             run.observe_unsubscribed()
         elif args.stage.startswith('observe-'):
