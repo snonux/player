@@ -286,11 +286,38 @@ def require_download_state(snapshot, episode, state):
 
 def seek_bar_node(nodes):
     candidates = [node for node in nodes if node['cls'] == 'SeekBar'
-                  and node['b'][2] - node['b'][0] >= 400
+                  and node['b'][2] > node['b'][0]
                   and node['b'][3] > node['b'][1]]
     if len(candidates) != 1:
         raise AssertionError('Expected one visible native playback seek bar')
     return candidates[0]
+
+
+def seek_track_swipe(nodes, bar, fraction=.62):
+    """Map the accessibility thumb to the full horizontal slider track."""
+    screens = [node['b'] for node in nodes if node['cls'] == 'FrameLayout'
+               and node['b'][1] == 0 and node['b'][2] > node['b'][0]]
+    if not screens:
+        raise AssertionError('Native player has no full-screen geometry for seek')
+    left, _, right, _ = max(screens, key=lambda bounds: bounds[2] - bounds[0])
+    width = right - left
+    if width < 400 or not 0 < fraction < 1:
+        raise AssertionError('Invalid native slider track geometry')
+    thumb_x = (bar['b'][0] + bar['b'][2]) // 2
+    y = (bar['b'][1] + bar['b'][3]) // 2
+    match = re.fullmatch(r'(\d{1,3})%', adrv.label(bar))
+    progress = int(match.group(1)) / 100 if match else .5
+    # Flutter exposes the thumb (132 px), not the full track. With symmetric
+    # insets, the thumb position and its percent estimate the track endpoint.
+    inset = ((thumb_x - left - progress * width) / (1 - 2 * progress)
+             if abs(1 - 2 * progress) >= .25 else width * .12)
+    if not width * .06 <= inset <= width * .22:
+        inset = width * .12
+    track_left, track_right = left + inset, right - inset
+    if not track_left - 12 <= thumb_x <= track_right + 12:
+        raise AssertionError('Seek thumb is outside inferred playback track')
+    target_x = round(track_left + fraction * (track_right - track_left))
+    return thumb_x, y, target_x
 
 
 def wait_seek_bar(timeout=12):
@@ -298,7 +325,8 @@ def wait_seek_bar(timeout=12):
     deadline = time.monotonic() + timeout
     while True:
         try:
-            return seek_bar_node(adrv.nodes())
+            nodes = adrv.nodes()
+            return nodes, seek_bar_node(nodes)
         except (AssertionError, RuntimeError) as error:
             if time.monotonic() >= deadline:
                 raise AssertionError(f'Native player seek bar did not appear: {error}')
@@ -1222,17 +1250,18 @@ class Run:
             else:
                 raise AssertionError('Downloaded episode did not play with both hosts offline')
             checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
-            bar = wait_seek_bar()
-            left, top, right, bottom = bar['b']
-            width, y = right - left, (top + bottom) // 2
-            start, target = left + int(width * .2), left + int(width * .62)
+            nodes, bar = wait_seek_bar()
+            before_seek = session_state()
+            start, y, target = seek_track_swipe(nodes, bar)
             checked_adb('shell', 'input', 'swipe', str(start), str(y),
                         str(target), str(y), '300')
             deadline = time.monotonic() + 4
             while time.monotonic() < deadline:
                 after_seek = session_state()
                 if (after_seek['title'] == episode['title']
-                        and 5500 <= (after_seek['position_ms'] or 0) <= 10000):
+                        and 5500 <= (after_seek['position_ms'] or 0) <= 10000
+                        and abs((after_seek['position_ms'] or 0) -
+                                (before_seek['position_ms'] or 0)) >= 2500):
                     break
                 time.sleep(.2)
             else:

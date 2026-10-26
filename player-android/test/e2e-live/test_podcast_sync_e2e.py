@@ -13,7 +13,8 @@ from types import SimpleNamespace
 from podcast_sync_e2e import (require_audio, require_resume, register_installation,
                               select_row_action, PlayerProxy, PublisherProxy, Run,
                               feed_label_pattern, require_publisher_response,
-                              require_download_state, seek_bar_node, wait_seek_bar)
+                              require_download_state, seek_bar_node,
+                              seek_track_swipe, wait_seek_bar)
 
 
 class PodcastNativeOracleTests(unittest.TestCase):
@@ -155,20 +156,32 @@ class PodcastNativeOracleTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             require_download_state(snapshot('failed', actual_sha256='abc'), episode, 'failed')
 
-    def test_offline_seek_requires_one_wide_seek_bar(self):
-        good = {'cls': 'SeekBar', 'b': [50, 800, 980, 900]}
-        self.assertIs(seek_bar_node([good]), good)
+    def test_offline_seek_uses_thumb_and_full_track_geometry(self):
+        root = {'cls': 'FrameLayout', 'b': [0, 0, 1080, 2220]}
+        good = {'cls': 'SeekBar', 'b': [75, 1400, 207, 1532],
+                'desc': '1%', 'text': ''}
+        nodes = [root, good]
+        self.assertIs(seek_bar_node(nodes), good)
+        self.assertEqual(seek_track_swipe(nodes, good), (141, 1466, 638))
+        finished = {**good, 'b': [873, 1400, 1005, 1532], 'desc': '100%'}
+        self.assertEqual(seek_track_swipe([root, finished], finished),
+                         (939, 1466, 636))
+        middle = {**good, 'b': [474, 1400, 606, 1532], 'desc': '50%'}
+        self.assertEqual(seek_track_swipe([root, middle], middle),
+                         (540, 1466, 638))
         with patch('podcast_sync_e2e.adrv.nodes',
-                   side_effect=[RuntimeError('route changing'), [], [good]]), \
+                   side_effect=[RuntimeError('route changing'), [], nodes]), \
                 patch('podcast_sync_e2e.time.sleep'):
-            self.assertIs(wait_seek_bar(timeout=2), good)
+            self.assertEqual(wait_seek_bar(timeout=2), (nodes, good))
         with patch('podcast_sync_e2e.adrv.nodes', return_value=[]):
             with self.assertRaisesRegex(AssertionError, 'did not appear'):
                 wait_seek_bar(timeout=0)
-        for nodes in ([], [good, dict(good)],
-                      [{'cls': 'SeekBar', 'b': [0, 0, 200, 30]}]):
+        for invalid in ([], [good, dict(good)],
+                        [{'cls': 'SeekBar', 'b': [0, 0, 0, 30]}]):
             with self.assertRaisesRegex(AssertionError, 'seek bar'):
-                seek_bar_node(nodes)
+                seek_bar_node(invalid)
+        with self.assertRaisesRegex(AssertionError, 'full-screen geometry'):
+            seek_track_swipe([good], good)
 
     def test_feed_title_boundary_accepts_actual_merged_url_but_not_another_show(self):
         pattern = feed_label_pattern('Acceptance Alpha')
