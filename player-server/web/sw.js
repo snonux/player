@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v84';
+const CACHE = 'kiss-v85';
 const ASSETS = [
   '/',
   '/index.html',

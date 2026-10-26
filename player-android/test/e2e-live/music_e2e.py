@@ -106,7 +106,7 @@ class EmulatorAudio:
 class Run:
     """Fixture, accounts, evidence and helpers shared by the journey steps."""
 
-    def __init__(self, args):
+    def __init__(self, args, *, evidence_dir=None):
         self.fixture_dir = Path(args.fixture_dir)
         self.state = json.loads((self.fixture_dir / 'state.json').read_text())
         self.auth = json.loads((self.fixture_dir / 'auth.json').read_text())
@@ -117,7 +117,7 @@ class Run:
         versions = device_versions(args, self.base)
         versions.update(server_version=self.state['server']['version'], run_id=self.state['run_id'],
                         server_build_revision=self.state['server'].get('build_revision'))
-        self.evidence = Evidence(self.state['evidence_dir'], 'android', versions)
+        self.evidence = Evidence(evidence_dir or self.state['evidence_dir'], 'android', versions)
         self.admin = Client(self.state['origin']).login(**self.auth['admin'])
 
     def record(self, scenario, ok, detail='', data=None, artifacts=(), result=None):

@@ -38,7 +38,9 @@ def swipe(up=True):
 
 def find_scrolling(pattern):
     """Find a grid item, scrolling the grid when it is off screen."""
-    for move in (None, True, True, False, False, False):
+    # Dense music catalogs (dozens of albums) need more than a couple of
+    # swipes before the target leaves the viewport in either direction.
+    for move in (None, *([True] * 14), *([False] * 14)):
         if move is not None: swipe(up=move)
         node = adrv.find(pattern)
         # Items clipped by the bottom edge are tappable but only just; nudge.

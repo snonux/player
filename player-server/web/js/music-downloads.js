@@ -27,7 +27,11 @@ export function downloadMusic(songs, opener = document.activeElement) {
  if(start.disabled)status.textContent=songs.length?'Select at most 500 songs per download.':'No songs available.';
  start.onclick=async()=>{
   const profile=quality?.value || 'original';
+  const focused=document.activeElement;
   controller=new AbortController();start.disabled=true;if(quality)quality.disabled=true;close.textContent='Cancel';progress.hidden=true;
+  // Disabling the active control otherwise leaves focus on body, where Escape
+  // bypasses this dynamic dialog's own cancel and opener-restoration handler.
+  if(focused===start || focused===quality)close.focus();
   const current=()=>!closed && state.user===user;
   const accountChanged=()=>{if(!current())controller.abort();};
   // Credential state can change without navigating; never save a former account's result.
