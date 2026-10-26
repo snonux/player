@@ -17,23 +17,35 @@ from podcast_sync_e2e import (require_audio, require_resume, register_installati
 
 
 class PodcastNativeOracleTests(unittest.TestCase):
-    def test_download_setup_uses_short_feed_views_instead_of_combined_pagination(self):
+    def test_download_setup_skips_absent_delete_controls_and_uses_short_feed_views(self):
         with tempfile.TemporaryDirectory() as directory:
-            run = self.run_without_device(directory)
-            run.state.update(database='unused', feeds=[
-                {'title': 'Acceptance Alpha', 'episodes': [{}, {},
-                    {'key': 'guid:alpha-003', 'title': 'Alpha Episode 003'}]},
-                {'title': 'Acceptance Beta', 'episodes': [{}, {},
-                    {'key': 'guid:beta-003', 'title': 'Beta Episode 003'}]},
-            ])
-            run.publisher_proxy = MagicMock(side_effect=RuntimeError('stop before device'))
-            with patch('podcast_sync_e2e.podcast_media', return_value={}):
-                with self.assertRaisesRegex(RuntimeError, 'stop before device'):
-                    run.download_negatives()
-            self.assertEqual([call.kwargs['feed_title'] for call in run.episodes.call_args_list],
-                             ['Acceptance Beta', 'Acceptance Alpha', 'Acceptance Beta'])
-            self.assertTrue(all(call.kwargs['combined'] is False
-                                for call in run.episodes.call_args_list))
+            for rows, expected_feeds, delete_count in (
+                    ([{'episode_key': 'guid:beta-003', 'state': 'missing'},
+                      {'episode_key': 'guid:alpha-003', 'state': 'failed'}],
+                     ['Acceptance Beta'], 0),
+                    ([{'episode_key': 'guid:beta-003', 'state': 'available'},
+                      {'episode_key': 'guid:alpha-003', 'state': 'available'}],
+                     ['Acceptance Beta', 'Acceptance Alpha', 'Acceptance Beta'], 2)):
+                run = self.run_without_device(directory)
+                run.state.update(database='unused', feeds=[
+                    {'title': 'Acceptance Alpha', 'episodes': [{}, {},
+                        {'key': 'guid:alpha-003', 'title': 'Alpha Episode 003'}]},
+                    {'title': 'Acceptance Beta', 'episodes': [{}, {},
+                        {'key': 'guid:beta-003', 'title': 'Beta Episode 003'}]},
+                ])
+                run.snapshot = MagicMock(return_value={'podcast_downloads': rows})
+                run.publisher_proxy = MagicMock(side_effect=RuntimeError('stop before device'))
+                with patch('podcast_sync_e2e.podcast_media', return_value={}):
+                    with self.assertRaisesRegex(RuntimeError, 'stop before device'):
+                        run.download_negatives()
+                run.snapshot.assert_called_once_with('before-download-negatives')
+                self.assertEqual([call.kwargs['feed_title'] for call in run.episodes.call_args_list],
+                                 expected_feeds)
+                self.assertTrue(all(call.kwargs['combined'] is False
+                                    for call in run.episodes.call_args_list))
+                self.assertEqual(run.row.call_count, delete_count)
+                self.assertTrue(all(call.args[0] == 'Delete downloaded file'
+                                    for call in run.row.call_args_list))
 
     def test_publisher_proxy_holds_real_bytes_and_switches_error_to_retry(self):
         class Upstream(BaseHTTPRequestHandler):

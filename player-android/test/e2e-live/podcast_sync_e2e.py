@@ -1116,10 +1116,16 @@ class Run:
         cancelled = self.state['feeds'][1]['episodes'][2]
         failed = self.state['feeds'][0]['episodes'][2]
         server_copies = podcast_media(self.state['database'])
+        # An absent copy has no Delete control. Inspect durable rows first so
+        # optional cleanup never spends 80 UI dumps looking for that control.
+        before = self.snapshot('before-download-negatives')
+        available = {row['episode_key'] for row in before['podcast_downloads']
+                     if row['state'] == 'available'}
         for feed, episode in ((self.state['feeds'][1], cancelled),
                               (self.state['feeds'][0], failed)):
-            self.episodes(combined=False, filter_name='All', feed_title=feed['title'])
-            self.row('Delete downloaded file', title=episode['title'], required=False)
+            if episode['key'] in available:
+                self.episodes(combined=False, filter_name='All', feed_title=feed['title'])
+                self.row('Delete downloaded file', title=episode['title'])
 
         self.episodes(combined=False, filter_name='All', feed_title=self.state['feeds'][1]['title'])
         with self.publisher_proxy(hold_tag='beta-003',
