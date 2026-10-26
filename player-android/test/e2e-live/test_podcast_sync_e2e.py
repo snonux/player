@@ -11,10 +11,109 @@ from contextlib import closing
 from contextlib import contextmanager
 from types import SimpleNamespace
 from podcast_sync_e2e import (require_audio, require_resume, register_installation,
-                              select_row_action, PlayerProxy, Run, feed_label_pattern)
+                              select_row_action, PlayerProxy, PublisherProxy, Run,
+                              feed_label_pattern, require_publisher_response,
+                              require_download_state, seek_bar_node)
 
 
 class PodcastNativeOracleTests(unittest.TestCase):
+    def test_publisher_proxy_holds_real_bytes_and_switches_error_to_retry(self):
+        class Upstream(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header('Content-Type', 'audio/wav')
+                self.send_header('Content-Length', '5')
+                self.end_headers()
+                self.wfile.write(b'audio')
+
+        upstream = ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
+        proxy = PublisherProxy(upstream.server_port, hold_tag='beta-003',
+                               fail_tag='alpha-003')
+        front = ThreadingHTTPServer(('127.0.0.1', 0), proxy.handler())
+        workers = [threading.Thread(target=s.serve_forever, daemon=True)
+                   for s in (upstream, front)]
+        for worker in workers:
+            worker.start()
+
+        def request(tag):
+            with closing(http.client.HTTPConnection('127.0.0.1', front.server_port,
+                                                    timeout=3)) as connection:
+                connection.request('GET', '/audio/end.wav?episode=' + tag)
+                response = connection.getresponse()
+                return response.status, response.read()
+
+        try:
+            result = []
+            worker = threading.Thread(target=lambda: result.append(request('beta-003')))
+            worker.start()
+            self.assertTrue(proxy.held.wait(2))
+            held = require_publisher_response(proxy.trace, 'beta-003', 200)
+            self.assertNotIn('delivered_ms', held)
+            proxy.release.set()
+            worker.join(3)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(result, [(200, b'audio')])
+            self.assertEqual(request('alpha-003'), (503, b''))
+            require_publisher_response(proxy.trace, 'alpha-003', 503)
+            proxy.fail_tag = None
+            self.assertEqual(request('alpha-003'), (200, b'audio'))
+            require_publisher_response(proxy.trace, 'alpha-003', 200)
+            with self.assertRaisesRegex(AssertionError, 'credential-free'):
+                require_publisher_response([{
+                    'episode_tag': 'alpha-003', 'method': 'GET', 'status': 200,
+                    'player_credentials_present': True}], 'alpha-003', 200)
+        finally:
+            proxy.release.set()
+            for server in (front, upstream):
+                server.shutdown()
+                server.server_close()
+            for worker in workers:
+                worker.join()
+
+    def test_publisher_mapping_is_restored_after_native_stage_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = self.run_without_device(directory)
+            run.state['publisher_port'] = 18776
+            run.publisher_proxy = Run.publisher_proxy.__get__(run)
+            calls = []
+            def adb(*args):
+                calls.append(args)
+                if args == ('reverse', '--list'):
+                    return 'emulator-5554 tcp:18776 tcp:18776\n'
+                return ''
+            with patch('podcast_sync_e2e.checked_adb', side_effect=adb):
+                with self.assertRaisesRegex(RuntimeError, 'test failure'):
+                    with run.publisher_proxy():
+                        raise RuntimeError('test failure')
+            self.assertEqual(calls[-1], ('reverse', 'tcp:18776', 'tcp:18776'))
+            self.assertTrue((run.output / 'publisher-proxy-trace.json').exists())
+
+    def test_negative_download_oracles_reject_playable_or_missing_state(self):
+        episode = {'key': 'guid:test', 'title': 'Beta Episode 003'}
+        def snapshot(state, **extra):
+            return {'podcast_downloads': [{'episode_key': episode['key'],
+                      'state': state, **extra}]}
+        require_download_state(snapshot('missing', size_bytes=0), episode, 'missing')
+        require_download_state(snapshot('failed', error='Retry download'), episode, 'failed')
+        require_download_state(snapshot('available', actual_sha256='abc'), episode, 'available')
+        with self.assertRaises(AssertionError):
+            require_download_state(snapshot('available', actual_sha256='abc'), episode, 'missing')
+        with self.assertRaises(AssertionError):
+            require_download_state(snapshot('available'), episode, 'available')
+        with self.assertRaises(AssertionError):
+            require_download_state(snapshot('failed', actual_sha256='abc'), episode, 'failed')
+
+    def test_offline_seek_requires_one_wide_seek_bar(self):
+        good = {'cls': 'SeekBar', 'b': [50, 800, 980, 900]}
+        self.assertIs(seek_bar_node([good]), good)
+        for nodes in ([], [good, dict(good)],
+                      [{'cls': 'SeekBar', 'b': [0, 0, 200, 30]}]):
+            with self.assertRaisesRegex(AssertionError, 'seek bar'):
+                seek_bar_node(nodes)
+
     def test_feed_title_boundary_accepts_actual_merged_url_but_not_another_show(self):
         pattern = feed_label_pattern('Acceptance Alpha')
         self.assertIsNotNone(re.match(pattern, 'Acceptance Alpha / http://127.0.0.1:18776/feeds/alpha.xml'))

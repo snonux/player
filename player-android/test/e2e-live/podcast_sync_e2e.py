@@ -24,6 +24,7 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import parse_qs, urlsplit
 
 import adrv
 import app_ui
@@ -112,6 +113,72 @@ class PlayerProxy:
         return Handler
 
 
+class PublisherProxy:
+    """Forward actual publisher bytes with one controlled device-side boundary."""
+
+    def __init__(self, port, *, hold_tag=None, fail_tag=None):
+        self.port = port
+        self.hold_tag = hold_tag
+        self.fail_tag = fail_tag
+        self.held = threading.Event()
+        self.release = threading.Event()
+        self.trace = []
+
+    def handler(self):
+        proxy = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def serve(self):
+                url = urlsplit(self.path)
+                tag = parse_qs(url.query).get('episode', [''])[0]
+                event = {'path': url.path, 'episode_tag': tag, 'method': self.command,
+                         'player_credentials_present': bool(
+                             self.headers.get('Authorization') or self.headers.get('Cookie'))}
+                proxy.trace.append(event)
+                if self.command == 'GET' and tag == proxy.fail_tag:
+                    event['status'] = 503
+                    self.send_response(503)
+                    self.send_header('Content-Length', '0')
+                    self.end_headers()
+                    return
+                connection = http.client.HTTPConnection('127.0.0.1', proxy.port, timeout=20)
+                try:
+                    headers = {k: v for k, v in self.headers.items()
+                               if k.lower() not in ('host', 'connection')}
+                    connection.request(self.command, self.path, headers=headers)
+                    response = connection.getresponse()
+                    data = response.read()
+                    event['status'] = response.status
+                    event['received_ms'] = round(time.monotonic() * 1000)
+                    if (self.command == 'GET' and tag == proxy.hold_tag
+                            and not proxy.held.is_set()):
+                        proxy.held.set()
+                        if not proxy.release.wait(25):
+                            event['hold_timed_out'] = True
+                            return
+                    event['delivered_ms'] = round(time.monotonic() * 1000)
+                    self.send_response(response.status)
+                    for key, value in response.getheaders():
+                        if key.lower() not in ('transfer-encoding', 'connection', 'content-length'):
+                            self.send_header(key, value)
+                    self.send_header('Content-Length', response.getheader('Content-Length', '0')
+                                     if self.command == 'HEAD' else str(len(data)))
+                    self.end_headers()
+                    if self.command != 'HEAD':
+                        self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass  # The expected result when native Cancel closes its socket.
+                finally:
+                    connection.close()
+
+            do_GET = do_HEAD = serve
+
+        return Handler
+
+
 def checked_adb(*args, binary=False, optional=False):
     result = subprocess.run(['adb', *args], capture_output=True, timeout=30)
     if result.returncode and not optional:
@@ -195,6 +262,35 @@ def episode_viewport_bottom(nodes):
 
 def action_above_footer(node, bottom):
     return bottom is None or node['b'][3] <= bottom - 8
+
+
+def require_publisher_response(trace, tag, status):
+    matches = [event for event in trace if event.get('episode_tag') == tag
+               and event.get('method') == 'GET' and event.get('status') == status]
+    if not matches or any(event.get('player_credentials_present') for event in matches):
+        raise AssertionError(f'Expected credential-free publisher GET {status} for {tag}')
+    return matches[-1]
+
+
+def require_download_state(snapshot, episode, state):
+    rows = [row for row in snapshot['podcast_downloads']
+            if row['episode_key'] == episode['key']]
+    if len(rows) != 1 or rows[0]['state'] != state:
+        raise AssertionError(f'Expected one {state} device copy for {episode["title"]}')
+    if state == 'available' and not rows[0].get('actual_sha256'):
+        raise AssertionError('Available device copy has no verified bytes')
+    if state in ('missing', 'failed') and rows[0].get('actual_sha256'):
+        raise AssertionError('Incomplete device copy was exposed as playable bytes')
+    return rows[0]
+
+
+def seek_bar_node(nodes):
+    candidates = [node for node in nodes if node['cls'] == 'SeekBar'
+                  and node['b'][2] - node['b'][0] >= 400
+                  and node['b'][3] > node['b'][1]]
+    if len(candidates) != 1:
+        raise AssertionError('Expected one visible native playback seek bar')
+    return candidates[0]
 
 
 class Run:
@@ -361,6 +457,24 @@ class Run:
                 time.sleep(.5)
         raise AssertionError(f'Device copy for {title} did not become available')
 
+    def wait_row_action(self, title, action, timeout=30):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            nodes = adrv.nodes()
+            bottom = episode_viewport_bottom(nodes)
+            try:
+                target = select_row_action(nodes, title, action)
+                if action_above_footer(target, bottom):
+                    return target
+            except AssertionError:
+                pass
+            titles = [node for node in nodes if episode_title_label(node) == title]
+            if bottom is not None and any(node['b'][1] > bottom * .6 for node in titles):
+                app_ui.swipe()
+            else:
+                time.sleep(.5)
+        raise AssertionError(f'Native {action} action did not appear for {title}')
+
     def no_server_audio(self):
         counts = podcast_media(self.state['database'])
         if any(counts.values()):
@@ -390,6 +504,32 @@ class Run:
                 server.server_close()
                 thread.join()
                 (self.output / 'proxy-trace.json').write_text(json.dumps(proxy.trace, indent=1))
+
+    @contextmanager
+    def publisher_proxy(self, *, evidence_name='publisher-proxy-trace', **options):
+        mapping = f'tcp:{self.state["publisher_port"]}'
+        mappings = checked_adb('reverse', '--list').splitlines()
+        original = next((line.split()[-1] for line in mappings
+                         if line.split()[-2] == mapping), None)
+        if original is None:
+            raise AssertionError('Parent must establish the selected device publisher reverse mapping')
+        proxy = PublisherProxy(self.state['publisher_port'], **options)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), proxy.handler())
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            checked_adb('reverse', mapping, f'tcp:{server.server_port}')
+            yield proxy
+        finally:
+            proxy.release.set()
+            try:
+                checked_adb('reverse', mapping, original)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+                (self.output / f'{evidence_name}.json').write_text(
+                    json.dumps(proxy.trace, indent=1))
 
     def _device_bytes(self, path, optional=False):
         """Read a private app path; non-root emulators need su 0."""
@@ -970,6 +1110,130 @@ class Run:
                           self.state['audio']['end']['tone_hz'])
             self.record('failed native end sync leaves completion durable and next source audible')
 
+    def download_negatives(self):
+        """Cancel a held publisher transfer; recover a real HTTP download error."""
+        cancelled = self.state['feeds'][1]['episodes'][2]
+        failed = self.state['feeds'][0]['episodes'][2]
+        server_copies = podcast_media(self.state['database'])
+        for episode in (cancelled, failed):
+            self.episodes(filter_name='All')
+            self.row('Delete downloaded file', title=episode['title'], required=False)
+
+        self.episodes(filter_name='All')
+        with self.publisher_proxy(hold_tag='beta-003',
+                                  evidence_name='publisher-cancel-trace') as proxy:
+            self.row(r'(?:Download|Retry download)', title=cancelled['title'])
+            if not proxy.held.wait(10):
+                raise AssertionError('Native transfer did not reach the actual publisher')
+            held = require_publisher_response(proxy.trace, 'beta-003', 200)
+            if 'delivered_ms' in held:
+                raise AssertionError('Publisher audio was delivered before native cancellation')
+            self.row('Cancel download', title=cancelled['title'])
+            if held.get('hold_timed_out'):
+                raise AssertionError('Publisher hold expired before native Cancel')
+            proxy.release.set()
+            self.wait_row_action(cancelled['title'], 'Download')
+            missing = self.snapshot('cancelled-download')
+            copy = require_download_state(missing, cancelled, 'missing')
+            if copy['size_bytes'] or copy.get('error'):
+                raise AssertionError('Cancelled download retained bytes or an error state')
+            for extension in ('.audio', '.part'):
+                path = f'/data/user/0/{PKG}/databases/podcast-downloads/{copy["id"]}{extension}'
+                if self._device_bytes(path, optional=True):
+                    raise AssertionError('Cancelled download left device audio bytes')
+        self.record('native cancel discards held publisher transfer and partial copy')
+
+        self.episodes(filter_name='All')
+        with self.publisher_proxy(fail_tag='alpha-003',
+                                  evidence_name='publisher-error-trace') as proxy:
+            self.row(r'(?:Download|Retry download)', title=failed['title'])
+            self.wait_row_action(failed['title'], 'Retry download')
+            require_publisher_response(proxy.trace, 'alpha-003', 503)
+            failure = self.snapshot('failed-download')
+            copy = require_download_state(failure, failed, 'failed')
+            if not copy.get('error'):
+                raise AssertionError('Failed publisher response did not retain retry guidance')
+            for extension in ('.audio', '.part'):
+                path = f'/data/user/0/{PKG}/databases/podcast-downloads/{copy["id"]}{extension}'
+                if self._device_bytes(path, optional=True):
+                    raise AssertionError('Failed publisher response left device audio bytes')
+            proxy.fail_tag = None
+            self.episodes(filter_name='All')
+            self.row('Retry download', title=failed['title'])
+            self.wait_downloaded_row(failed['title'])
+            require_publisher_response(proxy.trace, 'alpha-003', 200)
+            success = self.snapshot('retried-download')
+            copy = require_download_state(success, failed, 'available')
+            if copy['actual_sha256'] != self.state['audio']['end']['sha256']:
+                raise AssertionError('Retried native copy differs from publisher audio')
+        if podcast_media(self.state['database']) != server_copies:
+            raise AssertionError('Native negative downloads changed server podcast audio')
+        self.record('native publisher error exposes retry and successful direct redownload')
+
+    def offline_seek(self):
+        """Seek a downloaded podcast through its touch slider with both hosts offline."""
+        if not self.audio.available():
+            raise AssertionError('Offline seek needs real Android audio output')
+        episode = self.state['feeds'][1]['episodes'][1]
+        self.episodes(filter_name='All')
+        self.wait_downloaded_row(episode['title'])
+        snapshot = self.snapshot('before-offline-seek')
+        require_download_state(snapshot, episode, 'available')
+        self.episodes(filter_name='All')
+        mappings = checked_adb('reverse', '--list').splitlines()
+        selected = {}
+        for port in (self.state['port'], self.state['publisher_port']):
+            mapping = f'tcp:{port}'
+            original = next((line.split()[-1] for line in mappings
+                             if line.split()[-2] == mapping), None)
+            if original is None:
+                raise AssertionError('Offline seek needs both parent-owned reverse mappings')
+            selected[mapping] = original
+        try:
+            for mapping in selected:
+                checked_adb('reverse', '--remove', mapping)
+            self.row('Play from beginning', title=episode['title'])
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                state = session_state()
+                if state['state'] == 'PLAYING' and state['title'] == episode['title']:
+                    break
+                time.sleep(.2)
+            else:
+                raise AssertionError('Downloaded episode did not play with both hosts offline')
+            checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
+            bar = seek_bar_node(adrv.nodes())
+            left, top, right, bottom = bar['b']
+            width, y = right - left, (top + bottom) // 2
+            start, target = left + int(width * .2), left + int(width * .62)
+            checked_adb('shell', 'input', 'swipe', str(start), str(y),
+                        str(target), str(y), '300')
+            after_seek = session_state()
+            if after_seek['title'] != episode['title'] or not 5500 <= (after_seek['position_ms'] or 0) <= 10000:
+                raise AssertionError('Actual native media session did not seek offline')
+            self.shot('offline-seek-paused')
+            mark = self.audio.mark()
+            checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PLAY')
+            time.sleep(3)
+            checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
+            require_audio(audio_trace.analyze(self.audio.save(mark, self.output / 'offline-seek.wav')),
+                          self.state['audio']['end']['tone_hz'])
+            now = session_state()
+            if now['title'] != episode['title'] or (now['position_ms'] or 0) <= after_seek['position_ms']:
+                raise AssertionError('Offline seek did not continue downloaded playback')
+            app_ui.back()
+            persisted = self.snapshot('after-offline-seek')
+            require_download_state(persisted, episode, 'available')
+            states = [row for row in persisted['podcast_episode_state']
+                      if row['scope'] == self.scope and row['episode_key'] == episode['key']]
+            if len(states) != 1 or states[0]['position_seconds'] < 5:
+                raise AssertionError('Offline seek did not persist listening history')
+            self.record('native downloaded podcast seeks and stays audible with both hosts offline',
+                        position_ms=after_seek['position_ms'])
+        finally:
+            for mapping, original in selected.items():
+                checked_adb('reverse', mapping, original)
+
     def unsubscribe(self):
         before = self.snapshot('before-unsubscribe')
         server_copies = podcast_media(self.state['database'])
@@ -1106,7 +1370,7 @@ def main(argv=None):
         'observe-completed', 'uncomplete', 'observe-uncompleted', 'cleanup',
         'preplay', 'browse', 'feedback', 'globalprogress', 'isolation',
         'held-account', 'end-outage-next', 'unsubscribe', 'observe-unsubscribed',
-        'resubscribe', 'auth'], required=True)
+        'resubscribe', 'auth', 'download-negatives', 'offline-seek'], required=True)
     parser.add_argument('--emulator-wav', type=Path)
     args = parser.parse_args(argv)
     if args.stage in ('standalone', 'associate') and args.client != 'A':
@@ -1121,6 +1385,10 @@ def main(argv=None):
             run.held_account()
         elif args.stage == 'end-outage-next':
             run.end_outage_next()
+        elif args.stage == 'download-negatives':
+            run.download_negatives()
+        elif args.stage == 'offline-seek':
+            run.offline_seek()
         elif args.stage == 'observe-unsubscribed':
             run.observe_unsubscribed()
         elif args.stage.startswith('observe-'):

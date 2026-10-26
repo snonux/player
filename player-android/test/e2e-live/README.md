@@ -866,3 +866,16 @@ with Alpha and Beta subscribed: it downloads their short episodes directly,
 forces podcast sync transport failure through a real HTTP proxy, verifies local
 natural completion, and requires the next episode to play audibly. Neither
 stage should be claimed as passing until run on the installed APK.
+
+Run `download-negatives` on A while signed into the primary account with
+Alpha and Beta subscribed. It uses the existing publisher reverse mapping and
+an owned proxy to hold Beta Episode 003's real publisher response until native
+Cancel is tapped. It then returns a real HTTP `503` for Alpha Episode 003,
+requires visible Retry and durable failed state, and forwards the retry to the
+publisher for byte verification. The proxy restores the original mapping and
+does not alter publisher fixture fault files. Run `offline-seek` after the
+successful `end-outage-next` stage has left a downloaded Beta Episode 002 on A;
+pass `--emulator-wav`. It temporarily removes both owned reverse mappings,
+seeks through the actual Android player slider, requires continuing QEMU audio
+and durable local position, then restores those mappings. Each check needs an
+installed-app run before it is counted as platform evidence.
