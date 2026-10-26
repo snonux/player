@@ -59,8 +59,7 @@ async function actionByKeyboard(p: Page, target: Locator) {
 }
 async function manager(p: Page) {
   await p.keyboard.press('Escape');
-  await p.locator('body').click();
-  await p.keyboard.press('A');
+  await p.getByRole('button', { name: 'Admin settings', exact: true }).click();
   await expect(p.locator('#admin-modal')).toHaveClass(/open/);
   await p.locator('#admin-podcasts').click();
   await expect(p.locator('#podcast-modal')).toHaveClass(/open/);
