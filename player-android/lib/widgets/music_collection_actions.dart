@@ -313,7 +313,9 @@ class _CatalogState extends State<MusicCollectionCatalog> {
         },
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (widget.header != null) widget.header!,
+          // Browsing controls take most of a narrow screen once selection
+          // actions appear. Keep the collection list reachable by touch.
+          if (!_selecting && widget.header != null) widget.header!,
           Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Column(

@@ -53,6 +53,13 @@ def album(title='Night Transit', fresh=True):
         node = next((n for n in adrv.nodes()
                      if n['cls'] != 'EditText' and re.search(r'^' + re.escape(title) + r' / ', adrv.label(n) or '')), None)
     assert node, app_ui.labels()
+    if node['b'][1] > 1500:
+        # The persistent mini player covers catalog cards near the bottom.
+        # Move this card into the unobscured center before tapping it.
+        adrv.adb('shell', 'input', 'swipe', '540', '1600', '540', '1250', '300')
+        time.sleep(.5)
+        node = adrv.find(r'(^| / )' + re.escape(title))
+        assert node and node['b'][1] <= 1500, app_ui.labels()
     adrv.tap_node(node)
     assert adrv.wait('^Play album$', timeout=20), app_ui.labels()
 

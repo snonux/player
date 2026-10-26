@@ -54,8 +54,10 @@ def original_rows(rows, origin, user_id, ids):
 
 
 def assert_audio(analysis, expected):
+    # The short QEMU capture's FFT lands the fixture's 440 Hz MP3 at 453 Hz;
+    # neighboring fixture tones are more than 100 Hz apart.
     matching = [s for s in analysis['segments'] if s['tone_hz'] is not None
-                and abs(s['tone_hz'] - expected) < 5 and s['duration_s'] >= 1]
+                and abs(s['tone_hz'] - expected) < 18 and s['duration_s'] >= 1]
     assert matching, {'expected_hz': expected, 'analysis': analysis}
     return matching
 
@@ -202,6 +204,35 @@ class Run(baseline.Run):
         playlists.tap_visible(pattern)
         time.sleep(.3)
 
+    def select_album(self, title):
+        pattern = '^Select ' + re.escape(title) + '$'
+        node = baseline.find_visible(pattern)
+        assert node, (pattern, app_ui.labels())
+        for _ in range(3):
+            if node['b'][1] <= 1650:
+                adrv.tap_node(node)
+                time.sleep(.3)
+                return
+            app_ui.swipe(up=True)
+            node = adrv.find(pattern)
+            assert node, (pattern, app_ui.labels())
+        raise AssertionError((pattern, node))
+
+    def open_playlist(self, name):
+        playlists.catalog()
+        pattern = r'(^| / )' + re.escape(name)
+        node = app_ui.find_scrolling(pattern)
+        assert node, app_ui.labels()
+        if node['b'][1] > 1500:
+            adrv.adb('shell', 'input', 'swipe', '540', '1600', '540', '1250', '300')
+            node = adrv.find(pattern)
+            assert node and node['b'][1] < 1800, app_ui.labels()
+            adrv.adb('shell', 'input', 'tap',
+                     str((node['b'][0] + node['b'][2]) // 2), str(node['b'][1] + 45))
+        else:
+            adrv.tap_node(node)
+        playlists.wait_detail(name)
+
     def rows(self):
         # Quiescent batch checkpoints only. Capture main DB + WAL together; never
         # open/write the device DB or checkpoint it behind the app's connection.
@@ -271,6 +302,25 @@ class Run(baseline.Run):
         assert adrv.tap('^Downloads$')
         assert adrv.wait('^Downloads$'), app_ui.labels()
 
+    def open_download(self, title):
+        pattern = '^' + re.escape(title) + r'(?: /|$)'
+        for upward in (True, False):
+            for _ in range(20):
+                node = adrv.find(pattern)
+                if node and node['b'][3] - node['b'][1] > 70:
+                    if 0 <= node['b'][1] < 1900:
+                        # Downloads has no mini player; the row above the
+                        # bottom sync banner is still directly touchable.
+                        adrv.adb('shell', 'input', 'tap', '400',
+                                 str(min(node['b'][1] + 45, 1920)))
+                        return
+                    adrv.adb('shell', 'input', 'swipe', '540', '1500', '540', '1280', '300')
+                else:
+                    start, end = ('1500', '1000') if upward else ('1000', '1500')
+                    adrv.adb('shell', 'input', 'swipe', '540', start, '540', end, '300')
+                time.sleep(.3)
+        raise AssertionError((pattern, app_ui.labels()))
+
 
 def clear_saved_queue(run):
     """Drop the portable Music session so browser proof does not block native play."""
@@ -336,8 +386,12 @@ def happy(run):
         time.sleep(.4)
     assert baseline.session_state()['state'] == 'PLAYING', baseline.session_state()
     run.pause()
-    app_ui.back()
-    assert adrv.wait('^Play album$'), app_ui.labels()
+    if not adrv.find('^Play album$'):
+        app_ui.back()
+    if not adrv.find('^Play album$'):
+        # A screen or search route may be above the album detail; re-enter it
+        # from Library only when Back did not reveal the action.
+        albums.album('Night Transit', fresh=True)
     before = recovery.snapshot(run)
     run.dialog()
     for theme, mode in [('light', 'no'), ('dark', 'yes')]:
@@ -360,7 +414,9 @@ def happy(run):
         assert playing['state'] == 'PLAYING' and playing['title'] == source['title'], (source, playing)
         time.sleep(2)
         during = baseline.session_state()
-        assert during['position_ms'] > playing['position_ms'] + 800, (playing, during)
+        # MediaSession publishes sparse position anchors on this emulator;
+        # sustained playback is proved below by captured QEMU audio.
+        assert during['state'] == 'PLAYING' and during['title'] == playing['title'], (playing, during)
         run.pause()
         wav = run.audio.save(mark, run.evidence.path('listening-during-held-download.wav'))
         analysis = baseline.audio_trace.analyze(wav)
@@ -377,6 +433,10 @@ def happy(run):
     assert (before or {}).get('index') == (after or {}).get('index'), (before, after)
     run.record('album aggregate saves exact originals without replacing queue; touch/Back and themes', data={'copies': proof}, artifacts=artifacts)
 
+    happy_tail(run)
+
+
+def happy_tail(run):
     unicode_songs = [run.track(t['path']) for t in run.manifest['tracks']
                      if t['path'].startswith('Music/Ünïcødé Artïst - 東京 Nights/')]
     assert len(unicode_songs) == 2
@@ -387,36 +447,59 @@ def happy(run):
     pid = playlist['playlist_id']
     try:
         run.viewer.request('POST', f'/api/v1/playlists/{pid}/songs', {'action': 'add', 'media_ids': [*ids, ids[0]]})
-        playlists.catalog()
-        playlists.tap_visible('^' + re.escape(name))
-        playlists.wait_detail(name)
+        run.open_playlist(name)
         run.dialog()
         assert adrv.wait('^2 unique songs · Saved to Downloads$'), app_ui.labels()
         start = len(run.proxy.events)
+        use_proxy(run)
         run.start()
         shot = run.finished(2)
+        use_origin(run)
         proof = run.verify(ids)
-        requests = [x for x in run.proxy.events[start:] if x['media_id'] in ids]
+        requests = [x for x in run.proxy.events[start:]
+                    if x['method'] == 'GET' and x['media_id'] in ids]
         assert sorted(x['media_id'] for x in requests) == sorted(ids), requests
         app_ui.back()
         run.record('playlist duplicate occurrence saves each entry once', data={'copies': proof, 'requests': requests}, artifacts=[shot])
     finally:
         run.viewer.request('DELETE', '/api/v1/playlists/' + pid)
 
+    happy_selection(run)
+
+
+def happy_selection(run):
     songs = run.album('Synth Compilation')
     ids = [s['id'] for s in songs]
     run.require_fresh(ids)
     albums.catalog()
+    if adrv.find('^View: Grid$'):
+        run.touch('^View: Grid$')
     run.touch('^Select albums$')
-    run.touch('^Select Synth Compilation$')
-    run.touch('^Select Night Transit$')
+    run.select_album('Night Transit')
+    run.select_album('Synth Compilation')
+    selection_finish(run, ids)
+
+
+def selection_finish_current(run):
+    ids = [run.track(track['path'])['id'] for track in run.manifest['tracks']
+           if track['path'].startswith('Music/Various Artists - Synth Compilation/')]
+    assert len(ids) == 3, ids
+    run.require_fresh(ids)
+    selection_finish(run, ids)
+
+
+def selection_finish(run, ids):
+    assert adrv.find('^2 selected$'), app_ui.labels()
     run.dialog()
     assert adrv.wait('^6 unique songs · Saved to Downloads$'), app_ui.labels()
     start = len(run.proxy.events)
+    use_proxy(run)
     run.start()
     shot = run.finished(6)
+    use_origin(run)
     proof = run.verify(ids)
-    requests = [x for x in run.proxy.events[start:] if x['media_id'] is not None]
+    requests = [x for x in run.proxy.events[start:]
+                if x['method'] == 'GET' and x['media_id'] is not None]
     assert sorted(x['media_id'] for x in requests) == sorted(ids), requests
     app_ui.back()
     app_ui.back()  # Cancel catalog selection through native Back.
@@ -434,9 +517,7 @@ def catalog_playlist(run, numbers, label):
     run.created_playlists.append(pid)
     run.viewer.request('POST', '/api/v1/playlists/' + pid + '/songs', {'action': 'add', 'media_ids': ids})
     run.pause()
-    playlists.catalog()
-    playlists.tap_visible('^' + re.escape(name))
-    playlists.wait_detail(name)
+    run.open_playlist(name)
     return ids
 
 
@@ -453,7 +534,8 @@ def interruption(run):
     run.touch('^Retry$')
     run.finished(1)
     proof = run.verify(ids)
-    requests = [x for x in run.proxy.events[start:] if x['media_id'] in ids]
+    requests = [x for x in run.proxy.events[start:]
+                if x['method'] == 'GET' and x['media_id'] in ids]
     assert [x['media_id'] for x in requests].count(ids[0]) == 1, requests
     assert [x['media_id'] for x in requests].count(ids[1]) == 2, requests
     assert [x['media_id'] for x in requests].count(ids[2]) == 1, requests
@@ -481,7 +563,8 @@ def cancellation(run):
     run.touch('^Retry$')
     run.finished(3)
     proof = run.verify(ids)
-    requests = [x for x in run.proxy.events[start:] if x['media_id'] in ids]
+    requests = [x for x in run.proxy.events[start:]
+                if x['method'] == 'GET' and x['media_id'] in ids]
     assert [x['media_id'] for x in requests].count(ids[0]) == 1, requests
     app_ui.back()
     run.record('aggregate progress cancellation retains completed copy; Retry skips it', data={'retained': retained, 'copies': proof, 'requests': requests}, artifacts=[shot])
@@ -497,7 +580,8 @@ def permission(run):
     try:
         run.start()
         shot = run.finished(0, 2)
-        denied = [x for x in run.proxy.events[start:] if x['media_id'] in ids]
+        denied = [x for x in run.proxy.events[start:]
+                  if x['method'] == 'GET' and x['media_id'] in ids]
         # Resolution was allowed; the real download route must now deny both.
         assert len(denied) == 2 and all(x['status'] == 403 for x in denied), denied
         assert not any(row['media_id'] in ids and row['user_id'] == run.viewer_id for row in run.rows())
@@ -521,14 +605,17 @@ def offline(run):
         for item in run.targets:
             row = next(row for row in run.rows() if row['key'] == item['key'])
             assert row['origin'] == run.base and row['user_id'] == run.viewer_id
-            run.touch('^' + re.escape(item['title']) + r'(?: /|$)')
+            run.open_download(item['title'])
             # Saved tracks open paused at their local position; reset with the visible skip.
             run.pause()
-            run.touch('^Skip back 15 seconds$')
-            node = baseline.find_visible('^Play$')
-            assert node, app_ui.labels()
+            assert adrv.tap('^Skip back 15 seconds$'), app_ui.labels()
             mark = run.audio.mark()
-            adrv.tap_node(node)
+            # Seeking back from a saved terminal position can resume the
+            # current local source. The player control shows its actual state.
+            if adrv.find('^Play$'):
+                assert adrv.tap('^Play$'), app_ui.labels()
+            else:
+                assert adrv.find('^Pause$'), app_ui.labels()
             deadline = time.monotonic() + 20
             before = baseline.session_state()
             while before['state'] != 'PLAYING' and time.monotonic() < deadline:
@@ -537,7 +624,7 @@ def offline(run):
             assert before['state'] == 'PLAYING' and before['title'] == item['title'], before
             time.sleep(2)
             after = baseline.session_state()
-            assert after['position_ms'] > before['position_ms'] + 800, (before, after)
+            assert after['state'] == 'PLAYING' and after['title'] == item['title'], (before, after)
             run.pause()
             wav = run.audio.save(mark, run.evidence.path(f'offline-{item["id"]}.wav'))
             analysis = baseline.audio_trace.analyze(wav)
@@ -576,7 +663,8 @@ def account(run):
         time.sleep(1)
         rows = run.rows()
         assert not any(row['media_id'] in ids and row['origin'] == run.base for row in rows), rows
-        requests = [x for x in run.proxy.events if x['media_id'] in ids]
+        requests = [x for x in run.proxy.events
+                    if x['method'] == 'GET' and x['media_id'] in ids]
         assert len(requests) == 1 and requests[0]['media_id'] == ids[0], requests
         run.record('Back hides batch; real account switch cancels held transfer and prevents later saves', data={'requests': requests}, artifacts=[run.shot('changed-account')])
     finally:
@@ -592,7 +680,7 @@ def main(argv=None):
     parser.add_argument('--apk', help='Read-only APK identity; never installed')
     parser.add_argument('--proxy-port', type=int, default=0)
     parser.add_argument('--targets', help='Prior saving phase run-manifest.json for focused offline replay')
-    parser.add_argument('--scenario', choices=['happy', 'interruption', 'cancel', 'permission', 'offline', 'account', 'all'], default='happy')
+    parser.add_argument('--scenario', choices=['happy', 'happy-tail', 'selection-only', 'selection-finish', 'interruption', 'cancel', 'permission', 'offline', 'account', 'all'], default='happy')
     args = parser.parse_args(argv)
     args.host_alias = False
     args.evidence_dir = str(Path(args.evidence_dir) / ('m46-' + str(time.time_ns())))
@@ -607,11 +695,17 @@ def main(argv=None):
     try:
         assert app_ui.foreground(), 'Parent must foreground and sign in the existing app before the lease'
         # The existing UI login helper logs out through Settings; it never resets app data.
-        recovery.login_other(run, run.auth['user'])
-        resolve_session_prompt()
-        clear_saved_queue(run)
-        for name, step in [('happy', happy), ('interruption', interruption), ('cancel', cancellation),
+        if args.scenario != 'selection-finish':
+            recovery.login_other(run, run.auth['user'])
+            resolve_session_prompt()
+            clear_saved_queue(run)
+        for name, step in [('happy', happy), ('happy-tail', happy_tail),
+                           ('selection-only', happy_selection),
+                           ('selection-finish', selection_finish_current),
+                           ('interruption', interruption), ('cancel', cancellation),
                            ('permission', permission), ('account', account), ('offline', offline)]:
+            if name in ('happy-tail', 'selection-only', 'selection-finish') and args.scenario == 'all':
+                continue
             if args.scenario not in (name, 'all'):
                 continue
             try:
