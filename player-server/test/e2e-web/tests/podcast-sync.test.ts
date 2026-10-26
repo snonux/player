@@ -218,6 +218,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         // Retries may have left this episode completed. Restore it through the
         // visible control, then give both tabs the same baseline.
         if ((await history(other, target.key)).completed) {
+          await card(other).hover();
           await actionByKeyboard(other, card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }));
           await expect.poll(async () => (await history(other, target.key)).completed).toBe(false);
         }
@@ -228,6 +229,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         }
         await fullSync(page);
         await openEpisodes(page, 'All');
+        await card(page).hover();
         await expect(card(page).getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
 
         await page.route('**/api/podcasts/sync', async route => {
@@ -253,6 +255,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         // plays the downloaded copy to save an independent position register.
         await fullSync(other);
         await openEpisodes(other, 'All');
+        await card(other).hover();
         await expect(card(other).getByRole('button', { name: 'Mark uncompleted', exact: true })).toBeVisible();
         await other.waitForTimeout(10);
         await actionByKeyboard(other, card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }));
@@ -266,9 +269,11 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         expect(newer.completed).toBe(false);
 
         release();
+        await card(page).hover();
         await expect(card(page).getByRole('button', { name: 'Mark uncompleted', exact: true })).toBeVisible();
         await fullSync(page);
         await openEpisodes(page, 'All');
+        await card(page).hover();
         await expect(card(page).getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
         await expect(card(page).locator('.badge')).toContainText('Resume');
         const reconciled = await history(page, target.key);
