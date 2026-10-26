@@ -1,5 +1,23 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M40 artist Top songs, use an isolated `music_fixture.py up` server on an
+unused port and run one installed browser at a time:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M40_ISOLATED=1 \
+PLAYER_M40_EVIDENCE=/tmp/player-m40-web-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-artist-top-songs.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The runner creates a fresh three-song credited artist for each browser run. It
+checks empty, server-wide fallback and personal ranking, ordered queue and
+captured audio, keyboard and pointer navigation, narrow light/dark layouts,
+restart persistence, access revocation and offline Retry. Artifacts stay
+outside the repository. Stop the fixture with `music_fixture.py down`.
+
 For M38 album discovery, use a disposable `music_fixture.py up` server on an
 unused port and run one installed browser at a time:
 
