@@ -87,9 +87,20 @@ def audible(run, mark, name, hz):
     return wav, matching[0]
 
 
+def open_album():
+    labels = app_ui.labels()
+    if 'Play album' not in labels or ALBUM not in labels:
+        albums.album(ALBUM)
+
+
+def tap_song(title):
+    pattern = r'(?:^| / )' + re.escape(title) + r' / '
+    assert adrv.tap(pattern), app_ui.labels()
+
+
 def visible_counts(run, detail, name):
     pause()
-    albums.album(ALBUM)
+    open_album()
     labels = ' | '.join(app_ui.labels())
     expected = [f'Your plays: {detail["personal_play_count"]}',
                 f'Your plays: {run.song(detail, LONG)["personal_play_count"]}',
@@ -112,9 +123,9 @@ def online(run):
     long_before = run.song(before, LONG)
     # The album row opens the native player. Pause after a few real seconds,
     # well below the 60 s qualification boundary.
-    albums.album(ALBUM)
+    open_album()
     mark = run.audio.mark()
-    assert adrv.tap('^' + SHORT + '$'), app_ui.labels()
+    tap_song(SHORT)
     sequence.wait_track(SHORT)
     time.sleep(4)
     pause()
@@ -122,9 +133,9 @@ def online(run):
     assert run.song(run.album(run.user), SHORT)['personal_play_count'] == short_before['personal_play_count']
     short_shot = run.shot('m36-skipped-player')
 
-    albums.album(ALBUM)
+    open_album()
     mark = run.audio.mark()
-    assert adrv.tap('^' + LONG + '$'), app_ui.labels()
+    tap_song(LONG)
     sequence.wait_track(LONG)
     # Playback is left real-time; seeking cannot prove accumulated listening.
     deadline = time.monotonic() + 78
@@ -189,7 +200,7 @@ def saved_copy(run):
     assert len(rows) <= 1, rows
     if rows:
         return rows[0]
-    albums.album(ALBUM)
+    open_album()
     # Album collection action opens the normal two-song Keep offline flow.
     node = baseline.find_visible('^Keep offline$')
     assert node, app_ui.labels()
@@ -216,7 +227,25 @@ def open_download():
     node = app_ui.find_scrolling('^' + LONG + r'(?: /|$)')
     assert node, app_ui.labels()
     adrv.tap_node(node)
-    assert adrv.wait('^Play$', timeout=20) or adrv.find('^Pause$'), app_ui.labels()
+    # A row starts playback immediately. MediaSession polling is stable while
+    # the animated player can make uiautomator report no idle state.
+    sequence.wait_track(LONG)
+    pause()
+
+
+def rewind_download():
+    """A prior online listen can reopen a saved song at its final position."""
+    position = baseline.session_state()['position_ms']
+    if position is None or position < 15000:
+        return
+    pause()
+    back = adrv.find('^Skip back 15 seconds$')
+    assert back, app_ui.labels()
+    for _ in range(7):
+        adrv.tap_node(back)
+        time.sleep(.15)
+    position = baseline.session_state()['position_ms']
+    assert position is not None and position < 15000, ('could not rewind offline copy', position)
 
 
 def offline(run):
@@ -233,6 +262,7 @@ def offline(run):
         adrv.adb('reverse', '--remove', f'tcp:{port}')
         disconnected = True
         open_download()
+        rewind_download()
         mark = run.audio.mark()
         if adrv.find('^Play$'):
             assert adrv.tap('^Play$'), app_ui.labels()
@@ -263,6 +293,10 @@ def offline(run):
         adrv.adb('reverse', f'tcp:{port}', f'tcp:{port}')
         disconnected = False
         app_ui.launch()
+        if adrv.wait('^Choose a server$', timeout=8):
+            # A cold relaunch can ask which saved server to use before it
+            # offers the locked saved login.
+            assert adrv.tap('^' + re.escape(run.base) + '$', cls='Button'), app_ui.labels()
         if adrv.wait('^Welcome back$', timeout=8):
             fields = [node for node in adrv.nodes() if node['cls'] == 'EditText']
             assert fields, app_ui.labels()
