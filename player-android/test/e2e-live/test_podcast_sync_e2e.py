@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from podcast_sync_e2e import (require_audio, require_resume, register_installation,
                               select_row_action, PlayerProxy, PublisherProxy, Run,
                               feed_label_pattern, require_publisher_response,
-                              require_download_state, seek_bar_node)
+                              require_download_state, seek_bar_node, wait_seek_bar)
 
 
 class PodcastNativeOracleTests(unittest.TestCase):
@@ -158,6 +158,13 @@ class PodcastNativeOracleTests(unittest.TestCase):
     def test_offline_seek_requires_one_wide_seek_bar(self):
         good = {'cls': 'SeekBar', 'b': [50, 800, 980, 900]}
         self.assertIs(seek_bar_node([good]), good)
+        with patch('podcast_sync_e2e.adrv.nodes',
+                   side_effect=[RuntimeError('route changing'), [], [good]]), \
+                patch('podcast_sync_e2e.time.sleep'):
+            self.assertIs(wait_seek_bar(timeout=2), good)
+        with patch('podcast_sync_e2e.adrv.nodes', return_value=[]):
+            with self.assertRaisesRegex(AssertionError, 'did not appear'):
+                wait_seek_bar(timeout=0)
         for nodes in ([], [good, dict(good)],
                       [{'cls': 'SeekBar', 'b': [0, 0, 200, 30]}]):
             with self.assertRaisesRegex(AssertionError, 'seek bar'):

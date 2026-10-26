@@ -293,6 +293,18 @@ def seek_bar_node(nodes):
     return candidates[0]
 
 
+def wait_seek_bar(timeout=12):
+    """The player route can appear after its media session starts playing."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return seek_bar_node(adrv.nodes())
+        except (AssertionError, RuntimeError) as error:
+            if time.monotonic() >= deadline:
+                raise AssertionError(f'Native player seek bar did not appear: {error}')
+            time.sleep(.25)
+
+
 class Run:
     def __init__(self, args):
         self.args = args
@@ -1210,7 +1222,7 @@ class Run:
             else:
                 raise AssertionError('Downloaded episode did not play with both hosts offline')
             checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
-            bar = seek_bar_node(adrv.nodes())
+            bar = wait_seek_bar()
             left, top, right, bottom = bar['b']
             width, y = right - left, (top + bottom) // 2
             start, target = left + int(width * .2), left + int(width * .62)
