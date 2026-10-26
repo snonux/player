@@ -123,7 +123,9 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       return;
     }
     await fullSync(page);
-    await openEpisodes(page);
+    // Each browser flips completion during the boundary check; the second
+    // browser must still find the same episode after the first one hides it.
+    await openEpisodes(page, stage === 'boundaries' ? 'All' : 'Uncompleted');
     if (stage === 'unsubscribed') {
       expect((await catalogFeed(page)).subscribed).toBe(false);
       await expect(page.getByRole('button', { name: 'Podcast Acceptance Alpha', exact: true })).toHaveCount(0);
@@ -317,32 +319,57 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
     } else {
       // Hold an actual scoped response after the server produced it. Playback
       // must start using its bounded local fallback; release cannot seek it.
-      let release!: () => void;
-      const gate = new Promise<void>(resolve => { release = resolve; });
-      let held = false;
-      await page.route('**/api/podcasts/sync', async route => {
-        const body = route.request().postDataJSON();
-        if (!body?.scope || held) return route.continue();
-        const response = await route.fetch(); held = true;
-        await gate;
-        await route.fulfill({ response });
+      // Inspect the request where fetch owns its body: Firefox's Playwright
+      // route reports zero postData bytes for this real JSON POST. The wrapper
+      // still sends the original request and holds only its real response.
+      await page.evaluate(() => {
+        const original = window.fetch;
+        const gate = { held: false, cancelled: false, status: 0, release: () => {}, original };
+        (window as any).__podcastSyncGate = gate;
+        window.fetch = async (input, init) => {
+          const response = await original.call(window, input, init);
+          let body: any = null;
+          try { if (typeof init?.body === 'string') body = JSON.parse(init.body); } catch {}
+          if (!gate.cancelled && !gate.held && String(input).includes('/api/podcasts/sync') && body?.scope) {
+            gate.status = response.status; gate.held = true;
+            await new Promise<void>(resolve => { gate.release = resolve; });
+          }
+          return response;
+        };
       });
       try {
         const start = Date.now();
         await playCard(page, exactCard(page));
-        expect(held).toBe(true);
+        const currentMediaId = await page.evaluate(async () => {
+          const path = '/js/playback.js';
+          return (await import(path)).currentMediaId();
+        });
+        const expectedMediaId = (await history(page)).server_copy?.media_id;
+        traffic.push({ method: 'PLAYBACK', path: '/media', currentMediaId, expectedMediaId, at: Date.now() });
+        expect(currentMediaId).toBe(expectedMediaId);
+        await expect.poll(() => page.evaluate(() => (window as any).__podcastSyncGate.held),
+          { timeout: 3500 }).toBe(true);
+        expect(await page.evaluate(() => (window as any).__podcastSyncGate.status)).toBe(200);
         expect(Date.now() - start).toBeLessThan(6500);
         await pause(page);
         const position = (await audioState(page)).time;
-        release();
+        await page.evaluate(() => (window as any).__podcastSyncGate.release());
         await page.waitForTimeout(600);
         expect((await audioState(page)).paused).toBe(true);
         expect((await audioState(page)).time).toBeCloseTo(position, 1);
         record('bounded preplay and real delayed response cannot jump paused playback');
-      } finally { release(); await page.unroute('**/api/podcasts/sync'); }
+      } finally {
+        await page.evaluate(() => {
+          const gate = (window as any).__podcastSyncGate;
+          gate.cancelled = true; gate.release(); window.fetch = gate.original; delete (window as any).__podcastSyncGate;
+        });
+      }
       const previous = (await history(page)).completed;
       await page.route('**/api/podcasts/sync', route => route.abort('connectionrefused'));
-      await actionByKeyboard(page, exactCard(page).getByRole('button', { name: previous ? 'Mark uncompleted' : 'Mark completed', exact: true }));
+      await page.getByRole('button', { name: 'Minimize player (Shift+C)' }).click();
+      const card = exactCard(page);
+      await card.hover();
+      await actionByKeyboard(page, card.getByRole('button', { name: previous ? 'Mark uncompleted' : 'Mark completed', exact: true }));
       await expect(page.locator('#global-sync [data-sync-status]')).toContainText('pending');
       expect(await page.locator('.modal-overlay.open').count()).toBe(0);
       await page.unroute('**/api/podcasts/sync');
