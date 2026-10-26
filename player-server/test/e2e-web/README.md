@@ -1,5 +1,29 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M10 artist/album enrichment, start the deterministic provider and a
+disposable music fixture with its optional agent URL. Run the focused journey
+in installed Chrome, then Firefox, with one browser worker at a time:
+
+```sh
+printf ready >/tmp/player-m10-mode
+python3 player-server/test/enrichment/provider.py --port 18910 --mode-file /tmp/player-m10-mode &
+MUSIC_ENRICHMENT_URL=http://127.0.0.1:18910/metadata \
+  python3 player-android/integration_test/support/music_fixture.py up player-server/player \
+  --port 18810 --no-doubles --dir /path/to/fixture --evidence /tmp/player-m10-evidence
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M10_ISOLATED=1 \
+PLAYER_M10_MODE_FILE=/tmp/player-m10-mode PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-enrichment-live.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The journey exercises admin refresh for artist and album, provider image and
+links, retained local cover and audio, no match, provider failure, offline
+retry, restart persistence, and viewer/access permissions. Stop the fixture
+with `music_fixture.py down /path/to/fixture` and stop the provider process
+after Android acceptance. Artifacts stay outside the repository.
+
 For M06 music information, create a disposable fixture on an unused port,
 augment it once with the guarded technical tracks, then run installed Chrome
 and Firefox sequentially:
