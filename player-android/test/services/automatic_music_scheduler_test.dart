@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:player_android/providers/automatic_music_provider.dart';
 import 'package:player_android/services/automatic_music.dart';
 import 'package:player_android/services/podcast_sync.dart';
@@ -9,6 +10,28 @@ import 'package:player_android/services/offline_download_repository.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('scheduler survives automatic music status notifications', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            AutomaticMusicScheduler.channel, (call) async => null);
+    final service = AutomaticMusic(
+        AutomaticMusicLibrary(OfflineDownloadRepository()),
+        load: (key) async => null,
+        persist: (key, value) async {},
+        network: () => 'wifi');
+    final container = ProviderContainer(overrides: [
+      automaticMusicProvider.overrideWith((ref) => service),
+    ]);
+    addTearDown(() {
+      container.dispose();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(AutomaticMusicScheduler.channel, null);
+    });
+    final scheduler = container.read(automaticMusicSchedulerProvider);
+    service.schedulerChanged();
+    await container.pump();
+    expect(container.read(automaticMusicSchedulerProvider), same(scheduler));
+  });
   const codec = StandardMethodCodec();
   Future<void> invoke(String method, String token) async {
     final done = Completer<void>();

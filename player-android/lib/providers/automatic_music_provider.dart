@@ -211,7 +211,11 @@ class AutomaticMusicScheduler {
 
 final automaticMusicSchedulerProvider =
     Provider<AutomaticMusicScheduler>((ref) {
-  final scheduler = AutomaticMusicScheduler(ref.watch(automaticMusicProvider));
+  // The scheduler owns its binding to this service instance. Watching the
+  // ChangeNotifier value itself recreates it on every status notification,
+  // which also recreates the global sync coordinator while a run is active.
+  final scheduler =
+      AutomaticMusicScheduler(ref.watch(automaticMusicProvider.notifier));
   ref.onDispose(scheduler.dispose);
   return scheduler;
 });
