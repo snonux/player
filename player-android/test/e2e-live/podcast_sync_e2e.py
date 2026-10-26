@@ -138,7 +138,13 @@ def register_installation(ledger, name, identity):
     if other and (other['serial'] == identity['serial'] or other['android_id'] == identity['android_id']):
         raise AssertionError('A and B must be separate persistent Android installations')
     previous = ledger.get(name)
-    if previous and previous != identity:
+    def first_install(item):
+        match = re.search(r'^firstInstallTime=(.+)$', item['installed'], re.MULTILINE)
+        return match.group(1) if match else None
+    if previous and (previous['serial'] != identity['serial'] or
+                     previous['android_id'] != identity['android_id'] or
+                     not first_install(previous) or
+                     first_install(previous) != first_install(identity)):
         raise AssertionError('Installation identity changed between stages; preserve its app data')
     ledger[name] = identity
 
@@ -751,12 +757,13 @@ class Run:
 
     def switch_account(self, kind):
         self.root()
-        self.touch('^Settings$')
-        for _ in range(30):
-            if adrv.find('^Log Out$'):
-                break
-            app_ui.swipe()
-        self.touch('^Log Out$')
+        if not adrv.find('^Welcome back$'):
+            self.touch('^Settings$')
+            for _ in range(30):
+                if adrv.find('^Log Out$'):
+                    break
+                app_ui.swipe()
+            self.touch('^Log Out$')
         self.login(kind)
         if adrv.find(r"^Sync this device's podcasts with "):
             self.touch('^Keep separate$')
@@ -773,7 +780,7 @@ class Run:
             if adrv.find(feed_label_pattern('Acceptance Alpha')):
                 raise AssertionError('Primary account subscriptions leaked into the other account')
             self.record('native configured never-synced is quiet and account subscription scope is isolated')
-        self.touch('^Retry$')
+        self.touch(r'^(Sync now|Retry)$')
         if not adrv.wait('^Synced$', timeout=30):
             raise AssertionError('Other account did not reach full success after reconnection')
         self.switch_account('admin')

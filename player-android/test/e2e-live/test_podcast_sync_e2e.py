@@ -103,15 +103,20 @@ class PodcastNativeOracleTests(unittest.TestCase):
                 require_audio(data, 441)
 
     def test_two_clients_reject_same_device_or_changed_installation(self):
-        identity = {'serial': 'emulator-5554', 'android_id': 'one', 'installed': 'first'}
+        identity = {'serial': 'emulator-5554', 'android_id': 'one',
+                    'installed': 'versionCode=4022\nfirstInstallTime=original'}
         ledger = {}
         register_installation(ledger, 'A', identity)
         register_installation(ledger, 'A', identity)
         with self.assertRaises(AssertionError):
             register_installation(ledger, 'B', identity)
         with self.assertRaises(AssertionError):
-            register_installation(ledger, 'A', {**identity, 'installed': 'reinstalled'})
-        register_installation(ledger, 'B', {'serial': 'emulator-5556', 'android_id': 'two', 'installed': 'second'})
+            register_installation(ledger, 'A', {**identity,
+                'installed': 'versionCode=4023\nfirstInstallTime=reinstalled'})
+        register_installation(ledger, 'A', {**identity,
+            'installed': 'versionCode=4023\nfirstInstallTime=original'})
+        register_installation(ledger, 'B', {'serial': 'emulator-5556', 'android_id': 'two',
+            'installed': 'versionCode=4022\nfirstInstallTime=other'})
 
     def test_native_row_actions_must_belong_to_exact_episode(self):
         def node(text, top, click=True):
