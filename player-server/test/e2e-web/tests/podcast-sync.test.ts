@@ -269,8 +269,6 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
     } else if (stage === 'feedback') {
       const status = page.locator('#global-sync [data-sync-status]');
       const key = `player-global-sync-v1:${state.origin}#${state.accounts.admin}`;
-      const last = await page.evaluate(storageKey => JSON.parse(localStorage.getItem(storageKey)!).lastFullSuccessMs, key);
-      expect(last).toBeGreaterThan(0);
       // The existing ordinary source plays through actual browser controls.
       // Fail only its progress transport; podcast pulls continue successfully.
       await page.route('**/api/progress/batch', route => route.abort('connectionrefused'));
@@ -280,6 +278,13 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       await expect.poll(async () => (await audioState(page)).time).toBeGreaterThan(initial + 2);
       await pause(page);
       await expect(status).toContainText('pending');
+      // Playback can complete an in-flight initial sync before the first
+      // progress edit is queued. Anchor the age to the last success after an
+      // actual failed retry, when the partial-sync clock must remain stable.
+      await page.locator('#global-sync button').click();
+      await expect(status).toContainText('Sync unavailable');
+      const last = await page.evaluate(storageKey => JSON.parse(localStorage.getItem(storageKey)!).lastFullSuccessMs, key);
+      expect(last).toBeGreaterThan(0);
       // Freeze Date only. Media clocks/timers and the actual network continue.
       await page.clock.setFixedTime(new Date(last + 48 * 3600 * 1000 - 1));
       await page.locator('#global-sync button').click();
