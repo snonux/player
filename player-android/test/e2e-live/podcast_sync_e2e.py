@@ -681,9 +681,12 @@ class Run:
             else:
                 raise AssertionError('Native page-one pager could not be reached')
             self.touch('^Next page$')
-            if not adrv.wait(r'^(Alpha|Beta) Episode \d{3}$'):
+            labels = [adrv.label(node) for node in adrv.nodes()]
+            episode_pattern = r'^(?:\d+,\s*)?(?:Alpha|Beta) Episode \d{3}(?:$| /)'
+            if not any(re.match(episode_pattern, label) for label in labels):
                 raise AssertionError('Next native page did not show authoritative newer-first episode identities')
-            if adrv.find('^Alpha Episode 001$'):
+            if any(re.match(r'^(?:\d+,\s*)?Alpha Episode 001(?:$| /)', label)
+                   for label in labels):
                 raise AssertionError('Next page incorrectly retained the first episode')
             self.shot('next-page-combined' if combined else 'next-page-folder')
             self.record('native actual folder/combined next page', combined=combined)
