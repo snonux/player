@@ -323,33 +323,76 @@ def seek_track_swipe(nodes, bar, fraction=.62):
 def require_seek_jump(reset, target, title):
     start = reset.get('position_ms')
     end = target.get('position_ms')
-    if (reset.get('title') != title or target.get('title') != title
+    if (reset.get('state') != 'PAUSED' or target.get('state') != 'PAUSED'
+            or reset.get('title') != title or target.get('title') != title
             or not isinstance(start, int) or not isinstance(end, int)
             or not 0 <= start <= 1500 or not 5500 <= end <= 10000
             or end - start < 4500):
         raise AssertionError(f'Actual native offline seek was not a large touch jump: '
                              f'reset={start}, target={end}, '
                              f'reset_title={reset.get("title")!r}, '
-                             f'target_title={target.get("title")!r}')
+                             f'target_title={target.get("title")!r}, '
+                             f'reset_state={reset.get("state")!r}, '
+                             f'target_state={target.get("state")!r}')
 
 
-def wait_seek_jump(reset, title, timeout=12, reader=None):
-    """Wait for the media-session anchor to reflect the completed touch seek."""
+def seek_step(previous, current):
+    """Distinguish a touch jump from ordinary one-times-speed progression."""
+    before, after = previous['position_ms'], current['position_ms']
+    elapsed = max(0, current['elapsed_ms'] - previous['elapsed_ms'])
+    return (isinstance(before, int) and isinstance(after, int)
+            and after - before >= 2500 and after - before > elapsed + 1500)
+
+
+def wait_paused_session(title, timeout=4, reader=None, max_position=None):
+    """Require an actual stable paused media session before touching the slider."""
     reader = reader or session_state
     deadline = time.monotonic() + timeout
     samples = []
     while True:
+        first = reader()
+        samples.append((first.get('state'), first.get('position_ms')))
+        if first.get('state') == 'PAUSED' and first.get('title') == title:
+            time.sleep(.65)
+            second = reader()
+            samples.append((second.get('state'), second.get('position_ms')))
+            before, after = first.get('position_ms'), second.get('position_ms')
+            if (second.get('state') == 'PAUSED' and second.get('title') == title
+                    and isinstance(before, int) and isinstance(after, int)
+                    and abs(after - before) <= 200
+                    and (max_position is None or 0 <= after <= max_position)):
+                return second
+        if time.monotonic() >= deadline:
+            raise AssertionError(f'Native playback was not stably paused: samples={samples}')
+        time.sleep(.2)
+
+
+def wait_seek_jump(reset, title, timeout=12, reader=None, clock=None):
+    """Accept only a paused target reached by a faster-than-playback step."""
+    reader = reader or session_state
+    clock = clock or time.monotonic
+    started = clock()
+    previous = {'elapsed_ms': 0, 'position_ms': reset.get('position_ms')}
+    samples = []
+    while True:
         target = reader()
-        position = target.get('position_ms')
-        if not samples or samples[-1] != position:
-            samples.append(position)
+        sample = {'elapsed_ms': round((clock() - started) * 1000),
+                  'position_ms': target.get('position_ms'),
+                  'state': target.get('state')}
+        samples.append(sample)
+        if target.get('state') != 'PAUSED':
+            raise AssertionError(f'Native playback resumed during touch seek: samples={samples}')
         try:
             require_seek_jump(reset, target, title)
-            return target, samples
-        except AssertionError as error:
-            if time.monotonic() >= deadline:
-                raise AssertionError(f'{error}; sampled_positions_ms={samples}') from error
-            time.sleep(.2)
+            if seek_step(previous, sample):
+                return target, samples
+        except AssertionError:
+            pass
+        if sample['elapsed_ms'] >= timeout * 1000:
+            raise AssertionError(f'No paused target-reaching touch jump: '
+                                 f'reset={reset.get("position_ms")}, samples={samples}')
+        previous = sample
+        time.sleep(.2)
 
 
 def wait_seek_bar(timeout=12, max_percent=None):
@@ -1287,23 +1330,12 @@ class Run:
             else:
                 raise AssertionError('Downloaded episode did not play with both hosts offline')
             checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
+            initial = wait_paused_session(episode['title'])
             nodes, bar = wait_seek_bar()
-            initial = session_state()
             start, y, near_start = seek_track_swipe(nodes, bar, fraction=.02)
             checked_adb('shell', 'input', 'swipe', str(start), str(y),
                         str(near_start), str(y), '300')
-            deadline = time.monotonic() + 4
-            while time.monotonic() < deadline:
-                reset = session_state()
-                if (reset['title'] == episode['title']
-                        and isinstance(reset.get('position_ms'), int)
-                        and 0 <= reset['position_ms'] <= 1500):
-                    break
-                time.sleep(.2)
-            else:
-                raise AssertionError(f'Native paused touch reset did not reach start: '
-                                     f'initial={initial.get("position_ms")}, '
-                                     f'latest={reset.get("position_ms")}')
+            reset = wait_paused_session(episode['title'], max_position=1500)
             nodes, bar = wait_seek_bar(max_percent=15)
             start, y, target = seek_track_swipe(nodes, bar)
             checked_adb('shell', 'input', 'swipe', str(start), str(y),

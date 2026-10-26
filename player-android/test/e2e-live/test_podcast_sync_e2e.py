@@ -14,7 +14,8 @@ from podcast_sync_e2e import (require_audio, require_resume, register_installati
                               select_row_action, PlayerProxy, PublisherProxy, Run,
                               feed_label_pattern, require_publisher_response,
                               require_download_state, require_seek_jump, seek_bar_node,
-                              seek_track_swipe, wait_seek_bar, wait_seek_jump)
+                              seek_step, seek_track_swipe, wait_paused_session,
+                              wait_seek_bar, wait_seek_jump)
 
 
 class PodcastNativeOracleTests(unittest.TestCase):
@@ -192,22 +193,51 @@ class PodcastNativeOracleTests(unittest.TestCase):
 
     def test_offline_seek_requires_verified_reset_then_large_touch_jump(self):
         title = 'Beta Episode 002'
-        reset = {'title': title, 'position_ms': 240}
-        target = {'title': title, 'position_ms': 7456}
+        reset = {'title': title, 'position_ms': 240, 'state': 'PAUSED'}
+        target = {'title': title, 'position_ms': 7456, 'state': 'PAUSED'}
         require_seek_jump(reset, target, title)
-        states = iter([{'title': title, 'position_ms': 4217}, target])
+        self.assertFalse(seek_step({'elapsed_ms': 0, 'position_ms': 294},
+                                   {'elapsed_ms': 1000, 'position_ms': 1000}))
+        self.assertTrue(seek_step({'elapsed_ms': 4000, 'position_ms': 4217},
+                                  {'elapsed_ms': 4200, 'position_ms': 7456}))
+        states = iter([{'title': title, 'position_ms': 4217, 'state': 'PAUSED'}, target])
+        clock = iter([0, 4, 4.2])
         with patch('podcast_sync_e2e.time.sleep'):
-            observed, samples = wait_seek_jump(reset, title, reader=lambda: next(states))
+            observed, samples = wait_seek_jump(reset, title, reader=lambda: next(states),
+                                               clock=lambda: next(clock))
         self.assertEqual(observed, target)
-        self.assertEqual(samples, [4217, 7456])
-        with self.assertRaisesRegex(AssertionError, r'sampled_positions_ms=\[4217\]'):
+        self.assertEqual([sample['position_ms'] for sample in samples], [4217, 7456])
+        gradual = iter([{'title': title, 'position_ms': position, 'state': 'PAUSED'}
+                        for position in (746, 912, 5548)])
+        clock = iter([0, .5, .7, 5.5])
+        with patch('podcast_sync_e2e.time.sleep'):
+            with self.assertRaisesRegex(AssertionError, 'No paused target-reaching touch jump'):
+                wait_seek_jump(reset, title, timeout=5, reader=lambda: next(gradual),
+                               clock=lambda: next(clock))
+        with self.assertRaisesRegex(AssertionError, 'playback resumed'):
             wait_seek_jump(reset, title, timeout=0,
-                           reader=lambda: {'title': title, 'position_ms': 4217})
+                           reader=lambda: {'title': title, 'position_ms': 746,
+                                           'state': 'PLAYING'})
         for start, end in ((7456, 7456), (2000, 7456), (240, 4000),
                            (240, 11000)):
             with self.assertRaisesRegex(AssertionError, 'reset=.*target='):
-                require_seek_jump({'title': title, 'position_ms': start},
-                                  {'title': title, 'position_ms': end}, title)
+                require_seek_jump({'title': title, 'position_ms': start,
+                                   'state': 'PAUSED'},
+                                  {'title': title, 'position_ms': end,
+                                   'state': 'PAUSED'}, title)
+
+    def test_offline_seek_requires_stable_paused_session(self):
+        title = 'Beta Episode 002'
+        paused = {'title': title, 'position_ms': 300, 'state': 'PAUSED'}
+        states = iter([{'title': title, 'position_ms': 300, 'state': 'PLAYING'},
+                       paused, {**paused, 'position_ms': 330}])
+        with patch('podcast_sync_e2e.time.sleep'):
+            self.assertEqual(wait_paused_session(title, reader=lambda: next(states))
+                             ['position_ms'], 330)
+        states = iter([paused, {**paused, 'position_ms': 1000}])
+        with patch('podcast_sync_e2e.time.sleep'):
+            with self.assertRaisesRegex(AssertionError, 'not stably paused'):
+                wait_paused_session(title, timeout=0, reader=lambda: next(states))
 
     def test_feed_title_boundary_accepts_actual_merged_url_but_not_another_show(self):
         pattern = feed_label_pattern('Acceptance Alpha')
