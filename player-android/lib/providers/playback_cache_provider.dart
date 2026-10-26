@@ -56,6 +56,12 @@ final cachedAudioLoaderProvider =
   MusicNetworkPolicy.changes.addListener(handler.refreshGaplessPolicy);
   ref.onDispose(() =>
       MusicNetworkPolicy.changes.removeListener(handler.refreshGaplessPolicy));
+  ServerPlaybackRequest? currentRequest;
+  bool Function()? currentLease;
+  var currentCacheReady = false;
+  String? prefetchingKey;
+  var disposed = false;
+  late Future<void> Function() prefetchNext;
   // Decoder preparation must not cancel current downloads, change cache
   // protection, or publish a different playing URI. ExoPlayer will buffer
   // this authenticated source itself as the second concatenating child.
@@ -123,21 +129,6 @@ final cachedAudioLoaderProvider =
     } catch (_) {
       cacheReady = false;
     }
-    Future<void> prefetchNext() async {
-      if (!wanted() ||
-          prefetch ||
-          !cacheReady ||
-          !cache.prefetch ||
-          !MusicNetworkPolicy.prefetchAllowed) {
-        return;
-      }
-      final queue = handler.musicQueue;
-      if (queue.index + 1 < queue.entries.length) {
-        await load(queue.entries[queue.index + 1].request, wanted,
-            prefetch: true);
-      }
-    }
-
     Uri canonical, transport;
     Map<String, String> headers;
     try {
@@ -173,6 +164,11 @@ final cachedAudioLoaderProvider =
       final network = cacheTransportFailure(error);
       if (network && saved != null && wanted()) {
         MusicNetworkPolicy.assertStreamingAllowed();
+        if (!prefetch) {
+          currentRequest = request;
+          currentLease = wanted;
+          currentCacheReady = cacheReady;
+        }
         unawaited(prefetchNext().catchError((Object _) {}));
         return AudioSource.uri(saved);
       }
@@ -210,15 +206,96 @@ final cachedAudioLoaderProvider =
         cacheReady = false;
       }
     }
+    if (!prefetch) {
+      currentRequest = request;
+      currentLease = wanted;
+      currentCacheReady = cacheReady;
+    }
     if (cacheReady && saved == null) {
-      unawaited(fill().then((_) => prefetchNext()).catchError((Object _) {}));
-    } else {
+      final transfer = fill();
+      if (prefetch) {
+        await transfer;
+      } else {
+        unawaited(
+            transfer.then((_) => prefetchNext()).catchError((Object _) {}));
+      }
+    } else if (!prefetch) {
       unawaited(prefetchNext().catchError((Object _) {}));
     }
     MusicNetworkPolicy.assertStreamingAllowed();
     return AudioSource.uri(saved ?? transport,
         headers: saved != null || headers.isEmpty ? null : headers);
   }
+
+  ServerPlaybackRequest? queuedNext(ServerPlaybackRequest anchor) {
+    final queue = handler.musicQueue;
+    if (queue.index < 0 ||
+        queue.index + 1 >= queue.entries.length ||
+        queue.entries[queue.index].request.identity != anchor.identity) {
+      return null;
+    }
+    final next = queue.entries[queue.index + 1].request;
+    return next is ServerPlaybackRequest &&
+            next.serverOrigin == anchor.serverOrigin &&
+            next.userId == anchor.userId
+        ? next
+        : null;
+  }
+
+  prefetchNext = () async {
+    final anchor = currentRequest, lease = currentLease;
+    if (disposed ||
+        anchor == null ||
+        lease == null ||
+        !lease() ||
+        !currentCacheReady ||
+        cache.budget == 0 ||
+        !cache.prefetch ||
+        !MusicNetworkPolicy.prefetchAllowed) {
+      return;
+    }
+    final next = queuedNext(anchor);
+    if (next == null) return;
+    final quality = StreamQuality.selected(next.serverOrigin);
+    final key =
+        cache.key(next.serverOrigin, next.userId, next.mediaId, quality);
+    if (prefetchingKey == key) return;
+    prefetchingKey = key;
+    try {
+      await load(
+          next,
+          () =>
+              !disposed &&
+              identical(currentRequest, anchor) &&
+              lease() &&
+              queuedNext(anchor)?.identity == next.identity &&
+              StreamQuality.selected(next.serverOrigin) == quality,
+          prefetch: true);
+    } finally {
+      if (prefetchingKey == key) prefetchingKey = null;
+      // If the queue changed during a transfer, a cancellation may have left
+      // the new next song waiting behind the old one.
+      final replacement = currentRequest == anchor ? queuedNext(anchor) : null;
+      if (!disposed &&
+          replacement != null &&
+          cache.key(
+                  replacement.serverOrigin,
+                  replacement.userId,
+                  replacement.mediaId,
+                  StreamQuality.selected(replacement.serverOrigin)) !=
+              key) {
+        scheduleMicrotask(
+            () => unawaited(prefetchNext().catchError((Object _) {})));
+      }
+    }
+  };
+  final queueChanges = handler.queueChanges.listen((_) {
+    unawaited(prefetchNext().catchError((Object _) {}));
+  });
+  ref.onDispose(() {
+    disposed = true;
+    unawaited(queueChanges.cancel());
+  });
 
   return (request, current, {onPreparing}) =>
       load(request, current, onPreparing: onPreparing);

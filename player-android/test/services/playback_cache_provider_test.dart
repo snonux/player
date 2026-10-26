@@ -62,6 +62,7 @@ void main() {
     'api-denial',
     'cache-hit-prefetch',
     'complete-buffer-prefetch',
+    'late-queue-prefetch',
     'credential-rotation',
     'network-restricted'
   ]) {
@@ -176,7 +177,8 @@ void main() {
           handler.restoreMusicQueue(
               entries: [
                 MusicQueueEntry(1, song(1)),
-                MusicQueueEntry(2, song(2))
+                if (scenario != 'late-queue-prefetch')
+                  MusicQueueEntry(2, song(2))
               ],
               index: 0,
               label: 'Test',
@@ -186,6 +188,18 @@ void main() {
               load: (_, __) async => null);
           final source = await load(song(1), () => true) as UriAudioSource;
           expect(source.uri.scheme, 'file');
+          if (scenario == 'late-queue-prefetch') {
+            expect(gets.any((path) => path.contains('/2/')), isFalse);
+            expect(
+                await handler.insertQueue(
+                    entries: [song(2)],
+                    action: QueueInsertion.next,
+                    claim: (_) async => null,
+                    load: (_, __) async => null),
+                isTrue);
+            handler.queueRestoreStatus('Queue updated');
+            handler.queueRestoreStatus('Queue updated again');
+          }
           for (var i = 0;
               i < 100 && !gets.any((path) => path.contains('/2/'));
               i++) {
@@ -193,6 +207,19 @@ void main() {
           }
           expect(gets.any((path) => path.contains('/2/')), isTrue,
               reason: 'next song prefetched from $scenario');
+          if (scenario == 'late-queue-prefetch') {
+            final nextKey = cache.key(origin, 1, 2, 'auto');
+            for (var i = 0;
+                i < 100 && await cache.lookup(nextKey) == null;
+                i++) {
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+            }
+            expect(await cache.lookup(nextKey), isNotNull,
+                reason: 'late queue insertion must finish the cached copy');
+            expect(gets.where((path) => path.endsWith('/2/stream')).length, 1,
+                reason:
+                    'repeated queue notices must not download twice: $gets');
+          }
         }
       } finally {
         await MusicNetworkPolicy.save('stream-wifi', false);
