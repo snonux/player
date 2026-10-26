@@ -1208,8 +1208,14 @@ class Run:
             start, target = left + int(width * .2), left + int(width * .62)
             checked_adb('shell', 'input', 'swipe', str(start), str(y),
                         str(target), str(y), '300')
-            after_seek = session_state()
-            if after_seek['title'] != episode['title'] or not 5500 <= (after_seek['position_ms'] or 0) <= 10000:
+            deadline = time.monotonic() + 4
+            while time.monotonic() < deadline:
+                after_seek = session_state()
+                if (after_seek['title'] == episode['title']
+                        and 5500 <= (after_seek['position_ms'] or 0) <= 10000):
+                    break
+                time.sleep(.2)
+            else:
                 raise AssertionError('Actual native media session did not seek offline')
             self.shot('offline-seek-paused')
             mark = self.audio.mark()
@@ -1218,8 +1224,14 @@ class Run:
             checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
             require_audio(audio_trace.analyze(self.audio.save(mark, self.output / 'offline-seek.wav')),
                           self.state['audio']['end']['tone_hz'])
-            now = session_state()
-            if now['title'] != episode['title'] or (now['position_ms'] or 0) <= after_seek['position_ms']:
+            deadline = time.monotonic() + 4
+            while time.monotonic() < deadline:
+                now = session_state()
+                if (now['title'] == episode['title']
+                        and (now['position_ms'] or 0) > after_seek['position_ms']):
+                    break
+                time.sleep(.2)
+            else:
                 raise AssertionError('Offline seek did not continue downloaded playback')
             app_ui.back()
             persisted = self.snapshot('after-offline-seek')
