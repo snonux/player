@@ -875,3 +875,21 @@ The alias must serve the fixture backend; another fixture is a different server.
 No cross-origin browser routing or CORS configuration is needed for this scope.
 Native pairing/security/SSID/offline acceptance and retained evidence are in
 [`music-m53-implementation.md`](../../../docs/music-m53-implementation.md).
+
+## Podcast episode conflict acceptance
+
+Against the marked, isolated podcast fixture, run after the Alpha catalog is
+subscribed and the publisher and Player server are running:
+
+```sh
+PLAYER_PODCAST_FIXTURE=/absolute/podcast-5i3 \
+PLAYER_PODCAST_STAGE=episode-conflict \
+  npx playwright test -c playwright.podcasts.config.ts
+```
+
+Each installed browser uses its own short Alpha episode. One visible browser
+session completes it while its real successful sync response is held; a second
+session uncompletes it and plays its own server copy to save a position. After
+the older response arrives, the first session pulls the newer completion and
+position. The stage creates a server audio copy for those two episodes and
+writes evidence under `evidence/{chrome,firefox}/<run>/` in the fixture.

@@ -2,7 +2,7 @@
  * each browser, native B finish, completed in both browsers, uncomplete once,
  * observe-uncompleted on all clients, cleanup and boundaries.
  *
- * PLAYER_PODCAST_STAGE=catalog|resume|completed|uncomplete|observe-uncompleted|cleanup|boundaries|auth-visual|account-switch
+ * PLAYER_PODCAST_STAGE=catalog|resume|completed|uncomplete|observe-uncompleted|cleanup|boundaries|auth-visual|account-switch|episode-conflict
  * PLAYER_PODCAST_FIXTURE=/marked/path npx playwright test -c playwright.podcasts.config.ts --project=chrome
  * No API edits supply listening/completion proof. GETs are read-only oracles;
  * download, playback, completion, retry and cleanup use actual visible controls.
@@ -15,7 +15,7 @@ import { installAudioTap } from './helpers/audio-tap';
 
 const directory = process.env.PLAYER_PODCAST_FIXTURE!;
 const stage = process.env.PLAYER_PODCAST_STAGE;
-const allowed = ['catalog', 'resume', 'completed', 'uncomplete', 'observe-uncompleted', 'cleanup', 'boundaries', 'feedback', 'unsubscribed', 'conflict', 'auth-visual', 'account-switch'];
+const allowed = ['catalog', 'resume', 'completed', 'uncomplete', 'observe-uncompleted', 'cleanup', 'boundaries', 'feedback', 'unsubscribed', 'conflict', 'auth-visual', 'account-switch', 'episode-conflict'];
 if (!allowed.includes(stage || '')) throw new Error('Select one explicit PLAYER_PODCAST_STAGE');
 const state = JSON.parse(readFileSync(join(directory, 'state.json'), 'utf8'));
 const auth = JSON.parse(readFileSync(join(directory, 'auth.json'), 'utf8'));
@@ -196,6 +196,90 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         await actionByKeyboard(page, sub());
         await expect(unsub()).toBeVisible();
         await page.keyboard.press('Escape');
+      }
+    } else if (stage === 'episode-conflict') {
+      // Distinct short publisher episodes keep Chrome and Firefox independent
+      // when the projects run one after the other against the same fixture.
+      const target = feed.episodes[info.project.name === 'chrome' ? 4 : 5];
+      const card = (p: Page) => p.locator('.episode-card').filter({ hasText: target.title });
+      const otherContext = await browser.newContext({ baseURL: state.origin });
+      let release: () => void = () => {};
+      const released = new Promise<void>(resolve => { release = resolve; });
+      let signalHeld: () => void = () => {};
+      const held = new Promise<void>(resolve => { signalHeld = resolve; });
+      let heldResponse = false;
+      try {
+        const other = await otherContext.newPage();
+        await keyboardLogin(other, auth.admin);
+        await fullSync(other);
+        await openEpisodes(other, 'All');
+        await openEpisodes(page, 'All');
+
+        // Retries may have left this episode completed. Restore it through the
+        // visible control, then give both tabs the same baseline.
+        if ((await history(other, target.key)).completed) {
+          await actionByKeyboard(other, card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }));
+          await expect.poll(async () => (await history(other, target.key)).completed).toBe(false);
+        }
+        if (!(await history(other, target.key)).server_copy?.media_id) {
+          await card(other).hover();
+          await actionByKeyboard(other, card(other).getByRole('button', { name: 'Download episode to server', exact: true }));
+          await expect.poll(async () => Boolean((await history(other, target.key)).server_copy?.media_id), { timeout: 30_000 }).toBe(true);
+        }
+        await fullSync(page);
+        await openEpisodes(page, 'All');
+        await expect(card(page).getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
+
+        await page.route('**/api/podcasts/sync', async route => {
+          const response = await route.fetch();
+          const body = await response.json();
+          const matching = (body.episodes || []).find((row: any) =>
+            row.feed_key === feed.key && row.episode_key === target.key);
+          if (!heldResponse && matching?.completion?.completed && body.acked?.length) {
+            heldResponse = true;
+            signalHeld();
+            await released;
+          }
+          await route.fulfill({ response });
+        });
+        await actionByKeyboard(page, card(page).getByRole('button', { name: 'Mark completed', exact: true }));
+        await Promise.race([
+          held,
+          page.waitForTimeout(20_000).then(() => { throw new Error('Visible completion did not produce a held successful sync response'); }),
+        ]);
+        expect((await history(other, target.key)).completed).toBe(true);
+
+        // The second real browser session writes a newer completion edit, then
+        // plays the downloaded copy to save an independent position register.
+        await fullSync(other);
+        await openEpisodes(other, 'All');
+        await expect(card(other).getByRole('button', { name: 'Mark uncompleted', exact: true })).toBeVisible();
+        await other.waitForTimeout(10);
+        await actionByKeyboard(other, card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }));
+        await expect.poll(async () => (await history(other, target.key)).completed).toBe(false);
+        await playCard(other, card(other));
+        await expect.poll(async () => (await audioState(other)).time).toBeGreaterThan(2);
+        await pause(other);
+        await fullSync(other);
+        await expect.poll(async () => (await history(other, target.key)).position_seconds, { timeout: 20_000 }).toBeGreaterThan(0);
+        const newer = await history(other, target.key);
+        expect(newer.completed).toBe(false);
+
+        release();
+        await expect(card(page).getByRole('button', { name: 'Mark uncompleted', exact: true })).toBeVisible();
+        await fullSync(page);
+        await openEpisodes(page, 'All');
+        await expect(card(page).getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
+        await expect(card(page).locator('.badge')).toContainText('Resume');
+        const reconciled = await history(page, target.key);
+        expect(reconciled.completed).toBe(false);
+        expect(reconciled.position_seconds).toBeGreaterThan(0);
+        record('newer browser uncompletion and independent position survive a delayed older completion reply',
+          { episode_key: target.key, position_seconds: reconciled.position_seconds });
+      } finally {
+        release();
+        await page.unroute('**/api/podcasts/sync');
+        await otherContext.close();
       }
     } else if (stage === 'resume') {
       const transferFile = join(directory, 'transfer-B.json');
