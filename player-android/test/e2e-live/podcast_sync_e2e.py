@@ -388,9 +388,10 @@ class Run:
         if not adrv.wait('^All podcast episodes$'):
             raise AssertionError('Podcasts destination not visible')
 
-    def episodes(self, combined=True, filter_name='Uncompleted'):
+    def episodes(self, combined=True, filter_name='Uncompleted',
+                 feed_title='Acceptance Alpha'):
         self.podcasts()
-        self.touch('^All podcast episodes$' if combined else feed_label_pattern('Acceptance Alpha'))
+        self.touch('^All podcast episodes$' if combined else feed_label_pattern(feed_title))
         if filter_name == 'Uncompleted':
             chips = [node for node in adrv.nodes() if adrv.label(node) == 'Uncompleted']
             if len(chips) != 1 or not (chips[0]['sel'] == 'true' or chips[0]['checked'] == 'true'):
@@ -1115,11 +1116,12 @@ class Run:
         cancelled = self.state['feeds'][1]['episodes'][2]
         failed = self.state['feeds'][0]['episodes'][2]
         server_copies = podcast_media(self.state['database'])
-        for episode in (cancelled, failed):
-            self.episodes(filter_name='All')
+        for feed, episode in ((self.state['feeds'][1], cancelled),
+                              (self.state['feeds'][0], failed)):
+            self.episodes(combined=False, filter_name='All', feed_title=feed['title'])
             self.row('Delete downloaded file', title=episode['title'], required=False)
 
-        self.episodes(filter_name='All')
+        self.episodes(combined=False, filter_name='All', feed_title=self.state['feeds'][1]['title'])
         with self.publisher_proxy(hold_tag='beta-003',
                                   evidence_name='publisher-cancel-trace') as proxy:
             self.row(r'(?:Download|Retry download)', title=cancelled['title'])
@@ -1143,7 +1145,7 @@ class Run:
                     raise AssertionError('Cancelled download left device audio bytes')
         self.record('native cancel discards held publisher transfer and partial copy')
 
-        self.episodes(filter_name='All')
+        self.episodes(combined=False, filter_name='All', feed_title=self.state['feeds'][0]['title'])
         with self.publisher_proxy(fail_tag='alpha-003',
                                   evidence_name='publisher-error-trace') as proxy:
             self.row(r'(?:Download|Retry download)', title=failed['title'])
@@ -1158,7 +1160,8 @@ class Run:
                 if self._device_bytes(path, optional=True):
                     raise AssertionError('Failed publisher response left device audio bytes')
             proxy.fail_tag = None
-            self.episodes(filter_name='All')
+            self.episodes(combined=False, filter_name='All',
+                          feed_title=self.state['feeds'][0]['title'])
             self.row('Retry download', title=failed['title'])
             self.wait_downloaded_row(failed['title'])
             require_publisher_response(proxy.trace, 'alpha-003', 200)

@@ -17,6 +17,24 @@ from podcast_sync_e2e import (require_audio, require_resume, register_installati
 
 
 class PodcastNativeOracleTests(unittest.TestCase):
+    def test_download_setup_uses_short_feed_views_instead_of_combined_pagination(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = self.run_without_device(directory)
+            run.state.update(database='unused', feeds=[
+                {'title': 'Acceptance Alpha', 'episodes': [{}, {},
+                    {'key': 'guid:alpha-003', 'title': 'Alpha Episode 003'}]},
+                {'title': 'Acceptance Beta', 'episodes': [{}, {},
+                    {'key': 'guid:beta-003', 'title': 'Beta Episode 003'}]},
+            ])
+            run.publisher_proxy = MagicMock(side_effect=RuntimeError('stop before device'))
+            with patch('podcast_sync_e2e.podcast_media', return_value={}):
+                with self.assertRaisesRegex(RuntimeError, 'stop before device'):
+                    run.download_negatives()
+            self.assertEqual([call.kwargs['feed_title'] for call in run.episodes.call_args_list],
+                             ['Acceptance Beta', 'Acceptance Alpha', 'Acceptance Beta'])
+            self.assertTrue(all(call.kwargs['combined'] is False
+                                for call in run.episodes.call_args_list))
+
     def test_publisher_proxy_holds_real_bytes_and_switches_error_to_retry(self):
         class Upstream(BaseHTTPRequestHandler):
             def log_message(self, *_):
