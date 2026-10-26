@@ -303,15 +303,19 @@ class PodcastDownloads extends ChangeNotifier {
       throw StateError('Download this episode first.');
     }
     final store = PodcastSyncStore(repository);
-    final account = captureSyncAccount?.call();
+    // The account can still be loading while the row opens. Capture a lease
+    // when playback actually needs it, then retain that generation for end
+    // sync so a later account switch cannot send under new credentials.
+    PodcastSyncAccount? account;
     Future<void> synchronize() async {
-      if (account == null || account.scope != scope || !account.current()) {
-        return;
-      }
       try {
+        final lease = account ?? captureSyncAccount?.call();
+        if (lease == null || lease.scope != scope || !lease.current()) {
+          return;
+        }
+        account ??= lease;
         final current = await _identity(feed, key);
-        await PodcastSync(store)
-            .beforePlayback(account, current.$1, current.$2);
+        await PodcastSync(store).beforePlayback(lease, current.$1, current.$2);
       } catch (_) {
         // Reconciliation is optional; detached end sync must stay quiet too.
       }

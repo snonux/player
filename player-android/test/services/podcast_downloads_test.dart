@@ -290,6 +290,43 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   });
 
+  test('preplay waits for its account and keeps the first valid lease',
+      () async {
+    final key = episode['episode_key'] as String;
+    await downloads.download(feed, key);
+    const scope = 'account:https://example.com#1';
+    String? selectedScope;
+    var current = true;
+    var sent = 0;
+    downloads.dispose();
+    downloads = PodcastDownloads(repository, PlaybackSessionCoordinator(),
+        directory: Directory('${directory.path}/audio'),
+        captureSyncAccount: () => selectedScope == null
+            ? null
+            : PodcastSyncAccount(
+                scope: selectedScope,
+                current: () => current,
+                supported: () async => true,
+                send: (payload) async {
+                  sent++;
+                  expect(
+                      payload['scope'], {'feed_key': feed, 'episode_key': key});
+                  return {'acked': <String>[], 'episodes': <Object>[]};
+                }));
+    final request = await downloads.playbackRequest(scope, feed, episode);
+    await request.readPositionForDuration!(const Duration(seconds: 120));
+    expect(sent, 0);
+    selectedScope = 'account:https://example.com#2';
+    await request.readPositionForDuration!(const Duration(seconds: 120));
+    expect(sent, 0, reason: 'another account must not sync this request');
+    selectedScope = scope;
+    await request.readPositionForDuration!(const Duration(seconds: 120));
+    expect(sent, 1);
+    current = false;
+    await request.synchronize!();
+    expect(sent, 1, reason: 'an obsolete captured lease cannot be replaced');
+  });
+
   for (final failure in ['html', 'error', 'truncated']) {
     test('$failure never marks partial audio available; retry starts cleanly',
         () async {
