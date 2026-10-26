@@ -1,5 +1,25 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M38 album discovery, use a disposable `music_fixture.py up` server on an
+unused port and run one installed browser at a time:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M38_ISOLATED=1 \
+PLAYER_M38_EVIDENCE=/tmp/player-m38-web-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-discovery-collections.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The runner adds two tagged 70-second albums only to that fixture, creates a
+fresh scoped account, and seeds its qualified plays through the authenticated
+playback-sync API. It verifies all six discovery sources, complete Play/View all
+snapshots and actual audio, personal empty states, random Back, genre and
+decade filters, narrow light/dark layouts, real ACL removal and offline Retry.
+Artifacts stay outside the repository. Stop the fixture with
+`music_fixture.py down`.
+
 For M47 saved music collections, create a disposable `music_fixture.py up`
 server and run the focused journey one browser at a time:
 
