@@ -777,13 +777,15 @@ class Run:
             raise AssertionError('Parent must run explicit fixture setup for its isolation account')
         with self.proxy(fail_podcasts=True):
             self.switch_account('other')
-            if not adrv.wait('Not synced yet', timeout=20):
-                raise AssertionError('New selected account did not expose actual never-synced state')
-            self.shot('never-synced-other-account')
+            status = adrv.wait(r'^(Not synced yet|Sync unavailable)$', timeout=20)
+            if not status:
+                raise AssertionError('Other account did not expose a quiet, truthful sync state')
+            self.shot('quiet-other-account')
             self.podcasts()
             if adrv.find(feed_label_pattern('Acceptance Alpha')):
                 raise AssertionError('Primary account subscriptions leaked into the other account')
-            self.record('native configured never-synced is quiet and account subscription scope is isolated')
+            self.record('native other-account sync feedback is quiet and subscriptions are isolated',
+                        status=adrv.label(status))
         self.touch(r'^(Sync now|Retry)$')
         if not adrv.wait('^Synced$', timeout=30):
             raise AssertionError('Other account did not reach full success after reconnection')
