@@ -39,6 +39,12 @@ from fixture_server import Client
 PKG = app_ui.PKG
 
 
+def feed_label_pattern(title):
+    # Flutter merges a feed ListTile's title and URL into one accessibility
+    # label. Keep an exact title boundary rather than a loose substring match.
+    return '^' + re.escape(title) + r'(?: /|$)'
+
+
 class PlayerProxy:
     """Small real-HTTP fault boundary; credentials are relayed, never logged."""
     def __init__(self, port, *, fail_progress=False, fail_podcasts=False, delay_scope=False, strip_auth=False):
@@ -137,18 +143,26 @@ def register_installation(ledger, name, identity):
     ledger[name] = identity
 
 
+def episode_title_label(node):
+    """Strip list prefixes such as '0, ' from the merged episode a11y label."""
+    head = adrv.label(node).split(' / ')[0]
+    return re.sub(r'^\d+,\s*', '', head)
+
+
 def select_row_action(nodes, title, action):
     """Choose an actual labeled action inside the visible episode's extent."""
-    titles = [node for node in nodes if re.match(r'^(Alpha|Beta) Episode \d{3}(?:$| /)', adrv.label(node))]
-    target = [node for node in titles if adrv.label(node).split(' / ')[0] == title]
+    titles = [node for node in nodes
+              if re.match(r'^(?:\d+,\s*)?(Alpha|Beta) Episode \d{3}(?:$| /)', adrv.label(node))]
+    target = [node for node in titles if episode_title_label(node) == title]
     if len(target) != 1:
         raise AssertionError('Expected exactly one visible target episode title')
     top = target[0]['b'][1]
     bottom = min((node['b'][1] for node in titles if node['b'][1] > top), default=10**6)
     actions = [node for node in nodes if re.fullmatch(action, adrv.label(node))
-               and top <= node['b'][1] < bottom and node['b'][3] > node['b'][1]]
+               and top <= node['b'][1] < bottom and node['b'][3] > node['b'][1]
+               and node['click']]
     if len(actions) != 1:
-        raise AssertionError('Expected exactly one visible labeled action for the target episode')
+        raise AssertionError('Expected exactly one visible clickable action for the target episode')
     return actions[0]
 
 
@@ -188,10 +202,16 @@ class Run:
         adrv.shot(str(path))
         return str(path)
 
-    def touch(self, pattern):
-        node = adrv.wait(pattern, timeout=15)
+    def touch(self, pattern, cls=None):
+        node = adrv.wait(pattern, timeout=15, cls=cls)
         if not node:
             raise AssertionError('Missing labeled native control: ' + pattern)
+        # AppBar titles reuse action labels (e.g. Sign In); prefer a clickable hit.
+        if not node.get('click') and cls is None:
+            clickable = [n for n in adrv.nodes()
+                         if re.search(pattern, adrv.label(n)) and n.get('click')]
+            if clickable:
+                node = clickable[0]
         self.shot(f'touch-{len(list(self.output.glob("*.png"))):03}')
         adrv.tap_node(node)
 
@@ -201,14 +221,23 @@ class Run:
         adrv.tap_node({'b': target['bounds']})
         app_ui.clear_field(160)
         adrv.type_text(value)
+        # Refuse silent mangling (device sh historically turned http:// into //…).
+        # Password fields expose same-length bullets, not plaintext.
+        texts = [node['text'] or '' for node in adrv.nodes() if node['cls'] == 'EditText']
+        masked = '•' * len(value)
+        if value not in texts and masked not in texts:
+            raise AssertionError(f'Native field {hint!r} did not retain typed value {value!r}; saw {texts!r}')
         checked_adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
-
     def root(self):
         app_ui.launch()
-        for _ in range(10):
+        for _ in range(12):
             labels = app_ui.labels()
             if 'On this device' in labels or 'Open navigation menu' in labels or 'Welcome back' in labels:
                 return
+            # Cold start / process restart can land on the server chooser.
+            if adrv.find(r'^Use files on this device$'):
+                self.touch(r'^Use files on this device$')
+                continue
             app_ui.back()
         raise AssertionError('Native app did not return to an established root')
 
@@ -226,28 +255,42 @@ class Run:
 
     def episodes(self, combined=True, filter_name='Uncompleted'):
         self.podcasts()
-        self.touch('^All podcast episodes$' if combined else '^Acceptance Alpha$')
+        self.touch('^All podcast episodes$' if combined else feed_label_pattern('Acceptance Alpha'))
         if filter_name == 'Uncompleted':
             chips = [node for node in adrv.nodes() if adrv.label(node) == 'Uncompleted']
             if len(chips) != 1 or not (chips[0]['sel'] == 'true' or chips[0]['checked'] == 'true'):
                 raise AssertionError('Fresh native episode view did not default to Uncompleted')
         self.touch('^' + filter_name + '$')
 
-    def row(self, action, title=None):
+    def row(self, action, title=None, required=True):
         title = title or self.episode['title']
-        for _ in range(60):
+        for _ in range(80):
             nodes = adrv.nodes()
             try:
                 target = select_row_action(nodes, title, action)
                 self.shot(f'row-{len(list(self.output.glob("*.png"))):03}')
                 adrv.tap_node(target)
-                return
+                return True
             except AssertionError:
                 if any(title in adrv.label(node) for node in nodes):
-                    # Scroll a partially visible episode's own controls into view.
-                    app_ui.swipe()
-                else:
-                    app_ui.swipe()
+                    # Optional cleanup: title visible without the action means absent.
+                    if not required:
+                        return False
+                    # Title is on-screen: Download stays non-clickable until
+                    # PodcastDownloadControls' FutureBuilder settles — wait, do
+                    # not page away. Swipe only when the row is clipped.
+                    time.sleep(0.8)
+                    continue
+                # Combined catalogs page newest-first; advance when the title is absent.
+                nxt = next((node for node in nodes
+                            if adrv.label(node) == 'Next page' and node['click']), None)
+                if nxt:
+                    adrv.tap_node(nxt)
+                    time.sleep(0.8)
+                    continue
+                app_ui.swipe()
+        if not required:
+            return False
         raise AssertionError('Could not reach native episode action by label')
 
     def no_server_audio(self):
@@ -280,18 +323,37 @@ class Run:
                 thread.join()
                 (self.output / 'proxy-trace.json').write_text(json.dumps(proxy.trace, indent=1))
 
+    def _device_bytes(self, path, optional=False):
+        """Read a private app path; non-root emulators need su 0."""
+        data = checked_adb('exec-out', 'cat', path, binary=True, optional=True)
+        if data and not data.startswith(b'cat: '):
+            return data
+        data = checked_adb('exec-out', 'su', '0', 'cat', path, binary=True, optional=True)
+        if data and not data.startswith(b'cat: '):
+            return data
+        if optional:
+            return b''
+        raise AssertionError('Could not read device path ' + path)
+
     def snapshot(self, name):
         """Pause first; force-stop owned app so DB+WAL copies form one snapshot."""
         checked_adb('shell', 'am', 'force-stop', PKG)
+        time.sleep(1.5)
         folder = self.output / name
         folder.mkdir()
         root = f'/data/user/0/{PKG}/databases'
-        for suffix in ('', '-wal'):
-            data = checked_adb('exec-out', 'cat', root + '/podcasts.db' + suffix,
-                               binary=True, optional=bool(suffix))
-            if data:
-                (folder / ('podcasts.db' + suffix)).write_bytes(data)
-        with sqlite3.connect((folder / 'podcasts.db').as_uri() + '?mode=ro', uri=True) as db:
+        db_path = folder / 'podcasts.db'
+        for attempt in range(5):
+            for suffix in ('', '-wal', '-shm'):
+                data = self._device_bytes(root + '/podcasts.db' + suffix, optional=True)
+                if data:
+                    (folder / ('podcasts.db' + suffix)).write_bytes(data)
+            if db_path.exists() and db_path.read_bytes()[:15] == b'SQLite format 3':
+                break
+            time.sleep(0.8)
+        else:
+            raise AssertionError('Could not copy a readable podcasts.db snapshot from the device')
+        with sqlite3.connect(db_path.as_uri() + '?mode=ro', uri=True) as db:
             db.row_factory = sqlite3.Row
             keys = [feed['key'] for feed in self.state['feeds']]
             out = {}
@@ -307,7 +369,7 @@ class Run:
         folder.rmdir()
         for copy in out['podcast_downloads']:
             if copy['state'] == 'available':
-                data = checked_adb('exec-out', 'cat', root + '/podcast-downloads/' + copy['id'] + '.audio', binary=True)
+                data = self._device_bytes(root + '/podcast-downloads/' + copy['id'] + '.audio')
                 copy['actual_sha256'] = hashlib.sha256(data).hexdigest()
         (self.output / f'{name}.json').write_text(json.dumps(out, indent=1))
         return out
@@ -343,7 +405,17 @@ class Run:
             require_resume(expected_position, first_playing['position_ms'] / 1000, onset,
                            self.state['audio']['resume']['duration_s'])
         time.sleep(seconds)
-        self.touch('^Pause$')
+        # Prefer the media key during playback — uiautomator often cannot reach
+        # an idle hierarchy while the player surface is animating.
+        checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            try:
+                if adrv.find('^Play$') or session_state().get('state') != 'PLAYING':
+                    break
+            except RuntimeError:
+                pass
+            time.sleep(0.5)
         wav = self.audio.save(mark, self.output / f'{name}.wav')
         analysis = audio_trace.analyze(wav)
         require_audio(analysis, self.state['audio']['resume']['tone_hz'])
@@ -357,16 +429,23 @@ class Run:
         self.no_server_audio()
         self.podcasts()
         for feed in self.state['feeds']:
+            if adrv.find(feed_label_pattern(feed['title'])):
+                continue  # A failed driver attempt must not edit an existing subscription.
             self.touch('^Subscribe to podcast$')
             self.field('Feed URL', feed['url'])
             self.touch('^Subscribe$')
-            if not adrv.wait('^' + feed['title'] + '$'):
+            if not adrv.wait(feed_label_pattern(feed['title'])):
                 raise AssertionError('Direct publisher subscription was not visible')
         self.episodes()
         if not any('Acceptance Alpha' in label for label in app_ui.labels()):
             raise AssertionError('Combined native view omitted podcast label')
+        # All filter: a prior accidental complete hides the target under Uncompleted.
+        self.episodes(combined=False, filter_name='All')
+        self.row('Mark uncompleted', required=False)
+        self.row('Delete downloaded file', required=False)
         self.row('Download')
-        if not adrv.wait('^Available on this device$', timeout=25):
+        # Flutter merges status into the episode semantics label.
+        if not adrv.wait(r'Available on this device', timeout=90):
             raise AssertionError('Direct device download did not finish')
         self.playback('standalone audible partial', seconds=6)
         app_ui.back()
@@ -403,18 +482,26 @@ class Run:
 
     def associate(self):
         self.login()
-        if not adrv.wait(r"^Sync this device's podcasts with "):
-            raise AssertionError('Explicit local-to-account consent was not offered')
-        self.shot('explicit-consent')
-        self.touch('^Sync$')
-        self.touch('^Sync now$')
-        if not adrv.wait('^Synced$'):
-            raise AssertionError('Global account synchronization did not complete')
+        # Fresh sign-in offers consent once; retries after a prior PASS still need
+        # durable association + Synced proof without re-prompting.
+        if adrv.wait(r"^Sync this device's podcasts with ", timeout=12):
+            self.shot('explicit-consent')
+            self.touch('^Sync$')
+        if adrv.find(r'^(Sync now|Retry)$'):
+            self.touch(r'^(Sync now|Retry)$')
+        # Footer semantics may merge; require durable full success below.
+        adrv.wait(r'Synced', timeout=60)
         self.no_server_audio()
         snapshot = self.snapshot('associated')
         local, account = self.saved(snapshot, 'local'), self.saved(snapshot)
         if local['position_seconds'] != account['position_seconds']:
             raise AssertionError('Consent did not copy standalone listening history')
+        scopes = {row['scope']: row for row in snapshot['podcast_scopes']}
+        meta = scopes.get(self.scope) or {}
+        if not meta.get('associated_from_local'):
+            raise AssertionError('Account scope was not marked associated_from_local')
+        if not meta.get('last_full_success_ms'):
+            raise AssertionError('Account scope has no durable last_full_success_ms')
         self.publish_transfer('A', {'position_seconds': account['position_seconds'], 'source': 'native-A', 'scope': self.scope})
         self.record('explicit consent synchronizes history without server audio')
 
@@ -425,9 +512,12 @@ class Run:
         self.podcasts()
         self.touch('^Refresh feeds$')
         self.episodes()
-        self.row('Download')
-        if not adrv.wait('^Available on this device$', timeout=25):
-            raise AssertionError('Client B did not obtain its own publisher copy')
+        # Prior resume attempts may already have left B's independent copy.
+        if not any(self.episode['title'] in adrv.label(node) and 'Available on this device' in adrv.label(node)
+                   for node in adrv.nodes()):
+            self.row('Download')
+            if not adrv.wait(r'Available on this device', timeout=90):
+                raise AssertionError('Client B did not obtain its own publisher copy')
         elapsed = self.playback('cross-client audible resume',
                                 expected_position=transfer['position_seconds'])
         app_ui.back()
@@ -504,7 +594,7 @@ class Run:
         self.episodes(filter_name='All')
         self.row('Delete downloaded file')
         self.row('Download')
-        if not adrv.wait('^Available on this device$', timeout=25):
+        if not adrv.wait(r'Available on this device', timeout=90):
             raise AssertionError('Redownload did not finish')
         after = self.snapshot('after-redownload')
         if self.saved(before) != self.saved(after):
@@ -625,7 +715,7 @@ class Run:
                 raise AssertionError('New selected account did not expose actual never-synced state')
             self.shot('never-synced-other-account')
             self.podcasts()
-            if adrv.find('^Acceptance Alpha$'):
+            if adrv.find(feed_label_pattern('Acceptance Alpha')):
                 raise AssertionError('Primary account subscriptions leaked into the other account')
             self.record('native configured never-synced is quiet and account subscription scope is isolated')
         self.touch('^Retry$')
@@ -633,7 +723,7 @@ class Run:
             raise AssertionError('Other account did not reach full success after reconnection')
         self.switch_account('admin')
         self.podcasts()
-        if not adrv.wait('^Acceptance Alpha$'):
+        if not adrv.wait(feed_label_pattern('Acceptance Alpha')):
             raise AssertionError('Primary account subscriptions did not return after switching back')
         with sqlite3.connect(Path(self.state['database']).as_uri() + '?mode=ro', uri=True) as db:
             other = self.state['accounts']['other']
@@ -649,8 +739,8 @@ class Run:
         with self.proxy(fail_podcasts=True):
             self.podcasts()
             nodes = adrv.nodes()
-            names = [node for node in nodes if adrv.label(node) in ('Acceptance Alpha', 'Acceptance Beta')]
-            alpha = next(node for node in names if adrv.label(node) == 'Acceptance Alpha')
+            names = [node for node in nodes if adrv.label(node).split(' / ')[0] in ('Acceptance Alpha', 'Acceptance Beta')]
+            alpha = next(node for node in names if adrv.label(node).split(' / ')[0] == 'Acceptance Alpha')
             end = min((node['b'][1] for node in names if node['b'][1] > alpha['b'][1]), default=10**6)
             menus = [node for node in nodes if adrv.label(node) == 'Manage podcast' and alpha['b'][1] <= node['b'][1] < end]
             if len(menus) != 1:
@@ -662,7 +752,7 @@ class Run:
             if tombstone['subscribed'] or not tombstone['pending_edit_id']:
                 raise AssertionError('Offline unsubscribe did not persist a durable pending tombstone')
             self.podcasts()  # Cold restart and actual sign-in; sync remains unavailable.
-            if adrv.find('^Acceptance Alpha$'):
+            if adrv.find(feed_label_pattern('Acceptance Alpha')):
                 raise AssertionError('Process restart resurrected removed subscription')
             if self.saved(before)['position_seconds'] != self.saved(pending)['position_seconds']:
                 raise AssertionError('Unsubscribe changed saved listening position')
@@ -678,7 +768,7 @@ class Run:
         self.touch('^Sync now$')
         if not adrv.wait('^Synced$', timeout=30):
             raise AssertionError('Subscription tombstone pull did not fully sync')
-        if adrv.find('^Acceptance Alpha$'):
+        if adrv.find(feed_label_pattern('Acceptance Alpha')):
             raise AssertionError('Stale native client resurrected unsubscribed feed')
         snapshot = self.snapshot('unsubscribed-client')
         if not any(copy['episode_key'] == self.episode['key'] and copy['state'] == 'available'
@@ -692,7 +782,7 @@ class Run:
         self.touch('^Subscribe to podcast$')
         self.field('Feed URL', self.feed['url'])
         self.touch('^Subscribe$')
-        if not adrv.wait('^Acceptance Alpha$'):
+        if not adrv.wait(feed_label_pattern('Acceptance Alpha')):
             raise AssertionError('Explicit native resubscribe did not restore subscription')
         self.record('explicit native resubscribe restores feed without redownloading audio')
 

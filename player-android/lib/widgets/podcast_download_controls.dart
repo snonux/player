@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/podcast_library_provider.dart';
 import '../screens/audio_player_screen.dart';
+import '../services/podcast_downloads.dart';
 
 class PodcastDownloadControls extends ConsumerStatefulWidget {
   const PodcastDownloadControls(
@@ -23,6 +24,25 @@ class PodcastDownloadControlsState
     extends ConsumerState<PodcastDownloadControls> {
   bool busy = false;
   String? error;
+  String? _copyKey;
+  Future<Map<String, Object?>?>? _copy;
+
+  Future<Map<String, Object?>?> _copyFuture(PodcastDownloads downloads) {
+    final key = '${widget.feed}\x00${widget.episode['episode_key']}';
+    // Parent list rebuilds must not restart copy(); a fresh FutureBuilder
+    // future leaves Download disabled while connectionState stays waiting.
+    if (_copy == null || _copyKey != key) {
+      _copyKey = key;
+      _copy = downloads.copy(widget.feed, widget.episode['episode_key'] as String);
+    }
+    return _copy!;
+  }
+
+  void _refreshCopy() {
+    _copy = null;
+    _copyKey = null;
+  }
+
   Future<void> run(Future<void> Function() action) async {
     setState(() {
       busy = true;
@@ -36,7 +56,10 @@ class PodcastDownloadControlsState
             'Could not finish this action. Check publisher access, connection and device storage, then retry.');
       }
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        _refreshCopy();
+        setState(() => busy = false);
+      }
     }
   }
 
@@ -60,11 +83,18 @@ class PodcastDownloadControlsState
   Widget build(BuildContext context) {
     final downloads = ref.watch(podcastDownloadsProvider);
     final key = widget.episode['episode_key'] as String;
+    // Refresh only while this row owns an in-flight action. Unconditional
+    // clears on every list notify restarted copy() and greyed out Download.
+    ref.listen(podcastDownloadsProvider, (previous, next) {
+      if (!mounted || !busy) return;
+      setState(_refreshCopy);
+    });
     return FutureBuilder<Map<String, Object?>?>(
-        future: downloads.copy(widget.feed, key),
+        future: _copyFuture(downloads),
         builder: (context, snapshot) {
           final state = snapshot.data?['state'];
           final transferring = state == 'pending' || state == 'downloading';
+          final settled = snapshot.connectionState == ConnectionState.done;
           return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -82,7 +112,10 @@ class PodcastDownloadControlsState
                 Wrap(spacing: 8, children: [
                   if (transferring)
                     TextButton.icon(
-                        onPressed: downloads.cancel,
+                        onPressed: () {
+                          downloads.cancel();
+                          setState(_refreshCopy);
+                        },
                         icon: const Icon(Icons.close),
                         label: const Text('Cancel download'))
                   else if (state == 'available') ...[
@@ -108,10 +141,7 @@ class PodcastDownloadControlsState
                         label: const Text('Delete downloaded file')),
                   ] else
                     TextButton.icon(
-                        onPressed: busy ||
-                                !snapshot.hasData &&
-                                    snapshot.connectionState !=
-                                        ConnectionState.done
+                        onPressed: busy || !settled
                             ? null
                             : () =>
                                 run(() => downloads.download(widget.feed, key)),

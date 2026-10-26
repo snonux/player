@@ -66,7 +66,10 @@ class GlobalSyncCoordinator extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (state.scope != lease.scope) {
+    // Drop a prior account's success immediately on switch. First paint for a
+    // scope still waits for durable meta so we do not flash "Not synced yet".
+    final priorScope = state.scope;
+    if (priorScope != null && priorScope != lease.scope) {
       state = GlobalSyncState(scope: lease.scope);
       notifyListeners();
     }
@@ -116,7 +119,10 @@ class GlobalSyncCoordinator extends ChangeNotifier {
   }
 
   Future<void> syncNow({bool explicit = true}) {
-    if (_disposed || _authBlockedScope == account()?.podcast.scope) {
+    if (_disposed) return Future.value();
+    final lease = account()?.podcast;
+    // Require a live account scope; do not treat null==null as auth-blocked.
+    if (lease == null || _authBlockedScope == lease.scope) {
       return Future.value();
     }
     if (_running != null) {
@@ -124,7 +130,6 @@ class GlobalSyncCoordinator extends ChangeNotifier {
       _explicitAgain = _explicitAgain || explicit;
       return _running!;
     }
-    final lease = account()?.podcast;
     _running = _run(explicit).catchError((Object error) {
       if (_disposed) return;
       if (lease == null || !lease.current()) return;

@@ -100,12 +100,21 @@ class _GlobalSyncChromeState extends ConsumerState<GlobalSyncChrome> {
   @override
   Widget build(BuildContext context) {
     final sync = ref.watch(globalSyncCoordinatorProvider);
-    return Column(children: [
-      Expanded(child: PodcastAssociationHost(child: widget.child)),
-      GlobalSyncStatus(
-          state: sync.state,
-          nowMs: DateTime.now().millisecondsSinceEpoch,
-          onSync: () => unawaited(sync.syncNow())),
-    ]);
+    // Keep footer semantics off the library subtree — a merged Column node
+    // otherwise reports "Not synced yet"/"Synced" over the full screen.
+    return Semantics(
+      explicitChildNodes: true,
+      child: Column(children: [
+        Expanded(child: PodcastAssociationHost(child: widget.child)),
+        Semantics(
+          container: true,
+          explicitChildNodes: true,
+          child: GlobalSyncStatus(
+              state: sync.state,
+              nowMs: DateTime.now().millisecondsSinceEpoch,
+              onSync: () => unawaited(sync.syncNow())),
+        ),
+      ]),
+    );
   }
 }

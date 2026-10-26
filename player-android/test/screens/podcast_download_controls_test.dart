@@ -122,4 +122,29 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Podcasts on this device'), findsOneWidget);
   });
+
+  testWidgets(
+      'parent download notifyListeners does not leave Download disabled',
+      (tester) async {
+    final repository = _Repository();
+    final downloads = _Downloads(repository);
+    downloads.state = 'missing';
+    await tester.pumpWidget(ProviderScope(overrides: [
+      podcastRepositoryProvider.overrideWithValue(repository),
+      podcastScopeProvider.overrideWith((ref) async => 'local'),
+      podcastDownloadsProvider.overrideWith((ref) => downloads),
+    ], child: const MaterialApp(home: StandalonePodcastsScreen())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Podcast'));
+    await tester.pumpAndSettle();
+    final download = find.widgetWithText(TextButton, 'Download');
+    expect(tester.widget<TextButton>(download).onPressed, isNotNull);
+    // Spurious provider notifies must not restart copy() into a permanent
+    // waiting FutureBuilder that greys out Download.
+    downloads.notifyListeners();
+    await tester.pump();
+    downloads.notifyListeners();
+    await tester.pump();
+    expect(tester.widget<TextButton>(download).onPressed, isNotNull);
+  });
 }

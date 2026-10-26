@@ -30,38 +30,49 @@ def _ui_command(*args):
 
 def nodes():
     """Read one fresh complete screen, or raise before selectors can use it."""
-    remote = f"/sdcard/adrv-{uuid.uuid4().hex}.xml"
-    try:
-        dump = _ui_command("shell", "uiautomator", "dump", remote)
-        marker = f"UI hierchary dumped to: {remote}"
-        if (marker not in dump.stdout.decode(errors="replace").splitlines()
-                or b"ERROR" in dump.stdout.upper() or b"ERROR" in dump.stderr.upper()):
-            raise RuntimeError("Fresh UI dump failed: " + _ui_diagnostic(dump))
-        output = _ui_command("exec-out", "cat", remote)
+    # Playback/animations often make uiautomator report "could not get idle state".
+    last_error = None
+    for attempt in range(6):
+        remote = f"/sdcard/adrv-{uuid.uuid4().hex}.xml"
         try:
-            root = ET.fromstring(output.stdout)
-            if root.tag != "hierarchy":
-                raise ValueError("expected hierarchy root")
-            out = []
-            for node in root.iter("node"):
-                g = node.attrib.__getitem__
-                bounds = re.fullmatch(r"\[([+-]?\d+),([+-]?\d+)\]\[([+-]?\d+),([+-]?\d+)\]", g("bounds"))
-                if bounds is None:
-                    raise ValueError(f"invalid node bounds: {g('bounds')!r}")
-                out.append(dict(text=g("text"), desc=g("content-desc"), cls=g("class").split(".")[-1],
-                                b=[int(v) for v in bounds.groups()], click=g("clickable") == "true",
-                                checked=g("checked"), sel=g("selected"), focused=g("focused")))
-            return out
-        except (ET.ParseError, ValueError, KeyError) as error:
-            raise RuntimeError(f"Invalid fresh UI dump: {error}; " + _ui_diagnostic(output)) from error
-    finally:
-        primary = sys.exc_info()[1]
-        try:
-            _ui_command("shell", "rm", "-f", remote)
-        except RuntimeError as error:
-            if primary is None:
-                raise
-            print(f"UI dump cleanup also failed: {error}", file=sys.stderr)
+            dump = _ui_command("shell", "uiautomator", "dump", remote)
+            marker = f"UI hierchary dumped to: {remote}"
+            text_out = dump.stdout.decode(errors="replace")
+            text_err = dump.stderr.decode(errors="replace")
+            idle = "could not get idle state" in text_err.lower()
+            if (marker not in text_out.splitlines()
+                    or b"ERROR" in dump.stdout.upper() or b"ERROR" in dump.stderr.upper()):
+                last_error = RuntimeError("Fresh UI dump failed: " + _ui_diagnostic(dump))
+                if idle and attempt < 5:
+                    time.sleep(0.6 + attempt * 0.3)
+                    continue
+                raise last_error
+            output = _ui_command("exec-out", "cat", remote)
+            try:
+                root = ET.fromstring(output.stdout)
+                if root.tag != "hierarchy":
+                    raise ValueError("expected hierarchy root")
+                out = []
+                for node in root.iter("node"):
+                    g = node.attrib.__getitem__
+                    bounds = re.fullmatch(r"\[([+-]?\d+),([+-]?\d+)\]\[([+-]?\d+),([+-]?\d+)\]", g("bounds"))
+                    if bounds is None:
+                        raise ValueError(f"invalid node bounds: {g('bounds')!r}")
+                    out.append(dict(text=g("text"), desc=g("content-desc"), cls=g("class").split(".")[-1],
+                                    b=[int(v) for v in bounds.groups()], click=g("clickable") == "true",
+                                    checked=g("checked"), sel=g("selected"), focused=g("focused")))
+                return out
+            except (ET.ParseError, ValueError, KeyError) as error:
+                raise RuntimeError(f"Invalid fresh UI dump: {error}; " + _ui_diagnostic(output)) from error
+        finally:
+            primary = sys.exc_info()[1]
+            try:
+                _ui_command("shell", "rm", "-f", remote)
+            except RuntimeError as error:
+                if primary is None and last_error is None:
+                    raise
+                print(f"UI dump cleanup also failed: {error}", file=sys.stderr)
+    raise last_error or RuntimeError("Fresh UI dump failed after retries")
 
 def label(n): return (n["desc"] or n["text"]).replace("\n", " / ")
 
@@ -95,8 +106,10 @@ def tap(pat, cls=None, nth=0, timeout=15):
     return False
 
 def type_text(s):
-    # `input text` needs shell escaping; %s is its encoding for a space.
-    esc = "".join("%s" if c == " " else ("\\" + c if c in "\\'\"`$&|;<>()*?!#~{}[]" else c) for c in s)
+    # `adb shell` joins args into a device sh -c line. Escape shell metacharacters
+    # and URL punctuation so schemes like http:// survive intact (%s = space).
+    special = "\\'\"`$&|;<>()*?!#~{}[]:/"
+    esc = "".join("%s" if c == " " else ("\\" + c if c in special else c) for c in s)
     adb("shell", "input", "text", esc)
 
 def shot(name):

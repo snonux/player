@@ -3,14 +3,21 @@ from unittest.mock import MagicMock, patch
 import tempfile
 from pathlib import Path
 import json
+import re
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 from contextlib import closing
-from podcast_sync_e2e import require_audio, require_resume, register_installation, select_row_action, PlayerProxy, Run
+from podcast_sync_e2e import require_audio, require_resume, register_installation, select_row_action, PlayerProxy, Run, feed_label_pattern
 
 
 class PodcastNativeOracleTests(unittest.TestCase):
+    def test_feed_title_boundary_accepts_actual_merged_url_but_not_another_show(self):
+        pattern = feed_label_pattern('Acceptance Alpha')
+        self.assertIsNotNone(re.match(pattern, 'Acceptance Alpha / http://127.0.0.1:18776/feeds/alpha.xml'))
+        self.assertIsNotNone(re.match(pattern, 'Acceptance Alpha'))
+        self.assertIsNone(re.match(pattern, 'Acceptance Alphabet / another URL'))
+
     def run_without_device(self, directory):
         run = object.__new__(Run)
         run.directory = run.output = Path(directory)
@@ -96,12 +103,20 @@ class PodcastNativeOracleTests(unittest.TestCase):
         register_installation(ledger, 'B', {'serial': 'emulator-5556', 'android_id': 'two', 'installed': 'second'})
 
     def test_native_row_actions_must_belong_to_exact_episode(self):
-        def node(text, top):
-            return {'desc': '', 'text': text, 'b': [0, top, 500, top + 30]}
+        def node(text, top, click=True):
+            return {'desc': '', 'text': text, 'b': [0, top, 500, top + 30], 'click': click}
         first = node('Download', 150)
         nodes = [node('Alpha Episode 001', 100), first,
                  node('Alpha Episode 002', 200), node('Download', 250)]
         self.assertIs(select_row_action(nodes, 'Alpha Episode 001', 'Download'), first)
+        # Merged list semantics prefix progress, e.g. "0, Alpha Episode 001 / …".
+        prefixed = [node('0, Alpha Episode 001 / Acceptance Alpha / Unplayed', 100), first,
+                    node('0, Alpha Episode 002 / Acceptance Alpha / Unplayed', 200), node('Download', 250)]
+        self.assertIs(select_row_action(prefixed, 'Alpha Episode 001', 'Download'), first)
+        # FutureBuilder leaves Download non-clickable until copy() settles.
+        with self.assertRaises(AssertionError):
+            select_row_action([node('Alpha Episode 001', 100), node('Download', 150, click=False)],
+                              'Alpha Episode 001', 'Download')
         with self.assertRaises(AssertionError):
             select_row_action(nodes + [node('Download', 170)], 'Alpha Episode 001', 'Download')
         with self.assertRaises(AssertionError):
