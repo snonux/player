@@ -171,12 +171,12 @@ Firefox. Passing journeys so far:
 
 | Platform | Passing stages |
 | --- | --- |
-| Android A | standalone direct publisher download/playback without server audio, explicit account association, observe completed and uncompleted, local delete/redownload, feed-folder and combined-view page 2; account isolation and quiet never-synced feedback; bounded pre-playback sync and late-response stability; controlled 48-hour stale feedback and full retry; genuine sync `401` during audible playback; ordinary music progress through partial failure, process death, and global retry; offline unsubscribe tombstone through restart and reconnect; explicit resubscribe; held scoped response across account logout; failed completion sync with audible playback of the next downloaded source; selected-server isolation of pending edits and sync status; publisher download cancellation, error, retry, and direct redownload |
+| Android A | standalone direct publisher download/playback without server audio, explicit account association, observe completed and uncompleted, local delete/redownload, feed-folder and combined-view page 2; account isolation and quiet never-synced feedback; bounded pre-playback sync and late-response stability; controlled 48-hour stale feedback and full retry; genuine sync `401` during audible playback; ordinary music progress through partial failure, process death, and global retry; offline unsubscribe tombstone through restart and reconnect; explicit resubscribe; held scoped response across account logout; failed completion sync with audible playback of the next downloaded source; selected-server isolation of pending edits and sync status; publisher download cancellation, error, retry, and direct redownload; paused seek of a downloaded episode and fresh audible playback with server and publisher offline |
 | Android B | cross-client audible resume and independent download, natural-end completion, observe completed, manual uncompletion, local delete/redownload; observe A's unsubscribe while retaining its own copy and history; explicit resubscribe without redownload |
 | Chrome and Firefox | subscription catalog, shared-position audible resume, completion and uncompletion visibility, shared-server copy delete/redownload; non-podcast progress on global Retry, partial failure and exact 48-hour/never-synced feedback; bounded pre-playback fallback and late-response stability; conflicting subscription tombstones and observation of A's unsubscribe; genuine sync `401`, quiet sign-in, and narrow light/dark focus and target checks; visible account switch with isolated history and return to the original catalog; newer uncompletion and independent listening position survive a delayed older completion reply |
 
-These stages establish the main four-client flow, including separate Android
-files and retained history. They do not yet prove every acceptance boundary.
+These stages cover all nine listed four-client acceptance journeys, including
+separate Android files and retained history.
 For example, the passing native runs include
 `evidence/native-A/20261026T113434.160264Z-standalone/results.json`,
 `evidence/native-A/20261026T120538.859369Z-associate/results.json`,
@@ -213,13 +213,16 @@ conflicts passed in
 The native A server-switch and download-negative results are in
 `evidence/native-A/20261026T174951.738000Z-server-switch/results.json` and
 `evidence/native-A/20261026T175547.780939Z-download-negatives/results.json`.
+The installed A offline-seek result is in
+`evidence/native-A/20261026T183407.434949Z-offline-seek/results.json`:
+the paused touch seek reached a stable 7.441-second position without audible
+output, and Play produced a fresh audible tone from the downloaded publisher
+copy while both hosts were offline.
 
-Offline seek still needs an installed-device result. The full isolated Flutter
-suite passed 1,748 tests, Flutter analysis found no issues, and serial
-`mage test` and `mage build` passed. An earlier concurrent broad run exceeded
-timing budgets in five SVG rendering tests and two Go checks; the SVG tests
-and both named Go checks passed when rerun alone. Record the offline-seek
-result before closing `5i3`.
+The full isolated Flutter suite passed 1,748 tests, Flutter analysis found no
+issues, and serial `mage test` and `mage build` passed. An earlier concurrent
+broad run exceeded timing budgets in five SVG rendering tests and two Go
+checks; the SVG tests and both named Go checks passed when rerun alone.
 
 No release is requested by this plan. A later release must use the shared
 version/bump workflow, build both components, and update the Android F-Droid
