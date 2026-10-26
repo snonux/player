@@ -804,7 +804,7 @@ class Run:
     def unsubscribe(self):
         before = self.snapshot('before-unsubscribe')
         server_copies = podcast_media(self.state['database'])
-        with self.proxy(fail_podcasts=True):
+        with self.proxy(fail_podcasts=True) as proxy:
             self.podcasts()
             nodes = adrv.nodes()
             names = [node for node in nodes if adrv.label(node).split(' / ')[0] in ('Acceptance Alpha', 'Acceptance Beta')]
@@ -825,9 +825,21 @@ class Run:
             if self.saved(before)['position_seconds'] != self.saved(pending)['position_seconds']:
                 raise AssertionError('Unsubscribe changed saved listening position')
             self.record('offline native unsubscribe tombstone survives process restart without history loss')
-        self.touch('^Retry$')
-        if not adrv.wait('^Synced$', timeout=30):
-            raise AssertionError('Reconnected global retry did not deliver native tombstone')
+            # Restore the response while the selected device still talks to
+            # this controlled proxy. Swapping the reverse mapping first can
+            # trigger an automatic sync and replace Retry before the tap.
+            proxy.fail_podcasts = False
+            self.touch(r'^(Retry|Sync now)$')
+            if not adrv.wait('^Synced$', timeout=30):
+                raise AssertionError('Reconnected global retry did not deliver native tombstone')
+            if not any(item.get('status') == 200 and item['path'].endswith('/podcasts/sync')
+                       for item in proxy.trace):
+                raise AssertionError('Reconnected retry did not receive a successful podcast sync response')
+        with sqlite3.connect(Path(self.state['database']).as_uri() + '?mode=ro', uri=True) as db:
+            remote = db.execute('SELECT subscribed FROM podcast_subscriptions WHERE user_id=? AND feed_key=?',
+                (self.state['accounts']['admin'], self.feed['key'])).fetchone()
+        if remote != (0,):
+            raise AssertionError('Reconnected native tombstone did not reach the selected account')
         if podcast_media(self.state['database']) != server_copies:
             raise AssertionError('Subscription removal changed shared server downloads')
 
