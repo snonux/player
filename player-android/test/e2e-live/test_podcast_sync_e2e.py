@@ -29,6 +29,7 @@ class PodcastNativeOracleTests(unittest.TestCase):
         run.audio.save.return_value = run.output / 'not-platform-proof.wav'
         for name in ('login', 'touch', 'podcasts', 'episodes', 'row', 'no_server_audio', 'publish_transfer', 'record'):
             setattr(run, name, MagicMock())
+        run.episode_visible = MagicMock(return_value=True)
         return run
 
     def test_production_resume_checks_first_native_position_despite_stale_saved_history(self):
@@ -40,8 +41,14 @@ class PodcastNativeOracleTests(unittest.TestCase):
             analysis = {'audible_s': 3, 'segments': [{'duration_s': 3, 'tone_hz': 441}]}
             # Exercise Run.resume -> unmocked Run.playback, not only the scalar
             # helper: a zero player anchor with stale saved 12 must fail.
+            available = [{'desc': 'Alpha Episode 001 / Available on this device', 'text': '',
+                          'cls': 'Button', 'b': [0, 0, 1, 1], 'click': True}]
             with patch('podcast_sync_e2e.adrv.wait', return_value=True), \
+                    patch('podcast_sync_e2e.adrv.nodes', return_value=available), \
+                    patch('podcast_sync_e2e.adrv.label',
+                          side_effect=lambda n: (n.get('desc') or n.get('text') or '')), \
                     patch('podcast_sync_e2e.app_ui.back'), \
+                    patch('podcast_sync_e2e.checked_adb'), \
                     patch('podcast_sync_e2e.time.sleep'), \
                     patch('podcast_sync_e2e.audio_trace.analyze', return_value=analysis), \
                     patch('podcast_sync_e2e.session_state', return_value={
@@ -50,7 +57,11 @@ class PodcastNativeOracleTests(unittest.TestCase):
                     run.resume()
                 run.snapshot.assert_not_called()
             with patch('podcast_sync_e2e.adrv.wait', return_value=True), \
+                    patch('podcast_sync_e2e.adrv.nodes', return_value=available), \
+                    patch('podcast_sync_e2e.adrv.label',
+                          side_effect=lambda n: (n.get('desc') or n.get('text') or '')), \
                     patch('podcast_sync_e2e.app_ui.back'), \
+                    patch('podcast_sync_e2e.checked_adb'), \
                     patch('podcast_sync_e2e.time.sleep'), \
                     patch('podcast_sync_e2e.audio_trace.analyze', return_value=analysis), \
                     patch('podcast_sync_e2e.session_state', return_value={
@@ -119,6 +130,14 @@ class PodcastNativeOracleTests(unittest.TestCase):
                               'Alpha Episode 001', 'Download')
         with self.assertRaises(AssertionError):
             select_row_action(nodes + [node('Download', 170)], 'Alpha Episode 001', 'Download')
+        # In-progress rows expose Resume and Play from beginning together.
+        resume = node('Resume', 140)
+        restart = node('Play from beginning', 160)
+        dual = [node('Alpha Episode 001', 100), resume, restart,
+                node('Alpha Episode 002', 200), node('Download', 250)]
+        self.assertIs(
+            select_row_action(dual, 'Alpha Episode 001', r'(?:Play|Resume|Play from beginning)'),
+            resume)
         with self.assertRaises(AssertionError):
             select_row_action(nodes, 'Beta Episode 001', 'Download')
 

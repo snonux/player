@@ -161,8 +161,16 @@ def select_row_action(nodes, title, action):
     actions = [node for node in nodes if re.fullmatch(action, adrv.label(node))
                and top <= node['b'][1] < bottom and node['b'][3] > node['b'][1]
                and node['click']]
-    if len(actions) != 1:
+    if not actions:
         raise AssertionError('Expected exactly one visible clickable action for the target episode')
+    if len(actions) > 1:
+        # Alternation (Play|Resume|Play from beginning) matches sibling controls;
+        # prefer resume/continue over restart. Duplicate identical labels stay an error.
+        labels = {adrv.label(node) for node in actions}
+        if len(labels) == 1:
+            raise AssertionError('Expected exactly one visible clickable action for the target episode')
+        rank = {'Resume': 0, 'Play': 1, 'Play from beginning': 2}
+        actions.sort(key=lambda node: (rank.get(adrv.label(node), 99), node['b'][1]))
     return actions[0]
 
 
@@ -234,7 +242,12 @@ class Run:
             labels = app_ui.labels()
             if 'On this device' in labels or 'Open navigation menu' in labels or 'Welcome back' in labels:
                 return
-            # Cold start / process restart can land on the server chooser.
+            # Cold start can land on the server chooser. Prefer the fixture
+            # origin so account stages stay out of empty local-only mode.
+            origin = self.state.get('origin')
+            if origin and adrv.find('^' + re.escape(origin) + '$'):
+                self.touch('^' + re.escape(origin) + '$')
+                continue
             if adrv.find(r'^Use files on this device$'):
                 self.touch(r'^Use files on this device$')
                 continue
@@ -245,11 +258,14 @@ class Run:
         self.root()
         if adrv.find('^Welcome back$'):
             self.login()
-        if adrv.find('^Podcasts on this device$'):
-            self.touch('^Podcasts on this device$')
-        else:
+        # Account library exposes the drawer; local-only mode uses the home tile.
+        if adrv.find('^Open navigation menu$'):
             self.touch('^Open navigation menu$')
             self.touch('^Podcasts$')
+        elif adrv.find('^Podcasts on this device$'):
+            self.touch('^Podcasts on this device$')
+        else:
+            raise AssertionError('No podcasts entry from the established root')
         if not adrv.wait('^All podcast episodes$'):
             raise AssertionError('Podcasts destination not visible')
 
@@ -261,9 +277,6 @@ class Run:
             if len(chips) != 1 or not (chips[0]['sel'] == 'true' or chips[0]['checked'] == 'true'):
                 raise AssertionError('Fresh native episode view did not default to Uncompleted')
         self.touch('^' + filter_name + '$')
-        selected = [node for node in adrv.nodes() if adrv.label(node) == filter_name]
-        if not any(node.get('sel') == 'true' or node.get('checked') == 'true' for node in selected):
-            raise AssertionError(f'Episode filter {filter_name!r} did not become selected')
         selected = [node for node in adrv.nodes() if adrv.label(node) == filter_name]
         if not any(node.get('sel') == 'true' or node.get('checked') == 'true' for node in selected):
             raise AssertionError(f'Episode filter {filter_name!r} did not become selected')
@@ -534,13 +547,21 @@ class Run:
         self.publish_transfer('B', {'position_seconds': saved['position_seconds'], 'source': 'native-B', 'scope': self.scope})
         self.record('independent native B resumes shared state without server media', position_seconds=saved['position_seconds'])
 
+    def episode_visible(self):
+        pattern = r'(?:\d+,\s*)?' + re.escape(self.episode['title']) + r'(?:$| /)'
+        return any(re.match(pattern, adrv.label(node)) for node in adrv.nodes())
+
     def observe(self, completed):
-        self.episodes(filter_name='Completed' if completed else 'Uncompleted')
-        if not adrv.wait('^' + self.episode['title'] + '$'):
+        self.login()
+        if adrv.find(r'^(Sync now|Retry)$'):
+            self.touch(r'^(Sync now|Retry)$')
+            adrv.wait(r'Synced', timeout=60)
+        self.episodes(combined=False, filter_name='Completed' if completed else 'Uncompleted')
+        if not self.episode_visible():
             raise AssertionError('Expected synchronized episode missing from matching filter')
         self.shot('matching-filter')
         self.touch('^Uncompleted$' if completed else '^Completed$')
-        if any(self.episode['title'] == label.split(' / ')[0] for label in app_ui.labels()):
+        if self.episode_visible():
             raise AssertionError('Synchronized episode remained in opposite completion filter')
         self.record('completion filters reconcile', completed=completed)
         snapshot = self.snapshot('observed-independent-copy')
@@ -558,7 +579,7 @@ class Run:
         self.episodes(filter_name='Completed')
         self.row('Mark uncompleted')
         self.touch('^Uncompleted$')
-        if not adrv.wait('^' + self.episode['title'] + '$'):
+        if not self.episode_visible():
             raise AssertionError('Manual uncompletion did not return default visibility')
         after = self.saved(self.snapshot('after-manual-uncompletion'))
         if ((after['position_seconds'], after['position_ms']) !=
@@ -570,21 +591,43 @@ class Run:
                     before=before, after=after)
 
     def finish(self):
+        # Account library like resume: cold start must not settle in empty local mode.
         # Feed-scoped All: combined Uncompleted can be empty after other clients.
+        self.login()
         self.podcasts()
         self.touch('^Refresh feeds$')
+        if not adrv.wait(feed_label_pattern('Acceptance Alpha'), timeout=30):
+            raise AssertionError('Acceptance Alpha missing after Refresh in account podcasts')
         self.episodes(combined=False, filter_name='All')
         if not self.audio.available():
             raise AssertionError('Native output capture required')
+        # Resume near EOF seeks to a terminal position; podcast natural-end
+        # rejects that path. Restart from 0 so the decoder can complete.
         mark = self.audio.mark()
-        self.row(r'(?:Play|Resume|Play from beginning)')
+        self.row('Play from beginning')
         deadline = time.monotonic() + 90
         playing = False
+        terminal_stable = 0
+        last_terminal = None
         while time.monotonic() < deadline:
             state = session_state()
             playing = playing or state['state'] == 'PLAYING'
-            if playing and state['state'] in ('STOPPED', 'PAUSED') and (state['position_ms'] or 0) >= 59000:
+            pos = state['position_ms'] or 0
+            if not playing or pos < 59000:
+                terminal_stable = 0
+                last_terminal = None
+                time.sleep(.5)
+                continue
+            # Podcasts record automatic completion without stopping transport;
+            # music would advance/stop via the queue. Accept a stable terminal
+            # PLAYING sample or an explicit stop/pause at the real duration.
+            if state['state'] in ('STOPPED', 'PAUSED'):
                 break
+            if state['state'] == 'PLAYING':
+                terminal_stable = terminal_stable + 1 if pos == last_terminal else 1
+                last_terminal = pos
+                if terminal_stable >= 4:
+                    break
             time.sleep(.5)
         else:
             raise AssertionError('Native episode did not finish naturally within its real duration')
