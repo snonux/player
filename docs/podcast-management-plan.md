@@ -171,29 +171,38 @@ Firefox. Passing journeys so far:
 
 | Platform | Passing stages |
 | --- | --- |
-| Android A | standalone direct publisher download/playback without server audio, explicit account association, observe completed and uncompleted, local delete/redownload |
+| Android A | standalone direct publisher download/playback without server audio, explicit account association, observe completed and uncompleted, local delete/redownload, feed-folder and combined-view page 2 |
 | Android B | cross-client audible resume and independent download, natural-end completion, observe completed, manual uncompletion, local delete/redownload |
-| Chrome and Firefox | subscription catalog, shared-position audible resume, completion and uncompletion visibility, shared-server copy delete/redownload |
+| Chrome and Firefox | subscription catalog, shared-position audible resume, completion and uncompletion visibility, shared-server copy delete/redownload; non-podcast progress on global Retry, partial failure and exact 48-hour/never-synced feedback; bounded pre-playback fallback and late-response stability; conflicting subscription tombstones; genuine sync `401`, quiet sign-in, and narrow light/dark focus and target checks |
 
 These stages establish the main four-client flow, including separate Android
 files and retained history. They do not yet prove every acceptance boundary.
 For example, the passing native runs include
 `evidence/native-A/20261026T113434.160264Z-standalone/results.json`,
 `evidence/native-A/20261026T120538.859369Z-associate/results.json`,
+`evidence/native-A/20261026T143144.556471Z-browse/results.json`,
 `evidence/native-B/20261026T124041.654457Z-resume/results.json`, and
 `evidence/native-B/20261026T134658.547694Z-finish/results.json` under the
-fixture directory above. Browser runs are recorded separately under
-`evidence/chrome/` and `evidence/firefox/`; later attempts do not erase failed
+fixture directory above. The matching browser results are under
+`evidence/{chrome,firefox}/`; passing stage directories end in `feedback`,
+`boundaries`, `conflict`, and `auth-visual`. Later attempts do not erase failed
 attempts, so use each stage's passing `results.json` and associated captures.
-The native folder/combined pagination stage has a failed attempt and needs
-repair and rerun. Browser 48-hour feedback has failed in both browsers and is
-under investigation. Native pre-playback delay, non-podcast global progress,
-account isolation, offline tombstone/reconnect, quiet feedback and auth checks
-remain to run; browser delayed-response, conflicting-edit and unsubscribe
-checks also remain. Selected-server switching, a genuine browser 401, visual
-focus/contrast, native account switching during a held response, failed
-end-sync with next-source playback, and download cancel/seek/error negative
-journeys still need evidence. Record their results here before closing `5i3`.
+
+The native account-isolation journey proved a quiet never-synced state and
+separate subscriptions on the second account, but its full-sync footer stayed
+**Not synced yet** despite a server/database full-success record. A coordinator
+status race was repaired in commit `01c527b`; the installed app still needs a
+build with that repair and an actual rerun before the journey passes. Native
+pre-playback started audible output in 5.48 seconds, but the expected scoped
+sync request was absent, so bounded reconciliation and late-response safety
+are **not** verified by that attempt. Native non-podcast global progress,
+offline tombstone/restart/reconnect, quiet 48-hour and authentication feedback,
+and the second client's tombstone observation still need actual checks. Browser
+observation of the native unsubscribe remains pending, although browser-only
+conflicting tombstones passed. Selected-server switching, native account
+switching during a held response, failed end-sync with next-source playback,
+and download cancel/seek/error negative journeys still need evidence. Record
+their results here before closing `5i3`.
 
 No release is requested by this plan. A later release must use the shared
 version/bump workflow, build both components, and update the Android F-Droid
