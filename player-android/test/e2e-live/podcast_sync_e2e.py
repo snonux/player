@@ -333,6 +333,25 @@ def require_seek_jump(reset, target, title):
                              f'target_title={target.get("title")!r}')
 
 
+def wait_seek_jump(reset, title, timeout=12, reader=None):
+    """Wait for the media-session anchor to reflect the completed touch seek."""
+    reader = reader or session_state
+    deadline = time.monotonic() + timeout
+    samples = []
+    while True:
+        target = reader()
+        position = target.get('position_ms')
+        if not samples or samples[-1] != position:
+            samples.append(position)
+        try:
+            require_seek_jump(reset, target, title)
+            return target, samples
+        except AssertionError as error:
+            if time.monotonic() >= deadline:
+                raise AssertionError(f'{error}; sampled_positions_ms={samples}') from error
+            time.sleep(.2)
+
+
 def wait_seek_bar(timeout=12, max_percent=None):
     """The player route can appear after its media session starts playing."""
     deadline = time.monotonic() + timeout
@@ -1289,16 +1308,7 @@ class Run:
             start, y, target = seek_track_swipe(nodes, bar)
             checked_adb('shell', 'input', 'swipe', str(start), str(y),
                         str(target), str(y), '300')
-            deadline = time.monotonic() + 4
-            while time.monotonic() < deadline:
-                after_seek = session_state()
-                try:
-                    require_seek_jump(reset, after_seek, episode['title'])
-                    break
-                except AssertionError:
-                    time.sleep(.2)
-            else:
-                require_seek_jump(reset, after_seek, episode['title'])
+            after_seek, seek_samples = wait_seek_jump(reset, episode['title'])
             self.shot('offline-seek-paused')
             mark = self.audio.mark()
             checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PLAY')
@@ -1325,7 +1335,8 @@ class Run:
             self.record('native downloaded podcast seeks and stays audible with both hosts offline',
                         initial_position_ms=initial.get('position_ms'),
                         reset_position_ms=reset['position_ms'],
-                        seek_position_ms=after_seek['position_ms'])
+                        seek_position_ms=after_seek['position_ms'],
+                        seek_samples_ms=seek_samples)
         finally:
             for mapping, original in selected.items():
                 checked_adb('reverse', mapping, original)

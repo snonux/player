@@ -14,7 +14,7 @@ from podcast_sync_e2e import (require_audio, require_resume, register_installati
                               select_row_action, PlayerProxy, PublisherProxy, Run,
                               feed_label_pattern, require_publisher_response,
                               require_download_state, require_seek_jump, seek_bar_node,
-                              seek_track_swipe, wait_seek_bar)
+                              seek_track_swipe, wait_seek_bar, wait_seek_jump)
 
 
 class PodcastNativeOracleTests(unittest.TestCase):
@@ -195,6 +195,14 @@ class PodcastNativeOracleTests(unittest.TestCase):
         reset = {'title': title, 'position_ms': 240}
         target = {'title': title, 'position_ms': 7456}
         require_seek_jump(reset, target, title)
+        states = iter([{'title': title, 'position_ms': 4217}, target])
+        with patch('podcast_sync_e2e.time.sleep'):
+            observed, samples = wait_seek_jump(reset, title, reader=lambda: next(states))
+        self.assertEqual(observed, target)
+        self.assertEqual(samples, [4217, 7456])
+        with self.assertRaisesRegex(AssertionError, r'sampled_positions_ms=\[4217\]'):
+            wait_seek_jump(reset, title, timeout=0,
+                           reader=lambda: {'title': title, 'position_ms': 4217})
         for start, end in ((7456, 7456), (2000, 7456), (240, 4000),
                            (240, 11000)):
             with self.assertRaisesRegex(AssertionError, 'reset=.*target='):
