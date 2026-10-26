@@ -183,6 +183,20 @@ def select_row_action(nodes, title, action):
     return actions[0]
 
 
+def episode_viewport_bottom(nodes):
+    """The fixed sync footer covers episode controls exposed in semantics."""
+    screen_bottom = max((node['b'][3] for node in nodes if node['cls'] == 'FrameLayout'
+                         and node['b'][1] == 0), default=max(node['b'][3] for node in nodes))
+    footer = [node['b'][1] for node in nodes if node['click']
+              and adrv.label(node) in ('Sync now', 'Retry')
+              and node['b'][1] >= screen_bottom * .8]
+    return max(footer) if footer else None
+
+
+def action_above_footer(node, bottom):
+    return bottom is None or node['b'][3] <= bottom - 8
+
+
 class Run:
     def __init__(self, args):
         self.args = args
@@ -294,13 +308,21 @@ class Run:
         title = title or self.episode['title']
         for _ in range(80):
             nodes = adrv.nodes()
+            bottom = episode_viewport_bottom(nodes)
             try:
                 target = select_row_action(nodes, title, action)
+                if not action_above_footer(target, bottom):
+                    app_ui.swipe()
+                    continue
                 self.shot(f'row-{len(list(self.output.glob("*.png"))):03}')
                 adrv.tap_node(target)
                 return True
             except AssertionError:
                 if any(title in adrv.label(node) for node in nodes):
+                    titles = [node for node in nodes if episode_title_label(node) == title]
+                    if bottom is not None and any(node['b'][1] > bottom * .6 for node in titles):
+                        app_ui.swipe()
+                        continue
                     # Optional cleanup: title visible without the action means absent.
                     if not required:
                         return False
@@ -324,10 +346,18 @@ class Run:
     def wait_downloaded_row(self, title, timeout=90):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            nodes = adrv.nodes()
+            bottom = episode_viewport_bottom(nodes)
             try:
-                select_row_action(adrv.nodes(), title, 'Delete downloaded file')
-                return
+                action = select_row_action(nodes, title, 'Delete downloaded file')
+                if action_above_footer(action, bottom):
+                    return
             except AssertionError:
+                pass
+            titles = [node for node in nodes if episode_title_label(node) == title]
+            if bottom is not None and any(node['b'][1] > bottom * .6 for node in titles):
+                app_ui.swipe()
+            else:
                 time.sleep(.5)
         raise AssertionError(f'Device copy for {title} did not become available')
 

@@ -10,7 +10,8 @@ import threading
 from contextlib import closing
 from contextlib import contextmanager
 from types import SimpleNamespace
-from podcast_sync_e2e import require_audio, require_resume, register_installation, select_row_action, PlayerProxy, Run, feed_label_pattern
+from podcast_sync_e2e import (require_audio, require_resume, register_installation,
+                              select_row_action, PlayerProxy, Run, feed_label_pattern)
 
 
 class PodcastNativeOracleTests(unittest.TestCase):
@@ -147,6 +148,40 @@ class PodcastNativeOracleTests(unittest.TestCase):
             resume)
         with self.assertRaises(AssertionError):
             select_row_action(nodes, 'Beta Episode 001', 'Download')
+
+    def test_clipped_episode_action_scrolls_above_fixed_sync_footer_before_tap(self):
+        def node(text, top, bottom, click=True):
+            return {'desc': text, 'text': '', 'cls': 'Button',
+                    'b': [0, top, 500, bottom], 'click': click}
+        footer = node('Sync now', 2011, 2143)
+        clipped = node('Download', 2100, 2230)
+        visible = node('Download', 900, 1030)
+        screens = [
+            [node('Beta Episode 002', 1600, 1700), clipped, footer],
+            [node('Beta Episode 002', 500, 600), visible, footer],
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            run = self.run_without_device(directory)
+            run.row = Run.row.__get__(run)
+            run.shot = MagicMock()
+            with patch('podcast_sync_e2e.adrv.nodes', side_effect=screens), \
+                    patch('podcast_sync_e2e.adrv.tap_node') as tap, \
+                    patch('podcast_sync_e2e.app_ui.swipe') as swipe:
+                run.row('Download', title='Beta Episode 002')
+            swipe.assert_called_once()
+            tap.assert_called_once_with(visible)
+
+            run.wait_downloaded_row = Run.wait_downloaded_row.__get__(run)
+            screens = [
+                [node('Beta Episode 002', 1600, 1700),
+                 node('Delete downloaded file', 2100, 2230), footer],
+                [node('Beta Episode 002', 500, 600),
+                 node('Delete downloaded file', 900, 1030), footer],
+            ]
+            with patch('podcast_sync_e2e.adrv.nodes', side_effect=screens), \
+                    patch('podcast_sync_e2e.app_ui.swipe') as swipe:
+                run.wait_downloaded_row('Beta Episode 002', timeout=2)
+            swipe.assert_called_once()
 
     def test_held_account_releases_only_after_logout_and_rejects_cross_scope_state(self):
         with tempfile.TemporaryDirectory() as directory:
