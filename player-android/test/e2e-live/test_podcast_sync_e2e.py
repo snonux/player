@@ -161,7 +161,9 @@ class PodcastNativeOracleTests(unittest.TestCase):
             control.held.set()
 
             @contextmanager
-            def proxy(**_):
+            def proxy(**options):
+                self.assertTrue(options['delay_scope'])
+                self.assertGreater(options['hold_seconds'], 90)
                 yield control
 
             run.proxy = proxy

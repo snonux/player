@@ -819,7 +819,9 @@ class Run:
         if 'other' not in self.state['accounts']:
             raise AssertionError('Held-account check needs the fixture isolation account')
         self.episodes(filter_name='All')
-        with self.proxy(delay_scope=True, hold_seconds=90) as proxy:
+        # Returning from playback to Settings can take over ninety seconds on
+        # the owned emulator while Android's accessibility bridge is busy.
+        with self.proxy(delay_scope=True, hold_seconds=240) as proxy:
             self.row('Play from beginning')
             if not proxy.held.wait(10):
                 raise AssertionError('Podcast playback did not issue a real scoped sync request')
