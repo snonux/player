@@ -152,6 +152,10 @@ void main() {
       expect(offline.sourceUri.scheme, 'file');
       expect(offline.artist, 'Saved Artist');
       expect(offline.automationMusicEligible, isFalse);
+      expect(offline.savePosition, isNotNull,
+          reason: 'the native audio handler requires a progress callback');
+      expect(offline.markFinished, isNotNull,
+          reason: 'the native audio handler requires a finish callback');
       await expectLater(
           cache.setAutomationMusicEligibility(
               key, 'https://canonical.test', 2, true),

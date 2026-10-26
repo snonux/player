@@ -185,7 +185,7 @@ final musicAutomationProvider = Provider<void>((ref) {
           throw StateError(
               'Cached song metadata is missing. Download it again.');
         }
-        // Cache copies lack progress callbacks; use the same durable account
+        // Cache copies have no durable progress callbacks; use the same account
         // progress actor as streaming, without making an offline network read.
         return OfflinePlaybackRequest(
             downloadKey: local.downloadKey,

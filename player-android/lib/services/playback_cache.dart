@@ -162,7 +162,11 @@ class PlaybackCache extends ChangeNotifier {
         sourceName: row['source_name'] as String? ?? '',
         music: music,
         artist: music?.artist ?? '',
-        album: music?.album ?? '');
+        album: music?.album ?? '',
+        // The audio handler requires both callbacks when it starts a track.
+        // Disposable cache copies have no durable offline progress to update.
+        savePosition: (_) async {},
+        markFinished: () async {});
   }
 
   String key(String origin, int user, int media, String variant) => sha256
