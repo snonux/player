@@ -2,7 +2,7 @@
  * each browser, native B finish, completed in both browsers, uncomplete once,
  * observe-uncompleted on all clients, cleanup and boundaries.
  *
- * PLAYER_PODCAST_STAGE=catalog|resume|completed|uncomplete|observe-uncompleted|cleanup|boundaries|auth-visual
+ * PLAYER_PODCAST_STAGE=catalog|resume|completed|uncomplete|observe-uncompleted|cleanup|boundaries|auth-visual|account-switch
  * PLAYER_PODCAST_FIXTURE=/marked/path npx playwright test -c playwright.podcasts.config.ts --project=chrome
  * No API edits supply listening/completion proof. GETs are read-only oracles;
  * download, playback, completion, retry and cleanup use actual visible controls.
@@ -15,7 +15,7 @@ import { installAudioTap } from './helpers/audio-tap';
 
 const directory = process.env.PLAYER_PODCAST_FIXTURE!;
 const stage = process.env.PLAYER_PODCAST_STAGE;
-const allowed = ['catalog', 'resume', 'completed', 'uncomplete', 'observe-uncompleted', 'cleanup', 'boundaries', 'feedback', 'unsubscribed', 'conflict', 'auth-visual'];
+const allowed = ['catalog', 'resume', 'completed', 'uncomplete', 'observe-uncompleted', 'cleanup', 'boundaries', 'feedback', 'unsubscribed', 'conflict', 'auth-visual', 'account-switch'];
 if (!allowed.includes(stage || '')) throw new Error('Select one explicit PLAYER_PODCAST_STAGE');
 const state = JSON.parse(readFileSync(join(directory, 'state.json'), 'utf8'));
 const auth = JSON.parse(readFileSync(join(directory, 'auth.json'), 'utf8'));
@@ -131,6 +131,33 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       await expect(page.getByRole('button', { name: 'Podcast Acceptance Alpha', exact: true })).toHaveCount(0);
       await expect(exactCard(page)).toHaveCount(0);
       record('native unsubscribe tombstone removes browser subscription and default episodes');
+    } else if (stage === 'account-switch') {
+      const beta = state.feeds[1];
+      expect(beta, 'account switch needs the independent Beta fixture feed').toBeTruthy();
+      const betaButton = page.getByRole('button', { name: `Podcast ${beta.title}`, exact: true });
+      if (!await betaButton.isVisible()) await page.getByRole('button', { name: 'Toggle sets sidebar', exact: true }).click();
+      await expect(betaButton).toBeVisible();
+      await page.getByRole('button', { name: 'Log out', exact: true }).click();
+      await page.waitForURL(url => url.pathname === '/login.html', { waitUntil: 'domcontentloaded' });
+      await keyboardLogin(page, auth.other);
+      await fullSync(page);
+      await openEpisodes(page);
+      await expect(page.locator('.episode-card')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: `Podcast ${beta.title}`, exact: true })).toHaveCount(0);
+      expect((await rows(page)).length).toBe(0);
+      await page.screenshot({ path: join(output, 'other-account.png') });
+      record('visible browser account switch isolates subscriptions and episode history');
+
+      await page.getByRole('button', { name: 'Log out', exact: true }).click();
+      await page.waitForURL(url => url.pathname === '/login.html', { waitUntil: 'domcontentloaded' });
+      await keyboardLogin(page, auth.admin);
+      await fullSync(page);
+      await openEpisodes(page);
+      if (!await betaButton.isVisible()) await page.getByRole('button', { name: 'Toggle sets sidebar', exact: true }).click();
+      await expect(betaButton).toBeVisible();
+      expect((await rows(page)).length).toBeGreaterThan(0);
+      await page.screenshot({ path: join(output, 'admin-return.png') });
+      record('returning to the original browser account restores its podcast catalog');
     } else if (stage === 'conflict') {
       await manager(page);
       const unsub = () => page.getByRole('button', { name: 'Unsubscribe from Acceptance Alpha', exact: true });
