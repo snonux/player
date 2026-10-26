@@ -320,13 +320,31 @@ def seek_track_swipe(nodes, bar, fraction=.62):
     return thumb_x, y, target_x
 
 
-def wait_seek_bar(timeout=12):
+def require_seek_jump(reset, target, title):
+    start = reset.get('position_ms')
+    end = target.get('position_ms')
+    if (reset.get('title') != title or target.get('title') != title
+            or not isinstance(start, int) or not isinstance(end, int)
+            or not 0 <= start <= 1500 or not 5500 <= end <= 10000
+            or end - start < 4500):
+        raise AssertionError(f'Actual native offline seek was not a large touch jump: '
+                             f'reset={start}, target={end}, '
+                             f'reset_title={reset.get("title")!r}, '
+                             f'target_title={target.get("title")!r}')
+
+
+def wait_seek_bar(timeout=12, max_percent=None):
     """The player route can appear after its media session starts playing."""
     deadline = time.monotonic() + timeout
     while True:
         try:
             nodes = adrv.nodes()
-            return nodes, seek_bar_node(nodes)
+            bar = seek_bar_node(nodes)
+            if max_percent is not None:
+                match = re.fullmatch(r'(\d{1,3})%', adrv.label(bar))
+                if not match or int(match.group(1)) > max_percent:
+                    raise AssertionError('Seek thumb has not settled near the start')
+            return nodes, bar
         except (AssertionError, RuntimeError) as error:
             if time.monotonic() >= deadline:
                 raise AssertionError(f'Native player seek bar did not appear: {error}')
@@ -1251,21 +1269,36 @@ class Run:
                 raise AssertionError('Downloaded episode did not play with both hosts offline')
             checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
             nodes, bar = wait_seek_bar()
-            before_seek = session_state()
+            initial = session_state()
+            start, y, near_start = seek_track_swipe(nodes, bar, fraction=.02)
+            checked_adb('shell', 'input', 'swipe', str(start), str(y),
+                        str(near_start), str(y), '300')
+            deadline = time.monotonic() + 4
+            while time.monotonic() < deadline:
+                reset = session_state()
+                if (reset['title'] == episode['title']
+                        and isinstance(reset.get('position_ms'), int)
+                        and 0 <= reset['position_ms'] <= 1500):
+                    break
+                time.sleep(.2)
+            else:
+                raise AssertionError(f'Native paused touch reset did not reach start: '
+                                     f'initial={initial.get("position_ms")}, '
+                                     f'latest={reset.get("position_ms")}')
+            nodes, bar = wait_seek_bar(max_percent=15)
             start, y, target = seek_track_swipe(nodes, bar)
             checked_adb('shell', 'input', 'swipe', str(start), str(y),
                         str(target), str(y), '300')
             deadline = time.monotonic() + 4
             while time.monotonic() < deadline:
                 after_seek = session_state()
-                if (after_seek['title'] == episode['title']
-                        and 5500 <= (after_seek['position_ms'] or 0) <= 10000
-                        and abs((after_seek['position_ms'] or 0) -
-                                (before_seek['position_ms'] or 0)) >= 2500):
+                try:
+                    require_seek_jump(reset, after_seek, episode['title'])
                     break
-                time.sleep(.2)
+                except AssertionError:
+                    time.sleep(.2)
             else:
-                raise AssertionError('Actual native media session did not seek offline')
+                require_seek_jump(reset, after_seek, episode['title'])
             self.shot('offline-seek-paused')
             mark = self.audio.mark()
             checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PLAY')
@@ -1290,7 +1323,9 @@ class Run:
             if len(states) != 1 or states[0]['position_seconds'] < 5:
                 raise AssertionError('Offline seek did not persist listening history')
             self.record('native downloaded podcast seeks and stays audible with both hosts offline',
-                        position_ms=after_seek['position_ms'])
+                        initial_position_ms=initial.get('position_ms'),
+                        reset_position_ms=reset['position_ms'],
+                        seek_position_ms=after_seek['position_ms'])
         finally:
             for mapping, original in selected.items():
                 checked_adb('reverse', mapping, original)
