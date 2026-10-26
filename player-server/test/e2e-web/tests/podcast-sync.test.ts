@@ -233,7 +233,9 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         await expect(card(page).getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
 
         await page.route('**/api/podcasts/sync', async route => {
-          const response = await route.fetch();
+          // Firefox may need longer than Playwright's 10-second proxy default
+          // while the shared test server is under the Go race suite's load.
+          const response = await route.fetch({ timeout: 30_000 });
           const body = await response.json();
           const matching = (body.episodes || []).find((row: any) =>
             row.feed_key === feed.key && row.episode_key === target.key);
@@ -250,7 +252,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         await card(page).getByRole('button', { name: 'Mark completed', exact: true }).click();
         await Promise.race([
           held,
-          page.waitForTimeout(20_000).then(() => { throw new Error('Visible completion did not produce a held successful sync response'); }),
+          page.waitForTimeout(35_000).then(() => { throw new Error('Visible completion did not produce a held successful sync response'); }),
         ]);
         expect((await history(other, target.key)).completed).toBe(true);
 
@@ -286,8 +288,10 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
           { episode_key: target.key, position_seconds: reconciled.position_seconds });
       } finally {
         release();
-        await page.unroute('**/api/podcasts/sync');
-        await otherContext.close();
+        // A browser/test timeout can close the page first. Cleanup should not
+        // replace the request failure with an unrelated closed-page error.
+        if (!page.isClosed()) await page.unroute('**/api/podcasts/sync').catch(() => {});
+        await otherContext.close().catch(() => {});
       }
     } else if (stage === 'resume') {
       const transferFile = join(directory, 'transfer-B.json');
