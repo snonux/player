@@ -1,5 +1,26 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M06 music information, create a disposable fixture on an unused port,
+augment it once with the guarded technical tracks, then run installed Chrome
+and Firefox sequentially:
+
+```sh
+python3 player-android/integration_test/support/music_fixture.py up player-server/player \
+  --port 18816 --no-doubles --dir /path/to/fixture --evidence /tmp/player-m06-evidence
+python3 player-android/integration_test/support/music_info.py /path/to/fixture
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-info.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+Run the Python commands from the repository root and Playwright from
+`player-server/test/e2e-web`. The journey checks tagged source units against
+the probe, live audio while Info opens and closes, focus and narrow themes,
+lossy omissions, offline/restart recovery and permission denial. Keep the
+fixture alive until Android acceptance finishes; then stop it with
+`music_fixture.py down /path/to/fixture`. Evidence stays outside the repository.
+
 For M40 artist Top songs, use an isolated `music_fixture.py up` server on an
 unused port and run one installed browser at a time:
 
