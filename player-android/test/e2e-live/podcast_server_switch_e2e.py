@@ -71,6 +71,15 @@ def library_action_ready(labels, action):
     return 'Open navigation menu' in labels and action in labels
 
 
+def saved_server_target(nodes, origin):
+    """Require an enabled option; the currently selected URL is disabled."""
+    matches = [node for node in nodes
+               if adrv.label(node).startswith(origin) and node['click']]
+    if not matches:
+        raise AssertionError('Saved server target is missing or already selected')
+    return matches[0]
+
+
 def reverse_target(mapping):
     for line in checked_adb('reverse', '--list').splitlines():
         fields = line.split()
@@ -132,7 +141,9 @@ class ServerSwitchRun(Run):
 
     def choose_saved_server(self, origin):
         self.open_library_action('Switch server')
-        self.touch('^' + re.escape(origin))
+        target = saved_server_target(adrv.nodes(), origin)
+        self.shot('saved-server-target')
+        adrv.tap_node(target)
         if adrv.wait('^Welcome back$', timeout=10):
             if not adrv.wait('^Sign in to ' + re.escape(origin) + '$', timeout=10):
                 raise AssertionError('Saved server switch selected the wrong URL')
@@ -185,24 +196,31 @@ class ServerSwitchRun(Run):
                 self.touch(r'^(Sync now|Retry)$')
                 if not adrv.wait('^Synced$', timeout=30):
                     raise AssertionError('Secondary server did not report its own full sync')
+
+                # Exercise the saved-server menu before taking another DB
+                # snapshot. snapshot() force-stops the app; its cold chooser
+                # defaults to the fixture's primary URL on relaunch.
+                self.choose_saved_server(primary_origin)
+                self.login('admin')
+                if adrv.find(r"^Sync this device's podcasts with "):
+                    self.touch('^Keep separate$')
+                self.podcasts()
+                if not any('pending' in adrv.label(node).lower()
+                           for node in adrv.nodes()):
+                    raise AssertionError('Primary footer lost its pending status on return')
                 second = self.snapshot_for('secondary-synced', secondary_scope)
                 assert_pending_isolated(second, primary_scope, secondary_scope,
                                         episode['key'], edit_id)
                 scopes = {row['scope']: row for row in second['podcast_scopes']}
                 if not (scopes.get(secondary_scope) or {}).get('last_full_success_ms'):
                     raise AssertionError('Secondary server has no independent full-sync timestamp')
-
-                self.choose_saved_server(primary_origin)
-                self.login('admin')
-                if adrv.find(r"^Sync this device's podcasts with "):
-                    self.touch('^Keep separate$')
-                self.podcasts()
                 assert_pending_isolated(
                     self.snapshot_for('primary-restored', primary_scope),
                     primary_scope, secondary_scope, episode['key'], edit_id)
 
         # After restoring the original network mapping, deliver the pending
         # test edit so this stage does not leave fixture sync work behind.
+        self.login('admin')
         self.podcasts()
         self.touch(r'^(Sync now|Retry)$')
         if not adrv.wait('^Synced$', timeout=30):

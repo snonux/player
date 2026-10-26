@@ -4,6 +4,7 @@ from podcast_server_switch_e2e import (
     account_scope,
     assert_pending_isolated,
     library_action_ready,
+    saved_server_target,
     secondary_origin,
 )
 
@@ -18,6 +19,14 @@ class ServerSwitchOracleTest(unittest.TestCase):
             ['Library', 'Open navigation menu', 'Settings'], 'Settings'))
         self.assertFalse(library_action_ready(
             ['Library', 'Open navigation menu', 'Settings'], 'Switch server'))
+
+    def test_saved_server_target_rejects_checked_disabled_option(self):
+        current = {'desc': 'http://127.0.0.1:18766', 'text': '', 'click': False}
+        other = {'desc': 'http://127.0.0.1:18767', 'text': '', 'click': True}
+        self.assertIs(saved_server_target([current, other],
+                                          'http://127.0.0.1:18767'), other)
+        with self.assertRaisesRegex(AssertionError, 'already selected'):
+            saved_server_target([current, other], 'http://127.0.0.1:18766')
 
     def test_alias_changes_only_selected_origin(self):
         self.assertEqual(
