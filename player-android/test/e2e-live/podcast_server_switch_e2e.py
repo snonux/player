@@ -66,6 +66,11 @@ def assert_pending_isolated(snapshot, primary_scope, secondary_scope,
         raise AssertionError('Primary pending edit leaked into the other server scope')
 
 
+def library_action_ready(labels, action):
+    """A cold relaunch can stop on Sign In instead of the Library app bar."""
+    return 'Open navigation menu' in labels and action in labels
+
+
 def reverse_target(mapping):
     for line in checked_adb('reverse', '--list').splitlines():
         fields = line.split()
@@ -97,9 +102,21 @@ class ServerSwitchRun(Run):
         finally:
             self.scope = previous
 
+    def open_library_action(self, action):
+        # snapshot() force-stops the app. A fresh launch may show the saved
+        # server chooser and then Sign In, even though the previous screen was
+        # the episode list. Run.root() accepts Sign In as a root, so complete
+        # authentication before looking for Library app-bar actions.
+        self.login('admin')
+        if not library_action_ready(app_ui.labels(), action):
+            if not app_ui.go_home():
+                raise AssertionError('Native app did not return to Library')
+        if not library_action_ready(app_ui.labels(), action):
+            raise AssertionError(f'Library action {action!r} is not visible')
+        self.touch('^' + re.escape(action) + '$')
+
     def server_url_from_settings(self, origin):
-        self.root()
-        self.touch('^Settings$')
+        self.open_library_action('Settings')
         for _ in range(35):
             if adrv.find('^Save URL$'):
                 break
@@ -114,8 +131,7 @@ class ServerSwitchRun(Run):
             raise AssertionError('Native sign-in did not select the secondary URL')
 
     def choose_saved_server(self, origin):
-        self.root()
-        self.touch('^Switch server$')
+        self.open_library_action('Switch server')
         self.touch('^' + re.escape(origin))
         if adrv.wait('^Welcome back$', timeout=10):
             if not adrv.wait('^Sign in to ' + re.escape(origin) + '$', timeout=10):

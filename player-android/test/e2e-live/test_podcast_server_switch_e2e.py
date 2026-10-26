@@ -3,11 +3,22 @@ import unittest
 from podcast_server_switch_e2e import (
     account_scope,
     assert_pending_isolated,
+    library_action_ready,
     secondary_origin,
 )
 
 
 class ServerSwitchOracleTest(unittest.TestCase):
+    def test_cold_sign_in_is_not_library_action_ready(self):
+        self.assertFalse(library_action_ready(
+            ['Choose a server', 'http://127.0.0.1:18766'], 'Settings'))
+        self.assertFalse(library_action_ready(
+            ['Welcome back', 'Sign In', 'Settings'], 'Settings'))
+        self.assertTrue(library_action_ready(
+            ['Library', 'Open navigation menu', 'Settings'], 'Settings'))
+        self.assertFalse(library_action_ready(
+            ['Library', 'Open navigation menu', 'Settings'], 'Switch server'))
+
     def test_alias_changes_only_selected_origin(self):
         self.assertEqual(
             secondary_origin('http://127.0.0.1:18766', 18767),
