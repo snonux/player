@@ -97,7 +97,7 @@ Future<ServerSongInsertionResult> insertServerSongs(BuildContext context,
           claimedGeneration = lease?.generation;
           return lease;
         },
-        load: ref.read(cachedAudioLoaderProvider));
+        load: ref.read(cachedAudioLoaderProvider(generation)));
     if (!context.mounted ||
         generation != mutations.generation ||
         !isMusicActionIntent(intent) ||

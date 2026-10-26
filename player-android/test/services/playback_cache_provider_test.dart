@@ -62,6 +62,7 @@ void main() {
     'api-denial',
     'cache-hit-prefetch',
     'complete-buffer-prefetch',
+    'credential-rotation',
     'network-restricted'
   ]) {
     test('production cache loader: $scenario', () async {
@@ -120,8 +121,17 @@ void main() {
               authorized: () => true);
         }
         gets.clear();
-        final load = container.read(cachedAudioLoaderProvider);
-        if (scenario == 'network-restricted') {
+        final load = container.read(cachedAudioLoaderProvider(0));
+        if (scenario == 'credential-rotation') {
+          final nextGeneration = mutations.beginAuthChange(origin: origin);
+          mutations.enable(nextGeneration, origin: origin);
+          expect(await load(song(1), () => true), isNull,
+              reason: 'a retained queue loader must reject its old lease');
+          final fresh =
+              container.read(cachedAudioLoaderProvider(nextGeneration));
+          expect(await fresh(song(1), () => true), isA<UriAudioSource>(),
+              reason: 'a new sign-in must receive a fresh playback loader');
+        } else if (scenario == 'network-restricted') {
           await MusicNetworkPolicy.initialize();
           await MusicNetworkPolicy.save('mode', 'mobile');
           await MusicNetworkPolicy.save('stream-wifi', true);

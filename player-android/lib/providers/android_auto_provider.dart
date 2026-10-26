@@ -90,7 +90,8 @@ final androidAutoCatalogProvider = Provider<AndroidAutoCatalog>((ref) {
         final origin = ref.read(playerBaseUrlProvider).origin;
         final user = ref.read(authStateProvider).valueOrNull!.user!;
         final progress = ref.read(progressQueueProvider);
-        final load = ref.read(cachedAudioLoaderProvider);
+        final load = ref.read(cachedAudioLoaderProvider(
+            ref.read(credentialMutationQueueProvider).generation));
         final coordinator = ref.read(playbackSessionCoordinatorProvider);
         final source = coordinator.generation;
         bool current() => a.current();

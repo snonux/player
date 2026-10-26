@@ -257,7 +257,7 @@ final musicAutomationProvider = Provider<void>((ref) {
       if (!preparing() || !sameQueue()) {
         throw StateError('Music action superseded. Retry.');
       }
-      final load = ref.read(cachedAudioLoaderProvider);
+      final load = ref.read(cachedAudioLoaderProvider(epoch));
       int reboundTransport = transport;
       if (!queue.active ||
           (offline &&

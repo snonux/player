@@ -724,7 +724,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         index: _musicStartIndex,
         expand: _expandMusic!,
         changed: lease.updateSource,
-        load: ref.read(cachedAudioLoaderProvider));
+        load: ref.read(cachedAudioLoaderProvider(
+            ref.read(credentialMutationQueueProvider).generation)));
     _watchMusicState(handler, lease);
   }
 
@@ -843,7 +844,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   ) async {
     try {
       final source = attempt.request is ServerPlaybackRequest
-          ? await ref.read(cachedAudioLoaderProvider)(
+          ? await ref.read(cachedAudioLoaderProvider(
+                  ref.read(credentialMutationQueueProvider).generation))(
               attempt.request, () => _isCurrent(attempt),
               onPreparing: (preparation) {
               if (!_isCurrent(attempt)) {

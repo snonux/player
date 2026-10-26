@@ -50,7 +50,7 @@ class MusicQueuePersistence {
     _boundGeneration = generation;
     final client = _ref.read(apiClientProvider);
     final progress = _ref.read(progressQueueProvider);
-    final cachedLoad = _ref.read(cachedAudioLoaderProvider);
+    final cachedLoad = _ref.read(cachedAudioLoaderProvider(generation));
     final coordinator = _ref.read(playbackSessionCoordinatorProvider);
     bool current() =>
         mutations.generation == generation && handler.queueScope == scope;

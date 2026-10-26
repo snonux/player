@@ -108,9 +108,9 @@ void main() {
           authStateProvider.overrideWith(_Auth.new),
           cookieJarProvider.overrideWithValue(CookieJar()),
           progressQueueProvider.overrideWithValue(_Progress()),
-          cachedAudioLoaderProvider.overrideWithValue((r, wanted,
-                  {onPreparing}) async =>
-              wanted() ? AudioSource.uri(r.sourceUri) : null),
+          cachedAudioLoaderProvider.overrideWith((ref, generation) =>
+              (r, wanted, {onPreparing}) async =>
+                  wanted() ? AudioSource.uri(r.sourceUri) : null),
         ],
         child: MaterialApp(home: Scaffold(body: Consumer(builder: (c, r, _) {
           context = c;

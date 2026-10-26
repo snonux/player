@@ -40,14 +40,17 @@ typedef CachedAudioLoader = Future<AudioSource?> Function(
     {void Function(PlaybackPreparation)? onPreparing});
 
 /// Captures account dependencies for queue callbacks that outlive their screen.
-final cachedAudioLoaderProvider = Provider<CachedAudioLoader>((ref) {
+// A loader can outlive its screen in a music queue. Key it by the credential
+// generation so an old queue keeps its revoked lease while a new sign-in gets
+// a fresh loader, even when the API client and endpoint did not change.
+final cachedAudioLoaderProvider =
+    Provider.family<CachedAudioLoader, int>((ref, generation) {
   final cache = ref.read(playbackCacheProvider);
   final client = ref.watch(apiClientProvider);
   final router = ref.watch(serverEndpointRouterProvider);
   final storage = ref.read(tokenStorageProvider),
       jar = ref.read(cookieJarProvider);
   final mutations = ref.read(credentialMutationQueueProvider);
-  final generation = mutations.generation;
   final preparer = ref.read(playbackPreparerProvider);
   final handler = ref.read(audioHandlerProvider);
   MusicNetworkPolicy.changes.addListener(handler.refreshGaplessPolicy);

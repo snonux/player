@@ -699,9 +699,9 @@ void main() {
           tokenStorageProvider.overrideWithValue(const _FakeTokenStorage()),
           cookieJarProvider.overrideWith((ref) => CookieJar()),
           progressQueueProvider.overrideWithValue(_FakeProgressQueue()),
-          cachedAudioLoaderProvider.overrideWith((ref) => (request, current,
-                  {onPreparing}) async =>
-              AudioSource.uri(request.sourceUri)),
+          cachedAudioLoaderProvider.overrideWith((ref, generation) =>
+              (request, current, {onPreparing}) async =>
+                  AudioSource.uri(request.sourceUri)),
         ],
         child: const MaterialApp(
             home: Scaffold(bottomNavigationBar: MusicMiniPlayer()))));
