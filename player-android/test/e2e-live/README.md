@@ -879,3 +879,47 @@ pass `--emulator-wav`. It temporarily removes both owned reverse mappings,
 seeks through the actual Android player slider, requires continuing QEMU audio
 and durable local position, then restores those mappings. Each check needs an
 installed-app run before it is counted as platform evidence.
+
+# M36 personal music listening
+
+`music_personal_counts_e2e.py` checks the real 85-second **Qualified Listening**
+and 18-second **Skipped Listening** tracks in the disposable M36 fixture. It
+reads personal song, album and artist counts through authenticated user/admin
+APIs; opens the same album and players by touch; checks native secondary rows,
+UTC qualification dates, media-session playback and distinct 440/660 Hz QEMU
+output. The online phase starts with the fixture's `user` account signed into
+an already installed APK, changes to `admin` and back through the app's normal
+logout/login UI, and checks account-specific rows. The offline phase saves the
+album through **Keep offline** if needed, temporarily removes only the fixture's
+`adb reverse` route, listens to the downloaded 85-second track for 67 real
+seconds, reads a consistent read-only copy of the app's SQLite main/WAL files,
+force-stops the app, checks the pending UUID survived, restores the route,
+relaunches/signs in, and checks one acknowledged server count. It restores the
+route in `finally` even if a check fails. It does not install/clear the app,
+start an emulator, stop the server, or edit fixture media or databases.
+
+Run with the owned fixture already live on port 18936, the native app signed in
+as that fixture's `user`, `adb reverse tcp:18936 tcp:18936` established, and a
+running emulator launched with QEMU WAV output. Give each attempt its own
+outside-repo evidence directory. Run phases independently to preserve useful
+evidence after a failure:
+
+```sh
+python3 player-android/test/e2e-live/music_personal_counts_e2e.py \
+  --fixture-dir /home/paul/tmp/codex/player-music-uupeffb1 \
+  --evidence-dir /tmp/player-m36-native-online \
+  --emulator-wav /tmp/player-task-batch-emulator.wav \
+  --scenario online
+python3 player-android/test/e2e-live/music_personal_counts_e2e.py \
+  --fixture-dir /home/paul/tmp/codex/player-music-uupeffb1 \
+  --evidence-dir /tmp/player-m36-native-offline \
+  --emulator-wav /tmp/player-task-batch-emulator.wav \
+  --scenario offline
+```
+
+Pass `--apk /path/to/installed.apk` to include its SHA-256 in `versions.json`.
+The offline phase expects the saved long copy to start below 15 seconds; if a
+prior run left it near the end, reset its position through the app before
+rerunning. The runner records failures instead of treating an unexecuted phase
+as native acceptance. Review each `android/evidence.jsonl`, screenshots and
+WAV before marking M36 complete.
