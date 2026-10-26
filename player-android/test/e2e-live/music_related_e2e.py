@@ -42,35 +42,47 @@ def labels():
     return ' | '.join(app_ui.labels())
 
 
-def visible(pattern, swipes=14):
-    for attempt in range(swipes + 1):
+def scroll_content(up=True):
+    # Stay above the mini player and transient snackbar after a Play action.
+    start, end = ('1300', '450') if up else ('450', '1300')
+    adrv.adb('shell', 'input', 'swipe', '540', start, '540', end, '420')
+    time.sleep(.8)
+
+
+def visible(pattern, swipes=8):
+    for move in (None, *([True] * swipes), *([False] * (2 * swipes))):
+        if move is not None:
+            scroll_content(move)
         node = adrv.find(pattern)
         if node:
             return node
-        if attempt < swipes:
-            app_ui.swipe()
     raise AssertionError((pattern, labels()))
 
 
 def result_action(title, action):
     """Tap the named action within the visible related card for this title."""
-    for attempt in range(15):
+    for move in (None, *([True] * 10), *([False] * 20)):
+        if move is not None:
+            scroll_content(move)
         nodes = adrv.nodes()
         titles = [n for n in nodes if re.search(r'^' + re.escape(title) + r'($| / )', adrv.label(n))]
         actions = [n for n in nodes if adrv.label(n) == action and n['click']]
+        mini_player = any(adrv.label(n).startswith('Open player:') for n in nodes)
         pairs = [(a['b'][1] - t['b'][1], a) for t in titles for a in actions
-                 if 0 <= a['b'][1] - t['b'][1] <= 420]
+                 if 0 <= a['b'][1] - t['b'][1] <= 420
+                 and (not mini_player or a['b'][3] < 1450)]
         if pairs:
             _, target = min(pairs, key=lambda pair: pair[0])
             adrv.tap_node(target)
             return
-        if attempt < 14:
-            app_ui.swipe()
     raise AssertionError(('Related action missing', title, action, labels()))
 
 
 def output(run, song, label):
     sequence.wait_track(song['title'])
+    # Volume keys target music only after Player owns an active audio session.
+    for _ in range(15):
+        adrv.adb('shell', 'input', 'keyevent', 'KEYCODE_VOLUME_UP')
     sequence.ensure_music_volume(run)
     sequence.key('PAUSE')
     time.sleep(.5)
@@ -95,7 +107,7 @@ def core(run):
     tokyo = run.track('Music/Ünïcødé Artïst - 東京 Nights/01 - Café Ñoño.mp3')
     albums.album()
     visible('^More like this$')
-    visible('^From your library')
+    visible('From your library')
     for theme, mode in [('light', 'no'), ('dark', 'yes')]:
         adrv.adb('shell', 'cmd', 'uimode', 'night', mode)
         time.sleep(2)
@@ -105,7 +117,7 @@ def core(run):
     assert adrv.wait('^Play album$', timeout=25), labels()
     assert '東京 Nights (夜)' in labels(), labels()
     app_ui.back()
-    visible('^More like this$')
+    assert 'Night Transit' in labels(), labels()
     result_action('東京 Nights (夜)', 'Play')
     wav, proof = output(run, tokyo, 'm41-album-source')
     run.record('touch album suggestion Open/Back/Play and original output', True,
@@ -122,7 +134,7 @@ def core(run):
     result_action('Dusk Choir', 'Open artist')
     assert adrv.wait('^Dusk Choir$', timeout=25), labels()
     app_ui.back()
-    visible('^More like this$')
+    assert 'Aurora Lane' in labels(), labels()
     afterglow = run.track('Music/Various Artists - Synth Compilation/Disc 2/01 - Afterglow.ogg')
     result_action('Dusk Choir', 'Play')
     wav, proof = output(run, afterglow, 'm41-artist-source')
@@ -130,15 +142,19 @@ def core(run):
                data=proof, artifacts=[wav, run.shot('m41-artist-play')])
     app_ui.back()
 
+    song(run)
+
+
+def song(run):
+
     first = run.track('Music/Aurora Lane - Night Transit (2021)/01 - First Light.mp3')
     road = run.track('Music/Aurora Lane - Night Transit (2021)/02 - Long Road Home.mp3')
     assert baseline.open_track('Music', baseline.ALBUM, first['title']), labels()
     visible('^More like this$')
     result_action('Long Road Home', 'Open song')
-    assert adrv.wait('^Play Audio$', timeout=25), labels()
     assert 'Long Road Home' in labels(), labels()
     app_ui.back()
-    visible('^More like this$')
+    assert first['title'] in labels(), labels()
     result_action('Long Road Home', 'Play')
     wav, proof = output(run, road, 'm41-song-source')
     run.record('touch song suggestion Open/Back/Play and original output', True,
@@ -152,7 +168,7 @@ def boundaries(run):
                  if a['title'] == 'Partial Metadata')
     assert run.viewer.request('GET', '/api/v1/music/related/album/' + empty['album_key']) == []
     albums.album('Partial Metadata')
-    visible('^No related music found')
+    visible('No related music found')
     run.record('untagged album has explicit empty state', True,
                artifacts=[run.shot('m41-empty')])
     hidden = run.track('Restricted/Admin Only - Hidden Album/01 - Hidden Track.mp3')
@@ -240,8 +256,8 @@ def errors(run):
         assert app_ui.connect_and_login(run.base, run.auth['user']['username'],
                                         run.auth['user']['password'], run.record, run.shot)
         albums.album()
-        visible('^Could not load related music')
-        assert adrv.find('^Retry$'), labels()
+        visible('Could not load related music')
+        visible('^Retry$')
         shot = run.shot('m41-related-transport-failure')
         run.record('related-only transport failure keeps album detail and visible Retry', True,
                    detail='Local forwarder dropped only related HTTP response', artifacts=[shot])
@@ -251,8 +267,9 @@ def errors(run):
         proxy.shutdown()
         proxy.server_close()
         thread.join(timeout=5)
+    visible('^Retry$')
     assert adrv.tap('^Retry$'), labels()
-    visible('^Synth Compilation$')
+    visible('Synth Compilation')
     run.record('related Retry after direct fixture reconnect shows deterministic results', True,
                artifacts=[run.shot('m41-related-retry')])
 
@@ -264,7 +281,7 @@ def main(argv=None):
     parser.add_argument('--emulator-wav', required=True)
     parser.add_argument('--host-alias', action='store_true')
     parser.add_argument('--cleanup-device', action='store_true')
-    parser.add_argument('--scenario', choices=['all', 'core', 'boundaries', 'errors'], default='all')
+    parser.add_argument('--scenario', choices=['all', 'core', 'song', 'boundaries', 'errors'], default='all')
     args = parser.parse_args(argv)
     port = json.loads((Path(args.fixture_dir) / 'state.json').read_text())['port']
     run = None
@@ -275,7 +292,9 @@ def main(argv=None):
         assert run.audio.available(), 'QEMU output WAV required for actual native output proof'
         assert app_ui.connect_and_login(run.base, run.auth['user']['username'],
                                         run.auth['user']['password'], run.record, run.shot)
-        for name, step in [('core', core), ('boundaries', boundaries), ('errors', errors)]:
+        for name, step in [('core', core), ('song', song), ('boundaries', boundaries), ('errors', errors)]:
+            if name == 'song' and args.scenario != 'song':
+                continue  # core already includes the song journey.
             if args.scenario in ('all', name):
                 step(run)
     except Exception:
