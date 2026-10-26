@@ -725,7 +725,11 @@ class Run:
             if session_state()['state'] != 'PLAYING':
                 raise AssertionError('Ordinary native source did not play')
             time.sleep(4)
-            self.touch('^Pause$')
+            # The fixture lasts twelve seconds. A fresh UI dump can outlive
+            # the remaining audio, so use Android's real transport control.
+            checked_adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
+            if session_state()['state'] != 'PAUSED':
+                raise AssertionError('Ordinary native source did not pause before its natural end')
             wav = self.audio.save(mark, self.output / 'ordinary-progress.wav')
             require_audio(audio_trace.analyze(wav), spec['tone_hz'][0])
             if not adrv.wait('pending', timeout=20):
