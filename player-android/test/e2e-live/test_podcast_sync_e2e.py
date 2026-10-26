@@ -17,6 +17,25 @@ from podcast_sync_e2e import (require_audio, require_resume, register_installati
 
 
 class PodcastNativeOracleTests(unittest.TestCase):
+    def test_offline_seek_checks_durable_beta_copy_before_touch_navigation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = self.run_without_device(directory)
+            beta = {'key': 'guid:beta-002', 'title': 'Beta Episode 002'}
+            run.state['feeds'] = [{}, {'title': 'Acceptance Beta',
+                                      'episodes': [{}, beta]}]
+            run.snapshot = MagicMock(return_value={'podcast_downloads': [
+                {'episode_key': beta['key'], 'state': 'available',
+                 'actual_sha256': 'publisher-bytes'}]})
+            run.wait_downloaded_row = MagicMock()
+            with patch('podcast_sync_e2e.checked_adb',
+                       side_effect=RuntimeError('stop before offline mapping')):
+                with self.assertRaisesRegex(RuntimeError, 'stop before offline mapping'):
+                    run.offline_seek()
+            run.snapshot.assert_called_once_with('before-offline-seek')
+            run.episodes.assert_called_once_with(combined=False, filter_name='All',
+                                                  feed_title='Acceptance Beta')
+            run.wait_downloaded_row.assert_not_called()
+
     def test_download_setup_skips_absent_delete_controls_and_uses_short_feed_views(self):
         with tempfile.TemporaryDirectory() as directory:
             for rows, expected_feeds, delete_count in (

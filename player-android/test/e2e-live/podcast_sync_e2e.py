@@ -1184,11 +1184,10 @@ class Run:
         if not self.audio.available():
             raise AssertionError('Offline seek needs real Android audio output')
         episode = self.state['feeds'][1]['episodes'][1]
-        self.episodes(filter_name='All')
-        self.wait_downloaded_row(episode['title'])
         snapshot = self.snapshot('before-offline-seek')
         require_download_state(snapshot, episode, 'available')
-        self.episodes(filter_name='All')
+        self.episodes(combined=False, filter_name='All',
+                      feed_title=self.state['feeds'][1]['title'])
         mappings = checked_adb('reverse', '--list').splitlines()
         selected = {}
         for port in (self.state['port'], self.state['publisher_port']):
