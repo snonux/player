@@ -41,6 +41,17 @@ def album(title='Night Transit', fresh=True):
     if fresh:
         catalog()
     node = app_ui.find_scrolling(r'(^| / )' + re.escape(title))
+    if not node:
+        # Dense catalogs (many Catalog Release rows) can outrun scroll probing;
+        # Music search with the Albums scope still opens the same album detail.
+        assert adrv.tap('^Search music$'), app_ui.labels()
+        fields = [n for n in adrv.nodes() if n['cls'] == 'EditText']
+        assert fields, app_ui.labels()
+        adrv.tap_node(fields[0]); app_ui.clear_field(); adrv.type_text(title); time.sleep(1.5)
+        assert adrv.tap('^Albums$'), app_ui.labels(); time.sleep(1)
+        # Prefer the result row, never the search field that still holds the query.
+        node = next((n for n in adrv.nodes()
+                     if n['cls'] != 'EditText' and re.search(r'^' + re.escape(title) + r' / ', adrv.label(n) or '')), None)
     assert node, app_ui.labels()
     adrv.tap_node(node)
     assert adrv.wait('^Play album$', timeout=20), app_ui.labels()

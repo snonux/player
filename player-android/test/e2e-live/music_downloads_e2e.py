@@ -272,17 +272,69 @@ class Run(baseline.Run):
         assert adrv.wait('^Downloads$'), app_ui.labels()
 
 
+def clear_saved_queue(run):
+    """Drop the portable Music session so browser proof does not block native play."""
+    import uuid
+    import urllib.request
+    queue = run.viewer.request('GET', '/api/v1/queue')
+    body = json.dumps({
+        'mutation_id': str(uuid.uuid4()), 'entries': [], 'current_id': 0,
+        'position_seconds': 0, 'label': '', 'repeat': 'off', 'shuffle': False,
+        'canonical': [], 'up_next': [],
+    }).encode()
+    req = urllib.request.Request(
+        run.base + '/api/v1/queue', data=body, method='PUT',
+        headers={'Content-Type': 'application/json', 'If-Match': f'"{queue["revision"]}"'})
+    with run.viewer.opener.open(req) as response:
+        assert 200 <= response.status < 300, response.status
+
+
+def resolve_session_prompt():
+    """Dismiss multi-client saved-session prompts without leaving the app."""
+    for _ in range(4):
+        labels = app_ui.labels()
+        if 'Replace' in labels and any('Replace saved session?' in l for l in labels):
+            adrv.tap('^Replace$'); time.sleep(1); continue
+        if 'Replace saved session' in labels:
+            adrv.tap('^Replace saved session$'); time.sleep(1); continue
+        if 'Continue session' in labels:
+            adrv.tap('^Continue session$'); time.sleep(1); continue
+        if 'Keep this queue' in labels:
+            adrv.tap('^Keep this queue$'); time.sleep(1); continue
+        break
+
+
+def use_proxy(run):
+    adrv.adb('reverse', f'tcp:{run.state["port"]}', f'tcp:{run.proxy.port}')
+
+
+def use_origin(run):
+    adrv.adb('reverse', f'tcp:{run.state["port"]}', f'tcp:{run.state["port"]}')
+
+
 def happy(run):
     artifacts = []
+    clear_saved_queue(run)
     songs = run.album('Night Transit')
     ids = [s['id'] for s in songs]
     run.require_fresh(ids)
-    # Seed a real source by touch; pause before observing animated UI.
+    # Short fixture tracks left at their end finish immediately on Play album.
+    for song in songs:
+        baseline.reset_progress(run.viewer, song['id'])
+    resolve_session_prompt()
+    # Seed listening on the real fixture origin. The transfer proxy is only for
+    # download fault injection; streaming through it left the session in NONE.
+    port = run.state['port']
+    adrv.adb('reverse', f'tcp:{port}', f'tcp:{port}')
     run.touch('^Play album$')
-    deadline = time.monotonic() + 20
+    resolve_session_prompt()
+    deadline = time.monotonic() + 25
     while baseline.session_state()['state'] != 'PLAYING' and time.monotonic() < deadline:
-        time.sleep(.2)
-    assert baseline.session_state()['state'] == 'PLAYING'
+        # A prepared but idle session often needs an explicit media play.
+        if baseline.session_state()['state'] in (None, 'NONE', 'PAUSED'):
+            adrv.adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PLAY')
+        time.sleep(.4)
+    assert baseline.session_state()['state'] == 'PLAYING', baseline.session_state()
     run.pause()
     app_ui.back()
     assert adrv.wait('^Play album$'), app_ui.labels()
@@ -292,6 +344,7 @@ def happy(run):
         adrv.adb('shell', 'cmd', 'uimode', 'night', mode)
         time.sleep(.7)
         artifacts.append(run.shot('dialog-' + theme))
+    adrv.adb('reverse', f'tcp:{port}', f'tcp:{run.proxy.port}')
     run.proxy.hold(ids[0])
     try:
         run.start()
@@ -388,6 +441,7 @@ def catalog_playlist(run, numbers, label):
 
 
 def interruption(run):
+    use_proxy(run)
     ids = catalog_playlist(run, [1, 2, 3], 'interrupted')
     run.proxy.fail_once = ids[1]
     run.dialog()
@@ -408,6 +462,7 @@ def interruption(run):
 
 
 def cancellation(run):
+    use_proxy(run)
     ids = catalog_playlist(run, [4, 5, 6], 'cancel')
     run.proxy.hold(ids[1])
     try:
@@ -433,6 +488,7 @@ def cancellation(run):
 
 
 def permission(run):
+    use_proxy(run)
     ids = catalog_playlist(run, [7, 8], 'permission')
     run.dialog()
     grant = {'set_id': run.state['set_ids']['Music'], 'user_id': run.viewer_id, 'role': 'viewer'}
@@ -501,10 +557,11 @@ def offline(run):
             assert adrv.wait('^Downloads$'), app_ui.labels()
         run.record('every saved bulk entry decodes and advances with real source audio while disconnected', data={'copies': proof}, artifacts=[run.evidence.path(f'offline-{item["id"]}.wav') for item in run.targets])
     finally:
-        adrv.adb('reverse', f'tcp:{port}', f'tcp:{run.proxy.port}')
+        use_origin(run)
 
 
 def account(run):
+    use_proxy(run)
     ids = catalog_playlist(run, [9, 10], 'account')
     run.proxy.hold(ids[0])
     try:
@@ -544,11 +601,15 @@ def main(argv=None):
     initial_night = adrv.adb('shell', 'cmd', 'uimode', 'night').strip().rsplit(' ', 1)[-1]
     port = run.state['port']
     run.proxy.start()
-    adrv.adb('reverse', f'tcp:{port}', f'tcp:{run.proxy.port}')
+    # Keep the fixture origin mapped directly for login/catalog/playback.
+    # Individual download-fault steps remap through the proxy when needed.
+    adrv.adb('reverse', f'tcp:{port}', f'tcp:{port}')
     try:
         assert app_ui.foreground(), 'Parent must foreground and sign in the existing app before the lease'
         # The existing UI login helper logs out through Settings; it never resets app data.
         recovery.login_other(run, run.auth['user'])
+        resolve_session_prompt()
+        clear_saved_queue(run)
         for name, step in [('happy', happy), ('interruption', interruption), ('cancel', cancellation),
                            ('permission', permission), ('account', account), ('offline', offline)]:
             if args.scenario not in (name, 'all'):
