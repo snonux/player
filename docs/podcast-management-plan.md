@@ -171,9 +171,9 @@ Firefox. Passing journeys so far:
 
 | Platform | Passing stages |
 | --- | --- |
-| Android A | standalone direct publisher download/playback without server audio, explicit account association, observe completed and uncompleted, local delete/redownload, feed-folder and combined-view page 2 |
-| Android B | cross-client audible resume and independent download, natural-end completion, observe completed, manual uncompletion, local delete/redownload |
-| Chrome and Firefox | subscription catalog, shared-position audible resume, completion and uncompletion visibility, shared-server copy delete/redownload; non-podcast progress on global Retry, partial failure and exact 48-hour/never-synced feedback; bounded pre-playback fallback and late-response stability; conflicting subscription tombstones; genuine sync `401`, quiet sign-in, and narrow light/dark focus and target checks |
+| Android A | standalone direct publisher download/playback without server audio, explicit account association, observe completed and uncompleted, local delete/redownload, feed-folder and combined-view page 2; account isolation and quiet never-synced feedback; bounded pre-playback sync and late-response stability; controlled 48-hour stale feedback and full retry; genuine sync `401` during audible playback; ordinary music progress through partial failure, process death, and global retry; offline unsubscribe tombstone through restart and reconnect; explicit resubscribe |
+| Android B | cross-client audible resume and independent download, natural-end completion, observe completed, manual uncompletion, local delete/redownload; observe A's unsubscribe while retaining its own copy and history; explicit resubscribe without redownload |
+| Chrome and Firefox | subscription catalog, shared-position audible resume, completion and uncompletion visibility, shared-server copy delete/redownload; non-podcast progress on global Retry, partial failure and exact 48-hour/never-synced feedback; bounded pre-playback fallback and late-response stability; conflicting subscription tombstones and observation of A's unsubscribe; genuine sync `401`, quiet sign-in, and narrow light/dark focus and target checks |
 
 These stages establish the main four-client flow, including separate Android
 files and retained history. They do not yet prove every acceptance boundary.
@@ -185,24 +185,27 @@ For example, the passing native runs include
 `evidence/native-B/20261026T134658.547694Z-finish/results.json` under the
 fixture directory above. The matching browser results are under
 `evidence/{chrome,firefox}/`; passing stage directories end in `feedback`,
-`boundaries`, `conflict`, and `auth-visual`. Later attempts do not erase failed
-attempts, so use each stage's passing `results.json` and associated captures.
+`boundaries`, `conflict`, `auth-visual`, and `unsubscribed`. Later attempts do
+not erase failed attempts, so use each stage's passing `results.json` and
+associated captures. The native additions were verified in installed build
+4025 for `isolation`, `preplay`, `feedback`, and `auth`, then build 4026 for
+`globalprogress`, `unsubscribe`, `observe-unsubscribed`, and `resubscribe`:
+`evidence/native-A/20261026T155036.809324Z-isolation/results.json`,
+`evidence/native-A/20261026T155321.749471Z-preplay/results.json`,
+`evidence/native-A/20261026T160531.950552Z-feedback/results.json`,
+`evidence/native-A/20261026T160654.080002Z-auth/results.json`,
+`evidence/native-A/20261026T162732.836899Z-globalprogress/results.json`,
+`evidence/native-A/20261026T163059.686118Z-unsubscribe/results.json`,
+`evidence/native-B/20261026T162216.225545Z-observe-unsubscribed/results.json`,
+and `evidence/native-B/20261026T162245.668774Z-resubscribe/results.json`.
+Browser unsubscribe observations are in
+`evidence/chrome/1793031332420-unsubscribed/results.json` and
+`evidence/firefox/1793031341530-unsubscribed/results.json`.
 
-The native account-isolation journey proved a quiet never-synced state and
-separate subscriptions on the second account, but its full-sync footer stayed
-**Not synced yet** despite a server/database full-success record. A coordinator
-status race was repaired in commit `01c527b`; the installed app still needs a
-build with that repair and an actual rerun before the journey passes. Native
-pre-playback started audible output in 5.48 seconds, but the expected scoped
-sync request was absent, so bounded reconciliation and late-response safety
-are **not** verified by that attempt. Native non-podcast global progress,
-offline tombstone/restart/reconnect, quiet 48-hour and authentication feedback,
-and the second client's tombstone observation still need actual checks. Browser
-observation of the native unsubscribe remains pending, although browser-only
-conflicting tombstones passed. Selected-server switching, native account
-switching during a held response, failed end-sync with next-source playback,
-and download cancel/seek/error negative journeys still need evidence. Record
-their results here before closing `5i3`.
+Selected-server switching, native account switching during a held response,
+conflicting episode edits, failed end-sync with next-source playback, and
+download cancel/seek/error negative journeys still need evidence. Complete
+those journeys and final integrated gates before closing `5i3`.
 
 No release is requested by this plan. A later release must use the shared
 version/bump workflow, build both components, and update the Android F-Droid
