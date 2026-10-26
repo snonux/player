@@ -342,6 +342,48 @@ void main() {
     expect((await store.status(scope))['last_full_success_ms'], isNull);
     coordinator.dispose();
   });
+  test('late status read cannot erase a newly committed full success',
+      () async {
+    final mediaEntered = Completer<void>();
+    final releaseMedia = Completer<void>();
+    final refreshEntered = Completer<void>();
+    final releaseRefresh = Completer<int>();
+    var pendingCalls = 0;
+    final coordinator = GlobalSyncCoordinator(
+        PodcastSync(store),
+        () => GlobalSyncAccount(
+            podcast: PodcastSyncAccount(
+                scope: scope,
+                current: () => true,
+                supported: () async => true,
+                send: (_) async => reply()),
+            syncMedia: (_) async {
+              mediaEntered.complete();
+              await releaseMedia.future;
+            },
+            flushProgress: () async {},
+            pendingOther: () {
+              pendingCalls++;
+              if (pendingCalls == 2) {
+                refreshEntered.complete();
+                return releaseRefresh.future;
+              }
+              return Future.value(0);
+            }),
+        now: () => DateTime.fromMillisecondsSinceEpoch(9000));
+    final running = coordinator.syncNow();
+    await mediaEntered.future;
+    final refreshing = coordinator.refreshStatus();
+    await refreshEntered.future;
+    releaseMedia.complete();
+    await running;
+    expect((await store.status(scope))['last_full_success_ms'], 9000);
+    expect(coordinator.state.lastFullSuccessMs, 9000);
+    releaseRefresh.complete(0);
+    await refreshing;
+    expect(coordinator.state.lastFullSuccessMs, 9000);
+    coordinator.dispose();
+  });
   test(
       'global queue failure and new edits during success keep truthful pending',
       () async {

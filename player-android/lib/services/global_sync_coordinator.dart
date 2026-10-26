@@ -132,7 +132,9 @@ class GlobalSyncCoordinator extends ChangeNotifier {
     }
     _running = _run(explicit).catchError((Object error) {
       if (_disposed) return;
-      if (lease == null || !lease.current()) return;
+      if (!lease.current()) return;
+      // A status read begun during this run may still hold the older row.
+      _statusGeneration++;
       state = GlobalSyncState(
           scope: lease.scope,
           pending: state.pending,
@@ -209,6 +211,9 @@ class GlobalSyncCoordinator extends ChangeNotifier {
       if (!current()) throw StateError('Account changed');
     });
     if (!current()) return;
+    // The committed result supersedes status reads begun while this run was
+    // active; otherwise a late read can replace visible success with "never".
+    _statusGeneration++;
     state = GlobalSyncState(
         scope: lease.scope,
         pending: remaining,
