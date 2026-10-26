@@ -3,12 +3,14 @@ Podcast Support
 
 Per-account subscriptions, stable feed and episode identities and their
 synchronization are specified in
-[podcast-sync-contract.md](../../docs/podcast-sync-contract.md). Implemented
-so far: identities, the migration, subscription and episode state sync
+[podcast-sync-contract.md](../../docs/podcast-sync-contract.md). Implemented:
+identities, the migration, subscription and episode state sync
 (`POST /api/v1/podcasts/sync`, advertised as `podcast_sync` in
 `/api/v1/config`), feed and episode merges, legacy identity retirement,
-and the catalog/fetch rules below. Platform verification belongs to task
-`5i3`; server tests alone do not verify Chrome, Firefox or Android.
+and the catalog/fetch rules below. The main cross-client journey has been
+exercised in Chrome, Firefox and two installed Android clients; task `5i3`
+still tracks boundary checks in the
+[verification plan](../../docs/podcast-management-plan.md#integrated-verification-snapshot-2026-10-26).
 
 Podcasts are **special sets** (`sets.is_podcast = 1`). They reuse set permissions, browsing, and cover images, while adding feed management and episode tracking.
 
@@ -22,8 +24,9 @@ An expired session offers **Sign in** rather than reporting a server outage.
 Podcast pending edits are kept only in the open tab; keep it open until synced.
 The browser also performs quiet full passes while visible and on reconnection;
 it does not promise background execution after the tab closes. Native Android
-uses its existing durable coordinator and a labeled global control. Actual
-Chrome, Firefox and two-device acceptance remains pending for `4i3`/`5i3`.
+uses its existing durable coordinator and a labeled global control. Partial
+success, stale-age and authentication behavior still require actual platform
+checks before `5i3` can close.
 
 ### Subscribing
 

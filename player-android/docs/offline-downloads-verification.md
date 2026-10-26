@@ -24,6 +24,14 @@ deleting the file and its index row. Late progress saves update existing rows
 only. Android document-picker files use the existing separate library and are
 never removed by this manager.
 
+Podcast episodes use a separate device podcast store and direct publisher
+downloads, described in [standalone podcasts](standalone-podcasts.md). They do
+not enter this server-media Downloads index, require a server media ID, or
+invoke the server episode-download endpoint. The installed two-device podcast
+journey has verified independent copies, removal and redownload with listening
+history retained; the remaining cross-platform sync boundaries are tracked in
+the [podcast verification plan](../../docs/podcast-management-plan.md#integrated-verification-snapshot-2026-10-26).
+
 ## Host checks
 
 ```sh

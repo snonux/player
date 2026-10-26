@@ -1,7 +1,8 @@
 # Independent podcasts and synchronized listening
 
-Status: planned; the [synchronization contract](podcast-sync-contract.md) is
-specified, implementation and platform verification have not started.
+Status: implementation and integrated verification in progress. The
+[synchronization contract](podcast-sync-contract.md) is specified. Task `5i3`
+remains open until every required browser and native boundary is verified.
 
 ## Goal
 
@@ -160,6 +161,40 @@ tests alone do not verify native Android behavior.
 
 Follow root and component `AGENTS.md` and component-local README commands.
 Update the API and podcast documentation to match implemented behavior.
-Implementation tasks remain pending until worked; no release is requested by
-this plan. A later release must use the shared version/bump workflow, build both
-components, and update the Android F-Droid changelog.
+
+### Integrated verification snapshot (2026-10-26)
+
+The isolated fixture is under `/home/paul/tmp/player-integrated-verify/podcast-5i3`;
+each platform's `evidence/<platform>/<run>/results.json` records the stage
+result. It uses two separate installed Android emulator clients, Chrome and
+Firefox. Passing journeys so far:
+
+| Platform | Passing stages |
+| --- | --- |
+| Android A | standalone direct publisher download/playback without server audio, explicit account association, observe completed and uncompleted, local delete/redownload |
+| Android B | cross-client audible resume and independent download, natural-end completion, observe completed, manual uncompletion, local delete/redownload |
+| Chrome and Firefox | subscription catalog, shared-position audible resume, completion and uncompletion visibility, shared-server copy delete/redownload |
+
+These stages establish the main four-client flow, including separate Android
+files and retained history. They do not yet prove every acceptance boundary.
+For example, the passing native runs include
+`evidence/native-A/20261026T113434.160264Z-standalone/results.json`,
+`evidence/native-A/20261026T120538.859369Z-associate/results.json`,
+`evidence/native-B/20261026T124041.654457Z-resume/results.json`, and
+`evidence/native-B/20261026T134658.547694Z-finish/results.json` under the
+fixture directory above. Browser runs are recorded separately under
+`evidence/chrome/` and `evidence/firefox/`; later attempts do not erase failed
+attempts, so use each stage's passing `results.json` and associated captures.
+The native folder/combined pagination stage has a failed attempt and needs
+repair and rerun. Browser 48-hour feedback has failed in both browsers and is
+under investigation. Native pre-playback delay, non-podcast global progress,
+account isolation, offline tombstone/reconnect, quiet feedback and auth checks
+remain to run; browser delayed-response, conflicting-edit and unsubscribe
+checks also remain. Selected-server switching, a genuine browser 401, visual
+focus/contrast, native account switching during a held response, failed
+end-sync with next-source playback, and download cancel/seek/error negative
+journeys still need evidence. Record their results here before closing `5i3`.
+
+No release is requested by this plan. A later release must use the shared
+version/bump workflow, build both components, and update the Android F-Droid
+changelog.

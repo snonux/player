@@ -101,9 +101,20 @@ completion, position and pending sync edits remain. **Unsubscribe (keep
 history)** is separate. Existing server episode copies remain ordinary server
 media and previously kept offline copies remain in Downloads.
 
-Implementation checks cover local storage and widgets. Installed Android,
-Chrome/Firefox and two-client acceptance remain pending; see
-[podcast browsing implementation](../docs/podcast-browsing-implementation.md).
+Signing in does not silently move a standalone podcast library into an
+account. If the selected server supports podcast sync, the app asks once per
+account whether to **Sync** this device's podcasts and history or **Keep
+separate**. A declined or dismissed choice can be repeated with **Settings →
+Sync this device's podcasts**. Device audio stays on the device in either
+case; only subscriptions and listening history are associated with the
+account. An older server or a locked account leaves standalone use available.
+
+Local storage and widget checks are supplemented by the installed two-Android,
+Chrome and Firefox main listening journey. The remaining platform boundary
+checks are listed in the
+[verification plan](../docs/podcast-management-plan.md#integrated-verification-snapshot-2026-10-26);
+see also [podcast browsing implementation](../docs/podcast-browsing-implementation.md).
+
 Podcast playback attempts synchronization for at most three seconds before
 starting, then uses saved device state when unavailable. Background playback
 saves progress; natural episode end saves completion before a quiet sync.
@@ -121,7 +132,7 @@ full success. **Retry** keeps playback running; authentication instead asks you
 to sign in again. Session conflicts are resolved in Now Playing. Standalone use
 shows no sync hint. Pending Android edits survive restart; switching accounts
 loads that account's own saved status. Implementation checks pass; installed
-platform acceptance remains pending in
+48-hour, partial-failure and authentication acceptance remains pending in
 [4i3 notes](../docs/podcast-global-sync-feedback-implementation.md).
 
 ## Keep server files offline

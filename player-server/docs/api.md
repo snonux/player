@@ -2219,6 +2219,17 @@ The server keeps two separate things (see
   only listening history of an episode; the server copy's media progress is
   a projection of it.
 
+Synchronization transfers those account registers and identities, never audio
+bytes or download availability. Native Android subscribes, refreshes feeds and
+downloads episode audio directly from the publisher into its device podcast
+store; it can do this without a server login or server media row. A browser's
+explicit episode download calls the server endpoint below and creates a
+separate server copy shared by server listeners. Deleting a device copy leaves
+the server copy; deleting the server copy leaves device copies. Both preserve
+episode history. The four-client main journey has installed-platform
+evidence, but the remaining failure and feedback boundaries are tracked in the
+[verification plan](../../docs/podcast-management-plan.md#integrated-verification-snapshot-2026-10-26).
+
 Feeds and episodes carry stable identities: `feed_key` (the canonical feed
 URL without scheme, or `legacy-feed:<n>` for a stored URL that has none) and
 `episode_key` (`guid:<guid>`, `enc:<canonical enclosure URL>`, or
