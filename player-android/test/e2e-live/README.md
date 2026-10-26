@@ -918,8 +918,36 @@ python3 player-android/test/e2e-live/music_personal_counts_e2e.py \
 ```
 
 Pass `--apk /path/to/installed.apk` to include its SHA-256 in `versions.json`.
-The offline phase expects the saved long copy to start below 15 seconds; if a
-prior run left it near the end, reset its position through the app before
-rerunning. The runner records failures instead of treating an unexecuted phase
-as native acceptance. Review each `android/evidence.jsonl`, screenshots and
-WAV before marking M36 complete.
+The offline phase rewinds a saved long copy if a prior run left it near the
+end. The runner records failures instead of treating an unexecuted phase as
+native acceptance. Review each `android/evidence.jsonl`, screenshots and WAV
+before marking M36 complete.
+
+# M47 pinned music collections
+
+Use the installed release APK, the single rooted API34 emulator with QEMU WAV
+output, and a disposable music fixture. The M36 fixture above has an untouched
+three-song Night Transit album; create a user-owned playlist containing those
+same three song IDs to check overlapping collection pins. Use one emulator and
+run browser workers separately. Do not clear app data between the online and
+offline steps.
+
+In the signed-in app, open Night Transit and the playlist by touch. Pin each
+through **Pin offline…**, and check the visible `3 of 3` state against
+`music_offline_pins`, complete `downloads` rows, and exact saved bytes. In
+Settings → Playback cache, clear a populated disposable cache and check that
+the kept files remain. Remove only the fixture's `adb reverse` mapping, open
+Downloads → Saved music collections, and play a pinned collection; record its
+real QEMU output. Force-stop and relaunch while still disconnected, choose
+**Use files on this device**, then play the other pinned collection. Restore
+the reverse mapping in `finally`.
+
+Unpin the album and confirm its files and the overlapping playlist pin remain.
+Use Downloads → **Remove download** on one shared song: its confirmation must
+say the server file stays available, and the playlist must become partial with
+**Play downloaded** unavailable. Reconnect, sign in, and use **Retry pinning**
+to restore the missing original; then unpin the playlist and confirm files are
+retained. Switching to another server account must disable pin/refresh for the
+first account's saved snapshot. Review the dialog in light and dark mode and
+check Back/Close. Keep screenshots, WAV, exact-byte state and versions outside
+the repository; no media, APK, database or coverage artifacts belong in git.

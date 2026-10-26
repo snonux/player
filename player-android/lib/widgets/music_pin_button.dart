@@ -257,9 +257,9 @@ class _PinDialogState extends ConsumerState<_PinDialog> {
           TextButton(onPressed: _play, child: const Text('Play downloaded')),
         FilledButton(
             onPressed: _busy || !_current() || !canSave ? null : _save,
-            child: Text(_pin == null
+            child: Text(_pin == null || !_pin!.pinned
                 ? 'Pin offline'
-                : _pin!.complete && _pin!.pinned
+                : _pin!.complete
                     ? 'Refresh pin'
                     : 'Retry pinning')),
       ],
