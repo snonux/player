@@ -261,6 +261,12 @@ class Run:
             if len(chips) != 1 or not (chips[0]['sel'] == 'true' or chips[0]['checked'] == 'true'):
                 raise AssertionError('Fresh native episode view did not default to Uncompleted')
         self.touch('^' + filter_name + '$')
+        selected = [node for node in adrv.nodes() if adrv.label(node) == filter_name]
+        if not any(node.get('sel') == 'true' or node.get('checked') == 'true' for node in selected):
+            raise AssertionError(f'Episode filter {filter_name!r} did not become selected')
+        selected = [node for node in adrv.nodes() if adrv.label(node) == filter_name]
+        if not any(node.get('sel') == 'true' or node.get('checked') == 'true' for node in selected):
+            raise AssertionError(f'Episode filter {filter_name!r} did not become selected')
 
     def row(self, action, title=None, required=True):
         title = title or self.episode['title']
@@ -564,12 +570,15 @@ class Run:
                     before=before, after=after)
 
     def finish(self):
-        self.episodes()
+        # Feed-scoped All: combined Uncompleted can be empty after other clients.
+        self.podcasts()
+        self.touch('^Refresh feeds$')
+        self.episodes(combined=False, filter_name='All')
         if not self.audio.available():
             raise AssertionError('Native output capture required')
         mark = self.audio.mark()
-        self.row('(?:Play|Resume)')
-        deadline = time.monotonic() + 80
+        self.row(r'(?:Play|Resume|Play from beginning)')
+        deadline = time.monotonic() + 90
         playing = False
         while time.monotonic() < deadline:
             state = session_state()
