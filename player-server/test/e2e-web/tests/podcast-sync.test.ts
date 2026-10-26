@@ -219,7 +219,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         // visible control, then give both tabs the same baseline.
         if ((await history(other, target.key)).completed) {
           await card(other).hover();
-          await actionByKeyboard(other, card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }));
+          await card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }).click();
           await expect.poll(async () => (await history(other, target.key)).completed).toBe(false);
         }
         if (!(await history(other, target.key)).server_copy?.media_id) {
@@ -244,7 +244,10 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
           }
           await route.fulfill({ response });
         });
-        await actionByKeyboard(page, card(page).getByRole('button', { name: 'Mark completed', exact: true }));
+        // This card can rerender after the preceding pull. Pointer activation
+        // follows the visible replacement control; keyboard focus is covered
+        // by the separate completion journey.
+        await card(page).getByRole('button', { name: 'Mark completed', exact: true }).click();
         await Promise.race([
           held,
           page.waitForTimeout(20_000).then(() => { throw new Error('Visible completion did not produce a held successful sync response'); }),
@@ -258,7 +261,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         await card(other).hover();
         await expect(card(other).getByRole('button', { name: 'Mark uncompleted', exact: true })).toBeVisible();
         await other.waitForTimeout(10);
-        await actionByKeyboard(other, card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }));
+        await card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }).click();
         await expect.poll(async () => (await history(other, target.key)).completed).toBe(false);
         await playCard(other, card(other));
         await expect.poll(async () => (await audioState(other)).time).toBeGreaterThan(2);
