@@ -128,3 +128,24 @@ worker manifest was unchanged. R2 confirmed the blocker resolved with no new
 blocking findings. Parent corrected the existing standalone guide to describe
 the new routes and browsing controls; the final manifest contains 18 paths.
 No broader checks or runtime actions ran.
+
+## Integrated acceptance — 2026-10-27
+
+The retained 5i3 fixture at
+`/home/paul/tmp/player-integrated-verify/podcast-5i3` verifies the native
+standalone Podcasts destination in installed Android A and B clients. Native A
+subscribed directly to two feeds with the Player server unavailable, saw feed
+names in the combined view, and navigated the actual next page in both a
+podcast folder and All podcast episodes. The completion stages showed
+Completed and Uncompleted filters reconciling with browser and client B edits;
+manual uncompletion returned the episode to the default view without clearing
+its saved position. Direct download, Play from beginning, local delete/retry,
+Back and account isolation were exercised through visible controls, while
+native playback retained real publisher audio and listening state. Installed
+Chrome and Firefox passed the corresponding shared subscription/episode
+journeys. The passing `standalone`, `browse`, `observe-completed`,
+`observe-uncompleted`, `cleanup`, `isolation` and browser stage result files
+retain the checks. The focused SQLite/widget tests above cover retained page
+state, alias joins and ranking under mixed copy states. Very large catalog
+scalability remains unmeasured. No relevant native browsing code changed after
+the integrated run, so its evidence was reused for task `1i3`.
