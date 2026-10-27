@@ -1,5 +1,27 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M33 smart playlists, start a **fresh** disposable `music_fixture.py up`
+server with `--no-doubles`. Run the focused journey in installed Chrome, then
+Firefox, one worker and browser at a time:
+
+```sh
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M33_ISOLATED=1 \
+PLAYER_M33_EVIDENCE=/tmp/player-m33-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null GOMAXPROCS=2 \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-smart-playlists.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox using the same fixture.
+```
+
+The journey creates a shared smart list through the real editor and checks
+metadata order/limit and captured playback. It then changes rating, favorite,
+qualified-play and UTC date rules, refreshes after saved data changes, checks
+viewer-private results and read-only writes, and retains a draft after an
+offline Save error. The two browsers use different accounts. Start fresh for
+each full pair because qualified plays intentionally persist. Stop the fixture
+after Android acceptance; artifacts stay outside the repository.
+
 For M37 durable listening history, make a disposable fixture, add its two
 80-second tagged songs, then run one installed browser at a time:
 
