@@ -970,3 +970,25 @@ retained. Switching to another server account must disable pin/refresh for the
 first account's saved snapshot. Review the dialog in light and dark mode and
 check Back/Close. Keep screenshots, WAV, exact-byte state and versions outside
 the repository; no media, APK, database or coverage artifacts belong in git.
+
+# M49 offline music browsing
+
+With one rooted emulator already running the installed app and QEMU WAV output,
+run the focused native journey against a fresh disposable music fixture:
+
+```sh
+python3 -u player-android/test/e2e-live/music_offline_browse_e2e.py \
+  /home/paul/tmp/codex/player-m49-18846 \
+  --emulator-wav /path/to/emulator-output.wav \
+  --evidence-dir /home/paul/tmp/codex/player-m49-native-evidence
+```
+
+The runner clears only Player app data at startup, connects to the fixture,
+pins Night Transit and an overlapping playlist through native controls, then
+removes only that fixture's `adb reverse` mapping. After a cold relaunch it
+opens Downloads → Browse offline music, checks Songs, Albums, Artists,
+Playlists, search, Back and light/dark layouts, and captures actual offline
+First Light output. It restores the reverse route, verifies the browser stays
+local until explicit reconnection, and signs back in. The previous reverse
+mapping and system theme are restored in `finally`; server and emulator stay
+running. Pass an unused evidence directory outside the repository.

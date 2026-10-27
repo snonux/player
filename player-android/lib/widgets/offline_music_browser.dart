@@ -161,6 +161,11 @@ class _OfflineMusicBrowserState extends ConsumerState<OfflineMusicBrowser> {
                         'saved': group.songs.length,
                         'total': group.total
                       }))),
+                  if (group.songs.length < group.total)
+                    Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(context.tr(
+                            'Some downloads are missing. Reconnect and download them again.'))),
                   Wrap(spacing: 8, children: [
                     for (final action in QueueInsertion.values)
                       TextButton(
