@@ -1,12 +1,11 @@
 # M52 network-aware music settings
 
-Task `6l3`: implementation stage. Prerequisites `nj3`/`oj3` accepted;
+Task `6l3`: implementation and focused browser acceptance. Prerequisites `nj3`/`oj3` accepted;
 stream quality `4k3` (`9cd5343`), playback cache `ok3` (`8a7256e`) and separate
 download quality `5l3` (`8612150`) supply the existing playback policies.
-Full suites, final builds and actual Chrome, Firefox and native acceptance are
-deferred to the user-authorized integrated verification phase. This document
-is not platform acceptance evidence. Optional cover data saver is outside this
-implementation slice.
+Full suites and final builds are deferred to the user-authorized integrated
+verification phase. Native acceptance is tracked separately. Optional cover
+data saver is outside this implementation slice.
 
 ## Interaction and state layout
 
@@ -62,7 +61,7 @@ remain durable locally; Continue session explains that it waits for Wi-Fi and
 can be retried after changing settings. It does not claim to restrict all
 library traffic. Existing sync retry paths continue to own transfers.
 
-## Deferred integrated journeys
+## Integrated journey checklist
 
 - Chrome and Firefox: Auto with missing bearer reports Mobile settings; manual
   Wi-Fi/Mobile switches selected quality on actual requests. Native: real
@@ -79,6 +78,44 @@ library traffic. Existing sync retry paths continue to own transfers.
   Escape focus, narrow/light/dark rendering and long/unavailable profile labels.
 
 No release, version bump, push or deployment is included.
+
+## Focused browser acceptance, 2026-10-27
+
+An isolated `--no-doubles --shuffle-playback` fixture at
+`/home/paul/tmp/codex/player-m52-18890` served real 45-second Night Transit
+tracks from `http://127.0.0.1:18890`. Server 0.8.2 build
+`c6375805bfd3c159915172090c5e3516a52c1679-dirty` was exercised by
+installed Chrome 144.0.7559.132 and Firefox 156.0. Each browser ran alone
+with one Playwright worker and `GOMAXPROCS=2`:
+
+```sh
+cd player-server/test/e2e-web
+GOMAXPROCS=2 PLAYER_MUSIC_FIXTURE=/home/paul/tmp/codex/player-m52-18890 \
+  PLAYER_E2E_PULSE_SINK=player_e2e_null npx --no-install playwright test \
+  -c playwright.music.config.ts tests/music-network-aware.test.ts \
+  --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+Chrome 3/3 and Firefox 3/3 passed. The focused runner checks unknown browser
+bearer => Mobile settings; independent manual Wi-Fi and Mobile quality on real
+`compat?profile=aac128` and `compat?profile=opus96` responses; source stability
+until the next open; persisted preferences after reload; and AudioWorklet
+output matching the fixture tone. Wi-Fi-only mode leaves the current song
+playing while it blocks a cached song and a converted song without starting
+either request. Switching back to Wi-Fi and pressing Play recovers real audio.
+
+With a fresh scoped account, it checks that default Mobile prefetch issues no
+next-song request, Wi-Fi prefetch and explicitly enabled Mobile prefetch cache
+the actual successors, and queue edits remain locally durable through reload
+and a temporary browser-offline period. Continue session explains Wi-Fi
+deferral; real queue PUTs complete after reconnecting and selecting Wi-Fi.
+Progress remains callable under the sync restriction. Keyboard Escape restores
+focus, and narrow 390px settings were captured in dark and light themes with
+no horizontal overflow. Evidence and WAV/screenshots are under
+`/home/paul/tmp/codex/player-m52-evidence/{chrome,firefox}`. This is focused
+M52 acceptance; the ten-task integrated regression and native checks are
+separate gates.
 
 ## Focused implementation checks
 
@@ -105,11 +142,13 @@ intentional fake-Cast failure logs remain part of that passing test. Network
 policy and gapless gain tests were rerun and passed. Native scope-label changes
 were formatted; previous focused native passing results were reused. Root owns
 the new module's service-worker registration. All required actual platform
-journeys remain unverified until the integrated phase.
+journeys were pending at that implementation checkpoint; focused browser
+acceptance is recorded above.
 
 Round 1 reviewed the combined source guards, quality/cache/gapless policy,
 saved-session durability/retry and UI scope labels without confirming a
 blocking or nonblocking defect. No second review was needed. Root registered
-`network-policy.js` in SW v72. This is a reviewed implementation only; actual
-Chrome/Firefox/Android/network journeys and integrated suites/builds remain
-pending. Optional cover saving is outside this slice as stated above.
+`network-policy.js` in SW v72. At that checkpoint, actual platform journeys
+and integrated suites/builds remained pending. Focused Chrome and Firefox
+acceptance is recorded above; native and integrated gates are tracked
+separately. Optional cover saving is outside this slice as stated above.
