@@ -39,11 +39,12 @@ def nodes():
             marker = f"UI hierchary dumped to: {remote}"
             text_out = dump.stdout.decode(errors="replace")
             text_err = dump.stderr.decode(errors="replace")
-            idle = "could not get idle state" in text_err.lower()
+            retryable = ("could not get idle state" in text_err.lower()
+                         or "null root node returned" in text_err.lower())
             if (marker not in text_out.splitlines()
                     or b"ERROR" in dump.stdout.upper() or b"ERROR" in dump.stderr.upper()):
                 last_error = RuntimeError("Fresh UI dump failed: " + _ui_diagnostic(dump))
-                if idle and attempt < 5:
+                if retryable and attempt < 5:
                     time.sleep(0.6 + attempt * 0.3)
                     continue
                 raise last_error

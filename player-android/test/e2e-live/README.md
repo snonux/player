@@ -1,5 +1,24 @@
 # Android live end-to-end run
 
+For M10 enrichment, keep a disposable music fixture running with
+`MUSIC_ENRICHMENT_URL=http://127.0.0.1:18910/metadata` and the deterministic
+provider from `player-server/test/enrichment/provider.py` using mode file
+`/tmp/player-m10-mode`. Install the current APK on the one running emulator
+with QEMU WAV output, then from the repository root run:
+
+```sh
+python3 -u player-android/test/e2e-live/music_enrichment_e2e.py /path/to/fixture \
+  --emulator-wav /path/to/emulator-output.wav --evidence /tmp/player-m10-native
+```
+
+The runner maps both the Player and provider ports through `adb reverse`,
+signs in as fixture admin and viewer, and checks touch refresh, provider
+image/link, no match, failure, retained local cover, audio, offline Retry and
+revoked access. It restores the provider's ready mode and viewer grant, and
+clears app data on exit. Pass `--resume-device` to retain the signed-in app and
+reverse mappings for a following native journey. It does not start an emulator
+or server.
+
 `music_equalizer_e2e.py` verifies M25 on an already signed-in disposable
 fixture and normal installed app, using a running emulator with QEMU WAV
 output. It never clears app data or restarts the server/emulator. Run it
