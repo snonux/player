@@ -115,13 +115,20 @@ Shared Chrome catalog journeys: `music-albums.test.ts` + `music-search.test.ts`
 (`/home/paul/tmp/codex/player-m55-web-chrome.log`). Firefox: 6/7 passed; one
 ordered-collection case hit the known floating-player overlay flake.
 
-Android Auto Desktop Head Unit package is now installed at
+Android Auto Desktop Head Unit package is installed at
 `Android/Sdk/extras/google/auto/desktop-head-unit` (`sdkmanager
-'extras;google;auto'`). DHU TCP-connects to `adb forward tcp:5277`, then exits
-because the API 34 Google APIs emulator only ships
-`com.google.android.projection.gearhead` **stub**
-(`versionName=1.2.531830-stub`) with StubSettingsActivity and no
-HeadUnitServerService. Real DHU browse/play/search/audio cannot run until a
-non-stub Android Auto build (Play Store install) or an Automotive system image
-is available. AutoBrowseService remains registered in the Player APK; no Auto
-host proof is claimed. Task stays pending on that external host gap.
+'extras;google;auto'`). On the phone API 34 Google APIs AVD, DHU TCP-connects
+to `adb forward tcp:5277` then exits because
+`com.google.android.projection.gearhead` is a **stub**
+(`versionName=1.2.531830-stub`) without HeadUnitServerService.
+
+An Automotive x86_64 AVD (`Player_Automotive_API34`, system image
+`android-34-ext9;android-automotive;x86_64`) boots and runs
+`com.android.car.media` with Local Media Player browse tabs. Player’s
+`AutoBrowseService` is installed and registered. Completing Player account
+sign-in on the car’s 320×640 launcher UI did not succeed in this session
+(credentials form / keyboard dialogs are clipped), so Player never appeared as
+a selectable media source and browse/play/search were not exercised. Evidence:
+`/home/paul/tmp/codex/player-m55-evidence/`. Task stays pending until a usable
+Auto host path (signed-in Player + car media source, or non-stub phone DHU) is
+available. No Auto host browse/play proof is claimed.
