@@ -34,11 +34,19 @@ export async function audioState(page: Page): Promise<AudioState> {
 /** Sign in through the login form by keyboard only (Tab between fields). */
 export async function keyboardLogin(page: Page, account: Account): Promise<void> {
   await page.goto('/login.html');
-  await expect(page.locator('#username')).toBeFocused();
-  await page.keyboard.type(account.username);
-  await page.keyboard.press('Tab');
-  await page.keyboard.type(account.password);
-  await page.keyboard.press('Enter');
+  // app.js is a module; submitting before it binds turns the form into a GET
+  // with credentials in the query string and never reaches /api/v1/auth/login.
+  await page.waitForLoadState('networkidle');
+  const username = page.locator('#username');
+  const password = page.locator('#password');
+  await expect(username).toBeVisible();
+  // Firefox can lose the autofocus race after goto; click before typing so the
+  // credentials land in the fields instead of the document body.
+  await username.click();
+  await username.fill(account.username);
+  await password.click();
+  await password.fill(account.password);
+  await page.getByRole('button', { name: 'Sign In', exact: true }).click();
   // Prefer domcontentloaded: heavy music shell can delay the window load
   // event past Playwright's default waitForURL budget.
   await page.waitForURL((url) => url.pathname === '/', { waitUntil: 'domcontentloaded' });

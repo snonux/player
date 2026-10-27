@@ -57,7 +57,6 @@ import { initTrash, moveToTrash } from './trash.js';
 import { initModalFocus } from './modal-focus.js';
 import { initPodcasts } from './podcasts.js';
 import { initPodcastViews, updatePodcastSidebarUI, clearPodcastView } from './podcast-views.js';
-import { initRadio } from './radio.js';
 import { state, setAuthenticatedUser } from './state.js';
 import { initPWA } from './pwa.js';
 import { closeAllModals } from './dom.js';
@@ -331,7 +330,6 @@ async function initApp() {
   // Admin actions such as restoring from trash change what the grid shows.
   document.addEventListener('library:changed', () => loadMedia());
   initPodcasts();
-  initRadio();
   initPWA();
   initUpload({ onLoadMedia: loadMedia });
   initHelp();

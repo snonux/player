@@ -15,12 +15,18 @@ test.beforeEach(async ({page})=>{await page.addInitScript(installAudioTap);await
 async function restorePlayer(page:Page) {
   if((await page.locator('#player').getAttribute('class'))?.includes('minimized')) await page.getByRole('button',{name:'Restore player',exact:true}).click();
 }
+/** Collapse the floating player so album cards near the bottom stay clickable. */
+async function minimizePlayer(page:Page) {
+  const player=page.locator('#player');
+  const cls=await player.getAttribute('class') || '';
+  if(!cls.includes('open') || cls.includes('minimized')) return;
+  // Shift+C is the documented minimize shortcut; the ▾ control can sit under
+  // expanded loudness/visuals chrome and miss a plain click on Firefox.
+  await page.keyboard.press('Shift+KeyC');
+  await expect(player).toHaveClass(/minimized/,{timeout:5000});
+}
 async function albums(page:Page) {
-  const playerClass=await page.locator('#player').getAttribute('class') || '';
-  if(playerClass.includes('open') && !playerClass.includes('minimized')) {
-    await page.keyboard.press('Escape');
-    await expect(page.locator('#player')).toHaveClass(/minimized/);
-  }
+  await minimizePlayer(page);
   if(await page.locator('.album-card').count() && !(await page.getByRole('heading',{name:albumName,exact:true}).isVisible().catch(()=>false))) {
     return;
   }
@@ -29,13 +35,16 @@ async function albums(page:Page) {
 }
 async function openAlbum(page:Page,title=albumName,artist='Aurora Lane') {
   await albums(page);
+  await minimizePlayer(page);
   // Nested favorite/rating flatten the card to role=group; the primary open
   // control is the labelled sibling/button (same label as the card).
   const label=`Open album ${title} by ${artist}`;
   const open=page.getByRole('button',{name:label,exact:true});
-  await open.scrollIntoViewIfNeeded();
-  await open.click();
-  await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
+  await expect(open).toHaveCount(1);
+  // DOM click bypasses the minimized restore bar that intercepts Playwright
+  // pointer events on lower album cards in Firefox.
+  await open.evaluate((el:HTMLElement)=>el.click());
+  await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible({timeout:15_000});
 }
 async function audible(page:Page,song:any,name:string) {
   await expectPlaying(page,song.id);
