@@ -156,10 +156,13 @@ def _reject_wrong_password(record, shot):
 
 
 def sign_in(password):
-    """Type the password into the focused field and submit (Enter, else Sign In)."""
+    """Type the password and submit through the visible control if needed."""
     adrv.type_text(password)
     adrv.adb("shell", "input", "keyevent", "KEYCODE_ENTER"); time.sleep(2)
+    if adrv.wait("^Library$", timeout=5):
+        return True
     if adrv.find("^Welcome back$"):
-        adrv.adb("shell", "input", "keyevent", "KEYCODE_BACK"); time.sleep(1)
+        # Enter may only dismiss the IME. Back can now close the whole
+        # activity if that happened, so press the actual submit button.
         adrv.tap("^Sign In$", cls="Button")
     return adrv.wait("^Library$", timeout=30) is not None

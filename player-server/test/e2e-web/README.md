@@ -1,5 +1,23 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M48 automatic offline music, start a fresh disposable `music_fixture.py up`
+server, then run the focused journey serially in installed Chrome and Firefox:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/absolute/fixture PLAYER_M48_ISOLATED=1 \
+PLAYER_M48_EVIDENCE=/absolute/evidence PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-automatic-offline.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox on the same fixture.
+```
+
+It pins a playlist through visible controls, selects the automatic policy in
+Settings, checks Wi-Fi waiting and manual retry, changes playlist and starred
+membership, makes the saved interval due and reconnects the browser to trigger
+automatic work, then checks removal, retained downloads, policy reload, narrow
+light/dark layout, and actual offline playback audio. It restores its fixture
+favorite and deletes its test playlist. Keep evidence outside the repository.
+
 For M65 share encoding, start a disposable fixture without doubles and run the
 three focused cases in installed Chrome and Firefox, one browser at a time:
 

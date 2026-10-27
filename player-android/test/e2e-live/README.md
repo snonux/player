@@ -992,3 +992,27 @@ First Light output. It restores the reverse route, verifies the browser stays
 local until explicit reconnection, and signs back in. The previous reverse
 mapping and system theme are restored in `finally`; server and emulator stay
 running. Pass an unused evidence directory outside the repository.
+
+# M48 automatic offline music
+
+With one rooted API34 emulator, the installed x86_64 release APK, QEMU WAV
+output, and an isolated `music_fixture.py up` server, establish `adb reverse`
+for the fixture port and run:
+
+```sh
+python3 -u player-android/test/e2e-live/music_automatic_offline_e2e.py \
+  /absolute/fixture --emulator-wav /absolute/emulator-output.wav \
+  --evidence-dir /absolute/evidence --apk /absolute/app-x86_64-release.apk
+# Run again with --scenario locked on the same fresh fixture to check the
+# closed-engine scheduled job and catch-up after reopening the app.
+```
+
+The runner clears only Player app data, pins an album and overlapping playlist
+through touch controls, enables automatic music, verifies the Android periodic
+job, changes playlist and starred membership, and checks exact saved bytes. It
+tests Mobile/Wi-Fi policy and global Retry, advances the disposable device clock
+to invoke a due real JobService, then checks outage retention, removal, process
+restart, and captured offline playlist audio. It restores the clock and fixture
+reverse route. The locked scenario checks that a due OS job does not publish
+membership with no active Flutter engine and that reopening the app catches up.
+Keep its evidence and all media outside the repository.

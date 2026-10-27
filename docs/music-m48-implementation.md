@@ -1,9 +1,7 @@
 # Automatic offline music (M48 / sl3)
 
-Implementation-stage contract, based on U01 (§3, §5, §9–11), M47 saved
-collections and the reviewed zh3/4i3 global coordinator. Platform acceptance
-is deferred under the implementation-first workflow; no platform is accepted
-by this document.
+Implementation contract and acceptance record, based on U01 (§3, §5, §9–11),
+M47 saved collections and the reviewed zh3/4i3 global coordinator.
 
 ## Annotated interaction
 
@@ -105,12 +103,12 @@ Android scheduling follows the primary [JobScheduler](https://developer.android.
 and [JobService](https://developer.android.com/reference/android/app/job/JobService)
 contracts. No new scheduler dependency or saved credential store is introduced.
 
-Focused checks must cover due/cancel/policy/account races, failed fetch retaining
+Focused checks cover due/cancel/policy/account races, failed fetch retaining
 snapshots, empty/removed membership, real saved bytes, manual overlap, capacity
-and restart. Integrated gates still require Chrome, Firefox and native Android
-actual scheduling/manual sync, Wi-Fi unknown/manual policy, offline playback,
-restart/locked unlock, removal reconciliation, focus/touch/Back and light/dark/
-narrow layout. No browser/emulator/full-suite/final-build evidence is claimed.
+and restart. The platform acceptance record below covers Chrome, Firefox and
+native Android scheduling/manual sync, Wi-Fi unknown/manual policy, offline
+playback, restart/locked unlock, removal reconciliation, focus/touch/Back and
+light/dark/narrow layout.
 
 ## Implementation handoff
 
@@ -133,9 +131,8 @@ Focused production-module checks exercise complete/empty/failed membership,
 manual-overlap/retained-copy capacity, explicit removal freeing capacity,
 account/cancel/network/unpin/storage boundaries, favorite pagination, recent
 ordering, durable restart, native pending OS stop, loading cancellation and
-full-success timestamps. These are coherence checks only. Full suites, final
-builds and actual Chrome/Firefox/native Android journeys remain deferred to
-integrated verification. No runtime acceptance is claimed.
+full-success timestamps. The earlier implementation-only stage did not claim
+runtime acceptance; the checks below complete that stage.
 
 R1 fixes: automatic category ownership now follows current membership, including
 deselection. The retained-copy manager is rebuilt from automatic-owned copies
@@ -146,3 +143,37 @@ interrupted run and keeps global full-success unchanged during the interval
 wait. Successful retry, handled failure/cancel or deliberate policy reset clears
 the checkpoint. Focused regressions exercise real Remove download operations
 for replace/deselect/overlap/capacity and fresh-instance restart/global status.
+
+## Integrated acceptance — 2026-10-27
+
+The disposable Player fixture on `127.0.0.1:18848` ran server version 0.8.2,
+build revision `8691244ad0d7b45f3403bd56981ee2e81e404f2d-dirty`. `mage
+build` passed. The native x86_64 release APK was version 0.8.2 build 4022,
+SHA256 `58d7048ed0ce2c1388141f111688eea6299b5ed10b7313b4de3dfa33a5661f56`.
+Only one API34 emulator ran at a time. Evidence and media remain outside git
+under `/home/paul/tmp/codex/player-m48-evidence`.
+
+| Platform | Actual feature checks | Evidence |
+| --- | --- | --- |
+| Installed Chrome 144.0.7559.132 | PASS: keyboard pin, policy, Wi-Fi wait/manual override, changed playlist and starred set, due reconnect refresh, removal/retained bytes, reload, narrow light/dark, offline 440 Hz playback. | `1793107610122-500973/chrome/evidence.jsonl` |
+| Installed Firefox 156.0 | PASS: same browser journey, including explicit Wi-Fi choice for an unknown bearer. | `1793107627035-501247/firefox/evidence.jsonl` |
+| Native API34 x86_64 | PASS 12: touch pin/settings, OS job, Mobile wait/manual override, global Sync now, exact saved bytes, due JobService, outage/Retry, removal, process restart, offline 440 Hz playback. | `native-1793107218370941473/android/evidence.jsonl` |
+| Native API34 closed engine | PASS 2: a scheduled-job attempt with the app force-stopped left membership unchanged; reopening/signing in caught up the overdue source. | `native-1793108269748500740/android/evidence.jsonl` |
+
+The browser command is in `player-server/test/e2e-web/README.md` and the native
+main and `--scenario locked` commands are in
+`player-android/test/e2e-live/README.md`. Captured narrow browser light/dark
+and native light/dark screenshots were reviewed for readable controls, scrolling
+and touch targets. Native narrow 720×1280 controls were also inspected.
+
+Focused checks passed: three Node production-module suites, 12 Flutter
+automatic/scheduler tests, Python runner compilation, and `go test -p 1 ./...
+-race -cover` after the web test change. The task-30 full regression gate already
+passed; per the user's cadence, the next broad end-to-end gate follows task 40.
+
+The interval is intentionally inexact. The browser due check advanced this
+fixture's stored due time then used a real offline/reconnect event; the Android
+check advanced the owned emulator clock and invoked the registered JobService.
+Neither check waited six wall-clock hours or asserts that Android will schedule
+at an exact time under Doze. Browser scheduling still needs an open visible tab,
+and a closed native engine waits for explicit unlock/foreground catch-up.
