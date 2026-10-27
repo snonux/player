@@ -78,7 +78,7 @@ class _MusicMixActionsState extends ConsumerState<MusicMixActions> {
       }
       setState(() => _message = switch (insertion.outcome) {
             ServerSongInsertionOutcome.accepted =>
-              '$label · ${songs.length} songs',
+              '$label · ${songs.length} ${songs.length == 1 ? 'song' : 'songs'}',
             ServerSongInsertionOutcome.busy =>
               'Loading track… Please wait, then try again.',
             ServerSongInsertionOutcome.signedOut =>

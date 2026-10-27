@@ -1,8 +1,8 @@
 # M42 Artist radio and Instant Mix
 
-Implementation stage: awaiting integrated verification. Prerequisites nj3,
-oj3 and xk3 are accepted; nk3 local related recommendations are implemented
-and reviewed in acbe057, with formal acceptance deferred.
+Implementation stage: focused installed-browser and native Android acceptance
+passed. Prerequisites nj3, oj3 and xk3 are accepted; nk3 local related
+recommendations are implemented and reviewed in acbe057.
 
 ## Interaction and states
 
@@ -56,15 +56,28 @@ cancellation, actual queue insertion order/label/audio-loader invocation, reject
 and thrown insertion, busy rejection, real decoder failure and later Next after
 a newer action intent. Scoped analysis includes existing helper callers.
 
-Full regression suites, final server/APK builds and actual installed Chrome,
-Firefox and native Android feature acceptance remain deferred by the user's
-implementation-first workflow. Required integrated journeys include song/album/
-artist seeds, queue contents and rating constraints, empty/error/offline/access
-boundaries, account/source races, audio/source output, keyboard/touch/Back,
-light/dark/narrow layouts and accessibility. No feature acceptance is claimed.
-The broader existing collection widget file also has two reported screen-test
-failures (missing audio-handler override and lazy Album row lookup); its four
-focused shuffle resolution cases pass. No release/version/push is authorized.
+The focused Playwright journey passed in installed Chrome 144 and Firefox 156,
+one browser and worker at a time. It started album, artist and song mixes from
+visible controls; compared actual queue IDs with the service result for each;
+checked a personal five-star filter, empty result, failed read without queue
+replacement, keyboard activation, 390 px light/dark layouts and 440 Hz browser
+output. The native Android 14/API 34 release APK exercised touch album/rating,
+artist radio and song mix controls, a four-song queue, no-match and offline
+failure/recovery. QEMU output captured 440.0 Hz for 11.92 seconds plus subsequent
+fixture tones. Evidence is under `/home/paul/tmp/codex/player-m42-evidence/`;
+the browser runner is documented in `player-server/test/e2e-web/README.md`.
+
+Native acceptance revealed a singular feedback label, `1 songs`, which was
+corrected to `1 song` in both clients. Chrome and Firefox passed again with
+the corrected text, and the rebuilt release APK displayed `Mix · Night Transit
+· 1 song` on the emulator. Its light and dark layouts were inspected. The APK
+SHA-256 is `f8fe5f8aaa38993858858e43e836c89eb676c409c52483c5b295528792e9ffa3`.
+Targeted Flutter analysis and all eight mix widget tests passed. The server's
+required `go test ./... -race -cover` suite passed. The broad 20-task
+regression gate is due after M42 closes. The broader existing collection widget file had two
+reported screen-test failures (missing audio-handler override and lazy Album
+row lookup) during implementation; the full gate will determine their current
+status. No release/version/push is authorized.
 
 Focused commands (implementation worktree, not a final release build):
 

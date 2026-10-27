@@ -27,7 +27,7 @@ export function mountMusicMix(host, kind, key, current, { insert = insertQueue, 
    // completion while allowing any subsequent source action to supersede it.
    completionIntent = currentPlaybackIntent();
    const started = await pendingInsertion;
-   if (active()) status.textContent = started ? `${kind === 'artist' ? 'Artist radio' : 'Mix'} · ${result.title} · ${result.songs.length} songs` : 'Playback was not started. Try again.';
+   if (active()) status.textContent = started ? `${kind === 'artist' ? 'Artist radio' : 'Mix'} · ${result.title} · ${result.songs.length} ${result.songs.length === 1 ? 'song' : 'songs'}` : 'Playback was not started. Try again.';
   } catch (error) {
    if (active()) status.textContent = `Could not start mix. ${error.message || 'Check your connection and library access, then try again.'}`;
   } finally {

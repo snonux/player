@@ -1,5 +1,24 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M42 Artist radio and Instant Mix, use a fresh disposable `music_fixture.py up`
+server with `--no-doubles`, then run the focused journey sequentially in
+installed Chrome and Firefox:
+
+```sh
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M42_ISOLATED=1 \
+PLAYER_M42_EVIDENCE=/tmp/player-m42-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null GOMAXPROCS=2 \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-mix-acceptance.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox using the same fixture.
+```
+
+The journey starts album, artist and song mixes through their visible controls,
+compares queue contents with real API results, checks personal rating and
+no-match states, captures audio, and keeps the queue after a failed mix read.
+Stop the fixture after Android acceptance; keep evidence outside the repository.
+
 For M39 configurable music home, start a fresh disposable `music_fixture.py up`
 server with `--no-doubles`, then run one installed browser at a time:
 
