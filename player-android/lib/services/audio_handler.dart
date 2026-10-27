@@ -21,6 +21,7 @@ import 'loudness_effect.dart';
 import 'headset_policy.dart';
 import 'headset_preferences.dart';
 import 'android_auto_catalog.dart';
+import 'network_policy.dart';
 
 part 'audio_handler_gapless.dart';
 
@@ -310,6 +311,19 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   StreamSubscription<Duration>? _musicPositions;
   Future<List<PlaybackRequest>> Function()? _expandMusic;
   Future<AudioSource?> Function(PlaybackRequest, bool Function())? _musicLoader;
+
+  /// A synchronous policy check before a queue transition changes its source.
+  /// The loader still checks again after asynchronous URL/cache resolution.
+  String? Function(PlaybackRequest)? musicSourceBlocked;
+  String _musicNavigationStatus = '';
+  String get musicNavigationStatus => _musicNavigationStatus;
+  void clearMusicNavigationStatus() {
+    if (_musicNavigationStatus.isEmpty) return;
+    if (_queueStatus == _musicNavigationStatus) _queueStatus = '';
+    _musicNavigationStatus = '';
+    _queueChanges.add(null);
+  }
+
   void Function(PlaybackRequest)? _musicChanged;
   final _musicChanges = StreamController<MusicSequenceState>.broadcast();
   MusicSequenceState? _musicState;
@@ -966,6 +980,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _musicEntries = List.unmodifiable(entries);
     _musicIndex = index;
     _musicLoader = load;
+    _musicNavigationStatus = '';
     _sequenceLease = sequenceLease;
     _musicChanged = changed;
     _expandMusic = expand;
@@ -1087,6 +1102,32 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         (target < 0 || target >= _musicEntries.length)) {
       return;
     }
+    // A denied new library stream must leave the current decoder, metadata,
+    // progress and playback controls attached to the song that is audible.
+    // For wrapping folder traversal the next request is resolved later, but
+    // it has the same server policy as the current request.
+    final candidate = target >= 0 && target < _musicEntries.length
+        ? _musicEntries[target]
+        : _musicWrap && _musicEntries[_musicIndex] is ServerPlaybackRequest
+            ? _musicEntries[_musicIndex]
+            : null;
+    final restriction =
+        candidate == null ? null : musicSourceBlocked?.call(candidate);
+    if (restriction != null) {
+      _musicNavigationStatus = restriction;
+      _queueStatus = restriction;
+      _notifyQueue();
+      return;
+    }
+    clearMusicNavigationStatus();
+    final previousEntries = _musicEntries;
+    final previousIndex = _musicIndex;
+    final previousRequest = _musicEntries[previousIndex];
+    final previousPosition = _player.position;
+    final previousPlaying = _player.playing;
+    final previousListeningOccurrenceID = listeningOccurrenceID;
+    final previousNextIds = Set<int>.of(_queueNextIds);
+    var sourceResolved = false;
     // A deliberate Next/Previous/queue selection is a new playback intent.
     // Completion keeps the current policy, and later pause/noisy/focus events
     // invalidate this transition even while its source loader is pending.
@@ -1167,6 +1208,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       final source = await _musicLoader!(request, current);
       if (!current()) return;
       if (source == null) throw StateError('Playback preparation stopped');
+      sourceResolved = true;
       await loadSourceForSession(source, generation);
       if (!current()) return;
       double position = resumePosition?.inMilliseconds.toDouble() ?? -1;
@@ -1211,8 +1253,51 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       }
     } catch (error) {
       if (current()) {
-        _controlsEnabled = true;
-        _onPlaybackError(error);
+        if (error is MusicNetworkRestricted && !sourceResolved) {
+          // The policy may change while URL/cache resolution is pending. The
+          // decoder was never replaced, so restore the old occurrence and
+          // its progress session instead of stranding a playable source.
+          // Wrapped folder expansion must roll back to its old traversal;
+          // a queue may have appended related songs while this move waited.
+          _musicEntries = _queueActive
+              ? _albumQueue.map((entry) => entry.request).toList()
+              : previousEntries;
+          _musicIndex = previousIndex;
+          if (_queueActive &&
+              previousIndex >= 0 &&
+              previousIndex < _albumQueue.length) {
+            _queueIndex = previousIndex;
+            _queuePosition = previousPosition.inMilliseconds / 1000;
+            _queuePositionEntry = _albumQueue[previousIndex].id;
+            _queueNextIds = previousNextIds;
+          }
+          _musicPosition = previousPosition;
+          _failedMusicDelta = null;
+          _retryMusicPosition = null;
+          setMediaRequest(previousRequest);
+          activateSourceSession(generation);
+          if (previousRequest.savePosition != null &&
+              previousRequest.markFinished != null) {
+            startProgress(
+                savePosition: previousRequest.savePosition!,
+                saveListeningPosition: previousRequest.saveListeningPosition,
+                listeningOccurrenceID: previousListeningOccurrenceID,
+                markFinished: previousRequest.markFinished!,
+                naturalEndOnly: previousRequest.naturalEndOnly,
+                finishAtPosition: previousRequest.finishAtPosition);
+          }
+          _publishMusic();
+          _musicNavigationStatus = MusicNetworkRestricted.message;
+          _queueStatus = _musicNavigationStatus;
+          if (previousPlaying &&
+              transport == _transportRevision &&
+              sleepTimer.allowsPlayback(sleepIntent)) {
+            unawaited(_player.play().catchError(_onPlaybackError));
+          }
+        } else {
+          _controlsEnabled = true;
+          _onPlaybackError(error);
+        }
       }
     } finally {
       _movingTrack = false;
@@ -1274,6 +1359,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _musicPositions = null;
     _failedMusicDelta = null;
     _retryMusicPosition = null;
+    _musicNavigationStatus = '';
     _musicEntries = const [];
     _musicIndex = -1;
     _collectionEnded = false;
@@ -1593,6 +1679,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _musicPositions = null;
     _failedMusicDelta = null;
     _retryMusicPosition = null;
+    _musicNavigationStatus = '';
     _musicEntries = const [];
     _musicIndex = -1;
     _collectionEnded = false;

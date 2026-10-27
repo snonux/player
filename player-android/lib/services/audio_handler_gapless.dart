@@ -26,6 +26,7 @@ class _NativeGaplessState {
 extension GaplessAudioHandler on PlayerAudioHandler {
   /// Rechecks a prepared successor without replacing the current source.
   void refreshGaplessPolicy() {
+    clearMusicNavigationStatus();
     _gapless.invalidate();
     _refreshGapless();
   }

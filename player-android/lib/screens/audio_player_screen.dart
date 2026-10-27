@@ -1282,6 +1282,22 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                 _buildSeekBar(handler),
                 const SizedBox(height: 16),
                 _buildControls(handler),
+                StreamBuilder<void>(
+                    stream: handler.queueChanges,
+                    builder: (context, _) {
+                      final status = handler.musicNavigationStatus;
+                      if (status.isEmpty) return const SizedBox.shrink();
+                      return Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          child: Semantics(
+                              liveRegion: true,
+                              child: Text(status,
+                                  key: const Key('music_navigation_policy'),
+                                  textAlign: TextAlign.center,
+                                  style:
+                                      const TextStyle(color: Colors.white70))));
+                    }),
                 const SizedBox(height: 16),
                 if (handler.musicState != null)
                   Row(mainAxisAlignment: MainAxisAlignment.center, children: [

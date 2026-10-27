@@ -1,11 +1,11 @@
 # M52 network-aware music settings
 
-Task `6l3`: implementation and focused browser acceptance. Prerequisites `nj3`/`oj3` accepted;
+Task `6l3`: verified in Chrome, Firefox and native Android. Prerequisites `nj3`/`oj3` accepted;
 stream quality `4k3` (`9cd5343`), playback cache `ok3` (`8a7256e`) and separate
 download quality `5l3` (`8612150`) supply the existing playback policies.
-Full suites and final builds are deferred to the user-authorized integrated
-verification phase. Native acceptance is tracked separately. Optional cover
-data saver is outside this implementation slice.
+Focused platform acceptance is recorded below. The next combined full
+regression gate is due after twenty completed tasks under the user's
+ten-task cadence. Optional cover data saver is outside this implementation.
 
 ## Interaction and state layout
 
@@ -114,8 +114,54 @@ Progress remains callable under the sync restriction. Keyboard Escape restores
 focus, and narrow 390px settings were captured in dark and light themes with
 no horizontal overflow. Evidence and WAV/screenshots are under
 `/home/paul/tmp/codex/player-m52-evidence/{chrome,firefox}`. This is focused
-M52 acceptance; the ten-task integrated regression and native checks are
-separate gates.
+M52 browser acceptance; native acceptance is recorded below.
+
+## Focused native Android acceptance and fix, 2026-10-27
+
+One read-only Android 14/API34 emulator (33.1.24) ran the release x86_64 APK
+`0.8.2+4022` against a disposable `--no-doubles --shuffle-playback` fixture
+on port 18852. The path-only proxy on host port 18853 recorded request paths
+and status without credentials; QEMU WAV captured decoded output. Exact
+commands, APK/server hashes, screenshots and state files are in
+`/home/paul/tmp/codex/player-m52-evidence/native-summary.md`.
+
+Android's active default network and the app's Auto label both changed from
+validated Wi-Fi to validated MOBILE[HSPA] when Wi-Fi was disabled, then back
+when enabled. With Wi-Fi set to Original, the app requested a real stream
+and produced Long Road Home's expected tone. On Mobile with Data saver
+Opus96, it requested `compat?profile=opus96` and produced Harbour's expected
+tone. Editing the quality choices left the paused current source intact.
+
+With Wi-Fi-only streaming enabled on Mobile, the already loaded Harbour
+continued playing while a new library source made no audio request. The
+native run exposed a defect: Previous changed the displayed song to a
+blocked target and left the old playable decoder stranded behind Retry.
+The fix now checks the target before changing queue metadata, decoder,
+progress or controls. If the policy changes during asynchronous source
+resolution, it restores the old occurrence and progress session. The player
+shows a nonfatal Wi-Fi policy message. `music_sequence_test.dart` covers both
+cases, including a wrapped folder expansion rollback; scoped Dart analysis
+and 42 sequence/network/gapless tests passed.
+
+The final patched universal local release APK (`0.8.2+22`, SHA-256
+`5681c380851537873543bac30a26544fb140c1b562d0c49b12c10503c7f11dbf`)
+was installed on the same emulator after the rollback fixes. On real Mobile,
+blocked Previous kept Long Road Home PAUSED at the same position, displayed
+the policy message, and made no new audio stream request. Play resumed the
+same decoded 523.3 Hz song without a new request. Restoring Wi-Fi cleared
+the message; Previous then loaded First Light with 440 Hz output. The
+Wi-Fi retry used the previously cached song, so a fresh GET was unnecessary.
+State, proxy requests and decoded audio are in `stream-block-final.json`.
+
+Saved-session edits remained local through a force-stop/relaunch on real
+Mobile under Wi-Fi-only sync: the local queue changed Repeat to All, the
+server stayed Off, and no queue PUT was sent. Restoring Wi-Fi and tapping
+Retry sent one successful PUT and cleared the pending state. Gapless successor
+preparation was ready on Wi-Fi, became unavailable on restricted Mobile while
+the paused song stayed at 409 ms, and became ready again on Wi-Fi. Native
+permission revocation and a second physical network were not separately
+tested; the focused browser/API ACL checks and real Wi-Fi/Mobile emulator
+bearers cover the relevant authorization and network boundaries.
 
 ## Focused implementation checks
 

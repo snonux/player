@@ -53,6 +53,10 @@ final cachedAudioLoaderProvider =
   final mutations = ref.read(credentialMutationQueueProvider);
   final preparer = ref.read(playbackPreparerProvider);
   final handler = ref.read(audioHandlerProvider);
+  handler.musicSourceBlocked = (request) =>
+      request is ServerPlaybackRequest && MusicNetworkPolicy.streamBlocked
+          ? MusicNetworkRestricted.message
+          : null;
   MusicNetworkPolicy.changes.addListener(handler.refreshGaplessPolicy);
   ref.onDispose(() =>
       MusicNetworkPolicy.changes.removeListener(handler.refreshGaplessPolicy));

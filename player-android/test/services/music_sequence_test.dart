@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/music_sequence.dart';
+import 'package:player_android/services/network_policy.dart';
 import 'package:player_android/services/music_queue.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 import 'package:player_android/services/playback_request.dart';
@@ -186,6 +187,159 @@ void main() {
       await handler.stop();
     });
   }
+
+  test('restricted queue target leaves the current source playable', () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    final coordinator = PlaybackSessionCoordinator();
+    PlaybackRequest song(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    await handler.insertQueue(
+        entries: [song(1), song(2)],
+        action: QueueInsertion.now,
+        claim: (request) => coordinator.claim(
+            kind: request.kind, identity: request.identity, stop: handler.stop),
+        load: (request, current) async => AudioSource.uri(request.sourceUri));
+    player.elapsed = const Duration(seconds: 7);
+    final loaded = player.loads;
+    handler.musicSourceBlocked = (request) =>
+        (request as ServerPlaybackRequest).mediaId == 2
+            ? 'Library audio streaming waits for Wi-Fi.'
+            : null;
+
+    await handler.skipToNext();
+    expect(player.loads, loaded);
+    expect(player.playing, isTrue);
+    expect(player.position, const Duration(seconds: 7));
+    expect(
+        (handler.currentMetadataRequest as ServerPlaybackRequest).mediaId, 1);
+    expect(
+        (handler.currentActivatedMediaRequest as ServerPlaybackRequest).mediaId,
+        1);
+    expect(handler.musicQueue.index, 0);
+    expect(handler.musicNavigationStatus, contains('waits for Wi-Fi'));
+    expect(handler.musicQueue.status, contains('waits for Wi-Fi'));
+    await handler.play();
+    expect(player.playing, isTrue);
+
+    handler.musicSourceBlocked = null;
+    handler.clearMusicNavigationStatus();
+    expect(handler.musicNavigationStatus, isEmpty);
+    await handler.skipToNext();
+    expect(player.loads, loaded + 1);
+    expect(
+        (handler.currentActivatedMediaRequest as ServerPlaybackRequest).mediaId,
+        2);
+    await handler.stop();
+  });
+
+  test('policy change during next-source resolution restores current song',
+      () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    final coordinator = PlaybackSessionCoordinator();
+    final entered = Completer<void>();
+    final pending = Completer<AudioSource?>();
+    PlaybackRequest song(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    await handler.insertQueue(
+        entries: [song(1), song(2)],
+        action: QueueInsertion.now,
+        claim: (request) => coordinator.claim(
+            kind: request.kind, identity: request.identity, stop: handler.stop),
+        load: (request, current) async {
+          if ((request as ServerPlaybackRequest).mediaId == 2) {
+            entered.complete();
+            return pending.future;
+          }
+          return AudioSource.uri(request.sourceUri);
+        });
+    player.elapsed = const Duration(seconds: 7);
+    final loaded = player.loads;
+    final occurrence = handler.listeningOccurrenceID;
+    final transition = handler.skipToNext();
+    await entered.future;
+    expect(
+        (handler.currentMetadataRequest as ServerPlaybackRequest).mediaId, 2);
+    pending.completeError(const MusicNetworkRestricted());
+    await transition;
+
+    expect(player.loads, loaded);
+    expect(player.playing, isTrue);
+    expect(player.position, const Duration(seconds: 7));
+    expect(
+        (handler.currentMetadataRequest as ServerPlaybackRequest).mediaId, 1);
+    expect(
+        (handler.currentActivatedMediaRequest as ServerPlaybackRequest).mediaId,
+        1);
+    expect(handler.musicQueue.index, 0);
+    expect(handler.musicQueue.position, 7);
+    expect(handler.listeningOccurrenceID, occurrence,
+        reason: 'a policy rollback must not split one listening occurrence');
+    expect(handler.musicNavigationStatus, MusicNetworkRestricted.message);
+    await handler.stop();
+  });
+
+  test('policy rollback restores wrapped folder sequence before retry',
+      () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    PlaybackRequest song(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    final old = song(1), inserted = song(3), next = song(2);
+    final entered = Completer<void>();
+    final pending = Completer<AudioSource?>();
+    var deny = true;
+    handler.activateSourceSession(handler.beginSourceSession());
+    handler.startProgress(
+        savePosition: old.savePosition!, markFinished: old.markFinished!);
+    handler.startMusicSequence(
+        entries: [old],
+        index: 0,
+        expand: () async => [inserted, old, next],
+        changed: (_) {},
+        load: (request, current) async {
+          if (deny) {
+            entered.complete();
+            return pending.future;
+          }
+          return AudioSource.uri(request.sourceUri);
+        });
+    final occurrence = handler.listeningOccurrenceID;
+    final transition = handler.skipToNext();
+    await entered.future;
+    expect(handler.musicState?.request.identity, next.identity);
+    pending.completeError(const MusicNetworkRestricted());
+    await transition;
+    expect(handler.musicState?.request.identity, old.identity);
+    expect(handler.musicState?.index, 0);
+    expect(handler.listeningOccurrenceID, occurrence);
+    deny = false;
+    await handler.skipToNext();
+    expect(handler.musicState?.request.identity, next.identity);
+    await handler.stop();
+  });
 
   for (final mode in MusicRepeat.values) {
     test(
