@@ -1,5 +1,37 @@
 # Android live end-to-end run
 
+For A03c, use the provider and disposable fixture from the web E2E README,
+install the current x86_64 APK on the one running API 34 emulator with QEMU WAV
+output, and run:
+
+```sh
+python3 -u player-android/test/e2e-live/music_provider_lyrics_e2e.py \
+  /tmp/player-a03c-fixture --apk player-android/build/app/outputs/flutter-apk/app-x86_64-release.apk \
+  --emulator-wav /tmp/player-a03c-emulator.wav \
+  --evidence-dir /tmp/player-a03c-evidence --mode-file /tmp/player-a03c-mode
+```
+
+The runner clears only this disposable app's data, tests touch lookup,
+translation, failed retry, remove and restore, then pins one song. It removes
+only the fixture's adb reverse route for a cold local-library reopen and
+checks saved lyrics, translation, real captured audio and Back. `--offline-only`
+retries the final stage with the saved copy after a driver interruption.
+
+For A06d, keep the watch/schedule fixture from the web E2E README running, then:
+
+```sh
+python3 -u player-android/test/e2e-live/music_scan_automation_e2e.py \
+  /tmp/player-a06d-fixture --apk player-android/build/app/outputs/flutter-apk/app-x86_64-release.apk \
+  --emulator-wav /tmp/player-a06d-emulator.wav \
+  --evidence-dir /tmp/player-a06d-evidence
+```
+
+The runner signs in as fixture admin, opens Settings › Rescan Library, checks
+effective Scan settings, waits for a scheduled completion, proves watch
+add/retag/retain-on-delete in native browse, runs a manual Trigger Rescan into
+trash, then disconnects/restores the media root for the watch error path and
+Back.
+
 For M10 enrichment, keep a disposable music fixture running with
 `MUSIC_ENRICHMENT_URL=http://127.0.0.1:18910/metadata` and the deterministic
 provider from `player-server/test/enrichment/provider.py` using mode file

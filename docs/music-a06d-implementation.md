@@ -2,7 +2,8 @@
 
 Implementation and two bounded review rounds are complete. Final R2 approved
 the interrupted-inventory recovery, state-protected merge, conflict listing and
-configured-root symlink fixes. Integrated verification remains pending.
+configured-root symlink fixes. Integrated Chrome/Firefox/native acceptance
+passed on 2026-10-27 (see below).
 
 Design recorded before implementation, 2026-10-25. Extends U01 (nj3), the
 isolated verification harness (oj3), and the existing scanner/missing policy
@@ -82,11 +83,23 @@ snapshots remain proportional to the largest set (not a fixed-memory guarantee).
 Shutdown cancels and joins scanning/observation before database close. Scans
 retain the existing timeout. Cancellation cannot interrupt a blocked OS syscall.
 
-Integrated acceptance still required: add/retag/delete/reconnect fixtures; watch,
-schedule/manual concurrency; cancel/error/retry; generated-cache non-trigger;
-unchanged-row retention; both themes/narrow widths; web keyboard/focus and Android
-touch/Back, plus restart configuration. No runtime or emulator was changed during
-implementation.
+## Integrated acceptance (2026-10-27)
+
+Disposable fixture at `127.0.0.1:18851` with `SCAN_WATCH_SECONDS=10` and
+`SCAN_INTERVAL_MINUTES=1`, server 0.8.2 / build `8691244…-dirty`, checkout
+`584ba07`. Commands live in the component E2E READMEs. Evidence stays outside
+git under `/home/paul/tmp/codex/player-a06d-evidence`.
+
+| Platform | Result | Evidence |
+| --- | --- | --- |
+| Installed Chrome 144.0.7559.132 | PASS: scheduled completion, watch add/retag/retain-on-delete, keyboard manual rescan focus restore, soft-delete trash, root outage/recovery, narrow light Scan settings | `chrome/evidence.jsonl` (pass at 15:05:22Z) |
+| Installed Firefox 156.0 | PASS: same journey | `firefox/evidence.jsonl` (pass at 15:17:40Z) |
+| Native API34 x86_64 (`Player_Integrated_A_API34`) | PASS 10: Settings › Rescan Library Scan settings, schedule status, watch arrival browse, retag, retain-on-delete, Cancel while running, manual trash, root error/recovery, Back | `native-1793115144882205538/android/evidence.jsonl` |
+
+Screenshots were visually reviewed: web Admin shows Scan settings / status without
+horizontal overflow on the 390×844 light viewport; native Rescan Library shows
+effective watch/schedule text and the watched arrival opens as `A06d Native Arrival`.
+Admin focus restore after Trigger rescan is covered by the web suite (`admin.js`).
 
 R1 fixes (bounded, 2026-10-25): inventory audio insertions persist an
 `inventory_pending` provenance flag in existing music JSON. Re-probing preserves

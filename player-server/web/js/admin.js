@@ -20,12 +20,14 @@ export function initAdmin() {
   modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
 
   rescanBtn?.addEventListener('click', async () => {
+    const returnFocus = document.activeElement === rescanBtn;
     rescanBtn.disabled = true;
     try { await triggerRescan(); }
     finally {
       rescanBtn.disabled = false;
-      // Disabling the focused button dropped focus to <body>; give it back.
-      if (document.activeElement === document.body) rescanBtn.focus();
+      // A modal's focus trap can move focus into the form while this button
+      // is disabled; return keyboard users to the action they activated.
+      if (returnFocus && modal?.classList.contains('open')) rescanBtn.focus();
     }
   });
 

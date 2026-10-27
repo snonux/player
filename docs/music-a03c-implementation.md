@@ -1,11 +1,11 @@
 # Optional provider and retained lyrics (dm3 / A03c)
 
-Implementation and two bounded reviews are complete; integrated verification
-remains pending. Final R2 cleared the provider revalidation, offline caller and
-source/backing-copy fixes below. Uses accepted
-nj3/U01, oj3/V01, vj3/A03a and reviewed tl3/M49 code before formal acceptance.
-Rich A03b data remains intact. Existing local parsers and offline managers own
-their established responsibilities.
+Implementation and two bounded reviews are complete. Final R2 cleared the
+provider revalidation, offline caller and source/backing-copy fixes below.
+Integrated Chrome/Firefox/native acceptance passed on 2026-10-27 (see below).
+Uses accepted nj3/U01, oj3/V01, vj3/A03a and reviewed tl3/M49 code. Rich A03b
+data remains intact. Existing local parsers and offline managers own their
+established responsibilities.
 
 ## Interaction contract (before coding)
 
@@ -66,13 +66,23 @@ HTTP timeout, 1 MiB response bound, no redirects and one concurrent operation.
 All access is rechecked before the API returns after lookup. Sources beyond the
 hash bound retain local lyrics/audio and cannot use optional provider lookup.
 
-## Deferred verification
+## Integrated acceptance (2026-10-27)
 
-Only focused compile/lint/tests ran during implementation. Bounded reviews are
-complete; the parent still owns full suites/builds and installed Chrome/Firefox/native Android checks:
-local deterministic provider, error/denial, local-priority race, replacement,
-pin/cache/download, restart, offline seek/richness, account switch/removal and
-light/dark/narrow keyboard/touch/Back. No runtime mutation or acceptance claimed.
+Deterministic lyrics provider on `127.0.0.1:18912` with mode/call logs under
+`/home/paul/tmp/codex/`. Disposable fixture at `127.0.0.1:18850` with
+`LYRICS_PROVIDER_URL` set; provider-only track `Provider Sky`. Server 0.8.2 /
+build `8691244…-dirty`, APK 0.8.2+4022 SHA256
+`58d7048ed0ce2c1388141f111688eea6299b5ed10b7313b4de3dfa33a5661f56`. Commands in
+the component E2E READMEs. Evidence under `/home/paul/tmp/codex/player-a03c-evidence`.
+
+| Platform | Result | Evidence |
+| --- | --- | --- |
+| Installed Chrome 144.0.7559.132 | PASS: explicit lookup (no GET tags), cache/error/remove, translation, seek + 440 Hz audio, pin, cold offline rich lyrics, other-account unfetched, narrow light/dark | `1793113392036-538882/chrome/evidence.jsonl` |
+| Installed Firefox 156.0 | PASS: same journey | `1793113426462-539321/firefox/evidence.jsonl` |
+| Native API34 x86_64 (`Player_Integrated_A_API34`, QEMU wav) | PASS 8: touch lookup/translation/error/remove/retry, album pin, cold offline 440 Hz + French, Back | `native-1793115406305975941/android/evidence.jsonl` |
+
+Offline native audio measured 440 Hz dominant (`bands_dbfs` 440: −12.27 vs 523.25:
+−48.89). Screenshots of provider found/French and offline French were reviewed.
 
 ## Focused implementation verification / review freeze
 

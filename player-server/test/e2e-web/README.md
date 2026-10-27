@@ -1280,3 +1280,62 @@ session uncompletes it and plays its own server copy to save a position. After
 the older response arrives, the first session pulls the newer completion and
 position. The stage creates a server audio copy for those two episodes and
 writes evidence under `evidence/{chrome,firefox}/<run>/` in the fixture.
+# A03c provider lyrics and offline snapshots
+
+Run the deterministic local provider in one shell, keeping its mode and call
+log outside the repository:
+
+```sh
+python3 player-server/test/lyrics/provider.py --port 18912 \
+  --mode-file /tmp/player-a03c-mode --calls-file /tmp/player-a03c-calls.jsonl
+```
+
+In another shell, start a fresh disposable fixture with provider lookup
+enabled, add the single provider-only track, then run the focused tests from
+`player-server/test/e2e-web`:
+
+```sh
+LYRICS_PROVIDER_URL=http://127.0.0.1:18912/lyrics python3 \
+  player-android/integration_test/support/music_fixture.py up player-server/player \
+  --port 18850 --dir /tmp/player-a03c-fixture --no-doubles
+python3 player-android/integration_test/support/music_provider_lyrics_fixture.py \
+  /tmp/player-a03c-fixture
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/tmp/player-a03c-fixture PLAYER_A03C_ISOLATED=1 \
+  PLAYER_A03C_PROVIDER_MODE=/tmp/player-a03c-mode \
+  PLAYER_A03C_PROVIDER_CALLS=/tmp/player-a03c-calls.jsonl \
+  PLAYER_A03C_EVIDENCE=/tmp/player-a03c-evidence \
+  PLAYER_E2E_PULSE_SINK=player_e2e_null npx playwright test \
+  --config=playwright.music.config.ts tests/music-provider-lyrics.test.ts \
+  --project=chrome --project=firefox --workers=1
+```
+
+The suite checks explicit tag-only lookup, server cache/error/remove, rich
+translation and timed seeking, real decoded audio, a pin with cold offline
+reopen, separate account cache, and narrow light/dark layouts. Run projects
+serially because both use the same fixture account and provider mode file.
+The Android runner below uses the same fixture before teardown.
+
+# A06d automatic inventory scans
+
+Start a fresh disposable fixture with opt-in watch/schedule polling (not native
+filesystem events). Keep evidence outside the repository:
+
+```sh
+SCAN_WATCH_SECONDS=10 SCAN_INTERVAL_MINUTES=1 python3 \
+  player-android/integration_test/support/music_fixture.py up player-server/player \
+  --port 18851 --dir /tmp/player-a06d-fixture --no-doubles
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/tmp/player-a06d-fixture PLAYER_A06D_ISOLATED=1 \
+  PLAYER_E2E_PULSE_SINK=player_e2e_null npx playwright test \
+  --config=playwright.music.config.ts tests/music-scan-automation.test.ts \
+  --project=chrome --project=firefox --workers=1
+```
+
+The suite opens Admin with Shift+A, expands Scan settings, waits for a real
+scheduled completion, adds/retags/deletes a tagged FLAC through the watched
+tree, checks keyboard manual rescan focus return and soft-delete, then
+disconnects/restores the media root for an actionable watch error. Projects
+must run serially against the shared fixture. The Android runner below reuses
+the same fixture before teardown.
+
