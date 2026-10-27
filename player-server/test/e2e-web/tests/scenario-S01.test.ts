@@ -16,7 +16,7 @@ test('S01: bootstrap form creates exactly one admin and browser login works', as
   await page.locator('#username').fill('admin');
   await page.locator('#password').fill('TestPassw0rd!');
   await page.locator('button[type=submit]').click();
-  await expect(page.locator('#admin-toggle')).toBeVisible();
+  await expect(page.locator('#admin-toggle')).not.toHaveClass(/hidden/);
   const cookie = (await page.context().cookies()).find(c => c.name === 'session');
   expect(cookie?.value).toBeTruthy();
   const users = await json<any[]>(await call('GET', '/api/v1/admin/users', { cookie: `session=${cookie!.value}` }));

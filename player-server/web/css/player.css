@@ -18,21 +18,6 @@
   display: flex;
   flex-direction: column;
 }
-.player.floating.controls-expanded:not(.minimized):not(.is-fullscreen) {
-  height: min(calc(var(--floating-h, 340px) + 7rem), calc(100dvh - var(--header-height) - 2rem));
-}
-.player .player-inline-options {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border);
-}
-.player-inline-options .player-options-header { display: none; }
-.player-options.player-inline-options > .btn { width: auto; }
-.player-options.player-inline-options .volume-control { flex: 1 1 8rem; width: auto; }
-.player-options.player-inline-options .audio-visual-control, .playback-speed-control, .player-options.player-inline-options .lyrics-language { flex: 1 1 12rem; width: auto; }
 .player .stage {
   flex: 1 1 auto;
   position: relative;

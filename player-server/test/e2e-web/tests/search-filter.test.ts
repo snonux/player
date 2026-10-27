@@ -66,7 +66,7 @@ async function openAuthenticatedPage(page: Page, path: string): Promise<void> {
   await injectSessionCookie(page.context(), adminCookie);
   await page.goto(path);
   // The SPA renders the logout button once the static HTML has loaded.
-  await page.waitForSelector('#logout-btn', { timeout: 15_000 });
+  await page.waitForSelector('#header-menu-toggle', { timeout: 15_000 });
 }
 
 /**

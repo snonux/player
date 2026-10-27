@@ -21,7 +21,7 @@ for (const key of ['Escape', 'Backspace']) {
         domain: origin.hostname, path: '/', sameSite: 'Strict',
       }]);
       await page.goto('/');
-      await expect(page.locator('#help-toggle')).toBeVisible();
+      await expect(page.locator('#header-menu-toggle')).toBeVisible();
       await expect(page.locator('#media-grid')).toBeVisible();
       await page.evaluate(async type => {
         const doc = (globalThis as any).document;
@@ -75,7 +75,7 @@ test('Backspace keeps text editing and folder navigation', async ({ page }) => {
     domain: origin.hostname, path: '/', sameSite: 'Strict',
   }]);
   await page.goto('/');
-  await expect(page.locator('#help-toggle')).toBeVisible();
+  await expect(page.locator('#header-menu-toggle')).toBeVisible();
   await expect(page.locator('#media-grid')).toBeVisible();
   const search = page.locator('#search-input');
   await page.keyboard.press('/');

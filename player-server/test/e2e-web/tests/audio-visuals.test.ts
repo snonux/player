@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
+import { headerItem } from './helpers/header-menu';
 
 const webRoot = resolve(__dirname, '../../../web');
 
@@ -533,7 +534,7 @@ for (const width of [320, 1280]) {
     await page.getByRole('button', { name: 'Restore player', exact: true }).click();
     await expect(player).not.toHaveClass(/minimized/);
     expect((await player.locator('.stage').boundingBox())!.height).toBeGreaterThanOrEqual(160);
-    await page.locator('#theme-toggle').click();
+    await (await headerItem(page, '#theme-toggle')).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await more.click();
     await expect(panel).toBeVisible();

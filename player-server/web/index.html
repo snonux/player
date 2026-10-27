@@ -16,19 +16,30 @@
 <body>
 <header class="site-header" role="banner">
   <div class="header-main">
+    <button id="sidebar-toggle" class="icon-btn" title="Sets (s)" aria-label="Toggle sets sidebar">☰</button>
     <a href="/" class="logo"><img src="/favicon.svg" alt="" class="logo-img">Player</a>
     <div class="spacer"></div>
-    <button id="sidebar-toggle" class="icon-btn" title="Sets" aria-label="Toggle sets sidebar">☰</button>
-    <button id="shuffle-toggle" class="icon-btn" title="Shuffle library listing (r)" aria-label="Toggle library listing shuffle">🔀︎</button>
     <button class="btn btn-ghost btn-sm" data-queue-toggle title="Now Playing queue (Q)" aria-controls="queue-panel" data-i18n="Queue">Queue</button>
-    <button id="radio-toggle" class="icon-btn" type="button" title="Web radio (w)" aria-label="Open web radio" aria-controls="radio-modal">📻︎</button>
-    <button id="help-toggle" class="icon-btn" title="Help (?)">?</button>
-    <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
-    <button id="trash-toggle" class="icon-btn" title="Trash" aria-label="Open trash">🗑</button>
-    <button id="admin-toggle" class="icon-btn hidden" title="Admin panel" aria-label="Admin settings">⚙</button>
-    <button id="settings-toggle" class="btn btn-ghost btn-sm" aria-controls="settings-modal" data-i18n="Settings">Settings</button>
     <button id="global-sync-now" class="btn btn-ghost btn-sm hidden" aria-describedby="global-sync-status">Sync now</button>
-    <button id="logout-btn" class="btn btn-ghost btn-sm">Log out</button>
+    <button id="header-menu-toggle" class="icon-btn" type="button" popovertarget="header-menu" title="More options (m)" aria-label="More options" aria-haspopup="true" aria-expanded="false">⋮</button>
+    <div id="header-menu" class="header-menu" popover aria-label="More options">
+      <button id="menu-sync-now" class="menu-item" type="button">⟳ <span>Sync now</span></button>
+      <button id="shuffle-toggle" class="menu-item" type="button" title="Shuffle library listing (r)" aria-label="Toggle library listing shuffle">🔀︎ <span>Shuffle listing</span></button>
+      <button id="radio-toggle" class="menu-item" type="button" title="Web radio (w)" aria-label="Open web radio" aria-controls="radio-modal">📻︎ <span>Web radio</span></button>
+      <button id="trash-toggle" class="menu-item" type="button" title="Trash" aria-label="Open trash">🗑 <span>Trash</span></button>
+      <div class="menu-row thumbnail-size-controls" role="group" aria-label="Preview size">
+        <span>Previews</span>
+        <button id="thumbnail-smaller" class="btn btn-ghost btn-sm" type="button" aria-label="Smaller previews" title="Smaller previews (-)">−</button>
+        <button id="thumbnail-reset" class="btn btn-ghost btn-sm" type="button" title="Reset preview size (0)" aria-live="polite">100%</button>
+        <button id="thumbnail-larger" class="btn btn-ghost btn-sm" type="button" aria-label="Larger previews" title="Larger previews (+)">+</button>
+      </div>
+      <hr>
+      <button id="theme-toggle" class="menu-item" type="button" title="Toggle theme" aria-label="Toggle theme"><span data-icon></span> <span>Theme</span></button>
+      <button id="help-toggle" class="menu-item" type="button" title="Help (?)">? <span>Help</span></button>
+      <button id="settings-toggle" class="menu-item" type="button" aria-controls="settings-modal">⚙ <span data-i18n="Settings">Settings</span></button>
+      <button id="admin-toggle" class="menu-item hidden" type="button" title="Admin panel" aria-label="Admin settings">🛡 <span>Admin panel</span></button>
+      <button id="logout-btn" class="menu-item" type="button">⎋ <span>Log out</span></button>
+    </div>
   </div>
 </header>
 
@@ -84,13 +95,6 @@
     </div>
     <div class="browse-toolbar">
       <div id="result-count" class="text-muted text-xs mt-1"></div>
-      <div class="thumbnail-size-controls" role="group" aria-label="Preview size">
-        <span class="text-xs text-muted">Previews</span>
-        <button id="thumbnail-smaller" class="btn btn-ghost btn-sm" type="button" aria-label="Smaller previews" title="Smaller previews (-)">−</button>
-        <button id="thumbnail-reset" class="btn btn-ghost btn-sm" type="button" title="Reset preview size (0)" aria-live="polite">100%</button>
-        <button id="thumbnail-larger" class="btn btn-ghost btn-sm" type="button" aria-label="Larger previews" title="Larger previews (+)">+</button>
-      </div>
-      <button id="help-hint" class="btn btn-ghost btn-sm text-muted" type="button" aria-controls="help-modal">Press <kbd>?</kbd> for help</button>
     </div>
 
     <!-- Empty state hint: shown when no set is selected -->
@@ -384,6 +388,7 @@
         <div class="help-row"><span><kbd>Esc</kbd></span><span>Close dialog / exit fullscreen / return to thumbnails</span></div>
         <div class="help-row"><span><kbd>q</kbd></span><span>Stop playback and close player</span></div>
         <div class="help-row"><span><kbd>Backspace</kbd></span><span>Exit media view / go up one folder</span></div>
+        <div class="help-row"><span><kbd>m</kbd></span><span>More options menu (j / k move, Enter selects, Esc closes)</span></div>
         <div class="help-row"><span><kbd>r</kbd></span><span>Shuffle / reshuffle library listing (queue shuffle is in Now Playing)</span></div>
         <div class="help-row"><span><kbd>Z</kbd></span><span>Sleep timer duration</span></div>
         <div class="help-row"><span><kbd>s</kbd></span><span>Share selected media</span></div>

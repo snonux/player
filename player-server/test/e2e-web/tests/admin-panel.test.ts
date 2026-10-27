@@ -26,6 +26,7 @@ import {
   waitForServer,
   ADMIN_USER,
 } from './helpers/server';
+import { headerItem } from './helpers/header-menu';
 
 let adminCookie: string = '';
 
@@ -58,7 +59,7 @@ async function injectSessionCookie(
 async function openAuthenticatedPage(page: Page, path: string): Promise<void> {
   await injectSessionCookie(page.context(), adminCookie);
   await page.goto(path);
-  await page.waitForSelector('#logout-btn', { timeout: 15_000 });
+  await page.waitForSelector('#header-menu-toggle', { timeout: 15_000 });
 }
 
 /**
@@ -80,7 +81,7 @@ async function openAdminModal(page: Page): Promise<void> {
   await revealHeader(page);
   const adminToggle = page.locator('#admin-toggle');
   await expect(adminToggle).not.toHaveClass(/hidden/, { timeout: 10_000 });
-  await adminToggle.click();
+  await (await headerItem(page, '#admin-toggle')).click();
 
   const modal = page.locator('#admin-modal');
   await expect(modal).toHaveClass(/open/, { timeout: 5_000 });

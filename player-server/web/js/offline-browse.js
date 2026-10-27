@@ -16,7 +16,7 @@ export function initOfflineMusicApp() {
  const header=document.querySelector('.header-main'), host=document.querySelector('.main-content');
  const shortcuts=document.getElementById('keyboard-access-toggle');
  header.innerHTML=html`<a href="/index.html" class="logo">Player</a><div class="spacer"></div><button class="btn" data-queue-toggle>Queue</button><button id="theme-toggle" class="icon-btn" aria-label="Toggle theme"></button><a class="btn" href="/login.html">Sign In</a>`;
- if(shortcuts)header.append(shortcuts);
+ if(shortcuts){shortcuts.className='icon-btn';shortcuts.textContent='⌨';header.append(shortcuts);}
  document.querySelector('#sidebar')?.classList.remove('open');
  document.querySelector('.page')?.classList.remove('has-sidebar');
  host.innerHTML=html`<section><h1>Offline music</h1><p>Saved on this device. Online actions need a connection and sign-in.</p><p>Cached copies are disposable and may be evicted. Downloads stay separate.</p><p data-origin></p><div class="music-facet-controls"><label>Saved server and account <select data-account></select></label><label>Browse <select data-kind><option value="Songs">Songs</option><option value="Albums">Albums</option><option value="Artists">Artists</option><option value="Playlists">Playlists</option></select></label><label>Search downloaded music <input type="search" data-search></label><button class="btn" data-refresh>Refresh saved collections</button></div><p role="status" aria-live="polite" data-status></p><p>j/k or arrows select · Enter open · / search · Esc back · p play/pause · Q queue</p><div data-results></div></section>`;

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { audioState, assertValidCapture, captureOutput, expectPlaying, keyboardLogin, mainSegment, openFolder, openSidebarMusic, playCard } from './helpers/music-ui';
 import { installAudioTap } from './helpers/audio-tap';
+import { headerItem } from './helpers/header-menu';
 
 const FEATURE = 'M67 translated music UI';
 
@@ -34,7 +35,7 @@ test('M67: mounted playlist drafts, counts and storage/device fallback in instal
     await page.keyboard.type(comment);
     const settingsPage = await context.newPage();
     await settingsPage.goto('/');
-    await settingsPage.locator('#settings-toggle').click();
+    await (await headerItem(settingsPage, '#settings-toggle')).click();
     await settingsPage.locator('#language-select').selectOption('de');
     await page.bringToFront();
     await expect(dialog.locator('h2')).toHaveText('Wiedergabeliste erstellen');
@@ -67,7 +68,7 @@ test('M67: mounted playlist drafts, counts and storage/device fallback in instal
     const shots: string[] = [];
     for (const theme of ['dark', 'light']) {
       if ((await page.locator('html').getAttribute('data-theme') || 'dark') !== theme) {
-        await page.locator('#theme-toggle').click();
+        await (await headerItem(page, '#theme-toggle')).click();
       }
       const shot = evidence.path(`m67-playlist-german-narrow-${theme}.png`);
       await page.screenshot({ path: shot, animations: 'disabled' });
@@ -119,12 +120,12 @@ test('M67: device-local German labels switch live, preserve playback and persist
     await expectPlaying(page, song.id);
     const before = await audioState(page);
 
-    const settings = page.locator('#settings-toggle');
+    const settings = await headerItem(page, '#settings-toggle');
     await settings.click();
     const language = page.locator('#language-select');
     await language.selectOption('de');
     await expect(page.locator('html')).toHaveAttribute('lang', 'de');
-    await expect(settings).toHaveText('Einstellungen');
+    await expect(settings).toContainText('Einstellungen');
     await expect(page.locator('#language-status')).toContainText('Sprache');
     expect((await audioState(page)).src).toBe(before.src);
     expect((await audioState(page)).paused).toBe(false);

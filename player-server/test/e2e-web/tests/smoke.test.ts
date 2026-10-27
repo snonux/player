@@ -37,6 +37,7 @@ import {
   REGULAR_USER,
   REGULAR_PASS,
 } from './helpers/server';
+import { headerItem } from './helpers/header-menu';
 
 // -----------------------------------------------------------------------
 // Module-level setup: ensure the server is up and state is seeded once
@@ -120,9 +121,9 @@ async function openAuthenticatedPage(
  * we also wait for the sets API call to resolve (sets are in the DOM).
  */
 async function waitForAppReady(page: Page): Promise<void> {
-  // Wait for the page to have loaded the SPA HTML — logout-btn is in the
-  // static HTML so it is always present in the DOM when the SPA is loaded.
-  await page.waitForSelector('#logout-btn', { timeout: 15_000 });
+  // Wait for the page to have loaded the SPA HTML — the header menu button
+  // is in the static HTML so it is always present when the SPA is loaded.
+  await page.waitForSelector('#header-menu-toggle', { timeout: 15_000 });
 }
 
 /**
@@ -194,8 +195,8 @@ test('login form authenticates and lands on main page', async ({ page }) => {
   // versions does not have a string .includes() method.
   await page.waitForURL('**/', { timeout: 10_000 });
 
-  // The main page must render the header with the logout button.
-  await expect(page.locator('#logout-btn')).toBeVisible({ timeout: 10_000 });
+  // The main page must render the header with its menu.
+  await expect(page.locator('#header-menu-toggle')).toBeVisible({ timeout: 10_000 });
 });
 
 test('login with wrong password shows error message', async ({ page }) => {
@@ -347,7 +348,7 @@ test('admin gear button is visible and opens admin panel for admin user', async 
 
   // Reveal the auto-hiding header, then click the gear button.
   await revealHeader(page);
-  await adminToggle.click();
+  await (await headerItem(page, '#admin-toggle')).click();
 
   // The admin modal should open (it receives the 'open' CSS class).
   const adminModal = page.locator('#admin-modal');
@@ -397,7 +398,7 @@ test('logout button ends the session and redirects to login', async ({ page }) =
 
   // Reveal the auto-hiding header, then click logout.
   await revealHeader(page);
-  const logoutBtn = page.locator('#logout-btn');
+  const logoutBtn = await headerItem(page, '#logout-btn');
   await logoutBtn.click();
 
   // After logout the JS posts to /api/logout; the server clears the cookie

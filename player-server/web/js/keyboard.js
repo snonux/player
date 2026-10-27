@@ -391,6 +391,10 @@ export function initKeyboard(handlers) {
         e.preventDefault();
         handlers.radio?.(e);
         break;
+      case 'm':
+        e.preventDefault();
+        handlers.menu?.(e);
+        break;
       case 'L': handlers.sharesToggle?.(e); break;
       case 'T': handlers.regenThumbnail?.(e); break;
       case 'g':

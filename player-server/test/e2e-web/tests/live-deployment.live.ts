@@ -14,6 +14,7 @@
  * admin trash) so the operator can remove it from disk afterwards.
  */
 import { test, expect, type Browser, type Page } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
@@ -539,7 +540,7 @@ test.describe('library as admin', () => {
     await page.goto('/');
     await expect(page.locator('#admin-toggle')).not.toHaveClass(/hidden/);
     await revealHeader(page);
-    await page.locator('#admin-toggle').click();
+    await (await headerItem(page, '#admin-toggle')).click();
     await expect(page.locator('#admin-modal')).toHaveClass(/open/);
     await expect(page.locator('#admin-users')).toContainText(ADMIN.user);
     await expect(page.locator('#admin-users')).toContainText(USER.user);
@@ -580,7 +581,7 @@ test.describe('permissions and logout', () => {
   test('logout ends the session', async ({ page }) => {
     await login(page, ADMIN);
     await revealHeader(page);
-    await page.locator('#logout-btn').click();
+    await (await headerItem(page, '#logout-btn')).click();
     await expect(page.locator('#login-form')).toBeVisible();
     await page.goto('/');
     await expect(page).toHaveURL(/\/login\.html/);

@@ -255,7 +255,7 @@ async function playFromCard(page: Page, fileName: string, touch: boolean, shots:
 async function targetSizes(page: Page): Promise<Record<string, number[]>> {
   return page.evaluate(() => {
     const sizes: Record<string, number[]> = {};
-    for (const id of ['sidebar-toggle', 'theme-toggle', 'help-toggle', 'btn-play']) {
+    for (const id of ['sidebar-toggle', 'header-menu-toggle', 'btn-play']) {
       const element = document.getElementById(id);
       const box = element?.getBoundingClientRect();
       if (box && box.width) sizes[id] = [Math.round(box.width), Math.round(box.height)];

@@ -1,10 +1,9 @@
-// Roomy windows show every control under the stage. Small windows use a
-// popover so secondary actions don't consume the whole media area.
+// Secondary player actions always live in one popover so the floating player
+// shows only the stage, title, transport and seek bar.
 export function initCompactControls(player) {
   if (!player?.classList.contains('floating') ||
       typeof globalThis.HTMLElement?.prototype.showPopover !== 'function') return;
   const transport = player.querySelector('.transport-controls');
-  const controls = player.querySelector('.controls');
   if (!transport || player.querySelector('#player-options')) return;
 
   const panel = document.createElement('div');
@@ -42,22 +41,6 @@ export function initCompactControls(player) {
   more.setAttribute('popovertarget', panel.id);
   transport.insertBefore(more, player.querySelector('#btn-fullscreen'));
   player.appendChild(panel);
-  const roomy = matchMedia('(min-width: 600px) and (min-height: 640px)');
-  function arrange() {
-    dismiss();
-    more.hidden = roomy.matches;
-    player.classList.toggle('controls-expanded', roomy.matches);
-    panel.classList.toggle('player-inline-options', roomy.matches);
-    if (roomy.matches) {
-      panel.removeAttribute('popover');
-      controls.appendChild(panel);
-    } else {
-      panel.setAttribute('popover', 'auto');
-      player.appendChild(panel);
-    }
-  }
-  roomy.addEventListener('change', arrange);
-  arrange();
   panel.addEventListener('toggle', () => {
     more.setAttribute('aria-expanded', String(panel.matches(':popover-open')));
   });

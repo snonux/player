@@ -3,6 +3,7 @@
 // Run with playwright.radio.config.ts, which starts a fake Radio Browser
 // (tests/helpers/fake-radio-browser.mjs) and a Player server pointed at it.
 import { test, expect, type Page } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 
 const USER = 'radio-admin';
 const PASS = 'radio-passw0rd!';
@@ -23,7 +24,7 @@ async function openRadio(page: Page) {
     await page.request.delete(`/api/radio/bookmarks/${s.uuid}`);
   }
   await page.goto('/');
-  await expect(page.locator('#radio-toggle')).toBeVisible();
+  await expect(page.locator('#header-menu-toggle')).toBeVisible();
   await page.keyboard.press('w');
   await expect(page.locator('#radio-modal')).toHaveClass(/open/);
   await expect(page.locator('#radio-results .radio-row')).toHaveCount(5);
@@ -96,7 +97,7 @@ test('explore, filter, play and bookmark a station with the keyboard', async ({ 
 
   // After a reload the bookmark is still there; remove it from that tab.
   await page.reload();
-  await page.locator('#radio-toggle').click();
+  await (await headerItem(page, '#radio-toggle')).click();
   await page.locator('#radio-tab-bookmarks').click();
   await expect(page.locator('#radio-bookmarks .radio-row')).toHaveCount(1);
   await expect(page.locator('#radio-bookmarks')).toContainText('Fake Jazz One');

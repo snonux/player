@@ -19,7 +19,10 @@ export function globalSyncPresentation(state, now = Date.now()) {
   else if (!state.active && !state.errorKind) parts.push('Synced');
   if (state.pending) parts.push(`${state.pending} pending`);
   if (state.podcastPending) parts.push('Podcast changes stay in this tab until synced; keep it open');
-  return { hidden: false, text: parts.join(' · '),
+  // A fresh, complete sync needs no attention; the menu still offers Sync now.
+  const healthy = !state.active && !state.errorKind && !stale && state.lastFullSuccessMs != null
+    && !state.pending && !state.podcastPending;
+  return { hidden: healthy, text: parts.join(' · '),
     action: state.active ? 'Syncing…' : state.errorKind === 'auth' ? 'Sign in'
       : state.errorKind || stale ? 'Retry' : 'Sync now' };
 }

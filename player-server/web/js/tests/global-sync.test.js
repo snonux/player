@@ -26,6 +26,8 @@ assert.deepEqual(calls, ['podcasts', 'progress', 'queue']);
 assert.equal(sync.state.lastFullSuccessMs, now);
 assert.equal(view(sync.state, now - 100).text, 'Synced', 'negative age is not stale');
 assert.equal(view(sync.state, now + staleSyncMS - 1).action, 'Sync now');
+assert.equal(view(sync.state, now - 100).hidden, true, 'a fresh complete sync needs no attention');
+assert.equal(view(sync.state, now + staleSyncMS).hidden, false, 'stale sync asks for attention');
 assert.equal(view(sync.state, now + staleSyncMS).action, 'Retry');
 assert.match(view(sync.state, now + staleSyncMS).text, /Last synced 2 days ago/);
 failed = true; pending = ['episode:b', 'progress:b']; now += staleSyncMS;

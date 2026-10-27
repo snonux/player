@@ -47,6 +47,45 @@ body {
 }
 .site-header .spacer { flex: 1 1 auto; }
 
+/* Secondary header actions: one popover menu anchored under the header. */
+.header-menu {
+  position: fixed;
+  inset: calc(var(--header-height) + 0.25rem) 0.5rem auto auto;
+  margin: 0;
+  min-width: 15rem;
+  max-height: calc(100vh - var(--header-height) - 1rem);
+  overflow-y: auto;
+  padding: 0.35rem;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.5rem);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+.header-menu:popover-open { display: flex; flex-direction: column; gap: 0.1rem; }
+.header-menu hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 0.25rem 0; }
+.header-menu .menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.header-menu .menu-item:hover, .header-menu .menu-item:focus-visible { background: var(--bg-surface-hover); }
+.header-menu .menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.header-menu .menu-item.active { color: var(--accent); }
+.header-menu .menu-item:disabled { opacity: 0.5; cursor: default; }
+.header-menu .menu-row { padding: 0 0.25rem 0 0.75rem; }
+.header-menu .menu-row > span { flex: 1 1 auto; }
+
 .scan-indicator {
   position: fixed;
   top: 0.75rem;
@@ -203,15 +242,10 @@ body {
   display: flex;
   align-items: center;
   gap: 0.2rem;
-  margin-left: auto;
 }
 .thumbnail-size-controls .btn { min-width: 2.75rem; min-height: 2.75rem; }
 .thumbnail-size-controls .btn:disabled { opacity: 0.45; cursor: default; }
 #thumbnail-reset { min-width: 4rem; }
-#help-hint {
-  flex-shrink: 0;
-  margin-left: auto;
-}
 #picture-layout-toggle[aria-pressed="true"] {
   background: var(--selected-bg);
   border-color: var(--selected-border);
@@ -367,7 +401,11 @@ body {
 .media-card:not(.set-card):not(.folder-card) > .card-actions {
   grid-area: 1 / 1;
   align-self: end;
-  position: absolute;
+  position: relative;
+  bottom: auto;
+  margin: 0 0.35rem 0.35rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
   z-index: 2;
 }
 .media-card .card-actions .icon-btn { flex: 0 0 var(--control-height-sm); }
@@ -652,28 +690,16 @@ body {
   #user-name {
     display: none;
   }
-  #logout-btn {
-    padding: 0.3rem 0.5rem;
-    font-size: 0.75rem;
-  }
   .media-grid { --thumbnail-base: 10rem; }
 }
 
 @media (max-width: 520px) {
-  :root { --header-height: 5rem; }
-  .header-main {
-    flex-wrap: wrap;
-    align-content: center;
-  }
   .media-grid { --thumbnail-base: calc((100% - var(--gap)) / 2); }
   .toolbar .input-sm {
     min-width: 3.5rem;
   }
 }
 
-@media (max-width: 520px) and (pointer: coarse) {
-  :root { --header-height: 6.5rem; }
-}
 
 /* Utilities */
 .hidden { display: none !important; }

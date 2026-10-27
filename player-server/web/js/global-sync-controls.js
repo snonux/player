@@ -22,7 +22,8 @@ export function initGlobalSyncControls() {
   const host = document.getElementById('global-sync');
   if (!host) return null;
   const globalButton = document.getElementById('global-sync-now');
-  const render = mountGlobalSyncView(host, globalButton, () => void coordinator.syncNow(), () => coordinator.state);
+  const render = mountGlobalSyncView(host, globalButton, () => void coordinator.syncNow(), () => coordinator.state,
+    document.getElementById('menu-sync-now'));
   coordinator = new GlobalSyncCoordinator({ storage: localStorage, domains: {
     pending, podcasts: syncPodcastsForGlobal, progress: () => {
       if (listeningProgressStatus().account !== podcastSyncStatus().account) throw new Error('Progress account is not ready');

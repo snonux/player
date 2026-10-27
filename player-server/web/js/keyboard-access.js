@@ -11,7 +11,7 @@ const preferred = {
   'volume-slider': 'u', 'progress-track': 't', 'sidebar-toggle': 's',
   'btn-player-options': 'o', 'btn-cast': 'c', 'btn-zoom-in': 'z', 'btn-zoom-out': 'd',
   'btn-slideshow': 'w', 'btn-download': 'x',
-  'admin-toggle': 'a', 'theme-toggle': 't', 'logout-btn': 'o',
+  'admin-toggle': 'a', 'theme-toggle': 't', 'logout-btn': 'o', 'header-menu-toggle': 'm',
   'notes-save': 's', 'notes-delete': 'd', 'notes-textarea': 'n',
 };
 
@@ -64,13 +64,15 @@ export function initKeyboardAccess() {
   document.body.appendChild(status);
   const toggle = document.createElement('button');
   toggle.type = 'button';
-  toggle.className = 'icon-btn';
+  const menu = document.getElementById('header-menu');
+  toggle.className = menu ? 'menu-item' : 'icon-btn';
   toggle.id = 'keyboard-access-toggle';
-  toggle.textContent = '⌨';
+  toggle.innerHTML = menu ? '⌨ <span>Control shortcuts</span>' : '⌨';
   toggle.title = 'Show control shortcuts (; or F2)';
   toggle.setAttribute('aria-label', 'Show control shortcuts');
   toggle.addEventListener('click', () => { active = !active; prefix = ''; refresh(); });
-  (document.querySelector('.header-main, .transport-controls, .login-form') || document.body).appendChild(toggle);
+  if (menu) document.getElementById('help-toggle')?.after(toggle);
+  else (document.querySelector('.header-main, .transport-controls, .login-form') || document.body).appendChild(toggle);
 
   function localScope() {
     const popovers = [...document.querySelectorAll('[popover]:popover-open')];

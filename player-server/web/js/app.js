@@ -7,6 +7,7 @@ import { initRadio } from './radio.js';
 import { stopRenderer } from './renderer.js';
 import { setListeningProgressAccount } from './listening-progress.js';
 import { initGlobalSyncControls } from './global-sync-controls.js';
+import { initHeaderMenu } from './header-menu.js';
 import { setPodcastAccount } from './podcast-episode-state.js';
 import { initListeningHistory } from './listening-history.js';
 import { initSongNotifications, clearSongNotifications } from './song-notifications.js';
@@ -115,6 +116,7 @@ import {
 import { cancelTagsLoad, initTags, openTagsForElement, openTagsForSelected } from './views/tags.js';
 import { initUpload, showUpload } from './views/upload.js';
 
+let headerMenu = null;
 let loggingOut = false;
 let closeMusicPresence = null;
 
@@ -319,6 +321,7 @@ async function initApp() {
     isQueueFocused, queueKey, toggleQueue, cycleQueueRepeat,
     queueNext: () => queueSelected('next'), queueAppend: () => queueSelected('append'),
     radio: () => document.getElementById('radio-toggle')?.click(),
+    menu: () => headerMenu?.open(),
     togglePictureLayout: initPictureLayout(document.getElementById('media-grid')),
     ...initThumbnailSize(document.getElementById('media-grid')),
   });
@@ -639,14 +642,17 @@ function initChrome() {
   if (shuffleBtn && !document.getElementById('in-progress-toggle')) {
     const btn = document.createElement('button');
     btn.id = 'in-progress-toggle';
-    btn.className = 'icon-btn';
+    btn.className = shuffleBtn.className;
     btn.type = 'button';
     btn.title = 'In Progress';
     btn.setAttribute('aria-label', 'Show in-progress media');
-    btn.textContent = '◷';
+    btn.innerHTML = '◷ <span>In progress</span>';
     shuffleBtn.insertAdjacentElement('afterend', btn);
   }
   document.getElementById('in-progress-toggle')?.addEventListener('click', openInProgress);
+
+  headerMenu = initHeaderMenu();
+  document.getElementById('menu-sync-now')?.addEventListener('click', () => void initGlobalSyncControls()?.syncNow());
 
   document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
     toggleSidebar();

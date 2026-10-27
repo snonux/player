@@ -79,7 +79,8 @@ export function initRenderer(options, doc = document) {
   const button = doc.createElement('button');
   button.type = 'button';
   button.className = 'icon-btn';
-  button.textContent = 'Play on…';
+  button.textContent = '🔊︎';
+  button.title = 'Play on…';
   button.setAttribute('aria-label', 'Play on a network speaker');
   castButton.after(button);
   button.addEventListener('click', () => showPicker(button));

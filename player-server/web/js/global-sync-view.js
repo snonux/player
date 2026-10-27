@@ -1,6 +1,6 @@
 import { globalSyncPresentation } from './global-sync.js';
 
-export function mountGlobalSyncView(host, globalButton, syncNow, state) {
+export function mountGlobalSyncView(host, globalButton, syncNow, state, menuItem = null) {
   const text = host.querySelector('[data-sync-status]'), button = host.querySelector('button'), signIn = host.querySelector('a');
   button.addEventListener('click', syncNow);
   globalButton?.addEventListener('click', () => {
@@ -13,6 +13,10 @@ export function mountGlobalSyncView(host, globalButton, syncNow, state) {
     button.textContent = view.action; button.disabled = !!value.active;
     button.classList.toggle('hidden', value.errorKind === 'auth');
     signIn.classList.toggle('hidden', value.errorKind !== 'auth');
+    if (menuItem) {
+      menuItem.disabled = !!value.active || !value.account;
+      menuItem.title = view.text;
+    }
     if (globalButton) {
       globalButton.classList.toggle('hidden', view.hidden);
       globalButton.textContent = view.action; globalButton.disabled = !!value.active;

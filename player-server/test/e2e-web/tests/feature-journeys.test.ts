@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { bootstrap, triggerRescan, waitForScanIdle, waitForServer } from './helpers/server';
+import { headerItem } from './helpers/header-menu';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -145,18 +146,17 @@ test('open dialogs keep vi and admin shortcuts from acting behind them', async (
 });
 
 test('a focused toolbar button keeps / search and Enter activation', async ({ page }) => {
-  const help = page.locator('#help-toggle');
-  await help.focus();
+  await (await headerItem(page, '#help-toggle')).focus();
   await page.keyboard.press('/');
   await expect(page.locator('#search-input')).toBeFocused();
   await page.keyboard.press('Escape');
-  await help.focus();
+  await (await headerItem(page, '#help-toggle')).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#help-modal')).toHaveClass(/open/);
   // With help as the only dialog, ? closes it again.
   await page.keyboard.press('?');
   await expect(page.locator('#help-modal')).not.toHaveClass(/open/);
-  await help.focus();
+  await (await headerItem(page, '#help-toggle')).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#help-modal')).toHaveClass(/open/);
   await page.keyboard.press('Escape');
@@ -215,8 +215,7 @@ test('a keyboard-focused set row shows the accent focus outline', async ({ page 
 
 test('dialogs take focus, keep Tab inside, and return focus on close', async ({ page }) => {
   // Keyboard-opened admin panel: first form field gets focus.
-  const toggle = page.locator('#admin-toggle');
-  await toggle.focus();
+  await (await headerItem(page, '#admin-toggle')).focus();
   await page.keyboard.press('Enter');
   const panel = page.locator('#admin-modal');
   await expect(panel).toHaveClass(/open/);
@@ -228,10 +227,10 @@ test('dialogs take focus, keep Tab inside, and return focus on close', async ({ 
     expect(await page.evaluate(() => Boolean((globalThis as any).document.activeElement?.closest('#admin-modal')))).toBe(true);
   }
 
-  // Closing with the ✕ button returns focus to the opener.
+  // Closing with the ✕ button returns focus to the menu that opened it.
   await panel.getByRole('button', { name: 'Close' }).click();
   await expect(panel).not.toHaveClass(/open/);
-  await expect(toggle).toBeFocused();
+  await expect(page.locator('#header-menu-toggle')).toBeFocused();
 
   // A shortcut-opened dialog (notes via n) returns focus to the card.
   await page.getByRole('button', { name: 'Set images' }).click();
@@ -250,10 +249,9 @@ test('dialogs take focus, keep Tab inside, and return focus on close', async ({ 
 
 test('theme toggle switches by keyboard and survives a reload', async ({ page }) => {
   const html = page.locator('html');
-  const toggle = page.locator('#theme-toggle');
   const before = await html.getAttribute('data-theme') || 'dark';
   const after = before === 'dark' ? 'light' : 'dark';
-  await toggle.focus();
+  await (await headerItem(page, '#theme-toggle')).focus();
   await page.keyboard.press('Enter');
   await expect(html).toHaveAttribute('data-theme', after);
   const background = await page.evaluate(() => (globalThis as any).getComputedStyle((globalThis as any).document.body).backgroundColor);
@@ -261,7 +259,7 @@ test('theme toggle switches by keyboard and survives a reload', async ({ page })
   await expect(html).toHaveAttribute('data-theme', after);
   expect(await page.evaluate(() => (globalThis as any).getComputedStyle((globalThis as any).document.body).backgroundColor)).toBe(background);
   // Restore for the other tests.
-  await page.locator('#theme-toggle').focus();
+  await (await headerItem(page, '#theme-toggle')).focus();
   await page.keyboard.press('Enter');
   await expect(html).toHaveAttribute('data-theme', before);
 });

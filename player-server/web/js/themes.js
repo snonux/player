@@ -14,7 +14,7 @@ function render() {
   root.setAttribute('data-theme', dark ? 'dark' : 'light');
   for (const name of ['accent', 'shape', 'fit']) root.setAttribute(`data-${name}`, preferences[name]);
   const btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = dark ? '☀' : '☾';
+  if (btn) (btn.querySelector?.('[data-icon]') || btn).textContent = dark ? '☀' : '☾';
   for (const name of Object.keys(choices)) {
     const select = document.getElementById(`appearance-${name}`);
     if (select) select.value = preferences[name];

@@ -69,13 +69,17 @@ for (const width of [390, 1280]) {
   });
 }
 
-test('roomy windows show every control inline; resizing keeps the same controls and values', async ({ page }) => {
+test('every window keeps secondary player controls in one menu; resizing keeps their values', async ({ page }) => {
+  const secondary = ['btn-save-position', 'btn-bookmarks', 'btn-player-notes', 'btn-player-favorite', 'volume-slider'];
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/?media=11');
-  await expect(page.locator('#player')).toHaveClass(/controls-expanded/);
-  await expect(page.locator('#btn-player-options')).toBeHidden();
-  for (const id of ['btn-save-position', 'btn-bookmarks', 'btn-player-notes', 'btn-player-favorite', 'volume-slider']) await expect(page.locator('#' + id)).toBeVisible();
+  await expect(page.locator('#btn-player-options')).toBeVisible();
+  for (const id of secondary) await expect(page.locator('#' + id)).toBeHidden();
+  await page.locator('#btn-player-options').click();
+  for (const id of secondary) await expect(page.locator('#' + id)).toBeVisible();
   await page.locator('#volume-slider').fill('0.4');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#player-options')).toBeHidden();
   await page.setViewportSize({ width: 390, height: 800 });
   await expect(page.locator('#btn-player-options')).toBeVisible();
   await page.keyboard.press('Escape');

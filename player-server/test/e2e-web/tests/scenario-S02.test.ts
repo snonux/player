@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { test, expect, admin, browserLogin, createUser, podcast } from './helpers/scenario-fixture';
 import { call } from './helpers/scenario-http';
+import { headerItem } from './helpers/header-menu';
 test('S02: podcast subscription downloads real audio and records completion', async ({ sandbox }) => {
   const { cookie, api } = await admin();
   await podcast(cookie, async feed => {
@@ -44,8 +45,8 @@ test('S02: podcast manager and episode cards work from the browser', async ({ pa
     await browserLogin(page, cookie);
     await page.goto('/');
     const title = feed.title || feed.feed_url;
-    // The header auto-hides; reach the admin panel the keyboard way.
-    await page.locator('#admin-toggle').focus();
+    // Reach the admin panel from the header menu the keyboard way.
+    await (await headerItem(page, '#admin-toggle')).focus();
     await page.keyboard.press('Enter');
     await page.locator('#admin-podcasts').focus();
     await page.keyboard.press('Enter');

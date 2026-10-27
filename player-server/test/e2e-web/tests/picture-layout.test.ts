@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { bootstrap, waitForServer } from './helpers/server';
+import { headerItem } from './helpers/header-menu';
 
 test.use({ serviceWorkers: 'block' });
 const baseURL = process.env.PLAYER_URL || 'http://localhost:8080';
@@ -66,15 +67,15 @@ test('preview keys clamp, preserve selection and persist; controls keep native E
   await page.reload();
   await expect(grid).toHaveAttribute('data-thumbnail-size', '0');
   await page.getByRole('button', { name: 'Set pictures', exact: true }).click();
-  await page.getByRole('button', { name: 'Larger previews', exact: true }).focus();
+  await (await headerItem(page, '#thumbnail-larger')).focus();
   await page.keyboard.press('Enter');
   await expect(grid).toHaveAttribute('data-thumbnail-size', '1');
   await page.keyboard.press('0');
   await expect(grid).toHaveAttribute('data-thumbnail-size', '2');
-  await page.getByRole('button', { name: 'Larger previews', exact: true }).click();
-  await page.getByRole('button', { name: 'Larger previews', exact: true }).click();
+  await (await headerItem(page, '#thumbnail-larger')).click();
+  await (await headerItem(page, '#thumbnail-larger')).click();
   await expect(page.locator('#thumbnail-reset')).toBeFocused();
-  for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Smaller previews', exact: true }).click();
+  for (let i = 0; i < 4; i++) await (await headerItem(page, '#thumbnail-smaller')).click();
   await expect(page.locator('#thumbnail-reset')).toBeFocused();
 });
 
@@ -110,7 +111,7 @@ test('preview keys respect typing, dialogs, browser chords and image zoom', asyn
 test('preview buttons resize picture rows and fit narrow screens at every size', async ({ page }, testInfo) => {
   await page.keyboard.press('g');
   const before = await boxes(page);
-  await page.getByRole('button', { name: 'Larger previews', exact: true }).click();
+  await (await headerItem(page, '#thumbnail-larger')).click();
   await expect.poll(async () => (await boxes(page))[1].height).toBeGreaterThan(before[1].height);
   await page.reload();
   await page.getByRole('button', { name: 'Set pictures', exact: true }).click();
@@ -127,7 +128,7 @@ test('preview buttons resize picture rows and fit narrow screens at every size',
       await expect.poll(async () => (await boxes(page)).every(box => box.left + box.width <= 320)).toBe(true);
     }
   }
-  await page.locator('#thumbnail-reset').click();
+  await (await headerItem(page, '#thumbnail-reset')).click();
   await expect(page.locator('#thumbnail-reset')).toHaveText('100%');
   await page.screenshot({ path: testInfo.outputPath('preview-size-mobile.png'), fullPage: true });
 });
@@ -141,7 +142,7 @@ test('invalid or unavailable preview storage leaves controls usable', async ({ p
     Storage.prototype.setItem = () => { throw new DOMException('Storage blocked', 'SecurityError'); };
   });
   await page.reload();
-  await page.getByRole('button', { name: 'Larger previews', exact: true }).click();
+  await (await headerItem(page, '#thumbnail-larger')).click();
   await expect(page.locator('#thumbnail-reset')).toHaveText('130%');
   await page.keyboard.press('0');
   await expect(page.locator('#thumbnail-reset')).toHaveText('100%');
@@ -260,12 +261,11 @@ test('picture preference survives reload and narrow reflow has no overflow or lo
 });
 
 
-test('help hint stays visible, documents g and offers a native picture toggle', async ({ page }) => {
-  const hint = page.getByRole('button', { name: 'Press ? for help', exact: true });
-  await page.mouse.move(600, 400); // Header stays retracted on desktop.
-  await expect(hint).toBeInViewport();
+test('Help is in the header menu, documents g and offers a native picture toggle', async ({ page }) => {
+  await page.mouse.move(600, 400);
+  await expect(page.locator('#header-menu-toggle')).toBeInViewport();
   await expect(page.locator('.browse-toolbar #picture-layout-toggle')).toHaveCount(0);
-  await hint.click();
+  await (await headerItem(page, '#help-toggle')).click();
   const help = page.locator('#help-modal');
   await expect(help).toHaveClass(/open/);
   await expect(help.locator('.help-row').filter({ hasText: 'Picture layout' })).toContainText('g');
@@ -277,12 +277,12 @@ test('help hint stays visible, documents g and offers a native picture toggle', 
   await page.keyboard.press('g'); // Dialog owns letter keys.
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape');
-  await expect(hint).toBeFocused();
+  await expect(page.locator('#header-menu-toggle')).toBeFocused();
   await page.keyboard.press('?');
   await expect(help).toHaveClass(/open/);
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 320, height: 640 });
-  await expect(hint).toBeInViewport();
+  await expect(page.locator('#header-menu-toggle')).toBeInViewport();
 });
 
 test('picture shortcut respects typing, browser chords', async ({ page }) => {

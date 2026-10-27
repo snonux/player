@@ -100,6 +100,13 @@ function restoreFocus(modal) {
     opener.focus();
     return;
   }
+  // Menu items close their popover; return to the button that opens it.
+  const menu = opener?.closest?.('[popover][id]');
+  const invoker = menu && document.querySelector(`[popovertarget="${menu.id}"]`);
+  if (isFocusable(invoker)) {
+    invoker.focus();
+    return;
+  }
   focusSelectedCard();
 }
 

@@ -544,7 +544,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       }
       // Reach the footer action by actual Tab navigation and prove its focus
       // indicator appears in the compact layout.
-      await page.locator('#thumbnail-smaller').focus();
+      await page.locator('#media-grid').focus();
       await page.keyboard.press('Shift+Tab');
       await expect(signIn).toBeFocused();
       const outline = await signIn.evaluate(link => getComputedStyle(link).outlineStyle);
