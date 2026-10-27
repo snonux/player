@@ -1,5 +1,30 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M37 durable listening history, make a disposable fixture, add its two
+80-second tagged songs, then run one installed browser at a time:
+
+```sh
+python3 player-android/integration_test/support/music_fixture.py up player-server/player \
+  --port 18837 --no-doubles --dir /path/to/fixture --evidence /tmp/player-m37-evidence
+python3 player-android/integration_test/support/music_history_fixture.py \
+  /path/to/fixture /tmp/player-m37-evidence
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M37_ISOLATED=1 \
+PLAYER_M37_EVIDENCE=/tmp/player-m37-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null GOMAXPROCS=2 \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-listening-history.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The Python commands run from the repository root. The browser journey waits
+for actual qualified playback, including a second occurrence of the same song,
+checks captured output, account isolation, retention and recording settings,
+Clear confirmation, and offline Refresh recovery. Restart the fixture with
+`music_fixture.py restart /path/to/fixture` to check durable rows, then stop it
+with `music_fixture.py down /path/to/fixture` after native checks. Evidence
+stays outside the repository.
+
 For M28 Save queue as playlist, start a disposable music fixture and run the
 focused journey in installed Chrome and Firefox sequentially:
 
