@@ -97,15 +97,18 @@ class ConnectivityPreflightTest(unittest.TestCase):
 class CaptureTimingTest(unittest.TestCase):
     def test_buffering_does_not_consume_requested_playback_duration(self):
         run = SimpleNamespace(audio=SimpleNamespace(available=lambda: False))
-        states = [{'state': 'CONNECTING'}, {'state': 'PLAYING'}, {'state': 'PLAYING'}]
+        states = [{'state': state} for state in
+                  ('CONNECTING', 'PLAYING', 'PLAYING', 'PLAYING', 'PAUSED', 'PAUSED')]
         with patch.object(music_e2e, 'reset_progress'), \
                 patch.object(music_e2e.adrv, 'tap'), \
+                patch.object(music_e2e.adrv, 'adb') as adb, \
                 patch.object(music_e2e, 'session_state', side_effect=states), \
-                patch.object(music_e2e.time, 'monotonic', side_effect=[100, 119]), \
+                patch.object(music_e2e.time, 'monotonic', side_effect=[100, 119, 120]), \
                 patch.object(music_e2e.time, 'sleep') as sleep:
             sessions, analysis, wav = music_e2e.play_and_capture(run, None, {'id': 1}, 'probe', seconds=7)
         self.assertEqual(sessions[-1]['state'], 'PLAYING')
         self.assertEqual(sleep.call_args_list[-1].args, (7,))
+        adb.assert_called_once_with('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
         self.assertIsNone(analysis)
         self.assertIsNone(wav)
 

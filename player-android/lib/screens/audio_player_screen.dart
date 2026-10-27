@@ -1298,17 +1298,21 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                                   style:
                                       const TextStyle(color: Colors.white70))));
                     }),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 if (handler.musicState != null)
                   Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     IconButton(
                         onPressed: () => _skip(-_kSkipDuration),
                         tooltip: 'Skip back 15 seconds',
+                        constraints:
+                            const BoxConstraints(minWidth: 48, minHeight: 48),
                         icon:
                             const Icon(Icons.fast_rewind, color: Colors.white)),
                     IconButton(
                         onPressed: () => _skip(_kSkipDuration),
                         tooltip: 'Skip forward 15 seconds',
+                        constraints:
+                            const BoxConstraints(minWidth: 48, minHeight: 48),
                         icon: const Icon(Icons.fast_forward,
                             color: Colors.white)),
                   ]),

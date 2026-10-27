@@ -115,8 +115,20 @@ def connect_and_login(base, user, password, record, shot, check_wrong_password=F
     adrv.tap(".", cls="EditText"); time.sleep(1)
     clear_field(); adrv.type_text(base); time.sleep(1)
     adrv.tap("^Save URL$")
-    record("saving the server URL leads to Sign In", adrv.wait("^Welcome back$", timeout=25))
+    signed_in_screen = adrv.wait("^Welcome back$", timeout=25) is not None
+    record("saving the server URL leads to Sign In", signed_in_screen)
+    if not signed_in_screen:
+        shot("login-connect-error")
+        return False
     fields = [n for n in adrv.nodes() if n["cls"] == "EditText"]
+    deadline = time.monotonic() + 10
+    while len(fields) < 2 and time.monotonic() < deadline:
+        time.sleep(0.7)
+        fields = [n for n in adrv.nodes() if n["cls"] == "EditText"]
+    if len(fields) < 2:
+        record("sign-in fields are visible", False)
+        shot("login-fields-error")
+        return False
     adrv.tap_node(fields[0]); time.sleep(1); adrv.type_text(user)
     if check_wrong_password:
         _reject_wrong_password(record, shot)
@@ -129,7 +141,9 @@ def _reject_wrong_password(record, shot):
     """Submit a wrong password, expect a visible error, then clear the field."""
     fields = [n for n in adrv.nodes() if n["cls"] == "EditText"]
     adrv.tap_node(fields[1]); time.sleep(1); adrv.type_text("definitely-wrong-pw")
-    adrv.adb("shell", "input", "keyevent", "KEYCODE_ENTER")
+    # The IME Enter key can only dismiss the keyboard on this screen. Submit
+    # through the visible control so this check actually sends the bad login.
+    adrv.tap("^Sign In$", cls="Button")
     seen = ""
     for _ in range(4):
         seen = ui_error_text() or " | ".join(l for l in labels() if re.search(r"(?i)invalid|incorrect|credential", l))

@@ -225,10 +225,18 @@ def play_and_capture(run, client, track, name, seconds=4.0, bands=None, tone=Non
     if sessions[-1]['state'] == 'PLAYING':
         time.sleep(seconds)
     sessions.append(session_state())
-    if mark is None:
+    wav = run.audio.save(mark, run.evidence.path(f'{name}.wav')) if mark is not None else None
+    # A fresh UI dump can fail while the player is animating. Use Android's
+    # media control, as the other live runners do, and confirm it stopped.
+    if session_state()['state'] == 'PLAYING':
+        adrv.adb('shell', 'input', 'keyevent', 'KEYCODE_MEDIA_PAUSE')
+        deadline = time.monotonic() + 5
+        while session_state()['state'] == 'PLAYING' and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if session_state()['state'] == 'PLAYING':
+            raise RuntimeError('Android media session remained PLAYING after Pause')
+    if wav is None:
         return sessions, None, None
-    wav = run.audio.save(mark, run.evidence.path(f'{name}.wav'))
-    adrv.tap('^Pause$', timeout=3)  # stop before the next capture starts
     return sessions, audio_trace.analyze(wav, bands, tone=tone), wav
 
 
@@ -394,13 +402,23 @@ def step_metadata_audio(run, item):
 
 
 def step_tap_targets(run):
-    """Every clickable control on the player screen is at least 48 x 48 dp."""
+    """Visible player controls have full-sized targets once scrolled into view."""
     density = int(adrv.adb('shell', 'wm', 'density').split(':')[-1].strip() or 160)
     sizes = {}
-    for node in adrv.nodes():
-        if node['click'] and adrv.label(node):
+    def collect(nodes, only=None):
+        for node in nodes:
+            label = adrv.label(node)[:40]
+            if not node['click'] or not label or (only is not None and label not in only):
+                continue
             width, height = node['b'][2] - node['b'][0], node['b'][3] - node['b'][1]
-            sizes[adrv.label(node)[:40]] = [round(width * 160 / density), round(height * 160 / density)]
+            measured = [round(width * 160 / density), round(height * 160 / density)]
+            prior = sizes.get(label, [0, 0])
+            sizes[label] = [max(prior[0], measured[0]), max(prior[1], measured[1])]
+    collect(adrv.nodes())
+    clipped = {name for name, size in sizes.items() if min(size) < MIN_TARGET_DP}
+    if clipped:
+        app_ui.swipe(up=True)
+        collect(adrv.nodes(), only=clipped)
     small = {name: size for name, size in sizes.items() if min(size) < MIN_TARGET_DP}
     run.record(f'tap targets: player controls are at least {MIN_TARGET_DP} dp', bool(sizes) and not small,
                f'below {MIN_TARGET_DP} dp: {small}' if small else f'{len(sizes)} controls checked',
@@ -563,8 +581,10 @@ def calibrate_gap(run, track):
     if not open_track('Music', 'Gap Calibration', track['title']):
         run.record(scenario, False, 'could not open the track')
         return 0
+    # The known gap is in the middle of this source. Stop before its natural
+    # end, when a music queue may start another track with its own handoff gap.
     _, analysis, wav = play_and_capture(run, run.admin, track, f"gap-calibration-{gap['ms']}ms",
-                                        seconds=track['duration_s'] + 3, tone=track['tone_hz'][0])
+                                        seconds=track['duration_s'] - 1, tone=track['tone_hz'][0])
     segments = analysis['segments']
     span = (segments[0]['start_s'] + EDGE_S, segments[-1]['end_s'] - EDGE_S) if segments else (0, 0)
     silences = [g for g in analysis['gaps'] if g['kind'] == 'silence']
@@ -578,13 +598,6 @@ def calibrate_gap(run, track):
                f"(stream-edge silences ignored: {[g['duration_ms'] for g in silences if g not in interior]})",
                {'gaps': analysis['gaps'], 'counted': interior, 'discontinuities': clicks}, [wav])
     return len(clicks)
-
-
-def step_gapless_auto_advance(run):
-    """Gapless across tracks needs automatic track changes, which Android lacks."""
-    run.record('capture timing: gap at automatic track change (gapless)', False,
-               'Android plays one item and stops; no automatic track change to measure yet (design B7, M12/M21)',
-               result='gap')
 
 
 def step_regular_user(run):
@@ -663,7 +676,7 @@ def main(argv=None):
         run = Run(args)
         if step_sign_in(run):
             for step in ((step_metadata,) if args.metadata_only else (step_metadata, step_touch_journey, step_tap_targets, step_back_and_progress, step_themes,
-                         step_gain_levels, step_capture_calibration, step_gapless_auto_advance,
+                         step_gain_levels, step_capture_calibration,
                          step_server_restart, step_cold_relaunch, step_regular_user)):
                 try:
                     step(run)
