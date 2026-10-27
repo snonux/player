@@ -73,14 +73,30 @@ redirects, conditional 304 and Atom parsing. Run from `player-android`:
 flutter test --no-pub test/services/podcast_identity_test.dart test/services/podcast_repository_test.dart
 ```
 
-Implementation-first stage: Chrome, Firefox and native Android acceptance,
-full suites and final builds are deferred to integrated verification (5i3).
-Unit checks are not platform acceptance.
+Implementation-stage checks above are separate from the installed-client
+acceptance recorded below.
 
-Stage: **IMPLEMENTED/REVIEWED - AWAITING INTEGRATED VERIFICATION**. Both bounded
+Stage: **IMPLEMENTED/REVIEWED/VERIFIED** (2026-10-27). Both bounded
 expert rounds completed. Established feed and episode aliases now survive
 merges beyond new-alias acquisition caps; SQLite regressions cover alias
 pressure, enclosure rotation, history and old-URL resubscription. Scoped
 analysis and affected tests pass. Refresh-all retains independent publisher
-failures and reports partial failure. Integrated journeys and final gates
-remain deferred under the implementation-first workflow; task xh3 is pending.
+failures and reports partial failure.
+
+The retained 5i3 fixture at
+`/home/paul/tmp/player-integrated-verify/podcast-5i3` verifies standalone
+behavior in an installed Android A client. With the Player server connection
+absent, the native Subscribe controls fetched two publisher feeds directly;
+the aggregate list named the feed, downloaded audio bytes matched the
+publisher's SHA-256, captured output contained the publisher tone, and a
+process restart retained the uncompleted position and local copy. The native
+account-association, Keep separate, other-account isolation, offline
+unsubscribe/restart and explicit resubscribe stages passed. The two installed
+browser journeys exercised the synchronized feed identities and subscription
+views; installed Android B independently obtained its own publisher copy.
+The `standalone`, `associate`, `isolation`, `unsubscribe`, `resubscribe`,
+`download-negatives` and browser result files in that fixture retain the
+per-stage evidence. Redirect, GUID collision and old-schema migration edges
+were checked by focused SQLite/HTTP tests; they were not recreated through
+each installed client's UI. No standalone podcast implementation changed
+after the integrated run, so its passing journeys were reused for `xh3`.
