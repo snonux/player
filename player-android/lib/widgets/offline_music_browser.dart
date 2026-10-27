@@ -215,7 +215,10 @@ class _OfflineMusicBrowserState extends ConsumerState<OfflineMusicBrowser> {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (_, __) => Center(
                 child: TextButton(
-                    onPressed: () => ref.invalidate(offlineMusicItemsProvider),
+                    onPressed: () {
+                      ref.invalidate(offlineMediaListProvider);
+                      ref.invalidate(offlineMusicItemsProvider);
+                    },
                     child:
                         Text(context.tr('Could not load downloads. Retry')))),
             data: (items) {

@@ -323,6 +323,35 @@ class Run(baseline.Run):
                           'reverse': reverse_target(self.state['port'])},
                     artifacts=[detail, self.shot('offline-partial-playlist-queue')])
 
+    def storage_retry(self):
+        index = downloads.PRIVATE + '/index.db'
+        mode = adrv.adb('shell', 'stat', '-c', '%a', index).strip()
+        assert mode == '600', mode
+        adrv.adb('shell', 'am', 'force-stop', app_ui.PKG)
+        adrv.adb('shell', 'chmod', '000', index)
+        try:
+            app_ui.launch()
+            landing = adrv.wait(r'^On this device$|^Choose a server$|^Welcome back$',
+                                timeout=45)
+            assert landing, app_ui.labels()
+            if adrv.label(landing) != 'On this device':
+                touch('^Use files on this device$')
+            wait('^On this device$')
+            touch('^Downloads$')
+            wait('^Downloads$')
+            touch('^Browse offline music$')
+            wait('^Could not load downloads. Retry$')
+            error = self.shot('offline-storage-error')
+        finally:
+            adrv.adb('shell', 'chmod', mode, index)
+            assert adrv.adb('shell', 'stat', '-c', '%a', index).strip() == mode
+        touch('^Could not load downloads. Retry$')
+        wait('^Saved server and account')
+        wait('^First Light(?: /|$)')
+        self.record('unreadable local index shows an error and Retry recovers after storage returns',
+                    data={'reverse': reverse_target(self.state['port'])},
+                    artifacts=[error, self.shot('offline-storage-retry')])
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -353,6 +382,7 @@ def main(argv=None):
         run.play()
         run.reconnect()
         run.partial_playlist()
+        run.storage_retry()
     except Exception:
         failure = run.evidence.path('m49-failure.txt')
         failure.write_text(traceback.format_exc())

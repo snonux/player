@@ -1,6 +1,7 @@
 # M49 offline music browsing — tl3
 
-Implementation first; awaiting bounded review and integrated verification.
+Implemented and accepted in Chrome, Firefox, and the native Android app on
+2026-10-27.
 Dependencies: nj3/oj3/9k3/ck3 accepted; 4l3 durable collection pins reviewed in
 `e231b5c`, pending formal platform acceptance. Dependency links remain intact.
 
@@ -25,8 +26,8 @@ States: local loading indicator; no downloaded music; no search matches;
 retryable storage-read error; missing-file guidance; queue-busy feedback; truncated
 long row labels with full detail heading; no online editing/profile/session
 controls in offline mode. Existing theme tokens/native theme surfaces handle
-light/dark and flexible controls/lists handle narrow layouts. Actual screenshots,
-contrast/accessibility checks and touch/keyboard journeys remain deferred.
+light/dark and flexible controls/lists handle narrow layouts. Browser and native
+screenshots, keyboard/touch journeys, and native Back behavior were checked.
 Web preserves j/k/h/l and arrows selection, native Enter activation, / search,
 Esc/Backspace hierarchy, p/Space playback, r shuffle and Q queue, plus existing
 queue navigation and scoped keyboard access. Text/select controls own typing.
@@ -60,29 +61,32 @@ Online library navigation reinitializes queue persistence on its next scope.
 Play next/Add reject another account's queue and request explicit Play now.
 All files are revalidated through repository playback requests before insertion.
 
-## Checks and remaining gates
+## Verification
 
-IMPLEMENTED / self-reviewed — AWAITING INTEGRATED VERIFICATION (tl3/M49).
+The focused browser journey passed 2/2 in Chrome 144.0.7559.132 and 2/2 in
+Firefox 156.0. It covered an empty local store, real album/playlist pins,
+disposable cached music, a cold disconnected reload, all four browse types,
+search and keyboard navigation, partial playlist membership, queue playback
+with captured 440 Hz output, saved-account isolation, and explicit reconnect.
+There were zero API requests during the disconnected and reconnected-local
+phase. Evidence is under `/home/paul/tmp/codex/player-m49-evidence/`.
 
-Passed `node player-server/web/js/tests/offline-browse.test.js` (metadata groups,
-search, missing counts, zero network requests, explicit local identity,
-account-switch invalidation) and existing `offline-pins.test.js` (durable bytes,
-cache independence, removal/overlap/cancellation/denial/account boundaries).
-Dart formatting applied to changed native files. Scoped Flutter analysis of the
-new service/browser/cache adapters, existing Downloads/queue sheet and tests
-passed without issues; `flutter test test/services/offline_music_library_test.dart
-test/services/playback_cache_test.dart test/services/playback_cache_provider_test.dart`
-passed all nine tests. Cache adapter checks include saved metadata, account/origin
-isolation and eviction; existing provider tests retain online denial/prefetch checks.
-Full suites/builds and actual Chrome, Firefox and native emulator journeys are
-deliberately deferred by the implementation-first workflow. This is not platform
-acceptance.
+The Android API 34 x86_64 release APK (0.8.2+4022) passed 11/11 focused
+checks: real album and playlist downloads, cold local launch with its adb
+reverse route removed, all four browse types, search, light/dark, Back, queue
+playback with QEMU audio, explicit reconnect, and a 1-of-2 playlist that queued
+only its saved song and showed reconnection guidance. Evidence is under
+`/tmp/player-m49-native-final/`. A separate native check switched between two
+downloaded accounts while music played; it stopped playback and cleared the
+queue. A removed file produced missing-file guidance without network fallback.
+The empty local store and an unreadable download index were checked on device;
+Retry recovered when storage returned. Boundary screenshots and observations
+are under `/tmp/player-m49-native-boundary/` and
+`/tmp/player-m49-native-final-storage/`.
 
-Integrated scenario: download album/playlist and a manual song; stop server;
-cold-open Offline music; choose saved account; browse all four types; search;
-queue/play via pointer/keyboard or touch/native controls; check actual audio and
-saved media identity; delete/miss one file; switch accounts during loading;
-restart; reconnect and sign in without replacing local playback inadvertently.
-Run light/dark/narrow and long metadata, focus/Back, storage failure and
-cross-account isolation checks on each required platform. Retain exact versions,
-commands and artifacts outside committed media/build files.
+`GOMAXPROCS=2 go test -p 2 ./... -race -cover`, the web offline browse unit
+test, scoped Flutter analysis, and the Android release build passed after the
+fixes. The preceding ten-task regression also passed all 1,749 Flutter tests
+and all ten focused browser specs in both browsers. This task did not trigger
+another full regression; the next overall regression is due after ten more
+completed tasks.
