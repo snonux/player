@@ -1,5 +1,23 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M39 configurable music home, start a fresh disposable `music_fixture.py up`
+server with `--no-doubles`, then run one installed browser at a time:
+
+```sh
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M39_ISOLATED=1 \
+PLAYER_M39_EVIDENCE=/tmp/player-m39-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null GOMAXPROCS=2 \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-home-customize.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox using the same fixture.
+```
+
+The journey changes order and visibility, pins a private playlist, captures
+playback, checks reload persistence, playlist-list failure and retry, account
+isolation, unavailable pins, the all-hidden state, and defaults. Keep evidence
+outside the repository; stop the fixture after native acceptance.
+
 For M30 playlist duplicate and membership tools, start a disposable
 `music_fixture.py up` server with `--no-doubles`, then run the focused journey
 in installed Chrome and Firefox sequentially:
