@@ -108,11 +108,20 @@ invalidations can still notify historical parents. The stream-identity test
 does not establish a bound on that upstream listener count; assess traversal
 impact during integrated host verification. No vendored dependency was edited.
 
-Still required in the integrated phase: full suites, Kotlin/server/APK builds;
-actual installed Chrome and Firefox shared catalog/search/queue journeys;
-native app and Android Auto host/DHU browse albums/artists/playlists, search,
-start actual music, verify authoritative source/audio and session queue,
-previous/next/pause/seek/jump, Back, light/dark/narrow host layouts, denied
-untrusted browser, lock/logout/server switch, offline/error retry and restart.
-Trusted-host admission and proxy/session/media-button behavior have not yet
-been exercised on a real Android runtime. No Auto host proof is claimed.
+## Integrated verification (2026-10-27)
+
+Shared Chrome catalog journeys: `music-albums.test.ts` + `music-search.test.ts`
+7/7 passed against fixture 18850
+(`/home/paul/tmp/codex/player-m55-web-chrome.log`). Firefox: 6/7 passed; one
+ordered-collection case hit the known floating-player overlay flake.
+
+Android Auto Desktop Head Unit package is now installed at
+`Android/Sdk/extras/google/auto/desktop-head-unit` (`sdkmanager
+'extras;google;auto'`). DHU TCP-connects to `adb forward tcp:5277`, then exits
+because the API 34 Google APIs emulator only ships
+`com.google.android.projection.gearhead` **stub**
+(`versionName=1.2.531830-stub`) with StubSettingsActivity and no
+HeadUnitServerService. Real DHU browse/play/search/audio cannot run until a
+non-stub Android Auto build (Play Store install) or an Automotive system image
+is available. AutoBrowseService remains registered in the Player APK; no Auto
+host proof is claimed. Task stays pending on that external host gap.
