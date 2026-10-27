@@ -1,12 +1,12 @@
 Stage: IMPLEMENTED/REVIEWED - AWAITING INTEGRATED VERIFICATION.
 Two bounded expert rounds complete; paused successor-gain blocker fixed and R2 clear.
-Actual audio continuity/codec/output acceptance has not run.
+Chrome and Firefox audio continuity acceptance passed; native output is pending.
 
 # M21 / 0l3: gapless music queues
 
-Stage: implementation present on web and native Android; fresh review and
-integrated verification pending. No release, version bump, build or actual
-Chrome/Firefox/emulator audio acceptance is claimed here. Prerequisites are
+Stage: implementation present on web and native Android; focused browser
+acceptance passed and integrated native verification pending. No release,
+version bump, build or emulator audio acceptance is claimed here. Prerequisites are
 1k3 (transport), ck3 (queue), nj3 (interaction design), oj3 (audio fixtures).
 
 ## Interaction contract
@@ -50,7 +50,7 @@ is not a hard process-memory ceiling. Failed/late preparation uses ordinary
 advance. Other rates retain the existing pitch-preserving HTML audio path.
 Detached/share/Cast playback explicitly retains normal streaming. Queue cache
 warming remains a separate feature; it is not described as gapless. Browser
-decoder treatment of codec priming/padding still needs measured acceptance.
+decoder treatment of codec priming/padding was measured below for FLAC and MP3.
 
 Native uses just_audio 0.9.46's ConcatenatingAudioSource with eager source
 preparation (Android ExoPlayer), retaining the current item and one successor.
@@ -94,10 +94,36 @@ and resume with different current/next ReplayGain values. Settings preserve
 the current multiplier while paused; only a scheduled successor node receives
 future automation at the new deadline. This focused Node regression passes.
 
-Full regression gates/final server+APK builds and actual continuous adjoining
-sample captures on installed Chrome, Firefox and Android are deferred by the
-implementation-first instruction. Integrated acceptance must measure gap/click
-and audible before/after tones, including seek and queue edits; verify metadata/
-artwork/progress timing, controls and source/account/sleep cancellation; exercise
-resource/decode/network/offline and remote/rate fallbacks. No task acceptance
-until those platform checks pass.
+## Focused browser acceptance (2026-10-27)
+
+The installed Google Chrome and Mozilla Firefox passed the focused M21 runner
+`test/e2e-web/tests/music-gapless.test.ts` on a new disposable fixture. Its
+three-song FLAC and MP3 sets contain one continuous 880 Hz tone cut at exact
+six-second sample boundaries. An AudioWorklet captured the actual graph output
+for 13 seconds per run, covering two automatic queue transitions; captures
+with dropped worklet frames were rejected. The normal streaming run provides
+the same browser, codec, fixture and output path as a measured comparison.
+
+| Browser | Codec | Normal boundary silences | Gapless boundary silences | Gapless phase clicks |
+| --- | --- | --- | --- | --- |
+| Chrome | FLAC | 200, 319 ms | 0, 0 ms | 0 |
+| Chrome | MP3 | 69, 37 ms | 0, 0 ms | 0 |
+| Firefox | FLAC | 123, 91 ms | 0, 0 ms | 0 |
+| Firefox | MP3 | 81, 81 ms | 0, 0 ms | 0 |
+
+Both browsers also passed visible pause/seek, successor queue reorder, natural
+metadata and outgoing progress changes, pitch-preserving 1.5× streaming
+fallback, Sets source and account isolation, narrow light and desktop dark
+layouts, and audible ordinary playback after injected over-limit response
+headers and invalid decoder bytes. The narrow popover's Gapless checkbox was
+also toggled through its visible controls in both browsers. The latter two use
+controlled browser responses, not oversized media files. Evidence, WAV
+captures and screenshots are in `/home/paul/tmp/codex/player-m21-evidence`.
+The isolated fixture is
+`/home/paul/tmp/codex/player-m21-18858` on port 18858. Run the focused suite
+with `PLAYER_MUSIC_FIXTURE` pointing there, `GOMAXPROCS=2`, one Playwright worker,
+and each `--project=chrome` and `--project=firefox` serially.
+
+Android device output, sleep and remote handoff, network/offline behavior, full
+regression gates and final release builds remain part of integrated acceptance.
+No task acceptance is claimed until all platform checks pass.
