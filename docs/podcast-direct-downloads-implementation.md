@@ -80,3 +80,23 @@ test/services/podcast_downloads_test.dart
 test/screens/podcast_download_controls_test.dart` passed with no issues;
 `git diff --check` passed. No installed runtime, version, release or build was
 changed for these implementation-stage checks.
+
+## Integrated acceptance — 2026-10-27
+
+The retained 5i3 fixture at
+`/home/paul/tmp/player-integrated-verify/podcast-5i3` verifies this feature
+in two installed Android clients. Client A subscribed and downloaded directly
+from the local publisher while the Player server was unavailable; downloaded
+bytes matched the publisher SHA-256, real audio output was captured, and a
+process restart kept the copy and listening position. Client B obtained its
+own publisher copy and resumed shared listening state. Client A removed and
+redownloaded its device file without losing metadata, completion or position;
+it also canceled a held publisher transfer, retried an actual publisher error,
+and played/searched within its downloaded copy while both the publisher and
+Player server were offline. The browser-side shared history and separate
+server-copy behavior passed in installed Chrome and Firefox. The passing
+`standalone`, `resume`, `cleanup`, `download-negatives` and `offline-seek`
+result files retain these device checks. The native entry now uses the
+standalone surface from task `1i3`; the legacy server download screen is not
+reachable from Podcasts. This acceptance reuses the passing integrated run;
+the implementation has not changed since then.
