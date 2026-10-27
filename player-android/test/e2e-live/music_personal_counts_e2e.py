@@ -16,6 +16,7 @@ import tarfile
 import tempfile
 import time
 import traceback
+from urllib.parse import urlparse
 
 import adrv
 import app_ui
@@ -37,7 +38,7 @@ class Run(baseline.Run):
     def __init__(self, args):
         super().__init__(args, evidence_dir=args.evidence_dir)
         assert self.audio.available(), 'QEMU output WAV required'
-        assert self.state['port'] == 18936 and self.state['origin'] == 'http://127.0.0.1:18936', self.state['origin']
+        assert urlparse(self.state['origin']).hostname in ('127.0.0.1', 'localhost'), self.state['origin']
         self.user = Client(self.state['origin']).login(**self.auth['user'])
         self.other = Client(self.state['origin']).login(**self.auth['admin'])
         self.user_id = next(row['id'] for row in self.admin.request('GET', '/api/v1/admin/users')
@@ -95,7 +96,19 @@ def open_album():
 
 def tap_song(title):
     pattern = r'(?:^| / )' + re.escape(title) + r' / '
-    assert adrv.tap(pattern), app_ui.labels()
+    node = adrv.find(pattern)
+    assert node, app_ui.labels()
+    # The lower album row can be visible in semantics while a snackbar or
+    # mini player covers its center. Move it above those overlays first.
+    for _ in range(4):
+        if node['b'][3] <= 1650:
+            break
+        adrv.adb('shell', 'input', 'swipe', '540', '1650', '540', '1000', '350')
+        time.sleep(.6)
+        node = adrv.find(pattern)
+        assert node, app_ui.labels()
+    assert node['b'][3] <= 1650, node
+    adrv.tap_node(node)
 
 
 def visible_counts(run, detail, name):

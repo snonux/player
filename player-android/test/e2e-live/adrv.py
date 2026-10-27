@@ -35,7 +35,16 @@ def nodes():
     for attempt in range(6):
         remote = f"/sdcard/adrv-{uuid.uuid4().hex}.xml"
         try:
-            dump = _ui_command("shell", "uiautomator", "dump", remote)
+            try:
+                dump = _ui_command("shell", "uiautomator", "dump", remote)
+            except RuntimeError as error:
+                # Android can kill the short-lived dump process while the UI
+                # remains healthy. A fresh dump is safe to retry in that case.
+                if "exit=137" in str(error) and attempt < 5:
+                    last_error = error
+                    time.sleep(0.6 + attempt * 0.3)
+                    continue
+                raise
             marker = f"UI hierchary dumped to: {remote}"
             text_out = dump.stdout.decode(errors="replace")
             text_err = dump.stderr.decode(errors="replace")
