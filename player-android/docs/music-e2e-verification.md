@@ -283,6 +283,25 @@ interception remain unverified.
 - `adrv.adb` gives up after 120 s: after a host suspend, `uiautomator dump`
   hung forever on the old emulator; reboot the emulator in that case.
 
+### yn3 native media-card accessibility check (2026-10-27)
+
+On one API 34 emulator with the release APK and a disposable music fixture,
+`uiautomator dump` exposed the Afterglow card as a focusable, clickable node
+with its title, artist, album and duration. Its Favorite control was a separate
+focusable, clickable `android.widget.Button` named `Add to favorites` within the
+card bounds. A tap on that button changed its accessible name to `Remove from
+favorites` without navigating. A separate tap on the card opened Afterglow's
+detail screen. The two node bounds and actions confirm the card and favorite
+control are independently discoverable through Android's accessibility tree.
+Screenshots and the structured check are retained at
+`/home/paul/tmp/codex/player-yn3-evidence`.
+
+This AVD does not include the TalkBack package, so spoken announcements and
+TalkBack gesture navigation were not exercised. The device check directly
+inspected the accessibility nodes consumed by screen readers. The web card
+action checks in installed Chrome and Firefox are recorded in the yn3 task and
+`music-card-a11y.test.ts`.
+
 ## M01 embedded tags
 
 The same fixture now includes `Tag Verification/source_001.flac` with a title
