@@ -27,6 +27,10 @@ func (s subsonicBrowseStub) ListMedia(context.Context, int64, service.MediaQuery
 func (s subsonicBrowseStub) GetLyrics(context.Context, int64, int64) (*service.Lyrics, error) {
 	return nil, nil
 }
+
+func (s subsonicBrowseStub) GetAudioFormat(context.Context, int64, int64) (*service.AudioFormat, error) {
+	return nil, nil
+}
 func (s subsonicBrowseStub) GetMediaDetail(context.Context, int64, int64) (*service.MediaDetail, error) {
 	return nil, nil
 }

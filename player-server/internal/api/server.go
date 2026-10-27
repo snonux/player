@@ -553,7 +553,6 @@ func (s *Server) routes() {
 	s.routesShares()
 	s.routesAdmin()
 	s.routesPodcast()
-	s.routesRadio()
 }
 
 // routesSubsonic wires the optional Subsonic/OpenSubsonic /rest surface (A01a).
