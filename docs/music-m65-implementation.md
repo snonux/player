@@ -1,6 +1,8 @@
 # M65 share encoding and bitrate (9m3)
 
-Stage: IMPLEMENTED/REVIEWED - AWAITING INTEGRATED VERIFICATION.
+Stage: IMPLEMENTED AND VERIFIED in Chrome, Firefox, and native Android
+on 2026-10-27. Focused acceptance evidence is in
+`/home/paul/tmp/codex/player-m65-evidence`.
 Round 1 found no blocking issues; no second review round warranted.
 
 Design recorded before coding. Extend M62's existing share dialog and My Shares
@@ -84,11 +86,8 @@ Current-ACL checks for explicit single-file policies are additive; empty legacy
 single-file policies retain their prior access semantics. Conversion completion
 rechecks the stored policy and creator access before exposing prepared bytes.
 
-Full suites, final server/APK builds, real Chrome/Firefox
-and native Android codec/bitrate/output/seek, visual and keyboard/Back acceptance
-are still pending. Existing M50 evidence is prerequisite context, not proof for
-M65. Live servers/emulator, versions, .serena/, reports/ and research_notes/
-were untouched. Parent owns review, commit and eventual acceptance/closure.
+The implementation-stage notes above describe the state on 2026-10-25. The
+2026-10-27 acceptance results below supersede their pending runtime checks.
 
 Round 1 advisory follow-up: configuration in the shared single-song/collection
 creation dialog now locks expiry, maximum viewings, quality and profile reload
@@ -100,4 +99,42 @@ both the selected policy and disabled state. No other form was changed.
 success, failure and late-profile-response cases for both creation endpoints;
 `share-quality.test.js`, syntax and diff checks also pass. Parent inspects this
 small advisory fix without launching a second review round. Actual platform
-acceptance remains pending.
+acceptance was completed below.
+
+## Integrated acceptance — 2026-10-27
+
+The disposable real server at `127.0.0.1:18865` used real tagged music and
+FFmpeg, with no service double. `music-share-quality.test.ts` passed in installed
+Chrome and Firefox (three focused cases in each). The keyboard journey created
+Original, AAC 128, AAC 256, MP3 192, and Opus 96 single-song links through the
+visible dialog. An anonymous browser played each link; FFprobe identified
+FLAC/AAC/AAC/MP3/Opus bytes, and each download had the corresponding extension.
+The saved policy won over a forged profile query. HEAD, byte Range, revoke,
+expiry, and guest page status were checked. My Shares editing changed an MP3
+link to AAC and its actual bytes, preserved an Opus draft through an offline
+Save failure, saved it on retry, and restored focus on Escape. An album link
+created through the visible Share control applied MP3 to the first and last
+occurrences, playback, and per-item downloads. Nominal targets remain nominal:
+FFprobe measured this short Opus fixture at about 187 kbps despite a 96 kbps
+encoder request, consistent with FFmpeg/libopus VBR behavior.
+
+One API 34 emulator ran the fixture-specific x86_64 release APK with its base
+URL set to `http://127.0.0.1:18865` (SHA-256
+`e3f6afd31e0cf9b639a27b9be2efc7fac0d5e4da4753cc8f844f4dfffb29cd7f`).
+The signed-in UI created Original and all four encoded single-song links, and
+My Shares displayed their saved labels. Each public URL cold-opened the native
+guest viewer with the correct quality label and produced measured audible QEMU
+output (1.88–2.13 seconds in the captured samples). Native revoked and expired
+links displayed their distinct errors. Back from an unsaved edit preserved the
+stored policy; Save changed it, and a forged Original query still returned AAC
+bytes. The native album Share control created a three-song MP3 link; its public
+viewer displayed the policy and advanced playback through the collection.
+
+Focused Go/Flutter/Node checks from implementation cover omitted and legacy
+policies, signed viewing, current ACL, preparing/failed encoding, and migration.
+The real browser checks cover HEAD/Range and nominal output. Encoder failure,
+lost ACL, and signed-viewing edge cases were not recreated in each UI; the
+focused real-SQLite/HTTP tests cover those boundaries. The full repository
+regression gate last passed after task 20 and is next due after task 30 under
+the user's ten-task cadence. The fixture and emulator are disposable; evidence
+and generated APK stay outside tracked source.

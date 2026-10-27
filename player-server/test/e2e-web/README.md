@@ -1,5 +1,29 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M65 share encoding, start a disposable fixture without doubles and run the
+three focused cases in installed Chrome and Firefox, one browser at a time:
+
+```sh
+python3 player-android/integration_test/support/music_fixture.py up player-server/player \
+  --port 18865 --no-doubles --dir /tmp/player-m65-fixture \
+  --evidence /tmp/player-m65-evidence
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/tmp/player-m65-fixture PLAYER_M65_ISOLATED=1 \
+PLAYER_M65_EVIDENCE=/tmp/player-m65-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null GOMAXPROCS=2 \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-share-quality.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox on the same fixture.
+```
+
+The journey selects all five policies, plays anonymous single-song links,
+probes actual codecs and downloads, checks forged overrides, HEAD/Range,
+expiry/revoke, edits through My Shares with offline retry and Escape focus, and
+applies one policy to an album collection. Run the native checks in
+`../../../docs/music-m65-implementation.md` before stopping the fixture with
+`music_fixture.py down /tmp/player-m65-fixture`. Evidence stays outside the
+repository.
+
 For M61 Internet radio, start a fresh disposable `music_fixture.py up` with
 its radio service double. Serve the fixture's cover on another loopback port,
 then run the focused journey in installed Chrome and Firefox, one at a time:
