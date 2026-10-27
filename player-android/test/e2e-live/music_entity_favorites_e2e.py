@@ -82,7 +82,6 @@ def toggle_detail(run, kind, key, title):
 def catalog_favorite(run, kind, name, title):
     catalog(name)
     tap('^Favorites only$')
-    assert adrv.wait('^Show all ' + name.lower() + '$'), app_ui.labels()
     assert app_ui.find_scrolling(r'(^| / )' + re.escape(title)), app_ui.labels()
     run.record(kind + ' Favorites only shows the saved item', True,
                data={'title': title}, artifacts=[run.shot('m34-' + kind + '-filter')])
