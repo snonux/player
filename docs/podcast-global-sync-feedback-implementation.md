@@ -287,3 +287,43 @@ Stage: **IMPLEMENTED/REVIEWED - AWAITING INTEGRATED VERIFICATION**. Both review
 rounds are used. Parent inspected the final sidebar request/account guards and
 reran `global-sync-app-events`, `podcast-global-sync` and `global-sync`; all
 passed. No third review ran. The documented full-suite and platform gaps remain.
+
+## Integrated acceptance (2026-10-27)
+
+The isolated four-client run in
+`/home/paul/tmp/player-integrated-verify/podcast-5i3/evidence/` closed the
+platform gaps relevant to 4i3. The following `results.json` files contain
+passing records for actual installed clients:
+
+| Client | Passing evidence |
+| --- | --- |
+| Chrome | `chrome/1793025250622-feedback/`, `chrome/1793027231353-auth-visual/`, `chrome/1793026124599-boundaries/`, `chrome/1793032579815-account-switch/` |
+| Firefox | `firefox/1793025283451-feedback/`, `firefox/1793027241949-auth-visual/`, `firefox/1793026152980-boundaries/`, `firefox/1793032585166-account-switch/` |
+| Android A | `native-A/20261026T160531.950552Z-feedback/`, `native-A/20261026T162732.836899Z-globalprogress/`, `native-A/20261026T155036.809324Z-isolation/`, `native-A/20261026T160654.080002Z-auth/`, `native-A/20261026T155321.749471Z-preplay/` |
+| Android B | `native-B/20261026T124041.654457Z-resume/`, `native-B/20261026T134658.547694Z-finish/` |
+
+Chrome and Firefox showed global Retry delivering ordinary progress and pending
+podcast completion, retained the full-success clock through partial failure,
+displayed the exact 48-hour and never-synced states, and handled a genuine
+sync `401` without leaving playback. Narrow light/dark controls and keyboard
+focus passed. Android A showed the controlled stale hint and cleared it after
+full Retry, retained ordinary progress through partial failure and process
+death, then delivered it to the server. Its audible podcast playback continued
+through a genuine sync `401`; Android B independently received and published
+shared episode state. Account isolation, bounded pre-playback sync and late
+reply stability also passed in the listed runs.
+
+The integrated build 4026 passed Flutter analysis, the full isolated Flutter
+suite, serial server `mage test`, server `mage build`, and release APK build.
+The task-30 regression gate subsequently passed `mage webTest`, analysis,
+native installed checks, and all Flutter cases after an isolated rerun of one
+concurrency-sensitive SVG timing check. On current source, four focused Node
+suites and 20 focused Flutter checks passed. No global sync source changed
+after the four-client acceptance. The later audio-player skip-target layout
+fix was checked on a rebuilt installed APK.
+
+Browser storage denial and a native restrictive network-policy setting were
+not forced in the four-client run. The browser podcast pending text explicitly
+says edits remain in this tab until synchronized; it makes no persistence
+promise. These edge environments remain a verification limit, separate from
+the completed normal, offline, partial-failure and authentication journeys.
