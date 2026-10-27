@@ -1,6 +1,8 @@
 # M51 selectable download quality
 
-Stage: IMPLEMENTED/REVIEWED — integrated verification pending.
+Stage: ACCEPTED — focused Chrome, Firefox and native Android verification
+completed 2026-10-27. The combined regression gate remains due at completed
+task 20 under the user's ten-task cadence.
 Prerequisites: accepted U01/V01 (nj3/oj3), reviewed streaming quality 4k3
 (`9cd5343`) and bulk downloads pk3 (`65f6086`).
 
@@ -43,13 +45,11 @@ codec and target bitrate. Existing copies migrate with unknown quality rather
 than an invented Original label. The local hash filename remains an internal
 opaque `.media` path and its playback metadata carries the real extension.
 
-Integrated acceptance still required: actual Chrome and Firefox keyboard,
-pointer, light/dark/narrow and canceled/retried archive journeys; native
-touch/Back, restart, account, cancellation and storage errors; ffprobe actual
-downloaded codec/bitrate/container and playback of each kept copy offline.
-Full suites and final server/APK builds remain deferred by the implementation
-first workflow. Focused checks and bounded review outcomes will be recorded
-before this slice is committed. No runtime acceptance is claimed here.
+The browser export and native offline journeys below exercise the feature on
+all three required platforms. The full regression suite remains scheduled for
+the ten-task gate. Native low-storage failure and permission revocation were
+not separately forced on the emulator; focused implementation tests cover the
+storage/error path, and both installed browsers exercised a real ACL denial.
 
 Focused checks (2026-10-23): `GOMAXPROCS=2 go test -p 1
 ./internal/service ./internal/api -run 'TestMusicDownload' -short` passes;
@@ -76,7 +76,7 @@ persistence, preventing a start with the old profile in each pending state.
 `GOMAXPROCS=2 go test -p 1 ./internal/api -run 'TestMusicDownloadsHTTP' -short`
 passes; native scoped analysis of the picker, dialog, Settings and widget test
 is clean; the picker widget and preference tests pass 5 checks. Narrow review
-round 2 is pending; these results do not alter the deferred runtime acceptance.
+round 2 later confirmed both fixes.
 
 Round 1 found two blockers: cold archive preparation outlasted the server write
 deadline, and the native start action could freeze an older quality while the
@@ -88,4 +88,56 @@ selection; the dialog disables starting until ready and preserves that choice
 for the batch. Three delayed load/save widget checks pass, including rollback
 after a rejected save. Scoped analysis, including the direct Settings entry,
 remains clean. Round 2 confirmed both fixes and found no new blocking defects;
-that review did not rerun checks. Integrated acceptance remains pending.
+that review did not rerun checks.
+
+## Focused installed-platform acceptance, 2026-10-27
+
+The local server was rebuilt with `GOMAXPROCS=2 go build -p 2 -o player
+./cmd/player` in `player-server/` and run in isolated
+`/home/paul/tmp/codex/player-m51-18851` on port 18851 with `--no-doubles
+--shuffle-playback`. The server binary SHA-256 is
+`3eb987fd2ca8d5aa8e0130750ff96c912840b580a3c4e13bc82e76576ef1d5a9`.
+The local universal Android APK was built after implementation and installed
+on one read-only Android 14/API34 emulator; its SHA-256 is
+`5681c380851537873543bac30a26544fb140c1b562d0c49b12c10503c7f11dbf`
+(`0.8.2+22`). Neither build is a release. Evidence is outside the repository
+at `/home/paul/tmp/codex/player-m51-evidence/`.
+
+Installed Google Chrome 144.0.7559.132 and Mozilla Firefox 156.0 each passed
+two focused tests, serially with one Playwright worker and `GOMAXPROCS=2`:
+
+```sh
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/home/paul/tmp/codex/player-m51-18851 \
+PLAYER_M51_EVIDENCE=/home/paul/tmp/codex/player-m51-evidence/web \
+PLAYER_E2E_PULSE_SINK=player_e2e_null GOMAXPROCS=2 \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-download-quality.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The keyboard-opened album dialog selected AAC128 and Opus96 independently of
+stream quality. Real three-song ZIP responses contained `.m4a`/AAC at about
+125–128 kbps and `.ogg`/Opus at about 123–132 kbps according to `ffprobe`.
+Opus96 is a nominal encoder target and the actual Ogg files exceeded 96 kbps
+for these fixtures. Extracted files played through each installed browser
+with networking disabled; captured output included the expected 440 Hz song.
+The selected download choice persisted in the dialog; Escape restored focus.
+Narrow 390px dark/light screenshots show the dialog without horizontal
+overflow. Revoking the Music set permission after opening the selected AAC
+dialog produced HTTP 403 and visible Retry; restoring permission let the same
+dialog complete a real ZIP. See `web/{chrome,firefox}/`.
+
+On Android, the direct Settings sheet chose MP3 192 kbps, and Night Transit's
+Keep music offline dialog displayed that persisted choice. Touching Keep
+offline saved all three songs. The copied device bytes probed as MP3 at exactly
+192000 bps, with `.mp3` source names, `audio/mpeg` MIME and `mp3192` profile
+in the private download index (`native-mp3-copies.json`). With Wi-Fi and mobile
+data disabled and the `adb reverse` server mapping removed, First Light played
+from its saved copy; QEMU output contained 44.9 seconds at 440 Hz
+(`native-offline-mp3.json/.wav`). The capture used a −55 dBFS threshold because
+this emulator mix measured −51 dBFS RMS. After a force stop and offline relaunch,
+all three downloads remained available under On this device. Reconnecting to
+the fixture and signing in again showed the MP3 preference still selected;
+changing it to AAC256 required no new download. Touch and Back were used for
+the Settings sheet and album flow, with light/dark sheet screenshots recorded.

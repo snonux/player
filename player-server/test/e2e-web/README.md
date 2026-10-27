@@ -1,5 +1,22 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M51 selectable download quality, use a disposable `music_fixture.py up`
+server and run the two focused cases in installed Chrome and Firefox, one
+worker and browser at a time:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M51_EVIDENCE=/tmp/player-m51-web \
+PLAYER_E2E_PULSE_SINK=player_e2e_null GOMAXPROCS=2 \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-download-quality.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The runner keeps real AAC and Opus ZIPs outside the repository, probes their
+codec/bitrate/container, plays an extracted song offline, checks selection and
+focus in narrow light/dark UI, and revokes/restores real library access for a
+selected-quality failure and retry. Stop the fixture after Android acceptance.
+
 For M10 artist/album enrichment, start the deterministic provider and a
 disposable music fixture with its optional agent URL. Run the focused journey
 in installed Chrome, then Firefox, with one browser worker at a time:
